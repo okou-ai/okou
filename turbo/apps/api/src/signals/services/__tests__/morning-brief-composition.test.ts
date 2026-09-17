@@ -1,3 +1,4 @@
+import type { MorningBriefGithubBundle } from "@okouai/api-contracts/contracts/morning-brief-github-collection";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -29,6 +30,7 @@ import {
 import { normalizeMorningBriefCalendar } from "../morning-brief-calendar-source";
 import { normalizeMorningBriefChat } from "../morning-brief-chat-source";
 import { normalizeMorningBriefGithub } from "../morning-brief-github-source";
+import { normalizeMorningBriefGmail } from "../morning-brief-gmail-source";
 import {
   normalizeMorningBriefSlack,
   MORNING_BRIEF_SLACK_READ_SURFACE,
@@ -56,10 +58,15 @@ import {
 import {
   boundCombinedNormalizedItems,
   dedupeMorningBriefItems,
+  morningBriefEvidenceDigest,
   morningBriefItemBytes,
+  morningBriefItemFacts,
   MORNING_BRIEF_SOURCE_ORDER,
   morningBriefItemsBytes,
   MORNING_BRIEF_COMBINED_NORMALIZED_MAX_BYTES,
+  MORNING_BRIEF_NO_OMISSIONS,
+  MORNING_BRIEF_NO_PROVENANCE,
+  serializeMorningBriefAggregate,
   type MorningBriefSourceCollection,
   type MorningBriefSourceItem,
   serializeMorningBriefItem as serializeForTest,
@@ -140,8 +147,19 @@ function item(
     body: "",
     truncated: false,
     links: [],
+    facts: morningBriefItemFacts({}),
     ...overrides,
   };
+}
+
+/** The exact bytes a caller measuring the aggregate document would see. */
+function aggregateOracle(
+  collections: readonly MorningBriefSourceCollection[],
+): number {
+  return Buffer.byteLength(
+    JSON.stringify(serializeMorningBriefAggregate(collections)),
+    "utf8",
+  );
 }
 
 function collection(
@@ -153,7 +171,8 @@ function collection(
     coverage: items.length === 0 ? "empty" : "complete",
     items,
     requests: 0,
-    omittedBySource: 0,
+    provenance: MORNING_BRIEF_NO_PROVENANCE,
+    omittedBySource: MORNING_BRIEF_NO_OMISSIONS,
   };
 }
 
@@ -214,18 +233,54 @@ describe("normalized evidence identity", () => {
 });
 
 describe("combined normalized ceiling", () => {
-  it("accepts an item that exactly reaches the cap and rejects one byte more", () => {
-    const only = item("slack", "m1", { body: "x".repeat(50) });
-    const exact = morningBriefItemBytes(only);
+  it("accepts an aggregate that exactly reaches the cap and rejects one byte more", () => {
+    // Escaping, non-ASCII and a control character all have to be charged at
+    // their serialized width, and the metadata travelling beside the items is
+    // part of the same document.
+    const only = item("slack", "m1", {
+      body: '早安"\u0001'.repeat(50),
+      facts: morningBriefItemFacts({ startedAtRaw: "1789000000.000100" }),
+    });
+    const collections = [
+      { ...collection("slack", [only]), coverage: "partial" as const },
+    ];
+    // The oracle is the document a consumer serializes, not the bound's counter.
+    const exact = aggregateOracle(collections);
 
-    expect(
-      boundCombinedNormalizedItems([collection("slack", [only])], exact)
-        .omitted,
-    ).toBe(0);
-    expect(
-      boundCombinedNormalizedItems([collection("slack", [only])], exact - 1)
-        .omitted,
-    ).toBe(1);
+    const fitted = boundCombinedNormalizedItems(collections, exact);
+    expect(fitted.omitted).toBe(0);
+    expect(fitted.bytes).toBe(exact);
+    expect(aggregateOracle(fitted.collections)).toBe(exact);
+
+    const overflowed = boundCombinedNormalizedItems(collections, exact - 1);
+    expect(overflowed.omitted).toBe(1);
+    expect(overflowed.collections[0]?.items).toHaveLength(0);
+    expect(overflowed.bytes).toBeLessThan(exact);
+  });
+
+  it("charges the metadata that travels with the items", () => {
+    const only = item("slack", "m1", { body: "x".repeat(40) });
+    const plain: MorningBriefSourceCollection = {
+      ...collection("slack", [only]),
+      coverage: "partial",
+    };
+    const described: MorningBriefSourceCollection = {
+      ...plain,
+      requests: 11,
+      provenance: {
+        ...MORNING_BRIEF_NO_PROVENANCE,
+        startAt: "2026-09-16T06:00:00.000Z",
+        endAt: "2026-09-17T06:00:00.000Z",
+        timezone: "Asia/Shanghai",
+        limitations: ["response-bytes", "deadline"],
+      },
+    };
+    const plainCap = aggregateOracle([plain]);
+
+    // The same item, the same cap: the provenance and limitation metadata is
+    // part of the bounded document, so it is what pushes this one over.
+    expect(boundCombinedNormalizedItems([plain], plainCap).omitted).toBe(0);
+    expect(boundCombinedNormalizedItems([described], plainCap).omitted).toBe(1);
   });
 
   it("drops whole items and reports the source as partial", () => {
@@ -233,10 +288,13 @@ describe("combined normalized ceiling", () => {
     const second = item("slack", "m2", { body: "b".repeat(40), priority: 1 });
     const bounded = boundCombinedNormalizedItems(
       [collection("slack", [first, second])],
-      morningBriefItemBytes(first),
+      aggregateOracle([
+        { ...collection("slack", [first]), coverage: "partial" as const },
+      ]),
     );
 
     expect(bounded.omitted).toBe(1);
+    expect(bounded.omittedBySource.slack).toBe(1);
     expect(bounded.collections[0]?.items).toHaveLength(1);
     expect(bounded.collections[0]?.items[0]?.body).toBe("a".repeat(40));
     expect(bounded.collections[0]?.coverage).toBe("partial");
@@ -317,13 +375,16 @@ describe("source-fair request allocation", () => {
 
   it("counts an exactly fitting request as complete", () => {
     const only = item("slack", "m0", { body: "z".repeat(64) });
+    // What the one item really adds to an empty array, measured rather than
+    // charged: the first element pays no separator.
+    const inRequest = morningBriefItemsBytes([only]) - 2;
     const allocated = allocateMorningBriefRequest(
       [collection("slack", [only])],
-      { maxBytes: morningBriefItemBytes(only) },
+      { maxBytes: inRequest },
     );
 
     expect(allocated.omittedItems).toBe(0);
-    expect(allocated.bytes).toBe(morningBriefItemBytes(only));
+    expect(allocated.bytes).toBe(inRequest);
   });
 });
 
@@ -640,7 +701,10 @@ describe("exact request bytes", () => {
     const envelopeBytes = morningBriefEnvelopeBytes({
       language,
       instructions: null,
-      coverage: morningBriefCoverageReport(collections, {}),
+      coverage: morningBriefCoverageReport(collections, {
+        byNormalizedCap: {},
+        byRequest: {},
+      }),
     });
 
     const allocated = allocateMorningBriefRequest(collections, {
@@ -649,10 +713,10 @@ describe("exact request bytes", () => {
     const request = buildMorningBriefRequest({
       language,
       instructions: null,
-      coverage: morningBriefCoverageReport(
-        collections,
-        allocated.omittedBySource,
-      ),
+      coverage: morningBriefCoverageReport(collections, {
+        byNormalizedCap: {},
+        byRequest: allocated.omittedBySource,
+      }),
       items: allocated.items,
     });
 
@@ -668,7 +732,10 @@ describe("exact request bytes", () => {
       memberLocale: null,
     });
     const instructions = "写成简体中文。".repeat(4096);
-    const coverage = morningBriefCoverageReport([], {});
+    const coverage = morningBriefCoverageReport([], {
+      byNormalizedCap: {},
+      byRequest: {},
+    });
 
     const withText = morningBriefEnvelopeBytes({
       language,
@@ -695,9 +762,13 @@ describe("first-round source fairness under a tight ceiling", () => {
     // would take it, and Slack would contribute nothing at all.
     const gmail = [item("gmail", "big", { body: "g".repeat(600) })];
     const slack = [item("slack", "small", { body: "s" })];
+    // One byte short of what both items really cost in the request array.
     const budget =
-      morningBriefItemBytes(gmail[0] as MorningBriefSourceItem) +
-      morningBriefItemBytes(slack[0] as MorningBriefSourceItem) -
+      morningBriefItemsBytes([
+        gmail[0] as MorningBriefSourceItem,
+        slack[0] as MorningBriefSourceItem,
+      ]) -
+      2 -
       1;
 
     const allocated = allocateMorningBriefRequest(
@@ -716,9 +787,12 @@ describe("first-round source fairness under a tight ceiling", () => {
   it("still admits both when the budget covers both first items exactly", () => {
     const gmail = [item("gmail", "g0", { body: "g".repeat(600) })];
     const slack = [item("slack", "s0", { body: "s" })];
+    // Exactly what both items cost in the request array, measured not summed.
     const budget =
-      morningBriefItemBytes(gmail[0] as MorningBriefSourceItem) +
-      morningBriefItemBytes(slack[0] as MorningBriefSourceItem);
+      morningBriefItemsBytes([
+        gmail[0] as MorningBriefSourceItem,
+        slack[0] as MorningBriefSourceItem,
+      ]) - 2;
 
     const allocated = allocateMorningBriefRequest(
       [collection("gmail", gmail), collection("slack", slack)],
@@ -811,7 +885,7 @@ describe("envelope reservation against the final report", () => {
     const envelopeBytes = morningBriefEnvelopeBytes({
       language,
       instructions: null,
-      coverage: morningBriefWidestCoverageReport(collections),
+      coverage: morningBriefWidestCoverageReport(collections, {}),
     });
     const allocated = allocateMorningBriefRequest(collections, {
       overheadBytes: envelopeBytes,
@@ -819,10 +893,10 @@ describe("envelope reservation against the final report", () => {
     const request = buildMorningBriefRequest({
       language,
       instructions: null,
-      coverage: morningBriefCoverageReport(
-        collections,
-        allocated.omittedBySource,
-      ),
+      coverage: morningBriefCoverageReport(collections, {
+        byNormalizedCap: {},
+        byRequest: allocated.omittedBySource,
+      }),
       items: allocated.items,
     });
 
@@ -836,8 +910,11 @@ describe("envelope reservation against the final report", () => {
     const collections = [
       collection("gmail", [item("gmail", "m0"), item("gmail", "m1")]),
     ];
-    const widest = morningBriefWidestCoverageReport(collections);
-    const real = morningBriefCoverageReport(collections, { gmail: 1 });
+    const widest = morningBriefWidestCoverageReport(collections, {});
+    const real = morningBriefCoverageReport(collections, {
+      byNormalizedCap: {},
+      byRequest: { gmail: 1 },
+    });
 
     expect(JSON.stringify(widest).length).toBeGreaterThanOrEqual(
       JSON.stringify(real).length,
@@ -1080,13 +1157,14 @@ describe("five-source normalization", () => {
         item(source, `${source}-1`, { body: "y".repeat(400), priority: 1 }),
       ]);
     });
-    const firstItems = collections.map((entry) => {
-      return morningBriefItemBytes(entry.items[0] as MorningBriefSourceItem);
-    });
-    // Exactly enough for one item from each source and nothing more.
-    const budget = firstItems.reduce((total, bytes) => {
-      return total + bytes;
-    }, 0);
+    // Exactly enough for one item from each source and nothing more, measured
+    // on the array those five items actually serialize to.
+    const budget =
+      morningBriefItemsBytes(
+        collections.map((entry) => {
+          return entry.items[0] as MorningBriefSourceItem;
+        }),
+      ) - 2;
 
     const allocated = allocateMorningBriefRequest(collections, {
       maxBytes: budget,
@@ -1107,5 +1185,505 @@ describe("five-source normalization", () => {
       ["calendar", "gmail", "github"],
       ["slack", "chat"],
     ]);
+  });
+});
+
+describe("allocation under an unsatisfiable reservation", () => {
+  it("admits a fitting early item when a later source could never fit", () => {
+    // The controller's counterexample: a small Calendar item and an oversized
+    // Chat item share a tight ceiling. Reserving for Chat's first item — which
+    // no allocation could ever place — used to drop Calendar too, and the
+    // attempt then reported that nothing fitted while holding something that
+    // did.
+    const calendar = item("calendar", "e0", { body: "c".repeat(120) });
+    const chat = item("chat", "c0", { body: "x".repeat(40_000) });
+    const capacity = 1000;
+    expect(morningBriefItemBytes(calendar)).toBeLessThan(capacity);
+    expect(morningBriefItemBytes(chat)).toBeGreaterThan(capacity);
+
+    const allocated = allocateMorningBriefRequest(
+      [collection("calendar", [calendar]), collection("chat", [chat])],
+      { maxBytes: capacity },
+    );
+
+    expect(
+      allocated.items.map((accepted) => {
+        return accepted.identity.record;
+      }),
+    ).toStrictEqual(["e0"]);
+    expect(allocated.omittedBySource.chat).toBe(1);
+    expect(allocated.omittedBySource.calendar).toBeUndefined();
+    // Measured independently of the allocator's own counter.
+    expect(morningBriefItemsBytes(allocated.items) - 2).toBeLessThanOrEqual(
+      capacity,
+    );
+  });
+
+  it("keeps filling from a source whose own first item could never fit", () => {
+    const calendar = item("calendar", "e0", { body: "c".repeat(120) });
+    const hugeChat = item("chat", "c-huge", {
+      body: "x".repeat(40_000),
+      priority: 0,
+    });
+    const smallChat = item("chat", "c-small", { body: "y", priority: 1 });
+    // Exactly enough for the two items that can fit, and nothing more.
+    const capacity = morningBriefItemsBytes([calendar, smallChat]) - 2;
+    expect(morningBriefItemBytes(hugeChat)).toBeGreaterThan(capacity);
+
+    const allocated = allocateMorningBriefRequest(
+      [
+        collection("calendar", [calendar]),
+        collection("chat", [hugeChat, smallChat]),
+      ],
+      { maxBytes: capacity },
+    );
+
+    expect(
+      allocated.items.map((accepted) => {
+        return accepted.identity.record;
+      }),
+    ).toStrictEqual(["e0", "c-small"]);
+    expect(allocated.omittedItems).toBe(1);
+    expect(allocated.omittedBytes).toBe(morningBriefItemBytes(hugeChat));
+  });
+
+  it("represents every source that fits and no source that cannot", () => {
+    const fitting = MORNING_BRIEF_SOURCE_ORDER.filter((source) => {
+      return source !== "chat";
+    }).map((source) => {
+      return collection(source, [
+        item(source, `${source}-0`, { body: "s".repeat(80) }),
+        item(source, `${source}-1`, { body: "t".repeat(80), priority: 1 }),
+      ]);
+    });
+    const firstItems = fitting.map((entry) => {
+      return entry.items[0] as MorningBriefSourceItem;
+    });
+
+    const allocated = allocateMorningBriefRequest(
+      [
+        ...fitting,
+        collection("chat", [
+          item("chat", "chat-huge", { body: "z".repeat(40_000) }),
+        ]),
+      ],
+      { maxBytes: morningBriefItemsBytes(firstItems) - 2 },
+    );
+
+    expect(
+      allocated.items.map((accepted) => {
+        return accepted.identity.source;
+      }),
+    ).toStrictEqual(["calendar", "gmail", "github", "slack"]);
+    expect(allocated.omittedBySource.chat).toBe(1);
+  });
+});
+
+describe("request ceiling measured on the consumed serialization", () => {
+  const language = planMorningBriefLanguage({
+    instructions: { versionId: "ver_1", digest: "d1" },
+    memberLocale: null,
+  });
+  const instructions = "写成简体中文。".repeat(64);
+
+  function assemble(
+    collections: readonly MorningBriefSourceCollection[],
+    items: readonly MorningBriefSourceItem[],
+    byRequest: Partial<Record<MorningBriefSourceKind, number>>,
+  ) {
+    return buildMorningBriefRequest({
+      language,
+      instructions,
+      coverage: morningBriefCoverageReport(collections, {
+        byNormalizedCap: {},
+        byRequest,
+      }),
+      items,
+    });
+  }
+
+  it("meets the ceiling exactly and drops a whole item one byte under", () => {
+    // Escaping, non-ASCII, the coverage metadata and the whole instruction file
+    // are all inside the measured document.
+    const only = item("gmail", "m0", {
+      body: '"早安"'.repeat(64),
+      facts: morningBriefItemFacts({
+        reasons: [
+          { branch: "recent", detail: null, unread: true },
+          { branch: "unread", detail: null, unread: true },
+        ],
+        bodySource: "text-plain",
+      }),
+    });
+    const collections = [collection("gmail", [only])];
+    const envelopeBytes = morningBriefEnvelopeBytes({
+      language,
+      instructions,
+      coverage: morningBriefWidestCoverageReport(collections, {}),
+    });
+    // The oracle: the exact bytes of the request this composition would send.
+    const exact = Buffer.byteLength(
+      JSON.stringify(assemble(collections, [only], {})),
+      "utf8",
+    );
+
+    const fitted = allocateMorningBriefRequest(collections, {
+      maxBytes: exact,
+      overheadBytes: envelopeBytes,
+    });
+    expect(fitted.items).toHaveLength(1);
+    expect(
+      Buffer.byteLength(
+        JSON.stringify(assemble(collections, fitted.items, {})),
+        "utf8",
+      ),
+    ).toBe(exact);
+
+    const overflowed = allocateMorningBriefRequest(collections, {
+      maxBytes: exact - 1,
+      overheadBytes: envelopeBytes,
+    });
+    expect(overflowed.items).toHaveLength(0);
+    expect(overflowed.omittedBySource.gmail).toBe(1);
+  });
+
+  it("reserves for the widest omission counts the report can produce", () => {
+    const items = Array.from({ length: 300 }, (_, index) => {
+      return item("gmail", `m${index.toString()}`, {
+        body: "e".repeat(400),
+        priority: index,
+      });
+    });
+    const collections = [
+      {
+        ...collection("gmail", items),
+        omittedBySource: { known: 17, unknownRemaining: true },
+      },
+    ];
+    const envelopeBytes = morningBriefEnvelopeBytes({
+      language,
+      instructions,
+      coverage: morningBriefWidestCoverageReport(collections, { gmail: 9 }),
+    });
+    const allocated = allocateMorningBriefRequest(collections, {
+      overheadBytes: envelopeBytes,
+    });
+    const request = buildMorningBriefRequest({
+      language,
+      instructions,
+      coverage: morningBriefCoverageReport(collections, {
+        byNormalizedCap: { gmail: 9 },
+        byRequest: allocated.omittedBySource,
+      }),
+      items: allocated.items,
+    });
+
+    expect(allocated.omittedItems).toBeGreaterThan(99);
+    expect(
+      Buffer.byteLength(JSON.stringify(request), "utf8"),
+    ).toBeLessThanOrEqual(MORNING_BRIEF_REQUEST_MAX_BYTES);
+    const [report] = request.coverage;
+    // Three independent reductions, each reported as itself.
+    expect(report?.omitted.bySource.known).toBe(17);
+    expect(report?.omitted.byNormalizedCap).toBe(9);
+    expect(report?.omitted.byRequest).toBe(allocated.omittedItems);
+    expect(report?.omitted.knownTotal).toBe(17 + 9 + allocated.omittedItems);
+    expect(report?.omitted.unknownRemaining).toBeTruthy();
+  });
+
+  it("reports every stage that reduced a source, not only the last one", () => {
+    const kept = item("slack", "s0", { body: "k", priority: 0 });
+    const droppedByCap = item("slack", "s1", { body: "d", priority: 1 });
+    const unknownRemaining = { known: 0, unknownRemaining: true };
+    const bounded = boundCombinedNormalizedItems(
+      [
+        {
+          ...collection("slack", [kept, droppedByCap]),
+          omittedBySource: unknownRemaining,
+        },
+      ],
+      aggregateOracle([
+        {
+          ...collection("slack", [kept]),
+          coverage: "partial" as const,
+          omittedBySource: unknownRemaining,
+        },
+      ]),
+    );
+    const [report] = morningBriefCoverageReport(bounded.collections, {
+      byNormalizedCap: bounded.omittedBySource,
+      byRequest: {},
+    });
+
+    expect(report?.included).toBe(1);
+    expect(report?.omitted.byNormalizedCap).toBe(1);
+    expect(report?.omitted.knownTotal).toBe(1);
+    // A cap that ended the provider read stays an explicit unknown, never a
+    // count the collector never made.
+    expect(report?.omitted.unknownRemaining).toBeTruthy();
+  });
+});
+
+describe("preserved provider facts", () => {
+  function githubBundle(record: {
+    readonly branch: "assigned" | "review-requested";
+    readonly headSha: string;
+    readonly state: "failing" | "success";
+  }): MorningBriefGithubBundle {
+    return {
+      source: "github" as const,
+      login: "octocat",
+      anchor: "2026-09-17T06:00:00.000Z",
+      collectedAt: "2026-09-17T06:00:00.000Z",
+      observedAt: "2026-09-17T06:00:00.000Z",
+      timezone: "UTC",
+      coverage: "complete" as const,
+      outcome: "complete" as const,
+      items: [
+        {
+          repository: "vm0-ai/okou",
+          number: 7,
+          kind: "pull-request" as const,
+          title: "Ship the composition",
+          state: "open" as const,
+          updatedAt: "2026-09-17T05:00:00.000Z",
+          reasons: [{ branch: record.branch }],
+          checks: {
+            headSha: record.headSha,
+            state: record.state,
+            failing: record.state === "failing" ? 1 : 0,
+            pending: 0,
+            succeeded: 1,
+            failingNames: record.state === "failing" ? ["build"] : [],
+            incomplete: false,
+          },
+        },
+      ],
+      branches: {
+        notifications: {
+          status: "complete" as const,
+          windowStart: "2026-09-16T06:00:00.000Z",
+          windowEnd: "2026-09-17T06:00:00.000Z",
+          pages: 1,
+          items: 0,
+          limits: [],
+        },
+        assigned: {
+          status: "complete" as const,
+          observedAt: "2026-09-17T06:00:00.000Z",
+          pages: 1,
+          items: 1,
+          limits: [],
+        },
+        reviewRequested: {
+          status: "complete" as const,
+          observedAt: "2026-09-17T06:00:00.000Z",
+          pages: 1,
+          items: 1,
+          limits: [],
+        },
+        checks: { status: "complete" as const, pages: 2, items: 1, limits: [] },
+      },
+      limits: [],
+      counts: { items: 1, requests: 9, textCharacters: 24 },
+    };
+  }
+
+  it("distinguishes one pull request selected by different branches", () => {
+    const reviewRequested = normalizeMorningBriefGithub(
+      githubBundle({
+        branch: "review-requested",
+        headSha: "a".repeat(40),
+        state: "failing",
+      }),
+    );
+    const assigned = normalizeMorningBriefGithub(
+      githubBundle({
+        branch: "assigned",
+        headSha: "b".repeat(40),
+        state: "success",
+      }),
+    );
+
+    // Same repository, number and title; two different obligations.
+    expect(reviewRequested.items[0]?.title).toBe(assigned.items[0]?.title);
+    expect(morningBriefEvidenceDigest(reviewRequested.items)).not.toBe(
+      morningBriefEvidenceDigest(assigned.items),
+    );
+    expect(reviewRequested.items[0]?.facts.checks?.headSha).toBe(
+      "a".repeat(40),
+    );
+    expect(reviewRequested.items[0]?.facts.checks?.failingNames).toStrictEqual([
+      "build",
+    ]);
+    expect(reviewRequested.items[0]?.facts.reasons).toStrictEqual([
+      { branch: "review-requested", detail: null, unread: null },
+    ]);
+    // The collector's own read count, not a sum of list pages.
+    expect(reviewRequested.requests).toBe(9);
+  });
+
+  it("keeps both Gmail branches and the unread snapshot time", () => {
+    const normalized = normalizeMorningBriefGmail(
+      {
+        source: "gmail",
+        status: "partial",
+        accountEmail: "owner@example.test",
+        anchor: "2026-09-17T06:00:00.000Z",
+        collectedAt: "2026-09-17T06:00:10.000Z",
+        timezone: "Asia/Shanghai",
+        recentWindow: {
+          from: "2026-09-16T06:00:00.000Z",
+          to: "2026-09-17T06:00:00.000Z",
+        },
+        unreadObservedAt: "2026-09-17T06:00:05.000Z",
+        items: [
+          {
+            messageId: "m1",
+            threadId: "t1",
+            branches: ["recent", "unread"],
+            subject: "Release",
+            from: "peer@example.test",
+            to: null,
+            date: "Wed, 16 Sep 2026 20:00:00 +0000",
+            internalDate: "2026-09-16T20:00:00.000Z",
+            unread: true,
+            excerpt: "text",
+            excerptSource: "text-plain",
+            sourceUrl: "https://mail.google.com/mail/u/0/#inbox/m1",
+          },
+        ],
+        coverage: {
+          recent: "truncated",
+          unread: "complete",
+          truncations: ["list-pages", "candidates"],
+          requests: 6,
+          retryAfterMs: null,
+        },
+        failure: null,
+      },
+      "owner@example.test",
+    );
+
+    expect(normalized.items[0]?.facts.reasons).toStrictEqual([
+      { branch: "recent", detail: null, unread: true },
+      { branch: "unread", detail: null, unread: true },
+    ]);
+    expect(normalized.provenance.observedAt).toBe("2026-09-17T06:00:05.000Z");
+    expect(normalized.provenance.startAt).toBe("2026-09-16T06:00:00.000Z");
+    // Two truncation kinds are not two messages: the count stays unknown.
+    expect(normalized.omittedBySource).toStrictEqual({
+      known: 0,
+      unknownRemaining: true,
+    });
+  });
+
+  it("keeps an all-day date, its timezone and the frozen local window", () => {
+    const normalized = normalizeMorningBriefCalendar(
+      {
+        source: "google-calendar",
+        status: "ok",
+        anchor: "2026-09-17T06:00:00.000Z",
+        collectedAt: "2026-09-17T06:00:00.000Z",
+        timezone: "Asia/Shanghai",
+        window: {
+          startAt: "2026-09-16T16:00:00.000Z",
+          endAt: "2026-09-17T16:00:00.000Z",
+          startDate: "2026-09-17",
+          endDateExclusive: "2026-09-18",
+        },
+        items: [
+          {
+            calendarId: "cal-1",
+            calendarSummary: "Work",
+            calendarTimezone: "America/Los_Angeles",
+            eventId: "evt-1",
+            iCalUID: null,
+            recurringEventId: null,
+            originalStartTime: null,
+            summary: "Offsite",
+            location: null,
+            descriptionExcerpt: null,
+            allDay: true,
+            start: "2026-09-17",
+            end: "2026-09-19",
+            eventTimezone: null,
+            localDayOffset: 0,
+            organizer: null,
+            selfResponseStatus: null,
+            attendees: [],
+            attendeesTruncated: false,
+            link: null,
+          },
+        ],
+        coverage: {
+          calendarList: "complete",
+          calendars: [
+            {
+              calendarId: "cal-1",
+              summary: "Work",
+              accessRole: "owner",
+              primary: true,
+              outcome: "complete",
+              retryAfterMs: null,
+            },
+          ],
+          truncations: [],
+          requests: 4,
+          retryAfterMs: null,
+        },
+        failure: null,
+      },
+      "member-1",
+    );
+
+    // The calendar dates survive verbatim beside the ordering instant.
+    expect(normalized.items[0]?.facts.startedAtRaw).toBe("2026-09-17");
+    expect(normalized.items[0]?.facts.endsAtRaw).toBe("2026-09-19");
+    expect(normalized.items[0]?.facts.containerTimezone).toBe(
+      "America/Los_Angeles",
+    );
+    expect(normalized.provenance.startDate).toBe("2026-09-17");
+    expect(normalized.provenance.endDateExclusive).toBe("2026-09-18");
+    expect(normalized.provenance.timezone).toBe("Asia/Shanghai");
+    // Four reads for one calendar: the envelope count is not the read count.
+    expect(normalized.requests).toBe(4);
+  });
+
+  it("counts skipped Chat threads without counting policy exclusions", () => {
+    const normalized = normalizeMorningBriefChat(
+      {
+        source: "chat",
+        anchor: "2026-09-17T06:00:00.000Z",
+        collectedAt: "2026-09-17T06:00:00.000Z",
+        result: "collected",
+        coverage: "partial",
+        scope: { unreadCandidates: 4, inspectedThreads: 3 },
+        items: [],
+        skipped: [
+          {
+            threadId: "11111111-1111-4111-8111-111111111111",
+            reason: "destination_thread",
+          },
+          {
+            threadId: "22222222-2222-4222-8222-222222222222",
+            reason: "morning_brief_thread",
+          },
+          {
+            threadId: "33333333-3333-4333-8333-333333333333",
+            reason: "thread_read_failed",
+          },
+        ],
+        truncations: ["candidate_overflow"],
+      },
+      "member-1",
+    );
+
+    // The destination thread and Morning Brief threads were never eligible.
+    expect(normalized.omittedBySource).toStrictEqual({
+      known: 1,
+      unknownRemaining: true,
+    });
+    expect(normalized.provenance.limitations).toContain("thread_read_failed");
   });
 });

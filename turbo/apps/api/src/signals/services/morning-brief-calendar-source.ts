@@ -21,11 +21,13 @@ import {
   morningBriefScopeDigest,
   type MorningBriefRetainedSourceDescriptor,
 } from "./morning-brief-source-authority";
-import type {
-  MorningBriefSourceCollection,
-  MorningBriefSourceCoverage,
-  MorningBriefSourceItem,
-  MorningBriefTimeSemantics,
+import {
+  morningBriefItemFacts,
+  type MorningBriefSourceCollection,
+  type MorningBriefSourceCoverage,
+  type MorningBriefSourceItem,
+  type MorningBriefSourceProvenance,
+  type MorningBriefTimeSemantics,
 } from "./morning-brief-source-item";
 
 /** The Calendar authorization surface a Morning Brief read exercises. */
@@ -60,6 +62,48 @@ function calendarCoverage(
     return "partial";
   }
   return collection.items.length === 0 ? "empty" : "complete";
+}
+
+/**
+ * The window this collection's evidence is only true within.
+ *
+ * The frozen local dates and the owner timezone are the whole reason an all-day
+ * date is readable: `2026-09-17` with an exclusive end of `2026-09-18` is one
+ * day in Asia/Shanghai and a different range of instants in America/Los_Angeles.
+ * Each enumerated calendar keeps its own outcome, so a calendar that answered
+ * with busy blocks only is not reported as fully read.
+ */
+function calendarProvenance(
+  collection: MorningBriefCalendarCollection,
+): MorningBriefSourceProvenance {
+  return {
+    startAt: collection.window.startAt,
+    endAt: collection.window.endAt,
+    startDate: collection.window.startDate,
+    endDateExclusive: collection.window.endDateExclusive,
+    timezone: collection.timezone,
+    observedAt: null,
+    collectedAt: collection.collectedAt,
+    branches: [
+      {
+        name: "calendar-list",
+        status: collection.coverage.calendarList,
+        startAt: null,
+        endAt: null,
+        observedAt: null,
+      },
+      ...collection.coverage.calendars.map((calendar) => {
+        return {
+          name: calendar.calendarId,
+          status: calendar.outcome,
+          startAt: null,
+          endAt: null,
+          observedAt: null,
+        };
+      }),
+    ],
+    limitations: collection.coverage.truncations,
+  };
 }
 
 /**
@@ -115,14 +159,44 @@ export function normalizeMorningBriefCalendar(
       // itself is bounded by that same read.
       truncated: event.attendeesTruncated,
       links: link === null ? [] : [{ label: "Open in Calendar", url: link }],
+      // The original date strings travel verbatim beside the ordering instant.
+      // An all-day event's `start` is a calendar date, and the moment it is
+      // only a `Date` the request can no longer tell a whole day in the owner's
+      // timezone from midnight UTC.
+      facts: morningBriefItemFacts({
+        startedAtRaw: event.start,
+        endsAtRaw: event.end,
+        timezone: event.eventTimezone,
+        containerTimezone: event.calendarTimezone,
+        localDayOffset: event.localDayOffset,
+        seriesId: event.recurringEventId,
+        state: event.selfResponseStatus,
+        actor: event.organizer,
+        limitations: event.attendeesTruncated ? ["attendees"] : [],
+      }),
     };
   });
   return {
     source: "calendar",
     coverage: calendarCoverage(collection),
     items,
-    requests: collection.coverage.calendars.length,
-    omittedBySource: 0,
+    // The reads the collector actually issued. The number of enumerated
+    // calendars is not that number: one calendar can cost a list page and
+    // several event pages, and four requests reported as one envelope makes a
+    // budget report that cannot be reconciled with the provider's own.
+    requests: collection.coverage.requests,
+    provenance: calendarProvenance(collection),
+    // No cap here counts the events it did not read, so the remainder is
+    // explicitly unknown rather than a fabricated zero.
+    omittedBySource: {
+      known: 0,
+      unknownRemaining:
+        collection.coverage.truncations.length > 0 ||
+        collection.coverage.calendarList !== "complete" ||
+        collection.coverage.calendars.some((calendar) => {
+          return calendar.outcome !== "complete";
+        }),
+    },
   };
 }
 

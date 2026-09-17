@@ -80,6 +80,7 @@ import {
   morningBriefEnvelopeBytes,
   morningBriefRequestBytes,
   morningBriefWidestCoverageReport,
+  type MorningBriefOmissionStages,
 } from "./morning-brief-request-envelope";
 import { collectMorningBriefSlackBundle } from "./morning-brief-slack-collection.service";
 import {
@@ -93,8 +94,17 @@ import {
 import {
   boundCombinedNormalizedItems,
   dedupeMorningBriefItems,
+  morningBriefEvidenceDigest,
+  morningBriefSourceOmissions,
+  MORNING_BRIEF_COMBINED_NORMALIZED_MAX_BYTES,
+  MORNING_BRIEF_NO_OMISSIONS,
+  MORNING_BRIEF_NO_PROVENANCE,
   type MorningBriefSourceCollection,
+  type MorningBriefSourceItem,
   type MorningBriefSourceKind,
+  type MorningBriefSourceOmissions,
+  type MorningBriefSourceProvenance,
+  type MorningBriefTimeSemantics,
 } from "./morning-brief-source-item";
 import { slackUserInstallation } from "./slack-data.service";
 
@@ -119,16 +129,36 @@ interface SlackBinding {
 /** Slack's frozen window is the 24 hours ending at the anchor. */
 const MORNING_BRIEF_SLACK_WINDOW_MS = 24 * 60 * 60 * 1000;
 
+/** How many of one source's items made each kind of time claim. */
+interface MorningBriefTimeSemanticsCount {
+  readonly instant: number;
+  readonly overlap: number;
+  readonly dateOnly: number;
+  readonly outstanding: number;
+}
+
+/** What one source contributed, with no evidence text in it. */
+interface MorningBriefSourceReport {
+  readonly source: MorningBriefSourceKind;
+  readonly coverage: string;
+  /** Normalized items that survived the combined ceiling. */
+  readonly items: number;
+  /** Of those, the ones the request could actually carry. */
+  readonly includedInRequest: number;
+  readonly requests: number;
+  readonly timeSemantics: MorningBriefTimeSemanticsCount;
+  readonly omitted: MorningBriefSourceOmissions;
+  readonly provenance: MorningBriefSourceProvenance;
+  /** A fingerprint of exactly the evidence this source put in the request. */
+  readonly evidenceDigest: string;
+}
+
 /** What one composition attempt produced, with no provider payload in it. */
 interface MorningBriefCompositionResult {
-  readonly sources: readonly {
-    readonly source: MorningBriefSourceKind;
-    readonly coverage: string;
-    readonly items: number;
-    readonly requests: number;
-  }[];
+  readonly sources: readonly MorningBriefSourceReport[];
   readonly waves: readonly (readonly MorningBriefSourceKind[])[];
   readonly normalizedBytes: number;
+  readonly normalizedMaxBytes: number;
   readonly omittedByNormalizedCap: number;
   readonly request: {
     readonly envelopeBytes: number;
@@ -137,6 +167,8 @@ interface MorningBriefCompositionResult {
     readonly items: number;
     readonly omittedItems: number;
     readonly omittedBytes: number;
+    /** A fingerprint of the exact document the sole model call would carry. */
+    readonly digest: string;
   } | null;
   readonly language: MorningBriefLanguagePlan | null;
   readonly descriptors: readonly MorningBriefRetainedSourceDescriptor[];
@@ -242,30 +274,10 @@ export const composeMorningBrief$ = command(
       },
       signal,
     );
-    const deduped = collections.map((collection) => {
-      return {
-        ...collection,
-        items: dedupeMorningBriefItems(collection.items),
-      };
+    const { bounded, contributed, retained } = reduceMorningBriefEvidence({
+      collections,
+      descriptors,
     });
-    const bounded = boundCombinedNormalizedItems(deduped);
-    const contributed = new Set(
-      bounded.collections
-        .filter((collection) => {
-          return collection.items.length > 0;
-        })
-        .map((collection) => {
-          return collection.source;
-        }),
-    );
-    const retained = boundMorningBriefDescriptors(
-      descriptors.map((descriptor) => {
-        return {
-          ...descriptor,
-          contributed: contributed.has(descriptor.source),
-        };
-      }),
-    );
     if (retained.kind === "rejected") {
       // Failing closed is the whole point of the bound: a descriptor set that
       // quietly became empty would let every later permission check pass by
@@ -279,9 +291,9 @@ export const composeMorningBrief$ = command(
     }
 
     const base = {
-      sources: sourceSummary(bounded.collections),
       waves,
       normalizedBytes: bounded.bytes,
+      normalizedMaxBytes: MORNING_BRIEF_COMBINED_NORMALIZED_MAX_BYTES,
       omittedByNormalizedCap: bounded.omitted,
       descriptors: retained.descriptors,
     };
@@ -290,35 +302,115 @@ export const composeMorningBrief$ = command(
       // Healthy empty: settle with no language I/O, no request and no delivery.
       return {
         kind: "empty",
-        result: { ...base, request: null, language: null },
+        result: {
+          ...base,
+          sources: sourceReports(bounded.collections, {
+            stages: {
+              byNormalizedCap: bounded.omittedBySource,
+              byRequest: {},
+            },
+            accepted: [],
+          }),
+          request: null,
+          language: null,
+        },
       };
     }
     const planned = await set(
       planMorningBriefRequest$,
-      { scope, collections: bounded.collections, phaseDeadlineAt, args },
+      {
+        scope,
+        collections: bounded.collections,
+        omittedByNormalizedCap: bounded.omittedBySource,
+        phaseDeadlineAt,
+        args,
+      },
       signal,
     );
     if (planned.kind !== "planned") {
       return planned;
     }
-    const { language, envelopeBytes, totalBytes, allocation } = planned;
     return {
       kind: "composed",
       result: {
         ...base,
-        language,
-        request: {
-          envelopeBytes,
-          totalBytes,
-          maxBytes: MORNING_BRIEF_REQUEST_MAX_BYTES,
-          items: allocation.items.length,
-          omittedItems: allocation.omittedItems,
-          omittedBytes: allocation.omittedBytes,
-        },
+        sources: sourceReports(bounded.collections, {
+          stages: {
+            byNormalizedCap: bounded.omittedBySource,
+            byRequest: planned.allocation.omittedBySource,
+          },
+          accepted: planned.allocation.items,
+        }),
+        language: planned.language,
+        request: requestReport(planned),
       },
     };
   },
 );
+
+/** The measured request one model call would receive, with no evidence in it. */
+function requestReport(planned: {
+  readonly envelopeBytes: number;
+  readonly totalBytes: number;
+  readonly digest: string;
+  readonly allocation: ReturnType<typeof allocateMorningBriefRequest>;
+}): NonNullable<MorningBriefCompositionResult["request"]> {
+  return {
+    envelopeBytes: planned.envelopeBytes,
+    totalBytes: planned.totalBytes,
+    maxBytes: MORNING_BRIEF_REQUEST_MAX_BYTES,
+    items: planned.allocation.items.length,
+    omittedItems: planned.allocation.omittedItems,
+    omittedBytes: planned.allocation.omittedBytes,
+    digest: planned.digest,
+  };
+}
+
+/**
+ * Deduplicate, apply the combined normalized ceiling and bind the authority.
+ *
+ * The three run together because each one depends on the previous answer: only
+ * what survived the ceiling counts as a source that contributed, and only a
+ * source that contributed has evidence a later permission check has to cover.
+ */
+function reduceMorningBriefEvidence(input: {
+  readonly collections: readonly MorningBriefSourceCollection[];
+  readonly descriptors: readonly MorningBriefRetainedSourceDescriptor[];
+}): {
+  readonly bounded: ReturnType<typeof boundCombinedNormalizedItems>;
+  readonly contributed: ReadonlySet<MorningBriefSourceKind>;
+  readonly retained: ReturnType<typeof boundMorningBriefDescriptors>;
+} {
+  const bounded = boundCombinedNormalizedItems(
+    input.collections.map((collection) => {
+      return {
+        ...collection,
+        items: dedupeMorningBriefItems(collection.items),
+      };
+    }),
+  );
+  const contributed = new Set(
+    bounded.collections
+      .filter((collection) => {
+        return collection.items.length > 0;
+      })
+      .map((collection) => {
+        return collection.source;
+      }),
+  );
+  return {
+    bounded,
+    contributed,
+    retained: boundMorningBriefDescriptors(
+      input.descriptors.map((descriptor) => {
+        return {
+          ...descriptor,
+          contributed: contributed.has(descriptor.source),
+        };
+      }),
+    ),
+  };
+}
 
 /** The distinct containers a normalized collection drew from, in first-seen order. */
 function containerIds(
@@ -425,6 +517,7 @@ const planMorningBriefRequest$ = command(
     input: {
       readonly scope: MorningBriefCollectionScope;
       readonly collections: readonly MorningBriefSourceCollection[];
+      readonly omittedByNormalizedCap: MorningBriefOmissionStages["byNormalizedCap"];
       readonly phaseDeadlineAt: Date;
       readonly args: {
         readonly orgId: string;
@@ -439,6 +532,7 @@ const planMorningBriefRequest$ = command(
         readonly language: MorningBriefLanguagePlan;
         readonly envelopeBytes: number;
         readonly totalBytes: number;
+        readonly digest: string;
         readonly allocation: ReturnType<typeof allocateMorningBriefRequest>;
       }
     | {
@@ -485,7 +579,10 @@ const planMorningBriefRequest$ = command(
       instructions,
       // Measured at its widest, because the real counts are only known after
       // allocation and a narrower measurement would under-reserve.
-      coverage: morningBriefWidestCoverageReport(bounded.collections),
+      coverage: morningBriefWidestCoverageReport(
+        bounded.collections,
+        input.omittedByNormalizedCap,
+      ),
     });
     const allocation = allocateMorningBriefRequest(bounded.collections, {
       maxBytes: MORNING_BRIEF_REQUEST_MAX_BYTES,
@@ -504,10 +601,10 @@ const planMorningBriefRequest$ = command(
     const request = buildMorningBriefRequest({
       language,
       instructions,
-      coverage: morningBriefCoverageReport(
-        bounded.collections,
-        allocation.omittedBySource,
-      ),
+      coverage: morningBriefCoverageReport(bounded.collections, {
+        byNormalizedCap: input.omittedByNormalizedCap,
+        byRequest: allocation.omittedBySource,
+      }),
       items: allocation.items,
     });
     const totalBytes = morningBriefRequestBytes(request);
@@ -515,58 +612,146 @@ const planMorningBriefRequest$ = command(
     // Everything above awaited the network. Nothing has been released yet, so
     // this is where the owner's authority is proved again — against live state,
     // with a fresh clock, after the last await rather than before the first.
-    if (nowDate().getTime() >= phaseDeadlineAt.getTime()) {
-      return { kind: "authority-changed" };
-    }
-    const recheck = await admitMorningBriefCollection(
+    const unchanged = await proveMorningBriefAuthorityUnchanged(
       {
         db,
         clerk,
-        orgId: args.orgId,
-        userId: args.userId,
-        anchor: args.anchor,
+        scope,
+        args,
+        phaseDeadlineAt,
+        instructionsVersionId:
+          context.kind === "available" ? context.versionId : null,
       },
       signal,
     );
-    signal.throwIfAborted();
-    if (
-      recheck.kind !== "ok" ||
-      recheck.scope.membershipId !== scope.membershipId ||
-      recheck.scope.agentId !== scope.agentId ||
-      recheck.scope.installationId !== scope.installationId
-    ) {
+    if (!unchanged) {
       return { kind: "authority-changed" };
     }
-    // The Agent's instruction version is part of the request, so a change to it
-    // between the read and the reservation is a changed request, not a detail.
-    if (context.kind === "available") {
-      const current = await resolveMorningBriefInstructionsVersion(
-        db,
-        scope,
-        scope.agentId,
-      );
-      signal.throwIfAborted();
-      if (
-        current.kind !== "resolved" ||
-        current.versionId !== context.versionId
-      ) {
-        return { kind: "authority-changed" };
-      }
-    }
-    return { kind: "planned", language, envelopeBytes, totalBytes, allocation };
+    return {
+      kind: "planned",
+      language,
+      envelopeBytes,
+      totalBytes,
+      digest: morningBriefEvidenceDigest(allocation.items),
+      allocation,
+    };
   },
 );
 
-/** What each source contributed, with no evidence in it. */
-function sourceSummary(
+/**
+ * Prove the owner's authority again, after the last await rather than before
+ * the first.
+ *
+ * The Agent's instruction version is part of the request, so a change to it
+ * between the read and the reservation is a changed request, not a detail.
+ */
+async function proveMorningBriefAuthorityUnchanged(
+  input: {
+    readonly db: Db;
+    readonly clerk: ClerkClient;
+    readonly scope: MorningBriefCollectionScope;
+    readonly args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly anchor: Date;
+    };
+    readonly phaseDeadlineAt: Date;
+    readonly instructionsVersionId: string | null;
+  },
+  signal: AbortSignal,
+): Promise<boolean> {
+  const { db, clerk, scope, args } = input;
+  if (nowDate().getTime() >= input.phaseDeadlineAt.getTime()) {
+    return false;
+  }
+  const recheck = await admitMorningBriefCollection(
+    {
+      db,
+      clerk,
+      orgId: args.orgId,
+      userId: args.userId,
+      anchor: args.anchor,
+    },
+    signal,
+  );
+  signal.throwIfAborted();
+  if (
+    recheck.kind !== "ok" ||
+    recheck.scope.membershipId !== scope.membershipId ||
+    recheck.scope.agentId !== scope.agentId ||
+    recheck.scope.installationId !== scope.installationId
+  ) {
+    return false;
+  }
+  if (input.instructionsVersionId === null) {
+    return true;
+  }
+  const current = await resolveMorningBriefInstructionsVersion(
+    db,
+    scope,
+    scope.agentId,
+  );
+  signal.throwIfAborted();
+  return (
+    current.kind === "resolved" &&
+    current.versionId === input.instructionsVersionId
+  );
+}
+
+/** How many of one source's items made each kind of time claim. */
+function timeSemanticsCount(
+  items: readonly MorningBriefSourceItem[],
+): MorningBriefTimeSemanticsCount {
+  const counted: Record<MorningBriefTimeSemantics, number> = {
+    instant: 0,
+    overlap: 0,
+    "date-only": 0,
+    outstanding: 0,
+  };
+  for (const item of items) {
+    counted[item.timeSemantics] += 1;
+  }
+  return {
+    instant: counted.instant,
+    overlap: counted.overlap,
+    dateOnly: counted["date-only"],
+    outstanding: counted.outstanding,
+  };
+}
+
+/**
+ * What each source contributed, with no evidence text in it.
+ *
+ * Every reduction is named separately: the collector's own caps, the combined
+ * normalized ceiling and request packing each drop different records, and one
+ * number covering all three cannot say which of them shortened the day.
+ */
+function sourceReports(
   collections: readonly MorningBriefSourceCollection[],
-): MorningBriefCompositionResult["sources"] {
+  input: {
+    readonly stages: MorningBriefOmissionStages;
+    readonly accepted: readonly MorningBriefSourceItem[];
+  },
+): readonly MorningBriefSourceReport[] {
   return collections.map((collection) => {
+    const accepted = input.accepted.filter((item) => {
+      return item.identity.source === collection.source;
+    });
+    const byRequest = input.stages.byRequest[collection.source] ?? 0;
     return {
       source: collection.source,
       coverage: collection.coverage,
       items: collection.items.length,
+      includedInRequest: accepted.length,
       requests: collection.requests,
+      timeSemantics: timeSemanticsCount(collection.items),
+      omitted: morningBriefSourceOmissions({
+        bySource: collection.omittedBySource,
+        byNormalizedCap: input.stages.byNormalizedCap[collection.source] ?? 0,
+        byRequest,
+      }),
+      provenance: collection.provenance,
+      evidenceDigest: morningBriefEvidenceDigest(accepted),
     };
   });
 }
@@ -737,7 +922,8 @@ async function readGithubSource(
         coverage: execution.kind === "not-executed" ? "unconfigured" : "failed",
         items: [],
         requests: 0,
-        omittedBySource: 0,
+        provenance: MORNING_BRIEF_NO_PROVENANCE,
+        omittedBySource: MORNING_BRIEF_NO_OMISSIONS,
       },
       descriptor: null,
     };
@@ -860,7 +1046,8 @@ async function readSlackSource(
         coverage: "failed",
         items: [],
         requests: 0,
-        omittedBySource: 0,
+        provenance: MORNING_BRIEF_NO_PROVENANCE,
+        omittedBySource: MORNING_BRIEF_NO_OMISSIONS,
       },
       descriptor: describe([]),
     };

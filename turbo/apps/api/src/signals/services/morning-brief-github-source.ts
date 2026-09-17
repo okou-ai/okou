@@ -20,11 +20,14 @@ import {
   morningBriefScopeDigest,
   type MorningBriefRetainedSourceDescriptor,
 } from "./morning-brief-source-authority";
-import type {
-  MorningBriefSourceCollection,
-  MorningBriefSourceCoverage,
-  MorningBriefSourceItem,
-  MorningBriefTimeSemantics,
+import {
+  morningBriefItemFacts,
+  type MorningBriefSourceBranch,
+  type MorningBriefSourceCollection,
+  type MorningBriefSourceCoverage,
+  type MorningBriefSourceItem,
+  type MorningBriefSourceProvenance,
+  type MorningBriefTimeSemantics,
 } from "./morning-brief-source-item";
 
 /** The GitHub authorization surface a Morning Brief read exercises. */
@@ -50,6 +53,44 @@ function githubTimeSemantics(
   })
     ? "instant"
     : "outstanding";
+}
+
+/**
+ * One branch's own window or snapshot, as the collector declared it.
+ *
+ * The three selection branches do not share a window: notifications cover a
+ * half-open range, while assigned work and review requests are snapshots of
+ * what is outstanding right now. Flattening them into one collection time
+ * turns "still waiting for your review" into "happened this morning".
+ */
+function githubBranches(
+  bundle: MorningBriefGithubBundle,
+): readonly MorningBriefSourceBranch[] {
+  return Object.entries(bundle.branches).map(([name, branch]) => {
+    return {
+      name,
+      status: branch.status,
+      startAt: branch.windowStart ?? null,
+      endAt: branch.windowEnd ?? null,
+      observedAt: branch.observedAt ?? null,
+    };
+  });
+}
+
+function githubProvenance(
+  bundle: MorningBriefGithubBundle,
+): MorningBriefSourceProvenance {
+  return {
+    startAt: bundle.branches.notifications.windowStart ?? null,
+    endAt: bundle.branches.notifications.windowEnd ?? null,
+    startDate: null,
+    endDateExclusive: null,
+    timezone: bundle.timezone,
+    observedAt: bundle.observedAt,
+    collectedAt: bundle.collectedAt,
+    branches: githubBranches(bundle),
+    limitations: bundle.limits,
+  };
 }
 
 function githubCoverage(
@@ -82,6 +123,7 @@ export function normalizeMorningBriefGithub(
   });
   const items: MorningBriefSourceItem[] = ranked.map((record, index) => {
     const url = record.url;
+    const checks = record.checks;
     return {
       identity: {
         source: "github",
@@ -104,16 +146,51 @@ export function normalizeMorningBriefGithub(
       // collector declared, not an empty description.
       truncated: record.excerpt === undefined,
       links: url === undefined ? [] : [{ label: "Open on GitHub", url }],
+      // Every branch that selected the record, its open/closed state and the
+      // exact head its checks describe. Two records that differ only in these
+      // are two different obligations, and a normalization that drops them
+      // makes "review requested, head failing" and "assigned, head green"
+      // indistinguishable.
+      facts: morningBriefItemFacts({
+        reasons: record.reasons.map((reason) => {
+          return {
+            branch: reason.branch,
+            detail: reason.notificationReason ?? null,
+            unread: reason.unread ?? null,
+          };
+        }),
+        state: record.state,
+        draft: record.draft ?? null,
+        startedAtRaw: record.updatedAt,
+        actor: record.actor ?? null,
+        checks:
+          checks === undefined
+            ? null
+            : {
+                headSha: checks.headSha,
+                state: checks.state,
+                failing: checks.failing,
+                pending: checks.pending,
+                succeeded: checks.succeeded,
+                failingNames: checks.failingNames,
+                incomplete: checks.incomplete,
+              },
+      }),
     };
   });
   return {
     source: "github",
     coverage: githubCoverage(bundle),
     items,
-    requests: Object.values(bundle.branches).reduce((total, branch) => {
-      return total + branch.pages;
-    }, 0),
-    omittedBySource: 0,
+    // The collector's own count of provider reads, including refusals. Summing
+    // branch pages counted list pages only and missed every pull request
+    // detail, check run and status read the same collection spent.
+    requests: bundle.counts.requests,
+    provenance: githubProvenance(bundle),
+    // GitHub names the caps that fired but never counts what was on the other
+    // side of them, so the remainder stays explicitly unknown instead of
+    // becoming a total nothing observed.
+    omittedBySource: { known: 0, unknownRemaining: bundle.limits.length > 0 },
   };
 }
 

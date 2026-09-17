@@ -12,15 +12,25 @@
  * serialize is serialized here with an empty item array, and what is left is
  * what the allocator may spend.
  *
+ * This measures the document this module builds. The provider body that
+ * actually carries it is the integration owner's boundary: a wrapper that
+ * escapes this document into a JSON string field roughly doubles a quote-heavy
+ * payload, so the 128 KiB transport limit has to be enforced against the
+ * complete outgoing body, never against this number.
+ *
  * The rules are described in
  * [the composition contract](../../../../../../docs/morning-brief-composition.md).
  */
 
 import type { MorningBriefLanguagePlan } from "./morning-brief-language-policy";
 import {
+  morningBriefSourceOmissions,
   serializeMorningBriefItem,
   type MorningBriefSourceCollection,
   type MorningBriefSourceItem,
+  type MorningBriefSourceKind,
+  type MorningBriefSourceOmissions,
+  type MorningBriefSourceProvenance,
 } from "./morning-brief-source-item";
 
 /**
@@ -59,26 +69,85 @@ const MORNING_BRIEF_RESPONSE_SCHEMA = {
   },
 } as const;
 
-/** How much of each source survived, as the request reports it. */
-interface MorningBriefCoverageReport {
-  readonly source: string;
+/**
+ * How much of each source survived, as the request reports it.
+ *
+ * The omissions are the composed account, not the last stage's: an item the
+ * collector never returned, one the combined normalized ceiling dropped and one
+ * the request could not fit are three different losses of the same day, and a
+ * report that names only the third tells the model its input was complete.
+ */
+export interface MorningBriefCoverageReport {
+  readonly source: MorningBriefSourceKind;
   readonly coverage: string;
   readonly included: number;
-  readonly omitted: number;
+  /** Provider reads actually spent, as the collector counted them. */
+  readonly requests: number;
+  readonly omitted: MorningBriefSourceOmissions;
+  /** The window and snapshot context this source's evidence is true within. */
+  readonly provenance: MorningBriefSourceProvenance;
+}
+
+/** Whole-item losses charged to one source, per reduction stage. */
+export interface MorningBriefOmissionStages {
+  readonly byNormalizedCap: Readonly<
+    Partial<Record<MorningBriefSourceKind, number>>
+  >;
+  readonly byRequest: Readonly<Partial<Record<MorningBriefSourceKind, number>>>;
+}
+
+function reportFor(
+  collection: MorningBriefSourceCollection,
+  byNormalizedCap: number,
+  byRequest: number,
+): MorningBriefCoverageReport {
+  return {
+    source: collection.source,
+    coverage: collection.coverage,
+    included: Math.max(0, collection.items.length - byRequest),
+    requests: collection.requests,
+    omitted: morningBriefSourceOmissions({
+      bySource: collection.omittedBySource,
+      byNormalizedCap,
+      byRequest,
+    }),
+    provenance: collection.provenance,
+  };
 }
 
 export function morningBriefCoverageReport(
   collections: readonly MorningBriefSourceCollection[],
-  omittedBySource: Readonly<Partial<Record<string, number>>>,
+  stages: MorningBriefOmissionStages,
 ): readonly MorningBriefCoverageReport[] {
   return collections.map((collection) => {
-    const omitted = omittedBySource[collection.source] ?? 0;
-    return {
-      source: collection.source,
-      coverage: collection.coverage,
-      included: Math.max(0, collection.items.length - omitted),
-      omitted,
-    };
+    return reportFor(
+      collection,
+      stages.byNormalizedCap[collection.source] ?? 0,
+      stages.byRequest[collection.source] ?? 0,
+    );
+  });
+}
+
+/**
+ * The widest the coverage report can serialize for these collections.
+ *
+ * The real report is only known after allocation, but the envelope has to be
+ * measured before it, and `"byRequest":0` is narrower than `"byRequest":137`. A
+ * few bytes is enough to push a request that was budgeted to exactly the
+ * ceiling over it, so the measurement uses each source's item count — the
+ * largest value the request stage can take — and the real report can then only
+ * be narrower.
+ */
+export function morningBriefWidestCoverageReport(
+  collections: readonly MorningBriefSourceCollection[],
+  byNormalizedCap: MorningBriefOmissionStages["byNormalizedCap"],
+): readonly MorningBriefCoverageReport[] {
+  return collections.map((collection) => {
+    return reportFor(
+      collection,
+      byNormalizedCap[collection.source] ?? 0,
+      collection.items.length,
+    );
   });
 }
 
@@ -123,28 +192,6 @@ export function morningBriefRequestBytes(
   request: MorningBriefModelRequest,
 ): number {
   return Buffer.byteLength(JSON.stringify(request), "utf8");
-}
-
-/**
- * The widest the coverage report can serialize for these collections.
- *
- * The real report is only known after allocation, but the envelope has to be
- * measured before it, and `"omitted":0` is narrower than `"omitted":137`. A few
- * bytes is enough to push a request that was budgeted to exactly the ceiling
- * over it, so the measurement uses each source's item count — the largest value
- * either counter can take — and the real report can then only be narrower.
- */
-export function morningBriefWidestCoverageReport(
-  collections: readonly MorningBriefSourceCollection[],
-): readonly MorningBriefCoverageReport[] {
-  return collections.map((collection) => {
-    return {
-      source: collection.source,
-      coverage: collection.coverage,
-      included: collection.items.length,
-      omitted: collection.items.length,
-    };
-  });
 }
 
 /**

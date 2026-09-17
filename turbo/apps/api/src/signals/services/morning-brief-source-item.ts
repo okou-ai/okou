@@ -5,12 +5,15 @@
  * one model request without losing what makes each of them checkable. A
  * normalized item is therefore never a flattened string: it keeps the provider
  * identity that a permission recheck can be run against, the time semantics the
- * source actually declared, and display links the program resolved — never ones
- * a model proposed.
+ * source actually declared, the branch and state facts the collector already
+ * paid to read, and display links the program resolved — never ones a model
+ * proposed.
  *
  * The rules are described in
  * [the composition contract](../../../../../../docs/morning-brief-composition.md).
  */
+
+import { createHash } from "node:crypto";
 
 /** Every provider the composed brief can read. */
 export const MORNING_BRIEF_SOURCE_KINDS = [
@@ -103,6 +106,105 @@ export interface MorningBriefDisplayLink {
   readonly url: string;
 }
 
+/**
+ * Why one branch of a provider read selected this record.
+ *
+ * Every branch that contributed is kept. A pull request reached by both the
+ * notification branch and the review-requested branch is one record with two
+ * reasons, and reducing that to the first one is how "you were asked to review
+ * this" silently becomes "something changed".
+ */
+export interface MorningBriefItemReason {
+  readonly branch: string;
+  /** The provider's own reason word for that branch, when it supplies one. */
+  readonly detail: string | null;
+  /** Whether the record is still unread, when the branch knows. */
+  readonly unread: boolean | null;
+}
+
+/**
+ * The check state the collector observed for one pull request head.
+ *
+ * `headSha` is part of it because a check result describes a commit, not a pull
+ * request: dropping it turns "the head you were asked to review is failing"
+ * into an undated claim about a branch that has since moved.
+ */
+export interface MorningBriefCheckState {
+  readonly headSha: string;
+  /** `unknown` is deliberately not `success`: an unread check is not green. */
+  readonly state: string;
+  readonly failing: number;
+  readonly pending: number;
+  readonly succeeded: number;
+  readonly failingNames: readonly string[];
+  readonly incomplete: boolean;
+}
+
+/**
+ * The provider facts a flattened title-and-body item would destroy.
+ *
+ * One shape for all five sources, because the request has to compare them: the
+ * fields a source has no answer for stay null rather than being invented. Every
+ * value here was already read and paid for by the collector, so discarding it
+ * buys nothing and costs the request the ability to distinguish two records
+ * that happen to share a title.
+ */
+export interface MorningBriefItemFacts {
+  /** Every branch that selected this record, never reduced to the first. */
+  readonly reasons: readonly MorningBriefItemReason[];
+  /** The provider's own lifecycle or response word for the record. */
+  readonly state: string | null;
+  readonly draft: boolean | null;
+  /**
+   * The provider's own start and end strings, verbatim.
+   *
+   * An all-day event carries calendar dates with an exclusive end and a Slack
+   * message carries a microsecond timestamp; both lose information the moment
+   * they become a millisecond `Date`, so the original text travels beside it.
+   */
+  readonly startedAtRaw: string | null;
+  readonly endsAtRaw: string | null;
+  /** The timezone the record's own times are expressed in. */
+  readonly timezone: string | null;
+  /** The container's timezone, which may differ from the record's. */
+  readonly containerTimezone: string | null;
+  /** 0 is the anchor's local day; null when the record starts outside it. */
+  readonly localDayOffset: number | null;
+  /** The series this record is one instance of. */
+  readonly seriesId: string | null;
+  readonly checks: MorningBriefCheckState | null;
+  /** Who the provider attributes the record to. */
+  readonly actor: string | null;
+  /** How the collector obtained the body, so a gap is not read as content. */
+  readonly bodySource: string | null;
+  /** The collector's own limitations on this one record. */
+  readonly limitations: readonly string[];
+}
+
+/** The facts an adapter did not observe, so absence is explicit. */
+const NO_ITEM_FACTS: Readonly<MorningBriefItemFacts> = {
+  reasons: [],
+  state: null,
+  draft: null,
+  startedAtRaw: null,
+  endsAtRaw: null,
+  timezone: null,
+  containerTimezone: null,
+  localDayOffset: null,
+  seriesId: null,
+  checks: null,
+  actor: null,
+  bodySource: null,
+  limitations: [],
+};
+
+/** Fill the facts an adapter observed, leaving the rest explicitly absent. */
+export function morningBriefItemFacts(
+  observed: Partial<MorningBriefItemFacts>,
+): MorningBriefItemFacts {
+  return { ...NO_ITEM_FACTS, ...observed };
+}
+
 /** One normalized piece of evidence. */
 export interface MorningBriefSourceItem {
   readonly identity: MorningBriefItemIdentity;
@@ -123,17 +225,126 @@ export interface MorningBriefSourceItem {
    */
   readonly truncated: boolean;
   readonly links: readonly MorningBriefDisplayLink[];
+  readonly facts: MorningBriefItemFacts;
 }
+
+/**
+ * What one provider branch asked for, so a window edge stays checkable.
+ *
+ * A branch is either a half-open activity window or an outstanding-work
+ * snapshot, and the two make different claims: a snapshot says "this was true
+ * when I looked", never "this happened during the window".
+ */
+export interface MorningBriefSourceBranch {
+  readonly name: string;
+  readonly status: string;
+  readonly startAt: string | null;
+  readonly endAt: string | null;
+  readonly observedAt: string | null;
+}
+
+/**
+ * The window and snapshot context one source's evidence is only true within.
+ *
+ * Calendar is the source that proves why this cannot be dropped: an all-day
+ * date means nothing without the timezone it was frozen in and the local day
+ * range it was selected against, and a brief that lost them reports a
+ * three-day conference as "today".
+ */
+export interface MorningBriefSourceProvenance {
+  /** The half-open activity window, when the source has one. */
+  readonly startAt: string | null;
+  readonly endAt: string | null;
+  /** The frozen local dates that window covers, end-exclusive. */
+  readonly startDate: string | null;
+  readonly endDateExclusive: string | null;
+  /** The owner timezone those local dates were frozen in. */
+  readonly timezone: string | null;
+  /** When an outstanding-backlog snapshot was taken. */
+  readonly observedAt: string | null;
+  /** When the source finished reading. */
+  readonly collectedAt: string | null;
+  readonly branches: readonly MorningBriefSourceBranch[];
+  /** The collector's declared limitations, by its own names. */
+  readonly limitations: readonly string[];
+}
+
+/** The provenance of a source that never produced an authorized read. */
+export const MORNING_BRIEF_NO_PROVENANCE: Readonly<MorningBriefSourceProvenance> =
+  {
+    startAt: null,
+    endAt: null,
+    startDate: null,
+    endDateExclusive: null,
+    timezone: null,
+    observedAt: null,
+    collectedAt: null,
+    branches: [],
+    limitations: [],
+  };
+
+/**
+ * What a source itself dropped before normalization ever saw it.
+ *
+ * A count and "there was more" are different facts and the second one is not a
+ * number. Gmail's `truncations` list names the caps that fired — pages,
+ * candidates, byte budgets — and none of them knows how many messages were on
+ * the other side of them. Reporting that list's length as an item count states
+ * a total nothing observed, so the honest report is a known count plus an
+ * explicit unknown remainder.
+ */
+export interface MorningBriefOmissionAccount {
+  /** Records the collector identified and dropped, when it could count them. */
+  readonly known: number;
+  /** True when a declared cap ended the read before the rest was enumerated. */
+  readonly unknownRemaining: boolean;
+}
+
+export const MORNING_BRIEF_NO_OMISSIONS: Readonly<MorningBriefOmissionAccount> =
+  {
+    known: 0,
+    unknownRemaining: false,
+  };
 
 /** What one source contributed to one attempt. */
 export interface MorningBriefSourceCollection {
   readonly source: MorningBriefSourceKind;
   readonly coverage: MorningBriefSourceCoverage;
   readonly items: readonly MorningBriefSourceItem[];
-  /** Provider reads actually spent, for budget reporting. */
+  /** Provider reads actually spent, as the collector counted them. */
   readonly requests: number;
-  /** Items the adapter itself dropped before normalization. */
-  readonly omittedBySource: number;
+  readonly provenance: MorningBriefSourceProvenance;
+  /** What the adapter itself dropped before normalization. */
+  readonly omittedBySource: MorningBriefOmissionAccount;
+}
+
+/**
+ * Every omission that stands between one source and the model request.
+ *
+ * Three independent reductions can each drop evidence: the collector's own
+ * caps, the combined normalized ceiling and request packing. They act on
+ * disjoint sets — an item the collector never returned cannot also be dropped
+ * by the request — so the known counts add, and an unknown remainder stays a
+ * flag rather than being folded into a total it cannot support.
+ */
+export interface MorningBriefSourceOmissions {
+  readonly bySource: MorningBriefOmissionAccount;
+  readonly byNormalizedCap: number;
+  readonly byRequest: number;
+  readonly knownTotal: number;
+  readonly unknownRemaining: boolean;
+}
+
+export function morningBriefSourceOmissions(input: {
+  readonly bySource: MorningBriefOmissionAccount;
+  readonly byNormalizedCap: number;
+  readonly byRequest: number;
+}): MorningBriefSourceOmissions {
+  return {
+    ...input,
+    knownTotal: input.bySource.known + input.byNormalizedCap + input.byRequest,
+    unknownRemaining: input.bySource.unknownRemaining,
+  };
 }
 
 /** The combined normalized input ceiling, metadata included. */
@@ -156,6 +367,7 @@ interface MorningBriefSerializedItem {
   readonly body: string;
   readonly truncated: boolean;
   readonly links: readonly MorningBriefDisplayLink[];
+  readonly facts: MorningBriefItemFacts;
 }
 
 export function serializeMorningBriefItem(
@@ -171,6 +383,7 @@ export function serializeMorningBriefItem(
     body: item.body,
     truncated: item.truncated,
     links: item.links,
+    facts: item.facts,
   };
 }
 
@@ -214,6 +427,69 @@ export function morningBriefItemsBytes(
   );
 }
 
+/** One source's exact contribution to the combined normalized document. */
+interface MorningBriefSerializedCollection {
+  readonly source: MorningBriefSourceKind;
+  readonly coverage: MorningBriefSourceCoverage;
+  readonly requests: number;
+  readonly provenance: MorningBriefSourceProvenance;
+  readonly omittedBySource: MorningBriefOmissionAccount;
+  readonly items: readonly MorningBriefSerializedItem[];
+}
+
+/**
+ * The one aggregate representation the combined normalized ceiling bounds.
+ *
+ * The ceiling is on the normalized evidence *and* its metadata, so there has to
+ * be a single document the number describes. Summing item bodies is not that
+ * document: coverage, provenance windows, request counts and omission
+ * accounting are all carried alongside the items, and a budget blind to them
+ * bounds something nobody holds.
+ */
+export function serializeMorningBriefAggregate(
+  collections: readonly MorningBriefSourceCollection[],
+): { readonly sources: readonly MorningBriefSerializedCollection[] } {
+  return {
+    sources: collections.map((collection) => {
+      return {
+        source: collection.source,
+        coverage: collection.coverage,
+        requests: collection.requests,
+        provenance: collection.provenance,
+        omittedBySource: collection.omittedBySource,
+        items: collection.items.map(serializeMorningBriefItem),
+      };
+    }),
+  };
+}
+
+/** The exact UTF-8 size of that aggregate document. */
+export function morningBriefAggregateBytes(
+  collections: readonly MorningBriefSourceCollection[],
+): number {
+  return Buffer.byteLength(
+    JSON.stringify(serializeMorningBriefAggregate(collections)),
+    "utf8",
+  );
+}
+
+/**
+ * A content-free fingerprint of exactly the evidence that reached a request.
+ *
+ * It is the one externally checkable proof that two different provider states
+ * produce two different requests. A normalization that silently discarded the
+ * branch a pull request was selected by, or the head its checks describe, used
+ * to leave "review requested, checks failing" and "assigned, checks green"
+ * byte-identical here — indistinguishable to every consumer downstream.
+ */
+export function morningBriefEvidenceDigest(
+  items: readonly MorningBriefSourceItem[],
+): string {
+  return createHash("sha256")
+    .update(JSON.stringify(items.map(serializeMorningBriefItem)), "utf8")
+    .digest("hex");
+}
+
 function identityKey(identity: MorningBriefItemIdentity): string {
   return [
     identity.source,
@@ -251,12 +527,42 @@ export function dedupeMorningBriefItems(
 }
 
 /**
+ * What the cap charges before a single item is placed.
+ *
+ * Measured with empty item arrays, and with any `complete` source already
+ * widened to `partial`, because that is the only metadata value the cap itself
+ * can change. Everything else — provenance, request counts, the collector's own
+ * omission account — is fixed before this runs, so the base is exact for a
+ * source that is already partial and conservative by two bytes for one that is
+ * not.
+ */
+function aggregateBaseBytes(
+  collections: readonly MorningBriefSourceCollection[],
+): number {
+  return morningBriefAggregateBytes(
+    collections.map((collection) => {
+      return {
+        ...collection,
+        coverage:
+          collection.coverage === "complete" ? "partial" : collection.coverage,
+        items: [],
+      };
+    }),
+  );
+}
+
+/**
  * Apply the combined normalized ceiling by dropping whole trailing items.
  *
  * Items are considered in the fixed source order, then by each adapter's own
  * priority, so the cap removes the least important evidence rather than
  * whatever happened to be collected last. Bodies are never sliced: a half
  * sentence attributed to a real message is worse evidence than no message.
+ *
+ * Each item is charged exactly what it adds to the aggregate document — its own
+ * serialization, plus the one separator byte every item after the first in its
+ * source's array costs — so the returned size is the document's real size and
+ * not a parallel counter that can drift from it.
  */
 export function boundCombinedNormalizedItems(
   collections: readonly MorningBriefSourceCollection[],
@@ -264,6 +570,9 @@ export function boundCombinedNormalizedItems(
 ): {
   readonly collections: readonly MorningBriefSourceCollection[];
   readonly omitted: number;
+  readonly omittedBySource: Readonly<
+    Partial<Record<MorningBriefSourceKind, number>>
+  >;
   readonly bytes: number;
 } {
   const ordered = [...collections].sort((left, right) => {
@@ -276,7 +585,7 @@ export function boundCombinedNormalizedItems(
     MorningBriefSourceKind,
     MorningBriefSourceItem[]
   >();
-  let bytes = 0;
+  let bytes = aggregateBaseBytes(ordered);
   let omitted = 0;
   for (const collection of ordered) {
     const kept: MorningBriefSourceItem[] = [];
@@ -284,7 +593,10 @@ export function boundCombinedNormalizedItems(
       return left.priority - right.priority;
     });
     for (const item of sorted) {
-      const itemBytes = morningBriefItemBytes(item);
+      // The first item in a source's array pays no separator; every later one
+      // pays exactly the comma that precedes it.
+      const itemBytes =
+        morningBriefItemBytes(item) - (kept.length === 0 ? 1 : 0);
       if (bytes + itemBytes > maxBytes) {
         omitted += 1;
         continue;
@@ -294,20 +606,28 @@ export function boundCombinedNormalizedItems(
     }
     keptBySource.set(collection.source, kept);
   }
+  const omittedBySource: Partial<Record<MorningBriefSourceKind, number>> = {};
+  const bounded = ordered.map((collection) => {
+    const kept = keptBySource.get(collection.source) ?? [];
+    const dropped = collection.items.length - kept.length;
+    if (dropped > 0) {
+      omittedBySource[collection.source] = dropped;
+    }
+    return {
+      ...collection,
+      items: kept,
+      coverage:
+        dropped > 0 && collection.coverage === "complete"
+          ? ("partial" as const)
+          : collection.coverage,
+    };
+  });
   return {
-    collections: ordered.map((collection) => {
-      const kept = keptBySource.get(collection.source) ?? [];
-      const dropped = collection.items.length - kept.length;
-      return {
-        ...collection,
-        items: kept,
-        coverage:
-          dropped > 0 && collection.coverage === "complete"
-            ? "partial"
-            : collection.coverage,
-      };
-    }),
+    collections: bounded,
     omitted,
-    bytes,
+    omittedBySource,
+    // Measured on the document that actually resulted, so the reported size is
+    // the document's size rather than the running reservation.
+    bytes: morningBriefAggregateBytes(bounded),
   };
 }
