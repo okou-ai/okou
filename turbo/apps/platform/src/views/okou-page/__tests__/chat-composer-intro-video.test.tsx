@@ -246,13 +246,16 @@ test("Avatar looks require Use, and explicit voice choices survive removing the 
   const capture = installCatalogs();
   const { dialog, user } = await openIntroVideo();
   click(control("Select style Minimalism", dialog));
-  expect(optionsRow(dialog, "Avatar")).toHaveTextContent("No avatar");
+  expect(summary(dialog)).toHaveTextContent("Avatar: No avatar");
   openOptions(dialog, "Avatar");
   await within(dialog).findByText("Daphne");
+  // The footer reads the selection from behind the layer, so previewing a
+  // look and choosing it can be told apart without leaving the library: a
+  // group card shows its first look again once it is remounted.
   click(control("Preview look Daphne in Blue shirt", dialog));
-  expect(optionsRow(dialog, "Avatar")).toHaveTextContent("No avatar");
-  openOptions(dialog, "Avatar");
+  expect(summary(dialog)).toHaveTextContent("Avatar: No avatar");
   click(control("Choose an avatar: Daphne in Blue shirt", dialog));
+  expect(summary(dialog)).toHaveTextContent("Avatar: Daphne in Blue shirt");
   expect(optionsRow(dialog, "Avatar")).toHaveTextContent(
     "Daphne in Blue shirt",
   );
