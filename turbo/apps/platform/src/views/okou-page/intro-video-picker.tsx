@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
 import type { IntroVideoOptions } from "@okouai/api-contracts/contracts/intro-video-options";
 import type {
@@ -337,7 +337,11 @@ function StyleGallery({
   );
 }
 
-/** A compact row in the options layer: icon, title, one line of detail. */
+/**
+ * A compact row in the options layer: icon, title, one line of detail. It is a
+ * `div` rather than a `Button` because a library row carries its own preview
+ * control, and a button cannot nest inside a button.
+ */
 function PanelRow({
   leading,
   title,
@@ -352,13 +356,22 @@ function PanelRow({
   readonly onSelect: () => void;
 }) {
   return (
-    <Button
-      type="button"
-      variant="outline"
+    <div
+      role="button"
+      tabIndex={0}
       aria-pressed={selected}
       onClick={onSelect}
+      onKeyDown={(event: ReactKeyboardEvent<HTMLDivElement>) => {
+        if (event.target !== event.currentTarget) {
+          return;
+        }
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onSelect();
+        }
+      }}
       className={cn(
-        "h-auto w-full justify-start gap-2.5 whitespace-normal rounded-xl border-border bg-card px-2.5 py-2 text-left hover:bg-state-hover",
+        "flex w-full cursor-pointer items-center gap-2.5 rounded-xl border border-border bg-card px-2.5 py-2 text-left transition-colors hover:bg-state-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         selected && "border-primary bg-state-selected",
       )}
     >
@@ -378,7 +391,7 @@ function PanelRow({
           <Check size={12} />
         </span>
       ) : null}
-    </Button>
+    </div>
   );
 }
 
@@ -516,29 +529,84 @@ function voiceDetail(voice: IntroVideoVoice): string {
 }
 
 /**
- * The layer's first screen. It is not a pair of summary rows into two
- * libraries: the defaults and the first of each library are the choice most
- * people make, so they are offered outright and the libraries are the way
- * past them.
+ * The default-voice row. When a presenter is chosen its own voice is what
+ * "default" means, and that voice has a sample, so the row carries the same
+ * preview control a library row does.
  */
-function OptionsRootView({ signals }: PickerProps) {
+function DefaultVoiceRow({ signals }: PickerProps) {
   const { t } = useTranslation();
-  const voice = useGet(signals.voice$);
   const avatar = useGet(signals.avatar$);
+  const voice = useGet(signals.voice$);
   const setVoice = useSet(signals.setVoice$);
-  const setAvatar = useSet(signals.setAvatar$);
-  const setView = useSet(signals.setPanelView$);
-  const { voices, complete: voicesComplete } = useVoiceCatalog();
-  const {
-    groups,
-    loaded: groupsLoaded,
-    hasNext: groupsHasNext,
-  } = usePresenterGroups();
-  const defaultVoiceTitle = t(($) => {
+  const title = t(($) => {
     return avatar.kind === "none"
       ? $.chat.introVideo.voice.auto
       : $.chat.introVideo.picker.avatarVoice;
   });
+  const sample =
+    avatar.kind === "catalog" && avatar.avatar.defaultVoiceSampleUrl
+      ? {
+          id: avatar.avatar.defaultVoiceId,
+          name: avatar.avatar.defaultVoiceName ?? title,
+          sampleUrl: avatar.avatar.defaultVoiceSampleUrl,
+        }
+      : undefined;
+  return (
+    <PanelRow
+      leading={
+        sample ? (
+          <VoicePreviewControl voice={sample} />
+        ) : (
+          <PanelIcon>
+            <Volume2 size={15} />
+          </PanelIcon>
+        )
+      }
+      title={title}
+      detail={t(($) => {
+        return avatar.kind === "none"
+          ? $.chat.introVideo.picker.autoVoiceDescription
+          : $.chat.introVideo.voice.defaultDescription;
+      })}
+      selected={voice.kind === "default"}
+      onSelect={() => {
+        setVoice({ kind: "default" });
+      }}
+    />
+  );
+}
+
+function NoVoiceoverRow({ signals }: PickerProps) {
+  const { t } = useTranslation();
+  const voice = useGet(signals.voice$);
+  const setVoice = useSet(signals.setVoice$);
+  return (
+    <PanelRow
+      leading={
+        <PanelIcon>
+          <VolumeX size={15} />
+        </PanelIcon>
+      }
+      title={t(($) => {
+        return $.chat.introVideo.voice.none;
+      })}
+      detail={t(($) => {
+        return $.chat.introVideo.voice.noneShortDescription;
+      })}
+      selected={voice.kind === "none"}
+      onSelect={() => {
+        setVoice({ kind: "none" });
+      }}
+    />
+  );
+}
+
+function OptionsVoiceSection({ signals }: PickerProps) {
+  const { t } = useTranslation();
+  const voice = useGet(signals.voice$);
+  const setVoice = useSet(signals.setVoice$);
+  const setView = useSet(signals.setPanelView$);
+  const { voices, complete } = useVoiceCatalog();
   return (
     <>
       <p className="mb-2 text-xs font-medium text-muted-foreground">
@@ -547,40 +615,8 @@ function OptionsRootView({ signals }: PickerProps) {
         })}
       </p>
       <div className="grid gap-1.5">
-        <PanelRow
-          leading={
-            <PanelIcon>
-              <Volume2 size={15} />
-            </PanelIcon>
-          }
-          title={defaultVoiceTitle}
-          detail={t(($) => {
-            return avatar.kind === "none"
-              ? $.chat.introVideo.picker.autoVoiceDescription
-              : $.chat.introVideo.voice.defaultDescription;
-          })}
-          selected={voice.kind === "default"}
-          onSelect={() => {
-            setVoice({ kind: "default" });
-          }}
-        />
-        <PanelRow
-          leading={
-            <PanelIcon>
-              <VolumeX size={15} />
-            </PanelIcon>
-          }
-          title={t(($) => {
-            return $.chat.introVideo.voice.none;
-          })}
-          detail={t(($) => {
-            return $.chat.introVideo.voice.noneShortDescription;
-          })}
-          selected={voice.kind === "none"}
-          onSelect={() => {
-            setVoice({ kind: "none" });
-          }}
-        />
+        <DefaultVoiceRow signals={signals} />
+        <NoVoiceoverRow signals={signals} />
         {voices.slice(0, PANEL_PREVIEW_COUNT).map((item) => {
           return (
             <PanelRow
@@ -598,7 +634,7 @@ function OptionsRootView({ signals }: PickerProps) {
       </div>
       <PanelMoreRow
         label={
-          voicesComplete
+          complete
             ? t(
                 ($) => {
                   return $.chat.introVideo.picker.allVoicesCount;
@@ -613,6 +649,18 @@ function OptionsRootView({ signals }: PickerProps) {
           setView("voice");
         }}
       />
+    </>
+  );
+}
+
+function OptionsPresenterSection({ signals }: PickerProps) {
+  const { t } = useTranslation();
+  const avatar = useGet(signals.avatar$);
+  const setAvatar = useSet(signals.setAvatar$);
+  const setView = useSet(signals.setPanelView$);
+  const { groups, loaded, hasNext } = usePresenterGroups();
+  return (
+    <>
       <p className="mb-2 mt-5 text-xs font-medium text-muted-foreground">
         {t(($) => {
           return $.chat.introVideo.avatar.label;
@@ -651,7 +699,7 @@ function OptionsRootView({ signals }: PickerProps) {
       </div>
       <PanelMoreRow
         label={
-          groupsLoaded && !groupsHasNext
+          loaded && !hasNext
             ? t(
                 ($) => {
                   return $.chat.introVideo.picker.allPresentersCount;
@@ -666,6 +714,22 @@ function OptionsRootView({ signals }: PickerProps) {
           setView("avatar");
         }}
       />
+    </>
+  );
+}
+
+/**
+ * The layer's first screen. It is not a pair of summary rows into two
+ * libraries: the defaults and the first of each library are the choice most
+ * people make, so they are offered outright and the libraries are the way
+ * past them.
+ */
+function OptionsRootView({ signals }: PickerProps) {
+  const { t } = useTranslation();
+  return (
+    <>
+      <OptionsVoiceSection signals={signals} />
+      <OptionsPresenterSection signals={signals} />
       <p className="mt-5 rounded-xl bg-state-hover px-3 py-2.5 text-xs leading-5 text-muted-foreground">
         {t(($) => {
           return $.chat.introVideo.picker.optionsNote;
@@ -787,7 +851,6 @@ function AvatarLibraryView({ signals }: PickerProps) {
 
 function VoiceLibraryView({ signals }: PickerProps) {
   const { t } = useTranslation();
-  const avatar = useGet(signals.avatar$);
   const selection = useGet(signals.voice$);
   const setSelection = useSet(signals.setVoice$);
   const query = useGet(signals.libraryQuery$);
@@ -808,44 +871,8 @@ function VoiceLibraryView({ signals }: PickerProps) {
         query={query}
         header={
           <>
-            <PanelRow
-              leading={
-                <PanelIcon>
-                  <Volume2 size={15} />
-                </PanelIcon>
-              }
-              title={t(($) => {
-                return avatar.kind === "none"
-                  ? $.chat.introVideo.voice.auto
-                  : $.chat.introVideo.picker.avatarVoice;
-              })}
-              detail={t(($) => {
-                return avatar.kind === "none"
-                  ? $.chat.introVideo.picker.autoVoiceDescription
-                  : $.chat.introVideo.voice.defaultDescription;
-              })}
-              selected={selection.kind === "default"}
-              onSelect={() => {
-                setSelection({ kind: "default" });
-              }}
-            />
-            <PanelRow
-              leading={
-                <PanelIcon>
-                  <VolumeX size={15} />
-                </PanelIcon>
-              }
-              title={t(($) => {
-                return $.chat.introVideo.voice.none;
-              })}
-              detail={t(($) => {
-                return $.chat.introVideo.voice.noneShortDescription;
-              })}
-              selected={selection.kind === "none"}
-              onSelect={() => {
-                setSelection({ kind: "none" });
-              }}
-            />
+            <DefaultVoiceRow signals={signals} />
+            <NoVoiceoverRow signals={signals} />
           </>
         }
         selectedVoiceId={

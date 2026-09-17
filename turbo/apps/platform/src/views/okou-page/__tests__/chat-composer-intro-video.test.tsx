@@ -269,9 +269,13 @@ test("Avatar looks require Use, and explicit voice choices survive removing the 
   // Previewing a look is not choosing it.
   expect(summary(dialog)).toHaveTextContent("No avatar");
   openLibrary(dialog, "All presenters");
-  click(control("Choose an avatar: Daphne in Grey blazer", dialog));
+  click(
+    await within(dialog).findByLabelText(
+      "Choose an avatar: Daphne in Blue shirt",
+    ),
+  );
   click(control("Done", dialog));
-  expect(summary(dialog)).toHaveTextContent("Daphne in Grey blazer");
+  expect(summary(dialog)).toHaveTextContent("Daphne in Blue shirt");
   expect(control("Use Minimalism", dialog)).toBeEnabled();
   openLibrary(dialog, "All voices");
   click(await within(dialog).findByLabelText("Select voice Annie"));
@@ -349,7 +353,7 @@ test("Applying and reopening a template restores all settings without creating a
   await expect(
     within(reopened).findByLabelText("Select style Watercolor"),
   ).resolves.toHaveAttribute("aria-pressed", "true");
-  expect(summary(reopened)).toHaveTextContent("Voice: No voiceover");
+  expect(summary(reopened)).toHaveTextContent("No voiceover");
   click(control("Select style Minimalism", reopened));
   click(control("Use Minimalism", reopened));
   await expectInlineTemplate("Minimalism");
