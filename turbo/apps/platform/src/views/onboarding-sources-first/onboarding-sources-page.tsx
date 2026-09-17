@@ -1,8 +1,7 @@
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { Lock, Search } from "lucide-react";
+import { ArrowRight, Lock, Search } from "lucide-react";
 import {
-  Button,
   CommandDialog,
   CommandEmpty,
   CommandInput,
@@ -21,6 +20,7 @@ import {
   sourcesFirstUi$,
   updateSourcesFirstUi$,
 } from "../../signals/onboarding/onboarding-sources-first-state.ts";
+import { ConnectorEntryCard } from "../okou-page/components/settings/connector-entry-card.tsx";
 import { OnboardingConnectorSetup } from "../onboarding/onboarding-connectors.tsx";
 import {
   OnboardingFooter,
@@ -123,6 +123,7 @@ export function OnboardingSourcesPage() {
 
   return (
     <OnboardingShell
+      wide
       currentStep={flow.currentStep}
       totalSteps={flow.totalSteps}
       title={t(($) => {
@@ -144,24 +145,45 @@ export function OnboardingSourcesPage() {
     >
       <OnboardingConnectorSetup
         connectorSlugs={[...FEATURED_SOURCE_SLUGS, ...extraConnectedSlugs]}
-        variant="prompt"
+        variant="sources"
       >
-        <Button
-          type="button"
-          variant="outline"
-          size="lg"
-          className="justify-start gap-3"
-          onClick={() => {
-            updateUi({ searchOpen: true });
-          }}
-        >
-          <Search size={18} aria-hidden="true" />
-          {t(($) => {
+        {/* The catalog entry closes the grid, as the last cell of its last row. */}
+        <ConnectorEntryCard
+          icon={<Search size={18} aria-hidden="true" />}
+          label={t(($) => {
             return $.onboarding.sourcesFirst.sources.searchAction;
           })}
-        </Button>
+          description={t(($) => {
+            return $.onboarding.sourcesFirst.sources.searchCopy;
+          })}
+          showDescription
+          interactive
+          indicator={
+            <span
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border/60 text-muted-foreground"
+              aria-hidden="true"
+            >
+              <ArrowRight size={14} />
+            </span>
+          }
+          action={
+            <button
+              type="button"
+              className="absolute inset-0 z-10 rounded-[inherit] border-0 bg-transparent p-0 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              onClick={() => {
+                updateUi({ searchOpen: true });
+              }}
+            >
+              <span className="sr-only">
+                {t(($) => {
+                  return $.onboarding.sourcesFirst.sources.searchTitle;
+                })}
+              </span>
+            </button>
+          }
+        />
       </OnboardingConnectorSetup>
-      <p className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
+      <p className="mt-5 flex items-center gap-2 text-xs text-muted-foreground">
         <Lock size={14} aria-hidden="true" />
         {t(($) => {
           return $.onboarding.sourcesFirst.sources.note;

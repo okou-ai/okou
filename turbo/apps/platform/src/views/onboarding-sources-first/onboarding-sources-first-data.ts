@@ -15,6 +15,7 @@ export const FEATURED_SOURCE_SLUGS = [
   "linear",
   "notion",
   "google-calendar",
+  "outlook-mail",
 ] as const satisfies readonly ConnectorSlug[];
 
 export const SOURCE_FAMILIES = {

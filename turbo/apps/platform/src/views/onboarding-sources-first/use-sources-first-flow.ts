@@ -4,8 +4,7 @@ import {
   previousSourcesFirstStep,
   sourcesFirstDraft$,
   sourcesFirstFlow$,
-  sourcesFirstStepIndex,
-  sourcesFirstSteps,
+  sourcesFirstProgress,
   type SourcesFirstDraft,
   type SourcesFirstFlow,
   type SourcesFirstStep,
@@ -46,8 +45,8 @@ export function useSourcesFirstFlow(
   const flow = useGet(sourcesFirstFlow$);
   const draft = useGet(sourcesFirstDraft$);
   const navigate = useSet(detachedNavigateTo$);
-  const steps = sourcesFirstSteps(flow, draft.experienced);
   const previous = previousSourcesFirstStep(step, flow, draft.experienced);
+  const progress = sourcesFirstProgress(step, flow, draft.experienced);
 
   const goTo = (target: SourcesFirstStep): void => {
     navigate(STEP_ROUTES[target], { searchParams: new URLSearchParams() });
@@ -56,8 +55,8 @@ export function useSourcesFirstFlow(
   return {
     flow,
     draft,
-    currentStep: sourcesFirstStepIndex(step, flow, draft.experienced) + 1,
-    totalSteps: steps.length,
+    currentStep: progress.current,
+    totalSteps: progress.total,
     goBack: previous
       ? () => {
           goTo(previous);

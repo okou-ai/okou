@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Button } from "@okouai/ui";
+import { Button, cn } from "@okouai/ui";
 import { useSet } from "ccstate-react";
 import { Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -183,6 +183,7 @@ export function OnboardingShell({
   description,
   children,
   footer,
+  wide = false,
 }: {
   readonly currentStep: number;
   readonly totalSteps: number;
@@ -191,7 +192,10 @@ export function OnboardingShell({
   readonly children: ReactNode;
   readonly footer?: ReactNode;
   readonly preview?: ReactNode;
+  /** A step whose content is a card grid needs the app's content width. */
+  readonly wide?: boolean;
 }) {
+  const columnClass = wide ? "max-w-[1120px]" : "max-w-[750px]";
   return (
     <div className="relative box-border h-full max-h-full min-h-full w-full overflow-hidden bg-background pb-(--sab) text-foreground">
       <SettingsDialogMount />
@@ -208,7 +212,12 @@ export function OnboardingShell({
         <OnboardingAccount collapsed />
       </div>
 
-      <section className="mx-auto flex h-full min-h-0 w-full max-w-[750px] flex-col">
+      <section
+        className={cn(
+          "mx-auto flex h-full min-h-0 w-full flex-col",
+          columnClass,
+        )}
+      >
         <div className="shrink-0 px-5 pb-4 pt-[72px] sm:px-10 lg:pt-8">
           <OnboardingProgress current={currentStep} total={totalSteps} />
         </div>

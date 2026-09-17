@@ -48,6 +48,7 @@ export function OnboardingIndustryPage() {
 
   return (
     <OnboardingShell
+      wide
       currentStep={flow.currentStep}
       totalSteps={flow.totalSteps}
       title={t(($) => {
@@ -73,7 +74,7 @@ export function OnboardingIndustryPage() {
         onValueChange={(value) => {
           updateDraft({ industry: value as IndustryId });
         }}
-        className="grid gap-3 sm:grid-cols-2"
+        className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
       >
         {INDUSTRY_IDS.map((id) => {
           const selected = flow.draft.industry === id;
@@ -339,7 +340,7 @@ export function OnboardingSubscriptionPage() {
             providerConnected: false,
           });
         }}
-        className="grid gap-3 sm:grid-cols-2"
+        className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
       >
         {(["codex", "claudeCode"] as const).map((provider) => {
           const selected = flow.draft.provider === provider;

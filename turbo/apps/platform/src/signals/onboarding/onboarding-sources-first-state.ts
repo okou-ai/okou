@@ -146,14 +146,21 @@ export function sourcesFirstSteps(
   return [...base, ...experiencedSteps, ...slackStep];
 }
 
-export function sourcesFirstStepIndex(
+/**
+ * Progress markers, as the design counts them: connecting a subscription is
+ * step 4a under the AI experience question, not a step of its own.
+ */
+export function sourcesFirstProgress(
   step: SourcesFirstStep,
   flow: SourcesFirstFlow,
   experienced: boolean,
-): number {
-  const steps = sourcesFirstSteps(flow, experienced);
-  const index = steps.indexOf(step);
-  return index === -1 ? 0 : index;
+): { readonly current: number; readonly total: number } {
+  const markers = sourcesFirstSteps(flow, experienced).filter((candidate) => {
+    return candidate !== "subscription";
+  });
+  const marker = step === "subscription" ? "experience" : step;
+  const index = markers.indexOf(marker);
+  return { current: (index === -1 ? 0 : index) + 1, total: markers.length };
 }
 
 /** The step before `step`, or null when it is the first one. */
