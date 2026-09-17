@@ -37,6 +37,7 @@ import {
 } from "../pi-deferred-sandbox.service";
 import { promoteNextQueuedRun$ } from "../run-queue.service";
 import { drainOrgQueueToCapacity$ } from "../agent-run-lifecycle.service";
+import { cleanupSandboxes$ } from "../cron-cleanup-sandboxes.service";
 import { setTimeout as delay } from "node:timers/promises";
 import { OFFICIAL_RUNNER_TOKEN_PREFIX } from "@okouai/api-contracts/contracts/runner-primitives";
 import { runsCancelContract } from "@okouai/api-contracts/contracts/run-routes";
@@ -1051,6 +1052,151 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
     },
     60_000,
   );
+
+  it("publishes the final capacity after cancellation promotes an ordinary Run", async () => {
+    const { actor, agent, api } = await createLegacyAdmissionFixture(
+      "Cancellation promotion projection",
+    );
+    const deferred = await fixture({
+      orgId: actor.orgId,
+      userId: actor.userId,
+      publishInProcess: true,
+    });
+    const queued = await api.createRun(actor, {
+      agentId: agent.agentId,
+      prompt: "ordinary Run after cancelled demand",
+      modelProvider: "anthropic-api-key",
+    });
+    expect(queued.status).toBe("queued");
+    const before = await api.readRunQueue(actor);
+    expect(before.body.concurrency).toMatchObject({
+      limit: 1,
+      active: 0,
+      waiting: 1,
+      available: 0,
+    });
+
+    const held = await holdDeferredRow(context.signal, (tx) => {
+      return tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtext(${actor.orgId}))`,
+      );
+    });
+    await flushWaitUntilForTest();
+    context.mocks.ably.channelGet.mockClear();
+    context.mocks.ably.publish.mockClear();
+    const queueChangeCount = () => {
+      return context.mocks.ably.publish.mock.calls.filter(([topic]) => {
+        return topic === "runQueueChanged";
+      }).length;
+    };
+
+    const cancel = setupApp({ context, routes: runsCancelRoutes })(
+      runsCancelContract,
+    );
+    await accept(
+      cancel.cancel({
+        params: { id: deferred.runId },
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [200],
+    );
+    await expect.poll(queueChangeCount).toBe(1);
+    await held.waitForBlocked();
+    const afterCancellationHint = await api.readRunQueue(actor);
+    expect(afterCancellationHint.body.concurrency).toMatchObject({
+      active: 0,
+      waiting: 0,
+      available: 1,
+    });
+
+    await held.release();
+    await flushWaitUntilForTest();
+    expect(queueChangeCount()).toBe(2);
+    const finalCapacity = await api.readRunQueue(actor);
+    expect(finalCapacity.body.concurrency).toMatchObject({
+      active: 1,
+      waiting: 0,
+      available: 0,
+    });
+    await expect(
+      db()
+        .select({ status: agentRuns.status })
+        .from(agentRuns)
+        .where(eq(agentRuns.id, queued.runId)),
+    ).resolves.toStrictEqual([{ status: "pending" }]);
+  }, 60_000);
+
+  it("invalidates waiting demand expired by maintenance while capacity stays full", async () => {
+    const { actor, agent, api } = await createLegacyAdmissionFixture(
+      "Maintenance waiting projection",
+    );
+    const active = await api.createRun(actor, {
+      agentId: agent.agentId,
+      prompt: "physical occupancy during deferred expiry",
+      modelProvider: "anthropic-api-key",
+    });
+    expect(active.status).toBe("pending");
+    const deferred = await fixture({
+      orgId: actor.orgId,
+      userId: actor.userId,
+      publishInProcess: true,
+    });
+    const visibleWaiting = await api.readRunQueue(actor);
+    expect(visibleWaiting.body.concurrency).toMatchObject({
+      limit: 1,
+      active: 1,
+      waiting: 1,
+      available: 0,
+    });
+    await db()
+      .update(agentRunSandboxIntent)
+      .set({ expiresAt: new Date(Date.now() - 1) })
+      .where(eq(agentRunSandboxIntent.runId, deferred.runId));
+
+    await flushWaitUntilForTest();
+    context.mocks.ably.channelGet.mockClear();
+    context.mocks.ably.publish.mockClear();
+    const cleanup = await createStore().set(
+      cleanupSandboxes$,
+      {
+        kind: "fixtures",
+        runIds: [deferred.runId],
+        orgIds: [actor.orgId],
+        chatThreadIds: [deferred.threadId],
+        exportJobIds: [],
+      },
+      context.signal,
+    );
+    await flushWaitUntilForTest();
+
+    expect(cleanup.cleaned).toBe(1);
+    const after = await api.readRunQueue(actor);
+    expect(after.body.concurrency).toMatchObject({
+      active: 1,
+      waiting: 0,
+      available: 0,
+    });
+    await expect(
+      db()
+        .select({
+          status: agentRuns.status,
+          state: agentRunSandboxIntent.state,
+        })
+        .from(agentRuns)
+        .innerJoin(
+          agentRunSandboxIntent,
+          eq(agentRunSandboxIntent.runId, agentRuns.id),
+        )
+        .where(eq(agentRuns.id, deferred.runId)),
+    ).resolves.toStrictEqual([{ status: "timeout", state: "expired" }]);
+    expect(context.mocks.ably.channelGet).toHaveBeenCalledWith(
+      `org:${actor.orgId}`,
+    );
+    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+      "runQueueChanged",
+      null,
+    );
+  }, 60_000);
 
   it("fences a delayed claim before acknowledging not-started and forbids later dispatch", async () => {
     const f = await fixture();

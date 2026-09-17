@@ -33,6 +33,7 @@ import { writeDb$, type Db } from "../external/db";
 import { now, nowDate } from "../../lib/time";
 import {
   publishChatThreadMessageCreatedSafely,
+  publishRunQueueChangedForOrgSafely,
   publishThreadListChanged,
 } from "../external/realtime";
 import { logger } from "../../lib/log";
@@ -690,6 +691,13 @@ async function promoteQueuedCandidateWithSideEffects(
   },
 ): Promise<PromoteQueuedCandidateSideEffectResult> {
   const result = await promoteQueuedCandidate(db, args);
+  if (
+    result.status === "removed-stale" ||
+    result.status === "failed" ||
+    result.status === "promoted"
+  ) {
+    await publishRunQueueChangedForOrgSafely(args.orgId);
+  }
   if (result.status === "removed-stale") {
     return { status: "skipped" };
   }
