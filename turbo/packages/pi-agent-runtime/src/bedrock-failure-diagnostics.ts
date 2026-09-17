@@ -18,6 +18,15 @@ export function observeBedrockEventStreamFailures(
             const decoded = await deserializer(event);
             // Smithy constructs this single-key envelope from the frame header.
             // Await decoding first: malformed payloads are not provider refusals.
+            // Unknown normal events are ignored by Smithy. Unknown exceptions
+            // are classified only when Smithy throws them into the catch below.
+            if (
+              typeof decoded === "object" &&
+              decoded !== null &&
+              "$unknown" in decoded &&
+              decoded.$unknown
+            )
+              return decoded;
             const [code] = Object.keys(event);
             const reason = classifyProviderFailureCode(code);
             if (reason) observation.failureReason = reason;

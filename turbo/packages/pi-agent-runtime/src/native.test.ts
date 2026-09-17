@@ -625,6 +625,48 @@ describe("native Pi execution edges", () => {
     },
   );
 
+  it.each(["event", "exception"] as const)(
+    "preserves the SDK's distinction for an unmodeled Bedrock %s envelope",
+    async (messageType) => {
+      const fixture = fixtures.find(({ config }) => {
+        return config.dialect === "bedrock-converse-stream";
+      });
+      if (!fixture) throw new Error("Missing Bedrock fixture");
+      const config = piModelConfigV4Schema.parse(fixture.config);
+      const materialized = await materialize(config);
+      const model = resolvePiAgentModel(materialized);
+      if (!model) throw new Error("Missing native model");
+      server.use(
+        http.post(piNativeInferenceUrl(config), () => {
+          return new HttpResponse(
+            new Uint8Array(
+              Buffer.concat([
+                bedrockFrame(
+                  "ThrottlingException",
+                  { message: "Provider rejected request" },
+                  messageType,
+                ),
+                bedrockFrame("messageStart", { role: "user" }),
+              ]),
+            ),
+            {
+              headers: { "content-type": "application/vnd.amazon.eventstream" },
+            },
+          );
+        }),
+      );
+      const result = await piAgentStreamForConfig(materialized)(
+        model,
+        { messages: [{ role: "user", content: "hello", timestamp: 1 }] },
+        { apiKey: materialized.apiKey },
+      ).result();
+      expect(result.stopReason).toBe("error");
+      expect(projectPiApiAssistantMessage(result).failureReason).toBe(
+        messageType === "exception" ? "provider_rate_limited" : undefined,
+      );
+    },
+  );
+
   // Bedrock reaches its upstream through the AWS SDK request handler rather
   // than the adapter fetch, so only the Messages route crosses this boundary.
   it.each(
