@@ -1,6 +1,6 @@
 //! Caller-driven session ownership. No background workers or request queue.
 
-use std::time::Duration;
+use std::{future::Future, time::Duration};
 
 use tokio::{
     io::{AsyncRead, AsyncWrite, AsyncWriteExt},
@@ -114,13 +114,24 @@ impl<S: AsyncRead + AsyncWrite + Unpin + 'static> Session<S> {
     /// completed, not that an application accepted them. Never replay Unknown.
     /// Coordinate inputs refresh before checking the supplied geometry; RFB
     /// cannot make that check atomic with a later server-side resize.
-    pub async fn input(
+    /// The outcome resets at future creation, even if it is never polled; such
+    /// cancellation leaves the untouched session open and input NotStarted.
+    pub fn input<'a>(
+        &'a mut self,
+        command: Input<'a>,
+        outcome: &'a mut InputOutcome,
+        deadline: Instant,
+    ) -> impl Future<Output = Result<(), Error>> + 'a {
+        *outcome = InputOutcome::NotStarted;
+        self.send_input(command, outcome, deadline)
+    }
+
+    async fn send_input(
         &mut self,
         command: Input<'_>,
         outcome: &mut InputOutcome,
         deadline: Instant,
     ) -> Result<(), Error> {
-        *outcome = InputOutcome::NotStarted;
         let deadline = self.deadline(deadline, Duration::from_secs(5))?;
         let sequence = input::compile(command, &self.budget)?;
         let connection = self.connection.as_ref().ok_or(Error::SessionClosed)?;

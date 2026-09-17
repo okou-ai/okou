@@ -483,6 +483,36 @@ async fn cancelling_coordinate_refresh_keeps_input_not_started_and_closes_sessio
 }
 
 #[tokio::test]
+async fn cancelling_unpolled_input_resets_previous_delivery_without_touching_session() {
+    let (client, mut peer) = initialized(1, 1).await;
+    let mut session = Session::new(client);
+    let mut outcome = InputOutcome::default();
+    let expected = [key(true, u32::from('a')), key(false, u32::from('a'))];
+    let (result, ()) = bounded(async {
+        tokio::join!(
+            session.input(Input::Text("a"), &mut outcome, deadline()),
+            expect_input(&mut peer, &expected)
+        )
+    })
+    .await;
+    result.unwrap();
+    assert_eq!(outcome, InputOutcome::Sent);
+
+    // A ready cancellation branch can win before this future is ever polled.
+    // The next operation must not inherit the previous operation's delivery.
+    let pending = session.input(Input::Text("b"), &mut outcome, deadline());
+    drop(pending);
+    assert_eq!(outcome, InputOutcome::NotStarted);
+    assert!(!session.is_closed());
+    // The next wire message is exactly a framebuffer request, with no input
+    // prefix from the abandoned operation, and the session remains usable.
+    let capture = capture_frame(&mut session, &mut peer, 1, 1, &[raw(0, 0, 1, 1, &[GREEN])]).await;
+    assert_eq!(decode(&capture), GREEN);
+    session.close();
+    disconnected(&mut peer).await;
+}
+
+#[tokio::test]
 async fn cancellation_after_an_input_write_preserves_unknown_outcome_without_replaying() {
     let (client, mut peer) = initialized(1, 1).await;
     let mut session = Session::new(client);

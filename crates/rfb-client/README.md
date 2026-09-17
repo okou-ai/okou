@@ -154,7 +154,10 @@ responsibility. No image is written to disk or published by this crate.
 
 `input(command, &mut outcome, deadline)` prevalidates the entire operation and sends
 it once, within five seconds and the supplied/session deadlines. The caller-owned
-`InputOutcome` remains observable after dropping the future:
+`InputOutcome` resets to `NotStarted` when the future is created, before it is
+polled. Dropping an unpolled future preserves the untouched session and cannot
+reuse a previous operation's delivery result. The outcome remains observable
+after dropping the future:
 
 - `NotStarted`: no application-input write was attempted. A coordinate refresh may
   already have performed framebuffer IO.
