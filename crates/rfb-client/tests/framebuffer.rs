@@ -272,6 +272,33 @@ async fn preserves_the_zlib_stream_across_rectangles_with_independent_fixtures()
 }
 
 #[tokio::test]
+async fn decodes_padded_zlib_input_across_chunks_and_preserves_stream_state() {
+    fn padded_tile(color: [u8; 4]) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        // Independent nonfinal stored blocks, including more than one decoder
+        // input chunk with no output. Chunk boundaries fall inside block headers.
+        for _ in 0..20_001 {
+            bytes.extend([0, 0, 0, 0xff, 0xff]);
+        }
+        bytes.extend([0, 4, 0, 0xfb, 0xff, 1, color[0], color[1], color[2]]);
+        bytes.extend([0, 0, 0, 0xff, 0xff]);
+        bytes
+    }
+
+    let mut first = vec![0x78, 0x01];
+    first.extend(padded_tile(RED));
+    let second = padded_tile(GREEN); // Same zlib stream, without a new header.
+    let (client, mut peer) = initialized(1, 1).await;
+    let client = apply(client, &mut peer, false, &[zrle(0, 0, 1, 1, &first)]).await;
+    assert_eq!(client.pixels().unwrap(), RED);
+    let client = apply(client, &mut peer, true, &[zrle(0, 0, 1, 1, &second)]).await;
+    assert_eq!(client.pixels().unwrap(), GREEN);
+    assert_eq!(client.update_sequence(), 2);
+    drop(client);
+    disconnected(&mut peer).await;
+}
+
+#[tokio::test]
 async fn decodes_edge_tiles_in_rectangle_order() {
     let (client, mut peer) = initialized(65, 65).await;
     let mut tiles = Vec::new();

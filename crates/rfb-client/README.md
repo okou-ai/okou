@@ -76,7 +76,9 @@ Initialization and updates consume ownership. Error, timeout, or dropping the
 future drops the stream and its storage; a partially decoded connection cannot be
 reused. Each operation is bounded by the earlier of its caller deadline and 30
 seconds, with a fresh check before success. Decode work yields between rows/tiles
-and bounded inflate chunks. There are no detached workers or retries.
+and inflate chunks capped at 64 KiB of input and output each. Limiting input also
+bounds synchronous work on empty DEFLATE blocks that produce no pixels. There are
+no detached workers or retries.
 
 ## Decoder limits and accounting
 

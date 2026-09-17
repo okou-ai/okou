@@ -16,6 +16,7 @@ use crate::{
 };
 
 const MAX_COMPRESSED: usize = 40 * 1024 * 1024;
+const INFLATE_CHUNK: usize = 64 * 1024;
 // Conservatively reserve inflater state, fixed decoder tile/palette scratch and
 // protocol buffers in addition to all capacity-accounted heap buffers.
 const DECODER_OVERHEAD: usize = 256 * 1024;
@@ -365,14 +366,17 @@ async fn inflate(
     loop {
         let before_in = inflater.total_in();
         let before_out = inflater.total_out();
-        let end = (output_pos + 64 * 1024).min(output.len());
+        // Empty DEFLATE blocks consume input without filling output. Bound both
+        // sides so one synchronous call cannot process the entire wire payload.
+        let input_end = (input_pos + INFLATE_CHUNK).min(compressed.len());
+        let output_end = (output_pos + INFLATE_CHUNK).min(output.len());
         let status = inflater
             .decompress(
                 compressed
-                    .get(input_pos..)
+                    .get(input_pos..input_end)
                     .ok_or(Error::InvalidCompressedData)?,
                 output
-                    .get_mut(output_pos..end)
+                    .get_mut(output_pos..output_end)
                     .ok_or(Error::InvalidCompressedData)?,
                 FlushDecompress::Sync,
             )
@@ -393,5 +397,39 @@ async fn inflate(
             return Ok((output, output_pos));
         }
         tokio::task::yield_now().await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        future::Future,
+        task::{Context, Waker},
+    };
+
+    use super::{Budget, Decompress, inflate};
+
+    #[tokio::test]
+    async fn cancelling_inflate_leaves_cpu_input_unconsumed_and_releases_scratch() {
+        let mut compressed = vec![0x78, 0x01];
+        for _ in 0..200_000 {
+            compressed.extend([0, 0, 0, 0xff, 0xff]); // Empty stored blocks.
+        }
+        compressed.extend([0, 4, 0, 0xfb, 0xff, 1, 255, 0, 0]); // Solid red tile.
+        compressed.extend([0, 0, 0, 0xff, 0xff]);
+        let mut inflater = Decompress::new(true);
+        let budget = Budget::default();
+        // Poll the CPU-only future directly: a TCP readiness wait must not be
+        // mistaken for the decoder yielding while work remains to cancel.
+        let mut pending = Box::pin(inflate(&mut inflater, &compressed, 386, &budget));
+        let mut context = Context::from_waker(Waker::noop());
+        assert!(pending.as_mut().poll(&mut context).is_pending());
+        drop(pending);
+        assert!(inflater.total_in() > 0);
+        assert!(
+            inflater.total_in() < compressed.len() as u64,
+            "cancellation must interrupt input-heavy decoding before all CPU work finishes"
+        );
+        assert_eq!(budget.usage().0, 0, "cancelled scratch must be released");
     }
 }
