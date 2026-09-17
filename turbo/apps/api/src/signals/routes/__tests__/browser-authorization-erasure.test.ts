@@ -17,6 +17,7 @@ import {
 import {
   deleteBrowserAuthorizationRequestFixture,
   expireBrowserAuthorizationRequestFixture,
+  holdBrowserAuthorizationRequestRowLockFixture,
   withBrowserAuthorizationApplyBarrierFixture,
 } from "../../../test-fixtures/browser-authorization";
 import { holdChatThreadRowLockFixture } from "../../../test-fixtures/chat-events";
@@ -658,6 +659,113 @@ describe("account erasure fences cloud browser authorization apply", () => {
       await expect(sidebarHostEvents(fixture)).resolves.toStrictEqual(
         before.events,
       );
+      expect(countThreadListInvalidations()).toBe(0);
+    },
+  );
+
+  it(
+    "rechecks expiry against a clock read after the request lock, not before it",
+    { timeout: CASE_TIMEOUT_MS },
+    async () => {
+      const fixture = await createAuthorizationFixture();
+      const peer = orgScoped(bdd.user({ orgId: fixture.orgId }));
+      const before = await readApplyState(fixture);
+      context.mocks.ably.publish.mockClear();
+
+      // A second real session owns this exact request row, so the apply's own
+      // `FOR NO KEY UPDATE` pin waits on a lock this test holds. The stored
+      // `expires_at` is never touched: the request is live when the apply
+      // starts and lapses only because the clock moves while that wait is
+      // outstanding, which is the window a reading taken before the pin cannot
+      // see.
+      const holder = await holdBrowserAuthorizationRequestRowLockFixture({
+        requestToken: fixture.requestToken,
+        signal: context.signal,
+      });
+      const applying = applyAuthorization(fixture, [410]);
+      // `pg_blocking_pids` reporting the pin itself is what proves this exact
+      // apply reached the request lock before the clock moved.
+      await expect
+        .poll(holder.blockedRequestPinCount, BLOCKED)
+        .toBeGreaterThanOrEqual(1);
+      mockNow(STARTED_AT_MS + HOUR_MS + 1);
+      holder.release();
+      await holder.done;
+      await applying;
+
+      // A lapsed request keeps token and ownership ahead of its own expiry:
+      // neither another member nor an unknown token learns that it exists.
+      await applyAuthorization(fixture, [404], { actor: peer });
+      await applyAuthorization(fixture, [404], {
+        requestToken: `vm0_browser_authorization_request_${randomUUID()}`,
+      });
+
+      // Only this test's clock moved. Restoring it lets the unchanged read
+      // endpoint report the request's own `completed_at` instead of refusing
+      // it as lapsed.
+      mockNow(STARTED_AT_MS);
+      await flushWaitUntilForTest();
+      await expectUnchanged(fixture, before);
+      expect(countThreadListInvalidations()).toBe(0);
+
+      // The unexpired control: a later link minted from the same run waits on
+      // the very same pin and still applies. A wait is not an expiry, and the
+      // accepted apply takes the sidebar sequence id the denial never consumed.
+      const later = {
+        ...fixture,
+        requestToken: await createAuthorizationRequest(
+          fixture.actor,
+          fixture.runId,
+        ),
+      };
+      const laterBefore = await readApplyState(later);
+      expect(laterBefore.lastSeqId).toBe(before.lastSeqId);
+      const laterHolder = await holdBrowserAuthorizationRequestRowLockFixture({
+        requestToken: later.requestToken,
+        signal: context.signal,
+      });
+      const applyingLater = applyAuthorization(later, [200]);
+      await expect
+        .poll(laterHolder.blockedRequestPinCount, BLOCKED)
+        .toBeGreaterThanOrEqual(1);
+      laterHolder.release();
+      await laterHolder.done;
+      await applyingLater;
+      await expectApplied(later, laterBefore);
+    },
+  );
+
+  it(
+    "holds the pinned request's own result while the clock lapses and writes nothing",
+    { timeout: CASE_TIMEOUT_MS },
+    async () => {
+      const fixture = await createAuthorizationFixture();
+      const before = await readApplyState(fixture);
+      context.mocks.ably.publish.mockClear();
+
+      await withBrowserAuthorizationApplyBarrierFixture(
+        {
+          chatThreadId: fixture.threadId,
+          stopAt: "request-pin",
+          work: async (barrier) => {
+            const applying = applyAuthorization(fixture, [410]);
+            const pinned = await barrier.entered;
+            // The pin matched the live request row and holds it, and its result
+            // has not reached the service yet, so the same lapse is observed
+            // with the backend idle and no budget of its own running.
+            expect(pinned.rowCount).toBe(1);
+
+            mockNow(STARTED_AT_MS + HOUR_MS + 1);
+            barrier.release();
+            await applying;
+          },
+        },
+        context.signal,
+      );
+      mockNow(STARTED_AT_MS);
+      await flushWaitUntilForTest();
+
+      await expectUnchanged(fixture, before);
       expect(countThreadListInvalidations()).toBe(0);
     },
   );

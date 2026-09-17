@@ -35,9 +35,48 @@ async function closePreview() {
   });
 }
 
-test.each([true, false])(
-  "Official examples use ordinary previews with runless=%s and no uploaded artifacts",
-  async (runless) => {
+async function expectImagePreview() {
+  click(link("Sunlit bookshop.jpg"));
+  await expect(
+    screen.findByTestId("attachment-lightbox-image"),
+  ).resolves.toHaveAttribute("src", IMAGE);
+  await closePreview();
+}
+
+async function expectDeckPreview() {
+  click(link("View deck"));
+  expect(
+    (await screen.findByTestId("artifact-dialog-site-frame")).querySelector(
+      "iframe",
+    ),
+  ).toHaveAttribute("src", DECK);
+  await closePreview();
+}
+
+async function expectVideoPreview() {
+  click(link("View video"));
+  const dialog = await screen.findByTestId("attachment-lightbox");
+  await waitFor(() => {
+    return expect(dialog.querySelector("video")).toHaveAttribute("src", VIDEO);
+  });
+  expect(dialog.querySelector("video")).toHaveAttribute("controls");
+}
+
+const officialPreviewCases = [
+  { media: "image", expectPreview: expectImagePreview },
+  { media: "deck", expectPreview: expectDeckPreview },
+  { media: "video", expectPreview: expectVideoPreview },
+] as const;
+
+test.each(
+  [true, false].flatMap((runless) => {
+    return officialPreviewCases.map((preview) => {
+      return { runless, ...preview };
+    });
+  }),
+)(
+  "Official $media example uses an ordinary preview with runless=$runless and no uploaded artifacts",
+  async ({ runless, expectPreview }) => {
     const chat = createMarkdownChatFixture(context);
     const content = `## Hello from Okou\n\n[Sunlit bookshop.jpg](${IMAGE})\n\n![Launch deck.html](${DECK})\n\n![Epic grandeur.mp4](${VIDEO})\n\n[View deck](${DECK})\n\n[View video](${VIDEO})\n\nWelcome text is ready before media loads.`;
     const row = chat.outputMessage(content, { seqId: 1 });
@@ -67,27 +106,7 @@ test.each([true, false])(
     expect(
       document.querySelector('[data-role="assistant-thinking"]') === null,
     ).toBe(runless);
-    click(link("Sunlit bookshop.jpg"));
-    await expect(
-      screen.findByTestId("attachment-lightbox-image"),
-    ).resolves.toHaveAttribute("src", IMAGE);
-    await closePreview();
-    click(link("View deck"));
-    expect(
-      (await screen.findByTestId("artifact-dialog-site-frame")).querySelector(
-        "iframe",
-      ),
-    ).toHaveAttribute("src", DECK);
-    await closePreview();
-    click(link("View video"));
-    const dialog = await screen.findByTestId("attachment-lightbox");
-    await waitFor(() => {
-      return expect(dialog.querySelector("video")).toHaveAttribute(
-        "src",
-        VIDEO,
-      );
-    });
-    expect(dialog.querySelector("video")).toHaveAttribute("controls");
+    await expectPreview();
   },
 );
 

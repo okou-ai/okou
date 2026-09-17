@@ -46,6 +46,78 @@ export function safeJsonParse(input: string): unknown {
   }
 }
 
+/** The reviver context carrying a primitive's own source text. */
+interface JsonParseContext {
+  readonly source?: string;
+}
+
+declare global {
+  interface JSON {
+    /**
+     * The source-text reviver every supported runtime already implements.
+     *
+     * V8 12.4 provides it, which is Node 22 and above — the floor this
+     * workspace declares. The program's `lib` is pinned to ES2022, so the
+     * signature is declared here rather than by widening the whole library
+     * surface, and existing one- and two-argument calls keep resolving to the
+     * built-in overload.
+     */
+    parse(
+      text: string,
+      reviver: (
+        key: string,
+        value: unknown,
+        context: JsonParseContext,
+      ) => unknown,
+    ): unknown;
+  }
+}
+
+/**
+ * One JSON number, kept as the exact text its sender wrote.
+ *
+ * A parsed number is a double, and a double silently rewrites what it cannot
+ * hold: `1e-400` arrives as `0` and `0.10000000000000001` as `0.1`. Neither
+ * conversion is reversible, so code that has to decide whether a value is
+ * representable exactly — in a decimal column, or as a whole count — must judge
+ * the digits that were actually sent rather than the float they became.
+ */
+export class JsonNumberToken {
+  readonly text: string;
+
+  constructor(text: string) {
+    this.text = text;
+  }
+}
+
+/**
+ * `safeJsonParse`, with every number preserved as a `JsonNumberToken`.
+ *
+ * Structure, key identity, nesting and every non-numeric value are exactly what
+ * `JSON.parse` produces; only numbers are replaced, and only by their own source
+ * text. A number therefore stays distinguishable from a numeric string, no
+ * field is added or dropped, and nothing here allocates from a value's exponent.
+ *
+ * Use it where a number's exactness is part of the contract. Every other caller
+ * keeps `safeJsonParse` and its ordinary numbers.
+ */
+export function safeExactJsonParse(input: string): unknown {
+  // eslint-disable-next-line no-restricted-syntax -- this is the centralized guarded JSON.parse
+  try {
+    return JSON.parse(input, (_key, value, context) => {
+      // Every primitive carries its source text, so a number always becomes a
+      // token. Anything else is passed through exactly as parsed rather than
+      // rewritten into a value this parse cannot vouch for.
+      return typeof value === "number" && context.source !== undefined
+        ? new JsonNumberToken(context.source)
+        : value;
+    });
+  } catch (error) {
+    throwIfAbort(error);
+    return undefined;
+  }
+}
+
 export function safeUrlParse(input: string): URL | undefined {
   // eslint-disable-next-line no-restricted-syntax -- centralized guarded URL constructor
   try {

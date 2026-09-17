@@ -15,6 +15,7 @@ import { publishCancelToRunnerGroup } from "../external/realtime";
 import { tapError } from "../utils";
 import { transitionAgentRunsToTerminal } from "./agent-run-terminal-transition.service";
 import { revokeMorningBriefCollectionOwnership } from "./morning-brief-collection-occurrence.service";
+import { revokeMorningBriefDeliveryOwnership } from "./morning-brief-delivery.service";
 import { revokeMorningBriefScheduleOwnership } from "./morning-brief-schedule-claim.service";
 
 import type { Db } from "../external/db";
@@ -154,6 +155,14 @@ async function revokeOrgMemberRunAuthority(
       { kind: "membership", orgId: args.orgId, userId: args.userId },
       revokedAt,
     );
+    // A delivered brief's unsent email intent is the same kind of authority and
+    // still carries the recipient and the rendered body, so it leaves in this
+    // same transaction rather than in a later one that a fault could skip.
+    await revokeMorningBriefDeliveryOwnership(tx, {
+      kind: "membership",
+      orgId: args.orgId,
+      userId: args.userId,
+    });
     // The departing member's legacy schedule occurrences lose the same
     // authority here, before the rows they hang from are torn down.
     await revokeMorningBriefScheduleOwnership(tx, {

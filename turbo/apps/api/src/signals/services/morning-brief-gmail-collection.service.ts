@@ -12,11 +12,13 @@ import { z } from "zod";
 import { nowDate } from "../../lib/time";
 import type { ClerkClient } from "../external/clerk";
 import type { Db } from "../external/db";
+import { joinAll } from "../utils";
 import {
   withMorningBriefConnectorReader,
   type MorningBriefCollectionScope,
   type MorningBriefConnectorReader,
   type MorningBriefReadOutcome,
+  type MorningBriefSourceDeadline,
 } from "./morning-brief-connector-reader.service";
 
 /**
@@ -51,6 +53,14 @@ const GMAIL_COLLECTION_CAPS = Object.freeze({
   maxMimeNodes: 200,
   maxDecodedBodyBytes: 512 * 1024,
 });
+
+/**
+ * The whole-source budget, started by the composition that admits this source
+ * rather than by the reader, so the identity preflight that admits it spends
+ * the same deadline the provider requests do.
+ */
+export const MORNING_BRIEF_GMAIL_SOURCE_BUDGET_MS =
+  GMAIL_COLLECTION_CAPS.deadlineMs;
 
 /**
  * Per-header ceilings, each sized for what its field legitimately carries.
@@ -596,7 +606,10 @@ async function fetchMessageDetails(
     }
   }
 
-  await Promise.all(
+  // Every worker is joined before the failure of any one of them propagates,
+  // so a cancelled or timed-out body never leaves its siblings' rejections
+  // unobserved.
+  await joinAll(
     Array.from({ length: GMAIL_COLLECTION_CAPS.concurrency }, () => {
       return worker();
     }),
@@ -782,6 +795,12 @@ export async function collectMorningBriefGmail(
     readonly db: Db;
     readonly clerk: ClerkClient;
     readonly scope: MorningBriefCollectionScope;
+    /**
+     * The source deadline the caller started before admitting this source. It
+     * is spent, never restarted, so a slow admission shortens the collection
+     * instead of earning it a second allowance.
+     */
+    readonly deadline: MorningBriefSourceDeadline;
   },
   signal: AbortSignal,
 ): Promise<MorningBriefGmailCollection> {
@@ -812,8 +831,8 @@ export async function collectMorningBriefGmail(
         maxRequests: GMAIL_COLLECTION_CAPS.maxRequests,
         maxResponseBytes: GMAIL_COLLECTION_CAPS.maxResponseBytes,
         maxTotalResponseBytes: GMAIL_COLLECTION_CAPS.maxTotalResponseBytes,
-        deadlineMs: GMAIL_COLLECTION_CAPS.deadlineMs,
       },
+      deadline: args.deadline,
       db: args.db,
       clerk: args.clerk,
     },

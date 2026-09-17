@@ -36,7 +36,9 @@ import { clerk$, type ClerkClient } from "../external/clerk";
 import { writeDb$, type Db } from "../external/db";
 import {
   admitMorningBriefCollection,
+  startMorningBriefSourceDeadline,
   type MorningBriefCollectionScope,
+  type MorningBriefSourceDeadline,
 } from "./morning-brief-connector-reader.service";
 import {
   allocateMorningBriefRequest,
@@ -193,9 +195,13 @@ export const composeMorningBrief$ = command(
     const db: Db = set(writeDb$);
     const clerk = get(clerk$);
     const phaseStartedAt = nowDate();
-    const phaseDeadlineAt = new Date(
-      phaseStartedAt.getTime() + MORNING_BRIEF_COLLECTION_PHASE_MS,
+    // One phase deadline, started before the admission that reads canonical
+    // state and this member's live membership, so the preflight spends the same
+    // budget the sources are allocated out of instead of running outside it.
+    const phaseDeadline = startMorningBriefSourceDeadline(
+      MORNING_BRIEF_COLLECTION_PHASE_MS,
     );
+    const phaseDeadlineAt = new Date(phaseDeadline.at);
 
     const admitted = await admitMorningBriefCollection(
       {
@@ -204,6 +210,7 @@ export const composeMorningBrief$ = command(
         orgId: args.orgId,
         userId: args.userId,
         anchor: args.anchor,
+        deadline: phaseDeadline,
       },
       signal,
     );
@@ -295,7 +302,7 @@ export const composeMorningBrief$ = command(
     }
     const planned = await set(
       planMorningBriefRequest$,
-      { scope, collections: bounded.collections, phaseDeadlineAt, args },
+      { scope, collections: bounded.collections, phaseDeadline, args },
       signal,
     );
     if (planned.kind !== "planned") {
@@ -378,16 +385,23 @@ async function readMorningBriefSource(
   if (budgetMs === 0) {
     return null;
   }
-  const sourceSignal = AbortSignal.any([signal, AbortSignal.timeout(budgetMs)]);
+  // The composition already allocated this source's absolute deadline, so the
+  // reader is handed that exact instant rather than starting a second budget of
+  // its own.
+  const sourceDeadline: MorningBriefSourceDeadline = {
+    at: budget.deadlineAt.getTime(),
+    signal: AbortSignal.timeout(budgetMs),
+  };
+  const sourceSignal = AbortSignal.any([signal, sourceDeadline.signal]);
   if (source === "calendar") {
     return await readCalendarSource(
-      { db, clerk, scope, capturedAt },
+      { db, clerk, scope, capturedAt, deadline: sourceDeadline },
       sourceSignal,
     );
   }
   if (source === "github") {
     return await readGithubSource(
-      { db, clerk, scope, capturedAt },
+      { db, clerk, scope, capturedAt, deadline: sourceDeadline },
       sourceSignal,
     );
   }
@@ -399,7 +413,7 @@ async function readMorningBriefSource(
   }
   if (source === "gmail") {
     return await readGmailSource(
-      { db, clerk, scope, capturedAt },
+      { db, clerk, scope, capturedAt, deadline: sourceDeadline },
       sourceSignal,
     );
   }
@@ -425,7 +439,7 @@ const planMorningBriefRequest$ = command(
     input: {
       readonly scope: MorningBriefCollectionScope;
       readonly collections: readonly MorningBriefSourceCollection[];
-      readonly phaseDeadlineAt: Date;
+      readonly phaseDeadline: MorningBriefSourceDeadline;
       readonly args: {
         readonly orgId: string;
         readonly userId: string;
@@ -450,7 +464,8 @@ const planMorningBriefRequest$ = command(
   > => {
     const db = set(writeDb$);
     const clerk = get(clerk$);
-    const { scope, phaseDeadlineAt, args } = input;
+    const { scope, phaseDeadline, args } = input;
+    const phaseDeadlineAt = new Date(phaseDeadline.at);
     const bounded = { collections: input.collections };
 
     const context = await set(
@@ -525,6 +540,7 @@ const planMorningBriefRequest$ = command(
         orgId: args.orgId,
         userId: args.userId,
         anchor: args.anchor,
+        deadline: phaseDeadline,
       },
       signal,
     );
@@ -684,6 +700,8 @@ interface SourceReadArgs {
   readonly clerk: ClerkClient;
   readonly scope: MorningBriefCollectionScope;
   readonly capturedAt: Date;
+  /** The absolute deadline this composition allocated for the source. */
+  readonly deadline: MorningBriefSourceDeadline;
 }
 
 async function readCalendarSource(
@@ -691,7 +709,12 @@ async function readCalendarSource(
   signal: AbortSignal,
 ): Promise<CollectedSource> {
   const collection = await collectMorningBriefCalendar(
-    { db: args.db, clerk: args.clerk, scope: args.scope },
+    {
+      db: args.db,
+      clerk: args.clerk,
+      scope: args.scope,
+      deadline: args.deadline,
+    },
     signal,
   );
   // Like Gmail before its collector returned one, Calendar does not surface the
@@ -788,7 +811,12 @@ async function readGmailSource(
   signal: AbortSignal,
 ): Promise<CollectedSource> {
   const collection = await collectMorningBriefGmail(
-    { db: args.db, clerk: args.clerk, scope: args.scope },
+    {
+      db: args.db,
+      clerk: args.clerk,
+      scope: args.scope,
+      deadline: args.deadline,
+    },
     signal,
   );
   // The exact mailbox the shared reader resolved for this member's selected

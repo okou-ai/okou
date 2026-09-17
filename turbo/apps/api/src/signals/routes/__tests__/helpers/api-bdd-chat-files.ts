@@ -289,6 +289,18 @@ function unpinQuery(query: EventIdQuery) {
   return query.eventId === undefined ? {} : { eventId: query.eventId };
 }
 
+/** The image or video model pin body; an omitted event id stays omitted so the
+ * route keeps generating one for itself. */
+function generationModelBody<TModel extends string>(
+  model: TModel | null,
+  options: EventIdQuery | undefined,
+) {
+  return {
+    model,
+    ...(options?.eventId === undefined ? {} : { eventId: options.eventId }),
+  };
+}
+
 export function persistedAttachment(
   id: string,
   filename: string,
@@ -1096,14 +1108,32 @@ export function createChatFilesBddApi(context: TestContext) {
       actor: ApiTestUser,
       threadId: string,
       imageModel: ImageModelId | null,
+      options?: EventIdQuery,
     ): Promise<void> {
       await accept(
         threadImageModelClient().update({
           headers: authenticate(context, actor),
           params: { id: threadId },
-          body: { model: imageModel },
+          body: generationModelBody(imageModel, options),
         }),
         [204],
+      );
+    },
+
+    async requestUpdateThreadImageModel(
+      actor: ApiTestUser | null,
+      threadId: string,
+      imageModel: ImageModelId | null,
+      statuses: readonly (204 | 400 | 401 | 403 | 404)[],
+      options?: EventIdQuery,
+    ) {
+      return await accept(
+        threadImageModelClient().update({
+          headers: authenticate(context, actor),
+          params: { id: threadId },
+          body: generationModelBody(imageModel, options),
+        }),
+        statuses,
       );
     },
 
@@ -1111,15 +1141,68 @@ export function createChatFilesBddApi(context: TestContext) {
       actor: ApiTestUser,
       threadId: string,
       videoModel: VideoModelId | null,
+      options?: EventIdQuery,
     ): Promise<void> {
       await accept(
         threadVideoModelClient().update({
           headers: authenticate(context, actor),
           params: { id: threadId },
-          body: { model: videoModel },
+          body: generationModelBody(videoModel, options),
         }),
         [204],
       );
+    },
+
+    async requestUpdateThreadVideoModel(
+      actor: ApiTestUser | null,
+      threadId: string,
+      videoModel: VideoModelId | null,
+      statuses: readonly (204 | 400 | 401 | 403 | 404)[],
+      options?: EventIdQuery,
+    ) {
+      return await accept(
+        threadVideoModelClient().update({
+          headers: authenticate(context, actor),
+          params: { id: threadId },
+          body: generationModelBody(videoModel, options),
+        }),
+        statuses,
+      );
+    },
+
+    /**
+     * The image and video model pin writers driven through an app whose
+     * **operation** signal the caller owns, the same mechanism
+     * {@link readCursorWritesWithOperationSignal} documents. The requests are
+     * returned unnarrowed so a caller can assert the off-contract response a
+     * cancelled operation produces.
+     */
+    generationModelWritesWithOperationSignal(signal: AbortSignal) {
+      const operationApp = chatFilesOperationApp(context, signal);
+      return {
+        async updateImageModel(
+          actor: ApiTestUser,
+          threadId: string,
+          imageModel: ImageModelId | null,
+        ) {
+          return await operationApp(chatThreadImageModelContract).update({
+            headers: authenticate(context, actor),
+            params: { id: threadId },
+            body: { model: imageModel },
+          });
+        },
+        async updateVideoModel(
+          actor: ApiTestUser,
+          threadId: string,
+          videoModel: VideoModelId | null,
+        ) {
+          return await operationApp(chatThreadVideoModelContract).update({
+            headers: authenticate(context, actor),
+            params: { id: threadId },
+            body: { model: videoModel },
+          });
+        },
+      };
     },
 
     async updateUserModelPreference(

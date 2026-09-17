@@ -16,6 +16,7 @@ import { safeUrlParse } from "../utils";
 import type { ClerkClient } from "../external/clerk";
 import {
   admitMorningBriefCollection,
+  startMorningBriefSourceDeadline,
   withMorningBriefConnectorReader,
   type MorningBriefCollectionScope,
   type MorningBriefConnectorReader,
@@ -1465,6 +1466,13 @@ export async function executeMorningBriefGithubCollection(
     return invalid;
   }
 
+  // One absolute deadline covers this whole source, and it starts before the
+  // admission that reads canonical state and this member's live membership, so
+  // a slow preflight shortens the collection rather than earning a fresh
+  // budget.
+  const deadline = startMorningBriefSourceDeadline(
+    MORNING_BRIEF_GITHUB_BUDGET.deadlineMs,
+  );
   const admitted = await admitMorningBriefCollection(
     {
       db: args.db,
@@ -1472,6 +1480,7 @@ export async function executeMorningBriefGithubCollection(
       orgId: args.owner.orgId,
       userId: args.owner.userId,
       anchor: args.anchor,
+      deadline,
     },
     signal,
   );
@@ -1480,8 +1489,6 @@ export async function executeMorningBriefGithubCollection(
     return { kind: "not-executed", reason: admitted.reason };
   }
 
-  // The shared reader owns the absolute deadline for the whole source, so this
-  // passes the caller's signal and lets the wrapper bound it.
   const access = await withMorningBriefConnectorReader(
     {
       scope: admitted.scope,
@@ -1493,8 +1500,8 @@ export async function executeMorningBriefGithubCollection(
         maxResponseBytes: MORNING_BRIEF_GITHUB_BUDGET.maxResponseBytes,
         maxTotalResponseBytes:
           MORNING_BRIEF_GITHUB_BUDGET.maxTotalResponseBytes,
-        deadlineMs: MORNING_BRIEF_GITHUB_BUDGET.deadlineMs,
       },
+      deadline,
       db: args.db,
       clerk: args.clerk,
     },

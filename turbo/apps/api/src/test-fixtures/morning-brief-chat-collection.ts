@@ -9,15 +9,21 @@ import {
   workflowUserAutomationThreads,
   workflows,
 } from "@okouai/db/schema/workflow";
+import { chatEvents } from "@okouai/db/schema/chat-event";
+import { emailOutbox } from "@okouai/db/schema/email-outbox";
+import { usageEvent } from "@okouai/db/schema/usage-event";
 import { command } from "ccstate";
-import { and, eq, sql } from "drizzle-orm";
+import { and, count, eq, sql } from "drizzle-orm";
+import { onTestFinished } from "vitest";
 
+import { getApiTestMocks } from "../__tests__/mocks";
 import { db } from "../lib/db";
 import { nowDate } from "../lib/time";
 import { writeDb$ } from "../signals/external/db";
 import { createChatThreadInTransaction } from "../signals/services/chat-thread.service";
 import { insertChatEvent } from "../signals/services/chat-event.service";
 import { excludeMorningBriefChatThread } from "../signals/services/morning-brief-thread-provenance.service";
+import { createDeferredPromise } from "../signals/utils";
 import { seedInstalledMorningBrief } from "./morning-brief-collection";
 import { holdDeferredRow } from "./pi-deferred-lock";
 
@@ -75,6 +81,189 @@ export async function seedMorningBriefChatMemberFixture(
     agentId: installed.agentId,
     workflowId: installed.workflowId,
     automationId: installed.automationId,
+  };
+}
+
+/**
+ * Take this member's access to an Agent away.
+ *
+ * A private Agent owned by somebody else is invisible to this member, which is
+ * what losing access to the Agent hosting their brief looks like. No endpoint
+ * hands an Agent to another user: the Agent API changes visibility but never
+ * the owner, so this state cannot be built through the product and is written
+ * here, exactly as the existing held-transfer fixture below already does.
+ */
+export async function restrictAgentAccessFixture(args: {
+  readonly agentId: string;
+  readonly owner: string;
+}): Promise<void> {
+  await db()
+    .update(agents)
+    .set({ owner: args.owner, visibility: "private" })
+    .where(eq(agents.id, args.agentId));
+}
+
+/**
+ * Replace the member's canonical Morning Brief with another enabled one.
+ *
+ * The new installation is a complete, working brief on its own Agent: it is
+ * exactly the "merely enabled replacement" that must not be able to authorize
+ * content the previous installation's collection had already gathered. It
+ * reuses the shared installed-brief fixture rather than the Official Workflow
+ * install path, because the canonical legacy installation every Morning Brief
+ * suite starts from is already seeded that way; driving one member through a
+ * real install while the other is seeded would compare two different states.
+ */
+export async function replaceMorningBriefInstallationFixture(member: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly workflowId: string;
+}): Promise<{ readonly workflowId: string; readonly agentId: string }> {
+  await uninstallMorningBriefFixture(member.workflowId);
+  const installed = await seedInstalledMorningBrief({
+    orgId: member.orgId,
+    userId: member.userId,
+  });
+  return { workflowId: installed.workflowId, agentId: installed.agentId };
+}
+
+/**
+ * Suspend one numbered live membership lookup after it has answered.
+ *
+ * A single attempt resolves the member's Clerk generation more than once — when
+ * it is admitted, and again at the fence that decides whether the envelope may
+ * be released — so a test that has to stall one specific boundary names it by
+ * ordinal rather than by "the next one". The answer is computed first and only
+ * then held, which is what makes the resumed caller a genuinely stale one
+ * instead of a lookup that already observed the change.
+ */
+export function holdMorningBriefChatMembershipLookupFixture(
+  args: {
+    readonly owner: MorningBriefChatMember;
+    /** Lookups to let through untouched before suspending one. */
+    readonly skip: number;
+  },
+  signal: AbortSignal,
+): {
+  readonly waitForArrival: () => Promise<void>;
+  /**
+   * How many of this owner's lookups completed before the suspended one, so a
+   * test can prove it stalled the boundary it names instead of an earlier one
+   * that happens to produce the same outcome.
+   */
+  readonly lookupsBefore: () => number;
+  readonly release: () => void;
+} {
+  const lookup =
+    getApiTestMocks().clerk.organizations.getOrganizationMembershipList;
+  const answer = lookup.getMockImplementation();
+  if (!answer) {
+    throw new Error("Expected seeded Clerk organization membership mocks");
+  }
+  const arrived = createDeferredPromise<void>(signal);
+  const released = createDeferredPromise<void>(signal);
+  let seen = 0;
+  let suspendedAfter = 0;
+  let suspended = false;
+  const release = () => {
+    if (!released.settled()) {
+      released.resolve();
+    }
+  };
+  onTestFinished(release);
+  lookup.mockImplementation(async (...callArgs: unknown[]) => {
+    const membership: unknown = await answer(...callArgs);
+    if (!isOwnerMembershipLookup(callArgs, args.owner)) {
+      return membership;
+    }
+    if (suspended || seen++ < args.skip) {
+      return membership;
+    }
+    suspended = true;
+    suspendedAfter = seen - 1;
+    arrived.resolve();
+    await released.promise;
+    return membership;
+  });
+  return {
+    waitForArrival: () => {
+      return arrived.promise;
+    },
+    lookupsBefore: () => {
+      return suspendedAfter;
+    },
+    release,
+  };
+}
+
+function isOwnerMembershipLookup(
+  args: readonly unknown[],
+  owner: { readonly orgId: string; readonly userId: string },
+): boolean {
+  const [query] = args;
+  if (typeof query !== "object" || query === null) {
+    return false;
+  }
+  const organizationId =
+    "organizationId" in query ? query.organizationId : undefined;
+  const userId = "userId" in query ? query.userId : undefined;
+  return (
+    organizationId === owner.orgId &&
+    Array.isArray(userId) &&
+    userId.includes(owner.userId)
+  );
+}
+
+/**
+ * Everything a collection must not create for this owner.
+ *
+ * Counted rather than sampled, so a Run, a Chat event, a usage event or a
+ * queued e-mail appearing anywhere under this owner fails the assertion. There
+ * is no endpoint that reports "this owner produced no Run, usage event or
+ * queued e-mail", so this one assertion is made against the database; the read
+ * watermark, which *is* observable through a second collection, is not.
+ */
+export async function countMorningBriefChatWritesFixture(owner: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly automationId: string;
+}): Promise<{
+  readonly chatEvents: number;
+  readonly runs: number;
+  readonly usageEvents: number;
+  readonly emails: number;
+}> {
+  // Every counter is scoped to this owner, so a suite running beside this one
+  // cannot move the numbers the assertion compares.
+  const [events] = await db()
+    .select({ total: count() })
+    .from(chatEvents)
+    .innerJoin(chatThreads, eq(chatThreads.id, chatEvents.chatThreadId))
+    .where(eq(chatThreads.userId, owner.userId));
+  const [runs] = await db()
+    .select({ total: count() })
+    .from(agentRuns)
+    .where(
+      and(eq(agentRuns.orgId, owner.orgId), eq(agentRuns.userId, owner.userId)),
+    );
+  const [usageEvents] = await db()
+    .select({ total: count() })
+    .from(usageEvent)
+    .where(
+      and(
+        eq(usageEvent.orgId, owner.orgId),
+        eq(usageEvent.userId, owner.userId),
+      ),
+    );
+  const [emails] = await db()
+    .select({ total: count() })
+    .from(emailOutbox)
+    .where(eq(emailOutbox.sourceWorkflowAutomationId, owner.automationId));
+  return {
+    chatEvents: events?.total ?? 0,
+    runs: runs?.total ?? 0,
+    usageEvents: usageEvents?.total ?? 0,
+    emails: emails?.total ?? 0,
   };
 }
 
@@ -428,6 +617,28 @@ export async function holdChatThreadReadBarrierFixture(
       .from(chatThreads)
       .where(eq(chatThreads.id, chatThreadId))
       .for("no key update");
+  });
+}
+
+/**
+ * Hold the Agent row a collection has to take first, without changing anything.
+ *
+ * The per-thread read takes `FOR KEY SHARE` on the Agent before it can reach
+ * the thread row or any event body, and `FOR UPDATE` is the mode that conflicts
+ * with it. Holding it therefore suspends a real request in the window between
+ * candidate selection and the content read — the window where a deletion has to
+ * be observed rather than read around.
+ */
+export async function holdAgentRowFixture(
+  agentId: string,
+  signal: AbortSignal,
+) {
+  return await holdDeferredRow(signal, async (tx) => {
+    await tx
+      .select({ id: agents.id })
+      .from(agents)
+      .where(eq(agents.id, agentId))
+      .for("update");
   });
 }
 

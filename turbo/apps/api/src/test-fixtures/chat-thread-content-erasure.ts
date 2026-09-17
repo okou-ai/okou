@@ -203,6 +203,26 @@ function isReadCursorUpdate(
   );
 }
 
+/**
+ * The pin `UPDATE` the image or video model route issues after the retained
+ * identity locks and before it reserves a sidebar sequence and appends its
+ * event. Each route sets exactly one of the two columns first, so the column
+ * name identifies which endpoint is paused even though both write the same
+ * table for the same thread.
+ */
+function isGenerationModelPinUpdate(
+  queryArgs: unknown[],
+  column: "selected_image_model" | "selected_video_model",
+  chatThreadId: string,
+): boolean {
+  const text = barrierQueryText(queryArgs);
+  return (
+    text.startsWith("update") &&
+    text.includes(`"chat_threads" set "${column}"`) &&
+    barrierQueryBinds(queryArgs, chatThreadId)
+  );
+}
+
 function tookIdentityLock(transaction: SelectedTransaction): boolean {
   return transaction.statements.some((statement) => {
     return statement.includes("for key share");
@@ -223,12 +243,12 @@ function tookIdentityLock(transaction: SelectedTransaction): boolean {
  * lock. The read-only gate commits first and never locks, so without that the
  * barrier would pause the gate's commit instead of the writer's.
  *
- * `cursor-update` is the only stop that pauses **after** its statement: the
- * read-cursor `UPDATE` has run and is still uncommitted, which is the boundary
- * between the real mutation and the writer's own post-write cancellation check,
- * and therefore the last point at which a rollback is still guaranteed. Pausing
- * at `commit` is already past that check, so a cancellation arriving there
- * races a `COMMIT` that still succeeds.
+ * `cursor-update`, `image-model-update` and `video-model-update` are the stops
+ * that pause **after** their statement: the `UPDATE` has run and is still
+ * uncommitted, which is the boundary between the real mutation and the writer's
+ * own post-write cancellation check, and therefore the last point at which a
+ * rollback is still guaranteed. Pausing at `commit` is already past that check,
+ * so a cancellation arriving there races a `COMMIT` that still succeeds.
  */
 type ChatThreadContentBarrierStop =
   | "identity"
@@ -237,7 +257,17 @@ type ChatThreadContentBarrierStop =
   | "agent-lock"
   | "thread-lock"
   | "cursor-update"
+  | "image-model-update"
+  | "video-model-update"
   | "commit";
+
+function pausesAfterStatement(stop: ChatThreadContentBarrierStop): boolean {
+  return (
+    stop === "cursor-update" ||
+    stop === "image-model-update" ||
+    stop === "video-model-update"
+  );
+}
 
 function reachedBarrierStop(
   stop: ChatThreadContentBarrierStop,
@@ -263,6 +293,20 @@ function reachedBarrierStop(
   }
   if (stop === "cursor-update") {
     return isReadCursorUpdate(queryArgs, chatThreadId);
+  }
+  if (stop === "image-model-update") {
+    return isGenerationModelPinUpdate(
+      queryArgs,
+      "selected_image_model",
+      chatThreadId,
+    );
+  }
+  if (stop === "video-model-update") {
+    return isGenerationModelPinUpdate(
+      queryArgs,
+      "selected_video_model",
+      chatThreadId,
+    );
   }
   return (
     barrierQueryText(queryArgs) === "commit" && tookIdentityLock(transaction)
@@ -295,7 +339,7 @@ export async function withChatThreadContentBarrierFixture<T>(
           transaction,
         );
       },
-      pauseAfter: args.stopAt === "cursor-update",
+      pauseAfter: pausesAfterStatement(args.stopAt),
       work: args.work,
     },
     signal,

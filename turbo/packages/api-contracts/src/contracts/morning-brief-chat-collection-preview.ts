@@ -5,6 +5,20 @@ import { apiErrorSchema } from "./errors";
 
 const c = initContract();
 
+/**
+ * One collection attempt's absolute time budget.
+ *
+ * Part of the endpoint's contract rather than an implementation detail: a caller
+ * composing several sources needs to know what one unread Chat attempt can cost.
+ * The reserve is the tail of that budget the final authority check owns, so
+ * candidate work stops there and a released envelope is always one whose
+ * authority was re-verified inside the same budget.
+ */
+export const MORNING_BRIEF_CHAT_COLLECTION_BUDGET = {
+  deadlineMs: 15000,
+  finalAuthorityReserveMs: 3000,
+} as const;
+
 /** Why one unread candidate contributed no content. */
 const morningBriefChatSkipReasonSchema = z.enum([
   /** The member's canonical Morning Brief destination thread. */
@@ -125,6 +139,8 @@ export const morningBriefChatCollectionPreviewContract = c.router({
       /** Production, where this developer-only endpoint does not exist. */
       404: z.string(),
       500: apiErrorSchema,
+      /** The attempt ran out of its own budget; nothing was released. */
+      503: apiErrorSchema,
     },
     summary: "Collect eligible unread Chat for a Morning Brief occurrence",
   },
