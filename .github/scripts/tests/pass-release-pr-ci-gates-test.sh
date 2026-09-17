@@ -129,6 +129,9 @@ case "${1:-} ${2:-}" in
     ;;
   "pr diff")
     printf '%s\n' .release-please-manifest.json native/helper/Cargo.toml native/Cargo.lock
+    if [ -n "${MOCK_ADDITIONAL_CHANGED_FILE:-}" ]; then
+      printf '%s\n' "$MOCK_ADDITIONAL_CHANGED_FILE"
+    fi
     ;;
   "api repos/vm0-ai/vm0/check-runs")
     printf '%s\n' "$*" >>"$MOCK_GH_LOG"
@@ -187,11 +190,25 @@ valid_output=$(run_gates "$VALID_HEAD" 2>&1) || {
 assert_contains \
   "$valid_output" \
   "workspace coverage passed for exact head $VALID_HEAD"
-[ "$(wc -l <"$GH_LOG" | tr -d ' ')" = 3 ] ||
-  fail "the valid fast path should create exactly three required gate checks"
-for gate in ci-gate-turbo ci-gate-crates ci-gate-security; do
+[ "$(wc -l <"$GH_LOG" | tr -d ' ')" = 4 ] ||
+  fail "the valid fast path should create exactly four required gate checks"
+for gate in ci-gate-turbo ci-gate-crates ci-gate-security ci-gate-ios; do
   grep -Eq "name=${gate} .*conclusion=success" "$GH_LOG" ||
     fail "the valid fast path should pass ${gate}"
+done
+
+for ios_input in ios/Okou/App/OkouApp.swift .github/workflows/ios.yml .github/scripts/changed-base-ref.sh; do
+  : >"$GH_LOG"
+  ios_output=""
+  if ios_output=$(MOCK_ADDITIONAL_CHANGED_FILE="$ios_input" run_gates "$VALID_HEAD" 2>&1); then
+    fail "a release PR that changes $ios_input must not skip iOS validation"
+  fi
+  grep -Eq 'name=ci-gate-ios .*conclusion=failure' "$GH_LOG" ||
+    fail "changed iOS inputs must receive a failing iOS gate"
+  if grep -Eq 'name=ci-gate-ios .*conclusion=success' "$GH_LOG"; then
+    fail "changed iOS inputs received an unearned successful iOS gate"
+  fi
+  assert_contains "$ios_output" "cannot skip iOS validation"
 done
 
 command -v yq >/dev/null || fail "yq is required"
