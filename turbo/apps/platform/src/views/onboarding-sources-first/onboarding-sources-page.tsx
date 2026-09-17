@@ -123,6 +123,7 @@ export function OnboardingSourcesPage() {
 
   return (
     <OnboardingShell
+      canvas
       wide
       currentStep={flow.currentStep}
       totalSteps={flow.totalSteps}

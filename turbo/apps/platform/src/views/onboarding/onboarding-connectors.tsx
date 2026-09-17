@@ -126,10 +126,102 @@ function SourceConnectorCard({
   );
 }
 
-export function OnboardingConnectorSetup({
+export function OnboardingConnectorSetup(props: {
+  readonly connectorSlugs: readonly string[];
+  readonly requiredConnectorSlugs?: readonly string[];
+  readonly variant?: ConnectorSetupVariant;
+  readonly children?: ReactNode;
+}) {
+  if (props.variant === "sources") {
+    return <SourcesConnectorGrid {...props} />;
+  }
+  return <ListConnectorSetup {...props} />;
+}
+
+/** The source step's grid, on the connector directory's own entry card. */
+function SourcesConnectorGrid({
+  connectorSlugs,
+  children,
+}: {
+  readonly connectorSlugs: readonly string[];
+  readonly children?: ReactNode;
+}) {
+  const validConnectorSlugs = parseConnectorSlugs(connectorSlugs);
+  const connectorCatalogItemsLoadable = useLastLoadable(
+    connectorCatalogStatus$,
+  );
+  const setSelectedConnectorSlug = useSet(setSelectedConnectorSlug$);
+  const selectedConnectorSlug = useGet(selectedConnectorSlug$);
+  const connectFlowSlug = useGet(connectFlowConnectorSlug$);
+  const pollingAuthCodeSlug = useGet(pollingOAuthAuthCodeConnectorSlug$);
+  const pollingDeviceAuthSlug = useGet(pollingOAuthDeviceAuthConnectorSlug$);
+  const justConnectedSlugs = useGet(justConnectedSlugs$);
+  const connectorCatalogItems =
+    connectorCatalogItemsLoadable.state === "hasData"
+      ? connectorCatalogItemsLoadable.data.connectors
+      : [];
+  const selectedConnector = selectedConnectorSlug
+    ? connectorCatalogItems.find((connector) => {
+        return connector.slug === selectedConnectorSlug;
+      })
+    : undefined;
+  const selectedAccountOptions =
+    defaultBuiltinConnectorAccountOptions(selectedConnector);
+
+  return (
+    <>
+      <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {validConnectorSlugs.map((connectorSlug) => {
+          const item = connectorCatalogItems.find((candidate) => {
+            return candidate.slug === connectorSlug;
+          });
+          return (
+            <SourceConnectorCard
+              key={connectorSlug}
+              connectorSlug={connectorSlug}
+              connector={item}
+              connected={
+                item?.connected === true ||
+                justConnectedSlugs.has(connectorSlug)
+              }
+              busy={
+                connectFlowSlug === connectorSlug ||
+                pollingAuthCodeSlug === connectorSlug ||
+                pollingDeviceAuthSlug === connectorSlug
+              }
+              onActivate={() => {
+                setSelectedConnectorSlug(connectorSlug);
+              }}
+            />
+          );
+        })}
+        {children}
+      </section>
+      {selectedConnector && selectedAccountOptions ? (
+        <ConnectModal
+          item={selectedConnector}
+          accountOptions={selectedAccountOptions}
+          authorizeVisibleAgentsOnConnect
+          onClose={() => {
+            setSelectedConnectorSlug(null);
+          }}
+        />
+      ) : null}
+    </>
+  );
+}
+
+/** The two list layouts this component still renders. */
+function listLayout(
+  variant: ConnectorSetupVariant | undefined,
+): "workflow" | "prompt" {
+  return variant === "prompt" ? "prompt" : "workflow";
+}
+
+function ListConnectorSetup({
   connectorSlugs,
   requiredConnectorSlugs,
-  variant = "workflow",
+  variant,
   children,
 }: {
   readonly connectorSlugs: readonly string[];
@@ -137,6 +229,7 @@ export function OnboardingConnectorSetup({
   readonly variant?: ConnectorSetupVariant;
   readonly children?: ReactNode;
 }) {
+  const layout = listLayout(variant);
   const validConnectorSlugs = parseConnectorSlugs(connectorSlugs);
   const requiredSet = new Set(
     parseConnectorSlugs(requiredConnectorSlugs ?? []),
@@ -175,12 +268,9 @@ export function OnboardingConnectorSetup({
     <>
       <section
         className={cn(
-          variant === "workflow" &&
+          layout === "workflow" &&
             "mt-5 rounded-3xl border border-border bg-background px-6 pb-6",
-          variant === "prompt" && "mt-6 flex flex-col gap-3",
-          // The source step reuses the connector directory's own grid rhythm.
-          variant === "sources" &&
-            "grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3",
+          layout === "prompt" && "mt-6 flex flex-col gap-3",
         )}
       >
         {validConnectorSlugs.map((connectorSlug) => {
@@ -193,20 +283,6 @@ export function OnboardingConnectorSetup({
             connectFlowSlug === connectorSlug ||
             pollingAuthCodeSlug === connectorSlug ||
             pollingDeviceAuthSlug === connectorSlug;
-          if (variant === "sources") {
-            return (
-              <SourceConnectorCard
-                key={connectorSlug}
-                connectorSlug={connectorSlug}
-                connector={item}
-                connected={connected}
-                busy={connecting}
-                onActivate={() => {
-                  setSelectedConnectorSlug(connectorSlug);
-                }}
-              />
-            );
-          }
           const accountOptions = defaultBuiltinConnectorAccountOptions(item);
 
           return (
@@ -218,7 +294,7 @@ export function OnboardingConnectorSetup({
               connected={connected}
               busy={connecting}
               loading={loading}
-              layout={variant}
+              layout={layout}
               required={requiredSet.has(connectorSlug)}
               connect={
                 item && accountOptions

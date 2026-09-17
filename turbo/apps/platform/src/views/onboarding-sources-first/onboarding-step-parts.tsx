@@ -4,32 +4,9 @@ import { Radio, surfaceVariants, cn } from "@okouai/ui";
 import { PreferenceCardRow } from "../okou-page/components/settings/preference-card-row.tsx";
 
 /**
- * The onboarding steps are settings surfaces: a section heading with its
- * description, then the same preference rows and page surfaces the settings
- * panes already use.
+ * The onboarding steps are settings surfaces: the same preference rows and page
+ * surfaces the settings panes already use.
  */
-export function OnboardingSection({
-  title,
-  description,
-  children,
-}: {
-  readonly title: string;
-  readonly description?: string;
-  readonly children: ReactNode;
-}) {
-  return (
-    <section className="flex flex-col gap-3">
-      <div>
-        <h2 className="text-base font-semibold text-foreground">{title}</h2>
-        {description ? (
-          <p className="mt-1 text-sm text-muted-foreground">{description}</p>
-        ) : null}
-      </div>
-      {children}
-    </section>
-  );
-}
-
 /** A preference row whose control is the step's action. */
 export function OnboardingRow({
   icon,

@@ -39,7 +39,6 @@ import {
   OnboardingChoiceCard,
   OnboardingRow,
   OnboardingRowStack,
-  OnboardingSection,
 } from "./onboarding-step-parts.tsx";
 import { useWelcomeHandoff } from "./onboarding-welcome-dialog.tsx";
 import { useSourcesFirstFlow } from "./use-sources-first-flow.ts";
@@ -55,6 +54,7 @@ export function OnboardingIndustryPage() {
 
   return (
     <OnboardingShell
+      canvas
       wide
       currentStep={flow.currentStep}
       totalSteps={flow.totalSteps}
@@ -122,6 +122,7 @@ export function OnboardingTeamPage() {
 
   return (
     <OnboardingShell
+      canvas
       currentStep={flow.currentStep}
       totalSteps={flow.totalSteps}
       title={t(($) => {
@@ -141,21 +142,14 @@ export function OnboardingTeamPage() {
       }
     >
       {welcomeDialog}
-      <OnboardingSection
-        title={t(($) => {
-          return $.onboarding.sourcesFirst.team.label;
-        })}
-        description={t(($) => {
-          return $.onboarding.sourcesFirst.team.note;
-        })}
-      >
+      <OnboardingRowStack>
         <OnboardingRow
           icon={UserPlus}
           title={t(($) => {
             return $.onboarding.sourcesFirst.team.label;
           })}
           description={t(($) => {
-            return $.onboarding.sourcesFirst.team.copy;
+            return $.onboarding.sourcesFirst.team.note;
           })}
         >
           <div className="flex w-full gap-2 sm:w-[360px]">
@@ -203,7 +197,7 @@ export function OnboardingTeamPage() {
             })}
           </Card>
         ) : null}
-      </OnboardingSection>
+      </OnboardingRowStack>
     </OnboardingShell>
   );
 }
@@ -228,6 +222,7 @@ export function OnboardingExperiencePage() {
 
   return (
     <OnboardingShell
+      canvas
       currentStep={flow.currentStep}
       totalSteps={flow.totalSteps}
       title={t(($) => {
@@ -347,6 +342,7 @@ export function OnboardingSubscriptionPage() {
 
   return (
     <OnboardingShell
+      canvas
       currentStep={flow.currentStep}
       totalSteps={flow.totalSteps}
       title={t(($) => {
@@ -478,6 +474,7 @@ export function OnboardingSkillsPage() {
 
   return (
     <OnboardingShell
+      canvas
       currentStep={flow.currentStep}
       totalSteps={flow.totalSteps}
       title={
@@ -577,6 +574,7 @@ export function OnboardingSlackPage() {
 
   return (
     <OnboardingShell
+      canvas
       currentStep={flow.currentStep}
       totalSteps={flow.totalSteps}
       title={
