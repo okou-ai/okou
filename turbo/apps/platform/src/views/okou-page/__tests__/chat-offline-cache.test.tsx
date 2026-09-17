@@ -371,7 +371,7 @@ test("A missing chat is reported only after its current availability is confirme
   ).not.toBeInTheDocument();
 });
 
-test("Incomplete thread details wait for the full conversation record", async () => {
+async function openChatWithIncompleteMetadata() {
   const identity = cacheIdentity("complete-record");
   const thread = threadSnapshot(
     "b0000000-0000-4000-a000-000000000913",
@@ -412,6 +412,18 @@ test("Incomplete thread details wait for the full conversation record", async ()
     screen.queryByRole("textbox", { name: "Message" }),
   ).not.toBeInTheDocument();
 
+  return completeRecordReady;
+}
+
+test("Pending full metadata keeps the chat loading without a false missing record", async () => {
+  await openChatWithIncompleteMetadata();
+  expect(
+    screen.queryByRole("textbox", { name: "Message" }),
+  ).not.toBeInTheDocument();
+});
+
+test("Full metadata enables the conversation while its canonical listing is pending", async () => {
+  const completeRecordReady = await openChatWithIncompleteMetadata();
   completeRecordReady.resolve();
 
   const composer = await screen.findByRole("textbox", { name: "Message" });

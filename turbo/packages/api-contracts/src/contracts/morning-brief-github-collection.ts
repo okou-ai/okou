@@ -74,6 +74,8 @@ export const morningBriefGithubLimitSchema = z.enum([
   "response-bytes",
   "oversized-response",
   "malformed-response",
+  /** Transport or a provider status that is neither a refusal nor a bad body. */
+  "provider-failed",
   "text-characters",
   "deadline",
   "denied-endpoint",
@@ -159,6 +161,12 @@ export const morningBriefGithubBundleSchema = z.object({
     items: z.number().int().nonnegative(),
     /** Requests this adapter asked the shared reader for, including refusals. */
     requests: z.number().int().nonnegative(),
+    /**
+     * The documented model-visible text projection of `items`: repository,
+     * title, excerpt, actor, display link, each notification reason and each
+     * retained check name and head SHA. It is what the 40,000-character cap
+     * charges, so it is always the projection of the items actually emitted.
+     */
     textCharacters: z.number().int().nonnegative(),
   }),
   /** Bounded provider hints; metadata only, never a sleep or retry budget. */

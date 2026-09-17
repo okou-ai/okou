@@ -200,6 +200,30 @@ export async function deleteMorningBriefAgent(agentId: string): Promise<void> {
 }
 
 /**
+ * Move the installation's Agent out of this member's reach without deleting it.
+ *
+ * Deletion cascades the occurrence away, which hides every fence behind a
+ * foreign key. An access change does not: the Agent row survives, so only a
+ * real re-resolution of the installation's authority can notice that the member
+ * may no longer act through it.
+ *
+ * This is a deliberate external-behavior exception. The Agent only stops
+ * resolving when it is private *and* owned by somebody else, and no production
+ * endpoint transfers Agent ownership — `agentRequestSchema` and
+ * `agentMetadataRequestSchema` expose visibility but never an owner — so the
+ * state cannot be constructed through the real API. Turning visibility private
+ * alone leaves the member as the owner, which still resolves.
+ */
+export async function restrictMorningBriefAgent(
+  agentId: string,
+): Promise<void> {
+  await db()
+    .update(agents)
+    .set({ visibility: "private", owner: `user_${randomUUID()}` })
+    .where(eq(agents.id, agentId));
+}
+
+/**
  * Move the installation onto a different Agent.
  *
  * The occurrence freezes the Agent its installation ran on, so this is the

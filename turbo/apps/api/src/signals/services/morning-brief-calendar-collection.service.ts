@@ -11,6 +11,7 @@ import type { ClerkClient } from "../external/clerk";
 import type { Db } from "../external/db";
 import {
   withMorningBriefConnectorReader,
+  type MorningBriefSourceDeadline,
   type MorningBriefCollectionScope,
   type MorningBriefConnectorReader,
   type MorningBriefReadOutcome,
@@ -62,6 +63,14 @@ const MORNING_BRIEF_CALENDAR_CAPS = Object.freeze({
   maxLocationCharacters: 200,
   maxTextCharacters: 40_000,
 });
+
+/**
+ * The whole-source budget, started by the composition that admits this source
+ * rather than by the reader, so the identity preflight that admits it spends
+ * the same deadline the provider requests do.
+ */
+export const MORNING_BRIEF_CALENDAR_SOURCE_BUDGET_MS =
+  MORNING_BRIEF_CALENDAR_CAPS.deadlineMs;
 
 const READABLE_ACCESS_ROLES = ["reader", "writer", "owner"] as const;
 type ReadableAccessRole = (typeof READABLE_ACCESS_ROLES)[number];
@@ -836,6 +845,12 @@ export async function collectMorningBriefCalendar(
     readonly db: Db;
     readonly clerk: ClerkClient;
     readonly scope: MorningBriefCollectionScope;
+    /**
+     * The source deadline the caller started before admitting this source. It
+     * is spent, never restarted, so a slow admission shortens the collection
+     * instead of earning it a second allowance.
+     */
+    readonly deadline: MorningBriefSourceDeadline;
   },
   signal: AbortSignal,
 ): Promise<MorningBriefCalendarCollection> {
@@ -883,8 +898,8 @@ export async function collectMorningBriefCalendar(
         maxResponseBytes: MORNING_BRIEF_CALENDAR_CAPS.maxResponseBytes,
         maxTotalResponseBytes:
           MORNING_BRIEF_CALENDAR_CAPS.maxTotalResponseBytes,
-        deadlineMs: MORNING_BRIEF_CALENDAR_CAPS.deadlineMs,
       },
+      deadline: args.deadline,
       db: args.db,
       clerk: args.clerk,
     },

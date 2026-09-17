@@ -48,6 +48,36 @@ When a claimed official source does not resolve, the thread is demoted to
 unknown instead of keeping a positive `ordinary` value. Guessing in either
 direction is unsafe, and a stale `ordinary` would keep the thread eligible.
 
+### The binding producer's lock order
+
+The automation binding writes the exclusion to a thread it did not create, so
+it shares rows with
+[thread deletion](../turbo/apps/api/src/signals/services/chat-thread.service.ts),
+which locks the thread `FOR UPDATE` and then locks every binding pointing at it
+before disabling those automations. Both sides therefore take the **parent
+Agent and workflow, then the destination thread, then the binding row**, and the
+deletion adds nothing before its thread lock.
+
+Reuse cannot find its destination under the binding lock and only then write to
+that thread: that is the opposite order, and the two callers deadlocked on it
+(`40P01`) whenever a member fired Morning Brief while deleting its thread. The
+binding is instead read without a conflicting lock, the destination it names is
+locked, and the binding lock — still the creation serializer — is taken after it
+and revalidated against the thread actually held.
+
+Two bounded behaviours fall out of that order:
+
+- A per-owner `pg_advisory_xact_lock` keyed by organization, user and workflow
+  makes the window between the unlocked read and the binding lock private to one
+  resolution. Without it a second resolution could bind a destination that this
+  transaction could only lock after the binding row. Deletion never takes that
+  key, so it gains no new wait.
+- A destination deleted inside that window leaves the binding detached by its
+  own `ON DELETE SET NULL`, and reuse creates and binds a fresh destination
+  rather than resurrecting the deleted one. A binding that still names a thread
+  this transaction does not hold is an invariant violation and fails the
+  producer instead of locking out of order.
+
 ### Coverage limits
 
 - Creation ingress other than the three paths above leaves `NULL`. Automation

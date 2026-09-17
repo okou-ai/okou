@@ -11,15 +11,8 @@ jobs = turbo.fetch("jobs")
 deploy_app = jobs.fetch("deploy-app")
 steps = deploy_app.fetch("steps")
 
-%w[deploy-app deploy-cli].each do |job_name|
-  job = jobs.fetch(job_name)
-  if Array(job["needs"]).include?("detect-release")
-    raise "#{job_name} must run independently of detect-release"
-  end
-  if job.fetch("if", "").include?("needs.detect-release")
-    raise "#{job_name} condition must not depend on detect-release"
-  end
-end
+# Artifact selection and release/main scheduling are exercised by
+# native-only-gates-test.sh against the actual workflow predicates.
 
 find_step = lambda do |name|
   steps.find { |step| step["name"] == name } || raise("missing step: #{name}")

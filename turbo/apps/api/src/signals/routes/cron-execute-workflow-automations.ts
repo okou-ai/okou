@@ -9,6 +9,7 @@ import { executeDueWorkflowAutomations$ } from "../services/workflow-automation-
 import { executeOfficialWorkflowReconciliationWork$ } from "../services/official-workflow-reconciliation-worker.service";
 import { settle } from "../utils";
 import { executeMorningBriefEnrollmentWork$ } from "../services/morning-brief-enrollment-worker.service";
+import { executeMorningBriefGenerationRetentionWork$ } from "../services/morning-brief-generation-retention-worker.service";
 import { cronUnauthorized, hasValidCronSecret$ } from "./cron-auth";
 
 const log = logger("OfficialWorkflowReconciliationCron");
@@ -28,6 +29,19 @@ const executeWorkflowAutomationsRoute$: RouteEntry["handler"] = command(
     if (!enrollment.ok) {
       log.error("Morning Brief enrollment worker failed", {
         error: enrollment.error,
+      });
+    }
+    // Bounded physical retention for source-derived Morning Brief results. It
+    // is a maintenance batch on this existing tick, not a scheduler: it starts
+    // nothing, delivers nothing and settles independently, so a failure here
+    // cannot stop the automations below from running.
+    const retention = await settle(
+      set(executeMorningBriefGenerationRetentionWork$, signal),
+      signal,
+    );
+    if (!retention.ok) {
+      log.error("Morning Brief generation retention worker failed", {
+        error: retention.error,
       });
     }
     const reconciliation = await settle(

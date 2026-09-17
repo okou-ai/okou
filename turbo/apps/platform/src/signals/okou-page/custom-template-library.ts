@@ -128,6 +128,14 @@ export const openCustomTemplateDetail$ = computed(
   },
 );
 
+/**
+ * One save, start to finish. The caller's loadable is what decides whether the
+ * editor is still accepting input, so this resolves only once the surfaces that
+ * editor can see are carrying the new value — the catalog behind the panel, and
+ * the detail the editor itself reads. Resolving at the PATCH would reopen the
+ * field on the title the server has already replaced, which is the edit the
+ * member would then be correcting.
+ */
 export const updateCustomTemplate$ = command(
   async (
     { get, set },
@@ -148,6 +156,14 @@ export const updateCustomTemplate$ = command(
     );
     signal.throwIfAborted();
     await set(reloadAndAwaitCustomTemplates$, signal);
+    // Only the template still on screen has an editor waiting on its readback.
+    // A visibility change made from a card, or a rename the member walked away
+    // from, has no such reader — and waiting for a detail nobody is showing
+    // would keep a save open on a request that is never made.
+    if (get(internalOpenTemplateId$) === args.templateId) {
+      await waitForOperation(get(openCustomTemplateDetail$), signal);
+      signal.throwIfAborted();
+    }
   },
 );
 

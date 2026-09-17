@@ -5115,6 +5115,12 @@ function ImportedPresentationTemplateRenameControl({
       data-rename-dirty="false"
       onSubmit={(event) => {
         event.preventDefault();
+        // One rename at a time, stated where every path that submits has to
+        // pass. The closed field and the disabled control each block one way
+        // in; this is the rule they are both enforcing.
+        if (updating) {
+          return;
+        }
         const nextTitle = new FormData(event.currentTarget).get("title");
         if (typeof nextTitle !== "string") {
           return;
@@ -5132,6 +5138,15 @@ function ImportedPresentationTemplateRenameControl({
         className="grid min-h-10 min-w-0 flex-1 rounded-lg border border-transparent px-1 py-[5px] text-xl font-semibold leading-7 text-foreground transition-colors after:col-start-1 after:row-start-1 after:invisible after:whitespace-pre-wrap after:break-words after:content-[attr(data-value)_'_'] hover:border-[hsl(var(--gray-400))] focus-within:border-primary focus-within:ring-[3px] focus-within:ring-primary/10"
         data-value={title}
       >
+        {/*
+         * Closed while its own rename is in flight. Disabling the submit
+         * control is not enough on its own: Enter reaches the form through
+         * `requestSubmit()`, which does not consult a submit button's disabled
+         * state, so a second rename could still leave here before the first
+         * came back — and nothing orders the two, so the earlier one could
+         * land last and take the name back. Confirming already gives up focus,
+         * so closing the field costs the member nothing.
+         */}
         <textarea
           name="title"
           aria-label={label}
@@ -5139,6 +5154,7 @@ function ImportedPresentationTemplateRenameControl({
           required
           rows={1}
           maxLength={255}
+          disabled={updating}
           className="col-start-1 row-start-1 resize-none overflow-hidden break-words bg-transparent p-0 outline-none"
           onChange={(event) => {
             const field = event.currentTarget;

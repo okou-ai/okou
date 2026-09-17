@@ -40,8 +40,8 @@ const MODEL_POLICIES_RESPONSE = {
     },
     {
       id: "00000000-0000-4000-8000-000000000003",
-      model: "gpt-5.5",
-      modelLabel: "GPT 5.5",
+      model: "gpt-5.6-sol",
+      modelLabel: "GPT 5.6 Sol",
       isDefault: false,
       defaultProviderType: "codex-oauth-token",
       credentialScope: "member",
@@ -96,7 +96,7 @@ describe("okou model-provider command", () => {
     expect(logCalls).toContain("provider type: built-in (Built-in model)");
     expect(logCalls).toContain("GPT 5.6 Luna");
     expect(logCalls).toContain("provider: api key");
-    expect(logCalls).toContain("GPT 5.5");
+    expect(logCalls).toContain("GPT 5.6 Sol");
     expect(logCalls).toContain("provider: subscription");
     expect(logCalls).toContain("No personal subscription connected");
   });
