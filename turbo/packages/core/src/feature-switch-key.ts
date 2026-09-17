@@ -76,4 +76,5 @@ export enum FeatureSwitchKey {
   ComposerAddMenu = "composerAddMenu",
   CustomTemplates = "customTemplates",
   DeliveryFormatGuidance = "deliveryFormatGuidance",
+  OnboardingSourcesFirst = "onboardingSourcesFirst",
 }

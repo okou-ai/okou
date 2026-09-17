@@ -64,7 +64,6 @@ import { setupPromptPage$ } from "./prompt-page/prompt-page-setup.ts";
 import {
   setupOnboardingImageRunPage$,
   setupOnboardingImageTemplatePage$,
-  setupOnboardingMakePage$,
   setupOnboardingPresentationRunPage$,
   setupOnboardingPresentationTemplatePage$,
   setupOnboardingVideoRunPage$,
@@ -72,6 +71,15 @@ import {
   setupOnboardingWorkflowPickerPage$,
   setupOnboardingWorkflowRunPage$,
 } from "./onboarding/onboarding-page-setup.ts";
+import {
+  setupOnboardingEntryPage$,
+  setupOnboardingExperiencePage$,
+  setupOnboardingIndustryPage$,
+  setupOnboardingSkillsPage$,
+  setupOnboardingSlackPage$,
+  setupOnboardingSubscriptionPage$,
+  setupOnboardingTeamPage$,
+} from "./onboarding/onboarding-sources-first-page-setup.ts";
 import { setupIdeationPage$ } from "./okou-page/ideation-page-setup.ts";
 import { setupFinishOnboarding$ } from "./onboarding/finish-onboarding.ts";
 import { setupConnectorsPage$ } from "./connectors-page/connectors-page-setup.ts";
@@ -416,7 +424,31 @@ const ROUTE_CONFIG = [
   },
   {
     path: ROUTES.onboarding,
-    setup: setupAuthPageWrapper(setupOnboardingMakePage$),
+    setup: setupAuthPageWrapper(setupOnboardingEntryPage$),
+  },
+  {
+    path: ROUTES.onboardingIndustry,
+    setup: setupAuthPageWrapper(setupOnboardingIndustryPage$),
+  },
+  {
+    path: ROUTES.onboardingTeam,
+    setup: setupAuthPageWrapper(setupOnboardingTeamPage$),
+  },
+  {
+    path: ROUTES.onboardingExperience,
+    setup: setupAuthPageWrapper(setupOnboardingExperiencePage$),
+  },
+  {
+    path: ROUTES.onboardingSubscription,
+    setup: setupAuthPageWrapper(setupOnboardingSubscriptionPage$),
+  },
+  {
+    path: ROUTES.onboardingSkills,
+    setup: setupAuthPageWrapper(setupOnboardingSkillsPage$),
+  },
+  {
+    path: ROUTES.onboardingSlack,
+    setup: setupAuthPageWrapper(setupOnboardingSlackPage$),
   },
   {
     path: ROUTES.onboardingWorkflowPicker,

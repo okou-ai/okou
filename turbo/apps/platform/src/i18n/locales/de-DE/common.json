@@ -4137,6 +4137,450 @@
       "runNow": "Jetzt ausführen",
       "upgradePro": "Aktualisieren Sie Pro, um es auszuführen"
     },
+    "sourcesFirst": {
+      "common": {
+        "cancel": "",
+        "continue": "",
+        "skip": ""
+      },
+      "documentTitles": {
+        "experience": "",
+        "industry": "",
+        "skills": "",
+        "slack": "",
+        "sources": "",
+        "subscription": "",
+        "team": ""
+      },
+      "experience": {
+        "copy": "",
+        "no": "",
+        "title": "",
+        "yes": ""
+      },
+      "industries": {
+        "coaching": {
+          "name": "",
+          "summary": ""
+        },
+        "consulting": {
+          "name": "",
+          "summary": ""
+        },
+        "design": {
+          "name": "",
+          "summary": ""
+        },
+        "finance": {
+          "name": "",
+          "summary": ""
+        },
+        "investing": {
+          "name": "",
+          "summary": ""
+        },
+        "marketing": {
+          "name": "",
+          "summary": ""
+        },
+        "operations": {
+          "name": "",
+          "summary": ""
+        },
+        "other": {
+          "name": "",
+          "summary": ""
+        },
+        "research": {
+          "name": "",
+          "summary": ""
+        },
+        "sales": {
+          "name": "",
+          "summary": ""
+        },
+        "software": {
+          "name": "",
+          "summary": ""
+        }
+      },
+      "industry": {
+        "copy": "",
+        "title": ""
+      },
+      "skills": {
+        "confirm": "",
+        "copy": "",
+        "import": "",
+        "importedCopy": "",
+        "importedTitle": "",
+        "panelCopy": "",
+        "panelTitle": "",
+        "previewCopy": "",
+        "previewTitle": "",
+        "title": ""
+      },
+      "slack": {
+        "add": "",
+        "connectedCopy": "",
+        "connectedStatus": "",
+        "connectedTitle": "",
+        "copy": "",
+        "open": "",
+        "previewAsk": "",
+        "previewChannel": "",
+        "previewReply": "",
+        "title": ""
+      },
+      "sources": {
+        "copy": "",
+        "note": "",
+        "searchAction": "",
+        "searchCopy": "",
+        "searchEmpty": "",
+        "searchPlaceholder": "",
+        "searchTitle": "",
+        "title": ""
+      },
+      "startingPrompt": {
+        "exact": {
+          "finance_quickbooks": {
+            "outcome": "",
+            "question": "",
+            "text": ""
+          },
+          "finance_xero": {
+            "outcome": "",
+            "question": "",
+            "text": ""
+          },
+          "marketing_google_ads": {
+            "outcome": "",
+            "question": "",
+            "text": ""
+          },
+          "marketing_google_analytics": {
+            "outcome": "",
+            "question": "",
+            "text": ""
+          },
+          "marketing_google_search_console": {
+            "outcome": "",
+            "question": "",
+            "text": ""
+          },
+          "marketing_meta_ads": {
+            "outcome": "",
+            "question": "",
+            "text": ""
+          },
+          "marketing_tiktok_ads": {
+            "outcome": "",
+            "question": "",
+            "text": ""
+          },
+          "marketing_youtube": {
+            "outcome": "",
+            "question": "",
+            "text": ""
+          },
+          "sales_google_contacts": {
+            "outcome": "",
+            "question": "",
+            "text": ""
+          },
+          "sales_hubspot": {
+            "outcome": "",
+            "question": "",
+            "text": ""
+          },
+          "software_github": {
+            "outcome": "",
+            "question": "",
+            "text": ""
+          },
+          "software_linear": {
+            "outcome": "",
+            "question": "",
+            "text": ""
+          }
+        },
+        "fallback": {
+          "generic": {
+            "outcome": "",
+            "question": "",
+            "text": ""
+          },
+          "noSource": {
+            "question": ""
+          }
+        },
+        "family": {
+          "coaching_calendar": {
+            "outcome": "",
+            "question": "",
+            "text": ""
+          },
+          "coaching_documents": {
+            "outcome": "",
+            "question": "",
+            "text": ""
+          },
+          "coaching_email": {
+            "outcome": "",
+            "question": "",
+            "text": ""
+          },
+          "coaching_sheets": {
+            "outcome": "",
+            "question": "",
+            "text": ""
+          },
+          "consulting_documents": {
+            "outcome": "",
+            "question": "",
+            "text": ""
+          },
+          "consulting_email": {
+            "outcome": "",
+            "question": "",
+            "text": ""
+          },
+          "consulting_sheets": {
+            "outcome": "",
+            "question": "",
+            "text": ""
+          },
+          "design_documents": {
+            "outcome": "",
+            "question": "",
+            "text": ""
+          },
+          "design_email": {
+            "outcome": "",
+            "question": "",
+            "text": ""
+          },
+          "design_sheets": {
+            "outcome": "",
+            "question": "",
+            "text": ""
+          },
+          "finance_documents": {
+            "outcome": "",
+            "question": "",
+            "text": ""
+          },
+          "finance_email": {
+            "outcome": "",
+            "question": "",
+            "text": ""
+          },
+          "finance_sheets": {
+            "outcome": "",
+            "question": "",
+            "text": ""
+          },
+          "investing_documents": {
+            "outcome": "",
+            "question": "",
+            "text": ""
+          },
+          "investing_email": {
+            "outcome": "",
+            "question": "",
+            "text": ""
+          },
+          "investing_sheets": {
+            "outcome": "",
+            "question": "",
+            "text": ""
+          },
+          "marketing_documents": {
+            "outcome": "",
+            "question": "",
+            "text": ""
+          },
+          "marketing_email": {
+            "outcome": "",
+            "question": "",
+            "text": ""
+          },
+          "marketing_sheets": {
+            "outcome": "",
+            "question": "",
+            "text": ""
+          },
+          "operations_calendar": {
+            "outcome": "",
+            "question": "",
+            "text": ""
+          },
+          "operations_documents": {
+            "outcome": "",
+            "question": "",
+            "text": ""
+          },
+          "operations_email": {
+            "outcome": "",
+            "question": "",
+            "text": ""
+          },
+          "operations_sheets": {
+            "outcome": "",
+            "question": "",
+            "text": ""
+          },
+          "other_documents": {
+            "outcome": "",
+            "question": "",
+            "text": ""
+          },
+          "other_email": {
+            "outcome": "",
+            "question": "",
+            "text": ""
+          },
+          "other_sheets": {
+            "outcome": "",
+            "question": "",
+            "text": ""
+          },
+          "research_documents": {
+            "outcome": "",
+            "question": "",
+            "text": ""
+          },
+          "research_email": {
+            "outcome": "",
+            "question": "",
+            "text": ""
+          },
+          "research_sheets": {
+            "outcome": "",
+            "question": "",
+            "text": ""
+          },
+          "sales_calendar": {
+            "outcome": "",
+            "question": "",
+            "text": ""
+          },
+          "sales_documents": {
+            "outcome": "",
+            "question": "",
+            "text": ""
+          },
+          "sales_email": {
+            "outcome": "",
+            "question": "",
+            "text": ""
+          },
+          "sales_sheets": {
+            "outcome": "",
+            "question": "",
+            "text": ""
+          },
+          "software_documents": {
+            "outcome": "",
+            "question": "",
+            "text": ""
+          },
+          "software_email": {
+            "outcome": "",
+            "question": "",
+            "text": ""
+          },
+          "software_sheets": {
+            "outcome": "",
+            "question": "",
+            "text": ""
+          }
+        },
+        "profile": {
+          "coaching": {
+            "firstTaskPrompt": "",
+            "firstTaskTitle": "",
+            "short": ""
+          },
+          "consulting": {
+            "firstTaskPrompt": "",
+            "firstTaskTitle": "",
+            "short": ""
+          },
+          "design": {
+            "firstTaskPrompt": "",
+            "firstTaskTitle": "",
+            "short": ""
+          },
+          "finance": {
+            "firstTaskPrompt": "",
+            "firstTaskTitle": "",
+            "short": ""
+          },
+          "investing": {
+            "firstTaskPrompt": "",
+            "firstTaskTitle": "",
+            "short": ""
+          },
+          "marketing": {
+            "firstTaskPrompt": "",
+            "firstTaskTitle": "",
+            "short": ""
+          },
+          "operations": {
+            "firstTaskPrompt": "",
+            "firstTaskTitle": "",
+            "short": ""
+          },
+          "other": {
+            "firstTaskPrompt": "",
+            "firstTaskTitle": "",
+            "short": ""
+          },
+          "research": {
+            "firstTaskPrompt": "",
+            "firstTaskTitle": "",
+            "short": ""
+          },
+          "sales": {
+            "firstTaskPrompt": "",
+            "firstTaskTitle": "",
+            "short": ""
+          },
+          "software": {
+            "firstTaskPrompt": "",
+            "firstTaskTitle": "",
+            "short": ""
+          }
+        }
+      },
+      "subscription": {
+        "claudeCode": "",
+        "codex": "",
+        "connect": "",
+        "connected": "",
+        "copy": "",
+        "note": "",
+        "title": ""
+      },
+      "team": {
+        "copy": "",
+        "invite": "",
+        "label": "",
+        "note": "",
+        "placeholder": "",
+        "title": ""
+      },
+      "welcome": {
+        "copy": "",
+        "offerCopy": "",
+        "offerTitle": "",
+        "promptLabel": "",
+        "start": "",
+        "title": ""
+      }
+    },
     "templatePicker": {
       "image": {
         "description": "Verwenden Sie es als Referenz für das Bild, das Sie erstellen möchten.",
