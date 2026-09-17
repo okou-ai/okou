@@ -60,6 +60,9 @@ import { detach, Reason } from "../../signals/utils.ts";
 const CARD_MEDIA =
   "relative block aspect-video w-full overflow-hidden rounded-xl border border-border bg-muted";
 
+/** The accept list read as prose, for the hint under an upload entry. */
+const IMPORT_FORMATS = CUSTOM_TEMPLATE_IMPORT_ACCEPT.split(",").join(", ");
+
 /** Two levels only, ordered least to most reachable. */
 const VISIBILITY_OPTIONS: readonly UserTemplateVisibility[] = [
   "private",
@@ -349,12 +352,44 @@ function CustomTemplateCard({
 }
 
 /**
- * The upload entry for this catalog.
+ * The choice itself, shared by the two surfaces that offer it.
  *
  * One entry for every kind of template, not one per kind: the file the user
  * picked decides what it becomes, so the prompt that is sent — and with it the
  * command that publishes the result — follows the file rather than a choice
- * made before the analysis has read it.
+ * made before the analysis has read it. Keeping the input in one place is what
+ * holds the tile and the empty catalog's drop zone to the same set of files.
+ */
+function CustomTemplateFileInput({
+  signals,
+  label,
+}: {
+  readonly signals: ComposerSignals;
+  readonly label: string;
+}) {
+  const rootSignal = useGet(rootSignal$);
+  const importDeck = useSet(importPresentationTemplateDeck$);
+  return (
+    <input
+      type="file"
+      className="sr-only"
+      accept={CUSTOM_TEMPLATE_IMPORT_ACCEPT}
+      aria-label={label}
+      onChange={(event) => {
+        const file = event.currentTarget.files?.[0];
+        // Clear the input so choosing the same file again still fires.
+        event.currentTarget.value = "";
+        if (!file) {
+          return;
+        }
+        detach(importDeck({ signals, file }, rootSignal), Reason.DomCallback);
+      }}
+    />
+  );
+}
+
+/**
+ * The upload entry a populated catalog leads its grid with.
  *
  * Rendering its own tile rather than reusing the composer's is deliberate: the
  * composer already imports this pane, so importing the tile back would close a
@@ -366,8 +401,6 @@ function CustomTemplateUploadCard({
   readonly signals: ComposerSignals;
 }) {
   const { t } = useTranslation();
-  const rootSignal = useGet(rootSignal$);
-  const importDeck = useSet(importPresentationTemplateDeck$);
   const label = t(($) => {
     return $.artifacts.templates.importFile;
   });
@@ -384,24 +417,7 @@ function CustomTemplateUploadCard({
           strokeWidth={1.5}
           aria-hidden
         />
-        <input
-          type="file"
-          className="sr-only"
-          accept={CUSTOM_TEMPLATE_IMPORT_ACCEPT}
-          aria-label={label}
-          onChange={(event) => {
-            const file = event.currentTarget.files?.[0];
-            // Clear the input so choosing the same file again still fires.
-            event.currentTarget.value = "";
-            if (!file) {
-              return;
-            }
-            detach(
-              importDeck({ signals, file }, rootSignal),
-              Reason.DomCallback,
-            );
-          }}
-        />
+        <CustomTemplateFileInput signals={signals} label={label} />
       </span>
       <span className="flex flex-col gap-0.5">
         <span className="truncate text-sm font-medium text-foreground">
@@ -412,7 +428,7 @@ function CustomTemplateUploadCard({
             ($) => {
               return $.artifacts.templates.importFileHint;
             },
-            { formats: CUSTOM_TEMPLATE_IMPORT_ACCEPT.split(",").join(", ") },
+            { formats: IMPORT_FORMATS },
           )}
         </span>
       </span>
@@ -420,21 +436,50 @@ function CustomTemplateUploadCard({
   );
 }
 
-function CustomTemplatesEmpty() {
+/**
+ * The upload entry an empty catalog leads with.
+ *
+ * A pane with nothing in it should hold one object, not two. The tile-sized
+ * entry sitting under a card that only reported the catalog was empty gave the
+ * eye two blocks and no obvious target, so the entry becomes the surface and
+ * carries the line that card was carrying.
+ */
+function CustomTemplatesEmpty({
+  signals,
+}: {
+  readonly signals: ComposerSignals;
+}) {
   const { t } = useTranslation();
+  const label = t(($) => {
+    return $.artifacts.templates.importFile;
+  });
   return (
-    <div className="flex flex-col items-center rounded-[22px] border border-border bg-card px-6 py-12 text-center">
-      <p className="text-base font-semibold text-foreground">
-        {t(($) => {
-          return $.templates.empty.title;
-        })}
-      </p>
-      <p className="mt-1.5 max-w-md text-sm text-muted-foreground">
+    // `border-2` is the weight a dashed drop target takes: at the shared
+    // hairline a dashed edge reads as speckling rather than as a boundary.
+    <label className="group/zone flex min-h-80 cursor-pointer flex-col items-center justify-center gap-3 rounded-[22px] border-2 border-dashed border-border bg-muted/40 px-6 py-10 text-center transition-colors duration-150 hover:bg-muted/60 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-inset has-[:focus-visible]:ring-ring">
+      <Plus
+        className="size-10 text-muted-foreground transition-colors duration-150 group-hover/zone:text-foreground"
+        strokeWidth={1.5}
+        aria-hidden
+      />
+      <span className="flex flex-col gap-0.5">
+        <span className="text-sm font-medium text-foreground">{label}</span>
+        <span className="text-xs text-muted-foreground">
+          {t(
+            ($) => {
+              return $.artifacts.templates.importFileHint;
+            },
+            { formats: IMPORT_FORMATS },
+          )}
+        </span>
+      </span>
+      <span className="max-w-md text-xs text-muted-foreground">
         {t(($) => {
           return $.templates.empty.description;
         })}
-      </p>
-    </div>
+      </span>
+      <CustomTemplateFileInput signals={signals} label={label} />
+    </label>
   );
 }
 
@@ -661,29 +706,32 @@ export function CustomTemplatePickerPane({
     return <CustomTemplateDetail />;
   }
 
+  const hasQuery = query.trim().length > 0;
+  const templates =
+    templatesLoadable.state === "hasData" ? templatesLoadable.data : null;
+  // A box for narrowing a catalog belongs to a catalog there is something to
+  // narrow. It also waits for the catalog to resolve rather than assuming one:
+  // showing it while the answer is still in flight would take it away again the
+  // moment that answer turns out to be an empty catalog.
+  const showSearch = templates !== null && (templates.length > 0 || hasQuery);
+
   const body =
     templatesLoadable.state === "hasError" ? (
       <CustomTemplatesLoadError />
-    ) : templatesLoadable.state === "loading" ? null : templatesLoadable.data
-        .length === 0 ? (
+    ) : templates === null ? null : templates.length === 0 ? (
       // A query that matches nothing is a different event from having no
       // templates at all, and the picker already ships the panel that says so.
-      // Uploading cannot answer a failed search, so the tile only leads the
-      // empty catalog.
-      query.trim().length > 0 ? (
+      // Uploading cannot answer a failed search, so the drop zone only leads
+      // the empty catalog.
+      hasQuery ? (
         <TemplateEmptyPanel />
       ) : (
-        <div className="flex flex-col gap-5">
-          <CustomTemplatesEmpty />
-          <div className="grid grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-2 lg:grid-cols-3">
-            <CustomTemplateUploadCard signals={signals} />
-          </div>
-        </div>
+        <CustomTemplatesEmpty signals={signals} />
       )
     ) : (
       <div className="grid grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-2 lg:grid-cols-3">
         <CustomTemplateUploadCard signals={signals} />
-        {templatesLoadable.data.map((template) => {
+        {templates.map((template) => {
           return <CustomTemplateCard key={template.id} template={template} />;
         })}
       </div>
@@ -691,22 +739,24 @@ export function CustomTemplatePickerPane({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="relative w-56 shrink-0">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          aria-label={t(($) => {
-            return $.artifacts.templates.searchConnectors;
-          })}
-          className="h-9 pl-9 text-sm"
-          value={query}
-          onChange={(event) => {
-            setQuery(event.target.value);
-          }}
-          placeholder={t(($) => {
-            return $.artifacts.templates.searchConnector;
-          })}
-        />
-      </div>
+      {showSearch ? (
+        <div className="relative w-56 shrink-0">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            aria-label={t(($) => {
+              return $.artifacts.templates.searchConnectors;
+            })}
+            className="h-9 pl-9 text-sm"
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value);
+            }}
+            placeholder={t(($) => {
+              return $.artifacts.templates.searchConnector;
+            })}
+          />
+        </div>
+      ) : null}
       {body}
     </div>
   );

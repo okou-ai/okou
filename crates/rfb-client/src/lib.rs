@@ -1,14 +1,20 @@
-//! Verified RFB 3.8 / VeNCrypt 0.2 / X509Vnc authentication.
+//! Verified RFB 3.8 / VeNCrypt 0.2 / X509Vnc and bounded framebuffer decoding.
 //!
 //! [`authenticate`] consumes an already connected stream. The caller owns
 //! destination/authorization policy; this crate never resolves or connects a host.
-//! Success stops before ClientInit, leaving desktop negotiation to the engine.
+//! Authentication stops before ClientInit. [`Authenticated::initialize`] adds
+//! shared-mode desktop negotiation and owned framebuffer updates.
 //! Failure or cancellation drops the stream, with no background tasks.
 
 #![forbid(unsafe_code)]
 
 mod authentication;
+mod framebuffer;
+mod memory;
+mod pixels;
 mod trust;
+mod wire;
+mod zrle;
 
 use std::{fmt, io, time::Duration};
 
@@ -17,6 +23,7 @@ use tokio::time::Instant;
 use tokio_rustls::client::TlsStream;
 use zeroize::Zeroizing;
 
+pub use framebuffer::{Cursor, FramebufferConnection};
 pub use trust::TrustRoots;
 
 /// Maximum lifetime of the complete negotiation, including TLS and authentication.
@@ -101,6 +108,20 @@ where
 /// or included in Display/Debug output.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("invalid framebuffer dimensions or rectangle")]
+    InvalidFramebuffer,
+    #[error("invalid server pixel format")]
+    InvalidPixelFormat,
+    #[error("unsupported framebuffer encoding")]
+    UnsupportedEncoding,
+    #[error("invalid ZRLE compressed data")]
+    InvalidCompressedData,
+    #[error("RFB resource limit exceeded")]
+    ResourceLimit,
+    #[error("a full framebuffer update is required")]
+    FullUpdateRequired,
+    #[error("unsupported server message")]
+    UnsupportedMessage,
     #[error("VNC password must contain 1-8 printable ASCII bytes")]
     InvalidPassword,
     #[error("invalid TLS server name")]
@@ -121,7 +142,7 @@ pub enum Error {
     InvalidAuthenticationResult,
     #[error("server error text exceeds the 4 KiB limit")]
     RemoteDataTooLarge,
-    #[error("RFB authentication deadline exceeded")]
+    #[error("RFB operation deadline exceeded")]
     DeadlineExceeded,
     #[error("TLS verification or handshake failed")]
     Tls(#[source] io::Error),
