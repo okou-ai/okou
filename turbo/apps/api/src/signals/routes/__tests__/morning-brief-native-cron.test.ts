@@ -4,7 +4,7 @@ import { cronExecuteMorningBriefsContract } from "@okouai/api-contracts/contract
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createStore } from "ccstate";
 import { http, HttpResponse } from "msw";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -13,9 +13,11 @@ import { clearMockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { seedInstalledMorningBrief } from "../../../test-fixtures/morning-brief-collection";
 import { expireMorningBriefGenerationRetention } from "../../../test-fixtures/morning-brief-generation";
+import { drainEmailOutbox } from "../../../test-fixtures/morning-brief-delivery";
 import {
   abandonClaimedOccurrence,
   countEmailOutboxRows,
+  countOrgUsageEvents,
   countOrgAgentRuns,
   interruptNativeSettlement,
   makeNativeOccurrenceDue,
@@ -35,6 +37,7 @@ import {
   seedSlackOrgConnection$,
   seedSlackOrgInstallation$,
 } from "./helpers/integrations-slack";
+import { mockClerkUsers } from "./helpers/clerk-users";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 
 /**
@@ -58,11 +61,27 @@ const CRON_SECRET = "native-morning-brief-cron-secret";
 const SLACK_CONVERSATIONS_URL = "https://slack.com/api/users.conversations";
 const SLACK_HISTORY_URL = "https://slack.com/api/conversations.history";
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
-const RESEND_URL = "https://api.resend.com/emails";
+
+beforeEach(() => {
+  // The shared sender calls the globally mocked Resend SDK rather than HTTP, so
+  // this is the boundary every email assertion below observes.
+  context.mocks.resend.send.mockReset();
+  context.mocks.resend.send.mockResolvedValue({
+    data: { id: `resend-${randomUUID()}` },
+    error: null,
+  });
+});
 
 afterEach(() => {
   clearMockNow();
 });
+
+/** Every argument list the shared sender handed the Resend SDK boundary. */
+function emailSends(): readonly Record<string, unknown>[] {
+  return context.mocks.resend.send.mock.calls.map((call) => {
+    return call[0] as Record<string, unknown>;
+  });
+}
 
 interface Fixture {
   readonly orgId: string;
@@ -115,7 +134,24 @@ async function fixture(
   mockOptionalEnv("RESEND_API_KEY", "platform-resend-key");
   mockOptionalEnv("RESEND_FROM_DOMAIN", "mail.okou.test");
   mockOptionalEnv("EMAIL_OUTBOX_DRAIN_DELAY_MS", "0");
+  // The shared one-click unsubscribe link must be an https API URL, which the
+  // real drain validates before it hands anything to the provider.
+  mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.test");
   if (options.email !== null) {
+    // The shared drain resolves the recipient's live profile through Clerk
+    // before it hands anything to the provider.
+    mockClerkUsers(context, [
+      {
+        id: userId,
+        primaryEmailAddressId: "idn_primary",
+        emailAddresses: [
+          {
+            id: "idn_primary",
+            emailAddress: options.email ?? `${userId}@example.test`,
+          },
+        ],
+      },
+    ]);
     await seedRecipientAddress(
       userId,
       options.email ?? `${userId}@example.test`,
@@ -167,12 +203,11 @@ function scriptSlack(): void {
 
 interface ProviderCalls {
   readonly generation: string[];
-  readonly email: unknown[];
 }
 
 /** Script both provider boundaries and count every crossing request. */
 function scriptProviders(): { readonly calls: ProviderCalls } {
-  const calls: ProviderCalls = { generation: [], email: [] };
+  const calls: ProviderCalls = { generation: [] };
   server.use(
     http.post(OPENROUTER_URL, async ({ request }) => {
       calls.generation.push(await request.text());
@@ -205,10 +240,6 @@ function scriptProviders(): { readonly calls: ProviderCalls } {
           cost: 0.0001,
         },
       });
-    }),
-    http.post(RESEND_URL, async ({ request }) => {
-      calls.email.push(await request.json());
-      return HttpResponse.json({ id: `resend_${randomUUID()}` });
     }),
   );
   return { calls };
@@ -426,6 +457,42 @@ describe("native Morning Brief cron", () => {
     const rows = await readNativeOccurrences(f);
     expect(rows).toHaveLength(1);
     expect(rows[0]?.outcome).not.toBe("empty-skip");
+  });
+
+  // The email half of the product contract, through the real shared worker: the
+  // scheduler only enqueues an intent, and S2's drain is what actually sends.
+  // Asserting the enqueue alone would never show a provider request.
+  it("sends the subscribed brief through the real shared email drain with no user billing", async () => {
+    const f = await fixture();
+    scriptSlack();
+    const { calls } = scriptProviders();
+
+    await expect(countOrgUsageEvents(f.orgId)).resolves.toBe(0);
+
+    await tickUntilNative(f);
+    await makeNativeOccurrenceDue(f);
+    await accept(tick(), [200]);
+
+    const deliveries = await readNativeDeliveries(f);
+    expect(deliveries).toHaveLength(1);
+    const outboxId = deliveries[0]?.emailOutboxId;
+    expect(outboxId).not.toBeNull();
+    expect(emailSends()).toHaveLength(0);
+
+    // Now the real drain, on the exact row the delivery admitted.
+    await drainEmailOutbox([outboxId ?? ""], context.signal);
+
+    // One request crossed the provider boundary, carrying the accepted brief.
+    const sends = emailSends();
+    expect(sends).toHaveLength(1);
+    expect(sends[0]?.to).toBe(`${f.userId}@example.test`);
+    expect(sends[0]?.subject).toBe("Release readiness");
+
+    // Platform-funded throughout: one model request, no agent Run, and no
+    // usage row that could debit this organization.
+    expect(calls.generation).toHaveLength(1);
+    await expect(countOrgAgentRuns(f.orgId)).resolves.toBe(0);
+    await expect(countOrgUsageEvents(f.orgId)).resolves.toBe(0);
   });
 
   it("does not contact the provider twice for the same slot across ticks", async () => {

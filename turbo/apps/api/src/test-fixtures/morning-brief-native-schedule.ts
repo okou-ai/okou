@@ -7,6 +7,7 @@ import {
   morningBriefNativeSchedules,
 } from "@okouai/db/schema/morning-brief-native-schedule";
 import { agentRuns } from "@okouai/db/schema/agent-run";
+import { usageEvent } from "@okouai/db/schema/usage-event";
 import { userCache } from "@okouai/db/schema/user-cache";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { and, eq, sql } from "drizzle-orm";
@@ -266,4 +267,21 @@ export async function abandonClaimedOccurrence(
         eq(morningBriefNativeOccurrences.scheduledFor, scheduledFor),
       ),
     );
+}
+
+/**
+ * Every usage row this organization has, which for a Morning Brief must be
+ * none.
+ *
+ * The product contract is that the platform pays: no user or organization
+ * credit is admitted, reserved or debited, and no agent Run is created. A Run
+ * count alone does not show that, because usage accounting is a separate
+ * writer, so the suite snapshots both.
+ */
+export async function countOrgUsageEvents(orgId: string): Promise<number> {
+  const rows = await db()
+    .select({ id: usageEvent.id })
+    .from(usageEvent)
+    .where(eq(usageEvent.orgId, orgId));
+  return rows.length;
 }
