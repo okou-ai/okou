@@ -85,8 +85,12 @@ ownership and a run row lock; combined completion also owns its chat-thread
 boundary. Checkpoint persistence can retain a blob before promoting the session.
 Candidate cleanup takes storage ownership before releasing candidate references.
 
-Agent deletion retains canonical mutation advisory -> agent -> sessions -> runs,
-with existing NOWAIT and 100 ms behavior. With X resource billing configured,
+Agent deletion and threadless cleanup take shared usage-compaction admission
+before parent/Run locks, so their ledger FK updates cannot invert maintenance's
+ledger-before-Run order. Agent deletion then retains canonical mutation advisory
+-> agent -> sessions -> runs, with existing NOWAIT and 100 ms behavior; the
+shared admission wait also uses that 100 ms retry boundary.
+With X resource billing configured,
 Clerk first takes the scoped account-erasure subject lock exclusively to drain
 Run creation and queue promotion, which lock Agent rows before allowances.
 It then takes exclusive usage admission and the usage-compaction advisory lock,

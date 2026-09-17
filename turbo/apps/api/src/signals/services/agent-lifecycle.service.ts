@@ -45,7 +45,7 @@ export async function deleteClerkAgentLifecycleData(
     env("X_RESOURCE_BILLING_START_DATE") !== undefined;
   if (!resourceBillingEnabled) {
     // Keep the existing separately committed cleanup during the API rollout.
-    // Activation requires every settler to share compaction admission.
+    // Activation requires settlers and ordinary Run deleters to share admission.
     await deleteScopedUsageData(db, scope);
   }
   const receipt = await db.transaction(async (tx) => {

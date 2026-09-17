@@ -105,6 +105,11 @@ observation owns the obligation, including allowance/pack-funded reads.
 Credit settlement keeps its billing behavior and takes shared compaction
 admission before its organization credit lock. Different organizations can
 still settle concurrently; exclusive maintenance waits for admitted settlements.
+Agent deletion and threadless Run cleanup also share compaction admission before
+locking parents or Runs. Their Run-delete foreign keys update ledger rows, so
+they must not overlap maintenance that retains ledger locks before Run locks.
+Agent deletion keeps its 100-millisecond lock timeout and retryable 409 response,
+including when maintenance for another organization delays admission.
 
 The consumer takes no compaction or organization credit lock. Compaction only
 handles processed rows older than four days, so an immutable source within the
@@ -162,11 +167,12 @@ While the setting is unset, Clerk retains separately committed ledger cleanup
 before Run deletion, and the Pi preflight retains its existing behavior.
 
 X and compaction admission locks are global: account cleanup briefly pauses all
-webhook usage writes and settlement, and a slow settlement delays compaction or
-account cleanup. No network cleanup runs while those admission locks are held.
-Do not configure the setting while any serving or rollback API can settle
-without shared compaction admission; otherwise old settlement transactions
-could invert the combined cleanup's ledger/allowance/Run lock order.
+webhook usage writes, settlement and Run deletion. Slow settlement or deletion
+delays compaction or account cleanup. No network cleanup runs while those
+admission locks are held. Do not configure the setting while any serving or
+rollback API can settle or perform ordinary Run deletion without shared
+compaction admission; otherwise those transactions could invert the combined
+cleanup's ledger/allowance/Run lock order.
 
 ## Runner, annotation and activation
 
