@@ -78,9 +78,14 @@ function Tile({ accent, children }: { accent: string; children: ReactNode }) {
   );
 }
 
+/**
+ * The illustration gets its own ground rather than floating on the dialog's
+ * paper: a washed band reads as one picture, and it separates the drawing from
+ * the sentences under it without a rule.
+ */
 function TileRow({ children }: { children: ReactNode }) {
   return (
-    <div className="flex items-center justify-center gap-2 py-1">
+    <div className="flex items-center justify-center gap-3 rounded-xl bg-state-hover px-4 py-5">
       {children}
     </div>
   );
@@ -407,10 +412,10 @@ function WorkflowStep({
 
 function ScopeNote({ items }: { items: readonly string[] }) {
   return (
-    <ul className="rounded-surface-compact bg-state-hover px-3 py-2.5 text-xs text-muted-foreground">
+    <ul className="px-0.5 text-xs text-muted-foreground">
       {items.map((item) => {
         return (
-          <li key={item} className="py-0.5">
+          <li key={item} className="py-[3px]">
             {item}
           </li>
         );
@@ -516,9 +521,6 @@ function ConnectorIntro({ onConfirm, onClose }: IntroProps) {
             { assistantName },
           ),
           t(($) => {
-            return $.chat.agentPage.getStarted.intro.connector.scopeMinimum;
-          }),
-          t(($) => {
             return $.chat.agentPage.getStarted.intro.connector.scopeRevoke;
           }),
         ]}
@@ -590,9 +592,6 @@ function InviteIntro({ onConfirm, onClose }: IntroProps) {
         items={[
           t(($) => {
             return $.chat.agentPage.getStarted.intro.invite.scopeShared;
-          }),
-          t(($) => {
-            return $.chat.agentPage.getStarted.intro.invite.scopeConnectors;
           }),
         ]}
       />

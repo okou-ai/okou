@@ -660,14 +660,10 @@ test("The connector step says what it costs the user before it hands them off", 
   });
   // The refusal this answers is about custody, not value.
   expect(
-    within(dialog).getByText(
-      "Your credentials stay with the provider; they never enter Okou.",
-    ),
+    within(dialog).getByText("Your credentials never reach Okou."),
   ).toBeInTheDocument();
   expect(
-    within(dialog).getByText(
-      "Disconnect anytime in settings. Whatever it already produced stays.",
-    ),
+    within(dialog).getByText("Least access, and you can disconnect anytime."),
   ).toBeInTheDocument();
   // Explaining is all it does: the destination is still the connector list.
   expect(pathname()).toBe(questChatPath());
@@ -697,9 +693,7 @@ test("Declining an introduced step costs the user nothing", async () => {
   // The reason to invite is what a teammate inherits, not the per-member
   // reward the row already states.
   expect(
-    within(dialog).getByText(
-      "Workflows and agents are shared with everyone you invite.",
-    ),
+    within(dialog).getByText("Workflows are shared; connectors stay personal."),
   ).toBeInTheDocument();
 
   click(buttonNamed("Later", dialog));
