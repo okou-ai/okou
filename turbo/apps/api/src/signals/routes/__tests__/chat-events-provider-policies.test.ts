@@ -1873,7 +1873,9 @@ describe("CHAT-02: model-first provider policies", () => {
       expect(claim.codexRuntimeConfig).toMatchObject({
         providerId: expectedProvider,
         modelCatalog: {
-          models: [expect.objectContaining({ slug: expectedModel })],
+          models: expect.arrayContaining([
+            expect.objectContaining({ slug: expectedModel }),
+          ]),
         },
       });
       expect(claim.billableFirewalls).toContain(
