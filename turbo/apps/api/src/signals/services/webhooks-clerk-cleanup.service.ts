@@ -85,6 +85,7 @@ import {
 } from "./agent-lifecycle.service";
 import { deleteConnectorOwnerState } from "./connector-owner-cleanup.service";
 import { revokeMorningBriefCollectionOwnership } from "./morning-brief-collection-occurrence.service";
+import { revokeMorningBriefDeliveryOwnership } from "./morning-brief-delivery.service";
 import { deleteStoragesWithPiMemoryCandidates } from "./pi-memory-stage1-candidate.service";
 import { transitionAgentRunsToTerminal } from "./agent-run-terminal-transition.service";
 
@@ -951,6 +952,15 @@ export const cleanupClerkDeletedOrg$ = command(
       kind: "organization",
       orgId,
     });
+    // Detaching a delivery from its mail and deleting that mail has to be one
+    // atomic step: losing the association would strand a row that still holds
+    // the recipient and the rendered brief.
+    await db.transaction(async (tx) => {
+      await revokeMorningBriefDeliveryOwnership(tx, {
+        kind: "organization",
+        orgId,
+      });
+    });
     signal.throwIfAborted();
     await assertPiInferenceScopeErasureReady(db, {
       kind: "organization",
@@ -984,6 +994,9 @@ export const cleanupClerkDeletedUser$ = command(
     await cancelUserRuns(db, userId, true);
     signal.throwIfAborted();
     await revokeMorningBriefCollectionOwnership(db, { kind: "user", userId });
+    await db.transaction(async (tx) => {
+      await revokeMorningBriefDeliveryOwnership(tx, { kind: "user", userId });
+    });
     signal.throwIfAborted();
     await assertPiInferenceScopeErasureReady(db, { kind: "user", userId });
     signal.throwIfAborted();
@@ -1004,6 +1017,12 @@ export const cleanupClerkDeletedUser$ = command(
       await revokeMorningBriefCollectionOwnership(db, {
         kind: "organization",
         orgId,
+      });
+      await db.transaction(async (tx) => {
+        await revokeMorningBriefDeliveryOwnership(tx, {
+          kind: "organization",
+          orgId,
+        });
       });
       signal.throwIfAborted();
       await assertPiInferenceScopeErasureReady(db, {

@@ -15,6 +15,7 @@ import { publishCancelToRunnerGroup } from "../external/realtime";
 import { tapError } from "../utils";
 import { transitionAgentRunsToTerminal } from "./agent-run-terminal-transition.service";
 import { revokeMorningBriefCollectionOwnership } from "./morning-brief-collection-occurrence.service";
+import { revokeMorningBriefDeliveryOwnership } from "./morning-brief-delivery.service";
 
 import type { Db } from "../external/db";
 
@@ -123,6 +124,14 @@ async function revokeOrgMemberRunAuthority(
     // loses its occurrence here rather than surviving until the member row it
     // hangs from is removed further down this cleanup.
     await revokeMorningBriefCollectionOwnership(tx, {
+      kind: "membership",
+      orgId: args.orgId,
+      userId: args.userId,
+    });
+    // A delivered brief's unsent email intent still carries the recipient and
+    // the rendered body, so it is removed here rather than left for the drain
+    // to refuse.
+    await revokeMorningBriefDeliveryOwnership(tx, {
       kind: "membership",
       orgId: args.orgId,
       userId: args.userId,

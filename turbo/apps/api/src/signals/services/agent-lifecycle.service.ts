@@ -12,6 +12,7 @@ import {
   logCommittedConversationDeletion,
   releaseDeletedConversationReferences,
 } from "./conversation-history-deletion.service";
+import { revokeMorningBriefDeliveryOwnership } from "./morning-brief-delivery.service";
 
 export const AGENT_LIFECYCLE_LOCK_TIMEOUT = "100ms";
 
@@ -111,6 +112,14 @@ export async function deleteClerkAgentLifecycleData(
       }
     }
     if (agentIds.length > 0) {
+      for (const agentId of agentIds) {
+        // Same reason as the single-Agent deletion: the cascade would drop the
+        // association to unsent native mail.
+        await revokeMorningBriefDeliveryOwnership(tx, {
+          kind: "agent",
+          agentId,
+        });
+      }
       await tx
         .delete(agents)
         .where(

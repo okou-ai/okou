@@ -5,7 +5,18 @@ import { emailSuppressions } from "@okouai/db/schema/email-suppression";
 import { userCache } from "@okouai/db/schema/user-cache";
 import { users } from "@okouai/db/schema/user";
 import { command } from "ccstate";
-import { and, asc, eq, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  inArray,
+  isNull,
+  lt,
+  lte,
+  notInArray,
+  or,
+  sql,
+} from "drizzle-orm";
 import { Resend } from "resend";
 import { delay } from "signal-timers";
 import { Webhook } from "svix";
@@ -22,6 +33,19 @@ import type { ClerkClient } from "../external/clerk";
 import { writeDb$, type Db } from "../external/db";
 import type { Tx } from "../../lib/db-types";
 import { renderOfficialAutomationResultEmail } from "./official-automation-result-email-renderer";
+import {
+  admitNativeMorningBriefEmail,
+  currentNativeMorningBriefMembership$,
+  MORNING_BRIEF_RESULT_EMAIL_TEMPLATE,
+  peekNativeMorningBriefEmailOwner,
+  type NativeMorningBriefOwnerPreflight,
+} from "./morning-brief-native-email-admission.service";
+import {
+  MORNING_BRIEF_RESULT_EMAIL_BODY_MAX_BYTES,
+  MORNING_BRIEF_RESULT_EMAIL_TITLE_MAX_CHARACTERS,
+  MorningBriefResultEmailRenderError,
+  renderMorningBriefResultEmail,
+} from "./morning-brief-result-email-renderer";
 import { renderCreditLowBalanceEmail } from "./credit-low-balance-email-renderer";
 
 type Transaction = Tx;
@@ -84,6 +108,18 @@ function unicodeCharacterCount(value: string): number {
   return Array.from(value).length;
 }
 
+function boundedUtf8String(maxBytes: number) {
+  return z
+    .string()
+    .min(1)
+    .refine(
+      (value) => {
+        return Buffer.byteLength(value, "utf8") <= maxBytes;
+      },
+      { message: `Must contain at most ${maxBytes} UTF-8 bytes` },
+    );
+}
+
 function boundedUnicodeString(maxCharacters: number) {
   return z
     .string()
@@ -128,6 +164,25 @@ const emailTemplateSchema = z.discriminatedUnion("template", [
             OFFICIAL_AUTOMATION_RESULT_EMAIL_TEXT_MAX_CHARACTERS,
           ),
           runUrl: z.url().max(1024),
+          manageUrl: z.url().max(1024),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      template: z.literal(MORNING_BRIEF_RESULT_EMAIL_TEMPLATE),
+      props: z
+        .object({
+          title: boundedUnicodeString(
+            MORNING_BRIEF_RESULT_EMAIL_TITLE_MAX_CHARACTERS,
+          ),
+          // Byte-bounded to match the accepted generation result exactly, so
+          // the brief Chat shows is the brief this email carries.
+          resultMarkdown: boundedUtf8String(
+            MORNING_BRIEF_RESULT_EMAIL_BODY_MAX_BYTES,
+          ),
+          threadUrl: z.url().max(1024),
           manageUrl: z.url().max(1024),
         })
         .strict(),
@@ -353,6 +408,12 @@ function renderTemplate(
       }
       return { html: rendered.html, text: rendered.text };
     }
+    case MORNING_BRIEF_RESULT_EMAIL_TEMPLATE: {
+      return renderMorningBriefResultEmail(
+        template.props,
+        officialAutomationResultUnsubscribeUrl(headers),
+      );
+    }
   }
 }
 
@@ -364,7 +425,8 @@ function fromAddressForTemplate(template: EmailTemplate): string {
       return buildTeamFromAddress();
     }
     case "data-export-ready":
-    case "official-automation-result": {
+    case "official-automation-result":
+    case MORNING_BRIEF_RESULT_EMAIL_TEMPLATE: {
       return buildFromAddress();
     }
   }
@@ -483,6 +545,8 @@ interface PreparedOutboxItem {
 
 type PrepareOutcome =
   | { readonly kind: "empty" }
+  // Left untouched this pass because its live-owner evidence was not resolved.
+  | { readonly kind: "deferred"; readonly itemId: string }
   // Resolved without contacting the provider: expired, out of attempts, or
   // suppressed.
   | { readonly kind: "resolved" }
@@ -508,6 +572,8 @@ async function resolveWithoutSending(
 async function prepareNextOutboxItem(
   db: Db,
   currentTimeMs: number,
+  nativeOwnerPreflight: NativeMorningBriefOwnerPreflight | null,
+  deferredIds: ReadonlySet<string>,
   itemIds?: readonly string[],
 ): Promise<PrepareOutcome> {
   return await db.transaction(async (tx) => {
@@ -520,6 +586,11 @@ async function prepareNextOutboxItem(
           itemIds === undefined
             ? undefined
             : inArray(emailOutbox.id, [...itemIds]),
+          // Items this batch already deferred are skipped so a native intent
+          // without live owner evidence cannot stall its siblings.
+          deferredIds.size === 0
+            ? undefined
+            : notInArray(emailOutbox.id, [...deferredIds]),
           // `sending` items belong to an in-flight attempt until their lease
           // expires; recovering them replays the committed request.
           inArray(emailOutbox.status, ["pending", "sending"]),
@@ -568,6 +639,26 @@ async function prepareNextOutboxItem(
       );
     }
 
+    // A native Morning Brief intent is admitted only while its own delivery
+    // row and the owner's current policy still authorise it. Missing
+    // provenance fails closed here; it never falls through to the generic
+    // sender.
+    if (row.template.template === MORNING_BRIEF_RESULT_EMAIL_TEMPLATE) {
+      const admission = await admitNativeMorningBriefEmail(
+        tx,
+        itemId,
+        nativeOwnerPreflight,
+      );
+      if (admission.kind === "rejected") {
+        return await resolveWithoutSending(tx, itemId, admission.reason);
+      }
+      if (admission.kind === "deferred") {
+        // Neither sent nor failed: the row keeps its state and its attempt
+        // count, and the next pass resolves live evidence for it.
+        return { kind: "deferred", itemId };
+      }
+    }
+
     const toAddresses =
       typeof row.to_addresses === "string"
         ? [row.to_addresses]
@@ -584,9 +675,22 @@ async function prepareNextOutboxItem(
     // Render only for a row whose request is not committed yet. Once it is,
     // the provider may already hold this key, so the committed request is the
     // only payload that can be sent under it.
-    const request: ProviderRequest = hasCommittedRequest
-      ? providerRequestSchema.parse(committedRequest)
-      : buildProviderRequest(row);
+    let request: ProviderRequest;
+    if (hasCommittedRequest) {
+      request = providerRequestSchema.parse(committedRequest);
+    } else {
+      try {
+        request = buildProviderRequest(row);
+      } catch (error) {
+        // Only the native Morning Brief template reports this. It means the
+        // accepted body cannot be carried intact, which is an explicit
+        // delivery failure rather than a reason to mail a shorter brief.
+        if (!(error instanceof MorningBriefResultEmailRenderError)) {
+          throw error;
+        }
+        return await resolveWithoutSending(tx, itemId, error.message);
+      }
+    }
     // The committed key stays authoritative for the row it was written for,
     // even if the derivation below ever changes.
     const idempotencyKey =
@@ -683,11 +787,23 @@ async function completeOutboxItem(
 async function drainNextOutboxItem(
   db: Db,
   currentTimeMs: number,
+  nativeOwnerPreflight: NativeMorningBriefOwnerPreflight | null,
+  deferredIds: Set<string>,
   itemIds?: readonly string[],
 ): Promise<boolean> {
-  const prepared = await prepareNextOutboxItem(db, currentTimeMs, itemIds);
+  const prepared = await prepareNextOutboxItem(
+    db,
+    currentTimeMs,
+    nativeOwnerPreflight,
+    deferredIds,
+    itemIds,
+  );
   if (prepared.kind === "empty") {
     return false;
+  }
+  if (prepared.kind === "deferred") {
+    deferredIds.add(prepared.itemId);
+    return true;
   }
   if (prepared.kind === "resolved") {
     return true;
@@ -713,16 +829,29 @@ async function drainNextOutboxItem(
 async function drainEmailOutboxBatch(
   db: Db,
   context: EmailOutboxDrainContext,
+  resolveNativeOwner: NativeOwnerResolver,
   signal: AbortSignal,
   itemIds?: readonly string[],
 ): Promise<number> {
   let processed = 0;
+  const deferredIds = new Set<string>();
 
   for (let index = 0; index < MAX_OUTBOX_BATCH_SIZE; index++) {
+    signal.throwIfAborted();
+    // Live-owner evidence for the next due native intent is resolved here,
+    // outside the claim transaction, because it reaches Clerk.
+    const nativeOwner = await resolveNativeOwner(
+      new Date(context.currentTimeMs),
+      deferredIds,
+      itemIds,
+      signal,
+    );
     signal.throwIfAborted();
     const hadItem = await drainNextOutboxItem(
       db,
       context.currentTimeMs,
+      nativeOwner,
+      deferredIds,
       itemIds,
     );
     signal.throwIfAborted();
@@ -745,13 +874,42 @@ async function drainEmailOutboxBatch(
   return processed;
 }
 
+type NativeOwnerResolver = (
+  currentTime: Date,
+  deferredIds: ReadonlySet<string>,
+  itemIds: readonly string[] | undefined,
+  signal: AbortSignal,
+) => Promise<NativeMorningBriefOwnerPreflight | null>;
+
+const nativeOwnerResolver$ = command(({ set }): NativeOwnerResolver => {
+  const db = set(writeDb$);
+  return async (currentTime, deferredIds, itemIds, signal) => {
+    const candidate = await peekNativeMorningBriefEmailOwner(
+      db,
+      currentTime,
+      OUTBOX_TTL_MS,
+      deferredIds,
+      itemIds,
+    );
+    signal.throwIfAborted();
+    return candidate === null
+      ? null
+      : await set(currentNativeMorningBriefMembership$, candidate, signal);
+  };
+});
+
 export const drainEmailOutboxBatch$ = command(
   async (
     { set },
     context: EmailOutboxDrainContext,
     signal: AbortSignal,
   ): Promise<number> => {
-    return await drainEmailOutboxBatch(set(writeDb$), context, signal);
+    return await drainEmailOutboxBatch(
+      set(writeDb$),
+      context,
+      set(nativeOwnerResolver$),
+      signal,
+    );
   },
 );
 
@@ -764,6 +922,7 @@ export const drainEmailOutboxItems$ = command(
     return await drainEmailOutboxBatch(
       set(writeDb$),
       context,
+      set(nativeOwnerResolver$),
       signal,
       context.itemIds,
     );

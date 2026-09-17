@@ -27,6 +27,31 @@ const fetchedUnreads$ = computed(async (get): Promise<UnreadSnapshot> => {
   return result.body.unreads;
 });
 
+/**
+ * The server's own unread instant for one thread, once optimistic local marks
+ * are applied.
+ *
+ * The server watermark already covers both kinds of unread: a Run terminal
+ * marker and a native Morning Brief delivery, which has no Run and therefore
+ * no client-visible terminal event. Reading it here is what lets the open
+ * thread clear a native unread without inventing a Run event locally.
+ */
+export function serverUnreadAt$(threadId: string) {
+  return computed(async (get): Promise<string | undefined> => {
+    const unreads = await get(fetchedUnreads$);
+    const unread = unreads.find((entry) => {
+      return entry.threadId === threadId;
+    });
+    if (!unread) {
+      return undefined;
+    }
+    const markedAt = get(optimisticReadMarks$).get(threadId);
+    return markedAt === undefined || Date.parse(unread.unreadAt) > markedAt
+      ? unread.unreadAt
+      : undefined;
+  });
+}
+
 export const sidebarUnreadThreadIds$ = computed(
   async (get): Promise<ReadonlySet<string>> => {
     const unreads = await get(fetchedUnreads$);
