@@ -11,6 +11,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 import {
@@ -24,6 +25,7 @@ import { userTemplatesRoutes } from "../user-templates";
 const context = testContext();
 const bdd = createBddApi(context);
 const mocks = createRouteMocks(context);
+const storageApi = createStoragesBddApi(context);
 
 const SOURCE_CONTENT_TYPE =
   "application/vnd.openxmlformats-officedocument.presentationml.presentation";
@@ -334,6 +336,63 @@ describe("POST /api/user-templates", () => {
     });
   });
 
+  it("replaces the stored package rather than adding to it", async () => {
+    const fixture = installS3Fixture(context);
+    const actor = bdd.user();
+    await enableFor(actor);
+    const client = templateClient();
+
+    const threeFiles = await uploadTemplateFile(
+      context,
+      actor,
+      fixture,
+      { filename: "package.tar.gz", contentType: PACKAGE_CONTENT_TYPE },
+      tarGz([
+        ...guidance("presentation"),
+        { path: "swatches.md", content: "Retired on the next pass.\n" },
+      ]),
+    );
+    const published = await accept(
+      client.publish({
+        headers: webHeaders(),
+        body: {
+          ...(await publishBody(actor, fixture)),
+          packageFileId: threeFiles,
+        },
+      }),
+      [200],
+    );
+    const storageName = getUserTemplateStorageName(published.body.id);
+    const storedFileCount = async () => {
+      const storages = await storageApi.listStorages(actor, "organization");
+      return storages.find((storage) => {
+        return storage.name === storageName;
+      })?.fileCount;
+    };
+    await expect(storedFileCount()).resolves.toBe(3);
+
+    const twoFiles = await uploadTemplateFile(
+      context,
+      actor,
+      fixture,
+      { filename: "package.tar.gz", contentType: PACKAGE_CONTENT_TYPE },
+      tarGz(guidance("presentation")),
+    );
+    await accept(
+      client.replacePackage({
+        headers: webHeaders(),
+        params: { templateId: published.body.id },
+        body: { packageFileId: twoFiles },
+      }),
+      [200],
+    );
+
+    // Two, not three. A rebuild that dropped a file has dropped it: the new
+    // version is exactly what was sent, so nothing the guide no longer
+    // mentions is left behind for a run to read.
+    await expect(storedFileCount()).resolves.toBe(2);
+  });
+
   it("applies the row's kind to the replacement, not the caller's", async () => {
     const fixture = installS3Fixture(context);
     const actor = bdd.user();
@@ -417,6 +476,79 @@ describe("POST /api/user-templates", () => {
     expect(response.body.error.message).toBe(
       `User template not found: ${published.body.id}`,
     );
+  });
+
+  it("leaves every change to the owner, not to everyone who can see it", async () => {
+    const fixture = installS3Fixture(context);
+    const owner = bdd.user();
+    await enableFor(owner);
+    const client = templateClient();
+    const published = await accept(
+      client.publish({
+        headers: webHeaders(),
+        body: await publishBody(owner, fixture),
+      }),
+      [200],
+    );
+    // Shared, so the colleague genuinely reads it: a private row would be
+    // refused by the visibility rule and prove nothing about ownership.
+    await accept(
+      client.update({
+        headers: webHeaders(),
+        params: { templateId: published.body.id },
+        body: { visibility: "organization" },
+      }),
+      [200],
+    );
+
+    const colleague = bdd.user({ orgId: owner.orgId });
+    await enableFor(colleague);
+    await accept(
+      client.get({
+        headers: webHeaders(),
+        params: { templateId: published.body.id },
+      }),
+      [200],
+    );
+
+    // Reading it is not owning it. Retracting a colleague's template from the
+    // organization, renaming it, or deleting it are all theirs to refuse.
+    await accept(
+      client.update({
+        headers: webHeaders(),
+        params: { templateId: published.body.id },
+        body: { visibility: "private" },
+      }),
+      [404],
+    );
+    await accept(
+      client.update({
+        headers: webHeaders(),
+        params: { templateId: published.body.id },
+        body: { title: "Renamed by someone else" },
+      }),
+      [404],
+    );
+    await accept(
+      client.delete({
+        headers: webHeaders(),
+        params: { templateId: published.body.id },
+        body: undefined,
+      }),
+      [404],
+    );
+
+    const stillThere = await accept(
+      client.get({
+        headers: webHeaders(),
+        params: { templateId: published.body.id },
+      }),
+      [200],
+    );
+    expect(stillThere.body).toMatchObject({
+      title: published.body.title,
+      visibility: "organization",
+    });
   });
 
   it("rejects a package that is missing its required guidance", async () => {
