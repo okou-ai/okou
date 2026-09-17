@@ -24,6 +24,7 @@ import {
   customConnector,
   getConnectorAction,
   getConnectorCard,
+  getConnectorIcon,
   listAgent,
   mockConnectors,
   mockCustomConnectorStory,
@@ -79,6 +80,9 @@ test("Browse connectors by category", async () => {
   expect(
     ai.compareDocumentPosition(engineering) & Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
+  // The catalog is browsed a category at a time, and a category is far taller
+  // than the viewport. Its marks are fetched as they are reached.
+  expect(getConnectorIcon("Asana")).toHaveAttribute("loading", "lazy");
 });
 
 test("Show only connectors present in the current catalog", async () => {

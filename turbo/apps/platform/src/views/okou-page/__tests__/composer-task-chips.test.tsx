@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core";
+import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
 import {
   click,
   fill,
@@ -763,6 +764,18 @@ test.each([
   },
 );
 
+/**
+ * A slash panel row opens the picker as well as selecting the task, and the
+ * open dialog hides the composer from the accessibility tree. Close it to read
+ * what the row left behind.
+ */
+async function closeTemplatePicker(): Promise<void> {
+  click(button("Close", await screen.findByRole("dialog")));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+}
+
 test("Slash commands keep the selected task and recommendations in sync", async () => {
   mockTemplateChat();
   const editor = await setupChipsWithSlashPanel();
@@ -771,6 +784,7 @@ test("Slash commands keep the selected task and recommendations in sync", async 
   const user = userEvent.setup({ delay: null });
   // The panel's rows act on mousedown, which only a full pointer sequence fires.
   await user.click(button("Illustration", menu));
+  await closeTemplatePicker();
   await waitFor(() => {
     expect(selectedTask(editor, "Image")).toBeVisible();
   });
@@ -780,12 +794,59 @@ test("Slash commands keep the selected task and recommendations in sync", async 
   await fill(editor, "A quiet garden /vid");
   const videoMenu = await screen.findByTestId("slash-workflow-menu");
   await user.click(button("Video", videoMenu));
+  await closeTemplatePicker();
   await waitFor(() => {
     expect(selectedTask(editor, "Video")).toBeVisible();
   });
   expect(screen.queryByRole("group", { name: "Image" })).toBeNull();
   await screen.findByText("Turn a photo into a video");
   expect(editor).toHaveTextContent("A quiet garden");
+});
+
+// Website has no create mode, so the chips are the only surface that can carry
+// its selection; the row still has to open the picker on the way there.
+test("A slash panel row opens the picker and lands on its task", async () => {
+  mockTemplateChat();
+  const editor = await setupChipsWithSlashPanel();
+  await fill(editor, "A launch page /web");
+  const menu = await screen.findByTestId("slash-workflow-menu");
+  const user = userEvent.setup({ delay: null });
+
+  await user.click(button("Website", menu));
+
+  await waitFor(() => {
+    return screen.getByRole("dialog");
+  });
+  expect(tabByText("Website")).toHaveAttribute("aria-selected", "true");
+  await closeTemplatePicker();
+  await waitFor(() => {
+    expect(selectedTask(editor, "Website")).toBeVisible();
+  });
+  expect(editor).toHaveTextContent("A launch page");
+  expect(editor).not.toHaveTextContent("/web");
+});
+
+// A cover brings its template along instead of opening the picker, but lands
+// the composer in the same task its category row would.
+test("A slash panel cover attaches its template and lands on its task", async () => {
+  mockTemplateChat();
+  const editor = await setupChipsWithSlashPanel();
+  await fill(editor, "A launch page /web");
+  const menu = await screen.findByTestId("slash-workflow-menu");
+  const [first] = WEBSITE_TEMPLATE_ITEMS;
+  if (!first) {
+    throw new Error("Expected a website template");
+  }
+  const user = userEvent.setup({ delay: null });
+
+  await user.click(button(`Use template ${first.title}`, menu));
+
+  await waitFor(() => {
+    expect(selectedTask(editor, "Website")).toBeVisible();
+  });
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(editor).toHaveTextContent("A launch page");
+  expect(editor).not.toHaveTextContent("/web");
 });
 
 test("A presentation suggestion inserts a canonical template and preserves the prompt", async () => {

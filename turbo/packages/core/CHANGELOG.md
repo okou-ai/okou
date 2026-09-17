@@ -1,5 +1,24 @@
 # Changelog
 
+## [8.676.0](https://github.com/vm0-ai/okou/compare/core-v8.675.1...core-v8.676.0) (2026-09-17)
+
+
+### Features
+
+* **core:** enable private artifacts for staff ([#34983](https://github.com/vm0-ai/okou/issues/34983)) ([00909c4](https://github.com/vm0-ai/okou/commit/00909c48402ef7dd4d3d8a193101b640be01115b))
+* **core:** enable the composer run controls and model picker flyout by default ([#34971](https://github.com/vm0-ai/okou/issues/34971)) ([7401411](https://github.com/vm0-ai/okou/commit/740141186365eec6d7fc5ac09cb4f4569313e60c))
+* **core:** enable thread activity summaries for all users ([#34923](https://github.com/vm0-ai/okou/issues/34923)) ([4cd1b9a](https://github.com/vm0-ai/okou/commit/4cd1b9a0594a9b53c05c48f10d1ac343e6b1702b))
+* make a custom template usable, not just publishable ([#34886](https://github.com/vm0-ai/okou/issues/34886)) ([f43f666](https://github.com/vm0-ai/okou/commit/f43f666c5fd1e0e83b9fc76906cd5b668aec1225))
+* reorder presentation templates newest first ([#34959](https://github.com/vm0-ai/okou/issues/34959)) ([bbf2ad6](https://github.com/vm0-ai/okou/commit/bbf2ad6c60092246d426cfba84927e2da32938ae))
+* **ssh:** graduate access and remove the rollout switch ([#34967](https://github.com/vm0-ai/okou/issues/34967)) ([e2b3915](https://github.com/vm0-ai/okou/commit/e2b391588615f01f1bc5e5ff8239fbf5abf765bd))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.458.0
+
 ## [8.675.1](https://github.com/vm0-ai/okou/compare/core-v8.675.0...core-v8.675.1) (2026-09-17)
 
 

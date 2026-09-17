@@ -11,6 +11,50 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.911.0](https://github.com/vm0-ai/okou/compare/app-v0.910.0...app-v0.911.0) (2026-09-17)
+
+
+### Features
+
+* **app:** give intro video styles the shared gallery tile ([#34905](https://github.com/vm0-ai/okou/issues/34905)) ([9935c55](https://github.com/vm0-ai/okou/commit/9935c553d4cd81b166f651e17c4e9923521c849f))
+* **core:** enable the composer run controls and model picker flyout by default ([#34971](https://github.com/vm0-ai/okou/issues/34971)) ([7401411](https://github.com/vm0-ai/okou/commit/740141186365eec6d7fc5ac09cb4f4569313e60c))
+* **core:** enable thread activity summaries for all users ([#34923](https://github.com/vm0-ai/okou/issues/34923)) ([4cd1b9a](https://github.com/vm0-ai/okou/commit/4cd1b9a0594a9b53c05c48f10d1ac343e6b1702b))
+* make a custom template usable, not just publishable ([#34886](https://github.com/vm0-ai/okou/issues/34886)) ([f43f666](https://github.com/vm0-ai/okou/commit/f43f666c5fd1e0e83b9fc76906cd5b668aec1225))
+* **platform:** add input hints to ssh configuration forms ([#34907](https://github.com/vm0-ai/okou/issues/34907)) ([c9102a1](https://github.com/vm0-ai/okou/commit/c9102a1378be00812be25b3ca4fac5ca3c93e519))
+* **platform:** open the workflow task from the create workflow row ([#34969](https://github.com/vm0-ai/okou/issues/34969)) ([7040618](https://github.com/vm0-ai/okou/commit/7040618a8bff509dd75b8b1b6db3f009bd439d6e))
+* **platform:** rebuild the intro video picker around one style gallery ([#34984](https://github.com/vm0-ai/okou/issues/34984)) ([a79e898](https://github.com/vm0-ai/okou/commit/a79e89827f4e1f78b0676ad4318cfb202d5e6e35))
+* record onboarding and checkout starts in marketing ([#34944](https://github.com/vm0-ai/okou/issues/34944)) ([55f2137](https://github.com/vm0-ai/okou/commit/55f2137d24a2699adcbf847c6632528b58f36be3))
+* reorder presentation templates newest first ([#34959](https://github.com/vm0-ai/okou/issues/34959)) ([bbf2ad6](https://github.com/vm0-ai/okou/commit/bbf2ad6c60092246d426cfba84927e2da32938ae))
+* **ssh:** graduate access and remove the rollout switch ([#34967](https://github.com/vm0-ai/okou/issues/34967)) ([e2b3915](https://github.com/vm0-ai/okou/commit/e2b391588615f01f1bc5e5ff8239fbf5abf765bd))
+
+
+### Bug Fixes
+
+* add missing integration source links ([#34950](https://github.com/vm0-ai/okou/issues/34950)) ([5b2c750](https://github.com/vm0-ai/okou/commit/5b2c750697dffcc1da382a0ce7f6ee59005d0219))
+* **platform:** allow cancelling pending connector authorization ([#34917](https://github.com/vm0-ai/okou/issues/34917)) ([add192c](https://github.com/vm0-ai/okou/commit/add192c6a1e569816b6a2a522149677a85bfc6a2))
+* **platform:** consume the slash token when a panel cover is chosen ([#34974](https://github.com/vm0-ai/okou/issues/34974)) ([9d63a1b](https://github.com/vm0-ai/okou/commit/9d63a1be8e53f8bc7d95b7ad05ac0b126c93bc4a))
+* **platform:** frame the public conversation as the app and stop prompting members to sign in ([#34679](https://github.com/vm0-ai/okou/issues/34679)) ([79ba3df](https://github.com/vm0-ai/okou/commit/79ba3dff03936a7b278b65675cc9c3045efedda2))
+* **platform:** keep the slash panel's cover pane closed on a paneless row ([#34978](https://github.com/vm0-ai/okou/issues/34978)) ([64cd664](https://github.com/vm0-ai/okou/commit/64cd6643d85ecd45a2e54ca8c99cfa96259f9d83))
+* **platform:** keep the whole template nav in a creative video draft ([#34953](https://github.com/vm0-ai/okou/issues/34953)) ([db63392](https://github.com/vm0-ai/okou/commit/db63392449c28c3bed3fc25eb45ff56616cc5844))
+* **platform:** let the workspace canvas run under the chat composer ([#34988](https://github.com/vm0-ai/okou/issues/34988)) ([37dac94](https://github.com/vm0-ai/okou/commit/37dac94eb43a19238caa0d33da80398b2158e927))
+* **platform:** open the presentation tab from the shelf's more templates link ([#34937](https://github.com/vm0-ai/okou/issues/34937)) ([81d99f8](https://github.com/vm0-ai/okou/commit/81d99f87087fd6f3790a156cfd2a7f35021bdf1d))
+* **platform:** seat the connector toolbar on the workspace canvas ([#34916](https://github.com/vm0-ai/okou/issues/34916)) ([a7973da](https://github.com/vm0-ai/okou/commit/a7973da378be868dd980d6c45ddc3f5b4bb35f56))
+* reserve sandbox capacity for waiting demand ([#34868](https://github.com/vm0-ai/okou/issues/34868)) ([db7a6c3](https://github.com/vm0-ai/okou/commit/db7a6c32b1d54ab629e0efdffb79a2984ab587cc))
+
+
+### Performance Improvements
+
+* **platform:** skip management reads for agent creator display ([#34957](https://github.com/vm0-ai/okou/issues/34957)) ([d8f92a8](https://github.com/vm0-ai/okou/commit/d8f92a8bef0e110145af1e471869fb0ab6d63bc9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.458.0
+    * @okouai/core bumped to 8.676.0
+    * @okouai/ui bumped to 1.10.0
+
 ## [0.910.0](https://github.com/vm0-ai/okou/compare/app-v0.909.0...app-v0.910.0) (2026-09-17)
 
 

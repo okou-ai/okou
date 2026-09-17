@@ -23,6 +23,7 @@ import {
   mockAgent,
   mockBillingCapabilities,
   mockOrgModelRoutes,
+  tabByText,
   workflowSummary,
 } from "./chat-composer-test-helpers.ts";
 
@@ -331,11 +332,11 @@ test("Tab keeps the keyboard selection after the pointer leaves the menu", async
 });
 
 test.each([
-  { action: "Enter", expectedMode: "Create presentation" },
-  { action: "click", expectedMode: "Create video" },
+  { action: "Enter", expectedTab: "Presentation" },
+  { action: "click", expectedTab: "Video" },
 ])(
-  "$action activates the appropriate category while Video is hovered",
-  async ({ action, expectedMode }) => {
+  "$action opens the picker on the $expectedTab tab while Video is hovered",
+  async ({ action, expectedTab }) => {
     const user = userEvent.setup();
     await openSlashMenu();
     const video = slashButton("Video");
@@ -350,12 +351,43 @@ test.each([
       await user.keyboard("{Enter}");
     }
 
-    await expect(
-      screen.findByTestId("composer-create-mode"),
-    ).resolves.toHaveTextContent(expectedMode);
+    await waitFor(() => {
+      return screen.getByRole("dialog");
+    });
+    expect(tabByText(expectedTab)).toHaveAttribute("aria-selected", "true");
     expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
   },
 );
+
+// The two rows without a create mode are the ones that used to leave the menu
+// standing, so the dialog they opened had to compete with it.
+test.each(["Website", "Workflow"])(
+  "Clicking %s opens the picker on its own tab",
+  async (category) => {
+    const user = userEvent.setup();
+    await openSlashMenu();
+
+    await user.click(slashButton(category));
+
+    await waitFor(() => {
+      return screen.getByRole("dialog");
+    });
+    expect(tabByText(category)).toHaveAttribute("aria-selected", "true");
+    expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+  },
+);
+
+test("Browse all templates opens the picker", async () => {
+  const user = userEvent.setup();
+  await openSlashMenu();
+
+  await user.click(slashButton("Browse all templates"));
+
+  await waitFor(() => {
+    return screen.getByRole("dialog");
+  });
+  expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+});
 
 test("Keyboard navigation restores its preview even at the first row boundary", async () => {
   const user = userEvent.setup();
@@ -379,9 +411,10 @@ test("Keyboard navigation restores its preview even at the first row boundary", 
     expect(detailPane()).toHaveAttribute("data-category", "website");
   });
   await user.keyboard("{Enter}");
-  await expect(
-    screen.findByTestId("composer-create-mode"),
-  ).resolves.toHaveTextContent("Create presentation");
+  await waitFor(() => {
+    return screen.getByRole("dialog");
+  });
+  expect(tabByText("Presentation")).toHaveAttribute("aria-selected", "true");
 });
 
 test("Leaving the panel restores the keyboard-selected category preview", async () => {

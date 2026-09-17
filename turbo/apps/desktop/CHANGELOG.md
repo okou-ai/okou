@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.48.83](https://github.com/vm0-ai/okou/compare/desktop-v0.48.82...desktop-v0.48.83) (2026-09-17)
+
+
+### Bug Fixes
+
+* add missing integration source links ([#34950](https://github.com/vm0-ai/okou/issues/34950)) ([5b2c750](https://github.com/vm0-ai/okou/commit/5b2c750697dffcc1da382a0ce7f6ee59005d0219))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.458.0
+
 ## [0.48.82](https://github.com/vm0-ai/okou/compare/desktop-v0.48.81...desktop-v0.48.82) (2026-09-17)
 
 
