@@ -267,7 +267,7 @@ export function OnboardingSlackPage() {
         <div className="px-5 pb-5">
           <Button
             type="button"
-            variant={connected ? "outline" : "default"}
+            variant={connected ? "outline" : "neutral"}
             disabled={connected}
             className="w-full gap-2"
             onClick={() => {
