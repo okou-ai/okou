@@ -252,6 +252,11 @@ export const morningBriefGenerations = pgTable(
         table.userId,
         table.expiresAt,
       ),
+      // Physical retention cannot depend on an owner coming back, so the
+      // maintenance purge scans every owner's expired rows in deadline order.
+      // The owner-prefixed index above cannot serve that scan, so the bounded
+      // batch gets its own index range instead of a sequential scan.
+      index("idx_morning_brief_generations_expiry").on(table.expiresAt),
       // Every enumerated column is enforced by the database, so a reader never
       // has to guess what an unexpected stored value means.
       check(

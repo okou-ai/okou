@@ -641,7 +641,7 @@ function isFailure(
 }
 
 export async function loadOfficialWorkflowUserTimezone(
-  db: ReadonlyDb,
+  db: Pick<ReadonlyDb, "select">,
   args: { readonly orgId: string; readonly userId: string },
 ): Promise<string | null> {
   const [row] = await db

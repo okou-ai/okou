@@ -176,6 +176,23 @@ export async function deleteMorningBriefAgent(agentId: string): Promise<void> {
   await db().delete(agents).where(eq(agents.id, agentId));
 }
 
+/**
+ * Move the installation's Agent out of this member's reach without deleting it.
+ *
+ * Deletion cascades the occurrence away, which hides every fence behind a
+ * foreign key. An access change does not: the Agent row survives, so only a
+ * real re-resolution of the installation's authority can notice that the member
+ * may no longer act through it.
+ */
+export async function restrictMorningBriefAgent(
+  agentId: string,
+): Promise<void> {
+  await db()
+    .update(agents)
+    .set({ visibility: "private", owner: `user_${randomUUID()}` })
+    .where(eq(agents.id, agentId));
+}
+
 /** Pause the seeded schedule the way the Settings surface would. */
 export async function pauseMorningBriefAutomation(
   automationId: string,
