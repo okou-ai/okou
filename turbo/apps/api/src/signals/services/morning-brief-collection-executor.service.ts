@@ -17,6 +17,7 @@ import {
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 
+import type { Tx } from "../../lib/db-types";
 import { nowDate } from "../../lib/time";
 import { clerk$ } from "../external/clerk";
 import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
@@ -29,6 +30,7 @@ import {
   type MorningBriefCollectionAdmission,
   type MorningBriefCollectionClaim,
   type MorningBriefCollectionCompletion,
+  type MorningBriefCollectionOccurrenceRow,
   type MorningBriefCollectionOwner,
 } from "./morning-brief-collection-occurrence.service";
 import { loadMorningBriefMigrationState } from "./morning-brief-migration-state.service";
@@ -116,6 +118,37 @@ type AdmissionResult =
       readonly kind: "not-executed";
       readonly reason: MorningBriefCollectionSkipReason;
     };
+
+/** Everything this attempt owns at the instant its collection becomes durable. */
+export interface MorningBriefCollectionHandoffContext {
+  readonly admission: MorningBriefCollectionAdmission;
+  readonly claim: MorningBriefCollectionClaim;
+  readonly completion: MorningBriefCollectionCompletion;
+  readonly occurrence: MorningBriefCollectionOccurrenceRow;
+  /** The fresh in-memory bundle. It is never persisted and never replayable. */
+  readonly bundle: MorningBriefSlackBundle;
+  readonly at: Date;
+}
+
+/**
+ * The narrow collection-to-generation handoff.
+ *
+ * A completed occurrence is metadata, not a checkpoint, so the only moment a
+ * downstream stage can be admitted for a bundle is while this executor still
+ * holds it. `onCollected` runs inside the finalize transaction, after the
+ * guarded update matched, so the collected facts and the downstream admission
+ * become durable together or not at all: throwing rolls the finalization back
+ * and leaves the occurrence reclaimable.
+ *
+ * It is optional, and the collect-only entrypoint passes none — that path keeps
+ * exactly its previous behavior.
+ */
+interface MorningBriefCollectionHandoff {
+  readonly onCollected: (
+    tx: Tx,
+    context: MorningBriefCollectionHandoffContext,
+  ) => Promise<void>;
+}
 
 function occurrenceView(
   row: OccurrenceRow,
@@ -455,6 +488,7 @@ export const executeMorningBriefSlackCollection$ = command(
     args: {
       readonly owner: MorningBriefCollectionOwner;
       readonly scheduledFor: Date;
+      readonly handoff?: MorningBriefCollectionHandoff;
     },
     signal: AbortSignal,
   ): Promise<MorningBriefCollectionExecution> => {
@@ -530,13 +564,28 @@ export const executeMorningBriefSlackCollection$ = command(
     // with it. Equality with the deadline is already expired.
     const finalizedAt = nowDate();
     const finalized = await db.transaction(async (tx) => {
-      return await finalizeMorningBriefCollection(
+      const result = await finalizeMorningBriefCollection(
         tx,
         admission,
         claim,
         completion,
         finalizedAt,
       );
+      // The handoff joins this transaction rather than following it, so no
+      // downstream stage can ever be admitted for a bundle whose collection
+      // did not become durable, and none can be admitted for a bundle that was
+      // discarded because the claim was lost.
+      if (result.kind === "finalized" && collected.kind === "collected") {
+        await args.handoff?.onCollected(tx, {
+          admission,
+          claim,
+          completion,
+          occurrence: result.occurrence,
+          bundle: collected.bundle,
+          at: finalizedAt,
+        });
+      }
+      return result;
     });
     signal.throwIfAborted();
     if (finalized.kind !== "finalized") {

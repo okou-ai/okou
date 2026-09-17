@@ -62,6 +62,9 @@ surface; the index does not replace their detailed rules.
 - [Morning Brief source collection](./morning-brief-collection.md): the bounded
   Slack source contract, occurrence/attempt/lease ownership, owner revocation
   boundary, and the coverage limits this first collector declares.
+- [Morning Brief platform-funded generation](./morning-brief-generation.md): the
+  single-invocation reservation contract, the validated result shape, and the
+  anonymous platform cost receipt kept outside every user ledger.
 - [Marketing privacy rollback](./marketing-privacy-choices.md): withdrawn runtime
   behavior, storage retirement, and rollout boundaries.
 - [Google Cloud LLM voice routing](./google-llm-voice.md): shared Vercel workload

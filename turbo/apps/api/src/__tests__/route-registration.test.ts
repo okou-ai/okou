@@ -1,8 +1,10 @@
 import { morningBriefCollectionPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-collection-preview";
+import { morningBriefGenerationPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-generation-preview";
 
 import { ROUTES } from "../signals/route";
 import { assertUniqueRouteRegistrations } from "../signals/route-entry";
 import { morningBriefCollectionPreviewRoutes } from "../signals/routes/morning-brief-collection-preview";
+import { morningBriefGenerationPreviewRoutes } from "../signals/routes/morning-brief-generation-preview";
 
 describe("API route registrations", () => {
   // Hono keeps both registrations for a duplicated path and answers with the
@@ -32,6 +34,26 @@ describe("API route registrations", () => {
         return (
           registered.route.path ===
           morningBriefCollectionPreviewContract.collect.path
+        );
+      }),
+    ).toStrictEqual([entry]);
+  });
+
+  // The platform-funded generation preview has the same requirement: its own
+  // suite may not compose an app from this production-global table, so the
+  // exact entry object is asserted here. Registration is what makes that
+  // suite's results statements about the deployed endpoint, and what makes the
+  // production 404 a statement about a route that really exists.
+  it("registers the Morning Brief generation preview an operator invokes", () => {
+    const [entry, ...extra] = morningBriefGenerationPreviewRoutes;
+    expect(extra).toHaveLength(0);
+    expect(entry?.route).toBe(morningBriefGenerationPreviewContract.generate);
+    expect(ROUTES).toContain(entry);
+    expect(
+      ROUTES.filter((registered) => {
+        return (
+          registered.route.path ===
+          morningBriefGenerationPreviewContract.generate.path
         );
       }),
     ).toStrictEqual([entry]);

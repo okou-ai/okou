@@ -17,7 +17,7 @@ import {
   type OpenRouterTokenCounts,
 } from "./openrouter-failure";
 
-const OPENROUTER_CHAT_COMPLETIONS_URL =
+export const OPENROUTER_CHAT_COMPLETIONS_URL =
   "https://openrouter.ai/api/v1/chat/completions";
 const OPENROUTER_ERROR_RESPONSE_MAX_BYTES = 64 * 1024;
 
