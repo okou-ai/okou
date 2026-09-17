@@ -23,6 +23,7 @@ import connection_endpoints
 import connector_intent
 import flow_metadata
 import flow_metadata_keys as metadata_keys
+import gmail_send
 import http_network_log
 import matching
 import public_destination
@@ -162,6 +163,12 @@ class BrowserAllow:
 
 
 @dataclass(frozen=True)
+class GmailSendBlocked:
+    sandbox_info: dict
+    kind: Literal["gmail_send_blocked"] = field(init=False, default="gmail_send_blocked")
+
+
+@dataclass(frozen=True)
 class FirewallAmbiguous:
     sandbox_info: dict
     firewall_ambiguous: matching.FirewallAmbiguous
@@ -220,6 +227,7 @@ BlockingRequestClassification = (
     | InvalidRegistrySandbox
     | AuthorityDenied
     | PlatformPathDenied
+    | GmailSendBlocked
     | FirewallAmbiguous
     | FirewallBlock
     | PublicDestinationDenied
@@ -322,7 +330,7 @@ def classify_request(
 
     The decision order is registry/TLS admission, registered sandbox resolution,
     trusted authority validation, platform path admission, platform API allow,
-    browser passthrough, firewall match, publicDestination runtime validation,
+    browser passthrough, fixed Gmail send restriction, firewall match, publicDestination validation,
     and default allow.
 
     After registry and TLS admission checks accept a registered sandbox,
@@ -465,6 +473,9 @@ def _classify_request(
     if flow.metadata.get(metadata_keys.BROWSER_USER_AGENT):
         return BrowserAllow(sandbox_info=sandbox_info)
 
+    if gmail_send.blocks_gmail_send(trusted_authority.host, flow.request.path):
+        return GmailSendBlocked(sandbox_info=sandbox_info)
+
     is_asterisk_form = flow.request.path == "*"
     intent = connector_intent.from_flow(flow)
     omitted_builtin_firewalls = registry_state.omitted_builtin_firewalls.get(
@@ -548,6 +559,7 @@ def classification_needs_request_timing(classification: RequestClassification) -
         "api_allow",
         "platform_path_denied",
         "browser_allow",
+        "gmail_send_blocked",
         "firewall_ambiguous",
         "firewall_block",
         "firewall_allow",

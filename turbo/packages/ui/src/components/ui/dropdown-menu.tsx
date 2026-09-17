@@ -4,6 +4,7 @@ import * as React from "react";
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
 
 import { asChildRender } from "../../lib/base-ui-compat";
+import { MENU_ROW_HEIGHT_CLASS } from "./menu-row";
 import { anchoredPopupTransitionClassName } from "./popup-motion";
 import { cn } from "../../lib/utils";
 
@@ -161,7 +162,8 @@ const DropdownMenuItem = React.forwardRef<HTMLElement, DropdownMenuItemProps>(
         ref={ref}
         data-slot="dropdown-menu-item"
         className={cn(
-          "relative flex cursor-default select-none items-center gap-2 rounded-lg px-2 py-1.5 text-sm outline-none transition-colors hover:bg-state-hover data-highlighted:bg-state-hover data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+          "relative flex cursor-default select-none items-center gap-2 rounded-lg px-2 outline-none transition-colors hover:bg-state-hover data-highlighted:bg-state-hover data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+          MENU_ROW_HEIGHT_CLASS,
           className,
         )}
         onClick={(event) => {
@@ -205,7 +207,8 @@ const DropdownMenuSubTrigger = React.forwardRef<
       ref={ref}
       data-slot="dropdown-menu-sub-trigger"
       className={cn(
-        "flex cursor-default select-none items-center gap-2 rounded-lg px-2 py-1.5 text-sm outline-none hover:bg-state-hover data-highlighted:bg-state-hover data-popup-open:bg-state-hover [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+        "flex cursor-default select-none items-center gap-2 rounded-lg px-2 outline-none hover:bg-state-hover data-highlighted:bg-state-hover data-popup-open:bg-state-hover [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+        MENU_ROW_HEIGHT_CLASS,
         className,
       )}
       {...props}

@@ -3,7 +3,7 @@ import { userConnectorsContract } from "@okouai/api-contracts/contracts/user-con
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test } from "vitest";
+import { expect, test, describe, beforeEach, it } from "vitest";
 
 import {
   fill,
@@ -198,22 +198,48 @@ async function prepareScrollableDesktopConnectorMenu() {
   };
 }
 
-test("Keep the desktop connector menu above while filtering", async () => {
-  const {
-    user,
-    searchInput,
-    layout,
-    popover,
-    trigger,
-    connectorList,
-    expandedListHeight,
-  } = await prepareScrollableDesktopConnectorMenu();
-  await filterConnectorMenu(user, searchInput, layout.notifyResize);
-  await waitFor(() => {
-    expect(popoverSide(popover, trigger)).toBe("top");
-    expect(connectorList.clientHeight).toBe(expandedListHeight);
-    expect(connectorList.scrollHeight).toBe(connectorList.clientHeight);
-    expect(screen.getByText("Add connectors")).toBeInTheDocument();
+describe("with an open desktop connector menu", () => {
+  async function prepareScenario() {
+    const {
+      user,
+      searchInput,
+      layout,
+      popover,
+      trigger,
+      connectorList,
+      expandedListHeight,
+    } = await prepareScrollableDesktopConnectorMenu();
+    return {
+      user,
+      searchInput,
+      layout,
+      popover,
+      trigger,
+      connectorList,
+      expandedListHeight,
+    };
+  }
+  let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
+  beforeEach(async () => {
+    preparedScenario = await prepareScenario();
+  });
+  it("keep the desktop connector menu above while filtering", async () => {
+    const {
+      user,
+      searchInput,
+      layout,
+      popover,
+      trigger,
+      connectorList,
+      expandedListHeight,
+    } = preparedScenario;
+    await filterConnectorMenu(user, searchInput, layout.notifyResize);
+    await waitFor(() => {
+      expect(popoverSide(popover, trigger)).toBe("top");
+      expect(connectorList.clientHeight).toBe(expandedListHeight);
+      expect(connectorList.scrollHeight).toBe(connectorList.clientHeight);
+      expect(screen.getByText("Add connectors")).toBeInTheDocument();
+    });
   });
 });
 
@@ -409,70 +435,79 @@ test("Configure connector permissions from the composer", async () => {
   });
 });
 
-test("Connect a custom connector for only the active agent", async () => {
-  const user = userEvent.setup({ delay: null });
-  const fixture = installComposerConnectorFixture({
-    customConnectors: [
-      httpConnector({
-        id: ACME_CONNECTOR_ID,
-        slug: "acme-search",
-        displayName: "Acme Search",
-        connected: false,
-      }),
-    ],
+describe("connecting a custom connector for the active agent", () => {
+  let user: ReturnType<typeof userEvent.setup>;
+  let fixture: ReturnType<typeof installComposerConnectorFixture>;
+  beforeEach(async () => {
+    user = userEvent.setup({ delay: null });
+    fixture = installComposerConnectorFixture({
+      customConnectors: [
+        httpConnector({
+          id: ACME_CONNECTOR_ID,
+          slug: "acme-search",
+          displayName: "Acme Search",
+          connected: false,
+        }),
+      ],
+    });
+
+    await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
+
+    await loadComposer();
+    await openConnectors(user);
   });
 
-  await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
+  it("connects a custom connector for only the active agent", async () => {
+    let catalog = await openAddConnectors(user);
+    expect(
+      within(catalog).getByText("https://api.example.test/"),
+    ).toBeVisible();
+    await user.click(
+      await findFastControl("button", "Connect Acme Search", catalog),
+    );
+    let secret = await screen.findByLabelText("Secret");
+    expect(secret).toHaveValue("");
+    await user.type(secret, "discarded-secret");
+    await user.click(await findFastControl("button", "Cancel"));
 
-  await loadComposer();
-  await openConnectors(user);
-  let catalog = await openAddConnectors(user);
-  expect(within(catalog).getByText("https://api.example.test/")).toBeVisible();
-  await user.click(
-    await findFastControl("button", "Connect Acme Search", catalog),
-  );
-  let secret = await screen.findByLabelText("Secret");
-  expect(secret).toHaveValue("");
-  await user.type(secret, "discarded-secret");
-  await user.click(await findFastControl("button", "Cancel"));
+    await ensureConnectorsOpen(user);
+    catalog = await openAddConnectors(user);
+    await user.click(
+      await findFastControl("button", "Connect Acme Search", catalog),
+    );
+    secret = await screen.findByLabelText("Secret");
+    expect(secret).toHaveValue("");
+    await user.type(secret, "scout-secret");
+    await user.click(await findFastControl("button", "Save"));
 
-  await ensureConnectorsOpen(user);
-  catalog = await openAddConnectors(user);
-  await user.click(
-    await findFastControl("button", "Connect Acme Search", catalog),
-  );
-  secret = await screen.findByLabelText("Secret");
-  expect(secret).toHaveValue("");
-  await user.type(secret, "scout-secret");
-  await user.click(await findFastControl("button", "Save"));
-
-  await waitFor(() => {
-    expect(fixture.customValueRequests).toStrictEqual([
-      {
-        connectorId: ACME_CONNECTOR_ID,
-        values: [{ key: "secret", kind: "secret", value: "scout-secret" }],
-      },
-    ]);
-    expect(fixture.customAuthorizationUpdates).toStrictEqual([
-      {
-        agentId: SCOUT_AGENT_ID,
-        grants: [
-          {
-            customConnectorId: ACME_CONNECTOR_ID,
-            permissionNames: [],
-          },
-        ],
-        operation: "add",
-      },
-    ]);
+    await waitFor(() => {
+      expect(fixture.customValueRequests).toStrictEqual([
+        {
+          connectorId: ACME_CONNECTOR_ID,
+          values: [{ key: "secret", kind: "secret", value: "scout-secret" }],
+        },
+      ]);
+      expect(fixture.customAuthorizationUpdates).toStrictEqual([
+        {
+          agentId: SCOUT_AGENT_ID,
+          grants: [
+            {
+              customConnectorId: ACME_CONNECTOR_ID,
+              permissionNames: [],
+            },
+          ],
+          operation: "add",
+        },
+      ]);
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+    await ensureConnectorsOpen(user);
+    await expect(
+      screen.findByLabelText("Remove Acme Search"),
+    ).resolves.toBeVisible();
   });
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).toBeNull();
-  });
-  await ensureConnectorsOpen(user);
-  await expect(
-    screen.findByLabelText("Remove Acme Search"),
-  ).resolves.toBeVisible();
 });
 
 test("Show only the connector actions that are useful in chat", async () => {

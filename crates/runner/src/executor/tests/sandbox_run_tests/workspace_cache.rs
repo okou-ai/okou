@@ -600,6 +600,8 @@ async fn execute_inner_retries_fresh_after_workspace_cache_hit_create_failure() 
     config.workspace_cache = Some(cache.clone());
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
     overrides.push_create_result(Err(sandbox_create_error("bad seed image")));
+    let create_gate = MockLifecycleGate::new();
+    overrides.set_create_lifecycle_gate(create_gate.clone());
     let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
     let server = httpmock::MockServer::start_async().await;
     let body = storage_archive(b"workspace retry archive");
@@ -632,7 +634,7 @@ async fn execute_inner_retries_fresh_after_workspace_cache_hit_create_failure() 
         seed_workspace_image_cache(&cache, &runner_paths, "sess-cache-hit", 16).await;
     let mut telemetry = test_telemetry(&config, &ctx);
 
-    let outcome = execute_new_sandbox(
+    let execution = execute_new_sandbox(
         &factory,
         &ctx,
         NewSandboxDispatch {
@@ -643,9 +645,28 @@ async fn execute_inner_retries_fresh_after_workspace_cache_hit_create_failure() 
         &params,
         &mut telemetry,
         tokio_util::sync::CancellationToken::new(),
-    )
-    .await
-    .unwrap();
+    );
+    let admission = async {
+        create_gate
+            .wait_entered(1, Duration::from_secs(5))
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while full_get.calls_async().await == 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("first archive owner should request before create failure");
+        create_gate.release_one();
+        create_gate
+            .wait_entered(2, Duration::from_secs(5))
+            .await
+            .unwrap();
+        create_gate.release_one();
+    };
+    let (outcome, ()) = tokio::join!(execution, admission);
+    let outcome = outcome.unwrap();
 
     assert_eq!(outcome.exit_code(), 0);
     assert!(outcome.workspace_image.is_none());
@@ -872,7 +893,7 @@ async fn process_timeout_invalidates_consumed_workspace_cache_without_fallback()
 }
 
 #[tokio::test]
-async fn dns_replacement_records_completion_when_fresh_storage_prepare_fails() {
+async fn dns_replacement_storage_classification_failure_prevents_agent_start() {
     let dir = tempfile::tempdir().unwrap();
     let runner_paths = RunnerPaths::new(dir.path().join("runner"));
     let cache = WorkspaceImageCache::new(runner_paths.clone());
@@ -886,7 +907,7 @@ async fn dns_replacement_records_completion_when_fresh_storage_prepare_fails() {
     let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
     let mut ctx = minimal_context();
     let mount_path = format!("{CANONICAL_WORKING_DIR}/data");
-    let manifest = StorageManifest {
+    let mut manifest = StorageManifest {
         storages: vec![api_storage(
             "dns-retry-storage",
             &mount_path,
@@ -895,6 +916,7 @@ async fn dns_replacement_records_completion_when_fresh_storage_prepare_fails() {
         )],
         artifacts: Vec::new(),
     };
+    manifest.storages[0].archive_size = Some(1);
     let storage_fingerprints =
         crate::storage_fingerprints::StorageFingerprints::from_manifest(&manifest);
     ctx.storage_manifest = Some(manifest);
@@ -934,23 +956,20 @@ async fn dns_replacement_records_completion_when_fresh_storage_prepare_fails() {
     ))
     .await;
 
-    assert!(result.is_err());
-    assert_eq!(
-        overrides.create_configs().len(),
-        1,
-        "result={:?}; telemetry={:?}",
-        result.as_ref().err(),
-        telemetry.pending_ops_snapshot(),
-    );
+    let outcome = result.unwrap();
+    assert_eq!(outcome.exit_code(), 1);
+    assert!(outcome.failure.unwrap().error.contains("lock dir"));
+    assert!(overrides.start_agent_process_calls().is_empty());
+    assert_eq!(overrides.create_configs().len(), 2,);
     assert_telemetry_action(
         &telemetry,
         "runner_fresh_sandbox_dns_readiness_retry",
-        false,
-        Some("replacement_prepare_failed"),
+        true,
+        None,
     );
     let completion = captured_events_named(&events, "guest DNS readiness replacement completed");
     assert_eq!(completion.len(), 1, "events={events:#?}");
-    assert_captured_field(completion[0], "success", "false");
+    assert_captured_field(completion[0], "success", "true");
     assert_captured_field(completion[0], "workspace_fallback", "true");
 }
 

@@ -15,11 +15,19 @@ import { tmpdir } from "os";
 import { http, HttpResponse } from "msw";
 import { server } from "../../../mocks/server";
 import { downloadFileCommand } from "../download-file";
+import { artifactCommand } from "../../artifact";
 import chalk from "chalk";
 
 const DOWNLOAD_URL = "http://localhost:3000/api/web/download-file";
 
-describe("okou web download-file command", () => {
+describe.each([
+  { name: "okou web download-file", command: downloadFileCommand, prefix: [] },
+  {
+    name: "okou artifact download",
+    command: artifactCommand,
+    prefix: ["download"],
+  },
+])("$name", ({ command, prefix }) => {
   vi.spyOn(process, "exit").mockImplementation((() => {
     throw new Error("process.exit called");
   }) as never);
@@ -34,12 +42,14 @@ describe("okou web download-file command", () => {
     chalk.level = 0;
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
+    vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
 
     tmpDir = join(tmpdir(), `web-download-test-${Date.now()}`);
     mkdirSync(tmpDir, { recursive: true });
   });
 
   afterEach(() => {
+    vi.unstubAllEnvs();
     mockConsoleLog.mockClear();
     mockConsoleError.mockClear();
     rmSync(tmpDir, { recursive: true, force: true });
@@ -48,21 +58,45 @@ describe("okou web download-file command", () => {
   describe("successful download", () => {
     it.each([
       "abc-123-def",
+      "/artifacts/abcxyz1234.txt",
+      "https://app.okou.ai/artifacts/abcxyz1234.txt#detail",
+      "https://app.okou.ai/artifacts/00000000000040008000000000000023.txt",
       artifactReferencePath(
         "00000000-0000-4000-8000-000000000023",
         "result.txt",
       ),
     ])(
-      "streams an authenticated file ID or hostless reference (%s)",
+      "streams an authenticated file ID or artifact reference (%s)",
       async (input) => {
         const payload = Buffer.from("hello world");
         const outPath = join(tmpDir, "result.txt");
 
         server.use(
+          http.get(
+            "http://localhost:3000/api/artifact-references/abcxyz1234.txt",
+            ({ request }) => {
+              expect(new URL(request.url).searchParams.get("kind")).toBe(
+                "file",
+              );
+              expect(request.headers.get("authorization")).toBe(
+                "Bearer test-token",
+              );
+              return HttpResponse.json({
+                url: "https://r2.example.com/file",
+                expiresAt: "2026-09-18T00:00:00Z",
+                filename: "result.txt",
+                contentType: "text/plain",
+                target: {
+                  kind: "file",
+                  id: "00000000-0000-4000-8000-000000000023",
+                },
+              });
+            },
+          ),
           http.get(DOWNLOAD_URL, ({ request }) => {
             const url = new URL(request.url);
             expect(url.searchParams.get("file_id")).toBe(
-              input.startsWith("/artifacts/")
+              input.includes("/artifacts/")
                 ? "00000000-0000-4000-8000-000000000023"
                 : input,
             );
@@ -80,9 +114,10 @@ describe("okou web download-file command", () => {
           }),
         );
 
-        await downloadFileCommand.parseAsync([
+        await command.parseAsync([
           "node",
           "cli",
+          ...prefix,
           input,
           "-o",
           outPath,
@@ -117,7 +152,7 @@ describe("okou web download-file command", () => {
         }),
       );
 
-      await downloadFileCommand.parseAsync(["node", "cli", "uuid-default"]);
+      await command.parseAsync(["node", "cli", ...prefix, "uuid-default"]);
 
       const stdout = mockConsoleLog.mock.calls.flat().join("\n");
       const parsed = JSON.parse(stdout) as Record<string, unknown>;
@@ -144,9 +179,10 @@ describe("okou web download-file command", () => {
       );
 
       await expect(async () => {
-        await downloadFileCommand.parseAsync([
+        await command.parseAsync([
           "node",
           "cli",
+          ...prefix,
           "missing-uuid",
           "-o",
           join(tmpDir, "missing.bin"),
@@ -169,9 +205,10 @@ describe("okou web download-file command", () => {
       );
 
       await expect(async () => {
-        await downloadFileCommand.parseAsync([
+        await command.parseAsync([
           "node",
           "cli",
+          ...prefix,
           "some-uuid",
           "-o",
           join(tmpDir, "f1.bin"),

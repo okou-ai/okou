@@ -58,6 +58,37 @@ async fn direct_file_transfer_completes_across_notification_outages() {
     h.shutdown().await;
 }
 
+#[tokio::test]
+async fn active_upload_outlives_the_common_rpc_setup_deadline() {
+    let mut h = Harness::new(Reply::Sftp("normal")).await;
+    let _resolve = h.resolve(h.credential(true)).await;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("file");
+    let data = b"transfer after the setup deadline";
+    let guest = open(
+        &h,
+        "upload",
+        upload_params(&path, data.len(), false),
+        900_000,
+    )
+    .await;
+    let (read, write) = tokio::io::split(guest);
+    // Remote staging proves setup finished before crossing its deadline.
+    wait_for(|| std::fs::read_dir(dir.path()).unwrap().count() == 1).await;
+    tokio::time::pause();
+    tokio::time::advance(Duration::from_secs(61)).await;
+    tokio::time::resume();
+    let mut writer = Writer::input(write);
+    writer.send(&Frame::Data(data.to_vec())).await.unwrap();
+    writer.send(&Frame::End).await.unwrap();
+    let (outcome, _) = response(read).await;
+    assert_eq!(outcome["type"], "completed");
+    assert_eq!(outcome["sha256"], hex::encode(Sha256::digest(data)));
+    assert_eq!(std::fs::read(&path).unwrap(), data);
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    h.shutdown().await;
+}
+
 pub(super) async fn upload_across_notification_outages(h: &Harness) {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("file");

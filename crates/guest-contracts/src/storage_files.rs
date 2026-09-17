@@ -76,6 +76,77 @@ pub fn decoded_mount_conflicts(
         || child.starts_with(".AGENTS.md.vm0-copy-")
 }
 
+/// Validate decoded ownership against the complete manifest before transport splitting.
+pub fn validate_bindings<'a>(
+    manifest: &crate::storage_manifest::Manifest,
+    mounts: impl IntoIterator<Item = &'a str>,
+) -> io::Result<()> {
+    let mut manifest_mounts = HashSet::new();
+    for mount in manifest
+        .storages
+        .iter()
+        .map(|entry| entry.mount_path.as_str())
+        .chain(
+            manifest
+                .artifacts
+                .iter()
+                .map(|entry| entry.mount_path.as_str()),
+        )
+    {
+        if !manifest_mounts.insert(mount) {
+            return Err(io::Error::other("duplicate storage manifest mount"));
+        }
+    }
+    let mut selected = HashSet::new();
+    for mount in mounts {
+        if !selected.insert(mount) {
+            return Err(io::Error::other("duplicate decoded storage mount"));
+        }
+        let (index, entry) = manifest
+            .storages
+            .iter()
+            .enumerate()
+            .find(|(_, entry)| entry.mount_path == mount)
+            .ok_or_else(|| io::Error::other("decoded storage mount absent"))?;
+        if entry.cached
+            || entry.extract_path.is_some()
+            || entry.instructions_target_filename.is_some()
+            || entry
+                .archive_url
+                .as_deref()
+                .is_none_or(|url| url.is_empty() || url == "null")
+        {
+            return Err(io::Error::other(
+                "decoded storage source is not an ordinary download",
+            ));
+        }
+        let target = Path::new(mount);
+        for (other_index, other) in manifest.storages.iter().enumerate() {
+            if other_index == index {
+                continue;
+            }
+            if decoded_mount_conflicts(
+                target,
+                Path::new(&other.mount_path),
+                other.instructions_target_filename.as_deref(),
+                other.extract_path.as_deref().map(Path::new),
+                other
+                    .archive_url
+                    .as_deref()
+                    .is_some_and(|url| url != "null"),
+            ) {
+                return Err(io::Error::other("decoded storage overlaps another mount"));
+            }
+        }
+        for other in &manifest.artifacts {
+            if decoded_mount_conflicts(target, Path::new(&other.mount_path), None, None, true) {
+                return Err(io::Error::other("decoded storage overlaps another mount"));
+            }
+        }
+    }
+    Ok(())
+}
+
 fn absolute_mount(path: &Path) -> bool {
     path.is_absolute()
         && !path.as_os_str().as_encoded_bytes().contains(&0)

@@ -6,6 +6,10 @@ import { apiErrorSchema } from "./errors";
 import { runFailureReasonTokenSchema } from "./run-failure-reasons";
 import { piMemoryCitationSchema } from "./pi-memory-citations";
 import {
+  X_RESOURCE_USAGE_MAX_IDS,
+  xResourceUsageEventSchema,
+} from "./x-resource-usage";
+import {
   artifactMissingRootPolicySchema,
   RESUME_SESSION_HISTORY_MAX_BYTES,
   runnerHostnameSchema,
@@ -1278,9 +1282,38 @@ export const webhookUsageEventContract = c.router({
     body: z
       .object({
         runId: z.string().min(1, "runId is required"),
-        events: z.array(webhookUsageEventItemSchema).min(1).max(100),
+        events: z
+          .array(
+            z.union([webhookUsageEventItemSchema, xResourceUsageEventSchema]),
+          )
+          .min(1)
+          .max(100),
       })
-      .strict(),
+      .strict()
+      .superRefine((body, ctx) => {
+        let resourceCount = 0;
+        let hasResourceObservation = false;
+        for (const event of body.events) {
+          if ("protocol" in event) {
+            hasResourceObservation = true;
+            resourceCount += event.resources.length;
+          }
+        }
+        if (resourceCount > X_RESOURCE_USAGE_MAX_IDS) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["events"],
+            message: "At most 1000 resource identities are allowed per batch",
+          });
+        }
+        if (hasResourceObservation && !z.uuid().safeParse(body.runId).success) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["runId"],
+            message: "Resource observations require a UUID run ID",
+          });
+        }
+      }),
     responses: {
       200: z.object({
         success: z.boolean(),

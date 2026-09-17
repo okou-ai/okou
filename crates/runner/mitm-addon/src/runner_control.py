@@ -14,6 +14,7 @@ import re
 import socket
 import struct
 import threading
+from collections.abc import Callable
 from concurrent.futures import Future
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
@@ -86,11 +87,14 @@ class ControlServer:
         generation: str,
         registry_owner: registry_control.RegistryControl | None = None,
         delivery_owner: runner_flush_lifecycle.DeliveryControl | None = None,
+        *,
+        usage_snapshot: Callable[[str], dict[str, object]] | None = None,
     ) -> None:
         self._directory = directory
         self._generation = _identifier(generation)
         self._registry_owner = registry_owner
         self._delivery_owner = delivery_owner
+        self._usage_snapshot = usage_snapshot
         self._started: Future[None] = Future()
         self._shutdown: Future[None] = Future()
         self._tasks: set[asyncio.Task[None]] = set()
@@ -204,6 +208,14 @@ class ControlServer:
                 return self._error(request_id, "invalid_request")
             if generation != self._generation:
                 return self._error(request_id, "stale_generation")
+            if method == "usage.snapshot":
+                params = request["params"]
+                if set(params) != {"runId"}:
+                    return self._error(request_id, "invalid_request")
+                run_id = _identifier(params["runId"])
+                if self._usage_snapshot is None:
+                    return self._error(request_id, "not_ready")
+                return self._result(request_id, self._usage_snapshot(run_id))
             if method in {"delivery.flush", "delivery.status", "delivery.drain"}:
                 return await self._delivery(request_id, method, request["params"])
             if method == "logs.flush":

@@ -21,7 +21,7 @@ export function morningBriefEnrollmentWhere(
 }
 
 export async function loadMorningBriefEnrollment(
-  db: ReadonlyDb,
+  db: Pick<ReadonlyDb, "select">,
   identity: MorningBriefMemberIdentity,
 ) {
   const [row] = await db

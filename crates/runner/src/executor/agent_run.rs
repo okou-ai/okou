@@ -1647,7 +1647,7 @@ async fn prepare_guest_storage(
                 let files = prepared.plan.take_decoded();
                 let guest_manifest = prepared.plan.into_guest_manifest();
                 let download_started = Instant::now();
-                let download_result = super::storage::download_storages_with_files(sandbox, context, &guest_manifest, &files).await;
+                let download_result = super::storage::download_storages_with_files(sandbox, context, guest_manifest, &files).await;
                 telemetry.record(
                     "runner_storage_manifest_guest_storage_apply",
                     download_started.elapsed(),
@@ -1681,7 +1681,7 @@ async fn prepare_guest_storage(
                 let files = plan.take_decoded();
                 let guest_manifest = plan.into_guest_manifest();
                 let download_started = Instant::now();
-                let download_result = super::storage::download_storages_with_files(sandbox, context, &guest_manifest, &files).await;
+                let download_result = super::storage::download_storages_with_files(sandbox, context, guest_manifest, &files).await;
                 telemetry.record(
                     "runner_storage_manifest_guest_storage_apply",
                     download_started.elapsed(),

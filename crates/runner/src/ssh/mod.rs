@@ -16,7 +16,6 @@ mod sessions;
 mod tests;
 
 use runner_rpc_proto::{Delivery, ErrorCode, Response, ResponseWriter};
-use sandbox::{AcceptedGuestRpc, GuestRpcAcceptor, Sandbox};
 use serde::{Deserialize, Serialize};
 use std::{
     sync::{Arc, Mutex},
@@ -24,7 +23,6 @@ use std::{
 };
 use tokio::{
     sync::{OwnedSemaphorePermit, Semaphore},
-    task::{JoinHandle, JoinSet},
     time::Instant,
 };
 use tokio_util::sync::CancellationToken;
@@ -34,7 +32,6 @@ use authority::{Authority, CredentialAuth, PreparedAuth, PreparedCredential, Tru
 use io::GuestIo;
 use network::{Network, PublicNetwork};
 
-const RUN_REQUEST_CAPACITY: usize = 8;
 const TERMINAL_RESERVE: Duration = Duration::from_secs(1);
 
 /// Only allow-listed business codes cross the guest/log boundary.
@@ -138,110 +135,33 @@ impl SshRuntime {
         })))
     }
 
-    pub(crate) fn install(
-        self: &Arc<Self>,
-        sandbox: &dyn Sandbox,
-        run: RunId,
-        cancel: &CancellationToken,
-    ) -> Option<SshRun> {
-        let acceptor = sandbox.guest_rpc(&run.to_string())?;
-        Some(self.start(acceptor, sandbox.id().to_string(), run, cancel))
-    }
-
-    fn start(
-        self: &Arc<Self>,
-        acceptor: Arc<dyn GuestRpcAcceptor>,
-        sandbox: String,
-        run: RunId,
-        cancel: &CancellationToken,
-    ) -> SshRun {
-        let cancel = cancel.child_token();
-        let runtime = Arc::clone(self);
-        let task_cancel = cancel.clone();
+    pub(crate) fn for_run(self: &Arc<Self>, run: RunId, cancel: &CancellationToken) -> Arc<Run> {
         let registration = self.cache.register(run);
-        let task_registration = Arc::clone(&registration);
-        let task = tokio::spawn(async move {
-            runtime
-                .serve(acceptor, sandbox, run, task_cancel, task_registration)
-                .await;
-        });
-        SshRun {
-            cancel,
-            task: Some(task),
-            registration,
-        }
-    }
-
-    async fn serve(
-        self: Arc<Self>,
-        acceptor: Arc<dyn GuestRpcAcceptor>,
-        sandbox: String,
-        run: RunId,
-        cancel: CancellationToken,
-        registration: Arc<cache::Registration>,
-    ) {
-        let permits = Arc::new(Semaphore::new(RUN_REQUEST_CAPACITY));
-        let sessions = sessions::Manager::new(Arc::clone(&self), run, registration, cancel.clone());
-        let mut prune = tokio::time::interval(Duration::from_secs(30));
-        prune.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        let mut tasks = JoinSet::new();
-        loop {
-            let accepted = tokio::select! {
-                biased;
-                () = cancel.cancelled() => break,
-                _ = prune.tick() => { sessions.prune(); continue; }
-                result = tasks.join_next(), if !tasks.is_empty() => {
-                    if result.is_some_and(|result| result.is_err()) { tracing::warn!(run_id = %run, "SSH request task failed"); }
-                    continue;
-                }
-                result = acceptor.accept() => match result { Ok(accepted) => accepted, Err(_) => break },
-            };
-            if accepted.sandbox_id != sandbox {
-                continue;
-            }
-            let Ok(permit) = Arc::clone(&permits).try_acquire_owned() else {
-                tracing::info!(run_id = %run, sandbox_id = %sandbox, outcome = "resource_exhausted", "SSH admission rejected");
-                reject(accepted, ErrorCode::ResourceExhausted, &cancel).await;
-                continue;
-            };
-            let runtime = Arc::clone(&self);
-            let scope = Scope {
-                cancelled: cancel.child_token(),
-                sandbox_cancelled: accepted.cancelled,
-                deadline: Instant::now() + Duration::from_secs(60),
-            };
-            let lease = Arc::new(permit);
-            let sessions = Arc::clone(&sessions);
-            tasks.spawn(async move {
-                runtime
-                    .dispatch(accepted.stream, lease, run, scope, sessions)
-                    .await;
-            });
-        }
-        cancel.cancel();
-        sessions.registration.close();
-        while tasks.join_next().await.is_some() {}
-        sessions.shutdown().await;
+        Arc::new(Run {
+            runtime: Arc::clone(self),
+            sessions: sessions::Manager::new(Arc::clone(self), run, registration, cancel.clone()),
+        })
     }
 
     async fn dispatch(
         self: Arc<Self>,
-        mut input: GuestIo,
-        lease: Arc<OwnedSemaphorePermit>,
-        run: RunId,
-        mut scope: Scope,
+        args: crate::guest_rpc::Request,
         sessions: Arc<sessions::Manager>,
     ) {
-        let _cancel_on_drop = scope.cancelled.clone().drop_guard();
-        let started = Instant::now();
-        let request = scope.wait(runner_rpc_proto::read_request(&mut input)).await;
-        let request = match request {
-            Ok(Ok(request)) => request,
-            _ => {
-                let mut writer = ResponseWriter::new(input);
-                send_generic(&scope, &mut writer, ErrorCode::InvalidRequest).await;
-                return;
-            }
+        let crate::guest_rpc::Request {
+            input,
+            lease,
+            run,
+            started,
+            deadline,
+            cancelled,
+            sandbox_cancelled,
+            request,
+        } = args;
+        let mut scope = Scope {
+            cancelled,
+            sandbox_cancelled,
+            deadline,
         };
         if matches!(
             request.method.as_str(),
@@ -263,10 +183,6 @@ impl SshRuntime {
             return;
         }
         let mut writer = ResponseWriter::new(input);
-        if request.method != "ssh.exec" && !request.method.starts_with("ssh.session.") {
-            send_generic(&scope, &mut writer, ErrorCode::UnknownMethod).await;
-            return;
-        }
         let Some(remaining) = request.remaining_ms.filter(|ms| *ms > 1000) else {
             send_generic(&scope, &mut writer, ErrorCode::InvalidRequest).await;
             return;
@@ -563,39 +479,33 @@ impl Scope {
     }
 }
 
-pub(crate) struct SshRun {
-    cancel: CancellationToken,
-    task: Option<JoinHandle<()>>,
-    registration: Arc<cache::Registration>,
+/// SSH's run-local authority and sessions, independent of guest RPC admission.
+pub(crate) struct Run {
+    runtime: Arc<SshRuntime>,
+    sessions: Arc<sessions::Manager>,
 }
-impl SshRun {
-    pub(crate) async fn shutdown(mut self) {
-        self.cancel.cancel();
-        self.registration.close();
-        if let Some(task) = self.task.take() {
-            let _ = task.await;
-        }
+
+impl Run {
+    pub(crate) fn close(&self) {
+        self.sessions.registration.close();
     }
-}
-impl Drop for SshRun {
-    fn drop(&mut self) {
-        self.cancel.cancel();
-        self.registration.close();
+
+    pub(crate) fn prune(&self) {
+        self.sessions.prune();
+    }
+
+    pub(crate) async fn shutdown(&self) {
+        self.sessions.shutdown().await;
+    }
+
+    pub(crate) async fn dispatch(&self, request: crate::guest_rpc::Request) {
+        Arc::clone(&self.runtime)
+            .dispatch(request, Arc::clone(&self.sessions))
+            .await;
     }
 }
 
 async fn send_generic(scope: &Scope, writer: &mut ResponseWriter<GuestIo>, code: ErrorCode) {
-    let _ = scope
-        .wait(writer.send(&Response::error(code, Delivery::NotDispatched)))
-        .await;
-}
-async fn reject(accepted: AcceptedGuestRpc, code: ErrorCode, cancel: &CancellationToken) {
-    let scope = Scope {
-        cancelled: cancel.clone(),
-        sandbox_cancelled: accepted.cancelled,
-        deadline: Instant::now() + Duration::from_millis(100),
-    };
-    let mut writer = ResponseWriter::new(accepted.stream);
     let _ = scope
         .wait(writer.send(&Response::error(code, Delivery::NotDispatched)))
         .await;

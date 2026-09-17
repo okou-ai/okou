@@ -1,4 +1,7 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+
+import { GetObjectCommand } from "@aws-sdk/client-s3";
+import { cronConnectorCatalogContract } from "@okouai/api-contracts/contracts/cron";
 
 import {
   CONNECTOR_ACCOUNT_INSPECTION_MAX_SELECTIONS,
@@ -20,7 +23,12 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { mockEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
+import {
+  API_TEST_CONNECTOR_CATALOG,
+  captureApiTestConnectorCatalogCleanup,
+} from "../../../test-fixtures/connector-catalog";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { connectorsRoutes } from "../connectors";
@@ -28,6 +36,7 @@ import { customConnectorsRoutes } from "../custom-connectors";
 import { customConnectorsDeleteRoutes } from "../custom-connectors-delete";
 import { customConnectorsValuesSetRoutes } from "../custom-connectors-values-set";
 import { featureSwitchesRoutes } from "../feature-switches";
+import { cronConnectorCatalogRoutes } from "../cron-connector-catalog";
 import {
   seedConnectorStorageRow,
   setBuiltinOAuthScopeFacts,
@@ -35,6 +44,7 @@ import {
 } from "./helpers/connector-credential-storage-state";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
+import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -819,168 +829,245 @@ describe("connector account lifecycle routes", () => {
 
     const createdAccountIds: string[] = [];
     const connectorsApi = connectorClient();
-    for (let index = 0; index < 101; index += 1) {
-      const label = `Bulk ${index.toString().padStart(3, "0")}`;
-      const created = await accept(
-        connectorsApi.connect({
-          headers: authHeaders(),
-          params: { connectorSlug: "openai" },
-          body: {
-            authMethod: "api-token",
-            account: { intent: "add", displayName: label },
-            values: { apiKey: `sk-${label}` },
-          },
-        }),
-        [200],
-      );
-      createdAccountIds.push(created.body.id);
+    // Four owned streams keep independent requests moving without unbounded
+    // fan-out. Wait for every stream before fixture cleanup after a failure.
+    const created = await Promise.allSettled(
+      Array.from({ length: 4 }, async (_, stream) => {
+        for (let index = stream; index < 101; index += 4) {
+          const label = `Bulk ${index.toString().padStart(3, "0")}`;
+          const response = await accept(
+            connectorsApi.connect({
+              headers: authHeaders(),
+              params: { connectorSlug: "openai" },
+              body: {
+                authMethod: "api-token",
+                account: { intent: "add", displayName: label },
+                values: { apiKey: `sk-${label}` },
+              },
+            }),
+            [200],
+          );
+          createdAccountIds[index] = response.body.id;
+        }
+      }),
+    );
+    for (const result of created) {
+      if (result.status === "rejected") {
+        throw result.reason;
+      }
     }
     return createdAccountIds;
   }
 
-  it("paginates more than one hundred accounts", async () => {
-    await createBulkAccounts();
-    const ids = new Set<string>();
-    let cursor: string | undefined;
-    do {
-      const page = await accept(
+  describe("more than one hundred accounts", () => {
+    let createdAccountIds: string[];
+
+    beforeEach(async () => {
+      // Own the source, not just its version, so other files cannot replace
+      // this case's catalog while its 101 accounts are created and queried.
+      const bucket = `test-connector-capacity-${randomUUID()}`;
+      mockEnv("R2_USER_STORAGES_BUCKET_NAME", bucket);
+      // Infrastructure cleanup has no production endpoint. Capture only this
+      // source before env reset; setup and assertions still use real APIs.
+      const catalog = createFixtureOperationOwner(
+        captureApiTestConnectorCatalogCleanup(),
+      );
+      const catalogBytes = Buffer.from(
+        JSON.stringify(API_TEST_CONNECTOR_CATALOG),
+      );
+      const catalogKey = `connectors/v3/releases/${API_TEST_CONNECTOR_CATALOG.catalogVersion}/catalog.json`;
+      const objects = new Map([
+        [catalogKey, catalogBytes],
+        [
+          "connectors/v3/active.json",
+          Buffer.from(
+            JSON.stringify({
+              catalogVersion: API_TEST_CONNECTOR_CATALOG.catalogVersion,
+              catalogKey,
+              catalogDigest: `sha256:${createHash("sha256").update(catalogBytes).digest("hex")}`,
+            }),
+          ),
+        ],
+      ]);
+      context.mocks.s3.send.mockImplementation((command: unknown) => {
+        if (
+          !(command instanceof GetObjectCommand) ||
+          command.input.Bucket !== bucket
+        ) {
+          throw new Error("Unexpected catalog object request");
+        }
+        const bytes = objects.get(command.input.Key ?? "");
+        if (!bytes) {
+          throw new Error("Catalog object unavailable");
+        }
+        return Promise.resolve({
+          ContentLength: bytes.length,
+          Body: {
+            async *[Symbol.asyncIterator]() {
+              yield bytes;
+            },
+          },
+        });
+      });
+      const cronSecret = `test-cron-${randomUUID()}`;
+      mockEnv("CRON_SECRET", cronSecret);
+      await catalog.run(async () => {
+        const cron = setupApp({ context, routes: cronConnectorCatalogRoutes })(
+          cronConnectorCatalogContract,
+        );
+        const synced = await accept(
+          cron.sync({ headers: { authorization: `Bearer ${cronSecret}` } }),
+          [200],
+        );
+        if (synced.body.outcome !== "accepted") {
+          throw new Error(
+            `Catalog fixture sync failed: ${synced.body.outcome}`,
+          );
+        }
+      });
+      // Every case owns a complete API-created fixture before exercising its
+      // query contract. The enclosing tracker cleans up that case's accounts.
+      createdAccountIds = await catalog.run(createBulkAccounts);
+    });
+
+    it("paginates more than one hundred accounts", async () => {
+      const ids = new Set<string>();
+      let cursor: string | undefined;
+      do {
+        const page = await accept(
+          accountClient().connections({
+            headers: authHeaders(),
+            query: {
+              kind: "builtin",
+              connectorSlug: "openai",
+              limit: 23,
+              ...(cursor ? { cursor } : {}),
+            },
+          }),
+          [200],
+        );
+        for (const account of page.body.connections) {
+          ids.add(account.id);
+        }
+        cursor = page.body.nextCursor ?? undefined;
+      } while (cursor);
+      expect(ids.size).toBe(101);
+    });
+
+    it("summarizes more than one hundred accounts", async () => {
+      const summary = await accept(
+        accountClient().summaries({ headers: authHeaders() }),
+        [200],
+      );
+      expect(summary.body.summaries).toContainEqual(
+        expect.objectContaining({
+          target: { kind: "builtin", connectorSlug: "openai" },
+          accountCount: 101,
+        }),
+      );
+    });
+
+    it("searches display names across more than one hundred accounts", async () => {
+      const searched = await accept(
         accountClient().connections({
           headers: authHeaders(),
           query: {
             kind: "builtin",
             connectorSlug: "openai",
-            limit: 23,
-            ...(cursor ? { cursor } : {}),
+            limit: 100,
+            search: "Bulk 042",
           },
         }),
         [200],
       );
-      for (const account of page.body.connections) {
-        ids.add(account.id);
+      expect(searched.body.connections).toHaveLength(1);
+      expect(searched.body.connections[0]!.displayName).toBe("Bulk 042");
+    });
+
+    it("searches fallback names outside the first account page", async () => {
+      const firstPage = await accept(
+        accountClient().connections({
+          headers: authHeaders(),
+          query: { kind: "builtin", connectorSlug: "openai", limit: 23 },
+        }),
+        [200],
+      );
+      const firstPageIds = new Set(
+        firstPage.body.connections.map((account) => {
+          return account.id;
+        }),
+      );
+      const accountOutsideFirstPage = createdAccountIds.find((id) => {
+        return !firstPageIds.has(id);
+      });
+      if (!accountOutsideFirstPage) {
+        throw new Error("Expected an account outside the first page");
       }
-      cursor = page.body.nextCursor ?? undefined;
-    } while (cursor);
-    expect(ids.size).toBe(101);
-  });
-
-  it("summarizes more than one hundred accounts", async () => {
-    await createBulkAccounts();
-    const summary = await accept(
-      accountClient().summaries({ headers: authHeaders() }),
-      [200],
-    );
-    expect(summary.body.summaries).toContainEqual(
-      expect.objectContaining({
-        target: { kind: "builtin", connectorSlug: "openai" },
-        accountCount: 101,
-      }),
-    );
-  });
-
-  it("searches display names across more than one hundred accounts", async () => {
-    await createBulkAccounts();
-    const searched = await accept(
-      accountClient().connections({
-        headers: authHeaders(),
-        query: {
-          kind: "builtin",
-          connectorSlug: "openai",
-          limit: 100,
-          search: "Bulk 042",
-        },
-      }),
-      [200],
-    );
-    expect(searched.body.connections).toHaveLength(1);
-    expect(searched.body.connections[0]!.displayName).toBe("Bulk 042");
-  });
-
-  it("searches fallback names outside the first account page", async () => {
-    const createdAccountIds = await createBulkAccounts();
-    const firstPage = await accept(
-      accountClient().connections({
-        headers: authHeaders(),
-        query: { kind: "builtin", connectorSlug: "openai", limit: 23 },
-      }),
-      [200],
-    );
-    const firstPageIds = new Set(
-      firstPage.body.connections.map((account) => {
-        return account.id;
-      }),
-    );
-    const accountOutsideFirstPage = createdAccountIds.find((id) => {
-      return !firstPageIds.has(id);
-    });
-    if (!accountOutsideFirstPage) {
-      throw new Error("Expected an account outside the first page");
-    }
-    await accept(
-      accountClient().rename({
-        headers: authHeaders(),
-        params: { connectionId: accountOutsideFirstPage },
-        body: {
-          target: { kind: "builtin", connectorSlug: "openai" },
+      await accept(
+        accountClient().rename({
+          headers: authHeaders(),
+          params: { connectionId: accountOutsideFirstPage },
+          body: {
+            target: { kind: "builtin", connectorSlug: "openai" },
+            displayName: null,
+          },
+        }),
+        [200],
+      );
+      const searchedByFallback = await accept(
+        accountClient().connections({
+          headers: authHeaders(),
+          query: {
+            kind: "builtin",
+            connectorSlug: "openai",
+            limit: 100,
+            search: accountOutsideFirstPage.slice(0, 8),
+          },
+        }),
+        [200],
+      );
+      expect(searchedByFallback.body.connections).toContainEqual(
+        expect.objectContaining({
+          id: accountOutsideFirstPage,
           displayName: null,
-        },
-      }),
-      [200],
-    );
-    const searchedByFallback = await accept(
-      accountClient().connections({
-        headers: authHeaders(),
-        query: {
-          kind: "builtin",
-          connectorSlug: "openai",
-          limit: 100,
-          search: accountOutsideFirstPage.slice(0, 8),
-        },
-      }),
-      [200],
-    );
-    expect(searchedByFallback.body.connections).toContainEqual(
-      expect.objectContaining({
-        id: accountOutsideFirstPage,
-        displayName: null,
-      }),
-    );
-  });
-
-  it("returns no matches for absent searches with more than one hundred accounts", async () => {
-    await createBulkAccounts();
-    const noMatch = await accept(
-      accountClient().connections({
-        headers: authHeaders(),
-        query: {
-          kind: "builtin",
-          connectorSlug: "openai",
-          limit: 100,
-          search: "no-matching-connector-account",
-        },
-      }),
-      [200],
-    );
-    expect(noMatch.body).toStrictEqual({
-      connections: [],
-      nextCursor: null,
+        }),
+      );
     });
-  });
 
-  it("rejects blank searches with more than one hundred accounts", async () => {
-    await createBulkAccounts();
-    const response = await accept(
-      accountClient().connections({
-        headers: authHeaders(),
-        query: {
-          kind: "builtin",
-          connectorSlug: "openai",
-          limit: 100,
-          search: " ",
-        },
-      }),
-      [400],
-    );
-    expect(response.status).toBe(400);
+    it("returns no matches for absent searches with more than one hundred accounts", async () => {
+      const noMatch = await accept(
+        accountClient().connections({
+          headers: authHeaders(),
+          query: {
+            kind: "builtin",
+            connectorSlug: "openai",
+            limit: 100,
+            search: "no-matching-connector-account",
+          },
+        }),
+        [200],
+      );
+      expect(noMatch.body).toStrictEqual({
+        connections: [],
+        nextCursor: null,
+      });
+    });
+
+    it("rejects blank searches with more than one hundred accounts", async () => {
+      const response = await accept(
+        accountClient().connections({
+          headers: authHeaders(),
+          query: {
+            kind: "builtin",
+            connectorSlug: "openai",
+            limit: 100,
+            search: " ",
+          },
+        }),
+        [400],
+      );
+      expect(response.status).toBe(400);
+    });
   });
 
   it("does not enumerate or mutate another member account", async () => {

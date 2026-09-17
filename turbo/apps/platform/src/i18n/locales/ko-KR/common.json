@@ -439,6 +439,16 @@
     }
   },
   "artifacts": {
+    "access": {
+      "backToBrand": "{{brandName}}(으)로 돌아가기",
+      "description": "비공개이거나 더 이상 사용할 수 없을 수 있습니다.",
+      "help": "링크를 공유한 사람에게 접근 권한을 확인해 달라고 요청하세요.",
+      "signedInAs": "{{email}} 계정으로 로그인됨",
+      "switchAccount": "계정 전환",
+      "switchAccountFailed": "계정 전환 화면을 열 수 없습니다. 다시 시도해 주세요.",
+      "title": "이 아티팩트를 볼 수 없습니다",
+      "tryAgain": "다시 시도"
+    },
     "actions": {
       "backToAll": "모든 아티팩트로 돌아가기",
       "backToArtifacts": "아티팩트로 돌아가기",
@@ -579,9 +589,20 @@
       "videoLabel": "{{filename}} 비디오 미리보기"
     },
     "sharing": {
-      "shareOrganization": "조직에 공유",
-      "sharePublic": "공개적으로 공유",
-      "unavailable": "이 아티팩트를 사용할 수 없거나 액세스 권한이 없습니다."
+      "accessLabel": "액세스 권한",
+      "copyLink": "링크 복사",
+      "loadFailed": "권한을 불러올 수 없습니다",
+      "loadingPermissions": "권한을 불러오는 중",
+      "onlyMe": "나만",
+      "onlyMeDescription": "나만 이 아티팩트를 볼 수 있습니다",
+      "organization": "조직",
+      "organizationDescription": "링크가 있는 {{organization}} 구성원",
+      "permissionsUpdated": "액세스 권한이 업데이트되었습니다",
+      "publicAccess": "공개 액세스",
+      "publicDescription": "링크가 있는 모든 사람이 볼 수 있습니다",
+      "retry": "다시 시도",
+      "savedAutomatically": "변경 사항은 자동으로 저장됩니다",
+      "saving": "저장 중…"
     },
     "sidebar": {
       "openSharedConversation": "공유된 대화 열기",
@@ -686,11 +707,6 @@
       "websitePreview": "{{title}} 웹사이트 템플릿 미리보기",
       "workflow": "워크플로",
       "workflowCatalog": {
-        "alert-metric-moves-slack": {
-          "description": "핵심 지표를 모니터링하고 급격한 변동 시 Slack에 알림을 보냅니다.",
-          "shortDescription": "핵심 지표가 크게 움직이면 Slack에 알립니다.",
-          "title": "지표 변동 시 알림"
-        },
         "auto-inbox-label": {
           "description": "Gmail 라벨이 지정되면 실행되어 해당 메일을 처리하는 워크플로를 만듭니다.",
           "shortDescription": "Gmail 라벨을 붙이면 워크플로를 실행합니다.",
@@ -700,21 +716,6 @@
           "description": "준비 완료 라벨이 붙은 PR을 검토하고 CI를 기다린 후 병합하고 Slack에 게시합니다.",
           "shortDescription": "CI가 통과한 PR을 자동으로 머지합니다.",
           "title": "GitHub PR 자동 병합"
-        },
-        "blog-posts-to-x": {
-          "description": "새 블로그 글을 소셜용 문구로 바꿔 Buffer 대기열에 넣습니다.",
-          "shortDescription": "새 블로그 글을 소셜 게시물로 만듭니다.",
-          "title": "블로그 게시물을 소셜 게시물로 전환"
-        },
-        "build-weekly-deck-gamma": {
-          "description": "이번 주 지표를 Gamma에서 발표용 데크로 만듭니다.",
-          "shortDescription": "이번 주 지표를 Gamma 덱으로 만듭니다.",
-          "title": "Gamma에서 주간 데크 만들기"
-        },
-        "business-review-gamma": {
-          "description": "이번 달 지표를 Gamma에서 비즈니스 리뷰 데크로 만듭니다.",
-          "shortDescription": "이번 달 지표를 리뷰 덱으로 만듭니다.",
-          "title": "Gamma에서 비즈니스 리뷰 만들기"
         },
         "catch-calendar-conflicts": {
           "description": "캘린더에서 중복 예약을 찾아 미리 알림을 보냅니다.",
@@ -736,30 +737,15 @@
           "shortDescription": "가입 퍼널에서 이탈이 가장 큰 지점을 알려줍니다.",
           "title": "PostHog 가입 퍼널 확인"
         },
-        "clickup-slack-standup": {
-          "description": "매일 아침 ClickUp 작업을 모아 팀 스탠드업 요약을 Slack에 게시합니다.",
-          "shortDescription": "ClickUp 작업으로 아침 스탠드업을 게시합니다.",
-          "title": "ClickUp Slack 스탠드업"
-        },
         "compare-google-ads-last-month": {
           "description": "광고비와 ROAS를 지난달과 비교하고 이상 신호를 Slack에 알립니다.",
           "shortDescription": "광고비와 ROAS를 지난달과 비교합니다.",
           "title": "Google Ads와 지난달 비교"
         },
-        "competitive-intel-monitor": {
-          "description": "경쟁사 사이트의 가격과 기능 변화를 모니터링해 Notion에 기록하고 Slack에 알립니다.",
-          "shortDescription": "경쟁사 가격 변화를 Notion에 기록합니다.",
-          "title": "경쟁사 동향 모니터"
-        },
-        "daily-company-brief-slack": {
-          "description": "제품, 성장, 수익 데이터를 모아 Slack에 일일 브리핑을 게시합니다.",
-          "shortDescription": "제품·성장·매출을 한 편의 브리핑으로 모읍니다.",
-          "title": "Slack에 일일 회사 브리핑 게시"
-        },
-        "daily-industry-news-slack": {
-          "description": "당일 관련 산업 뉴스를 모아 Slack 브리핑으로 게시합니다.",
-          "shortDescription": "그날의 업계 소식을 Slack에 정리합니다.",
-          "title": "Slack에 일일 산업 뉴스 게시"
+        "creator-shortlist-to-sheets": {
+          "description": "검토 중인 크리에이터를 도달과 engagement로 평가해 시트 하나에 순위대로 정리합니다.",
+          "shortDescription": "도달과 engagement로 크리에이터 순위를 매깁니다.",
+          "title": "Google 스프레드시트로 크리에이터 후보 목록 만들기"
         },
         "daily-standup-report": {
           "description": "매일 아침 제품과 엔지니어링 지표를 모아 짧은 리포트를 만들고 Slack에 게시합니다.",
@@ -776,11 +762,6 @@
           "shortDescription": "최근 소식을 모아 뉴스레터를 만듭니다.",
           "title": "Mailchimp에서 뉴스레터 초안 작성"
         },
-        "draft-replies-notion-faq": {
-          "description": "Notion FAQ를 기반으로 티켓 답변 초안을 작성합니다.",
-          "shortDescription": "Notion FAQ로 문의 답변 초안을 씁니다.",
-          "title": "Notion FAQ에서 답변 초안 작성"
-        },
         "feedback-router": {
           "description": "Slack 채널을 지켜보다가 제품 피드백에 라벨과 담당자를 붙여 Notion으로 보냅니다.",
           "shortDescription": "Slack의 제품 피드백을 Notion으로 보냅니다.",
@@ -795,11 +776,6 @@
           "description": "새 Sentry 오류를 사용자 영향도별로 순위 매기고 심각한 오류를 GitHub 이슈로 등록합니다.",
           "shortDescription": "심각한 Sentry 오류를 GitHub 이슈로 등록합니다.",
           "title": "Sentry 충돌을 GitHub 이슈로 등록"
-        },
-        "flag-figma-designs-no-task": {
-          "description": "아직 연결된 Linear 작업이 없는 Figma 디자인을 표시합니다.",
-          "shortDescription": "Linear 작업이 없는 Figma 디자인을 찾아냅니다.",
-          "title": "작업 없는 Figma 디자인 표시"
         },
         "flagged-gmail-todoist-tasks": {
           "description": "표시한 이메일을 자동으로 Todoist 작업으로 전환합니다.",
@@ -816,11 +792,6 @@
           "shortDescription": "머지된 풀 리퀘스트를 리포트로 모읍니다.",
           "title": "GitHub PR 요약"
         },
-        "gmail-followups-auto": {
-          "description": "응답하지 않은 연락처를 찾아 다음 후속 조치를 초안 작성합니다.",
-          "shortDescription": "답장이 없는 상대에게 후속 메일 초안을 씁니다.",
-          "title": "Gmail 후속 조치를 자동으로 보내기"
-        },
         "gmail-reconnect-reminders": {
           "description": "오랫동안 이메일을 보내지 않은 중요한 연락처를 표시합니다.",
           "shortDescription": "한동안 연락하지 않은 사람을 알려줍니다.",
@@ -831,25 +802,10 @@
           "shortDescription": "지금 확인해야 할 메일을 골라줍니다.",
           "title": "Gmail에서 주요 이메일 강조하기"
         },
-        "investor-update-google-docs": {
-          "description": "지표와 하이라이트를 모아 Docs에 투자자 업데이트를 작성합니다.",
-          "shortDescription": "지표를 모아 투자자 업데이트를 만듭니다.",
-          "title": "Google Docs에서 투자자 업데이트 초안 작성하기"
-        },
-        "log-gong-calls-hubspot": {
-          "description": "Gong 통화에서 노트와 다음 단계를 HubSpot 거래에 가져옵니다.",
-          "shortDescription": "Gong 통화 메모를 HubSpot 거래에 기록합니다.",
-          "title": "Gong 통화를 HubSpot에 기록하기"
-        },
-        "meeting-notes-asana-tasks": {
-          "description": "회의 노트를 할당된 기한 있는 Asana 작업으로 전환합니다.",
-          "shortDescription": "회의록을 Asana 작업으로 만듭니다.",
-          "title": "회의 노트를 Asana 작업으로 전환하기"
-        },
-        "meeting-recaps-slack": {
-          "description": "각 회의 후 결정 사항과 액션 아이템이 포함된 요약을 공유합니다.",
-          "shortDescription": "회의 후 결정과 할 일을 공유합니다.",
-          "title": "Slack에서 회의 요약 받기"
+        "keyword-ranks-to-sheets": {
+          "description": "중요한 키워드에서 페이지가 몇 위인지 확인하고 변동을 기록합니다.",
+          "shortDescription": "주간 키워드 순위 변동을 시트에 기록합니다.",
+          "title": "Google 스프레드시트에서 키워드 순위 추적"
         },
         "morning-brief": {
           "description": "Gmail, 캘린더, Notion 업데이트를 짧은 하루 계획으로 만들어 Slack에 보냅니다.",
@@ -861,20 +817,10 @@
           "shortDescription": "처음 보는 발신자를 HubSpot에 추가합니다.",
           "title": "새 Gmail 연락처를 HubSpot에 추가하기"
         },
-        "onboard-new-hires-asana": {
-          "description": "각 신입 사원을 위한 온보딩 작업 체크리스트를 Asana에 생성합니다.",
-          "shortDescription": "신규 입사자별 온보딩 체크리스트를 만듭니다.",
-          "title": "Asana에서 신입 사원 온보딩하기"
-        },
         "personal-weekly-digest": {
           "description": "GitHub, Gmail, 캘린더 활동을 한 주 단위로 정리해 Slack에 보냅니다.",
           "shortDescription": "GitHub과 Gmail로 한 주를 정리합니다.",
           "title": "개인 주간 다이제스트"
-        },
-        "post-daily-metrics-slack": {
-          "description": "일일 방문자, 가입자 및 활성화 수치를 Slack에 게시합니다.",
-          "shortDescription": "일일 방문자와 가입자를 Slack에 게시합니다.",
-          "title": "일일 지표를 Slack에 게시하기"
         },
         "post-release-notes-slack": {
           "description": "최근 배포된 작업에서 변경 로그 초안을 작성해 Slack에 게시합니다.",
@@ -886,35 +832,10 @@
           "shortDescription": "외부 미팅 전에 사전 브리핑을 보냅니다.",
           "title": "Google 캘린더 회의 준비"
         },
-        "publish-scheduled-posts-buffer": {
-          "description": "그날 예약된 콘텐츠를 게시하고 소셜 게시물을 대기열에 넣습니다.",
-          "shortDescription": "그날 예약된 소셜 게시물을 발행합니다.",
-          "title": "Buffer에 예정된 게시물 게시"
-        },
         "research-calendar-meetings": {
           "description": "각 캘린더 이벤트 전에 만나는 사람을 조사합니다.",
           "shortDescription": "미팅 전에 만날 사람을 조사합니다.",
           "title": "캘린더 회의 조사"
-        },
-        "research-new-signups-apollo": {
-          "description": "새 가입자를 조사하고 빠른 스냅샷을 게시합니다.",
-          "shortDescription": "새 가입자를 조사해 요약을 게시합니다.",
-          "title": "신규 가입자 조사"
-        },
-        "revenuecat-subscription-digest": {
-          "description": "구독 현황을 시트로 추적하고 이탈이나 해지 패턴이 바뀌면 Slack에 알립니다.",
-          "shortDescription": "구독을 추적하고 이탈 신호를 Slack에 알립니다.",
-          "title": "RevenueCat 구독 다이제스트"
-        },
-        "run-daily-query-sheets": {
-          "description": "저장된 SQL을 예약 실행하고 결과를 시트에 추가합니다.",
-          "shortDescription": "저장된 SQL을 실행해 시트에 결과를 추가합니다.",
-          "title": "일일 쿼리를 Google Sheets에 실행"
-        },
-        "salesforce-pipeline-digest": {
-          "description": "매주 Salesforce 기회 변동과 마감일 리스크를 Slack에 정리합니다.",
-          "shortDescription": "매주 Salesforce 파이프라인 리스크를 정리합니다.",
-          "title": "Salesforce 파이프라인 다이제스트"
         },
         "send-bugs-github-slack": {
           "description": "버그 태그가 붙은 보고서를 GitHub 이슈로 등록하고 팀에 Slack 알림을 보냅니다.",
@@ -926,25 +847,20 @@
           "shortDescription": "심각한 Sentry 이슈를 매일 정리해 보냅니다.",
           "title": "Sentry 이슈 다이제스트"
         },
+        "social-posts-to-sheets": {
+          "description": "추적 중인 계정의 공개 게시물과 engagement를 시트 하나에 모읍니다.",
+          "shortDescription": "공개 소셜 게시물을 시트 하나에 모읍니다.",
+          "title": "소셜 게시물을 Google 스프레드시트에 모으기"
+        },
         "sort-gmail-draft-replies": {
           "description": "받은편지함을 정리하고 답장이 필요한 이메일에 답장 초안을 작성합니다.",
           "shortDescription": "받은편지함을 정리하고 답장 초안을 씁니다.",
           "title": "Gmail 정리 및 답장 초안 작성"
         },
-        "spot-churn-risk-stripe-zendesk": {
-          "description": "이탈 위험 계정을 표시하고 복구 이메일을 초안 작성합니다.",
-          "shortDescription": "이탈 위험을 찾아 회복 메일을 준비합니다.",
-          "title": "Stripe와 Zendesk에서 이탈 위험 감지"
-        },
         "summarize-gmail-newsletters": {
           "description": "받은편지함 뉴스레터를 한 줄 요약으로 정리합니다.",
           "shortDescription": "뉴스레터를 하나의 요약으로 정리합니다.",
           "title": "Gmail 뉴스레터 요약"
-        },
-        "summarize-zendesk-tickets-daily": {
-          "description": "지난 하루 Zendesk 티켓을 요약해 Slack에 게시합니다.",
-          "shortDescription": "Zendesk 티켓을 매일 요약해 게시합니다.",
-          "title": "Zendesk 티켓 일일 요약"
         },
         "support-ticket-router": {
           "description": "고객 문의 메일을 분류해 Notion에 기록하고 긴급 건은 Slack에 알립니다.",
@@ -966,30 +882,20 @@
           "shortDescription": "이번 주 사용량 변화가 큰 기능을 알려줍니다.",
           "title": "PostHog로 기능 사용량 추적"
         },
-        "track-keyword-ranks-ahrefs": {
-          "description": "Ahrefs에서 키워드 순위를 추적하고 변동이 큰 키워드를 Notion에 정리합니다.",
-          "shortDescription": "이번 주 키워드 순위 변동을 정리합니다.",
-          "title": "Ahrefs로 키워드 순위 추적"
-        },
-        "track-signup-sources-sheets": {
-          "description": "각 신규 가입을 추적 시트의 출처에 연결합니다.",
-          "shortDescription": "가입 경로를 시트에 정리합니다.",
-          "title": "Google 시트에서 가입 출처 추적"
-        },
         "vercel-deploy-digest": {
           "description": "Vercel 배포를 모니터링해 GitHub 커밋과 연결하고 실패하면 Slack에 알립니다.",
           "shortDescription": "Vercel 배포가 실패하면 Slack에 알립니다.",
           "title": "Vercel 배포 다이제스트"
         },
+        "web-data-to-sheets": {
+          "description": "지정한 페이지 목록에서 같은 항목을 주기적으로 수집하고 기록을 시트 하나에 남깁니다.",
+          "shortDescription": "페이지 목록에서 항목을 시트 하나로 모읍니다.",
+          "title": "웹 페이지 데이터를 스프레드시트에 모으기"
+        },
         "x-brand-monitor": {
           "description": "X에서 브랜드 언급을 추적해 관련 게시물을 Notion에 저장하고 중요한 언급은 Slack에 알립니다.",
           "shortDescription": "X에서 눈에 띄는 브랜드 언급을 Slack에 알립니다.",
           "title": "X 브랜드 모니터"
-        },
-        "zendesk-knowledge-base": {
-          "description": "Zendesk에서 반복되는 질문을 찾아 FAQ 초안을 만들고 Notion에 저장합니다.",
-          "shortDescription": "반복되는 질문을 FAQ 항목으로 만듭니다.",
-          "title": "Zendesk 지식베이스"
         }
       },
       "workflowCategories": {
@@ -1008,8 +914,7 @@
     "toasts": {
       "copyLinkFailed": "링크 복사 실패",
       "downloadFailed": "다운로드 실패",
-      "linkCopied": "링크 복사됨",
-      "sharing": "공유 중…"
+      "linkCopied": "링크 복사됨"
     },
     "viewer": {
       "continuePrompt": "이 결과물로 작업할 수 있도록 도와주세요: {{url}}",
@@ -1515,19 +1420,22 @@
     "agentPage": {
       "getStarted": {
         "checkin": {
-          "description": "매일 앱을 여세요. 00:00 UTC에 초기화돼요.",
+          "action": "출석하기",
+          "description": "하루에 한 번 출석하세요. UTC 00:00에 초기화됩니다.",
           "name": "매일 출석하기",
           "unit": "하루당"
         },
         "connector": {
-          "description": "OAuth로 연결하세요. 커넥터별로 한 번 받을 수 있어요.",
+          "action": "연결",
+          "description": "Gmail, Notion 등 100개 이상",
           "name": "커넥터 연결하기",
           "unit": "커넥터당"
         },
         "inReview": "검토 중",
         "inReviewDescription": "제출됨, 검토 대기 중",
         "invite": {
-          "description": "초대가 수락되면 지급돼요. 최대 15명까지 가능해요.",
+          "action": "초대",
+          "description": "추가하는 사람마다 적립됩니다",
           "name": "팀 초대하기",
           "unit": "멤버당"
         },
@@ -1538,6 +1446,7 @@
         "reward": "+{{amount}}",
         "rewardedConnections": "보상을 받은 커넥터: {{amount}}",
         "share": {
+          "action": "공유",
           "description": "게시한 뒤 링크를 붙여넣기",
           "name": "X에 {{assistantName}} 공유하기"
         },
@@ -1550,14 +1459,16 @@
           "title": "X에 {{assistantName}} 공유하기"
         },
         "slack": {
-          "description": "조직 및 워크스페이스당 한 번, 조직 크레딧 2,000을 받으세요.",
+          "action": "추가",
+          "description": "팀이 이미 일하고 있는 곳으로",
           "name": "Slack에 {{assistantName}} 추가하기"
         },
         "stepCount": "{{completed}}/{{total}}",
         "subtitle": "작업을 시도하고 크레딧을 받으세요.",
         "title": "시작하기",
         "workflow": {
-          "description": "직접 만든 워크플로를 성공적으로 실행하세요.",
+          "action": "만들기",
+          "description": "반복 작업을 재사용 가능한 스킬로 만들기",
           "name": "워크플로 만들기"
         }
       },
@@ -1904,6 +1815,8 @@
       "providerIncompatibleAction": "새 세션 시작",
       "providerIncompatiblePrefix": "이 세션은 다른 모델 공급자로 시작되어 현재 공급자로 계속할 수 없습니다.",
       "recovery": {
+        "autonomyLimitDescription": "연속 자동 실행 한도에 도달했습니다. 계속하려면 확인해 주세요.",
+        "autonomyLimitTitle": "자동 실행 한도에 도달했습니다",
         "capacityDescription": "잠시 후 다시 시도하거나 다른 모델로 전환하세요.",
         "capacityTitle": "이 모델은 지금 혼잡합니다",
         "claudeCode": "Claude Code",
@@ -2041,7 +1954,7 @@
     },
     "newChat": "새 채팅",
     "origins": {
-      "agentphone": "AgentPhone",
+      "agentphone": "iMessage",
       "feishu": "Feishu",
       "github": "GitHub",
       "lark": "Lark",
@@ -2944,27 +2857,6 @@
     "toasts": {
       "copied": "복사됨",
       "deleted": "채팅 삭제됨"
-    },
-    "translation": {
-      "action": "번역",
-      "close": "번역 닫기",
-      "copy": "번역 복사",
-      "languages": {
-        "de": "Deutsch",
-        "en": "English",
-        "es": "Español",
-        "fr": "Français",
-        "hi": "हिन्दी",
-        "id": "Bahasa Indonesia",
-        "it": "Italiano",
-        "ja": "日本語",
-        "ko": "한국어",
-        "ptBR": "Português",
-        "zhCN": "简体中文",
-        "zhTW": "繁體中文"
-      },
-      "result": "번역",
-      "targetLanguage": "번역 언어"
     },
     "voice": {
       "checkingLimit": "음성 입력 제한 확인 중",
@@ -5877,8 +5769,8 @@
             "cottonSky": "Cotton sky",
             "daydream": "Daydream",
             "deepLagoon": "Deep lagoon",
-            "goldenHour": "Golden hour",
-            "limelight": "Limelight"
+            "default": "기본",
+            "goldenHour": "Golden hour"
           },
           "title": "컬러 테마"
         },
@@ -6371,11 +6263,44 @@
     "resetHelp": "새 서버의 신원을 독립적으로 확인한 후에만 재설정하세요. 다음 연결에서는 새 호스트 키를 신뢰하고 저장합니다.",
     "retry": "다시 시도",
     "save": "저장",
+    "saveRecovery": {
+      "resourceIdConflict": "이 리소스 ID는 사용할 수 없습니다. 양식을 닫았다가 다시 열어 시도하세요.",
+      "uncertain": "변경 사항이 저장되었는지 확인하지 못했습니다. 같은 내용으로 저장을 다시 시도하거나, 닫고 목록을 확인한 후 다시 추가하세요."
+    },
     "summary_one": "호스트 {{count}}개 구성됨",
     "summary_other": "호스트 {{count}}개 구성됨",
     "title": "SSH 호스트",
     "unavailable": "이 계정에서는 SSH 접근을 사용할 수 없습니다.",
     "username": "SSH 사용자 이름"
+  },
+  "templates": {
+    "actions": {
+      "delete": "삭제",
+      "menu": "{{title}} 작업",
+      "preview": "{{title}} 미리보기",
+      "rename": "템플릿 이름 바꾸기"
+    },
+    "custom": "커스텀",
+    "detail": {
+      "back": "커스텀 템플릿",
+      "page": "{{number}}페이지",
+      "source_other": "{{count}}페이지 · {{filename}}에서"
+    },
+    "empty": {
+      "description": "업로드한 파일로 만든 템플릿이 여기에 표시됩니다.",
+      "title": "아직 템플릿이 없습니다"
+    },
+    "loadFailed": "템플릿을 불러오지 못했습니다.",
+    "pageCount_other": "{{count}}페이지",
+    "retry": "다시 시도",
+    "sharedBy": "{{owner}} 님이 공유함",
+    "visibility": {
+      "change": "변경",
+      "organization": "조직",
+      "organizationState": "이 조직의 모든 사람이 사용할 수 있습니다",
+      "private": "비공개",
+      "privateState": "나만 보고 사용할 수 있습니다"
+    }
   },
   "usage": {
     "displayNames": {

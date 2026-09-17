@@ -1,5 +1,4 @@
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { artifactReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createHash, randomUUID } from "node:crypto";
 import {
@@ -548,8 +547,8 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
         ? `private-artifacts/${canonicalAssetId}/report.csv`
         : `artifacts/${new URL(initialized.body.url).pathname.replace(/^\/+/u, "")}`;
       if (privateFiles) {
-        expect(initialized.body.url).toBe(
-          artifactReferencePath(canonicalAssetId, "report.csv"),
+        expect(initialized.body.url).toMatch(
+          /^\/artifacts\/[a-z0-9]{10}\.csv$/u,
         );
       } else {
         expect(initialized.body.url).toMatch(

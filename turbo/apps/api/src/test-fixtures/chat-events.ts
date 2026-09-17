@@ -2010,6 +2010,75 @@ export async function replaceThreadSessionBindingFixture(args: {
   }
 }
 
+/**
+ * Product APIs cannot transfer session ownership. Stage that infrastructure-only
+ * race without changing the committed preparation snapshot, then let admission
+ * observe it after waiting for the real session row lock.
+ */
+export async function holdThreadSessionOwnerChangeFixture(args: {
+  readonly threadId: string;
+  readonly ownerChange:
+    | { readonly userId: string }
+    | { readonly orgId: string }
+    | { readonly agentId: string };
+  readonly clearConversation: boolean;
+  readonly signal: AbortSignal;
+}): Promise<{
+  readonly release: () => void;
+  readonly done: Promise<void>;
+  readonly blockedWaiterCount: () => Promise<number>;
+}> {
+  const started = createDeferredPromise<number>(args.signal);
+  const released = createDeferredPromise<void>(args.signal);
+  const done = onRejection(
+    db().transaction(async (tx) => {
+      const [thread] = await tx
+        .select({ agentSessionId: chatThreads.agentSessionId })
+        .from(chatThreads)
+        .where(eq(chatThreads.id, args.threadId));
+      if (!thread?.agentSessionId) {
+        throw new Error("Expected a bound chat thread session");
+      }
+      const [session] = await tx
+        .update(agentSessions)
+        .set({
+          ...args.ownerChange,
+          ...(args.clearConversation ? { conversationId: null } : {}),
+        })
+        .where(eq(agentSessions.id, thread.agentSessionId))
+        .returning({ id: agentSessions.id });
+      if (!session) {
+        throw new Error("Expected a bound agent session");
+      }
+      const [row] = await executeRawRows(
+        tx,
+        sql`SELECT pg_backend_pid() AS "pid"`,
+        databasePidRowSchema,
+      );
+      if (!row) {
+        throw new Error("Expected the session owner change holder pid");
+      }
+      started.resolve(row.pid);
+      await released.promise;
+    }),
+    (error) => {
+      started.reject(error);
+    },
+  );
+  const holderPid = await started.promise;
+  return {
+    release: () => {
+      if (!released.settled()) {
+        released.resolve(undefined);
+      }
+    },
+    done,
+    blockedWaiterCount: async () => {
+      return await directBlockedWaiterCount(holderPid);
+    },
+  };
+}
+
 /** Replaces a completed run's native session blob with exact test-owned bytes. */
 export async function replacePiSessionHistoryJsonlFixture(args: {
   readonly runId: string;

@@ -17,7 +17,7 @@ import {
 } from "@okouai/api-contracts/contracts/billing";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test, vi, type Mock } from "vitest";
+import { beforeEach, describe, expect, it, test, vi, type Mock } from "vitest";
 
 import {
   click,
@@ -806,85 +806,93 @@ test("Keep standalone package choices visible until closing finishes", async () 
   ).toHaveTextContent("21,234 credits · 6% off");
 });
 
-test("Leave a member-package flow without keeping unfinished choices", async () => {
+describe("leaving a member-package flow with unfinished choices", () => {
   let purchaseSubmitted = false;
-  mockInitialUsagePackPurchase();
-  context.mocks.api(billingUsagePackCheckoutContract.create, ({ respond }) => {
-    purchaseSubmitted = true;
-    return respond(200, {
-      url: "https://checkout.stripe.com/unexpected-package-purchase",
+  beforeEach(async () => {
+    purchaseSubmitted = false;
+    mockInitialUsagePackPurchase();
+    context.mocks.api(
+      billingUsagePackCheckoutContract.create,
+      ({ respond }) => {
+        purchaseSubmitted = true;
+        return respond(200, {
+          url: "https://checkout.stripe.com/unexpected-package-purchase",
+        });
+      },
+    );
+    const { teamPlan } = await openUsagePackPlanSelection();
+    const { memberUsage } = await openTeamMemberPackages(teamPlan);
+    await selectMemberUsagePack(
+      memberUsage,
+      "Alex Chen",
+      "$50 · 54,321 credits · 8% off",
+    );
+    await selectMemberUsagePack(
+      memberUsage,
+      "pending@example.com",
+      "$100 · 109,999 credits · 9% off",
+    );
+  });
+
+  it("discards unfinished choices after leaving and reopening", async () => {
+    const packagesDialog = screen.getByRole("dialog", {
+      name: "Configure member packages",
     });
-  });
-  const { teamPlan } = await openUsagePackPlanSelection();
-  const { memberUsage } = await openTeamMemberPackages(teamPlan);
-  await selectMemberUsagePack(
-    memberUsage,
-    "Alex Chen",
-    "$50 · 54,321 credits · 8% off",
-  );
-  await selectMemberUsagePack(
-    memberUsage,
-    "pending@example.com",
-    "$100 · 109,999 credits · 9% off",
-  );
+    click(within(packagesDialog).getByLabelText("Back"));
+    const planChooserHeading = await screen.findByRole("heading", {
+      name: "Choose a plan",
+    });
+    expect(purchaseSubmitted).toBeFalsy();
+    const planChooserDialog = planChooserHeading.closest('[role="dialog"]');
+    if (!(planChooserDialog instanceof HTMLElement)) {
+      throw new Error("Plan chooser dialog not found");
+    }
+    click(within(planChooserDialog).getByLabelText("Close"));
 
-  const packagesDialog = screen.getByRole("dialog", {
-    name: "Configure member packages",
-  });
-  click(within(packagesDialog).getByLabelText("Back"));
-  const planChooserHeading = await screen.findByRole("heading", {
-    name: "Choose a plan",
-  });
-  expect(purchaseSubmitted).toBeFalsy();
-  const planChooserDialog = planChooserHeading.closest('[role="dialog"]');
-  if (!(planChooserDialog instanceof HTMLElement)) {
-    throw new Error("Plan chooser dialog not found");
-  }
-  click(within(planChooserDialog).getByLabelText("Close"));
+    const settingsDialog = screen.getByRole("dialog", { name: "Settings" });
+    click(within(settingsDialog).getByLabelText("Close"));
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("dialog", { name: "Settings" }),
+      ).not.toBeInTheDocument();
+    });
 
-  const settingsDialog = screen.getByRole("dialog", { name: "Settings" });
-  click(within(settingsDialog).getByLabelText("Close"));
-  await waitFor(() => {
+    const reopenedDialog = await openSettingsFromAccountMenu("Alex Chen");
+    click(buttonByText("Billing", reopenedDialog));
+    await waitFor(() => {
+      expect(screen.getByText("No active plan")).toBeInTheDocument();
+    });
+    click(buttonByText("Upgrade"));
+    await expect(
+      screen.findByRole("heading", { name: "Choose a plan" }),
+    ).resolves.toBeInTheDocument();
+
+    const reopenedTeamPlan = screen.getByRole("article", {
+      name: "Team plan",
+    });
+    click(buttonByText("Start with Team", reopenedTeamPlan));
+
+    const resetMemberUsage = await screen.findByRole("group", {
+      name: "Member usage",
+    });
     expect(
-      screen.queryByRole("dialog", { name: "Settings" }),
-    ).not.toBeInTheDocument();
+      within(resetMemberUsage).getByRole("combobox", {
+        name: "Usage for Alex Chen",
+      }),
+    ).toHaveTextContent("21,234 credits · 6% off");
+    expect(
+      within(resetMemberUsage).getByRole("combobox", {
+        name: "Usage for pending@example.com",
+      }),
+    ).toHaveTextContent("21,234 credits · 6% off");
+    expect(
+      within(resetMemberUsage).getByRole("combobox", {
+        name: "Usage for Sam Lee",
+      }),
+    ).toHaveTextContent("21,234 credits · 6% off");
+    expect(resetMemberUsage).toHaveTextContent("$220/month");
+    expect(purchaseSubmitted).toBeFalsy();
   });
-
-  const reopenedDialog = await openSettingsFromAccountMenu("Alex Chen");
-  click(buttonByText("Billing", reopenedDialog));
-  await waitFor(() => {
-    expect(screen.getByText("No active plan")).toBeInTheDocument();
-  });
-  click(buttonByText("Upgrade"));
-  await expect(
-    screen.findByRole("heading", { name: "Choose a plan" }),
-  ).resolves.toBeInTheDocument();
-
-  const reopenedTeamPlan = screen.getByRole("article", {
-    name: "Team plan",
-  });
-  click(buttonByText("Start with Team", reopenedTeamPlan));
-
-  const resetMemberUsage = await screen.findByRole("group", {
-    name: "Member usage",
-  });
-  expect(
-    within(resetMemberUsage).getByRole("combobox", {
-      name: "Usage for Alex Chen",
-    }),
-  ).toHaveTextContent("21,234 credits · 6% off");
-  expect(
-    within(resetMemberUsage).getByRole("combobox", {
-      name: "Usage for pending@example.com",
-    }),
-  ).toHaveTextContent("21,234 credits · 6% off");
-  expect(
-    within(resetMemberUsage).getByRole("combobox", {
-      name: "Usage for Sam Lee",
-    }),
-  ).toHaveTextContent("21,234 credits · 6% off");
-  expect(resetMemberUsage).toHaveTextContent("$220/month");
-  expect(purchaseSubmitted).toBeFalsy();
 });
 
 test("Add a package for a member without an allocation", async () => {

@@ -171,7 +171,9 @@ async function loadAgentForConfiguration(
     .from(agents)
     .where(and(eq(agents.orgId, args.orgId), eq(agents.id, args.agentId)))
     .limit(1);
-  const [agent] = await (args.lock ? query.for("update") : query);
+  // Publication reads Agent permissions without changing the Agent. A shared
+  // lock keeps them stable while independent workflows publish concurrently.
+  const [agent] = await (args.lock ? query.for("share") : query);
 
   return agent ?? null;
 }

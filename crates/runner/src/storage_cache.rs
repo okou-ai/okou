@@ -14,7 +14,11 @@
 //!
 //! Production source preparation first selects admissible extracted-file hits
 //! and pins their owned bytes in the plan. Those identities bypass archive
-//! prefetch and staging entirely. After successful direct use and Agent spawn,
+//! prefetch and staging entirely.
+//! Each selected mount must fit a bounded Guest request; larger combined
+//! manifests are batched by the executor without increasing payload budgets.
+//!
+//! After successful direct use and Agent spawn,
 //! the same bounded background owner can retire the redundant compressed entry
 //! while holding both formats' locks and validating the extracted replacement.
 //! Ordinary archive consumers retain the delivery and fill paths below.
@@ -23,8 +27,8 @@
 //! identities to a runner owner before independent pre-spawn preparation.
 //! That owner performs one full request, keeps the cache writer through atomic
 //! publication and the runner-wide permit through guest application, and
-//! stages only complete content. A terminal owner is drained before the
-//! unchanged remote URL is allowed to fall back to guest download.
+//! stages only complete content. An admitted owner's terminal failure fails
+//! storage preparation after draining; it does not retry the request in the guest.
 //! Keying on both name and version gives same-version entries with different
 //! storage names separate collision-resistant staged filenames in normal
 //! operation, so they do not clobber each other on the guest tmpfs.
@@ -50,7 +54,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
-use futures_util::FutureExt;
+use futures_util::{FutureExt, StreamExt};
 use reqwest::Client;
 use sandbox::{Sandbox, WriteFileEntry};
 use tokio::fs;
@@ -64,7 +68,7 @@ use crate::error::{RunnerError, RunnerResult};
 use crate::lock;
 use crate::object_download_policy::OBJECT_DOWNLOAD_TIMEOUT;
 use crate::paths::{HomePaths, short_digest, touch_mtime};
-use crate::storage_plan::{ArchiveHandle, StoragePlan};
+use crate::storage_plan::{ArchiveHandle, CacheArchiveCandidate, StoragePlan};
 use crate::telemetry::{JobTelemetry, SandboxOpRecord, SandboxOpReporter};
 
 pub(crate) mod decoded;
@@ -77,6 +81,8 @@ const BODY_BUFFER_FALLBACK_CAPACITY: usize = 64 * 1024;
 const CONCURRENCY: usize = 4;
 /// Maximum number of cache-fill groups that may be active across the runner.
 const BACKGROUND_FILL_ACTIVE_LIMIT: usize = CONCURRENCY;
+/// Idle transport retention, independent of the per-object request deadline.
+const FRESH_DELIVERY_HTTP_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 /// Maximum number of unique cache-fill groups waiting for a worker across the runner.
 const BACKGROUND_FILL_QUEUE_CAPACITY: usize = 32;
 /// Maximum number of completed telemetry tasks reaped between scheduler polls.
@@ -183,12 +189,15 @@ struct FreshDeliveryScanSummary {
     unknown_size_count: usize,
     per_run: bool,
     runner_wide: bool,
-    scan_limit: bool,
 }
 
 impl FreshDeliveryScanSummary {
-    fn from_groups(groups: &[CacheTargetGroup], scan_limit: usize) -> Self {
-        let suffix = groups.iter().skip(scan_limit);
+    fn from_groups<'a>(
+        groups: impl Iterator<Item = &'a CacheTargetGroup> + Clone,
+        scan_limit: usize,
+    ) -> Self {
+        let group_count = groups.clone().count();
+        let suffix = groups.skip(scan_limit);
         let static_eligible_count = suffix
             .clone()
             .filter(|group| {
@@ -199,13 +208,12 @@ impl FreshDeliveryScanSummary {
             .count();
         let unknown_size_count = suffix.filter(|group| group.archive_size.is_none()).count();
         Self {
-            group_count: groups.len(),
-            cap_excess_count: groups.len().saturating_sub(scan_limit),
+            group_count,
+            cap_excess_count: group_count.saturating_sub(scan_limit),
             static_eligible_count,
             unknown_size_count,
             per_run: false,
             runner_wide: false,
-            scan_limit: false,
         }
     }
 
@@ -238,11 +246,7 @@ impl FreshDeliveryScanSummary {
         }
 
         let mut recorded_stop = false;
-        for (observed, outcome) in [
-            (self.per_run, "per_run"),
-            (self.runner_wide, "runner_wide"),
-            (self.scan_limit, "scan_limit"),
-        ] {
+        for (observed, outcome) in [(self.per_run, "per_run"), (self.runner_wide, "runner_wide")] {
             if observed {
                 telemetry.record_bounded_outcome(
                     STORAGE_CACHE_FRESH_DELIVERY_SCAN_STOP,
@@ -271,16 +275,62 @@ impl FreshDeliveryScanSummary {
 /// permit follows the downloaded body through atomic cache publication and
 /// remains held until the guest staging attempt completes. This bounds
 /// retained runner-owned archive bodies across runs, not only active fetches.
+/// Clones also share one lazy same-origin HTTP pool with at most eight idle
+/// sockets and a 30-second idle timeout. Origin replacement releases the cached
+/// client; admitted fetches can retain its old pool until their owned tasks end.
 #[derive(Clone)]
 pub(crate) struct FreshArchiveDeliveryAdmission {
     permits: Arc<Semaphore>,
+    http: Arc<Mutex<Option<FreshArchiveHttpClient>>>,
+}
+
+struct FreshArchiveHttpClient {
+    origin: url::Origin,
+    client: Client,
 }
 
 impl FreshArchiveDeliveryAdmission {
     pub(crate) fn new() -> Self {
         Self {
             permits: Arc::new(Semaphore::new(FRESH_DELIVERY_RUNNER_LIMIT)),
+            http: Arc::new(Mutex::new(None)),
         }
+    }
+
+    fn client_for_archive(&self, archive_url: &str) -> RunnerResult<Client> {
+        // Only this origin may use the cached client: redirects are disabled,
+        // and changing origins replaces the idle pool instead of accumulating
+        // one for every host. Active fetches retain their own client clones.
+        // Invalid/unsupported URLs still fail in the owned fetch, as before.
+        let origin = reqwest::Url::parse(archive_url)
+            .ok()
+            .filter(|url| matches!(url.scheme(), "http" | "https"))
+            .map(|url| url.origin());
+        let mut cached = self.http.lock().map_err(|_| {
+            RunnerError::Internal("runner-owned archive client lock poisoned".into())
+        })?;
+        if let Some(cached) = cached.as_ref()
+            && origin.as_ref() == Some(&cached.origin)
+        {
+            return Ok(cached.client.clone());
+        }
+        // Construction remains lazy after admission and failures are not
+        // cached. There is no await while holding this initialization lock.
+        let client = Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .pool_max_idle_per_host(FRESH_DELIVERY_RUNNER_LIMIT)
+            .pool_idle_timeout(FRESH_DELIVERY_HTTP_IDLE_TIMEOUT)
+            .build()
+            .map_err(|error| {
+                RunnerError::Internal(format!("build runner-owned archive client: {error}"))
+            })?;
+        if let Some(origin) = origin {
+            *cached = Some(FreshArchiveHttpClient {
+                origin,
+                client: client.clone(),
+            });
+        }
+        Ok(client)
     }
 }
 
@@ -896,9 +946,20 @@ struct FreshArchiveResolved {
 /// cancelled midway.
 pub(crate) struct FreshArchiveDelivery {
     cancel: CancellationToken,
+    classification: JoinSet<FreshArchiveClassification>,
+    groups: Option<Vec<CacheTargetGroup>>,
     apply: Vec<oneshot::Sender<()>>,
     fetches: JoinSet<FreshArchiveFetchTaskResult>,
     publications: JoinSet<FreshArchivePublicationTaskResult>,
+}
+
+struct FreshArchiveClassification {
+    groups: Vec<CacheTargetGroup>,
+    apply: Vec<oneshot::Sender<()>>,
+    fetches: JoinSet<FreshArchiveFetchTaskResult>,
+    metrics: CacheProcessMetrics,
+    summary: FreshDeliveryScanSummary,
+    result: RunnerResult<()>,
 }
 
 /// A storage plan paired with the delivery prepared for its plan inputs.
@@ -915,6 +976,7 @@ pub(crate) struct PreparedStorage {
 impl Drop for FreshArchiveDelivery {
     fn drop(&mut self) {
         self.cancel.cancel();
+        self.classification.abort_all();
         self.fetches.abort_all();
         // Cache publication is an atomic fsync/rename transaction. Explicit
         // lifecycle paths drain it below; an unexpected owner drop must let an
@@ -924,6 +986,23 @@ impl Drop for FreshArchiveDelivery {
 }
 
 impl FreshArchiveDelivery {
+    async fn finish_classification(&mut self, telemetry: &mut JobTelemetry) -> RunnerResult<()> {
+        let Some(task) = self.classification.join_next().await else {
+            return Ok(());
+        };
+        let classified = task.map_err(|error| {
+            RunnerError::Internal(format!("runner-owned archive classification task: {error}"))
+        })?;
+        classified.metrics.record_to(telemetry);
+        classified
+            .summary
+            .record(telemetry, classified.result.is_ok());
+        self.groups = Some(classified.groups);
+        self.apply = classified.apply;
+        self.fetches = classified.fetches;
+        classified.result
+    }
+
     /// Cancels and awaits delivery work when its prepared plan will not be applied.
     ///
     /// Callers use this for sandbox preparation failure, replacement after a
@@ -938,9 +1017,18 @@ impl FreshArchiveDelivery {
     /// exists.
     pub(crate) async fn cancel_and_drain(&mut self, telemetry: &mut JobTelemetry) {
         let started_at = Instant::now();
-        let had_owned_work =
-            !self.apply.is_empty() || !self.fetches.is_empty() || !self.publications.is_empty();
+        let had_owned_work = !self.classification.is_empty()
+            || !self.apply.is_empty()
+            || !self.fetches.is_empty()
+            || !self.publications.is_empty();
         self.cancel.cancel();
+        // The classifier owns its fetch tasks until this join. Transfer that
+        // ownership before draining; no classifier or download is detached.
+        if let Err(error) = self.finish_classification(telemetry).await
+            && !matches!(error, RunnerError::Cancelled)
+        {
+            warn!(%error, "runner-owned archive classification failed while draining");
+        }
         if had_owned_work {
             telemetry.record(
                 STORAGE_CACHE_FRESH_DELIVERY_CANCELLED,
@@ -980,6 +1068,10 @@ impl FreshArchiveDelivery {
         home: &HomePaths,
         telemetry: &mut JobTelemetry,
     ) -> RunnerResult<Vec<FreshArchiveResolved>> {
+        if let Err(error) = self.finish_classification(telemetry).await {
+            self.cancel_and_drain(telemetry).await;
+            return Err(error);
+        }
         for apply in self.apply.drain(..) {
             let _ = apply.send(());
         }
@@ -1247,9 +1339,6 @@ async fn prepare_decoded_storage(
         return Ok(());
     }
     for batch in groups.chunks(decoded::LOOKUP_BATCH_SIZE) {
-        if plan.decoded_manifest_rejected() {
-            break;
-        }
         let keys = batch
             .iter()
             .map(|group| {
@@ -1295,8 +1384,10 @@ fn reuse_decoded(
     else {
         return Ok(false);
     };
-    if !plan.admit_decoded_manifest()? {
-        return Ok(false);
+    for target in &group.targets {
+        if !plan.decoded_entry_fits(target.handle)? {
+            return Ok(false);
+        }
     }
     let added = mounts
         .iter()
@@ -1309,7 +1400,9 @@ fn reuse_decoded(
                     .sum::<usize>()
         })
         .sum::<usize>();
-    if plan.decoded_bytes() + added + 4 > guest_contracts::storage_files::MAX_PAYLOAD_BYTES {
+    if plan.decoded_bytes() + added + 4 > guest_contracts::storage_files::MAX_PAYLOAD_BYTES
+        || plan.decoded_mount_count() + mounts.len() > guest_contracts::storage_files::MAX_MOUNTS
+    {
         return Ok(false);
     }
     for mount in mounts {
@@ -1778,7 +1871,18 @@ pub(crate) async fn populate_cache_with_fresh_delivery(
     fresh_delivery: Option<&mut FreshArchiveDelivery>,
     decoded: Option<&decoded::DecodedCache>,
 ) -> RunnerResult<Option<DeferredBackgroundFill>> {
-    let target_groups = group_targets(collect_targets(plan));
+    let mut fresh_delivery = fresh_delivery;
+    let target_groups = if let Some(delivery) = fresh_delivery.as_mut() {
+        if let Err(error) = delivery.finish_classification(telemetry).await {
+            delivery.cancel_and_drain(telemetry).await;
+            return Err(error);
+        }
+        delivery.groups.take().ok_or_else(|| {
+            RunnerError::Internal("prepared archive groups already consumed".into())
+        })?
+    } else {
+        group_targets(collect_targets(plan.cache_candidates()))
+    };
     if let Some(cache) = decoded {
         prepare_decoded_storage(plan, &target_groups, cache, telemetry).await?;
     }
@@ -1901,8 +2005,7 @@ fn group_key(group: &CacheTargetGroup) -> Option<(String, String)> {
 }
 
 fn is_ordinary_storage_group(group: &CacheTargetGroup, plan: &StoragePlan) -> bool {
-    !plan.decoded_manifest_rejected()
-        && !group.targets.is_empty()
+    !group.targets.is_empty()
         && group
             .targets
             .iter()
@@ -2083,8 +2186,8 @@ fn reconcile_archive_size(targets: &[CacheTarget]) -> Option<u64> {
     known_size
 }
 
-fn collect_targets(plan: &StoragePlan) -> Vec<CacheTarget> {
-    plan.cache_candidates()
+fn collect_targets(candidates: Vec<CacheArchiveCandidate>) -> Vec<CacheTarget> {
+    candidates
         .into_iter()
         .filter_map(|candidate| {
             cache_target_from_entry(
@@ -2102,8 +2205,8 @@ fn collect_targets(plan: &StoragePlan) -> Vec<CacheTarget> {
 ///
 /// The executor calls this after previous-storage selection fixes the plan and
 /// before fresh or reused sandbox preparation, allowing eligible full-archive
-/// fetches to overlap pre-spawn work. Preparation examines at most
-/// `FRESH_DELIVERY_SCAN_LIMIT` target groups, admits at most
+/// fetches to overlap pre-spawn work. An owned classifier inspects the required
+/// groups with bounded concurrency alongside sandbox creation, admits at most
 /// `FRESH_DELIVERY_PER_RUN_LIMIT`, and draws each admission from the shared
 /// `FRESH_DELIVERY_RUNNER_LIMIT`.
 ///
@@ -2118,7 +2221,8 @@ fn collect_targets(plan: &StoragePlan) -> Vec<CacheTarget> {
 /// case, the caller must keep it paired with this plan and either resolve it
 /// through `populate_cache_with_fresh_delivery` or call
 /// [`FreshArchiveDelivery::cancel_and_drain`] before abandoning the plan.
-/// A preparation builds at most one HTTP client, only for an admitted cache miss.
+/// Admitted cache misses reuse the Runner's bounded same-origin HTTP client.
+/// Plans without an admitted miss do not initialize a client or load CA roots.
 /// Select extracted files using the same source groups before archive admission;
 /// selected hits never start an archive request. A prepared plan keeps its pins
 /// and does not repeat the lookup during population.
@@ -2130,34 +2234,105 @@ pub(crate) async fn prepare_fresh_archive_delivery(
     telemetry: &mut JobTelemetry,
     decoded: Option<&decoded::DecodedCache>,
 ) -> RunnerResult<FreshArchiveDelivery> {
-    let mut groups = group_targets(collect_targets(plan));
+    let archives = plan.cache_candidates();
+    let ordinary_required = archives
+        .iter()
+        .any(|archive| archive.name.is_empty() || archive.version.is_empty());
+    let groups = group_targets(collect_targets(archives));
     if let Some(cache) = decoded {
         prepare_decoded_storage(plan, &groups, cache, telemetry).await?;
     }
-    groups.retain(|group| !group_has_decoded(group, plan));
-    let mut scan_summary =
-        FreshDeliveryScanSummary::from_groups(&groups, FRESH_DELIVERY_SCAN_LIMIT);
+    let candidates = groups
+        .iter()
+        .map(|group| !group_has_decoded(group, plan))
+        .collect::<Vec<_>>();
     let owner_cancel = cancel.child_token();
-    let mut delivery = FreshArchiveDelivery {
-        cancel: owner_cancel.clone(),
+    let mut classification = JoinSet::new();
+    classification.spawn(classify_fresh_archives(
+        groups,
+        candidates,
+        home.clone(),
+        admission.clone(),
+        owner_cancel.clone(),
+        ordinary_required,
+    ));
+    Ok(FreshArchiveDelivery {
+        cancel: owner_cancel,
+        classification,
+        groups: None,
         apply: Vec::new(),
         fetches: JoinSet::new(),
         publications: JoinSet::new(),
-    };
-    if groups.is_empty() {
-        scan_summary.record(telemetry, true);
-        return Ok(delivery);
-    }
-    let group_count = groups.len();
+    })
+}
 
-    let prepare_result: RunnerResult<()> = async {
-        let mut http: Option<Client> = None;
-
-        let mut scanned = 0;
-        for group in groups.into_iter().take(FRESH_DELIVERY_SCAN_LIMIT) {
-            if delivery.apply.len() >= FRESH_DELIVERY_PER_RUN_LIMIT {
+async fn classify_fresh_archives(
+    groups: Vec<CacheTargetGroup>,
+    candidates: Vec<bool>,
+    home: HomePaths,
+    admission: FreshArchiveDeliveryAdmission,
+    owner_cancel: CancellationToken,
+    mut ordinary_required: bool,
+) -> FreshArchiveClassification {
+    let started = Instant::now();
+    let mut scan_summary = FreshDeliveryScanSummary::from_groups(
+        groups
+            .iter()
+            .zip(&candidates)
+            .filter_map(|(group, &selected)| selected.then_some(group)),
+        FRESH_DELIVERY_SCAN_LIMIT,
+    );
+    let mut metrics = CacheProcessMetrics::default();
+    let mut requests = FreshArchiveRequests::default();
+    let prepare = async {
+        // Metadata hints do not pin bodies or locks. Preserve manifest order and
+        // the original non-decoded prefix, including response-size admission.
+        let inspections = futures_util::stream::iter(
+            candidates
+                .into_iter()
+                .enumerate()
+                .filter_map(|(index, selected)| selected.then_some(index))
+                .enumerate(),
+        )
+        .map(|(position, index)| {
+            let groups = &groups;
+            let home = &home;
+            async move {
+                let group = groups.get(index).ok_or_else(|| {
+                    RunnerError::Internal("invalid archive classification group".into())
+                })?;
+                if group
+                    .archive_size
+                    .is_some_and(|size| size == 0 || size > CACHE_MAX_SIZE)
+                {
+                    return Ok((position, index, false));
+                }
+                let target = group.targets.first().ok_or_else(|| {
+                    RunnerError::Internal("empty runner-owned archive target group".into())
+                })?;
+                let path = home
+                    .storage_cache_dir(&target.name, &target.version)
+                    .join("archive.tar.gz");
+                let warm = match fs::metadata(&path).await {
+                    Ok(metadata) => metadata.len() > 0 && metadata.len() <= CACHE_MAX_SIZE,
+                    Err(error) if error.kind() == io::ErrorKind::NotFound => false,
+                    Err(error) => {
+                        return Err(RunnerError::Internal(format!(
+                            "stat cached {}: {error}",
+                            path.display()
+                        )));
+                    }
+                };
+                Ok((position, index, warm))
+            }
+        })
+        .buffered(CONCURRENCY);
+        tokio::pin!(inspections);
+        let mut expanded = Vec::new();
+        while let Some(inspection) = inspections.next().await {
+            if requests.apply.len() >= FRESH_DELIVERY_PER_RUN_LIMIT {
                 scan_summary.per_run = true;
-                telemetry.record(
+                metrics.record(
                     STORAGE_CACHE_FRESH_DELIVERY_CAPACITY,
                     Duration::ZERO,
                     true,
@@ -2165,165 +2340,276 @@ pub(crate) async fn prepare_fresh_archive_delivery(
                 );
                 break;
             }
-            scanned += 1;
-            if group.archive_size.is_some_and(|size| size > CACHE_MAX_SIZE) {
-                telemetry.record(
+            let (position, index, warm) = inspection?;
+            let suffix = position >= FRESH_DELIVERY_SCAN_LIMIT;
+            if suffix && ordinary_required {
+                return Ok(());
+            }
+            let group = groups.get(index).ok_or_else(|| {
+                RunnerError::Internal("invalid archive classification group".into())
+            })?;
+            if group
+                .archive_size
+                .is_some_and(|size| size == 0 || size > CACHE_MAX_SIZE)
+            {
+                metrics.record(
                     STORAGE_CACHE_FRESH_DELIVERY_OVERSIZED,
                     Duration::ZERO,
                     true,
                     Some("known-size"),
                 );
+                ordinary_required = true;
                 continue;
             }
-
+            if warm {
+                metrics.record(
+                    STORAGE_CACHE_FRESH_DELIVERY_WARM,
+                    Duration::ZERO,
+                    true,
+                    None,
+                );
+                continue;
+            }
+            if suffix {
+                // Expanding only part of a run can serialize Host delivery and
+                // Guest download. Collect a complete bounded suffix before any
+                // new request. Unknown sizes retain ordinary Guest ownership.
+                if group.archive_size.is_none() {
+                    return Ok(());
+                }
+                if expanded.len() + requests.apply.len() == FRESH_DELIVERY_PER_RUN_LIMIT {
+                    scan_summary.per_run = true;
+                    metrics.record(
+                        STORAGE_CACHE_FRESH_DELIVERY_CAPACITY,
+                        Duration::ZERO,
+                        true,
+                        Some("per-run"),
+                    );
+                    return Ok(());
+                }
+                expanded.push(index);
+                continue;
+            }
             let permit = match Arc::clone(&admission.permits).try_acquire_owned() {
                 Ok(permit) => permit,
                 Err(_) => {
                     scan_summary.runner_wide = true;
-                    telemetry.record(
+                    metrics.record(
                         STORAGE_CACHE_FRESH_DELIVERY_CAPACITY,
                         Duration::ZERO,
                         true,
                         Some("runner-wide"),
                     );
+                    ordinary_required = true;
                     continue;
                 }
             };
-            let target = group.targets.first().ok_or_else(|| {
-                RunnerError::Internal("empty runner-owned archive target group".to_string())
-            })?;
-            let lock_path = home.storage_lock(&target.name, &target.version);
-            let cache_dir = home.storage_cache_dir(&target.name, &target.version);
-            let archive_path = cache_dir.join("archive.tar.gz");
-            let writer = match lock::try_acquire_or_busy(lock_path).await? {
-                lock::TryLock::Acquired(writer) => writer,
-                lock::TryLock::Busy => {
-                    telemetry.record(
-                        STORAGE_CACHE_FRESH_DELIVERY_LOCK_BUSY,
-                        Duration::ZERO,
-                        true,
-                        None,
-                    );
-                    continue;
+            match claim_fresh_archive(group, &home, &mut metrics).await? {
+                FreshArchiveClaim::Cold(writer) => {
+                    requests.start(
+                        group,
+                        writer,
+                        permit,
+                        &admission,
+                        &owner_cancel,
+                        &mut metrics,
+                    )?;
                 }
-            };
-
-            match fs::metadata(&archive_path).await {
-                Ok(metadata) if metadata.len() == 0 => {
-                    evict_empty_cache(target, &cache_dir).await?;
-                }
-                Ok(metadata) if metadata.len() <= CACHE_MAX_SIZE => {
-                    telemetry.record(
-                        STORAGE_CACHE_FRESH_DELIVERY_WARM,
-                        Duration::ZERO,
-                        true,
-                        None,
-                    );
-                    continue;
-                }
-                Ok(metadata) => {
-                    evict_oversized_cache(target, &cache_dir, metadata.len()).await?;
-                }
-                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-                Err(error) => {
-                    return Err(RunnerError::Internal(format!(
-                        "stat cached {}: {error}",
-                        archive_path.display()
-                    )));
-                }
+                FreshArchiveClaim::Warm => {}
+                FreshArchiveClaim::Busy => ordinary_required = true,
             }
-
-            let archive_url = target.archive_url.clone();
-            let archive_size = group.archive_size;
-            let task_group = group.clone();
-            let task_cancel = owner_cancel.clone();
-            let task_http = match &mut http {
-                Some(http) => http,
-                slot @ None => slot.insert(
-                    Client::builder()
-                        .redirect(reqwest::redirect::Policy::none())
-                        .build()
-                        .map_err(|error| {
-                            RunnerError::Internal(format!(
-                                "build runner-owned archive client: {error}"
-                            ))
-                        })?,
-                ),
-            }
-            .clone();
-            let (apply_tx, apply_rx) = oneshot::channel();
-            delivery.apply.push(apply_tx);
-            delivery.fetches.spawn(async move {
-                let fetch = tokio::select! {
-                    biased;
-                    () = task_cancel.cancelled() => Err("cancelled"),
-                    result = fetch_fresh_archive(&task_http, &archive_url, archive_size) => result,
-                };
-                let (bytes, size_source) = match fetch {
-                    Ok(download) => download,
-                    Err(reason) => {
-                        return FreshArchiveFetchTaskResult::Terminal { reason };
-                    }
-                };
-
-                tokio::select! {
-                    biased;
-                    () = task_cancel.cancelled() => FreshArchiveFetchTaskResult::Terminal {
-                        reason: "cancelled",
-                    },
-                    ready = apply_rx => {
-                        if ready.is_err() {
-                            FreshArchiveFetchTaskResult::Terminal {
-                                reason: "cancelled",
-                            }
-                        } else {
-                            FreshArchiveFetchTaskResult::Downloaded(FreshArchiveDownloaded {
-                            group: task_group,
-                            bytes,
-                            size_source,
-                            writer,
-                            permit,
-                            })
-                        }
-                    }
-                }
-            });
-            telemetry.record(
-                STORAGE_CACHE_FRESH_DELIVERY_ADMITTED,
-                Duration::ZERO,
-                true,
-                None,
-            );
-            telemetry.record(
-                STORAGE_CACHE_FRESH_DELIVERY_SINGLE_REQUEST,
-                Duration::ZERO,
-                true,
-                None,
-            );
         }
-        if group_count > FRESH_DELIVERY_SCAN_LIMIT && scanned == FRESH_DELIVERY_SCAN_LIMIT {
-            scan_summary.scan_limit = true;
-            telemetry.record(
-                STORAGE_CACHE_FRESH_DELIVERY_CAPACITY,
-                Duration::ZERO,
-                true,
-                Some("scan-limit"),
-            );
+        if ordinary_required || expanded.is_empty() {
+            return Ok(());
+        }
+
+        // This nonblocking reservation is all-or-none across simultaneous runs.
+        // Keep it bounded by the remaining cumulative per-run allowance.
+        let mut permits =
+            match Arc::clone(&admission.permits).try_acquire_many_owned(expanded.len() as u32) {
+                Ok(permits) => permits,
+                Err(_) => {
+                    scan_summary.runner_wide = true;
+                    metrics.record(
+                        STORAGE_CACHE_FRESH_DELIVERY_CAPACITY,
+                        Duration::ZERO,
+                        true,
+                        Some("runner-wide"),
+                    );
+                    return Ok(());
+                }
+            };
+        let mut claims = Vec::new();
+        for index in expanded {
+            let group = groups.get(index).ok_or_else(|| {
+                RunnerError::Internal("invalid archive classification group".into())
+            })?;
+            let permit = permits.split(1).ok_or_else(|| {
+                RunnerError::Internal("incomplete expanded archive reservation".into())
+            })?;
+            match claim_fresh_archive(group, &home, &mut metrics).await? {
+                FreshArchiveClaim::Cold(writer) => claims.push((group, writer, permit)),
+                FreshArchiveClaim::Warm => {} // Drop the unused reservation immediately.
+                FreshArchiveClaim::Busy => return Ok(()),
+            }
+        }
+        // No GET has started for these claims. A busy writer above releases all
+        // locks and permits, leaving the complete expanded set on ordinary delivery.
+        for (group, writer, permit) in claims {
+            requests.start(
+                group,
+                writer,
+                permit,
+                &admission,
+                &owner_cancel,
+                &mut metrics,
+            )?;
         }
         Ok(())
+    };
+    let result = tokio::select! {
+        biased;
+        () = owner_cancel.cancelled() => Err(RunnerError::Cancelled),
+        result = prepare => result,
+    };
+    metrics.record(
+        "storage_cache_fresh_delivery_classify",
+        started.elapsed(),
+        result.is_ok(),
+        None,
+    );
+    FreshArchiveClassification {
+        groups,
+        apply: requests.apply,
+        fetches: requests.fetches,
+        metrics,
+        summary: scan_summary,
+        result,
     }
-    .await;
-    scan_summary.record(telemetry, prepare_result.is_ok());
-    if let Err(error) = prepare_result {
-        delivery.cancel_and_drain(telemetry).await;
-        return Err(error);
-    }
-
-    Ok(delivery)
 }
 
-/// Runner-owned archive delivery uses the shared bounded timeout and falls
-/// back to guest-storage-apply when its best-effort request cannot complete.
+enum FreshArchiveClaim {
+    Cold(nix::fcntl::Flock<std::fs::File>),
+    Warm,
+    Busy,
+}
+
+async fn claim_fresh_archive(
+    group: &CacheTargetGroup,
+    home: &HomePaths,
+    metrics: &mut CacheProcessMetrics,
+) -> RunnerResult<FreshArchiveClaim> {
+    let target = group
+        .targets
+        .first()
+        .ok_or_else(|| RunnerError::Internal("empty runner-owned archive target group".into()))?;
+    let writer =
+        match lock::try_acquire_or_busy(home.storage_lock(&target.name, &target.version)).await? {
+            lock::TryLock::Acquired(writer) => writer,
+            lock::TryLock::Busy => {
+                metrics.record(
+                    STORAGE_CACHE_FRESH_DELIVERY_LOCK_BUSY,
+                    Duration::ZERO,
+                    true,
+                    None,
+                );
+                return Ok(FreshArchiveClaim::Busy);
+            }
+        };
+    let cache_dir = home.storage_cache_dir(&target.name, &target.version);
+    let archive_path = cache_dir.join("archive.tar.gz");
+    // Unlocked observations are only hints. Revalidate under the writer before
+    // assigning request ownership, preserving corrupt-entry cleanup and errors.
+    match fs::metadata(&archive_path).await {
+        Ok(metadata) if metadata.len() == 0 => evict_empty_cache(target, &cache_dir).await?,
+        Ok(metadata) if metadata.len() <= CACHE_MAX_SIZE => {
+            metrics.record(
+                STORAGE_CACHE_FRESH_DELIVERY_WARM,
+                Duration::ZERO,
+                true,
+                None,
+            );
+            return Ok(FreshArchiveClaim::Warm);
+        }
+        Ok(metadata) => evict_oversized_cache(target, &cache_dir, metadata.len()).await?,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(RunnerError::Internal(format!(
+                "stat cached {}: {error}",
+                archive_path.display()
+            )));
+        }
+    }
+    Ok(FreshArchiveClaim::Cold(writer))
+}
+
+#[derive(Default)]
+struct FreshArchiveRequests {
+    apply: Vec<oneshot::Sender<()>>,
+    fetches: JoinSet<FreshArchiveFetchTaskResult>,
+}
+
+impl FreshArchiveRequests {
+    fn start(
+        &mut self,
+        group: &CacheTargetGroup,
+        writer: nix::fcntl::Flock<std::fs::File>,
+        permit: OwnedSemaphorePermit,
+        admission: &FreshArchiveDeliveryAdmission,
+        cancel: &CancellationToken,
+        metrics: &mut CacheProcessMetrics,
+    ) -> RunnerResult<()> {
+        let target = group.targets.first().ok_or_else(|| {
+            RunnerError::Internal("empty runner-owned archive target group".into())
+        })?;
+        let http = admission.client_for_archive(&target.archive_url)?;
+        let archive_url = target.archive_url.clone();
+        let group = group.clone();
+        let cancel = cancel.clone();
+        let (apply_tx, apply_rx) = oneshot::channel();
+        self.apply.push(apply_tx);
+        self.fetches.spawn(async move {
+            let fetch = tokio::select! {
+                biased;
+                () = cancel.cancelled() => Err("cancelled"),
+                result = fetch_fresh_archive(&http, &archive_url, group.archive_size) => result,
+            };
+            let (bytes, size_source) = match fetch {
+                Ok(download) => download,
+                Err(reason) => return FreshArchiveFetchTaskResult::Terminal { reason },
+            };
+            tokio::select! {
+                biased;
+                () = cancel.cancelled() => FreshArchiveFetchTaskResult::Terminal { reason: "cancelled" },
+                ready = apply_rx => {
+                    if ready.is_err() {
+                        FreshArchiveFetchTaskResult::Terminal { reason: "cancelled" }
+                    } else {
+                        FreshArchiveFetchTaskResult::Downloaded(FreshArchiveDownloaded {
+                            group, bytes, size_source, writer, permit,
+                        })
+                    }
+                }
+            }
+        });
+        metrics.record(
+            STORAGE_CACHE_FRESH_DELIVERY_ADMITTED,
+            Duration::ZERO,
+            true,
+            None,
+        );
+        metrics.record(
+            STORAGE_CACHE_FRESH_DELIVERY_SINGLE_REQUEST,
+            Duration::ZERO,
+            true,
+            None,
+        );
+        Ok(())
+    }
+}
+
+/// An admitted runner-owned request uses the shared bounded timeout. Failure
+/// is terminal; it must not be retried through a second Guest download owner.
 async fn fetch_fresh_archive(
     http: &Client,
     archive_url: &str,
@@ -3484,6 +3770,8 @@ fn rewrite_url(plan: &mut StoragePlan, target: &CacheTarget) {
 mod tests {
     use super::*;
 
+    mod http_reuse;
+
     use async_trait::async_trait;
     use httpmock::Method::{GET, HEAD};
     use httpmock::prelude::*;
@@ -3508,6 +3796,27 @@ mod tests {
     };
 
     const CACHE_TEST_RUNTIME_DIR: &str = "/tmp/storage-cache-test-runtime";
+
+    // Cache tests observe selection at its join boundary. Executor tests use
+    // the production entry point directly to verify pre-create overlap.
+    async fn prepare_fresh_archive_delivery(
+        plan: &mut StoragePlan,
+        home: &HomePaths,
+        admission: &FreshArchiveDeliveryAdmission,
+        cancel: &CancellationToken,
+        telemetry: &mut JobTelemetry,
+        decoded: Option<&decoded::DecodedCache>,
+    ) -> RunnerResult<FreshArchiveDelivery> {
+        let mut delivery = super::prepare_fresh_archive_delivery(
+            plan, home, admission, cancel, telemetry, decoded,
+        )
+        .await?;
+        if let Err(error) = delivery.finish_classification(telemetry).await {
+            delivery.cancel_and_drain(telemetry).await;
+            return Err(error);
+        }
+        Ok(delivery)
+    }
 
     fn new_telemetry() -> JobTelemetry {
         new_telemetry_for_api_url("http://localhost:0")
@@ -3821,17 +4130,20 @@ mod tests {
     }
 
     fn tarball_bytes() -> Vec<u8> {
+        tarball_with_contents(b"storage cache test file\n")
+    }
+
+    fn tarball_with_contents(content: &[u8]) -> Vec<u8> {
         let mut bytes = Vec::new();
         {
             let encoder = flate2::write::GzEncoder::new(&mut bytes, flate2::Compression::default());
             let mut builder = tar::Builder::new(encoder);
-            let content = b"storage cache test file\n";
             let mut header = tar::Header::new_gnu();
             header.set_size(content.len() as u64);
             header.set_mode(0o644);
             header.set_cksum();
             builder
-                .append_data(&mut header, "file.txt", &content[..])
+                .append_data(&mut header, "file.txt", content)
                 .unwrap();
             let encoder = builder.into_inner().unwrap();
             encoder.finish().unwrap();
@@ -4191,6 +4503,17 @@ mod tests {
                 .unwrap_or_else(|e| e.into_inner())
                 .remove(path);
             result
+        }
+
+        async fn write_file_with_compression(
+            &self,
+            path: &str,
+            content: &[u8],
+            compression: sandbox::FileCompression,
+        ) -> sandbox::Result<()> {
+            self.inner
+                .write_file_with_compression(path, content, compression)
+                .await
         }
 
         async fn write_private_file(&self, path: &str, content: &[u8]) -> sandbox::Result<()> {
@@ -4797,7 +5120,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn fresh_delivery_uses_full_response_content_length_without_a_probe() {
+    async fn fresh_delivery_unknown_size_uses_one_response_for_duplicate_targets() {
         let temp = tempfile::tempdir().unwrap();
         let home = home_at(&temp);
         let sandbox = MockSandbox::new("test");
@@ -4837,15 +5160,131 @@ mod tests {
         assert!(deferred.is_none());
         first.assert_calls_async(1).await;
         second.assert_calls_async(0).await;
-        let expected = format!("file://{}", guest_archive_path(name, version));
-        assert_eq!(storage_archive_url(&plan, 0), Some(expected.as_str()));
-        assert_eq!(storage_archive_url(&plan, 1), Some(expected.as_str()));
+        let staged_url = format!("file://{}", guest_archive_path(name, version));
+        assert_eq!(storage_archive_url(&plan, 0), Some(staged_url.as_str()));
+        assert_eq!(storage_archive_url(&plan, 1), Some(staged_url.as_str()));
         let batches = sandbox.write_files_calls();
         assert_eq!(batches.len(), 1);
         assert_eq!(batches[0].files.len(), 1);
-        let ops = telemetry.pending_ops_snapshot();
-        assert_op(&ops, STORAGE_CACHE_FRESH_DELIVERY_SIZE_RESPONSE, true);
-        assert_op_count(&ops, STORAGE_CACHE_FRESH_DELIVERY_SINGLE_REQUEST, 1);
+        assert_eq!(batches[0].files[0].content, body);
+        assert_eq!(
+            fs::read(home.storage_cache_dir(name, version).join("archive.tar.gz"))
+                .await
+                .unwrap(),
+            body
+        );
+        assert_op(
+            &telemetry.pending_ops_snapshot(),
+            STORAGE_CACHE_FRESH_DELIVERY_SIZE_RESPONSE,
+            true,
+        );
+    }
+
+    #[tokio::test]
+    async fn fresh_delivery_unknown_size_is_bounded_to_the_original_candidate_prefix() {
+        for prefix_count in [FRESH_DELIVERY_SCAN_LIMIT - 1, FRESH_DELIVERY_SCAN_LIMIT] {
+            let temp = tempfile::tempdir().unwrap();
+            let home = home_at(&temp);
+            let sandbox = MockSandbox::new("unknown-prefix");
+            let mut telemetry = new_telemetry();
+            let server = MockServer::start_async().await;
+            let body = tarball_bytes();
+            let get = server
+                .mock_async(|when, then| {
+                    when.method(GET).path("/unknown.tar.gz");
+                    then.status(200).body(body.clone());
+                })
+                .await;
+            let mut storages = (0..prefix_count)
+                .map(|index| {
+                    let name = format!("warm-{index}");
+                    write_cached_archive(&home, &name, "v1", &body);
+                    storage_entry_with_archive_size(
+                        format!("/mnt/warm-{index}"),
+                        server.url(format!("/warm-{index}.tar.gz")),
+                        &name,
+                        "v1",
+                        Some(body.len() as u64),
+                    )
+                })
+                .collect::<Vec<_>>();
+            let original = server.url("/unknown.tar.gz");
+            storages.push(storage_entry(
+                "/mnt/unknown".into(),
+                original.clone(),
+                "unknown",
+                "v1",
+            ));
+            let mut plan = plan_from_entries(storages, Vec::new(), None);
+
+            let deferred =
+                populate_cache_through_fresh_delivery(&mut plan, &sandbox, &home, &mut telemetry)
+                    .await
+                    .unwrap();
+
+            let eligible = prefix_count < FRESH_DELIVERY_SCAN_LIMIT;
+            assert_eq!(deferred.is_none(), eligible);
+            drop(deferred);
+            get.assert_calls_async(usize::from(eligible)).await;
+            let expected = if eligible {
+                format!("file://{}", guest_archive_path("unknown", "v1"))
+            } else {
+                original
+            };
+            assert_eq!(
+                storage_archive_url(&plan, prefix_count),
+                Some(expected.as_str())
+            );
+            let staged = sandbox.write_files_calls();
+            let unknown = staged
+                .iter()
+                .flat_map(|batch| &batch.files)
+                .find(|file| file.path == guest_archive_path("unknown", "v1"));
+            assert_eq!(
+                unknown.map(|file| file.content.as_slice()),
+                eligible.then_some(body.as_slice())
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn fresh_delivery_unknown_size_requires_a_bounded_response_length() {
+        for (headers, reason) in [
+            ("".to_string(), "response-size-missing"),
+            ("Content-Length: 0\r\n".to_string(), "response-size-zero"),
+            (
+                format!("Content-Length: {}\r\n", CACHE_MAX_SIZE + 1),
+                "response-size-oversized",
+            ),
+        ] {
+            let temp = tempfile::tempdir().unwrap();
+            let home = home_at(&temp);
+            let sandbox = MockSandbox::new(reason);
+            let mut telemetry = new_telemetry();
+            let response = format!("HTTP/1.1 200 OK\r\n{headers}Connection: close\r\n\r\n");
+            let (url, server_task) = raw_http_url(response.into_bytes()).await;
+            let mut plan = fresh_storage_plan(url.clone(), "unknown-length", "v1");
+
+            let result =
+                populate_cache_through_fresh_delivery(&mut plan, &sandbox, &home, &mut telemetry)
+                    .await;
+
+            server_task.assert_finished().await;
+            assert!(matches!(result, Err(RunnerError::Internal(_))), "{reason}");
+            assert_eq!(storage_archive_url(&plan, 0), Some(url.as_str()));
+            assert!(sandbox.write_files_calls().is_empty());
+            assert!(
+                !home
+                    .storage_cache_dir("unknown-length", "v1")
+                    .join("archive.tar.gz")
+                    .exists()
+            );
+            assert_op_error(
+                &telemetry.pending_ops_snapshot(),
+                STORAGE_CACHE_FRESH_DELIVERY_FAILED,
+                reason,
+            );
+        }
     }
 
     #[tokio::test]
@@ -4899,7 +5338,14 @@ mod tests {
             .await;
         let name = "fresh-artifact";
         let version = "v1";
-        let mut plan = fresh_artifact_plan(server.url("/fresh-artifact.tar.gz"), name, version);
+        let mut entry = artifact_entry(
+            "/mnt/artifact".into(),
+            server.url("/fresh-artifact.tar.gz"),
+            name,
+            version,
+        );
+        entry.archive_size = Some(body.len() as u64);
+        let mut plan = plan_from_entries(Vec::new(), vec![entry], None);
 
         let deferred =
             populate_cache_through_fresh_delivery(&mut plan, &sandbox, &home, &mut telemetry)
@@ -4913,7 +5359,7 @@ mod tests {
             Some(format!("file://{}", guest_archive_path(name, version)).as_str())
         );
         let ops = telemetry.pending_ops_snapshot();
-        assert_op(&ops, STORAGE_CACHE_FRESH_DELIVERY_SIZE_RESPONSE, true);
+        assert_op(&ops, STORAGE_CACHE_FRESH_DELIVERY_SIZE_MANIFEST, true);
         assert_op(&ops, STORAGE_CACHE_FRESH_DELIVERY_STAGED, true);
     }
 
@@ -4933,7 +5379,12 @@ mod tests {
             })
             .await;
         let original = server.url("/fresh-partial.tar.gz");
-        let mut plan = fresh_storage_plan(original.clone(), "fresh-partial", "v1");
+        let mut plan = fresh_storage_plan_with_archive_size(
+            original.clone(),
+            "fresh-partial",
+            "v1",
+            tarball_bytes().len() as u64,
+        );
 
         let result =
             populate_cache_through_fresh_delivery(&mut plan, &sandbox, &home, &mut telemetry).await;
@@ -5122,7 +5573,7 @@ mod tests {
             "fresh-publication",
             "v1",
         );
-        let group = group_targets(collect_targets(&plan))
+        let group = group_targets(collect_targets(plan.cache_candidates()))
             .into_iter()
             .next()
             .unwrap();
@@ -5134,6 +5585,8 @@ mod tests {
         let (release_tx, release_rx) = oneshot::channel();
         let mut delivery = FreshArchiveDelivery {
             cancel: publication_cancel,
+            classification: JoinSet::new(),
+            groups: None,
             apply: Vec::new(),
             fetches: JoinSet::new(),
             publications: JoinSet::new(),
@@ -5447,7 +5900,254 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn fresh_delivery_scan_summary_preserves_coexisting_capacity_stops() {
+    async fn fresh_delivery_expanded_misses_require_complete_admission() {
+        for case in [
+            "complete",
+            "capacity",
+            "overflow",
+            "writer",
+            "unknown",
+            "oversized",
+            "unkeyed",
+        ] {
+            let temp = tempfile::tempdir().unwrap();
+            let home = home_at(&temp);
+            let server = MockServer::start_async().await;
+            let body = tarball_bytes();
+            let cold_get = server
+                .mock_async(|when, then| {
+                    when.method(GET).path_includes("/expanded-");
+                    then.status(200).body(body.clone());
+                })
+                .await;
+            let mut storages = (0..98)
+                .map(|index| {
+                    let name = format!("warm-{index}");
+                    write_cached_archive(&home, &name, "v1", &body);
+                    storage_entry_with_archive_size(
+                        format!("/warm/{index}"),
+                        server.url(format!("/warm-{index}")),
+                        &name,
+                        "v1",
+                        Some(body.len() as u64),
+                    )
+                })
+                .collect::<Vec<_>>();
+            let cold_count = if case == "overflow" { 5 } else { 4 };
+            for index in 0..cold_count {
+                let size = match (case, index) {
+                    ("unknown", 3) => None,
+                    ("oversized", 3) => Some(CACHE_MAX_SIZE + 1),
+                    _ => Some(body.len() as u64),
+                };
+                storages.push(storage_entry_with_archive_size(
+                    format!("/cold/{index}"),
+                    server.url(format!("/expanded-{index}")),
+                    &if case == "unkeyed" && index == 3 {
+                        String::new()
+                    } else {
+                        format!("expanded-{index}")
+                    },
+                    "v1",
+                    size,
+                ));
+            }
+            let mut plan = plan_from_entries(storages, Vec::new(), None);
+            let admission = FreshArchiveDeliveryAdmission::new();
+            let held = if case == "capacity" {
+                Some(
+                    Arc::clone(&admission.permits)
+                        .try_acquire_many_owned(5)
+                        .unwrap(),
+                )
+            } else {
+                None
+            };
+            let writer = if case == "writer" {
+                Some(
+                    lock::acquire(home.storage_lock("expanded-3", "v1"))
+                        .await
+                        .unwrap(),
+                )
+            } else {
+                None
+            };
+            let mut telemetry = new_telemetry();
+            let mut delivery = prepare_fresh_archive_delivery(
+                &mut plan,
+                &home,
+                &admission,
+                &CancellationToken::new(),
+                &mut telemetry,
+                None,
+            )
+            .await
+            .unwrap();
+            let sandbox = MockSandbox::new(case);
+            let deferred = populate_cache_with_fresh_delivery(
+                &mut plan,
+                &sandbox,
+                &home,
+                &mut telemetry,
+                Some(&mut delivery),
+                None,
+            )
+            .await
+            .unwrap();
+            let admitted = case == "complete";
+            cold_get
+                .assert_calls_async(if admitted { 4 } else { 0 })
+                .await;
+            for index in 0..cold_count {
+                let expected = if admitted {
+                    format!(
+                        "file://{}",
+                        guest_archive_path(&format!("expanded-{index}"), "v1")
+                    )
+                } else {
+                    server.url(format!("/expanded-{index}"))
+                };
+                assert_eq!(
+                    storage_archive_url(&plan, 98 + index),
+                    Some(expected.as_str()),
+                    "{case}"
+                );
+                let batches = sandbox.write_files_calls();
+                let staged = batches.iter().flat_map(|batch| &batch.files).find(|file| {
+                    file.path == guest_archive_path(&format!("expanded-{index}"), "v1")
+                });
+                assert_eq!(
+                    staged.map(|file| file.content.as_slice()),
+                    admitted.then_some(body.as_slice()),
+                    "{case}"
+                );
+            }
+            drop(deferred);
+            delivery.cancel_and_drain(&mut telemetry).await;
+            drop(writer);
+            drop(held);
+            assert_eq!(
+                admission.permits.available_permits(),
+                FRESH_DELIVERY_RUNNER_LIMIT,
+                "{case}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn fresh_delivery_concurrent_expanded_sets_keep_whole_request_ownership() {
+        let temp = tempfile::tempdir().unwrap();
+        let home = home_at(&temp);
+        let server = MockServer::start_async().await;
+        let body = tarball_bytes();
+        let mut warm = Vec::new();
+        for index in 0..98 {
+            let name = format!("shared-warm-{index}");
+            write_cached_archive(&home, &name, "v1", &body);
+            warm.push(storage_entry_with_archive_size(
+                format!("/warm/{index}"),
+                server.url(format!("/warm-{index}")),
+                &name,
+                "v1",
+                Some(body.len() as u64),
+            ));
+        }
+        let mut gets = Vec::new();
+        for lane in 0..4 {
+            gets.push(
+                server
+                    .mock_async(|when, then| {
+                        when.method(GET).path_includes(format!("/lane-{lane}-"));
+                        then.status(200).body(body.clone());
+                    })
+                    .await,
+            );
+        }
+        let admission = FreshArchiveDeliveryAdmission::new();
+        let mut preparations = Vec::new();
+        for lane in 0..4 {
+            let mut entries = warm.clone();
+            for index in 0..4 {
+                let name = format!("lane-{lane}-{index}");
+                entries.push(storage_entry_with_archive_size(
+                    format!("/cold/{index}"),
+                    server.url(format!("/{name}")),
+                    &name,
+                    "v1",
+                    Some(body.len() as u64),
+                ));
+            }
+            let home = &home;
+            let admission = &admission;
+            preparations.push(async move {
+                let mut plan = plan_from_entries(entries, Vec::new(), None);
+                let mut telemetry = new_telemetry();
+                let delivery = prepare_fresh_archive_delivery(
+                    &mut plan,
+                    home,
+                    admission,
+                    &CancellationToken::new(),
+                    &mut telemetry,
+                    None,
+                )
+                .await
+                .unwrap();
+                (lane, plan, telemetry, delivery)
+            });
+        }
+        // Every preparation completes while all admitted requests are still
+        // held before Guest staging, so no lane can borrow released capacity.
+        let prepared = futures_util::future::join_all(preparations).await;
+        let mut admitted_lanes = 0;
+        for (lane, mut plan, mut telemetry, mut delivery) in prepared {
+            let sandbox = MockSandbox::new("concurrent-expanded");
+            let deferred = populate_cache_with_fresh_delivery(
+                &mut plan,
+                &sandbox,
+                &home,
+                &mut telemetry,
+                Some(&mut delivery),
+                None,
+            )
+            .await
+            .unwrap();
+            let staged = (98..102)
+                .filter(|&index| {
+                    storage_archive_url(&plan, index).is_some_and(|url| url.starts_with("file://"))
+                })
+                .count();
+            assert!(
+                staged == 0 || staged == 4,
+                "lane {lane} has a partial set: {staged}"
+            );
+            gets[lane].assert_calls_async(staged).await;
+            if staged == 4 {
+                admitted_lanes += 1;
+            }
+            let batches = sandbox.write_files_calls();
+            for index in 0..4 {
+                let name = format!("lane-{lane}-{index}");
+                let file = batches
+                    .iter()
+                    .flat_map(|batch| &batch.files)
+                    .find(|file| file.path == guest_archive_path(&name, "v1"));
+                assert_eq!(
+                    file.map(|file| file.content.as_slice()),
+                    (staged == 4).then_some(body.as_slice())
+                );
+            }
+            drop(deferred);
+            delivery.cancel_and_drain(&mut telemetry).await;
+        }
+        assert_eq!(admitted_lanes, 2);
+        assert_eq!(
+            admission.permits.available_permits(),
+            FRESH_DELIVERY_RUNNER_LIMIT
+        );
+    }
+
+    #[tokio::test]
+    async fn fresh_delivery_runner_capacity_keeps_late_misses_on_ordinary_source() {
         let temp = tempfile::tempdir().unwrap();
         let home = home_at(&temp);
         let mut telemetry = new_telemetry();
@@ -5485,7 +6185,7 @@ mod tests {
             !home
                 .storage_lock(&format!("saturated-{FRESH_DELIVERY_SCAN_LIMIT}"), "v1")
                 .exists(),
-            "the group beyond the finite scan must remain untouched"
+            "a saturated runner must not acquire another archive writer"
         );
         let ops = telemetry.pending_ops_snapshot();
         assert_eq!(
@@ -5497,10 +6197,6 @@ mod tests {
                 .count(),
             FRESH_DELIVERY_SCAN_LIMIT
         );
-        assert!(ops.iter().any(|(action, _, error)| {
-            action == STORAGE_CACHE_FRESH_DELIVERY_CAPACITY
-                && error.as_deref() == Some("scan-limit")
-        }));
         let outcome_ops = telemetry.pending_ops_with_outcome_snapshot();
         assert_bounded_outcome(
             &outcome_ops,
@@ -5509,16 +6205,9 @@ mod tests {
             "runner_wide",
             None,
         );
-        assert_bounded_outcome(
-            &outcome_ops,
-            STORAGE_CACHE_FRESH_DELIVERY_SCAN_STOP,
-            true,
-            "scan_limit",
-            None,
-        );
         assert_eq!(
             bounded_outcome_count(&outcome_ops, STORAGE_CACHE_FRESH_DELIVERY_SCAN_STOP),
-            2
+            1
         );
         drop(held_permits);
     }
@@ -5576,6 +6265,9 @@ mod tests {
         ));
         let mut plan = plan_from_entries(storages, Vec::new(), None);
         let admission = FreshArchiveDeliveryAdmission::new();
+        let held_permits = Arc::clone(&admission.permits)
+            .try_acquire_many_owned(FRESH_DELIVERY_RUNNER_LIMIT as u32)
+            .unwrap();
         let cancel = CancellationToken::new();
 
         let delivery = prepare_fresh_archive_delivery(
@@ -5591,6 +6283,7 @@ mod tests {
 
         assert!(delivery.apply.is_empty());
         get.assert_calls_async(0).await;
+        drop(held_permits);
         let outcome_ops = telemetry.pending_ops_with_outcome_snapshot();
         assert_bounded_outcome(
             &outcome_ops,
@@ -5730,11 +6423,6 @@ mod tests {
             "none",
             None,
         );
-        assert!(!outcome_ops.iter().any(|(action, _, outcome, _)| {
-            action == STORAGE_CACHE_FRESH_DELIVERY_SCAN_STOP
-                && outcome.as_deref() == Some("scan_limit")
-        }));
-
         first.cancel_and_drain(&mut telemetry).await;
         second.cancel_and_drain(&mut telemetry).await;
         third.cancel_and_drain(&mut telemetry).await;

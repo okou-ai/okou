@@ -178,6 +178,13 @@ Start returns a session ID before remote setup completes; it is not proof that t
       .option("--base64 <data>", "Canonical base64 input")
       .option("--eof", "Close stdin after this input")
       .option("--json", "Print JSON")
+      .addHelpText(
+        "after",
+        `
+Shell input and recovery:
+  - For a persistent shell, terminate commands with an actual newline in --text (for Bash, --text $'whoami\\n'); the two characters \\ and n are not Enter.
+  - An uncertain write may already have had remote effects. Recover the exact session with okou ssh session list --json, then inspect okou ssh session status <session-id> --json and okou ssh session read <session-id> --json. Never automatically replay the input.`,
+      )
       .action(
         withErrorHandler(
           async (
@@ -223,6 +230,12 @@ Start returns a session ID before remote setup completes; it is not proof that t
       .argument("<session-id>", "Exact session ID")
       .requiredOption("--signal <signal>", "INT, TERM, KILL, HUP, USR1 or USR2")
       .option("--json", "Print JSON")
+      .addHelpText(
+        "after",
+        `
+Signal safety:
+  - Submission does not confirm remote handling or effects. After an uncertain outcome, inspect okou ssh session status <session-id> --json and okou ssh session read <session-id> --json. Never automatically replay the signal.`,
+      )
       .action(
         withErrorHandler(
           async (

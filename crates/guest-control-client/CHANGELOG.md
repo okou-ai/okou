@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.20.21](https://github.com/vm0-ai/okou/compare/guest-control-client-v0.20.20...guest-control-client-v0.20.21) (2026-09-17)
+
+## [0.20.20](https://github.com/vm0-ai/okou/compare/guest-control-client-v0.20.19...guest-control-client-v0.20.20) (2026-09-16)
+
+
+### Performance Improvements
+
+* **runner:** stream compressed session history with caller-owned policy ([#34603](https://github.com/vm0-ai/okou/issues/34603)) ([1376434](https://github.com/vm0-ai/okou/commit/1376434b697f5e39be6d569c6b20a4e33ed12342))
+
+## [0.20.19](https://github.com/vm0-ai/okou/compare/guest-control-client-v0.20.18...guest-control-client-v0.20.19) (2026-09-16)
+
 ## [0.20.18](https://github.com/vm0-ai/okou/compare/guest-control-client-v0.20.17...guest-control-client-v0.20.18) (2026-09-16)
 
 ## [0.20.17](https://github.com/vm0-ai/okou/compare/guest-control-client-v0.20.16...guest-control-client-v0.20.17) (2026-09-16)

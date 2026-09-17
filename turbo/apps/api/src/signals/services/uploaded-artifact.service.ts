@@ -88,7 +88,7 @@ export function uploadedArtifactObject(args: UploadedArtifactIdentity) {
       return {
         key: record.key,
         bucket: record.bucket,
-        url: privateArtifactUrl(record.id, record.filename),
+        url: privateArtifactUrl(record.id, record.filename, record.metadata),
         publicBrand: record.publicBrand,
         filename: record.filename,
         contentType: record.contentType,

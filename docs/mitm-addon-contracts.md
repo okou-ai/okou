@@ -5,6 +5,45 @@ normalization. Read the relevant section before changing the addon or its pinned
 mitmproxy/wsproto dependencies. See the [testing guide](testing/mitm-addon-testing.md)
 for environment setup, commands, and executable coverage.
 
+## Gmail send restriction
+
+For registered sandbox requests, trusted authority validation and the existing
+browser passthrough run first. The addon then rejects non-browser Gmail send
+operations before configurable firewall matching, credential resolution, or
+request streaming. Ordinary `allow` grants cannot override this local restriction.
+The browser exemption still uses the existing User-Agent heuristic; this is not
+a guarantee against clients that imitate a browser.
+
+The restriction covers `messages/send` and `drafts/send` on the normal, upload,
+and resumable-upload paths, including upload PUTs, explicit mailbox IDs, and
+encoded endpoint spellings. Gmail-host batch paths and the shared Google
+`/batch/gmail/v1` path are rejected wholesale. Use individual calls for reads and
+draft edits. Unrelated Google API paths retain their existing policy.
+Shared-host paths are also checked after bounded decoding and dot-segment
+removal, even when no configurable firewall matches. This normalization is only
+for classification; it does not rewrite the forwarded request path.
+
+Rejected requests receive a local `403` with reason `gmail_send_blocked` and a
+Gmail-compatible `error.message` so SDK callers see the actionable handoff:
+create a draft through the existing Gmail draft API, then run the existing
+`okou mail link <gmail-draft-id>` command and return the review URL for the user
+to review and send. Reuse or update an existing draft when recovering from a
+blocked send. The response uses the same instructions in every environment.
+No CLI command is added or changed by this restriction.
+The session-authenticated API review/send path remains outside this addon guard.
+
+Both request hooks share the restriction. The header hook must not install a
+stream or resolve credentials for a rejected flow; the request hook produces the
+local response after normal buffering. A local response is not a promise to stop
+receiving the client's body immediately. Existing request framing and cleanup
+remain in force.
+
+Addon source is embedded in Runner, so old Runner instances must be replaced
+or drained for enforcement. The handoff uses an existing CLI command and needs
+no CLI rollout. No API, catalog, database, or Runner wire-format migration is
+required. `tests/test_gmail_send.py` exercises both request hooks, the browser
+exemption, and the existing draft/review handoff instructions.
+
 ## Runner-private control and readiness
 
 Runner and its embedded addon ship together. `okou_control_socket_dir` selects
@@ -74,8 +113,64 @@ mutations or move business state onto its thread.
 Runner and the embedded addon use the private control socket for all flush
 coordination. Old Runner instances retain their embedded addon; no
 API-first deployment or mixed Runner/addon protocol fallback is needed. This
-stage does not implement token accounting or guest RPC, and unit/packaged runtime
+transport does not implement guest RPC, and unit/packaged runtime
 tests do not claim production soak or a measured latency improvement.
+
+### Cumulative per-run inference observations
+
+`usage.snapshot` takes exactly `{"runId":"<run identifier>"}` and returns an
+independent MITM source observation. Request and generation identifiers and
+terminal EOF use the same strict envelope. Unknown or uninitialized runs return
+`{state: unavailable, runId}`; reads never create a run or report missing history
+as complete zero. The Rust reader freezes its run and generation before use,
+admits at most eight concurrent reads per proxy without a waiting queue, and
+releases its socket and permit on cancellation. It rejects invalid quantities,
+inconsistent totals/coverage, unknown fields/reasons and mismatched identities.
+
+Runner constructs a source handle with `MitmUsageHandle::from(&proxy)` and freezes
+a run with `for_run(run_id)` before calling `snapshot()`.
+
+Available data contains `runId`, `revision`, `sampledAtMs`, `observedResponses`,
+`outstandingResponses`, `complete`, `reasons` and `totals`. Totals contain disjoint
+`input`, `cacheRead`, `cacheCreation`, `output` and their `total`; exact integers
+are bounded by 2^53 - 1. The revision changes with observed state; sampling time
+is wall-clock milliseconds at the coherent read. Explicit provider zero counts
+as an observed response. Missing categories contribute no fabricated quantities
+and make coverage partial. A registered run before its first inference can have
+complete zero totals with zero observed responses.
+
+Validated registry loads initialize lifetimes. Runner records the original addon
+`usageGeneration` in each registration and preserves it on same-run refreshes.
+Absent or different generation means `history_lost`, including after restart.
+Flow attribution is captured before upstream work and survives IP reassignment.
+The supported model JSON/SSE and Responses WebSocket parsers feed this state
+independently of billing admission. Response identities are scoped to the run
+and provider firewall; HTTP without a provider ID uses its flow ID. Repeated
+snapshots replace known quantities for one response, and billing flushes do not
+clear totals or deduplication. Known partial/error observations remain visible.
+Idle WebSockets and proven prewarm do not count as outstanding inference.
+
+The owner retains at most 256 runs, 4096 response identities and outstanding
+flow handles per run, and 32768 response identities across the process. Retained
+identity strings are bounded at 1024 bytes. Inactive runs remain for five minutes;
+registry reconciliation and reads prune them, and registration pressure evicts
+inactive runs first. If all run slots are active, a new run remains unavailable.
+Response pressure refuses new identities rather than forgetting deduplication;
+existing eligible identities remain updatable. Once any run history is discarded,
+newly initialized runs conservatively carry `retention_lost` until the next addon
+generation, avoiding an unbounded tombstone set. Process exit owns final cleanup.
+
+Coverage reasons are `history_lost`, `retention_lost`, `missing_usage`,
+`missing_categories`, `parse_error`, `ambiguous_response`, `unsupported_protocol`,
+`interrupted`, `overflow` and `in_flight`. All except `in_flight` are sticky for
+the retained run; missing provider evidence can therefore never become an
+unqualified complete result. The read copies small totals under a short lock,
+without file, parser or delivery I/O. Blocked billing does not block it.
+
+This is an in-memory source measurement, not durable accounting, API-first-turn
+usage or a combined CLI query. Runner and its addon ship together; the optional
+registry field keeps older entries readable with explicit incomplete coverage.
+There is no new listener, guest-selected identity or automatic protocol fallback.
 
 ### Delivery admission, observation and shutdown
 
@@ -139,7 +234,18 @@ acknowledgement after releasing registry and active-run locks. Their success and
 retry policies still describe publication: an unconfirmed acknowledgement never
 rolls back or automatically republishes configuration.
 Initial registration establishes local network-log attribution and runtime-sync
-tracking before waiting, including for already-unparked reused sandboxes.
+tracking before nonblocking observation admission, including for already-unparked
+reused sandboxes. Registration does not wait for a receipt. Each proxy control
+generation owns at most one background exchange and one queued publication;
+queue saturation records an unconfirmed outcome without waiting or retrying.
+Restart, stop, kill and proxy Drop cancel the old generation's queued/in-flight
+local observations, even when registry handles survive. Cancellation is an
+unconfirmed observation, not rollback of the published registry. Frozen targets
+never follow a replacement generation. Unregistration and connector synchronization
+retain their synchronous observation waits.
+
+Moving the receipt wait off startup does not remove addon loading work or certify
+first-request latency. Current-file enforcement remains on the request path.
 
 `registry.apply` takes exactly `{"digest":"<64 lowercase hex characters>"}`.
 It reads only the configured registry/catalog paths; neither policies nor caller

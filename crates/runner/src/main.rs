@@ -15,6 +15,7 @@ mod error;
 mod executor;
 mod firewall_hostname_policy;
 mod group;
+mod guest_rpc;
 mod guest_timezone;
 mod helper_exec;
 mod host;
@@ -72,6 +73,12 @@ mod types;
 mod workspace_image_cache;
 mod workspace_mount;
 mod workspace_promotion;
+
+// Source-observation API; guest RPC composition is a separate delivery slice.
+pub use proxy::{
+    CoverageReason, MitmRunUsage, MitmUsageHandle, RunUsageObservation, RunUsageSnapshot,
+    TokenTotals,
+};
 
 use std::path::Path;
 use std::process::ExitCode;

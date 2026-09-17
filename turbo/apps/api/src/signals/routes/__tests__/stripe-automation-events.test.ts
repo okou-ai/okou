@@ -934,176 +934,212 @@ describe("Stripe automation event webhook", () => {
     );
   });
 
-  it("source-gates ingress before preserving run connector fallback order", async () => {
-    const originalAccountId = `acct_stripe_original_${randomUUID()}`;
-    const threadAccountId = `acct_stripe_thread_${randomUUID()}`;
-    const defaultAccountId = `acct_stripe_default_${randomUUID()}`;
-    const scenario = await setupScenario({ accountId: originalAccountId });
-    const seenRunIds = new Set<string>();
-    const orgId = scenario.actor.orgId;
-    if (!orgId) {
-      throw new Error("Expected an organization-scoped workflow owner");
-    }
-    await connectors.updateFeatureSwitches(scenario.actor, {});
-    await runs.enableAgentConnectors(scenario.actor, scenario.agentId, [
-      "stripe",
-    ]);
-    const threadAccount = await addStripeOAuthAccount(
-      scenario.actor,
-      "Thread account",
-      threadAccountId,
-    );
-    const defaultAccount = await addStripeOAuthAccount(
-      scenario.actor,
-      "Default account",
-      defaultAccountId,
-    );
-    mocks.clerk.session(scenario.actor.userId, orgId);
-    await accept(
-      connectorAccountsClient().setDefault({
-        headers: authHeaders(),
-        params: { connectionId: defaultAccount.id },
-        body: { target: { kind: "builtin", connectorSlug: "stripe" } },
-      }),
-      [200],
-    );
-    await accept(
-      chatThreadConnectorSelectionsClient().update({
-        headers: authHeaders(),
-        params: { id: scenario.chatThreadId },
-        body: {
+  describe("source-gated ingress and run connector fallback order", () => {
+    async function prepareConnectorFallbacks() {
+      const originalAccountId = `acct_stripe_original_${randomUUID()}`;
+      const threadAccountId = `acct_stripe_thread_${randomUUID()}`;
+      const defaultAccountId = `acct_stripe_default_${randomUUID()}`;
+      const scenario = await setupScenario({ accountId: originalAccountId });
+      const seenRunIds = new Set<string>();
+      const orgId = scenario.actor.orgId;
+      if (!orgId) {
+        throw new Error("Expected an organization-scoped workflow owner");
+      }
+      await connectors.updateFeatureSwitches(scenario.actor, {});
+      await runs.enableAgentConnectors(scenario.actor, scenario.agentId, [
+        "stripe",
+      ]);
+      const threadAccount = await addStripeOAuthAccount(
+        scenario.actor,
+        "Thread account",
+        threadAccountId,
+      );
+      const defaultAccount = await addStripeOAuthAccount(
+        scenario.actor,
+        "Default account",
+        defaultAccountId,
+      );
+      mocks.clerk.session(scenario.actor.userId, orgId);
+      await accept(
+        connectorAccountsClient().setDefault({
+          headers: authHeaders(),
+          params: { connectionId: defaultAccount.id },
+          body: { target: { kind: "builtin", connectorSlug: "stripe" } },
+        }),
+        [200],
+      );
+      await accept(
+        chatThreadConnectorSelectionsClient().update({
+          headers: authHeaders(),
+          params: { id: scenario.chatThreadId },
+          body: {
+            connectionId: threadAccount.id,
+            target: { kind: "builtin", connectorSlug: "stripe" },
+          },
+        }),
+        [200],
+      );
+      const configuredSelections = await accept(
+        chatThreadConnectorSelectionsClient().get({
+          headers: authHeaders(),
+          params: { id: scenario.chatThreadId },
+        }),
+        [200],
+      );
+      expect(configuredSelections.body.selections).toStrictEqual([
+        {
           connectionId: threadAccount.id,
           target: { kind: "builtin", connectorSlug: "stripe" },
         },
-      }),
-      [200],
-    );
-    const configuredSelections = await accept(
-      chatThreadConnectorSelectionsClient().get({
-        headers: authHeaders(),
-        params: { id: scenario.chatThreadId },
-      }),
-      [200],
-    );
-    expect(configuredSelections.body.selections).toStrictEqual([
-      {
-        connectionId: threadAccount.id,
-        target: { kind: "builtin", connectorSlug: "stripe" },
-      },
-    ]);
-    const configuredAccounts = await accept(
-      connectorAccountsClient().connections({
-        headers: authHeaders(),
-        query: { kind: "builtin", connectorSlug: "stripe", limit: 100 },
-      }),
-      [200],
-    );
-    expect(
-      configuredAccounts.body.connections.map((connection) => {
-        return {
-          id: connection.id,
-          status: connection.connectionStatus,
-        };
-      }),
-    ).toStrictEqual(
-      expect.arrayContaining([
-        { id: scenario.connector.id, status: "connected" },
-        { id: threadAccount.id, status: "connected" },
-        { id: defaultAccount.id, status: "connected" },
-      ]),
-    );
+      ]);
+      const configuredAccounts = await accept(
+        connectorAccountsClient().connections({
+          headers: authHeaders(),
+          query: { kind: "builtin", connectorSlug: "stripe", limit: 100 },
+        }),
+        [200],
+      );
+      expect(
+        configuredAccounts.body.connections.map((connection) => {
+          return {
+            id: connection.id,
+            status: connection.connectionStatus,
+          };
+        }),
+      ).toStrictEqual(
+        expect.arrayContaining([
+          { id: scenario.connector.id, status: "connected" },
+          { id: threadAccount.id, status: "connected" },
+          { id: defaultAccount.id, status: "connected" },
+        ]),
+      );
+      return {
+        originalAccountId,
+        threadAccountId,
+        scenario,
+        seenRunIds,
+        orgId,
+        threadAccount,
+        defaultAccount,
+      };
+    }
 
-    const oldSourceEventId = "evt_connector_projection_old_source";
-    await postStripeAutomationEvent(
-      invoicePaidEvent({
-        accountId: originalAccountId,
-        eventId: oldSourceEventId,
-      }),
-    );
-    expect((await executeAutomation(scenario)).body).toStrictEqual(
-      NO_EXECUTION,
-    );
-
-    const threadEventId = "evt_connector_projection_thread";
-    await postStripeAutomationEvent(
-      invoicePaidEvent({ accountId: threadAccountId, eventId: threadEventId }),
-    );
-    expect((await executeAutomation(scenario)).body).toStrictEqual(
-      EXECUTED_EXECUTION,
-    );
-    const threadClaim = await claimUnseenScenarioRun(scenario, seenRunIds);
-    expect(
-      Object.values(threadClaim.secretConnectorMetadataMap ?? {}),
-    ).toContainEqual(expect.objectContaining({ sourceId: threadAccount.id }));
-
-    const defaultFallbackEventId = "evt_connector_projection_default";
-    await postStripeAutomationEvent(
-      invoicePaidEvent({
-        accountId: threadAccountId,
-        eventId: defaultFallbackEventId,
-      }),
-    );
-    expect((await executeAutomation(scenario)).body).toStrictEqual(
-      EXECUTED_EXECUTION,
-    );
-    await setConnectorAccountState(context, {
-      orgId,
-      userId: scenario.actor.userId,
-      connectorId: threadAccount.id,
-      needsReconnect: true,
-      storageVersion: 1,
+    let prepared: Awaited<ReturnType<typeof prepareConnectorFallbacks>>;
+    beforeEach(async () => {
+      prepared = await prepareConnectorFallbacks();
     });
-    await completeScenarioRun(threadClaim);
-    const defaultClaim = await claimUnseenScenarioRun(scenario, seenRunIds);
-    expect(
-      Object.values(defaultClaim.secretConnectorMetadataMap ?? {}),
-    ).toContainEqual(expect.objectContaining({ sourceId: defaultAccount.id }));
 
-    await setConnectorAccountState(context, {
-      orgId,
-      userId: scenario.actor.userId,
-      connectorId: threadAccount.id,
-      needsReconnect: false,
-      storageVersion: 3,
-    });
-    const unavailableEventId = "evt_connector_projection_unavailable";
-    await postStripeAutomationEvent(
-      invoicePaidEvent({
-        accountId: threadAccountId,
-        eventId: unavailableEventId,
-      }),
-    );
-    expect((await executeAutomation(scenario)).body).toStrictEqual(
-      EXECUTED_EXECUTION,
-    );
-    await Promise.all([
-      setConnectorAccountState(context, {
+    it("source-gates ingress before preserving run connector fallback order", async () => {
+      const {
+        originalAccountId,
+        threadAccountId,
+        scenario,
+        seenRunIds,
+        orgId,
+        threadAccount,
+        defaultAccount,
+      } = prepared;
+
+      const oldSourceEventId = "evt_connector_projection_old_source";
+      await postStripeAutomationEvent(
+        invoicePaidEvent({
+          accountId: originalAccountId,
+          eventId: oldSourceEventId,
+        }),
+      );
+      expect((await executeAutomation(scenario)).body).toStrictEqual(
+        NO_EXECUTION,
+      );
+
+      const threadEventId = "evt_connector_projection_thread";
+      await postStripeAutomationEvent(
+        invoicePaidEvent({
+          accountId: threadAccountId,
+          eventId: threadEventId,
+        }),
+      );
+      expect((await executeAutomation(scenario)).body).toStrictEqual(
+        EXECUTED_EXECUTION,
+      );
+      const threadClaim = await claimUnseenScenarioRun(scenario, seenRunIds);
+      expect(
+        Object.values(threadClaim.secretConnectorMetadataMap ?? {}),
+      ).toContainEqual(expect.objectContaining({ sourceId: threadAccount.id }));
+
+      const defaultFallbackEventId = "evt_connector_projection_default";
+      await postStripeAutomationEvent(
+        invoicePaidEvent({
+          accountId: threadAccountId,
+          eventId: defaultFallbackEventId,
+        }),
+      );
+      expect((await executeAutomation(scenario)).body).toStrictEqual(
+        EXECUTED_EXECUTION,
+      );
+      await setConnectorAccountState(context, {
         orgId,
         userId: scenario.actor.userId,
         connectorId: threadAccount.id,
         needsReconnect: true,
         storageVersion: 1,
-      }),
-      setConnectorAccountState(context, {
+      });
+      await completeScenarioRun(threadClaim);
+      const defaultClaim = await claimUnseenScenarioRun(scenario, seenRunIds);
+      expect(
+        Object.values(defaultClaim.secretConnectorMetadataMap ?? {}),
+      ).toContainEqual(
+        expect.objectContaining({ sourceId: defaultAccount.id }),
+      );
+
+      await setConnectorAccountState(context, {
         orgId,
         userId: scenario.actor.userId,
-        connectorId: defaultAccount.id,
-        needsReconnect: true,
-        storageVersion: 1,
-      }),
-    ]);
-    await completeScenarioRun(defaultClaim);
-    const unavailableClaim = await claimUnseenScenarioRun(scenario, seenRunIds);
-    const unavailableMetadata = Object.values(
-      unavailableClaim.secretConnectorMetadataMap ?? {},
-    );
-    expect(unavailableMetadata).not.toContainEqual(
-      expect.objectContaining({ sourceId: threadAccount.id }),
-    );
-    expect(unavailableMetadata).not.toContainEqual(
-      expect.objectContaining({ sourceId: defaultAccount.id }),
-    );
-    await completeScenarioRun(unavailableClaim);
+        connectorId: threadAccount.id,
+        needsReconnect: false,
+        storageVersion: 3,
+      });
+      const unavailableEventId = "evt_connector_projection_unavailable";
+      await postStripeAutomationEvent(
+        invoicePaidEvent({
+          accountId: threadAccountId,
+          eventId: unavailableEventId,
+        }),
+      );
+      expect((await executeAutomation(scenario)).body).toStrictEqual(
+        EXECUTED_EXECUTION,
+      );
+      await Promise.all([
+        setConnectorAccountState(context, {
+          orgId,
+          userId: scenario.actor.userId,
+          connectorId: threadAccount.id,
+          needsReconnect: true,
+          storageVersion: 1,
+        }),
+        setConnectorAccountState(context, {
+          orgId,
+          userId: scenario.actor.userId,
+          connectorId: defaultAccount.id,
+          needsReconnect: true,
+          storageVersion: 1,
+        }),
+      ]);
+      await completeScenarioRun(defaultClaim);
+      const unavailableClaim = await claimUnseenScenarioRun(
+        scenario,
+        seenRunIds,
+      );
+      const unavailableMetadata = Object.values(
+        unavailableClaim.secretConnectorMetadataMap ?? {},
+      );
+      expect(unavailableMetadata).not.toContainEqual(
+        expect.objectContaining({ sourceId: threadAccount.id }),
+      );
+      expect(unavailableMetadata).not.toContainEqual(
+        expect.objectContaining({ sourceId: defaultAccount.id }),
+      );
+      await completeScenarioRun(unavailableClaim);
+    });
   });
 
   it("falls back when a queued event's Stripe source is deleted", async () => {

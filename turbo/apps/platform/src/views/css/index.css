@@ -156,6 +156,18 @@
      reaches this entry through `motion-safe:animate-owf-beam-flow`. */
   --animate-owf-beam-flow: owf-beam-flow 2.8s linear infinite;
 
+  /* Avatar maker. The option grid staggers its tiles, the dice spins once when
+     a random face is rolled, and each firework particle travels to its own
+     offset. Registered here on the same contract as the entries above; the row
+     sets each tile's delay inline, because `animate-*` compiles to the
+     `animation` shorthand and a shorthand resets a separate `animation-delay`
+     back to zero. The particle's `--fx` / `--fy` stay per-instance runtime data
+     that the component sets. Keyframes stay below. */
+  --animate-avatar-option-appear: avatar-option-appear 0.2s ease-out both;
+  --animate-avatar-option-appear-fast: avatar-option-appear 0.15s ease-out;
+  --animate-avatar-dice-spin: avatar-dice-spin 0.6s ease-out;
+  --animate-avatar-firework: avatar-firework 0.6s ease-out forwards;
+
   /* Illustration strokes. These are drawn artwork inside a scaled canvas, not
      product chrome, so they are a different decision from `--border-width-surface`
      and its shared hairline rather than a competing value for it: an
@@ -473,6 +485,44 @@ body {
   }
 }
 
+@keyframes avatar-option-appear {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes avatar-dice-spin {
+  0% {
+    transform: rotate(0deg) scale(1);
+  }
+  30% {
+    transform: rotate(180deg) scale(1.3);
+  }
+  100% {
+    transform: rotate(360deg) scale(1);
+  }
+}
+
+@keyframes avatar-firework {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  70% {
+    opacity: 0.8;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--fx)), calc(-50% + var(--fy)))
+      scale(0.3);
+  }
+}
+
 @keyframes okou-composer-rail-item-in {
   from {
     opacity: 0;
@@ -509,6 +559,20 @@ body {
   [data-locator-landed] {
     animation-duration: 0.01ms;
   }
+}
+
+/* The product's own palette. It is the absence of a preset rather than another
+   one: `signals/theme.ts` writes no palette attribute while it is selected, so
+   every token keeps the shared values and none of the rules below key in. These
+   two exist for the one element that does carry the attribute, the picker's own
+   swatch, and they are not a designed pair: both are the brand stop the
+   interface already paints with, so the swatch shows the state it selects
+   rather than a new palette. The companion repeats the anchor because the
+   default state has no second colour and no gradient — the shared preview
+   gradient then resolves to one flat brand fill. */
+[data-color-theme="default"] {
+  --okou-color-theme-anchor: hsl(var(--primary-300));
+  --okou-color-theme-companion: hsl(var(--primary-300));
 }
 
 /* Each named theme pairs one anchor with one companion; the same pair drives
@@ -577,13 +641,26 @@ body {
   --okou-color-theme-ring: 171.8 47.1% 33.3%;
 }
 
-[data-color-theme="limelight"] {
-  --okou-color-theme-primary: 70.6 67.5% 49.4%;
-  --okou-color-theme-primary-foreground: 40 4.3% 13.5%;
-  --okou-color-theme-anchor: hsl(var(--okou-color-theme-primary));
-  --okou-color-theme-companion: #f4e33c;
-  --okou-color-theme-hue: 70.6;
-  --okou-color-theme-ring: 74.2 53.8% 41.6%;
+/* The wash behind the picker's selected option, owned at the document root so
+   it resolves on the default palette as well: that palette writes no attribute,
+   so the gradient rule that otherwise supplies this value never keys in and the
+   selected card would lose its fill. It is the same blend the palettes take
+   below, carrying the default palette's own colour, so one option's selected
+   card is not visibly heavier than another's. */
+:root {
+  --okou-color-theme-selected: color-mix(
+    in srgb,
+    #ffffff 84%,
+    hsl(var(--primary-300)) 16%
+  );
+}
+
+:root:where([data-theme="dark"]) {
+  --okou-color-theme-selected: color-mix(
+    in srgb,
+    hsl(var(--card)) 86%,
+    hsl(var(--primary-300)) 14%
+  );
 }
 
 /* Card geometry and elevation. These are document-level runtime theme values, so
@@ -651,12 +728,6 @@ body {
   --okou-composer-focus-veil: none;
 }
 
-/* Avatar / logo thumbnails: the edge of a picture stays readable without the
-   stroke reading as a frame. Its width is already the shared hairline. */
-.okou-thumb-border {
-  border: 0.5px solid hsl(var(--gray-400));
-}
-
 /* The travel a sidebar thread title is scrolled by while its row is hovered or
    focused. `ChatThreadItemTitle` composes the mask and the travel as Tailwind
    utilities and reads this property from both; it is registered here because a
@@ -669,8 +740,6 @@ body {
   inherits: true;
   initial-value: 0px;
 }
-
-/* Morandi outline buttons */
 
 @layer base {
   *,
@@ -996,7 +1065,7 @@ body {
   width: 100%;
   display: table;
   overflow: hidden;
-  border: 0.7px solid hsl(var(--gray-400));
+  border: var(--default-border-width) solid hsl(var(--gray-400));
   border-radius: 8px;
 }
 
@@ -1048,7 +1117,7 @@ body {
   max-width: 100%;
   width: 100%;
   box-sizing: border-box;
-  border: 0.7px solid hsl(var(--gray-400));
+  border: var(--default-border-width) solid hsl(var(--gray-400));
   border-radius: 8px;
 }
 

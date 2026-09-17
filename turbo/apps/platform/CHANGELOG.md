@@ -11,6 +11,171 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.908.0](https://github.com/vm0-ai/okou/compare/app-v0.907.2...app-v0.908.0) (2026-09-17)
+
+
+### Features
+
+* add owner-aware artifact sharing controls ([#34682](https://github.com/vm0-ai/okou/issues/34682)) ([a2fcba9](https://github.com/vm0-ai/okou/commit/a2fcba980a4a92c72678d031d9c85e4154b0bc09))
+* **platform:** keep only oauth-connector workflow templates ([#34665](https://github.com/vm0-ai/okou/issues/34665)) ([558905e](https://github.com/vm0-ai/okou/commit/558905e519c9e6b2ae00cc5c03fac2769e66a3b4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.454.0
+    * @okouai/core bumped to 8.674.0
+
+## [0.907.2](https://github.com/vm0-ai/okou/compare/app-v0.907.1...app-v0.907.2) (2026-09-17)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.453.0
+    * @okouai/core bumped to 8.673.2
+
+## [0.907.1](https://github.com/vm0-ai/okou/compare/app-v0.907.0...app-v0.907.1) (2026-09-16)
+
+
+### Bug Fixes
+
+* **app:** label chat message sources as imessage ([#34746](https://github.com/vm0-ai/okou/issues/34746)) ([88a1de9](https://github.com/vm0-ai/okou/commit/88a1de9a5edba1538b2fd1f0c40b846f84d30536))
+* **chat:** render multiple action links without losing prose ([#34688](https://github.com/vm0-ai/okou/issues/34688)) ([cc367e4](https://github.com/vm0-ai/okou/commit/cc367e411e0262ea6da0982b63c4d60e03cfaa9f))
+* **cli:** include the app origin in private artifact urls ([#34743](https://github.com/vm0-ai/okou/issues/34743)) ([fc49a4c](https://github.com/vm0-ai/okou/commit/fc49a4cbaec88437e82fe3caec5e56670b4e1cf7))
+* **platform:** move workflow message navigation to source label ([#34749](https://github.com/vm0-ai/okou/issues/34749)) ([9fb9ac6](https://github.com/vm0-ai/okou/commit/9fb9ac6fc7dbbd96c64914e970b9f7ce8216e1ef))
+* **platform:** require manual get started check-in ([#34744](https://github.com/vm0-ai/okou/issues/34744)) ([89551da](https://github.com/vm0-ai/okou/commit/89551da94b9bd6b38e2c4166a572c91cb4ce61fa))
+
+
+### Refactoring
+
+* **app:** remove shared worker topic whitelist ([#34736](https://github.com/vm0-ai/okou/issues/34736)) ([39c8d35](https://github.com/vm0-ai/okou/commit/39c8d353ab496edaa471543970c5474bd9147213))
+* require org model policy revision fields ([#34752](https://github.com/vm0-ai/okou/issues/34752)) ([0493242](https://github.com/vm0-ai/okou/commit/0493242c74f11006531e7e34ba665da6f4b5e1d1))
+
+
+### Performance Improvements
+
+* **platform:** split vendor dependencies into five acyclic chunks ([#34751](https://github.com/vm0-ai/okou/issues/34751)) ([f0df6e6](https://github.com/vm0-ai/okou/commit/f0df6e656f2da1826c268d16e2ba9af0689a9d1a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.452.1
+    * @okouai/core bumped to 8.673.1
+
+## [0.907.0](https://github.com/vm0-ai/okou/compare/app-v0.906.1...app-v0.907.0) (2026-09-16)
+
+
+### Features
+
+* **platform:** add a custom category to the template picker ([#34617](https://github.com/vm0-ai/okou/issues/34617)) ([a6d695b](https://github.com/vm0-ai/okou/commit/a6d695ba91197f5f2bd9483977506458fe423792))
+
+
+### Bug Fixes
+
+* **app:** size chat notice cards from their own rows ([#34685](https://github.com/vm0-ai/okou/issues/34685)) ([6e07fe4](https://github.com/vm0-ai/okou/commit/6e07fe4b421b57bd49caaf3282d3c53645eaeb06))
+* **ui:** draw every menu and select row at 36px ([#34699](https://github.com/vm0-ai/okou/issues/34699)) ([34309b1](https://github.com/vm0-ai/okou/commit/34309b1610f5e2c0c8871e78ed259718b161bbdd))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.452.0
+    * @okouai/core bumped to 8.673.0
+    * @okouai/ui bumped to 1.9.3
+
+## [0.906.1](https://github.com/vm0-ai/okou/compare/app-v0.906.0...app-v0.906.1) (2026-09-16)
+
+
+### Bug Fixes
+
+* **api:** attribute required-output backpressure phases ([#34663](https://github.com/vm0-ai/okou/issues/34663)) ([a1e31af](https://github.com/vm0-ai/okou/commit/a1e31afbdd683ded91cb4b0343bfaa2505244b26))
+* **app:** keep the composer's type in the footer and in the thread it opens ([#34660](https://github.com/vm0-ai/okou/issues/34660)) ([d5cff0a](https://github.com/vm0-ai/okou/commit/d5cff0a8edf0b237ad3085cbc877a4fd1c5f80b1))
+* keep the model picker flyout focus ring inside its row ([#34664](https://github.com/vm0-ai/okou/issues/34664)) ([f419bc3](https://github.com/vm0-ai/okou/commit/f419bc3324e6244de5754b289821317400eb4824))
+
+
+### Performance Improvements
+
+* **app:** deduplicate retained attribution requests ([#34649](https://github.com/vm0-ai/okou/issues/34649)) ([2f007cc](https://github.com/vm0-ai/okou/commit/2f007ccb86ff61d279443552030e4107fce50200))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.451.0
+    * @okouai/core bumped to 8.672.0
+
+## [0.906.0](https://github.com/vm0-ai/okou/compare/app-v0.905.2...app-v0.906.0) (2026-09-16)
+
+
+### Features
+
+* **app:** offer the product's own palette in the color theme picker ([#34556](https://github.com/vm0-ai/okou/issues/34556)) ([c915c93](https://github.com/vm0-ai/okou/commit/c915c93abccb6448ccadd41f9dd1c893617928a7))
+* **platform:** give each get started quest a press affordance ([#34551](https://github.com/vm0-ai/okou/issues/34551)) ([c5497ee](https://github.com/vm0-ai/okou/commit/c5497eeb9002e93d2fd8f13ef4d8369c1fb3d7f3))
+
+
+### Bug Fixes
+
+* **ssh:** prevent duplicate resources when retrying saves ([#34568](https://github.com/vm0-ai/okou/issues/34568)) ([c70d478](https://github.com/vm0-ai/okou/commit/c70d4789d1767a291991103a4db0c29a0788bfea))
+
+
+### Refactoring
+
+* **app:** drain the last two hairline selectors and the avatar injection ([#34632](https://github.com/vm0-ai/okou/issues/34632)) ([38de4e7](https://github.com/vm0-ai/okou/commit/38de4e7b3e52db6081a7b1bfda679778b386c8d2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.450.0
+    * @okouai/core bumped to 8.671.0
+
+## [0.905.2](https://github.com/vm0-ai/okou/compare/app-v0.905.1...app-v0.905.2) (2026-09-16)
+
+
+### Bug Fixes
+
+* **app:** add recovery page for unavailable artifacts ([#34565](https://github.com/vm0-ai/okou/issues/34565)) ([4670cc5](https://github.com/vm0-ai/okou/commit/4670cc5bb6acdaa2cefad6b46c1da7e4bdfae7a4))
+* **app:** type-check shared worker realtime topics ([#34583](https://github.com/vm0-ai/okou/issues/34583)) ([93d4c2f](https://github.com/vm0-ai/okou/commit/93d4c2f7280a5ceb826c7ea55ea29e4227947feb))
+* **platform:** stop user bubbles stacking on top of each other while sharing ([#34582](https://github.com/vm0-ai/okou/issues/34582)) ([bcebe14](https://github.com/vm0-ai/okou/commit/bcebe140c7d89c9dd17661764fe456262023f192))
+
+
+### Documentation
+
+* **styles:** keep the rules, drop the migration record ([#34522](https://github.com/vm0-ai/okou/issues/34522)) ([1c9510b](https://github.com/vm0-ai/okou/commit/1c9510b26bd225a80ebd259252d7fd89c9bf0bcc))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.449.1
+    * @okouai/core bumped to 8.670.2
+
+## [0.905.1](https://github.com/vm0-ai/okou/compare/app-v0.905.0...app-v0.905.1) (2026-09-16)
+
+
+### Bug Fixes
+
+* **app:** allow get started reward notifications through shared worker ([#34563](https://github.com/vm0-ai/okou/issues/34563)) ([48a840e](https://github.com/vm0-ai/okou/commit/48a840ec4d2f56d8626c9c0cb4db99788fb98012))
+* **app:** keep search category button widths stable ([#34564](https://github.com/vm0-ai/okou/issues/34564)) ([0566857](https://github.com/vm0-ai/okou/commit/0566857360ad4df2d78012dec7deb4f881ba3c08))
+* **platform:** present embedded sites in a public conversation ([#34528](https://github.com/vm0-ai/okou/issues/34528)) ([7135839](https://github.com/vm0-ai/okou/commit/7135839d97aa9f336d5e4a3b9898b1dcd26433ea))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.449.0
+    * @okouai/core bumped to 8.670.1
+
 ## [0.905.0](https://github.com/vm0-ai/okou/compare/app-v0.904.0...app-v0.905.0) (2026-09-16)
 
 

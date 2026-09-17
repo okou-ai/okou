@@ -4,7 +4,7 @@ import chalk from "chalk";
 import { getBillingStatus } from "../../lib/api/domains/billing";
 import { getOrg } from "../../lib/api/domains/orgs";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
-import { getPlatformOrigin } from "./platform-url";
+import { getPlatformOrigin } from "../../lib/platform-url";
 import {
   currentPlanAllowsVideo,
   currentPlanCanBuyCredits,

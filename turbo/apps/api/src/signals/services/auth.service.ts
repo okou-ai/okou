@@ -2,17 +2,22 @@ import { command, computed, type Computed } from "ccstate";
 import { cliTokens } from "@okouai/db/schema/cli-tokens";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { and, eq, gt } from "drizzle-orm";
+import { timeout } from "signal-timers";
 
 import { clerk$, isClerkResourceNotFound } from "../external/clerk";
 import { db$, writeDb$ } from "../external/db";
 import { logger } from "../../lib/log";
 import { now, nowDate } from "../../lib/time";
+import { singleton } from "../../lib/singleton";
 import type { ApiOrgRole, CliAuth, CliTokenRecord } from "../../types/auth";
-import { settle } from "../utils";
+import { awaitWithSignal, settle } from "../utils";
 
 const L = logger("AuthService");
 
 const MEMBER_ROLE_CACHE_TTL_MS = 60_000;
+const NEGATIVE_MEMBER_ROLE_TTL_MS = 5000;
+const MAX_MEMBER_ROLE_ENTRIES = 512;
+const MEMBER_ROLE_REFRESH_TIMEOUT_MS = 15_000;
 
 /**
  * Outcome of an organization membership read.
@@ -27,6 +32,89 @@ type MemberRoleResult =
   | { readonly kind: "member"; readonly role: ApiOrgRole }
   | { readonly kind: "not_member" }
   | { readonly kind: "identity_not_found" };
+
+type NegativeMemberRole = Exclude<MemberRoleResult, { kind: "member" }>;
+
+interface MemberRoleRefresh {
+  readonly controller: AbortController;
+  readonly promise: Promise<MemberRoleResult>;
+  consumers: number;
+}
+
+export class MemberRoleRefreshUnavailableError extends Error {
+  constructor(readonly reason: "capacity" | "deadline") {
+    super("Membership refresh is temporarily unavailable");
+    this.name = "MemberRoleRefreshUnavailableError";
+  }
+}
+
+// Process-local only. The database remains the sole positive cache. Cold
+// instances can each refresh a key; see docs/membership-refresh.md for bounds.
+const memberRoleRefreshes = singleton(() => {
+  return {
+    active: new Map<string, MemberRoleRefresh>(),
+    missing: new Map<
+      string,
+      { readonly result: NegativeMemberRole; readonly expiresAt: number }
+    >(),
+  };
+});
+
+function memberRoleKey(orgId: string, userId: string): string {
+  return JSON.stringify([orgId, userId]);
+}
+
+function rememberNegativeMemberRole(
+  orgId: string,
+  userId: string,
+  result: NegativeMemberRole,
+  observedAt: number,
+): NegativeMemberRole {
+  const missing = memberRoleRefreshes().missing;
+  if (missing.size >= MAX_MEMBER_ROLE_ENTRIES) {
+    const oldest = missing.keys().next().value;
+    if (oldest !== undefined) {
+      missing.delete(oldest);
+    }
+  }
+  missing.set(memberRoleKey(orgId, userId), {
+    result,
+    expiresAt: observedAt + NEGATIVE_MEMBER_ROLE_TTL_MS,
+  });
+  return result;
+}
+
+const readMemberRoleCache$ = command(
+  async ({ get }, orgId: string, userId: string, signal: AbortSignal) => {
+    const [cached] = await get(db$)
+      .select({
+        role: orgMembersCache.role,
+        cachedAt: orgMembersCache.cachedAt,
+      })
+      .from(orgMembersCache)
+      .where(
+        and(
+          eq(orgMembersCache.orgId, orgId),
+          eq(orgMembersCache.userId, userId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return cached;
+  },
+);
+
+function freshMemberRole(
+  cached: { readonly role: string; readonly cachedAt: Date } | undefined,
+): MemberRoleResult | undefined {
+  if (cached && now() - cached.cachedAt.getTime() < MEMBER_ROLE_CACHE_TTL_MS) {
+    return {
+      kind: "member",
+      role: cached.role === "admin" ? "admin" : "member",
+    };
+  }
+  return undefined;
+}
 
 function mapClerkRole(role: string): ApiOrgRole {
   return role === "org:admin" ? "admin" : "member";
@@ -48,8 +136,9 @@ const upsertMemberRoleCache$ = command(
     orgId: string,
     userId: string,
     role: ApiOrgRole,
-    _signal: AbortSignal,
+    signal: AbortSignal,
   ): Promise<void> => {
+    signal.throwIfAborted();
     const writeDb = set(writeDb$);
     await writeDb
       .insert(orgMembersCache)
@@ -58,6 +147,7 @@ const upsertMemberRoleCache$ = command(
         target: [orgMembersCache.orgId, orgMembersCache.userId],
         set: { role, cachedAt: nowDate() },
       });
+    signal.throwIfAborted();
   },
 );
 
@@ -66,8 +156,9 @@ const deleteMemberRoleCache$ = command(
     { set },
     orgId: string,
     userId: string,
-    _signal: AbortSignal,
+    signal: AbortSignal,
   ): Promise<void> => {
+    signal.throwIfAborted();
     const writeDb = set(writeDb$);
     await writeDb
       .delete(orgMembersCache)
@@ -77,39 +168,23 @@ const deleteMemberRoleCache$ = command(
           eq(orgMembersCache.userId, userId),
         ),
       );
+    signal.throwIfAborted();
   },
 );
 
-export const getMemberRoleAndUpdateCache$ = command(
+const refreshMemberRole$ = command(
   async (
     { get, set },
     orgId: string,
     userId: string,
     signal: AbortSignal,
   ): Promise<MemberRoleResult> => {
-    const db = get(db$);
-    const [cached] = await db
-      .select({
-        role: orgMembersCache.role,
-        cachedAt: orgMembersCache.cachedAt,
-      })
-      .from(orgMembersCache)
-      .where(
-        and(
-          eq(orgMembersCache.orgId, orgId),
-          eq(orgMembersCache.userId, userId),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-
-    const currentTime = now();
-    if (
-      cached &&
-      currentTime - cached.cachedAt.getTime() < MEMBER_ROLE_CACHE_TTL_MS
-    ) {
-      const role: ApiOrgRole = cached.role === "admin" ? "admin" : "member";
-      return { kind: "member", role };
+    // Recheck after ownership: another refresh may have completed while this
+    // caller's initial database miss was still in flight.
+    const cached = await set(readMemberRoleCache$, orgId, userId, signal);
+    const fresh = freshMemberRole(cached);
+    if (fresh) {
+      return fresh;
     }
 
     const read = await settle(
@@ -120,6 +195,7 @@ export const getMemberRoleAndUpdateCache$ = command(
       ),
       signal,
     );
+    const observedAt = now();
 
     if (!read.ok) {
       // Allowlist, deliberately written as a negated guard: a missing Clerk
@@ -143,7 +219,12 @@ export const getMemberRoleAndUpdateCache$ = command(
       L.debug("Clerk identity no longer exists during membership read", {
         type: "clerk_identity_not_found",
       });
-      return { kind: "identity_not_found" };
+      return rememberNegativeMemberRole(
+        orgId,
+        userId,
+        { kind: "identity_not_found" },
+        observedAt,
+      );
     }
 
     const membership = read.value.data.find((candidate) => {
@@ -151,17 +232,86 @@ export const getMemberRoleAndUpdateCache$ = command(
     });
 
     if (!membership) {
-      // Drop the stale row so the next call doesn't keep falling back to Clerk
-      // for a user that's no longer a member.
+      // Remove stale organization authority before retaining the negative.
       if (cached) {
         await set(deleteMemberRoleCache$, orgId, userId, signal);
       }
-      return { kind: "not_member" };
+      return rememberNegativeMemberRole(
+        orgId,
+        userId,
+        { kind: "not_member" },
+        observedAt,
+      );
     }
 
     const role = mapClerkRole(membership.role);
     await set(upsertMemberRoleCache$, orgId, userId, role, signal);
     return { kind: "member", role };
+  },
+);
+
+export const getMemberRoleAndUpdateCache$ = command(
+  async (
+    { set },
+    orgId: string,
+    userId: string,
+    signal: AbortSignal,
+  ): Promise<MemberRoleResult> => {
+    signal.throwIfAborted();
+    const cached = await set(readMemberRoleCache$, orgId, userId, signal);
+    const fresh = freshMemberRole(cached);
+    const cache = memberRoleRefreshes();
+    const key = memberRoleKey(orgId, userId);
+    if (fresh) {
+      cache.missing.delete(key);
+      return fresh;
+    }
+
+    for (const [missingKey, entry] of cache.missing) {
+      if (entry.expiresAt <= now()) {
+        cache.missing.delete(missingKey);
+      }
+    }
+    const missing = cache.missing.get(key);
+    if (missing) {
+      return missing.result;
+    }
+
+    let refresh = cache.active.get(key);
+    if (!refresh) {
+      if (cache.active.size >= MAX_MEMBER_ROLE_ENTRIES) {
+        throw new MemberRoleRefreshUnavailableError("capacity");
+      }
+      const controller = new AbortController();
+      timeout(
+        () => {
+          controller.abort(new MemberRoleRefreshUnavailableError("deadline"));
+        },
+        MEMBER_ROLE_REFRESH_TIMEOUT_MS,
+        { signal: controller.signal },
+      );
+      const promise = awaitWithSignal(
+        set(refreshMemberRole$, orgId, userId, controller.signal),
+        controller.signal,
+      ).finally(() => {
+        controller.abort();
+        if (cache.active.get(key)?.promise === promise) {
+          cache.active.delete(key);
+        }
+      });
+      refresh = { controller, promise, consumers: 0 };
+      cache.active.set(key, refresh);
+    }
+    refresh.consumers += 1;
+    return await awaitWithSignal(refresh.promise, signal).finally(() => {
+      refresh.consumers -= 1;
+      if (refresh.consumers === 0) {
+        refresh.controller.abort();
+        if (cache.active.get(key) === refresh) {
+          cache.active.delete(key);
+        }
+      }
+    });
   },
 );
 

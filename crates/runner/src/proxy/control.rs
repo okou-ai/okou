@@ -16,34 +16,87 @@ use tokio::net::UnixStream;
 use tokio::time::Instant;
 use uuid::Uuid;
 
+use super::registry_application::{
+    RegistryPublication,
+    observer::{ObservationTask, PendingObservation},
+};
+
 const MAX_FRAME_BYTES: usize = 64 * 1024;
 pub(super) const SOCKET_NAME: &str = "control.sock";
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct ControlTarget {
     pub directory: PathBuf,
     pub generation: String,
 }
 
-/// Short launch lookup only; no I/O or operation waits hold this lock.
-#[derive(Clone, Default)]
+/// Short launch lookup/admission only; no I/O or operation waits hold this lock.
+#[derive(Clone)]
 pub(super) struct ControlHandle {
-    target: Arc<Mutex<Option<ControlTarget>>>,
+    launch: Arc<Mutex<Option<ControlLaunch>>>,
+    pub(super) usage_admission: Arc<tokio::sync::Semaphore>,
+}
+
+impl Default for ControlHandle {
+    fn default() -> Self {
+        Self {
+            launch: Arc::default(),
+            usage_admission: Arc::new(tokio::sync::Semaphore::new(8)),
+        }
+    }
+}
+
+struct ControlLaunch {
+    target: ControlTarget,
+    observations: Option<ObservationTask>,
 }
 
 impl ControlHandle {
     pub fn set_target(&self, target: Option<ControlTarget>) {
-        *self
-            .target
-            .lock()
-            .unwrap_or_else(|error| error.into_inner()) = target;
+        let old = std::mem::replace(
+            &mut *self
+                .launch
+                .lock()
+                .unwrap_or_else(|error| error.into_inner()),
+            target.map(|target| ControlLaunch {
+                target,
+                observations: None,
+            }),
+        );
+        // Cancel the old owner even when registry/log handles outlive the proxy.
+        drop(old);
     }
 
     pub fn target(&self) -> Option<ControlTarget> {
-        self.target
+        self.launch
             .lock()
             .unwrap_or_else(|error| error.into_inner())
-            .clone()
+            .as_ref()
+            .map(|launch| launch.target.clone())
+    }
+
+    pub fn observe_registry(&self, publication: RegistryPublication) {
+        if publication.target.is_none() {
+            return;
+        }
+        let rejected = {
+            let mut launch = self
+                .launch
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            match launch
+                .as_mut()
+                .filter(|launch| Some(&launch.target) == publication.target.as_ref())
+            {
+                Some(launch) => launch
+                    .observations
+                    .get_or_insert_with(ObservationTask::new)
+                    .request(publication),
+                None => Err(PendingObservation::new(publication, "stale_generation")),
+            }
+        };
+        // Rejected admission records an unknown outcome outside the launch lock.
+        drop(rejected);
     }
 }
 

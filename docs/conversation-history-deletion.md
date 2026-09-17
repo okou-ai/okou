@@ -110,17 +110,43 @@ claimed production GC job execution.
 
 ## Query bounds and measured cost
 
-The helper batches 500 run IDs per conversation CTE and run delete, aggregates
-hash multiplicity across all batches, then locks/releases 500 distinct hashes
-per batch. Release uses one JSON parameter with `jsonb_to_recordset` and guarded
-`UPDATE ... FROM`; it does not issue one query per conversation or hash. Each
-helper query has at most 500 scalar parameters (release has one). At 64-character
-hashes, a 500-hash release parameter is about 50 KB. Memory is proportional to the
-target run/hash set; the transaction remains atomic across batches.
+After complete-set Pi erasure readiness and object-reference capture, the helper
+issues three child-deletion statements for a nonempty captured Run set: released
+Sandbox leases, inference rows, and the conversation `DELETE ... RETURNING` CTE.
+Each statement binds the complete Run set as one UUID-array parameter; the lease
+delete also binds its released-state predicate. Empty input issues no deletion.
+The conversation CTE groups actual removed rows by hash across the whole set.
+
+Explicit Run deletion still batches 500 locked Run IDs. Final blob locking and
+release still batch 500 distinct hashes, in global hash order. Release uses one
+JSON parameter with `jsonb_to_recordset` and guarded `UPDATE ... FROM`; it does
+not issue one query per conversation or hash. At 64-character hashes, a 500-hash
+release parameter is about 50 KB. Memory remains proportional to the target
+Run/hash set, and all operations remain in the caller's atomic transaction. The
+array binding bounds parameter count, not the child statement's matched rows or
+working memory; a large conversation CTE can spill to temporary storage.
 
 Clerk discovery uses indexed user/org predicates UNION indexed owned-session
 lookups, then primary-key run locks. Agent IDs use one UUID-array parameter;
 session IDs stay in SQL subqueries rather than an unbounded placeholder list.
+
+### UUID-array statement comparison, 2026-09-16
+
+Rollback-only `EXPLAIN (ANALYZE, BUFFERS)` compared 0, 2, 1,003 and 65,536 target
+IDs on sparse and dense synthetic PostgreSQL 18 tables. With 65,536 actual rows
+and mostly distinct conversation hashes, child-deletion statement count fell
+from 396 to 3, with measured server execution of 403.518 versus 184.507 ms. The
+array case wrote 569 root-level temporary blocks (about 4.4 MiB), versus zero
+for the batched case. The old diagnostic interleaved child kinds per batch;
+these numbers compare statement shapes, not complete production transactions.
+
+Those temporary tables reproduce production columns, defaults and indexes but
+omit FK triggers and check constraints. Migrated-schema erasure and accounting
+tests separately verify integrity, rollback and reference release. These local
+plans are cost evidence, not production latency estimates. The measurements
+below predate this array rewrite and retain the old batched query shape.
+
+### Historical batched-helper measurements, 2026-09-15
 
 Local synthetic PostgreSQL 18 measurements on 2026-09-15 used 282,246 runs,
 71,721 sessions, 276,822 conversations (276,693 hash-backed), 276,822 checkpoints,
@@ -135,8 +161,8 @@ These single-host measurements are cost evidence, not production latency targets
 | 5,000 / 5,000                 | 43                                             | 1,088.2 ms |
 
 The benchmark's initial run lock used its explicit synthetic ID list; production
-Clerk discovery uses the bounded scope/subquery shape above. The 5,000-target
-helper statements still each stay within 500 parameters. A representative Clerk
+Clerk discovery uses the bounded scope/subquery shape above. The historical
+5,000-target helper statements each stayed within 500 parameters. A representative Clerk
 UNION selected 321 direct/indirect runs in 59.9 ms using scope, session and run
 indexes.
 

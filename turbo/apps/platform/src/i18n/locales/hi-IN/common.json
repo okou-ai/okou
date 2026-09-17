@@ -439,6 +439,16 @@
     }
   },
   "artifacts": {
+    "access": {
+      "backToBrand": "{{brandName}} पर वापस जाएँ",
+      "description": "यह निजी हो सकता है या अब उपलब्ध नहीं है।",
+      "help": "जिस व्यक्ति ने यह लिंक शेयर किया है, उससे ऐक्सेस जाँचने के लिए कहें।",
+      "signedInAs": "{{email}} के रूप में साइन इन हैं",
+      "switchAccount": "खाता बदलें",
+      "switchAccountFailed": "खाता बदलने की विंडो नहीं खुल सकी। कृपया फिर से कोशिश करें।",
+      "title": "आप यह आर्टिफ़ैक्ट नहीं देख सकते",
+      "tryAgain": "फिर से कोशिश करें"
+    },
     "actions": {
       "backToAll": "सभी आर्टिफ़ैक्ट्स पर वापस जाएँ",
       "backToArtifacts": "आर्टिफ़ैक्ट्स पर वापस जाएँ",
@@ -580,9 +590,20 @@
       "videoLabel": "{{filename}} के लिए वीडियो पूर्वावलोकन"
     },
     "sharing": {
-      "shareOrganization": "संगठन के साथ शेयर करें",
-      "sharePublic": "सार्वजनिक रूप से शेयर करें",
-      "unavailable": "यह आर्टिफ़ैक्ट उपलब्ध नहीं है या आपके पास इसका ऐक्सेस नहीं है।"
+      "accessLabel": "किसे ऐक्सेस है",
+      "copyLink": "लिंक कॉपी करें",
+      "loadFailed": "अनुमतियाँ लोड नहीं हो सकीं",
+      "loadingPermissions": "अनुमतियाँ लोड हो रही हैं",
+      "onlyMe": "केवल मैं",
+      "onlyMeDescription": "केवल आप यह आर्टिफ़ैक्ट देख सकते हैं",
+      "organization": "संगठन",
+      "organizationDescription": "{{organization}} में लिंक वाला कोई भी व्यक्ति",
+      "permissionsUpdated": "पहुँच अपडेट हो गई",
+      "publicAccess": "सार्वजनिक ऐक्सेस",
+      "publicDescription": "लिंक वाला कोई भी व्यक्ति देख सकता है",
+      "retry": "फिर से कोशिश करें",
+      "savedAutomatically": "बदलाव अपने-आप सेव होते हैं",
+      "saving": "सेव हो रहा है…"
     },
     "sidebar": {
       "openSharedConversation": "साझा बातचीत खोलें",
@@ -687,11 +708,6 @@
       "websitePreview": "{{title}} वेबसाइट टेम्पलेट पूर्वावलोकन",
       "workflow": "वर्कफ़्लो",
       "workflowCatalog": {
-        "alert-metric-moves-slack": {
-          "description": "अपने प्रमुख मेट्रिक्स देखें और जब कोई तेजी से आगे बढ़े तो Slack को सचेत करें।",
-          "shortDescription": "मुख्य मेट्रिक तेज़ी से बदलने पर Slack में बताएँ।",
-          "title": "जब कोई मीट्रिक बदलता है तो अलर्ट करें"
-        },
         "auto-inbox-label": {
           "description": "ऐसा वर्कफ़्लो बनाएँ जो Gmail लेबल लगते ही चले और उस ईमेल को संभाले।",
           "shortDescription": "Gmail लेबल लगाते ही वर्कफ़्लो चलाएँ।",
@@ -701,21 +717,6 @@
           "description": "विलय के लिए तैयार लेबल वाले पीआर की समीक्षा करें, CI की प्रतीक्षा करें, फिर विलय करें और Slack पर पोस्ट करें।",
           "shortDescription": "CI पास होते ही तैयार PR मर्ज करें।",
           "title": "ऑटो-मर्ज GitHub PRs"
-        },
-        "blog-posts-to-x": {
-          "description": "हर नए ब्लॉग पोस्ट को सोशल वर्ज़न में बदलकर Buffer की कतार में डालें।",
-          "shortDescription": "हर नए ब्लॉग पोस्ट को सोशल पोस्ट में बदलें।",
-          "title": "ब्लॉग पोस्ट को सोशल पोस्ट में बदलें"
-        },
-        "build-weekly-deck-gamma": {
-          "description": "सप्ताह के मेट्रिक्स को गामा में प्रस्तुत करने के लिए तैयार डेक में बदलें।",
-          "shortDescription": "हफ़्ते के आंकड़ों से Gamma डेक बनाएँ।",
-          "title": "गामा में साप्ताहिक डेक बनाएं"
-        },
-        "business-review-gamma": {
-          "description": "महीने के मेट्रिक्स को गामा में व्यावसायिक समीक्षा डेक में बदलें।",
-          "shortDescription": "महीने के आंकड़ों से रिव्यू डेक बनाएँ।",
-          "title": "गामा में व्यवसाय समीक्षा बनाएं"
         },
         "catch-calendar-conflicts": {
           "description": "डबल-बुकिंग के लिए अपने कैलेंडर को स्कैन करें और आपको पहले ही सचेत कर दें।",
@@ -737,30 +738,15 @@
           "shortDescription": "साइनअप फ़नल का सबसे बड़ा ड्रॉप-ऑफ़ बताएँ।",
           "title": "PostHog साइनअप फ़नल की जाँच करें"
         },
-        "clickup-slack-standup": {
-          "description": "हर सुबह ClickUp के टास्क लेकर टीम का स्टैंडअप सारांश Slack पर पोस्ट करें।",
-          "shortDescription": "ClickUp टास्क से सुबह का स्टैंडअप पोस्ट करें।",
-          "title": "ClickUp का Slack स्टैंडअप"
-        },
         "compare-google-ads-last-month": {
           "description": "विज्ञापन खर्च और ROAS की पिछले महीने से तुलना करें और गड़बड़ी Slack में बताएँ।",
           "shortDescription": "विज्ञापन खर्च और ROAS की पिछले महीने से तुलना करें।",
           "title": "Google विज्ञापनों की तुलना पिछले महीने से करें"
         },
-        "competitive-intel-monitor": {
-          "description": "प्रतिस्पर्धियों की साइट पर कीमत और फ़ीचर बदलाव देखें, Notion में सहेजें और Slack में सूचित करें।",
-          "shortDescription": "प्रतिस्पर्धियों के कीमत बदलाव Notion में दर्ज करें।",
-          "title": "प्रतिस्पर्धी निगरानी"
-        },
-        "daily-company-brief-slack": {
-          "description": "Slack पर उत्पाद, विकास और राजस्व को दैनिक संक्षिप्त में शामिल करें।",
-          "shortDescription": "प्रोडक्ट, ग्रोथ और रेवेन्यू एक ब्रीफ़ में लाएँ।",
-          "title": "Slack पर दैनिक कंपनी संक्षिप्त पोस्ट करें"
-        },
-        "daily-industry-news-slack": {
-          "description": "दिन भर की प्रासंगिक उद्योग समाचारों को Slack संक्षिप्त में सारांशित करें।",
-          "shortDescription": "दिन की इंडस्ट्री खबरें Slack के लिए जुटाएँ।",
-          "title": "Slack पर दैनिक उद्योग समाचार पोस्ट करें"
+        "creator-shortlist-to-sheets": {
+          "description": "जिन क्रिएटर पर विचार कर रहे हैं उन्हें रीच और एंगेजमेंट पर आँकें और शीट में क्रम से रखें।",
+          "shortDescription": "रीच और एंगेजमेंट से क्रिएटर क्रम में लगाएँ।",
+          "title": "Google Sheets में क्रिएटर शॉर्टलिस्ट बनाएँ"
         },
         "daily-standup-report": {
           "description": "हर सुबह प्रोडक्ट और इंजीनियरिंग के आंकड़े जुटाएँ, छोटी रिपोर्ट बनाएँ और Slack पर पोस्ट करें।",
@@ -777,11 +763,6 @@
           "shortDescription": "हाल के अपडेट को एक न्यूज़लेटर में जोड़ें।",
           "title": "Mailchimp में न्यूज़लेटर का ड्राफ्ट तैयार करें"
         },
-        "draft-replies-notion-faq": {
-          "description": "ड्राफ्ट टिकट के उत्तर आपके Notion FAQ पर आधारित हैं।",
-          "shortDescription": "Notion FAQ से टिकट के जवाब लिखें।",
-          "title": "आपके Notion FAQ से ड्राफ्ट उत्तर तैयार करें"
-        },
         "feedback-router": {
           "description": "किसी Slack चैनल पर नज़र रखें और प्रोडक्ट फ़ीडबैक को लेबल व ज़िम्मेदार के साथ Notion में भेजें।",
           "shortDescription": "Slack से प्रोडक्ट फ़ीडबैक Notion में भेजें।",
@@ -796,11 +777,6 @@
           "description": "उपयोगकर्ता प्रभाव के आधार पर नई सेंट्री त्रुटियों को रैंक करें और सबसे खराब को GitHub इश्यू के रूप में दर्ज करें।",
           "shortDescription": "सबसे गंभीर Sentry त्रुटियाँ GitHub इश्यू बनाएँ।",
           "title": "सेंट्री क्रैश को GitHub इश्यू के रूप में फ़ाइल करें"
-        },
-        "flag-figma-designs-no-task": {
-          "description": "फिग्मा डिज़ाइनों को फ़्लैग करें जिनमें अभी तक कोई रैखिक कार्य नहीं जुड़ा है।",
-          "shortDescription": "बिना Linear टास्क वाले Figma डिज़ाइन बताएँ।",
-          "title": "बिना किसी कार्य के फिग्मा डिज़ाइन को फ़्लैग करें"
         },
         "flagged-gmail-todoist-tasks": {
           "description": "आपके द्वारा फ़्लैग किए गए ईमेल को स्वचालित रूप से टोडोइस्ट कार्यों में बदल दें।",
@@ -817,11 +793,6 @@
           "shortDescription": "मर्ज हुए पुल रिक्वेस्ट को एक रिपोर्ट में जोड़ें।",
           "title": "GitHub PR सारांश"
         },
-        "gmail-followups-auto": {
-          "description": "उन संपर्कों को ढूंढें जिन्होंने उत्तर नहीं दिया और अगली अनुवर्ती कार्रवाई का मसौदा तैयार करें।",
-          "shortDescription": "जवाब न देने वालों के लिए फ़ॉलो-अप लिखें।",
-          "title": "Gmail फॉलो-अप स्वचालित रूप से भेजें"
-        },
         "gmail-reconnect-reminders": {
           "description": "उन महत्वपूर्ण संपर्कों को सामने लाएँ जिन्हें आपने कुछ समय से ईमेल नहीं किया है।",
           "shortDescription": "जिन्हें लंबे समय से नहीं लिखा, उन्हें दिखाएँ।",
@@ -832,25 +803,10 @@
           "shortDescription": "जिन ईमेल पर ध्यान चाहिए, उन्हें सामने लाएँ।",
           "title": "Gmail में प्रमुख ईमेल हाइलाइट करें"
         },
-        "investor-update-google-docs": {
-          "description": "डॉक्स में निवेशक अपडेट में मेट्रिक्स और हाइलाइट्स को इकट्ठा करें।",
-          "shortDescription": "आंकड़े जोड़कर निवेशक अपडेट तैयार करें।",
-          "title": "Google डॉक्स में निवेशक अपडेट ड्राफ्ट करें"
-        },
-        "log-gong-calls-hubspot": {
-          "description": "HubSpot डील में गोंग कॉल से नोट्स और अगले चरण निकालें।",
-          "shortDescription": "Gong कॉल नोट्स HubSpot डील में जोड़ें।",
-          "title": "गोंग कॉल को HubSpot पर लॉग करें"
-        },
-        "meeting-notes-asana-tasks": {
-          "description": "मीटिंग नोट्स को असाइन किए गए, नियत तिथियों वाले कार्यों में Asana में बदलें।",
-          "shortDescription": "मीटिंग नोट्स को Asana टास्क में बदलें।",
-          "title": "मीटिंग नोट्स को Asana कार्यों में बदलें"
-        },
-        "meeting-recaps-slack": {
-          "description": "प्रत्येक बैठक के बाद निर्णयों और कार्रवाई मदों का सारांश साझा करें।",
-          "shortDescription": "मीटिंग के बाद फ़ैसले और काम साझा करें।",
-          "title": "Slack में मीटिंग पुनर्कथन प्राप्त करें"
+        "keyword-ranks-to-sheets": {
+          "description": "अपने ज़रूरी कीवर्ड पर पेजों की रैंक देखें और बदलाव दर्ज करें।",
+          "shortDescription": "हर हफ़्ते रैंक में बदलाव शीट में दर्ज करें।",
+          "title": "Google Sheets में कीवर्ड रैंकिंग ट्रैक करें"
         },
         "morning-brief": {
           "description": "Gmail, कैलेंडर और Notion के अपडेट को Slack पर दिन की छोटी योजना में बदलें।",
@@ -862,20 +818,10 @@
           "shortDescription": "अनजान ईमेल भेजने वालों को HubSpot में जोड़ें।",
           "title": "HubSpot में नए Gmail संपर्क जोड़ें"
         },
-        "onboard-new-hires-asana": {
-          "description": "आसन में प्रत्येक नए कर्मचारी के लिए ऑनबोर्डिंग कार्य चेकलिस्ट बनाएं।",
-          "shortDescription": "हर नई भर्ती के लिए ऑनबोर्डिंग चेकलिस्ट बनाएँ।",
-          "title": "Asana में नए कर्मचारियों को शामिल करें"
-        },
         "personal-weekly-digest": {
           "description": "GitHub, Gmail और कैलेंडर की गतिविधि को एक साप्ताहिक Slack अपडेट में समेटें।",
           "shortDescription": "GitHub और Gmail से अपने हफ़्ते का सार बनाएँ।",
           "title": "व्यक्तिगत साप्ताहिक डाइजेस्ट"
-        },
-        "post-daily-metrics-slack": {
-          "description": "Slack पर दैनिक विज़िटर, साइनअप और सक्रियण संख्या पोस्ट करें।",
-          "shortDescription": "रोज़ के विज़िटर और साइनअप Slack पर पोस्ट करें।",
-          "title": "Slack पर दैनिक मेट्रिक्स पोस्ट करें"
         },
         "post-release-notes-slack": {
           "description": "हाल ही में भेजे गए कार्य से एक चेंजलॉग ड्राफ्ट करें और इसे Slack पर पोस्ट करें।",
@@ -887,35 +833,10 @@
           "shortDescription": "बाहरी मीटिंग से पहले तैयारी ब्रीफ़ भेजें।",
           "title": "Google Calendar बैठकों के लिए तैयारी"
         },
-        "publish-scheduled-posts-buffer": {
-          "description": "दिन का शेड्यूल किया गया कंटेंट प्रकाशित करें और सोशल पोस्ट कतार में लगाएँ।",
-          "shortDescription": "आज शेड्यूल किए सोशल पोस्ट प्रकाशित करें।",
-          "title": "बफ़र पर निर्धारित पोस्ट प्रकाशित करें"
-        },
         "research-calendar-meetings": {
           "description": "प्रत्येक कैलेंडर ईवेंट से पहले उन लोगों पर शोध करें जिनसे आप मिल रहे हैं।",
           "shortDescription": "हर मीटिंग से पहले लोगों के बारे में जानें।",
           "title": "अपनी कैलेंडर बैठकों पर शोध करें"
-        },
-        "research-new-signups-apollo": {
-          "description": "प्रत्येक नए साइनअप पर शोध करें और एक त्वरित स्नैपशॉट पोस्ट करें।",
-          "shortDescription": "हर नए साइनअप पर शोध कर ब्योरा पोस्ट करें।",
-          "title": "नए साइनअप पर शोध करें"
-        },
-        "revenuecat-subscription-digest": {
-          "description": "Sheets में सब्सक्रिप्शन ट्रैक करें और चर्न या कैंसिलेशन का पैटर्न बदलने पर Slack में सूचित करें।",
-          "shortDescription": "सब्सक्रिप्शन ट्रैक करें, चर्न पर Slack में बताएँ।",
-          "title": "RevenueCat सब्सक्रिप्शन डाइजेस्ट"
-        },
-        "run-daily-query-sheets": {
-          "description": "अपने सहेजे गए SQL को एक शेड्यूल पर चलाएं और परिणामों को एक शीट में जोड़ें।",
-          "shortDescription": "सहेजा SQL चलाकर नतीजे शीट में जोड़ें।",
-          "title": "Google शीट्स में दैनिक क्वेरी चलाएँ"
-        },
-        "salesforce-pipeline-digest": {
-          "description": "हर हफ़्ते Salesforce अवसरों के बदलाव और क्लोज़ डेट के जोखिम Slack में बताएँ।",
-          "shortDescription": "हर हफ़्ते Salesforce पाइपलाइन के जोखिम बताएँ।",
-          "title": "Salesforce पाइपलाइन डाइजेस्ट"
         },
         "send-bugs-github-slack": {
           "description": "GitHub इश्यू के रूप में बग-टैग की गई रिपोर्ट दर्ज करें और Slack पर टीम को सचेत करें।",
@@ -927,25 +848,20 @@
           "shortDescription": "गंभीर Sentry इश्यू का रोज़ाना सारांश भेजें।",
           "title": "Sentry इश्यू डाइजेस्ट"
         },
+        "social-posts-to-sheets": {
+          "description": "जिन अकाउंट को आप ट्रैक करते हैं उनकी सार्वजनिक पोस्ट और एंगेजमेंट एक शीट में जुटाएँ।",
+          "shortDescription": "सार्वजनिक सोशल पोस्ट एक ही शीट में जुटाएँ।",
+          "title": "सोशल पोस्ट Google Sheets में इकट्ठा करें"
+        },
         "sort-gmail-draft-replies": {
           "description": "अपने इनबॉक्स को क्रमबद्ध करें और उन ईमेल के उत्तर ड्राफ्ट करें जिन्हें उनकी आवश्यकता है।",
           "shortDescription": "इनबॉक्स छाँटें और ज़रूरी जवाब लिखें।",
           "title": "Gmail को क्रमबद्ध करें और उत्तरों का मसौदा तैयार करें"
         },
-        "spot-churn-risk-stripe-zendesk": {
-          "description": "मंथन के जोखिम वाले खातों को चिह्नित करें और एक पुनर्प्राप्ति ईमेल का मसौदा तैयार करें।",
-          "shortDescription": "चर्न जोखिम बताएँ और वापसी ईमेल लिखें।",
-          "title": "स्ट्राइप और ज़ेंडेस्क में मंथन जोखिम को पहचानें"
-        },
         "summarize-gmail-newsletters": {
           "description": "अपने इनबॉक्स में मौजूद न्यूज़लेटर्स को एक संक्षिप्त सारांश में समेटें।",
           "shortDescription": "अपने न्यूज़लेटर एक सारांश में समेटें।",
           "title": "Gmail न्यूज़लेटर्स का सारांश प्रस्तुत करें"
-        },
-        "summarize-zendesk-tickets-daily": {
-          "description": "ज़ेंडेस्क टिकटों के अंतिम दिन का सारांश बनाएं और इसे Slack पर पोस्ट करें।",
-          "shortDescription": "Zendesk टिकट का रोज़ाना सारांश पोस्ट करें।",
-          "title": "प्रतिदिन ज़ेंडेस्क टिकटों का सारांश बनाएं"
         },
         "support-ticket-router": {
           "description": "सपोर्ट ईमेल वर्गीकृत करें, Notion में रिकॉर्ड बनाएँ और गंभीर टिकट पर Slack में सूचित करें।",
@@ -967,30 +883,20 @@
           "shortDescription": "इस हफ़्ते उपयोग में सबसे बड़े बदलाव दिखाएँ।",
           "title": "PostHog के साथ फीचर उपयोग को ट्रैक करें"
         },
-        "track-keyword-ranks-ahrefs": {
-          "description": "Ahrefs में कीवर्ड रैंकिंग ट्रैक करें और सबसे बड़े बदलाव Notion में दर्ज करें।",
-          "shortDescription": "इस हफ़्ते की कीवर्ड रैंक हलचल बताएँ।",
-          "title": "Ahrefs के साथ कीवर्ड रैंक ट्रैक करें"
-        },
-        "track-signup-sources-sheets": {
-          "description": "ट्रैकिंग शीट में प्रत्येक नए साइनअप को उसके स्रोत से जोड़ें।",
-          "shortDescription": "हर साइनअप का स्रोत शीट में दर्ज करें।",
-          "title": "Google शीट्स में साइनअप स्रोत ट्रैक करें"
-        },
         "vercel-deploy-digest": {
           "description": "Vercel डिप्लॉयमेंट पर नज़र रखें, उन्हें GitHub कमिट से जोड़ें और विफलता पर Slack में सूचित करें।",
           "shortDescription": "Vercel डिप्लॉय विफल होने पर Slack में बताएँ।",
           "title": "Vercel डिप्लॉय डाइजेस्ट"
         },
+        "web-data-to-sheets": {
+          "description": "दी गई पेज सूची से वही फ़ील्ड नियमित रूप से निकालें और इतिहास एक शीट में रखें।",
+          "shortDescription": "पेज सूची से फ़ील्ड एक शीट में लाएँ।",
+          "title": "वेब पेज का डेटा स्प्रेडशीट में इकट्ठा करें"
+        },
         "x-brand-monitor": {
           "description": "X पर ब्रांड के ज़िक्र ट्रैक करें, अहम पोस्ट Notion में सहेजें और बड़े ज़िक्र पर Slack में सूचित करें।",
           "shortDescription": "X पर बड़े ब्रांड ज़िक्र की सूचना Slack में दें।",
           "title": "X पर ब्रांड निगरानी"
-        },
-        "zendesk-knowledge-base": {
-          "description": "Zendesk में बार-बार आने वाले सवाल खोजें, FAQ प्रविष्टियाँ लिखें और Notion में सहेजें।",
-          "shortDescription": "बार-बार आने वाले सवालों को FAQ बनाएँ।",
-          "title": "Zendesk नॉलेज बेस"
         }
       },
       "workflowCategories": {
@@ -1009,8 +915,7 @@
     "toasts": {
       "copyLinkFailed": "लिंक कॉपी करने में विफल",
       "downloadFailed": "डाउनलोड विफल रहा",
-      "linkCopied": "लिंक कॉपी किया गया",
-      "sharing": "साझा किया जा रहा है…"
+      "linkCopied": "लिंक कॉपी किया गया"
     },
     "viewer": {
       "continuePrompt": "इस आर्टिफ़ैक्ट पर काम करने में मेरी मदद करें: {{url}}",
@@ -1516,19 +1421,22 @@
     "agentPage": {
       "getStarted": {
         "checkin": {
-          "description": "रोज़ ऐप खोलें। रीसेट का समय 00:00 UTC है।",
+          "action": "चेक इन करें",
+          "description": "दिन में एक बार चेक इन करें। 00:00 UTC पर रीसेट होता है।",
           "name": "रोज़ चेक इन करें",
           "unit": "प्रति दिन"
         },
         "connector": {
-          "description": "OAuth से कनेक्ट करें। हर कनेक्टर पर एक बार इनाम पाएँ।",
+          "action": "कनेक्ट करें",
+          "description": "Gmail, Notion और 100+ अन्य",
           "name": "कनेक्टर जोड़ें",
           "unit": "प्रति कनेक्टर"
         },
         "inReview": "समीक्षा में",
         "inReviewDescription": "भेजा गया, समीक्षा बाकी है",
         "invite": {
-          "description": "निमंत्रण स्वीकार होने पर इनाम पाएँ, अधिकतम 15 सदस्यों के लिए।",
+          "action": "बुलाएँ",
+          "description": "आप जिसे भी जोड़ेंगे वह गिना जाएगा",
           "name": "अपनी टीम को बुलाएँ",
           "unit": "प्रति सदस्य"
         },
@@ -1539,6 +1447,7 @@
         "reward": "+{{amount}}",
         "rewardedConnections": "पुरस्कृत कनेक्टर: {{amount}}",
         "share": {
+          "action": "शेयर करें",
           "description": "पोस्ट करें, फिर लिंक यहाँ चिपकाएँ",
           "name": "{{assistantName}} को X पर शेयर करें"
         },
@@ -1551,14 +1460,16 @@
           "title": "{{assistantName}} को X पर शेयर करें"
         },
         "slack": {
-          "description": "हर संगठन और वर्कस्पेस के लिए एक बार 2,000 संगठन क्रेडिट पाएँ।",
+          "action": "जोड़ें",
+          "description": "जहाँ आपकी टीम पहले से काम करती है",
           "name": "{{assistantName}} को Slack में जोड़ें"
         },
         "stepCount": "{{completed}}/{{total}}",
         "subtitle": "कोई काम आज़माएँ और क्रेडिट पाएँ।",
         "title": "शुरू करें",
         "workflow": {
-          "description": "अपने बनाए वर्कफ़्लो को सफलतापूर्वक चलाएँ।",
+          "action": "बनाएँ",
+          "description": "बार-बार होने वाले काम को दोबारा इस्तेमाल होने वाली स्किल बनाएँ",
           "name": "वर्कफ़्लो बनाएँ"
         }
       },
@@ -1912,6 +1823,8 @@
       "providerIncompatibleAction": "नया सत्र प्रारंभ करें",
       "providerIncompatiblePrefix": "यह सत्र एक अलग मॉडल प्रोवाइडर के साथ शुरू किया गया था और इसे वर्तमान के साथ जारी नहीं रखा जा सकता है।",
       "recovery": {
+        "autonomyLimitDescription": "लगातार अपने-आप चलने की सीमा पूरी हो गई है। जारी रखने के लिए पुष्टि करें।",
+        "autonomyLimitTitle": "अपने-आप चलने की सीमा पूरी हो गई",
         "capacityDescription": "थोड़ी देर बाद फिर कोशिश करें, या मॉडल बदलें।",
         "capacityTitle": "यह मॉडल अभी व्यस्त है",
         "claudeCode": "Claude Code",
@@ -2049,7 +1962,7 @@
     },
     "newChat": "नई चैट",
     "origins": {
-      "agentphone": "AgentPhone",
+      "agentphone": "iMessage",
       "feishu": "Feishu",
       "github": "GitHub",
       "lark": "Lark",
@@ -2953,27 +2866,6 @@
     "toasts": {
       "copied": "कॉपी किया गया",
       "deleted": "चैट हटा दी गई"
-    },
-    "translation": {
-      "action": "अनुवाद करें",
-      "close": "अनुवाद बंद करें",
-      "copy": "अनुवाद कॉपी करें",
-      "languages": {
-        "de": "Deutsch",
-        "en": "English",
-        "es": "Español",
-        "fr": "Français",
-        "hi": "हिन्दी",
-        "id": "Bahasa Indonesia",
-        "it": "Italiano",
-        "ja": "日本語",
-        "ko": "한국어",
-        "ptBR": "Português",
-        "zhCN": "简体中文",
-        "zhTW": "繁體中文"
-      },
-      "result": "अनुवाद",
-      "targetLanguage": "अनुवाद की भाषा"
     },
     "voice": {
       "checkingLimit": "ध्वनि इनपुट सीमा की जाँच की जा रही है",
@@ -5891,8 +5783,8 @@
             "cottonSky": "Cotton sky",
             "daydream": "Daydream",
             "deepLagoon": "Deep lagoon",
-            "goldenHour": "Golden hour",
-            "limelight": "Limelight"
+            "default": "डिफ़ॉल्ट",
+            "goldenHour": "Golden hour"
           },
           "title": "कलर थीम"
         },
@@ -6390,11 +6282,46 @@
     "resetHelp": "नए सर्वर की पहचान स्वतंत्र रूप से सत्यापित करने के बाद ही रीसेट करें। अगला कनेक्शन नई होस्ट कुंजी पर भरोसा करेगा और उसे सहेजेगा।",
     "retry": "फिर से कोशिश करें",
     "save": "सहेजें",
+    "saveRecovery": {
+      "resourceIdConflict": "इस संसाधन आईडी का उपयोग नहीं किया जा सकता। फिर से कोशिश करने के लिए फ़ॉर्म बंद करके दोबारा खोलें।",
+      "uncertain": "हम पुष्टि नहीं कर सके कि आपके बदलाव सहेजे गए हैं या नहीं। वही जानकारी फिर से सहेजने की कोशिश करें, या फ़ॉर्म बंद करें और दोबारा जोड़ने से पहले सूची जाँचें।"
+    },
     "summary_one": "{{count}} होस्ट कॉन्फ़िगर किया गया",
     "summary_other": "{{count}} होस्ट कॉन्फ़िगर किए गए",
     "title": "SSH होस्ट",
     "unavailable": "इस खाते के लिए SSH ऐक्सेस उपलब्ध नहीं है।",
     "username": "SSH उपयोगकर्ता नाम"
+  },
+  "templates": {
+    "actions": {
+      "delete": "हटाएँ",
+      "menu": "{{title}} के लिए क्रियाएँ",
+      "preview": "{{title}} का पूर्वावलोकन करें",
+      "rename": "टेम्पलेट का नाम बदलें"
+    },
+    "custom": "कस्टम",
+    "detail": {
+      "back": "कस्टम टेम्पलेट",
+      "page": "पृष्ठ {{number}}",
+      "source_one": "{{count}} पृष्ठ · {{filename}} से",
+      "source_other": "{{count}} पृष्ठ · {{filename}} से"
+    },
+    "empty": {
+      "description": "आपके द्वारा अपलोड की गई फ़ाइल से बने टेम्पलेट यहाँ दिखाई देंगे।",
+      "title": "अभी तक कोई टेम्पलेट नहीं"
+    },
+    "loadFailed": "टेम्पलेट लोड नहीं हो सके।",
+    "pageCount_one": "{{count}} पृष्ठ",
+    "pageCount_other": "{{count}} पृष्ठ",
+    "retry": "फिर से कोशिश करें",
+    "sharedBy": "{{owner}} द्वारा साझा किया गया",
+    "visibility": {
+      "change": "बदलें",
+      "organization": "संगठन",
+      "organizationState": "इस संगठन में कोई भी इसका उपयोग कर सकता है",
+      "private": "निजी",
+      "privateState": "केवल आप इसे देख और उपयोग कर सकते हैं"
+    }
   },
   "usage": {
     "displayNames": {

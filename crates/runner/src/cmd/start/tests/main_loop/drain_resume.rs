@@ -2,8 +2,9 @@ use super::super::super::signals::handle_resume_signal;
 use super::super::super::*;
 use super::super::support::{
     assert_run_exits_within, context_with_session, minimal_context, mock_run_config,
-    mock_run_config_with_overrides, push_job, shutdown, test_profiles, wait_cancel_token,
-    wait_cancel_token_removed, wait_discover_entered, wait_parking_state, wait_status_mode,
+    mock_run_config_with_overrides, push_job, seed_idle_pool_with_overrides, shutdown,
+    test_profiles, wait_cancel_token, wait_cancel_token_removed, wait_discover_entered,
+    wait_parking_state, wait_status_mode,
 };
 use crate::idle_pool::ParkingState;
 use std::sync::Arc;
@@ -333,63 +334,67 @@ async fn drain_with_jobs_transitions_to_stopping_when_empty() {
 /// guarded on `mode == Draining`, so a concurrent SIGUSR2 that flips
 /// mode back to Running is preserved rather than silently overwritten.
 ///
-/// We simulate the race deterministically:
-/// 1. Claim a gated job — mode is Draining and the reactor is waiting
-///    with Draining-mode guards.
-/// 2. Silently flip mode to Running via `send_if_modified(false)`
-///    (equivalent to SIGUSR2 arriving *after* the arm noticed jobs was
-///    non-empty but *before* the next iteration's guard).
-/// 3. Release the gate — the job completes, the reactor reaps it, loops to
-///    top, sees `jobs.is_empty()`, and evaluates the guarded
-///    `send_if_modified`. The guard rejects the overwrite because mode
-///    is no longer Draining.
-/// 4. Outer loop re-reads mode → Running → resumes normal discovery.
+/// Hold idle sandbox destruction after the reactor has captured Draining,
+/// with no active jobs. Resume through the real signal handler, then release
+/// destruction so the same Draining branch attempts the stale natural stop.
+/// The next iteration must publish Running and process subsequent work.
 #[tokio::test]
 async fn draining_auto_stop_preserves_concurrent_resume() {
-    let gate = Arc::new(tokio::sync::Notify::new());
-    let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::with_wait_process_gate(
-        Arc::clone(&gate),
-    ));
-    let (config, env) = mock_run_config_with_overrides(test_profiles(), 8, 32768, 4, overrides);
+    let destroy_gate = sandbox_mock::MockLifecycleGate::new();
+    let idle_overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+    idle_overrides.set_destroy_lifecycle_gate(destroy_gate.clone());
+    let (config, env) = mock_run_config(test_profiles(), 8, 32768, 4);
     let status_path = env._temp_dir.path().join("status.json");
-    let run_handle = tokio::spawn(run(config));
 
-    // Claim a job and hold it at the gate so Draining mode has
-    // something to wait on — without a live job the auto-transition
-    // fires before any concurrent signal could race.
-    let run_id = RunId::new_v4();
-    push_job(&env, run_id, "vm0/default", Some(minimal_context(run_id)));
-    let _token = wait_cancel_token(&env.cancel_tokens, run_id, Duration::from_secs(5)).await;
+    // Only this idle sandbox uses the destroy gate; subsequent work and
+    // teardown use the regular mock runtime and cannot block on it.
+    seed_idle_pool_with_overrides(
+        &config.shared.idle_pool,
+        &config.capacity.budget,
+        &idle_overrides,
+        "sess-concurrent-resume",
+        "vm0/default",
+        2,
+        4096,
+    )
+    .await;
+    let run_handle = tokio::spawn(run(config));
+    wait_discover_entered(&env, Duration::from_secs(5)).await;
 
     env.drain();
-    wait_status_mode(&status_path, "draining", Duration::from_secs(5)).await;
+    destroy_gate
+        .wait_entered(1, Duration::from_secs(5))
+        .await
+        .expect("Draining should wait for idle sandbox destruction");
     assert_eq!(*env.mode_tx.borrow(), RunnerMode::Draining);
+    assert_eq!(env.parking_gate.state(), ParkingState::SoftDraining);
 
-    // Silently flip to Running — the `false` return suppresses
-    // `changed()`, so the arm does not wake on a mode transition. The
-    // guard will only observe the new value on its next iteration's
-    // send_if_modified closure.
-    env.parking_gate.open_after_soft_drain();
-    env.mode_tx.send_if_modified(|v| {
-        *v = RunnerMode::Running;
-        false
-    });
+    env.resume();
+    assert_eq!(*env.mode_tx.borrow(), RunnerMode::Running);
+    assert_eq!(env.parking_gate.state(), ParkingState::Open);
 
-    // Release the gate: job completes, the arm reaps, then checks
-    // jobs.is_empty() → true → calls the guarded send_if_modified.
-    gate.notify_one();
-    let _ = env
-        .handle
-        .wait_completion(run_id, Duration::from_secs(5))
-        .await;
-    wait_cancel_token_removed(&env.cancel_tokens, run_id, Duration::from_secs(5)).await;
+    // The reactor is still inside Draining with an empty job set. Once
+    // destruction returns, it must reject the stale natural-stop attempt
+    // before the next iteration can persist Running.
+    destroy_gate.release_one();
     wait_status_mode(&status_path, "running", Duration::from_secs(5)).await;
-
     assert_eq!(
         *env.mode_tx.borrow(),
         RunnerMode::Running,
         "SIGUSR2 must win the race against the Draining auto-Stop",
     );
+    assert_eq!(env.parking_gate.state(), ParkingState::Open);
+
+    let run_id = RunId::new_v4();
+    push_job(&env, run_id, "vm0/default", Some(minimal_context(run_id)));
+    let completion = env
+        .handle
+        .wait_completion(run_id, Duration::from_secs(5))
+        .await
+        .expect("runner should claim and complete subsequent work after resume");
+    assert_eq!(completion.exit_code, 0, "job ran to normal completion");
+    assert!(completion.error.is_none(), "no cancellation error");
+    wait_cancel_token_removed(&env.cancel_tokens, run_id, Duration::from_secs(5)).await;
 
     // Tear down cleanly.
     env.trigger_stopping().await;

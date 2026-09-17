@@ -439,6 +439,16 @@
     }
   },
   "artifacts": {
+    "access": {
+      "backToBrand": "Zurück zu {{brandName}}",
+      "description": "Es ist möglicherweise privat oder nicht mehr verfügbar.",
+      "help": "Bitte die Person, die diesen Link geteilt hat, den Zugriff zu prüfen.",
+      "signedInAs": "Angemeldet als {{email}}",
+      "switchAccount": "Konto wechseln",
+      "switchAccountFailed": "Die Kontoauswahl konnte nicht geöffnet werden. Bitte versuche es erneut.",
+      "title": "Du kannst dieses Artefakt nicht ansehen",
+      "tryAgain": "Erneut versuchen"
+    },
     "actions": {
       "backToAll": "Zurück zu allen Artefakten",
       "backToArtifacts": "Zurück zu den Artefakten",
@@ -580,9 +590,20 @@
       "videoLabel": "Videovorschau für {{filename}}"
     },
     "sharing": {
-      "shareOrganization": "Mit der Organisation teilen",
-      "sharePublic": "Öffentlich teilen",
-      "unavailable": "Dieses Artefakt ist nicht verfügbar oder du hast keinen Zugriff."
+      "accessLabel": "Wer hat Zugriff",
+      "copyLink": "Link kopieren",
+      "loadFailed": "Berechtigungen konnten nicht geladen werden",
+      "loadingPermissions": "Berechtigungen werden geladen",
+      "onlyMe": "Nur ich",
+      "onlyMeDescription": "Nur du kannst dieses Artefakt ansehen",
+      "organization": "Organisation",
+      "organizationDescription": "Alle in {{organization}} mit dem Link",
+      "permissionsUpdated": "Zugriff aktualisiert",
+      "publicAccess": "Öffentlicher Zugriff",
+      "publicDescription": "Alle mit dem Link können es ansehen",
+      "retry": "Erneut versuchen",
+      "savedAutomatically": "Änderungen werden automatisch gespeichert",
+      "saving": "Wird gespeichert…"
     },
     "sidebar": {
       "openSharedConversation": "Geteilte Unterhaltung öffnen",
@@ -687,11 +708,6 @@
       "websitePreview": "{{title}} Vorschau der Website-Vorlage",
       "workflow": "Workflow",
       "workflowCatalog": {
-        "alert-metric-moves-slack": {
-          "description": "Beobachten Sie Ihre wichtigsten Kennzahlen und benachrichtigen Sie Slack, wenn sich eine starke Veränderung abzeichnet.",
-          "shortDescription": "Slack melden, wenn eine Kennzahl stark ausschlägt.",
-          "title": "Warnung, wenn sich eine Metrik ändert"
-        },
         "auto-inbox-label": {
           "description": "Erstellen Sie einen Workflow, der startet, sobald ein Gmail-Label gesetzt wird, und die markierte E-Mail bearbeitet.",
           "shortDescription": "Workflow starten, sobald Sie ein Gmail-Label setzen.",
@@ -701,21 +717,6 @@
           "description": "PRs mit dem Label „Ready-to-Merge“ prüfen, auf CI warten, mergen und das Ergebnis in Slack posten.",
           "shortDescription": "Fertige PRs mergen, sobald die CI grün ist.",
           "title": "GitHub-PRs automatisch mergen"
-        },
-        "blog-posts-to-x": {
-          "description": "Machen Sie aus jedem neuen Blogbeitrag Social-Varianten in der Buffer-Warteschlange.",
-          "shortDescription": "Aus jedem neuen Blogbeitrag Social-Posts machen.",
-          "title": "Verwandeln Sie Blog-Beiträge in soziale Beiträge"
-        },
-        "build-weekly-deck-gamma": {
-          "description": "Verwandeln Sie die Kennzahlen der Woche in ein präsentationsfertiges Deck in Gamma.",
-          "shortDescription": "Die Wochenzahlen zu einem Gamma-Deck machen.",
-          "title": "Baue das wöchentliche Deck in Gamma"
-        },
-        "business-review-gamma": {
-          "description": "Verwandeln Sie die Kennzahlen des Monats in ein Business-Review-Deck in Gamma.",
-          "shortDescription": "Die Monatszahlen zu einem Review-Deck machen.",
-          "title": "Business-Review in Gamma erstellen"
         },
         "catch-calendar-conflicts": {
           "description": "Scannen Sie Ihren Kalender auf Doppelbuchungen und benachrichtigen Sie frühzeitig.",
@@ -737,30 +738,15 @@
           "shortDescription": "Den größten Abbruch im Anmeldefunnel posten.",
           "title": "Schauen Sie sich den PostHog-Anmeldetrichter an"
         },
-        "clickup-slack-standup": {
-          "description": "Holen Sie jeden Morgen die ClickUp-Aufgaben und posten Sie eine Standup-Zusammenfassung des Teams in Slack.",
-          "shortDescription": "Ein Morgen-Standup aus ClickUp-Aufgaben posten.",
-          "title": "ClickUp-Standup in Slack"
-        },
         "compare-google-ads-last-month": {
           "description": "Vergleichen Sie Werbeausgaben und ROAS mit dem Vormonat und melden Sie Auffälligkeiten in Slack.",
           "shortDescription": "Werbeausgaben und ROAS mit dem Vormonat vergleichen.",
           "title": "Vergleichen Sie Google Ads mit dem letzten Monat"
         },
-        "competitive-intel-monitor": {
-          "description": "Beobachten Sie Preise und Funktionen auf Wettbewerber-Websites, sichern Sie die Funde in Notion und melden Sie sie in Slack.",
-          "shortDescription": "Preisänderungen der Wettbewerber in Notion festhalten.",
-          "title": "Wettbewerbsbeobachtung"
-        },
-        "daily-company-brief-slack": {
-          "description": "Fassen Sie Produkte, Wachstum und Umsatz in einem täglichen Briefing auf Slack zusammen.",
-          "shortDescription": "Produkt, Wachstum und Umsatz in einem Briefing.",
-          "title": "Veröffentlichen Sie täglich ein Unternehmensbriefing auf Slack"
-        },
-        "daily-industry-news-slack": {
-          "description": "Fassen Sie die relevanten Branchennachrichten des Tages in einem Slack-Briefing zusammen.",
-          "shortDescription": "Die Branchennews des Tages für Slack bündeln.",
-          "title": "Veröffentlichen Sie täglich Branchennachrichten auf Slack"
+        "creator-shortlist-to-sheets": {
+          "description": "Bewerten Sie infrage kommende Creator nach Reichweite und Interaktion, sortiert in einem Sheet.",
+          "shortDescription": "Creator nach Reichweite und Interaktion sortieren.",
+          "title": "Creator-Shortlist in Google Sheets aufbauen"
         },
         "daily-standup-report": {
           "description": "Sammeln Sie jeden Morgen Produkt- und Engineering-Signale, erstellen Sie einen kurzen Bericht und posten Sie ihn in Slack.",
@@ -777,11 +763,6 @@
           "shortDescription": "Neuigkeiten zu einem Newsletter zusammenstellen.",
           "title": "Entwerfen Sie den Newsletter in Mailchimp"
         },
-        "draft-replies-notion-faq": {
-          "description": "Entwürfe von Ticketantworten basieren auf Ihren Notion-FAQ.",
-          "shortDescription": "Ticket-Antworten aus Ihrer Notion-FAQ entwerfen.",
-          "title": "Antwortentwürfe aus Ihren Notion-FAQs"
-        },
         "feedback-router": {
           "description": "Beobachten Sie einen Slack-Kanal und leiten Sie Produktfeedback mit Labels und Zuständigen nach Notion weiter.",
           "shortDescription": "Produktfeedback aus Slack nach Notion leiten.",
@@ -796,11 +777,6 @@
           "description": "Ordnen Sie neue Sentry-Fehler nach ihren Auswirkungen auf Benutzer und erfassen Sie die wichtigsten als GitHub-Issues.",
           "shortDescription": "Die schwersten Sentry-Fehler als GitHub-Issues anlegen.",
           "title": "Sentry-Abstürze als GitHub-Issues erfassen"
-        },
-        "flag-figma-designs-no-task": {
-          "description": "Markieren Sie Figma-Designs, mit denen noch keine Linear-Aufgabe verknüpft ist.",
-          "shortDescription": "Figma-Designs ohne Linear-Aufgabe markieren.",
-          "title": "Markieren Sie Figma-Designs ohne Aufgabe"
         },
         "flagged-gmail-todoist-tasks": {
           "description": "Wandeln Sie die E-Mails, die Sie markieren, automatisch in Todoist-Aufgaben um.",
@@ -817,11 +793,6 @@
           "shortDescription": "Gemergte Pull Requests zu einem Bericht bündeln.",
           "title": "GitHub-PR-Zusammenfassung"
         },
-        "gmail-followups-auto": {
-          "description": "Suchen Sie nach Kontakten, die nicht geantwortet haben, und verfassen Sie das nächste Follow-up.",
-          "shortDescription": "Nachfassen bei Kontakten, die nicht geantwortet haben.",
-          "title": "Senden Sie Gmail-Follow-ups automatisch"
-        },
         "gmail-reconnect-reminders": {
           "description": "Zeigen Sie wichtige Kontakte an, die Sie schon lange nicht mehr per E-Mail verschickt haben.",
           "shortDescription": "Kontakte zeigen, denen Sie lange nicht schrieben.",
@@ -832,25 +803,10 @@
           "shortDescription": "Die E-Mails zeigen, die Sie jetzt brauchen.",
           "title": "Markieren Sie wichtige E-Mails in Gmail"
         },
-        "investor-update-google-docs": {
-          "description": "Fassen Sie Kennzahlen und Highlights in einem Anleger-Update in Docs zusammen.",
-          "shortDescription": "Kennzahlen zu einem Investoren-Update bündeln.",
-          "title": "Entwerfen Sie das Investoren-Update in Google Docs"
-        },
-        "log-gong-calls-hubspot": {
-          "description": "Ziehen Sie Notizen und nächste Schritte aus einem Gong-Anruf in den HubSpot-Deal ein.",
-          "shortDescription": "Gong-Gesprächsnotizen in den HubSpot-Deal holen.",
-          "title": "Gong-Anrufe bei HubSpot protokollieren"
-        },
-        "meeting-notes-asana-tasks": {
-          "description": "Wandeln Sie Besprechungsnotizen in Asana in zugewiesene, fällige Aufgaben um.",
-          "shortDescription": "Aus Meetingnotizen Aufgaben in Asana machen.",
-          "title": "Verwandeln Sie Besprechungsnotizen in Asana-Aufgaben"
-        },
-        "meeting-recaps-slack": {
-          "description": "Teilen Sie nach jedem Meeting eine Zusammenfassung mit Entscheidungen und Aktionspunkten.",
-          "shortDescription": "Entscheidungen und To-dos nach dem Meeting teilen.",
-          "title": "Erhalten Sie Besprechungsrückblicke in Slack"
+        "keyword-ranks-to-sheets": {
+          "description": "Prüfen Sie, wo Ihre Seiten für wichtige Keywords ranken, und halten Sie Veränderungen fest.",
+          "shortDescription": "Wöchentliche Rankingänderungen im Sheet festhalten.",
+          "title": "Keyword-Rankings in Google Sheets verfolgen"
         },
         "morning-brief": {
           "description": "Machen Sie aus Gmail-, Kalender- und Notion-Updates einen kurzen Tagesplan in Slack.",
@@ -862,20 +818,10 @@
           "shortDescription": "Unbekannte Absender in HubSpot anlegen.",
           "title": "Fügen Sie neue Gmail-Kontakte zu HubSpot hinzu"
         },
-        "onboard-new-hires-asana": {
-          "description": "Erstellen Sie die Checkliste für die Onboarding-Aufgaben für jeden neuen Mitarbeiter in Asana.",
-          "shortDescription": "Pro neuer Person eine Onboarding-Checkliste anlegen.",
-          "title": "Onboarding neuer Mitarbeiter in Asana"
-        },
         "personal-weekly-digest": {
           "description": "Fassen Sie GitHub-, Gmail- und Kalenderaktivität zu einem wöchentlichen Slack-Update zusammen.",
           "shortDescription": "Ihre Woche aus GitHub und Gmail zusammenfassen.",
           "title": "Persönlicher Wochenüberblick"
-        },
-        "post-daily-metrics-slack": {
-          "description": "Veröffentlichen Sie tägliche Besucher, Anmeldungen und Aktivierungsnummern in Slack.",
-          "shortDescription": "Tägliche Besucher und Anmeldungen in Slack posten.",
-          "title": "Veröffentlichen Sie tägliche Kennzahlen auf Slack"
         },
         "post-release-notes-slack": {
           "description": "Erstellen Sie ein Änderungsprotokoll der kürzlich versendeten Arbeit und veröffentlichen Sie es in Slack.",
@@ -887,35 +833,10 @@
           "shortDescription": "Vor externen Terminen ein Briefing schicken.",
           "title": "Auf Google Calendar-Meetings vorbereiten"
         },
-        "publish-scheduled-posts-buffer": {
-          "description": "Veröffentlichen Sie die für den Tag geplanten Inhalte und stellen Sie die Social-Beiträge in die Warteschlange.",
-          "shortDescription": "Die für heute geplanten Social-Beiträge posten.",
-          "title": "Veröffentlichen Sie geplante Beiträge in Buffer"
-        },
         "research-calendar-meetings": {
           "description": "Informieren Sie sich vor jedem Kalenderereignis über die Personen, die Sie treffen.",
           "shortDescription": "Vor jedem Termin die Teilnehmenden recherchieren.",
           "title": "Recherchieren Sie Ihre Kalenderbesprechungen"
-        },
-        "research-new-signups-apollo": {
-          "description": "Recherchieren Sie jede neue Anmeldung und veröffentlichen Sie einen kurzen Schnappschuss.",
-          "shortDescription": "Jede neue Anmeldung recherchieren und posten.",
-          "title": "Recherchieren Sie neue Anmeldungen"
-        },
-        "revenuecat-subscription-digest": {
-          "description": "Verfolgen Sie Abos in Sheets und melden Sie in Slack, wenn sich Kündigungs- oder Abwanderungsmuster ändern.",
-          "shortDescription": "Abos verfolgen und Abwanderung in Slack melden.",
-          "title": "RevenueCat-Abo-Überblick"
-        },
-        "run-daily-query-sheets": {
-          "description": "Führen Sie Ihr gespeichertes SQL nach einem Zeitplan aus und hängen Sie die Ergebnisse an ein Blatt an.",
-          "shortDescription": "Gespeichertes SQL ausführen und in ein Sheet schreiben.",
-          "title": "Führen Sie täglich eine Abfrage in Google Sheets durch"
-        },
-        "salesforce-pipeline-digest": {
-          "description": "Fassen Sie wöchentlich Änderungen an Salesforce-Opportunities und Risiken beim Abschlussdatum in Slack zusammen.",
-          "shortDescription": "Wöchentlich die Risiken der Salesforce-Pipeline bündeln.",
-          "title": "Salesforce-Pipeline-Überblick"
         },
         "send-bugs-github-slack": {
           "description": "Erfassen Sie als Fehler gekennzeichnete Berichte als GitHub-Issues und benachrichtigen Sie das Team in Slack.",
@@ -927,25 +848,20 @@
           "shortDescription": "Täglich die kritischen Sentry-Issues senden.",
           "title": "Sentry-Issue-Überblick"
         },
+        "social-posts-to-sheets": {
+          "description": "Sammeln Sie öffentliche Beiträge und Interaktionen der beobachteten Accounts in einem Sheet.",
+          "shortDescription": "Öffentliche Social-Beiträge in einem Sheet sammeln.",
+          "title": "Social-Beiträge in Google Sheets sammeln"
+        },
         "sort-gmail-draft-replies": {
           "description": "Sortieren Sie Ihren Posteingang und entwerfen Sie Antworten auf die E-Mails, die sie benötigen.",
           "shortDescription": "Posteingang sortieren und Antworten entwerfen.",
           "title": "Sortieren Sie Gmail- und Antwortentwürfe"
         },
-        "spot-churn-risk-stripe-zendesk": {
-          "description": "Kennzeichnen Sie Konten, bei denen das Risiko einer Abwanderung besteht, und verfassen Sie eine Wiederherstellungs-E-Mail.",
-          "shortDescription": "Abwanderungsrisiko erkennen und Mail entwerfen.",
-          "title": "Erkennen Sie das Abwanderungsrisiko bei Stripe und Zendesk"
-        },
         "summarize-gmail-newsletters": {
           "description": "Fassen Sie die Newsletter in Ihrem Posteingang in einer kurzen Zusammenfassung zusammen.",
           "shortDescription": "Ihre Newsletter zu einer Zusammenfassung bündeln.",
           "title": "Fassen Sie Gmail-Newsletter zusammen"
-        },
-        "summarize-zendesk-tickets-daily": {
-          "description": "Fassen Sie die Zendesk-Tickets des letzten Tages zusammen und veröffentlichen Sie sie auf Slack.",
-          "shortDescription": "Täglich die Zendesk-Tickets zusammenfassen.",
-          "title": "Fassen Sie Zendesk-Tickets täglich zusammen"
         },
         "support-ticket-router": {
           "description": "Klassifizieren Sie Support-E-Mails, legen Sie Notion-Einträge an und melden Sie kritische Tickets in Slack.",
@@ -967,30 +883,20 @@
           "shortDescription": "Die größten Nutzungsänderungen der Woche zeigen.",
           "title": "Verfolgen Sie die Funktionsnutzung mit PostHog"
         },
-        "track-keyword-ranks-ahrefs": {
-          "description": "Verfolgen Sie Keyword-Rankings in Ahrefs und halten Sie die größten Bewegungen in Notion fest.",
-          "shortDescription": "Die Keyword-Bewegungen der Woche berichten.",
-          "title": "Verfolgen Sie Keyword-Ränge mit Ahrefs"
-        },
-        "track-signup-sources-sheets": {
-          "description": "Ordnen Sie jede neue Anmeldung in einem Tracking-Sheet ihrer Quelle zu.",
-          "shortDescription": "Jede Anmeldung ihrer Quelle im Sheet zuordnen.",
-          "title": "Verfolgen Sie Anmeldequellen in Google Sheets"
-        },
         "vercel-deploy-digest": {
           "description": "Überwachen Sie Vercel-Deployments, verknüpfen Sie sie mit GitHub-Commits und melden Sie Fehlschläge in Slack.",
           "shortDescription": "Slack melden, wenn ein Vercel-Deploy fehlschlägt.",
           "title": "Vercel-Deploy-Überblick"
         },
+        "web-data-to-sheets": {
+          "description": "Holen Sie dieselben Felder regelmäßig aus einer Seitenliste und behalten Sie den Verlauf in einem Sheet.",
+          "shortDescription": "Felder aus einer Seitenliste in einem Sheet sammeln.",
+          "title": "Daten von Webseiten in einer Tabelle sammeln"
+        },
         "x-brand-monitor": {
           "description": "Verfolgen Sie Markenerwähnungen auf X, sichern Sie relevante Beiträge in Notion und melden Sie wichtige Erwähnungen in Slack.",
           "shortDescription": "Starke Markenerwähnungen auf X in Slack melden.",
           "title": "Markenbeobachtung auf X"
-        },
-        "zendesk-knowledge-base": {
-          "description": "Finden Sie wiederkehrende Zendesk-Fragen, entwerfen Sie FAQ-Einträge und speichern Sie sie in Notion.",
-          "shortDescription": "Wiederkehrende Fragen zu FAQ-Einträgen machen.",
-          "title": "Zendesk-Wissensdatenbank"
         }
       },
       "workflowCategories": {
@@ -1009,8 +915,7 @@
     "toasts": {
       "copyLinkFailed": "Link konnte nicht kopiert werden",
       "downloadFailed": "Der Download ist fehlgeschlagen",
-      "linkCopied": "Link kopiert",
-      "sharing": "Wird geteilt…"
+      "linkCopied": "Link kopiert"
     },
     "viewer": {
       "continuePrompt": "Hilf mir, mit diesem Artefakt zu arbeiten: {{url}}",
@@ -1516,19 +1421,22 @@
     "agentPage": {
       "getStarted": {
         "checkin": {
-          "description": "App täglich öffnen. Zurücksetzung um 00:00 UTC.",
+          "action": "Einchecken",
+          "description": "Einmal täglich einchecken. Neuer Tag um 00:00 UTC.",
           "name": "Täglich einchecken",
           "unit": "pro Tag"
         },
         "connector": {
-          "description": "Per OAuth verbinden. Eine Prämie pro Connector.",
+          "action": "Verbinden",
+          "description": "Gmail, Notion und 100+ weitere",
           "name": "Connector verbinden",
           "unit": "pro Connector"
         },
         "inReview": "In Prüfung",
         "inReviewDescription": "Eingereicht, wartet auf Prüfung",
         "invite": {
-          "description": "Prämie bei angenommener Einladung, bis zu 15 Mitglieder.",
+          "action": "Einladen",
+          "description": "Jede Person, die du hinzufügst, zählt",
           "name": "Team einladen",
           "unit": "pro Mitglied"
         },
@@ -1539,6 +1447,7 @@
         "reward": "+{{amount}}",
         "rewardedConnections": "Belohnte Connectors: {{amount}}",
         "share": {
+          "action": "Teilen",
           "description": "Poste es und füge den Link hier ein",
           "name": "{{assistantName}} auf X teilen"
         },
@@ -1551,14 +1460,16 @@
           "title": "{{assistantName}} auf X teilen"
         },
         "slack": {
-          "description": "Erhalte 2.000 Organisations-Credits, einmal pro Organisation und Workspace.",
+          "action": "Hinzufügen",
+          "description": "Da, wo dein Team schon arbeitet",
           "name": "{{assistantName}} zu Slack hinzufügen"
         },
         "stepCount": "{{completed}}/{{total}}",
         "subtitle": "Aufgabe ausprobieren und Credits verdienen.",
         "title": "Einstieg",
         "workflow": {
-          "description": "Einen selbst erstellten Workflow erfolgreich ausführen.",
+          "action": "Bauen",
+          "description": "Mach aus einer Routineaufgabe eine wiederverwendbare Fähigkeit",
           "name": "Workflow bauen"
         }
       },
@@ -1912,6 +1823,8 @@
       "providerIncompatibleAction": "Starten Sie eine neue Sitzung",
       "providerIncompatiblePrefix": "Diese Sitzung wurde bei einem anderen Modellanbieter gestartet und kann nicht mit dem aktuellen fortgesetzt werden.",
       "recovery": {
+        "autonomyLimitDescription": "Das Limit für aufeinanderfolgende automatische Ausführungen wurde erreicht. Bestätige, um fortzufahren.",
+        "autonomyLimitTitle": "Limit für automatische Ausführungen erreicht",
         "capacityDescription": "Versuchen Sie es gleich erneut oder wechseln Sie das Modell.",
         "capacityTitle": "Dieses Modell ist gerade ausgelastet",
         "claudeCode": "Claude Code",
@@ -2049,7 +1962,7 @@
     },
     "newChat": "Neuer Chat",
     "origins": {
-      "agentphone": "AgentPhone",
+      "agentphone": "iMessage",
       "feishu": "Feishu",
       "github": "GitHub",
       "lark": "Lark",
@@ -2953,27 +2866,6 @@
     "toasts": {
       "copied": "Kopiert",
       "deleted": "Chat gelöscht"
-    },
-    "translation": {
-      "action": "Übersetzen",
-      "close": "Übersetzung schließen",
-      "copy": "Übersetzung kopieren",
-      "languages": {
-        "de": "Deutsch",
-        "en": "English",
-        "es": "Español",
-        "fr": "Français",
-        "hi": "हिन्दी",
-        "id": "Bahasa Indonesia",
-        "it": "Italiano",
-        "ja": "日本語",
-        "ko": "한국어",
-        "ptBR": "Português",
-        "zhCN": "简体中文",
-        "zhTW": "繁體中文"
-      },
-      "result": "Übersetzung",
-      "targetLanguage": "Übersetzungssprache"
     },
     "voice": {
       "checkingLimit": "Überprüfung des Spracheingabelimits",
@@ -5891,8 +5783,8 @@
             "cottonSky": "Cotton sky",
             "daydream": "Daydream",
             "deepLagoon": "Deep lagoon",
-            "goldenHour": "Golden hour",
-            "limelight": "Limelight"
+            "default": "Standard",
+            "goldenHour": "Golden hour"
           },
           "title": "Farbthema"
         },
@@ -6390,11 +6282,46 @@
     "resetHelp": "Setzen Sie den Schlüssel erst zurück, nachdem Sie die neue Serveridentität unabhängig geprüft haben. Die nächste Verbindung vertraut einem neuen Hostschlüssel und speichert ihn.",
     "retry": "Erneut versuchen",
     "save": "Speichern",
+    "saveRecovery": {
+      "resourceIdConflict": "Diese Ressourcen-ID kann nicht verwendet werden. Schließen Sie das Formular und öffnen Sie es erneut, um es noch einmal zu versuchen.",
+      "uncertain": "Wir konnten nicht bestätigen, ob Ihre Änderungen gespeichert wurden. Wiederholen Sie denselben Speichervorgang, oder schließen Sie das Formular und prüfen Sie die Liste, bevor Sie erneut etwas hinzufügen."
+    },
     "summary_one": "{{count}} Host konfiguriert",
     "summary_other": "{{count}} Hosts konfiguriert",
     "title": "SSH-Hosts",
     "unavailable": "SSH-Zugriff ist für dieses Konto nicht verfügbar.",
     "username": "SSH-Benutzername"
+  },
+  "templates": {
+    "actions": {
+      "delete": "Löschen",
+      "menu": "Aktionen für {{title}}",
+      "preview": "{{title}} in der Vorschau anzeigen",
+      "rename": "Vorlage umbenennen"
+    },
+    "custom": "Eigene",
+    "detail": {
+      "back": "Eigene Vorlagen",
+      "page": "Seite {{number}}",
+      "source_one": "{{count}} Seite · aus {{filename}}",
+      "source_other": "{{count}} Seiten · aus {{filename}}"
+    },
+    "empty": {
+      "description": "Vorlagen, die aus einer hochgeladenen Datei erstellt werden, erscheinen hier.",
+      "title": "Noch keine Vorlagen"
+    },
+    "loadFailed": "Vorlagen konnten nicht geladen werden.",
+    "pageCount_one": "{{count}} Seite",
+    "pageCount_other": "{{count}} Seiten",
+    "retry": "Erneut versuchen",
+    "sharedBy": "Geteilt von {{owner}}",
+    "visibility": {
+      "change": "Ändern",
+      "organization": "Organisation",
+      "organizationState": "Alle in dieser Organisation können sie verwenden",
+      "private": "Privat",
+      "privateState": "Nur du kannst sie sehen und verwenden"
+    }
   },
   "usage": {
     "displayNames": {

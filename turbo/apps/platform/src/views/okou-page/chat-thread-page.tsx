@@ -321,6 +321,7 @@ import {
   CHAT_THREAD_ASSISTANT_RESPONSE_COLUMN_CLASS,
   CHAT_THREAD_CONTENT_MAIN_CLASS,
   CHAT_THREAD_MESSAGE_LIST_CLASS,
+  CHAT_THREAD_MESSAGE_ROW_GAP_CLASS,
   CHAT_THREAD_MESSAGE_STACK_PULL_CLASS,
   CHAT_THREAD_RESPONSE_FLUSH_CLASS,
   CHAT_THREAD_RESPONSE_LINE_CLASS,
@@ -3630,7 +3631,11 @@ function RunWorkSectionRow({
           })}
           onClick={onToggle}
           data-chat-run-work-range
-          className={cn(className, "h-auto p-0 pr-1")}
+          // The hover surface needs an inset on the side its glyph starts on,
+          // otherwise the hourglass sits flush against the left edge while the
+          // chevron keeps `pr-1`. The negative margin spends that inset on the
+          // overhang, so the glyph still starts on the response column.
+          className={cn(className, "h-auto p-0 pl-1.5 pr-1 -ml-1.5")}
         >
           {content}
         </Button>
@@ -4264,10 +4269,9 @@ function ShimmerText({
         // only thing that moves is the gradient's paint origin; nothing here
         // moves a box that holds glyphs. `contain: paint` keeps the per-frame
         // repaint inside the label. The `-webkit-` clip stays beside
-        // `bg-clip-text` because Tailwind emits only the unprefixed property
-        // while the retired rule declared both; keeping it changes nothing on
-        // the build's target browsers, which is why it is here rather than
-        // dropped as part of a styling change.
+        // `bg-clip-text` because Tailwind emits only the unprefixed property.
+        // Chromium treats the two as aliases, so dropping the prefixed one is
+        // a browser-support decision rather than a styling change.
         "h-auto min-w-0 flex-1 animate-shimmer truncate bg-shimmer-text bg-clip-text [background-size:200%_100%] [-webkit-background-clip:text] [-webkit-text-fill-color:transparent] [contain:paint]",
         CHAT_THREAD_RESPONSE_SUPPORTING_TEXT_CLASS,
         className,
@@ -4720,20 +4724,45 @@ function customCreditsFromForm(form: HTMLFormElement | null): number | null {
   return credits;
 }
 
+/**
+ * A notice card's height comes from its own rows, so a card that carries only a
+ * headline is one row tall. The supporting line keeps a reserved two-line box
+ * instead: billing status and failure-recovery classification both resolve
+ * asynchronously and swap this text inside an already mounted frame, and
+ * `docs/chat-cards.md` requires that swap to leave the frame's geometry
+ * untouched. Clamping alone would let a one-line message resize the transcript
+ * once the asynchronous read lands.
+ */
+const CHAT_NOTICE_DESCRIPTION_CLASS =
+  "line-clamp-2 h-10 text-sm leading-5 text-muted-foreground";
+
+/**
+ * The billing notice's action is the other row an asynchronous read introduces:
+ * it appears only once `billingStatusAsync$` and `isOrgAdmin$` resolve, and the
+ * credits-available state replaces the whole body without one. Below the card's
+ * 640px breakpoint the body is a column, so mounting that row late would add its
+ * own height plus the container gap and resize the transcript. Every billing
+ * state therefore keeps this slot, filled or empty, at the shared action height.
+ */
+const CHAT_NOTICE_ACTION_SLOT_CLASS = "flex h-8 shrink-0 items-center";
+
 function CreditsAvailableMessage() {
   const { t } = useTranslation();
   return (
-    <div className="flex h-full flex-col justify-center p-3">
-      <p className="truncate text-[0.9375rem] font-medium text-emerald-700 dark:text-emerald-300">
-        {t(($) => {
-          return $.chat.billing.creditsAvailable;
-        })}
-      </p>
-      <p className="mt-1 text-sm text-muted-foreground">
-        {t(($) => {
-          return $.chat.billing.creditsAdded;
-        })}
-      </p>
+    <div className="flex flex-col justify-between gap-3 p-3 @[640px]:flex-row @[640px]:items-center">
+      <div className="min-w-0">
+        <p className="truncate text-[0.9375rem] font-medium text-emerald-700 dark:text-emerald-300">
+          {t(($) => {
+            return $.chat.billing.creditsAvailable;
+          })}
+        </p>
+        <p className={cn("mt-1", CHAT_NOTICE_DESCRIPTION_CLASS)}>
+          {t(($) => {
+            return $.chat.billing.creditsAdded;
+          })}
+        </p>
+      </div>
+      <div className={CHAT_NOTICE_ACTION_SLOT_CLASS} />
     </div>
   );
 }
@@ -4944,46 +4973,46 @@ function InsufficientCreditsCard() {
   };
 
   return (
-    <div className="flex h-full flex-col justify-between gap-3 p-3 @[640px]:flex-row @[640px]:items-center">
+    <div className="flex flex-col justify-between gap-3 p-3 @[640px]:flex-row @[640px]:items-center">
       <div className="min-w-0">
         <p className="truncate text-[0.9375rem] font-medium text-foreground">
           {headline}
         </p>
-        <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
-          {helper}
-        </p>
+        <p className={cn("mt-1", CHAT_NOTICE_DESCRIPTION_CLASS)}>{helper}</p>
       </div>
-      {!canShowBillingAction ? null : shouldStartProCheckout ? (
-        <Button
-          type="button"
-          onClick={handleUpgradeClick}
-          disabled={checkoutRedirecting}
-          variant="default"
-          size="sm"
-          className="shrink-0 disabled:opacity-60"
-        >
-          {checkoutRedirecting
-            ? t(($) => {
-                return $.chat.billing.redirecting;
-              })
-            : t(($) => {
-                return $.chat.billing.upgradeToPro;
-              })}
-        </Button>
-      ) : (
-        <ChatCardDetails
-          title={headline}
-          triggerLabel={t(($) => {
-            return $.runErrors.actions.addCredits;
-          })}
-        >
-          <p>{helper}</p>
-          <PaidCreditCheckoutActions
-            preparing={creditCheckoutPreparing}
-            handleCreditClick={handleCreditClick}
-          />
-        </ChatCardDetails>
-      )}
+      <div className={CHAT_NOTICE_ACTION_SLOT_CLASS}>
+        {!canShowBillingAction ? null : shouldStartProCheckout ? (
+          <Button
+            type="button"
+            onClick={handleUpgradeClick}
+            disabled={checkoutRedirecting}
+            variant="default"
+            size="sm"
+            className="shrink-0 disabled:opacity-60"
+          >
+            {checkoutRedirecting
+              ? t(($) => {
+                  return $.chat.billing.redirecting;
+                })
+              : t(($) => {
+                  return $.chat.billing.upgradeToPro;
+                })}
+          </Button>
+        ) : (
+          <ChatCardDetails
+            title={headline}
+            triggerLabel={t(($) => {
+              return $.runErrors.actions.addCredits;
+            })}
+          >
+            <p>{helper}</p>
+            <PaidCreditCheckoutActions
+              preparing={creditCheckoutPreparing}
+              handleCreditClick={handleCreditClick}
+            />
+          </ChatCardDetails>
+        )}
+      </div>
     </div>
   );
 }
@@ -5038,7 +5067,7 @@ function AssistantRecoveryActions({
   const resetting = resetLoadable.state === "loading";
   const hasResetAction = recovery.actions.resetAndTryAgain !== null;
   const hasRetryAction = recovery.actions.tryAgain !== null;
-  const hasModelSelectionAction = recovery.kind !== "execution-timeout";
+  const hasModelSelectionAction = recovery.framework !== null;
   // `excludedModel` drops the failed model from the menu, so showing it as the
   // trigger label would offer a choice the user cannot make. Fall back to the
   // "Switch model" placeholder until they pick something else.
@@ -5100,8 +5129,7 @@ function AssistantRecoveryActions({
           }}
         >
           <AssistantRecoveryActionSpinner loading={retrying} />
-          {/* A timed-out run is resumed, not retried, and its copy says so. */}
-          {recovery.kind === "execution-timeout"
+          {recovery.framework === null
             ? t(($) => {
                 return $.chat.errors.recovery.continue;
               })
@@ -5133,7 +5161,7 @@ function AssistantErrorCard({
     <div
       role="status"
       data-testid={testId}
-      className="flex h-full w-full flex-col justify-between gap-3 p-3 text-foreground @[640px]:flex-row @[640px]:items-center"
+      className="flex w-full flex-col justify-between gap-3 p-3 text-foreground @[640px]:flex-row @[640px]:items-center"
     >
       <div className="flex min-w-0 items-start gap-2.5 @[640px]:flex-1">
         <Icon size={16} className="mt-1 shrink-0 text-brand-text" />
@@ -5141,9 +5169,11 @@ function AssistantErrorCard({
           <div className="truncate text-[0.9375rem] font-medium leading-6">
             {title}
           </div>
-          <div className="mt-0.5 line-clamp-2 text-sm leading-5 text-muted-foreground">
-            {description}
-          </div>
+          {description !== "" && (
+            <div className={cn("mt-0.5", CHAT_NOTICE_DESCRIPTION_CLASS)}>
+              {description}
+            </div>
+          )}
         </div>
       </div>
       {(description !== "" ||
@@ -5178,6 +5208,11 @@ function AssistantErrorRecoveryCard({
         return $.chat.errors.recovery.timeoutTitle;
       });
     }
+    if (recovery.kind === "autonomy-budget-exhausted") {
+      return t(($) => {
+        return $.chat.errors.recovery.autonomyLimitTitle;
+      });
+    }
     if (recovery.kind === "model-unavailable") {
       return t(($) => {
         return $.chat.errors.recovery.unavailableTitle;
@@ -5210,17 +5245,21 @@ function AssistantErrorRecoveryCard({
         ? t(($) => {
             return $.chat.errors.recovery.timeoutDescription;
           })
-        : recovery.kind === "usage-limit"
+        : recovery.kind === "autonomy-budget-exhausted"
           ? t(($) => {
-              return $.chat.errors.recovery.usageDescription;
+              return $.chat.errors.recovery.autonomyLimitDescription;
             })
-          : recovery.kind === "model-unavailable"
+          : recovery.kind === "usage-limit"
             ? t(($) => {
-                return $.chat.errors.recovery.unavailableDescription;
+                return $.chat.errors.recovery.usageDescription;
               })
-            : t(($) => {
-                return $.chat.errors.recovery.capacityDescription;
-              });
+            : recovery.kind === "model-unavailable"
+              ? t(($) => {
+                  return $.chat.errors.recovery.unavailableDescription;
+                })
+              : t(($) => {
+                  return $.chat.errors.recovery.capacityDescription;
+                });
   const personalSource = recovery.source?.credentialScope === "member";
   const sourceDescription = personalSource
     ? recovery.source?.account.status === "unavailable"
@@ -5244,9 +5283,12 @@ function AssistantErrorRecoveryCard({
   return (
     <AssistantErrorCard
       icon={
-        recovery.kind === "usage-limit" || recovery.kind === "execution-timeout"
-          ? Clock
-          : Coffee
+        recovery.kind === "autonomy-budget-exhausted"
+          ? Hand
+          : recovery.kind === "usage-limit" ||
+              recovery.kind === "execution-timeout"
+            ? Clock
+            : Coffee
       }
       title={title}
       description={`${description}${resetText ? ` ${resetText}` : ""}`}
@@ -5437,10 +5479,7 @@ function AssistantErrorContent({
   thread: ChatPanelSignals;
 }) {
   return (
-    <ChatCard
-      data-testid="assistant-error-card-shell"
-      className="h-[136px] w-full @[640px]:h-[88px]"
-    >
+    <ChatCard data-testid="assistant-error-card-shell" className="w-full">
       <AssistantErrorState error={error} eventId={eventId} thread={thread} />
     </ChatCard>
   );
@@ -5646,7 +5685,12 @@ function SelectablePagedGroupRow({
           : undefined
       }
       className={cn(
-        "relative -my-1 rounded-lg py-1 transition-colors",
+        // Every row in the transcript is otherwise a direct child of the
+        // message list's flex column. This wrapper interrupts that column, so
+        // it carries the same rhythm itself; without it a group holding a burst
+        // of user messages renders them with no gap at all.
+        "relative -my-1 flex flex-col rounded-lg py-1 transition-colors",
+        CHAT_THREAD_MESSAGE_ROW_GAP_CLASS,
         phase === "selecting" && "cursor-pointer hover:bg-state-hover",
       )}
       onClick={(event) => {
@@ -5960,35 +6004,41 @@ function UserMessageAttachments({
   );
 }
 
+// The row below a user message is part of that message's frame, not a thing the
+// copy button brings with it. It stays even when there is no button to show —
+// a message nobody can copy, or a mode that offers no per-message action — so
+// the burst spacing that is measured against it does not collapse.
 function UserMessageActions({
-  canCopy,
+  showCopy,
   copied,
   onCopy,
 }: {
-  canCopy: boolean;
+  showCopy: boolean;
   copied: boolean;
   onCopy: () => void;
 }) {
   const { t } = useTranslation();
-  if (!canCopy) {
-    return null;
-  }
   return (
-    <div className={CHAT_THREAD_USER_MESSAGE_ACTIONS_CLASS}>
-      <Button
-        type="button"
-        variant="quiet"
-        size="icon-xs"
-        iconSize="sm"
-        showTooltip
-        onClick={onCopy}
-        className="text-muted-foreground/60"
-        aria-label={t(($) => {
-          return $.chat.actions.copyMessage;
-        })}
-      >
-        {copied ? <Check /> : <Copy />}
-      </Button>
+    <div
+      data-chat-user-message-actions
+      className={CHAT_THREAD_USER_MESSAGE_ACTIONS_CLASS}
+    >
+      {showCopy ? (
+        <Button
+          type="button"
+          variant="quiet"
+          size="icon-xs"
+          iconSize="sm"
+          showTooltip
+          onClick={onCopy}
+          className="text-muted-foreground/60"
+          aria-label={t(($) => {
+            return $.chat.actions.copyMessage;
+          })}
+        >
+          {copied ? <Check /> : <Copy />}
+        </Button>
+      ) : null}
     </div>
   );
 }
@@ -6057,6 +6107,35 @@ function MessageAnnotation({
     "rounded-md px-1.5 text-xs font-medium text-muted-foreground";
   if (renderPart.type === "automation") {
     const { part } = renderPart;
+    const content = (
+      <>
+        <Route size={15} className="shrink-0" />
+        <span className="min-w-0 truncate">{part.workflowName}</span>
+      </>
+    );
+    if (part.workflowId !== undefined) {
+      const workflowTitle =
+        part.workflowName.trim() ||
+        t(($) => {
+          return $.chat.templates.categories.workflow;
+        });
+      return (
+        <Link
+          pathname={ROUTES.workflowDetailAutomations}
+          options={{ pathParams: { workflowId: part.workflowId } }}
+          aria-label={t(
+            ($) => {
+              return $.chat.workflows.open;
+            },
+            { title: workflowTitle },
+          )}
+          className={`${className} transition-colors hover:bg-state-hover hover:text-foreground`}
+          title={part.workflowName}
+        >
+          {content}
+        </Link>
+      );
+    }
     return (
       <div
         aria-label={t(
@@ -6070,8 +6149,7 @@ function MessageAnnotation({
         className={className}
         title={part.workflowName}
       >
-        <Route size={15} className="shrink-0" />
-        <span className="min-w-0 truncate">{part.workflowName}</span>
+        {content}
       </div>
     );
   }
@@ -6765,7 +6843,6 @@ function WorkflowUserMessage({
 }: {
   event: EnrichedChatEvent & ChatInputEvent;
 }) {
-  const { t } = useTranslation();
   const renderPart = userMessageAnnotationRenderPart(
     event.userMessageRenderDocument,
   );
@@ -6773,11 +6850,6 @@ function WorkflowUserMessage({
     return null;
   }
   const { part } = renderPart;
-  const workflowTitle =
-    part.workflowName.trim() ||
-    t(($) => {
-      return $.chat.templates.categories.workflow;
-    });
   const workflowBody =
     messageDocumentToDisplayText(event.userMessage)?.trim() ||
     part.automationBrief?.trim();
@@ -6788,8 +6860,6 @@ function WorkflowUserMessage({
       <div className="px-4 py-3">{workflowBody}</div>
     </div>
   ) : null;
-  const workflowId = part.workflowId;
-  const linked = workflowId !== undefined;
 
   return (
     <div
@@ -6802,29 +6872,7 @@ function WorkflowUserMessage({
         <div className="hidden @[900px]:block @[900px]:w-9 @[900px]:h-9 @[900px]:shrink-0" />
         <div className="flex w-full flex-col items-end">
           <MessageAnnotation renderPart={renderPart} />
-          {linked && body ? (
-            <Link
-              pathname={ROUTES.workflowDetailAutomations}
-              options={{
-                pathParams: {
-                  workflowId,
-                },
-              }}
-              className="contents"
-              aria-label={t(
-                ($) => {
-                  return $.chat.workflows.open;
-                },
-                {
-                  title: workflowTitle,
-                },
-              )}
-            >
-              {body}
-            </Link>
-          ) : (
-            body
-          )}
+          {body}
         </div>
       </div>
     </div>
@@ -6986,18 +7034,22 @@ function PagedUserMessage({
             <MessageAnnotation renderPart={annotationPart} />
           ) : null}
           {renderDocument ? (
-            <UserMessageContent
-              document={renderDocument}
-              attachments={allAttachments}
-              onImageClick={openLightbox}
-            />
-          ) : null}
-          {sharingPhase === "idle" ? (
-            <UserMessageActions
-              canCopy={canCopy}
-              copied={copied}
-              onCopy={handleCopy}
-            />
+            <>
+              <UserMessageContent
+                document={renderDocument}
+                attachments={allAttachments}
+                onImageClick={openLightbox}
+              />
+              {/* The row belongs to the bubble, not to the button inside it.
+                  Sharing hides the button and a message nobody can copy has
+                  none, and in both cases the next message in the burst is
+                  still pulled up by the height this row holds. */}
+              <UserMessageActions
+                showCopy={canCopy && sharingPhase === "idle"}
+                copied={copied}
+                onCopy={handleCopy}
+              />
+            </>
           ) : null}
         </div>
       </div>

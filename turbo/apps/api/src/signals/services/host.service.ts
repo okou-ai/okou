@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { command } from "ccstate";
+import { artifactShareReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
 import type {
   HostedArtifactKind,
   HostedSiteFilesResponse,
@@ -30,12 +31,16 @@ import {
 import { nowDate } from "../../lib/time";
 import { privateArtifactCreationEnabled } from "./private-artifact-storage.service";
 import { registerLegacyHostedSite$ } from "./artifact-delivery.service";
-import { privateHostedArtifactUrl } from "./private-hosted-preview.service";
+import { allocateArtifactReference$ } from "./artifact-reference.service";
 import {
   scheduleArtifactPreviewRender$,
   type RenderArtifactPreviewArgs,
 } from "./artifact-preview.service";
 import { recordHostedSiteArtifact$ } from "./run-uploaded-files.service";
+import {
+  collectHostedSiteDependencies$,
+  hostedSiteDeliveryManifest,
+} from "./hosted-site-dependencies.service";
 import {
   assertHostedDeploymentScope,
   canonicalizeHostedSiteScope,
@@ -169,6 +174,8 @@ type SiteDeploymentCreationResult =
 
 interface CreateHostedSiteDeploymentContext {
   readonly now: Date;
+  readonly deploymentId: string;
+  readonly privateReference: string | null;
 }
 
 interface HostedSiteAllocation {
@@ -689,10 +696,14 @@ async function insertHostedDeployment(
   allocation: HostedSiteAllocation,
 ): Promise<HostedDeploymentRow> {
   const { deploymentVersion, site } = allocation;
-  const deploymentId = crypto.randomUUID();
-  const artifactUrl = args.privateArtifacts
-    ? privateHostedArtifactUrl(deploymentId)
-    : deploymentUrl(site.publicBrand, deploymentId);
+  const { deploymentId } = context;
+  if (args.privateArtifacts !== (context.privateReference !== null)) {
+    throw new Error("Deployment reference does not match its storage policy");
+  }
+  const artifactUrl =
+    context.privateReference === null
+      ? deploymentUrl(site.publicBrand, deploymentId)
+      : artifactShareReferencePath(context.privateReference, "index.html");
   const aliasUrl = args.privateArtifacts
     ? artifactUrl
     : publicUrl(site.publicBrand, site.publicSlug);
@@ -818,10 +829,18 @@ export const prepareHostedSiteDeployment$ = command(
     };
     signal.throwIfAborted();
     const now = nowDate();
+    const deploymentId = crypto.randomUUID();
+    const privateReference = creationArgs.privateArtifacts
+      ? await set(
+          allocateArtifactReference$,
+          { kind: "html", id: deploymentId },
+          signal,
+        )
+      : null;
     const siteAndDeployment = await createHostedSiteDeployment(
       writeDb,
       creationArgs,
-      { now },
+      { now, deploymentId, privateReference },
     );
     signal.throwIfAborted();
     if (siteAndDeployment.kind === "scope_conflict") {
@@ -1013,6 +1032,36 @@ const promoteHostedSiteDeployment$ = command(
   },
 );
 
+const publishHostedSiteManifest$ = command(
+  async (
+    { get, set },
+    deployment: HostedDeploymentRow,
+    bucket: string,
+    signal: AbortSignal,
+  ) => {
+    if (deployment.manifest.access === "owner-private-v1") {
+      await set(collectHostedSiteDependencies$, deployment, bucket, signal);
+      signal.throwIfAborted();
+    }
+    const manifestKey = `${deployment.r2Prefix}/manifest.json`;
+    await get(
+      putHostedSitesS3Object(
+        bucket,
+        manifestKey,
+        JSON.stringify(
+          hostedSiteDeliveryManifest(deployment.manifest),
+          null,
+          2,
+        ),
+        "application/json",
+      ),
+    );
+    signal.throwIfAborted();
+
+    return manifestKey;
+  },
+);
+
 export const completeHostedSiteDeployment$ = command(
   async (
     { get, set },
@@ -1058,14 +1107,11 @@ export const completeHostedSiteDeployment$ = command(
       };
     }
 
-    const manifestKey = `${deployment.r2Prefix}/manifest.json`;
-    await get(
-      putHostedSitesS3Object(
-        hostedR2.config.bucket,
-        manifestKey,
-        JSON.stringify(deployment.manifest, null, 2),
-        "application/json",
-      ),
+    const manifestKey = await set(
+      publishHostedSiteManifest$,
+      deployment,
+      hostedR2.config.bucket,
+      signal,
     );
     signal.throwIfAborted();
 

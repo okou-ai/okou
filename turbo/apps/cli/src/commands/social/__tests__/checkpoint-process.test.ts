@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { afterEach, beforeEach, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 let directory: string;
 beforeEach(async () => {
@@ -55,73 +55,85 @@ function invoke(args: string[], failPage = false) {
   );
 }
 
-it("recovers a buffered tail through three independent real CLI processes", async () => {
-  const checkpoint = join(directory, "comments.json");
-  const first = await invoke([
-    "comments",
-    "https://instagram.com/p/example",
-    "--limit",
-    "2",
-    "--checkpoint",
-    checkpoint,
-    "--json",
-  ]);
-  expect(first.code, first.stderr).toBe(0);
-  expect(JSON.parse(first.stdout) as unknown).toMatchObject({
-    data: { items: [{ id: "one" }, { id: "two" }] },
-  });
-  const second = await invoke([
-    "resume",
-    checkpoint,
-    "--limit",
-    "1",
-    "--stream",
-  ]);
-  expect(second.code, second.stderr).toBe(0);
-  const records: unknown[] = second.stdout
-    .trim()
-    .split("\n")
-    .map((line) => {
-      return JSON.parse(line);
+describe("a buffered tail across three independent real CLI processes", () => {
+  let checkpoint: string;
+  beforeEach(async () => {
+    checkpoint = join(directory, "comments.json");
+    const first = await invoke([
+      "comments",
+      "https://instagram.com/p/example",
+      "--limit",
+      "2",
+      "--checkpoint",
+      checkpoint,
+      "--json",
+    ]);
+    expect(first.code, first.stderr).toBe(0);
+    expect(JSON.parse(first.stdout) as unknown).toMatchObject({
+      data: { items: [{ id: "one" }, { id: "two" }] },
     });
-  expect(records).toHaveLength(2);
-  expect(records[0]).toMatchObject({
-    source: "checkpoint",
-    data: { items: [{ id: "three" }] },
   });
-  expect(records[1]).toMatchObject({
-    kind: "summary",
-    billing: { quantity: 0, creditsCharged: 0 },
-  });
-  expect(
-    (await readFile(join(directory, "requests.jsonl"), "utf8"))
+
+  it("resumes the buffered tail and then fetches the next page", async () => {
+    const second = await invoke([
+      "resume",
+      checkpoint,
+      "--limit",
+      "1",
+      "--stream",
+    ]);
+    expect(second.code, second.stderr).toBe(0);
+    const records: unknown[] = second.stdout
       .trim()
-      .split("\n"),
-  ).toHaveLength(1);
-  const third = await invoke(["resume", checkpoint, "--limit", "10", "--json"]);
-  expect(third.code, third.stderr).toBe(0);
-  expect(JSON.parse(third.stdout) as unknown).toMatchObject({
-    data: { items: [{ id: "four" }] },
-    collection: {
-      cumulative: {
-        pages: 2,
-        itemsReturned: 4,
-        itemsObserved: 4,
-        creditsCharged: 6,
-      },
-      continuation: { available: false },
-    },
-  });
-  const requests: unknown[] = (
-    await readFile(join(directory, "requests.jsonl"), "utf8")
-  )
-    .trim()
-    .split("\n")
-    .map((line) => {
-      return JSON.parse(line);
+      .split("\n")
+      .map((line) => {
+        return JSON.parse(line);
+      });
+    expect(records).toHaveLength(2);
+    expect(records[0]).toMatchObject({
+      source: "checkpoint",
+      data: { items: [{ id: "three" }] },
     });
-  expect(requests).toHaveLength(2);
-  expect(requests[1]).toHaveProperty("input.cursor", "next");
+    expect(records[1]).toMatchObject({
+      kind: "summary",
+      billing: { quantity: 0, creditsCharged: 0 },
+    });
+    expect(
+      (await readFile(join(directory, "requests.jsonl"), "utf8"))
+        .trim()
+        .split("\n"),
+    ).toHaveLength(1);
+    const third = await invoke([
+      "resume",
+      checkpoint,
+      "--limit",
+      "10",
+      "--json",
+    ]);
+    expect(third.code, third.stderr).toBe(0);
+    expect(JSON.parse(third.stdout) as unknown).toMatchObject({
+      data: { items: [{ id: "four" }] },
+      collection: {
+        cumulative: {
+          pages: 2,
+          itemsReturned: 4,
+          itemsObserved: 4,
+          creditsCharged: 6,
+        },
+        continuation: { available: false },
+      },
+    });
+    const requests: unknown[] = (
+      await readFile(join(directory, "requests.jsonl"), "utf8")
+    )
+      .trim()
+      .split("\n")
+      .map((line) => {
+        return JSON.parse(line);
+      });
+    expect(requests).toHaveLength(2);
+    expect(requests[1]).toHaveProperty("input.cursor", "next");
+  });
 });
 
 it("recovers a later failed page in another process without refetching page one", async () => {

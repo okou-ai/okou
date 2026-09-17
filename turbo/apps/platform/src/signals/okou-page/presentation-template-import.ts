@@ -1,5 +1,7 @@
 import { command } from "ccstate";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
+import { featureSwitch$ } from "../external/feature-switch.ts";
 import type { ComposerSignals } from "./composer-signals.ts";
 
 /**
@@ -26,6 +28,20 @@ export const PRESENTATION_TEMPLATE_IMPORT_ACCEPT = ".pptx,.ppt,.pdf";
  */
 function presentationTemplateImportPrompt(): string {
   return "Analyse this deck and save its visual language as a reusable presentation template.";
+}
+
+/**
+ * The same request, aimed at the custom template catalog.
+ *
+ * Naming the command is the one instruction this message has to carry. The
+ * reverse guide the run already loads ends at `okou presentation-template
+ * publish`, which writes to the presentation table; a template published there
+ * never reaches the Custom pane, which reads the user template catalog. Until
+ * that pinned guide moves, the message is where the run learns which catalog
+ * the user asked for.
+ */
+function customTemplateImportPrompt(): string {
+  return "Analyse this deck and save its visual language as a reusable template. Publish it with `okou user-template publish` so it appears under Custom.";
 }
 
 /**
@@ -56,7 +72,19 @@ export const importPresentationTemplateDeck$ = command(
     if (!attached) {
       return false;
     }
-    set(signals.draft.setDraftInput$, presentationTemplateImportPrompt());
+    // Which catalog the deck lands in follows the switch that decides which
+    // catalog the user can see. Sending every import to the custom catalog
+    // while the switch is off would publish templates into a pane that member
+    // cannot open, and take them out of the Presentation grid where they
+    // currently appear.
+    const customTemplates =
+      get(featureSwitch$)[FeatureSwitchKey.CustomTemplates] === true;
+    set(
+      signals.draft.setDraftInput$,
+      customTemplates
+        ? customTemplateImportPrompt()
+        : presentationTemplateImportPrompt(),
+    );
 
     const action = await get(signals.submission.primaryAction$);
     signal.throwIfAborted();

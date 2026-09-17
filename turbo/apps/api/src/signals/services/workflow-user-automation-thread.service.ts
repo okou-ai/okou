@@ -108,7 +108,7 @@ async function resolveAutomationChatThreadTitle(
 }
 
 export async function loadWorkflowUserAutomationThreadId(
-  db: ReadonlyDb,
+  db: Pick<ReadonlyDb, "select">,
   args: {
     readonly orgId: string;
     readonly userId: string;

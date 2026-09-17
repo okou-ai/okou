@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.42.15](https://github.com/vm0-ai/okou/compare/sandbox-firecracker-v0.42.14...sandbox-firecracker-v0.42.15) (2026-09-17)
+
+## [0.42.14](https://github.com/vm0-ai/okou/compare/sandbox-firecracker-v0.42.13...sandbox-firecracker-v0.42.14) (2026-09-16)
+
+
+### Performance Improvements
+
+* **runner:** stream compressed session history with caller-owned policy ([#34603](https://github.com/vm0-ai/okou/issues/34603)) ([1376434](https://github.com/vm0-ai/okou/commit/1376434b697f5e39be6d569c6b20a4e33ed12342))
+
+## [0.42.13](https://github.com/vm0-ai/okou/compare/sandbox-firecracker-v0.42.12...sandbox-firecracker-v0.42.13) (2026-09-16)
+
 ## [0.42.12](https://github.com/vm0-ai/okou/compare/sandbox-firecracker-v0.42.11...sandbox-firecracker-v0.42.12) (2026-09-16)
 
 ## [0.42.11](https://github.com/vm0-ai/okou/compare/sandbox-firecracker-v0.42.10...sandbox-firecracker-v0.42.11) (2026-09-16)

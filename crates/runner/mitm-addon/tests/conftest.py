@@ -41,6 +41,7 @@ import mitm_addon
 import model_provider_failure
 import platform_api
 import registry
+import run_usage
 import runner_flush_lifecycle
 import upstream_admission
 import upstream_destination_binding
@@ -71,6 +72,7 @@ def _reset_module_state() -> Iterator[None]:
     aws_sigv4_body_admission.reset_for_tests()
     builtin_connector_diagnostics.reset_cache_for_tests()
     registry.reset_cache_for_tests()
+    run_usage.initialize(None)
     upstream_destination_binding.reset_for_tests()
     runner_flush_lifecycle.reset_runner_usage_flush_state_for_tests()
     upstream_admission.reset_api_destination_cache_for_tests()

@@ -10,28 +10,27 @@ import { cn, CopyButton } from "@okouai/ui";
  * each call site.
  *
  * The control sits in the fence's top-right corner and only appears while the
- * pointer is over the fence. `[pre:hover_&]` reproduces that reveal as a plain
+ * pointer is over the fence. `[pre:hover_&]` spells that reveal as a plain
  * descendant selector rather than `group-hover:`, which Tailwind wraps in
- * `@media (hover: hover)`: the retired rules also fired on a coarse pointer,
- * where a tap leaves a sticky hover. The hovered and pressed fills spell the
- * retired selectors literally for the same reason, and because `pre:hover &`
- * outranks the shared control's own `hover:` fill by specificity instead of
- * racing it inside the same Tailwind layer.
+ * `@media (hover: hover)`: the plain form also fires on a coarse pointer, where
+ * a tap leaves a sticky hover. The hovered and pressed fills spell the ancestor
+ * for the same reason, and because `pre:hover &` outranks the shared control's
+ * own `hover:` fill by specificity instead of racing it inside the same
+ * Tailwind layer.
  *
- * The hovered fill excludes the pressed state explicitly. The retired rules
- * carried equal specificity and the pressed one came second, so it won while
- * both matched; Tailwind sorts the pressed variant first, so the hovered fill
- * has to step aside by selector rather than by source order.
+ * The hovered fill excludes the pressed state explicitly, because Tailwind
+ * sorts the pressed variant first; the hovered fill has to step aside by
+ * selector rather than by source order.
  *
  * `text-[12px]` names the size rather than taking `text-xs`, because `text-xs`
- * carries a paired line height the retired declaration did not set; the
- * control's own line height stays whatever it resolves to at 12px.
+ * carries a paired line height this control does not want; its line height
+ * stays whatever it resolves to at 12px.
  *
- * The transition names its three properties rather than taking the retired
- * `all`. This is an auxiliary control revealed by hover, so the style guide
- * asks for the animating properties by name; only these three ever change, and
- * `visibility` has to stay among them because it is what holds the control on
- * screen while it fades out of reach.
+ * The transition names its three properties rather than taking `all`. This is
+ * an auxiliary control revealed by hover, so the style guide asks for the
+ * animating properties by name; only these three ever change, and `visibility`
+ * has to stay among them because it is what holds the control on screen while
+ * it fades out of reach.
  */
 export function CodeBlockCopyButton({ code }: { readonly code: string }) {
   return (

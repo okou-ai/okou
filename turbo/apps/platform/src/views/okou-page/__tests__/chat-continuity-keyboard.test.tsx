@@ -6,7 +6,7 @@ import {
   chatThreadUnpinContract,
   type ChatThreadSnapshotProjection,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { expect, test } from "vitest";
+import { expect, test, describe, beforeEach, it } from "vitest";
 
 import {
   click,
@@ -139,26 +139,36 @@ async function openNeighboringChatPanes(mainThread: "current" | "newest") {
   return { current, side, newest };
 }
 
-test("Move to a newer chat from the main pane without changing the side pane", async () => {
-  const user = userEvent.setup({ delay: null });
-  const { current, side, newest } = await openNeighboringChatPanes("current");
-  const mainComposer = composerIn(current.id);
-  mainComposer.focus();
-  expect(mainComposer).toHaveFocus();
-  await user.keyboard("{Control>}{Shift>}{ArrowUp}{/Shift}{/Control}");
+describe("with neighboring chat panes", () => {
+  async function prepareScenario() {
+    const user = userEvent.setup({ delay: null });
+    const { current, side, newest } = await openNeighboringChatPanes("current");
+    const mainComposer = composerIn(current.id);
+    mainComposer.focus();
+    return { mainComposer, user, newest, side };
+  }
+  let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
+  beforeEach(async () => {
+    preparedScenario = await prepareScenario();
+  });
+  it("move to a newer chat from the main pane without changing the side pane", async () => {
+    const { mainComposer, user, newest, side } = preparedScenario;
+    expect(mainComposer).toHaveFocus();
+    await user.keyboard("{Control>}{Shift>}{ArrowUp}{/Shift}{/Control}");
 
-  await waitFor(() => {
-    expect(threadContainer(newest.id)).toBeVisible();
+    await waitFor(() => {
+      expect(threadContainer(newest.id)).toBeVisible();
+      expect(continuitySidebarLink(newest.id)).toHaveAttribute(
+        "aria-current",
+        "page",
+      );
+    });
     expect(continuitySidebarLink(newest.id)).toHaveAttribute(
       "aria-current",
       "page",
     );
+    expectPaneTitle(side, "Side keyboard chat");
   });
-  expect(continuitySidebarLink(newest.id)).toHaveAttribute(
-    "aria-current",
-    "page",
-  );
-  expectPaneTitle(side, "Side keyboard chat");
 });
 
 test("Move to an older chat from the side pane without changing the main pane", async () => {

@@ -2,9 +2,11 @@ import {
   consumeDeferredPiRun$,
   settleDeferredPiTerminal$,
   failWaitingPiCandidate,
+} from "./pi-deferred-sandbox.service";
+import {
   listDeferredPiCandidates,
   hasEarlierDeferredDemand,
-} from "./pi-deferred-sandbox.service";
+} from "./pi-deferred-demand.service";
 import { agentRunSandboxIntent } from "@okouai/db/schema/agent-run-inference";
 import { command } from "ccstate";
 import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
@@ -509,6 +511,7 @@ async function promoteAdmittedQueuedRun(
       args.row.prompt !== null
         ? {
             piApiFirstTurn: {
+              executionMode: "legacy-sandbox-race",
               runId: args.row.runId,
               runnerGroup: payload.runnerGroup,
               userId: args.row.userId,

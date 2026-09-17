@@ -63,10 +63,30 @@ export const artifactUrlSchema = z.union([z.url(), artifactReferenceSchema]);
 
 const c = initContract();
 export const artifactReferencesContract = c.router({
+  publicUrl: {
+    method: "GET",
+    path: "/api/artifact-references/:reference/public",
+    pathParams: z.object({
+      reference: z
+        .string()
+        .regex(/^(?:[a-f0-9]{32}|[a-z0-9]{10})(?:\.[a-z0-9]{1,12})?$/u),
+    }),
+    responses: {
+      200: z.object({ url: z.url() }),
+      400: apiErrorSchema,
+      404: apiErrorSchema,
+      500: apiErrorSchema,
+    },
+    summary:
+      "Resolve an explicitly public artifact to its current public delivery URL",
+  },
   resolve: {
     method: "GET",
     path: "/api/artifact-references/:reference",
     headers: authHeadersSchema,
+    // Agent consumers resolve only owned resources. Artifact management accepts
+    // either resource type under artifact:read, without recipient access.
+    query: z.object({ kind: z.enum(["file", "html", "artifact"]).optional() }),
     pathParams: z.object({
       reference: z
         .string()

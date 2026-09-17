@@ -112,7 +112,7 @@ describe("default-off Pi inference lifecycle readers", () => {
     await expect(probePiInferenceOwnership(f, 1)).resolves.toBe(0);
     await expect(
       finalizePiInferenceFixture(f, 1, context.signal),
-    ).rejects.toThrow("current unexpired execution owner");
+    ).rejects.toThrow("current inference owner");
   });
 
   it("keeps a ten-minute handoff pending until its own queue expiry", async () => {

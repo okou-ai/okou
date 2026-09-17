@@ -11,7 +11,7 @@ import {
   finalizeActionUrl,
   printCallbackTurnInstruction,
 } from "../connector/action-url";
-import { getPlatformOrigin } from "../doctor/platform-url";
+import { getPlatformOrigin } from "../../lib/platform-url";
 
 interface JsonOption {
   readonly json?: boolean;

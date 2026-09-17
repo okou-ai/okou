@@ -29,15 +29,12 @@ interface ObjectOwner {
 }
 const MAX_OBJECT_BYTES = 32 * 1024 * 1024;
 
-/** No executable environment or signed URL belongs in this immutable envelope.
- * Secret callers supply the persistent-secret ciphertext, never plaintext. */
-export async function publishPiInferenceObject<T>(
-  db: Db,
+function serializePiInferenceObject<T>(
   owner: ObjectOwner,
   kind: ObjectKind,
   schema: z.ZodType<T>,
   value: T,
-): Promise<string> {
+): { readonly content: string; readonly hash: string } {
   if (kind === "secrets") {
     piDeferredSecretsSchema.parse(value);
   }
@@ -51,7 +48,38 @@ export async function publishPiInferenceObject<T>(
   if (Buffer.byteLength(content) > MAX_OBJECT_BYTES) {
     throw new Error("Pi inference object exceeds its byte limit");
   }
-  const hash = createHash("sha256").update(content).digest("hex");
+  return {
+    content,
+    hash: createHash("sha256").update(content).digest("hex"),
+  };
+}
+
+/** Derive the exact durable reference before publication so speculative SDK
+ * preparation can overlap DB object writes without weakening integrity. */
+export function piInferenceObjectHash<T>(
+  owner: ObjectOwner,
+  kind: ObjectKind,
+  schema: z.ZodType<T>,
+  value: T,
+): string {
+  return serializePiInferenceObject(owner, kind, schema, value).hash;
+}
+
+/** No executable environment or signed URL belongs in this immutable envelope.
+ * Secret callers supply the persistent-secret ciphertext, never plaintext. */
+export async function publishPiInferenceObject<T>(
+  db: Db,
+  owner: ObjectOwner,
+  kind: ObjectKind,
+  schema: z.ZodType<T>,
+  value: T,
+): Promise<string> {
+  const { content, hash } = serializePiInferenceObject(
+    owner,
+    kind,
+    schema,
+    value,
+  );
   await db.transaction(async (tx) => {
     await assertErasureSubjectWritable(tx, [
       { subjectKind: "organization", subjectId: owner.orgId },

@@ -10,14 +10,7 @@ import { apiClient$ } from "../api-client.ts";
 import { featureSwitches$ } from "../external/feature-switch.ts";
 import { runtimeAuthenticatedIdentity$ } from "../auth-context.ts";
 import { accept } from "../../lib/accept.ts";
-import {
-  createDeferredPromise,
-  resetSignal,
-  setDaemon,
-  settle,
-  waitForOperation,
-  withCleanup,
-} from "../utils.ts";
+import { resetSignal, setDaemon, waitForOperation } from "../utils.ts";
 import { reloadAccountMenuCreditBalances$ } from "./billing.ts";
 import { setAblyLoop$ } from "../realtime.ts";
 
@@ -167,68 +160,29 @@ export const submitSharePost$ = command(
   },
 );
 
-/** Each wait owns its timer and focus listeners, all released on root cancellation. */
-async function waitForRewardRefresh(
-  milliseconds: number | null,
-  signal: AbortSignal,
-): Promise<void> {
-  signal.throwIfAborted();
-  const next = createDeferredPromise<void>(signal);
-  const wake = () => {
-    if (!next.settled()) {
-      next.resolve();
-    }
-  };
-  const visible = () => {
-    if (document.visibilityState === "visible") {
-      wake();
-    }
-  };
-  const timer =
-    milliseconds === null ? null : window.setTimeout(wake, milliseconds);
-  window.addEventListener("focus", wake);
-  document.addEventListener("visibilitychange", visible);
-  await withCleanup(next.promise, () => {
-    if (timer !== null) {
-      window.clearTimeout(timer);
-    }
-    window.removeEventListener("focus", wake);
-    document.removeEventListener("visibilitychange", visible);
-  });
-}
-
-const refreshAndCheckin$ = command(
+export const checkInGetStarted$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    set(reloadGetStarted$);
-    let data = await waitForOperation(get(getStartedStatus$), signal);
+    await accept(
+      get(apiClient$)(getStartedContract).checkin({
+        fetchOptions: { signal },
+      }),
+      [200],
+      signal,
+    );
     signal.throwIfAborted();
-    if (!data) {
-      return null;
-    }
-    if (!data.claimedToday) {
-      const result = await accept(
-        get(apiClient$)(getStartedContract).checkin({
-          fetchOptions: { signal },
-        }),
-        [200, 403],
-        signal,
-        { showErrorToast: false },
-      );
-      signal.throwIfAborted();
-      if (result.status === 403) {
-        return null;
-      }
-      set(reloadGetStarted$);
-      data = await waitForOperation(get(getStartedStatus$), signal);
-      signal.throwIfAborted();
-    }
-    return data;
+    set(reloadGetStarted$);
+    await Promise.all([
+      waitForOperation(get(getStartedStatus$), signal),
+      set(reloadAccountMenuCreditBalances$, signal),
+    ]);
+    signal.throwIfAborted();
   },
 );
 
 const refreshGetStartedFromRealtime$ = command(
-  async ({ set }, signal: AbortSignal): Promise<boolean> => {
-    const data = await set(refreshAndCheckin$, signal);
+  async ({ get, set }, signal: AbortSignal): Promise<boolean> => {
+    set(reloadGetStarted$);
+    const data = await waitForOperation(get(getStartedStatus$), signal);
     signal.throwIfAborted();
     if (!data) {
       return true;
@@ -236,38 +190,6 @@ const refreshGetStartedFromRealtime$ = command(
     await set(reloadAccountMenuCreditBalances$, signal);
     signal.throwIfAborted();
     return false;
-  },
-);
-
-/** Focus and the next UTC boundary are explicit refresh triggers, not polling. */
-const refreshGetStartedOnFocusAndUtcDay$ = command(
-  async ({ set }, signal: AbortSignal): Promise<void> => {
-    let previousEarnings: number | null = null;
-    while (!signal.aborted) {
-      const result = await settle(set(refreshAndCheckin$, signal), signal);
-      signal.throwIfAborted();
-      let nextReset: number | null = null;
-      if (result.ok) {
-        const data = result.value;
-        if (!data) {
-          return;
-        }
-        const earnings = data.quests.reduce((sum, quest) => {
-          return sum + quest.earnedCredits;
-        }, 0);
-        if (earnings !== previousEarnings) {
-          await settle(set(reloadAccountMenuCreditBalances$, signal), signal);
-          signal.throwIfAborted();
-        }
-        previousEarnings = earnings;
-        nextReset = Math.max(
-          250,
-          Date.parse(data.nextResetAt) - Date.parse(data.serverNow),
-        );
-      }
-      await waitForRewardRefresh(nextReset, signal);
-      signal.throwIfAborted();
-    }
   },
 );
 
@@ -289,7 +211,6 @@ export const setupGetStartedRewards$ = command(
         },
         ownerSignal,
       );
-      await set(refreshGetStartedOnFocusAndUtcDay$, ownerSignal);
     }, signal);
   },
 );

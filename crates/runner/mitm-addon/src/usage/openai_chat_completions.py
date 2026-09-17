@@ -26,7 +26,7 @@ from .model_tokens import (
     MODEL_USAGE_CATEGORY_INPUT,
     MODEL_USAGE_CATEGORY_OUTPUT,
 )
-from .openai_tokens import is_usage_quantity, partition_input_tokens
+from .openai_tokens import input_partition_overlaps, is_usage_quantity, partition_input_tokens
 from .quantities import MAX_USAGE_QUANTITY
 from .sse import SseUsageScanner
 
@@ -268,6 +268,12 @@ def _usage_snapshot(result: JsonExtractionResult) -> dict | None:
     )
 
     usage: dict = {}
+    if input_partition_overlaps(
+        result.values.get((*usage_path, "prompt_tokens")),
+        cached_tokens,
+        result.values.get((*usage_path, "prompt_tokens_details", "cache_write_tokens")),
+    ):
+        usage["input_partition_incomplete"] = True
     _store_quantity(usage, MODEL_USAGE_CATEGORY_INPUT, input_tokens)
     _store_quantity(
         usage,
@@ -302,11 +308,15 @@ class _OpenAIChatCompletionsSseUsageHandler:
         usage: dict,
         *,
         on_parse_error: _SseUsageParseErrorCallback | None = None,
+        on_usage: Callable[[dict], None] | None = None,
+        on_done: Callable[[], None] | None = None,
         include_usage: bool = True,
         failure_observer: ModelHttpFailureObserver | None = None,
     ) -> None:
         self._usage = usage
         self._on_parse_error = on_parse_error
+        self._on_usage = on_usage
+        self._on_done = on_done
         self._include_usage = include_usage
         self._failure_observer = failure_observer
         self._extractor = _new_extractor(
@@ -348,6 +358,8 @@ class _OpenAIChatCompletionsSseUsageHandler:
             event_data = bytes(self._event_data)
             self._event_data.clear()
             if len(event_data) <= _DONE_PREFIX_MAX_BYTES and event_data.strip() == _DONE_SENTINEL:
+                if self._include_usage and self._on_done is not None:
+                    self._on_done()
                 if self._failure_observer is not None:
                     self._failure_observer.observe(
                         ModelHttpFailureEvidence(
@@ -399,6 +411,8 @@ class _OpenAIChatCompletionsSseUsageHandler:
             return
         self._usage.clear()
         self._usage.update(snapshot)
+        if self._on_usage is not None:
+            self._on_usage(snapshot)
 
     def on_event_discard(self, event_name: str | None) -> None:
         self._extractor.reset()
@@ -415,6 +429,8 @@ class _OpenAIChatCompletionsSseUsageHandler:
 def create_openai_chat_completions_sse_usage_extractor(
     on_parse_error: _SseUsageParseErrorCallback | None = None,
     *,
+    on_usage: Callable[[dict], None] | None = None,
+    on_done: Callable[[], None] | None = None,
     include_usage: bool = True,
     failure_observer: ModelHttpFailureObserver | None = None,
 ) -> tuple[SseUsageScanner, dict]:
@@ -426,12 +442,18 @@ def create_openai_chat_completions_sse_usage_extractor(
     event boundary updates that same dict in place. After the final decoded
     bytes have been fed, callers must invoke ``scanner.finish()`` to finalize a
     captured trailing event when the stream ends without a blank-line terminator.
+
+    ``on_usage`` observes each valid snapshot before later frames can replace
+    it. ``on_done`` observes the protocol's end sentinel. Both are disabled
+    with usage extraction and do not change billing admission.
     """
     usage: dict = {}
     parser = SseUsageScanner(
         _OpenAIChatCompletionsSseUsageHandler(
             usage,
             on_parse_error=on_parse_error,
+            on_usage=on_usage,
+            on_done=on_done,
             include_usage=include_usage,
             failure_observer=failure_observer,
         ),

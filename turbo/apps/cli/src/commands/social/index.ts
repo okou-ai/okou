@@ -1525,7 +1525,7 @@ const statusCommand = new Command()
 Reports public service health, not account access, quota, or balance.
 Overall includes service-wide health even when operations are filtered.
 Missing, invalid, unavailable, or older-than-five-minute observations are unknown.
-Requires social:read and the Social status feature to be enabled.
+Requires authentication, an organization, and social:read for capability tokens.
 Discover supported operations and constraints offline: okou social capabilities [platform] --json
 `,
   )
@@ -1735,6 +1735,10 @@ const transcriptCommand = new Command()
     "Bypass YouTube extraction caches; captions may still be unavailable",
   )
   .option("--json", "Print compact JSON")
+  .addHelpText(
+    "after",
+    "\nFor YouTube, use --refresh when extraction caches may be stale, for example after captions were added. It bypasses cached caption absence but does not guarantee captions exist.",
+  )
   .action(async (url: string, options: TranscriptOptions) => {
     await runSocialAction(options.json === true, async () => {
       const target = parseSocialTarget(url);
@@ -1823,7 +1827,7 @@ Examples:
 Notes:
   - Supported on Facebook, Instagram, TikTok, and YouTube
   - Use either --fields or --fields-file with a nonempty JSON object
-  - Field names must be 1-64 characters; descriptions must be nonblank strings
+  - Field names must be nonblank and 1-64 characters; descriptions must be nonblank strings
   - Compact serialized JSON must not exceed ${SOCIALKIT_MAX_INPUT_VALUE_CHARS} characters
   - --prompt adds analysis instructions alongside the requested field descriptions
   - Field descriptions guide extraction; they do not enforce strict JSON Schema
@@ -2055,6 +2059,8 @@ export const socialCommand = new Command()
   .addHelpText(
     "after",
     `
+Read the relevant subcommand's --help before use for supported inputs, limits, billing, export, and recovery guidance.
+
 Examples:
   Discover:    okou social capabilities instagram --json
   Health:      okou social status instagram --json

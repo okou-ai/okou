@@ -43,6 +43,7 @@ describe("okou host clone command", () => {
     chalk.level = 0;
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
+    vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
     tempDir = join(tmpdir(), `host-clone-${Date.now()}`);
     mkdirSync(tempDir, { recursive: true });
   });
@@ -57,6 +58,9 @@ describe("okou host clone command", () => {
 
   it.each([
     ARTIFACT_URL,
+    "/artifacts/abcxyz1234.html",
+    "https://app.okou.ai/artifacts/abcxyz1234.html#slide-2",
+    "https://app.okou.ai/artifacts/00000000000040008000000000000002.html",
     artifactReferencePath("00000000-0000-4000-8000-000000000002", "index.html"),
   ])("downloads owned deployment files from %s", async (sourceUrl) => {
     const index = Buffer.from("<!doctype html><h1>Hello</h1>");
@@ -64,6 +68,25 @@ describe("okou host clone command", () => {
     const destination = join(tempDir, "site");
 
     server.use(
+      http.get(
+        "http://localhost:3000/api/artifact-references/abcxyz1234.html",
+        ({ request }) => {
+          expect(new URL(request.url).searchParams.get("kind")).toBe("html");
+          expect(request.headers.get("authorization")).toBe(
+            "Bearer test-token",
+          );
+          return HttpResponse.json({
+            url: "https://preview.example.com/",
+            expiresAt: "2026-09-18T00:00:00Z",
+            filename: "index.html",
+            contentType: "text/html",
+            target: {
+              kind: "html",
+              id: "00000000-0000-4000-8000-000000000002",
+            },
+          });
+        },
+      ),
       http.get(FILES_URL, ({ params, request }) => {
         expect(params.publicSlug).toBe(
           "dpl-00000000-0000-4000-8000-000000000002",
@@ -137,6 +160,17 @@ describe("okou host clone command", () => {
   });
 
   it("keeps organization share references on the app authorization path", async () => {
+    server.use(
+      http.get(
+        "http://localhost:3000/api/artifact-references/a1b2c3d4e5.html",
+        () => {
+          return HttpResponse.json(
+            { error: { message: "Artifact unavailable", code: "NOT_FOUND" } },
+            { status: 404 },
+          );
+        },
+      ),
+    );
     const destination = join(tempDir, "shared-site");
     await expect(
       hostCommand.parseAsync([
@@ -149,7 +183,7 @@ describe("okou host clone command", () => {
       ]),
     ).rejects.toThrow("process.exit called");
     expect(mockConsoleError).toHaveBeenCalledWith(
-      expect.stringContaining("use its owner artifact reference"),
+      expect.stringContaining("Artifact unavailable"),
     );
     expect(mockExit).toHaveBeenCalledWith(1);
     expect(existsSync(destination)).toBe(false);

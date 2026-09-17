@@ -66,6 +66,50 @@ observers may record actual usage with the original response/category
 idempotency, but never output, checkpoint or another terminal event. The captured
 `PiExecutionRoute`, exact account and one edge materializer remain authoritative.
 
+## Durable producer mode
+
+`PiApiFirstTurnActivation` explicitly distinguishes `legacy-sandbox-race` from
+`durable-inference`; job absence is never an ownership signal. The durable mode
+is written only for eligible chat starts behind the org-scoped, default-off
+`piDeferredSandbox` switch. It carries the Run/user/org, original API clock,
+model-visible H0/resources, selected route and immutable object hashes, not a
+complete Runner context.
+
+The creation path derives deterministic hashes for configuration, context and one
+encrypted activation credential object (with an optional deferred body-secret
+payload), then overlaps their publication and subscription admission with
+speculative SDK preparation. One canonical admission transaction writes the Run,
+session/input claim, v4 inference row and retention edges. Failed or stale
+admission disposes speculative preparation. The committed winner schedules
+request-independent `waitUntil` dispatch before response-side telemetry;
+disabling the start switch later does not disable readers, cancellation or
+maintenance recovery.
+
+For durable mode, lifecycle state is additional authority:
+
+- `ready/not-started` must atomically become `provider/may-have-started` for the
+  same epoch and attempt ID before the runtime transport marker resolves.
+- H1 plus its producer receipt is retained at `publishing/settled` before usage;
+  response-derived idempotency then permits recovery to repair a missing ledger
+  write before setting `usageSettled` and resuming local effects.
+- Direct completion uses the normal event/checkpoint/completion owners and never
+  creates Sandbox demand. Pending tools, accepted active input and explicit
+  untouched-H0 fallback use `publishPiSandboxDemand`; a false result is not an
+  executable handoff.
+- Recovery advances the common epoch. It may restart only `ready/not-started`
+  from the narrow retained credential snapshot (never a reconstructed Runner
+  payload), may resume only usage/local work from `publishing/settled`, and
+  terminalizes `provider/may-have-started` without resetting or replaying H0.
+  Canonical terminal fencing advances the epoch once more.
+
+Independent provider/organization advisory locks enforce the positive
+`PI_INFERENCE_PROVIDER_MAX_IN_FLIGHT` and `PI_INFERENCE_ORG_MAX_IN_FLIGHT`
+limits. Rejection is typed `429 PI_INFERENCE_BUSY`; it neither consumes nor waits
+for a Sandbox slot. Active inference phases retain the reservation; terminal
+uncertainty retains it for the bounded 55-second grace even if local usage
+settles, because transport abort is not remote-stop evidence. This is technical
+protection, not customer concurrency.
+
 ## Fixed cross-language examples
 
 `fixtures/pi-public-events.json` has hand-authored raw Guest input, normalized API
@@ -94,7 +138,7 @@ work. `preparePiApiTurn` receives no provider ownership or publication callback;
 `executePreparedPiApiTurn` consumes its session once. The combined runtime entry
 remains available.
 
-The atomic run/session/full Runner job/input-claim transaction is unchanged.
+The legacy atomic run/session/full Runner job/input-claim transaction is unchanged.
 Only its pending winner transfers the in-memory preparation handle to activation.
 Runner notification and the create response do not join preparation. Queued,
 claim-lost, stale and failed admissions abort their private preparation and give
@@ -127,7 +171,8 @@ actual provider HTTP span; overlapping intervals must not be summed as serial
 latency. Discarded preparation is work, not a canonical run publication. These
 observations establish scheduling behavior, not a measured production speedup.
 
-No database migration or changed persisted job, manifest, Runner or CLI reader is
-needed. Old queued contexts use the same complete payload and the existing
-promotion deadline refresh. API/runtime internals ship together; old and new
-API/Runner combinations continue to exchange the same contracts.
+No database migration is needed for the producer because the v4 lifecycle and
+immutable-object schema already exist. Legacy queued contexts keep the same
+complete payload and deadline refresh. Durable demand requires the accepted v4
+consumer, capable Runner and commit-addressed CLI reader; switched-off starts
+remain legacy while already-written v4 recovery stays enabled.

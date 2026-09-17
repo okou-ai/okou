@@ -66,7 +66,8 @@ ${examples.join("\n")}
 
 Routing:
   - If the task includes an attached generation template, follow that template's exact commands and resources. Do not run generic provider discovery unless the template names it as a fallback.
-  - Otherwise, run this help to choose a supported type, then run "okou generate <type>" with no generation input to list every available provider for that type. Run the type's --help before execution; flags differ (for example, avatar-video uses --script or --audio-url, not --prompt).
+  - When the type is known, run "okou generate <type> --help" directly before execution and reuse help already read for the same CLI version and context. Do not unconditionally chain root, group, and leaf help; flags differ (for example, avatar-video uses --script or --audio-url, not --prompt).
+  - Run this root help only when the type is unknown. Run "okou generate <type>" without generation input only when provider or registry discovery is needed. If the user named a provider, use --provider <name> directly when the type supports it instead of listing every provider.
   - Supported generation surfaces are image, video, avatar-video, presentation, voice/audio, website, and connector-backed text, code, or document plus the listed HTML artifact types. Do not infer unsupported types.
 
 Execution:

@@ -48,6 +48,7 @@ describe("okou host publish command", () => {
     hostCommand.setOptionValue("json", undefined);
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
+    vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
     tempDir = join(tmpdir(), `host-publish-${Date.now()}`);
     mkdirSync(tempDir, { recursive: true });
   });
@@ -69,7 +70,7 @@ describe("okou host publish command", () => {
     { label: "public", privateArtifact: false },
     { label: "private", privateArtifact: true },
   ])(
-    "uploads a $label bundle and returns the exact API-selected URL in text and JSON",
+    "uploads a $label bundle and returns complete artifact URLs in text and JSON",
     async ({ privateArtifact }) => {
       const artifactUrl = privateArtifact
         ? artifactReferencePath(
@@ -78,6 +79,10 @@ describe("okou host publish command", () => {
           )
         : ARTIFACT_URL;
       const url = privateArtifact ? artifactUrl : ALIAS_URL;
+      const expectedArtifactUrl = privateArtifact
+        ? `https://app.okou.ai${artifactUrl}`
+        : artifactUrl;
+      const expectedUrl = privateArtifact ? expectedArtifactUrl : ALIAS_URL;
       const alias = privateArtifact ? {} : { aliasUrl: ALIAS_URL };
       const index = "<!doctype html><main>Hosted site</main>";
       let uploadedRobots = false;
@@ -171,7 +176,7 @@ describe("okou host publish command", () => {
 
       const stdout = mockConsoleLog.mock.calls.flat().join("\n");
       expect(stdout).toContain("✓ Hosted site deployed");
-      expect(stdout).toContain(`Artifact: ${artifactUrl}`);
+      expect(stdout).toContain(`Artifact: ${expectedArtifactUrl}`);
       if (privateArtifact) {
         expect(stdout).not.toContain(ALIAS_URL);
         expect(stdout).not.toContain("Alias:");
@@ -179,8 +184,8 @@ describe("okou host publish command", () => {
         expect(stdout).toContain(`Alias: ${ALIAS_URL} → v1`);
       }
       expect(stdout).toContain("Artifact presentation context:");
-      expect(stdout).toContain(`[demo-site](<${url}>)`);
-      expect(stdout).toContain(`\n\n![demo-site](<${url}>)\n\n`);
+      expect(stdout).toContain(`[demo-site](<${expectedUrl}>)`);
+      expect(stdout).toContain(`\n\n![demo-site](<${expectedUrl}>)\n\n`);
       expect(stdout).toContain(
         "occupies its own Markdown paragraph, with a blank line before and after it, and is outside a code fence",
       );
@@ -204,15 +209,16 @@ describe("okou host publish command", () => {
       expect(parsed).toMatchObject({
         publicSlug: "demo-site",
         deploymentVersion: 1,
-        artifactUrl,
+        artifactUrl: expectedArtifactUrl,
+        url: expectedUrl,
         ...alias,
         isActive: !privateArtifact,
         fileCount: 2,
         size:
           Buffer.byteLength(index) +
           Buffer.byteLength(DEFAULT_HOSTED_SITE_ROBOTS_TXT),
-        inlineMarkdownLink: `[demo-site](<${url}>)`,
-        previewMarkdownBlock: `![demo-site](<${url}>)`,
+        inlineMarkdownLink: `[demo-site](<${expectedUrl}>)`,
+        previewMarkdownBlock: `![demo-site](<${expectedUrl}>)`,
         artifactPresentationContext: expect.stringContaining(
           "outside code fences",
         ),

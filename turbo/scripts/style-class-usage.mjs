@@ -218,7 +218,7 @@ function classStringContents(sourceFile, checker) {
   return contents;
 }
 
-function countLegacyTokens(contents, tokens) {
+function countClassTokens(contents, tokens) {
   const counts = {};
   for (const token of tokens) {
     let count = 0;
@@ -240,7 +240,7 @@ function countLegacyTokens(contents, tokens) {
   return counts;
 }
 
-export function collectLegacyClassUsages(root, files, tokens) {
+export function collectClassUsages(root, files, tokens) {
   // Bind the in-scope source graph for lexical scopes, imports, and re-exports.
   // No type checking or dependency/library loading is needed for initializers.
   const program = ts.createProgram(
@@ -257,7 +257,7 @@ export function collectLegacyClassUsages(root, files, tokens) {
   const usages = {};
   for (const file of files) {
     const source = program.getSourceFile(resolve(root, file));
-    const counts = countLegacyTokens(
+    const counts = countClassTokens(
       classStringContents(source, checker),
       tokens,
     );

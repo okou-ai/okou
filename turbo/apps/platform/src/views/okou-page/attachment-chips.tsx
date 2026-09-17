@@ -1252,6 +1252,7 @@ function ArtifactPreviewDialogActions({
       )}
       {showShare && (
         <ArtifactShareButton
+          surface="dialog"
           shareUrl={shareUrl}
           ariaLabel={t(($) => {
             return $.artifacts.actions.share;

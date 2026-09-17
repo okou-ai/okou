@@ -1,5 +1,108 @@
 # Changelog
 
+## [8.674.0](https://github.com/vm0-ai/okou/compare/core-v8.673.2...core-v8.674.0) (2026-09-17)
+
+
+### Features
+
+* **platform:** keep only oauth-connector workflow templates ([#34665](https://github.com/vm0-ai/okou/issues/34665)) ([558905e](https://github.com/vm0-ai/okou/commit/558905e519c9e6b2ae00cc5c03fac2769e66a3b4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.454.0
+
+## [8.673.2](https://github.com/vm0-ai/okou/compare/core-v8.673.1...core-v8.673.2) (2026-09-17)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.453.0
+
+## [8.673.1](https://github.com/vm0-ai/okou/compare/core-v8.673.0...core-v8.673.1) (2026-09-16)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.452.1
+
+## [8.673.0](https://github.com/vm0-ai/okou/compare/core-v8.672.0...core-v8.673.0) (2026-09-16)
+
+
+### Features
+
+* **platform:** add a custom category to the template picker ([#34617](https://github.com/vm0-ai/okou/issues/34617)) ([a6d695b](https://github.com/vm0-ai/okou/commit/a6d695ba91197f5f2bd9483977506458fe423792))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.452.0
+
+## [8.672.0](https://github.com/vm0-ai/okou/compare/core-v8.671.0...core-v8.672.0) (2026-09-16)
+
+
+### Features
+
+* **api:** make social status generally available ([#34671](https://github.com/vm0-ai/okou/issues/34671)) ([998634e](https://github.com/vm0-ai/okou/commit/998634e9f3f394868f1f91998ced12e0fb0d0824))
+* **api:** publish a compiled reverse run as a user template ([#34642](https://github.com/vm0-ai/okou/issues/34642)) ([1d641f8](https://github.com/vm0-ai/okou/commit/1d641f8bdc8231fc8f849ea5df7848f6833ac9f0))
+
+
+### Bug Fixes
+
+* **api:** attribute required-output backpressure phases ([#34663](https://github.com/vm0-ai/okou/issues/34663)) ([a1e31af](https://github.com/vm0-ai/okou/commit/a1e31afbdd683ded91cb4b0343bfaa2505244b26))
+
+
+### Refactoring
+
+* **api:** establish canonical morning brief migration state ([#34672](https://github.com/vm0-ai/okou/issues/34672)) ([6377cee](https://github.com/vm0-ai/okou/commit/6377cee9d4c7d5640bd9bd465a47b153de86085a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.451.0
+
+## [8.671.0](https://github.com/vm0-ai/okou/compare/core-v8.670.2...core-v8.671.0) (2026-09-16)
+
+
+### Features
+
+* **api:** choose the delivery format from the deliverable, behind a switch ([#34604](https://github.com/vm0-ai/okou/issues/34604)) ([08c8d62](https://github.com/vm0-ai/okou/commit/08c8d62d8d5555b6bbe2f4c3f873a3d72d68e06f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.450.0
+
+## [8.670.2](https://github.com/vm0-ai/okou/compare/core-v8.670.1...core-v8.670.2) (2026-09-16)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.449.1
+
+## [8.670.1](https://github.com/vm0-ai/okou/compare/core-v8.670.0...core-v8.670.1) (2026-09-16)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.449.0
+
 ## [8.670.0](https://github.com/vm0-ai/okou/compare/core-v8.669.0...core-v8.670.0) (2026-09-16)
 
 

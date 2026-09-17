@@ -1,4 +1,3 @@
-import { artifactReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
 import { randomUUID } from "node:crypto";
 import { HeadObjectCommand } from "@aws-sdk/client-s3";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
@@ -200,7 +199,7 @@ describe("POST /api/uploads/complete", () => {
       [200],
     );
     expect(response.body).toMatchObject({
-      url: artifactReferencePath(prepared.body.id, "private-report.md"),
+      url: prepared.body.url,
       contentType: "text/markdown; charset=utf-8",
     });
     const catalog = await chat.listArtifactCatalog(fixture.actor, {

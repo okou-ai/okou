@@ -307,17 +307,22 @@ describe("okou generate video command", () => {
     expect(mockConsoleLog).not.toHaveBeenCalled();
   });
 
-  it.each([true, false])(
-    "validates frame dimensions without sending credentials to a foreign origin (owned API=%s)",
-    async (ownedApi) => {
+  it.each([
+    { ownedApi: true, absolute: false },
+    { ownedApi: true, absolute: true },
+    { ownedApi: false, absolute: false },
+  ])(
+    "validates frame dimensions without leaking credentials (owned=$ownedApi, absolute=$absolute)",
+    async ({ ownedApi, absolute }) => {
+      vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
       const origin = ownedApi
         ? "http://localhost:3000"
         : "https://foreign.example";
       const frame = ownedApi
-        ? artifactReferencePath(
+        ? `${absolute ? "https://app.okou.ai" : ""}${artifactReferencePath(
             "00000000-0000-4000-8000-000000000021",
             "frame.png",
-          )
+          )}`
         : `${origin}/api/web/download-file?file_id=private-frame&filename=frame.png`;
       let authorization: string | null = null;
       let videoInput: unknown;
@@ -358,10 +363,10 @@ describe("okou generate video command", () => {
         })
         .join("\n");
       expect(output).toContain(
-        artifactReferencePath(
+        `https://app.okou.ai${artifactReferencePath(
           "00000000-0000-4000-8000-000000000022",
           "video.mp4",
-        ),
+        )}`,
       );
       expect(output).not.toContain(VIDEO_RESULT.sourceUrl);
       expect(output).not.toContain("test-token");

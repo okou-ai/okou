@@ -238,6 +238,12 @@ pub struct MitmProxy {
     control: ControlHandle,
 }
 
+impl From<&MitmProxy> for super::run_usage::MitmUsageHandle {
+    fn from(proxy: &MitmProxy) -> Self {
+        Self::new(proxy.control.clone())
+    }
+}
+
 impl MitmProxy {
     /// Prepare the proxy: allocate a port, write addon script and empty registry.
     ///
@@ -389,11 +395,9 @@ impl MitmProxy {
         source_ip: &str,
         registration: &SandboxRegistration<'_>,
     ) -> RunnerResult<()> {
-        let publication = self
-            .registry_handle()
-            .register_sandbox(source_ip, registration)
-            .await?;
-        publication.observe().await;
+        let registry = self.registry_handle();
+        let publication = registry.register_sandbox(source_ip, registration).await?;
+        registry.observe_registration(publication);
         Ok(())
     }
 
@@ -405,7 +409,7 @@ impl MitmProxy {
     }
 
     /// Freeze the live launch; callers never follow a later replacement.
-    pub fn usage_flush_target(&mut self) -> Option<DeliveryTarget> {
+    pub(crate) fn usage_flush_target(&mut self) -> Option<DeliveryTarget> {
         let child_exited = match self.child.as_mut()?.try_wait() {
             Ok(Some(status)) => {
                 error!(
@@ -458,7 +462,7 @@ impl MitmProxy {
     /// The caller drives `MitmRestartParams::spawn` in a background task. It
     /// finishes old-child cleanup before starting the replacement; the caller
     /// then adopts the result with `complete_restart`.
-    pub fn begin_restart(&mut self) -> MitmRestartParams {
+    pub(crate) fn begin_restart(&mut self) -> MitmRestartParams {
         self.control.set_target(None);
         self.delivery_flush = None;
         // Each monitor keeps its own flag: an old child's delayed EOF must
@@ -481,7 +485,7 @@ impl MitmProxy {
     }
 
     /// Finish a restart by storing the newly spawned child process.
-    pub fn complete_restart(&mut self, child: ManagedMitmdump) {
+    pub(crate) fn complete_restart(&mut self, child: ManagedMitmdump) {
         self.control
             .set_target(child.control_directory().map(|directory| ControlTarget {
                 directory: directory.to_path_buf(),
@@ -563,7 +567,7 @@ impl MitmProxy {
         self.child = Some(ManagedMitmdump::unmanaged(child));
     }
 
-    pub fn set_reap_gate_for_test(&mut self, gate: crate::child_cleanup::ReapGate) {
+    pub(crate) fn set_reap_gate_for_test(&mut self, gate: crate::child_cleanup::ReapGate) {
         self.child
             .as_mut()
             .expect("test child installed")
@@ -573,6 +577,7 @@ impl MitmProxy {
 
 impl Drop for MitmProxy {
     fn drop(&mut self) {
+        self.control.set_target(None);
         self.stopping.store(true, Ordering::Release);
         self.delivery_flush = None;
         drop(self.child.take());

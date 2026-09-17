@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it, onTestFinished, beforeEach } from "vitest";
+
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
@@ -232,66 +233,80 @@ describe("CHAT-02: thread connector account selection", () => {
     await cancelChatRun(fixture.actor, run.runId, claimed.sandboxHeaders);
   });
 
-  it("preserves an out-of-scope choice without requiring its catalog", async () => {
-    const fixture = await selectedThreadConnectorFixture(
-      "Out-of-scope thread catalog selection",
-    );
-    await api.enableAgentConnectors(fixture.actor, fixture.agentId, []);
-    onTestFinished(() => {
+  describe("with a thread with a selected connector", () => {
+    async function prepareScenario() {
+      const fixture = await selectedThreadConnectorFixture(
+        "Out-of-scope thread catalog selection",
+      );
+      return { fixture };
+    }
+    let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
+    beforeEach(async () => {
+      preparedScenario = await prepareScenario();
+    });
+    it("preserves an out-of-scope choice without requiring its catalog", async () => {
+      const { fixture } = preparedScenario;
+      await api.enableAgentConnectors(fixture.actor, fixture.agentId, []);
+      onTestFinished(() => {
+        clearApiTestConnectorCatalogExternalReaderIdentityReplacements();
+        clearApiTestConnectorCatalogRuntimeProjectionIdentityReplacements();
+      });
+      const rejectCatalogRead = () => {
+        return Promise.reject(new Error("Connector catalog is unavailable"));
+      };
+      setApiTestConnectorCatalogExternalReaderIdentityReadHook(
+        rejectCatalogRead,
+      );
+      setApiTestConnectorCatalogRuntimeProjectionIdentityReadHook(
+        rejectCatalogRead,
+      );
+      const run = await sendChatRun(fixture.actor, {
+        agentId: fixture.agentId,
+        threadId: fixture.threadId,
+        prompt: "Do not use the connector removed from the agent scope",
+      });
+      const claimed = await claimChatRun(fixture.runnerGroup, run.runId);
+      expect(
+        claimed.claim.secretConnectorMetadataMap?.OPENAI_TOKEN,
+      ).toBeUndefined();
+      await cancelChatRun(fixture.actor, run.runId, claimed.sandboxHeaders);
+
       clearApiTestConnectorCatalogExternalReaderIdentityReplacements();
       clearApiTestConnectorCatalogRuntimeProjectionIdentityReplacements();
+      await api.enableAgentConnectors(fixture.actor, fixture.agentId, [
+        "openai",
+      ]);
+      const selections = await accept(
+        chatThreadConnectorSelectionsClient().get({
+          headers: sessionHeaders(fixture.actor),
+          params: { id: fixture.threadId },
+        }),
+        [200],
+      );
+      expect(selections.body.selections).toStrictEqual([
+        {
+          connectionId: fixture.connectionId,
+          target: { kind: "builtin", connectorSlug: "openai" },
+        },
+      ]);
+      const reauthorized = await sendChatRun(fixture.actor, {
+        agentId: fixture.agentId,
+        threadId: fixture.threadId,
+        prompt: "Use the preserved account after reauthorization",
+      });
+      const reauthorizedClaim = await claimChatRun(
+        fixture.runnerGroup,
+        reauthorized.runId,
+      );
+      expect(
+        reauthorizedClaim.claim.secretConnectorMetadataMap?.OPENAI_TOKEN,
+      ).toMatchObject({ sourceId: fixture.connectionId });
+      await cancelChatRun(
+        fixture.actor,
+        reauthorized.runId,
+        reauthorizedClaim.sandboxHeaders,
+      );
     });
-    const rejectCatalogRead = () => {
-      return Promise.reject(new Error("Connector catalog is unavailable"));
-    };
-    setApiTestConnectorCatalogExternalReaderIdentityReadHook(rejectCatalogRead);
-    setApiTestConnectorCatalogRuntimeProjectionIdentityReadHook(
-      rejectCatalogRead,
-    );
-    const run = await sendChatRun(fixture.actor, {
-      agentId: fixture.agentId,
-      threadId: fixture.threadId,
-      prompt: "Do not use the connector removed from the agent scope",
-    });
-    const claimed = await claimChatRun(fixture.runnerGroup, run.runId);
-    expect(
-      claimed.claim.secretConnectorMetadataMap?.OPENAI_TOKEN,
-    ).toBeUndefined();
-    await cancelChatRun(fixture.actor, run.runId, claimed.sandboxHeaders);
-
-    clearApiTestConnectorCatalogExternalReaderIdentityReplacements();
-    clearApiTestConnectorCatalogRuntimeProjectionIdentityReplacements();
-    await api.enableAgentConnectors(fixture.actor, fixture.agentId, ["openai"]);
-    const selections = await accept(
-      chatThreadConnectorSelectionsClient().get({
-        headers: sessionHeaders(fixture.actor),
-        params: { id: fixture.threadId },
-      }),
-      [200],
-    );
-    expect(selections.body.selections).toStrictEqual([
-      {
-        connectionId: fixture.connectionId,
-        target: { kind: "builtin", connectorSlug: "openai" },
-      },
-    ]);
-    const reauthorized = await sendChatRun(fixture.actor, {
-      agentId: fixture.agentId,
-      threadId: fixture.threadId,
-      prompt: "Use the preserved account after reauthorization",
-    });
-    const reauthorizedClaim = await claimChatRun(
-      fixture.runnerGroup,
-      reauthorized.runId,
-    );
-    expect(
-      reauthorizedClaim.claim.secretConnectorMetadataMap?.OPENAI_TOKEN,
-    ).toMatchObject({ sourceId: fixture.connectionId });
-    await cancelChatRun(
-      fixture.actor,
-      reauthorized.runId,
-      reauthorizedClaim.sandboxHeaders,
-    );
   });
 
   it("overlaps stored thread selection with model-provider resolution", async () => {

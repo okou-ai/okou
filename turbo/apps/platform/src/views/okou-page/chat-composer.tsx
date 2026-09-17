@@ -8,11 +8,10 @@ import {
   type ComposerActions,
 } from "./composer-actions.ts";
 import {
-  ComposerCreateControls,
   ComposerCreatePicker,
   ComposerCreateImageModelPicker,
   ComposerCreateVideoModelPicker,
-  ComposerSelectedTask,
+  ComposerTaskControls,
 } from "./composer-create.tsx";
 import {
   ComposerAddMenu,
@@ -44,6 +43,9 @@ import { i18n } from "../../i18n/index.ts";
 import { introVideoTemplateOptions } from "@okouai/core/intro-video-template";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { IntroVideoPicker } from "./intro-video-picker.tsx";
+import { TemplateEmptyPanel } from "./template-empty-panel.tsx";
+import { CustomTemplatePickerPane } from "./custom-template-picker-pane.tsx";
+import { resetCustomTemplatePicker$ } from "../../signals/okou-page/custom-template-library.ts";
 import {
   avatarSelectionLabel,
   styleSelectionLabel,
@@ -79,6 +81,7 @@ import {
   Image as ImageIcon,
   LayoutTemplate,
   Loader2,
+  Layers,
   Lock,
   Mic,
   Monitor,
@@ -122,6 +125,7 @@ import {
   Select,
   SelectContent,
   SelectItem,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from "@okouai/ui/components/ui/select";
@@ -962,12 +966,9 @@ function VideoTemplatePreview({ item }: { item: VideoTemplateItem }) {
  * carries slightly less alpha. Replaces Tailwind `shadow-sm`, whose hard black
  * tint reads muddy on white.
  *
- * The picker renders through a Base UI portal on `document.body`, which used to
- * force the literal because the token was scoped to `.okou-app`. That scope is
- * gone — `--okou-card-shadow` is declared at `:root` and would resolve here —
- * so keeping the literal is now a colour decision rather than a constraint.
- * Adopting the token would also pick up its gradient-palette override, which
- * this surface has never had.
+ * `--okou-card-shadow` is declared at `:root` and would resolve here, so this
+ * is a colour decision rather than a constraint. Adopting the token would also
+ * pick up its gradient-palette override, which this surface has never had.
  */
 const TEMPLATE_CARD_SHADOW =
   "shadow-[0_2px_12px_hsl(220_12%_50%/0.04),0_0_0_0.5px_hsl(220_12%_50%/0.02)]";
@@ -1457,27 +1458,6 @@ function WorkflowTemplateGrid({
           />
         );
       })}
-    </div>
-  );
-}
-
-function TemplateEmptyPanel() {
-  const { t } = useTranslation();
-  return (
-    <div className="flex min-h-40 flex-1 items-center justify-center rounded-[22px] border-2 border-dashed border-border bg-background px-6 py-10 text-center">
-      <div className="flex max-w-xl flex-col items-center">
-        <Search className="mb-4 h-8 w-8" />
-        <p className="text-sm font-semibold text-muted-foreground">
-          {t(($) => {
-            return $.artifacts.templates.noMatches;
-          })}
-        </p>
-        <p className="mt-2 text-sm text-muted-foreground/80">
-          {t(($) => {
-            return $.artifacts.templates.tryDifferentSearch;
-          })}
-        </p>
-      </div>
     </div>
   );
 }
@@ -4279,8 +4259,12 @@ function IllustrationTemplateCard({
 function resolveTemplatePickerCategory(
   category: string,
   introVideoEnabled: boolean,
+  customTemplatesEnabled: boolean,
 ): string {
   switch (category) {
+    case "custom": {
+      return customTemplatesEnabled ? category : "slides";
+    }
     case "intro-video": {
       return introVideoEnabled ? category : "video";
     }
@@ -4301,20 +4285,36 @@ function resolveTemplatePickerCategory(
 function TemplatePickerCategoryNav({
   selectedCategory,
   introVideoEnabled,
+  customTemplatesEnabled,
   creativeVideoOnly,
   onChange,
 }: {
   selectedCategory: string;
   introVideoEnabled: boolean;
+  customTemplatesEnabled: boolean;
   creativeVideoOnly: boolean;
   onChange: (value: string) => void;
 }) {
   const { t } = useTranslation();
+  // Custom leads the list and is separated by a rule, because it answers who
+  // made a template while the seven below it answer what you are making. The
+  // format options keep their own order untouched.
   const categoryOptions: {
     value: string;
     label: string;
     Icon: LucideIcon;
   }[] = [
+    ...(customTemplatesEnabled
+      ? [
+          {
+            value: "custom",
+            label: t(($) => {
+              return $.templates.custom;
+            }),
+            Icon: Layers,
+          },
+        ]
+      : []),
     {
       value: "slides",
       label: t(($) => {
@@ -4388,15 +4388,18 @@ function TemplatePickerCategoryNav({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {visibleCategories.map(({ value, label, Icon }) => {
-              return (
+            {visibleCategories.flatMap(({ value, label, Icon }) => {
+              return [
                 <SelectItem key={value} value={value}>
                   <span className="flex items-center gap-2">
                     <Icon className="h-4 w-4" />
                     {label}
                   </span>
-                </SelectItem>
-              );
+                </SelectItem>,
+                ...(value === "custom"
+                  ? [<SelectSeparator key={`${value}-rule`} />]
+                  : []),
+              ];
             })}
           </SelectContent>
         </Select>
@@ -4413,61 +4416,72 @@ function TemplatePickerCategoryNav({
             data-template-picker-sidebar=""
             className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-3 pb-3"
           >
-            {visibleCategories.map(({ value, label, Icon }, categoryIndex) => {
-              const selected = value === selectedCategory;
-              return (
-                <button
-                  key={value}
-                  type="button"
-                  role="tab"
-                  aria-selected={selected}
-                  tabIndex={selected ? 0 : -1}
-                  onClick={() => {
-                    onChange(value);
-                  }}
-                  onKeyDown={(event) => {
-                    let nextIndex: number | null = null;
-                    if (event.key === "ArrowDown") {
-                      nextIndex =
-                        (categoryIndex + 1) % visibleCategories.length;
-                    } else if (event.key === "ArrowUp") {
-                      nextIndex =
-                        (categoryIndex - 1 + visibleCategories.length) %
-                        visibleCategories.length;
-                    } else if (event.key === "Home") {
-                      nextIndex = 0;
-                    } else if (event.key === "End") {
-                      nextIndex = visibleCategories.length - 1;
-                    }
-                    if (nextIndex === null) {
-                      return;
-                    }
-                    event.preventDefault();
-                    const nextTab = event.currentTarget.parentElement
-                      ?.querySelectorAll<HTMLElement>("[role=tab]")
-                      .item(nextIndex);
-                    nextTab?.focus();
-                    onChange(visibleCategories[nextIndex]?.value ?? value);
-                  }}
-                  className={cn(
-                    "group flex h-9 w-full shrink-0 items-center gap-2.5 rounded-lg px-2.5 text-left text-sm leading-5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-                    selected
-                      ? "bg-gray-50 font-medium text-foreground"
-                      : "text-gray-800 hover:bg-state-hover hover:text-foreground",
-                  )}
-                >
-                  <Icon
+            {visibleCategories.flatMap(
+              ({ value, label, Icon }, categoryIndex) => {
+                const selected = value === selectedCategory;
+                return [
+                  <button
+                    key={value}
+                    type="button"
+                    role="tab"
+                    aria-selected={selected}
+                    tabIndex={selected ? 0 : -1}
+                    onClick={() => {
+                      onChange(value);
+                    }}
+                    onKeyDown={(event) => {
+                      let nextIndex: number | null = null;
+                      if (event.key === "ArrowDown") {
+                        nextIndex =
+                          (categoryIndex + 1) % visibleCategories.length;
+                      } else if (event.key === "ArrowUp") {
+                        nextIndex =
+                          (categoryIndex - 1 + visibleCategories.length) %
+                          visibleCategories.length;
+                      } else if (event.key === "Home") {
+                        nextIndex = 0;
+                      } else if (event.key === "End") {
+                        nextIndex = visibleCategories.length - 1;
+                      }
+                      if (nextIndex === null) {
+                        return;
+                      }
+                      event.preventDefault();
+                      const nextTab = event.currentTarget.parentElement
+                        ?.querySelectorAll<HTMLElement>("[role=tab]")
+                        .item(nextIndex);
+                      nextTab?.focus();
+                      onChange(visibleCategories[nextIndex]?.value ?? value);
+                    }}
                     className={cn(
-                      "h-4 w-4 shrink-0 transition-colors",
+                      "group flex h-9 w-full shrink-0 items-center gap-2.5 rounded-lg px-2.5 text-left text-sm leading-5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
                       selected
-                        ? "text-foreground"
-                        : "text-gray-700 group-hover:text-gray-800",
+                        ? "bg-gray-50 font-medium text-foreground"
+                        : "text-gray-800 hover:bg-state-hover hover:text-foreground",
                     )}
-                  />
-                  <span className="truncate">{label}</span>
-                </button>
-              );
-            })}
+                  >
+                    <Icon
+                      className={cn(
+                        "h-4 w-4 shrink-0 transition-colors",
+                        selected
+                          ? "text-foreground"
+                          : "text-gray-700 group-hover:text-gray-800",
+                      )}
+                    />
+                    <span className="truncate">{label}</span>
+                  </button>,
+                  ...(value === "custom"
+                    ? [
+                        <div
+                          key={`${value}-rule`}
+                          role="presentation"
+                          className="my-2 shrink-0 border-t border-t-gray-400"
+                        />,
+                      ]
+                    : []),
+                ];
+              },
+            )}
           </nav>
         </div>
       </div>
@@ -5875,6 +5889,13 @@ export function ComposerPresentationRecommendations({
   const builtIn = PRESENTATION_TEMPLATE_PICKER_ITEMS;
   const openTemplates = useSet(signals.template.openTemplatePicker$);
   const setMode = useSet(signals.create.setMode$);
+  // The shelf keeps mixing uploaded and built-in covers — it recommends rather
+  // than classifies — but "more" has to land on the tab that now holds the
+  // uploaded ones.
+  const moreTemplatesCategory =
+    useGet(featureSwitch$)[FeatureSwitchKey.CustomTemplates] === true
+      ? "custom"
+      : "slides";
   const label = t(($) => {
     return $.chat.taskChips.presentationTemplates;
   });
@@ -5895,7 +5916,7 @@ export function ComposerPresentationRecommendations({
           size="xs"
           className="shrink-0 gap-1.5 font-normal"
           onClick={() => {
-            openTemplates({ kind: "insert", category: "slides" });
+            openTemplates({ kind: "insert", category: moreTemplatesCategory });
           }}
         >
           {t(($) => {
@@ -5990,29 +6011,39 @@ function PptTemplateGrid({
   onImported: () => void;
   signals: ComposerSignals;
 }) {
-  // Import tile, then accessible uploaded decks (owned decks are sorted first),
-  // then the built-in templates.
+  // Uploading and the decks it produced belong to whichever catalog this
+  // member can open. Once Custom is theirs, both live there, and this tab is
+  // the built-in templates alone; until then it is the import tile, the
+  // accessible uploaded decks (owned decks first), then the built-ins.
+  const customTemplates =
+    useGet(featureSwitch$)[FeatureSwitchKey.CustomTemplates] === true;
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      <ImportedPresentationTemplateLibraryStatus signals={signals} />
-      <PptImportCard signals={signals} onImported={onImported} />
-      {importedItems.map(({ imageBuffers, template }) => {
-        return (
-          <ImportedPptCard
-            key={template.id}
-            imageSignals={imageBuffers.card}
-            template={template}
-            selected={
-              value?.type === "presentation" &&
-              value.selection.templateId ===
-                formatUserPresentationTemplateId(template.id)
-            }
-            onSelect={onSelectImported}
-            onPreview={onPreviewImported}
-            signals={signals}
-          />
-        );
-      })}
+      {customTemplates ? null : (
+        <>
+          <ImportedPresentationTemplateLibraryStatus signals={signals} />
+          <PptImportCard signals={signals} onImported={onImported} />
+        </>
+      )}
+      {(customTemplates ? [] : importedItems).map(
+        ({ imageBuffers, template }) => {
+          return (
+            <ImportedPptCard
+              key={template.id}
+              imageSignals={imageBuffers.card}
+              template={template}
+              selected={
+                value?.type === "presentation" &&
+                value.selection.templateId ===
+                  formatUserPresentationTemplateId(template.id)
+              }
+              onSelect={onSelectImported}
+              onPreview={onPreviewImported}
+              signals={signals}
+            />
+          );
+        },
+      )}
       {items.map((item) => {
         return (
           <PptCard
@@ -6084,6 +6115,7 @@ function TemplatePickerDialog({
   const resetImportedTemplatePicker = useSet(
     signals.template.resetImportedPresentationTemplatePicker$,
   );
+  const resetCustomTemplatePicker = useSet(resetCustomTemplatePicker$);
   const restorePresentationGridScroll = useSet(
     signals.template.restoreTemplatePickerPresentationScroll$,
   );
@@ -6155,9 +6187,12 @@ function TemplatePickerDialog({
 
   const features = useGet(featureSwitch$);
   const introVideoEnabled = features[FeatureSwitchKey.IntroVideo] === true;
+  const customTemplatesEnabled =
+    features[FeatureSwitchKey.CustomTemplates] === true;
   const selectedCategory = resolveTemplatePickerCategory(
     category,
     introVideoEnabled,
+    customTemplatesEnabled,
   );
   const showTemplatePickerSearch = selectedCategory === "workflow";
   const showAvatarPickerToolbar = selectedCategory === "avatar";
@@ -6199,6 +6234,7 @@ function TemplatePickerDialog({
   const completeTemplatePickerClose = () => {
     releasePreviewResources(runtime);
     resetImportedTemplatePicker();
+    resetCustomTemplatePicker();
     clearAvatarVoiceSelection();
     setPresentationGridScrollTop(0);
     onCloseComplete();
@@ -6445,6 +6481,7 @@ function TemplatePickerDialog({
               <TemplatePickerCategoryNav
                 selectedCategory={selectedCategory}
                 introVideoEnabled={introVideoEnabled}
+                customTemplatesEnabled={customTemplatesEnabled}
                 creativeVideoOnly={creativeVideoOnly}
                 onChange={handleCategoryChange}
               />
@@ -6612,6 +6649,13 @@ function TemplatePickerCategoryContent({
   onSelectWorkflow: (item: WorkflowTemplateItem) => void;
   runtime: TemplatePreviewRuntime;
 }) {
+  if (selectedCategory === "custom") {
+    return (
+      <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-6 pt-0.5">
+        <CustomTemplatePickerPane signals={signals} />
+      </div>
+    );
+  }
   if (selectedCategory === "slides") {
     return (
       <div
@@ -6847,8 +6891,11 @@ function selectedComposerTemplateAttachment(
 function useTemplatePickerTrigger(signals: ComposerSignals) {
   const { t } = useTranslation();
   const category = useGet(signals.template.templatePickerCategory$);
+  const pickerFeatures = useGet(featureSwitch$);
   const introVideoEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.IntroVideo] === true;
+    pickerFeatures[FeatureSwitchKey.IntroVideo] === true;
+  const customTemplatesEnabled =
+    pickerFeatures[FeatureSwitchKey.CustomTemplates] === true;
   const createMode = useGet(signals.create.mode$);
   const creativeVideo = useGet(signals.create.creativeVideo$);
   const openTemplatePicker = useSet(signals.template.openTemplatePicker$);
@@ -6875,7 +6922,11 @@ function useTemplatePickerTrigger(signals: ComposerSignals) {
     templateMode === "presentation"
       ? "slides"
       : (templateMode ??
-        resolveTemplatePickerCategory(category, introVideoEnabled));
+        resolveTemplatePickerCategory(
+          category,
+          introVideoEnabled,
+          customTemplatesEnabled,
+        ));
   const prewarm = () => {
     prewarmTemplatePreviewImages(
       runtime,
@@ -11016,11 +11067,12 @@ function ComposerFooter({
                 signals={signals}
                 actions={connectorActions}
               />
+              <ComposerTaskControls signals={signals} />
             </div>
             {/*
-              The video spec sits beside the connectors, at the head of the
-              controls that act on the run rather than on the message, and on
-              the same line as the model it is resolved against.
+              The video spec follows the type it describes, among the controls
+              that act on the run rather than on the message, and on the same
+              line as the model it is resolved against.
 
               It is a sibling of the icon row rather than a member of it: below
               640px this group is `display: contents`, so the chip reaches the
@@ -11095,9 +11147,7 @@ function ComposerCard({ signals }: { signals: ComposerSignals }) {
           ref={actions.bind}
           className={cn("flex flex-col", layoutHeightClassNames.shell)}
         >
-          <ComposerCreateControls signals={signals} />
           <ComposerAttachments signals={signals} />
-          <ComposerSelectedTask signals={signals} />
           <ComposerInputSlot
             signals={signals}
             actions={actions}

@@ -24,6 +24,8 @@ surface; the index does not replace their detailed rules.
   concrete account ownership, bounded disconnect retention and activation gates.
 - [Subscription decryption experiment](./subscription-decryption-experiment.md):
   bounded KMS concurrency, provider-lock measurements and failure trade-offs.
+- [Subscription equivalence experiment](./subscription-equivalence-experiment.md):
+  paired canonical/mirror proof decryption and complete caller measurements.
 - [Connector-account workflow automations](./connector-account-workflow-automation.md):
   workflow-thread account authority, exact provider ingress, lifecycle
   convergence, and persisted compatibility for account-backed triggers.
@@ -42,6 +44,8 @@ surface; the index does not replace their detailed rules.
   capabilities, live health normalization, freshness and rollout boundaries.
 - [Billing attribution foundation](./database/billing-attribution.md): immutable
   billing identity, writer inventory, bounded backfill and activation boundaries.
+- [X resource observation preparation](./x-resource-observations.md): dormant
+  resource protocol, shared claim storage, transient remainder and consumer gates.
 - [Database trigger retirement](./database-trigger-retirement.md): explicit API
   entitlement writers, repair paths, and the serving/rollback removal gate.
 - [Account telemetry and recovery erasure](./account-erasure-evidence.md):
@@ -52,6 +56,9 @@ surface; the index does not replace their detailed rules.
   publication-order evidence.
 - [Dependency override audit](./dependency-overrides.md): retained dependency
   constraints, their origins, and evidence for removing obsolete overrides.
+- [Morning Brief migration state](./morning-brief-migration-state.md): the
+  canonical reader for a member's existing brief, its ownership and thread
+  invariants, and the boundary the `simple-morning-brief` cutover must respect.
 - [Marketing privacy rollback](./marketing-privacy-choices.md): withdrawn runtime
   behavior, storage retirement, and rollout boundaries.
 - [Google Cloud LLM voice routing](./google-llm-voice.md): shared Vercel workload
@@ -90,6 +97,8 @@ surface; the index does not replace their detailed rules.
   control/runtime reclaim protection, and tool OOM trade-offs.
 - [Workspace history restore telemetry](./workspace-history-restore-telemetry.md):
   local source and restored payload sizes, representation and timing semantics.
+- [Guest file compression](./guest-file-compression.md): caller-owned history
+  selection, bounded streaming, failure semantics and bundled compatibility.
 - [Runner multi-architecture rollout](./runner-multi-architecture.md): build,
   deploy, and validate runner artifacts for supported host architectures.
 - [Testing catalog](./testing/anti-patterns.md): detailed testing anti-patterns.

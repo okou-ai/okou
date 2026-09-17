@@ -33,6 +33,8 @@ struct SandboxEntry {
     cli_agent_type: String,
     sandbox_token: String,
     registered_at: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    usage_generation: Option<String>,
     network_log_path: String,
     proxy_log_path: String,
     firewalls: Option<Vec<FirewallEntry>>,
@@ -580,6 +582,11 @@ fn initial_connector_routing_variables(
 }
 
 impl ProxyRegistryHandle {
+    /// Observe a published registration without delaying sandbox preparation.
+    pub(crate) fn observe_registration(&self, publication: RegistryPublication) {
+        self.control.observe_registry(publication);
+    }
+
     #[cfg(test)]
     pub(crate) fn set_control_target_for_test(&self, directory: PathBuf, generation: String) {
         self.control.set_target(Some(super::control::ControlTarget {
@@ -620,6 +627,14 @@ impl ProxyRegistryHandle {
 
         let mut registry = read_registry(&self.registry_path).await?;
         let now = chrono::Utc::now().timestamp_millis();
+        // Preserve original observation provenance for a same-run refresh and
+        // across addon restarts. A new process cannot claim the old history.
+        let usage_generation = registry
+            .sandboxes
+            .values()
+            .find(|entry| entry.run_id == registration.run_id)
+            .map(|entry| entry.usage_generation.clone())
+            .unwrap_or_else(|| self.control.target().map(|target| target.generation));
         let firewalls = registration.firewalls.map(|s| s.to_vec());
         let (omitted_builtin_firewalls, omitted_custom_connector_ids) =
             initial_omitted_connector_runtime_targets(registration);
@@ -630,6 +645,7 @@ impl ProxyRegistryHandle {
                 cli_agent_type: registration.cli_agent_type.to_string(),
                 sandbox_token: registration.sandbox_token.to_string(),
                 registered_at: now,
+                usage_generation,
                 network_log_path: registration.network_log_path.to_string_lossy().into_owned(),
                 proxy_log_path: registration.proxy_log_path.to_string_lossy().into_owned(),
                 firewalls,
@@ -1061,6 +1077,68 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn registration_preserves_original_usage_generation_across_restart() {
+        let fixture = RegistryHarness::new().await;
+        fixture.handle.set_control_target_for_test(
+            fixture.registry_path().parent().unwrap().to_path_buf(),
+            "generation-1".into(),
+        );
+        fixture
+            .handle
+            .register_sandbox("10.200.0.2", &base_registration())
+            .await
+            .unwrap();
+        let first: serde_json::Value = serde_json::from_str(
+            &tokio::fs::read_to_string(fixture.registry_path())
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            first["sandboxes"]["10.200.0.2"]["usageGeneration"],
+            "generation-1"
+        );
+        fixture.handle.set_control_target_for_test(
+            fixture.registry_path().parent().unwrap().to_path_buf(),
+            "generation-2".into(),
+        );
+        fixture
+            .handle
+            .register_sandbox("10.200.0.2", &base_registration())
+            .await
+            .unwrap();
+        let second: serde_json::Value = serde_json::from_str(
+            &tokio::fs::read_to_string(fixture.registry_path())
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            second["sandboxes"]["10.200.0.2"]["usageGeneration"],
+            "generation-1"
+        );
+        let registration = SandboxRegistration {
+            run_id: "new-run",
+            ..base_registration()
+        };
+        fixture
+            .handle
+            .register_sandbox("10.200.0.2", &registration)
+            .await
+            .unwrap();
+        let replacement: serde_json::Value = serde_json::from_str(
+            &tokio::fs::read_to_string(fixture.registry_path())
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            replacement["sandboxes"]["10.200.0.2"]["usageGeneration"],
+            "generation-2"
+        );
+    }
+
     fn test_firewalls(connector_slugs: &[&str]) -> Vec<FirewallEntry> {
         connector_slugs
             .iter()
@@ -1217,6 +1295,7 @@ mod tests {
                 cli_agent_type: "claude-code".to_string(),
                 sandbox_token: String::new(),
                 registered_at: 1000,
+                usage_generation: None,
                 network_log_path: "/tmp/network-test-run.jsonl".to_string(),
                 proxy_log_path: "/tmp/proxy-test-run.jsonl".to_string(),
                 firewalls: None,

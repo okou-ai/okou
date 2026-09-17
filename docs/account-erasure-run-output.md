@@ -141,7 +141,10 @@ Terminal lifecycle/error markers, integration completion placeholders and
 transactionally coupled delivery/sidebar writes are covered by
 [B2b2-T](account-erasure-terminal-callback.md). Summaries, followups and automation
 results remain B2b2-R. The lifecycle-owned `insertIntegrationCompletionFallback`
-is outside this B2b2-O assistant history/result projection. Chat input/creation/editing, activity/search/
+is outside this B2b2-O assistant history/result projection. The durable chat
+search producer is fenced separately by
+[B2b2-R2](account-erasure-chat-search.md); its already durable rows remain
+historical data. Chat input/creation/editing, activity/
 sidebar/archive copies and previously admitted optional consumers also remain
 outside this slice. Files/sites,
 credentials, remote sessions, transient Ably/provider egress and existing
@@ -155,3 +158,52 @@ separate release qualification/publication, authority/activation gates, billing
 independence, domain erasure and H remain separate. The implementation owner
 stops at its sole PR's protected merge; it does not activate or probe deletion in
 production, and the recovered September 12 account is excluded from fixtures.
+
+## Required-output backpressure attribution (B2b2-P)
+
+[#34432](https://github.com/vm0-ai/vm0/issues/34432) adds three optional fields to
+only the existing required-output `55P03` backpressure record. Both HTTP webhook
+and Pi API-first callers use the same invocation-owned capture. There is no new
+record, success stream, sink, identifier, payload, SQL or driver-error field.
+The record's existing finite lifecycle remains part of G2/H; this does not
+create a permanent non-billing audit exception.
+
+`outputPhase` is a fixed operation-group enum: `preparation`,
+`transaction_setup`, `ownership_snapshot`, `subject_admission`,
+`resource_identity_locks`, `output_advisory_lock`, `thread_lock`, `run_lock`,
+`session_lock`, `ownership_recheck`, `projection_write`, `transaction_finalize`.
+The subject group includes the unchanged shared B1 advisory acquisition and its
+single closure lookup, so it waits behind an exclusive erasure or first-closure
+holder rather than behind another ordinary writer.
+It identifies no particular user, organization or blocking session.
+Preparation includes ownership/status preparation and historical run-group reads;
+transaction setup includes connection/BEGIN and the existing deadline statements.
+
+Each awaited group is marked before execution. The transaction callback freezes
+its original thrown object's receipt before Drizzle rolls back. A rejection
+returned by the transaction must be that same object to reuse the receipt; a
+different rollback error discards unavailable attribution. After a successful
+callback, the pending COMMIT is explicitly `transaction_finalize`, including
+any driver rollback before that transaction rejection becomes observable.
+No error is wrapped or mutated, and `cause.code` and abort identity are retained.
+
+`outputPhaseElapsedMs` and `outputAttemptElapsedMs` use `performance.now()`,
+independent of business timestamps. They are finite, nonnegative rounded
+milliseconds capped at **60,000 ms**; invalid durations are omitted. They measure
+operation/attempt elapsed time, including scheduling and execution, rather than
+pure lock wait or lock hold. Preparation and each of the existing three maximum
+ownership attempts start fresh timing. Success, closure and abort clear capture;
+the handler consumes a failure receipt once. No timer, added query, timeout,
+retry, disposition or billing decision uses these measurements.
+
+The existing PostgreSQL infrastructure harness covers held user/org, resource,
+output, thread, run, session and projection locks, rollback without partial output,
+HTTP 503 followed by an idempotent retry, both closure orders, shared-org and
+unrelated liveness, ownership retries, abort identity and ordinary errors. Its
+exception also permits connection-local deferred constraints and terminating a
+test-owned connection to exercise commit/rollback failures, which production
+APIs cannot request. It observes the same minimal capture the handler consumes,
+without logger or Axiom assertions. All normal output/closure/billing regressions
+remain applicable. A bounded four-layout baseline/candidate observation is
+reported with exact production SHAs and environment in the PR; it establishes
+neither production throughput nor a causal guard regression.

@@ -45,12 +45,6 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
-  [FeatureSwitchKey.SocialStatus]: {
-    maintainer: "liangyou@okou.ai",
-    description: "On-demand public Social service health",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.WelcomeThread]: {
     maintainer: "lancy@okou.ai",
     description: "Manually create a welcome conversation with fixed examples",
@@ -63,6 +57,17 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Generate short public activity summaries for active thread subscriptions.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.CustomTemplates]: {
+    maintainer: "bingjie@okou.ai",
+    description:
+      "Templates compiled from a file the user uploaded, with their own catalog.",
+    enabled: false,
+    // Narrowed from the staff org to the maintainer while nothing in the
+    // product publishes a row: the API route exists, but no upload surface
+    // calls it yet, so everyone else would only ever see the empty panel.
+    enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
+    enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
   },
   [FeatureSwitchKey.ComposerTaskChips]: {
     maintainer: "bingjie@okou.ai",
@@ -229,6 +234,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Enable Morning Brief and email subscription management in Preferences.",
     enabled: true,
   },
+  [FeatureSwitchKey.SimpleMorningBrief]: {
+    maintainer: "lancy@okou.ai",
+    description:
+      "Select the platform-funded simple-morning-brief pipeline instead of the Official Workflow Run. Separate from the user's Morning Brief preference.",
+    enabled: false,
+  },
   [FeatureSwitchKey.TestOauthConnector]: {
     maintainer: "liangyou@okou.ai",
     description:
@@ -344,12 +355,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.ChatTranslation]: {
-    maintainer: "yuma@okou.ai",
-    description:
-      "Translate selected assistant text into a remembered target language.",
-    enabled: false,
-  },
   [FeatureSwitchKey.ZapierConnector]: {
     maintainer: "yuma@okou.ai",
     description:
@@ -369,7 +374,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Use private artifact storage, the Okou viewer, and organization and public sharing.",
     enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ComposerImageAnnotation]: {
     maintainer: "tongx@okou.ai",
@@ -408,12 +412,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "linghan@okou.ai",
     description: "Enable Lark bot setup, account connections, and messaging.",
     enabled: false,
-  },
-  [FeatureSwitchKey.TelegramDmSessions]: {
-    maintainer: "linghan@okou.ai",
-    description:
-      "Use agent/model-scoped Telegram DM sessions and separate reply chains.",
-    enabled: true,
   },
   [FeatureSwitchKey.FeishuIntegration]: {
     maintainer: "linghan@okou.ai",
@@ -475,6 +473,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "bingjie@okou.ai",
     description:
       "Collapse the composer toolbar's attach, template and create workflow buttons into a single plus menu.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.DeliveryFormatGuidance]: {
+    maintainer: "bingjie@okou.ai",
+    description:
+      "Replace the hosted-HTML-first delivery guidance with a rule that picks docx, xlsx, PDF, CSV, a hosted view or a chat reply from what the user will do with the result.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

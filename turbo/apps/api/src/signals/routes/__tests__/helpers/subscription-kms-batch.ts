@@ -6,7 +6,8 @@ export function holdSubscriptionKmsBatch(signal: AbortSignal) {
   const entered = createDeferredPromise<void>(signal);
   const first = createDeferredPromise<void>(signal);
   const second = createDeferredPromise<void>(signal);
-  let failure: Error | undefined;
+  let firstFailure: Error | undefined;
+  let secondFailure: Error | undefined;
   let active = 0;
   let peak = 0;
   const decrypt = async (call: number) => {
@@ -15,12 +16,15 @@ export function holdSubscriptionKmsBatch(signal: AbortSignal) {
     const held = async () => {
       if (call === 2) {
         await first.promise;
-        if (failure) {
-          throw failure;
+        if (firstFailure) {
+          throw firstFailure;
         }
       } else if (call === 3) {
         entered.resolve(undefined);
         await second.promise;
+        if (secondFailure) {
+          throw secondFailure;
+        }
       }
       return Buffer.from("0123456789abcdef0123456789abcdef");
     };
@@ -39,8 +43,12 @@ export function holdSubscriptionKmsBatch(signal: AbortSignal) {
   return {
     entered: entered.promise,
     failFirst() {
-      failure = new Error("Synthetic KMS unavailable");
+      firstFailure = new Error("Synthetic KMS unavailable");
       first.resolve(undefined);
+    },
+    failSecond() {
+      secondFailure = new Error("Synthetic mirror KMS unavailable");
+      second.resolve(undefined);
     },
     release() {
       if (!first.settled()) {

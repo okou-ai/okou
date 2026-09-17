@@ -74,6 +74,7 @@ import request_classification
 import request_streaming
 import response_encoding_negotiation
 import response_streaming
+import run_usage
 import runner_control
 import runner_flush_lifecycle
 import tcp_logging
@@ -260,6 +261,7 @@ def running() -> None:
 
     control_dir = ctx.options.okou_control_socket_dir
     usage_state_id = ctx.options.okou_usage_state_id
+    run_usage.initialize(usage_state_id or None)
     if control_dir and usage_state_id:
         registry_owner = registry_control.RegistryControl(
             asyncio.get_running_loop(), get_registry_path()
@@ -269,6 +271,7 @@ def running() -> None:
             usage_state_id,
             registry_owner,
             runner_flush_lifecycle.DeliveryControl(),
+            usage_snapshot=run_usage.snapshot,
         )
         control.start()
         _registry_control = registry_owner
@@ -1275,6 +1278,9 @@ def _block_request_classification(
     if classification.kind == "platform_path_denied":
         _block_platform_path_denied(flow)
         return
+    if classification.kind == "gmail_send_blocked":
+        http_local_responses.block_gmail_send(flow)
+        return
     if classification.kind == "firewall_ambiguous":
         _set_firewall_ambiguous_response(flow, classification.firewall_ambiguous)
         return
@@ -1420,6 +1426,9 @@ async def request(flow: http.HTTPFlow) -> None:
             flow.metadata[metadata_keys.FIREWALL_BILLABLE] = False
             flow.metadata.pop(metadata_keys.MODEL_USAGE_PROVIDER, None)
             flow_metadata.set_firewall_decision(flow.metadata, "ALLOW")
+            if _is_websocket_upgrade_request(flow):
+                flow.metadata[metadata_keys.WEBSOCKET_UPGRADE_REQUEST] = True
+            run_usage.admit(flow)
             return
         if classification.kind == "firewall_allow":
             allow = classification.firewall_allow
@@ -1454,6 +1463,7 @@ async def request(flow: http.HTTPFlow) -> None:
                 )
                 return
             _maybe_normalize_accept_encoding_for_body_inspection(flow, allow, sandbox_info)
+            run_usage.admit(flow, namespace=allow.name)
             terminal_usage.track_flow_if_needed(
                 flow,
                 is_billable_firewall(allow.name, sandbox_info),
@@ -1643,7 +1653,8 @@ def websocket_message(flow: http.HTTPFlow) -> None:
         body = message.content.encode() if isinstance(message.content, str) else message.content
         if not failure_client_enabled and not usage_client_enabled:
             event = usage.inspect_openai_responses_event_json(body)
-            codex_output_timing.observe_client_event(flow, event.event_type, message.timestamp)
+            if usage.is_model_provider_usage_billable(flow):
+                codex_output_timing.observe_client_event(flow, event.event_type, message.timestamp)
             return
         event = usage.inspect_openai_responses_client_event_json(body)
         if failure_client_enabled:
@@ -1652,7 +1663,7 @@ def websocket_message(flow: http.HTTPFlow) -> None:
                 request_kind=event.request_kind,
                 is_prewarm=event.is_prewarm,
             )
-        if usage_enabled:
+        if usage_enabled and usage.is_model_provider_usage_billable(flow):
             codex_output_timing.observe_client_event(flow, event.event_type, message.timestamp)
         if usage_client_enabled:
             model_websocket_usage.observe_client_event(flow, event)
@@ -1663,7 +1674,7 @@ def websocket_message(flow: http.HTTPFlow) -> None:
     if not failure_enabled and not usage_enabled:
         return
     event = usage.inspect_openai_responses_event_json(body)
-    if usage_enabled:
+    if usage_enabled and usage.is_model_provider_usage_billable(flow):
         codex_output_timing.observe_server_event(flow, event.event_type)
     inspection = usage.inspect_openai_responses_server_event(
         event,
@@ -1891,6 +1902,10 @@ def _finish_response_handling(
     response_streaming.finalize_model_sse_usage(flow)
     response_streaming.finalize_model_json_usage(flow, proxy_log_path)
 
+    if not model_websocket_usage.is_enabled(flow):
+        run_usage.observe(flow, flow.metadata.get(metadata_keys.MODEL_PROVIDER_USAGE))
+        run_usage.finish(flow)
+
     terminal_usage.report_model_provider_usage_once(flow, run_id)
 
     # Billable connector usage observation (issue #9504, stage 0).
@@ -1978,6 +1993,9 @@ def _handle_error(flow: http.HTTPFlow) -> None:
     # The SSE parser may have partially populated model_provider_usage before the
     # connection error occurred.  Partial data is better than none.
     response_streaming.finalize_model_sse_usage(flow)
+    response_streaming.observe_interrupted_model_json(flow)
+    run_usage.observe(flow, flow.metadata.get(metadata_keys.MODEL_PROVIDER_USAGE))
+    run_usage.finish(flow, interrupted=True)
     terminal_usage.report_model_provider_usage_once(flow, run_id)
 
     # Connector parsers opt into interrupted reporting only when accumulated

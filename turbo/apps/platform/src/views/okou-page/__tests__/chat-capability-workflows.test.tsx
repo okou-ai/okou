@@ -367,6 +367,7 @@ function automationInput(args: {
   readonly id: string;
   readonly seqId: number;
   readonly workflowName: string;
+  readonly workflowId?: string;
   readonly automationBrief: string;
   readonly prompt?: string;
   readonly runId?: string;
@@ -375,6 +376,7 @@ function automationInput(args: {
     {
       type: "automation",
       workflowName: args.workflowName,
+      ...(args.workflowId ? { workflowId: args.workflowId } : {}),
       automationBrief: args.automationBrief,
     },
     ...(args.prompt ? [{ type: "text" as const, text: args.prompt }] : []),
@@ -402,6 +404,7 @@ test("Present workflow trigger events as meaningful chat history", async () => {
       seqId: 1,
       runId: FIRST_CAPABILITY_RUN_ID,
       workflowName: "Daily release review",
+      workflowId: WORKFLOW_ID,
       automationBrief: unusedBrief,
       prompt: actualTriggerPrompt,
     }),
@@ -446,10 +449,18 @@ test("Present workflow trigger events as meaningful chat history", async () => {
   await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
 
   const chat = await readyChat();
-  expect(
-    within(chat).getByLabelText("Workflow Daily release review"),
-  ).toBeVisible();
-  expect(within(chat).getByText(actualTriggerPrompt)).toBeVisible();
+  const workflowLink = within(chat).getByLabelText(
+    "Open workflow Daily release review",
+  );
+  expect(workflowLink).toHaveTextContent("Daily release review");
+  expect(workflowLink).toHaveAttribute(
+    "href",
+    `/workflows/${WORKFLOW_ID}/automations`,
+  );
+  const triggerPrompt = within(chat).getByText(actualTriggerPrompt);
+  expect(triggerPrompt).toBeInTheDocument();
+  click(triggerPrompt);
+  expect(window.location.pathname).toBe(RUN_PATH);
   expect(within(chat).queryByText(unusedBrief)).not.toBeInTheDocument();
   expect(
     within(chat).getByLabelText("Workflow Weekly pipeline summary"),

@@ -6,12 +6,16 @@ import betterTailwindcss from "eslint-plugin-better-tailwindcss";
 import { tailwind4 } from "tailwind-csstree";
 import tseslint from "typescript-eslint";
 
-const baseline = JSON.parse(
-  readFileSync(
-    resolve(import.meta.dirname, "style-legacy-baseline.json"),
-    "utf8",
-  ),
+const allowlist = JSON.parse(
+  readFileSync(resolve(import.meta.dirname, "style-allowlist.json"), "utf8"),
 );
+
+// The classes an allowlisted third-party DOM dependency puts on an element. The
+// policy owns which file may carry each one and how often; this only keeps the
+// unknown-class rule from flagging a name that is authorized somewhere.
+const allowlistedClasses = allowlist.classDependencies.map((entry) => {
+  return entry.token;
+});
 
 function exactRegex(value) {
   return `^${value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`;
@@ -118,7 +122,7 @@ export default [
         "error",
         {
           attributes: ["class", "className", "contentClassName"],
-          ignore: baseline.legacyClassTokens.map(exactRegex),
+          ignore: allowlistedClasses.map(exactRegex),
         },
       ],
       "no-restricted-syntax": ["error", ...strokeWidthRestrictions],

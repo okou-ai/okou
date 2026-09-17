@@ -224,6 +224,35 @@ export async function readApiTestConnectorCatalogSnapshot(
   return snapshot;
 }
 
+export function captureApiTestConnectorCatalogCleanup(): () => Promise<void> {
+  const { sourceId } = connectorCatalogSource();
+  return async () => {
+    await deleteApiTestConnectorCatalogSource(sourceId);
+  };
+}
+
+async function deleteApiTestConnectorCatalogSource(
+  sourceId: string,
+): Promise<void> {
+  const db = store.set(writeDb$);
+  await db.transaction(async (tx) => {
+    // Projection rows cascade from their set. The other source children must
+    // be removed before their sync-state parent.
+    await tx
+      .delete(connectorCatalogRuntimeProjectionSets)
+      .where(eq(connectorCatalogRuntimeProjectionSets.sourceId, sourceId));
+    await tx
+      .delete(connectorCatalogCompatibilityEvaluation)
+      .where(eq(connectorCatalogCompatibilityEvaluation.sourceId, sourceId));
+    await tx
+      .delete(connectorCatalogActiveSnapshot)
+      .where(eq(connectorCatalogActiveSnapshot.sourceId, sourceId));
+    await tx
+      .delete(connectorCatalogSyncState)
+      .where(eq(connectorCatalogSyncState.sourceId, sourceId));
+  });
+}
+
 export function setApiTestConnectorCatalogRuntimeProjectionIdentityReadHook(
   hook: () => Promise<void>,
 ): void {

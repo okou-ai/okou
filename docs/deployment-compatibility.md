@@ -80,12 +80,13 @@ active, or introduce a versioned/new endpoint and migrate the frontend first.
 
 #### Artifact share names and short references
 
-Share status adds optional `shortUrl`; `url` continues returning the legacy
-32-character organization reference for already-open App bundles. New Apps
-prefer `shortUrl` and fall back to `url` when talking to an older API. An explicit
-share action allocates the new alias when a current API reports `shortUrl: null`;
-opening the menu does not mutate a share. Both organization reference formats
-resolve through the same membership and policy checks.
+Organization share status returns the same short reference in `url` and
+`shortUrl`; it no longer produces a 32-character share-level URL. The `url` field
+remains available to clients that consume only that field. New Apps prefer
+`shortUrl` and fall back to `url` when talking to an older API. An older policy
+without a short reference returns null for both fields until an explicit share
+action allocates the alias; opening the menu does not mutate a share. Previously
+copied organization references retain their membership and policy checks.
 
 The R2 policy fields `organizationReference` and `publicSlug` are optional, so
 old policies remain readable. The immutable reference index and public alias
@@ -94,26 +95,78 @@ reuse the same organization index and retain the legacy public-token registry
 entry. Named public sites use the existing generic Worker publication reader;
 they require no database migration or new Worker routing format. Current APIs
 must serve short-reference resolution before Apps begin copying those links.
-Rolling the API back removes short-reference support until it is restored;
-existing legacy organization URLs remain available in the `url` response.
+Serving and rollback APIs must support the reference formats emitted by the
+enabled writer.
 
 The compatibility scope preserves the explicitly requested existing links;
 `privateArtifacts` being non-GA does not independently require a rollback bridge.
 Issue [#32492](https://github.com/vm0-ai/vm0/issues/32492) owns later retirement:
 the optional response reader can be removed once older APIs leave serving and
-supported rollback targets. The legacy organization `url` projection can be
-removed only after the short-reference App is live and an App minimum version
-excludes earlier bundles. Open pages have no passive expiry. Neither gate is
-closed in this PR. Durable-link readers and aliases remain until a separate
-retirement decision accounts for the stored references; a deployment or App
-floor alone cannot invalidate links already copied by users.
+supported rollback targets. The long organization URL writer is retired by
+the explicit short-reference change. Durable-link readers and aliases remain
+until a separate retirement decision accounts for the stored references; a
+deployment or App floor alone cannot invalidate links already copied by users.
 
 The iframe loading correction spans the App's explicit first-party iframe
 referrer policy and the host Worker's same-origin resource policy. Both must be
 deployed to verify full HTML resource loading against the hosted-domain WAF.
 The viewer and sharing use the existing `privateArtifacts` rollout switch.
 
+#### Artifact sharing controls and public references
+
+The App separates permission changes from copying and retains the existing
+`privateArtifacts` switch. Owner status is read from the existing owner-only
+endpoint; a resolved recipient with status 404 copies the original reference
+without writing a grant. Existing share responses and public delivery URLs
+remain supported for older Apps.
+
+The additive, unauthenticated `GET /api/artifact-references/:reference/public`
+returns only a currently published delivery URL. Private, organization-only,
+revoked, missing, and unselected version references return 404. Public copies
+use the same App reference as organization copies. Deploy the new API before
+relying on anonymous opening of these references; a new App against an older
+API retains the sign-in fallback on 404. Previously copied URLs remain valid
+under their existing policy. Owner resolution of an old organization alias
+continues after switching it to Only me; recipients lose access.
+
 #### Private attachment uploads
+
+CLI artifact output qualifies hostless references with its configured app origin
+(`OKOU_APP_URL`, or the existing API-to-App origin mapping). Production output is
+`https://app.okou.ai/artifacts/<reference>`. Generation, upload, hosting and media
+download results use the same complete URL in text, JSON and Markdown. Public
+URLs keep their original bytes, including query strings. API responses and stored
+references retain their existing shapes, so older pinned CLIs retain their prior
+output and the new CLI can consume an older API. Downloading or cloning newly
+qualified URLs requires the updated CLI; previously captured contexts retain
+their own CLI package. No database rewrite or API rollout ordering is required.
+CLI download, generation-input and clone readers accept both
+hostless references and absolute references from that same app origin. Existing
+App thread readers already accept same-origin absolute references and resolve
+them through the authenticated artifact endpoint.
+
+New private artifact creation allocates a ten-character version-2 R2 reference
+index and stores the reference in file metadata or the hosted deployment URL.
+Organization sharing reuses that version reference. Readers retain the existing
+32-character owner URLs and version-1 organization indexes. These are durable
+links, not a rollout cache; #32492 owns retirement only after accounting for
+stored and previously copied links. Files without `metadata.artifactReference`
+retain their original long URL, and no bulk rewrite or database migration runs.
+
+CLI owner resolution adds optional `kind=file|html` to the existing reference
+endpoint. Each mode requires its existing read capability and denies recipient
+access; the browser resolver retains its sharing authorization. Deploy the
+matching API and CLI before relying on short references in clone/download or
+generation-input commands. Existing file IDs and deployment IDs remain valid.
+An older API cannot resolve new version-2 indexes; keep capable readers in
+serving and rollback targets once the new writer is enabled.
+
+Thread resource records and policies accept both new ten-character tokens and
+persisted 24-character tokens. New registry records also bind `targetId` before
+publication; old records continue to resolve through their parent policy. Deploy
+the host Worker with the tolerant schemas before the API emits short snapshot
+links. An older Worker rejects the new records, failing closed. Original files,
+snapshot bytes, revocation policies, and rollout-switch defaults are unchanged.
 
 The API accepts the previous attachment prepare request without `purpose`, and
 selects private storage from the existing `privateArtifacts` switch. The current
@@ -699,9 +752,27 @@ and revalidates the lock only for a present entry, then reopens the directory
 under the lock. Missing, busy or unsupported entries keep ordinary delivery;
 malformed present cache data is an error, not an unverified hit.
 
-The bounded binary-manifest check is computed once on the first usable ready
-hit, before omitting archive staging. Miss-only runs do not clone and serialize
-the manifest just to decide whether an unused binary input would fit.
+Before omitting archive staging, a ready decoded mount must individually fit
+the existing 64 KiB canonical manifest bound. Other mounts' signed URLs or
+cleanup metadata do not reject that ready mount. Miss-only runs do not serialize
+entries to decide whether an unused binary input would fit. The selected files
+still share the 15 MiB payload and 1,024-mount limits across the entire run.
+
+After source resolution, a combined manifest that fits uses one Guest operation.
+An oversized combined manifest is composed into bounded existing-format
+requests: ordinary storage, artifacts, reused paths and all cleanup run first;
+decoded-only batches follow without repeating cleanup. The Runner validates
+decoded bindings against the complete manifest before partitioning, and the
+Guest validates each binary request. Every batch retains the existing 64 KiB
+manifest and 15 MiB payload limits, real source URLs and file/path validation.
+All batches are encoded before the first storage-apply operation, and a failure stops
+later batches and prevents Agent spawn. The existing non-transactional partial
+filesystem-change semantics remain; multiple requests do not imply rollback.
+Oversized ordinary JSON retains its existing manifest-file transport. No API,
+wire shape, persisted cache format, archive eligibility or generic stdin limit
+changes. Split runs can emit multiple Guest storage-apply operations inside one
+enclosing Runner storage-apply stage; per-helper entry indices are not globally
+unique within such a run.
 
 Lookup windows admit at most 128 identities with 128 KiB of owned key bytes,
 retaining the per-key limits. Non-admitted keys retain ordinary delivery;
@@ -1294,6 +1365,17 @@ capabilities in their client version. The API projects a stored locale to
 writes that the client did not advertise. Keep this compatibility layer until
 stale browser clients and API rollback windows have closed.
 
+### Retired Limelight color theme
+
+`limelight` is removed from `COLOR_THEMES`, so the API no longer parses it in
+either direction. Migration `1147_retire_limelight_color_theme` moves stored
+selections to `citrus-spark`, which declares the same two colours; it must run
+before the API that rejects the value, which is the normal migrate-then-promote
+order. The App is promoted after the API, so between the two an already-open
+bundle can still offer Limelight and receive `400` on that one write; every
+other palette, and the member's stored selection, is unaffected. The palette was
+only reachable under the `GradientColorThemes` rollout switch.
+
 ### Treat Database/API Transitions as a First-class Boundary
 
 Schema changes have two independent compatibility directions:
@@ -1506,6 +1588,17 @@ requires SSH eligibility and an explicit Direct selection. Losing SSH eligibilit
 owner clears open secret forms and cancels their pending UI work. API authorization
 and same-owner foreign keys remain authoritative; frontend visibility is not an
 access check.
+
+SSH save retries (#34503) require a client-generated resource `id` on host creation
+and standalone credential/Access creation. New resources return `201`; same-owner
+existing IDs return `204` without mutation. Host edits retain their existing
+`expectedGeneration` contract. There is no database migration or backfill, and
+Runner/guest protocols are unchanged. Deploy the API before the App. Under the
+staff-only pre-GA policy, stale Apps/APIs may reject the new/missing field or fail
+to handle `204`; refresh staff clients after deployment. Do not fall back to a
+new-ID save or automatically replay it. Deduplication only covers the existing
+resource's lifetime, not deletion or abandoned forms; see
+[SSH access](ssh-access.md#save-retries).
 
 | State                                                              | Required behavior                                                                                      |
 | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
@@ -1780,8 +1873,128 @@ disappearance decisions. This API slice alone adds no new stop-delay bound.
 Before a v4 API-inference producer can emit Sandbox demand, deploy the
 [durable consumer and its Runner/CLI readers](./pi-deferred-sandbox-consumer.md).
 Its optional Runner header is ignored by older APIs; older Runners remain
-excluded from v4 jobs. The outer Pi launch-config v2 contains a new versioned
-continuation slot, so enablement requires both the capable Runner and the
-commit-addressed co-built CLI. Drain existing v4 intents/leases and release
-receipts before rolling the API back below that floor. No switch is enabled by
-the consumer implementation.
+excluded from v4 jobs. The release endpoint and Runner use one strict explicit
+outcome contract: a missing, malformed or unknown outcome retains the receipt
+instead of fabricating a stale acknowledgement. No mixed-response bridge is
+required while the feature is non-GA: no production publisher exists and
+`piDeferredSandbox` is off, so an older API cannot produce a v4 job for a newer
+Runner. The outer Pi launch-config v2 contains a new versioned continuation slot,
+so enablement requires the capable API, Runner and commit-addressed co-built CLI.
+Drain existing v4 intents, leases and release receipts before rolling any of
+those readers back below that floor. No switch is enabled by the consumer
+implementation.
+
+## Email outbox provider replay and send-time expiry (#34645, #34695)
+
+Migration 1148 adds nullable `email_outbox.provider_idempotency_key` and
+`email_outbox.provider_request`, plus a unique index over the key. Apply it
+before promoting API code; both columns stay NULL for producer-enqueued rows and
+for every row written before the migration, so an older API keeps working and a
+rollback retains the additive columns.
+
+The first delivery attempt of a row renders its template, commits that provider
+request together with a key derived from the row's own id, and only then calls
+Resend. Later attempts replay the committed request byte-for-byte under the same
+key, so a template change, a sender/`APP_URL` change, a restart, or a provider
+acceptance whose completion write is lost resolves to the same email instead of a
+second one. Attempts never derive a new key, and an idempotency conflict
+(`invalid_idempotent_request`) fails the row visibly rather than re-keying it.
+
+Recovery and bounds:
+
+- A prepared row stays `sending` and owns a 60-second lease. After the lease, a
+  drain re-selects it and replays the same request; the abandoned attempt's
+  completion is fenced on `(status, attempts)` and cannot overwrite the newer
+  one. `sending` is now a durable state, not only an in-transaction marker.
+- A row's deadline is its persisted creation time plus the 15-minute TTL. No
+  claim, retry or lease moves it. Preparation admits a row against that deadline
+  rather than against the timestamp its batch started with, and the drain then
+  rechecks the same deadline against a fresh clock after the claim commits and
+  immediately before the provider call, because the suppression lookup, the claim
+  update and that commit all take real time. A row that reaches its deadline
+  inside that window makes no provider request: its owned attempt is failed with
+  `Email outbox item expired before contacting the provider`, under the same
+  `(id, status, attempts)` fence as any other completion, so it cannot overwrite a
+  newer claim or recreate a row that was removed meanwhile. It keeps its committed
+  request and key, because an earlier attempt may still be unresolved at the
+  provider and that pair is the only record of it. Attempt-exhausted rows are
+  failed the same way, and the existing cleanup removes both.
+- Expiry decides admission, not retraction. Once `resend.emails.send` has been
+  called the email belongs to the provider, so a request already in flight is
+  delivered whether or not the deadline passes while it is outstanding.
+- Three attempts within a 15-minute TTL stay well inside Resend's documented
+  24-hour idempotency retention. Outside that window the provider no longer
+  replays a key, so this is bounded retry safety, not unlimited exactly-once
+  delivery, and sends made before this rollout carried no key and cannot be
+  deduplicated retroactively.
+- Delivery clears the committed request and keeps only the key and provider id.
+  Undelivered rows are removed by the existing TTL cleanup, so the rendered
+  message is retained no longer than the template and recipient already on the
+  row, and no new retention or erasure obligation is created.
+
+Mixed-version limitation: an old drain worker selects only `pending` rows and
+sends without a key, so it can still duplicate a row that a new worker returned
+to `pending`. A worker predating the send-time recheck also samples expiry only
+while preparing, so it can still send a row that crossed its deadline during that
+preparation. Both protections start once every drain worker runs the new path.
+Row locking with `SKIP LOCKED` keeps the two versions from processing the same
+row at the same time, and an old worker never claims a `sending` row.
+
+Scale at the time of the change: a fully paginated masked read at 2026-09-16
+09:56:29 UTC found 1,008 retained outbox rows, all `sent` and none past one
+attempt. That is retained row inventory under the 15-minute TTL, not historical
+volume, and it does not establish that an ambiguous send never happened.
+
+## Morning Brief installed preference projection (#34693)
+
+Migration 1149 adds the empty `morning_brief_installed_preferences` table, its
+indexes, and its foreign keys to `org_members_cache(org_id, user_id)`,
+`agents(id)` and `chat_threads(id)`. It is purely additive and needs no
+backfill, `LOCK TABLE` or historical scan, so apply it before promoting API
+code. An older API neither reads nor writes the table, and a rollback leaves it
+in place holding only derived rows.
+
+`FeatureSwitchKey.SimpleMorningBrief` stays off by default. While it is off the
+Settings read and write paths behave exactly as before; turning it on makes the
+Settings writers copy the member's installed state into the projection and lets
+the Settings GET answer from that copy. Turning it back off immediately restores
+the legacy read and write path and discards nothing: every user choice still
+lives in the legacy installation and its automation.
+
+Both schema directions are therefore closed. Old code after migration never
+names the new table. New code before migration cannot reach it either: every
+statement against `morning_brief_installed_preferences` sits behind that
+default-off switch, so the release's normal migration-before-promotion ordering
+is not the only thing standing between a new API artifact and a `42P01`.
+
+Mixed-version and old-writer behavior is the reason the reader validates instead
+of trusting the row:
+
+- An old API binary changes the legacy state without refreshing the projection.
+  So does the automation poller advancing `next_run_at`, catalog reconciliation,
+  and thread deletion. A new binary therefore accepts a row only when its
+  `projection_version` matches and every copied field — selected installation,
+  automation, Agent, bound thread, enabled, cron expression, timezone and next
+  run — still equals the live canonical state. Any mismatch serves the legacy
+  answer, so a stale row can never restore an old enabled, schedule, timezone or
+  thread state.
+- The projection's own `updated_at` is not freshness evidence and is never used
+  as one.
+- The legacy mutation and the copy are not atomic: the mutation runs on the
+  outer `Db` and commits before the copy starts, even though both are inside the
+  preference advisory lock. A failed copy is reported operationally and the real
+  committed outcome is still returned; the next read falls back to legacy.
+
+The row's lifetime is an evictable cache, not durable ownership. The composite
+key to `org_members_cache` fences the current membership, user and organization
+cleanup paths, and the refresh locks and rechecks that exact parent with
+`FOR KEY SHARE` without ever recreating it. `org_members_cache` is a 60-second
+read-through role cache that a concurrent membership read can refill, and the
+Clerk erasure bridge is still unregistered, so this is a local fence rather than
+global deletion finality. Before native state becomes execution authority, that
+lifetime must be replaced with durable membership and erasure ownership.
+
+This slice transfers no execution ownership: it consumes no occurrence and adds
+no Run, Chat event, email, provider request or credit operation. See
+[the migration contract](morning-brief-migration-state.md) for the full
+invariants.

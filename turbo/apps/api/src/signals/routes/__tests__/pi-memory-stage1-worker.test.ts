@@ -1650,30 +1650,40 @@ describe("Pi memory Stage 1 worker", () => {
     expect(provider.calls).toHaveLength(2);
   });
 
-  it("retains the independent eight-call global bound across nine owners", async () => {
-    const storages = [];
-    for (let index = 0; index < 9; index += 1) {
-      const storage = createStorageFixture();
-      const piSessionId = randomUUID();
-      await storage.seed({
-        piSessionId,
-        raw: settledHistory(piSessionId, "global capacity"),
-      });
-      storages.push(storage);
+  describe("with nine independent memory owners", () => {
+    async function prepareScenario() {
+      const storages = [];
+      for (let index = 0; index < 9; index += 1) {
+        const storage = createStorageFixture();
+        const piSessionId = randomUUID();
+        await storage.seed({
+          piSessionId,
+          raw: settledHistory(piSessionId, "global capacity"),
+        });
+        storages.push(storage);
+      }
+      const provider = installProvider();
+      return { storages, provider };
     }
-    const provider = installProvider();
-    const first = await accept(
-      stage1Client(storages).extract({ headers: stage1Headers() }),
-      [200],
-    );
-    expect(first.body).toMatchObject({ claimed: 8, succeeded: 8 });
-    expect(provider.calls).toHaveLength(8);
-    const second = await accept(
-      stage1Client(storages).extract({ headers: stage1Headers() }),
-      [200],
-    );
-    expect(second.body).toMatchObject({ claimed: 1, succeeded: 1 });
-    expect(provider.calls).toHaveLength(9);
+    let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
+    beforeEach(async () => {
+      preparedScenario = await prepareScenario();
+    });
+    it("retains the independent eight-call global bound across nine owners", async () => {
+      const { storages, provider } = preparedScenario;
+      const first = await accept(
+        stage1Client(storages).extract({ headers: stage1Headers() }),
+        [200],
+      );
+      expect(first.body).toMatchObject({ claimed: 8, succeeded: 8 });
+      expect(provider.calls).toHaveLength(8);
+      const second = await accept(
+        stage1Client(storages).extract({ headers: stage1Headers() }),
+        [200],
+      );
+      expect(second.body).toMatchObject({ claimed: 1, succeeded: 1 });
+      expect(provider.calls).toHaveLength(9);
+    });
   });
 
   it("terminates invalid structured output at the named maximum attempt", async () => {

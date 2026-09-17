@@ -453,6 +453,16 @@
     }
   },
   "artifacts": {
+    "access": {
+      "backToBrand": "Voltar para {{brandName}}",
+      "description": "Ele pode ser privado ou não estar mais disponível.",
+      "help": "Peça à pessoa que compartilhou este link para verificar o acesso.",
+      "signedInAs": "Conectado como {{email}}",
+      "switchAccount": "Trocar de conta",
+      "switchAccountFailed": "Não foi possível abrir o seletor de contas. Tente novamente.",
+      "title": "Você não pode visualizar este artefato",
+      "tryAgain": "Tentar novamente"
+    },
     "actions": {
       "backToAll": "Voltar para todos os artefatos",
       "backToArtifacts": "Voltar aos artefatos",
@@ -598,9 +608,20 @@
       "videoLabel": "Visualização de vídeo de {{filename}}"
     },
     "sharing": {
-      "shareOrganization": "Compartilhar com a organização",
-      "sharePublic": "Compartilhar publicamente",
-      "unavailable": "Este artefato não está disponível ou você não tem acesso."
+      "accessLabel": "Quem pode acessar",
+      "copyLink": "Copiar link",
+      "loadFailed": "Não foi possível carregar as permissões",
+      "loadingPermissions": "Carregando permissões",
+      "onlyMe": "Somente eu",
+      "onlyMeDescription": "Somente você pode ver este artefato",
+      "organization": "Organização",
+      "organizationDescription": "Qualquer pessoa de {{organization}} com o link",
+      "permissionsUpdated": "Acesso atualizado",
+      "publicAccess": "Acesso público",
+      "publicDescription": "Qualquer pessoa com o link pode ver",
+      "retry": "Tentar novamente",
+      "savedAutomatically": "As alterações são salvas automaticamente",
+      "saving": "Salvando…"
     },
     "sidebar": {
       "openSharedConversation": "Abrir conversa compartilhada",
@@ -706,11 +727,6 @@
       "websitePreview": "Visualização do modelo de site {{title}}",
       "workflow": "Fluxo de trabalho",
       "workflowCatalog": {
-        "alert-metric-moves-slack": {
-          "description": "Monitore suas métricas-chave e avise o Slack quando uma mudar drasticamente.",
-          "shortDescription": "Avisa no Slack quando uma métrica-chave dispara.",
-          "title": "Alerta quando uma métrica muda"
-        },
         "auto-inbox-label": {
           "description": "Crie um fluxo que roda quando um marcador do Gmail é aplicado e cuida da mensagem marcada.",
           "shortDescription": "Roda um fluxo quando você aplica um marcador do Gmail.",
@@ -720,21 +736,6 @@
           "description": "Revise PRs rotulados como prontos para mesclar, aguarde o CI, depois mescle e publique no Slack.",
           "shortDescription": "Mescla os PRs prontos quando a CI passa.",
           "title": "Mesclar PRs do GitHub automaticamente"
-        },
-        "blog-posts-to-x": {
-          "description": "Transforme cada novo post do blog em variações sociais na fila do Buffer.",
-          "shortDescription": "Transforma cada novo post do blog em posts sociais.",
-          "title": "Transformar posts de blog em posts sociais"
-        },
-        "build-weekly-deck-gamma": {
-          "description": "Transforme as métricas da semana em um deck pronto para apresentação no Gamma.",
-          "shortDescription": "Transforma as métricas da semana em um deck no Gamma.",
-          "title": "Criar o deck semanal no Gamma"
-        },
-        "business-review-gamma": {
-          "description": "Transforme as métricas do mês em uma apresentação de revisão de negócios no Gamma.",
-          "shortDescription": "Transforma as métricas do mês em um deck de review.",
-          "title": "Construir a revisão de negócios no Gamma"
         },
         "catch-calendar-conflicts": {
           "description": "Verifique seu calendário em busca de reservas duplas e alerte você com antecedência.",
@@ -756,30 +757,15 @@
           "shortDescription": "Publica onde o funil de cadastro mais perde gente.",
           "title": "Verificar o funil de inscrição do PostHog"
         },
-        "clickup-slack-standup": {
-          "description": "Reúna as tarefas do ClickUp toda manhã e publique o standup do time no Slack.",
-          "shortDescription": "Publica o standup da manhã a partir do ClickUp.",
-          "title": "Standup do ClickUp no Slack"
-        },
         "compare-google-ads-last-month": {
           "description": "Compare investimento e ROAS com o mês passado e aponte as anomalias no Slack.",
           "shortDescription": "Compara investimento e ROAS com o mês passado.",
           "title": "Comparar Google Ads com o mês passado"
         },
-        "competitive-intel-monitor": {
-          "description": "Acompanhe preços e recursos nos sites dos concorrentes, registre no Notion e avise no Slack.",
-          "shortDescription": "Registra no Notion as mudanças de preço dos concorrentes.",
-          "title": "Monitor da concorrência"
-        },
-        "daily-company-brief-slack": {
-          "description": "Reúna dados de produto, crescimento e receita em um resumo diário no Slack.",
-          "shortDescription": "Junta produto, crescimento e receita em um resumo.",
-          "title": "Publicar um resumo diário da empresa no Slack"
-        },
-        "daily-industry-news-slack": {
-          "description": "Reúna as notícias relevantes do dia da indústria em um resumo no Slack.",
-          "shortDescription": "Reúne as notícias do setor para o Slack.",
-          "title": "Publicar notícias diárias da indústria no Slack"
+        "creator-shortlist-to-sheets": {
+          "description": "Avalie os creators que você está considerando por alcance e engajamento, ordenados em uma planilha.",
+          "shortDescription": "Classifica creators por alcance e engajamento.",
+          "title": "Montar uma lista de creators no Google Sheets"
         },
         "daily-standup-report": {
           "description": "Reúna todas as manhãs os sinais de produto e engenharia, monte um relatório curto e publique no Slack.",
@@ -796,11 +782,6 @@
           "shortDescription": "Reúne as novidades recentes em uma newsletter.",
           "title": "Rascunhar a newsletter no Mailchimp"
         },
-        "draft-replies-notion-faq": {
-          "description": "Redija respostas para tickets com base na sua FAQ do Notion.",
-          "shortDescription": "Escreve respostas a partir do seu FAQ no Notion.",
-          "title": "Redigir respostas da sua FAQ do Notion"
-        },
         "feedback-router": {
           "description": "Acompanhe um canal do Slack e leve o feedback de produto para o Notion com marcadores e responsáveis.",
           "shortDescription": "Leva o feedback de produto do Slack para o Notion.",
@@ -815,11 +796,6 @@
           "description": "Classifique novos erros do Sentry por impacto no usuário e registre os piores como problemas do GitHub.",
           "shortDescription": "Abre issues no GitHub para os piores erros do Sentry.",
           "title": "Registrar falhas do Sentry como problemas do GitHub"
-        },
-        "flag-figma-designs-no-task": {
-          "description": "Sinalizar designs do Figma que ainda não têm uma tarefa vinculada ao Linear.",
-          "shortDescription": "Aponta designs do Figma sem tarefa no Linear.",
-          "title": "Sinalizar designs do Figma sem uma tarefa"
         },
         "flagged-gmail-todoist-tasks": {
           "description": "Transforme os e-mails que você sinaliza em tarefas do Todoist automaticamente.",
@@ -836,11 +812,6 @@
           "shortDescription": "Reúne os pull requests mesclados em um relatório.",
           "title": "Resumo de PRs do GitHub"
         },
-        "gmail-followups-auto": {
-          "description": "Encontre contatos que não responderam e elabore o próximo follow-up.",
-          "shortDescription": "Escreve follow-ups para quem não respondeu.",
-          "title": "Enviar follow-ups do Gmail automaticamente"
-        },
         "gmail-reconnect-reminders": {
           "description": "Destaque contatos importantes com quem você não enviou e-mail há um tempo.",
           "shortDescription": "Mostra contatos com quem você não fala há tempo.",
@@ -851,25 +822,10 @@
           "shortDescription": "Destaca os e-mails que precisam de você.",
           "title": "Destacar e-mails importantes no Gmail"
         },
-        "investor-update-google-docs": {
-          "description": "Monte métricas e destaques em uma atualização para investidores no Docs.",
-          "shortDescription": "Reúne as métricas em um update para investidores.",
-          "title": "Redigir a atualização para investidores no Google Docs"
-        },
-        "log-gong-calls-hubspot": {
-          "description": "Puxe notas e próximos passos de uma chamada do Gong para o negócio no HubSpot.",
-          "shortDescription": "Leva as notas das calls do Gong para o negócio no HubSpot.",
-          "title": "Registrar chamadas do Gong no HubSpot"
-        },
-        "meeting-notes-asana-tasks": {
-          "description": "Transforme notas de reunião em tarefas atribuídas e com prazo no Asana.",
-          "shortDescription": "Transforma notas de reunião em tarefas no Asana.",
-          "title": "Transformar notas de reunião em tarefas do Asana"
-        },
-        "meeting-recaps-slack": {
-          "description": "Compartilhe um resumo com decisões e itens de ação após cada reunião.",
-          "shortDescription": "Compartilha decisões e próximos passos após reuniões.",
-          "title": "Receber resumos de reuniões no Slack"
+        "keyword-ranks-to-sheets": {
+          "description": "Veja em que posição suas páginas aparecem nas palavras-chave que importam e registre as mudanças.",
+          "shortDescription": "Registra a variação de posição toda semana.",
+          "title": "Acompanhar posições de palavras-chave no Google Sheets"
         },
         "morning-brief": {
           "description": "Transforme as novidades do Gmail, Agenda e Notion em um plano diário curto no Slack.",
@@ -881,20 +837,10 @@
           "shortDescription": "Adiciona ao HubSpot remetentes desconhecidos.",
           "title": "Adicionar novos contatos do Gmail ao HubSpot"
         },
-        "onboard-new-hires-asana": {
-          "description": "Crie a lista de verificação de tarefas de integração para cada novo contratado no Asana.",
-          "shortDescription": "Cria um checklist de integração por nova contratação.",
-          "title": "Integrar novos contratados no Asana"
-        },
         "personal-weekly-digest": {
           "description": "Resuma a atividade do GitHub, Gmail e Agenda em uma atualização semanal no Slack.",
           "shortDescription": "Resume sua semana no GitHub e no Gmail.",
           "title": "Resumo semanal pessoal"
-        },
-        "post-daily-metrics-slack": {
-          "description": "Publicar visitantes diários, inscrições e números de ativação no Slack.",
-          "shortDescription": "Publica visitantes e cadastros do dia no Slack.",
-          "title": "Publicar métricas diárias no Slack"
         },
         "post-release-notes-slack": {
           "description": "Rascunhe um changelog do trabalho recentemente enviado e publique no Slack.",
@@ -906,35 +852,10 @@
           "shortDescription": "Envia um resumo antes das reuniões externas.",
           "title": "Preparar reuniões do Google Calendar"
         },
-        "publish-scheduled-posts-buffer": {
-          "description": "Publique o conteúdo agendado do dia e coloque os posts sociais na fila.",
-          "shortDescription": "Publica os posts sociais agendados para hoje.",
-          "title": "Publicar posts agendados no Buffer"
-        },
         "research-calendar-meetings": {
           "description": "Pesquise as pessoas que você vai encontrar antes de cada evento no calendário.",
           "shortDescription": "Pesquisa quem você vai encontrar antes de cada evento.",
           "title": "Pesquise suas reuniões no calendário"
-        },
-        "research-new-signups-apollo": {
-          "description": "Pesquise cada nova inscrição e publique um rápido resumo.",
-          "shortDescription": "Pesquisa cada novo cadastro e publica um panorama.",
-          "title": "Pesquisar novas inscrições"
-        },
-        "revenuecat-subscription-digest": {
-          "description": "Acompanhe as assinaturas em uma planilha e avise no Slack quando o churn ou os cancelamentos mudarem.",
-          "shortDescription": "Acompanha assinaturas e avisa no Slack sobre churn.",
-          "title": "Resumo de assinaturas do RevenueCat"
-        },
-        "run-daily-query-sheets": {
-          "description": "Execute sua SQL salva em um cronograma e anexe os resultados a uma planilha.",
-          "shortDescription": "Roda um SQL salvo e adiciona o resultado à planilha.",
-          "title": "Executar uma consulta diária no Google Sheets"
-        },
-        "salesforce-pipeline-digest": {
-          "description": "Resuma toda semana no Slack as mudanças nas oportunidades do Salesforce e os riscos de data de fechamento.",
-          "shortDescription": "Resume toda semana os riscos do pipeline.",
-          "title": "Resumo do pipeline do Salesforce"
         },
         "send-bugs-github-slack": {
           "description": "Registre relatórios marcados como bugs como problemas no GitHub e avise a equipe no Slack.",
@@ -946,25 +867,20 @@
           "shortDescription": "Envia diariamente os problemas críticos do Sentry.",
           "title": "Resumo de problemas do Sentry"
         },
+        "social-posts-to-sheets": {
+          "description": "Reúna os posts públicos e o engajamento das contas que você acompanha em uma planilha.",
+          "shortDescription": "Reúne posts públicos em uma única planilha.",
+          "title": "Reunir posts de redes sociais no Google Sheets"
+        },
         "sort-gmail-draft-replies": {
           "description": "Classifique sua caixa de entrada e rascunhe respostas para os e-mails que precisam delas.",
           "shortDescription": "Organiza a caixa de entrada e rascunha as respostas.",
           "title": "Classificar Gmail e rascunhar respostas"
         },
-        "spot-churn-risk-stripe-zendesk": {
-          "description": "Marque contas em risco de churn e redija um e-mail de recuperação.",
-          "shortDescription": "Aponta risco de churn e escreve um e-mail.",
-          "title": "Identificar risco de churn no Stripe e Zendesk"
-        },
         "summarize-gmail-newsletters": {
           "description": "Resuma as newsletters na sua caixa de entrada em um breve resumo.",
           "shortDescription": "Condensa suas newsletters em um só resumo.",
           "title": "Resumir newsletters do Gmail"
-        },
-        "summarize-zendesk-tickets-daily": {
-          "description": "Resuma o último dia de tickets do Zendesk e publique no Slack.",
-          "shortDescription": "Publica um resumo diário dos tickets do Zendesk.",
-          "title": "Resumir tickets do Zendesk diariamente"
         },
         "support-ticket-router": {
           "description": "Classifique os e-mails de suporte, crie registros no Notion e avise no Slack sobre tickets críticos.",
@@ -986,30 +902,20 @@
           "shortDescription": "Mostra as maiores mudanças de uso da semana.",
           "title": "Rastrear uso de recursos com PostHog"
         },
-        "track-keyword-ranks-ahrefs": {
-          "description": "Acompanhe as posições das palavras-chave no Ahrefs e registre as maiores variações no Notion.",
-          "shortDescription": "Relata as variações de posição da semana.",
-          "title": "Rastrear posições de palavras-chave com Ahrefs"
-        },
-        "track-signup-sources-sheets": {
-          "description": "Atribua cada nova inscrição à sua fonte em uma planilha de rastreamento.",
-          "shortDescription": "Atribui cada cadastro à sua origem na planilha.",
-          "title": "Rastrear fontes de inscrição no Google Sheets"
-        },
         "vercel-deploy-digest": {
           "description": "Acompanhe os deploys da Vercel, ligue-os aos commits do GitHub e avise no Slack quando falharem.",
           "shortDescription": "Avisa no Slack quando um deploy da Vercel falha.",
           "title": "Resumo de deploys da Vercel"
         },
+        "web-data-to-sheets": {
+          "description": "Extraia os mesmos campos de uma lista de páginas com frequência e mantenha o histórico em uma planilha.",
+          "shortDescription": "Extrai campos de uma lista de páginas para a planilha.",
+          "title": "Reunir dados de páginas da web em uma planilha"
+        },
         "x-brand-monitor": {
           "description": "Acompanhe menções à marca no X, salve os posts relevantes no Notion e avise no Slack sobre os mais fortes.",
           "shortDescription": "Avisa no Slack sobre menções fortes à marca no X.",
           "title": "Monitor de marca no X"
-        },
-        "zendesk-knowledge-base": {
-          "description": "Encontre as perguntas recorrentes no Zendesk, escreva entradas de FAQ e salve no Notion.",
-          "shortDescription": "Transforma perguntas recorrentes em itens de FAQ.",
-          "title": "Base de conhecimento do Zendesk"
         }
       },
       "workflowCategories": {
@@ -1028,8 +934,7 @@
     "toasts": {
       "copyLinkFailed": "Falha ao copiar o link",
       "downloadFailed": "Falha no download",
-      "linkCopied": "Link copiado",
-      "sharing": "Compartilhando…"
+      "linkCopied": "Link copiado"
     },
     "viewer": {
       "continuePrompt": "Ajude-me a trabalhar com este artefato: {{url}}",
@@ -1540,19 +1445,22 @@
     "agentPage": {
       "getStarted": {
         "checkin": {
-          "description": "Abra o app diariamente. Reinicia às 00:00 UTC.",
+          "action": "Fazer check-in",
+          "description": "Faça check-in uma vez por dia. Reinicia às 00:00 UTC.",
           "name": "Entrar todo dia",
           "unit": "por dia"
         },
         "connector": {
-          "description": "Conecte com OAuth. Uma recompensa por conector.",
+          "action": "Conectar",
+          "description": "Gmail, Notion e mais de 100",
           "name": "Conectar um conector",
           "unit": "por conector"
         },
         "inReview": "Em análise",
         "inReviewDescription": "Enviado, aguardando análise",
         "invite": {
-          "description": "Ganhe quando um convite for aceito, até 15 membros.",
+          "action": "Convidar",
+          "description": "Cada pessoa que você adiciona conta",
           "name": "Convide seu time",
           "unit": "por membro"
         },
@@ -1563,6 +1471,7 @@
         "reward": "+{{amount}}",
         "rewardedConnections": "Conectores recompensados: {{amount}}",
         "share": {
+          "action": "Compartilhar",
           "description": "Publique e cole o link aqui",
           "name": "Compartilhe o {{assistantName}} no X"
         },
@@ -1575,14 +1484,16 @@
           "title": "Compartilhe o {{assistantName}} no X"
         },
         "slack": {
-          "description": "Ganhe 2.000 créditos da organização, uma vez por organização e workspace.",
+          "action": "Adicionar",
+          "description": "Onde seu time já trabalha",
           "name": "Adicionar o {{assistantName}} ao Slack"
         },
         "stepCount": "{{completed}}/{{total}}",
         "subtitle": "Experimente uma tarefa e ganhe créditos.",
         "title": "Primeiros passos",
         "workflow": {
-          "description": "Execute com sucesso um workflow que você criou.",
+          "action": "Criar",
+          "description": "Transforme uma tarefa repetida em uma habilidade reutilizável",
           "name": "Criar um workflow"
         }
       },
@@ -1947,6 +1858,8 @@
       "providerIncompatibleAction": "Iniciar uma nova sessão",
       "providerIncompatiblePrefix": "Esta sessão foi iniciada com um provedor de modelo diferente e não pode continuar com o atual.",
       "recovery": {
+        "autonomyLimitDescription": "O limite de execuções automáticas consecutivas foi atingido. Confirme para continuar.",
+        "autonomyLimitTitle": "Limite de execuções automáticas atingido",
         "capacityDescription": "Tente novamente em instantes ou troque de modelo.",
         "capacityTitle": "Este modelo está ocupado no momento",
         "claudeCode": "Claude Code",
@@ -2086,7 +1999,7 @@
     },
     "newChat": "Nova conversa",
     "origins": {
-      "agentphone": "AgentPhone",
+      "agentphone": "iMessage",
       "feishu": "Feishu",
       "github": "GitHub",
       "lark": "Lark",
@@ -2999,27 +2912,6 @@
     "toasts": {
       "copied": "Copiado",
       "deleted": "Conversa excluída"
-    },
-    "translation": {
-      "action": "Traduzir",
-      "close": "Fechar tradução",
-      "copy": "Copiar tradução",
-      "languages": {
-        "de": "Deutsch",
-        "en": "English",
-        "es": "Español",
-        "fr": "Français",
-        "hi": "हिन्दी",
-        "id": "Bahasa Indonesia",
-        "it": "Italiano",
-        "ja": "日本語",
-        "ko": "한국어",
-        "ptBR": "Português",
-        "zhCN": "简体中文",
-        "zhTW": "繁體中文"
-      },
-      "result": "Tradução",
-      "targetLanguage": "Idioma da tradução"
     },
     "voice": {
       "checkingLimit": "Verificando limite da entrada de voz",
@@ -5951,8 +5843,8 @@
             "cottonSky": "Cotton sky",
             "daydream": "Daydream",
             "deepLagoon": "Deep lagoon",
-            "goldenHour": "Golden hour",
-            "limelight": "Limelight"
+            "default": "Padrão",
+            "goldenHour": "Golden hour"
           },
           "title": "Tema de cores"
         },
@@ -6456,12 +6348,49 @@
     "resetHelp": "Redefina somente após verificar de forma independente a nova identidade do servidor. A próxima conexão confiará em uma nova chave de host e a armazenará.",
     "retry": "Tentar novamente",
     "save": "Salvar",
+    "saveRecovery": {
+      "resourceIdConflict": "Este ID de recurso não pode ser usado. Feche e reabra o formulário para tentar novamente.",
+      "uncertain": "Não foi possível confirmar se as alterações foram salvas. Tente salvar o mesmo conteúdo novamente ou feche e confira a lista antes de adicioná-las de novo."
+    },
     "summary_one": "{{count}} host configurado",
     "summary_many": "{{count}} hosts configurados",
     "summary_other": "{{count}} hosts configurados",
     "title": "Hosts SSH",
     "unavailable": "O acesso SSH não está disponível para esta conta.",
     "username": "Nome de usuário SSH"
+  },
+  "templates": {
+    "actions": {
+      "delete": "Excluir",
+      "menu": "Ações para {{title}}",
+      "preview": "Visualizar {{title}}",
+      "rename": "Renomear modelo"
+    },
+    "custom": "Personalizados",
+    "detail": {
+      "back": "Modelos personalizados",
+      "page": "Página {{number}}",
+      "source_one": "{{count}} página · de {{filename}}",
+      "source_many": "{{count}} páginas · de {{filename}}",
+      "source_other": "{{count}} páginas · de {{filename}}"
+    },
+    "empty": {
+      "description": "Os modelos criados a partir de um arquivo que você enviar aparecerão aqui.",
+      "title": "Ainda não há modelos"
+    },
+    "loadFailed": "Não foi possível carregar os modelos.",
+    "pageCount_one": "{{count}} página",
+    "pageCount_many": "{{count}} páginas",
+    "pageCount_other": "{{count}} páginas",
+    "retry": "Tentar novamente",
+    "sharedBy": "Compartilhado por {{owner}}",
+    "visibility": {
+      "change": "Alterar",
+      "organization": "Organização",
+      "organizationState": "Qualquer pessoa nesta organização pode usá-lo",
+      "private": "Privado",
+      "privateState": "Somente você pode vê-lo e usá-lo"
+    }
   },
   "usage": {
     "displayNames": {

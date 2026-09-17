@@ -22,6 +22,7 @@ import type { ClerkClient } from "../external/clerk";
 import { writeDb$, type Db } from "../external/db";
 import type { Tx } from "../../lib/db-types";
 import { renderOfficialAutomationResultEmail } from "./official-automation-result-email-renderer";
+import { renderCreditLowBalanceEmail } from "./credit-low-balance-email-renderer";
 
 type Transaction = Tx;
 
@@ -39,6 +40,13 @@ const MAX_ATTEMPTS = 3;
 const BACKOFF_BASE_MS = 1000;
 const MAX_OUTBOX_BATCH_SIZE = 120;
 const OUTBOX_DRAIN_DELAY_MS = 500;
+// Namespaced so the provider key cannot collide with another Okou producer's
+// idempotency key. Resend accepts 1-256 characters.
+const PROVIDER_IDEMPOTENCY_KEY_PREFIX = "okou-email-outbox/v1/";
+// A prepared item is owned until this lease expires. A worker that dies between
+// the provider request and its completion write leaves the row in `sending`;
+// after the lease, another drain replays the same committed request.
+const OUTBOX_SEND_LEASE_MS = 60_000;
 // Email is single-branded even while the rest of the product retains the
 // dual PublicBrand compatibility contract.
 export const EMAIL_PUBLIC_BRAND = "okou" satisfies PublicBrand;
@@ -57,6 +65,13 @@ function outboxDrainDelayMs(): number {
     : OUTBOX_DRAIN_DELAY_MS;
 }
 const OUTBOX_TTL_MS = 15 * 60 * 1000;
+// Preparation admits a row against its deadline; the provider boundary rechecks
+// the same deadline. The two outcomes are distinct because only the second one
+// can follow a committed request and key.
+const OUTBOX_EXPIRED_BEFORE_DELIVERY_ERROR =
+  "Email outbox item expired before delivery";
+const OUTBOX_EXPIRED_BEFORE_PROVIDER_ERROR =
+  "Email outbox item expired before contacting the provider";
 export const CREDIT_LOW_BALANCE_EMAIL_SUBJECT =
   "Your credit balance is running low";
 export const OFFICIAL_AUTOMATION_RESULT_EMAIL_SUBJECT_MAX_CHARACTERS = 180;
@@ -132,8 +147,28 @@ const outboxRowSchema = z.object({
   headers: z.record(z.string(), z.string()).nullable(),
   template: emailTemplateSchema,
   attempts: z.int(),
+  created_at: z.date(),
+  provider_idempotency_key: z.string().nullable(),
+  provider_request: z.unknown(),
 });
 type OutboxRow = z.output<typeof outboxRowSchema>;
+
+// The exact provider request replayed by every attempt of one outbox row. It is
+// stored verbatim, so an added optional field must stay optional here for rows
+// committed by an older deployment.
+const providerRequestSchema = z
+  .object({
+    from: z.string(),
+    to: emailAddressesSchema,
+    cc: emailAddressesSchema.optional(),
+    subject: z.string(),
+    replyTo: z.string().optional(),
+    headers: z.record(z.string(), z.string()).optional(),
+    html: z.string(),
+    text: z.string().optional(),
+  })
+  .strict();
+type ProviderRequest = z.output<typeof providerRequestSchema>;
 
 function outboxRowSelection() {
   return {
@@ -145,6 +180,9 @@ function outboxRowSelection() {
     headers: emailOutbox.headers,
     template: emailOutbox.template,
     attempts: emailOutbox.attempts,
+    created_at: emailOutbox.createdAt,
+    provider_idempotency_key: emailOutbox.providerIdempotencyKey,
+    provider_request: emailOutbox.providerRequest,
   };
 }
 
@@ -295,26 +333,11 @@ function renderTemplate(
       };
     }
     case "credit-low-balance": {
-      const remainingCredits =
-        template.props.remainingCredits.toLocaleString("en-US");
-      const thresholdCredits =
-        template.props.thresholdCredits.toLocaleString("en-US");
-      const unsubscribe = template.props.unsubscribeUrl
-        ? `<p><a href="${escapeHtml(
-            template.props.unsubscribeUrl,
-          )}">Unsubscribe</a></p>`
-        : "";
-      return {
-        html: `<main><h1>${CREDIT_LOW_BALANCE_EMAIL_SUBJECT}</h1><p>${escapeHtml(
-          template.props.orgName,
-        )} has ${escapeHtml(
-          remainingCredits,
-        )} credits remaining.</p><p>This alert is sent when an org reaches ${escapeHtml(
-          thresholdCredits,
-        )} credits or less.</p><p><a href="${escapeHtml(
-          template.props.billingUrl,
-        )}">Manage billing</a></p>${unsubscribe}</main>`,
-      };
+      return renderCreditLowBalanceEmail({
+        ...template.props,
+        title: CREDIT_LOW_BALANCE_EMAIL_SUBJECT,
+        websiteUrl: webUrl(),
+      });
     }
     case "official-automation-result": {
       const rendered = renderOfficialAutomationResultEmail(
@@ -347,38 +370,75 @@ function fromAddressForTemplate(template: EmailTemplate): string {
   }
 }
 
-async function sendEmailDirect(options: {
-  readonly to: string | readonly string[];
-  readonly subject: string;
-  readonly template: EmailTemplate;
-  readonly cc?: string | readonly string[];
-  readonly replyTo?: string;
-  readonly headers?: Record<string, string>;
-}): Promise<
-  | { readonly ok: true; readonly resendId: string }
-  | { readonly ok: false; readonly error: string }
-> {
+function providerIdempotencyKey(outboxId: string): string {
+  return `${PROVIDER_IDEMPOTENCY_KEY_PREFIX}${outboxId}`;
+}
+
+function buildProviderRequest(row: OutboxRow): ProviderRequest {
+  const headers = row.headers ?? undefined;
+  const rendered = renderTemplate(row.template, headers);
+  return {
+    from: fromAddressForTemplate(row.template),
+    to: row.to_addresses,
+    ...(row.cc_addresses === null ? {} : { cc: row.cc_addresses }),
+    subject: row.subject,
+    ...(row.reply_to === null ? {} : { replyTo: row.reply_to }),
+    ...(headers === undefined ? {} : { headers }),
+    html: rendered.html,
+    ...(rendered.text === undefined ? {} : { text: rendered.text }),
+  };
+}
+
+type ProviderSendOutcome =
+  // The provider owns exactly one email for this key, either from this request
+  // or replayed from the accepted original.
+  | { readonly kind: "sent"; readonly resendId: string }
+  // Transient, and safe to replay under the same key.
+  | { readonly kind: "retry"; readonly error: string }
+  // The key is already bound to a different payload. Re-keying would send a
+  // second email for the same row, so stop here and keep the failure visible.
+  | { readonly kind: "conflict"; readonly error: string };
+
+type OutboxAttemptOutcome =
+  | ProviderSendOutcome
+  // The row reached its own deadline while this attempt was preparing, so the
+  // attempt resolved locally and never reached the provider.
+  | { readonly kind: "expired" };
+
+async function sendProviderRequest(
+  request: ProviderRequest,
+  idempotencyKey: string,
+): Promise<ProviderSendOutcome> {
   const resend = getResendClient();
-  const rendered = renderTemplate(options.template, options.headers);
-  const { data, error } = await resend.emails.send({
-    from: fromAddressForTemplate(options.template),
-    to: typeof options.to === "string" ? options.to : [...options.to],
-    subject: options.subject,
-    ...rendered,
-    cc:
-      options.cc === undefined
-        ? undefined
-        : typeof options.cc === "string"
-          ? options.cc
-          : [...options.cc],
-    replyTo: options.replyTo,
-    headers: options.headers,
-  });
+  const { data, error } = await resend.emails.send(
+    {
+      from: request.from,
+      to: typeof request.to === "string" ? request.to : [...request.to],
+      subject: request.subject,
+      html: request.html,
+      ...(request.text === undefined ? {} : { text: request.text }),
+      ...(request.cc === undefined
+        ? {}
+        : {
+            cc: typeof request.cc === "string" ? request.cc : [...request.cc],
+          }),
+      ...(request.replyTo === undefined ? {} : { replyTo: request.replyTo }),
+      ...(request.headers === undefined ? {} : { headers: request.headers }),
+    },
+    { idempotencyKey },
+  );
 
   if (error || !data) {
-    return { ok: false, error: error?.message ?? "unknown" };
+    const message = error?.message ?? "unknown";
+    if (
+      error?.name === "invalid_idempotent_request" ||
+      error?.name === "invalid_idempotency_key"
+    ) {
+      return { kind: "conflict", error: `${error.name}: ${message}` };
+    }
+    return { kind: "retry", error: message };
   }
-  return { ok: true, resendId: data.id };
+  return { kind: "sent", resendId: data.id };
 }
 
 async function findSuppressedAddress(
@@ -410,75 +470,46 @@ async function findSuppressedAddress(
   );
 }
 
-async function processOutboxItem(
-  tx: Transaction,
-  row: OutboxRow,
-  currentTimeMs: number = now(),
-): Promise<true> {
-  const itemId = row.id;
-  const attempts = row.attempts + 1;
-  await tx
-    .update(emailOutbox)
-    .set({ status: "sending", attempts })
-    .where(eq(emailOutbox.id, itemId));
-
-  const toAddresses =
-    typeof row.to_addresses === "string"
-      ? [row.to_addresses]
-      : row.to_addresses;
-  const suppressedAddress = await findSuppressedAddress(tx, toAddresses);
-  if (suppressedAddress) {
-    await tx
-      .update(emailOutbox)
-      .set({
-        status: "failed",
-        lastError: `Recipient address suppressed (${suppressedAddress})`,
-      })
-      .where(eq(emailOutbox.id, itemId));
-    return true;
-  }
-
-  const result = await sendEmailDirect({
-    to: row.to_addresses,
-    subject: row.subject,
-    template: row.template,
-    cc: row.cc_addresses ?? undefined,
-    replyTo: row.reply_to ?? undefined,
-    headers: row.headers ?? undefined,
-  });
-
-  if (!result.ok) {
-    if (attempts < MAX_ATTEMPTS) {
-      const backoffMs = BACKOFF_BASE_MS * 4 ** (attempts - 1);
-      await tx
-        .update(emailOutbox)
-        .set({
-          status: "pending",
-          lastError: result.error,
-          nextRetryAt: new Date(currentTimeMs + backoffMs),
-        })
-        .where(eq(emailOutbox.id, itemId));
-    } else {
-      await tx
-        .update(emailOutbox)
-        .set({ status: "failed", lastError: result.error })
-        .where(eq(emailOutbox.id, itemId));
-    }
-    return true;
-  }
-
-  await tx
-    .update(emailOutbox)
-    .set({ status: "sent", resendId: result.resendId })
-    .where(eq(emailOutbox.id, itemId));
-  return true;
+interface PreparedOutboxItem {
+  readonly id: string;
+  readonly attempts: number;
+  readonly idempotencyKey: string;
+  readonly request: ProviderRequest;
+  // The row's own deadline, carried from its persisted creation time so the
+  // send boundary rechecks the original lifetime instead of this claim's.
+  readonly expiresAtMs: number;
+  readonly preparedAtMs: number;
 }
 
-async function drainNextOutboxItem(
+type PrepareOutcome =
+  | { readonly kind: "empty" }
+  // Resolved without contacting the provider: expired, out of attempts, or
+  // suppressed.
+  | { readonly kind: "resolved" }
+  | { readonly kind: "prepared"; readonly item: PreparedOutboxItem };
+
+async function resolveWithoutSending(
+  tx: Transaction,
+  itemId: string,
+  lastError: string,
+): Promise<PrepareOutcome> {
+  await tx
+    .update(emailOutbox)
+    .set({ status: "failed", lastError })
+    .where(eq(emailOutbox.id, itemId));
+  return { kind: "resolved" };
+}
+
+/**
+ * Claims one due item and commits the provider request and key it will be sent
+ * under. The transaction ends before any network call, so the payload and key a
+ * retry replays are already durable when the provider first sees them.
+ */
+async function prepareNextOutboxItem(
   db: Db,
   currentTimeMs: number,
   itemIds?: readonly string[],
-): Promise<boolean> {
+): Promise<PrepareOutcome> {
   return await db.transaction(async (tx) => {
     const currentTime = new Date(currentTimeMs);
     const [selectedRow] = await tx
@@ -489,7 +520,9 @@ async function drainNextOutboxItem(
           itemIds === undefined
             ? undefined
             : inArray(emailOutbox.id, [...itemIds]),
-          eq(emailOutbox.status, "pending"),
+          // `sending` items belong to an in-flight attempt until their lease
+          // expires; recovering them replays the committed request.
+          inArray(emailOutbox.status, ["pending", "sending"]),
           or(
             isNull(emailOutbox.nextRetryAt),
             // Keep the Date schema-bound so Drizzle encodes its UTC wall-clock
@@ -501,9 +534,180 @@ async function drainNextOutboxItem(
       .orderBy(asc(emailOutbox.createdAt))
       .limit(1)
       .for("update", { skipLocked: true });
-    const row = selectedRow ? outboxRowSchema.parse(selectedRow) : undefined;
-    return row ? await processOutboxItem(tx, row, currentTimeMs) : false;
+    if (!selectedRow) {
+      return { kind: "empty" };
+    }
+    const row = outboxRowSchema.parse(selectedRow);
+    const itemId = row.id;
+    const attempts = row.attempts + 1;
+    const committedRequest: unknown = row.provider_request;
+    const hasCommittedRequest =
+      committedRequest !== null && committedRequest !== undefined;
+    // Admit against the real clock reached here, not the timestamp the batch
+    // started with: a paced batch can outlive its own items. The provider
+    // boundary rechecks the same deadline once this claim has committed.
+    const preparedAtMs = now();
+    // Derived once from the persisted creation time. Neither this claim nor a
+    // later retry may extend it.
+    const expiresAtMs = row.created_at.getTime() + OUTBOX_TTL_MS;
+
+    if (expiresAtMs <= preparedAtMs) {
+      return await resolveWithoutSending(
+        tx,
+        itemId,
+        OUTBOX_EXPIRED_BEFORE_DELIVERY_ERROR,
+      );
+    }
+    if (attempts > MAX_ATTEMPTS) {
+      return await resolveWithoutSending(
+        tx,
+        itemId,
+        hasCommittedRequest
+          ? "Email outbox item exhausted its delivery attempts with an unresolved provider send"
+          : "Email outbox item exhausted its delivery attempts",
+      );
+    }
+
+    const toAddresses =
+      typeof row.to_addresses === "string"
+        ? [row.to_addresses]
+        : row.to_addresses;
+    const suppressedAddress = await findSuppressedAddress(tx, toAddresses);
+    if (suppressedAddress) {
+      return await resolveWithoutSending(
+        tx,
+        itemId,
+        `Recipient address suppressed (${suppressedAddress})`,
+      );
+    }
+
+    // Render only for a row whose request is not committed yet. Once it is,
+    // the provider may already hold this key, so the committed request is the
+    // only payload that can be sent under it.
+    const request: ProviderRequest = hasCommittedRequest
+      ? providerRequestSchema.parse(committedRequest)
+      : buildProviderRequest(row);
+    // The committed key stays authoritative for the row it was written for,
+    // even if the derivation below ever changes.
+    const idempotencyKey =
+      row.provider_idempotency_key ?? providerIdempotencyKey(itemId);
+
+    await tx
+      .update(emailOutbox)
+      .set({
+        status: "sending",
+        attempts,
+        providerRequest: request,
+        providerIdempotencyKey: idempotencyKey,
+        nextRetryAt: new Date(preparedAtMs + OUTBOX_SEND_LEASE_MS),
+      })
+      .where(eq(emailOutbox.id, itemId));
+
+    return {
+      kind: "prepared",
+      item: {
+        id: itemId,
+        attempts,
+        idempotencyKey,
+        request,
+        expiresAtMs,
+        preparedAtMs,
+      },
+    };
   });
+}
+
+async function completeOutboxItem(
+  db: Db,
+  item: PreparedOutboxItem,
+  outcome: OutboxAttemptOutcome,
+): Promise<void> {
+  const completion =
+    outcome.kind === "sent"
+      ? {
+          status: "sent" as const,
+          resendId: outcome.resendId,
+          lastError: null,
+          nextRetryAt: null,
+          // A delivered row is retained past the outbox TTL, so drop the
+          // rendered message once nothing can replay it. The key stays for
+          // reconciliation against the provider.
+          providerRequest: null,
+        }
+      : outcome.kind === "expired"
+        ? {
+            // This attempt sent nothing, so the committed request and key stay
+            // on the row: an earlier attempt may still be unresolved at the
+            // provider, and that ambiguity is the only evidence of it.
+            status: "failed" as const,
+            lastError: OUTBOX_EXPIRED_BEFORE_PROVIDER_ERROR,
+            nextRetryAt: null,
+          }
+        : outcome.kind === "retry" && item.attempts < MAX_ATTEMPTS
+          ? {
+              status: "pending" as const,
+              lastError: outcome.error,
+              nextRetryAt: new Date(
+                item.preparedAtMs + BACKOFF_BASE_MS * 4 ** (item.attempts - 1),
+              ),
+            }
+          : {
+              status: "failed" as const,
+              lastError: outcome.error,
+              nextRetryAt: null,
+            };
+
+  const [completed] = await db
+    .update(emailOutbox)
+    .set(completion)
+    .where(
+      and(
+        eq(emailOutbox.id, item.id),
+        // A lost completion is recovered by a later attempt. Never overwrite
+        // whatever that attempt has already decided.
+        eq(emailOutbox.status, "sending"),
+        eq(emailOutbox.attempts, item.attempts),
+      ),
+    )
+    .returning({ id: emailOutbox.id });
+
+  if (!completed) {
+    log.warn("Email outbox completion lost its claim", {
+      itemId: item.id,
+      attempts: item.attempts,
+      outcome: outcome.kind,
+    });
+  }
+}
+
+async function drainNextOutboxItem(
+  db: Db,
+  currentTimeMs: number,
+  itemIds?: readonly string[],
+): Promise<boolean> {
+  const prepared = await prepareNextOutboxItem(db, currentTimeMs, itemIds);
+  if (prepared.kind === "empty") {
+    return false;
+  }
+  if (prepared.kind === "resolved") {
+    return true;
+  }
+
+  // Preparation admitted this row, then spent real time on the suppression
+  // lookup, the claim update and its commit. This is the last point at which no
+  // email exists yet, so the original deadline is rechecked against a fresh
+  // clock here rather than trusting the sample preparation started with.
+  if (now() >= prepared.item.expiresAtMs) {
+    await completeOutboxItem(db, prepared.item, { kind: "expired" });
+    return true;
+  }
+
+  const outcome = await sendProviderRequest(
+    prepared.item.request,
+    prepared.item.idempotencyKey,
+  );
+  await completeOutboxItem(db, prepared.item, outcome);
+  return true;
 }
 
 async function drainEmailOutboxBatch(

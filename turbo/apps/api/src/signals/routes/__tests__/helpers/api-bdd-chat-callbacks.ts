@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import { HttpResponse, http } from "msw";
 import { pushSubscriptionsContract } from "@okouai/api-contracts/contracts/push-subscriptions";
@@ -15,6 +15,7 @@ import { pushSubscriptionsRoutes } from "../../push-subscriptions";
 import { sessionHistoryBlobBodyForKey } from "./api-bdd-session-history";
 import type { ApiTestUser } from "./api-bdd";
 import { createRouteMocks } from "./route-test";
+import { installArtifactReferenceStorage } from "./artifact-reference-storage";
 import { openRouterModelContractError } from "./openrouter-model-contract";
 import type { AgentEvent } from "../../../../lib/event-consumer/verify";
 
@@ -148,6 +149,9 @@ function storedS3ObjectResponse(
   const body =
     object?.body ?? (object ? new Uint8Array(object.size) : undefined);
   return {
+    ETag: body
+      ? `"${createHash("md5").update(body).digest("hex")}"`
+      : undefined,
     ContentLength: object?.size,
     ContentType: object?.contentType,
     LastModified: object ? nowDate() : undefined,
@@ -468,6 +472,7 @@ export function createChatCallbacksApi(context: TestContext) {
         }
         return Promise.resolve({});
       });
+      installArtifactReferenceStorage(context);
       return {
         addObject(object: StoredS3Object): void {
           objects.push(object);

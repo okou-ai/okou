@@ -477,6 +477,41 @@
       "when": 1789540183977,
       "tag": "1145_pi_durable_sandbox_objects",
       "breakpoints": true
+    },
+    {
+      "idx": 1146,
+      "version": "7",
+      "when": 1789545996691,
+      "tag": "1146_user_templates",
+      "breakpoints": true
+    },
+    {
+      "idx": 1147,
+      "version": "7",
+      "when": 1789551061445,
+      "tag": "1147_retire_limelight_color_theme",
+      "breakpoints": true
+    },
+    {
+      "idx": 1148,
+      "version": "7",
+      "when": 1789556208626,
+      "tag": "1148_email_outbox_provider_replay",
+      "breakpoints": true
+    },
+    {
+      "idx": 1149,
+      "version": "7",
+      "when": 1789561628531,
+      "tag": "1149_morning_brief_installed_preferences",
+      "breakpoints": true
+    },
+    {
+      "idx": 1150,
+      "version": "7",
+      "when": 1789614304243,
+      "tag": "1150_x_resource_reads",
+      "breakpoints": true
     }
   ]
 }

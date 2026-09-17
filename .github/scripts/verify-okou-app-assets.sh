@@ -24,7 +24,7 @@ declare -a vendor_files=()
 declare -a runtime_files=()
 declare -a worker_files=()
 declare -a clerk_ui_files=()
-find "$OKOU_APP_ASSETS_DIRECTORY" -type f -name '*.js' -print0 > "$layout_files"
+find "$OKOU_APP_ASSETS_DIRECTORY" -type f -name '*.js' -print0 | sort -z > "$layout_files"
 while IFS= read -r -d '' source_path; do
   relative_path="${source_path#"$OKOU_APP_ASSETS_DIRECTORY"/}"
   case "$relative_path" in
@@ -38,12 +38,12 @@ done < "$layout_files"
 
 if ((
   ${#app_files[@]} != 1 ||
-  ${#vendor_files[@]} != 1 ||
+  ${#vendor_files[@]} != 5 ||
   ${#runtime_files[@]} != 1 ||
   ${#worker_files[@]} != 1 ||
   ${#clerk_ui_files[@]} != 1
 )); then
-  echo "Expected exactly one app, vendor, Rolldown runtime, SharedWorker, and optional Clerk UI JavaScript asset" >&2
+  echo "Expected exactly five numbered vendor assets plus one app, Rolldown runtime, SharedWorker, and optional Clerk UI JavaScript asset" >&2
   printf 'app=%s vendor=%s runtime=%s worker=%s clerk-ui=%s\n' \
     "${app_files[*]:-none}" \
     "${vendor_files[*]:-none}" \
@@ -53,9 +53,22 @@ if ((
   exit 1
 fi
 
+for group in 1 2 3 4 5; do
+  matches=0
+  for vendor_file in "${vendor_files[@]}"; do
+    if [[ "$vendor_file" == vendor-"${group}"-*.js ]]; then
+      matches=$((matches + 1))
+    fi
+  done
+  if (( matches != 1 )); then
+    echo "Expected exactly one vendor-${group} JavaScript asset, found ${matches}" >&2
+    exit 1
+  fi
+done
+
 printf 'App bundle layout: app=%s vendor=%s runtime=%s worker=%s clerk-ui=%s\n' \
   "${app_files[0]}" \
-  "${vendor_files[0]}" \
+  "${vendor_files[*]}" \
   "${runtime_files[0]}" \
   "${worker_files[0]}" \
   "${clerk_ui_files[0]}"

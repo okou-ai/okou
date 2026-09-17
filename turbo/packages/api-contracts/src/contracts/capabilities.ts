@@ -40,11 +40,14 @@ export const CAPABILITIES = [
   "browser:write",
   "file:read",
   "file:write",
+  "artifact:read",
+  "artifact:write",
   "host:read",
   "host:write",
   "ssh:read",
   "ssh:write",
   "presentation-template:write",
+  "user-template:write",
 ] as const;
 
 /** Inferred union type of all Okou run capabilities. */
@@ -184,6 +187,8 @@ export const CAPABILITY_META: Record<Capability, CapabilityMeta> = {
   },
   "file:read": { group: "Files", label: "Download uploaded files" },
   "file:write": { group: "Files", label: "Upload files" },
+  "artifact:read": { group: "Artifacts", label: "View artifact sharing" },
+  "artifact:write": { group: "Artifacts", label: "Change artifact sharing" },
   "host:read": { group: "Hosting", label: "View hosted sites" },
   "host:write": { group: "Hosting", label: "Publish hosted sites" },
   "ssh:read": { group: "SSH", label: "List authorized SSH hosts" },
@@ -194,5 +199,9 @@ export const CAPABILITY_META: Record<Capability, CapabilityMeta> = {
   "presentation-template:write": {
     group: "Presentation Templates",
     label: "Publish a presentation template",
+  },
+  "user-template:write": {
+    group: "Custom Templates",
+    label: "Publish a custom template",
   },
 };

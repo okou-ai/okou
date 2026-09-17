@@ -23,7 +23,15 @@ describe("okou host versions command", () => {
     vi.unstubAllEnvs();
   });
 
-  it("lists immutable deployment versions for a logical site slug", async () => {
+  it.each([
+    "https://dpl-00000000-0000-4000-8000-000000000003.sites.example.com",
+    "/artifacts/abcxyz1234.html",
+    null,
+  ])("lists deployment version URLs for %s", async (artifactUrl) => {
+    vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
+    const expectedUrl = artifactUrl?.startsWith("/artifacts/")
+      ? `https://app.okou.ai${artifactUrl}`
+      : artifactUrl;
     server.use(
       http.get(DEPLOYMENTS_URL, ({ params, request }) => {
         expect(params.site).toBe("demo-site");
@@ -39,8 +47,7 @@ describe("okou host versions command", () => {
             {
               deploymentId: "00000000-0000-4000-8000-000000000003",
               deploymentVersion: 2,
-              artifactUrl:
-                "https://dpl-00000000-0000-4000-8000-000000000003.sites.example.com",
+              artifactUrl,
               status: "ready",
               isActive: true,
               createdAt: "2026-07-22T02:00:00.000Z",
@@ -76,7 +83,11 @@ describe("okou host versions command", () => {
       aliasUrl: ALIAS_URL,
       activeDeploymentVersion: 2,
       deployments: [
-        expect.objectContaining({ deploymentVersion: 2, isActive: true }),
+        expect.objectContaining({
+          deploymentVersion: 2,
+          isActive: true,
+          artifactUrl: expectedUrl,
+        }),
         expect.objectContaining({ deploymentVersion: 1, isActive: false }),
       ],
     });

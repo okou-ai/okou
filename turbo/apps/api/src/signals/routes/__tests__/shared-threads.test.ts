@@ -251,10 +251,10 @@ describe("optional shared-thread titles", () => {
     async ({ response, title }) => {
       const fixture = await prepareShare();
       mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter");
-      const prompts: string[] = [];
+      const requests: unknown[] = [];
       server.use(
         http.post(endpoint, async ({ request }) => {
-          prompts.push(await request.text());
+          requests.push(await request.json());
           return response();
         }),
       );
@@ -265,10 +265,16 @@ describe("optional shared-thread titles", () => {
       expect(Object.keys(created.body)).toStrictEqual(["id"]);
       await flushWaitUntilForTest();
       await expectSharedSnapshot(fixture, created.body.id, title);
-      expect(prompts).toHaveLength(1);
-      expect(prompts[0]).toContain(selectedContent);
-      expect(prompts[0]).not.toContain(privateTitle);
-      expect(prompts[0]).not.toContain(privateContent);
+      expect(requests).toHaveLength(1);
+      expect(requests[0]).toMatchObject({
+        model: "google/gemini-3.1-flash-lite",
+        max_tokens: 2048,
+        reasoning: { effort: "minimal" },
+      });
+      const prompt = JSON.stringify(requests[0]);
+      expect(prompt).toContain(selectedContent);
+      expect(prompt).not.toContain(privateTitle);
+      expect(prompt).not.toContain(privateContent);
       expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
     },
   );
@@ -288,7 +294,7 @@ describe("optional shared-thread titles", () => {
     expect(requests).toStrictEqual([]);
   });
 
-  it.each(["ingest", "flush"] as const)(
+  it.each(["ingest", "flush", "phase-abort"] as const)(
     "preserves a valid share when telemetry %s fails",
     async (mode) => {
       const fixture = await prepareShare();
@@ -298,7 +304,15 @@ describe("optional shared-thread titles", () => {
           return new HttpResponse(null, { status: 429 });
         }),
       );
-      mockAxiomSdkTelemetryFailure({ mode });
+      if (mode === "phase-abort") {
+        mockAxiomSdkTelemetryFailure({
+          mode: "ingest",
+          eventTypes: ["shared_thread_phase"],
+          error: new DOMException("Telemetry cancelled", "AbortError"),
+        });
+      } else {
+        mockAxiomSdkTelemetryFailure({ mode });
+      }
       const created = await accept(
         client().create(requestBody(fixture)),
         [201],

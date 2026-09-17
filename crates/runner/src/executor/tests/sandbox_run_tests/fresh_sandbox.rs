@@ -285,9 +285,41 @@ async fn execute_inner_does_not_prefetch_after_early_guest_state_failure() {
 
 #[tokio::test]
 async fn fresh_archive_download_overlaps_blocked_sandbox_create() {
+    assert_archive_overlaps_create(ArchiveOverlapCase::LateStorage).await;
+}
+
+#[tokio::test]
+async fn fresh_memory_download_overlaps_blocked_sandbox_create() {
+    assert_archive_overlaps_create(ArchiveOverlapCase::LateMemory).await;
+}
+
+#[tokio::test]
+async fn fresh_unknown_archive_download_overlaps_blocked_sandbox_create() {
+    assert_archive_overlaps_create(ArchiveOverlapCase::UnknownSize).await;
+}
+
+#[tokio::test]
+async fn fresh_unknown_archive_prefix_excludes_decoded_groups() {
+    assert_archive_overlaps_create(ArchiveOverlapCase::UnknownAfterDecoded).await;
+}
+
+enum ArchiveOverlapCase {
+    LateStorage,
+    LateMemory,
+    UnknownSize,
+    UnknownAfterDecoded,
+}
+
+async fn assert_archive_overlaps_create(case: ArchiveOverlapCase) {
+    let artifact = matches!(case, ArchiveOverlapCase::LateMemory);
+    let decoded_prefix = matches!(case, ArchiveOverlapCase::UnknownAfterDecoded);
     let dir = tempfile::tempdir().unwrap();
     let config = test_executor_config(dir.path()).await;
     let cache = config.decoded_cache.clone();
+    let archive_path = config
+        .home
+        .storage_cache_dir("fresh-overlap", "v1")
+        .join("archive.tar.gz");
     let factory = Arc::new(CreateGateFactory::new());
     let server = httpmock::MockServer::start_async().await;
     let body = storage_archive(b"fresh archive");
@@ -306,10 +338,56 @@ async fn fresh_archive_download_overlaps_blocked_sandbox_create() {
         "v1",
         &server.url("/fresh-overlap.tar.gz"),
     );
-    storage.archive_size = Some(body.len() as u64);
+    if matches!(case, ArchiveOverlapCase::LateStorage) {
+        storage.archive_size = Some(body.len() as u64);
+    }
+    let mut storages = Vec::new();
+    let prefix_count = if matches!(case, ArchiveOverlapCase::UnknownSize) {
+        0
+    } else {
+        98
+    };
+    for index in 0..prefix_count {
+        let name = format!("overlap-warm-{index}");
+        let cache_dir = config.home.storage_cache_dir(&name, "v1");
+        tokio::fs::create_dir_all(&cache_dir).await.unwrap();
+        tokio::fs::write(cache_dir.join("archive.tar.gz"), &body)
+            .await
+            .unwrap();
+        if decoded_prefix {
+            drop(
+                crate::lock::acquire(config.home.storage_lock(&name, "v1"))
+                    .await
+                    .unwrap(),
+            );
+            cache.warm_from_archive(&name, "v1").await.unwrap();
+        }
+        let mut warm = api_storage(
+            &name,
+            &format!("/warm/{index}"),
+            "v1",
+            &server.url(format!("/warm-{index}.tar.gz")),
+        );
+        warm.archive_size = Some(body.len() as u64);
+        storages.push(warm);
+    }
+    let artifacts = if artifact {
+        let mut memory = api_artifact(
+            "fresh-overlap",
+            "/data",
+            "fresh-overlap",
+            "v1",
+            &server.url("/fresh-overlap.tar.gz"),
+        );
+        memory.archive_size = Some(body.len() as u64);
+        vec![memory]
+    } else {
+        storages.push(storage);
+        Vec::new()
+    };
     ctx.storage_manifest = Some(StorageManifest {
-        storages: vec![storage],
-        artifacts: Vec::new(),
+        storages,
+        artifacts,
     });
 
     let task = tokio::spawn({
@@ -367,15 +445,13 @@ async fn fresh_archive_download_overlaps_blocked_sandbox_create() {
         .expect("run task should not panic");
     assert_eq!(outcome.unwrap().exit_code(), 0);
     full_get.assert_calls_async(1).await;
-    assert_no_telemetry_action(&telemetry, "storage_cache_decoded");
+    if decoded_prefix {
+        assert_telemetry_action(&telemetry, "storage_cache_decoded", true, None);
+    } else {
+        assert_no_telemetry_action(&telemetry, "storage_cache_decoded");
+    }
     assert_telemetry_action(&telemetry, "storage_cache_hit", true, None);
-    assert!(
-        cache
-            .get_ready("fresh-overlap", "v1")
-            .await
-            .unwrap()
-            .is_some()
-    );
+    assert_eq!(tokio::fs::read(archive_path).await.unwrap(), body,);
     cache.shutdown().await;
 }
 
@@ -1943,13 +2019,10 @@ async fn execute_inner_with_storage_manifest() {
         .await;
 
     let mut ctx = minimal_context();
+    let mut storage = api_storage("data", "/data", "v1", &server.url("/data.tar.gz"));
+    storage.archive_size = Some(b"storage archive".len() as u64);
     ctx.storage_manifest = Some(StorageManifest {
-        storages: vec![api_storage(
-            "data",
-            "/data",
-            "v1",
-            &server.url("/data.tar.gz"),
-        )],
+        storages: vec![storage],
         artifacts: vec![],
     });
     let (exit_code, error_msg) = run_new_sandbox_status(&factory, &ctx, &config, &default_params())

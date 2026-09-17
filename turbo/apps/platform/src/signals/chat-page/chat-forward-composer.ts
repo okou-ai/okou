@@ -27,6 +27,7 @@ export function createChatForwardComposerSignals(
     const prepare$ = command(
       ({ set }, signal: AbortSignal): ChatForwardComposerState => {
         signal.throwIfAborted();
+        set(composer.voice.setup$, signal);
         set(composer.feedback.add$, forward);
         return { target, composer };
       },
@@ -43,6 +44,7 @@ export function createChatForwardComposerSignals(
   const prepare$ = command(
     async ({ set }, signal: AbortSignal): Promise<ChatForwardComposerState> => {
       signal.throwIfAborted();
+      set(composer.voice.setup$, signal);
       set(composer.feedback.add$, forward);
       await set(chatEvents.setup$, signal);
       await set(chatEvents.catchUp$, signal);

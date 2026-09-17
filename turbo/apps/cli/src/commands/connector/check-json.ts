@@ -13,7 +13,7 @@ import {
   getCustomConnector,
 } from "../../lib/api/domains/connectors";
 import { getOkouAgentId } from "../../lib/okou-env";
-import { getPlatformOrigin } from "../doctor/platform-url";
+import { getPlatformOrigin } from "../../lib/platform-url";
 import {
   CALLBACK_PROMPT_PLACEHOLDER,
   currentChatSupportsActionCallback,

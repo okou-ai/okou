@@ -29,16 +29,10 @@ const tileBaseClass =
 
 function tileBorderClass(selected: boolean): string {
   // A text tile keeps the shared hairline in both states and only recolours it.
-  // The resting branch used to be `okou-border`, whose legacy 0.7px made
-  // selecting a preset quietly change the tile's border width as well.
-  //
-  // `border-surface-border`, not `border-border`: the retired rule painted
-  // gray-400 and `--border` is gray-300, one stop lighter. docs/styles.md
-  // records this replacement by name under "The all-round hairline", and the
-  // card wrapping these tiles reads the same token.
-  return selected
-    ? "border border-primary"
-    : "border border-surface-border hover:border-muted-foreground/30";
+  // Selection is the border alone: the ring belongs to the focus indicator, and
+  // a selected tile that also draws one gives a keyboard user two rings on the
+  // same element.
+  return selected ? "border border-primary" : "border border-surface-border";
 }
 
 function PresetTile({

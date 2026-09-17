@@ -1848,6 +1848,20 @@ export {
   type PublishPresentationTemplateBody,
 } from "./presentation-templates";
 export {
+  MAX_USER_TEMPLATE_PAGES,
+  USER_TEMPLATE_PACKAGE_CONTENT_TYPE,
+  USER_TEMPLATE_PAGE_CONTENT_TYPE,
+  userTemplatesContract,
+  type UpdateUserTemplateBody,
+  type UserTemplateCatalogEntry,
+  type UserTemplateDetail,
+  type UserTemplateKind,
+  type UserTemplatePreviewAsset,
+  type UserTemplateSummary,
+  type UserTemplatesContract,
+  type UserTemplateVisibility,
+} from "./user-templates";
+export {
   hostContract,
   hostedSiteFileSchema,
   hostedSitePrepareRequestSchema,

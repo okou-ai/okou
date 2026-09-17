@@ -1,11 +1,7 @@
-import { command } from "ccstate";
-import { toast } from "@okouai/ui/components/ui/sonner";
-import { i18n } from "../i18n/index.ts";
 import { createAttachmentPreviewSignals } from "./attachment-resource-url.ts";
 import { classifyChatAttachment } from "./chat-page/parse-body-blocks.ts";
 import { createMarkdownPreviewTree } from "./markdown-preview-tree.ts";
 import type { AttachmentLightboxState } from "./okou-page/attachment-chips.ts";
-import { writeToClipboard } from "./okou-page/clipboard.ts";
 import {
   createTextPreviewComputed,
   isTextPreviewKind,
@@ -61,28 +57,6 @@ export function createSharedArtifactPreview(
     preview,
   };
 }
-
-export const copySharedArtifactLink$ = command(
-  async (_context, signal: AbortSignal) => {
-    // Read the app address at click time; temporary preview URLs never leave
-    // the viewer through the share action.
-    const copied = await writeToClipboard(window.location.href);
-    signal.throwIfAborted();
-    if (copied) {
-      toast.success(
-        i18n.t(($) => {
-          return $.artifacts.toasts.linkCopied;
-        }),
-      );
-      return;
-    }
-    toast.error(
-      i18n.t(($) => {
-        return $.artifacts.toasts.copyLinkFailed;
-      }),
-    );
-  },
-);
 
 export function createSharedArtifactViewerSignals() {
   return {

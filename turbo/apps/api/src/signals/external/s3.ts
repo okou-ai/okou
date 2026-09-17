@@ -1275,12 +1275,16 @@ function putImmutableS3ObjectWithOptions(
 
 /** Server-side immutable sharing copies never receive upload credentials. */
 export function copyArtifactShareObject(
-  bucket: string,
-  sourceKey: string,
-  targetKey: string,
-  hosted: boolean,
+  args: {
+    readonly bucket: string;
+    readonly sourceKey: string;
+    readonly targetKey: string;
+    readonly hosted: boolean;
+    readonly sourceEtag?: string;
+  },
   signal: AbortSignal,
 ): Computed<Promise<void>> {
+  const { bucket, sourceKey, targetKey, hosted, sourceEtag } = args;
   return computed(async (get) => {
     const client = get(
       hosted ? hostedSitesS3Client$ : s3ClientForBucket(bucket),
@@ -1290,9 +1294,35 @@ export function copyArtifactShareObject(
         Bucket: bucket,
         Key: targetKey,
         CopySource: `${bucket}/${sourceKey.split("/").map(encodeURIComponent).join("/")}`,
+        CopySourceIfMatch: sourceEtag,
       }),
       { abortSignal: signal },
     );
+  });
+}
+
+/** Body and validator must describe the same source revision. */
+export function readHostedSiteSnapshotSource(
+  bucket: string,
+  key: string,
+  signal: AbortSignal,
+  etag?: string,
+) {
+  return computed(async (get) => {
+    const response = await get(hostedSitesS3Client$).send(
+      new GetObjectCommand({ Bucket: bucket, Key: key, IfMatch: etag }),
+      { abortSignal: signal },
+    );
+    const buffer = await readS3ObjectBody(
+      response,
+      key,
+      { maxBytes: 4 * 1024 * 1024 },
+      signal,
+    );
+    if (!response.ETag) {
+      throw new Error("Hosted snapshot source has no storage revision");
+    }
+    return { buffer, etag: response.ETag };
   });
 }
 

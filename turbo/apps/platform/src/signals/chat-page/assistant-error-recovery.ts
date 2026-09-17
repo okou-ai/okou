@@ -33,10 +33,11 @@ type AssistantErrorRecoveryKind =
   | "usage-limit"
   | "model-capacity"
   | "model-unavailable"
-  | "execution-timeout";
+  | "execution-timeout"
+  | "autonomy-budget-exhausted";
 type ProviderAssistantErrorRecoveryKind = Exclude<
   AssistantErrorRecoveryKind,
-  "execution-timeout"
+  "execution-timeout" | "autonomy-budget-exhausted"
 >;
 type AssistantErrorRecoveryScope = "framework" | "model";
 type AssistantErrorRecoveryWindow =
@@ -59,7 +60,7 @@ interface ClassifiedAssistantErrorBase {
 type ClassifiedAssistantError = ClassifiedAssistantErrorBase &
   (
     | {
-        readonly kind: "execution-timeout";
+        readonly kind: "execution-timeout" | "autonomy-budget-exhausted";
         readonly framework: null;
       }
     | {
@@ -162,6 +163,19 @@ function classifyAssistantErrorFromText(
     return classifyExecutionTimeout(event, error);
   }
 
+  if (normalized.toUpperCase() === "AUTONOMY_BUDGET_EXHAUSTED") {
+    return {
+      sourceEventId: event.id,
+      providerMessage: error,
+      kind: "autonomy-budget-exhausted",
+      framework: null,
+      scope: "framework",
+      limitWindow: null,
+      retryLabel: null,
+      failedModel: null,
+    };
+  }
+
   if (unsupportedModel !== undefined) {
     return {
       sourceEventId: event.id,
@@ -259,7 +273,7 @@ const STRUCTURED_RECOVERY_KIND = Object.freeze({
 
 function structuredRecoveryKind(
   event: EnrichedChatEvent,
-): AssistantErrorRecoveryKind | null | undefined {
+): (typeof STRUCTURED_RECOVERY_KIND)[KnownRunFailureReason] | undefined {
   if (event.eventType !== "run.failed" || event.failureReason === undefined) {
     return undefined;
   }
@@ -563,7 +577,7 @@ function createClassifiedAssistantErrorComputed(
       );
     }
     const historicalClassified: ClassifiedAssistantError =
-      classified.kind === "execution-timeout"
+      classified.framework === null
         ? classified
         : {
             ...classified,

@@ -1,5 +1,66 @@
 # Changelog
 
+## [0.196.2](https://github.com/vm0-ai/okou/compare/runner-rs-v0.196.1...runner-rs-v0.196.2) (2026-09-17)
+
+
+### Performance Improvements
+
+* **runner:** retain decoded cache hits in large storage plans ([#34747](https://github.com/vm0-ai/okou/issues/34747)) ([d170bf9](https://github.com/vm0-ai/okou/commit/d170bf9b7b92f028bf6803e4912d2176798dab42))
+
+## [0.196.1](https://github.com/vm0-ai/okou/compare/runner-rs-v0.196.0...runner-rs-v0.196.1) (2026-09-16)
+
+
+### Performance Improvements
+
+* **runner:** overlap bounded archive classification with sandbox startup ([#34608](https://github.com/vm0-ai/okou/issues/34608)) ([aa488bf](https://github.com/vm0-ai/okou/commit/aa488bfdd3c783483ef43ae9b09db4e05c33e2be))
+
+## [0.196.0](https://github.com/vm0-ai/okou/compare/runner-rs-v0.195.3...runner-rs-v0.196.0) (2026-09-16)
+
+
+### Features
+
+* **runner:** expose cumulative mitm token usage per run ([#34687](https://github.com/vm0-ai/okou/issues/34687)) ([3cbba0e](https://github.com/vm0-ai/okou/commit/3cbba0e6a5bb70fac04130bf26a64fdd168a9e1d))
+
+
+### Bug Fixes
+
+* block direct gmail sends and guide agents to draft review ([#34684](https://github.com/vm0-ai/okou/issues/34684)) ([dbe9107](https://github.com/vm0-ai/okou/commit/dbe9107196583b25d63db499290e02951dff09a5))
+* **runner:** fairly drain deferred releases ([#34705](https://github.com/vm0-ai/okou/issues/34705)) ([cfb147f](https://github.com/vm0-ai/okou/commit/cfb147f636c01278232aeebe50f8aa98f2402794))
+
+## [0.195.3](https://github.com/vm0-ai/okou/compare/runner-rs-v0.195.2...runner-rs-v0.195.3) (2026-09-16)
+
+
+### Bug Fixes
+
+* **api:** attribute required-output backpressure phases ([#34663](https://github.com/vm0-ai/okou/issues/34663)) ([a1e31af](https://github.com/vm0-ai/okou/commit/a1e31afbdd683ded91cb4b0343bfaa2505244b26))
+
+## [0.195.2](https://github.com/vm0-ai/okou/compare/runner-rs-v0.195.1...runner-rs-v0.195.2) (2026-09-16)
+
+
+### Bug Fixes
+
+* **api:** close deferred sandbox release, fairness and payload gaps ([#34595](https://github.com/vm0-ai/okou/issues/34595)) ([c8b0471](https://github.com/vm0-ai/okou/commit/c8b0471c07e9ec0b897e8e0caf4f0050225e9dcf))
+* **runner:** reconcile cancellation after successful claims ([#34580](https://github.com/vm0-ai/okou/issues/34580)) ([435944a](https://github.com/vm0-ai/okou/commit/435944a392ca774cdcfe7be13e37733cdbf52bb5))
+
+
+### Performance Improvements
+
+* **runner:** stream compressed session history with caller-owned policy ([#34603](https://github.com/vm0-ai/okou/issues/34603)) ([1376434](https://github.com/vm0-ai/okou/commit/1376434b697f5e39be6d569c6b20a4e33ed12342))
+
+## [0.195.1](https://github.com/vm0-ai/okou/compare/runner-rs-v0.195.0...runner-rs-v0.195.1) (2026-09-16)
+
+
+### Refactoring
+
+* **runner:** separate guest rpc ownership from ssh dispatch ([#34589](https://github.com/vm0-ai/okou/issues/34589)) ([1d4d031](https://github.com/vm0-ai/okou/commit/1d4d0319b66dcb0dab55180a618ad301a10fa0ea))
+
+## [0.195.0](https://github.com/vm0-ai/okou/compare/runner-rs-v0.194.10...runner-rs-v0.195.0) (2026-09-16)
+
+
+### Features
+
+* add durable deferred pi sandbox consumer ([#34412](https://github.com/vm0-ai/okou/issues/34412)) ([7462236](https://github.com/vm0-ai/okou/commit/74622367fb4d6fb3ad6f12fc71ea1e526efe406b))
+
 ## [0.194.10](https://github.com/vm0-ai/okou/compare/runner-rs-v0.194.9...runner-rs-v0.194.10) (2026-09-16)
 
 

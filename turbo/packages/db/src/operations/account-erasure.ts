@@ -11,8 +11,11 @@ import {
   lte,
   ne,
   exists,
+  notExists,
   or,
   sql,
+  type SQL,
+  type SQLWrapper,
 } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type { PgUpdateSetSource } from "drizzle-orm/pg-core";
@@ -268,14 +271,59 @@ export async function assertErasureSubjectWritable(
   subjects: readonly ErasureSubject[],
 ): Promise<void> {
   await acquireErasureSubjectLocks(tx, subjects, "shared");
+  // Start a new READ COMMITTED statement after every lock has been acquired.
+  // A closure committed while a lock was waiting must be visible here.
+  const [closed] = await tx
+    .select({ id: jobs.id })
+    .from(jobs)
+    .where(or(...subjects.map(subjectCondition)))
+    .limit(1);
+  invariant(!closed, "subject_closed");
+}
+
+/** Indexed candidate filter for a batched ordinary writer whose selection runs
+ * outside its write transaction. It reads the same subject domains the shared
+ * admission checks, using the `(subject_kind, subject_id)` prefix of
+ * `account_erasure_subject_generation`, so a closed subject stops consuming the
+ * writer's bounded batch instead of starving later open candidates.
+ *
+ * This is selection, never authority: it takes no lock, it can go stale the
+ * moment it returns, and `assertErasureSubjectWritable` remains the only
+ * admission inside the writer's own transaction. A `SQLWrapper` subject id lets
+ * a caller pass the joined owner columns it already selects.
+ */
+export function erasureSubjectOpenCondition(
+  executor: Pick<Db, "select"> | Tx,
+  subjects: readonly {
+    readonly subjectKind: Job["subjectKind"];
+    readonly subjectId: SQLWrapper;
+  }[],
+): SQL {
+  invariant(
+    subjects.length > 0 && subjects.length <= MAX_SINKS,
+    "subject_limit",
+  );
   for (const subject of subjects) {
-    const [closed] = await tx
+    invariant(
+      subject.subjectKind === "user" || subject.subjectKind === "organization",
+      "invalid_subject",
+    );
+  }
+  return notExists(
+    executor
       .select({ id: jobs.id })
       .from(jobs)
-      .where(subjectCondition(subject))
-      .limit(1);
-    invariant(!closed, "subject_closed");
-  }
+      .where(
+        or(
+          ...subjects.map((subject) => {
+            return and(
+              eq(jobs.subjectKind, subject.subjectKind),
+              eq(jobs.subjectId, subject.subjectId),
+            );
+          }),
+        ),
+      ),
+  );
 }
 
 async function lockJob(tx: Tx, jobId: string, retiring = false): Promise<Job> {

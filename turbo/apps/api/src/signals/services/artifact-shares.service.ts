@@ -1,12 +1,10 @@
+import { hostedSiteDeliveryManifest } from "./hosted-site-dependencies.service";
 import { nowDate } from "../../lib/time";
 import { randomBytes, randomUUID } from "node:crypto";
 import { artifactFilenameExtension } from "@okouai/api-contracts/contracts/artifact-delivery";
-import {
-  artifactReferencePath,
-  artifactShareReferencePath,
-} from "@okouai/api-contracts/contracts/artifact-references";
+import { artifactShareReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
 import { command, computed } from "ccstate";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, or } from "drizzle-orm";
 import { artifactShares } from "@okouai/db/schema/artifact-share";
 import {
   hostedSites,
@@ -23,7 +21,11 @@ import { settle } from "../utils";
 import { env } from "../../lib/env";
 import { artifactHash } from "../../lib/file-url";
 import { db$, writeDb$ } from "../external/db";
-import { clerk$, isClerkResourceNotFound } from "../external/clerk";
+import {
+  clerk$,
+  isClerkResourceNotFound,
+  type ClerkOrganizationMembership,
+} from "../external/clerk";
 import {
   copyArtifactShareObject,
   readArtifactSharePolicyObject,
@@ -31,7 +33,10 @@ import {
   generateArtifactPreviewUrl,
   putHostedSitesS3Object,
 } from "../external/s3";
-import { privateArtifactRecord } from "./private-artifact-storage.service";
+import {
+  privateArtifactRecord,
+  privateArtifactUrl,
+} from "./private-artifact-storage.service";
 import { createPrivateHostedPreview$ } from "./private-hosted-preview.service";
 import { prepareArtifactShareAliases$ } from "./artifact-share-alias.service";
 
@@ -117,6 +122,10 @@ function ownedShareTarget(
       }
       return {
         targetId: file.id,
+        ownerUrl: new URL(
+          privateArtifactUrl(file.id, file.filename, file.metadata),
+          env("APP_URL"),
+        ).href,
         publicBrand: file.publicBrand,
         candidateVersion: null,
         target: {
@@ -151,6 +160,7 @@ function ownedShareTarget(
     const deployment = row.deployment;
     return {
       targetId: deployment.siteId,
+      ownerUrl: new URL(deployment.artifactUrl, env("APP_URL")).href,
       publicBrand: deployment.publicBrand,
       candidateVersion: deployment.deploymentVersion,
       target: {
@@ -158,7 +168,7 @@ function ownedShareTarget(
         id: deployment.id,
         siteId: deployment.siteId,
         deploymentVersion: deployment.deploymentVersion,
-        manifest: deployment.manifest,
+        manifest: hostedSiteDeliveryManifest(deployment.manifest),
       },
     };
   });
@@ -250,58 +260,45 @@ function shortShareUrl(policy: ArtifactSharePolicy | null): string | null {
   ).href;
 }
 
-const shareStatus$ = command(
-  async (
-    { get },
-    args: {
-      readonly policy: ArtifactSharePolicy | null;
-      readonly orgId: string;
-      readonly candidateVersion: number | null;
-    },
-    signal: AbortSignal,
-  ): Promise<ArtifactShareStatus> => {
-    const org = await get(clerk$).organizations.getOrganization(
-      { organizationId: args.orgId },
-      undefined,
-      signal,
-    );
-    const policy = args.policy;
-    return {
-      shareId: policy?.shareId ?? null,
-      audience: policy?.audience ?? "private",
-      organization: { id: args.orgId, name: org.name },
-      candidateVersion: args.candidateVersion,
-      selectedTarget: policy
-        ? { kind: policy.target.kind, id: policy.target.id }
-        : null,
-      selectedVersion:
-        policy?.target.kind === "html" ? policy.target.deploymentVersion : null,
-      shortUrl: shortShareUrl(policy),
-      url:
-        !policy || policy.status === "revoked"
-          ? null
-          : policy.audience === "public"
-            ? publicShareUrl(policy)
-            : new URL(
-                artifactReferencePath(
-                  policy.shareId,
-                  policy.target.kind === "file"
-                    ? policy.target.filename
-                    : "index.html",
-                ),
-                env("APP_URL"),
-              ).href,
-    };
-  },
-);
+function shareStatus(args: {
+  readonly policy: ArtifactSharePolicy | null;
+  readonly organization: ArtifactShareStatus["organization"];
+  readonly ownerUrl: string;
+  readonly candidateVersion: number | null;
+}): ArtifactShareStatus {
+  const policy = args.policy;
+  const shortUrl = shortShareUrl(policy);
+  return {
+    ownerUrl: args.ownerUrl,
+    shareId: policy?.shareId ?? null,
+    audience: policy?.audience ?? "private",
+    organization: args.organization,
+    candidateVersion: args.candidateVersion,
+    selectedTarget: policy
+      ? { kind: policy.target.kind, id: policy.target.id }
+      : null,
+    selectedVersion:
+      policy?.target.kind === "html" ? policy.target.deploymentVersion : null,
+    shortUrl,
+    url:
+      !policy || policy.status === "revoked"
+        ? null
+        : policy.audience === "public"
+          ? publicShareUrl(policy)
+          : shortUrl,
+  };
+}
 
+// Reuse the embedded organization name only within this request. Every status,
+// update and resolve still reads current membership; renames follow that fresh
+// Clerk response without a separate display lookup or cross-request cache.
 const currentShareMember$ = command(
   async (
     { get },
     orgId: string,
     userId: string,
     signal: AbortSignal,
-  ): Promise<boolean> => {
+  ): Promise<ClerkOrganizationMembership | null> => {
     const memberships = await settle(
       get(clerk$).organizations.getOrganizationMembershipList(
         { organizationId: orgId, userId: [userId], limit: 1 },
@@ -313,13 +310,15 @@ const currentShareMember$ = command(
     if (!memberships.ok) {
       // The durable share may outlive its original Clerk organization.
       if (isClerkResourceNotFound(memberships.error)) {
-        return false;
+        return null;
       }
       throw memberships.error;
     }
-    return memberships.value.data.some((member) => {
-      return member.publicUserData?.userId === userId;
-    });
+    return (
+      memberships.value.data.find((member) => {
+        return member.publicUserData?.userId === userId;
+      }) ?? null
+    );
   },
 );
 
@@ -340,22 +339,25 @@ export const readArtifactShare$ = command(
     if (!candidate) {
       return null;
     }
-    if (!(await set(currentShareMember$, args.orgId, args.userId, signal))) {
+    const member = await set(
+      currentShareMember$,
+      args.orgId,
+      args.userId,
+      signal,
+    );
+    if (!member) {
       return null;
     }
     const row = await get(shareIdentity(args.target.kind, candidate.targetId));
     signal.throwIfAborted();
     const stored = row ? await get(policyFor(row, signal)) : null;
     signal.throwIfAborted();
-    return await set(
-      shareStatus$,
-      {
-        policy: stored?.policy ?? null,
-        orgId: args.orgId,
-        candidateVersion: candidate.candidateVersion,
-      },
-      signal,
-    );
+    return shareStatus({
+      policy: stored?.policy ?? null,
+      organization: { id: args.orgId, name: member.organization.name },
+      ownerUrl: candidate.ownerUrl,
+      candidateVersion: candidate.candidateVersion,
+    });
   },
 );
 
@@ -371,7 +373,15 @@ const snapshotTarget$ = command(
       }
       const key = `private-artifacts/${target.id}/shares/${snapshotId}/${encodeURIComponent(target.filename)}`;
       await get(
-        copyArtifactShareObject(file.bucket, target.key, key, false, signal),
+        copyArtifactShareObject(
+          {
+            bucket: file.bucket,
+            sourceKey: target.key,
+            targetKey: key,
+            hosted: false,
+          },
+          signal,
+        ),
       );
       signal.throwIfAborted();
       return { ...target, key };
@@ -384,10 +394,12 @@ const snapshotTarget$ = command(
         files.slice(start, start + 10).map((path) => {
           return get(
             copyArtifactShareObject(
-              policyBucket(),
-              `private-sites/${candidate.publicBrand}/${target.id}${path}`,
-              `${prefix}${path}`,
-              true,
+              {
+                bucket: policyBucket(),
+                sourceKey: `private-sites/${candidate.publicBrand}/${target.id}${path}`,
+                targetKey: `${prefix}${path}`,
+                hosted: true,
+              },
               signal,
             ),
           );
@@ -426,7 +438,13 @@ export const updateArtifactShare$ = command(
     if (!candidate) {
       return null;
     }
-    if (!(await set(currentShareMember$, args.orgId, args.userId, signal))) {
+    const member = await set(
+      currentShareMember$,
+      args.orgId,
+      args.userId,
+      signal,
+    );
+    if (!member) {
       return null;
     }
     const db = set(writeDb$);
@@ -516,15 +534,12 @@ export const updateArtifactShare$ = command(
     if (!policy && args.audience !== "private") {
       return null;
     }
-    return await set(
-      shareStatus$,
-      {
-        policy,
-        orgId: args.orgId,
-        candidateVersion: candidate.candidateVersion,
-      },
-      signal,
-    );
+    return shareStatus({
+      policy,
+      organization: { id: args.orgId, name: member.organization.name },
+      ownerUrl: candidate.ownerUrl,
+      candidateVersion: candidate.candidateVersion,
+    });
   },
 );
 
@@ -534,6 +549,8 @@ export const resolveArtifactShare$ = command(
     args: {
       readonly id: string;
       readonly userId: string;
+      readonly expectedTarget?: ArtifactShareTarget;
+      readonly allowPrivateOwner?: boolean;
     },
     signal: AbortSignal,
   ) => {
@@ -549,7 +566,14 @@ export const resolveArtifactShare$ = command(
     const stored = await get(policyFor(row, signal));
     signal.throwIfAborted();
     const policy = stored?.policy;
-    if (!policy || policy.status !== "active") {
+    if (
+      !policy ||
+      (policy.status !== "active" &&
+        !(args.allowPrivateOwner && policy.ownerId === args.userId)) ||
+      (args.expectedTarget &&
+        (policy.target.kind !== args.expectedTarget.kind ||
+          policy.target.id !== args.expectedTarget.id))
+    ) {
       return null;
     }
     // No active-org assumption and no membership cache: removal is observed at
@@ -601,5 +625,103 @@ export const resolveArtifactShare$ = command(
       contentType: file.contentType,
       target: { kind: "file" as const, id: policy.target.id },
     };
+  },
+);
+
+/** A version reference must never follow a site's share to a different version. */
+export const resolveArtifactTargetShare$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly target: ArtifactShareTarget;
+      readonly targetId: string;
+      readonly userId: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    const row = await get(shareIdentity(args.target.kind, args.targetId));
+    signal.throwIfAborted();
+    return row
+      ? await set(
+          resolveArtifactShare$,
+          { id: row.id, userId: args.userId, expectedTarget: args.target },
+          signal,
+        )
+      : null;
+  },
+);
+
+/** Public references disclose only an already published URL, never private bytes. */
+export const resolvePublicArtifactUrl$ = command(
+  async (
+    { get },
+    args: { readonly id: string; readonly kind?: "file" | "html" | "share" },
+    signal: AbortSignal,
+  ) => {
+    const [direct] =
+      args.kind === "html"
+        ? []
+        : await get(db$)
+            .select()
+            .from(artifactShares)
+            .where(
+              or(
+                args.kind === undefined || args.kind === "share"
+                  ? eq(artifactShares.id, args.id)
+                  : undefined,
+                args.kind === undefined || args.kind === "file"
+                  ? and(
+                      eq(artifactShares.targetKind, "file"),
+                      eq(artifactShares.targetId, args.id),
+                    )
+                  : undefined,
+              ),
+            )
+            .limit(1);
+    signal.throwIfAborted();
+    let row = direct;
+    if (!row && (args.kind === undefined || args.kind === "html")) {
+      const [deployment] = await get(db$)
+        .select({ siteId: privateHostedDeployments.siteId })
+        .from(privateHostedDeployments)
+        .innerJoin(
+          hostedSites,
+          eq(hostedSites.id, privateHostedDeployments.siteId),
+        )
+        .where(
+          and(
+            eq(privateHostedDeployments.id, args.id),
+            isNull(hostedSites.deletedAt),
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      row = deployment
+        ? ((await get(shareIdentity("html", deployment.siteId))) ?? undefined)
+        : undefined;
+      signal.throwIfAborted();
+    }
+    if (!row) {
+      return null;
+    }
+    const stored = await get(policyFor(row, signal));
+    signal.throwIfAborted();
+    const policy = stored?.policy;
+    if (
+      !policy ||
+      policy.status !== "active" ||
+      policy.audience !== "public" ||
+      (row.id !== args.id &&
+        args.kind !== "share" &&
+        policy.target.id !== args.id)
+    ) {
+      return null;
+    }
+    // A removed artifact must not become discoverable through an old reference.
+    const target = await get(
+      ownedShareTarget(policy.target, row.userId, row.orgId),
+    );
+    signal.throwIfAborted();
+    return target ? { url: publicShareUrl(policy) } : null;
   },
 );

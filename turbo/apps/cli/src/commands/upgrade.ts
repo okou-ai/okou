@@ -2,7 +2,7 @@ import { Command, InvalidArgumentError } from "commander";
 import chalk from "chalk";
 
 import { withErrorHandler } from "../lib/command/with-error-handler";
-import { getPlatformOrigin } from "./doctor/platform-url";
+import { getPlatformOrigin } from "../lib/platform-url";
 import { planUpgradeUrl } from "./shared/billing-links";
 
 type UpgradePlan = "pro";
