@@ -96,10 +96,17 @@ function TileRow({ children }: { children: ReactNode }) {
 /** The join between two tiles: what the quest actually adds. */
 function Link({ accent }: { accent: string }) {
   return (
-    <span
-      className="h-px w-4 shrink-0"
-      style={{ backgroundColor: `${accent}${LINE_ALPHA}` }}
-    />
+    <span className="flex shrink-0 items-center gap-[3px]">
+      {["a", "b", "c"].map((id) => {
+        return (
+          <span
+            key={id}
+            className="size-[3px] rounded-full"
+            style={{ backgroundColor: `${accent}${SOFT_ALPHA}` }}
+          />
+        );
+      })}
+    </span>
   );
 }
 
@@ -108,26 +115,29 @@ function Lines({
   accent,
   width,
   count = 2,
+  height = 3,
 }: {
   accent: string;
   width: number;
   count?: number;
+  height?: number;
 }) {
   return (
-    <span className="flex flex-col gap-[3px]">
+    <span className="flex flex-col gap-[4px]">
       {/* The last line is short, the way a paragraph ends. */}
       {Array.from({ length: count }, (_, index) => {
         return {
           id: `line-${index}`,
-          width: index === count - 1 ? width * 0.6 : width,
+          width: index === count - 1 ? width * 0.62 : width,
         };
       }).map(({ id, width: lineWidth }) => {
         return (
           <span
             key={id}
-            className="h-[2px] rounded-full"
+            className="rounded-full"
             style={{
               width: lineWidth,
+              height,
               backgroundColor: `${accent}${SOFT_ALPHA}`,
             }}
           />
@@ -151,7 +161,7 @@ function OkouAvatar({ size }: { size: number }) {
       src={OKOU_AVATAR_IMG}
       alt=""
       aria-hidden
-      className="block object-contain"
+      className="block shrink-0 object-contain"
       style={{ width: size, height: size }}
     />
   );
@@ -171,19 +181,19 @@ function Person({ accent, size }: { accent: string; size: number }) {
       <span
         className="absolute left-1/2 rounded-full"
         style={{
-          top: size * 0.22,
-          width: size * 0.3,
-          height: size * 0.3,
-          marginLeft: -size * 0.15,
+          top: size * 0.24,
+          width: size * 0.28,
+          height: size * 0.28,
+          marginLeft: -size * 0.14,
           backgroundColor: `${accent}${FILL_ALPHA}`,
         }}
       />
       <span
         className="absolute bottom-0 left-1/2 rounded-t-full"
         style={{
-          width: size * 0.62,
-          height: size * 0.36,
-          marginLeft: -size * 0.31,
+          width: size * 0.58,
+          height: size * 0.32,
+          marginLeft: -size * 0.29,
           backgroundColor: `${accent}${FILL_ALPHA}`,
         }}
       />
@@ -192,51 +202,35 @@ function Person({ accent, size }: { accent: string; size: number }) {
 }
 
 /**
- * What a connector adds: the assistant on one side, the user's own mail, docs
- * and calendar on the other, joined by a link that the copy underneath says can
- * be broken again.
+ * What a connector adds: Okou on one side, the user's own mail, docs and
+ * calendar on the other. Two shapes and a join — the sentence underneath does
+ * the explaining, so the picture only has to be legible at a glance.
  */
 function ConnectorFigure() {
   const accent = ILLUSTRATION_ACCENTS.website;
   return (
     <TileRow>
       <Tile accent={accent}>
-        <OkouAvatar size={44} />
+        <OkouAvatar size={46} />
       </Tile>
       <Link accent={accent} />
       <Tile accent={accent}>
-        {/* Three of the user's own things, stacked: an envelope, a page and a
-            dated sheet. Naming specific products would date the drawing. */}
-        <span className="flex flex-col gap-[3px]">
-          <span
-            className={`flex h-[15px] w-[46px] items-center gap-[3px] px-[4px] ${NODE_CLASS}`}
-            style={{ borderColor: `${accent}${LINE_ALPHA}` }}
-          >
-            <span
-              className="size-[7px] shrink-0 rounded-[2px]"
-              style={{ backgroundColor: `${accent}${FILL_ALPHA}` }}
-            />
-            <Lines accent={accent} width={26} count={2} />
-          </span>
-          <span
-            className={`flex h-[15px] w-[46px] items-center gap-[3px] px-[4px] ${NODE_CLASS}`}
-            style={{ borderColor: `${accent}${LINE_ALPHA}` }}
-          >
-            <span
-              className="size-[7px] shrink-0 rounded-full"
-              style={{ backgroundColor: `${accent}${FILL_ALPHA}` }}
-            />
-            <Lines accent={accent} width={26} count={2} />
-          </span>
-          <span
-            className={`h-[15px] w-[46px] px-[4px] pt-[3px] ${NODE_CLASS}`}
-            style={{ borderColor: `${accent}${LINE_ALPHA}` }}
-          >
-            <span
-              className="block h-[3px] w-full rounded-full"
-              style={{ backgroundColor: `${accent}${BAND_ALPHA}` }}
-            />
-          </span>
+        <span className="flex flex-col gap-[5px]">
+          {["mail", "doc"].map((id) => {
+            return (
+              <span
+                key={id}
+                className={`flex h-[21px] w-[48px] items-center gap-[5px] px-[5px] ${NODE_CLASS}`}
+                style={{ borderColor: `${accent}${LINE_ALPHA}` }}
+              >
+                <span
+                  className="size-[9px] shrink-0 rounded-[2px]"
+                  style={{ backgroundColor: `${accent}${FILL_ALPHA}` }}
+                />
+                <Lines accent={accent} width={24} count={2} height={2} />
+              </span>
+            );
+          })}
         </span>
       </Tile>
     </TileRow>
@@ -244,125 +238,55 @@ function ConnectorFigure() {
 }
 
 /**
- * What the quest actually produces: a channel with the assistant in it.
+ * The channel, after the quest is done: Okou answering in it.
  *
- * The other figures can stay abstract because they are about the user's own
- * material, but this one names a place the reader already knows, so it is drawn
- * as a small Slack window — rail, channel name, a mention and the reply — with
- * the real mark on the message that answers.
+ * One card, four elements. An earlier draft drew the whole Slack window —
+ * rail, someone asking, the reply and its result — and at this size that read
+ * as texture rather than as a picture. What has to be recognised is the
+ * channel and who is talking in it.
  */
 function SlackFigure({ assistantName }: { assistantName: string }) {
-  // Slack's own aubergine, because this drawing has to be recognised as Slack
-  // before it is read. It is laid down at the same five strengths as every
-  // other tile so the figure still belongs to the family.
+  // Slack's own aubergine, so the card is recognised before it is read.
   const accent = "#4A154B";
-  // The handle the reader would actually type, built from the assistant's name
-  // rather than hard-coded, so a rebrand carries through the drawing too.
   const mention = `@${assistantName.toLowerCase()}`;
   return (
     <TileRow>
       <span
-        className={`flex h-[112px] w-[292px] overflow-hidden ${NODE_CLASS}`}
+        className={`w-[268px] overflow-hidden ${NODE_CLASS}`}
         style={{ borderColor: `${accent}${LINE_ALPHA}` }}
       >
-        {/* The rail: the workspace, with the channel it was invited to marked. */}
         <span
-          className="flex w-[58px] shrink-0 flex-col gap-[6px] p-[7px]"
-          style={{ backgroundColor: `${accent}${BAND_ALPHA}` }}
+          className="flex items-center gap-[6px] border-b px-[12px] py-[8px]"
+          style={{
+            borderColor: `${accent}${LINE_ALPHA}`,
+            backgroundColor: `${accent}${BAND_ALPHA}`,
+          }}
         >
+          <SlackMark size={12} />
           <span
-            className="h-[6px] w-[26px] rounded-full"
+            className="text-[11px] font-semibold leading-none"
+            style={{ color: accent }}
+          >
+            #
+          </span>
+          <span
+            className="h-[5px] w-[44px] rounded-full"
             style={{ backgroundColor: `${accent}${FILL_ALPHA}` }}
           />
-          {[
-            { id: "rail-1", active: false },
-            { id: "rail-2", active: true },
-            { id: "rail-3", active: false },
-          ].map(({ id, active }) => {
-            return (
-              <span
-                key={id}
-                className="flex items-center gap-[4px] rounded-[3px] px-[3px] py-[2px]"
-                style={{
-                  backgroundColor: active
-                    ? `${accent}${SOFT_ALPHA}`
-                    : undefined,
-                }}
-              >
-                <span
-                  className="text-[7px] font-bold leading-none"
-                  style={{ color: active ? "#fff" : `${accent}${FILL_ALPHA}` }}
-                >
-                  #
-                </span>
-                <span
-                  className="h-[3px] rounded-full"
-                  style={{
-                    width: active ? 28 : 22,
-                    backgroundColor: active
-                      ? "#ffffffcc"
-                      : `${accent}${SOFT_ALPHA}`,
-                  }}
-                />
-              </span>
-            );
-          })}
         </span>
-        {/* The channel: someone asks, the assistant answers. */}
-        <span className="flex min-w-0 flex-1 flex-col gap-[6px] p-[8px]">
-          <span className="flex items-center gap-[4px]">
-            <SlackMark size={10} />
+        <span className="flex items-start gap-[9px] px-[12px] py-[11px]">
+          <OkouAvatar size={30} />
+          <span className="flex flex-col gap-[6px] pt-[2px]">
             <span
-              className="text-[9px] font-bold leading-none"
-              style={{ color: accent }}
+              className="w-fit rounded-[3px] px-[5px] py-[2px] text-[9px] font-semibold leading-none"
+              style={{
+                backgroundColor: `${accent}${BAND_ALPHA}`,
+                color: accent,
+              }}
             >
-              #
+              {mention}
             </span>
-            <span
-              className="h-[4px] w-[34px] rounded-full"
-              style={{ backgroundColor: `${accent}${FILL_ALPHA}` }}
-            />
-          </span>
-          <span className="flex items-start gap-[5px]">
-            <Person accent={accent} size={16} />
-            <span className="flex flex-col gap-[3px] pt-[2px]">
-              <span className="flex items-center gap-[3px]">
-                <span
-                  className="rounded-[2px] px-[3px] py-[1px] text-[7px] font-semibold leading-none"
-                  style={{
-                    backgroundColor: `${accent}${BAND_ALPHA}`,
-                    color: accent,
-                  }}
-                >
-                  {mention}
-                </span>
-                <span
-                  className="h-[3px] w-[52px] rounded-full"
-                  style={{ backgroundColor: `${accent}${SOFT_ALPHA}` }}
-                />
-              </span>
-            </span>
-          </span>
-          <span className="flex items-start gap-[5px]">
-            <OkouAvatar size={18} />
-            <span className="flex flex-col gap-[3px] pt-[3px]">
-              <span
-                className="h-[3px] w-[130px] rounded-full"
-                style={{ backgroundColor: `${accent}${SOFT_ALPHA}` }}
-              />
-              <span
-                className="h-[3px] w-[104px] rounded-full"
-                style={{ backgroundColor: `${accent}${SOFT_ALPHA}` }}
-              />
-              {/* The result itself, delivered in the channel. */}
-              <span
-                className={`mt-[2px] h-[20px] w-[142px] ${NODE_CLASS}`}
-                style={{
-                  borderColor: `${accent}${LINE_ALPHA}`,
-                  backgroundColor: `${accent}${BAND_ALPHA}`,
-                }}
-              />
-            </span>
+            <Lines accent={accent} width={158} count={2} height={4} />
           </span>
         </span>
       </span>
@@ -377,22 +301,31 @@ function InviteFigure() {
     <TileRow>
       <Tile accent={accent}>
         <span
-          className={`flex h-[40px] w-[48px] flex-col gap-[4px] p-[5px] ${NODE_CLASS}`}
+          className={`flex h-[46px] w-[50px] flex-col gap-[6px] p-[7px] ${NODE_CLASS}`}
           style={{ borderColor: `${accent}${LINE_ALPHA}` }}
         >
           <span
-            className="h-[4px] w-[22px] rounded-full"
+            className="h-[5px] w-[24px] rounded-full"
             style={{ backgroundColor: `${accent}${FILL_ALPHA}` }}
           />
-          <Lines accent={accent} width={36} count={3} />
+          <Lines accent={accent} width={36} count={2} height={3} />
         </span>
       </Tile>
       <Link accent={accent} />
       <Tile accent={accent}>
-        <span className="flex items-center gap-[4px]">
-          <Person accent={accent} size={20} />
-          <Person accent={accent} size={20} />
-          <Person accent={accent} size={20} />
+        {/* Overlapped, the way a team reads in every product's member list. */}
+        <span className="flex items-center">
+          {["a", "b", "c"].map((id, index) => {
+            return (
+              <span
+                key={id}
+                style={{ marginLeft: index === 0 ? 0 : -8 }}
+                className="rounded-full bg-card"
+              >
+                <Person accent={accent} size={26} />
+              </span>
+            );
+          })}
         </span>
       </Tile>
     </TileRow>
