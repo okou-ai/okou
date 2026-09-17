@@ -4226,14 +4226,14 @@
         "title": "Add Okou to Slack"
       },
       "sources": {
-        "copy": "Okou is your team's AI teammate, working in the cloud. Connect at least one source so it can start from the work your team already has.",
+        "copy": "Connect one source to start.",
         "note": "You choose which accounts to connect.",
         "searchAction": "Find a source for your work",
         "searchCopy": "Search the full catalog by task or app name.",
         "searchEmpty": "No matching sources",
         "searchPlaceholder": "Search by task or app name",
         "searchTitle": "Find a source for your work",
-        "title": "Built for the team, not one terminal."
+        "title": "Your team's AI teammate. In the cloud."
       },
       "startingPrompt": {
         "exact": {
