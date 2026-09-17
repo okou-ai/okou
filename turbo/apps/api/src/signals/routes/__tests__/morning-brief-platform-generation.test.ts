@@ -2713,6 +2713,63 @@ describe("Morning Brief platform receipt wire amounts", () => {
     expect(traffic.bodies).toHaveLength(1);
   });
 
+  it("keeps a body with an invalid number unreadable", async () => {
+    const f = await fixture();
+    slackWithMessages();
+    // `01` is not a JSON number. Preserving reported digits must not make a
+    // document readable that the parser would have refused.
+    const traffic = scriptRawProvider(
+      rawCompletionBody({ prompt_tokens: "01", cost: "0.5" }),
+    );
+
+    const response = await accept(generate(f), [200]);
+    const body = expectGenerated(response.body);
+    expect(body.generation.state).toBe("provider_failed");
+    expect(body.generation.failureReason).toBe("response_unreadable");
+    expect(body.generation.receipt?.cost.state).toBe("invocation_unknown");
+    expect(traffic.bodies).toHaveLength(1);
+  });
+
+  it("leaves number-shaped provider text inside the result alone", async () => {
+    const f = await fixture();
+    slackWithMessages();
+    const traffic = scriptRawProvider(
+      rawCompletionBody(rawUsage("cost", "0.012345678901"), {
+        content: JSON.stringify({
+          decision: "deliver",
+          title: "Release readiness",
+          sections: [
+            {
+              heading: "Decisions",
+              items: [
+                {
+                  // Numbers and a quote inside provider text, which the number
+                  // reading must never reach into or rewrite.
+                  text: 'Ship 1.5 at 0.10000000000000001 cost, "confirmed"',
+                  sourceIds: ["m1"],
+                },
+              ],
+            },
+          ],
+        }),
+      }),
+    );
+
+    const response = await accept(generate(f), [200]);
+    const body = expectGenerated(response.body);
+    expect(body.generation.state).toBe("succeeded");
+    const markdown =
+      body.generation.result?.decision === "deliver"
+        ? body.generation.result.markdown
+        : "";
+    expect(markdown).toContain("0.10000000000000001");
+    expect(markdown).toContain("Ship 1.5");
+    // The field that is a number is read exactly; the text that contains
+    // numbers is delivered unchanged.
+    expect(body.generation.receipt?.cost.value).toBe("0.012345678901");
+    expect(traffic.bodies).toHaveLength(1);
+  });
+
   it("keeps a bare number body an unreadable outcome", async () => {
     const f = await fixture();
     slackWithMessages();

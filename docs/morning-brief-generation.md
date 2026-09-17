@@ -401,6 +401,13 @@ key identity, nesting and every non-numeric value are unchanged, a number stays
 distinguishable from a numeric string — a quoted `"0.5"` is still refused — and
 no other caller of `safeJsonParse` is affected.
 
+The digits come from the engine's own source-text reviver, available from V8
+12.4 and therefore on every Node version this workspace supports. `JSON.parse`
+stays the one thing that parses and validates the document, so text it would
+have rejected — `01`, `1.`, `+1`, a truncated body — is still rejected, and
+number-shaped text inside provider prose is never reached into: it is string
+content, and the reviver only ever sees the number values themselves.
+
 Only the selected `usage` fields and `data.total_cost` are read from that parse;
 nothing scans the body for number-shaped text, which would match a value in
 someone else's field. Bounds are decided by counting digits and shifting a

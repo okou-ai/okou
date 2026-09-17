@@ -54,11 +54,13 @@ interface JsonParseContext {
 declare global {
   interface JSON {
     /**
-     * The source-text reviver this runtime already implements.
+     * The source-text reviver every supported runtime already implements.
      *
-     * The program's `lib` is pinned to ES2022, so the signature is declared
-     * here rather than by widening the whole library surface. Existing one- and
-     * two-argument calls keep resolving to the built-in overload.
+     * V8 12.4 provides it, which is Node 22 and above — the floor this
+     * workspace declares. The program's `lib` is pinned to ES2022, so the
+     * signature is declared here rather than by widening the whole library
+     * surface, and existing one- and two-argument calls keep resolving to the
+     * built-in overload.
      */
     parse(
       text: string,
@@ -103,11 +105,11 @@ export function safeExactJsonParse(input: string): unknown {
   // eslint-disable-next-line no-restricted-syntax -- this is the centralized guarded JSON.parse
   try {
     return JSON.parse(input, (_key, value, context) => {
-      // A number whose source text is unavailable is kept as an unreadable
-      // token rather than as its double: the field stays present, and it fails
-      // the exact domain instead of passing it with rewritten digits.
-      return typeof value === "number"
-        ? new JsonNumberToken(context.source ?? "")
+      // Every primitive carries its source text, so a number always becomes a
+      // token. Anything else is passed through exactly as parsed rather than
+      // rewritten into a value this parse cannot vouch for.
+      return typeof value === "number" && context.source !== undefined
+        ? new JsonNumberToken(context.source)
         : value;
     });
   } catch (error) {
