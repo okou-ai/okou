@@ -11,8 +11,10 @@ import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createHostMapsBddApi } from "./helpers/api-bdd-host-maps";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
+const mocks = createRouteMocks(context);
 const bdd = createBddApi(context);
 const api = createHostMapsBddApi(context);
 const billing = createBillingMediaApi(context);
@@ -44,7 +46,7 @@ async function fixture(enabled = true) {
 
 test("keeps runless deployments private across switch rollback and only issues owner previews", async () => {
   const { actor, capture, body } = await fixture();
-  context.mocks.clerk.session(actor.userId, actor.orgId);
+  mocks.clerk.session(actor.userId, actor.orgId);
   const prepared = await accept(
     setupApp({ context, routes: hostRoutes })(hostContract).preparePrivate({
       headers: { authorization: "Bearer clerk-session" },
