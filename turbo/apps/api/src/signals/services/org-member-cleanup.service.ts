@@ -16,6 +16,7 @@ import { tapError } from "../utils";
 import { transitionAgentRunsToTerminal } from "./agent-run-terminal-transition.service";
 import { revokeMorningBriefCollectionOwnership } from "./morning-brief-collection-occurrence.service";
 import { revokeMorningBriefDeliveryOwnership } from "./morning-brief-delivery.service";
+import { revokeMorningBriefScheduleOwnership } from "./morning-brief-schedule-claim.service";
 
 import type { Db } from "../external/db";
 
@@ -132,6 +133,9 @@ async function revokeOrgMemberRunAuthority(
     // the rendered body, so it is removed here rather than left for the drain
     // to refuse.
     await revokeMorningBriefDeliveryOwnership(tx, {
+    // The departing member's legacy schedule occurrences lose the same
+    // authority here, before the rows they hang from are torn down.
+    await revokeMorningBriefScheduleOwnership(tx, {
       kind: "membership",
       orgId: args.orgId,
       userId: args.userId,

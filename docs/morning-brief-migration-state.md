@@ -282,12 +282,41 @@ and that `next_run_at` is still NULL. It then reads the current schedule and
 timezone, applies the existing recurrence and failure policy, and commits the
 schedule update and the settlement together.
 
+The recurrence clock is sampled after those locks, never at arrival. Waiting on
+a real schedule writer can outlast a cron boundary, and an instant read taken
+before the wait would publish a successor that is already in the past and fire
+again immediately.
+
+The late `last_run_id` write that follows the launch transaction has the same
+shape of hazard and the same answer. It cannot be expressed as one UPDATE with a
+"no newer claim" subquery: under READ COMMITTED a statement keeps the snapshot
+it started with, so an UPDATE that begins before a newer claimant commits, waits
+on the automation row and then proceeds would still evaluate that subquery
+against its pre-wait snapshot and overwrite the newer value. The write therefore
+takes the automation row lock first and re-reads the current claim in later
+statements, which observe everything the wait let through.
+
 That makes a duplicate callback, a failed-Run callback overlapping the outer
 pre-run error path, and a callback from a superseded claim all no-ops. A user
 action that already published a non-null `next_run_at` keeps that schedule, and
 a timezone edited while the claim was active is the timezone its own completion
 uses. Insufficient-credit handling and the existing failure-count and
 auto-disable behavior are unchanged.
+
+### A tick without a claim has no schedule authority
+
+Two ticks can resolve the same due row. The one that loses, or that fails at the
+queue admission boundary before any claim exists, must not behave like the old
+unjournaled writer: that writer computes recurrence and failure counts from its
+own stale snapshot and updates by id and enabled state alone, so it could
+republish a schedule the winner already consumed, raise a failure count or
+disable the automation the winner owns.
+
+A journal-aware tick that failed before acquiring a claim therefore restricts
+its failure update to the exact unconsumed occurrence it resolved. Absence of a
+local claim id is not mutation authority. Genuinely unjournaled legacy ticks
+pass no such restriction and keep their exact previous behavior, and a tick that
+did acquire a claim settles through the shared settlement operation instead.
 
 ### Compatibility branches and their removal gates
 
@@ -310,15 +339,34 @@ auto-disable behavior are unchanged.
 ### Evidence lifetime
 
 Rows are content-free execution and dedupe history: no prompt, provider payload,
-result, email address, credential or free-form error string is stored. They are
-kept for the lifetime of the automation and are removed with it, through the
-`automation_id` cascade, which is also how owner and organization deletion
-removes them. There is deliberately no shorter TTL: deleting a row while its
-callback can still arrive would restore exactly the double-advance this table
-prevents, and losing a known record must never reclassify it as an old
-untracked execution that may advance again. Nothing here authorizes historical
-deletion or backfill, and missing historical evidence is not proof of a drain.
-S7b and S9 have to account for this retained history before removing it.
+result, email address, credential or free-form error string is stored. There is
+deliberately no shorter TTL: deleting a row while its callback can still arrive
+would restore exactly the double-advance this table prevents, and losing a known
+record must never reclassify it as an old untracked execution that may advance
+again. Nothing here authorizes historical deletion or backfill, and missing
+historical evidence is not proof of a drain. S7b and S9 have to account for this
+retained history before removing it.
+
+Two removal paths exist, and the `automation_id` cascade is not sufficient on
+its own. `workflows.owner_user_id` and `workflow_automations.owner_user_id` are
+plain text with no users foreign key, and user cleanup only cascades the Agents
+the departing user owns, so a member whose Morning Brief runs on a colleague's
+shared or default Agent would otherwise keep both the automation and this
+journal after deletion. `revokeMorningBriefScheduleOwnership` therefore runs at
+the same owner, organization and membership revocation points the rest of
+Morning Brief already uses:
+
+- the `automation_id` cascade removes occurrences with their automation,
+  including uninstall;
+- owner, organization and membership revocation deletes that scope's
+  occurrences, and changes nothing else.
+
+Known limit: after revocation a late callback for that scope no longer matches a
+recorded occurrence and falls back to the unjournaled legacy branch, exactly as
+it would for an execution this table never recorded. Closing that residual
+replay window requires the durable owner and revocation epoch S7b owns. It is
+recorded here rather than closed by disabling schedules in cleanup, which would
+change behavior other Morning Brief surfaces already rely on.
 
 ### What this slice does not do
 

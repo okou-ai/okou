@@ -86,7 +86,6 @@ export async function handleWorkflowAutomationInternalCallback(
     resolveIsCreditError: () => {
       return isInsufficientCreditsRun(db, input.callback);
     },
-    settledAt: nowDate(),
   });
   signal?.throwIfAborted();
   if (settled) {

@@ -7,7 +7,7 @@ import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/mode
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { writeDb$, type Db } from "../external/db";
 import type { Tx } from "../../lib/db-types";
 import { now, nowDate } from "../../lib/time";
@@ -35,7 +35,7 @@ import {
 import { createQueueFirstAgentRun$ } from "./agent-runs-create.service";
 import {
   bindMorningBriefScheduleClaimRun,
-  morningBriefScheduleClaimIsNotSuperseded,
+  morningBriefScheduleClaimSuperseded,
 } from "./morning-brief-schedule-claim.service";
 import { workflowAutomationCanFire } from "./workflow-automation-access.service";
 import { loadComputerUseHostGrantForAutoSend } from "./chat-computer-use-host.service";
@@ -571,22 +571,34 @@ async function recordWorkflowAutomationRunStart(
   });
   signal.throwIfAborted();
 
-  await db
-    .update(workflowAutomations)
-    .set({
-      ...(args.recordLastRunId === false ? {} : { lastRunId: runId }),
-      ...(args.recordLastRunAt ? { lastRunAt: nowDate() } : {}),
-      ...(args.due.allowClaimedOnceScheduleAutomation
-        ? { enabled: false }
-        : {}),
-      updatedAt: nowDate(),
-    })
-    .where(
-      and(
-        eq(workflowAutomations.id, automation.id),
-        morningBriefScheduleClaimIsNotSuperseded(db, runId),
-      ),
-    );
+  // The automation row lock is the serialization boundary for this late write.
+  // Taking it first, then re-reading the journal in later statements, is what
+  // makes a claim that committed while this transaction waited visible here.
+  await db.transaction(async (tx) => {
+    const [locked] = await tx
+      .select({ id: workflowAutomations.id })
+      .from(workflowAutomations)
+      .where(eq(workflowAutomations.id, automation.id))
+      .limit(1)
+      .for("update");
+    if (!locked) {
+      return;
+    }
+    if (await morningBriefScheduleClaimSuperseded(tx, runId)) {
+      return;
+    }
+    await tx
+      .update(workflowAutomations)
+      .set({
+        ...(args.recordLastRunId === false ? {} : { lastRunId: runId }),
+        ...(args.recordLastRunAt ? { lastRunAt: nowDate() } : {}),
+        ...(args.due.allowClaimedOnceScheduleAutomation
+          ? { enabled: false }
+          : {}),
+        updatedAt: nowDate(),
+      })
+      .where(eq(workflowAutomations.id, automation.id));
+  });
   signal.throwIfAborted();
 }
 

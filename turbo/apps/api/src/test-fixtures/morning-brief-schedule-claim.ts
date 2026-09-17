@@ -3,7 +3,7 @@ import { asc, eq } from "drizzle-orm";
 
 import { db } from "../lib/db";
 
-export interface MorningBriefScheduleClaimSnapshot {
+interface MorningBriefScheduleClaimSnapshot {
   readonly id: string;
   readonly automationId: string;
   readonly orgId: string;

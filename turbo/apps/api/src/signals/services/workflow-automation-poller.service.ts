@@ -276,16 +276,25 @@ function journaledScheduleExecution(
       // A journaled occurrence settles through the shared operation that the
       // completion callback uses; only an unjournaled tick keeps the legacy
       // update that can overlap a failed-Run callback.
-      if (claimId === undefined) {
-        await recordPreRunFailure(args.db, automation, error, signal);
+      if (claimId !== undefined) {
+        await settleMorningBriefSchedulePreRunFailure(args.db, {
+          automationId: automation.id,
+          claimId,
+          isCreditError: isInsufficientCreditsFailure(error),
+        });
+        logPreRunFailure(automation, error);
         return;
       }
-      await settleMorningBriefSchedulePreRunFailure(args.db, {
-        automationId: automation.id,
-        claimId,
-        isCreditError: isInsufficientCreditsFailure(error),
-      });
-      logPreRunFailure(automation, error);
+      // Failing before any claim is not authority to mutate the schedule: a
+      // competing tick may already own this occurrence. The update only lands
+      // while the original due instant is still unconsumed.
+      await recordPreRunFailure(
+        args.db,
+        automation,
+        error,
+        signal,
+        args.scheduledAnchorAt ?? undefined,
+      );
     },
   };
 }
@@ -326,11 +335,20 @@ function logPreRunFailure(automation: AutomationRow, error: unknown): void {
   }
 }
 
+/**
+ * `stillDueAt` restricts the update to the exact unconsumed occurrence this
+ * tick resolved. A journal-aware tick that failed before it acquired any claim
+ * passes it, so it can never republish a schedule, raise a failure count or
+ * disable an automation that another tick already claimed or that a user has
+ * since rescheduled. Legacy unjournaled ticks pass nothing and keep their exact
+ * previous behavior.
+ */
 async function recordPreRunFailure(
   db: Db,
   automation: AutomationRow,
   error: unknown,
   signal: AbortSignal,
+  stillDueAt?: Date,
 ): Promise<void> {
   const isCreditError = isInsufficientCreditsFailure(error);
   const context = {
@@ -353,12 +371,16 @@ async function recordPreRunFailure(
     failureTime,
     shouldDisable,
   );
+  const stillOwnsOccurrence = stillDueAt
+    ? eq(workflowAutomations.nextRunAt, stillDueAt)
+    : undefined;
   const automationIsStillEligible =
     automation.scheduleType === "once"
-      ? eq(workflowAutomations.id, automation.id)
+      ? and(eq(workflowAutomations.id, automation.id), stillOwnsOccurrence)
       : and(
           eq(workflowAutomations.id, automation.id),
           eq(workflowAutomations.enabled, true),
+          stillOwnsOccurrence,
         );
 
   await db
@@ -555,10 +577,20 @@ async function executeDueWorkflowAutomations(
       continue;
     }
 
+    const execution = journaledScheduleExecution(
+      {
+        db: args.db,
+        automation: claimed,
+        scheduledAnchorAt: journaled ? scheduledAnchorAt : null,
+        claimedAt: currentTime,
+      },
+      signal,
+    );
+
     const chatThreadId = await tapError(
       ensureDueWorkflowAutomationChatThread(args.db, row, currentTime),
       async (error) => {
-        await recordPreRunFailure(args.db, claimed, error, signal);
+        await execution.recordFailure(error);
         skipped++;
       },
     );
@@ -572,16 +604,6 @@ async function executeDueWorkflowAutomations(
       agentId: row.agentId,
       chatThreadId,
     };
-
-    const execution = journaledScheduleExecution(
-      {
-        db: args.db,
-        automation: claimed,
-        scheduledAnchorAt: journaled ? scheduledAnchorAt : null,
-        claimedAt: currentTime,
-      },
-      signal,
-    );
 
     // The tick owns the fire time, so it builds the trigger line here rather
     // than letting a later drain guess it from its own clock.
