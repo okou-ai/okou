@@ -3393,6 +3393,7 @@ name = "rfb-client"
 version = "0.2.0"
 dependencies = [
  "des",
+ "flate2",
  "rcgen",
  "rustls",
  "thiserror",

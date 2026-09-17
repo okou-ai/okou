@@ -557,6 +557,41 @@ impl LocalQueue {
                 "local active input text must not be empty",
             ));
         }
+        let _guard = super::fs::lock_active_inputs(&self.group_dir)?;
+        // Terminal owners publish a result or remove the retained job before
+        // taking this same lock for cleanup. A preliminary CLI check cannot
+        // replace this check: an independent publisher can outlive both owners.
+        if super::private_file_has_content(
+            &super::result_path(&self.group_dir, entry.run_id),
+            "local result file",
+        )? {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("local job {} has already completed", entry.run_id),
+            ));
+        }
+        let paths = match self.collect_job_file_paths(entry.run_id) {
+            JobFileScan::Complete(paths) => paths,
+            JobFileScan::ScanFailed(_) => {
+                return Err(std::io::Error::other(format!(
+                    "cannot scan local job requests for {}",
+                    entry.run_id
+                )));
+            }
+        };
+        let mut has_job = false;
+        for path in paths {
+            has_job |= super::marker_file_exists(&path, "local job file")?;
+        }
+        if !has_job {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("no local job request found for {}", entry.run_id),
+            ));
+        }
+        #[cfg(test)]
+        crate::cmd::active_input_publication_locked_for_test();
+
         let run_dir = super::ensure_run_inputs_dir(&self.group_dir, entry.run_id)?;
         let bytes = serde_json::to_vec(entry).map_err(std::io::Error::other)?;
         let tmp_path = run_dir.join(format!(
@@ -652,6 +687,14 @@ impl LocalQueue {
     }
 
     pub(crate) fn cleanup_active_inputs_sync(&self, run_id: RunId) {
+        let _guard = match super::fs::lock_active_inputs(&self.group_dir) {
+            Ok(guard) => guard,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return,
+            Err(e) => {
+                warn!(run_id = %run_id, error = %e, "local: failed to lock active-input cleanup");
+                return;
+            }
+        };
         let run_dir = super::run_inputs_dir(&self.group_dir, run_id);
         match std::fs::symlink_metadata(&run_dir) {
             Ok(metadata) if metadata.file_type().is_dir() => {
@@ -1188,6 +1231,7 @@ mod tests {
         let group_dir = dir.path();
         let queue = LocalQueue::new(group_dir.to_path_buf());
         let run_id = RunId::new_v4();
+        write_job_request(group_dir, run_id, crate::profile::DEFAULT_PROFILE);
         let entry_10 = ActiveInputEntry {
             run_id,
             sequence: 10,
@@ -1223,6 +1267,7 @@ mod tests {
         let group_dir = dir.path();
         let queue = LocalQueue::new(group_dir.to_path_buf());
         let run_id = RunId::new_v4();
+        write_job_request(group_dir, run_id, crate::profile::DEFAULT_PROFILE);
         let other_run_id = RunId::new_v4();
         let valid = ActiveInputEntry {
             run_id,
@@ -1275,6 +1320,7 @@ mod tests {
         let group_dir = dir.path();
         let queue = LocalQueue::new(group_dir.to_path_buf());
         let run_id = RunId::new_v4();
+        write_job_request(group_dir, run_id, crate::profile::DEFAULT_PROFILE);
         let entry_1 = ActiveInputEntry {
             run_id,
             sequence: 1,
@@ -1300,6 +1346,7 @@ mod tests {
         let group_dir = dir.path();
         let queue = LocalQueue::new(group_dir.to_path_buf());
         let run_id = RunId::new_v4();
+        write_job_request(group_dir, run_id, crate::profile::DEFAULT_PROFILE);
         let original = ActiveInputEntry {
             run_id,
             sequence: 1,
@@ -1338,11 +1385,118 @@ mod tests {
     }
 
     #[test]
+    fn active_input_write_rejects_terminal_result_with_retained_job() {
+        let dir = tempfile::tempdir().unwrap();
+        let group_dir = dir.path();
+        let queue = LocalQueue::new(group_dir.to_path_buf());
+        let run_id = RunId::new_v4();
+        let job_path = write_job_request(group_dir, run_id, crate::profile::DEFAULT_PROFILE);
+        assert!(queue.write_result_sync(run_id, 0, None));
+
+        let error = queue
+            .write_active_input_sync(&ActiveInputEntry {
+                run_id,
+                sequence: 1,
+                text: "late".to_string(),
+            })
+            .unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
+        assert!(job_path.exists());
+        assert!(!super::super::inputs_dir(group_dir).exists());
+    }
+
+    #[test]
+    fn active_input_write_rejects_missing_job_despite_retained_claim() {
+        let dir = tempfile::tempdir().unwrap();
+        let group_dir = dir.path();
+        let queue = LocalQueue::new(group_dir.to_path_buf());
+        let run_id = RunId::new_v4();
+        super::super::ensure_claims_dir(group_dir).unwrap();
+        let claim_path = super::super::claim_path(group_dir, run_id);
+        super::super::write_private_marker(&claim_path, "test claim").unwrap();
+
+        let error = queue
+            .write_active_input_sync(&ActiveInputEntry {
+                run_id,
+                sequence: 1,
+                text: "late".to_string(),
+            })
+            .unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
+        assert!(claim_path.exists());
+        assert!(!super::super::inputs_dir(group_dir).exists());
+    }
+
+    #[test]
+    fn active_input_write_rejects_unreadable_result_state() {
+        let dir = tempfile::tempdir().unwrap();
+        let group_dir = dir.path();
+        let queue = LocalQueue::new(group_dir.to_path_buf());
+        let run_id = RunId::new_v4();
+        write_job_request(group_dir, run_id, crate::profile::DEFAULT_PROFILE);
+        let result_path = super::super::result_path(group_dir, run_id);
+        std::fs::create_dir_all(&result_path).unwrap();
+
+        let error = queue
+            .write_active_input_sync(&ActiveInputEntry {
+                run_id,
+                sequence: 1,
+                text: "follow-up".to_string(),
+            })
+            .unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
+        assert!(result_path.is_dir());
+        assert!(!super::super::inputs_dir(group_dir).exists());
+    }
+
+    #[test]
+    fn active_input_write_rejects_failed_job_scan() {
+        let dir = tempfile::tempdir().unwrap();
+        let group_dir = dir.path();
+        let queue = LocalQueue::new(group_dir.to_path_buf());
+        let run_id = RunId::new_v4();
+        std::fs::write(super::super::jobs_dir(group_dir), b"not a directory").unwrap();
+
+        let error = queue
+            .write_active_input_sync(&ActiveInputEntry {
+                run_id,
+                sequence: 1,
+                text: "follow-up".to_string(),
+            })
+            .unwrap_err();
+
+        assert_ne!(error.kind(), std::io::ErrorKind::NotFound);
+        assert!(!super::super::inputs_dir(group_dir).exists());
+    }
+
+    #[test]
+    fn active_input_write_does_not_create_missing_group() {
+        let dir = tempfile::tempdir().unwrap();
+        let group_dir = dir.path().join("missing-group");
+        let queue = LocalQueue::new(group_dir.clone());
+
+        let error = queue
+            .write_active_input_sync(&ActiveInputEntry {
+                run_id: RunId::new_v4(),
+                sequence: 1,
+                text: "late".to_string(),
+            })
+            .unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
+        assert!(!group_dir.exists());
+    }
+
+    #[test]
     fn active_input_cleanup_is_idempotent() {
         let dir = tempfile::tempdir().unwrap();
         let group_dir = dir.path();
         let queue = LocalQueue::new(group_dir.to_path_buf());
         let run_id = RunId::new_v4();
+        write_job_request(group_dir, run_id, crate::profile::DEFAULT_PROFILE);
         queue
             .write_active_input_sync(&ActiveInputEntry {
                 run_id,

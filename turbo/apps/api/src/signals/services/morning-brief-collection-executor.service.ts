@@ -17,6 +17,7 @@ import {
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 
+import type { Tx } from "../../lib/db-types";
 import { nowDate } from "../../lib/time";
 import { clerk$ } from "../external/clerk";
 import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
@@ -29,8 +30,10 @@ import {
   type MorningBriefCollectionAdmission,
   type MorningBriefCollectionClaim,
   type MorningBriefCollectionCompletion,
+  type MorningBriefCollectionOccurrenceRow,
   type MorningBriefCollectionOwner,
 } from "./morning-brief-collection-occurrence.service";
+import { loadCurrentMembershipId } from "./morning-brief-membership.service";
 import { loadMorningBriefMigrationState } from "./morning-brief-migration-state.service";
 import {
   collectMorningBriefSlackBundle,
@@ -116,6 +119,37 @@ type AdmissionResult =
       readonly reason: MorningBriefCollectionSkipReason;
     };
 
+/** Everything this attempt owns at the instant its collection becomes durable. */
+export interface MorningBriefCollectionHandoffContext {
+  readonly admission: MorningBriefCollectionAdmission;
+  readonly claim: MorningBriefCollectionClaim;
+  readonly completion: MorningBriefCollectionCompletion;
+  readonly occurrence: MorningBriefCollectionOccurrenceRow;
+  /** The fresh in-memory bundle. It is never persisted and never replayable. */
+  readonly bundle: MorningBriefSlackBundle;
+  readonly at: Date;
+}
+
+/**
+ * The narrow collection-to-generation handoff.
+ *
+ * A completed occurrence is metadata, not a checkpoint, so the only moment a
+ * downstream stage can be admitted for a bundle is while this executor still
+ * holds it. `onCollected` runs inside the finalize transaction, after the
+ * guarded update matched, so the collected facts and the downstream admission
+ * become durable together or not at all: throwing rolls the finalization back
+ * and leaves the occurrence reclaimable.
+ *
+ * It is optional, and the collect-only entrypoint passes none — that path keeps
+ * exactly its previous behavior.
+ */
+interface MorningBriefCollectionHandoff {
+  readonly onCollected: (
+    tx: Tx,
+    context: MorningBriefCollectionHandoffContext,
+  ) => Promise<void>;
+}
+
 function occurrenceView(
   row: OccurrenceRow,
 ): MorningBriefCollectionOccurrenceView {
@@ -169,10 +203,8 @@ async function loadInstallationAgentId(
 /**
  * The member's current Clerk membership generation.
  *
- * Ordinary request authentication may answer from the 60-second role cache, so
- * execution admission repeats the exact-member lookup here and pins the
- * immutable membership id. A remove and rejoin issues a new id, which is what
- * stops a new membership from reviving an older occurrence.
+ * The exact-member lookup and its immutable-id pin are shared with the
+ * Simple Morning Brief connector reader, so both admit on one authority.
  */
 const currentMembershipId$ = command(
   async (
@@ -180,21 +212,7 @@ const currentMembershipId$ = command(
     owner: MorningBriefCollectionOwner,
     signal: AbortSignal,
   ): Promise<string | null> => {
-    const memberships = await get(
-      clerk$,
-    ).organizations.getOrganizationMembershipList(
-      { organizationId: owner.orgId, userId: [owner.userId], limit: 1 },
-      undefined,
-      signal,
-    );
-    signal.throwIfAborted();
-    const membership = memberships.data.find((entry) => {
-      return (
-        entry.publicUserData?.userId === owner.userId &&
-        entry.organization.id === owner.orgId
-      );
-    });
-    return membership?.id ?? null;
+    return await loadCurrentMembershipId(get(clerk$), owner, signal);
   },
 );
 
@@ -317,6 +335,43 @@ const admitMorningBriefCollection$ = command(
         },
       },
     };
+  },
+);
+
+/**
+ * The owner's live Morning Brief authority, without the Slack credential.
+ *
+ * It is the same canonical resolution admission uses — the implementation
+ * switch, the canonical installed-and-enabled brief, the member timezone, the
+ * installation's Agent, a fresh exact-member Clerk membership and the native
+ * Slack binding — exposed so a later stage can revalidate that exact authority
+ * instead of inventing a second adoption algorithm. The bot token stays inside
+ * this module: a caller that only needs to know *whether* the authority still
+ * holds never receives a credential.
+ */
+export const currentMorningBriefCollectionAuthority$ = command(
+  async (
+    { set },
+    args: {
+      readonly owner: MorningBriefCollectionOwner;
+      readonly scheduledFor: Date;
+    },
+    signal: AbortSignal,
+  ): Promise<
+    | {
+        readonly kind: "admitted";
+        readonly admission: MorningBriefCollectionAdmission;
+      }
+    | {
+        readonly kind: "not-executed";
+        readonly reason: MorningBriefCollectionSkipReason;
+      }
+  > => {
+    const resolved = await set(admitMorningBriefCollection$, args, signal);
+    signal.throwIfAborted();
+    return resolved.kind === "admitted"
+      ? { kind: "admitted", admission: resolved.admitted.admission }
+      : resolved;
   },
 );
 
@@ -468,6 +523,7 @@ export const executeMorningBriefSlackCollection$ = command(
     args: {
       readonly owner: MorningBriefCollectionOwner;
       readonly scheduledFor: Date;
+      readonly handoff?: MorningBriefCollectionHandoff;
     },
     signal: AbortSignal,
   ): Promise<MorningBriefCollectionExecution> => {
@@ -544,13 +600,28 @@ export const executeMorningBriefSlackCollection$ = command(
     // compares is read inside that transition, after its owner and row locks,
     // because waiting for them can outlast the lease this attempt holds.
     const finalized = await db.transaction(async (tx) => {
-      return await finalizeMorningBriefCollection(
+      const result = await finalizeMorningBriefCollection(
         tx,
         admission,
         claim,
         completion,
         nowDate,
       );
+      // The handoff joins this transaction rather than following it, so no
+      // downstream stage can ever be admitted for a bundle whose collection
+      // did not become durable, and none can be admitted for a bundle that was
+      // discarded because the claim was lost.
+      if (result.kind === "finalized" && collected.kind === "collected") {
+        await args.handoff?.onCollected(tx, {
+          admission,
+          claim,
+          completion,
+          occurrence: result.occurrence,
+          bundle: collected.bundle,
+          at: result.at,
+        });
+      }
+      return result;
     });
     signal.throwIfAborted();
     if (finalized.kind !== "finalized") {

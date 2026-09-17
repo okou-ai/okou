@@ -8,6 +8,7 @@ import {
   barrierQueryBinds,
   barrierQueryText,
   withDatabaseTransactionBarrierFixture,
+  type SelectedTransaction,
   type TransactionBarrier,
 } from "./account-erasure-subject";
 
@@ -117,14 +118,51 @@ function isContentLock(queryArgs: unknown[], table: string): boolean {
   );
 }
 
+/** The first statement shared B1 admission issues, before any advisory lock and
+ * before its closure lookup. Pausing here leaves the identity already resolved
+ * and admission not yet begun. */
+function isErasureAdmissionStart(queryArgs: unknown[]): boolean {
+  return barrierQueryText(queryArgs).includes("erasure_isolation_probe");
+}
+
+/** The generated-title gate's own bounded prior-round read. Only that workflow
+ * reads this thread's events inside a fenced transaction, so it identifies the
+ * capture rather than any other reader of the same thread. */
+function isTitleContextRead(
+  queryArgs: unknown[],
+  chatThreadId: string,
+): boolean {
+  const text = barrierQueryText(queryArgs);
+  return (
+    text.startsWith("select") &&
+    text.includes('from "chat_events"') &&
+    barrierQueryBinds(queryArgs, chatThreadId)
+  );
+}
+
+function tookIdentityLock(transaction: SelectedTransaction): boolean {
+  return transaction.statements.some((statement) => {
+    return statement.includes("for key share");
+  });
+}
+
 /**
- * Where the paused transaction stops. `identity` precedes subject admission,
- * `agent-lock` and `thread-lock` sit between the unlocked identity read and the
- * matching identity lock, and `commit` retains every barrier with the title or
- * draft already written. A thread without an Agent issues no `agent-lock`.
+ * Where the paused transaction stops. `identity` precedes subject admission and
+ * `admission` sits between the resolved identity and B1's first statement, both
+ * of which the read-only initiation gate and the writer reach. `title-context`
+ * is the generated-title gate's own prior-round read. `agent-lock` and
+ * `thread-lock` sit between the unlocked identity read and the matching
+ * identity lock, and `commit` retains every barrier with the title or draft
+ * already written. A thread without an Agent issues no `agent-lock`.
+ *
+ * `commit` additionally requires that the transaction already took an identity
+ * lock. The read-only gate commits first and never locks, so without that the
+ * barrier would pause the gate's commit instead of the writer's.
  */
 type ChatThreadContentBarrierStop =
   | "identity"
+  | "admission"
+  | "title-context"
   | "agent-lock"
   | "thread-lock"
   | "commit";
@@ -133,9 +171,17 @@ function reachedBarrierStop(
   stop: ChatThreadContentBarrierStop,
   queryArgs: unknown[],
   identityRead: boolean,
+  chatThreadId: string,
+  transaction: SelectedTransaction,
 ): boolean {
   if (stop === "identity") {
     return identityRead;
+  }
+  if (stop === "admission") {
+    return isErasureAdmissionStart(queryArgs);
+  }
+  if (stop === "title-context") {
+    return isTitleContextRead(queryArgs, chatThreadId);
   }
   if (stop === "agent-lock") {
     return isContentLock(queryArgs, "agents");
@@ -143,7 +189,9 @@ function reachedBarrierStop(
   if (stop === "thread-lock") {
     return isContentLock(queryArgs, "chat_threads");
   }
-  return barrierQueryText(queryArgs) === "commit";
+  return (
+    barrierQueryText(queryArgs) === "commit" && tookIdentityLock(transaction)
+  );
 }
 
 /** Pauses the draft or rename transaction opened for one thread. See
@@ -163,8 +211,14 @@ export async function withChatThreadContentBarrierFixture<T>(
       select: (queryArgs) => {
         return isContentIdentityRead(queryArgs, args.chatThreadId);
       },
-      stopAt: (queryArgs, selectingStatement) => {
-        return reachedBarrierStop(args.stopAt, queryArgs, selectingStatement);
+      stopAt: (queryArgs, selectingStatement, transaction) => {
+        return reachedBarrierStop(
+          args.stopAt,
+          queryArgs,
+          selectingStatement,
+          args.chatThreadId,
+          transaction,
+        );
       },
       work: args.work,
     },

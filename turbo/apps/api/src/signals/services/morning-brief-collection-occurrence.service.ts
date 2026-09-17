@@ -96,6 +96,8 @@ type MorningBriefCollectionFinalizeResult =
   | {
       readonly kind: "finalized";
       readonly occurrence: MorningBriefCollectionOccurrenceRow;
+      /** The admitted instant this completion was written with. */
+      readonly at: Date;
     }
   | { readonly kind: "claim-lost" }
   | { readonly kind: "owner-revoked" };
@@ -170,11 +172,20 @@ function memberKey(owner: MorningBriefCollectionOwner): SQL | undefined {
  * rather than claiming an attempt, reaching the provider, and leaving a stale
  * occurrence in the rejoined member's way.
  */
-async function lockCollectionOwner(
+export async function lockCollectionOwner(
   tx: Tx,
-  admission: Pick<MorningBriefCollectionAdmission, "owner" | "memberCreatedAt">,
+  owner: MorningBriefCollectionOwner,
 ): Promise<boolean> {
-  const { owner } = admission;
+  const member = await lockOwnerRow(tx, owner);
+  return member !== undefined && member.revokedAt === null;
+}
+
+async function lockOwnerRow(
+  tx: Tx,
+  owner: MorningBriefCollectionOwner,
+): Promise<
+  { readonly revokedAt: Date | null; readonly createdAt: Date } | undefined
+> {
   await assertErasureSubjectWritable(tx, [
     { subjectKind: "organization", subjectId: owner.orgId },
     { subjectKind: "user", subjectId: owner.userId },
@@ -188,6 +199,23 @@ async function lockCollectionOwner(
     .where(memberKey(owner))
     .limit(1)
     .for("key share");
+  return member;
+}
+
+/**
+ * The same lock, plus the parent generation this admission resolved against.
+ *
+ * Only admission can be stale this way: it resolves an external membership
+ * answer that a completed cleanup may already have invalidated, and the rejoin
+ * that follows inserts an unstamped replacement row. A later stage holding a
+ * persisted occurrence needs no such check, because deleting the parent
+ * cascades that occurrence away — its survival is the proof.
+ */
+async function lockAdmittedCollectionOwner(
+  tx: Tx,
+  admission: Pick<MorningBriefCollectionAdmission, "owner" | "memberCreatedAt">,
+): Promise<boolean> {
+  const member = await lockOwnerRow(tx, admission.owner);
   return (
     member !== undefined &&
     member.revokedAt === null &&
@@ -237,8 +265,16 @@ async function lockOccurrence(
   return row;
 }
 
-/** Every frozen field a retry must still match to reuse an occurrence. */
-function sameBinding(
+/**
+ * Every frozen field a retry must still match to reuse an occurrence.
+ *
+ * It is exported because a later stage that holds this occurrence has to prove
+ * the same thing before it acts on the owner's behalf or releases what it
+ * produced: the binding an occurrence was admitted under is the only authority
+ * its results ever had. A different current binding is a different authority,
+ * never a licence to reuse the old one's work.
+ */
+export function morningBriefCollectionBindingMatches(
   row: MorningBriefCollectionOccurrenceRow,
   admission: MorningBriefCollectionAdmission,
 ): boolean {
@@ -337,7 +373,7 @@ export async function claimMorningBriefCollection(
   leaseToken: string,
   clock: () => Date,
 ): Promise<MorningBriefCollectionClaimResult> {
-  if (!(await lockCollectionOwner(tx, admission))) {
+  if (!(await lockAdmittedCollectionOwner(tx, admission))) {
     return { kind: "rejected", reason: "owner-revoked" };
   }
   let current = await lockOccurrence(tx, admission);
@@ -384,7 +420,7 @@ export async function claimMorningBriefCollection(
   }
 
   const at = clock();
-  if (!sameBinding(current, admission)) {
+  if (!morningBriefCollectionBindingMatches(current, admission)) {
     return { kind: "rejected", reason: "binding-changed" };
   }
   if (current.status === "completed") {
@@ -427,11 +463,11 @@ export async function finalizeMorningBriefCollection(
   completion: MorningBriefCollectionCompletion,
   clock: () => Date,
 ): Promise<MorningBriefCollectionFinalizeResult> {
-  if (!(await lockCollectionOwner(tx, admission))) {
+  if (!(await lockAdmittedCollectionOwner(tx, admission))) {
     return { kind: "owner-revoked" };
   }
   const current = await lockOccurrence(tx, admission);
-  if (!current || !sameBinding(current, admission)) {
+  if (!current || !morningBriefCollectionBindingMatches(current, admission)) {
     return { kind: "claim-lost" };
   }
   const at = clock();
@@ -466,7 +502,7 @@ export async function finalizeMorningBriefCollection(
     )
     .returning();
   return finalized
-    ? { kind: "finalized", occurrence: finalized }
+    ? { kind: "finalized", occurrence: finalized, at }
     : { kind: "claim-lost" };
 }
 
@@ -549,6 +585,28 @@ export async function revokeMorningBriefCollectionOwnership(
   await tx
     .delete(morningBriefCollectionOccurrences)
     .where(revocationWhere(scope));
+}
+
+/**
+ * Read one occurrence's frozen scope and binding.
+ *
+ * The row is the only durable record of the authority a collection was
+ * admitted under, so anything that later revalidates that authority compares
+ * against this rather than against a caller-supplied copy.
+ */
+export async function readMorningBriefCollectionOccurrence(
+  db: Pick<ReadonlyDb, "select">,
+  key: Pick<
+    MorningBriefCollectionAdmission,
+    "owner" | "scheduledFor" | "collectionKind"
+  >,
+): Promise<MorningBriefCollectionOccurrenceRow | undefined> {
+  const [row] = await db
+    .select()
+    .from(morningBriefCollectionOccurrences)
+    .where(occurrenceKey(key))
+    .limit(1);
+  return row;
 }
 
 /** The next lease deadline for an attempt claimed at `at`. */

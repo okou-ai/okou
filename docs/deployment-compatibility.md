@@ -2093,7 +2093,7 @@ lease semantics, finite budgets and declared coverage limits.
 
 ## Morning Brief collection revocation stamp (#34860)
 
-Migration 1152 adds the nullable `org_members_metadata.morning_brief_collection_revoked_at`
+Migration 1153 adds the nullable `org_members_metadata.morning_brief_collection_revoked_at`
 column. It is additive, has no default and needs no backfill, scan or
 `LOCK TABLE`, so it applies as an ordinary short transaction.
 
@@ -2110,7 +2110,7 @@ found no occurrence to delete, and long before the member row itself is removed.
   organization cleanup write this column **unconditionally**, in the same
   transaction that already revokes run authority, with no feature check in front
   of it; the default-off `simpleMorningBrief` switch does not protect it.
-  Promoting the API artifact before migration 1152 has shipped would make those
+  Promoting the API artifact before migration 1153 has shipped would make those
   Clerk cleanup webhooks fail with `42703`. Claiming and finalizing read the
   column in the same unconditional statement that locks the member row.
 - **Rollback** leaves stamped rows behind. An older artifact ignores them, so a
