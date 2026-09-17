@@ -147,14 +147,47 @@ after `COMMIT`.
 
 ## Cost
 
-Per accepted request the admission adds, inside the one existing transaction:
-two `set_config` round trips, one identity `SELECT` (primary key plus a left
-join on `agents`), the shared `assertErasureSubjectWritable` probe, one
-`agents FOR KEY SHARE`, one `chat_threads FOR KEY SHARE` and one repeat identity
-`SELECT` — the same additive inventory the model-settings, pin and title slices
-already accepted, on rows reached by primary key. The transaction count is
-unchanged at one per attempt; a reselect costs one more bounded attempt, capped
-at three. `lock_timeout` stays `1s` and `statement_timeout` stays `5s`.
+Per accepted request the admission adds ten statements inside the one existing
+transaction, and only six of them touch a table at all:
+
+| Added statement                                           | Count | Table access                                                                                 |
+| --------------------------------------------------------- | ----- | -------------------------------------------------------------------------------------------- |
+| `SELECT set_config('lock_timeout' / 'statement_timeout')` | 2     | none; session-local settings                                                                 |
+| `current_setting('transaction_isolation')` probe          | 1     | none; evaluated over a `VALUES` row                                                          |
+| `pg_advisory_xact_lock_shared` per distinct subject       | 2-3   | none; lock manager only                                                                      |
+| Closure lookup on `account_erasure_jobs`                  | 1     | predicate on the `(subject_kind, subject_id)` prefix of `account_erasure_subject_generation` |
+| `agents` / `chat_threads` `FOR KEY SHARE`                 | 2     | one row each, by primary key                                                                 |
+| Identity read, `chat_threads` left join `agents`          | 2     | one `chat_threads` row by primary key plus its `agents` parent                               |
+
+The advisory-lock count is 2 for this slice's common shape, where the thread
+user and the Agent owner are the same user, and 3 when a genuinely distinct
+shared-Agent owner exists. Every statement targets at most one row, but that is
+a property of the predicates, not of the access paths PostgreSQL chooses: the
+`set_config`, probe and advisory-lock statements read no table, and the observed
+plans for the rest are fixture-scale dependent.
+
+The plans actually observed locally (`EXPLAIN`, PostgreSQL 18.6) on a fixture of
+125 `chat_threads` rows in 5 pages, 131 `agents` rows in 10 pages and an empty
+single-page `account_erasure_jobs`:
+
+- Identity read: `Nested Loop Left Join`, with a **`Seq Scan on chat_threads`**
+  and an `Index Scan using agents_pkey`.
+- Closure lookup: **`Seq Scan on account_erasure_jobs`**.
+- `agents FOR KEY SHARE`: `LockRows` over `Index Scan using agents_pkey`.
+- `chat_threads FOR KEY SHARE`: `LockRows` over a **`Seq Scan on chat_threads`**.
+- Pin `UPDATE`: `Nested Loop` with a `Seq Scan on chat_threads` and an
+  `Index Scan` on `agents` for the organization `EXISTS`.
+
+`chat_threads_pkey` and `account_erasure_subject_generation` both exist; at this
+size a 5-page or 1-page table is simply cheaper to scan than to descend, so the
+planner does not use them. These are therefore **local plans on a local
+fixture**, not the plans a production-sized table produces, and they are
+recorded here as observed evidence rather than as a claim about production
+access paths.
+
+The transaction count is unchanged at one per attempt; a reselect costs one more
+bounded attempt, capped at three. `lock_timeout` stays `1s` and
+`statement_timeout` stays `5s`.
 
 Local same-fixture per-request samples are recorded on the pull request rather
 than here, because they are machine- and fixture-scale specific. No universal
