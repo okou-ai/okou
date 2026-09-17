@@ -1893,9 +1893,9 @@
       },
       "picker": {
         "allPresenters": "すべてのプレゼンター",
-        "allPresentersCount": "すべてのプレゼンター ({{count}})",
+        "allPresentersCount": "すべてのプレゼンター ({{total}})",
         "allVoices": "すべての音声",
-        "allVoicesCount": "すべての音声 ({{count}})",
+        "allVoicesCount": "すべての音声 ({{total}})",
         "autoVoiceDescription": "スタイルに合う音声",
         "avatarVoice": "アバターの音声",
         "back": "戻る",
@@ -1911,8 +1911,8 @@
         "searchVoices": "音声を検索",
         "selectedStyle": "選択中: {{name}}",
         "settings": "イントロ動画の設定",
-        "styleCount": "{{count}} 件のスタイル",
         "styleCountOf": "{{total}} 件中 {{shown}} 件",
+        "styleCount_other": "{{count}} 件のスタイル",
         "useStyle": "{{name}} を使用"
       },
       "style": {

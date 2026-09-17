@@ -1939,9 +1939,9 @@
       },
       "picker": {
         "allPresenters": "Todos os apresentadores",
-        "allPresentersCount": "Todos os apresentadores ({{count}})",
+        "allPresentersCount": "Todos os apresentadores ({{total}})",
         "allVoices": "Todas as vozes",
-        "allVoicesCount": "Todas as vozes ({{count}})",
+        "allVoicesCount": "Todas as vozes ({{total}})",
         "autoVoiceDescription": "Uma voz que combina com seu estilo",
         "avatarVoice": "Voz do avatar",
         "back": "Voltar",
@@ -1957,8 +1957,9 @@
         "searchVoices": "Buscar vozes",
         "selectedStyle": "Selecionado: {{name}}",
         "settings": "Configurações do vídeo de introdução",
-        "styleCount": "{{count}} estilos",
         "styleCountOf": "{{shown}} de {{total}}",
+        "styleCount_one": "{{count}} estilo",
+        "styleCount_other": "{{count}} estilos",
         "useStyle": "Usar {{name}}"
       },
       "style": {

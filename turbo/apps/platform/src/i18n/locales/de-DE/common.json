@@ -1901,9 +1901,9 @@
       },
       "picker": {
         "allPresenters": "Alle Moderatoren",
-        "allPresentersCount": "Alle Moderatoren ({{count}})",
+        "allPresentersCount": "Alle Moderatoren ({{total}})",
         "allVoices": "Alle Stimmen",
-        "allVoicesCount": "Alle Stimmen ({{count}})",
+        "allVoicesCount": "Alle Stimmen ({{total}})",
         "autoVoiceDescription": "Eine Stimme, die zu deinem Stil passt",
         "avatarVoice": "Stimme des Avatars",
         "back": "Zurück",
@@ -1919,8 +1919,9 @@
         "searchVoices": "Stimmen suchen",
         "selectedStyle": "Ausgewählt: {{name}}",
         "settings": "Einstellungen für Intro-Videos",
-        "styleCount": "{{count}} Stile",
         "styleCountOf": "{{shown}} von {{total}}",
+        "styleCount_one": "{{count}} Stil",
+        "styleCount_other": "{{count}} Stile",
         "useStyle": "{{name}} verwenden"
       },
       "style": {

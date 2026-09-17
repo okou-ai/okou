@@ -1901,9 +1901,9 @@
       },
       "picker": {
         "allPresenters": "सभी प्रेज़ेंटर",
-        "allPresentersCount": "सभी प्रेज़ेंटर ({{count}})",
+        "allPresentersCount": "सभी प्रेज़ेंटर ({{total}})",
         "allVoices": "सभी आवाज़ें",
-        "allVoicesCount": "सभी आवाज़ें ({{count}})",
+        "allVoicesCount": "सभी आवाज़ें ({{total}})",
         "autoVoiceDescription": "आपकी शैली से मेल खाती आवाज़",
         "avatarVoice": "अवतार की आवाज़",
         "back": "वापस",
@@ -1919,8 +1919,9 @@
         "searchVoices": "आवाज़ें खोजें",
         "selectedStyle": "चयनित: {{name}}",
         "settings": "इंट्रो वीडियो की सेटिंग",
-        "styleCount": "{{count}} शैलियाँ",
         "styleCountOf": "{{total}} में से {{shown}}",
+        "styleCount_one": "{{count}} शैली",
+        "styleCount_other": "{{count}} शैलियाँ",
         "useStyle": "{{name}} इस्तेमाल करें"
       },
       "style": {

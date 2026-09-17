@@ -1893,9 +1893,9 @@
       },
       "picker": {
         "allPresenters": "Semua presenter",
-        "allPresentersCount": "Semua presenter ({{count}})",
+        "allPresentersCount": "Semua presenter ({{total}})",
         "allVoices": "Semua suara",
-        "allVoicesCount": "Semua suara ({{count}})",
+        "allVoicesCount": "Semua suara ({{total}})",
         "autoVoiceDescription": "Suara yang cocok dengan gaya Anda",
         "avatarVoice": "Suara avatar",
         "back": "Kembali",
@@ -1911,8 +1911,8 @@
         "searchVoices": "Cari suara",
         "selectedStyle": "Dipilih: {{name}}",
         "settings": "Pengaturan video intro",
-        "styleCount": "{{count}} gaya",
         "styleCountOf": "{{shown}} dari {{total}}",
+        "styleCount_other": "{{count}} gaya",
         "useStyle": "Gunakan {{name}}"
       },
       "style": {

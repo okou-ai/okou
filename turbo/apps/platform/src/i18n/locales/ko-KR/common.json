@@ -1893,9 +1893,9 @@
       },
       "picker": {
         "allPresenters": "모든 프레젠터",
-        "allPresentersCount": "모든 프레젠터 ({{count}})",
+        "allPresentersCount": "모든 프레젠터 ({{total}})",
         "allVoices": "모든 음성",
-        "allVoicesCount": "모든 음성 ({{count}})",
+        "allVoicesCount": "모든 음성 ({{total}})",
         "autoVoiceDescription": "스타일에 어울리는 음성",
         "avatarVoice": "아바타 음성",
         "back": "뒤로",
@@ -1911,8 +1911,8 @@
         "searchVoices": "음성 검색",
         "selectedStyle": "선택됨: {{name}}",
         "settings": "인트로 영상 설정",
-        "styleCount": "스타일 {{count}}개",
         "styleCountOf": "{{total}}개 중 {{shown}}개",
+        "styleCount_other": "스타일 {{count}}개",
         "useStyle": "{{name}} 사용"
       },
       "style": {

@@ -603,7 +603,7 @@ function OptionsRootView({ signals }: PickerProps) {
                 ($) => {
                   return $.chat.introVideo.picker.allVoicesCount;
                 },
-                { count: voices.length },
+                { total: voices.length },
               )
             : t(($) => {
                 return $.chat.introVideo.picker.allVoices;
@@ -656,7 +656,7 @@ function OptionsRootView({ signals }: PickerProps) {
                 ($) => {
                   return $.chat.introVideo.picker.allPresentersCount;
                 },
-                { count: groups.length },
+                { total: groups.length },
               )
             : t(($) => {
                 return $.chat.introVideo.picker.allPresenters;

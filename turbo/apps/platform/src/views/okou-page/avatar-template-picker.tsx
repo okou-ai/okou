@@ -814,7 +814,7 @@ function toggleVoicePreview(event: ReactMouseEvent<HTMLButtonElement>): void {
   detach(audio.play(), Reason.DomCallback);
 }
 
-export interface VoiceCardVoice {
+interface VoiceCardVoice {
   readonly id: string;
   readonly name: string;
   readonly sampleUrl?: string;
@@ -829,12 +829,12 @@ export interface VoiceCardVoice {
  * DOM contract for the row that hosts a {@link VoicePreviewControl}: the toggle
  * finds its audio through the card and flips `data-playing` for the icon swap.
  */
-export const VOICE_PREVIEW_CARD_PROPS = {
+const VOICE_PREVIEW_CARD_PROPS = {
   "data-avatar-voice-card": "",
   "data-playing": "false",
 } as const;
 
-export const VOICE_PREVIEW_CARD_CLASS = "group/voice";
+const VOICE_PREVIEW_CARD_CLASS = "group/voice";
 
 export function VoicePreviewControl({
   voice,
