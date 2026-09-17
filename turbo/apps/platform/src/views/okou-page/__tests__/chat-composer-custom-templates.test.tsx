@@ -57,11 +57,35 @@ function mockCustomTemplates(templates: readonly UserTemplateDetail[]): void {
 }
 
 /**
+ * How one request finishes: a promise holds the response open until the test
+ * releases it, `"fail"` answers 500, and nothing at all answers immediately.
+ */
+type RequestOutcome = Promise<void> | "fail" | undefined;
+
+/**
  * List, detail and update served from one mutable array, so a mutation is
  * observable the only way a user can observe it: by looking at the panel again.
+ *
+ * Each hook receives that request's 1-based number and chooses its outcome.
+ * Holding a named request is what makes the editor's behaviour during a save
+ * observable at all — the alternative is guessing at it with a sleep.
  */
-function mockCustomTemplateStore(initial: readonly UserTemplateDetail[]): void {
+function mockCustomTemplateStore(
+  initial: readonly UserTemplateDetail[],
+  outcomes: {
+    readonly update?: (call: number) => RequestOutcome;
+    readonly detail?: (call: number) => RequestOutcome;
+  } = {},
+): void {
   const templates = [...initial];
+  let detailCalls = 0;
+  let updateCalls = 0;
+  const serverError = {
+    error: {
+      code: "INTERNAL_SERVER_ERROR" as const,
+      message: "User template update failed",
+    },
+  };
   context.mocks.api(userTemplatesContract.list, ({ respond }) => {
     return respond(
       200,
@@ -70,18 +94,37 @@ function mockCustomTemplateStore(initial: readonly UserTemplateDetail[]): void {
       }),
     );
   });
-  context.mocks.api(userTemplatesContract.get, ({ params, respond }) => {
-    const template = templates.find((candidate) => {
-      return candidate.id === params.templateId;
-    });
-    if (!template) {
-      throw new Error(`No template mocked for ${params.templateId}`);
-    }
-    return respond(200, template);
-  });
+  context.mocks.api(
+    userTemplatesContract.get,
+    async ({ params, respond, withSignal }) => {
+      detailCalls += 1;
+      const outcome = outcomes.detail?.(detailCalls);
+      if (outcome === "fail") {
+        return respond(500, serverError);
+      }
+      if (outcome) {
+        await withSignal(outcome);
+      }
+      const template = templates.find((candidate) => {
+        return candidate.id === params.templateId;
+      });
+      if (!template) {
+        throw new Error(`No template mocked for ${params.templateId}`);
+      }
+      return respond(200, template);
+    },
+  );
   context.mocks.api(
     userTemplatesContract.update,
-    ({ body, params, respond }) => {
+    async ({ body, params, respond, withSignal }) => {
+      updateCalls += 1;
+      const outcome = outcomes.update?.(updateCalls);
+      if (outcome === "fail") {
+        return respond(500, serverError);
+      }
+      if (outcome) {
+        await withSignal(outcome);
+      }
       const index = templates.findIndex((candidate) => {
         return candidate.id === params.templateId;
       });
@@ -411,6 +454,142 @@ test("Renaming a template updates its card in the panel", async () => {
     within(dialog).findByText("Board review FY26"),
   ).resolves.toBeInTheDocument();
   expect(within(dialog).queryByText("Q3 board review")).not.toBeInTheDocument();
+});
+
+function renameField(dialog: HTMLElement): HTMLElement {
+  return within(dialog).getByLabelText("Rename template");
+}
+
+test("A second rename waits for the one already sent", async () => {
+  const stored = context.mocks.deferred<void>();
+  mockCustomTemplateStore([customTemplate()], {
+    update: (call) => {
+      return call === 1 ? stored.promise : undefined;
+    },
+  });
+
+  const { dialog } = await openCustomPanel();
+  const input = await openDetail(dialog, "Q3 board review");
+
+  await fill(input, "Board review FY26");
+  fireEvent.blur(input);
+
+  // Nothing here promises two renames arrive in the order they were typed, so
+  // the field stays closed rather than letting the member send a second one.
+  await waitFor(() => {
+    expect(renameField(dialog)).toBeDisabled();
+  });
+
+  stored.resolve();
+
+  // It reopens on the stored name, not on the one that was typed: the member
+  // is editing what the server now holds.
+  await waitFor(() => {
+    expect(renameField(dialog)).toBeEnabled();
+  });
+  expect(renameField(dialog)).toHaveValue("Board review FY26");
+
+  await fill(renameField(dialog), "Board review FY27");
+  fireEvent.blur(renameField(dialog));
+  click(buttonByName("Custom templates", dialog)!);
+
+  // The later edit is the one that survives — the defect was the earlier one
+  // landing last and taking the name back.
+  await expect(
+    within(dialog).findByText("Board review FY27"),
+  ).resolves.toBeInTheDocument();
+  expect(
+    within(dialog).queryByText("Board review FY26"),
+  ).not.toBeInTheDocument();
+});
+
+test("The editor is not taken away by the readback its own save causes", async () => {
+  const readback = context.mocks.deferred<void>();
+  let detailRequests = 0;
+  mockCustomTemplateStore([customTemplate()], {
+    detail: (call) => {
+      detailRequests = call;
+      // The first request opens the editor; the second is the readback the
+      // rename invalidated.
+      return call === 2 ? readback.promise : undefined;
+    },
+  });
+
+  const { dialog } = await openCustomPanel();
+  const input = await openDetail(dialog, "Q3 board review");
+
+  await fill(input, "Board review FY26");
+  fireEvent.blur(input);
+
+  await waitFor(() => {
+    expect(detailRequests).toBe(2);
+  });
+  // A query refreshing underneath the editor is not a reason to remove the
+  // field the member is waiting to get back. This is the element they were
+  // typing into, not a replacement mounted in its place.
+  expect(input).toBeInTheDocument();
+  expect(input).toBeDisabled();
+
+  readback.resolve();
+
+  await waitFor(() => {
+    expect(renameField(dialog)).toBeEnabled();
+  });
+  expect(renameField(dialog)).toHaveValue("Board review FY26");
+});
+
+test("A rename left behind by going back still reaches the list", async () => {
+  const stored = context.mocks.deferred<void>();
+  mockCustomTemplateStore([customTemplate()], {
+    update: (call) => {
+      return call === 1 ? stored.promise : undefined;
+    },
+  });
+
+  const { dialog } = await openCustomPanel();
+  const input = await openDetail(dialog, "Q3 board review");
+
+  await fill(input, "Board review FY26");
+  fireEvent.blur(input);
+  click(buttonByName("Custom templates", dialog)!);
+
+  await within(dialog).findByText("Q3 board review");
+  // Leaving the detail does not retract a rename the member already committed
+  // by blurring, so the card has to catch up when the server answers.
+  stored.resolve();
+
+  await expect(
+    within(dialog).findByText("Board review FY26"),
+  ).resolves.toBeInTheDocument();
+});
+
+test("A rejected rename keeps the typed name for another attempt", async () => {
+  mockCustomTemplateStore([customTemplate()], {
+    update: (call) => {
+      return call === 1 ? "fail" : undefined;
+    },
+  });
+
+  const { dialog } = await openCustomPanel();
+  const input = await openDetail(dialog, "Q3 board review");
+
+  await fill(input, "Board review FY26");
+  fireEvent.blur(input);
+
+  await expect(
+    within(dialog).findByText("Couldn't rename the template."),
+  ).resolves.toBeInTheDocument();
+  // The name the server refused is still in the field: it is the member's
+  // work, and throwing it away would make them type it a second time.
+  expect(renameField(dialog)).toBeEnabled();
+  expect(renameField(dialog)).toHaveValue("Board review FY26");
+
+  fireEvent.blur(renameField(dialog));
+  click(buttonByName("Custom templates", dialog)!);
+
+  await expect(
+    within(dialog).findByText("Board review FY26"),
+  ).resolves.toBeInTheDocument();
 });
 
 test("Changing visibility updates the card's meta line", async () => {

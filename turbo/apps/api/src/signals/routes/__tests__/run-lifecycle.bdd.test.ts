@@ -5163,7 +5163,7 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
       await api.requestCancelRun(actor, first.runId, [200]);
       const failed = await waitForRunStatus(api, actor, queued.runId, "failed");
       expect(failed.error).toBe(
-        "Claude Fable 5 has been retired. Select Claude Fable 5.1.",
+        "This model has been retired. Select another available model.",
       );
       expect(
         (await waitForRunQueueLength(api, actor, 0)).body.queue,

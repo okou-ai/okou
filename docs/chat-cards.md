@@ -61,8 +61,17 @@ transcript, rather than by a card's resource-loading state.
 
 Equal heights before and after loading are insufficient if React replaces the
 entire sized element. The intermediate removal can temporarily collapse the
-transcript and make WebKit clamp its scroll position. A persistent parent frame
-prevents that collapse even while its children are replaced.
+transcript and make WebKit clamp its scroll position by that element's own
+height, which drops a reader who was following the latest message and leaves the
+card behind the composer until they scroll back themselves.
+
+Selecting between two card components at one position replaces that element even
+when both render the same rows, because React reconciles by component type. Read
+the asynchronous state into the card's _contents_ — icon, copy, status, action
+nodes — and hand them to one element that stays mounted, rather than choosing
+between a pending component and a ready component. A parent frame only prevents
+the collapse when it carries the geometry itself; wrapping a replaceable sized
+element in an unsized frame leaves the frame to collapse to its border.
 
 Use `ConnectorAccountActionCard` in
 `turbo/apps/platform/src/views/okou-page/connector-account-action-card.tsx` as

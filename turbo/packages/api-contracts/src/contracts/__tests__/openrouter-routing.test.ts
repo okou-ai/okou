@@ -19,7 +19,6 @@ const verified: readonly (readonly [OpenRouterApi, string])[] = [
   ["responses", "openai/gpt-5.6-sol"],
   ["responses", "openai/gpt-5.6-terra"],
   ["responses", "openai/gpt-5.6-luna"],
-  ["responses", "openai/gpt-5.5"],
 ];
 
 describe("platform OpenRouter regional selection", () => {
