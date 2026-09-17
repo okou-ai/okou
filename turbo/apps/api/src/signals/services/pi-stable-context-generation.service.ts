@@ -121,6 +121,18 @@ function generationScopeCondition(scope: PiStableContextScope) {
   );
 }
 
+function generationKeyCondition(key: {
+  readonly orgId: string;
+  readonly agentId: string;
+  readonly subject: string;
+}) {
+  return and(
+    eq(piStableContextGenerations.orgId, key.orgId),
+    eq(piStableContextGenerations.agentId, key.agentId),
+    eq(piStableContextGenerations.subject, key.subject),
+  );
+}
+
 function publicationKeyCondition(
   scope: PiStableContextScope,
   publicationKey: string,
@@ -349,7 +361,7 @@ function requireCondition(
 }
 
 async function advanceGenerationSet(db: Db, condition: SQL): Promise<void> {
-  await db
+  const generations = await db
     .select({
       orgId: piStableContextGenerations.orgId,
       agentId: piStableContextGenerations.agentId,
@@ -363,13 +375,23 @@ async function advanceGenerationSet(db: Db, condition: SQL): Promise<void> {
       asc(piStableContextGenerations.subject),
     )
     .for("update");
-  await db
-    .update(piStableContextGenerations)
-    .set({
-      generation: sql`${piStableContextGenerations.generation} + 1`,
-      updatedAt: nowDate(),
-    })
-    .where(condition);
+  // Update only the rows in the ordered prelock snapshot. A wider second
+  // predicate could include a concurrently inserted, never-locked generation.
+  for (let offset = 0; offset < generations.length; offset += 256) {
+    const batch = generations.slice(offset, offset + 256);
+    await db
+      .update(piStableContextGenerations)
+      .set({
+        generation: sql`${piStableContextGenerations.generation} + 1`,
+        updatedAt: nowDate(),
+      })
+      .where(
+        requireCondition(
+          or(...batch.map(generationKeyCondition)),
+          "prelocked generation",
+        ),
+      );
+  }
 }
 
 /** Bulk invalidation for a user-scoped feature/profile source writer. */

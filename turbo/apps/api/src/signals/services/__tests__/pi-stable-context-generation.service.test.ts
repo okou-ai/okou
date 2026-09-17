@@ -359,12 +359,18 @@ describe("Pi stable context generation fences", () => {
 
   it("locks global catalog generations before a two-scope Workflow waiter", async () => {
     const fixture = await seed();
+    const late = await seed();
     await db
       .delete(piStableContextHeads)
-      .where(eq(piStableContextHeads.id, fixture.headId));
+      .where(inArray(piStableContextHeads.id, [fixture.headId, late.headId]));
     await db
       .delete(piStableContextGenerations)
-      .where(eq(piStableContextGenerations.agentId, fixture.agentId));
+      .where(
+        inArray(piStableContextGenerations.agentId, [
+          fixture.agentId,
+          late.agentId,
+        ]),
+      );
     // Preserve the reachable history from the review: private Workflow demand
     // inserted the user row before registration materialized @agent.
     await db.insert(piStableContextGenerations).values({
@@ -480,12 +486,35 @@ describe("Pi stable context generation fences", () => {
         blockedByUserHolder: false,
       });
 
+    // This commits after the invalidator's ordered SELECT has taken its
+    // statement snapshot. The later UPDATE must not include this unlocked row.
+    await db.insert(piStableContextGenerations).values({
+      orgId: late.orgId,
+      agentId: late.agentId,
+      subject: late.userId,
+    });
+
     releaseHolder.resolve();
     await workflowLocked.promise;
     releaseWorkflow.resolve();
     await expect(holder).resolves.toBeUndefined();
     await expect(workflow).resolves.toBeUndefined();
     await expect(catalog).resolves.toBeUndefined();
+    await expect(
+      db
+        .select({ generation: piStableContextGenerations.generation })
+        .from(piStableContextGenerations)
+        .where(
+          and(
+            eq(piStableContextGenerations.orgId, late.orgId),
+            eq(piStableContextGenerations.agentId, late.agentId),
+            eq(piStableContextGenerations.subject, late.userId),
+          ),
+        )
+        .then(([row]) => {
+          return row?.generation;
+        }),
+    ).resolves.toBe(1);
   });
 
   it("keeps a test catalog source from mutating another source's work", async () => {
