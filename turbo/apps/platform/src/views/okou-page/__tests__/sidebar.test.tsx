@@ -1177,6 +1177,58 @@ test("Archive an untitled chat and restore it from the completed empty state", a
   });
 });
 
+test("Find archived chats in All and Chats workspace search results", async () => {
+  prepareDefaultAgent();
+  const currentThread = createThread(EXISTING_THREAD_ID, "Release plan");
+  const archivedThread = createThread(
+    ARCHIVED_THREAD_ID,
+    "✅ Archived context",
+  );
+  mockSidebarThreadStory([currentThread, archivedThread]);
+  context.mocks.api(chatThreadsContract.unreads, ({ respond }) => {
+    return respond(200, { unreads: [] });
+  });
+
+  await setupSidebarPage({
+    context,
+    path: `/chats/${EXISTING_THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.ChatThreadArchiving]: true },
+  });
+
+  await waitFor(() => {
+    expect(within(sidebar()).getByText("Release plan")).toBeInTheDocument();
+    expect(
+      within(sidebar()).queryByText("✅ Archived context"),
+    ).not.toBeInTheDocument();
+  });
+
+  click(within(sidebar()).getByLabelText("Search workspace"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Search workspace...",
+  });
+  await fill(
+    within(dialog).getByPlaceholderText("Search workspace..."),
+    "archived context",
+  );
+
+  await waitFor(() => {
+    expect(buttonByText("All", dialog)).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(within(dialog).getByText("✅ Archived context")).toBeInTheDocument();
+  });
+
+  click(buttonByText("Chats", dialog));
+  await waitFor(() => {
+    expect(buttonByText("Chats", dialog)).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(within(dialog).getByText("✅ Archived context")).toBeInTheDocument();
+  });
+});
+
 test("Find conversations by title in workspace search", async () => {
   prepareAgents();
   const defaultThread = createThread(EXISTING_THREAD_ID, "Incident notes");
