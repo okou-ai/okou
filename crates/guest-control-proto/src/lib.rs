@@ -109,6 +109,8 @@
 //!
 //! - `0x00`: ordinary contained workload.
 //! - `0x01`: controlled Agent operation.
+//! - `0x02`: fixed one-shot session-history identity verifier with disabled control.
+//! - `0x03`: fixed one-shot reused-Codex session cleanup helper with disabled control.
 //!
 //! `lifecycle`, `process_role`, and `control_policy` are validated as one
 //! process contract. See [`ExecStartEncodeRequest`] for the complete matrix;
