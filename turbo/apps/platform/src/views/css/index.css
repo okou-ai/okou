@@ -370,6 +370,58 @@
   );
 }
 
+/* The aurora's dark pair. The texture's own colours are fixed rather than
+   theme-paired -- that is what the dot above records -- but "fixed" was only
+   ever right for a mark drawn *on* the texture, never for the texture itself:
+   a ground that runs from near-white to peach is a light-mode object, and in
+   dark it lands in a near-black popover as a lit slab.
+
+   Pairing it also removes the warm hairline that used to trace the track's four
+   corner arcs. The plain track is an opaque layer over this ground and both
+   carry the same radius, so a corner pixel composites as
+   `card*(1-a)^2 + ground*a*(1-a) + track*a` -- the middle term leaks the ground
+   out along the arc while the straight edges stay covered. The leak is
+   proportional to the distance between the ground and the card behind it, so it
+   was invisible in light and glaring in dark; a ground that sits near the
+   track's own lightness makes it vanish without touching the geometry.
+
+   The bands keep their hues and their coprime tile widths. Only lightness
+   moves: the ground drops below the track it replaces and the peaks and the
+   curtain rise, so the same gradient that read as a wash on white now reads as
+   what an aurora actually is -- warm light against a dark sky. */
+:root:where([data-theme="dark"]) {
+  --background-image-effort-aurora-ground: linear-gradient(
+    90deg,
+    oklch(0.35 0.015 70),
+    oklch(0.46 0.095 45)
+  );
+  --background-image-effort-aurora-peaks:
+    radial-gradient(
+      46px 40px at 50% 116%,
+      oklch(0.72 0.19 38 / 0.95),
+      transparent 70%
+    ),
+    radial-gradient(
+      30px 33px at 50% 121%,
+      oklch(0.78 0.175 56 / 0.9),
+      transparent 68%
+    );
+  --background-image-effort-aurora-curtain:
+    radial-gradient(
+      84px 27px at 50% 127%,
+      oklch(0.74 0.175 44 / 0.9),
+      transparent 72%
+    ),
+    radial-gradient(
+      120px 20px at 50% 132%,
+      oklch(0.8 0.145 72 / 0.85),
+      transparent 70%
+    );
+  /* Light specks on a dark ground, for the reason the light value is dark on a
+     light one: the mark has to survive the texture without becoming a rule. */
+  --okou-effort-dot-on-texture: rgb(255 244 234 / 0.22);
+}
+
 @supports (height: 100lvh) {
   @media (display-mode: standalone) {
     :root {
