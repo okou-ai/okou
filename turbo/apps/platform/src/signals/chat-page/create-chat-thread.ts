@@ -136,6 +136,8 @@ import {
 } from "./chat-thread-remote-signals.ts";
 import { markChatThreadRead$ } from "./chat-thread-mark-read.ts";
 import { serverUnreadAt$ } from "./sidebar-unread-threads.ts";
+import { compareCreatedAt } from "./compare-created-at.ts";
+import { unreadThroughAt } from "./unread-through-at.ts";
 import {
   cardSlotUrl,
   classifyChatAttachment,
@@ -1112,28 +1114,6 @@ interface RegisteredChatEvent {
   readonly event: ChatEvent;
   readonly runDetail: RunDetailSignals | undefined;
   readonly userMessageRenderDocument: UserMessageRenderDocument | undefined;
-}
-
-function compareCursorString(left: string, right: string): number {
-  if (left < right) {
-    return -1;
-  }
-  if (left > right) {
-    return 1;
-  }
-  return 0;
-}
-
-function compareCreatedAt(left: string, right: string): number {
-  if (left === right) {
-    return 0;
-  }
-  const leftTime = Date.parse(left);
-  const rightTime = Date.parse(right);
-  if (Number.isNaN(leftTime) || Number.isNaN(rightTime)) {
-    return compareCursorString(left, right);
-  }
-  return leftTime - rightTime;
 }
 
 const registerFeedbackNoteRenderPart$ = command(
@@ -2359,15 +2339,7 @@ function createUnreadThroughAt$(
       get(latestRunFinishCreatedAt$),
       get(unreadAt$),
     ]);
-    if (runFinishAt === undefined) {
-      return serverUnreadAt;
-    }
-    if (serverUnreadAt === undefined) {
-      return runFinishAt;
-    }
-    return compareCreatedAt(serverUnreadAt, runFinishAt) > 0
-      ? serverUnreadAt
-      : runFinishAt;
+    return unreadThroughAt(runFinishAt, serverUnreadAt);
   });
 }
 

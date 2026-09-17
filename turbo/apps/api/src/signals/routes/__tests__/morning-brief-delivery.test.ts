@@ -21,6 +21,7 @@ import { expireMorningBriefGenerationRetention } from "../../../test-fixtures/mo
 import { rejectEmailOutboxCompletion } from "../../../test-fixtures/email-outbox";
 import {
   deleteOwnedChatThread,
+  rejectMorningBriefDeliveryInsert,
   holdDeliveryAgentRow,
   holdDeliveryOwnerRow,
   readBoundChatThreadId,
@@ -1027,5 +1028,72 @@ describe("Morning Brief native delivery", () => {
     expect(text).toContain("alert('x')");
     // Neither part is shortened: the whole accepted body reaches both.
     expect(text).toContain("*".repeat(40));
+  });
+
+  it("leaves nothing behind when the delivery row fails to commit", async () => {
+    const f = await fixture();
+    scriptSlack();
+    const { calls } = scriptProviders();
+    const attemptId = await generateAcceptedResult(f);
+
+    // The last write the transaction makes fails, so the message, the sticky
+    // provenance, the binding and the email intent must all unwind with it.
+    await rejectMorningBriefDeliveryInsert(f.orgId, context.signal);
+    const failure = await deliver(f, attemptId).then(
+      (response) => {
+        return response.status === 200
+          ? new Error("Expected the delivery transaction to fail")
+          : undefined;
+      },
+      (error: unknown) => {
+        return error;
+      },
+    );
+    expect(failure).toBeDefined();
+
+    await expect(readDeliveries(f)).resolves.toHaveLength(0);
+    await expect(readOutbox(f)).resolves.toHaveLength(0);
+    expect(emailSends()).toHaveLength(0);
+    // No second generation was made to recover from the failure.
+    expect(calls.generation).toHaveLength(1);
+    const boundThreadId = await readBoundChatThreadId(f.workflowId);
+    if (boundThreadId) {
+      const events = await readThreadEvents(boundThreadId);
+      expect(
+        events.filter((event) => {
+          return event.eventType === "output.message";
+        }),
+      ).toHaveLength(0);
+      const thread = await readChatThreadState(boundThreadId);
+      expect(thread?.provenance).not.toBe("morning_brief");
+    }
+  });
+
+  it("keeps a committed delivery when its realtime notification fails", async () => {
+    const f = await fixture();
+    scriptSlack();
+    scriptProviders();
+    const attemptId = await generateAcceptedResult(f);
+
+    // The post-commit notification is best effort. A failing publish must not
+    // fail the request, replay the write, or leave the message unreadable.
+    context.mocks.ably.publish.mockRejectedValue(new Error("ably unavailable"));
+
+    const response = await accept(deliver(f, attemptId), [200]);
+    expect(response.body.result).toBe("delivered");
+
+    const deliveries = await readDeliveries(f);
+    expect(deliveries).toHaveLength(1);
+    const events = await readThreadEvents(response.body.delivery.chatThreadId);
+    expect(
+      events.filter((event) => {
+        return event.id === response.body.delivery.chatEventId;
+      }),
+    ).toHaveLength(1);
+    // The canonical read still answers, and a repeat request converges rather
+    // than appending a second message.
+    const replay = await accept(deliver(f, attemptId), [200]);
+    expect(replay.body.result).toBe("already-delivered");
+    await expect(readDeliveries(f)).resolves.toHaveLength(1);
   });
 });
