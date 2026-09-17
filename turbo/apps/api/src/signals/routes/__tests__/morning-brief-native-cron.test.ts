@@ -18,6 +18,7 @@ import {
   abandonClaimedOccurrence,
   countEmailOutboxRows,
   countOrgUsageEvents,
+  enqueueUnsentLegacyEmail,
   countOrgAgentRuns,
   interruptNativeSettlement,
   makeNativeOccurrenceDue,
@@ -611,6 +612,39 @@ describe("native Morning Brief cron", () => {
     expect(rolled?.nextRunAt?.getTime()).toBeGreaterThan(now());
     // Reconciliation is not admission: no second brief was generated.
     expect(calls.generation).toHaveLength(1);
+  });
+
+  // Clearing the legacy poller's due instant stops new claims but cannot retract
+  // mail the old path already queued. An unsent legacy intent is reachable work,
+  // so the cutover has to hold rather than hand the schedule to native.
+  it("holds the cutover while a legacy email intent is still unsent", async () => {
+    const f = await fixture();
+    scriptSlack();
+    const { calls } = scriptProviders();
+
+    const outboxId = await enqueueUnsentLegacyEmail(
+      f.automationId,
+      `${f.userId}@example.test`,
+      f.userId,
+    );
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      await accept(tick(), [200]);
+    }
+
+    const held = await readNativeSchedule(f);
+    expect(held?.phase).toBe("draining");
+    expect(held?.drainUnresolvedReason).toBe("legacy-outbox-unsent");
+    // Nothing native was admitted while that mail was outstanding.
+    await expect(readNativeOccurrences(f)).resolves.toHaveLength(0);
+    expect(calls.generation).toHaveLength(0);
+
+    // Once the shared drain actually sends it, the same ticks converge.
+    await drainEmailOutbox([outboxId], context.signal);
+    await tickUntilNative(f);
+    await expect(readNativeSchedule(f)).resolves.toMatchObject({
+      phase: "native",
+    });
   });
 
   it("admits no native occurrence while the implementation switch is off", async () => {

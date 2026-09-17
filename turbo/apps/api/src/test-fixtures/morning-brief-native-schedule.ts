@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { emailOutbox } from "@okouai/db/schema/email-outbox";
 import { morningBriefDeliveries } from "@okouai/db/schema/morning-brief-delivery";
@@ -12,6 +14,10 @@ import { userCache } from "@okouai/db/schema/user-cache";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { and, eq, sql } from "drizzle-orm";
 
+import {
+  buildOneClickUnsubscribeUrl,
+  buildUnsubscribeHeaders,
+} from "../signals/services/email-common.service";
 import { db } from "../lib/db";
 import { now } from "../lib/time";
 import { loadResumableOccurrences } from "../signals/services/morning-brief-native-schedule.service";
@@ -284,4 +290,46 @@ export async function countOrgUsageEvents(orgId: string): Promise<number> {
     .from(usageEvent)
     .where(eq(usageEvent.orgId, orgId));
   return rows.length;
+}
+
+/**
+ * Enqueue an unsent legacy result email for this automation.
+ *
+ * It is the shape the old Run-result callback leaves behind: a real outbox row
+ * whose producer identity is the legacy automation, still owed a provider
+ * request. The cutover has to treat that as reachable mail work.
+ */
+export async function enqueueUnsentLegacyEmail(
+  automationId: string,
+  recipient: string,
+  userId: string,
+): Promise<string> {
+  // The outbox requires a complete producer identity, which is exactly what
+  // the legacy Run-result callback supplies.
+  const sourceRunId = randomUUID();
+  const [row] = await db()
+    .insert(emailOutbox)
+    .values({
+      fromAddress: "briefs@mail.okou.test",
+      toAddresses: [recipient],
+      subject: "Yesterday's Morning Brief",
+      template: {
+        template: "official-automation-result",
+        props: {
+          title: "Yesterday's Morning Brief",
+          resultText: "The legacy run already produced this.",
+          runUrl: "https://app.okou.test/runs/legacy",
+          manageUrl: "https://app.okou.test/settings/morning-brief",
+        },
+      },
+      headers: buildUnsubscribeHeaders(buildOneClickUnsubscribeUrl(userId)),
+      sourceRunId,
+      sourceWorkflowAutomationId: automationId,
+      status: "pending",
+    })
+    .returning({ id: emailOutbox.id });
+  if (row === undefined) {
+    throw new Error("Expected an enqueued legacy email");
+  }
+  return row.id;
 }

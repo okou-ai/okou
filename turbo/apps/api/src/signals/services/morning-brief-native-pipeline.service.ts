@@ -3,7 +3,9 @@ import { morningBriefNativeOccurrences } from "@okouai/db/schema/morning-brief-n
 import { morningBriefScheduleClaims } from "@okouai/db/schema/morning-brief-schedule-claim";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
-import { and, count, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { emailOutbox } from "@okouai/db/schema/email-outbox";
+import { and, count, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 
 import { logger } from "../../lib/log";
 import { writeDb$, type ReadonlyDb } from "../external/db";
@@ -28,6 +30,12 @@ import {
 } from "./morning-brief-native-schedule.service";
 
 const log = logger("MorningBriefNativePipeline");
+
+/** A Run in any of these states can still deliver a legacy result callback. */
+const ACTIVE_LEGACY_RUN_STATUSES = ["queued", "pending", "running"] as const;
+
+/** An outbox row in any of these states still owes a provider request. */
+const UNSENT_OUTBOX_STATUSES = ["pending", "sending", "failed"] as const;
 
 /**
  * The production wiring of the native Morning Brief tick.
@@ -56,8 +64,12 @@ type MorningBriefDrainVerdict =
  *   unresolved; it is never treated as finished because a lease or TTL lapsed.
  * - A journalled claim that is settled but still carries a **queue binding in
  *   the `queued` disposition** has a launch that was never consumed, and a
- *   claim still bound to a **non-terminal Run** has a callback that can still
- *   write. Both keep the drain unresolved.
+ *   claim whose bound Run is **still active** has a result callback that can
+ *   still write. Both keep the drain unresolved. Run liveness is read from the
+ *   Run itself, not inferred from the claim's own settlement.
+ * - An **unsent legacy email intent** produced by this automation is reachable
+ *   mail work. The shared outbox owns its own retries, so a row that is not yet
+ *   `sent` keeps the drain unresolved regardless of what the journal says.
  * - A member with **no journal rows at all** has unknown history: the journal
  *   only starts recording at S7a's deployment, so earlier work has no
  *   recoverable scheduled identity. It must not be reconstructed from
@@ -87,9 +99,6 @@ async function proveLegacyMorningBriefDrain(
       queued: count(
         sql`CASE WHEN ${and(eq(morningBriefScheduleClaims.queueDisposition, "queued"), isNotNull(morningBriefScheduleClaims.queueEventId))} THEN 1 END`,
       ),
-      liveRuns: count(
-        sql`CASE WHEN ${and(isNotNull(morningBriefScheduleClaims.runId), eq(morningBriefScheduleClaims.settlement, "unsettled"))} THEN 1 END`,
-      ),
     })
     .from(morningBriefScheduleClaims)
     .where(
@@ -103,13 +112,48 @@ async function proveLegacyMorningBriefDrain(
       ),
     );
 
+  // Reachable work the journal cannot describe on its own: a Run that can still
+  // deliver a result callback, and an email intent the shared outbox has not
+  // sent yet. Both are read from the rows that own them.
+  const [liveRun] = await db
+    .select({ id: agentRuns.id })
+    .from(morningBriefScheduleClaims)
+    .innerJoin(agentRuns, eq(agentRuns.id, morningBriefScheduleClaims.runId))
+    .where(
+      and(
+        eq(
+          morningBriefScheduleClaims.automationId,
+          schedule.legacyAutomationId,
+        ),
+        inArray(agentRuns.status, ACTIVE_LEGACY_RUN_STATUSES),
+      ),
+    )
+    .limit(1);
+  if (liveRun !== undefined) {
+    return { kind: "unresolved", reason: "legacy-run-callback-reachable" };
+  }
+
+  const [unsentMail] = await db
+    .select({ id: emailOutbox.id })
+    .from(emailOutbox)
+    .where(
+      and(
+        eq(emailOutbox.sourceWorkflowAutomationId, schedule.legacyAutomationId),
+        inArray(emailOutbox.status, UNSENT_OUTBOX_STATUSES),
+      ),
+    )
+    .limit(1);
+  if (unsentMail !== undefined) {
+    return { kind: "unresolved", reason: "legacy-outbox-unsent" };
+  }
+
   if (counts === undefined || counts.total === 0) {
-    // No journalled claim exists. That is unknown history rather than a proven
-    // drain *unless* the automation has never launched a Run at all: an
-    // automation with no `last_run_id` has produced no legacy Run, no result
-    // callback and no result email, so there is nothing reachable to drain.
-    // Anything else keeps the bounded unresolved reason rather than inventing
-    // an anchor from `firedAt`, a Run's context or a title.
+    // No journalled claim exists. The journal only starts recording at S7a's
+    // deployment, so earlier work has no recoverable scheduled identity. With
+    // no reachable Run and no unsent mail above, the remaining unknown is an
+    // anchor this deployment never saw, and it must not be reconstructed from
+    // `firedAt`, a Run's context or an automation title. An automation that has
+    // never launched a Run produced none of that work at all.
     const [legacy] = await db
       .select({ lastRunId: workflowAutomations.lastRunId })
       .from(workflowAutomations)
@@ -124,9 +168,6 @@ async function proveLegacyMorningBriefDrain(
   }
   if (counts.queued > 0) {
     return { kind: "unresolved", reason: "legacy-launch-unconsumed" };
-  }
-  if (counts.liveRuns > 0) {
-    return { kind: "unresolved", reason: "legacy-run-callback-reachable" };
   }
   return { kind: "proven" };
 }
