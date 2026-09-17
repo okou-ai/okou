@@ -30,7 +30,7 @@ const internalAccountMenuCodexResetDialog$ = state({
   open: false,
   resetCredits: null as number | null,
 });
-export interface PersonalAccountDisconnectDialogState {
+interface PersonalAccountDisconnectDialogState {
   readonly account: ModelProviderResponse;
   readonly fallbackIndex: number;
 }
