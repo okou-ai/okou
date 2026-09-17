@@ -460,9 +460,14 @@ describe("CHAT-02: generation templates and attachments", () => {
     const run = await api.readRun(actor, forwarded.body.runId);
     expect(run.prompt).toBe(expectedPrompt);
     const messages = await chat.listThreadEvents(actor, targetThread.id);
-    const forwardedMessage = userMessages(messages.events).find((message) => {
-      return message.runId === forwarded.body.runId;
-    });
+    const forwardedMessage = userMessages(messages.events).find(
+      (message): message is PromptMessage => {
+        return (
+          message.eventType === "input.prompt" &&
+          message.runId === forwarded.body.runId
+        );
+      },
+    );
     expect(forwardedMessage?.userMessage?.parts).toContainEqual({
       type: "source",
       kind: "agent",
