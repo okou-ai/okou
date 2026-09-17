@@ -570,7 +570,8 @@ function usagePackCheckoutMetadata(args: {
   readonly planPriceId: string;
   readonly usagePackSubscriptionId: string;
   readonly adAttribution:
-    Readonly<Record<string, string | undefined>> | undefined;
+    | Readonly<Record<string, string | undefined>>
+    | undefined;
 }): StripeMetadataParam {
   const metadata = usagePackSubscriptionMetadata(args);
   for (const [key, value] of Object.entries(args.adAttribution ?? {})) {
@@ -1731,7 +1732,9 @@ function embeddedUsagePackSubscriptionId(
 
 function oneUsagePackSubscriptionId(
   ...metadataCandidates: readonly (
-    Readonly<Record<string, string>> | null | undefined
+    | Readonly<Record<string, string>>
+    | null
+    | undefined
   )[]
 ): string | null {
   const ids = new Set(
@@ -1838,7 +1841,9 @@ async function resolveUsagePackSubscriptionId(
   args: {
     readonly stripeSubscriptionId: string | null;
     readonly metadata: readonly (
-      Readonly<Record<string, string>> | null | undefined
+      | Readonly<Record<string, string>>
+      | null
+      | undefined
     )[];
     readonly includeTerminalBinding?: boolean;
   },

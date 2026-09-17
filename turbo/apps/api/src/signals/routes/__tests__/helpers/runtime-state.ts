@@ -473,7 +473,10 @@ export async function setOfficialWorkflowAutomationAdmissionStateFixture(
   context: TestContext,
   automationId: string,
   reconciliationStatus:
-    "current" | "reconciling" | "needs_reconfiguration" | "failed",
+    | "current"
+    | "reconciling"
+    | "needs_reconfiguration"
+    | "failed",
   appliedFingerprint?: string,
 ): Promise<void> {
   await postAction(context, {
@@ -524,7 +527,9 @@ export async function assertOfficialWorkflowAutomationFinalAdmissionRejectedFixt
 }
 
 type OfficialWorkflowRunGateKind =
-  "observation" | "final-admission" | "bootstrap-requirement";
+  | "observation"
+  | "final-admission"
+  | "bootstrap-requirement";
 
 type OfficialWorkflowRunGateState = NonNullable<
   TestRuntimeStateActionResponse["official_workflow_run_gate_state"]

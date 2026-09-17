@@ -325,7 +325,12 @@ interface SnapshotSource {
 
 type SnapshotSkipReason = "unreadable" | "undecodable" | "incomplete";
 type SnapshotDecodeFailureClass =
-  "checksum" | "gzip" | "raw_row" | "projection" | "prefix" | "terminal";
+  | "checksum"
+  | "gzip"
+  | "raw_row"
+  | "projection"
+  | "prefix"
+  | "terminal";
 
 class SnapshotDecodeFailure extends Error {
   readonly failureClass: SnapshotDecodeFailureClass;
@@ -388,13 +393,15 @@ function resolveSnapshotSource(
   ) {
     return { kind: "skipped", reason: "incomplete" };
   }
-  if (!(
-    (source.terminalSeqId === 0 && source.terminalEventId === null) ||
-    (source.terminalSeqId !== null &&
-      source.terminalSeqId > 0 &&
-      source.terminalSeqId <= source.lastSeqId &&
-      source.terminalEventId !== null)
-  )) {
+  if (
+    !(
+      (source.terminalSeqId === 0 && source.terminalEventId === null) ||
+      (source.terminalSeqId !== null &&
+        source.terminalSeqId > 0 &&
+        source.terminalSeqId <= source.lastSeqId &&
+        source.terminalEventId !== null)
+    )
+  ) {
     return { kind: "skipped", reason: "incomplete" };
   }
   return {
@@ -896,7 +903,11 @@ function archivedThreadFromPublication(
  * object keys or event bodies.
  */
 type SnapshotArchiveStage =
-  "resolve_prefix" | "read_events" | "compress" | "put_object" | "publish";
+  | "resolve_prefix"
+  | "read_events"
+  | "compress"
+  | "put_object"
+  | "publish";
 
 interface SnapshotArchiveStageRecorder {
   stage: SnapshotArchiveStage;

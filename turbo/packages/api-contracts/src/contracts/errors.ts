@@ -344,7 +344,9 @@ export const ACTIONABLE_RUN_ERROR_SNIPPETS = [
 type ClaudeCodeCredentialRecovery = {
   readonly modelProviderType: ModelProviderType | null | undefined;
   readonly modelProviderCredentialScope:
-    ModelProviderCredentialScope | null | undefined;
+    | ModelProviderCredentialScope
+    | null
+    | undefined;
   readonly canManageOrgModelProviders: boolean;
   readonly modelProvidersUrl: string | undefined;
 };

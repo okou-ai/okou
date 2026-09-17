@@ -97,7 +97,8 @@ async function prepareChatTitle() {
 }
 
 type TitleCompletion =
-  Response | { readonly content: string; readonly finishReason: "length" };
+  | Response
+  | { readonly content: string; readonly finishReason: "length" };
 
 function mockTitleCompletion(response: () => TitleCompletion) {
   createChatCallbacksApi(context).mockOpenRouterCompletions((body) => {

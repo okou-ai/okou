@@ -191,13 +191,16 @@ interface ProviderUnavailableRootFields {
   readonly provider: "clerk";
   readonly provider_status: number | null;
   readonly failure_class:
-    "transient_read_exhausted" | "transport_read_exhausted";
+    | "transient_read_exhausted"
+    | "transport_read_exhausted";
   readonly method: string;
   readonly route: string;
 }
 
 type DesktopUpdateManifestOutcome =
-  "retry_recovered" | "served_stale" | "unavailable";
+  | "retry_recovered"
+  | "served_stale"
+  | "unavailable";
 
 interface DesktopUpdateManifestRootFields {
   readonly type: "desktop_update_manifest_upstream";
@@ -319,14 +322,17 @@ function providerUnavailableRootFields(
     return null;
   }
 
-  if (!(
-    (providerStatus === null && failureClass === "transport_read_exhausted") ||
-    (typeof providerStatus === "number" &&
-      Number.isInteger(providerStatus) &&
-      providerStatus >= 500 &&
-      providerStatus <= 599 &&
-      failureClass === "transient_read_exhausted")
-  )) {
+  if (
+    !(
+      (providerStatus === null &&
+        failureClass === "transport_read_exhausted") ||
+      (typeof providerStatus === "number" &&
+        Number.isInteger(providerStatus) &&
+        providerStatus >= 500 &&
+        providerStatus <= 599 &&
+        failureClass === "transient_read_exhausted")
+    )
+  ) {
     return null;
   }
 

@@ -47,6 +47,7 @@ CREATE TABLE "morning_brief_native_schedules" (
 	CONSTRAINT "morning_brief_native_schedules_pk" PRIMARY KEY("org_id","user_id")
 );
 --> statement-breakpoint
+ALTER TABLE "morning_brief_generations" DROP CONSTRAINT "chk_morning_brief_generation_purpose";--> statement-breakpoint
 ALTER TABLE "morning_brief_native_occurrences" ADD CONSTRAINT "fk_morning_brief_native_occurrences_schedule" FOREIGN KEY ("org_id","user_id") REFERENCES "public"."morning_brief_native_schedules"("org_id","user_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "morning_brief_native_schedules" ADD CONSTRAINT "fk_morning_brief_native_schedules_thread" FOREIGN KEY ("chat_thread_id") REFERENCES "public"."chat_threads"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 CREATE UNIQUE INDEX "uq_morning_brief_native_occurrences_attempt" ON "morning_brief_native_occurrences" USING btree ("generation_attempt_id");--> statement-breakpoint
@@ -56,4 +57,5 @@ CREATE INDEX "idx_morning_brief_native_schedules_due" ON "morning_brief_native_s
 CREATE INDEX "idx_morning_brief_native_schedules_phase" ON "morning_brief_native_schedules" USING btree ("phase");--> statement-breakpoint
 CREATE INDEX "idx_morning_brief_native_schedules_user" ON "morning_brief_native_schedules" USING btree ("user_id");--> statement-breakpoint
 CREATE INDEX "idx_morning_brief_native_schedules_agent" ON "morning_brief_native_schedules" USING btree ("agent_id");--> statement-breakpoint
-CREATE INDEX "idx_morning_brief_native_schedules_thread" ON "morning_brief_native_schedules" USING btree ("chat_thread_id");
+CREATE INDEX "idx_morning_brief_native_schedules_thread" ON "morning_brief_native_schedules" USING btree ("chat_thread_id");--> statement-breakpoint
+ALTER TABLE "morning_brief_generations" ADD CONSTRAINT "chk_morning_brief_generation_purpose" CHECK ("morning_brief_generations"."execution_purpose" IN ('preview', 'production'));

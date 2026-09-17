@@ -228,7 +228,8 @@ function installVolumeS3Fixture() {
   const objects = new Map<string, Buffer>();
   const writes: { readonly key: string; readonly body: Buffer }[] = [];
   let beforeNextArchiveWrite:
-    ((key: string, body: Buffer) => void | Promise<void>) | undefined;
+    | ((key: string, body: Buffer) => void | Promise<void>)
+    | undefined;
 
   context.mocks.s3.send.mockImplementation(async (command: unknown) => {
     if (command instanceof PutObjectCommand) {

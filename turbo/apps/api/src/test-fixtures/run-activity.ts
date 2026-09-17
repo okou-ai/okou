@@ -90,7 +90,11 @@ export async function readRunActivityBookkeepingFixture(runId: string) {
 }
 
 type ActivityCommitStage =
-  "capture" | "claim" | "completion" | "response" | "output";
+  | "capture"
+  | "claim"
+  | "completion"
+  | "response"
+  | "output";
 
 function activityCommitQuery(queryArgs: unknown[], runId: string) {
   const parsed = z

@@ -87,7 +87,8 @@ interface PersistedChatThreadModelSnapshot {
 }
 
 export type PersistedChatThreadModelResolutionPath =
-  "read_only" | "locked_reconciliation";
+  | "read_only"
+  | "locked_reconciliation";
 
 export interface ResolvedPersistedChatThreadModel {
   readonly pin: ModelFirstPin;

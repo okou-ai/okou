@@ -67,7 +67,8 @@ interface FinanceErrorResult {
 }
 
 type FinanceProviderResult =
-  FinanceErrorResult | { readonly kind: "body"; readonly body: unknown };
+  | FinanceErrorResult
+  | { readonly kind: "body"; readonly body: unknown };
 
 type FinanceCommandResponse =
   | { readonly status: 200; readonly body: FinanceResponse }

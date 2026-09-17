@@ -78,7 +78,8 @@ type ServiceResult<T> =
   | {
       readonly ok: false;
       readonly response:
-        ReturnType<typeof insufficientCredits> | ReturnType<typeof conflict>;
+        | ReturnType<typeof insufficientCredits>
+        | ReturnType<typeof conflict>;
     };
 
 const ORG_SENTINEL_USER_ID = "__org__";

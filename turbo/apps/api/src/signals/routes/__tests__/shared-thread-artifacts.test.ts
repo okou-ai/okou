@@ -110,10 +110,12 @@ async function fixture() {
 
   context.mocks.s3.getSignedUrl.mockImplementation(
     (_client: unknown, command: unknown) => {
-      if (!(
-        command instanceof PutObjectCommand ||
-        command instanceof GetObjectCommand
-      )) {
+      if (
+        !(
+          command instanceof PutObjectCommand ||
+          command instanceof GetObjectCommand
+        )
+      ) {
         throw new Error("Unexpected presign operation");
       }
       return Promise.resolve(

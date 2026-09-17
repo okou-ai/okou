@@ -186,7 +186,9 @@ async function loadNextDrainEvent(
 
 const CONTINUE_DRAIN = Symbol("continue-workflow-queue-drain");
 type WorkflowQueueDrainStep =
-  WorkflowQueueDrainResult | null | typeof CONTINUE_DRAIN;
+  | WorkflowQueueDrainResult
+  | null
+  | typeof CONTINUE_DRAIN;
 
 async function publishQueueEventChanged(
   event: PendingWorkflowQueueEvent,

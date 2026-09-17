@@ -126,7 +126,8 @@ type LaunchGatedDirectOkouCase = {
   readonly callbackQuery?: Readonly<Record<string, string>>;
   readonly mockUserInfo?: () => void;
 } & (
-  { readonly clientEnvPrefix: string } | { readonly publicClientId: string }
+  | { readonly clientEnvPrefix: string }
+  | { readonly publicClientId: string }
 );
 
 const LAUNCH_GATED_DIRECT_OKOU_CASES: readonly LaunchGatedDirectOkouCase[] = [

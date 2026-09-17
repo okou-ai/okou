@@ -792,7 +792,9 @@ type AutomaticOAuthClientSelection =
   | {
       readonly clientId: string;
       readonly tokenEndpointAuthMethod:
-        "none" | "client_secret_basic" | "client_secret_post";
+        | "none"
+        | "client_secret_basic"
+        | "client_secret_post";
       readonly registrationMethod: "dcr";
       readonly dcrRegistrationId: string;
     };
@@ -1036,7 +1038,9 @@ export type CustomConnectorAutomaticOAuthStateContext = {
   readonly authorizationResponseIssParameterSupported: boolean;
   readonly clientId: string;
   readonly tokenEndpointAuthMethod:
-    "none" | "client_secret_basic" | "client_secret_post";
+    | "none"
+    | "client_secret_basic"
+    | "client_secret_post";
 } & (
   | {
       readonly registrationMethod: "cimd";
@@ -1198,7 +1202,9 @@ type AutomaticOAuthBoundClientContext = {
   readonly issuer: string;
   readonly clientId: string;
   readonly tokenEndpointAuthMethod:
-    "none" | "client_secret_basic" | "client_secret_post";
+    | "none"
+    | "client_secret_basic"
+    | "client_secret_post";
 } & (
   | {
       readonly registrationMethod: "cimd";

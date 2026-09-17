@@ -35,7 +35,12 @@ export function piPreparationObserver(runId: string): PiPreparationObserver {
 export function recordPiAdmissionPreparation(
   runId: string,
   outcome:
-    "started" | "ready" | "failed" | "adopted" | "discarded" | "released",
+    | "started"
+    | "ready"
+    | "failed"
+    | "adopted"
+    | "discarded"
+    | "released",
   startedAt: number,
   discardReason?: PiPreparationDiscardReason,
 ): void {

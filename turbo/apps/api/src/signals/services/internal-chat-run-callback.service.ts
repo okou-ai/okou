@@ -865,7 +865,8 @@ interface TerminalChatCallbackWork {
 }
 
 type DrainOutcome =
-  { readonly ok: true } | { readonly ok: false; readonly error: unknown };
+  | { readonly ok: true }
+  | { readonly ok: false; readonly error: unknown };
 
 function isCreatedQueuedRunStatus(
   status: string,
@@ -3165,7 +3166,8 @@ function queuedIntegrationPrompt(args: {
 function resolveQueuedMessageGenerationTemplatePrompt(args: {
   readonly input: CreateQueuedChatRunInputArgs;
   readonly userMessageProjection:
-    ReturnType<typeof projectUserMessage> | undefined;
+    | ReturnType<typeof projectUserMessage>
+    | undefined;
   readonly introVideoEnabled: boolean;
   readonly mountedUserPresentationTemplateIds: readonly string[];
 }) {

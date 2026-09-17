@@ -89,7 +89,9 @@ import {
 const L = logger("WebhookStripe");
 
 type BillingDowngradeCheckoutTargetTier =
-  "limited-free-1" | "pro-suspend" | "pro";
+  | "limited-free-1"
+  | "pro-suspend"
+  | "pro";
 const CANCELED_SUBSCRIPTION_TARGET_TIER = "limited-free-1";
 
 type WriteTx = Tx;

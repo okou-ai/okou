@@ -33,7 +33,8 @@ const HEADER_NAME_REGEX = /^[A-Za-z][A-Za-z0-9-]*$/;
 type BadRequestResponse = ReturnType<typeof badRequestMessage>;
 type NotFoundResponse = ReturnType<typeof notFound>;
 type ConnectionInput =
-  CreateModelProviderConnectionRequest | UpdateModelProviderConnectionRequest;
+  | CreateModelProviderConnectionRequest
+  | UpdateModelProviderConnectionRequest;
 
 interface ValidatedSurface {
   readonly protocol: ModelProviderSurfaceProtocol;

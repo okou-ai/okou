@@ -107,7 +107,8 @@ interface SocialKitErrorResult {
 }
 
 type SocialKitBodyResult =
-  SocialKitErrorResult | { readonly kind: "body"; readonly body: unknown };
+  | SocialKitErrorResult
+  | { readonly kind: "body"; readonly body: unknown };
 
 type SocialKitFetchResult =
   | SocialKitErrorResult

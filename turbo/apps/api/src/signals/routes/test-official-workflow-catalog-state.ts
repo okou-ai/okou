@@ -388,7 +388,8 @@ async function readStorageState(
 async function stateResponse(
   db: Db,
   body:
-    Pick<ReadAction, "definitionName" | "revision" | "workflowId"> | undefined,
+    | Pick<ReadAction, "definitionName" | "revision" | "workflowId">
+    | undefined,
   worker: {
     readonly claimed: number;
     readonly completed: number;

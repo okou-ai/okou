@@ -98,7 +98,9 @@ const orgAdmissionLockGate = testOverride<OrgAdmissionLockGate | null>(() => {
 });
 
 type OfficialWorkflowRunGateKind =
-  "observation" | "final-admission" | "bootstrap-requirement";
+  | "observation"
+  | "final-admission"
+  | "bootstrap-requirement";
 
 interface OfficialWorkflowRunGate {
   readonly kind: OfficialWorkflowRunGateKind;
@@ -1453,7 +1455,9 @@ type TimingStateAction = Extract<
   TestRuntimeStateActionBody,
   {
     action:
-      "clear-run-api-start" | "read-run-api-start" | "steer-run-time-budget";
+      | "clear-run-api-start"
+      | "read-run-api-start"
+      | "steer-run-time-budget";
   }
 >;
 

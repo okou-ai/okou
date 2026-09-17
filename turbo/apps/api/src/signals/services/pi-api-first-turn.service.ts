@@ -3267,7 +3267,9 @@ function logApiFirstTurnAttemptTimedOut(
 
 function sandboxFirstPublicationOutcome(reason: PiSandboxFirstReason): {
   readonly outcome:
-    "ownership_transfer" | "sandbox_fallback" | "sandbox_retry_started";
+    | "ownership_transfer"
+    | "sandbox_fallback"
+    | "sandbox_retry_started";
   readonly reason: string;
 } {
   switch (reason) {

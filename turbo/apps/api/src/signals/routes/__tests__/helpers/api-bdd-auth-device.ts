@@ -172,7 +172,9 @@ export function makeCodexJwt(payload: Record<string, unknown>): string {
 }
 
 type CodexWorkspaceClaim =
-  "organization.title" | "workspace.name" | "chatgpt_workspace_name";
+  | "organization.title"
+  | "workspace.name"
+  | "chatgpt_workspace_name";
 
 function makeCodexIdToken(opts: {
   readonly accountId: string | null;

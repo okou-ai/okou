@@ -705,7 +705,8 @@ type ArchiveVerification =
   | { readonly kind: "invalid-archive-size" };
 
 type UploadedStorageFilesVerification =
-  ArchiveVerification | { readonly kind: "missing-manifest" };
+  | ArchiveVerification
+  | { readonly kind: "missing-manifest" };
 
 function verifyArchiveHead(
   archiveHead: S3ObjectHead,

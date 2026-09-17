@@ -164,7 +164,8 @@ type ApiFirstTurnCommitDecision =
   | {
       readonly outcome: "transfer";
       readonly mode:
-        "pending-tool-continuation" | "settled-session-continuation";
+        | "pending-tool-continuation"
+        | "settled-session-continuation";
       readonly reason:
         | "pending_tool_continuation"
         | "active_input_pending_tool"

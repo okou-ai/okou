@@ -93,7 +93,10 @@ export interface StripeSchedulePhase {
   readonly currency?: string | null;
   readonly metadata?: Record<string, string> | null;
   readonly proration_behavior?:
-    "always_invoice" | "create_prorations" | "none" | null;
+    | "always_invoice"
+    | "create_prorations"
+    | "none"
+    | null;
   readonly items?: readonly {
     readonly price: StripeRef;
     readonly quantity?: number;
@@ -167,7 +170,9 @@ export interface StripeSubscriptionUpdateParams {
   readonly default_source?: string;
   readonly items?: StripeSubscriptionUpdateItemParam[];
   readonly payment_behavior?:
-    "allow_incomplete" | "error_if_incomplete" | "pending_if_incomplete";
+    | "allow_incomplete"
+    | "error_if_incomplete"
+    | "pending_if_incomplete";
   readonly proration_behavior?: "always_invoice" | "create_prorations" | "none";
   readonly proration_date?: number;
   readonly expand?: string[];
@@ -267,7 +272,10 @@ export interface StripeCreditNoteParams {
   readonly email_type?: "credit_note" | "none";
   readonly metadata?: StripeMetadataParam;
   readonly reason?:
-    "duplicate" | "fraudulent" | "order_change" | "product_unsatisfactory";
+    | "duplicate"
+    | "fraudulent"
+    | "order_change"
+    | "product_unsatisfactory";
 }
 
 export interface StripeInvoiceLine {
@@ -582,13 +590,17 @@ export interface StripeInvoiceCreatePreviewParams {
   readonly subscription_details?: StripeInvoicePreviewCancellationParams & {
     readonly items: StripeSubscriptionUpdateItemParam[];
     readonly proration_behavior?:
-      "always_invoice" | "create_prorations" | "none";
+      | "always_invoice"
+      | "create_prorations"
+      | "none";
     readonly proration_date?: number;
   };
   readonly schedule_details?: {
     readonly end_behavior?: "cancel" | "release";
     readonly proration_behavior?:
-      "always_invoice" | "create_prorations" | "none";
+      | "always_invoice"
+      | "create_prorations"
+      | "none";
     readonly phases?: StripeSchedulePhaseParam[];
   };
 }
@@ -948,7 +960,8 @@ export interface UndeliveredStripePaidInvoice {
 export interface UndeliveredStripePaidCheckoutSession {
   readonly eventId: string;
   readonly eventType:
-    "checkout.session.completed" | "checkout.session.async_payment_succeeded";
+    | "checkout.session.completed"
+    | "checkout.session.async_payment_succeeded";
   readonly created: number;
   readonly session: StripeCheckoutSession;
 }

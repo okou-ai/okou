@@ -137,7 +137,8 @@ export const persistOrgAcquisitionAttribution$ = command(
     args: {
       readonly orgId: string;
       readonly attribution:
-        Readonly<Record<string, string | undefined>> | undefined;
+        | Readonly<Record<string, string | undefined>>
+        | undefined;
     },
     signal: AbortSignal,
   ): Promise<boolean> => {

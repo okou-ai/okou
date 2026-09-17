@@ -43,7 +43,9 @@ export interface ResolvedModelFirstPolicyRoute {
   readonly modelProviderCredentialScope: ModelProviderCredentialScope;
   readonly selectedModel: SupportedRunModel;
   readonly personalConnectionState?:
-    "capture_required" | "reconnect_required" | "unavailable";
+    | "capture_required"
+    | "reconnect_required"
+    | "unavailable";
 }
 
 interface PersonalCandidate {

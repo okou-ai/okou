@@ -234,7 +234,8 @@ function isNavigationTimeoutResponse(
 }
 
 type SnapshotNavigationOptions =
-  typeof PRIMARY_NAVIGATION_OPTIONS | typeof NAVIGATION_TIMEOUT_RETRY_OPTIONS;
+  | typeof PRIMARY_NAVIGATION_OPTIONS
+  | typeof NAVIGATION_TIMEOUT_RETRY_OPTIONS;
 
 interface FetchArtifactSnapshotArgs {
   readonly token: string;

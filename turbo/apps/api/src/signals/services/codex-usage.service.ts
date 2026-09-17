@@ -97,7 +97,10 @@ interface CodexUsageMetadata {
 }
 
 export type CodexRateLimitResetCreditOutcome =
-  "reset" | "nothingToReset" | "noCredit" | "alreadyRedeemed";
+  | "reset"
+  | "nothingToReset"
+  | "noCredit"
+  | "alreadyRedeemed";
 
 interface UsageResetWindow {
   readonly period: string | null;

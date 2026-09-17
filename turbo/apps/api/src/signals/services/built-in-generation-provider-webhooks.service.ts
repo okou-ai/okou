@@ -6,7 +6,10 @@ import { env } from "../../lib/env";
 import { webUrl } from "../../lib/web-url";
 
 type BuiltInGenerationProviderWebhookProvider =
-  "fal" | "byteplus" | "minimax" | "heygen";
+  | "fal"
+  | "byteplus"
+  | "minimax"
+  | "heygen";
 
 function webhookTokenPayload(args: {
   readonly provider: BuiltInGenerationProviderWebhookProvider;

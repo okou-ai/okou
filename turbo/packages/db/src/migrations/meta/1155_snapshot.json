@@ -1,6 +1,6 @@
 {
-  "id": "871060ab-db52-4d77-bc99-34894d7d990a",
-  "prevId": "7bf690b3-7f94-4c80-8034-48b5f2efffb6",
+  "id": "ecff738c-b53e-4526-8f36-f3a9d9707265",
+  "prevId": "ea8a3b00-ccb2-40df-b0bc-0db03b027248",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -19452,7 +19452,7 @@
       "checkConstraints": {
         "chk_morning_brief_generation_purpose": {
           "name": "chk_morning_brief_generation_purpose",
-          "value": "\"morning_brief_generations\".\"execution_purpose\" IN ('preview', 'production')"
+          "value": "\"morning_brief_generations\".\"execution_purpose\" IN ('preview')"
         },
         "chk_morning_brief_generation_state": {
           "name": "chk_morning_brief_generation_state",

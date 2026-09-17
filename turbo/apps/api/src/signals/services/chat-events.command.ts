@@ -308,7 +308,8 @@ interface PreparedNormalSend {
   readonly runConfiguration: ResolvedRunConfiguration;
   readonly clientEventPrechecked: boolean;
   readonly preflightClientEventConflict:
-    ReturnType<typeof duplicateClientEventIdResponse> | undefined;
+    | ReturnType<typeof duplicateClientEventIdResponse>
+    | undefined;
   readonly triggerSource: "web" | "agent";
   readonly agentRunSource: ChatAgentRunSourceAnnotation | null;
   readonly piExecution: boolean;
@@ -538,7 +539,8 @@ interface CreatedChatEventResponse {
 }
 
 type ClientSendResolution =
-  CreatedChatEventResponse | ReturnType<typeof conflict>;
+  | CreatedChatEventResponse
+  | ReturnType<typeof conflict>;
 
 type CreateChatThreadResult =
   | {
@@ -1790,7 +1792,8 @@ async function resolveThread(params: {
 
   let runConfiguration = params.explicitRunConfiguration;
   let persistedModelResolutionPath:
-    PersistedChatThreadModelResolutionPath | undefined;
+    | PersistedChatThreadModelResolutionPath
+    | undefined;
   if (!runConfiguration) {
     const persisted = await measureApiDispatchTiming(
       params.timing,

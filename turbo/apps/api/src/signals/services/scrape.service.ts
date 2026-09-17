@@ -80,7 +80,8 @@ interface ScrapeErrorResult {
 }
 
 type FirecrawlBodyResult =
-  ScrapeErrorResult | { readonly kind: "body"; readonly body: unknown };
+  | ScrapeErrorResult
+  | { readonly kind: "body"; readonly body: unknown };
 
 type FirecrawlResponseResult =
   | ScrapeErrorResult

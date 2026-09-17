@@ -94,7 +94,8 @@ type OrgUpdateErrorResponse =
   | typeof forbiddenAccess;
 
 type OrgDeleteErrorResponse =
-  ReturnType<typeof notFound> | typeof orgDeleteForbidden;
+  | ReturnType<typeof notFound>
+  | typeof orgDeleteForbidden;
 
 type RemoveOrgMemberErrorResponse =
   | ReturnType<typeof badRequestMessage>

@@ -309,7 +309,9 @@ async function persistCustomConnectorOAuth2Connection(
       readonly tokenEndpoint: string;
       readonly clientId: string;
       readonly tokenEndpointAuthMethod:
-        "none" | "client_secret_basic" | "client_secret_post";
+        | "none"
+        | "client_secret_basic"
+        | "client_secret_post";
       readonly registrationMethod: "cimd" | "dcr";
       readonly dcrRegistrationId: string | null;
     };

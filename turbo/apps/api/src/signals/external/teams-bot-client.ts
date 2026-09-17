@@ -154,7 +154,8 @@ type FetchTeamsGraphMessagesResult =
   | TeamsApiErrorResult;
 
 type FetchTeamsFileResult =
-  { readonly kind: "ok"; readonly response: Response } | TeamsApiErrorResult;
+  | { readonly kind: "ok"; readonly response: Response }
+  | TeamsApiErrorResult;
 
 export type TeamsGraphMessage = z.infer<typeof teamsGraphMessageSchema>;
 export type TeamsGraphAttachment = z.infer<typeof teamsGraphAttachmentSchema>;
@@ -189,7 +190,8 @@ interface TeamsFileAttachment {
 }
 
 type TeamsActivityAttachment =
-  TeamsAdaptiveCardAttachment | TeamsFileAttachment;
+  | TeamsAdaptiveCardAttachment
+  | TeamsFileAttachment;
 
 export interface TeamsMentionEntity {
   readonly type: "mention";

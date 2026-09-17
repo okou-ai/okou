@@ -55,7 +55,9 @@ export interface ErasureBridgeAuthority {
   >;
 }
 type NonSuccessStatus =
-  "pending" | "external_committed_local_pending" | "unresolved";
+  | "pending"
+  | "external_committed_local_pending"
+  | "unresolved";
 type ErasureBridgeResult =
   | {
       readonly status: "projection_committed";

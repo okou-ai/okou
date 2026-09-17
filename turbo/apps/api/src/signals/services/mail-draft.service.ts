@@ -142,10 +142,12 @@ interface MailDraftErrorResult {
 export type MailDraftMutationResult = MailDraftResult | MailDraftErrorResult;
 
 export type MailDraftLinkMutationResult =
-  MailDraftLinkResult | MailDraftErrorResult;
+  | MailDraftLinkResult
+  | MailDraftErrorResult;
 
 type MailDraftAttachmentResult =
-  MailDraftAttachmentSuccess | MailDraftErrorResult;
+  | MailDraftAttachmentSuccess
+  | MailDraftErrorResult;
 
 const reconnectMailError = Object.freeze({
   kind: "conflict" as const,

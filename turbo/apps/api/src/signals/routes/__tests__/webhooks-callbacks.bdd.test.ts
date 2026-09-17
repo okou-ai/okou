@@ -6439,7 +6439,8 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
         });
       }
       const removal = input.Delete as
-        { readonly Objects?: readonly { readonly Key?: string }[] } | undefined;
+        | { readonly Objects?: readonly { readonly Key?: string }[] }
+        | undefined;
       for (const object of removal?.Objects ?? []) {
         if (object.Key) {
           deletedS3Keys.push(object.Key);
@@ -7016,7 +7017,8 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
       );
     });
     let revokedPoll:
-      Awaited<ReturnType<typeof runs.requestPollRunnerAs>> | undefined;
+      | Awaited<ReturnType<typeof runs.requestPollRunnerAs>>
+      | undefined;
     await expect
       .poll(async () => {
         revokedPoll = await runs.requestPollRunnerAs(

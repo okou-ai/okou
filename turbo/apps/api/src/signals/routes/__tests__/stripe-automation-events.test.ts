@@ -189,7 +189,9 @@ async function setupScenario(
   options: {
     readonly accountId?: string;
     readonly billingReasons?: readonly (
-      "manual" | "subscription_cycle" | "subscription_create"
+      | "manual"
+      | "subscription_cycle"
+      | "subscription_create"
     )[];
   } = {},
 ): Promise<Scenario> {

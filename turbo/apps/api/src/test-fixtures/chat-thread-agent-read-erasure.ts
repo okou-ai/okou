@@ -146,7 +146,10 @@ function isAgentIdentityRead(queryArgs: unknown[], agentId: string): boolean {
  * retains every barrier with every matched cursor already written.
  */
 type ChatThreadAgentReadBarrierStop =
-  "identity" | "agent-lock" | "update" | "commit";
+  | "identity"
+  | "agent-lock"
+  | "update"
+  | "commit";
 
 function reachedBarrierStop(
   stop: ChatThreadAgentReadBarrierStop,

@@ -88,7 +88,8 @@ function actionBadRequest(error: string) {
 type CronCleanupSandboxesAction =
   TestCronCleanupSandboxesStateActionBody["action"];
 type CronCleanupSandboxesActionResponse =
-  ReturnType<typeof actionOk> | ReturnType<typeof actionBadRequest>;
+  | ReturnType<typeof actionOk>
+  | ReturnType<typeof actionBadRequest>;
 type CronCleanupSandboxesActionHandler = (
   db: Db,
   body: Record<string, unknown>,

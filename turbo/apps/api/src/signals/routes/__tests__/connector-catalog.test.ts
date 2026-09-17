@@ -75,7 +75,8 @@ function currentSecond(): number {
 
 function assertCategoryMetadataMatchesVisibleConnectors(
   body:
-    PublicConnectorCatalogListResponse | PublicConnectorCatalogStatusResponse,
+    | PublicConnectorCatalogListResponse
+    | PublicConnectorCatalogStatusResponse,
 ): void {
   const metadata = body.categoryMetadata;
   expect(metadata).toBeDefined();

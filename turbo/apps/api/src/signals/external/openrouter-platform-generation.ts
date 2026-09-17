@@ -60,7 +60,12 @@ const OPENROUTER_COST_SOURCE = "chat_completion_usage_cost";
 const OPENROUTER_GENERATION_COST_SOURCE = "generation_total_cost";
 
 export type PlatformGenerationFinishReason =
-  "stop" | "length" | "tool_calls" | "content_filter" | "error" | "other";
+  | "stop"
+  | "length"
+  | "tool_calls"
+  | "content_filter"
+  | "error"
+  | "other";
 
 export interface PlatformGenerationTokens {
   readonly prompt: number | null;
@@ -71,7 +76,8 @@ export interface PlatformGenerationTokens {
 }
 
 export type PlatformGenerationCostSource =
-  typeof OPENROUTER_COST_SOURCE | typeof OPENROUTER_GENERATION_COST_SOURCE;
+  | typeof OPENROUTER_COST_SOURCE
+  | typeof OPENROUTER_GENERATION_COST_SOURCE;
 
 export type PlatformGenerationCost =
   | {

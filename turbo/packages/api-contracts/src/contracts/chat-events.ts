@@ -203,7 +203,10 @@ export function isChatUserMessageEventType(
 export function isChatOutputEventType(
   eventType: ChatEventType,
 ): eventType is
-  "output.message" | "output.error" | "output.thinking" | "output.followups" {
+  | "output.message"
+  | "output.error"
+  | "output.thinking"
+  | "output.followups" {
   return eventType.startsWith("output.");
 }
 

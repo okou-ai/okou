@@ -1448,7 +1448,9 @@ export async function storeCustomConnectorOAuth2Connection(
       readonly tokenEndpoint: string;
       readonly clientId: string;
       readonly tokenEndpointAuthMethod:
-        "none" | "client_secret_basic" | "client_secret_post";
+        | "none"
+        | "client_secret_basic"
+        | "client_secret_post";
       readonly registrationMethod: "cimd" | "dcr";
       readonly dcrRegistrationId: string | null;
     };
@@ -1669,7 +1671,8 @@ type CustomConnectorOAuth2AccessTokenResolution =
 function storedConnectionAccessToken(
   connection: StoredConnection,
 ):
-  AvailableCustomConnectorOAuth2AccessToken | { readonly kind: "unavailable" } {
+  | AvailableCustomConnectorOAuth2AccessToken
+  | { readonly kind: "unavailable" } {
   if (!connection.encryptedAccessToken) {
     return { kind: "unavailable" };
   }

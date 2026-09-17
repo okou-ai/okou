@@ -53,7 +53,10 @@ const store = createStore();
 interface ConnectedFixture {
   readonly actor: ApiTestUser;
   readonly connectorSlug:
-    "cloudflare" | "github" | "reap" | "removed-connector";
+    | "cloudflare"
+    | "github"
+    | "reap"
+    | "removed-connector";
 }
 
 const trackConnectedFixture = createFixtureTracker<ConnectedFixture>(

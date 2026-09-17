@@ -693,7 +693,8 @@ function logOutcome(args: {
 function isCredentialFailure(
   error: unknown,
 ): error is
-  PiMemoryStage1CredentialError | PiMemoryStage1CredentialRefreshError {
+  | PiMemoryStage1CredentialError
+  | PiMemoryStage1CredentialRefreshError {
   return (
     error instanceof PiMemoryStage1CredentialError ||
     error instanceof PiMemoryStage1CredentialRefreshError

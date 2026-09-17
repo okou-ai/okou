@@ -3378,7 +3378,8 @@ export function renderCustomConnectorRuntimePrefix(args: {
 }
 
 type CustomConnectorRuntimeDataTimingStep =
-  "connectorRows" | "connectorValueRows";
+  | "connectorRows"
+  | "connectorValueRows";
 type CustomConnectorRuntimeDataTimingMeasure = <T>(
   step: CustomConnectorRuntimeDataTimingStep,
   operation: () => Promise<T>,

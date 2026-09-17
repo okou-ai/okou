@@ -14,7 +14,9 @@ import {
 export type ChatThreadSessionRoute = SessionExecutionIdentity;
 
 export type ChatThreadSessionResolutionAction =
-  "initialized" | "reused" | "rotated";
+  | "initialized"
+  | "reused"
+  | "rotated";
 
 export interface ChatThreadSessionSnapshot {
   readonly agentSessionId: string | null;

@@ -129,7 +129,8 @@ interface AxiomIngestStatus {
 }
 
 type DirectAxiomIngestResult =
-  { readonly configured: false } | { readonly configured: true };
+  | { readonly configured: false }
+  | { readonly configured: true };
 
 type DirectAxiomIngestErrorOptions =
   | {

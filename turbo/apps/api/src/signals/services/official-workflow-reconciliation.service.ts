@@ -2299,7 +2299,8 @@ interface DormantBlueprintReconciliationArgs {
   readonly blueprint: OfficialWorkflowAcceptedBlueprint;
   readonly activeDefinitionOnly: boolean;
   readonly identity:
-    typeof officialWorkflowAutomationIdentities.$inferSelect | undefined;
+    | typeof officialWorkflowAutomationIdentities.$inferSelect
+    | undefined;
   readonly overrides: readonly OfficialWorkflowParameterBinding[];
   readonly userTimezone: string | null;
   readonly createAutomation: (

@@ -140,13 +140,15 @@ export function installSharedThreadStorage(context: TestContext) {
     return Promise.resolve(url);
   });
   context.mocks.s3.send.mockImplementation(async (command) => {
-    if (!(
-      command instanceof HeadObjectCommand ||
-      command instanceof GetObjectCommand ||
-      command instanceof ListObjectsV2Command ||
-      command instanceof PutObjectCommand ||
-      command instanceof CopyObjectCommand
-    )) {
+    if (
+      !(
+        command instanceof HeadObjectCommand ||
+        command instanceof GetObjectCommand ||
+        command instanceof ListObjectsV2Command ||
+        command instanceof PutObjectCommand ||
+        command instanceof CopyObjectCommand
+      )
+    ) {
       throw new Error("Unexpected storage operation");
     }
     const bucket = command.input.Bucket;

@@ -64,7 +64,8 @@ type UpdateChatThreadConnectorSelectionResult =
   | { readonly kind: "invalid"; readonly message: string };
 
 type ClearChatThreadConnectorSelectionResult =
-  { readonly kind: "cleared" } | { readonly kind: "not_found" };
+  | { readonly kind: "cleared" }
+  | { readonly kind: "not_found" };
 
 type ResolveChatThreadConnectorSelectionsResult =
   | {

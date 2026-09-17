@@ -21,7 +21,10 @@ const US_MODELS: Readonly<Record<OpenRouterApi, readonly string[]>> = {
 };
 
 export type OpenRouterApi =
-  "messages" | "responses" | "chat/completions" | "audio/transcriptions";
+  | "messages"
+  | "responses"
+  | "chat/completions"
+  | "audio/transcriptions";
 
 export interface OpenRouterRoutingContext {
   readonly credentialOwner: "builtin" | "organization" | "member";

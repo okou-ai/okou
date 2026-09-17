@@ -125,7 +125,8 @@ export type MorningBriefExecutionPurpose =
   (typeof morningBriefGenerations.$inferSelect)["executionPurpose"];
 
 export type MorningBriefGenerationConflict =
-  MorningBriefCollectionConflict | "generation-in-progress";
+  | MorningBriefCollectionConflict
+  | "generation-in-progress";
 
 export type MorningBriefGenerationExecution =
   | {

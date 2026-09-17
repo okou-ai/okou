@@ -162,7 +162,8 @@ interface WorkspaceEventsFetchError {
 }
 
 type WorkspaceEventsFetchResult<T> =
-  WorkspaceEventsFetchOk<T> | WorkspaceEventsFetchError;
+  | WorkspaceEventsFetchOk<T>
+  | WorkspaceEventsFetchError;
 
 type GoogleWorkspaceSubscriptionStateRow =
   typeof googleWorkspaceEventSubscriptionStates.$inferSelect;
@@ -815,7 +816,10 @@ async function createOrAdoptWorkspaceSubscription(
 }
 
 type GoogleMeetSubscriptionReconcileAction =
-  "unchanged" | "created" | "renewed" | "removed";
+  | "unchanged"
+  | "created"
+  | "renewed"
+  | "removed";
 
 type GoogleMeetSubscriptionReconcileResult =
   | {

@@ -127,7 +127,8 @@ interface CompletionSuccessResponse {
 }
 
 type CompletionResponse =
-  CompletionSuccessResponse | AgentCheckpointErrorResponse;
+  | CompletionSuccessResponse
+  | AgentCheckpointErrorResponse;
 
 interface RunRecord {
   readonly apiStartedAt: Date | null;

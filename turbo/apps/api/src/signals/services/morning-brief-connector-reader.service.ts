@@ -171,7 +171,9 @@ export type MorningBriefReadOutcome<T> =
   | { readonly kind: "revoked" };
 
 type MorningBriefReaderLimit =
-  "total-requests" | "deadline" | "total-response-bytes";
+  | "total-requests"
+  | "deadline"
+  | "total-response-bytes";
 
 export interface MorningBriefConnectorReader {
   /**
@@ -1161,7 +1163,10 @@ type MorningBriefCollectionAdmission =
   | {
       readonly kind: "denied";
       readonly reason:
-        "feature-disabled" | "not-installed" | "disabled" | "no-membership";
+        | "feature-disabled"
+        | "not-installed"
+        | "disabled"
+        | "no-membership";
     };
 
 export async function admitMorningBriefCollection(

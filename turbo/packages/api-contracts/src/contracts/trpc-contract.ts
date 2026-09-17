@@ -30,7 +30,10 @@ export interface ZodSchema<TOutput = unknown, TInput = unknown> {
 }
 
 export type ContractSchema<T = unknown> =
-  ZodSchema<T> | ZodLikeSchema<T> | TypeMarker<T> | NoBodyMarker;
+  | ZodSchema<T>
+  | ZodLikeSchema<T>
+  | TypeMarker<T>
+  | NoBodyMarker;
 
 export interface ResponseWithBody<TBody = unknown> {
   readonly contentType?: string;
@@ -38,7 +41,8 @@ export interface ResponseWithBody<TBody = unknown> {
 }
 
 export type ResponseSchema<TBody = unknown> =
-  ContractSchema<TBody> | ResponseWithBody<TBody>;
+  | ContractSchema<TBody>
+  | ResponseWithBody<TBody>;
 
 export type ResponseMap = Record<number, ResponseSchema>;
 

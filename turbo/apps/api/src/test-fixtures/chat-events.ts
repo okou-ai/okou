@@ -84,7 +84,10 @@ const blockedByPidRowSchema = z.object({ blocked: z.boolean() });
 const blockedQueryRowSchema = z.object({ query: z.string() });
 
 type ChatThreadBlockedStatementKind =
-  "select_for_key_share" | "select_for_update" | "update" | "other";
+  | "select_for_key_share"
+  | "select_for_update"
+  | "update"
+  | "other";
 
 interface ChatEventContextFixture {
   readonly id: string;

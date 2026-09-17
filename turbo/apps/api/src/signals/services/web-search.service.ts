@@ -66,7 +66,8 @@ interface WebSearchErrorResult {
 }
 
 type PerplexityBodyResult =
-  WebSearchErrorResult | { readonly kind: "body"; readonly body: unknown };
+  | WebSearchErrorResult
+  | { readonly kind: "body"; readonly body: unknown };
 
 type PerplexityResponseResult =
   | WebSearchErrorResult

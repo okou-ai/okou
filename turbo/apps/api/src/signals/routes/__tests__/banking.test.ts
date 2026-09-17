@@ -44,9 +44,14 @@ const FINICITY_CONNECT_URL = `${FINICITY_BASE_URL}/connect/v2/generate`;
 const FINICITY_APP_SECRET = randomBytes(32).toString("hex");
 
 type BankingConnectionStatus =
-  "active" | "repair_required" | "revoked" | "deleted";
+  | "active"
+  | "repair_required"
+  | "revoked"
+  | "deleted";
 type BankingOperationScope =
-  "accounts.read" | "balances.read" | "transactions.read";
+  | "accounts.read"
+  | "balances.read"
+  | "transactions.read";
 
 interface BankingFixture {
   readonly orgId: string;

@@ -83,7 +83,8 @@ export interface PreparedAgentCheckpoint {
 }
 
 export type AgentCheckpointErrorResponse =
-  ReturnType<typeof badRequestMessage> | ReturnType<typeof notFound>;
+  | ReturnType<typeof badRequestMessage>
+  | ReturnType<typeof notFound>;
 
 type AgentCheckpointPreparation =
   | { readonly ok: true; readonly prepared: PreparedAgentCheckpoint }
@@ -93,7 +94,9 @@ type AgentCheckpointPreparation =
     };
 
 type AgentCheckpointPersistenceSource =
-  "standalone-webhook" | "combined-completion" | "pi-api-first-turn";
+  | "standalone-webhook"
+  | "combined-completion"
+  | "pi-api-first-turn";
 
 interface CheckpointRunContext {
   readonly agentSessionConversationId: string | null;
@@ -744,7 +747,8 @@ type AgentCheckpointSuccessResponse = ReturnType<
 >;
 
 type AgentCheckpointResponse =
-  AgentCheckpointSuccessResponse | AgentCheckpointErrorResponse;
+  | AgentCheckpointSuccessResponse
+  | AgentCheckpointErrorResponse;
 
 function isActivePiCheckpointStatus(status: RunStatus): boolean {
   return status === "pending" || status === "running";

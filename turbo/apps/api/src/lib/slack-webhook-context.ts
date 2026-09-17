@@ -19,10 +19,16 @@ import {
 export type SlackFile = ChatSlackMessageFile;
 
 type SlackConversationContextPhase =
-  "replies" | "history" | "user_info" | "format";
+  | "replies"
+  | "history"
+  | "user_info"
+  | "format";
 
 type SlackConversationContextShape =
-  "dm_no_thread" | "channel_no_thread" | "dm_thread" | "channel_thread";
+  | "dm_no_thread"
+  | "channel_no_thread"
+  | "dm_thread"
+  | "channel_thread";
 
 interface SlackConversationContextTelemetryDimensions {
   readonly slack_context_shape: SlackConversationContextShape;
