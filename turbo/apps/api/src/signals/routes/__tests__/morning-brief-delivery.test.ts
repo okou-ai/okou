@@ -27,6 +27,7 @@ import {
   seedInstalledMorningBrief,
 } from "../../../test-fixtures/morning-brief-collection";
 import { expireMorningBriefGenerationRetention } from "../../../test-fixtures/morning-brief-generation";
+import { rejectEmailOutboxCompletion } from "../../../test-fixtures/email-outbox";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { deleteChatThread$ } from "../../services/chat-thread.service";
 import { drainEmailOutboxItems$ } from "../../services/email-common.service";
@@ -294,10 +295,11 @@ async function generateAcceptedResult(f: Fixture): Promise<string> {
   return response.body.generation.attemptId;
 }
 
-function deliver(f: Fixture, resultAttemptId: string) {
+function deliver(f: Fixture, resultAttemptId: string, signal?: AbortSignal) {
   return deliveryClient().preview({
     headers: f.headers,
     body: { resultAttemptId },
+    ...(signal === undefined ? {} : { fetchOptions: { signal } }),
   });
 }
 
@@ -851,5 +853,97 @@ describe("Morning Brief native delivery", () => {
       .from(emailOutbox)
       .where(eq(emailOutbox.id, queued!.id));
     expect(remaining).toHaveLength(0);
+  });
+
+  it("converges concurrent deliveries of one result on a single message", async () => {
+    const f = await fixture();
+    scriptSlack();
+    scriptProviders();
+    const attemptId = await generateAcceptedResult(f);
+
+    const [first, second] = await Promise.all([
+      accept(deliver(f, attemptId), [200]),
+      accept(deliver(f, attemptId), [200]),
+    ]);
+
+    const results = [first.body.result, second.body.result].sort();
+    expect(results).toStrictEqual(["already-delivered", "delivered"]);
+    expect(first.body.delivery.chatEventId).toBe(
+      second.body.delivery.chatEventId,
+    );
+    expect(await readDeliveries(f)).toHaveLength(1);
+    const events = await readThreadEvents(first.body.delivery.chatThreadId);
+    expect(
+      events.filter((event) => {
+        return event.eventType === "output.message";
+      }),
+    ).toHaveLength(1);
+    expect(await readOutbox(f)).toHaveLength(1);
+  });
+
+  it("replays one native send under the same key after a lost completion", async () => {
+    const f = await fixture();
+    scriptSlack();
+    scriptProviders();
+    const attemptId = await generateAcceptedResult(f);
+    await accept(deliver(f, attemptId), [200]);
+    const [queued] = await readOutbox(f);
+
+    // The provider accepts, then the completion write fails — the exact
+    // ambiguity S2's committed request and key exist for.
+    const restore = await rejectEmailOutboxCompletion(
+      queued!.id,
+      context.signal,
+    );
+    await expect(
+      store.set(
+        drainEmailOutboxItems$,
+        { currentTimeMs: now(), itemIds: [queued!.id] },
+        context.signal,
+      ),
+    ).rejects.toThrow();
+    await restore();
+
+    const firstSends = emailSends();
+    expect(firstSends).toHaveLength(1);
+    const [afterLoss] = await db()
+      .select({
+        status: emailOutbox.status,
+        providerIdempotencyKey: emailOutbox.providerIdempotencyKey,
+        providerRequest: emailOutbox.providerRequest,
+      })
+      .from(emailOutbox)
+      .where(eq(emailOutbox.id, queued!.id));
+    // The row is still `sending` with its committed payload and key intact.
+    expect(afterLoss?.status).toBe("sending");
+    expect(afterLoss?.providerIdempotencyKey).toBe(
+      firstSends[0]?.options.idempotencyKey,
+    );
+
+    // Its recovery lease elapses and another drain replays the same request.
+    await db()
+      .update(emailOutbox)
+      .set({ nextRetryAt: new Date(now() - 1000) })
+      .where(eq(emailOutbox.id, queued!.id));
+    await store.set(
+      drainEmailOutboxItems$,
+      { currentTimeMs: now(), itemIds: [queued!.id] },
+      context.signal,
+    );
+
+    const sends = emailSends();
+    expect(sends).toHaveLength(2);
+    // Same payload, same key: the provider owns one logical delivery.
+    expect(sends[1]?.payload).toStrictEqual(sends[0]?.payload);
+    expect(sends[1]?.options.idempotencyKey).toBe(
+      sends[0]?.options.idempotencyKey,
+    );
+    const [settled] = await db()
+      .select({ status: emailOutbox.status })
+      .from(emailOutbox)
+      .where(eq(emailOutbox.id, queued!.id));
+    expect(settled?.status).toBe("sent");
+    // No second Chat message and no second generation followed the replay.
+    expect(await readDeliveries(f)).toHaveLength(1);
   });
 });
