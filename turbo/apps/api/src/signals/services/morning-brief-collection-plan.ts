@@ -39,6 +39,40 @@ export const MORNING_BRIEF_NEW_READ_CUTOFF_MS =
 /** At most three sources are in flight; the rest queue in the fixed order. */
 export const MORNING_BRIEF_MAX_CONCURRENT_SOURCES = 3;
 
+/** The one absolute instant an attempt owns, and which bound produced it. */
+export interface MorningBriefCompositionDeadline {
+  readonly startedAt: Date;
+  readonly deadlineAt: Date;
+  /** `caller` whenever the caller's budget is the tighter of the two. */
+  readonly source: "phase" | "caller";
+}
+
+/**
+ * Resolve the single absolute deadline the whole attempt runs under.
+ *
+ * The 45-second phase and the caller's own budget — a scheduled occurrence's
+ * remaining lease, or a preview caller's explicit limit — are two upper bounds
+ * on the same attempt, so the tighter one wins and the attempt never holds a
+ * deadline its caller has already given up on. Resolving it once, before
+ * admission, is what makes every later check a sample of the same instant
+ * rather than a fresh 45 seconds granted by whichever step asked last.
+ */
+export function morningBriefCompositionDeadline(
+  startedAt: Date,
+  callerDeadlineAt: Date | null,
+): MorningBriefCompositionDeadline {
+  const phaseDeadlineAt = new Date(
+    startedAt.getTime() + MORNING_BRIEF_COLLECTION_PHASE_MS,
+  );
+  if (
+    callerDeadlineAt !== null &&
+    callerDeadlineAt.getTime() < phaseDeadlineAt.getTime()
+  ) {
+    return { startedAt, deadlineAt: callerDeadlineAt, source: "caller" };
+  }
+  return { startedAt, deadlineAt: phaseDeadlineAt, source: "phase" };
+}
+
 /** The per-source ceilings each adapter already declares, restated as the plan's. */
 export const MORNING_BRIEF_SOURCE_BUDGETS: Readonly<
   Record<
