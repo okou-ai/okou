@@ -1,5 +1,6 @@
 import { agentSshAccessContract } from "@okouai/api-contracts/contracts/ssh-access";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
+import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
 import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
@@ -155,7 +156,7 @@ test("The SSH directory distinguishes unavailable diagnostics from failed hosts"
 });
 
 test.each([0, 2])(
-  "SSH with %i hosts appears before custom connectors and respects its category filter",
+  "SSH with %i hosts ends the catalog and respects its category filter",
   async (configuredCount) => {
     mockCatalog();
     mockPublicConnectorStatus(
@@ -198,14 +199,9 @@ test.each([0, 2])(
       },
     });
     await screen.findByTestId("connector-shelf-communication-collaboration");
-    const remoteAccess = await screen.findByRole("heading", {
-      name: "Remote access",
-    });
-    const custom = await screen.findByText("Acme Search");
-    expect(
-      remoteAccess.compareDocumentPosition(custom) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
+    await screen.findByRole("heading", { name: "Remote access" });
+    // Custom is a scope of its own, so the catalog ends with Remote access.
+    expect(screen.queryByText("Acme Search")).toBeNull();
     expect(getConnectorAction("link", "Manage SSH hosts")).toHaveAttribute(
       "href",
       configuredCount === 0 ? "/connectors/ssh?add=1" : "/connectors/ssh",
@@ -350,6 +346,9 @@ test.each([0, 1, 2])(
   async (count) => {
     mockCatalog();
     context.mocks.data.agents([]);
+    context.mocks.api(sshCredentialsContract.list, ({ respond }) => {
+      return respond(200, { credentials: [] });
+    });
     context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
       return respond(200, { configuredCount: count });
     });
@@ -394,7 +393,8 @@ test.each([0, 1, 2])(
       click(getConnectorAction("button", "Add host"));
     }
     const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getByLabelText("Private key")).toHaveValue("");
+    const key = await within(dialog).findByLabelText("Private key");
+    expect(key).toHaveValue("");
     expect(within(dialog).queryByText("OAuth")).not.toBeInTheDocument();
   },
 );
@@ -516,7 +516,7 @@ test("Returning from host management refreshes the SSH card after deleting the l
     return respond(204);
   });
   await page();
-  await screen.findByText("1 host configured");
+  await screen.findByText("Deployment");
   click(getConnectorAction("link", "Manage SSH hosts"));
   await screen.findByText("Deployment");
   click(getConnectorAction("button", "Delete host"));

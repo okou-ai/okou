@@ -3,12 +3,18 @@ import type { ChatEvent } from "./chat-event-types.ts";
 
 type ChatEventsSignal = Computed<ChatEvent[]>;
 
-export interface ChatEventChangeHandler {
-  readonly command$: Command<
-    Promise<void>,
-    [ChatEventChangeHandler, AbortSignal]
-  >;
-}
+export type ChatEventChangeHandler =
+  | {
+      readonly command$: Command<
+        Promise<void>,
+        [ChatEventChangeHandler, AbortSignal]
+      >;
+    }
+  | {
+      // Synchronous listeners may start background work with the registration's
+      // captured owner signal, independent of the notification's shorter lifetime.
+      readonly callback: () => void;
+    };
 
 interface ChatEventChangeRegistration {
   readonly id: string;
@@ -49,6 +55,11 @@ const invokeChatEventChangeHandler$ = command(
     handler: ChatEventChangeHandler,
     signal: AbortSignal,
   ): Promise<void> => {
+    signal.throwIfAborted();
+    if ("callback" in handler) {
+      handler.callback();
+      return;
+    }
     const [completion] = await Promise.allSettled([
       set(handler.command$, handler, signal),
     ]);

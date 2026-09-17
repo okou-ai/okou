@@ -126,6 +126,10 @@ export class CitationLiteralEscaper {
     if (c === "\n") {
       const closes = this.#fenceClose && this.#closing >= this.#width;
       if (!closes) {
+        if (this.#closing > 0) {
+          // A failed closing run is non-whitespace body content.
+          this.#invalidate(emit);
+        }
         this.#consumeToken(c, true, emit);
       }
       this.#retain(item, emit);

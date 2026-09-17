@@ -613,11 +613,12 @@ async fn execute(
         } else {
             guest_contracts::oom_evidence::CaptureReason::CliError
         };
-        if let Some(evidence) = workload_containment.oom_evidence(reason).await {
+        let evidence = workload_containment.oom_evidence(reason).await;
+        if let Some(evidence) = evidence.as_ref() {
             telemetry
                 .incident_reporter()
                 .with_sandbox_id(runtime.config.sandbox_id.clone())
-                .record(evidence);
+                .record(evidence.clone());
         }
         match workload_containment.resource_diagnostics() {
             Ok(diagnostics) => {
@@ -625,9 +626,17 @@ async fn execute(
                     log_info!(LOG_TAG, "{pressure}");
                 }
                 if let Some(hard_limit) = diagnostics.hard_limit {
+                    let contained = cli_execution_succeeded
+                        && evidence.as_ref().is_some_and(|evidence| {
+                            evidence.proves_contained_resource_limit(&hard_limit)
+                        });
                     let message =
                         apply_workload_resource_limit(&mut failure_diagnostic, hard_limit);
-                    log_warn!(LOG_TAG, "{message}");
+                    if contained {
+                        log_info!(LOG_TAG, "{message} oom_classification=contained_tool_oom");
+                    } else {
+                        log_warn!(LOG_TAG, "{message}");
+                    }
                 }
             }
             Err(error) => {
@@ -1263,6 +1272,7 @@ mod tests {
         let success_result = cli::JsonlResultSummary {
             num_turns: Some(1),
             status: cli::JsonlResultStatus::Success,
+            model_request: None,
         };
         let make_result = |jsonl_result: cli::JsonlResultSummary,
                            cleanup_result: cli::JsonlResultSummary,
@@ -1304,6 +1314,7 @@ mod tests {
             cli::JsonlResultSummary {
                 num_turns: Some(1),
                 status: cli::JsonlResultStatus::Error,
+                model_request: None,
             },
             success_result,
             CliTerminationReason::PostResultReap,
@@ -1318,6 +1329,7 @@ mod tests {
             cli::JsonlResultSummary {
                 num_turns: Some(1),
                 status: cli::JsonlResultStatus::Error,
+                model_request: None,
             },
             CliTerminationReason::PostResultReap,
         );

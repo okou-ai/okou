@@ -1,3 +1,8 @@
+import {
+  readPiInferenceLifecycle,
+  assertPiInferenceApiFailure,
+  assertPiInferencePublication,
+} from "./pi-inference-lifecycle.service";
 import { command } from "ccstate";
 import type { z } from "zod";
 import { and, eq, inArray, sql } from "drizzle-orm";
@@ -19,12 +24,12 @@ import { webhookCompleteContract } from "@okouai/api-contracts/contracts/webhook
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { checkpoints } from "@okouai/db/schema/checkpoint";
-
-import { notFound } from "../../lib/error";
-import { env } from "../../lib/env";
-import { logger } from "../../lib/log";
-import { now, nowDate } from "../../lib/time";
 import type { Tx } from "../../lib/db-types";
+import { notFound } from "../../lib/error";
+import { logger } from "../../lib/log";
+import { piLangfuseDebugUserId } from "../../lib/pi-langfuse-debug";
+import { recordPiLangfuseRunEndToEnd } from "../../lib/pi-langfuse-tracing";
+import { now, nowDate } from "../../lib/time";
 import type { SandboxAuth } from "../../types/auth";
 import { writeDb$, type Db } from "../external/db";
 import { recordSandboxOperation } from "../external/sandbox-op-log";
@@ -32,7 +37,7 @@ import {
   publishChatThreadDetailChangedSafely,
   publishChatThreadMessageCreatedSafely,
 } from "../external/realtime";
-import { tapError } from "../utils";
+import { safeSync, tapError } from "../utils";
 import {
   chatCallbackIdForRun,
   dispatchFailedRunCallbacks,
@@ -55,12 +60,7 @@ import {
   persistAgentCheckpointInTransaction,
   prepareAgentCheckpointPersistence$,
 } from "./agent-webhook-checkpoints.service";
-import {
-  admitPiMemoryStage1Candidate,
-  lockPiMemoryCandidateStorage,
-  type PiMemoryStage1Admission,
-} from "./pi-memory-stage1-candidate.service";
-import { isGptApiKeyPiProviderType } from "./pi-sandbox-config";
+import { lockPiMemoryCandidateStorage } from "./pi-memory-stage1-candidate.service";
 import { transitionAgentRunsToTerminal } from "./agent-run-terminal-transition.service";
 
 type WebhookCompleteBody = z.infer<
@@ -69,11 +69,11 @@ type WebhookCompleteBody = z.infer<
 type TerminalStatus = "completed" | "failed";
 
 interface CompleteAgentRunInput {
+  readonly inferenceOwnerEpoch?: number;
   readonly auth: SandboxAuth;
   readonly body: WebhookCompleteBody;
   readonly allowCheckpointlessSuccess?: boolean;
   readonly executionOwner?: "api-first";
-  readonly suppressFailureLog?: boolean;
 }
 
 export interface TerminalSideEffectsInput {
@@ -131,6 +131,7 @@ type CompletionResponse =
   | AgentCheckpointErrorResponse;
 
 interface RunRecord {
+  readonly apiStartedAt: Date | null;
   readonly cancellationRecoveryCompleted: boolean | null;
   readonly orgId: string;
   readonly sessionId: string;
@@ -139,6 +140,7 @@ interface RunRecord {
   readonly chatThreadId: string | null;
   readonly triggerSource: string | null;
   readonly launchSnapshot: (typeof agentRuns.$inferSelect)["launchSnapshot"];
+  readonly langfuseTraceEnabled: boolean;
   readonly modelProvider: string | null;
 }
 
@@ -158,7 +160,6 @@ interface CompletionCommit {
   readonly transitionFailureKind?: PreparedCompletion["failureKind"];
   readonly transitionFailureReason?: RunFailureReasonToken;
   readonly finalization: FinalizeActiveInputDeliveryResult;
-  readonly piMemoryStage1Admission?: PiMemoryStage1Admission;
 }
 
 type CompletionTransactionResult =
@@ -172,73 +173,48 @@ type CompletionTransactionResult =
 
 const L = logger("webhook:complete");
 
-function logGptApiKeyPiSandboxOutcome(
-  input: CompleteAgentRunInput,
-  commit: CompletionCommit,
-): boolean {
-  if (
-    input.executionOwner === "api-first" ||
-    commit.run.launchSnapshot?.framework !== "pi" ||
-    !isGptApiKeyPiProviderType(commit.run.modelProvider)
-  ) {
-    return false;
-  }
-  const details = {
-    runId: input.body.runId,
-    productProvider: commit.run.modelProvider,
-    dialect: "openai-responses",
-    executionOwner: "sandbox",
-    outcome:
-      commit.responseStatus === "completed"
-        ? "sandbox_completion"
-        : "terminal_failure",
-    reason:
-      commit.transitionFailureReason ??
-      (commit.responseStatus === "completed"
-        ? "settled_session"
-        : "sandbox_failure"),
-    ownershipStage: "sandbox",
-  } as const;
-  if (commit.responseStatus === "completed") {
-    L.debug("Pi API first-turn outcome", details);
-    return false;
-  }
-  L.warn("Pi API first-turn outcome", details);
-  return true;
-}
+const KNOWN_FAILURE_LOG_POLICY = Object.freeze({
+  // Input and execution limits need no operator action for either key owner.
+  safety_policy_refusal: "suppress",
+  input_too_large: "suppress",
+  execution_timeout: "suppress",
+  insufficient_credits: "suppress-byok",
+  provider_insufficient_credits: "suppress-byok",
+  invalid_api_key: "suppress-byok",
+  invalid_credentials: "suppress-byok",
+  terms_acceptance_required: "suppress-byok",
+  context_window_exceeded: "suppress-byok",
+  output_token_limit: "suppress-byok",
+  provider_rate_limited: "suppress-byok",
+  provider_overloaded: "suppress-byok",
+  provider_stream_timeout: "suppress-byok",
+  provider_queue_timeout: "suppress-byok",
+  provider_server_error: "suppress-byok",
+  response_connection_lost: "suppress-byok",
+  reconnect_required: "suppress-byok",
+  usage_limit: "suppress-byok",
+  session_history_limit: "retain",
+  unsupported_model: "retain",
+} satisfies Record<
+  KnownRunFailureReason,
+  "suppress" | "suppress-byok" | "retain"
+>);
 
 function shouldSuppressKnownFailureLog(
   run: RunRecord,
   failureReason: KnownRunFailureReason,
 ): boolean {
-  switch (failureReason) {
-    // A content-safety rejection is decided by the submitted input, so it needs
-    // no operator action even when the built-in provider owns the credential.
-    case "safety_policy_refusal":
-    case "input_too_large":
-    case "execution_timeout": {
+  switch (KNOWN_FAILURE_LOG_POLICY[failureReason]) {
+    case "suppress": {
       return true;
     }
-    case "insufficient_credits":
-    case "invalid_api_key":
-    case "invalid_credentials":
-    case "terms_acceptance_required":
-    case "context_window_exceeded":
-    case "output_token_limit":
-    case "provider_rate_limited":
-    case "provider_overloaded":
-    case "provider_stream_timeout":
-    case "provider_server_error":
-    case "response_connection_lost":
-    case "reconnect_required":
-    case "usage_limit": {
+    case "suppress-byok": {
       const providerType = modelProviderTypeSchema.safeParse(run.modelProvider);
       return (
         providerType.success && !isBuiltInModelProviderType(providerType.data)
       );
     }
-    case "session_history_limit":
-    case "unsupported_model": {
+    case "retain": {
       return false;
     }
   }
@@ -248,12 +224,8 @@ function logAgentRunCompletionOutcome(
   input: CompleteAgentRunInput,
   commit: CompletionCommit,
 ): void {
-  const loggedPiSandboxFailure = logGptApiKeyPiSandboxOutcome(input, commit);
   if (commit.responseStatus === "completed") {
     L.debug("Run completed successfully", { runId: input.body.runId });
-    return;
-  }
-  if (loggedPiSandboxFailure) {
     return;
   }
   if (commit.transitionFailureKind === "missing-checkpoint") {
@@ -263,10 +235,7 @@ function logAgentRunCompletionOutcome(
     });
     return;
   }
-  if (
-    !input.suppressFailureLog &&
-    !shouldSuppressFailureLog(commit.run, commit.transitionFailureReason)
-  ) {
+  if (!shouldSuppressFailureLog(commit.run, commit.transitionFailureReason)) {
     logRunFailure(input, commit);
   }
 }
@@ -328,6 +297,9 @@ function checkpointInputForCompletion(
   }
   return {
     auth: input.auth,
+    ...(input.inferenceOwnerEpoch === undefined
+      ? {}
+      : { inferenceOwnerEpoch: input.inferenceOwnerEpoch }),
     body: {
       ...input.body.checkpoint,
       runId: input.body.runId,
@@ -383,6 +355,7 @@ async function loadCompletionRun(
 ): Promise<RunRecord | null> {
   const [run] = await db
     .select({
+      apiStartedAt: agentRuns.apiStartedAt,
       orgId: agentRuns.orgId,
       sessionId: agentRuns.sessionId,
       status: agentRuns.status,
@@ -391,6 +364,7 @@ async function loadCompletionRun(
       chatThreadId: agentRuns.chatThreadId,
       triggerSource: agentRuns.triggerSource,
       launchSnapshot: agentRuns.launchSnapshot,
+      langfuseTraceEnabled: agentRuns.langfuseTraceEnabled,
       modelProvider: agentRuns.modelProvider,
     })
     .from(agentRuns)
@@ -414,9 +388,11 @@ async function prepareCompletion(
   signal: AbortSignal,
 ): Promise<PreparedCompletion> {
   if (input.body.exitCode !== 0) {
+    const error =
+      input.body.error?.trim() || "Run failed without error message";
     return {
       status: "failed",
-      error: input.body.error?.trim() || "Run failed without error message",
+      error,
       failureReason: input.body.failureReason,
       failureKind: "reported",
     };
@@ -453,6 +429,7 @@ async function lockCompletionRun(
 ): Promise<RunRecord | null> {
   const [run] = await tx
     .select({
+      apiStartedAt: agentRuns.apiStartedAt,
       orgId: agentRuns.orgId,
       sessionId: agentRuns.sessionId,
       status: agentRuns.status,
@@ -461,6 +438,7 @@ async function lockCompletionRun(
       chatThreadId: agentRuns.chatThreadId,
       triggerSource: agentRuns.triggerSource,
       launchSnapshot: agentRuns.launchSnapshot,
+      langfuseTraceEnabled: agentRuns.langfuseTraceEnabled,
       modelProvider: agentRuns.modelProvider,
     })
     .from(agentRuns)
@@ -475,6 +453,31 @@ async function lockCompletionRun(
   if (!run) {
     return null;
   }
+  const lifecycle = await readPiInferenceLifecycle(
+    tx,
+    input.body.runId,
+    run.launchSnapshot,
+  );
+  const sandboxFence = input.auth.piSandbox;
+  if (sandboxFence) {
+    if (
+      lifecycle?.lease?.claimedOwnerEpoch !== sandboxFence.ownerEpoch ||
+      lifecycle.lease.claimedGeneration !== sandboxFence.generation
+    ) {
+      throw new Error("Stale Pi Sandbox completion");
+    }
+    if (lifecycle.inference.phase !== "terminal") {
+      assertPiInferencePublication(lifecycle, sandboxFence.ownerEpoch);
+    }
+  } else if (
+    input.executionOwner === "api-first" &&
+    input.body.exitCode !== 0
+  ) {
+    assertPiInferenceApiFailure(lifecycle, input.inferenceOwnerEpoch);
+  } else {
+    assertPiInferencePublication(lifecycle, input.inferenceOwnerEpoch);
+  }
+
   return { ...run, status: runStatusSchema.parse(run.status) };
 }
 
@@ -548,6 +551,9 @@ async function applyTerminalCompletion(
     values: {
       status: prepared.status,
       completedAt,
+      ...(input.executionOwner === "api-first"
+        ? { runnerCancellationMode: "hard" as const }
+        : {}),
       ...(prepared.error !== undefined ? { error: prepared.error } : {}),
       failureReason: prepared.failureReason ?? null,
       ...(prepared.result !== undefined ? { result: prepared.result } : {}),
@@ -588,25 +594,6 @@ async function completeActiveAgentRunTransition(
 ): Promise<CompletionTransactionResult> {
   const completedAt = nowDate();
   await applyTerminalCompletion(tx, input, run, prepared, completedAt);
-  const launchSnapshot = run.launchSnapshot;
-  const piMemoryStage1Admission = await admitPiMemoryStage1Candidate(tx, {
-    runId: input.body.runId,
-    orgId: run.orgId,
-    userId: run.userId,
-    status: prepared.status,
-    framework: launchSnapshot?.framework ?? null,
-    // Historical V1/null snapshots remain disabled. V2 retains its persisted
-    // rollout decision; V3 Pi runs have already passed the PiLoop launch policy.
-    generationEnabled:
-      launchSnapshot?.schemaVersion === 2
-        ? launchSnapshot.piMemoryGenerationEnabled
-        : launchSnapshot?.schemaVersion === 3 &&
-          launchSnapshot.framework === "pi",
-    triggerSource: run.triggerSource,
-    chatThreadId: run.chatThreadId,
-    completedAt,
-    idleDelayMs: env("PI_MEMORY_STAGE1_IDLE_DELAY_MS"),
-  });
   return {
     kind: "committed",
     commit: {
@@ -617,7 +604,6 @@ async function completeActiveAgentRunTransition(
       transitionFailureKind: prepared.failureKind,
       transitionFailureReason: prepared.failureReason,
       finalization,
-      piMemoryStage1Admission,
     },
   };
 }
@@ -1026,38 +1012,33 @@ export const completeAgentRun$ = command(
     }
 
     if (commit.transitioned) {
+      const terminalCommittedAt = now();
+      const terminalCommittedAtIso = new Date(
+        terminalCommittedAt,
+      ).toISOString();
+      if (
+        commit.run.launchSnapshot?.framework === "pi" &&
+        commit.run.langfuseTraceEnabled
+      ) {
+        safeSync(() => {
+          recordPiLangfuseRunEndToEnd({
+            enabled: true,
+            runId: input.body.runId,
+            sessionId: commit.run.sessionId,
+            userId: piLangfuseDebugUserId(commit.run.userId),
+            apiStartedAt: commit.run.apiStartedAt?.getTime(),
+            terminalCommittedAt,
+            terminalStatus: commit.responseStatus,
+          });
+        });
+      }
       recordSandboxOperation({
         sandboxType: "runner",
         actionType: "run_terminal_transition_committed",
         durationMs: 0,
         success: true,
         runId: input.body.runId,
-      });
-      const admission = commit.piMemoryStage1Admission;
-      if (!admission) {
-        throw new Error("Terminal transition is missing Pi memory admission");
-      }
-      recordSandboxOperation({
-        sandboxType: "runner",
-        actionType: "pi_memory_stage1_candidate_admission",
-        durationMs: 0,
-        success: true,
-        runId: input.body.runId,
-        dimensions: {
-          candidate_outcome: admission.outcome,
-          ...(admission.outcome === "skipped"
-            ? { candidate_skip_reason: admission.reason }
-            : {}),
-          ...(admission.memoryStorageId
-            ? { memory_storage_id: admission.memoryStorageId }
-            : {}),
-          ...(admission.piSessionId
-            ? { pi_session_id: admission.piSessionId }
-            : {}),
-          ...(admission.sourceHistoryHash
-            ? { source_history_hash: admission.sourceHistoryHash }
-            : {}),
-        },
+        timestamp: terminalCommittedAtIso,
       });
       logAgentRunCompletionOutcome(input, commit);
     } else if (

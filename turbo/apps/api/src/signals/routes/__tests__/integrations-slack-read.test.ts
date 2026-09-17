@@ -4,7 +4,6 @@ import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import { integrationsSlackReadContract } from "@okouai/api-contracts/contracts/integrations-slack-read";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -12,8 +11,6 @@ import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { integrationsSlackReadRoutes } from "../integrations-slack-read";
-import type { ApiTestUser } from "./helpers/api-bdd";
-import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
 import {
   seedSlackOrgConnection$,
   seedSlackOrgInstallation$,
@@ -22,7 +19,6 @@ import { seedOrgMembership$ } from "./helpers/org-membership";
 
 const context = testContext();
 const store = createStore();
-const connectors = createConnectorBddApi(context);
 const SLACK_USER_CONVERSATIONS_URL =
   "https://slack.com/api/users.conversations";
 const SLACK_HISTORY_URL = "https://slack.com/api/conversations.history";
@@ -31,7 +27,6 @@ const THREAD_TS = "1750000000.000001";
 
 async function fixture(
   options: {
-    enabled?: boolean;
     installed?: boolean;
     connected?: boolean;
     capabilities?: readonly Capability[];
@@ -39,15 +34,6 @@ async function fixture(
 ) {
   const orgId = `org_${randomUUID()}`;
   const userId = `user_${randomUUID()}`;
-  const actor: ApiTestUser = {
-    userId,
-    orgId,
-    orgRole: "org:admin",
-    email: `${userId}@example.test`,
-  };
-  await connectors.updateFeatureSwitches(actor, {
-    [FeatureSwitchKey.SlackRead]: options.enabled ?? true,
-  });
   await store.set(
     seedOrgMembership$,
     { userId, orgId, role: "admin" },
@@ -87,7 +73,6 @@ async function fixture(
     client: setupApp({ context, routes: integrationsSlackReadRoutes })(
       integrationsSlackReadContract,
     ),
-    actor,
     botToken,
     installation,
     slackUserId: connection?.slackUserId ?? null,
@@ -451,15 +436,6 @@ describe("Slack bot channel discovery and history", () => {
     expect(response.body.error.message).toContain("slack:read");
   });
 
-  it("enforces the feature switch even for a token with slack:read", async () => {
-    const { client, headers } = await fixture({ enabled: false });
-    const response = await accept(
-      client.listChannels({ headers, query: { limit: 10 } }),
-      [403],
-    );
-    expect(response.body.error.message).toContain("not enabled");
-  });
-
   it("does not reuse a Slack installation from another organization", async () => {
     await fixture();
     const { client, headers } = await fixture({ installed: false });
@@ -697,7 +673,6 @@ describe("Slack bot thread replies", () => {
       status: 403,
       message: "slack:read",
     },
-    { options: { enabled: false }, status: 403, message: "not enabled" },
     {
       options: { installed: false },
       status: 404,

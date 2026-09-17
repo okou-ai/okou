@@ -614,6 +614,7 @@ async fn validate(
         WorkloadResourcePolicy::for_guest_capacity(
             profile.vcpu,
             u64::from(profile.memory_mb) * 1024 * 1024,
+            true,
         )
         .map_err(|error| RunnerError::Config(format!("profile {name}: {error}")))?;
         if profile.rootfs_disk_mb > MAX_DISK_MB {

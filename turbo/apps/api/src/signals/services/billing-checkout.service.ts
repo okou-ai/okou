@@ -1,3 +1,4 @@
+import { retireImpactMetadata } from "../../lib/impact-marketing";
 import { compatibleGoogleAdsAttribution } from "@okouai/core/google-ads-attribution";
 import { randomUUID } from "node:crypto";
 
@@ -30,10 +31,6 @@ import {
 import { getOrCreateStripeCustomer$ } from "./billing-customer.service";
 import { persistOrgAcquisitionAttribution$ } from "./acquisition-attribution.service";
 import {
-  impactStripeMetadata$,
-  readOrgImpactMetadata,
-} from "./impact-attribution.service";
-import {
   addStripeConcurrencySubscriptionItem$,
   previewStripeConcurrencySubscriptionChange$,
 } from "./billing-concurrency-subscription.service";
@@ -62,6 +59,7 @@ interface CreateCheckoutSessionArgs {
   readonly cancelUrl: string;
   readonly adAttribution?: Readonly<Record<string, string | undefined>>;
   readonly checkoutIdempotencyKey?: string;
+  readonly purchaseCreatedAt?: string;
 }
 
 interface StartPlanPurchaseArgs extends CreateCheckoutSessionArgs {
@@ -114,6 +112,7 @@ interface CreateCreditCheckoutSessionArgs {
   readonly successUrl: string;
   readonly cancelUrl: string;
   readonly checkoutIdempotencyKey?: string;
+  readonly purchaseCreatedAt?: string;
 }
 
 interface PreviewExistingBillingCreditPurchaseArgs {
@@ -201,7 +200,6 @@ const creditPurchasePreviewTokenSchema = z.object({
   quantity: z.number().int().positive(),
   credits: z.number().int().positive(),
   amountCents: z.number().int().nonnegative(),
-  impactMetadata: z.record(z.string(), z.string()).optional(),
   currency: z.string().length(3),
   successUrl: z.string().url().optional(),
   cancelUrl: z.string().url().optional(),
@@ -232,6 +230,14 @@ type PlanPurchasePreviewToken = z.infer<typeof planPurchasePreviewTokenSchema>;
 type CreditPurchasePreviewToken = z.infer<
   typeof creditPurchasePreviewTokenSchema
 >;
+
+function purchasePreviewCreatedAt(preview: {
+  readonly expiresAt: string;
+}): string {
+  return new Date(
+    Date.parse(preview.expiresAt) - CREDIT_PURCHASE_PREVIEW_TTL_MS,
+  ).toISOString();
+}
 
 function legacyPriceIdsForTier(
   tier: SubscriptionCheckoutTier,
@@ -529,7 +535,7 @@ function creditPurchasePayableAmount(invoice: StripeInvoice): number {
 
 export const previewExistingBillingCreditPurchase$ = command(
   async (
-    { get, set },
+    { get },
     args: PreviewExistingBillingCreditPurchaseArgs,
     signal: AbortSignal,
   ): Promise<CreditPurchasePreviewResponse | null> => {
@@ -601,7 +607,6 @@ export const previewExistingBillingCreditPurchase$ = command(
       quantity,
       credits,
       amountCents,
-      impactMetadata: await set(impactStripeMetadata$, args.orgId, signal),
       currency: invoice.currency,
       successUrl: args.successUrl,
       cancelUrl: args.cancelUrl,
@@ -709,6 +714,7 @@ export const confirmExistingBillingCreditPurchase$ = command(
           successUrl: preview.successUrl,
           cancelUrl: preview.cancelUrl,
           checkoutIdempotencyKey: `credit-purchase:${preview.purchaseId}:checkout`,
+          purchaseCreatedAt: purchasePreviewCreatedAt(preview),
         },
         signal,
       );
@@ -731,7 +737,7 @@ export const confirmExistingBillingCreditPurchase$ = command(
       creditsAmountMode: "amount_subtotal",
       requestedCreditsAmount: String(preview.credits),
       creditPurchaseId: preview.purchaseId,
-      ...preview.impactMetadata,
+      purchaseCreatedAt: purchasePreviewCreatedAt(preview),
       ...stripePreviewMetadata(),
     };
     const invoice = await stripe.invoices.create(
@@ -799,6 +805,7 @@ export const confirmExistingBillingCreditPurchase$ = command(
 
 function checkoutSessionMetadata(args: {
   readonly orgId: string;
+  readonly purchaseCreatedAt?: string;
   readonly tier: SubscriptionCheckoutTier;
   readonly priceId: string;
   readonly adAttribution:
@@ -809,9 +816,12 @@ function checkoutSessionMetadata(args: {
     orgId: args.orgId,
     tier: args.tier,
     priceId: args.priceId,
+    purchaseCreatedAt: args.purchaseCreatedAt ?? nowDate().toISOString(),
   };
   for (const [key, value] of Object.entries(
-    compatibleGoogleAdsAttribution(args.adAttribution ?? {}),
+    compatibleGoogleAdsAttribution(
+      retireImpactMetadata(args.adAttribution ?? {}),
+    ),
   )) {
     if (value) {
       metadata[key] = value;
@@ -838,7 +848,7 @@ function definedAttribution(
   attribution: Readonly<Record<string, string | undefined>> | undefined,
 ): Record<string, string> | undefined {
   const entries = Object.entries(
-    compatibleGoogleAdsAttribution(attribution ?? {}),
+    compatibleGoogleAdsAttribution(retireImpactMetadata(attribution ?? {})),
   ).filter((entry): entry is [string, string] => {
     return entry[1] !== undefined;
   });
@@ -1060,6 +1070,7 @@ async function createConfirmedPlanSubscription(
       tier: preview.tier,
       priceId: preview.priceId,
       adAttribution: preview.adAttribution,
+      purchaseCreatedAt: purchasePreviewCreatedAt(preview),
     }),
     billingPurchaseId: preview.purchaseId,
   };
@@ -1211,6 +1222,7 @@ async function confirmPlanPurchaseTransaction(
         cancelUrl: preview.cancelUrl,
         adAttribution: preview.adAttribution,
         checkoutIdempotencyKey: `plan-purchase:${preview.purchaseId}:checkout`,
+        purchaseCreatedAt: purchasePreviewCreatedAt(preview),
       },
       signal,
     );
@@ -1284,6 +1296,7 @@ async function createPlanCheckoutSession(
     tier: args.tier,
     priceId: args.priceId,
     adAttribution: args.adAttribution,
+    purchaseCreatedAt: args.purchaseCreatedAt,
   });
   const params: StripeCheckoutSessionCreateParams = {
     mode: "subscription",
@@ -1453,7 +1466,7 @@ export const createCreditCheckoutSession$ = command(
     const baseMetadata = {
       purpose: "credit_purchase",
       orgId: args.orgId,
-      ...(await readOrgImpactMetadata(set(writeDb$), args.orgId, signal)),
+      purchaseCreatedAt: args.purchaseCreatedAt ?? nowDate().toISOString(),
       ...stripePreviewMetadata(),
     };
     const customCreditUnitPriceId = activeCustomCreditUnitPriceId();

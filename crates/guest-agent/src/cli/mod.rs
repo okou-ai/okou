@@ -41,9 +41,11 @@ mod event_delivery_budget_tests;
 mod exec_boundary;
 mod jsonl_result;
 mod line_reader;
+mod pi_deferred_handoff;
 mod pi_event_delivery;
 mod pi_memory_citation;
 mod pi_rpc;
+mod pi_session_output;
 mod process_group;
 mod provider_event_normalization;
 mod reasoning_effort;
@@ -95,6 +97,9 @@ const OPENAI_BASE_URL_ENV_KEY: &str = "OPENAI_BASE_URL";
 const OKOU_AGENT_ID_ENV_KEY: &str = "OKOU_AGENT_ID";
 const CODEX_SERVICE_TIER_CANONICAL_ENV: &str = "OKOU_CODEX_SERVICE_TIER";
 const CLI_PACKAGE_URL_ENV_KEY: &str = "CLI_PKG_URL";
+const PI_LANGFUSE_DEBUG_ENABLED_ENV_KEY: &str = "OKOU_PI_LANGFUSE_DEBUG_ENABLED";
+const LANGFUSE_PUBLIC_KEY_ENV_KEY: &str = "LANGFUSE_PUBLIC_KEY";
+const LANGFUSE_SECRET_KEY_ENV_KEY: &str = "LANGFUSE_SECRET_KEY";
 const WEB_SEARCH_TOOL_NAME: &str = "WebSearch";
 const MAX_EVENT_SEQUENCE_NUMBER: u32 = i32::MAX as u32;
 const CODEX_FIXED_STARTUP_CONFIGS: [&str; 5] = [
@@ -367,6 +372,7 @@ pub(super) struct CliRuntimeConfig<'a> {
     pi_session_id: Cow<'a, str>,
     pi_launch_config: Cow<'a, str>,
     pi_launch_payload_file: Cow<'a, str>,
+    pi_deferred_handoff_file: Cow<'a, str>,
     pi_model_config: Cow<'a, str>,
     user_env: &'a HashMap<String, String>,
 }
@@ -450,6 +456,7 @@ impl<'a> CliRuntimeConfig<'a> {
             pi_session_id: Cow::Borrowed(&config.pi_session_id),
             pi_launch_config: Cow::Borrowed(&config.pi_launch_config),
             pi_launch_payload_file: Cow::Borrowed(paths.pi_launch_payload_file()),
+            pi_deferred_handoff_file: Cow::Borrowed(paths.pi_deferred_handoff_file()),
             pi_model_config: Cow::Borrowed(&config.pi_model_config),
             user_env: &config.user_env,
         })
@@ -492,7 +499,9 @@ impl<'a> CliRuntimeConfig<'a> {
         let remove_claude_effort = matches!(self.framework, env::Framework::ClaudeCode)
             && self.reasoning_effort.is_some()
             && self.user_env.contains_key("CLAUDE_CODE_EFFORT_LEVEL");
-        if !remove_base_url && !remove_claude_effort {
+        let remove_pi_langfuse_credentials = matches!(self.framework, env::Framework::Pi)
+            && user_env_value(self.user_env, PI_LANGFUSE_DEBUG_ENABLED_ENV_KEY) == "true";
+        if !remove_base_url && !remove_claude_effort && !remove_pi_langfuse_credentials {
             return Cow::Borrowed(self.user_env);
         }
         // Structured Codex runtime config is authoritative; do not let stale
@@ -505,6 +514,12 @@ impl<'a> CliRuntimeConfig<'a> {
         // ultracode. An explicit chat choice must win over restored user env.
         if remove_claude_effort {
             user_env.remove("CLAUDE_CODE_EFFORT_LEVEL");
+        }
+        // Platform tracing uses the first-party relay. Its Pi child must not
+        // receive Langfuse project credentials.
+        if remove_pi_langfuse_credentials {
+            user_env.remove(LANGFUSE_PUBLIC_KEY_ENV_KEY);
+            user_env.remove(LANGFUSE_SECRET_KEY_ENV_KEY);
         }
         Cow::Owned(user_env)
     }
@@ -593,7 +608,7 @@ fn write_claude_append_system_prompt_file(
     Ok(())
 }
 
-fn pi_child_env_values(runtime: &CliRuntimeConfig<'_>) -> [(String, String); 4] {
+fn pi_child_env_values(runtime: &CliRuntimeConfig<'_>) -> [(String, String); 5] {
     [
         (
             guest_contracts::env::RUN_ID_ENV.to_string(),
@@ -606,6 +621,10 @@ fn pi_child_env_values(runtime: &CliRuntimeConfig<'_>) -> [(String, String); 4] 
         (
             guest_contracts::env::PI_LAUNCH_PAYLOAD_FILE_ENV.to_string(),
             runtime.pi_launch_payload_file.to_string(),
+        ),
+        (
+            guest_contracts::env::PI_DEFERRED_HANDOFF_FILE_ENV.to_string(),
+            runtime.pi_deferred_handoff_file.to_string(),
         ),
         (
             guest_contracts::env::PI_MODEL_CONFIG_ENV.to_string(),
@@ -1029,6 +1048,10 @@ async fn execute_cli_inner(
         // leave a CLI process running in the VM.
         .kill_on_drop(true);
 
+    if matches!(runtime.framework, env::Framework::Pi) {
+        pi_deferred_handoff::prepare_for_cli(runtime, &http).await?;
+        write_pi_launch_payload_file(runtime)?;
+    }
     let mut child_env_values = child_env::values_for_runtime(runtime);
     match runtime.framework {
         env::Framework::ClaudeCode => child_env_values.push((
@@ -1036,7 +1059,6 @@ async fn execute_cli_inner(
             runtime.claude_config_dir.to_string(),
         )),
         env::Framework::Pi => {
-            write_pi_launch_payload_file(runtime)?;
             child_env_values.extend(pi_child_env_values(runtime));
         }
         env::Framework::Codex => {}
@@ -1120,8 +1142,22 @@ async fn execute_cli_inner(
     let (pi_rpc_startup_tx, pi_rpc_startup_rx) = tokio::sync::oneshot::channel();
     let mut pi_rpc_startup_tx = pi_rpc_execution.then_some(pi_rpc_startup_tx);
     let pi_rpc_cancellation = CancellationToken::new();
+    let pi_session_output = pi_rpc_execution
+        .then(|| {
+            pi_session_output::start(
+                http.clone(),
+                runtime.run_id.as_ref(),
+                runtime.pi_session_id.as_ref(),
+            )
+        })
+        .flatten();
     let mut pi_rpc_projection = pi_rpc_execution.then(|| {
-        pi_rpc::PiRpcProjection::new(runtime.run_id.as_ref(), runtime.pi_session_id.as_ref())
+        let projection =
+            pi_rpc::PiRpcProjection::new(runtime.run_id.as_ref(), runtime.pi_session_id.as_ref());
+        match pi_session_output {
+            Some(output) => projection.with_session_output(output),
+            None => projection,
+        }
     });
     let mut pi_rpc_startup_boundary = pi_rpc_execution.then(pi_rpc::PiRpcStartupBoundary::default);
     let mut stdin_write_handle = Some({
@@ -1464,11 +1500,18 @@ async fn execute_cli_inner(
                             }
                             if let Some(projection) = pi_rpc_projection.as_mut() {
                                 match projection.project(event, &pi_rpc_response_tx, line.len()) {
-                                    Ok(Some(projected)) => event = projected,
-                                    Ok(None) => {
-                                        agent_log.write_raw_line(line.as_bytes()).await;
-                                        continue;
-                                    }
+                                    Ok(projected) => {
+                                        if let Some(containment) = workload_containment
+                                            && let Some(timestamp) = projection.runtime_progress_at() {
+                                            containment.record_runtime_progress(timestamp);
+                                        }
+                                        if let Some(projected) = projected {
+                                            event = projected;
+                                        } else {
+                                            agent_log.write_raw_line(line.as_bytes()).await;
+                                            continue;
+                                        }
+                                    },
                                     Err(error) => {
                                         agent_log.write_raw_line(line.as_bytes()).await;
                                         active_input_controller.close_terminal();
@@ -1597,7 +1640,10 @@ async fn execute_cli_inner(
                                     let candidate = CliFailureDiagnostic {
                                         message: diagnostic.message,
                                         source,
-                                        failure_reason: None,
+                                        failure_reason: (source == FailureDetailSource::PiResult)
+                                            .then(|| event.get("failureReason"))
+                                            .flatten()
+                                            .and_then(|reason| serde_json::from_value(reason.clone()).ok()),
                                     };
                                     log_warn!(
                                         LOG_TAG,
@@ -2398,6 +2444,7 @@ mod tests {
             pi_session_id: Cow::Borrowed(""),
             pi_launch_config: Cow::Borrowed(""),
             pi_launch_payload_file: Cow::Borrowed("/tmp/pi-launch-payload/payload.json"),
+            pi_deferred_handoff_file: Cow::Borrowed("/tmp/pi-deferred-handoff/payload.json"),
             pi_model_config: Cow::Borrowed(""),
             user_env,
         }
@@ -2452,6 +2499,77 @@ mod tests {
     }
 
     #[test]
+    fn pi_langfuse_credentials_are_filtered_from_child_environment() {
+        let user_env = HashMap::from([
+            (
+                super::PI_LANGFUSE_DEBUG_ENABLED_ENV_KEY.to_string(),
+                "true".to_string(),
+            ),
+            (
+                super::LANGFUSE_PUBLIC_KEY_ENV_KEY.to_string(),
+                "pk-lf-private".to_string(),
+            ),
+            (
+                super::LANGFUSE_SECRET_KEY_ENV_KEY.to_string(),
+                "sk-lf-private".to_string(),
+            ),
+        ]);
+        let runtime = runtime_for_command_test(env::Framework::Pi, "prompt", "", &user_env);
+
+        let child_values = child_env::values_for_runtime(&runtime);
+        assert!(
+            !child_values
+                .iter()
+                .any(|(key, _)| key == super::LANGFUSE_PUBLIC_KEY_ENV_KEY)
+        );
+        assert!(
+            !child_values
+                .iter()
+                .any(|(key, _)| key == super::LANGFUSE_SECRET_KEY_ENV_KEY)
+        );
+        assert!(child_values.iter().any(|(key, value)| key
+            == super::PI_LANGFUSE_DEBUG_ENABLED_ENV_KEY
+            && value == "true"));
+        #[cfg(target_os = "linux")]
+        {
+            let mut child = std::process::Command::new("/bin/sh");
+            child
+                .arg("-c")
+                .arg("tr '\\0' '\\n' < /proc/self/environ")
+                .env_clear()
+                .envs(child_values.iter().cloned());
+            let output = child.output().unwrap();
+            assert!(output.status.success());
+            let initial_environment = String::from_utf8(output.stdout).unwrap();
+            assert!(!initial_environment.contains("pk-lf-private"));
+            assert!(!initial_environment.contains("sk-lf-private"));
+        }
+    }
+
+    #[test]
+    fn pi_langfuse_credentials_remain_user_owned_when_tracing_gate_is_off() {
+        let user_env = HashMap::from([
+            (
+                super::LANGFUSE_PUBLIC_KEY_ENV_KEY.to_string(),
+                "user-public-key".to_string(),
+            ),
+            (
+                super::LANGFUSE_SECRET_KEY_ENV_KEY.to_string(),
+                "user-secret-key".to_string(),
+            ),
+        ]);
+        let runtime = runtime_for_command_test(env::Framework::Pi, "prompt", "", &user_env);
+        let child_values = child_env::values_for_runtime(&runtime);
+
+        assert!(child_values.iter().any(|(key, value)| {
+            key == super::LANGFUSE_PUBLIC_KEY_ENV_KEY && value == "user-public-key"
+        }));
+        assert!(child_values.iter().any(|(key, value)| {
+            key == super::LANGFUSE_SECRET_KEY_ENV_KEY && value == "user-secret-key"
+        }));
+    }
+
+    #[test]
     fn pi_child_env_passes_v2_model_config_with_canonical_run_id() {
         let user_env = HashMap::new();
         let mut runtime = runtime_for_command_test(env::Framework::Pi, "prompt", "", &user_env);
@@ -2477,6 +2595,10 @@ mod tests {
             (
                 guest_contracts::env::PI_LAUNCH_PAYLOAD_FILE_ENV,
                 runtime.pi_launch_payload_file.as_ref(),
+            ),
+            (
+                guest_contracts::env::PI_DEFERRED_HANDOFF_FILE_ENV,
+                runtime.pi_deferred_handoff_file.as_ref(),
             ),
             (
                 guest_contracts::env::PI_MODEL_CONFIG_ENV,

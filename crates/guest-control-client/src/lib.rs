@@ -71,6 +71,7 @@
 mod connection;
 mod exec_operation;
 mod file;
+mod file_stream;
 mod guest_dns_readiness;
 mod guest_state_restore;
 mod guest_storage_manifest;
@@ -109,6 +110,7 @@ pub use guest_dns_readiness::GuestDnsReadinessResult;
 pub use guest_state_restore::GuestStateRestoreResult;
 pub use guest_storage_manifest::GuestStorageManifestResult;
 pub use operation_tracker::NormalOperationRejection;
+pub use sandbox::FileCompression;
 pub use workspace_drive_mount::WorkspaceDriveMountResult;
 
 /// Host-observed stage at which a request deadline expired.

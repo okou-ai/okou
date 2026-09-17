@@ -1,7 +1,17 @@
+import { feishuRequestPlatform$ } from "../context/feishu-platform";
+import {
+  FEISHU_PLATFORMS,
+  type FeishuPlatform,
+} from "@okouai/core/feishu-platform";
 import { command } from "ccstate";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { and, eq, isNotNull } from "drizzle-orm";
 import {
   FEISHU_FILE_UPLOAD_MAX_BYTES,
+  integrationsLarkDownloadFileContract,
+  integrationsLarkUploadInitContract,
+  integrationsLarkUploadCompleteContract,
   integrationsFeishuDownloadFileContract,
   integrationsFeishuUploadCompleteContract,
   integrationsFeishuUploadInitContract,
@@ -12,7 +22,6 @@ import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 
-import { env } from "../../lib/env";
 import { sanitizeArtifactFilename } from "../../lib/file-url";
 import { inferMimetype } from "../../lib/mimetype";
 import { organizationAuthContext$ } from "../auth/auth-context";
@@ -33,17 +42,17 @@ import {
   s3MetadataHeaders,
 } from "../external/s3";
 import {
-  allocateArtifactObject$,
-  resolveArtifactObject$,
-} from "../services/artifact-storage.service";
+  allocateUploadedArtifact$,
+  materializeUploadedArtifact$,
+} from "../services/uploaded-artifact.service";
 import { feishuOrgCallbackPayloadSchema } from "../services/feishu-org-callback-payload";
 import { recordFeishuUploadedFile$ } from "../services/run-uploaded-files.service";
+import { loadUserFeatureSwitchContext } from "../services/feature-switches.service";
 import type { RouteEntry } from "../route-entry";
 import { safeUriComponentDecode, settle } from "../utils";
 import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 
 const DOWNLOAD_MAX_BYTES = 100 * 1024 * 1024;
-const PUT_URL_TTL_SECONDS = 3600;
 const FEISHU_FILE_ID_PREFIX = "feishu_file_";
 
 type InstallationResolution =
@@ -59,11 +68,12 @@ interface FeishuDownloadTarget {
 }
 
 function apiError(
-  status: 400 | 404 | 413 | 502,
+  status: 400 | 403 | 404 | 413 | 502,
   code:
     | "BAD_REQUEST"
     | "EMPTY_BODY"
     | "FEISHU_ERROR"
+    | "FORBIDDEN"
     | "NOT_FOUND"
     | "PAYLOAD_TOO_LARGE",
   message: string,
@@ -86,6 +96,7 @@ function feishuUploadSizeError(size: number) {
 
 async function resolveInstallation(
   args: {
+    readonly platform?: FeishuPlatform;
     readonly db: Db;
     readonly orgId: string;
     readonly installationId: string | undefined;
@@ -98,6 +109,7 @@ async function resolveInstallation(
     .where(
       and(
         eq(feishuOrgInstallations.orgId, args.orgId),
+        eq(feishuOrgInstallations.platform, args.platform ?? "feishu"),
         isNotNull(feishuOrgInstallations.setupCompletedAt),
         ...(args.installationId
           ? [eq(feishuOrgInstallations.id, args.installationId)]
@@ -165,28 +177,34 @@ async function resolveDownloadTarget(args: {
 function installationError(
   resolution: Exclude<InstallationResolution, { readonly kind: "resolved" }>,
   installationId: string | undefined,
+  platform: FeishuPlatform,
 ) {
+  const platformName = FEISHU_PLATFORMS[platform].name;
   if (resolution.kind === "ambiguous") {
     return apiError(
       400,
       "BAD_REQUEST",
-      "Multiple Feishu installations are available. Specify installationId.",
+      `Multiple ${platformName} installations are available. Specify installationId.`,
     );
   }
   return apiError(
     404,
     "NOT_FOUND",
     installationId
-      ? "Feishu installation not found"
-      : "No Feishu installation found for this organization",
+      ? `${platformName} installation not found`
+      : `No ${platformName} installation found for this organization`,
   );
 }
 
-function feishuApiError(error: FeishuApiError) {
+function feishuApiError(error: unknown, platform: FeishuPlatform) {
+  if (!(error instanceof FeishuApiError)) {
+    throw error;
+  }
+  const platformName = FEISHU_PLATFORMS[platform].name;
   return apiError(
     error.routeStatus,
     "FEISHU_ERROR",
-    `Feishu API error: ${error.message}`,
+    `${platformName} API error: ${error.message}`,
   );
 }
 
@@ -328,18 +346,27 @@ const download$ = command(async ({ get, set }, signal: AbortSignal) => {
   });
   signal.throwIfAborted();
   if (!target) {
-    return apiError(400, "BAD_REQUEST", "Invalid Feishu file id");
+    return apiError(
+      400,
+      "BAD_REQUEST",
+      `Invalid ${FEISHU_PLATFORMS[get(feishuRequestPlatform$)].name} file id`,
+    );
   }
   const installation = await resolveInstallation(
     {
       db,
       orgId: auth.orgId,
       installationId: target.installationId,
+      platform: get(feishuRequestPlatform$),
     },
     signal,
   );
   if (installation.kind !== "resolved") {
-    return installationError(installation, target.installationId);
+    return installationError(
+      installation,
+      target.installationId,
+      get(feishuRequestPlatform$),
+    );
   }
 
   const downloaded = await settle(
@@ -357,12 +384,16 @@ const download$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
   if (!downloaded.ok) {
     if (downloaded.error instanceof FeishuApiError) {
-      return feishuApiError(downloaded.error);
+      return feishuApiError(downloaded.error, get(feishuRequestPlatform$));
     }
     throw downloaded.error;
   }
   if (!downloaded.value.body) {
-    return apiError(502, "EMPTY_BODY", "Feishu download response has no body");
+    return apiError(
+      502,
+      "EMPTY_BODY",
+      `${FEISHU_PLATFORMS[get(feishuRequestPlatform$)].name} download response has no body`,
+    );
   }
 
   const contentLength = downloaded.value.headers.get("content-length");
@@ -393,6 +424,17 @@ const download$ = command(async ({ get, set }, signal: AbortSignal) => {
 
 const initUpload$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
+  if (get(feishuRequestPlatform$) === "lark") {
+    const context = await loadUserFeatureSwitchContext(
+      set(writeDb$),
+      auth.orgId,
+      auth.userId,
+    );
+    signal.throwIfAborted();
+    if (!isFeatureEnabled(FeatureSwitchKey.LarkIntegration, context)) {
+      return apiError(403, "FORBIDDEN", "Lark integration is not enabled");
+    }
+  }
   const bodyResult = await get(
     bodyResultOf(integrationsFeishuUploadInitContract.init),
   );
@@ -403,23 +445,24 @@ const initUpload$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   const filename = sanitizeArtifactFilename(bodyResult.data.filename);
   const artifact = await set(
-    allocateArtifactObject$,
+    allocateUploadedArtifact$,
     {
       userId: auth.userId,
       filename: bodyResult.data.filename,
+      orgId: auth.orgId,
+      contentType: bodyResult.data.contentType,
+      size: bodyResult.data.length,
       publicBrand: PUBLIC_BRAND,
     },
     signal,
   );
   const uploadHeaders = s3MetadataHeaders(artifact.metadata);
-  const bucket = env("R2_USER_ARTIFACTS_BUCKET_NAME");
   const uploadUrl = await get(
     generatePresignedPutUrl(
-      bucket,
+      artifact.bucket,
       artifact.key,
       bodyResult.data.contentType,
       {
-        expiresIn: PUT_URL_TTL_SECONDS,
         usePublicEndpoint: true,
         metadata: artifact.metadata,
       },
@@ -459,11 +502,16 @@ const completeUpload$ = command(async ({ get, set }, signal: AbortSignal) => {
       db,
       orgId: auth.orgId,
       installationId: body.installationId,
+      platform: get(feishuRequestPlatform$),
     },
     signal,
   );
   if (installation.kind !== "resolved") {
-    return installationError(installation, body.installationId);
+    return installationError(
+      installation,
+      body.installationId,
+      get(feishuRequestPlatform$),
+    );
   }
 
   const user = await resolveUserOpenId(
@@ -479,13 +527,13 @@ const completeUpload$ = command(async ({ get, set }, signal: AbortSignal) => {
     return apiError(
       404,
       "NOT_FOUND",
-      "No Feishu connection found for the current user",
+      `No ${FEISHU_PLATFORMS[get(feishuRequestPlatform$)].name} connection found for the current user`,
     );
   }
 
   const object = await set(
-    resolveArtifactObject$,
-    { userId: auth.userId, id: body.uploadId },
+    materializeUploadedArtifact$,
+    { userId: auth.userId, orgId: auth.orgId, id: body.uploadId },
     signal,
   );
   if (!object) {
@@ -499,8 +547,7 @@ const completeUpload$ = command(async ({ get, set }, signal: AbortSignal) => {
   const filename = object.filename;
   const contentType = body.contentType ?? object.contentType;
   const fileUrl = object.url;
-  const bucket = env("R2_USER_ARTIFACTS_BUCKET_NAME");
-  const content = await get(downloadS3Buffer(bucket, object.key));
+  const content = await get(downloadS3Buffer(object.bucket, object.key));
   signal.throwIfAborted();
   const uploadInput = {
     db,
@@ -511,10 +558,7 @@ const completeUpload$ = command(async ({ get, set }, signal: AbortSignal) => {
   };
   const uploaded = await settle(uploadFeishuFile(uploadInput, signal), signal);
   if (!uploaded.ok) {
-    if (uploaded.error instanceof FeishuApiError) {
-      return feishuApiError(uploaded.error);
-    }
-    throw uploaded.error;
+    return feishuApiError(uploaded.error, get(feishuRequestPlatform$));
   }
 
   const deliveryInput = {
@@ -526,15 +570,16 @@ const completeUpload$ = command(async ({ get, set }, signal: AbortSignal) => {
   };
   const delivery = deliverUploadedFile(deliveryInput, signal);
   if (!delivery) {
-    return apiError(400, "BAD_REQUEST", "A Feishu file target is required");
+    return apiError(
+      400,
+      "BAD_REQUEST",
+      `A ${FEISHU_PLATFORMS[get(feishuRequestPlatform$)].name} file target is required`,
+    );
   }
 
   const sent = await settle(delivery, signal);
   if (!sent.ok) {
-    if (sent.error instanceof FeishuApiError) {
-      return feishuApiError(sent.error);
-    }
-    throw sent.error;
+    return feishuApiError(sent.error, get(feishuRequestPlatform$));
   }
   const recordInput = {
     runId,
@@ -590,5 +635,26 @@ export const integrationsFeishuFileRoutes: readonly RouteEntry[] = [
   {
     route: integrationsFeishuUploadCompleteContract.complete,
     handler: authRoute(feishuWriteAuth, completeUpload$),
+  },
+  {
+    route: integrationsLarkDownloadFileContract.download,
+    handler: authRoute(
+      { ...feishuWriteAuth, requiredCapability: "lark:write" },
+      download$,
+    ),
+  },
+  {
+    route: integrationsLarkUploadInitContract.init,
+    handler: authRoute(
+      { ...feishuWriteAuth, requiredCapability: "lark:write" },
+      initUpload$,
+    ),
+  },
+  {
+    route: integrationsLarkUploadCompleteContract.complete,
+    handler: authRoute(
+      { ...feishuWriteAuth, requiredCapability: "lark:write" },
+      completeUpload$,
+    ),
   },
 ];

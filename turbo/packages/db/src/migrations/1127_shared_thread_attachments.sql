@@ -1,0 +1,1 @@
+ALTER TABLE "shared_threads" ADD COLUMN "message_attachments" jsonb DEFAULT '{}'::jsonb NOT NULL;

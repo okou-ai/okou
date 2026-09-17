@@ -1,5 +1,80 @@
 # Changelog
 
+## [0.14.16](https://github.com/vm0-ai/okou/compare/guest-contracts-v0.14.15...guest-contracts-v0.14.16) (2026-09-17)
+
+
+### Bug Fixes
+
+* **pi:** authenticate deferred handoff in guest ([#34845](https://github.com/vm0-ai/okou/issues/34845)) ([2562612](https://github.com/vm0-ai/okou/commit/2562612020484e515569c2cb78d11f672b5bff5d))
+
+## [0.14.15](https://github.com/vm0-ai/okou/compare/guest-contracts-v0.14.14...guest-contracts-v0.14.15) (2026-09-17)
+
+
+### Performance Improvements
+
+* **runner:** retain decoded cache hits in large storage plans ([#34747](https://github.com/vm0-ai/okou/issues/34747)) ([d170bf9](https://github.com/vm0-ai/okou/commit/d170bf9b7b92f028bf6803e4912d2176798dab42))
+
+## [0.14.14](https://github.com/vm0-ai/okou/compare/guest-contracts-v0.14.13...guest-contracts-v0.14.14) (2026-09-16)
+
+## [0.14.13](https://github.com/vm0-ai/okou/compare/guest-contracts-v0.14.12...guest-contracts-v0.14.13) (2026-09-16)
+
+
+### Bug Fixes
+
+* **pi:** stop retries after provider queue expiry ([#34531](https://github.com/vm0-ai/okou/issues/34531)) ([38285ac](https://github.com/vm0-ai/okou/commit/38285acb5a5aa77c2e31c81ef37235dfedc6e2b5))
+
+## [0.14.12](https://github.com/vm0-ai/okou/compare/guest-contracts-v0.14.11...guest-contracts-v0.14.12) (2026-09-16)
+
+
+### Bug Fixes
+
+* **pi:** preserve causal transport failure diagnostics ([#34505](https://github.com/vm0-ai/okou/issues/34505)) ([9ae5a27](https://github.com/vm0-ai/okou/commit/9ae5a2748353914dce8bcf983dac554f7ae5a4af))
+* **runner:** classify contained tool oom as informational ([#34520](https://github.com/vm0-ai/okou/issues/34520)) ([02e789d](https://github.com/vm0-ai/okou/commit/02e789d0129298079e23570bc319c5c0557a2d77))
+
+## [0.14.11](https://github.com/vm0-ai/okou/compare/guest-contracts-v0.14.10...guest-contracts-v0.14.11) (2026-09-16)
+
+## [0.14.10](https://github.com/vm0-ai/vm0/compare/guest-contracts-v0.14.9...guest-contracts-v0.14.10) (2026-09-15)
+
+
+### Bug Fixes
+
+* **runner:** admit decoded skills beside staged instructions ([#34425](https://github.com/vm0-ai/vm0/issues/34425)) ([a889f9e](https://github.com/vm0-ai/vm0/commit/a889f9e9156c7c3f073e1cdedf313bb37bc1d7e3))
+
+## [0.14.9](https://github.com/vm0-ai/vm0/compare/guest-contracts-v0.14.8...guest-contracts-v0.14.9) (2026-09-15)
+
+
+### Bug Fixes
+
+* **runner:** protect native runtime memory from tool reclaim ([#34398](https://github.com/vm0-ai/vm0/issues/34398)) ([756b6bc](https://github.com/vm0-ai/vm0/commit/756b6bce47a0a4b341359971ebc7ae9a4c24c62e))
+
+## [0.14.8](https://github.com/vm0-ai/vm0/compare/guest-contracts-v0.14.7...guest-contracts-v0.14.8) (2026-09-15)
+
+
+### Bug Fixes
+
+* distinguish balance ownership and localize run errors ([#34251](https://github.com/vm0-ai/vm0/issues/34251)) ([0367d97](https://github.com/vm0-ai/vm0/commit/0367d976a87fe1251fcb9b6cfe545a8b24e4f2b6))
+
+## [0.14.7](https://github.com/vm0-ai/vm0/compare/guest-contracts-v0.14.6...guest-contracts-v0.14.7) (2026-09-15)
+
+
+### Bug Fixes
+
+* **pi:** preserve codex rate-limit diagnostics ([#34266](https://github.com/vm0-ai/vm0/issues/34266)) ([48cb88f](https://github.com/vm0-ai/vm0/commit/48cb88fe5c6a70dd6519565211de55b710fee3af))
+
+
+### Performance Improvements
+
+* **runner:** persist extracted storage files for cache-hit delivery ([#33976](https://github.com/vm0-ai/vm0/issues/33976)) ([b961911](https://github.com/vm0-ai/vm0/commit/b961911d0516fbdc06d3e8387bedb0653eee5ea9))
+
+## [0.14.6](https://github.com/vm0-ai/vm0/compare/guest-contracts-v0.14.5...guest-contracts-v0.14.6) (2026-09-15)
+
+## [0.14.5](https://github.com/vm0-ai/vm0/compare/guest-contracts-v0.14.4...guest-contracts-v0.14.5) (2026-09-14)
+
+
+### Refactoring
+
+* **rust:** unify http failure attempt diagnostics ([#33946](https://github.com/vm0-ai/vm0/issues/33946)) ([394a3c3](https://github.com/vm0-ai/vm0/commit/394a3c3615d2b2485646f50f718f6cb28fb48c71))
+
 ## [0.14.4](https://github.com/vm0-ai/vm0/compare/guest-contracts-v0.14.3...guest-contracts-v0.14.4) (2026-09-11)
 
 ## [0.14.3](https://github.com/vm0-ai/vm0/compare/guest-contracts-v0.14.2...guest-contracts-v0.14.3) (2026-09-11)

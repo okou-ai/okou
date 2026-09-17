@@ -1,4 +1,4 @@
-//! HTTP client with retry logic for webhook calls and S3 uploads.
+//! HTTP client for webhook calls and single-attempt S3 uploads.
 
 use crate::constants;
 use crate::env;
@@ -8,6 +8,7 @@ use api_contracts::generated::constants::client::headers::{
     CLIENT_REQUEST_ID_HEADER, CLIENT_SESSION_ID_HEADER, CLIENT_TYPE_HEADER, CLIENT_VERSION_HEADER,
 };
 use api_contracts::generated::constants::client::types::CLIENT_TYPE_GUEST_AGENT;
+use api_contracts::generated::types::runners::jobs::pi_handoff::Response as DeferredPiHandoffResponse;
 use api_contracts::generated::types::runners::runs::active_inputs::receipt::Response as ActiveInputReceiptResponse;
 use bytes::{Bytes, BytesMut};
 use guest_contracts::diagnostics::{HttpAttemptFailureKind, HttpCompletedAttemptDiagnostic};
@@ -24,13 +25,14 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Duration;
-use tokio::io::{AsyncRead, AsyncSeekExt, ReadBuf};
+use tokio::io::{AsyncRead, ReadBuf};
 use tokio::time::Instant;
 use uuid::Uuid;
 
 const LOG_TAG: &str = "sandbox:guest-agent";
 const HTTP_TOO_MANY_REQUESTS: u16 = 429;
 const DEFAULT_RETRY_DELAY: Duration = Duration::from_secs(1);
+const SESSION_OUTPUT_REQUEST_TIMEOUT: Duration = Duration::from_secs(3);
 #[cfg(debug_assertions)]
 const TEST_DISABLE_HTTP_RETRY_DELAY_ENV: &str = "OKOU_TEST_DISABLE_HTTP_RETRY_DELAY";
 const GUEST_AGENT_CLIENT_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -38,6 +40,7 @@ const API_RESPONSE_BODY_TOO_LARGE_DIAGNOSTIC: &str =
     "API response body exceeds the configured limit";
 const API_ERROR_RESPONSE_BODY_TOO_LARGE_DIAGNOSTIC: &str =
     "API error response body exceeds the configured limit";
+const PI_DEFERRED_HANDOFF_RESPONSE_MAX_BYTES: usize = 1_500_000;
 
 enum ResponseBodyCollectionError {
     TooLarge,
@@ -151,15 +154,6 @@ impl RetryableFailure {
             },
         }
     }
-
-    fn terminal_cause(self) -> String {
-        match self {
-            Self::HttpStatus(status) => format!("HTTP {status}"),
-            Self::Timeout { .. } => "timeout".to_string(),
-            Self::Connect => "connect".to_string(),
-            Self::Transport => "transport".to_string(),
-        }
-    }
 }
 
 /// Synchronous observer for selected control and event request paths.
@@ -197,6 +191,7 @@ struct ApiHttpConfig {
 #[derive(Clone)]
 struct ApiUrls {
     events: String,
+    session_output: String,
     complete: String,
     heartbeat: String,
     telemetry: String,
@@ -385,6 +380,10 @@ impl HttpClient {
         Ok(&self.api_config()?.urls.events)
     }
 
+    fn session_output_url(&self) -> Result<&str, AgentError> {
+        Ok(&self.api_config()?.urls.session_output)
+    }
+
     pub(crate) fn complete_url(&self) -> Result<&str, AgentError> {
         Ok(&self.api_config()?.urls.complete)
     }
@@ -418,6 +417,14 @@ impl HttpClient {
             &self.api_config()?.base_url,
             run_id,
             delivery_id,
+        ))
+    }
+
+    fn deferred_pi_handoff_url(&self, run_id: &str, offset: u64) -> Result<String, AgentError> {
+        Ok(urls::deferred_pi_handoff_url(
+            &self.api_config()?.base_url,
+            run_id,
+            offset,
         ))
     }
 }
@@ -455,6 +462,7 @@ impl ApiUrls {
     fn new(base_url: &str) -> Self {
         Self {
             events: urls::events_url(base_url),
+            session_output: urls::session_output_url(base_url),
             complete: urls::complete_url(base_url),
             heartbeat: urls::heartbeat_url(base_url),
             telemetry: urls::telemetry_url(base_url),
@@ -471,13 +479,6 @@ struct RetryRequest {
 }
 
 impl RetryRequest {
-    fn unobserved(builder: RequestBuilder) -> Self {
-        Self {
-            builder,
-            client_request_id: None,
-        }
-    }
-
     fn observed(builder: RequestBuilder, client_request_id: String) -> Self {
         Self {
             builder,
@@ -564,20 +565,6 @@ where
     }
 
     Err(build_final_error(last_retryable_failure))
-}
-
-fn presigned_retry_exhausted_error(
-    max_attempts: u32,
-    last_failure: Option<RetryableFailure>,
-) -> AgentError {
-    let message = match last_failure {
-        Some(failure) => format!(
-            "PUT presigned failed after {max_attempts} attempts; last failure: {}",
-            failure.terminal_cause()
-        ),
-        None => format!("PUT presigned failed after {max_attempts} attempts"),
-    };
-    AgentError::Http(message)
 }
 
 fn observe_attempt_finished(
@@ -713,6 +700,22 @@ impl HttpClient {
         Ok(())
     }
 
+    /// Publish one best-effort session-output delta exactly once.
+    ///
+    /// A timeout can race with successful server publication, so this path must
+    /// never retry. The caller stops previewing the affected text block and
+    /// leaves reconciliation to the durable event path.
+    pub(crate) async fn post_session_output(
+        &self,
+        body: &impl Serialize,
+    ) -> Result<(), AgentError> {
+        let url = self.session_output_url()?;
+        let body = Bytes::from(serde_json::to_vec(body)?);
+        self.post_json_response(url, body, 1, None, Some(SESSION_OUTPUT_REQUEST_TIMEOUT))
+            .await?;
+        Ok(())
+    }
+
     /// Record one backend-accepted active-input delivery.
     ///
     /// The API operation is idempotent. Retry ownership remains with the
@@ -738,6 +741,76 @@ impl HttpClient {
         let body = collect_api_success_body(response).await?;
         serde_json::from_slice::<ActiveInputReceiptResponse>(&body)
             .map_err(|error| AgentError::Http(error.to_string()))
+    }
+
+    /// Read one authenticated deferred Pi handoff chunk exactly once.
+    ///
+    /// The guest owns the private Sandbox control token. It never forwards
+    /// that credential to the CLI child; only the validated response bytes
+    /// cross the child boundary through a private runtime file.
+    pub(crate) async fn get_deferred_pi_handoff_chunk(
+        &self,
+        run_id: &str,
+        offset: u64,
+        request_timeout: Duration,
+    ) -> Result<DeferredPiHandoffResponse, AgentError> {
+        let url = self.deferred_pi_handoff_url(run_id, offset)?;
+        let client = self.inner()?;
+        let api = self.api_config()?;
+        let response = send_with_retry(
+            "deferred Pi handoff GET",
+            1,
+            Duration::ZERO,
+            |failure| match failure {
+                Some(RetryableFailure::HttpStatus(status)) => AgentError::HttpStatus {
+                    status,
+                    message: format!("Deferred Pi handoff read failed: HTTP {status}"),
+                },
+                Some(RetryableFailure::Timeout { .. }) => {
+                    AgentError::Http("Deferred Pi handoff read timed out".to_string())
+                }
+                Some(RetryableFailure::Connect | RetryableFailure::Transport) | None => {
+                    AgentError::Http("Deferred Pi handoff transport failed".to_string())
+                }
+            },
+            || {
+                let request_id = Uuid::new_v4().to_string();
+                let mut request = client
+                    .get(&url)
+                    .timeout(request_timeout)
+                    .header("Authorization", format!("Bearer {}", api.token));
+                if !api.vercel_bypass.is_empty() {
+                    request = request.header("x-vercel-protection-bypass", &api.vercel_bypass);
+                }
+                request = request
+                    .header(CLIENT_VERSION_HEADER, GUEST_AGENT_CLIENT_VERSION)
+                    .header(CLIENT_TYPE_HEADER, CLIENT_TYPE_GUEST_AGENT)
+                    .header(CLIENT_SESSION_ID_HEADER, api.client_session_id.as_str())
+                    .header(CLIENT_REQUEST_ID_HEADER, &request_id);
+                std::future::ready(Ok(RetryRequest::observed(request, request_id)))
+            },
+            |response, _, _| async move {
+                let status = response.status().as_u16();
+                AgentError::HttpStatus {
+                    status,
+                    message: format!("Deferred Pi handoff read failed: HTTP {status}"),
+                }
+            },
+            None,
+        )
+        .await?;
+        let body = collect_response_body(response, PI_DEFERRED_HANDOFF_RESPONSE_MAX_BYTES)
+            .await
+            .map_err(|error| match error {
+                ResponseBodyCollectionError::TooLarge => {
+                    AgentError::Http("Deferred Pi handoff response exceeds its size limit".into())
+                }
+                ResponseBodyCollectionError::Transport(_) => {
+                    AgentError::Http("Deferred Pi handoff response body could not be read".into())
+                }
+            })?;
+        serde_json::from_slice(&body)
+            .map_err(|_| AgentError::Http("Deferred Pi handoff response is malformed".into()))
     }
 
     async fn post_json_response(
@@ -840,47 +913,33 @@ impl HttpClient {
         .await
     }
 
-    /// PUT raw bytes to a presigned S3 URL with retry.
+    /// PUT raw bytes to a presigned S3 URL.
     ///
     /// No auth headers — the URL itself carries the authorization.
     /// Uses a per-request timeout override for longer uploads.
-    /// Accepts `Bytes` for O(1) clone on retry.
     pub async fn put_presigned(
         &self,
         url: &str,
         data: Bytes,
         content_type: &str,
     ) -> Result<(), AgentError> {
-        let max_attempts = constants::HTTP_MAX_ATTEMPTS;
-        let client = self.inner()?;
-
-        send_with_retry(
-            "PUT presigned",
-            max_attempts,
-            self.retry_delay,
-            move |last_failure| presigned_retry_exhausted_error(max_attempts, last_failure),
-            move || {
-                let data = data.clone();
-                std::future::ready(Ok(RetryRequest::unobserved(
-                    client
-                        .put(url)
-                        .timeout(Duration::from_secs(constants::HTTP_UPLOAD_TIMEOUT_SECS))
-                        .header("Content-Type", content_type)
-                        .body(data),
-                )))
-            },
-            |resp, attempt, max_attempts| async move {
-                let status = resp.status();
-                log_warn!(
-                    LOG_TAG,
-                    "HTTP PUT presigned failed (attempt {attempt}/{max_attempts}): HTTP {status}",
-                );
-                AgentError::Http(format!("PUT presigned: HTTP {status}"))
-            },
-            None,
-        )
-        .await?;
-
+        let response = self
+            .inner()?
+            .put(url)
+            .timeout(Duration::from_secs(constants::HTTP_UPLOAD_TIMEOUT_SECS))
+            .header("Content-Type", content_type)
+            .body(data)
+            .send()
+            .await
+            .map_err(|error| {
+                AgentError::Http(format!("PUT presigned: {}", format_reqwest_error(error)))
+            })?;
+        if !response.status().is_success() {
+            return Err(AgentError::Http(format!(
+                "PUT presigned: HTTP {}",
+                response.status()
+            )));
+        }
         Ok(())
     }
 }
@@ -989,53 +1048,33 @@ impl HttpClient {
     ///
     /// Unlike [`Self::put_presigned`], this avoids loading the entire file into
     /// memory. A `SizedBody` streams bounded chunks and reports the file size via
-    /// `size_hint`, so hyper sets `Content-Length` automatically. On each retry the
-    /// original file handle is cloned, producing a fresh body with stable file
-    /// identity and length.
+    /// `size_hint`, so hyper sets `Content-Length` automatically.
     pub async fn put_presigned_file(
         &self,
         url: &str,
         path: &Path,
         content_type: &str,
     ) -> Result<(), AgentError> {
-        let max_attempts = constants::HTTP_MAX_ATTEMPTS;
         let client = self.inner()?;
-        let source_file = Arc::new(tokio::fs::File::open(path).await?);
-        let file_len = source_file.metadata().await?.len();
-
-        send_with_retry(
-            "PUT presigned",
-            max_attempts,
-            self.retry_delay,
-            move |last_failure| presigned_retry_exhausted_error(max_attempts, last_failure),
-            move || {
-                let source_file = Arc::clone(&source_file);
-                async move {
-                    let mut file = source_file.try_clone().await?;
-                    file.seek(std::io::SeekFrom::Start(0)).await?;
-                    let body = reqwest::Body::wrap(SizedBody::new(file, file_len));
-
-                    Ok(RetryRequest::unobserved(
-                        client
-                            .put(url)
-                            .timeout(Duration::from_secs(constants::HTTP_UPLOAD_TIMEOUT_SECS))
-                            .header("Content-Type", content_type)
-                            .body(body),
-                    ))
-                }
-            },
-            |resp, attempt, max_attempts| async move {
-                let status = resp.status();
-                log_warn!(
-                    LOG_TAG,
-                    "HTTP PUT presigned failed (attempt {attempt}/{max_attempts}): HTTP {status}",
-                );
-                AgentError::Http(format!("PUT presigned: HTTP {status}"))
-            },
-            None,
-        )
-        .await?;
-
+        let file = tokio::fs::File::open(path).await?;
+        let file_len = file.metadata().await?.len();
+        let body = reqwest::Body::wrap(SizedBody::new(file, file_len));
+        let response = client
+            .put(url)
+            .timeout(Duration::from_secs(constants::HTTP_UPLOAD_TIMEOUT_SECS))
+            .header("Content-Type", content_type)
+            .body(body)
+            .send()
+            .await
+            .map_err(|error| {
+                AgentError::Http(format!("PUT presigned: {}", format_reqwest_error(error)))
+            })?;
+        if !response.status().is_success() {
+            return Err(AgentError::Http(format!(
+                "PUT presigned: HTTP {}",
+                response.status()
+            )));
+        }
         Ok(())
     }
 }

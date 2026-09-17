@@ -7,6 +7,7 @@ import { revokeChatEvent, insertChatEvent } from "./chat-event.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
 import type { Tx } from "../../lib/db-types";
 import { canonicalChatEventGoalId } from "./canonical-chat-event-read.service";
+import { lockChatQueueThread } from "./chat-event-queue.service";
 
 type DbTransaction = Tx;
 
@@ -36,6 +37,9 @@ export async function appendQueuedRunAssistantMarker(
     readonly createdAfter?: Date;
   },
 ): Promise<QueuedRunMarkerAppendResult> {
+  // Queue maintenance owns thread -> run -> provider. Marker insertion also
+  // writes the thread sequence, so it must acquire the same thread first.
+  await lockChatQueueThread(tx, args.chatThreadId);
   const [run] = await tx
     .select({ status: agentRuns.status })
     .from(agentRuns)

@@ -15,6 +15,7 @@ import {
   runPiOfficialRpcMode,
   runPiMemoryPhase2MountedConsolidation,
   type PiAgentModelConfig,
+  type PiLangfuseRuntimeConfig,
   type PiMemoryRecallOutcome,
   type PiMemoryToolSourceUse,
 } from "@okouai/pi-agent-runtime/node";
@@ -23,10 +24,12 @@ import {
   resolvePiApiFirstTurnHandoff,
   type PiApiFirstTurnBoundaryControl,
 } from "./pi-api-first-turn-handoff";
+import { piLangfuseTracesContract } from "@okouai/api-contracts/contracts/pi-langfuse";
 
 const RUN_ID_ENV = "OKOU_RUN_ID";
 const PI_SESSION_ID_ENV = "OKOU_PI_SESSION_ID";
 const PI_LAUNCH_PAYLOAD_FILE_ENV = "OKOU_PI_LAUNCH_PAYLOAD_FILE";
+const PI_DEFERRED_HANDOFF_FILE_ENV = "OKOU_PI_DEFERRED_HANDOFF_FILE";
 const PI_MODEL_CONFIG_ENV = "OKOU_PI_MODEL_CONFIG";
 const PI_API_FIRST_TURN_BOUNDARY_CONTROL_TYPE =
   "vm0_pi_api_first_turn_boundary";
@@ -60,7 +63,9 @@ export interface PiSandboxAgentConfig {
   readonly runId: string;
   readonly sessionId: string;
   readonly launchPayload: PiLaunchPayload;
+  readonly deferredHandoffFile?: string;
   readonly model: PiAgentModelConfig;
+  readonly langfuseConfig?: PiLangfuseRuntimeConfig;
 }
 
 function requiredEnv(env: NodeJS.ProcessEnv, name: string): string {
@@ -120,6 +125,8 @@ export async function piSandboxAgentConfigFromEnv(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<PiSandboxAgentConfig> {
   const runId = requiredEnv(env, RUN_ID_ENV);
+  const langfuseConfig = piLangfuseRelayConfig(env, runId);
+  const deferredHandoffFile = env[PI_DEFERRED_HANDOFF_FILE_ENV];
   const parsedModel = piModelConfigSchema.parse(
     parseJsonEnv(env, PI_MODEL_CONFIG_ENV),
   );
@@ -127,6 +134,7 @@ export async function piSandboxAgentConfigFromEnv(
     runId,
     sessionId: requiredEnv(env, PI_SESSION_ID_ENV),
     launchPayload: await readLaunchPayload(env),
+    ...(deferredHandoffFile ? { deferredHandoffFile } : {}),
     model: await materializePiAgentModelConfig({
       config: parsedModel,
       target: "sandbox-firewall",
@@ -134,6 +142,29 @@ export async function piSandboxAgentConfigFromEnv(
         return requiredEnv(env, binding.environment);
       },
     }),
+    ...(langfuseConfig ? { langfuseConfig } : {}),
+  };
+}
+
+function piLangfuseRelayConfig(
+  env: NodeJS.ProcessEnv,
+  runId: string,
+): PiLangfuseRuntimeConfig | undefined {
+  if (env.OKOU_PI_LANGFUSE_DEBUG_ENABLED !== "true") {
+    return undefined;
+  }
+  const apiUrl = requiredEnv(env, "OKOU_API_BACKEND_URL");
+  const endpoint = new URL(
+    piLangfuseTracesContract.export.path.replace(
+      ":runId",
+      encodeURIComponent(runId),
+    ),
+    apiUrl.startsWith("http") ? apiUrl : `https://${apiUrl}`,
+  ).toString();
+  return {
+    relay: { endpoint, token: requiredEnv(env, "OKOU_TOKEN") },
+    userId: env.LANGFUSE_USER_ID,
+    environment: env.LANGFUSE_TRACING_ENVIRONMENT,
   };
 }
 
@@ -214,9 +245,26 @@ export async function runPiSandboxAgentLoop(args: {
     config: args.config.launchPayload.launchConfig.apiFirstTurn,
     sessionDir,
     sessionId: args.config.sessionId,
+    ...(args.config.deferredHandoffFile
+      ? { deferredHandoffFile: args.config.deferredHandoffFile }
+      : {}),
   });
   await writePiApiFirstTurnBoundaryControl(handoff.boundaryControl);
+  const startedAt = Date.now();
+  const deferred =
+    args.config.launchPayload.launchConfig.apiFirstTurn.schemaVersion === 2;
+  const recordBoundary = (boundary: "start" | "first-tool") => {
+    if (deferred) {
+      process.stderr.write(
+        `${JSON.stringify({ type: "pi_deferred_sandbox_timing", runId: args.config.runId, boundary, at: Date.now(), elapsedSinceStartMs: Date.now() - startedAt, apiStartedAt: process.env.OKOU_API_START_TIME })}\n`,
+      );
+    }
+  };
+  recordBoundary("start");
   return await runPiOfficialRpcMode({
+    onFirstTool: () => {
+      recordBoundary("first-tool");
+    },
     sessionId: args.config.sessionId,
     sessionDir,
     cwd: args.cwd ?? process.cwd(),
@@ -224,6 +272,9 @@ export async function runPiSandboxAgentLoop(args: {
     model: args.config.model,
     appendSystemPrompt: args.config.launchPayload.appendSystemPrompt,
     memoryRecall: args.config.launchPayload.launchConfig.memoryRecall,
+    ...(args.config.launchPayload.launchConfig.apiFirstTurn.schemaVersion === 2
+      ? { resourceSnapshot: handoff.resourceSnapshot }
+      : {}),
     onMemoryRecallOutcome(outcome) {
       recordPiMemoryRecallOutcome(args.config.runId, outcome);
     },
@@ -236,6 +287,12 @@ export async function runPiSandboxAgentLoop(args: {
     },
     sessionFile: handoff.sessionFile,
     ownershipTransferMode: handoff.ownershipTransferMode,
+    ...(handoff.langfuseParent
+      ? { langfuseParent: handoff.langfuseParent }
+      : {}),
+    ...(args.config.langfuseConfig
+      ? { langfuseConfig: args.config.langfuseConfig }
+      : {}),
   });
 }
 

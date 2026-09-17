@@ -24,6 +24,7 @@ import { PiApiFirstTurnCompactionRequiredError } from "./errors";
 import { materializePiAgentModelConfig } from "./credential";
 import { piAgentStreamForConfig, resolvePiAgentModel } from "./model";
 import { createPiApiFirstTurnOwnership, runPiApiFirstTurn } from "./api";
+import { projectPiApiAssistantMessage } from "./api-turn";
 
 const server = setupServer();
 beforeAll(() => {
@@ -328,6 +329,10 @@ describe("native Pi execution edges", () => {
         cacheRead: 7,
         cacheWrite: 5,
       });
+      expect(result.usageObservation).toEqual({
+        coverage: "complete",
+        tokens: { input: 11, output: 3, cacheRead: 7, cacheCreation: 5 },
+      });
       expect(requests).toHaveLength(1);
       const request = requests[0];
       if (!request) throw new Error("Missing native request");
@@ -392,6 +397,11 @@ describe("native Pi execution edges", () => {
       ).result();
       expect(result.stopReason).toBe("error");
       expect(attempts).toBe(1);
+      if (config.dialect === "anthropic-messages") {
+        expect(projectPiApiAssistantMessage(result).failureReason).toBe(
+          "provider_rate_limited",
+        );
+      }
     },
   );
 
@@ -428,6 +438,9 @@ describe("native Pi execution edges", () => {
 
       expect(result.stopReason).toBe("error");
       const errorMessage = result.errorMessage ?? "";
+      expect(projectPiApiAssistantMessage(result).failureReason).toBe(
+        "provider_server_error",
+      );
       expect(errorMessage).toContain("upstream_non_api_response");
       expect(errorMessage).toContain("status=503");
       expect(errorMessage).toContain("content_type=html");

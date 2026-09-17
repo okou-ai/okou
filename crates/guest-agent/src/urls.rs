@@ -6,6 +6,10 @@ pub(crate) fn events_url(base_url: &str) -> String {
     routes::webhooks::agent::events::SEND.url(base_url)
 }
 
+pub(crate) fn session_output_url(base_url: &str) -> String {
+    routes::webhooks::agent::session_output::SEND.url(base_url)
+}
+
 pub(crate) fn complete_url(base_url: &str) -> String {
     routes::webhooks::agent::complete::COMPLETE.url(base_url)
 }
@@ -35,6 +39,17 @@ pub(crate) fn active_input_receipt_url(base_url: &str, run_id: &str, delivery_id
         routes::runners::runs::by_run_id::active_inputs::deliveries::by_delivery_id::receipt::Params {
             run_id,
             delivery_id,
+        },
+    )
+    .url(base_url)
+}
+
+pub(crate) fn deferred_pi_handoff_url(base_url: &str, run_id: &str, offset: u64) -> String {
+    let offset = offset.to_string();
+    routes::runners::jobs::by_id::pi_handoff::by_offset::route(
+        routes::runners::jobs::by_id::pi_handoff::by_offset::Params {
+            id: run_id,
+            offset: &offset,
         },
     )
     .url(base_url)

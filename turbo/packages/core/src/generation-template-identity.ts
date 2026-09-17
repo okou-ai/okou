@@ -1,6 +1,10 @@
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
 
-import { parseAvatarTemplateStylePresetId } from "./avatar-template";
+import {
+  generationTemplateKind,
+  type GenerationTemplateKind,
+} from "./generation-template-kind";
+import { INTRO_VIDEO_TEMPLATE_ID } from "./intro-video-template";
 import { isUserPresentationTemplateId } from "./presentation-template-selection";
 import { findWorkflowTemplateItem } from "./workflow-template-items";
 
@@ -9,12 +13,18 @@ import { findWorkflowTemplateItem } from "./workflow-template-items";
  *
  * These are reporting buckets, not UI identifiers. The picker's own tab id for
  * presentations is `"slides"` (see `resolveTemplatePickerCategory` in the
- * platform composer); this enum follows the wire contract's `type` instead, so
- * a tab rename cannot silently rewrite historical reporting.
+ * platform composer); this enum stays spelled out here instead, so a tab rename
+ * cannot silently rewrite historical reporting.
+ *
+ * It is listed separately from `GenerationTemplateKind` rather than aliased to
+ * it on purpose. `videoIdentity` assigns a kind straight into this type, so
+ * adding a kind fails to compile until someone decides what it reports as —
+ * a new bucket cannot appear in reporting by accident.
  */
 export type GenerationTemplateCategory =
   | "avatar"
   | "illustration"
+  | "intro-video"
   | "presentation"
   | "video"
   | "website"
@@ -112,22 +122,22 @@ function presentationIdentity(
 }
 
 /**
- * Avatar templates are reported as their own category even though they travel
- * inside the video envelope.
+ * Talking avatar is reported as its own category even though it travels inside
+ * the video envelope.
  *
- * The contract reuses `type: "video"` for talking-avatar selections so that
- * bundles deployed before the split can still parse newer messages. Bucketing
- * on `type` alone would merge text-to-video with talking-avatar usage, which
- * are different products with different catalogues.
+ * Both share `type: "video"` on the wire, so bucketing on `type` alone would
+ * merge two products with two separate catalogues into one number. The split
+ * itself belongs to `generationTemplateKind`; this only records what each kind
+ * reports as.
  */
 function videoIdentity(
   selection: Extract<GenerationTemplateRequest, { type: "video" }>["selection"],
 ): GenerationTemplateIdentity {
-  const avatarId = parseAvatarTemplateStylePresetId(selection.stylePresetId);
-  return builtinIdentity(
-    avatarId === undefined ? "video" : "avatar",
-    selection.stylePresetId,
-  );
+  const kind: GenerationTemplateKind = generationTemplateKind({
+    type: "video",
+    selection,
+  });
+  return builtinIdentity(kind, selection.stylePresetId);
 }
 
 function workflowIdentity(
@@ -162,6 +172,12 @@ export function generationTemplateIdentity(
     }
     case "video": {
       return videoIdentity(request.selection);
+    }
+    case "intro-video": {
+      // One template, so the product name is the identifier. Selections stored
+      // before the wire split reported `explainer-video` in the `video`
+      // category; neither is rewritten.
+      return builtinIdentity("intro-video", INTRO_VIDEO_TEMPLATE_ID);
     }
     case "illustration": {
       return builtinIdentity(

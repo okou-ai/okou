@@ -1,5 +1,12 @@
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import { queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
@@ -159,6 +166,57 @@ test("A public conversation renders embedded media and diagrams", async () => {
   expect(expandDiagram).toBeEnabled();
 });
 
+test("A shared diagram keeps its white SVG when the system theme changes", async () => {
+  const media = context.mocks.browser.matchMedia((query) => {
+    return query === "(prefers-color-scheme: dark)";
+  });
+  const images = context.mocks.browser.blobDownload();
+  const content = [
+    "```mermaid",
+    "sequenceDiagram",
+    "  Reader->>Platform: Read the plan",
+    "  Note over Platform: Ready",
+    "```",
+  ].join("\n");
+  context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
+    return respond(
+      200,
+      sharedThread({
+        messages: [{ messageIndex: 0, role: "assistant", content }],
+      }),
+    );
+  });
+
+  await setupSharedThreadPage(context, { host: "app.okou.ai" });
+  const image = await screen.findByRole("img", { name: "Diagram" });
+  const source = image.getAttribute("src");
+  if (!source) {
+    throw new Error("Expected a diagram image URL");
+  }
+  const file = images.blobForUrl(source);
+  if (!file) {
+    throw new Error("Expected the diagram image file");
+  }
+  const svg = new DOMParser()
+    .parseFromString(await file.text(), "image/svg+xml")
+    .querySelector("svg");
+  expect(svg?.style.backgroundColor).toBe("#ffffff");
+
+  act(() => {
+    media.setMatches(false);
+  });
+
+  expect(document.documentElement).toHaveAttribute("data-theme", "light");
+  expect(screen.getByRole("img", { name: "Diagram" })).toHaveAttribute(
+    "src",
+    source,
+  );
+  const expand = queryAllByRoleFast("button").find((button) => {
+    return button.getAttribute("aria-label") === "Expand diagram";
+  });
+  expect(expand).toBeEnabled();
+});
+
 test("An intact public Goal archive displays its original literal text", async () => {
   const content =
     "Okou Goal retired.\nGoal ID: 00000000-0000-4000-8000-000000000001\nOriginal recorded status: paused\nThe recorded status is preserved; retirement does not mark the objective complete.\n\nFull original objective:\nBefore <oai-mem-citation>literal objective</oai-mem-citation> after\n`<oai-mem-citation>`\nUnclosed <oai-mem-citation>keep the rest 🧭\n\n";
@@ -175,4 +233,60 @@ test("An intact public Goal archive displays its original literal text", async (
     /Before <oai-mem-citation>literal objective/,
   );
   expect(message.textContent).toBe(content);
+});
+
+test("A public conversation carries the signed-in viewer's color theme", async () => {
+  context.mocks.data.userPreferences({ colorTheme: "golden-hour" });
+  context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
+    return respond(
+      200,
+      sharedThread({
+        messages: [
+          { messageIndex: 0, role: "assistant", content: "The plan is ready." },
+        ],
+      }),
+    );
+  });
+
+  await setupSharedThreadPage(context, {
+    host: "app.okou.ai",
+    auth: {
+      user: { id: "user_shared_thread_theme", fullName: "Shared Viewer" },
+    },
+    featureSwitches: { [FeatureSwitchKey.GradientColorThemes]: true },
+  });
+
+  await expect(
+    screen.findByText("The plan is ready."),
+  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(document.documentElement).toHaveAttribute(
+      "data-color-theme",
+      "golden-hour",
+    );
+    expect(document.documentElement).toHaveAttribute(
+      "data-gradient-color-themes",
+    );
+  });
+});
+
+test("A public conversation reads inside the app's workspace sheet", async () => {
+  context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
+    return respond(
+      200,
+      sharedThread({
+        messages: [
+          { messageIndex: 0, role: "assistant", content: "The plan is ready." },
+        ],
+      }),
+    );
+  });
+
+  await setupSharedThreadPage(context, { host: "app.okou.ai" });
+
+  const sheet = await screen.findByTestId("workspace-inset");
+  expect(within(sheet).getByText("The plan is ready.")).toBeInTheDocument();
+  expect(
+    within(sheet).getByText("Make this conversation yours"),
+  ).toBeInTheDocument();
 });

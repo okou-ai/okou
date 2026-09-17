@@ -20,7 +20,6 @@ use crate::support::{create_tar_gz, write_manifest};
 use httpmock::prelude::*;
 use httpmock::{HttpMockRequest, HttpMockResponse, Mock};
 use std::path::Path;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, mpsc};
 use std::time::{Duration, Instant};
 
@@ -380,37 +379,6 @@ fn serve_blocked_archive<'server>(
             gzip_response(body.clone())
         });
     })
-}
-
-fn retry_once_archive_server(
-    body: Vec<u8>,
-    event_tx: mpsc::Sender<String>,
-    first_attempt_release: ReleaseWaiter,
-    request_name: String,
-    observations: RequestObservations,
-) -> (MockServer, Arc<AtomicUsize>) {
-    let server = MockServer::start();
-    let attempts = Arc::new(AtomicUsize::new(0));
-    let responder_attempts = Arc::clone(&attempts);
-    server.mock(move |when, then| {
-        when.method(GET).path("/archive.tar.gz");
-        then.respond_with(move |_req: &HttpMockRequest| {
-            let _active_guard = observations.track(&request_name);
-            let attempt = responder_attempts.fetch_add(1, Ordering::SeqCst) + 1;
-            let event = format!("{request_name}-attempt-{attempt}");
-            if event_tx.send(event.clone()).is_err() {
-                return error_response(409, format!("failed to send {event}"));
-            }
-            if attempt == 1 {
-                if let Err(error) = first_attempt_release.wait(&request_name) {
-                    return error_response(408, error);
-                }
-                return error_response(503, format!("retry {request_name}"));
-            }
-            gzip_response(body.clone())
-        });
-    });
-    (server, attempts)
 }
 
 struct NumberedStorages {
@@ -788,160 +756,6 @@ fn download_concurrency_cap_limits_initial_starts() {
         Err(mpsc::RecvTimeoutError::Timeout)
     ));
     completion.unwrap();
-}
-
-#[test]
-fn retry_backoff_releases_attempt_slot_but_retains_mount_reservation() {
-    let dir = tempfile::tempdir().unwrap();
-    let (event_tx, event_rx) = mpsc::channel();
-    let retry_release = ReleaseGate::new();
-    let observations = RequestObservations::new();
-    let parent_mount = dir.path().join("parent");
-    let mut storages = Vec::new();
-    let mut retry_servers = Vec::new();
-
-    for i in 0..4 {
-        let filename = format!("retry-{i}.txt");
-        let content = format!("retry-{i}");
-        let body = create_tar_gz(&[(&filename, content.as_bytes())]).unwrap();
-        let request_name = format!("retry-{i}");
-        let retry_server = retry_once_archive_server(
-            body,
-            event_tx.clone(),
-            retry_release.waiter(),
-            request_name,
-            observations.clone(),
-        );
-        let mount = if i == 0 {
-            parent_mount.clone()
-        } else {
-            dir.path().join(format!("retry-{i}"))
-        };
-        storages.push((
-            path_to_string(&mount).unwrap(),
-            retry_server.0.url("/archive.tar.gz"),
-        ));
-        retry_servers.push(retry_server);
-    }
-
-    let healthy_server = MockServer::start();
-    let healthy_mount = dir.path().join("healthy");
-    let healthy_body = create_tar_gz(&[("healthy.txt", b"healthy")]).unwrap();
-    let healthy_mock = serve_archive(
-        &healthy_server,
-        "/healthy.tar.gz",
-        healthy_body,
-        {
-            let event_tx = event_tx.clone();
-            move || {
-                event_tx
-                    .send("healthy".to_owned())
-                    .map_err(|e| format!("failed to send healthy start: {e}"))
-            }
-        },
-        "healthy".to_owned(),
-        observations.clone(),
-    );
-    storages.push((
-        path_to_string(&healthy_mount).unwrap(),
-        healthy_server.url("/healthy.tar.gz"),
-    ));
-
-    let overlapping_server = MockServer::start();
-    let overlapping_mount = parent_mount.join("child");
-    let overlapping_body = create_tar_gz(&[("child.txt", b"child")]).unwrap();
-    let overlapping_mock = serve_archive(
-        &overlapping_server,
-        "/overlapping.tar.gz",
-        overlapping_body,
-        move || {
-            event_tx
-                .send("overlapping".to_owned())
-                .map_err(|e| format!("failed to send overlapping start: {e}"))
-        },
-        "overlapping".to_owned(),
-        observations.clone(),
-    );
-    storages.push((
-        path_to_string(&overlapping_mount).unwrap(),
-        overlapping_server.url("/overlapping.tar.gz"),
-    ));
-
-    let execution = spawn_guest_storage_apply(
-        stringify!(retry_backoff_releases_attempt_slot_but_retains_mount_reservation),
-        &dir,
-        &storages,
-    )
-    .unwrap();
-
-    let mut initial_starts = wait_for_events(&event_rx, 4, REQUEST_START_TIMEOUT).unwrap();
-    initial_starts.sort();
-    assert_eq!(
-        initial_starts,
-        [
-            "retry-0-attempt-1",
-            "retry-1-attempt-1",
-            "retry-2-attempt-1",
-            "retry-3-attempt-1",
-        ]
-    );
-
-    retry_release.release_many(4);
-    assert_eq!(
-        event_rx.recv_timeout(REQUEST_START_TIMEOUT).unwrap(),
-        "healthy"
-    );
-
-    let mut seen_events = Vec::new();
-    while !seen_events.iter().any(|event| event == "retry-0-attempt-2") {
-        let event = event_rx.recv_timeout(REQUEST_START_TIMEOUT).unwrap();
-        assert_ne!(
-            event, "overlapping",
-            "overlapping mount started while its parent retained a retry reservation"
-        );
-        seen_events.push(event);
-    }
-    wait_for_event(
-        &event_rx,
-        &mut seen_events,
-        "overlapping",
-        REQUEST_START_TIMEOUT,
-    )
-    .unwrap();
-    execution
-        .wait_for_completion(
-            stringify!(retry_backoff_releases_attempt_slot_but_retains_mount_reservation),
-            COMPLETION_TIMEOUT,
-            &retry_release,
-            &observations,
-        )
-        .unwrap();
-
-    assert!(observations.max_active() <= 4);
-    for (_, attempts) in retry_servers {
-        assert_eq!(attempts.load(Ordering::SeqCst), 2);
-    }
-    healthy_mock.assert_calls(1);
-    overlapping_mock.assert_calls(1);
-    for i in 0..4 {
-        let mount = if i == 0 {
-            parent_mount.clone()
-        } else {
-            dir.path().join(format!("retry-{i}"))
-        };
-        assert_eq!(
-            std::fs::read_to_string(mount.join(format!("retry-{i}.txt"))).unwrap(),
-            format!("retry-{i}")
-        );
-    }
-    assert_eq!(
-        std::fs::read_to_string(healthy_mount.join("healthy.txt")).unwrap(),
-        "healthy"
-    );
-    assert_eq!(
-        std::fs::read_to_string(overlapping_mount.join("child.txt")).unwrap(),
-        "child"
-    );
 }
 
 #[test]

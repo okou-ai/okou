@@ -63,6 +63,7 @@ import {
   appendChatThreadEvent,
   chatThreadServiceTierFromCodex,
 } from "./chat-thread-event.service";
+import { withChatThreadContentWrite } from "./chat-thread-content-erasure-admission.service";
 import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
 import { cancelRun$, type CancelRunResult } from "./run-cancel.service";
 import { runOwnedChatEventForRunCondition } from "./chat-event-type.service";
@@ -799,35 +800,6 @@ export const createChatThread$ = command(
   },
 );
 
-export async function chatThreadForRunFromDb(
-  db: Pick<Db, "select">,
-  runId: string,
-): Promise<{
-  readonly chatThreadId: string;
-  readonly userId: string;
-  readonly orgId: string;
-} | null> {
-  const [row] = await db
-    .select({
-      chatThreadId: agentRuns.chatThreadId,
-      userId: chatThreads.userId,
-      orgId: agentRuns.orgId,
-    })
-    .from(agentRuns)
-    .innerJoin(chatThreads, eq(agentRuns.chatThreadId, chatThreads.id))
-    .where(and(eq(agentRuns.id, runId), isNotNull(agentRuns.triggerSource)))
-    .limit(1);
-
-  if (!row?.chatThreadId) {
-    return null;
-  }
-  return {
-    chatThreadId: row.chatThreadId,
-    userId: row.userId,
-    orgId: row.orgId,
-  };
-}
-
 interface ThreadRunToCancel {
   readonly runId: string;
   readonly orgId: string;
@@ -924,10 +896,12 @@ export const deleteChatThread$ = command(
       );
 
       // Search rows are an eventually consistent derived projection without a
-      // parent FK. Remove the normal-path rows synchronously; the projection
-      // cron repairs only writes that race this transaction. Delete the
-      // watermark first so any later projector write also restores the cleanup
-      // anchor.
+      // parent FK. Remove them synchronously under the thread lock taken above:
+      // the projector now takes a conflicting KEY SHARE on this same row and
+      // revalidates the thread inside its transaction, so it either commits
+      // before this delete removes its rows or finds the thread gone and writes
+      // nothing. Delete the watermark first so the bounded orphan repair, which
+      // still covers pre-fence rows and older producers, keeps its anchor.
       await tx
         .delete(chatEventSearchMessageWatermarks)
         .where(
@@ -995,6 +969,13 @@ export const deleteChatThread$ = command(
  * changes do not publish `threadListChanged`: the editing client updates its
  * own sidebar locally, and other clients pick the dot up from the drafts
  * endpoint on their next list reload.
+ *
+ * A draft and its attachment descriptors are account content, so the write now
+ * runs under the shared B1 admission and the canonical Agent/thread locks in
+ * {@link withChatThreadContentWrite}. B1 closure reuses the same
+ * `{ updated: false }` 404 disposition, which keeps the endpoint non-oracular.
+ * This route deliberately requires no organization and accepts a thread without
+ * an Agent, so a legal null-Agent thread keeps its thread-user-only subject.
  */
 export const updateChatThreadDraft$ = command(
   async (
@@ -1008,23 +989,36 @@ export const updateChatThreadDraft$ = command(
     signal: AbortSignal,
   ): Promise<{ readonly updated: boolean }> => {
     const writeDb = set(writeDb$);
-    const updated = await writeDb
-      .update(chatThreads)
-      .set({
-        draftUserMessage: args.draftUserMessage,
-        draftAttachments: args.draftAttachments
-          ? [...args.draftAttachments]
-          : null,
-      })
-      .where(
-        and(
-          eq(chatThreads.id, args.threadId),
-          eq(chatThreads.userId, args.userId),
-        ),
-      )
-      .returning({ id: chatThreads.id });
+    const result = await withChatThreadContentWrite(
+      writeDb,
+      {
+        chatThreadId: args.threadId,
+        authorize: (identity) => {
+          return identity.userId === args.userId;
+        },
+      },
+      async (tx) => {
+        const updated = await tx
+          .update(chatThreads)
+          .set({
+            draftUserMessage: args.draftUserMessage,
+            draftAttachments: args.draftAttachments
+              ? [...args.draftAttachments]
+              : null,
+          })
+          .where(
+            and(
+              eq(chatThreads.id, args.threadId),
+              eq(chatThreads.userId, args.userId),
+            ),
+          )
+          .returning({ id: chatThreads.id });
+        return updated.length > 0;
+      },
+      signal,
+    );
     signal.throwIfAborted();
 
-    return { updated: updated.length > 0 };
+    return { updated: result.outcome === "written" && result.value };
   },
 );

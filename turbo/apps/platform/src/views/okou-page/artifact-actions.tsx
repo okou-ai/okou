@@ -157,12 +157,14 @@ export function ArtifactActionTooltip({
 
 export function ArtifactShareButton({
   shareUrl,
+  surface,
   ariaLabel,
   className,
   iconSize = 16,
   url,
 }: {
   shareUrl: string | null | undefined;
+  surface: "dialog" | "sidebar";
   ariaLabel?: string;
   className?: string;
   iconSize?: number;
@@ -176,13 +178,13 @@ export function ArtifactShareButton({
       return $.artifacts.actions.share;
     });
   if (
-    shareUrl === null &&
     features?.[FeatureSwitchKey.PrivateArtifacts] &&
     isShareableArtifactReference(url)
   ) {
     return (
       <ArtifactShareMenu
         url={url}
+        surface={surface}
         ariaLabel={label}
         className={className}
         iconSize={iconSize}
@@ -525,6 +527,7 @@ type ArtifactDownloadMenuProps = {
   className?: string;
   filename: string;
   iconSize?: number;
+  showGoogleDriveAction?: boolean;
   syncTarget?: ArtifactDownloadSyncTarget;
   url: string;
 };
@@ -536,6 +539,7 @@ export function ArtifactDownloadMenu({
   className,
   filename,
   iconSize = 16,
+  showGoogleDriveAction = true,
   syncTarget,
   url,
 }: ArtifactDownloadMenuProps) {
@@ -591,7 +595,9 @@ export function ArtifactDownloadMenu({
             return $.artifacts.actions.download;
           })}
         </DropdownMenuItem>
-        <GoogleDriveMenuItem syncTarget={syncTarget} />
+        {showGoogleDriveAction && (
+          <GoogleDriveMenuItem syncTarget={syncTarget} />
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

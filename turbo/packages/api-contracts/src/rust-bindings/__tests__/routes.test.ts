@@ -3,6 +3,12 @@ import { type RustRouteBinding, rustRouteBindings } from "../routes";
 
 const expectedBindings = [
   {
+    method: "GET",
+    path: "/api/runners/runs/:runId/cancellation",
+    rustModulePath: ["runners", "runs", "by_run_id", "cancellation"],
+    rustConstName: "GET",
+  },
+  {
     method: "POST",
     path: "/api/runners/runs/:runId/ssh/observations",
     rustModulePath: ["runners", "runs", "by_run_id", "ssh", "observations"],
@@ -28,9 +34,21 @@ const expectedBindings = [
   },
   {
     method: "POST",
+    path: "/api/runners/jobs/:id/release",
+    rustModulePath: ["runners", "jobs", "by_id", "release"],
+    rustConstName: "RELEASE",
+  },
+  {
+    method: "POST",
     path: "/api/runners/jobs/:id/claim",
     rustModulePath: ["runners", "jobs", "by_id", "claim"],
     rustConstName: "CLAIM",
+  },
+  {
+    method: "GET",
+    path: "/api/runners/jobs/:id/pi-handoff/:offset",
+    rustModulePath: ["runners", "jobs", "by_id", "pi_handoff", "by_offset"],
+    rustConstName: "GET",
   },
   {
     method: "POST",
@@ -98,6 +116,12 @@ const expectedBindings = [
     method: "POST",
     path: "/api/webhooks/agent/events",
     rustModulePath: ["webhooks", "agent", "events"],
+    rustConstName: "SEND",
+  },
+  {
+    method: "POST",
+    path: "/api/webhooks/agent/session-output",
+    rustModulePath: ["webhooks", "agent", "session_output"],
     rustConstName: "SEND",
   },
   {
@@ -189,7 +213,9 @@ describe("Rust route bindings", () => {
 
     expect(secondRender).toBe(firstRender);
     for (const binding of expectedBindings) {
-      expect(firstRender).toContain("crate::Method::Post");
+      expect(firstRender).toContain(
+        binding.method === "GET" ? "crate::Method::Get" : "crate::Method::Post",
+      );
       expect(firstRender).toContain(`"${binding.path}"`);
     }
   });

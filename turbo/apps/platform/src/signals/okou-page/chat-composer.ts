@@ -348,6 +348,7 @@ function createBasicComposerUiSignals() {
  * over with the composer rather than following the thread.
  */
 function createVideoRunOptionsUiSignals() {
+  // Keep the summary compact until the user opens the settings panel.
   const internalVideoOptionsOpen$ = state(false);
   const internalVideoRunOptions$ = state<VideoRunOptionsPatch>({});
   const videoOptionsOpen$ = computed((get) => {
@@ -362,11 +363,16 @@ function createVideoRunOptionsUiSignals() {
   const setVideoRunOptions$ = command(({ set }, next: VideoRunOptionsPatch) => {
     set(internalVideoRunOptions$, next);
   });
+  const resetVideoRunOptions$ = command(({ set }) => {
+    set(internalVideoOptionsOpen$, false);
+    set(internalVideoRunOptions$, {});
+  });
   return {
     videoOptionsOpen$,
     setVideoOptionsOpen$,
     videoRunOptions$,
     setVideoRunOptions$,
+    resetVideoRunOptions$,
   };
 }
 

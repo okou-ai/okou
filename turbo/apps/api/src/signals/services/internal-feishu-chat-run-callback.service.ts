@@ -278,6 +278,7 @@ export async function deliverFeishuChatAdmissionFailure(
         messageId: args.target.messageId,
         message,
         replyInThread: true,
+        idempotencyKey: args.chatEventId,
       },
       signal,
     );
@@ -351,6 +352,7 @@ async function deliverClaimedFeishuChatCallback(
         messageId: payload.messageId,
         message,
         replyInThread: true,
+        idempotencyKey: args.callback.runId,
       },
       signal,
     );

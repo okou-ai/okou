@@ -63,6 +63,13 @@ AXIOM_TOKEN_SESSIONS=op://Development/axiom/AXIOM_TOKEN_SESSIONS
 AXIOM_TOKEN_TELEMETRY=op://Development/axiom/AXIOM_TOKEN_TELEMETRY
 AXIOM_DATASET_SUFFIX=dev
 
+# Optional: isolated Pi Langfuse project. Tracing starts only for runs whose
+# user has explicitly enabled the default-off feature switch.
+LANGFUSE_PUBLIC_KEY=op://Development/langfuse/LANGFUSE_PUBLIC_KEY
+LANGFUSE_SECRET_KEY=op://Development/langfuse/LANGFUSE_SECRET_KEY
+LANGFUSE_BASE_URL=https://us.cloud.langfuse.com
+LANGFUSE_PROJECT_ID=cmu0bvhcu012gad0drbw8ddts
+
 # Required: Secrets encryption
 SECRETS_ENCRYPTION_KEY=op://Development/vm0/SECRETS_ENCRYPTION_KEY
 

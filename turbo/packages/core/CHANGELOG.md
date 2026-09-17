@@ -1,5 +1,470 @@
 # Changelog
 
+## [8.675.0](https://github.com/vm0-ai/okou/compare/core-v8.674.2...core-v8.675.0) (2026-09-17)
+
+
+### Features
+
+* **cli:** support artifact visibility during creation ([#34862](https://github.com/vm0-ai/okou/issues/34862)) ([f1c2168](https://github.com/vm0-ai/okou/commit/f1c216821b6942fc83533abef752089d3cd925d2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.456.0
+
+## [8.674.2](https://github.com/vm0-ai/okou/compare/core-v8.674.1...core-v8.674.2) (2026-09-17)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.455.1
+
+## [8.674.1](https://github.com/vm0-ai/okou/compare/core-v8.674.0...core-v8.674.1) (2026-09-17)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.455.0
+
+## [8.674.0](https://github.com/vm0-ai/okou/compare/core-v8.673.2...core-v8.674.0) (2026-09-17)
+
+
+### Features
+
+* **platform:** keep only oauth-connector workflow templates ([#34665](https://github.com/vm0-ai/okou/issues/34665)) ([558905e](https://github.com/vm0-ai/okou/commit/558905e519c9e6b2ae00cc5c03fac2769e66a3b4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.454.0
+
+## [8.673.2](https://github.com/vm0-ai/okou/compare/core-v8.673.1...core-v8.673.2) (2026-09-17)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.453.0
+
+## [8.673.1](https://github.com/vm0-ai/okou/compare/core-v8.673.0...core-v8.673.1) (2026-09-16)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.452.1
+
+## [8.673.0](https://github.com/vm0-ai/okou/compare/core-v8.672.0...core-v8.673.0) (2026-09-16)
+
+
+### Features
+
+* **platform:** add a custom category to the template picker ([#34617](https://github.com/vm0-ai/okou/issues/34617)) ([a6d695b](https://github.com/vm0-ai/okou/commit/a6d695ba91197f5f2bd9483977506458fe423792))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.452.0
+
+## [8.672.0](https://github.com/vm0-ai/okou/compare/core-v8.671.0...core-v8.672.0) (2026-09-16)
+
+
+### Features
+
+* **api:** make social status generally available ([#34671](https://github.com/vm0-ai/okou/issues/34671)) ([998634e](https://github.com/vm0-ai/okou/commit/998634e9f3f394868f1f91998ced12e0fb0d0824))
+* **api:** publish a compiled reverse run as a user template ([#34642](https://github.com/vm0-ai/okou/issues/34642)) ([1d641f8](https://github.com/vm0-ai/okou/commit/1d641f8bdc8231fc8f849ea5df7848f6833ac9f0))
+
+
+### Bug Fixes
+
+* **api:** attribute required-output backpressure phases ([#34663](https://github.com/vm0-ai/okou/issues/34663)) ([a1e31af](https://github.com/vm0-ai/okou/commit/a1e31afbdd683ded91cb4b0343bfaa2505244b26))
+
+
+### Refactoring
+
+* **api:** establish canonical morning brief migration state ([#34672](https://github.com/vm0-ai/okou/issues/34672)) ([6377cee](https://github.com/vm0-ai/okou/commit/6377cee9d4c7d5640bd9bd465a47b153de86085a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.451.0
+
+## [8.671.0](https://github.com/vm0-ai/okou/compare/core-v8.670.2...core-v8.671.0) (2026-09-16)
+
+
+### Features
+
+* **api:** choose the delivery format from the deliverable, behind a switch ([#34604](https://github.com/vm0-ai/okou/issues/34604)) ([08c8d62](https://github.com/vm0-ai/okou/commit/08c8d62d8d5555b6bbe2f4c3f873a3d72d68e06f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.450.0
+
+## [8.670.2](https://github.com/vm0-ai/okou/compare/core-v8.670.1...core-v8.670.2) (2026-09-16)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.449.1
+
+## [8.670.1](https://github.com/vm0-ai/okou/compare/core-v8.670.0...core-v8.670.1) (2026-09-16)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.449.0
+
+## [8.670.0](https://github.com/vm0-ai/okou/compare/core-v8.669.0...core-v8.670.0) (2026-09-16)
+
+
+### Features
+
+* **core:** enable private artifacts for staff ([#34542](https://github.com/vm0-ai/okou/issues/34542)) ([ecaccf2](https://github.com/vm0-ai/okou/commit/ecaccf2069c3f800daec4519000b86c83bedfe48))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.448.0
+
+## [8.669.0](https://github.com/vm0-ai/okou/compare/core-v8.668.2...core-v8.669.0) (2026-09-16)
+
+
+### Features
+
+* add get started rewards with seven-day expiry ([#34404](https://github.com/vm0-ai/okou/issues/34404)) ([fb09ab0](https://github.com/vm0-ai/okou/commit/fb09ab0357f47181d1c6e38713b8a8d2dc959f6c))
+
+
+### Refactoring
+
+* remove composerCreateCommands feature switch ([#34527](https://github.com/vm0-ai/okou/issues/34527)) ([b3be0f4](https://github.com/vm0-ai/okou/commit/b3be0f414f149f23c3e33efc9161486268380c02))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.447.0
+
+## [8.668.2](https://github.com/vm0-ai/okou/compare/core-v8.668.1...core-v8.668.2) (2026-09-16)
+
+
+### Refactoring
+
+* **ssh:** share rollout gating with cloudflare access ([#34489](https://github.com/vm0-ai/okou/issues/34489)) ([84a84fb](https://github.com/vm0-ai/okou/commit/84a84fba45ee6b5273b0ee5c6ade5a60a10b22c9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.446.1
+
+## [8.668.1](https://github.com/vm0-ai/okou/compare/core-v8.668.0...core-v8.668.1) (2026-09-16)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.446.0
+
+## [8.668.0](https://github.com/vm0-ai/okou/compare/core-v8.667.1...core-v8.668.0) (2026-09-16)
+
+
+### Features
+
+* **platform:** collapse the composer toolbar into one add menu ([#34394](https://github.com/vm0-ai/okou/issues/34394)) ([a54f703](https://github.com/vm0-ai/okou/commit/a54f703655d94b3552f856783294efbe97484a6b))
+
+## [8.667.1](https://github.com/vm0-ai/okou/compare/core-v8.667.0...core-v8.667.1) (2026-09-16)
+
+
+### Refactoring
+
+* fold session output streaming into piloop ([#34445](https://github.com/vm0-ai/okou/issues/34445)) ([9a641d1](https://github.com/vm0-ai/okou/commit/9a641d19a9776261fd549d21fbe225e08d3ad3df))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.445.1
+
+## [8.667.0](https://github.com/vm0-ai/vm0/compare/core-v8.666.7...core-v8.667.0) (2026-09-15)
+
+
+### Features
+
+* **memory:** attribute stage 1 cost and define daily budget guardrails ([#34288](https://github.com/vm0-ai/vm0/issues/34288)) ([5ee718c](https://github.com/vm0-ai/vm0/commit/5ee718ca99c65f0bf8e59b2aed23b2fabaa5a2b2))
+
+## [8.666.7](https://github.com/vm0-ai/vm0/compare/core-v8.666.6...core-v8.666.7) (2026-09-15)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.445.0
+
+## [8.666.6](https://github.com/vm0-ai/vm0/compare/core-v8.666.5...core-v8.666.6) (2026-09-15)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.444.1
+
+## [8.666.5](https://github.com/vm0-ai/vm0/compare/core-v8.666.4...core-v8.666.5) (2026-09-15)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.444.0
+
+## [8.666.4](https://github.com/vm0-ai/vm0/compare/core-v8.666.3...core-v8.666.4) (2026-09-15)
+
+
+### Bug Fixes
+
+* use mime types for attachment thumbnails ([#34313](https://github.com/vm0-ai/vm0/issues/34313)) ([58685d3](https://github.com/vm0-ai/vm0/commit/58685d3dda2abe907742b0855631a7307098c681))
+
+
+### Refactoring
+
+* drop the retired refactorModelSelect switch ([#34270](https://github.com/vm0-ai/vm0/issues/34270)) ([31d09ce](https://github.com/vm0-ai/vm0/commit/31d09ce890496df0db5fca839e4d1ef24efe35d0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.443.3
+
+## [8.666.3](https://github.com/vm0-ai/vm0/compare/core-v8.666.2...core-v8.666.3) (2026-09-15)
+
+
+### Refactoring
+
+* give effort its own switch ([#34269](https://github.com/vm0-ai/vm0/issues/34269)) ([df5644a](https://github.com/vm0-ai/vm0/commit/df5644a8cb7e7905813ba4d1dc40aa9b98e4de92))
+* remove the reference images feature switch ([#34272](https://github.com/vm0-ai/vm0/issues/34272)) ([bc9a254](https://github.com/vm0-ai/vm0/commit/bc9a254f8005d20b6514254c30c903649f7f1b00))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.443.2
+
+## [8.666.2](https://github.com/vm0-ai/vm0/compare/core-v8.666.1...core-v8.666.2) (2026-09-15)
+
+
+### Bug Fixes
+
+* align artifact viewer and shorten sharing urls ([#34249](https://github.com/vm0-ai/vm0/issues/34249)) ([f833361](https://github.com/vm0-ai/vm0/commit/f833361a484782b0d85ea6dd6d4929f0a6034d14))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.443.1
+
+## [8.666.1](https://github.com/vm0-ai/vm0/compare/core-v8.666.0...core-v8.666.1) (2026-09-15)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.443.0
+
+## [8.666.0](https://github.com/vm0-ai/vm0/compare/core-v8.665.0...core-v8.666.0) (2026-09-15)
+
+
+### Features
+
+* give intro video its own generation template type ([#34221](https://github.com/vm0-ai/vm0/issues/34221)) ([776735a](https://github.com/vm0-ai/vm0/commit/776735a14e2d2c8d3fe482b3c8b92b9dd66f5ce8))
+
+
+### Refactoring
+
+* remove progressiveArtifactPreview feature switch ([#34214](https://github.com/vm0-ai/vm0/issues/34214)) ([db1b28e](https://github.com/vm0-ai/vm0/commit/db1b28ee3ed5f570a45c5bf37a74238af716d715))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.442.0
+
+## [8.665.0](https://github.com/vm0-ai/vm0/compare/core-v8.664.2...core-v8.665.0) (2026-09-15)
+
+
+### Features
+
+* **ssh:** add reusable cloudflare access configuration ([#34105](https://github.com/vm0-ai/vm0/issues/34105)) ([21f7e6a](https://github.com/vm0-ai/vm0/commit/21f7e6a3d2870791cb705ebd37217457d9118890))
+
+
+### Bug Fixes
+
+* report and label intro video as its own template kind ([#34096](https://github.com/vm0-ai/vm0/issues/34096)) ([8d01e1a](https://github.com/vm0-ai/vm0/commit/8d01e1a9832cd0e73330d85e55709abe515acfe7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.441.0
+
+## [8.664.2](https://github.com/vm0-ai/vm0/compare/core-v8.664.1...core-v8.664.2) (2026-09-15)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.440.1
+
+## [8.664.1](https://github.com/vm0-ai/vm0/compare/core-v8.664.0...core-v8.664.1) (2026-09-14)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.440.0
+
+## [8.664.0](https://github.com/vm0-ai/vm0/compare/core-v8.663.2...core-v8.664.0) (2026-09-14)
+
+
+### Features
+
+* add social service status and capability limits ([#34073](https://github.com/vm0-ai/vm0/issues/34073)) ([2adf088](https://github.com/vm0-ai/vm0/commit/2adf088b05f825efd06bf0f2edce166821e2778e))
+* **pi:** add gated langfuse tracing ([#33756](https://github.com/vm0-ai/vm0/issues/33756)) ([5f5f9f3](https://github.com/vm0-ai/vm0/commit/5f5f9f3434f7770b0db8b8ccd7d94c9f37282160))
+
+
+### Refactoring
+
+* unify model selection feature switches ([#34133](https://github.com/vm0-ai/vm0/issues/34133)) ([252e116](https://github.com/vm0-ai/vm0/commit/252e1163a515c7f212cd0b31c7c59b3d385f3a38))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.439.0
+
+## [8.663.2](https://github.com/vm0-ai/vm0/compare/core-v8.663.1...core-v8.663.2) (2026-09-14)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.438.2
+
+## [8.663.1](https://github.com/vm0-ai/vm0/compare/core-v8.663.0...core-v8.663.1) (2026-09-14)
+
+
+### Refactoring
+
+* remove voice input v2 feature switch ([#33884](https://github.com/vm0-ai/vm0/issues/33884)) ([be1af01](https://github.com/vm0-ai/vm0/commit/be1af014b3329820ca167fec5238e02c73d6bc7d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.438.1
+
+## [8.663.0](https://github.com/vm0-ai/vm0/compare/core-v8.662.2...core-v8.663.0) (2026-09-14)
+
+
+### Features
+
+* **app:** add a standalone artifact viewer ([#34088](https://github.com/vm0-ai/vm0/issues/34088)) ([c49b23f](https://github.com/vm0-ai/vm0/commit/c49b23f072d00dd9e51d2279ebd606f0b83556e2))
+
+
+### Refactoring
+
+* remove chat thinking spinner feature switch ([#34069](https://github.com/vm0-ai/vm0/issues/34069)) ([379454f](https://github.com/vm0-ai/vm0/commit/379454fc8965991e2898f6a9d8530db140c378b2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.438.0
+
+## [8.662.2](https://github.com/vm0-ai/vm0/compare/core-v8.662.1...core-v8.662.2) (2026-09-14)
+
+
+### Refactoring
+
+* remove agentMessageMath feature switch ([#34051](https://github.com/vm0-ai/vm0/issues/34051)) ([66cd8df](https://github.com/vm0-ai/vm0/commit/66cd8df66d3e3231a71bebb00fe8e21fb8b2c1ba))
+* remove composer workflow fuzzy search feature switch ([#34033](https://github.com/vm0-ai/vm0/issues/34033)) ([b812218](https://github.com/vm0-ai/vm0/commit/b8122187980a96ad51e376bca047f5e49479035a))
+* remove slack read feature switch ([#34060](https://github.com/vm0-ai/vm0/issues/34060)) ([b2337d3](https://github.com/vm0-ai/vm0/commit/b2337d3807cf8b85ae86f0e3de2ce6520bea5b22))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.437.0
+
+## [8.662.1](https://github.com/vm0-ai/vm0/compare/core-v8.662.0...core-v8.662.1) (2026-09-14)
+
+
+### Bug Fixes
+
+* **app:** scope video controls to creative video drafts ([#33934](https://github.com/vm0-ai/vm0/issues/33934)) ([dc5ccdf](https://github.com/vm0-ai/vm0/commit/dc5ccdf653935b778d77fe120d62f3e20cc2b4e5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.436.0
+
+## [8.662.0](https://github.com/vm0-ai/vm0/compare/core-v8.661.1...core-v8.662.0) (2026-09-14)
+
+
+### Features
+
+* **pi-memory:** add the pimemory feature switch gating admission, workers and recall ([#33927](https://github.com/vm0-ai/vm0/issues/33927)) ([121fb21](https://github.com/vm0-ai/vm0/commit/121fb21295cc188a89cd0534b66c34f851a5b885))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.435.1
+
 ## [8.661.1](https://github.com/vm0-ai/vm0/compare/core-v8.661.0...core-v8.661.1) (2026-09-14)
 
 

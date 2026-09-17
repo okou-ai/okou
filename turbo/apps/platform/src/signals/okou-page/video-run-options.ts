@@ -49,7 +49,7 @@ export function videoRunOptionsPatch(
   };
 }
 
-/** `16:9 · 8s · 720p`, the chip's whole label. Audio is left to the panel. */
+/** Text summary; the control presents audio separately as an icon. */
 export function videoRunOptionsText(
   resolved: ResolvedVideoGenerationOptions,
 ): string {
@@ -59,18 +59,15 @@ export function videoRunOptionsText(
 }
 
 /**
- * The parameters to send with a message, or undefined when the run would use
- * the model's defaults anyway. Re-resolved against the effective model first:
- * the stored set can name a value the model that is now in effect rejects, and
- * that is exactly what the run must not be told to use.
+ * Send all displayed parameters, including untouched defaults, without the
+ * model (which the run carries separately). Resolve against the effective
+ * model so unsupported stored values fall back to its current defaults.
  */
 export function videoRunOptionsForSend(
   patch: VideoRunOptionsPatch,
   model: VideoModel,
-): ChatRunVideoOptionsRequest | undefined {
-  const settled = videoRunOptionsPatch(
-    resolveVideoRunOptions(patch, model),
-    model,
-  );
-  return Object.keys(settled).length > 0 ? settled : undefined;
+): ChatRunVideoOptionsRequest {
+  const { aspectRatio, duration, resolution, generateAudio } =
+    resolveVideoRunOptions(patch, model);
+  return { aspectRatio, duration, resolution, generateAudio };
 }

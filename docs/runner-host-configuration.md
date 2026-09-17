@@ -47,25 +47,47 @@ telemetry/Axiom dimensions, and distinct hostnames on two hosts running one
 version. Remove any historical query fallback only after its bounded
 observation window expires.
 
-## Blank Sandbox Memory
+## Active and Parked Sandbox Memory
+
+Active Guests keep a traditional balloon target of zero. Stable free-page
+reporting returns pages the Guest has already freed; it does not evict live
+file cache. OOM deflation remains enabled. There is no periodic active
+inflation policy or available-memory threshold that a workload must cross
+before regaining its configured capacity.
+
+This can increase active Firecracker RSS, particularly for file-cache-heavy
+workloads. Admission still accounts for profile memory and applies
+`concurrency_factor`; it does not measure RSS or reserve host memory overhead.
+Overcommit therefore has no worst-case resident-memory safety guarantee.
+Size concurrency against the full active profile working set plus host/Runner
+overhead, and measure host headroom and parked residency as well as latency.
+Free-page reporting and parked reclamation are not substitutes for that budget.
 
 Tenant-free sandboxes prepared for the blank pool retain their full profile
-resource budget. Firecracker stops their reactive balloon controller and
-pauses vCPUs without requesting aggressive idle balloon inflation. Guest
-quiesce and operation fencing still complete before pause. This avoids a
+resource budget. Firecracker pauses vCPUs without requesting aggressive idle
+balloon inflation. Guest quiesce and operation fencing still complete before pause. This avoids a
 large idle-only inflate/deflate cycle when a prepared sandbox is claimed.
 
-Unpark still requests memory return without waiting for physical balloon
-convergence. After a preserved blank resumes, its background controller waits
-for both target-zero convergence and the first successful Agent-ready event
-before resuming reactive reclamation. Guest operations and Agent startup do not
-wait for that controller, and no fixed delay is added. Failed or cancelled
-startup does not release the gate; ordinary park, stop and destruction cancel
-the owned controller. The full profile budget stays reserved throughout.
+Unpark resumes vCPUs, requests target zero, and confirms exact target/actual
+page counts are zero before reopening Guest operations. This returns real
+memory rather than correcting displayed counters. The convergence wait,
+including in-flight statistics requests, is bounded at five seconds; failures
+keep operations fenced and use the existing destroy/fresh-create recovery.
+Physical deflation adds latency to reuse. No background balloon controller or
+Agent-readiness reclamation gate remains. The full profile budget stays reserved
+throughout. Minimum profiles never inflate and skip this balloon recovery.
 
-A small balloon from active preparation may remain at park. Exact/session idle
-sandboxes continue using ordinary memory reclamation, including after a
-claimed blank completes its first run.
+Zero page counts describe the currently reported state, not a target-generation
+acknowledgement: an interrupted Guest inflation batch may update its actual count
+after an earlier zero sample. Reporting itself also temporarily isolates free
+pages. This policy prevents sustained active inflation; it does not promise
+literally invariant `MemFree`/`MemAvailable` at every instant.
+
+Exact/session idle sandboxes continue requesting ordinary balloon reclamation
+before vCPU pause, retaining at least the supported minimum profile capacity.
+This also applies after a claimed blank completes its first run. Direct
+handoff may still interrupt idle settling; the successor confirms physical
+deflation through the same readiness boundary before starting work.
 
 Pool sizing, full-profile admission, exact-first reuse and blank-first pressure
 eviction are unchanged. Preserving blank memory can increase physical idle
@@ -107,8 +129,8 @@ The existing sidecar export gate covers guest export execution only. Idle
 reclamation additionally acquires admission **before unpark** and holds it
 through terminal unpark, export, host copy, workspace freeze and immediate
 sandbox termination. Waiting reclamation jobs remain parked. Terminal unpark
-does not start the reactive balloon controller used by future active workloads,
-and the temporary guest sidecar is left for sandbox destruction instead of a
+uses the same physical-deflation readiness boundary as normal reuse, and the
+temporary guest sidecar is left for sandbox destruction instead of a
 separate guest cleanup command.
 
 After successful termination, cache publication and factory destruction run
@@ -124,6 +146,38 @@ waiting; capacity-pressure reclamation can consequently take longer too.
 Overlapping runner versions have independent limits. Four is an initial policy,
 not a measured optimum or a guarantee that large-history export/copy latency
 disappears. No operator setting or persistent cache format changes are required.
+
+### Sidecar export resource diagnostics
+
+The existing `workspace image cache session history sidecar export completed`
+event includes per-stage resource counters alongside wall-clock timings. The
+`helper_read_verify_` and `helper_write_` prefixes each expose:
+
+- `resources_available`: whether both resource snapshots produced valid deltas.
+- `user_cpu_us` and `system_cpu_us`: CPU time in microseconds.
+- `minor_faults` and `major_faults`: page faults without and with I/O, respectively.
+- `input_blocks` and `output_blocks`: Linux `ru_inblock` and `ru_oublock`
+  filesystem I/O accounting counters, not bytes or disk latency.
+- `voluntary_context_switches` and `involuntary_context_switches`: scheduler
+  context-switch counts.
+
+These are deltas for the synchronous exporting thread, not all guest processes
+or threads. Read/verify includes decoding, buffering and hashing. Write includes
+private export-file creation and writing, but not the subsequent host copy.
+Zero is a measured value. If collection fails, a counter decreases, or the
+platform is not Linux, affected stage counters are absent and
+`resources_available` is false; export success and failure handling are unchanged.
+
+Faults can reflect buffer allocation and cache effects, and block counters do
+not describe physical-device service time. Wall time minus CPU time also includes
+scheduling and other waits: it is not disk-wait time or proof of a balloon-related
+cause. Correlate these fields with the exact artifact and guest/host evidence.
+
+Collection uses three fixed `getrusage(RUSAGE_THREAD)` calls per successful
+export, with no per-chunk sampling, second history read, new RPC or run-startup
+wait. The bounded numeric summary is private helper output, not persisted cache
+metadata. Existing export admission, timeouts and the 5-second warning threshold
+remain unchanged.
 
 ## Runner Operator Server Configuration
 

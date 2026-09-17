@@ -114,6 +114,36 @@ export type PersonalModelProvidersByTypeContract =
 
 /** Concrete personal subscription account mutations. */
 export const personalModelProviderAccountsByIdContract = c.router({
+  resetFailedRunSubscriptionUsage: {
+    method: "POST",
+    path: "/api/me/model-provider-accounts/:id/runs/:runId/subscription-reset",
+    headers: authHeadersSchema,
+    pathParams: z.object({ id: z.uuid(), runId: z.uuid() }),
+    body: resetPersonalModelProviderSubscriptionUsageRequestSchema,
+    responses: {
+      200: resetPersonalModelProviderSubscriptionUsageResponseSchema,
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      404: apiErrorSchema,
+      500: apiErrorSchema,
+    },
+    summary: "Reset the verified original account of a failed run",
+  },
+  getById: {
+    method: "GET",
+    path: "/api/me/model-provider-accounts/:id",
+    headers: authHeadersSchema,
+    pathParams: z.object({ id: z.uuid() }),
+    query: z.object({ runId: z.uuid() }),
+    responses: {
+      200: modelProviderResponseSchema,
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      404: apiErrorSchema,
+      500: apiErrorSchema,
+    },
+    summary: "Read the verified original account of a failed run",
+  },
   activate: {
     method: "POST",
     path: "/api/me/model-provider-accounts/:id/activate",

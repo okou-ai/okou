@@ -744,6 +744,9 @@ describe("POST /api/chat-threads", () => {
 
   it("routes thread-list invalidations only to the user-org channel", async () => {
     const fixture = await seedAgent();
+    await flushWaitUntilForTest();
+    context.mocks.ably.channelGet.mockClear();
+    context.mocks.ably.publish.mockClear();
     const token = okouToken({
       userId: fixture.userId,
       orgId: fixture.orgId,
@@ -955,7 +958,7 @@ describe("POST /api/chat-threads", () => {
     });
   });
 
-  it.each([FeatureSwitchKey.CodexFastMode, FeatureSwitchKey.ModelPickerMenu])(
+  it.each([FeatureSwitchKey.CodexFastMode, FeatureSwitchKey.Effort])(
     "inherits priority from the run's chat thread and allows an explicit standard override with %s",
     async (fastSwitch) => {
       const fixture = await seedAgent();

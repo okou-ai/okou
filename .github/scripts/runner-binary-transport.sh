@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CACHE="${SCRIPT_DIR}/runner-binary-cache.sh"
 . "${SCRIPT_DIR}/runner-image-target.sh"
+. "${SCRIPT_DIR}/runner-binary-download.sh"
 
 fail() {
   echo "::error::Runner binary transport: $*" >&2
@@ -55,7 +56,7 @@ case "${1:-}" in
   download)
     mkdir "${transport_tmp}/download"
     manifest="${transport_tmp}/download/manifest.json"
-    r2 get-object --key "$reference_key" --range bytes=0-65536 "$manifest"
+    runner_binary_download fresh-manifest "$reference_key" bytes=0-65536 "$manifest" 120 240
     [ "$(stat -c '%s' "$manifest")" -le 65536 ] || fail "manifest exceeds 64 KiB"
     env GITHUB_OUTPUT= MANIFEST_PATH="$manifest" EXPECTED_REPOSITORY="$REPO" \
       "$CACHE" manifest-validate
@@ -63,8 +64,8 @@ case "${1:-}" in
       "$manifest" >/dev/null || fail "manifest belongs to a different run"
 
     compressed="${transport_tmp}/runner.zst"
-    r2 get-object --key "$(jq -r '.object.key' "$manifest")" \
-      --range bytes=0-67108864 "$compressed"
+    runner_binary_download fresh-binary "$(jq -r '.object.key' "$manifest")" \
+      bytes=0-67108864 "$compressed" 120 240
     [ "$(stat -c '%s' "$compressed")" = "$(jq -r '.object.sizeBytes' "$manifest")" ] || \
       fail "compressed binary size mismatch"
     zstd -q -d -c "$compressed" | head -c 134217729 > "${transport_tmp}/download/runner"

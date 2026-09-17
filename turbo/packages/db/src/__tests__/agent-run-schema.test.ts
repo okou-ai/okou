@@ -86,6 +86,9 @@ describe("agentRuns circular foreign keys", () => {
     expect(agentRuns.autonomyBudget.hasDefault).toBe(false);
     expect(agentRuns.launchSnapshot.notNull).toBe(false);
     expect(agentRuns.launchSnapshot.hasDefault).toBe(false);
+    expect(agentRuns.langfuseTraceEnabled.name).toBe("langfuse_trace_enabled");
+    expect(agentRuns.langfuseTraceEnabled.notNull).toBeTruthy();
+    expect(agentRuns.langfuseTraceEnabled.hasDefault).toBeTruthy();
     expect(agentRuns.officialWorkflowProvenance.name).toBe(
       "official_workflow_provenance",
     );

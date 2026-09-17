@@ -270,21 +270,6 @@ export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
     url: z.url(),
   }),
   z.object({
-    action: z.literal("insert-hosted-site-as-previous-api"),
-    user_id: z.string(),
-    org_id: z.string(),
-    run_id: z.uuid(),
-    site: z.string(),
-    public_slug: z.string(),
-  }),
-  z.object({
-    action: z.literal("insert-hosted-deployment-as-previous-api"),
-    user_id: z.string(),
-    org_id: z.string(),
-    run_id: z.uuid(),
-    hosted_site_id: z.uuid(),
-  }),
-  z.object({
     action: z.literal("set-computer-use-host-as-previous-api"),
     thread_id: z.uuid(),
     computer_use_host_id: z.uuid(),
@@ -403,6 +388,12 @@ export const testRuntimeStateActionResponseSchema = z.object({
               runnerProfile: z.string().min(1).max(255),
             })
             .strict(),
+          z.strictObject({
+            schemaVersion: z.literal(4),
+            framework: z.literal("pi"),
+            executionMode: z.literal("api-inference"),
+            inferenceContractVersion: z.literal(1),
+          }),
         ])
         .nullable(),
     })
@@ -489,8 +480,6 @@ export const testRuntimeStateActionResponseSchema = z.object({
     })
     .optional(),
   file_id: z.uuid().optional(),
-  hosted_site_id: z.uuid().optional(),
-  hosted_deployment_scope_blocked: z.boolean().optional(),
   storage_persistence: z
     .object({
       run_canonical: z.boolean(),

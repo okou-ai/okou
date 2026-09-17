@@ -1,0 +1,811 @@
+{
+  "evidence_kind": "synthetic_only",
+  "environment": {
+    "architecture": "x86_64",
+    "postgresql": "18.6",
+    "block_size_bytes": 8192,
+    "shared_buffers": "128MB",
+    "work_mem": "16MB",
+    "hash_mem_multiplier": 2,
+    "parallel_query_workers": 0,
+    "jit": false
+  },
+  "source_population": "Separate MaskDB aggregate requests at 2026-09-15 03:46:13.720-03:46:20.717 UTC; no shared production snapshot",
+  "validator": "pnpm -F @okouai/db test:historical-blob-audit",
+  "results": [
+    {
+      "evidence": "synthetic_current_scale_plan",
+      "Plan": {
+        "Node Type": "Nested Loop",
+        "Actual Rows": 1,
+        "Actual Loops": 1,
+        "Shared Hit Blocks": 7669,
+        "Shared Read Blocks": 10056,
+        "Temp Read Blocks": 18841,
+        "Temp Written Blocks": 14677,
+        "Plans": [
+          {
+            "Node Type": "Result",
+            "Actual Rows": 1,
+            "Actual Loops": 1,
+            "Shared Hit Blocks": 0,
+            "Shared Read Blocks": 0,
+            "Temp Read Blocks": 0,
+            "Temp Written Blocks": 0
+          },
+          {
+            "Node Type": "Nested Loop",
+            "Actual Rows": 1341,
+            "Actual Loops": 1,
+            "Shared Hit Blocks": 5648,
+            "Shared Read Blocks": 71,
+            "Temp Read Blocks": 0,
+            "Temp Written Blocks": 0,
+            "Plans": [
+              {
+                "Node Type": "CTE Scan",
+                "Actual Rows": 1,
+                "Actual Loops": 1,
+                "Shared Hit Blocks": 0,
+                "Shared Read Blocks": 0,
+                "Temp Read Blocks": 0,
+                "Temp Written Blocks": 0
+              },
+              {
+                "Node Type": "Nested Loop",
+                "Actual Rows": 1341,
+                "Actual Loops": 1,
+                "Shared Hit Blocks": 5648,
+                "Shared Read Blocks": 71,
+                "Temp Read Blocks": 0,
+                "Temp Written Blocks": 0,
+                "Plans": [
+                  {
+                    "Node Type": "Hash Join",
+                    "Actual Rows": 1341,
+                    "Actual Loops": 1,
+                    "Shared Hit Blocks": 355,
+                    "Shared Read Blocks": 0,
+                    "Temp Read Blocks": 0,
+                    "Temp Written Blocks": 0,
+                    "Plans": [
+                      {
+                        "Node Type": "Seq Scan",
+                        "Relation Name": "storages",
+                        "Actual Rows": 18194,
+                        "Actual Loops": 1,
+                        "Shared Hit Blocks": 314,
+                        "Shared Read Blocks": 0,
+                        "Temp Read Blocks": 0,
+                        "Temp Written Blocks": 0
+                      },
+                      {
+                        "Node Type": "Hash",
+                        "Actual Rows": 1341,
+                        "Actual Loops": 1,
+                        "Shared Hit Blocks": 41,
+                        "Shared Read Blocks": 0,
+                        "Temp Read Blocks": 0,
+                        "Temp Written Blocks": 0,
+                        "Peak Memory Usage": 268,
+                        "Hash Batches": 1,
+                        "Plans": [
+                          {
+                            "Node Type": "Seq Scan",
+                            "Relation Name": "pi_memory_stage1_candidates",
+                            "Actual Rows": 1341,
+                            "Actual Loops": 1,
+                            "Shared Hit Blocks": 41,
+                            "Shared Read Blocks": 0,
+                            "Temp Read Blocks": 0,
+                            "Temp Written Blocks": 0
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "Node Type": "Index Only Scan",
+                    "Relation Name": "agent_runs",
+                    "Index Name": "agent_runs_pkey",
+                    "Actual Rows": 1,
+                    "Actual Loops": 1341,
+                    "Shared Hit Blocks": 5293,
+                    "Shared Read Blocks": 71,
+                    "Temp Read Blocks": 0,
+                    "Temp Written Blocks": 0
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "Node Type": "Aggregate",
+            "Actual Rows": 1341,
+            "Actual Loops": 1,
+            "Shared Hit Blocks": 5648,
+            "Shared Read Blocks": 71,
+            "Temp Read Blocks": 0,
+            "Temp Written Blocks": 0,
+            "Peak Memory Usage": 313,
+            "HashAgg Batches": 1,
+            "Plans": [
+              {
+                "Node Type": "CTE Scan",
+                "Actual Rows": 1341,
+                "Actual Loops": 1,
+                "Shared Hit Blocks": 5648,
+                "Shared Read Blocks": 71,
+                "Temp Read Blocks": 0,
+                "Temp Written Blocks": 0
+              }
+            ]
+          },
+          {
+            "Node Type": "Aggregate",
+            "Actual Rows": 277197,
+            "Actual Loops": 1,
+            "Shared Hit Blocks": 1911,
+            "Shared Read Blocks": 4249,
+            "Temp Read Blocks": 3325,
+            "Temp Written Blocks": 3327,
+            "Plans": [
+              {
+                "Node Type": "Sort",
+                "Actual Rows": 277197,
+                "Actual Loops": 1,
+                "Shared Hit Blocks": 1911,
+                "Shared Read Blocks": 4249,
+                "Temp Read Blocks": 3325,
+                "Temp Written Blocks": 3327,
+                "Sort Space Used": 26600,
+                "Sort Space Type": "Disk",
+                "Plans": [
+                  {
+                    "Node Type": "Nested Loop",
+                    "Actual Rows": 277197,
+                    "Actual Loops": 1,
+                    "Shared Hit Blocks": 1911,
+                    "Shared Read Blocks": 4249,
+                    "Temp Read Blocks": 0,
+                    "Temp Written Blocks": 0,
+                    "Plans": [
+                      {
+                        "Node Type": "CTE Scan",
+                        "Actual Rows": 1,
+                        "Actual Loops": 1,
+                        "Shared Hit Blocks": 0,
+                        "Shared Read Blocks": 0,
+                        "Temp Read Blocks": 0,
+                        "Temp Written Blocks": 0
+                      },
+                      {
+                        "Node Type": "Seq Scan",
+                        "Relation Name": "conversations",
+                        "Actual Rows": 277197,
+                        "Actual Loops": 1,
+                        "Shared Hit Blocks": 1911,
+                        "Shared Read Blocks": 4249,
+                        "Temp Read Blocks": 0,
+                        "Temp Written Blocks": 0
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "Node Type": "Nested Loop",
+            "Actual Rows": 313033,
+            "Actual Loops": 1,
+            "Shared Hit Blocks": 7585,
+            "Shared Read Blocks": 9986,
+            "Temp Read Blocks": 7125,
+            "Temp Written Blocks": 10510,
+            "Plans": [
+              {
+                "Node Type": "CTE Scan",
+                "Actual Rows": 1,
+                "Actual Loops": 1,
+                "Shared Hit Blocks": 0,
+                "Shared Read Blocks": 0,
+                "Temp Read Blocks": 0,
+                "Temp Written Blocks": 0
+              },
+              {
+                "Node Type": "Hash Join",
+                "Actual Rows": 313033,
+                "Actual Loops": 1,
+                "Shared Hit Blocks": 7585,
+                "Shared Read Blocks": 9986,
+                "Temp Read Blocks": 7125,
+                "Temp Written Blocks": 10510,
+                "Plans": [
+                  {
+                    "Node Type": "Merge Join",
+                    "Actual Rows": 278538,
+                    "Actual Loops": 1,
+                    "Shared Hit Blocks": 7559,
+                    "Shared Read Blocks": 4320,
+                    "Temp Read Blocks": 3325,
+                    "Temp Written Blocks": 6710,
+                    "Plans": [
+                      {
+                        "Node Type": "CTE Scan",
+                        "Actual Rows": 277197,
+                        "Actual Loops": 1,
+                        "Shared Hit Blocks": 1911,
+                        "Shared Read Blocks": 4249,
+                        "Temp Read Blocks": 3325,
+                        "Temp Written Blocks": 6710
+                      },
+                      {
+                        "Node Type": "Sort",
+                        "Actual Rows": 1341,
+                        "Actual Loops": 1,
+                        "Shared Hit Blocks": 5648,
+                        "Shared Read Blocks": 71,
+                        "Temp Read Blocks": 0,
+                        "Temp Written Blocks": 0,
+                        "Sort Space Used": 185,
+                        "Sort Space Type": "Memory",
+                        "Plans": [
+                          {
+                            "Node Type": "CTE Scan",
+                            "Actual Rows": 1341,
+                            "Actual Loops": 1,
+                            "Shared Hit Blocks": 5648,
+                            "Shared Read Blocks": 71,
+                            "Temp Read Blocks": 0,
+                            "Temp Written Blocks": 0
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "Node Type": "Hash",
+                    "Actual Rows": 313033,
+                    "Actual Loops": 1,
+                    "Shared Hit Blocks": 26,
+                    "Shared Read Blocks": 5666,
+                    "Temp Read Blocks": 0,
+                    "Temp Written Blocks": 1911,
+                    "Peak Memory Usage": 21210,
+                    "Hash Batches": 2,
+                    "Plans": [
+                      {
+                        "Node Type": "Seq Scan",
+                        "Relation Name": "blobs",
+                        "Actual Rows": 313033,
+                        "Actual Loops": 1,
+                        "Shared Hit Blocks": 26,
+                        "Shared Read Blocks": 5666,
+                        "Temp Read Blocks": 0,
+                        "Temp Written Blocks": 0
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "Node Type": "Seq Scan",
+            "Relation Name": "pg_constraint",
+            "Actual Rows": 1,
+            "Actual Loops": 1,
+            "Shared Hit Blocks": 23,
+            "Shared Read Blocks": 67,
+            "Temp Read Blocks": 0,
+            "Temp Written Blocks": 0,
+            "Plans": [
+              {
+                "Node Type": "Index Scan",
+                "Relation Name": "pg_attribute",
+                "Index Name": "pg_attribute_relid_attnam_index",
+                "Actual Rows": 1,
+                "Actual Loops": 1,
+                "Shared Hit Blocks": 1,
+                "Shared Read Blocks": 2,
+                "Temp Read Blocks": 0,
+                "Temp Written Blocks": 0
+              },
+              {
+                "Node Type": "Index Scan",
+                "Relation Name": "pg_attribute",
+                "Index Name": "pg_attribute_relid_attnam_index",
+                "Actual Rows": 1,
+                "Actual Loops": 1,
+                "Shared Hit Blocks": 2,
+                "Shared Read Blocks": 1,
+                "Temp Read Blocks": 0,
+                "Temp Written Blocks": 0
+              }
+            ]
+          },
+          {
+            "Node Type": "Aggregate",
+            "Actual Rows": 1,
+            "Actual Loops": 1,
+            "Shared Hit Blocks": 16,
+            "Shared Read Blocks": 3,
+            "Temp Read Blocks": 0,
+            "Temp Written Blocks": 0,
+            "Plans": [
+              {
+                "Node Type": "Seq Scan",
+                "Relation Name": "pg_trigger",
+                "Actual Rows": 0,
+                "Actual Loops": 1,
+                "Shared Hit Blocks": 16,
+                "Shared Read Blocks": 3,
+                "Temp Read Blocks": 0,
+                "Temp Written Blocks": 0
+              }
+            ]
+          },
+          {
+            "Node Type": "Aggregate",
+            "Actual Rows": 1,
+            "Actual Loops": 1,
+            "Shared Hit Blocks": 23,
+            "Shared Read Blocks": 67,
+            "Temp Read Blocks": 0,
+            "Temp Written Blocks": 0,
+            "Plans": [
+              {
+                "Node Type": "CTE Scan",
+                "Actual Rows": 1,
+                "Actual Loops": 1,
+                "Shared Hit Blocks": 23,
+                "Shared Read Blocks": 67,
+                "Temp Read Blocks": 0,
+                "Temp Written Blocks": 0
+              }
+            ]
+          },
+          {
+            "Node Type": "Aggregate",
+            "Actual Rows": 1,
+            "Actual Loops": 1,
+            "Shared Hit Blocks": 0,
+            "Shared Read Blocks": 0,
+            "Temp Read Blocks": 0,
+            "Temp Written Blocks": 0,
+            "Plans": [
+              {
+                "Node Type": "CTE Scan",
+                "Actual Rows": 0,
+                "Actual Loops": 1,
+                "Shared Hit Blocks": 0,
+                "Shared Read Blocks": 0,
+                "Temp Read Blocks": 0,
+                "Temp Written Blocks": 0
+              }
+            ]
+          },
+          {
+            "Node Type": "Aggregate",
+            "Actual Rows": 1,
+            "Actual Loops": 1,
+            "Shared Hit Blocks": 13,
+            "Shared Read Blocks": 0,
+            "Temp Read Blocks": 0,
+            "Temp Written Blocks": 0,
+            "Plans": [
+              {
+                "Node Type": "Index Scan",
+                "Relation Name": "pg_class",
+                "Index Name": "pg_class_oid_index",
+                "Actual Rows": 0,
+                "Actual Loops": 1,
+                "Shared Hit Blocks": 13,
+                "Shared Read Blocks": 0,
+                "Temp Read Blocks": 0,
+                "Temp Written Blocks": 0
+              }
+            ]
+          },
+          {
+            "Node Type": "Aggregate",
+            "Actual Rows": 1,
+            "Actual Loops": 1,
+            "Shared Hit Blocks": 19,
+            "Shared Read Blocks": 0,
+            "Temp Read Blocks": 0,
+            "Temp Written Blocks": 0,
+            "Plans": [
+              {
+                "Node Type": "Seq Scan",
+                "Relation Name": "pg_trigger",
+                "Actual Rows": 0,
+                "Actual Loops": 1,
+                "Shared Hit Blocks": 19,
+                "Shared Read Blocks": 0,
+                "Temp Read Blocks": 0,
+                "Temp Written Blocks": 0
+              }
+            ]
+          },
+          {
+            "Node Type": "Aggregate",
+            "Actual Rows": 1,
+            "Actual Loops": 1,
+            "Shared Hit Blocks": 0,
+            "Shared Read Blocks": 0,
+            "Temp Read Blocks": 0,
+            "Temp Written Blocks": 0,
+            "Plans": [
+              {
+                "Node Type": "CTE Scan",
+                "Actual Rows": 1,
+                "Actual Loops": 1,
+                "Shared Hit Blocks": 0,
+                "Shared Read Blocks": 0,
+                "Temp Read Blocks": 0,
+                "Temp Written Blocks": 0
+              }
+            ]
+          },
+          {
+            "Node Type": "Aggregate",
+            "Actual Rows": 1,
+            "Actual Loops": 1,
+            "Shared Hit Blocks": 0,
+            "Shared Read Blocks": 0,
+            "Temp Read Blocks": 0,
+            "Temp Written Blocks": 0,
+            "Plans": [
+              {
+                "Node Type": "CTE Scan",
+                "Actual Rows": 0,
+                "Actual Loops": 1,
+                "Shared Hit Blocks": 0,
+                "Shared Read Blocks": 0,
+                "Temp Read Blocks": 0,
+                "Temp Written Blocks": 0
+              }
+            ]
+          },
+          {
+            "Node Type": "Aggregate",
+            "Actual Rows": 1,
+            "Actual Loops": 1,
+            "Shared Hit Blocks": 13,
+            "Shared Read Blocks": 0,
+            "Temp Read Blocks": 0,
+            "Temp Written Blocks": 0,
+            "Plans": [
+              {
+                "Node Type": "Index Scan",
+                "Relation Name": "pg_class",
+                "Index Name": "pg_class_oid_index",
+                "Actual Rows": 0,
+                "Actual Loops": 1,
+                "Shared Hit Blocks": 13,
+                "Shared Read Blocks": 0,
+                "Temp Read Blocks": 0,
+                "Temp Written Blocks": 0
+              }
+            ]
+          },
+          {
+            "Node Type": "Nested Loop",
+            "Actual Rows": 1,
+            "Actual Loops": 1,
+            "Shared Hit Blocks": 7585,
+            "Shared Read Blocks": 9986,
+            "Temp Read Blocks": 15457,
+            "Temp Written Blocks": 14676,
+            "Plans": [
+              {
+                "Node Type": "Nested Loop",
+                "Actual Rows": 1,
+                "Actual Loops": 1,
+                "Shared Hit Blocks": 7585,
+                "Shared Read Blocks": 9986,
+                "Temp Read Blocks": 15457,
+                "Temp Written Blocks": 14676,
+                "Plans": [
+                  {
+                    "Node Type": "Nested Loop",
+                    "Actual Rows": 1,
+                    "Actual Loops": 1,
+                    "Shared Hit Blocks": 7585,
+                    "Shared Read Blocks": 9986,
+                    "Temp Read Blocks": 11291,
+                    "Temp Written Blocks": 14676,
+                    "Plans": [
+                      {
+                        "Node Type": "Nested Loop",
+                        "Actual Rows": 1,
+                        "Actual Loops": 1,
+                        "Shared Hit Blocks": 7585,
+                        "Shared Read Blocks": 9986,
+                        "Temp Read Blocks": 7125,
+                        "Temp Written Blocks": 14675,
+                        "Plans": [
+                          {
+                            "Node Type": "CTE Scan",
+                            "Actual Rows": 1,
+                            "Actual Loops": 1,
+                            "Shared Hit Blocks": 0,
+                            "Shared Read Blocks": 0,
+                            "Temp Read Blocks": 0,
+                            "Temp Written Blocks": 0
+                          },
+                          {
+                            "Node Type": "Subquery Scan",
+                            "Actual Rows": 1,
+                            "Actual Loops": 1,
+                            "Shared Hit Blocks": 7585,
+                            "Shared Read Blocks": 9986,
+                            "Temp Read Blocks": 7125,
+                            "Temp Written Blocks": 14675,
+                            "Plans": [
+                              {
+                                "Node Type": "Aggregate",
+                                "Actual Rows": 1,
+                                "Actual Loops": 1,
+                                "Shared Hit Blocks": 7585,
+                                "Shared Read Blocks": 9986,
+                                "Temp Read Blocks": 7125,
+                                "Temp Written Blocks": 14675,
+                                "Plans": [
+                                  {
+                                    "Node Type": "CTE Scan",
+                                    "Actual Rows": 313033,
+                                    "Actual Loops": 1,
+                                    "Shared Hit Blocks": 7585,
+                                    "Shared Read Blocks": 9986,
+                                    "Temp Read Blocks": 7125,
+                                    "Temp Written Blocks": 14675
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "Node Type": "Subquery Scan",
+                        "Actual Rows": 1,
+                        "Actual Loops": 1,
+                        "Shared Hit Blocks": 0,
+                        "Shared Read Blocks": 0,
+                        "Temp Read Blocks": 4166,
+                        "Temp Written Blocks": 1,
+                        "Plans": [
+                          {
+                            "Node Type": "Aggregate",
+                            "Actual Rows": 1,
+                            "Actual Loops": 1,
+                            "Shared Hit Blocks": 0,
+                            "Shared Read Blocks": 0,
+                            "Temp Read Blocks": 4166,
+                            "Temp Written Blocks": 1,
+                            "Plans": [
+                              {
+                                "Node Type": "CTE Scan",
+                                "Actual Rows": 313033,
+                                "Actual Loops": 1,
+                                "Shared Hit Blocks": 0,
+                                "Shared Read Blocks": 0,
+                                "Temp Read Blocks": 4166,
+                                "Temp Written Blocks": 1
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "Node Type": "Subquery Scan",
+                    "Actual Rows": 1,
+                    "Actual Loops": 1,
+                    "Shared Hit Blocks": 0,
+                    "Shared Read Blocks": 0,
+                    "Temp Read Blocks": 4166,
+                    "Temp Written Blocks": 0,
+                    "Plans": [
+                      {
+                        "Node Type": "Aggregate",
+                        "Actual Rows": 1,
+                        "Actual Loops": 1,
+                        "Shared Hit Blocks": 0,
+                        "Shared Read Blocks": 0,
+                        "Temp Read Blocks": 4166,
+                        "Temp Written Blocks": 0,
+                        "Plans": [
+                          {
+                            "Node Type": "CTE Scan",
+                            "Actual Rows": 1341,
+                            "Actual Loops": 1,
+                            "Shared Hit Blocks": 0,
+                            "Shared Read Blocks": 0,
+                            "Temp Read Blocks": 4166,
+                            "Temp Written Blocks": 0
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "Node Type": "Subquery Scan",
+                "Actual Rows": 1,
+                "Actual Loops": 1,
+                "Shared Hit Blocks": 0,
+                "Shared Read Blocks": 0,
+                "Temp Read Blocks": 0,
+                "Temp Written Blocks": 0,
+                "Plans": [
+                  {
+                    "Node Type": "Aggregate",
+                    "Actual Rows": 1,
+                    "Actual Loops": 1,
+                    "Shared Hit Blocks": 0,
+                    "Shared Read Blocks": 0,
+                    "Temp Read Blocks": 0,
+                    "Temp Written Blocks": 0,
+                    "Plans": [
+                      {
+                        "Node Type": "CTE Scan",
+                        "Actual Rows": 1341,
+                        "Actual Loops": 1,
+                        "Shared Hit Blocks": 0,
+                        "Shared Read Blocks": 0,
+                        "Temp Read Blocks": 0,
+                        "Temp Written Blocks": 0
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "Node Type": "Subquery Scan",
+            "Actual Rows": 1,
+            "Actual Loops": 1,
+            "Shared Hit Blocks": 0,
+            "Shared Read Blocks": 0,
+            "Temp Read Blocks": 3384,
+            "Temp Written Blocks": 1,
+            "Plans": [
+              {
+                "Node Type": "Aggregate",
+                "Actual Rows": 1,
+                "Actual Loops": 1,
+                "Shared Hit Blocks": 0,
+                "Shared Read Blocks": 0,
+                "Temp Read Blocks": 3384,
+                "Temp Written Blocks": 1,
+                "Plans": [
+                  {
+                    "Node Type": "CTE Scan",
+                    "Actual Rows": 277197,
+                    "Actual Loops": 1,
+                    "Shared Hit Blocks": 0,
+                    "Shared Read Blocks": 0,
+                    "Temp Read Blocks": 3384,
+                    "Temp Written Blocks": 1
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "Planning Time": 10.581,
+      "Execution Time": 3756.405
+    },
+    {
+      "evidence": "synthetic_current_scale_receipt",
+      "receipt": {
+        "receipt_version": "historical_session_blob_references_v1",
+        "inventory_revision": "7247fe035f88b8e5c59d0151c9a1ef44a411a238",
+        "scope": "all public.blobs union all non-null conversation and candidate source hashes",
+        "observed_at": "2026-09-15T04:20:53.699187+00:00",
+        "finished_at": "2026-09-15T04:20:56.810924+00:00",
+        "statement_elapsed_ms": 3111.737,
+        "server_version": "18.6 (Ubuntu 18.6-1.pgdg24.04+2)",
+        "transaction": {
+          "read_only": "on",
+          "isolation": "repeatable read",
+          "started_at": "2026-09-15T04:20:49.897106+00:00",
+          "ending": "rollback",
+          "statement_timeout": "30s",
+          "lock_timeout": "3s",
+          "idle_timeout": "15s",
+          "work_mem": "16MB",
+          "hash_mem_multiplier": "2",
+          "parallel_workers": "0",
+          "row_security": "off"
+        },
+        "cutoffs": {
+          "timezone": "UTC",
+          "recent_window_hours": 24,
+          "recent_observation_cutoff": "2026-09-14T04:20:53.699187",
+          "old_candidate_b_cutoff": "2026-09-14T01:11:38",
+          "validated": true
+        },
+        "assumptions": {
+          "persisted_owners": ["conversations", "pi_memory_stage1_candidates"],
+          "catalog_matches_inventory": true,
+          "current_writer_and_rollout_revalidation_required": true,
+          "out_of_repository_writers_verified": false,
+          "object_existence_verified": false,
+          "counter_mutation_timestamps_available": false,
+          "conversation_hash_replacement_timestamps_available": false,
+          "differences_authorize_repair": false
+        },
+        "population": {
+          "blob_rows": 313033,
+          "owned_hashes": 278538,
+          "union_hashes": 313033,
+          "shared_hashes": 0,
+          "owner_references": 278538,
+          "cross_owner_hashes": 0,
+          "recorded_references": 278538,
+          "candidate_references": 1341,
+          "conversation_references": 277197,
+          "shared_candidate_hashes": 0,
+          "unrecognized_hash_format": 0,
+          "maximum_owner_multiplicity": 1,
+          "shared_conversation_hashes": 0
+        },
+        "reconciliation": {
+          "negative_hashes": 0,
+          "all_excess_hashes": 0,
+          "excess_owned_hashes": 0,
+          "balanced_owned_hashes": 278538,
+          "nonfinite_time_hashes": 0,
+          "under_retained_hashes": 0,
+          "missing_metadata_hashes": 0,
+          "positive_unowned_hashes": 0,
+          "recent_or_active_hashes": 1341,
+          "under_retained_difference": 0,
+          "excess_reference_difference": 0,
+          "missing_metadata_references": 0,
+          "unowned_zero_count_metadata": 34495,
+          "older_observed_excess_hashes": 0,
+          "recent_or_active_excess_hashes": 0,
+          "excess_hashes_with_unknown_counter_history": 0
+        },
+        "conversations": {
+          "conversation_rows": 277197,
+          "null_history_rows": 0,
+          "hash_with_inline_rows": 0,
+          "legacy_inline_only_rows": 0
+        },
+        "candidate_only": {
+          "candidate_rows": 1341,
+          "balanced_hashes": 1341,
+          "candidate_hashes": 1341,
+          "absent_source_runs": 0,
+          "below_known_owners": 0,
+          "unexplained_hashes": 0,
+          "missing_source_blobs": 0,
+          "below_candidate_floor": 0,
+          "missing_source_hashes": 0,
+          "missing_storage_owners": 0,
+          "mismatched_storage_owners": 0,
+          "unexpected_storage_namespaces": 0,
+          "negative_candidate_blob_counts": 0,
+          "old_source_deleted_run_residuals": 0
+        },
+        "catalog": {
+          "owner_table_user_triggers": 0,
+          "unexpected_blob_foreign_keys": 0,
+          "unexpected_relation_configuration": 0,
+          "expected_candidate_blob_foreign_keys": 1
+        }
+      }
+    }
+  ]
+}

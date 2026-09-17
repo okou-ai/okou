@@ -1,0 +1,1 @@
+ALTER TABLE "model_provider_accounts" ADD COLUMN "disconnected_at" timestamp;

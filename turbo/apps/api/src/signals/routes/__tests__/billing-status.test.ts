@@ -16,8 +16,6 @@ import {
 } from "../../../test-fixtures/system-config-seeds";
 import {
   deleteOrgPlanEntitlementFixture,
-  insertOrgMetadataAsLegacyWriterFixture,
-  updateOrgPlanKeyAsLegacyWriterFixture,
   upsertOrgPlanEntitlementFixture,
 } from "../../../test-fixtures/org-plan-entitlement";
 import {
@@ -188,6 +186,53 @@ describe("GET /api/billing/status", () => {
       code: "FORBIDDEN",
     });
   });
+
+  it.each([
+    ["active", "active"],
+    ["trialing", "active"],
+    ["past_due", "active"],
+    ["unpaid", "active"],
+    ["atom_grant", "active"],
+    ["manual_active", "active"],
+    ["suspended", "suspended"],
+    ["canceled", "suspended"],
+    ["unknown", "suspended"],
+  ] as const)(
+    "normalizes the persisted %s status without enabling package controls",
+    async (status, expected) => {
+      const fixture = await track(
+        store.set(seedBillingStatusOrg$, { credits: 0 }, context.signal),
+      );
+      // Historical entitlement statuses cannot all be produced by current APIs.
+      // Seed only that persisted state, then verify the production HTTP response.
+      await upsertOrgPlanEntitlementFixture({
+        orgId: fixture.orgId,
+        status,
+        showUsagePack: false,
+      });
+      mocks.clerk.session(fixture.userId, fixture.orgId);
+      const client = setupApp({ context, routes: billingStatusRoutes })(
+        billingStatusContract,
+      );
+      const headers = { authorization: "Bearer clerk-session" };
+      const response = await accept(client.get({ headers }), [200]);
+      expect(response.body).toMatchObject({
+        status: expected,
+        showUsagePack: false,
+      });
+
+      const changedStatus = expected === "active" ? "suspended" : "active";
+      await upsertOrgPlanEntitlementFixture({
+        orgId: fixture.orgId,
+        status: changedStatus,
+      });
+      const updated = await accept(client.get({ headers }), [200]);
+      expect(updated.body).toMatchObject({
+        status: changedStatus,
+        showUsagePack: false,
+      });
+    },
+  );
 
   it("returns correct data for subscribed org", async () => {
     const periodEnd = new Date("2099-04-20T00:00:00Z");
@@ -482,44 +527,6 @@ describe("GET /api/billing/status", () => {
     expect(missingPriceResponse.body).not.toHaveProperty(
       "concurrencyUnitAmountCents",
     );
-  });
-
-  it("keeps plan capabilities accurate for legacy rollout writes", async () => {
-    const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    onTestFinished(async () => {
-      await deleteOrgPlanEntitlementFixture(orgId);
-    });
-    await insertOrgMetadataAsLegacyWriterFixture({
-      orgId,
-      tier: "limited-free-1",
-      credits: 0,
-    });
-    mocks.clerk.session(userId, orgId);
-
-    const client = setupApp({ context, routes: billingStatusRoutes })(
-      billingStatusContract,
-    );
-    const initialResponse = await accept(
-      client.get({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-    expect(initialResponse.body.canBuyCredits).toBeFalsy();
-    expect(initialResponse.body.status).toBe("active");
-
-    await updateOrgPlanKeyAsLegacyWriterFixture({ orgId, planKey: "pro" });
-
-    const updatedResponse = await accept(
-      client.get({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-    expect(updatedResponse.body.tier).toBe("limited-free-1");
-    expect(updatedResponse.body.canBuyCredits).toBeTruthy();
-    expect(updatedResponse.body.status).toBe("active");
   });
 
   it("includes active concurrency subscription slots", async () => {

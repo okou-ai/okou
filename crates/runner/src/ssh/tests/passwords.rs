@@ -45,7 +45,6 @@ async fn rejected_or_partial_password_never_falls_back_and_reports_recovery() {
     for password in ["wrong-password-canary", PARTIAL_PASSWORD] {
         let mut h = Harness::new(Reply::default()).await;
         let dispatcher = h.take_dispatcher();
-        h.runtime.ably_connected(true);
         let resolve = h.resolve(credential(&h, true, password)).await;
         let failure = h
             .api
@@ -157,9 +156,8 @@ async fn password_waits_for_confirmed_tofu_and_reports_its_generation() {
 }
 
 #[tokio::test]
-async fn invalidation_replaces_cached_key_with_password_and_disconnect_evicts_it() {
+async fn invalidation_replaces_cached_key_with_password_and_rotation_evicts_it() {
     let h = Harness::new(Reply::default()).await;
-    h.runtime.ably_connected(true);
     let resolve = h.resolve(h.credential(true)).await;
     assert_eq!(terminal(&h.request(params()).await)["type"], "finished");
     resolve.assert_calls_async(1).await;
@@ -177,7 +175,13 @@ async fn invalidation_replaces_cached_key_with_password_and_disconnect_evicts_it
     }
     resolve.assert_calls_async(1).await;
     resolve.delete_async().await;
-    h.runtime.ably_connected(false);
+    assert!(h.runtime.ably_message(&ably_subscriber::Message {
+        name: Some("ssh-authority-invalidated".into()),
+        data: json!({"runId":h.run,"connectionId":null}),
+        id: None,
+        client_id: None,
+        timestamp: None,
+    }));
     let resolve = h
         .resolve(credential(&h, true, "rotated-password-canary"))
         .await;

@@ -2,6 +2,10 @@
 
 use api_contracts::generated::types::runners::ssh::ObservationRequestFailureReason;
 use chrono::{DateTime, Utc};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 
 use super::FailureReason;
 
@@ -10,6 +14,8 @@ pub(super) struct Attempt {
     pub(super) generation: Option<i64>,
     pub(super) connecting: bool,
     pub(super) authenticated_at: Option<DateTime<Utc>>,
+    pub(super) access_failure: Option<ObservationRequestFailureReason>,
+    pub(super) access_protocol_failed: Option<Arc<AtomicBool>>,
 }
 
 pub(super) struct Observation {
@@ -29,6 +35,18 @@ impl Attempt {
             });
         }
         use ObservationRequestFailureReason as Reason;
+        if let Some(reason) = self.access_failure.or_else(|| {
+            self.access_protocol_failed
+                .as_ref()
+                .filter(|failed| failed.load(Ordering::Acquire))
+                .map(|_| Reason::AccessProtocolFailure)
+        }) {
+            return Some(Observation {
+                generation,
+                observed_at: Utc::now(),
+                failure: Some(reason),
+            });
+        }
         let failure = match failure? {
             FailureReason::InvalidCredential => Reason::InvalidCredential,
             FailureReason::UnsupportedCredential => Reason::UnsupportedCredential,

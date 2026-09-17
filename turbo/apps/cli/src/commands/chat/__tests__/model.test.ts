@@ -211,4 +211,81 @@ describe("okou chat model command", () => {
     expect(stderr).toContain("Run: okou chat model --help");
     expect(mockExit).toHaveBeenCalledWith(1);
   });
+  it("offers and switches a personal candidate despite a missing administrative provider", async () => {
+    server.use(
+      http.get(MODEL_POLICIES_URL, () => {
+        return HttpResponse.json({
+          ...MODEL_POLICIES_RESPONSE,
+          policies: [
+            {
+              ...MODEL_POLICIES_RESPONSE.policies[1],
+              defaultProviderType: "openai-api-key",
+              credentialScope: "org",
+              memberEffective: {
+                providerType: "codex-oauth-token",
+                runtimeProviderType: "codex-oauth-token",
+                credentialScope: "member",
+                availability: "available",
+                accountSelection: "capture_required",
+              },
+            },
+          ],
+        });
+      }),
+      http.post(OTHER_MODEL_SELECTION_URL, async ({ request }) => {
+        await expect(request.json()).resolves.toStrictEqual({
+          model: "gpt-5.5",
+        });
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+
+    await chatCommand.parseAsync(["node", "cli", "model", "--help"]);
+    expect(mockConsoleLog.mock.calls.flat().join("\n")).toContain(
+      "provider: subscription (ChatGPT (Codex); codex-oauth-token)",
+    );
+    await chatCommand.parseAsync([
+      "node",
+      "cli",
+      "model",
+      "--thread",
+      OTHER_THREAD_ID,
+      "gpt-5.5",
+    ]);
+    expect(mockConsoleLog.mock.calls.flat().join("\n")).toContain(
+      "Chat model updated",
+    );
+  });
+
+  it.each(["reconnect_required", "plan_restricted", "unavailable"])(
+    "rejects a %s member route despite a valid administrative provider",
+    async (availability) => {
+      server.use(
+        http.get(MODEL_POLICIES_URL, () => {
+          return HttpResponse.json({
+            ...MODEL_POLICIES_RESPONSE,
+            policies: [
+              {
+                ...MODEL_POLICIES_RESPONSE.policies[0],
+                memberEffective: {
+                  providerType: "claude-code-oauth-token",
+                  runtimeProviderType: "claude-code-oauth-token",
+                  credentialScope: "member",
+                  availability,
+                  accountSelection: "capture_required",
+                },
+              },
+            ],
+          });
+        }),
+      );
+
+      await expect(
+        chatCommand.parseAsync(["node", "cli", "model", "claude-sonnet-5"]),
+      ).rejects.toThrow("process.exit called");
+      expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
+        availability,
+      );
+    },
+  );
 });

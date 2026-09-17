@@ -88,7 +88,6 @@ describe("captured Pi execution intent", () => {
         catalogModel: "gpt-5.6-terra",
         ...(generation === 1
           ? {
-              api: "openai-codex-responses",
               apiKeyEnv: "OPENAI_API_KEY",
               credentialSecretName: "OPENAI_API_KEY",
               credentialHeader: header,

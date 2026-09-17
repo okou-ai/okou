@@ -74,6 +74,97 @@ fn count_storage_cache_versions(home: &HomePaths) -> usize {
         .sum()
 }
 
+#[tokio::test]
+async fn gc_extracted_storage_uses_existing_lock_accounting_and_preserves_pinned_bytes() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = test_home(dir.path());
+    let encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::none());
+    let mut archive = tar::Builder::new(encoder);
+    let mut header = tar::Header::new_ustar();
+    header.set_size(5);
+    header.set_mode(0o644);
+    header.set_cksum();
+    archive
+        .append_data(&mut header, "nested/file", &b"hello"[..])
+        .unwrap();
+    let bytes = archive.into_inner().unwrap().finish().unwrap();
+    let compressed = make_storage_entry(&home, "name", "v1", &bytes, old_gc_time());
+    drop(
+        lock::acquire(home.storage_lock("name", "v1"))
+            .await
+            .unwrap(),
+    );
+    let cache = crate::storage_cache::decoded::DecodedCache::new(home.clone());
+    cache.warm_from_archive("name", "v1").await.unwrap();
+    let pinned = cache.get_ready("name", "v1").await.unwrap().unwrap();
+    let name = crate::paths::short_digest("name");
+    let version = format!("decoded-v1-{}", crate::paths::short_digest("v1"));
+    let entry = home.storages_dir().join(&name).join(&version);
+    assert_eq!(
+        std::fs::read(entry.join("files/nested/file")).unwrap(),
+        b"hello"
+    );
+    let set_old = |path: &Path| {
+        std::fs::File::open(path)
+            .unwrap()
+            .set_times(std::fs::FileTimes::new().set_modified(old_gc_time()))
+            .unwrap()
+    };
+    set_old(&entry);
+    let reader = lock::acquire_shared(home.storage_lock_for_cache_key(&name, &version))
+        .await
+        .unwrap();
+    gc_storage_cache_with_limits(&home, 0, 0, false)
+        .await
+        .unwrap();
+    assert!(entry.exists());
+    assert!(!compressed.exists());
+    drop(reader);
+    let expected = dir_stats(&entry).await.0;
+    assert!(
+        expected > 5,
+        "GC must account allocated file/index/directory blocks"
+    );
+    assert_eq!(
+        gc_storage_cache_with_limits(&home, 0, 0, false)
+            .await
+            .unwrap(),
+        expected
+    );
+    assert!(!entry.exists());
+    assert!(cache.get_ready("name", "v1").await.unwrap().is_none());
+    assert_eq!(pinned.files[0].content, b"hello");
+    cache.shutdown().await;
+}
+
+#[tokio::test]
+async fn gc_extracted_staging_uses_the_final_version_lock() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = test_home(dir.path());
+    let name = crate::paths::short_digest("name");
+    let version = format!("decoded-v1-{}", crate::paths::short_digest("v1"));
+    let staging = home
+        .storages_dir()
+        .join(&name)
+        .join(format!("{version}.tmp"));
+    make_storage_entry_at(staging.clone(), b"partial", old_gc_time());
+    let writer = lock::acquire(home.storage_lock_for_cache_key(&name, &version))
+        .await
+        .unwrap();
+    gc_storage_cache_with_limits(&home, 0, 0, false)
+        .await
+        .unwrap();
+    assert!(staging.exists());
+    drop(writer);
+    assert!(
+        gc_storage_cache_with_limits(&home, 0, 0, false)
+            .await
+            .unwrap()
+            > 0
+    );
+    assert!(!staging.exists());
+}
+
 async fn storage_candidate_for(path: PathBuf) -> StorageCandidate {
     let name = path
         .parent()

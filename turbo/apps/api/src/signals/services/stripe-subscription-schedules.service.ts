@@ -1,3 +1,4 @@
+import { retireImpactMetadata } from "../../lib/impact-marketing";
 import { isDeepStrictEqual } from "node:util";
 
 import {
@@ -92,7 +93,7 @@ function schedulePhaseItemParam(
     price,
     quantity,
     ...(discounts.length > 0 ? { discounts } : {}),
-    ...(item.metadata ? { metadata: { ...item.metadata } } : {}),
+    ...(item.metadata ? { metadata: retireImpactMetadata(item.metadata) } : {}),
     ...(taxRates.length > 0 ? { tax_rates: taxRates } : {}),
   };
 }
@@ -120,7 +121,7 @@ function schedulePhaseParam(
     end_date: args.endDate,
     ...(phase.currency ? { currency: phase.currency } : {}),
     items: [...items],
-    ...(metadata ? { metadata: { ...metadata } } : {}),
+    ...(metadata ? { metadata: retireImpactMetadata(metadata) } : {}),
     proration_behavior: phase.proration_behavior ?? "none",
     ...(discounts.length > 0 ? { discounts } : {}),
   };

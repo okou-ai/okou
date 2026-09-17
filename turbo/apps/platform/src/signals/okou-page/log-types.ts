@@ -13,7 +13,10 @@ import { i18n } from "../../i18n/index.ts";
 export type { LogStatus, TriggerSource };
 
 /** Build a display label for a trigger source. */
-export function getTriggerSourceLabel(source: TriggerSource): string {
+export function getTriggerSourceLabel(
+  source: TriggerSource,
+  appendSystemPrompt?: string | null,
+): string {
   switch (source) {
     case "web": {
       return i18n.t(($) => {
@@ -31,8 +34,14 @@ export function getTriggerSourceLabel(source: TriggerSource): string {
       });
     }
     case "feishu": {
+      // The shared transport keeps its historical source enum. The server's
+      // integration context carries the provider for display.
+      const isLark =
+        appendSystemPrompt
+          ?.split("# Current Integration\n")[1]
+          ?.startsWith("You are currently running inside: Lark\n") ?? false;
       return i18n.t(($) => {
-        return $.activity.sources.feishu;
+        return $.activity.sources[isLark ? "lark" : "feishu"];
       });
     }
     case "email": {

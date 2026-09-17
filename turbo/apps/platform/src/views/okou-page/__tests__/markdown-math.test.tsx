@@ -1,5 +1,4 @@
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -58,7 +57,6 @@ test("Agent formulas render from explicit delimiters without treating currency a
     context,
     path: chat.path,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.AgentMessageMath]: true },
   });
 
   await waitFor(() => {
@@ -93,7 +91,7 @@ test("Agent formulas render from explicit delimiters without treating currency a
   );
 });
 
-test("Shared Agent formulas use the fetched rollout", async () => {
+test("Shared Agent formulas render", async () => {
   const sharedThreadId = "30000000-0000-4000-8000-000000000703";
   context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
     return respond(200, {
@@ -115,7 +113,6 @@ test("Shared Agent formulas use the fetched rollout", async () => {
     context,
     path: `/share/threads/${sharedThreadId}`,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.AgentMessageMath]: true },
   });
 
   await waitFor(() => {
@@ -126,7 +123,7 @@ test("Shared Agent formulas use the fetched rollout", async () => {
   expect(document.querySelectorAll("math")).toHaveLength(1);
 });
 
-test("The enabled rollout leaves dollar prose alone", async () => {
+test("Dollar prose is left alone", async () => {
   const chat = createMarkdownChatFixture(context);
   const source =
     "Portfolio value is $2,499, ticker $ABC$, and inline $$not math$$.";
@@ -141,31 +138,9 @@ test("The enabled rollout leaves dollar prose alone", async () => {
     context,
     path: chat.path,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.AgentMessageMath]: true },
   });
 
   await screen.findByText(/Portfolio value is/);
   expect(document.body).toHaveTextContent(source);
-  expect(document.querySelector("math")).toBeNull();
-});
-
-test("The disabled rollout does not render formulas", async () => {
-  const chat = createMarkdownChatFixture(context);
-  const source = String.raw`Inline \(x^2\) and $5 remain readable.`;
-  const rows = completedMessageRows(chat, source);
-  chat.install({
-    rows: () => {
-      return rows;
-    },
-  });
-
-  await setupPage({
-    context,
-    path: chat.path,
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.AgentMessageMath]: false },
-  });
-
-  await screen.findByText(/Inline/);
   expect(document.querySelector("math")).toBeNull();
 });

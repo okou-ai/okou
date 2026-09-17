@@ -1,365 +1,161 @@
-"""Runner-triggered usage flush and JSONL marker-watcher lifecycle owner."""
+"""Coalesced delivery work, independent of control waiters and proxy hooks."""
 
-import os
-import signal
+import asyncio
 import threading
-import time
-from pathlib import Path
 from typing import Literal
 
 import addon_process_logging
 import anthropic_accounting
 import claude_output_timing
 import codex_output_timing
-import logging_utils
-import runner_flush_request
-import state_file
 import usage
 
-_RunnerFlushPhase = Literal["running", "draining", "closed"]
-_DeliveryFlushTrigger = Literal["runner", "shutdown"]
-
-# Runner-triggered flush protocols:
-# - Rust writes `usage-flush-request` with the active usageStateId and a fresh
-#   flushRequestId, then sends SIGUSR1 to this addon process.
-# - This addon flushes buffered delivery work and writes `usage-pending` with the
-#   matching flushRequestId so the runner can observe a fresh snapshot.
-# - Rust performs a bounded wait for the acknowledged snapshot to have zero
-#   flows, buffered work, and reports before stopping the proxy.
-# - Rust may also write `jsonl-flush-request` for a concrete network log path.
-#   An addon-owned watcher independently drains accepted JSONL writes for that
-#   path and acknowledges with `jsonl-flush-state` before Rust uploads the file.
-#
-# Keep this in sync with usage/counters.py and the Rust wait path in
-# crates/runner/src/proxy/flush.rs plus crates/runner/src/cmd/start/mod.rs.
-RUNNER_USAGE_FLUSH_SIGNAL = signal.SIGUSR1
-# The signal handler must not use a lock-backed flag: it can re-enter the main
-# thread while shutdown is consuming a request. CPython Boolean assignment is
-# sufficient for this level-triggered flag, just as Event.is_set() was an
-# unlocked read; the owner lock below still serializes flush work.
-_usage_flush_requested: bool = False
-_usage_flush_signal_lock = threading.Lock()
-# Running workers own requests under the lock. During shutdown, drain_and_close()
-# changes the phase before waiting for that lock and becomes the sole draining owner.
-_runner_flush_phase: _RunnerFlushPhase = "running"
-_jsonl_flush_state_publisher = state_file.AtomicJsonPublisher()
-_jsonl_flush_worker_lock = threading.Lock()
-_jsonl_flush_stop = threading.Event()
-_jsonl_flush_worker: threading.Thread | None = None
-_last_jsonl_flush_request_id: str | None = None
-_last_jsonl_state_write_error_request_id: str | None = None
-_JSONL_FLUSH_REQUEST_FILE = "jsonl-flush-request"
-_JSONL_FLUSH_STATE_FILE = "jsonl-flush-state"
-RUNNER_JSONL_FLUSH_TIMEOUT_SECONDS = 4.0
-RUNNER_JSONL_FLUSH_POLL_SECONDS = 0.1
+_condition = threading.Condition()
+_closed = False
+_active = False
+_requested = False
+_flush_failures = 0
+DRAIN_TIMEOUT_SECONDS = 4.0
+DRAIN_POLL_SECONDS = 0.05
+FLUSH_RETRY_SECONDS = 1.0
 
 
-def handle_runner_usage_flush_signal(signum: int, _frame: object) -> None:
-    """Schedule runner-requested flush work from the SIGUSR1 handler.
+class DeliveryControl:
+    """One bounded observer on the control loop; the worker owns actual work."""
 
-    Keep this handler minimal: it may interrupt mitmproxy's event loop, so it
-    only records that work is needed and lets the background worker perform
-    file I/O and usage flushing.
-    """
-    global _usage_flush_requested
+    def __init__(self) -> None:
+        self._draining = False
 
-    del signum
-    if _runner_flush_phase == "closed":
-        return
-    _usage_flush_requested = True
-    _start_usage_flush_worker()
+    def flush(self) -> Literal["admitted", "coalesced", "closed"]:
+        return request_flush()
 
+    def status(self) -> dict[str, object]:
+        return {**snapshot(), "drainActive": self._draining}
 
-def wait_for_runner_usage_flush_worker_to_stop_for_tests(timeout: float = 1.0) -> None:
-    deadline = time.monotonic() + timeout
-    while True:
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            raise AssertionError("runner usage flush worker did not stop")
-
-        acquired = _usage_flush_signal_lock.acquire(timeout=remaining)
-        if not acquired:
-            raise AssertionError("runner usage flush worker did not stop")
+    async def drain(self) -> dict[str, object] | None:
+        if self._draining:
+            return None
+        self._draining = True
         try:
-            if not _usage_flush_requested:
-                return
+            loop = asyncio.get_running_loop()
+            deadline = loop.time() + DRAIN_TIMEOUT_SECONDS
+            next_flush = loop.time()
+            while True:
+                now = loop.time()
+                if now >= next_flush:
+                    request_flush()
+                    next_flush = now + FLUSH_RETRY_SECONDS
+                state = self.status()
+                if not any(
+                    state[key]
+                    for key in ("flows", "buffered", "reports", "workerActive", "wakePending")
+                ):
+                    return {"state": "quiescent", "snapshot": state}
+                remaining = deadline - loop.time()
+                if remaining <= 0:
+                    return {"state": "deadline", "snapshot": state}
+                await asyncio.sleep(min(DRAIN_POLL_SECONDS, remaining))
         finally:
-            _usage_flush_signal_lock.release()
-        _start_usage_flush_worker()
+            # Retiring this observer never releases the worker or API owners.
+            self._draining = False
 
 
 def reset_runner_usage_flush_state_for_tests(timeout: float = 1.0) -> None:
-    global _last_jsonl_flush_request_id, _last_jsonl_state_write_error_request_id
-    global _runner_flush_phase, _usage_flush_requested
+    global _closed, _requested, _flush_failures
 
-    _stop_runner_jsonl_flush_worker()
-    acquired = _usage_flush_signal_lock.acquire(timeout=timeout)
-    if not acquired:
-        raise AssertionError("runner usage flush worker did not stop")
-    try:
-        _runner_flush_phase = "running"
-        _usage_flush_requested = False
-        _last_jsonl_flush_request_id = None
-        _last_jsonl_state_write_error_request_id = None
-    finally:
-        _usage_flush_signal_lock.release()
+    wait_for_runner_usage_flush_worker_to_stop_for_tests(timeout)
+    with _condition:
+        _closed = False
+        _requested = False
+        _flush_failures = 0
 
 
-def start_runner_jsonl_flush_worker() -> None:
-    """Start the addon-owned JSONL marker watcher once."""
-    global _jsonl_flush_worker
-
-    with _jsonl_flush_worker_lock:
-        if _runner_flush_phase != "running":
-            return
-        if _jsonl_flush_worker is not None and _jsonl_flush_worker.is_alive():
-            return
-
-        marker_directory = Path(__file__).resolve().parent
-        request_path = marker_directory / _JSONL_FLUSH_REQUEST_FILE
-        state_path = marker_directory / _JSONL_FLUSH_STATE_FILE
-        _jsonl_flush_stop.clear()
-        worker = threading.Thread(
-            target=_run_runner_jsonl_flush_worker,
-            args=(request_path, state_path),
-            name="runner-jsonl-flush",
-            daemon=True,
-        )
-        worker.start()
-        _jsonl_flush_worker = worker
+def wait_for_runner_usage_flush_worker_to_stop_for_tests(timeout: float = 1.0) -> None:
+    with _condition:
+        if not _condition.wait_for(lambda: not _active, timeout):
+            raise AssertionError("runner delivery flush worker did not stop")
 
 
-def stop_runner_jsonl_flush_worker_for_tests() -> None:
-    _stop_runner_jsonl_flush_worker()
+def request_flush() -> Literal["admitted", "coalesced", "closed"]:
+    """Admit one wake, retaining at most one further wake behind the worker."""
+    global _active, _requested
+
+    with _condition:
+        if _closed:
+            return "closed"
+        _requested = True
+        if _active:
+            return "coalesced"
+        _active = True
+        try:
+            threading.Thread(target=_run_worker, name="runner-delivery", daemon=True).start()
+        except Exception:
+            _active = False
+            _requested = False
+            _condition.notify_all()
+            raise
+    return "admitted"
 
 
-def _run_runner_jsonl_flush_worker(request_path: Path, state_path: Path) -> None:
-    """Observe current-generation JSONL markers independently of usage."""
+def snapshot() -> dict[str, object]:
+    """Read a coherent short projection, never waiting for delivery work."""
+    with _condition:
+        return {
+            **usage.delivery_snapshot(),
+            "workerActive": _active,
+            "wakePending": _requested,
+            "closed": _closed,
+            "flushFailures": _flush_failures,
+        }
+
+
+def _run_worker() -> None:
+    global _active, _requested, _flush_failures
+
     while True:
-        _flush_jsonl_for_runner_request(request_path, state_path)
-        if _jsonl_flush_stop.wait(RUNNER_JSONL_FLUSH_POLL_SECONDS):
-            _flush_jsonl_for_runner_request(request_path, state_path)
-            return
+        with _condition:
+            if not _requested:
+                _active = False
+                _condition.notify_all()
+                return
+            _requested = False
+        try:
+            _flush_delivery_work(trigger="runner")
+        except Exception as exc:
+            # This boundary owns errors even after its control caller leaves.
+            with _condition:
+                _flush_failures += 1
+            addon_process_logging.emit_addon_process_event(
+                "warn", f"Failed to flush delivery work after runner request ({type(exc).__name__})"
+            )
 
 
-def _stop_runner_jsonl_flush_worker() -> None:
-    global _jsonl_flush_worker
-
-    with _jsonl_flush_worker_lock:
-        worker = _jsonl_flush_worker
-        if worker is None:
-            return
-        _jsonl_flush_stop.set()
-
-    worker.join()
-
-    with _jsonl_flush_worker_lock:
-        if _jsonl_flush_worker is worker:
-            _jsonl_flush_worker = None
-
-
-def _start_usage_flush_worker() -> None:
-    """Start one flush worker, coalescing repeated signals while active."""
-    if _runner_flush_phase != "running":
-        return
-    if not _usage_flush_signal_lock.acquire(blocking=False):
-        return
-    if _runner_flush_phase != "running":
-        _usage_flush_signal_lock.release()
-        return
-
-    thread = threading.Thread(
-        target=_run_usage_flush_worker,
-        name="runner-flush-request",
-        daemon=True,
-    )
-    started = False
-    try:
-        thread.start()
-        started = True
-    finally:
-        if not started:
-            _usage_flush_signal_lock.release()
-
-
-def _run_usage_flush_worker() -> None:
-    """Drain coalesced runner flush requests under the worker lock.
-
-    The request flag can be set again while a flush is running. Loop until no
-    request is pending. After releasing the lock, restart for a running-phase
-    signal; draining-phase requests belong to ``drain_and_close()``.
-    """
-    try:
-        _drain_runner_usage_flush_requests()
-    finally:
-        _usage_flush_signal_lock.release()
-        if _usage_flush_requested:
-            _start_usage_flush_worker()
-
-
-def _drain_runner_usage_flush_requests() -> None:
-    """Drain coalesced runner requests while the caller owns the signal lock."""
-    global _usage_flush_requested
-
-    while _usage_flush_requested:
-        _usage_flush_requested = False
-        _flush_usage_for_runner_request()
-
-
-def _flush_usage_for_runner_request() -> None:
-    """Flush retained delivery work and acknowledge the runner's current request.
-
-    The pending snapshot is written in ``finally`` so the runner can observe
-    fresh counters and the current flushRequestId even if flushing fails.
-    """
-    flush_request_id = usage.read_usage_flush_request_id()
-    try:
-        _flush_delivery_work(trigger="runner")
-    except Exception as exc:
-        addon_process_logging.emit_addon_process_event(
-            "warn",
-            f"Failed to flush delivery work after runner request ({type(exc).__name__})",
-        )
-    finally:
-        usage.write_pending_snapshot(flush_request_id=flush_request_id)
-
-
-def _flush_delivery_work(*, trigger: _DeliveryFlushTrigger) -> None:
-    """Admit billing work before retained diagnostic reports."""
+def _flush_delivery_work(*, trigger: Literal["runner", "shutdown"]) -> None:
     usage.flush_usage_events(trigger=trigger)
     _retry_retained_diagnostic_reports()
 
 
 def _retry_retained_diagnostic_reports() -> None:
-    """Retry every retained diagnostic source in its established order."""
     anthropic_accounting.retry_all_pending()
     claude_output_timing.retry_all_pending()
     codex_output_timing.retry_all_pending()
 
 
 def drain_delivery_work_after_executor_shutdown() -> None:
-    """Synchronously drain work after the usage executor has been joined.
-
-    The caller must first shut down and join the executor so completed delivery
-    callbacks cannot retain new billing work after the usage drain observes an
-    empty state. New admissions then use webhook delivery's synchronous fallback.
-    """
+    """Join delivery callbacks first; their retained work now delivers synchronously."""
     usage.drain_usage_events_after_executor_shutdown()
     _retry_retained_diagnostic_reports()
 
 
-def _flush_jsonl_for_runner_request(request_path: Path, state_path: Path) -> None:
-    global _last_jsonl_flush_request_id
-
-    request = _read_jsonl_flush_request(request_path)
-    if request is None:
-        return
-
-    log_path, flush_request_id = request
-    pending = 0
-    timed_out = False
-    try:
-        if not logging_utils.flush_log_path(
-            log_path,
-            timeout=RUNNER_JSONL_FLUSH_TIMEOUT_SECONDS,
-        ):
-            pending = 1
-            timed_out = True
-            addon_process_logging.emit_addon_process_event(
-                "warn",
-                "JSONL flush did not complete before timeout",
-            )
-    except Exception as exc:
-        pending = 1
-        addon_process_logging.emit_addon_process_event(
-            "warn",
-            f"Failed to flush JSONL logs after runner request ({type(exc).__name__})",
-        )
-    finally:
-        state_written = _write_jsonl_flush_state(
-            state_path,
-            log_path,
-            flush_request_id,
-            pending=pending,
-        )
-        if state_written and (pending == 0 or timed_out):
-            _last_jsonl_flush_request_id = flush_request_id
-
-
-def _read_jsonl_flush_request(request_path: Path) -> tuple[str, str] | None:
-    request = runner_flush_request.read_runner_flush_request(
-        request_path,
-        get_usage_state_id=usage.current_usage_state_id,
-    )
-    if request is None:
-        return None
-    flush_request_id = request.flush_request_id
-    if (
-        not _is_safe_jsonl_flush_request_id(flush_request_id)
-        or flush_request_id == _last_jsonl_flush_request_id
-    ):
-        return None
-    log_path = request.marker.get("path")
-    if not isinstance(log_path, str) or not log_path:
-        return None
-    return log_path, flush_request_id
-
-
-def _is_safe_jsonl_flush_request_id(flush_request_id: str) -> bool:
-    return all(
-        ("a" <= char <= "z") or ("A" <= char <= "Z") or ("0" <= char <= "9") or char in "-_"
-        for char in flush_request_id
-    )
-
-
-def _write_jsonl_flush_state(
-    state_path: Path,
-    log_path: str,
-    flush_request_id: str,
-    *,
-    pending: int = 0,
-) -> bool:
-    global _last_jsonl_state_write_error_request_id
-
-    state: dict[str, object] = {
-        "pid": os.getpid(),
-        "usageStateId": usage.current_usage_state_id(),
-        "updatedAtMs": int(time.time() * 1000),
-        "flushRequestId": flush_request_id,
-        "path": log_path,
-        "pending": pending,
-    }
-    try:
-        _jsonl_flush_state_publisher.publish(state_path, state)
-        return True
-    except OSError as exc:
-        if _last_jsonl_state_write_error_request_id != flush_request_id:
-            _last_jsonl_state_write_error_request_id = flush_request_id
-            addon_process_logging.emit_addon_process_event(
-                "warn",
-                (
-                    f"Failed to write JSONL flush state for request {flush_request_id!r} "
-                    f"({type(exc).__name__}). Subsequent failures for this request will be "
-                    f"silent. State path: {state_path}. Error: {exc}"
-                ),
-            )
-        return False
-
-
 def drain_and_close() -> None:
-    """Drain accepted runner flush requests and close further admission."""
-    global _runner_flush_phase
+    """Close admission and join actual work before handing off to final shutdown.
 
-    _runner_flush_phase = "draining"
-    try:
-        with _usage_flush_signal_lock:
-            try:
-                _flush_delivery_work(trigger="shutdown")
-                _drain_runner_usage_flush_requests()
-            finally:
-                # Close request admission while still owning the lock, then consume
-                # any request recorded immediately before this cutoff.
-                _runner_flush_phase = "closed"
-                _drain_runner_usage_flush_requests()
-    finally:
-        _stop_runner_jsonl_flush_worker()
+    The Runner's outer process-stop deadline remains the bound for kernel/network
+    stalls. Releasing this owner at a caller deadline could race executor teardown.
+    """
+    global _closed
+
+    with _condition:
+        _closed = True
+        _condition.wait_for(lambda: not _active)
+    _flush_delivery_work(trigger="shutdown")

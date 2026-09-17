@@ -78,6 +78,127 @@ after a backend deployment. When changing an API used by the frontend, keep the
 old request shape working until old browser clients can no longer reasonably be
 active, or introduce a versioned/new endpoint and migrate the frontend first.
 
+#### Artifact share names and short references
+
+Organization share status returns the same short reference in `url` and
+`shortUrl`; it no longer produces a 32-character share-level URL. The `url` field
+remains available to clients that consume only that field. New Apps prefer
+`shortUrl` and fall back to `url` when talking to an older API. An older policy
+without a short reference returns null for both fields until an explicit share
+action allocates the alias; opening the menu does not mutate a share. Previously
+copied organization references retain their membership and policy checks.
+
+The R2 policy fields `organizationReference` and `publicSlug` are optional, so
+old policies remain readable. The immutable reference index and public alias
+registry survive an older writer dropping those optional fields. Current APIs
+reuse the same organization index and retain the legacy public-token registry
+entry. Named public sites use the existing generic Worker publication reader;
+they require no database migration or new Worker routing format. Current APIs
+must serve short-reference resolution before Apps begin copying those links.
+Serving and rollback APIs must support the reference formats emitted by the
+enabled writer.
+
+The compatibility scope preserves the explicitly requested existing links;
+`privateArtifacts` being non-GA does not independently require a rollback bridge.
+Issue [#32492](https://github.com/vm0-ai/vm0/issues/32492) owns later retirement:
+the optional response reader can be removed once older APIs leave serving and
+supported rollback targets. The long organization URL writer is retired by
+the explicit short-reference change. Durable-link readers and aliases remain
+until a separate retirement decision accounts for the stored references; a
+deployment or App floor alone cannot invalidate links already copied by users.
+
+The iframe loading correction spans the App's explicit first-party iframe
+referrer policy and the host Worker's same-origin resource policy. Both must be
+deployed to verify full HTML resource loading against the hosted-domain WAF.
+The viewer and sharing use the existing `privateArtifacts` rollout switch.
+
+#### Artifact sharing controls and public references
+
+The App separates permission changes from copying and retains the existing
+`privateArtifacts` switch. Owner status is read from the existing owner-only
+endpoint; a resolved recipient with status 404 copies the original reference
+without writing a grant. Existing share responses and public delivery URLs
+remain supported for older Apps.
+
+The additive, unauthenticated `GET /api/artifact-references/:reference/public`
+returns a currently published delivery URL and `preview: { filename, contentType }`.
+Private, organization-only, revoked, missing, and unselected version references
+return 404 without metadata. Public copies use the same App reference as
+organization copies. The App renders public previews inside that address and
+shows its access page on 404; sign-in is an explicit action on that page.
+
+Deploy the API with preview metadata before the App that consumes it. The
+existing `url` field remains unchanged for older Apps. This is an iteration of
+the non-GA `privateArtifacts` feature, so the new App does not carry a tolerant
+reader for an API lacking the preview metadata. No database or host Worker
+protocol change is required. Previously copied URLs remain valid under their
+existing policy. Owner resolution of an old organization alias continues after
+switching it to Only me; recipients lose access.
+
+#### Private attachment uploads
+
+CLI artifact output qualifies hostless references with its configured app origin
+(`OKOU_APP_URL`, or the existing API-to-App origin mapping). Production output is
+`https://app.okou.ai/artifacts/<reference>`. Generation, upload, hosting and media
+download results use the same complete URL in text, JSON and Markdown. Public
+URLs keep their original bytes, including query strings. API responses and stored
+references retain their existing shapes, so older pinned CLIs retain their prior
+output and the new CLI can consume an older API. Downloading or cloning newly
+qualified URLs requires the updated CLI; previously captured contexts retain
+their own CLI package. No database rewrite or API rollout ordering is required.
+CLI download, generation-input and clone readers accept both
+hostless references and absolute references from that same app origin. Existing
+App thread readers already accept same-origin absolute references and resolve
+them through the authenticated artifact endpoint.
+
+New private artifact creation allocates a ten-character version-2 R2 reference
+index and stores the reference in file metadata or the hosted deployment URL.
+Organization sharing reuses that version reference. Readers retain the existing
+32-character owner URLs and version-1 organization indexes. These are durable
+links, not a rollout cache; #32492 owns retirement only after accounting for
+stored and previously copied links. Files without `metadata.artifactReference`
+retain their original long URL, and no bulk rewrite or database migration runs.
+
+CLI owner resolution adds optional `kind=file|html` to the existing reference
+endpoint. Each mode requires its existing read capability and denies recipient
+access; the browser resolver retains its sharing authorization. Deploy the
+matching API and CLI before relying on short references in clone/download or
+generation-input commands. Existing file IDs and deployment IDs remain valid.
+An older API cannot resolve new version-2 indexes; keep capable readers in
+serving and rollback targets once the new writer is enabled.
+
+Thread resource records and policies accept both new ten-character tokens and
+persisted 24-character tokens. New registry records also bind `targetId` before
+publication; old records continue to resolve through their parent policy. Deploy
+the host Worker with the tolerant schemas before the API emits short snapshot
+links. An older Worker rejects the new records, failing closed. Original files,
+snapshot bytes, revocation policies, and rollout-switch defaults are unchanged.
+
+The API accepts the previous attachment prepare request without `purpose`, and
+selects private storage from the existing `privateArtifacts` switch. The current
+App completes a private single PUT before exposing a ready attachment; multipart
+completion finalizes the ownership record on the API. Older composers omit the
+single-upload complete call, so authenticated reference resolution verifies the
+owned object with HEAD before signing it. An incomplete multipart upload has no
+readable object. This previous-App bridge can be removed only after a later App
+floor excludes those composers; #32492 owns that retirement.
+
+Storage reads are independent of the rollout switch. Historical public objects
+and canonical `accessLevel: private` records without a versioned storage marker
+remain public objects; new private IDs never fall through to public storage.
+This is a durable-data compatibility boundary, with no bulk migration in this
+change. Template records select storage from their persisted source/page key
+namespace, and Social job snapshots use an optional `privateArtifacts` field
+(absent means the historical public mode). These readers must remain until the
+corresponding persisted records have been migrated or explicitly retired.
+
+Integration upload and Social responses use the existing stable `/artifacts/`
+reference format for new private files. API, App and CLI consumers must support
+that format before enabling the cohort; existing public response values are
+unchanged. Signed provider/preview URLs are issued on reads and are not stored as
+the durable file identity. No database migration, force-upgrade floor, Worker
+protocol change, or infrastructure change is introduced here.
+
 #### Connector App retirement
 
 The first singleton-free connector App release is `0.843.1`, built from
@@ -118,6 +239,51 @@ decoders in the cleanup release. The normal migration transaction and timeouts
 apply; a failed cleanup blocks release and rolls back. #29777 removes the
 remaining singleton contract only after this migration release succeeds.
 Investigate unexpected new singleton writes rather than adding a cleanup loop.
+
+#### Slack connector OAuth rollout cleanup
+
+The combined Slack integration and user OAuth flow from
+[#33421](https://github.com/vm0-ai/vm0/pull/33421) first shipped in App `0.887.0`
+and API `1.584.1`, release
+`9ce193854ab828baeec40579a6d36cdf2d4dbf73`. Its
+[API promotion](https://github.com/vm0-ai/vm0/actions/runs/34578216432/job/103198883138)
+completed on 2026-09-11 at 08:30:58 UTC, followed by
+[App promotion](https://github.com/vm0-ai/vm0/actions/runs/34578216432/job/103199718280)
+at 08:33:05 UTC. App `0.886.0` still omitted `requestUserScopes`.
+
+On 2026-09-15, production App HTML identified App `0.899.2` from
+`05af5a0fe3cdbd9188a9b3d66545bab2dab2a834`. Its
+[API promotion](https://github.com/vm0-ai/vm0/actions/runs/34940290360/job/104290489082)
+completed at 07:25:09 UTC with API `1.603.2`, followed by
+[App promotion](https://github.com/vm0-ai/vm0/actions/runs/34940290360/job/104291320762)
+at 07:27:07 UTC. The canonical rollback resolver already requires
+`PREPARED_DOMAIN_TRIGGER_RELEASE`
+`eb2f211a9af41450d0d5dad10c0c8ad12fac0a24`, which contains #33421. Pre-OAuth
+APIs are outside the supported production rollback boundary without adding a
+new rollback restriction.
+
+Cleanup [#34306](https://github.com/vm0-ai/vm0/pull/34306) raises the App floor
+from `0.873.0` to `0.887.0` in this later release, after the replacement App is
+live. Identified App versions below that floor receive `426` before route
+handling and must refresh on their next handled API request. Idle pages are
+not reloaded automatically. This affects all handled App API requests. An App
+rollback must also remain at or above `0.887.0` while this floor is enforced.
+
+Slack Connect requires `requestUserScopes: true` and returns only
+`202 { authorizationUrl }` on success. The App follows that URL; connection
+binding and notifications happen after the existing OAuth callback verifies
+the grant. The direct-connect branch, its response shape, and rollout-only
+tests are removed. Existing callback identity, workspace, membership, and
+single-use-state checks remain in force.
+
+The floor does not exclude non-App callers or missing/unparseable versions;
+they can use the same canonical OAuth request. Authenticated requests without
+`requestUserScopes: true` receive the contract's `400` validation response.
+Current repository production code has one caller, the App, which already
+sends that field; no CLI caller was found. The complete retained 72-hour
+request-log query ending 2026-09-15 at 07:14:20 UTC contained one POST: App
+`0.893.2`, response `202`. It found no non-App or unidentified POST; this is
+bounded caller evidence, not a guarantee about every external client.
 
 ### Backend
 
@@ -195,6 +361,209 @@ raises the frontend compatibility floor, rolling the frontend below that floor
 also requires rolling back the backend floor. Rolling the backend back to the
 dual-protocol preparation release remains safe for canonical clients.
 
+#### Instagram nullable views
+
+Instagram stats preserves provider `views` as a nonnegative integer, null, or
+omitted for every caller, without capability-header negotiation. Zero is a
+verified count; null is unavailable and is never converted to zero. Engagement,
+author data, extensions and the existing provider-identity redaction boundary
+remain unchanged. The optional `requireViews` input requests the provider's
+bounded recovery. Its documented missing-view HTTP 503 returns without managed
+billing or automatic retries.
+
+The [#34047 retirement receipt](https://github.com/vm0-ai/vm0/issues/34047#issuecomment-5676398885)
+records the first capable API release, `api-v1.597.0`, promoted on September 14,
+2026 at 13:54:04 UTC. That release selected the immutable CLI artifact
+`1c1d6963d034592bc9b3ca671f5f9475c2314234`. On September 15, after the queue,
+execution and finalization window, the operator explicitly confirmed both queues
+empty, all pre-cutoff runs finished, and no supported independently pinned older
+CLI caller. This is operator-confirmed drain, not an automated database census
+or an inference from runner versions alone.
+
+- Capable pre-cleanup CLI -> canonical API: nullable results remain readable;
+  the old capability header is no longer needed.
+- Headerless CLI -> canonical API: null, omitted, zero and positive views stay
+  distinct.
+- Headerless CLI -> capable bridge API: null is temporarily omitted but remains
+  readable; strict lookup remains supported. This also applies to rollback to
+  the bridge API until the canonical API serves again.
+
+Pre-reader CLI artifacts are outside the confirmed supported caller set. This
+cleanup changes no persisted format, Runner protocol, or other social operation.
+
+### Instagram search collection limits
+
+Instagram Reels Search exposes one anonymous batch of up to 12 results. The
+request accepts only page 1 and a query of at most 100 characters after trimming.
+Keyword, hashtag and encoded leading-hash inputs share normalization. The CLI's
+request preserves case because Unicode case folding can expand a validated
+100-character input; the provider performs its documented lowercase conversion.
+The CLI's `--limit` truncates returned items locally; it does not request more
+source coverage or forward the OpenAPI's unbounded `limit` parameter.
+
+Search responses retain the existing `provider_limited` collection state and
+`provider_ceiling` reason, adding optional
+`sourceLimit: { kind: "single_batch", maxItems: 12 }`. Empty and short batches,
+including `hasMore: false`, do not establish exhaustive search. The provider's
+`count` describes the batch and is not a reported global total.
+
+Retained CLI response schemas accept these existing discriminants and ignore
+the new optional field. The API owns source-limit normalization; public projection
+preserves its canonical metadata. Aggregate and streamed terminal output preserve
+the source limit; `callerLimited` independently
+records whether the fetched batch was trimmed. `status: complete` still means
+the caller's requested count was satisfied, while collection state describes
+source completeness. Unsatisfied source-limited requests remain partial.
+
+The old-API metadata projection is retired by
+[#34053](https://github.com/vm0-ai/vm0/issues/34053), using the following
+production and supported rollback evidence from 2026-09-15:
+
+- Writer commit `e43a677e7508192b61801356f234dbcf231a0fbe` (#34067) first
+  shipped in API 1.596.0. The [API 1.603.2 production promotion](https://github.com/vm0-ai/vm0/actions/runs/34940290360/job/104290489082)
+  checked out and built `05af5a0fe3cdbd9188a9b3d66545bab2dab2a834`, which
+  contains that writer, and published the production alias at 07:24:43 UTC.
+- The existing rollback resolver requires
+  `eb2f211a9af41450d0d5dad10c0c8ad12fac0a24` (API 1.600.1) for prepared
+  domain writers. That release already contains the Instagram writer, so every
+  supported rollback target emits canonical source-limit metadata. The rollback
+  workflow loads the resolver from current `main`.
+
+No response variant is retired and no CLI drain, schema migration, or additional
+release floor is required. Old CLI -> current API remains readable. New CLI ->
+supported rollback API preserves the same single-batch metadata. Pre-fix APIs
+are no longer repaired by the new CLI; historical fixed deployment URLs or a
+manual bypass of the official rollback workflow are outside this boundary.
+
+### Social download accounting and media metadata
+
+Social download admission uses the caller's maximum duration rounded up to
+started minutes and the requested format/quality tier: audio and SD video use
+one provider credit per minute; 720p/1080p video uses four. TikTok ready jobs use
+the delivered tier, capped at the requested tier, so a 720p request delivered at
+576p uses the SD rate. The default request remains 720p. These are **provider
+usage units**; managed usage applies the separately configured Okou retail
+price to the validated actual `creditsCost`, once per download job.
+
+The [provider API overview](https://docs.socialkit.dev/api-reference#credit-costs)
+documents a 30-day legacy-account pricing transition. Admission conservatively
+uses current published tiers, while settlement accepts only the exact current
+cost or the prior one-credit-per-minute cost from the authenticated ready job.
+It does not assume the production account's transition date or bill the
+preflight maximum. Remove the legacy allowance only after verifying the managed
+account's transition and that no recoverable historical jobs need the old rate.
+Parent [#34056](https://github.com/vm0-ai/vm0/issues/34056) retains these
+unverified provider-account and historical-job gates. Its response-only child
+[#34320](https://github.com/vm0-ai/vm0/issues/34320) removes the separately
+drained old-API normalization described below; it does not remove legacy rates.
+An explicitly unbilled ready response is rejected. Polling headers may report
+zero new usage on a paid-link refresh; the original job cost remains authoritative.
+
+The response fields distinguish media intent from delivery evidence:
+
+- `quality` and `format` remain request aliases for older CLI artifacts;
+  the required `requested` block explicitly contains those same values.
+- `provider.quality` and `provider.format` preserve the accepted ready metadata.
+  Provider-reported resolution accepts renditions such as `576p`, independently
+  of the finite request-quality choices. It is not a byte-level resolution
+  measurement.
+- `artifact.format` records the byte-sniffed MP4, M4A or MP3 type, or null when
+  unrecognized. `delivered.format` uses only that evidence. Existing filenames
+  and content types may be request-derived and are not used to infer it.
+- `delivered.quality` uses stored provider reporting and is null for audio.
+  The `delivered` block is required, but both members remain nullable. Missing
+  historical delivery metadata remains null. New artifact recovery can establish
+  a sniffed format without fabricating missing original quality.
+
+No relational migration or stored-job rewrite is required. Old JSONB writers
+legitimately omit the new optional media fields; new readers keep their original
+usage and return unknown delivery metadata. Interrupted settlement and paid-link
+refresh keep the same job and usage idempotency key. Refresh metadata must match
+the original accepted duration and cost, rather than reprice a paid download.
+
+The response-envelope retirement was verified on **2026-09-15**:
+
+- [#34070](https://github.com/vm0-ai/vm0/pull/34070), merge
+  `9c55bc983c52f37369576d36eb32fbb0aec94994`, first shipped the unconditional
+  create/get/list writer in API **1.598.0**.
+- The [API production promotion](https://github.com/vm0-ai/vm0/actions/runs/34940290360/job/104290489082)
+  checked out and built `05af5a0fe3cdbd9188a9b3d66545bab2dab2a834`, API
+  **1.603.2**, and published `api.vm0.ai` at **07:24:43 UTC**. This is the
+  build's release SHA, not the moving GitHub deployment metadata SHA.
+- The [rollback resolver](../.github/scripts/resolve-production-rollback-target.sh)
+  already enforces `eb2f211a9af41450d0d5dad10c0c8ad12fac0a24`, API **1.600.1**,
+  which contains that writer. The [rollback workflow](../.github/workflows/rollback-production.yml)
+  loads the resolver from `main`, so a historical target cannot replace the guard.
+  No additional rollback floor is introduced.
+
+APIs without these blocks are therefore outside supported canonical serving and
+rollback targets. The CLI passes through the API's redacted response without
+synthesizing missing blocks. This receipt retires only absent response blocks:
+it proves neither a provider-rate transition nor an old-CLI drain, and does not
+replace the independent MP3 compatibility requirements below.
+
+| Pairing                      | Supported behavior                                                                                                         |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Old CLI, new API             | Existing request aliases remain valid for mutually supported formats; additional blocks can be ignored.                    |
+| New CLI, supported old API   | Writer-capable APIs already emit both blocks, including explicit nulls. No CLI normalization is needed.                    |
+| Supported old API, new JSONB | Additive media keys preserve existing required values for mutually supported formats.                                      |
+| New API, old JSONB           | Completed jobs remain readable; pending settlement and artifact recovery preserve original usage and unknown media fields. |
+
+#### Explicit MP3 social downloads
+
+`social download --format mp3` requests audio through the existing download
+lifecycle. MP4 remains the default, M4A remains supported, and both audio
+formats use one provider unit per started minute regardless of video quality.
+The provider's ready format must match the request. Artifact bytes still
+determine the delivered extension and MIME: detected MP3 is `audio/mpeg`, and
+a different detected type is reported truthfully. For unrecognized bytes, the
+filename and MIME are request-derived hints (MP3 uses `audio/mpeg`) while
+`delivered.format` remains null. Sniffing does not validate an entire media file.
+
+MP3 requests become available when the capable API is deployed, using the
+existing authentication, capability, credit and active-task checks. MP3 extends
+values inside existing response and JSONB fields. Older API and CLI schemas
+reject those values, including when listing tasks that contain an MP3 request.
+
+Coordinate MP3-capable serving, reconciling and rollback API artifacts with
+compatible commit-addressed CLI selection and the incompatible queued, active
+and finalizing context drain described above. Upgrade supported external
+callers that may list or resume MP3 tasks. These compatibility conditions must
+be addressed as part of deployment because the new API accepts MP3 immediately.
+
+| Pairing                            | Behavior                                                                                                                          |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Old CLI, new API, MP4/M4A jobs     | MP4/M4A requests, polling and discovery retain their existing contract.                                                           |
+| New CLI, old API                   | MP4/M4A keep working. Explicit MP3 is rejected by the old API; never silently substitute a format or resubmit.                    |
+| New API, old JSONB                 | MP4/M4A tasks remain readable/resumable; missing historical delivery metadata stays unknown. No migration or rewrite is required. |
+| MP3-capable CLI/API, new MP3 JSONB | Creation, listing, polling and same-job recovery use the widened format contract.                                                 |
+| Old CLI/API, new MP3 JSONB         | Unsupported; exclude this pairing from supported deployment and rollback combinations once MP3 tasks exist.                       |
+
+After the first MP3 task is created, rollback must retain MP3-capable readers
+for as long as MP3 tasks remain readable or recoverable.
+
+### Pi Gen1 wire-field retirement
+
+[#33966](https://github.com/vm0-ai/vm0/issues/33966) removes only the optional
+Gen1 `piModelConfig.api` field. Slice 1
+[#32632](https://github.com/vm0-ai/vm0/pull/32632) stopped writing it while keeping
+readers tolerant. The [September 14 controller receipt](https://github.com/vm0-ai/vm0/issues/31085#issuecomment-5660026283)
+accepted the writer-cutoff release, supported rollback targets, executable
+context census, retained callers and Runner/Sandbox/CLI drain. Its
+[dispatch admission](https://github.com/vm0-ai/vm0/issues/33966#issuecomment-5660179289)
+reconciled all 17 Pi runs among 50 nonterminal runs and both empty queues. These
+are dated complete observations, not current counters.
+
+Old cutoff-safe writers and new readers share the field-absent Gen1 shape;
+new writers remain readable by the retained cutoff-safe readers. Strict
+TypeScript boundaries reject a Gen1 object containing `api`. Rust keeps its
+existing general unknown-field policy, discarding unknown fields during decode;
+the generated Gen1 DTO no longer represents, emits or retains this key. Gen1
+itself, Gen2/3/4, active subscription dialects and upstream Pi `Model.api` are
+unchanged. No stored context rewrite, migration, backfill or rollback-floor
+change is required or included. Parent #31085 still owns independent acceptance,
+release and final production verification.
+
 ### Pi native session history
 
 Pi checkpoint persistence shares the Runner's 128 MiB raw and encoded history
@@ -216,6 +585,57 @@ Pi remains staff-only behind `PiLoop`. Rolling the API back below this change
 restores its 16 MiB validation and resume limit: larger saved histories stay in
 storage, but continuing those sessions requires the fixed API and CLI again.
 There is no history truncation, migration, or alternate reader for that rollback.
+
+### Pi Langfuse trace relay
+
+New run contexts no longer store or inject platform Langfuse credentials.
+The commit-pinned CLI exports
+OTLP to `POST /api/webhooks/agent/:runId/langfuse/traces` using its existing
+`OKOU_TOKEN`. The API checks that token's run/user/org and the run's captured
+`langfuseTraceEnabled`, then forwards only the OTLP body and encoding headers
+with server-owned Langfuse credentials. Connector account selection cannot
+change this destination or authentication. API execution, ownership transfer,
+Sandbox Wait, and Sandbox Execution are sibling observations under the
+deterministic Run End-to-End parent. LLM and tool observations stay inside their
+execution phase. Both V3 and V4 sandbox handoffs carry that run parent and a
+required `sandboxWaitStartedAt` timestamp when tracing is admitted. This
+staff-only trace contract has no legacy shape or historical rewrite.
+
+The API phase ends when handoff preparation starts. Transfer preparation ends
+when manifest publication starts; the sandbox emits Sandbox Wait from that same
+timestamp through native execution start. Publication, handoff restoration, and
+runtime startup therefore belong to waiting. Publication failures still mark
+the transfer as failed. Cross-host clock skew never produces a fabricated or
+negative wait; invalid intervals are omitted.
+
+The relay sets `x-langfuse-ingestion-version: 4` on its upstream request so
+Langfuse stores native observations without synthesizing an extra trace span.
+The API owns this version declaration; incoming headers cannot downgrade it.
+This staff-only feature requires v4 ingestion and has no legacy ingestion
+fallback or historical trace backfill.
+
+The API and its pinned CLI must ship together through the existing deployment
+pipeline. Existing Guests already pass the first-party API URL, run token, and
+trusted platform environment to that CLI; no Runner promotion is needed.
+
+The relay first reached production on 2026-09-15 at 05:11:55 UTC in API 1.603.0
+and CLI 9.331.0, at commit `4a60b74daa3cba9e11fdb6a072fa989dd1a242d3`
+([deployment](https://github.com/vm0-ai/vm0/actions/runs/34931381962/job/104260645155)).
+[#34256](https://github.com/vm0-ai/vm0/issues/34256) explicitly retires optional
+legacy tracing support: claim-time credential extraction and the Guest bootstrap
+file are removed. The 07:19 and 07:21 UTC observations found empty admission and
+runner queues and only post-rollout nonterminal Pi runs. Those observations do
+not certify complete draining of captured legacy contexts or close the rollback
+window; the retirement decision accepts loss of optional tracing for such contexts.
+
+An older context retains its captured CLI URL. That CLI treats an absent bootstrap
+path as tracing disabled, so agent execution continues without legacy exports.
+Guests still filter platform Langfuse project keys from tracing-enabled Pi child
+environments. The current CLI only configures the relay and has no direct-export
+fallback. This change does not repair exports from an already-running legacy CLI.
+An API rollback that removes the relay route drops optional trace exports from
+relay-enabled runs; agent execution continues independently. This retirement does
+not change production rollback policy.
 
 ### Runner
 
@@ -311,6 +731,123 @@ it is upgraded (potentially causing a cache miss, not exposing an active build).
 
 Runner and guest binaries are deployed as one runner artifact. Compatibility is
 not required between a runner binary and a guest binary from a different version.
+
+The extracted storage cache is a separate, host-local cross-version boundary.
+New readers use `storages/<name-hash>/decoded-v1-<version-hash>/` containing an
+identity/content index and real files. Existing compressed readers continue to
+use their original hashed version directory and `archive.tar.gz`; neither
+reader interprets the other format. Selection validates and pins usable extracted
+files before archive prefetch, so an admitted hit does not download or publish a
+missing compressed entry. New entries use the existing name/version-key flock,
+including the final-version lock for `.tmp` staging, so both old and new storage
+GC recursively account and evict them with the existing best-effort byte and
+entry targets. These targets are not hard disk-usage limits. Directory admission
+also bounds each extracted entry's inode footprint.
+
+Unsupported-archive admission records use separate
+`decoded-v1-rejected-<version-hash>/` keys under the same GC and lock rules.
+Only background fill reads these records; foreground lookup probes positive
+file entries only, so unsupported archives do not pay a rejection-record lock
+and read on every startup. Each reader validates its expected entry kind.
+
+For an ordinary archive hit, optional decoded warming is omitted when this
+plan's existing foreground lookup already validated positive decoded contents,
+even if mount or payload admission did not select them for delivery. This
+observation belongs only to that prepared plan and adds no lookup or retained
+file contents. A missing compressed archive still selects its required fill;
+later plans perform their own positive lookup, so GC eviction cannot become a
+permanent warming exclusion. Unobserved positive entries and rejection records
+retain the existing background checks.
+
+Readers hold that lock while validating the bounded index, identity, file types,
+sizes and content digests, then pin owned bytes through Guest apply. GC can evict
+the disk entry afterward without invalidating an in-flight delivery. Orphaned
+lock GC may remove an unlocked lock while retaining its data; a reader recreates
+and revalidates the lock only for a present entry, then reopens the directory
+under the lock. Missing, busy or unsupported entries keep ordinary delivery;
+malformed present cache data is an error, not an unverified hit.
+
+Before omitting archive staging, a ready decoded mount must individually fit
+the existing 64 KiB canonical manifest bound. Other mounts' signed URLs or
+cleanup metadata do not reject that ready mount. Miss-only runs do not serialize
+entries to decide whether an unused binary input would fit. The selected files
+still share the 15 MiB payload and 1,024-mount limits across the entire run.
+
+After source resolution, a combined manifest that fits uses one Guest operation.
+An oversized combined manifest is composed into bounded existing-format
+requests: ordinary storage, artifacts, reused paths and all cleanup run first;
+decoded-only batches follow without repeating cleanup. The Runner validates
+decoded bindings against the complete manifest before partitioning, and the
+Guest validates each binary request. Every batch retains the existing 64 KiB
+manifest and 15 MiB payload limits, real source URLs and file/path validation.
+All batches are encoded before the first storage-apply operation, and a failure stops
+later batches and prevents Agent spawn. The existing non-transactional partial
+filesystem-change semantics remain; multiple requests do not imply rollback.
+Oversized ordinary JSON retains its existing manifest-file transport. No API,
+wire shape, persisted cache format, archive eligibility or generic stdin limit
+changes. Split runs can emit multiple Guest storage-apply operations inside one
+enclosing Runner storage-apply stage; per-helper entry indices are not globally
+unique within such a run.
+
+Lookup windows admit at most 128 identities with 128 KiB of owned key bytes,
+retaining the per-key limits. Non-admitted keys retain ordinary delivery;
+this bounds metadata even when a plan contains unusually long identities.
+Ready-file read-ahead stops after reaching 15 MiB of content, with at most one
+additional storage's size in that last read; the wider miss-probe window does
+not increase the former 16-MiB content read-ahead bound.
+
+First-fill extraction belongs to the existing bounded background-fill owner and
+starts only after Agent spawn. Before that point, selected work owns no task,
+cache lock or open file. Publication uses private staging and atomic rename;
+this is a disposable cache, not a power-loss-durable source of truth. Runner
+shutdown joins background work and extracted-cache blocking tasks. The binary
+final-file input is private to the bundled Runner/Guest storage operation;
+ordinary HTTP downloads, API manifests and generic exec-stdin limits do not
+change. No backend reader-first deployment is required for that bundled input.
+
+The Runner-wide owner admits at most 32 waiting identities and runs at most four
+workers. Missing-archive observations and maintenance (warming an observed archive
+hit or retiring its compressed source) each leave four waiting positions for the
+other class; the remaining 24 positions are shared. Pure-class bursts can therefore
+be rejected at 28 waiting entries. Admission never waits, evicts an accepted task,
+or retains rejected work for retry. Queued same-key archive demand supersedes
+retirement, and missing demand promotes warming without losing its decoded-cache
+consumer. Such promotions retain accepted ownership even above a class quota,
+while the total queue bound remains unchanged.
+
+Dispatch is FIFO within each class. While both classes wait, at most three missing
+fills start before one maintenance task; an empty class does not idle workers.
+This gives every accepted warming and retirement task finite dispatch progress
+provided active operations finish, not a wall-clock deadline or guaranteed
+admission at mixed saturation. Classification uses existing preparation outcomes
+only: workers still validate actual cache state under the original locks, so an
+evicted warm source can be downloaded and a newly filled miss can be reused. No
+new foreground lookup, network request or maintenance barrier is introduced.
+
+After a run actually selects extracted-file delivery and successfully spawns its
+Agent, that same bounded background owner may retire the corresponding compressed
+archive. Retirement never downloads data. It takes the old archive's exclusive
+lock without waiting and validates the complete positive replacement under its
+own lock, retaining both locks through deletion. Busy, missing or non-admitted
+replacement work is skipped; malformed data is reported as a background error.
+It removes only the regular archive and an empty version directory, not unrelated
+files. GC can independently evict either format after those locks are released.
+
+Conversion alone does not delete an archive: a never-used converted entry may
+retain both formats until direct use or GC. Old Runners, rollback, instructions,
+artifacts and other archive-required consumers keep their original delivery and
+may refill a compressed cache miss. Queued archive-fill demand takes precedence
+over queued retirement for the same identity. This is use-driven best-effort
+cleanup, not a guarantee of exactly one representation across mixed consumers.
+
+Positive lookup includes a metadata-only archive-existence hint for maintenance
+admission. Already retired entries do not consume the background queue again,
+so a decoded prefix cannot repeatedly displace later warming or retirement.
+The hint neither reads compressed content nor authorizes deletion: retirement
+reopens and validates under locks. Metadata errors are left to that background
+validation rather than failing an otherwise valid extracted-file delivery. An
+orphaned source lock is recreated only for observed archive data, following the
+same lock repair rule as cache readers.
 
 Use **sandbox** for provider-neutral runner lifecycle, ownership, status,
 network-policy, and operator concepts. Use **VM** only for concrete
@@ -468,6 +1005,51 @@ CLI contexts must drain through queue, execution, and finalization, and the
 production rollback resolver rejects targets that do not contain the reader
 commit. The reason is stored outside strict payload JSON so old API instances
 remain compatible during the additive database migration and traffic overlap.
+
+Balance failures keep `insufficient_credits` for vm0 credit admission and add
+`provider_insufficient_credits` for upstream model-account balance. Completion
+stores that real failure reason for both BYOK and built-in runs. Public presentation
+uses persisted run ownership to display a platform-owned balance failure as
+"The current model is unavailable." and omit its billing reason from public chat
+metadata. Model unavailability is presentation, not a completion failure reason.
+The webhook and Chat Event V7 schemas accept all valid reason tokens; older readers
+use generic failure copy for an unknown token instead of rejecting the run or
+showing the vm0 recharge card. The token addition required no schema migration.
+
+The #34219 cleanup follows the reader/writer rollout in #34251. The production
+read on 2026-09-16 found API `1.607.0`, App `0.902.2`, and all three running
+Runners on `0.194.6`, containing the owner-aware reader and structured writer
+commit `0367d976a87fe1251fcb9b6cfe545a8b24e4f2b6`.
+
+Historical errors remain as stored, including missing or misclassified failure
+reasons. No data migration or repair is required. The user accepted that those
+records may display raw errors or the old incorrect credit classification after
+terminal text inference is removed. Terminal readers use the persisted cause.
+Current failed provider-event detection and network-export redaction remain.
+The production rollback resolver enforces the commit above for both the API
+target and its independently resolved Runner tag, preventing an older writer or
+public reader from returning for new runs.
+
+This change does not certify alert delivery. #34219 remains open for actual
+built-in/BYOK production samples, Axiom monitor configuration and delivered-alert
+verification. Runner INFO events are below the Axiom upload threshold, and the
+investigation token could not read monitor configuration.
+
+Pi queue expiry adds `provider_queue_timeout` under the same open-token
+contract. Prefer API/App readers and terminal policy before the patched CLI;
+Guest and Runner typed contracts ship as a supported pair. An old API's
+transient allowlist excludes the new token. Old Guests may ignore the optional
+runtime diagnosis but preserve failure; a new Guest can refine an old CLI's
+generic server/overload evidence from exact terminal text. It cannot undo
+retries already performed by an old SDK. No new protocol, database column or
+session format is introduced, and local-deadline handoff is unchanged.
+
+Queued or active commit-addressed contexts can retain the old CLI. Release
+acceptance must record API SHA, CLI package SHA and Runner/Guest versions, run
+the controlled fixture against that artifact, and observe a fixed 24-hour
+window for unique affected runs, actual statuses/attempts and built-in warning
+visibility. No occurrence means no observed exposure, not proven recovery.
+Rollback can restore old retry behavior; retained reason tokens stay readable.
 
 Avoid one-shot protocol flips:
 
@@ -654,20 +1236,136 @@ in place. Removing them in this same release would break outgoing API SQL
 between migration and promotion. No schema migration or rollback-floor change
 is part of this preparation release.
 
-To finish #32575 after this API is released:
+Migration 1132 below subsequently handles the three entitlement triggers and
+enforces the canonical-only rollback artifact. Its production completion and
+the remaining #32575 column/client contraction are recorded next.
 
-1. Record its successful production promotion and outgoing API drain. Enforce
-   a supported rollback floor that contains the canonical-only runtime mapping
-   and unconditional migration response; the existing floor is insufficient.
-2. Generate the column-drop migration with Drizzle. Audit persisted SQL first,
-   including `ensure_legacy_org_metadata_plan_entitlement`, then drop both
-   legacy columns and the invitation status-mirror trigger/function. Update
-   their exact inventory entries. Coordinate the overlapping trigger with
-   #33747; unrelated triggers are outside #32575.
-3. Remove the App migration query opt-in and contract. Retire the invitation
-   transition validator only after its contraction has shipped and permanent
-   coverage retains active Free invitations, suspended direct/paid rejection,
-   admin authorization, reactivation and explicit `showUsagePack: false`.
+#### Legacy invitation column contraction (2026-09-15)
+
+The [API 1.603.1 production job](https://github.com/vm0-ai/vm0/actions/runs/34936717500/job/104278924406)
+checked out and built `caa4352ddba6ef4b1912cbbb7838afb94ac4aa82`. Its **Run
+Production Migrations** step records the real production 1132 receipt at
+2026-09-15 06:38:10.5347961 UTC: eight matched/retired triggers, eight matched
+functions and zero audited invariant violations on PostgreSQL 17.10. This is
+separate from the preceding smoke-clone receipt. `Migrations complete` follows
+at **06:38:10.7737004 UTC**. The shipped migration runner and entry point are
+byte-identical to this change's base: the runner awaits the transaction including
+the journal insertion before the entry point reports completion. This establishes
+the 1132 journal frontier, `when=1789448024786`; no direct production journal
+SELECT is claimed.
+
+The 2026-09-15 serving-alias read resolves both `api.vm0.ai` and `api.okou.ai`
+to READY production deployment `dpl_i8s7vaEvyqeKFD7m2hTa2W2CAKYW` at that same
+artifact. It descends from the enforced API 1.600.1 rollback floor,
+`eb2f211a9af41450d0d5dad10c0c8ad12fac0a24`, which in turn contains #33909's
+canonical-only mapping and unconditional all-Free migration response. The
+resolver continues to load from current main and reject earlier artifacts.
+Current and supported rollback APIs therefore neither name the old columns in
+SQL nor require the App's migration query opt-in.
+
+Drizzle-generated migration `1137_retire_legacy_invitation_columns` removes
+`member_invite_usage_pack_required` and `member_invitation_allowed`. It locks
+only `org_plan_entitlements`, checks the predecessor journal frontier, exact
+column definitions, persisted routine bodies in user schemas, and all recorded
+column dependencies before either drop. Only the columns' own defaults and
+native NOT NULL constraints may disappear; unexpected indexes, checks, views,
+triggers or functions abort the transaction. The normal 1s lock / 10s statement
+limits and atomic journal insertion remain in force. Historical migrations and
+1132's evidence remain unchanged.
+
+The App removes `supportsFreeMembers=true` from the migration GET request and
+its request contract. Catalog/management responses still explicitly advertise
+Free-member support. Existing route coverage checks all-Free configuration
+without a query parameter; invitation admission continues to use normalized
+status and administrator authorization, and package controls use `showUsagePack`.
+
+The final #32575 cleanup follows production release [#34303](https://github.com/vm0-ai/vm0/pull/34303),
+which promoted API 1.604.0 and App 0.900.0 from
+`8a391b88833ae0b075c4df194010641955d4f936`. That actual artifact contains
+#34317. The release PR's earlier branch head does not contain #34317 and is
+not the production artifact used for this verification.
+
+The [API production job](https://github.com/vm0-ai/vm0/actions/runs/34957141130/job/104345191059)
+checked out that exact artifact and completed **Run Production Migrations** at
+**2026-09-15 10:31:12.0275988 UTC**. This is the real production completion,
+separate from the preceding smoke clone's 10:31:09.4559442 UTC completion. The
+artifact's final journal entry is 1137, `when=1789460587817`. Its 1137 SQL,
+migration runner and entry point are byte-identical to #34317: the runner awaits
+both column drops and the journal insertion in one transaction before the entry
+point prints `Migrations complete`. That acknowledged execution establishes the
+committed frontier and column contraction; no direct production journal or
+catalog SELECT is claimed.
+
+Fresh serving-alias reads resolve both `api.vm0.ai` and `api.okou.ai` to READY
+production deployment `dpl_AFZ3enCuHEt768R3HaqanNg8ZxtH` at that same artifact.
+The [App production job](https://github.com/vm0-ai/vm0/actions/runs/34957141130/job/104346013714)
+verified the immutable App artifact and assets, then completed promotion at
+10:33:12 UTC. The serving `https://app.okou.ai/` HTML reports that exact SHA and
+version 0.900.0. Current main still loads the rollback resolver from main and
+enforces API 1.600.1 at `eb2f211a9af41450d0d5dad10c0c8ad12fac0a24` as the
+prepared-writer floor. Both that floor and the serving API use the canonical
+entitlement mapping and return migration state without a query opt-in. The
+serving/rollback compatibility cycle covered by the invitation validators is
+complete.
+
+The cleanup removes both invitation transition validators, the frozen outgoing
+API projection, and the retained/trigger-free private-schema variants. Permanent
+schema validation exercises the canonical projection on both replayed and freshly
+generated schemas. Historical `showUsagePack` backfill checks remain. Current API
+coverage retains infrastructure failure/transaction cases and verifies
+persisted status normalization through the billing endpoint; existing invitation
+and page suites retain Free, suspended, administrator, reactivation and explicit
+`showUsagePack: false` behavior. Close #32575 after the final cleanup merges.
+
+### Prepared billing, OAuth and hosting trigger contraction (2026-09-15)
+
+Migration `1132_retire_prepared_domain_triggers` removes A–D's eight triggers
+and functions from #33747. The supported rollback floor is API 1.600.1,
+`api-v1.600.1`, at `eb2f211a9af41450d0d5dad10c0c8ad12fac0a24`; it contains
+all four prepared writers, their webhook/cron paths and the canonical-only
+invitation mapping. Its [production promotion](https://github.com/vm0-ai/vm0/actions/runs/34915532910/job/104212801721)
+records checkout/build and alias publication at 2026-09-15 01:07:30 UTC.
+A bounded Vercel read verifies exactly one READY production artifact for that
+SHA. The 2026-09-15 02:56–02:57 UTC alias/deployment read resolved API 1.601.0 at
+`3ace38cfefa54eb9df33715131a3ee8be1be3c27`, a descendant of that floor.
+The rollback resolver enforces the floor before resolving API/Runner artifacts;
+the workflow always loads the resolver from `main`.
+
+The prepared API works on both schemas, so migration-before-promotion and an
+API rollback to that floor preserve the explicit writes. Current route tests
+run with all eight absent; private service suites preserve retained/outgoing
+SQL controls until contraction has actually shipped. The migration keeps its
+1s lock / 10s statement limits and validates catalog/data under locks before
+any drop. Production smoke and production journal completion are distinct
+release gates; no production deletion is asserted by this source change.
+
+The invitation status-mirror trigger is included; its obsolete physical columns
+and App query opt-in remain #32575 work. E's privacy trigger is excluded, and
+the withdrawn feature remains withdrawn. See the
+[writer inventory, repair rules and migration receipts](database-trigger-retirement.md#a-d-contraction-migration-1132).
+
+### Withdrawn marketing privacy storage contraction (2026-09-15)
+
+Migration 1139 drops the three withdrawn privacy tables and their trigger/function
+under #33747. The old `user.deleted` cleanup still unconditionally names
+`privacy_choices`, so preparation #34296 must be released and its old writers
+drained before contraction can merge/release. The prepared cleanup handles all
+three relations present or absent under the shared advisory lock also taken
+exclusively by the migration. Current contraction code removes that temporary
+helper and schema dependency entirely.
+
+The rollback resolver derives the preparation's actual introduction from main's
+first-parent history of `marketing-privacy-cleanup.service.ts`, preserving that
+boundary after the file is deleted and across a squash merge. It rejects absent
+history and targets predating preparation before looking up artifacts. The retained
+target must also be a released READY artifact. The canonical preparation
+introduction is `e98391290d01e88ece8bf1acfcfc258b3f1e3c13`. Record the immutable
+production artifact and old-invocation drain on
+[contraction #34305](https://github.com/vm0-ai/vm0/pull/34305) before it becomes
+ready; this source guard alone does not prove serving or drain. See the
+[explicit release and rollback gates](marketing-privacy-choices.md#required-release-order-and-rollback-boundary).
+API rollback cannot recreate the retired rows. The withdrawn feature stays
+withdrawn, and #33275 owns any replacement privacy design.
 
 ### Workflow automation connector-account projections
 
@@ -700,6 +1398,17 @@ capabilities in their client version. The API projects a stored locale to
 `en-US` when the requesting client cannot parse that locale and rejects locale
 writes that the client did not advertise. Keep this compatibility layer until
 stale browser clients and API rollback windows have closed.
+
+### Retired Limelight color theme
+
+`limelight` is removed from `COLOR_THEMES`, so the API no longer parses it in
+either direction. Migration `1147_retire_limelight_color_theme` moves stored
+selections to `citrus-spark`, which declares the same two colours; it must run
+before the API that rejects the value, which is the normal migrate-then-promote
+order. The App is promoted after the API, so between the two an already-open
+bundle can still offer Limelight and receive `400` on that one write; every
+other palette, and the member's stored selection, is unaffected. The palette was
+only reachable under the `GradientColorThemes` rollout switch.
 
 ### Treat Database/API Transitions as a First-class Boundary
 
@@ -874,6 +1583,128 @@ These objects are contracts, not generic fallbacks. Verify the exact outgoing
 SQL against them, record the release they protect, and remove the functions,
 triggers, and views after that release drains.
 
+## Cloudflare Access for SSH
+
+The #31996 delivery adds a protected transport to the existing SSH host domain.
+#34077 is additive database/API authority preparation, including the minimal
+current Runner contract reader and Platform diagnostic translations.
+Direct and Cloudflare Access now share the existing staff-only `sshAccess` switch;
+there is no independent Access switch. The SSH cohort and Agent grants are unchanged.
+Under the [pre-GA policy](fallback.md), this feature keeps one canonical contract:
+no profile selector, duplicate old/new DTO, or legacy diagnostic projection.
+
+Before the first protected configuration or binding is written in a deployed
+environment, every serving API must understand protected authority, Runners from
+#34080 must own new Run admission, and incompatible active Runs must have drained.
+#34081 owns Access management UI; #34370 records integrated real-Run acceptance
+and the owner-approved evidence boundaries at closure.
+Management stays inside `/connectors/ssh`. Access is a reusable host connection
+setting under the existing SSH Agent grant, not a separately authorized service.
+The SSH feature switch controls rollout for both transports; it does not replace
+the existing Agent permission.
+Native Service Auth interoperability must be verified; S1 contract tests are not
+provider E2E evidence. Do not use a production feature override as a test fixture.
+
+The management UI uses the existing canonical Access endpoints; it adds no
+schema or private Runner contract. Unified host forms also accept inline Access
+creation in the host write request. Existing `configId` selections remain valid;
+responses still return only the resolved binding. Deploy API support before the
+App uses inline creation. An older API rejects that write alternative; staff
+clients should refresh after the current API/App deployment, without a second
+save path or automatic fallback. Existing rows and older App requests remain
+valid, and Runner versions do not need a new decoder for this management change.
+
+With SSH enabled, Access management and
+protected host creation are available without an additional opt-in. With SSH off,
+both transports' management, guest inventory and fresh authority are unavailable.
+Already-bound hosts are never silently converted to Direct. Removing a binding
+requires SSH eligibility and an explicit Direct selection. Losing SSH eligibility or changing
+owner clears open secret forms and cancels their pending UI work. API authorization
+and same-owner foreign keys remain authoritative; frontend visibility is not an
+access check.
+
+SSH save retries (#34503) require a client-generated resource `id` on host creation
+and standalone credential/Access creation. New resources return `201`; same-owner
+existing IDs return `204` without mutation. Host edits retain their existing
+`expectedGeneration` contract. There is no database migration or backfill, and
+Runner/guest protocols are unchanged. Deploy the API before the App. Under the
+staff-only pre-GA policy, stale Apps/APIs may reject the new/missing field or fail
+to handle `204`; refresh staff clients after deployment. Do not fall back to a
+new-ID save or automatically replay it. Deduplication only covers the existing
+resource's lifetime, not deletion or abandoned forms; see
+[SSH access](ssh-access.md#save-retries).
+
+| State                                                              | Required behavior                                                                                      |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| Existing Direct data after the additive migration                  | Hosts, credentials, pins, grants and observations remain unchanged; bindings are null.                 |
+| Current API and S1 Runner with protected handoff                   | Runner returns unavailable without dialing Direct SSH or forwarding the token.                         |
+| Current API and S2 Runner with authorized protected handoff        | Runner uses native WSS/443, verifies gateway TLS and SSH identity separately, without Direct fallback. |
+| Current API with an unauthorized host or SSH feature off           | Private authority and guest inventory remain unavailable under the SSH gate and Agent grant.           |
+| Pre-Access API with protected rows                                 | Forbidden: the old reader can interpret the row as Direct.                                             |
+| Protected writes before the native carrier and real-Run acceptance | Forbidden outside controlled local tests.                                                              |
+
+Feature disable does not make a protected row safe for a pre-Access reader.
+Do not deploy such a reader after protected writes exist; no automatic deletion
+or conversion is part of deployment.
+
+#34080 changes the Runner transport without changing guest CLI terminal enums or
+the S1 private API contract. Existing Direct requests keep their behavior. A
+missing/incompatible authority response fails closed; no pre-GA dual decoder is
+introduced. The separate switch removal changes API eligibility and Platform
+visibility only; Runner/guest wire contracts and stored credentials stay unchanged.
+Old pre-removal APIs may still enforce their Access switch, and old App bundles
+may hide Access until refreshed. Both remain pre-GA under `sshAccess`; deploy the
+current API/App and refresh staff clients rather than adding a compatibility alias
+or second decoder. Retired switch overrides are ignored by the existing registered-key
+filter; no database migration or destructive cleanup is required.
+
+Run cache invalidations are best-effort and identifier-only. Token/SSH-grant changes
+may leave cached authority usable for the remainder of an active Run if a notice
+is missed. End those Runs when immediate revocation is required.
+
+#34353 changes only Runner-local authority ownership, not the API, guest RPC or
+persisted data contracts. New Runners preserve SSH authority and healthy work
+across Ably connection loss, recovery and initial subscription unavailability;
+draining old Runners retain their previous disconnect-eviction behavior. First
+use/cache misses still authorize through the same API. Delivered invalidation,
+failure eviction and Run/sandbox teardown remain effective. The accepted
+Run-lifetime missed-notification window includes observed outages; this introduces
+no reconnect grace deadline, periodic reauthorization or new TTL. No coordinated
+API rollout or migration is required for this Runner change.
+
+## Integration input attachments
+
+New Feishu/Lark, Teams, Telegram, and AgentPhone trigger attachments use the
+existing canonical input asset rows and `R2_USER_ARTIFACTS_BUCKET_NAME`, as Slack
+does. Successful imports emit the existing `userMessage` file part and
+`[Web file]` prompt format; existing frontends and pinned CLIs can read them
+without a coordinated release. Provider download commands continue to accept
+their original IDs.
+
+Feishu, Telegram, and AgentPhone store the resolved prompt in their existing
+launch context. Teams adds an optional `messageFiles[].canonicalAsset` object;
+new readers fall back to the original provider reference when it is absent,
+and old readers can still resolve that retained provider reference. Both queue
+launch and active input delivery read this persisted context. No database
+migration or historical attachment backfill is required. Failed imports retain
+the canonical file part and the provider-native prompt reference, matching
+Slack. Only ready imports emit a `[Web file]` prompt.
+
+All adapters share MIME validation, streamed size enforcement, a 10-second
+per-file import timeout, and retry classification: HTTP 429/5xx and transient
+failures remain retryable; other HTTP failures and invalid/unsupported/oversized
+files do not. The general size limit is 100 MiB; Telegram retains its Bot API
+20 MiB download limit.
+
+The new adapters deduplicate across messages by user, organization, installation,
+and stable upstream file identity. Message IDs remain provenance, not identity.
+Telegram uses `file_unique_id`; Teams uses file `uniqueId` where available.
+Resources without a provider file ID use a hash of the full resource URL, so
+unrelated attachments with the same message-local attachment number cannot
+collide. Slack retains its existing user/file-ID identity, including existing
+canonical asset rows. This does not deduplicate equal bytes under distinct
+upstream resource identities.
+
 ## Testing Expectations
 
 Tests should cover cross-version behavior when a change touches a deployment
@@ -1012,3 +1843,250 @@ existing storage-version lifecycle. US provider user IDs remain unchanged;
 EU IDs have an `eu:` prefix to distinguish independent regional ID namespaces.
 The personal API-key storage version stays at 1. No frontend, Runner, or
 production data migration is required.
+
+## Storage presigned URLs use a fixed two-day lifetime
+
+All first-party object-storage GET, PUT, and multipart-part URLs are signed for
+172800 seconds. API responses that advertise expiration use the same shared
+constant, including reference images, private previews, registry archives, chat
+snapshots, and exports. Private hosted preview tokens retain that same two-day
+lifetime. Provider-owned URLs and OAuth token lifetimes are unchanged.
+
+The app no longer renews preview credentials on a timer or after media errors.
+Presigned uploads and Runner/Guest object downloads make one application-level attempt;
+errors remain visible to the caller. Existing preview-resolution API contracts
+remain available to deployed older app and CLI versions. Old Runner versions can
+consume the longer-lived URLs without a wire-format change.
+
+Storage URL caches are read on demand and reuse unexpired entries. Missing or
+expired entries are signed once during the normal API request. There is no
+proactive refresh or retry. The cron endpoint is now
+`/api/cron/prune-storage-presigned-urls` and only removes expired cache rows.
+Cache keys include the lifetime, so new code does not reuse the previous shorter
+policy. The database's required `refresh_after` and `last_requested_at` columns
+remain writable for deployment coexistence; new rows set `refresh_after` to their
+expiration and new code does not use either column to schedule renewal.
+
+## Pi inference lifecycle reader floor (#34242)
+
+The [Pi inference lifecycle contract](pi-inference-lifecycle.md) adds a strict v4
+launch discriminator without a Runner profile and three sparse ownership/intent/lease
+tables. Full-launch v1–v3 and historical NULL writes remain legal. The generated
+expand migration replaces the launch CHECK as NOT VALID; a separate bounded
+validation transaction scans retained runs before API promotion. New runtime
+writers are absent and `piDeferredSandbox` is org-scoped and off, including staff.
+
+After future v4 activation, disabling starts must retain phase/epoch-aware readers,
+consumer/recovery, cancellation, capacity counting, credential retention and erasure.
+A v1–v3-only application is below the rollback floor while v4 records remain.
+Do not shrink the CHECK or cascade away releasing leases. See the linked contract
+for exact DDL timeouts, failure/retry behavior, scale receipts and activation gates.
+
+## DeepSeek V4.1 Flash Pi coverage
+
+The [V4.1 Pi catalog and deployment contract](../turbo/packages/pi-agent-runtime/src/deepseek-v41-catalog.md)
+requires the API's matching commit-addressed CLI for new admission and preserves
+old captured contexts. Existing Responses schemas and Runner claims are unchanged.
+Retain the V4.1 reader and API billing writer in serving/recovery and rollback
+targets while admitted V4.1 Pi work remains.
+
+## Durable Run stop intent (#34383)
+
+The [Run cancellation reconciliation contract](run-cancellation-reconciliation.md)
+adds nullable `agent_runs.runner_cancellation_mode` and an authenticated v1 read
+endpoint. Apply migration 1143 before promoting API code. Its CHECK remains
+`NOT VALID` because all existing rows receive NULL; new writes are constrained
+without a historical scan. Old writers remain valid with NULL. Rollback retains
+the additive column.
+Deploy the API across the serving fleet before enabling the Runner consumer in
+#34384. Unsupported endpoints and other inconclusive reads must not become
+disappearance decisions. This API slice alone adds no new stop-delay bound.
+
+## Deferred Pi Sandbox reader floor
+
+Before a v4 API-inference producer can emit Sandbox demand, deploy the
+[durable consumer and its Runner/CLI readers](./pi-deferred-sandbox-consumer.md).
+Its optional Runner header is ignored by older APIs; older Runners remain
+excluded from v4 jobs. The release endpoint and Runner use one strict explicit
+outcome contract: a missing, malformed or unknown outcome retains the receipt
+instead of fabricating a stale acknowledgement. No mixed-response bridge is
+required while the feature is non-GA: no production publisher is enabled and
+`piDeferredSandbox` is off, so an older API cannot produce a v4 job for a newer
+Runner. The outer Pi launch-config v2 contains a new versioned continuation slot.
+The co-built Guest uses its private Sandbox control token to assemble the handoff
+in a 0600 run-scoped file and passes only an additive path variable to the CLI.
+An older CLI fails its legacy ordinary-token read; a newer CLI under an older
+Guest fails because the authenticated file is absent. Both combinations stop
+before the RPC boundary. Enablement therefore requires the capable API,
+Runner/Guest and newly captured commit-addressed CLI.
+Drain existing v4 intents, leases and release receipts before rolling any of
+those readers back below that floor. No switch is enabled by the consumer
+implementation.
+
+## Email outbox provider replay and send-time expiry (#34645, #34695)
+
+Migration 1148 adds nullable `email_outbox.provider_idempotency_key` and
+`email_outbox.provider_request`, plus a unique index over the key. Apply it
+before promoting API code; both columns stay NULL for producer-enqueued rows and
+for every row written before the migration, so an older API keeps working and a
+rollback retains the additive columns.
+
+The first delivery attempt of a row renders its template, commits that provider
+request together with a key derived from the row's own id, and only then calls
+Resend. Later attempts replay the committed request byte-for-byte under the same
+key, so a template change, a sender/`APP_URL` change, a restart, or a provider
+acceptance whose completion write is lost resolves to the same email instead of a
+second one. Attempts never derive a new key, and an idempotency conflict
+(`invalid_idempotent_request`) fails the row visibly rather than re-keying it.
+
+Recovery and bounds:
+
+- A prepared row stays `sending` and owns a 60-second lease. After the lease, a
+  drain re-selects it and replays the same request; the abandoned attempt's
+  completion is fenced on `(status, attempts)` and cannot overwrite the newer
+  one. `sending` is now a durable state, not only an in-transaction marker.
+- A row's deadline is its persisted creation time plus the 15-minute TTL. No
+  claim, retry or lease moves it. Preparation admits a row against that deadline
+  rather than against the timestamp its batch started with, and the drain then
+  rechecks the same deadline against a fresh clock after the claim commits and
+  immediately before the provider call, because the suppression lookup, the claim
+  update and that commit all take real time. A row that reaches its deadline
+  inside that window makes no provider request: its owned attempt is failed with
+  `Email outbox item expired before contacting the provider`, under the same
+  `(id, status, attempts)` fence as any other completion, so it cannot overwrite a
+  newer claim or recreate a row that was removed meanwhile. It keeps its committed
+  request and key, because an earlier attempt may still be unresolved at the
+  provider and that pair is the only record of it. Attempt-exhausted rows are
+  failed the same way, and the existing cleanup removes both.
+- Expiry decides admission, not retraction. Once `resend.emails.send` has been
+  called the email belongs to the provider, so a request already in flight is
+  delivered whether or not the deadline passes while it is outstanding.
+- Three attempts within a 15-minute TTL stay well inside Resend's documented
+  24-hour idempotency retention. Outside that window the provider no longer
+  replays a key, so this is bounded retry safety, not unlimited exactly-once
+  delivery, and sends made before this rollout carried no key and cannot be
+  deduplicated retroactively.
+- Delivery clears the committed request and keeps only the key and provider id.
+  Undelivered rows are removed by the existing TTL cleanup, so the rendered
+  message is retained no longer than the template and recipient already on the
+  row, and no new retention or erasure obligation is created.
+
+Mixed-version limitation: an old drain worker selects only `pending` rows and
+sends without a key, so it can still duplicate a row that a new worker returned
+to `pending`. A worker predating the send-time recheck also samples expiry only
+while preparing, so it can still send a row that crossed its deadline during that
+preparation. Both protections start once every drain worker runs the new path.
+Row locking with `SKIP LOCKED` keeps the two versions from processing the same
+row at the same time, and an old worker never claims a `sending` row.
+
+Scale at the time of the change: a fully paginated masked read at 2026-09-16
+09:56:29 UTC found 1,008 retained outbox rows, all `sent` and none past one
+attempt. That is retained row inventory under the 15-minute TTL, not historical
+volume, and it does not establish that an ambiguous send never happened.
+
+## Morning Brief installed preference projection (#34693)
+
+Migration 1149 adds the empty `morning_brief_installed_preferences` table, its
+indexes, and its foreign keys to `org_members_cache(org_id, user_id)`,
+`agents(id)` and `chat_threads(id)`. It is purely additive and needs no
+backfill, `LOCK TABLE` or historical scan, so apply it before promoting API
+code. An older API neither reads nor writes the table, and a rollback leaves it
+in place holding only derived rows.
+
+`FeatureSwitchKey.SimpleMorningBrief` stays off by default. While it is off the
+Settings read and write paths behave exactly as before; turning it on makes the
+Settings writers copy the member's installed state into the projection and lets
+the Settings GET answer from that copy. Turning it back off immediately restores
+the legacy read and write path and discards nothing: every user choice still
+lives in the legacy installation and its automation.
+
+Both schema directions are therefore closed. Old code after migration never
+names the new table. New code before migration cannot reach it either: every
+statement against `morning_brief_installed_preferences` sits behind that
+default-off switch, so the release's normal migration-before-promotion ordering
+is not the only thing standing between a new API artifact and a `42P01`.
+
+Mixed-version and old-writer behavior is the reason the reader validates instead
+of trusting the row:
+
+- An old API binary changes the legacy state without refreshing the projection.
+  So does the automation poller advancing `next_run_at`, catalog reconciliation,
+  and thread deletion. A new binary therefore accepts a row only when its
+  `projection_version` matches and every copied field — selected installation,
+  automation, Agent, bound thread, enabled, cron expression, timezone and next
+  run — still equals the live canonical state. Any mismatch serves the legacy
+  answer, so a stale row can never restore an old enabled, schedule, timezone or
+  thread state.
+- The projection's own `updated_at` is not freshness evidence and is never used
+  as one.
+- The legacy mutation and the copy are not atomic: the mutation runs on the
+  outer `Db` and commits before the copy starts, even though both are inside the
+  preference advisory lock. A failed copy is reported operationally and the real
+  committed outcome is still returned; the next read falls back to legacy.
+
+The row's lifetime is an evictable cache, not durable ownership. The composite
+key to `org_members_cache` fences the current membership, user and organization
+cleanup paths, and the refresh locks and rechecks that exact parent with
+`FOR KEY SHARE` without ever recreating it. `org_members_cache` is a 60-second
+read-through role cache that a concurrent membership read can refill, and the
+Clerk erasure bridge is still unregistered, so this is a local fence rather than
+global deletion finality. Before native state becomes execution authority, that
+lifetime must be replaced with durable membership and erasure ownership.
+
+This slice transfers no execution ownership: it consumes no occurrence and adds
+no Run, Chat event, email, provider request or credit operation. See
+[the migration contract](morning-brief-migration-state.md) for the full
+invariants.
+
+## Morning Brief bounded Slack collection (#34727)
+
+Migration 1151 adds the empty `morning_brief_collection_occurrences` table, its
+two indexes, its check constraints, and its foreign keys to
+`org_members_metadata(org_id, user_id)` and `agents(id)`. It is purely additive
+and needs no backfill, `LOCK TABLE` or historical scan, so apply it before
+promoting API code. The production scale note below is automation inventory, not
+a cutover census, and nothing existing is materialized by this slice.
+
+Both schema directions are closed, but for different reasons, and the default-off
+switch is only half the story:
+
+- **Old code after migration** never names the new table. Its only readers and
+  writers ship with this change.
+- **New code before migration** reaches the table from two places. The collector
+  itself is registered in the deployed route table but is gated by the
+  development / protected-preview environment check and by the default-off
+  `FeatureSwitchKey.SimpleMorningBrief`, so it cannot run in production at all.
+  The cleanup revocation added to membership, user and organization deletion is
+  **unconditional** — it is a `DELETE` that runs whenever those webhooks fire,
+  with no feature check in front of it. A default-off switch does not protect
+  it. The repository's migration-before-promotion ordering is therefore the
+  actual requirement here, not a convenience: promoting the API artifact before
+  migration 1151 has shipped would make Clerk membership, user and organization
+  cleanup fail with `42P01`.
+- A rollback leaves the table in place holding only operational metadata. An
+  older API neither reads nor deletes it; its rows stay fenced by the two
+  foreign keys until a newer artifact returns.
+
+The row's lifetime is durable member ownership rather than an evictable cache.
+`org_members_metadata` is the source of truth for the member's own preferences,
+including the timezone an enabled brief requires; it is deleted by membership,
+user and organization cleanup and is not refilled by a background reader. This
+is deliberately stronger than the `org_members_cache` parent the installed
+preference projection uses, which a concurrent membership read can refill.
+Claiming and finalizing take erasure admission first and then lock and recheck
+that member row with `FOR KEY SHARE`, so a cleanup either waits for the writer
+and cascades its row away or has already committed and leaves nothing to write.
+
+This slice transfers no execution ownership. It starts no Run, makes no LLM,
+credit or usage operation, writes no Chat event, email or outbox row, and leaves
+`next_run_at` and `last_run_at` untouched. The existing Settings, legacy
+automation and native Slack read contracts are unchanged. Durable membership and
+materialization ownership, global deletion readiness, scheduling and cutover
+remain S7 gates; the Clerk erasure bridge is still unregistered, so this is a
+local fence rather than global deletion finality.
+
+Requests already in flight to Slack cannot be retracted. Revocation guarantees
+only that no result of such a request is accepted, persisted or returned after
+the revoking transaction commits. See
+[the collection contract](morning-brief-collection.md) for the source contract,
+lease semantics, finite budgets and declared coverage limits.

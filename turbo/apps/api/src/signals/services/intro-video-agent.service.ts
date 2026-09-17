@@ -45,7 +45,7 @@ import {
 } from "./heygen.service";
 import { introVideoAgentPricing$ } from "./intro-video-agent-pricing.service";
 import {
-  artifactFileReference,
+  resolveArtifactFileReference,
   privateArtifactCreationEnabled,
 } from "./private-artifact-storage.service";
 import { uploadedArtifactObject } from "./uploaded-artifact.service";
@@ -148,7 +148,8 @@ export const resolveIntroVideoAgentReferences$ = command(
   > => {
     const urls: string[] = [];
     for (const url of args.urls) {
-      const reference = artifactFileReference(url);
+      const reference = await get(resolveArtifactFileReference(url, signal));
+      signal.throwIfAborted();
       const object = reference
         ? await get(
             uploadedArtifactObject({
@@ -186,9 +187,7 @@ export const resolveIntroVideoAgentReferences$ = command(
         );
       }
       urls.push(
-        await get(
-          generatePresignedGetUrl(bucket, key, 24 * 60 * 60, undefined, true),
-        ),
+        await get(generatePresignedGetUrl(bucket, key, undefined, true)),
       );
       signal.throwIfAborted();
     }

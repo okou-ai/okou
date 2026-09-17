@@ -24,9 +24,6 @@ import { cn } from "../../lib/utils";
  * instead, and `whitespace-nowrap overflow-hidden`, which would stop the long
  * key/value chips from wrapping.
  */
-const badgeClassName =
-  "inline-flex items-center gap-1 rounded-md border border-surface-border bg-gray-0 px-2 py-0.5 align-middle leading-snug [&>svg]:size-3";
-
 export type BadgeProps = useRender.ComponentProps<"span">;
 
 /** Renders a `span` unless `render` supplies another element. */
@@ -36,7 +33,13 @@ export function Badge({ className, render, ref, ...props }: BadgeProps) {
     props: {
       "data-slot": "badge",
       ...props,
-      className: cn(badgeClassName, className),
+      // Font-size utilities remove earlier leading utilities during merging.
+      // Keep the badge's own line height after caller typography.
+      className: cn(
+        "inline-flex items-center gap-1 rounded-md border border-surface-border bg-gray-0 px-2 py-0.5 align-middle [&>svg]:size-3",
+        className,
+        "leading-snug",
+      ),
     },
     ref,
     render,

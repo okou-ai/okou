@@ -56,6 +56,17 @@ export interface ManagedSocialKitPublicResult {
   readonly schema: z.ZodType;
 }
 
+export const socialKitCollectionSourceLimitSchema = z
+  .object({
+    kind: z.literal("single_batch"),
+    maxItems: z.number().int().positive(),
+  })
+  .strict();
+
+export type SocialKitCollectionSourceLimit = z.infer<
+  typeof socialKitCollectionSourceLimitSchema
+>;
+
 export interface ManagedSocialKitCollection {
   readonly resultField: ManagedSocialKitResultField;
   readonly defaultLimit?: number;
@@ -65,6 +76,7 @@ export interface ManagedSocialKitCollection {
   readonly pagination: ManagedSocialKitPagination;
   readonly emptyResult?: ManagedSocialKitUnreliableEmptyResult;
   readonly pageSize?: ManagedSocialKitProviderControlledPageSize;
+  readonly sourceLimit?: SocialKitCollectionSourceLimit;
 }
 
 export interface ManagedSocialKitToolDefinition<
@@ -154,7 +166,7 @@ function cachedUrlCollectionInput(maxLimit: number) {
     .strict();
 }
 
-const customResponseObjectSchema = z
+export const socialKitSummaryFieldsSchema = z
   .record(z.string().min(1).max(64), inputStringSchema)
   .refine(
     (value) => {
@@ -167,7 +179,7 @@ const summaryInputSchema = z
   .object({
     url: urlSchema.describe("Public social video URL to summarize"),
     custom_response: z
-      .union([inputStringSchema, customResponseObjectSchema])
+      .union([inputStringSchema, socialKitSummaryFieldsSchema])
       .optional()
       .describe("Custom response fields, as instructions or a field map"),
     custom_prompt: inputStringSchema
@@ -395,7 +407,7 @@ const instagramStatsResultSchema = providerObject({
   shortcode: z.string(),
   title: z.string(),
   description: z.string(),
-  views: countSchema,
+  views: countSchema.nullable(),
   likes: countSchema,
   comments: countSchema,
   publishedAt: z.string(),
@@ -499,7 +511,7 @@ const instagramReelsSearchResultSchema = providerObject({
   items: z.array(instagramReelsSearchItemSchema),
   count: countSchema,
   hasMore: z.boolean(),
-});
+}).required({ hasMore: true });
 
 const tiktokStatsResultSchema = providerObject({
   url: z.string(),
@@ -893,7 +905,14 @@ export const MANAGED_SOCIALKIT_TOOLS = [
     name: "instagram_stats",
     description: "Get engagement statistics for a public Instagram post.",
     path: "/instagram/stats",
-    inputSchema: urlInput(),
+    inputSchema: urlInput().extend({
+      requireViews: z
+        .boolean()
+        .optional()
+        .describe(
+          "Require verified video views; unavailable views fail without a charge",
+        ),
+    }),
     resultSchema: instagramStatsResultSchema,
   }),
   defineTool({
@@ -963,18 +982,29 @@ export const MANAGED_SOCIALKIT_TOOLS = [
   }),
   defineTool({
     name: "instagram_reels_search",
-    description: "Search public Instagram reels by keyword.",
+    description:
+      "Search public Instagram reels by keyword or hashtag in one anonymous batch of up to 12 results.",
     path: "/instagram/reels-search",
     inputSchema: z
       .object({
-        query: inputStringSchema,
-        page: z.number().int().min(1).max(2).optional(),
+        query: z
+          .string()
+          .trim()
+          .max(100)
+          .overwrite((query) => {
+            // The provider folds case. Doing it here can expand Unicode input
+            // beyond the bound before a CLI request is validated by the API.
+            return query.replace(/\s/gu, "").replace(/^(?:#|%23)+/iu, "");
+          })
+          .min(1),
+        page: z.literal(1).optional(),
       })
       .strict(),
     resultSchema: instagramReelsSearchResultSchema,
     collection: {
       resultField: "items",
-      pagination: { kind: "page", maxPage: 2 },
+      pagination: { kind: "none" },
+      sourceLimit: { kind: "single_batch", maxItems: 12 },
     },
   }),
   defineTool({
@@ -1137,7 +1167,14 @@ export const MANAGED_SOCIALKIT_TOOLS = [
     name: "youtube_transcript",
     description: "Extract the transcript from a public YouTube video.",
     path: "/youtube/transcript",
-    inputSchema: urlInput(),
+    inputSchema: urlInput().extend({
+      no_cache: z
+        .boolean()
+        .optional()
+        .describe(
+          "Bypass YouTube extraction caches, including cached caption absence; captions may still be unavailable",
+        ),
+    }),
     resultSchema: videoTranscriptResultSchema,
     availability: "transcript",
   }),
@@ -1225,7 +1262,14 @@ export const MANAGED_SOCIALKIT_TOOLS = [
     name: "youtube_summarize",
     description: "Summarize a public YouTube video.",
     path: "/youtube/summarize",
-    inputSchema: summaryInputSchema,
+    inputSchema: summaryInputSchema.extend({
+      no_cache: z
+        .boolean()
+        .optional()
+        .describe(
+          "Bypass YouTube extraction caches, not the summary-result cache; combine with cache=false for a fresh summary. Captions may still be unavailable",
+        ),
+    }),
     resultSchema: summaryResultSchema,
   }),
 ] as const;
@@ -1317,6 +1361,7 @@ export interface ManagedSocialKitToolCatalogEntry {
     readonly providerLimit?: ManagedSocialKitCatalogProviderLimit;
     readonly emptyResult?: ManagedSocialKitUnreliableEmptyResult;
     readonly pageSize?: ManagedSocialKitProviderControlledPageSize;
+    readonly sourceLimit?: SocialKitCollectionSourceLimit;
     readonly itemContract?: "tiktok_video";
   } | null;
   readonly billing: ManagedSocialKitCatalogBilling;
@@ -1430,6 +1475,9 @@ export function managedSocialKitToolCatalog(): readonly ManagedSocialKitToolCata
               ? { emptyResult: collection.emptyResult }
               : {}),
             ...(collection.pageSize ? { pageSize: collection.pageSize } : {}),
+            ...(collection.sourceLimit
+              ? { sourceLimit: collection.sourceLimit }
+              : {}),
             ...(tool.publicResult?.kind === "tiktok_video_collection"
               ? { itemContract: "tiktok_video" as const }
               : {}),

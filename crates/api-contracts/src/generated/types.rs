@@ -8,6 +8,22 @@
 
 /// Runner-facing DTOs generated from TypeScript API contracts.
 pub mod runners {
+    /// Authenticated Runner job DTOs.
+    pub mod jobs {
+        /// Authenticated deferred Pi handoff DTOs.
+        pub mod pi_handoff {
+            /// One bounded chunk of authenticated deferred Pi handoff data.
+            #[derive(serde::Deserialize)]
+            #[serde(rename_all = "camelCase", deny_unknown_fields)]
+            pub struct Response {
+                /// Base64-encoded handoff bytes.
+                pub chunk: String,
+                /// Next exact byte offset, or null after the final chunk.
+                pub next_offset: Option<u64>,
+            }
+        }
+    }
+
     /// Run-scoped DTOs exchanged between runners, guests, and the API.
     pub mod runs {
         /// API-owned provider configuration forwarded to Codex in the sandbox.
@@ -35,6 +51,52 @@ pub mod runners {
             /// Optional opaque Codex model catalog supplied by the API.
             #[serde(default, skip_serializing_if = "Option::is_none")]
             pub model_catalog: Option<serde_json::Value>,
+        }
+
+        /// Captured H0 checkpoint.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct PiDeferredLaunchConfigApiFirstTurnBaseSession {
+            /// Canonical Pi session identifier.
+            pub session_id: String,
+            /// Original H0 history digest, or null for an empty session.
+            pub sha256: Option<String>,
+        }
+
+        /// Minimum deferred handoff identity accepted by the Runner.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct PiDeferredLaunchConfigApiFirstTurn {
+            /// Deferred continuation version.
+            pub schema_version: i64,
+            /// Claimed inference owner epoch.
+            pub owner_epoch: i64,
+            /// Claimed demand generation.
+            pub generation: i64,
+            /// Execution startup deadline in Unix milliseconds.
+            pub deadline_at: i64,
+            /// Digest of the frozen resources validated by the CLI.
+            pub resource_snapshot_digest: String,
+            /// Original canonical Pi session checkpoint.
+            pub base_session: PiDeferredLaunchConfigApiFirstTurnBaseSession,
+            /// First unpublished Sandbox event sequence.
+            pub sandbox_event_sequence_start: u64,
+            /// Digest of the exact H1 or untouched H0 bytes.
+            pub history_hash: String,
+            /// Original Run authorized by the Sandbox token.
+            pub run_id: String,
+            /// Original Run has a thread capable of receiving active input.
+            pub active_input: bool,
+        }
+
+        /// Deferred Pi Runner validation view. The CLI validates the full immutable payload.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct PiDeferredLaunchConfig {
+            /// Outer Pi launch version.
+            pub schema_version: i64,
+            /// Generation-fenced durable continuation.
+            pub api_first_turn: PiDeferredLaunchConfigApiFirstTurn,
         }
 
         /// Pi session checkpoint used as the first-turn base.
@@ -176,20 +238,6 @@ pub mod runners {
             Codex,
         }
 
-        /// OpenAI-compatible transports supported by Pi.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-        pub enum PiModelConfigApi {
-            /// OpenAI Chat Completions transport.
-            #[serde(rename = "openai-completions")]
-            OpenaiCompletions,
-            /// OpenAI Responses transport.
-            #[serde(rename = "openai-responses")]
-            OpenaiResponses,
-            /// ChatGPT Codex Responses transport.
-            #[serde(rename = "openai-codex-responses")]
-            OpenaiCodexResponses,
-        }
-
         /// Thinking levels supported by Pi sessions.
         #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
         pub enum PiModelConfigThinkingLevel {
@@ -261,9 +309,6 @@ pub mod runners {
             /// Optional native Pi catalog model used only for trusted capabilities and limits.
             #[serde(default, skip_serializing_if = "Option::is_none")]
             pub catalog_model: Option<String>,
-            /// Cross-version transport input. Current writers emit OpenAI Responses; readers normalize absent or legacy values until the previous API rollback, runner/Sandbox drain, and pre-cutover context gates in #31085 pass.
-            #[serde(default, skip_serializing_if = "Option::is_none")]
-            pub api: Option<PiModelConfigApi>,
             /// Explicit Pi thinking level. Legacy payloads omit this field and retain Pi's medium default.
             #[serde(default, skip_serializing_if = "Option::is_none")]
             pub thinking_level: Option<PiModelConfigThinkingLevel>,
@@ -1116,6 +1161,52 @@ pub mod runners {
             }
         }
 
+        /// Authenticated Run cancellation reconciliation DTOs.
+        pub mod cancellation {
+            /// Effective mode persisted by the API's canonical stop decision.
+            #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+            pub enum ResponsePresentMode {
+                /// Allow bounded cancellation recovery.
+                #[serde(rename = "cooperative")]
+                Cooperative,
+                /// Stop without waiting for cooperative recovery.
+                #[serde(rename = "hard")]
+                Hard,
+            }
+
+            /// Stop intent or authenticated physical absence for an exact Run.
+            #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+            #[serde(tag = "state", rename_all_fields = "camelCase")]
+            pub enum Response {
+                /// The matching Run exists; only an explicit mode requests cancellation.
+                #[serde(rename = "present")]
+                Present {
+                    /// Version of the cancellation response contract.
+                    protocol_version: i64,
+                    /// Exact Run authorized by the request's sandbox credential.
+                    run_id: String,
+                    /// Explicit committed stop mode; null cannot reconstruct a historical intent.
+                    mode: Option<ResponsePresentMode>,
+                },
+                /// The authenticated Run is physically absent; stop its remaining execution.
+                #[serde(rename = "gone")]
+                Gone {
+                    /// Version of the cancellation response contract.
+                    protocol_version: i64,
+                    /// Exact Run authorized by the request's sandbox credential.
+                    run_id: String,
+                },
+                /// The present row does not match the expected owner or claim.
+                #[serde(rename = "unavailable")]
+                Unavailable {
+                    /// Version of the cancellation response contract.
+                    protocol_version: i64,
+                    /// Exact Run authorized by the request's sandbox credential.
+                    run_id: String,
+                },
+            }
+        }
+
         /// DTOs for reporting bounded built-in model provider failures.
         pub mod model_provider_failures {
             /// Request body for reporting a built-in model provider failure.
@@ -1236,6 +1327,15 @@ pub mod runners {
             /// Connection did not authenticate before its deadline.
             #[serde(rename = "timed_out")]
             TimedOut,
+            /// Cloudflare Access rejected the Service Token or policy.
+            #[serde(rename = "access_rejected")]
+            AccessRejected,
+            /// The Access gateway TLS identity could not be verified.
+            #[serde(rename = "access_tls_failure")]
+            AccessTlsFailure,
+            /// The Access gateway did not establish a valid carrier.
+            #[serde(rename = "access_protocol_failure")]
+            AccessProtocolFailure,
         }
 
         /// Latest connection evidence, never commands or authorization.
@@ -1385,6 +1485,131 @@ pub mod runners {
             pub fingerprint: String,
         }
 
+        /// Private SSH authentication after carrier authorization and host proof.
+        pub enum ResolveResponseResolvedAccessAuthentication {
+            /// SSH private key.
+            PrivateKey {
+                /// Bounded zeroizing key.
+                private_key: crate::SecretText<65536>,
+                /// Optional zeroizing passphrase.
+                passphrase: Option<crate::SecretText<4096>>,
+            },
+            /// SSH password.
+            Password {
+                /// Bounded zeroizing password.
+                password: crate::SecretText<4096>,
+            },
+        }
+
+        impl<'de> serde::Deserialize<'de> for ResolveResponseResolvedAccessAuthentication {
+            fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+                // Decode fields directly: serde's internally tagged Content buffer would copy secrets.
+                #[derive(serde::Deserialize)]
+                enum Kind {
+                    #[serde(rename = "private_key")]
+                    PrivateKey,
+                    #[serde(rename = "password")]
+                    Password,
+                }
+                #[derive(serde::Deserialize)]
+                #[serde(field_identifier)]
+                enum Field {
+                    #[serde(rename = "method")]
+                    Outcome,
+                    #[serde(rename = "privateKey")]
+                    PrivateKey,
+                    #[serde(rename = "passphrase")]
+                    Passphrase,
+                    #[serde(rename = "password")]
+                    Password,
+                }
+                struct Visitor;
+                impl<'de> serde::de::Visitor<'de> for Visitor {
+                    type Value = ResolveResponseResolvedAccessAuthentication;
+                    fn expecting(
+                        &self,
+                        formatter: &mut std::fmt::Formatter<'_>,
+                    ) -> std::fmt::Result {
+                        formatter.write_str("a private authority response object")
+                    }
+                    fn visit_map<M: serde::de::MapAccess<'de>>(
+                        self,
+                        mut map: M,
+                    ) -> Result<Self::Value, M::Error> {
+                        let mut outcome = None::<Kind>;
+                        let mut private_key = None::<crate::SecretText<65536>>;
+                        let mut passphrase = None::<Option<crate::SecretText<4096>>>;
+                        let mut password = None::<crate::SecretText<4096>>;
+                        while let Some(field) = map.next_key::<Field>()? {
+                            match field {
+                                Field::Outcome => {
+                                    if outcome.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    outcome = Some(map.next_value()?);
+                                }
+                                Field::PrivateKey => {
+                                    if private_key.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    private_key = Some(map.next_value()?);
+                                }
+                                Field::Passphrase => {
+                                    if passphrase.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    passphrase = Some(map.next_value()?);
+                                }
+                                Field::Password => {
+                                    if password.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    password = Some(map.next_value()?);
+                                }
+                            }
+                        }
+                        match (outcome, private_key, passphrase, password) {
+                            (Some(Kind::PrivateKey), Some(private_key), Some(passphrase), None) => {
+                                Ok(ResolveResponseResolvedAccessAuthentication::PrivateKey {
+                                    private_key,
+                                    passphrase,
+                                })
+                            }
+                            (Some(Kind::Password), None, None, Some(password)) => {
+                                Ok(ResolveResponseResolvedAccessAuthentication::Password {
+                                    password,
+                                })
+                            }
+                            _ => Err(serde::de::Error::custom("invalid authority outcome fields")),
+                        }
+                    }
+                }
+                deserializer.deserialize_map(Visitor)
+            }
+        }
+
+        /// Private Service Token for the exact saved hostname, never guest-visible.
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase", deny_unknown_fields)]
+        pub struct ResolveResponseResolvedAccessAccess {
+            /// Bounded zeroizing Client ID.
+            pub client_id: crate::SecretText<4096>,
+            /// Bounded zeroizing Client Secret.
+            pub client_secret: crate::SecretText<4096>,
+            /// Owner configuration ID.
+            pub config_id: String,
+            /// Effective Access generation.
+            pub generation: i64,
+        }
+
         /// Private JIT response. Never Debug, clone, serialize, persist or send to guest.
         pub enum ResolveResponse {
             /// Current authority not available; no secrets.
@@ -1421,6 +1646,23 @@ pub mod runners {
                 /// Bounded zeroizing login password, preserving whitespace.
                 password: crate::SecretText<4096>,
             },
+            /// Authorized protected carrier and SSH credential handoff.
+            ResolvedAccess {
+                /// Current destination, private to Runner.
+                host: String,
+                /// Current destination port.
+                port: u64,
+                /// Current login identity.
+                username: String,
+                /// Current configuration generation.
+                generation: i64,
+                /// Existing pin, or first-use trust required.
+                learned_host_key: Option<ResolveResponseResolvedLearnedHostKey>,
+                /// SSH authentication after protected carrier and host proof.
+                authentication: ResolveResponseResolvedAccessAuthentication,
+                /// Private Access authority for the exact saved recipient.
+                access: ResolveResponseResolvedAccessAccess,
+            },
         }
 
         impl<'de> serde::Deserialize<'de> for ResolveResponse {
@@ -1434,6 +1676,8 @@ pub mod runners {
                     Resolved,
                     #[serde(rename = "resolved_password")]
                     ResolvedPassword,
+                    #[serde(rename = "resolved_access")]
+                    ResolvedAccess,
                 }
                 #[derive(serde::Deserialize)]
                 #[serde(field_identifier)]
@@ -1456,6 +1700,10 @@ pub mod runners {
                     Passphrase,
                     #[serde(rename = "password")]
                     Password,
+                    #[serde(rename = "authentication")]
+                    Authentication,
+                    #[serde(rename = "access")]
+                    Access,
                 }
                 struct Visitor;
                 impl<'de> serde::de::Visitor<'de> for Visitor {
@@ -1480,6 +1728,9 @@ pub mod runners {
                         let mut private_key = None::<crate::SecretText<65536>>;
                         let mut passphrase = None::<Option<crate::SecretText<4096>>>;
                         let mut password = None::<crate::SecretText<4096>>;
+                        let mut authentication =
+                            None::<ResolveResponseResolvedAccessAuthentication>;
+                        let mut access = None::<ResolveResponseResolvedAccessAccess>;
                         while let Some(field) = map.next_key::<Field>()? {
                             match field {
                                 Field::Outcome => {
@@ -1554,6 +1805,22 @@ pub mod runners {
                                     }
                                     password = Some(map.next_value()?);
                                 }
+                                Field::Authentication => {
+                                    if authentication.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    authentication = Some(map.next_value()?);
+                                }
+                                Field::Access => {
+                                    if access.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    access = Some(map.next_value()?);
+                                }
                             }
                         }
                         match (
@@ -1566,9 +1833,13 @@ pub mod runners {
                             private_key,
                             passphrase,
                             password,
+                            authentication,
+                            access,
                         ) {
                             (
                                 Some(Kind::Unavailable),
+                                None,
+                                None,
                                 None,
                                 None,
                                 None,
@@ -1587,6 +1858,8 @@ pub mod runners {
                                 Some(learned_host_key),
                                 Some(private_key),
                                 Some(passphrase),
+                                None,
+                                None,
                                 None,
                             ) => Ok(ResolveResponse::Resolved {
                                 host,
@@ -1607,6 +1880,8 @@ pub mod runners {
                                 None,
                                 None,
                                 Some(password),
+                                None,
+                                None,
                             ) => Ok(ResolveResponse::ResolvedPassword {
                                 host,
                                 port,
@@ -1614,6 +1889,27 @@ pub mod runners {
                                 generation,
                                 learned_host_key,
                                 password,
+                            }),
+                            (
+                                Some(Kind::ResolvedAccess),
+                                Some(host),
+                                Some(port),
+                                Some(username),
+                                Some(generation),
+                                Some(learned_host_key),
+                                None,
+                                None,
+                                None,
+                                Some(authentication),
+                                Some(access),
+                            ) => Ok(ResolveResponse::ResolvedAccess {
+                                host,
+                                port,
+                                username,
+                                generation,
+                                learned_host_key,
+                                authentication,
+                                access,
                             }),
                             _ => Err(serde::de::Error::custom("invalid authority outcome fields")),
                         }
@@ -1987,9 +2283,12 @@ pub mod webhooks {
                 /// The run reached its execution time limit.
                 #[serde(rename = "execution_timeout")]
                 ExecutionTimeout,
-                /// The provider account lacks credits.
+                /// The vm0 workspace lacks credits.
                 #[serde(rename = "insufficient_credits")]
                 InsufficientCredits,
+                /// The upstream provider account lacks credits.
+                #[serde(rename = "provider_insufficient_credits")]
+                ProviderInsufficientCredits,
                 /// The configured API key is invalid.
                 #[serde(rename = "invalid_api_key")]
                 InvalidApiKey,
@@ -2017,6 +2316,9 @@ pub mod webhooks {
                 /// The provider stream timed out.
                 #[serde(rename = "provider_stream_timeout")]
                 ProviderStreamTimeout,
+                /// The provider expired the request before processing started.
+                #[serde(rename = "provider_queue_timeout")]
+                ProviderQueueTimeout,
                 /// The provider returned a server error.
                 #[serde(rename = "provider_server_error")]
                 ProviderServerError,

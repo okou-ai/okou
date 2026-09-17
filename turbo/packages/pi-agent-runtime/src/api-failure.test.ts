@@ -5,8 +5,64 @@ import {
   projectPiApiModelFailure,
 } from "./api-failure";
 import { projectPiApiAssistantMessage } from "./api-turn";
+import providerFailures from "./test/fixtures/provider-failures.json";
 
 describe("Pi API model failure diagnostics", () => {
+  it.each(providerFailures)(
+    "preserves the sandbox Pi/Codex/Claude reason for $message",
+    ({ message, reason }) => {
+      const requestError = new PiApiModelRequestError(
+        new Error(message),
+        "openai-codex",
+      );
+      const assistant = projectPiApiAssistantMessage({
+        ...fauxAssistantMessage(""),
+        provider: "openai-codex",
+        stopReason: "error",
+        errorMessage: message,
+      });
+      expect(requestError.failureReason).toBe(reason ?? undefined);
+      expect(assistant.failureReason).toBe(reason ?? undefined);
+      expect(assistant.stopReason).toBe("error");
+    },
+  );
+
+  it.each([undefined, 200, 503])(
+    "preserves queue expiry at the thrown request boundary with status %s",
+    (status) => {
+      const error = new PiApiModelRequestError(
+        new Error(
+          "We were unable to start processing your request within the 900-second timeout limit. Please try again later.",
+        ),
+        "deepseek",
+        status,
+      );
+      expect(error.failureReason).toBe("provider_queue_timeout");
+      expect(error.diagnostic.httpStatus).toBe(status);
+      expect(error.message).toBe("Pi API model request failed");
+    },
+  );
+  it("classifies a truncated final answer but never successful or aborted answer text", () => {
+    const message = fauxAssistantMessage("Partial answer");
+    expect(
+      projectPiApiAssistantMessage({ ...message, stopReason: "length" })
+        .failureReason,
+    ).toBe("output_token_limit");
+    for (const stopReason of ["stop", "aborted"] as const) {
+      for (const errorMessage of [
+        "Our servers are currently overloaded. Please try again later.",
+        "Codex error: Invalid prompt: your prompt was flagged as potentially violating our usage policy. Please try again with a different prompt: https://example.invalid/policy",
+      ]) {
+        expect(
+          projectPiApiAssistantMessage({
+            ...message,
+            stopReason,
+            errorMessage,
+          }).failureReason,
+        ).toBeUndefined();
+      }
+    }
+  });
   it.each([522, 525, 401, 403])(
     "retains observed HTTP %s without provider content",
     (status) => {
@@ -70,7 +126,9 @@ describe("Pi API model failure diagnostics", () => {
 
   it("keeps known product failures on the thrown request boundary", () => {
     const error = new PiApiModelRequestError(
-      new Error("usage_limit private sentinel"),
+      new Error(
+        '{"error":{"code":"usage_limit_reached","message":"private sentinel"}}',
+      ),
       "openai-codex",
       429,
     );

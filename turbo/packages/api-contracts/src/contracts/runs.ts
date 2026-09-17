@@ -2,6 +2,8 @@ import { z } from "zod";
 import { timestampQueryNumberSchema } from "./base";
 import { firewallPoliciesSchema } from "@okouai/connectors/firewall-contracts";
 import {
+  modelProviderCredentialScopeSchema,
+  modelProviderTypeSchema,
   modelProviderWriteTypeSchema,
   type ModelProviderWriteType,
 } from "./model-providers";
@@ -185,6 +187,22 @@ const getRunResponseSchema = z.object({
   createdAt: z.string(),
   startedAt: z.string().optional(),
   completedAt: z.string().optional(),
+  /** Stored run identity; omitted by older APIs. Never a current route projection. */
+  source: z
+    .object({
+      providerType: modelProviderTypeSchema.nullable(),
+      runtimeProviderType: modelProviderTypeSchema.nullable(),
+      model: z.string().nullable(),
+      credentialScope: modelProviderCredentialScopeSchema.nullable(),
+      account: z.discriminatedUnion("status", [
+        z.object({ status: z.literal("unknown") }),
+        z.object({ status: z.literal("unavailable") }),
+        z.object({ status: z.literal("connected"), id: z.uuid() }),
+      ]),
+    })
+    .optional(),
+  /** Omitted when tracing was disabled for this run or by older APIs. */
+  langfuseTraceUrl: z.url().optional(),
 });
 
 /**

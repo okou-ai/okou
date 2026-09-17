@@ -1,43 +1,16 @@
 import type { IntroVideoStyle } from "@okouai/api-contracts/contracts/intro-video-presenter";
 import { cn } from "@okouai/ui";
-import { useGet, useSet } from "ccstate-react";
 import { Check, LayoutTemplate, Play } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import { introVideoStyleGallerySignals } from "../../signals/okou-page/intro-video-style-gallery.ts";
+import {
+  markVideoPreviewPlaying,
+  resetVideoPreview,
+  startVideoPreview,
+} from "./video-preview-hover.ts";
 
 function StylePreviewMedia({ style }: { readonly style: IntroVideoStyle }) {
   const { t } = useTranslation();
-  const previewId = useGet(introVideoStyleGallerySignals.previewId$);
-  const previewStyle = useSet(introVideoStyleGallerySignals.previewStyle$);
-  if (previewId === style.id && style.previewVideoUrl) {
-    return (
-      <>
-        <video
-          src={style.previewVideoUrl}
-          poster={style.thumbnailUrl}
-          controls
-          autoPlay
-          muted
-          playsInline
-          preload="metadata"
-          aria-label={style.name}
-          className="peer h-full w-full object-contain data-[failed=true]:hidden"
-          onError={(event) => {
-            event.currentTarget.dataset.failed = "true";
-          }}
-        />
-        <p
-          role="status"
-          className="hidden p-3 text-sm text-muted-foreground peer-data-[failed=true]:block"
-        >
-          {t(($) => {
-            return $.chat.introVideo.style.previewUnavailable;
-          })}
-        </p>
-      </>
-    );
-  }
   return (
     <>
       {style.thumbnailUrl ? (
@@ -54,23 +27,46 @@ function StylePreviewMedia({ style }: { readonly style: IntroVideoStyle }) {
         </span>
       )}
       {style.previewVideoUrl ? (
-        <button
-          type="button"
-          aria-label={t(
-            ($) => {
-              return $.chat.introVideo.style.preview;
-            },
-            { title: style.name },
-          )}
-          onClick={() => {
-            previewStyle(style.id);
-          }}
-          className="absolute inset-0 grid place-items-center bg-black/10 text-white transition-colors hover:bg-black/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-        >
-          <span className="grid size-11 place-items-center rounded-full bg-black/55">
-            <Play size={20} fill="currentColor" />
-          </span>
-        </button>
+        <>
+          <video
+            src={style.previewVideoUrl}
+            preload="none"
+            playsInline
+            muted
+            loop
+            aria-hidden="true"
+            className="peer pointer-events-none absolute inset-0 h-full w-full object-contain opacity-0 data-[preview-playing=true]:opacity-100"
+            onPlaying={(event) => {
+              markVideoPreviewPlaying(event.currentTarget, true);
+            }}
+            onPause={(event) => {
+              markVideoPreviewPlaying(event.currentTarget, false);
+            }}
+            onError={(event) => {
+              markVideoPreviewPlaying(event.currentTarget, false);
+            }}
+          />
+          <button
+            type="button"
+            aria-label={t(
+              ($) => {
+                return $.chat.introVideo.style.preview;
+              },
+              { title: style.name },
+            )}
+            onClick={(event) => {
+              startVideoPreview(
+                event.currentTarget.parentElement?.querySelector("video") ??
+                  null,
+              );
+            }}
+            className="absolute inset-0 grid place-items-center bg-black/10 text-white transition-colors hover:bg-black/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring peer-data-[preview-playing=true]:pointer-events-none peer-data-[preview-playing=true]:opacity-0"
+          >
+            <span className="grid size-11 place-items-center rounded-full bg-black/55">
+              <Play size={20} fill="currentColor" />
+            </span>
+          </button>
+        </>
       ) : null}
     </>
   );
@@ -93,7 +89,15 @@ export function IntroVideoStyleCard({
         selected ? "border-primary" : "border-border",
       )}
     >
-      <div className="relative aspect-video overflow-hidden bg-muted">
+      <div
+        className="relative aspect-video overflow-hidden bg-muted"
+        onMouseEnter={(event) => {
+          startVideoPreview(event.currentTarget.querySelector("video"));
+        }}
+        onMouseLeave={(event) => {
+          resetVideoPreview(event.currentTarget.querySelector("video"));
+        }}
+      >
         <StylePreviewMedia style={style} />
       </div>
       <button

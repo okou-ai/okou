@@ -11,7 +11,7 @@ import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reason
 import {
   modelAllowedForPlan,
   modelPlanCapabilities$,
-  modelPolicyAllowedForPlan,
+  memberModelPolicyAllowedForPlan,
 } from "./model-plan-capabilities.ts";
 
 interface UserModelDefaultSource {
@@ -60,7 +60,13 @@ export function isCodexFastModeAvailableForSelection(params: {
   const policy = params.policies?.policies.find((candidate) => {
     return candidate.model === params.selectedModel;
   });
-  return policy?.routeStatus === "valid";
+  // Availability can change without changing this model's Fast capability.
+  // Preserve the saved choice through reconnect, plan restrictions and outages;
+  // send readiness and admission own whether it can run now.
+  return (
+    policy !== undefined &&
+    (policy.memberEffective !== undefined || policy.routeStatus === "valid")
+  );
 }
 
 export function resolveModelFirstUserDefaultSelection(params: {
@@ -128,7 +134,7 @@ export const resolveExplicitModelSelection$ = command(
     if (
       !modelAllowedForPlan(selectedModel, modelCapabilities) ||
       (selectedPolicy !== undefined &&
-        !modelPolicyAllowedForPlan(selectedPolicy, modelCapabilities))
+        !memberModelPolicyAllowedForPlan(selectedPolicy, modelCapabilities))
     ) {
       return { kind: "compare-plans" };
     }

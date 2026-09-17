@@ -1,6 +1,7 @@
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
+  ArrowRight,
   ArrowUpRight,
   CalendarDays,
   ChartNoAxesCombined,
@@ -11,25 +12,55 @@ import {
   MessageSquare,
   Presentation,
   RefreshCw,
+  Route,
   Sparkles,
   UserRound,
   Video,
-  Workflow,
 } from "lucide-react";
 import { Button } from "@okouai/ui";
+import { cn } from "@okouai/ui/lib/utils";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import type {
-  ComposerIdeaTask,
+  ComposerPromptRowTask,
   ComposerTask,
+  ComposerTemplateTask,
 } from "../../signals/okou-page/composer-task-chips.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ComposerPresentationRecommendations } from "./chat-composer.tsx";
+import {
+  ComposerRail,
+  RAIL_TILE,
+  RAIL_TILE_CAPTION,
+} from "./composer-rail.tsx";
+import {
+  slashTemplatePreviewGroup,
+  type SlashTemplatePreview,
+  type SlashTemplatePreviewCategory,
+} from "./composer-template-catalog.ts";
 import { ComposerWorkflowRecommendations } from "./composer-workflow-recommendations.tsx";
 import { ComposerVisualizationOptions } from "./composer-visualization-options.tsx";
 
+/**
+ * Both chip rows -- the task types and the ideas inside a type -- are the same
+ * object, so the one thing they override carries one definition.
+ *
+ * `neutral` at its default size is a form button: `px-4` against a fixed `h-9`
+ * leaves 17.25px of ink inset on the sides and 11.5px above and below, a
+ * 1.5 : 1 frame that reads as a submit control rather than a chip. `px-3`
+ * brings the sides to 13.25px, or 1.15 : 1 -- close to even, with the slight
+ * horizontal margin a label needs to not touch its own edge. The height is
+ * deliberately left alone: `h-9` is what sets this row's rhythm under the
+ * composer, and what reads wrong is the frame, not the size.
+ *
+ * Padding is the caller's to set; the border is not. The stroke stays on the
+ * variant's `control-border`, because `--border` is `gray-200` rather than
+ * `gray-300` under the color presets, so borrowing it here would take two
+ * stops in those palettes instead of one.
+ */
+const TASK_CHIP = "px-3";
 const TASK_ICONS = {
-  workflow: Workflow,
+  workflow: Route,
   presentation: Presentation,
   image: Image,
   video: Video,
@@ -37,6 +68,16 @@ const TASK_ICONS = {
   visualization: ChartNoAxesCombined,
 } as const;
 const IDEA_ICONS = {
+  presentation: [
+    Presentation,
+    MessageSquare,
+    Sparkles,
+    FileText,
+    UserRound,
+    ChartNoAxesCombined,
+    Globe,
+    CalendarDays,
+  ],
   image: [
     Image,
     UserRound,
@@ -66,7 +107,6 @@ const IDEA_ICONS = {
     CalendarDays,
   ],
 } as const;
-const IDEAS_PER_PAGE = 4;
 const IMAGE_IDEAS = [
   "productScene",
   "headshot",
@@ -97,6 +137,16 @@ const VIDEO_IDEAS = [
   "brandIntro",
   "videoGreeting",
 ] as const;
+const PRESENTATION_IDEAS = [
+  "pitchDeck",
+  "teamUpdate",
+  "productIntro",
+  "clientProposal",
+  "training",
+  "resultsReadout",
+  "companyOverview",
+  "eventTalk",
+] as const;
 const WEBSITE_IDEAS = [
   "businessSite",
   "portfolio",
@@ -107,15 +157,166 @@ const WEBSITE_IDEAS = [
   "linkPage",
   "bookingPage",
 ] as const;
-const CHIP_CLASS =
-  "gap-2 rounded-full border border-transparent px-3 font-normal hover:bg-gray-50";
+/**
+ * Illustration styles run 20 portrait, 9 square and 3 landscape, so their own
+ * proportions cannot line up. One 4:5 tile centre-crops them into a single
+ * rhythm; a style sample is judged on texture and palette, and the uncropped
+ * artwork is still what the picker dialog shows. The other two catalogs are
+ * screenshots of 16:9 artifacts and keep that ratio.
+ */
+const TASK_TEMPLATE_SHELF = {
+  image: {
+    category: "illustration",
+    width: "w-[118px]",
+    ratio: "aspect-[4/5]",
+  },
+  video: { category: "video", width: "w-[200px]", ratio: "aspect-video" },
+  website: { category: "website", width: "w-[200px]", ratio: "aspect-video" },
+} as const satisfies Record<
+  ComposerTemplateTask,
+  {
+    readonly category: SlashTemplatePreviewCategory;
+    readonly width: string;
+    readonly ratio: string;
+  }
+>;
+
+/**
+ * One cover. Selecting it attaches the template to the composer the same way
+ * the slash panel does; the catalog already pairs each preview with the
+ * attachment its chip stores.
+ */
+function ComposerTemplateCover({
+  preview,
+  width,
+  ratio,
+  onSelect,
+}: {
+  readonly preview: SlashTemplatePreview;
+  readonly width: string;
+  readonly ratio: string;
+  readonly onSelect: (preview: SlashTemplatePreview) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <Button
+      type="button"
+      variant="quiet"
+      className={cn(RAIL_TILE, width)}
+      aria-label={t(
+        ($) => {
+          return $.chat.composer.slashPanel.useTemplate;
+        },
+        { title: preview.title },
+      )}
+      onClick={() => {
+        onSelect(preview);
+      }}
+    >
+      <span
+        className={cn(
+          "block overflow-hidden rounded-lg border border-border bg-muted",
+          ratio,
+        )}
+      >
+        <img
+          src={preview.coverUrl}
+          alt=""
+          loading="lazy"
+          className="h-full w-full object-cover object-center transition-transform duration-200 group-hover/tile:scale-[1.04]"
+        />
+      </span>
+      <span className={RAIL_TILE_CAPTION}>{preview.title}</span>
+    </Button>
+  );
+}
+
+/**
+ * The cover shelf for a type. Its header owns the two actions that used to
+ * float in a column of their own: the catalog link stays on the title line,
+ * and paging stays beside the covers it moves.
+ */
+function ComposerTemplateShelf({
+  signals,
+  task,
+}: {
+  readonly signals: ComposerSignals;
+  readonly task: ComposerTemplateTask;
+}) {
+  const { t } = useTranslation();
+  const { category, width, ratio } = TASK_TEMPLATE_SHELF[task];
+  const group = slashTemplatePreviewGroup(category);
+  const insertTemplate = useSet(signals.template.insertTemplate$);
+  const openTemplates = useSet(signals.template.openTemplatePicker$);
+  const saveDraft = useSet(signals.draft.save$);
+  const pageSignal = useGet(pageSignal$);
+  // Named one key at a time: the extractor only keeps keys it can see.
+  const labels = {
+    image: t(($) => {
+      return $.chat.taskChips.shelf.image;
+    }),
+    video: t(($) => {
+      return $.chat.taskChips.shelf.video;
+    }),
+    website: t(($) => {
+      return $.chat.taskChips.shelf.website;
+    }),
+  };
+  const label = labels[task];
+  return (
+    <div
+      className="flex min-w-0 flex-col gap-3"
+      role="group"
+      aria-label={label}
+    >
+      <div className="flex min-w-0 items-center justify-between gap-3">
+        <p className="min-w-0 truncate text-[13px] font-medium">{label}</p>
+        <Button
+          type="button"
+          variant="quiet"
+          size="xs"
+          className="shrink-0 gap-1.5 font-normal"
+          onClick={() => {
+            openTemplates({ kind: "insert", category });
+          }}
+        >
+          {t(($) => {
+            return task === "image"
+              ? $.chat.taskChips.shelf.browseStyles
+              : $.chat.taskChips.shelf.browseTemplates;
+          })}
+          <ArrowRight className="size-3" aria-hidden />
+        </Button>
+      </div>
+      <ComposerRail
+        signals={signals}
+        rail={`templates:${task}`}
+        gap="gap-3"
+        items={group.previews.map((preview) => {
+          return (
+            <ComposerTemplateCover
+              key={preview.slug}
+              preview={preview}
+              width={width}
+              ratio={ratio}
+              onSelect={() => {
+                insertTemplate(preview.template, preview.attachment);
+                detach(saveDraft(pageSignal), Reason.DomCallback);
+              }}
+            />
+          );
+        })}
+      />
+    </div>
+  );
+}
 
 function ComposerTaskIdeas({
   signals,
   task,
 }: {
   readonly signals: ComposerSignals;
-  readonly task: Exclude<ComposerIdeaTask, "workflow">;
+  readonly task: ComposerPromptRowTask;
 }) {
   const { t } = useTranslation();
   const copy = t(
@@ -134,90 +335,45 @@ function ComposerTaskIdeas({
     website: WEBSITE_IDEAS.map((key) => {
       return copy.website[key];
     }),
+    presentation: PRESENTATION_IDEAS.map((key) => {
+      return copy.presentation[key];
+    }),
   }[task];
-  const page = useGet(signals.taskChips.ideaPages$)[task];
-  const nextIdeas = useSet(signals.taskChips.nextIdeas$);
-  const insertPrompt = useSet(signals.editor.selectOrAppendText$);
+  const insertPrompt = useSet(signals.editor.replacePromptText$);
   const saveDraft = useSet(signals.draft.save$);
   const pageSignal = useGet(pageSignal$);
-  const openTemplates = useSet(signals.template.openTemplatePicker$);
   const icons = IDEA_ICONS[task];
-  const pageIdeas = Array.from({ length: IDEAS_PER_PAGE }, (_, index) => {
-    return ideas[(page * IDEAS_PER_PAGE + index) % ideas.length]!;
-  });
   return (
-    <div
-      className="grid min-w-0 grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-[minmax(0,1fr)_auto]"
-      role="group"
-      aria-label={t(($) => {
+    <ComposerRail
+      signals={signals}
+      rail={`ideas:${task}`}
+      label={t(($) => {
         return $.chat.taskChips.ideasLabel;
       })}
-    >
-      <div className="grid min-w-0 grid-cols-1 gap-1">
-        {pageIdeas.map((idea, index) => {
-          const ideaIndex = (page * IDEAS_PER_PAGE + index) % ideas.length;
-          const Icon = icons[ideaIndex % icons.length]!;
-          return (
-            <Button
-              key={idea.label}
-              type="button"
-              variant="quiet"
-              size="sm"
-              className="group h-auto min-h-11 min-w-0 justify-start gap-3 px-3 py-2 text-left font-normal hover:bg-gray-50"
-              onClick={() => {
-                insertPrompt(idea.prompt);
-                detach(saveDraft(pageSignal), Reason.DomCallback);
-              }}
-            >
-              <Icon
-                size={16}
-                className="shrink-0 text-muted-foreground"
-                aria-hidden
-              />
-              <span className="min-w-0 flex-1 whitespace-normal text-[13px] leading-5">
-                {idea.label}
-              </span>
-              <ArrowUpRight
-                size={14}
-                className="shrink-0 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100"
-                aria-hidden
-              />
-            </Button>
-          );
-        })}
-      </div>
-      <div className="flex flex-col items-end gap-1 sm:pt-2">
-        <Button
-          type="button"
-          variant="quiet"
-          size="xs"
-          className="gap-2 font-normal hover:bg-gray-50"
-          onClick={() => {
-            nextIdeas(task, Math.ceil(ideas.length / IDEAS_PER_PAGE));
-          }}
-        >
-          <RefreshCw size={14} aria-hidden />
-          {t(($) => {
-            return $.chat.taskChips.moreIdeas;
-          })}
-        </Button>
-        {task === "website" && (
+      gap="gap-2"
+      items={ideas.map((idea, index) => {
+        const Icon = icons[index % icons.length]!;
+        return (
           <Button
+            key={idea.label}
             type="button"
-            variant="quiet"
-            size="xs"
-            className="font-normal hover:bg-gray-50"
+            variant="neutral"
+            className={cn("shrink-0", TASK_CHIP)}
             onClick={() => {
-              openTemplates({ kind: "insert", category: "website" });
+              insertPrompt(idea.prompt);
+              detach(saveDraft(pageSignal), Reason.DomCallback);
             }}
           >
-            {t(($) => {
-              return $.chat.taskChips.moreTemplates;
-            })}
+            <Icon
+              size={16}
+              className="shrink-0 text-muted-foreground"
+              aria-hidden
+            />
+            {idea.label}
           </Button>
-        )}
-      </div>
-    </div>
+        );
+      })}
+    />
   );
 }
 
@@ -252,7 +408,7 @@ export function ComposerTaskChips({
     >
       {selected === null && (
         <div
-          className="flex flex-wrap items-center justify-start gap-1.5"
+          className="flex flex-wrap items-center justify-start gap-2"
           role="group"
           aria-label={t(($) => {
             return $.chat.taskChips.chooseTask;
@@ -273,35 +429,56 @@ export function ComposerTaskChips({
                 <Button
                   key={task}
                   type="button"
-                  size="sm"
-                  variant="quiet"
-                  className={CHIP_CLASS}
+                  variant="neutral"
+                  className={TASK_CHIP}
                   onClick={() => {
                     selectTask(task);
                   }}
                 >
-                  <Icon size={16} aria-hidden />
+                  <Icon
+                    size={16}
+                    className="text-muted-foreground"
+                    aria-hidden
+                  />
                   {labels[task]}
                 </Button>
               );
             })}
         </div>
       )}
-      {selected === "presentation" && (
-        <ComposerPresentationRecommendations signals={signals} />
+      {selected !== null && (
+        // Keyed by the type so switching remounts the panel: a CSS entry runs
+        // on mount, and the rails inside start again from their first item and
+        // their own left edge, which is where a new catalog should begin.
+        <div
+          key={selected}
+          className={cn(
+            "flex min-w-0 flex-col gap-5",
+            "motion-safe:animate-composer-panel-in",
+          )}
+        >
+          {selected === "presentation" && (
+            <>
+              <ComposerTaskIdeas signals={signals} task="presentation" />
+              <ComposerPresentationRecommendations signals={signals} />
+            </>
+          )}
+          {selected === "workflow" && (
+            <ComposerWorkflowRecommendations signals={signals} />
+          )}
+          {selected === "visualization" && (
+            <ComposerVisualizationOptions signals={signals} />
+          )}
+          {selected !== "presentation" &&
+            selected !== "workflow" &&
+            selected !== "visualization" && (
+              <>
+                <ComposerTaskIdeas signals={signals} task={selected} />
+                <ComposerTemplateShelf signals={signals} task={selected} />
+              </>
+            )}
+        </div>
       )}
-      {selected === "workflow" && (
-        <ComposerWorkflowRecommendations signals={signals} />
-      )}
-      {selected === "visualization" && (
-        <ComposerVisualizationOptions signals={signals} />
-      )}
-      {selected !== null &&
-        selected !== "presentation" &&
-        selected !== "workflow" &&
-        selected !== "visualization" && (
-          <ComposerTaskIdeas signals={signals} task={selected} />
-        )}
     </section>
   );
 }

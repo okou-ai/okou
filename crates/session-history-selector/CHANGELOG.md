@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.3.100](https://github.com/vm0-ai/okou/compare/session-history-selector-v0.3.99...session-history-selector-v0.3.100) (2026-09-17)
+
+## [0.3.99](https://github.com/vm0-ai/okou/compare/session-history-selector-v0.3.98...session-history-selector-v0.3.99) (2026-09-17)
+
+## [0.3.98](https://github.com/vm0-ai/okou/compare/session-history-selector-v0.3.97...session-history-selector-v0.3.98) (2026-09-16)
+
+## [0.3.97](https://github.com/vm0-ai/okou/compare/session-history-selector-v0.3.96...session-history-selector-v0.3.97) (2026-09-16)
+
+## [0.3.96](https://github.com/vm0-ai/okou/compare/session-history-selector-v0.3.95...session-history-selector-v0.3.96) (2026-09-16)
+
+## [0.3.95](https://github.com/vm0-ai/okou/compare/session-history-selector-v0.3.94...session-history-selector-v0.3.95) (2026-09-16)
+
+## [0.3.94](https://github.com/vm0-ai/vm0/compare/session-history-selector-v0.3.93...session-history-selector-v0.3.94) (2026-09-15)
+
+## [0.3.93](https://github.com/vm0-ai/vm0/compare/session-history-selector-v0.3.92...session-history-selector-v0.3.93) (2026-09-15)
+
+## [0.3.92](https://github.com/vm0-ai/vm0/compare/session-history-selector-v0.3.91...session-history-selector-v0.3.92) (2026-09-15)
+
+## [0.3.91](https://github.com/vm0-ai/vm0/compare/session-history-selector-v0.3.90...session-history-selector-v0.3.91) (2026-09-15)
+
+## [0.3.90](https://github.com/vm0-ai/vm0/compare/session-history-selector-v0.3.89...session-history-selector-v0.3.90) (2026-09-15)
+
+## [0.3.89](https://github.com/vm0-ai/vm0/compare/session-history-selector-v0.3.88...session-history-selector-v0.3.89) (2026-09-14)
+
 ## [0.3.88](https://github.com/vm0-ai/vm0/compare/session-history-selector-v0.3.87...session-history-selector-v0.3.88) (2026-09-11)
 
 ## [0.3.87](https://github.com/vm0-ai/vm0/compare/session-history-selector-v0.3.86...session-history-selector-v0.3.87) (2026-09-11)

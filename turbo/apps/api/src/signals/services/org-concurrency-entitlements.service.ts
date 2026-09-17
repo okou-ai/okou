@@ -2,12 +2,12 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-subscription";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
-import { and, asc, count, eq, gt, inArray, or, sql, sum } from "drizzle-orm";
+import { and, asc, count, eq, gt, inArray, sql, sum } from "drizzle-orm";
 import { pgIntegerDecoder } from "../../lib/db-structured-result";
 import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
-import { activePendingRunPredicate } from "./agent-run-activity.service";
+import { sandboxCapacityPredicate } from "./pi-inference-lifecycle.service";
 
 export const CONCURRENCY_SUBSCRIPTION_PURPOSE = "concurrency_subscription";
 const CONCURRENCY_SUBSCRIPTION_ACTIVE_STATUSES = [
@@ -134,13 +134,7 @@ export async function loadOrgConcurrencyState(
     .where(
       and(
         eq(agentRuns.orgId, args.orgId),
-        or(
-          eq(agentRuns.status, "running"),
-          and(
-            eq(agentRuns.status, "pending"),
-            activePendingRunPredicate(args.activePendingAfter),
-          ),
-        ),
+        sandboxCapacityPredicate(db, args.orgId, args.activePendingAfter),
       ),
     )
     .as("active_concurrency_run_totals");

@@ -7,6 +7,7 @@ import {
   click,
   queryAllByRoleFast,
   setupPage,
+  startPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
@@ -131,7 +132,7 @@ test("Enabling cloud browser replaces the Computer Use host", async () => {
     return respond(200, { hosts: [onlineComputerUseHost(HOST_ID)] });
   });
 
-  await setupPage({
+  const page = await startPage({
     context,
     path: `/chats/${thread.id}`,
     auth,
@@ -147,6 +148,7 @@ test("Enabling cloud browser replaces the Computer Use host", async () => {
     screen.getByRole("switch", { name: "Enable Cloud browser" }),
   ).not.toBeChecked();
   remote.resolve();
+  await page.ready;
 
   await openComputerMenu();
   const enabledCloudBrowser = await screen.findByRole("switch", {
@@ -292,7 +294,7 @@ test("Service tier and Computer Use settings update independently", async () => 
     hosts: [onlineComputerUseHost(HOST_ID)],
   });
 
-  await setupPage({
+  const page = await startPage({
     context,
     path: `/chats/${target.id}`,
     auth,
@@ -311,6 +313,7 @@ test("Service tier and Computer Use settings update independently", async () => 
   });
   expect(disconnectedHost).not.toBeChecked();
   remote.resolve();
+  await page.ready;
 
   await expectSelectedModel("GPT 5.6 Sol Fast");
   await openComputerMenu();

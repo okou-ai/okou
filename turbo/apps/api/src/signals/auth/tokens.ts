@@ -26,10 +26,13 @@ const PAT_TOKEN_PREFIX = "vm0_pat_";
 const SANDBOX_TOKEN_TTL_SECONDS = 3 * 60 * 60;
 
 const CONDITIONAL_CAPABILITIES = [
+  ["artifact:read", FeatureSwitchKey.PrivateArtifacts],
+  ["artifact:write", FeatureSwitchKey.PrivateArtifacts],
   ["banking:read", FeatureSwitchKey.Banking],
-  ["slack:read", FeatureSwitchKey.SlackRead],
+  ["lark:write", FeatureSwitchKey.LarkIntegration],
   ["ssh:read", FeatureSwitchKey.SshAccess],
   ["ssh:write", FeatureSwitchKey.SshAccess],
+  ["user-template:write", FeatureSwitchKey.CustomTemplates],
 ] as const satisfies readonly (readonly [Capability, FeatureSwitchKey])[];
 
 const AGENT_EXCLUDED_CAPABILITIES = [
@@ -51,6 +54,12 @@ const jwtBaseSchema = z.object({
 });
 
 const sandboxTokenPayloadSchema = jwtBaseSchema.extend({
+  piSandbox: z
+    .object({
+      ownerEpoch: z.number().int().positive(),
+      generation: z.number().int().positive(),
+    })
+    .optional(),
   scope: z.literal("sandbox"),
   runId: z.string().min(1),
   orgId: z.string().min(1),
@@ -243,6 +252,7 @@ export function verifySandboxToken(token: string): SandboxAuth | null {
   }
 
   return {
+    ...(parsed.data.piSandbox ? { piSandbox: parsed.data.piSandbox } : {}),
     userId: parsed.data.userId,
     runId: parsed.data.runId,
     orgId: parsed.data.orgId,
@@ -310,10 +320,12 @@ export function generateSandboxToken(
   userId: string,
   runId: string,
   orgId: string,
+  piSandbox?: SandboxAuth["piSandbox"],
 ): string {
   const nowSeconds = Math.floor(now() / 1000);
   const payload: z.infer<typeof sandboxTokenPayloadSchema> = {
     scope: "sandbox",
+    ...(piSandbox ? { piSandbox } : {}),
     userId,
     runId,
     orgId,

@@ -6,6 +6,10 @@ import { apiErrorSchema } from "./errors";
 import { runFailureReasonTokenSchema } from "./run-failure-reasons";
 import { piMemoryCitationSchema } from "./pi-memory-citations";
 import {
+  X_RESOURCE_USAGE_MAX_IDS,
+  xResourceUsageEventSchema,
+} from "./x-resource-usage";
+import {
   artifactMissingRootPolicySchema,
   RESUME_SESSION_HISTORY_MAX_BYTES,
   runnerHostnameSchema,
@@ -581,6 +585,16 @@ const piMemoryCitationTransportSchema = z
     }
   });
 
+const webhookSessionOutputBodySchema = z
+  .object({
+    runId: z.uuid(),
+    threadId: z.uuid(),
+    runEventId: z.string().min(1).max(512),
+    chunkIndex: z.number().int().nonnegative().max(4_294_967_295),
+    delta: z.string().min(1).max(4096),
+  })
+  .strict();
+
 const webhookEventsBodySchema = z
   .object({
     runId: z.string().min(1, "runId is required"),
@@ -711,6 +725,30 @@ export const webhookFirewallAuthContract = c.router({
       500: apiErrorSchema,
     },
     summary: "Resolve firewall auth templates",
+  },
+});
+
+/**
+ * Best-effort Sandbox session output contract.
+ *
+ * The sandbox token, rather than body fields, supplies the user and
+ * organization that own the realtime channel. The thread ID is only a client
+ * display hint inside that run-scoped channel. This path never enters durable
+ * event ingestion.
+ */
+export const webhookSessionOutputContract = c.router({
+  send: {
+    method: "POST",
+    path: "/api/webhooks/agent/session-output",
+    headers: authHeadersSchema,
+    body: webhookSessionOutputBodySchema,
+    responses: {
+      204: c.noBody(),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      503: apiErrorSchema,
+    },
+    summary: "Publish transient session output from sandbox",
   },
 });
 
@@ -902,6 +940,14 @@ const sessionHistoryCompressionRatioBucketSchema = z.enum([
   "ge_1",
 ]);
 
+const sessionHistoryPayloadBytesSchema = z
+  .number()
+  .int()
+  .nonnegative()
+  .max(RESUME_SESSION_HISTORY_MAX_BYTES);
+
+const sessionHistoryRestoreRepresentationSchema = z.enum(["raw", "codex_zstd"]);
+
 const booleanStringSchema = z.enum(["true", "false"]);
 
 const sessionHistoryContentLengthStateSchema = z.enum([
@@ -1027,6 +1073,45 @@ const sandboxOperationSchema = z.object({
   session_history_transfer_encoding_state:
     sessionHistoryTransferEncodingStateSchema.optional(),
   session_history_download_source: sandboxOperationDownloadSourceSchema,
+  session_history_framework: z.enum(["claude-code", "codex", "pi"]).optional(),
+  session_history_raw_bytes: sessionHistoryPayloadBytesSchema.optional(),
+  session_history_source_bytes: sessionHistoryPayloadBytesSchema.optional(),
+  // Successful history payload bytes; omitted when a local restore fails.
+  session_history_guest_bytes: sessionHistoryPayloadBytesSchema.optional(),
+  session_history_source_representation:
+    sessionHistoryRestoreRepresentationSchema.optional(),
+  session_history_restore_representation:
+    sessionHistoryRestoreRepresentationSchema.optional(),
+  session_history_restore_reason: z
+    .enum(["raw_source", "retained_zstd", "codex_pruning_guard"])
+    .optional(),
+  session_history_transfer_source: z
+    .enum(["workspace_cache", "downloaded", "inline"])
+    .optional(),
+  session_history_wire_codec: z.enum(["none", "zstd"]).optional(),
+  session_history_codec_reason: z
+    .enum([
+      "native_zstd",
+      "below_threshold",
+      "sample_rejected",
+      "sample_accepted",
+    ])
+    .optional(),
+  // These also describe inline history, whose existing contract has no
+  // reference-size ceiling. Keep safe integer measurements without imposing
+  // the local/ref 128 MiB limit on that separate restore path.
+  session_history_transfer_bytes: z.number().int().nonnegative().optional(),
+  session_history_wire_bytes: z.number().int().nonnegative().optional(),
+  session_history_write_requests: z.number().int().positive().optional(),
+  session_history_selection_ms: z.number().int().nonnegative().optional(),
+  session_history_file_gate_wait_ms: z.number().int().nonnegative().optional(),
+  session_history_requests_ms: z.number().int().nonnegative().optional(),
+  session_history_encoder_pipeline_ms: z
+    .number()
+    .int()
+    .nonnegative()
+    .optional(),
+  session_history_publication_ms: z.number().int().nonnegative().optional(),
 });
 
 /**
@@ -1224,9 +1309,38 @@ export const webhookUsageEventContract = c.router({
     body: z
       .object({
         runId: z.string().min(1, "runId is required"),
-        events: z.array(webhookUsageEventItemSchema).min(1).max(100),
+        events: z
+          .array(
+            z.union([webhookUsageEventItemSchema, xResourceUsageEventSchema]),
+          )
+          .min(1)
+          .max(100),
       })
-      .strict(),
+      .strict()
+      .superRefine((body, ctx) => {
+        let resourceCount = 0;
+        let hasResourceObservation = false;
+        for (const event of body.events) {
+          if ("protocol" in event) {
+            hasResourceObservation = true;
+            resourceCount += event.resources.length;
+          }
+        }
+        if (resourceCount > X_RESOURCE_USAGE_MAX_IDS) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["events"],
+            message: "At most 1000 resource identities are allowed per batch",
+          });
+        }
+        if (hasResourceObservation && !z.uuid().safeParse(body.runId).success) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["runId"],
+            message: "Resource observations require a UUID run ID",
+          });
+        }
+      }),
     responses: {
       200: z.object({
         success: z.boolean(),

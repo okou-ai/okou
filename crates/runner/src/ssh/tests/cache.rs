@@ -25,7 +25,6 @@ fn notify(h: &Harness, data: Value) {
 #[tokio::test]
 async fn run_cache_reuses_transport_but_validates_each_cold_destination() {
     let h = Harness::new(Reply::default()).await;
-    h.runtime.ably_connected(true);
     let resolve = h.resolve(h.credential(true)).await;
     assert_eq!(terminal(&h.request(params()).await)["type"], "finished");
     let _cpu = Arc::clone(&h.runtime.cpu)
@@ -47,7 +46,6 @@ async fn run_cache_reuses_transport_but_validates_each_cold_destination() {
 #[tokio::test]
 async fn concurrent_commands_share_one_authority_fill() {
     let h = Harness::new(Reply::default()).await;
-    h.runtime.ably_connected(true);
     let resolve = h.resolve(h.credential(true)).await;
     let (first, second) = tokio::join!(h.request(params()), h.request(params()));
     assert_eq!(terminal(&first)["type"], "finished");
@@ -65,7 +63,6 @@ async fn cached_pin_still_rejects_a_different_peer_before_authentication() {
         harness::key(Algorithm::Ed25519),
     )
     .await;
-    h.runtime.ably_connected(true);
     let resolve = h.resolve(h.credential(true)).await;
     assert_eq!(terminal(&h.request(params()).await)["type"], "finished");
     let original = *h.network.target.lock().unwrap();
@@ -86,7 +83,6 @@ async fn cached_pin_still_rejects_a_different_peer_before_authentication() {
 #[tokio::test]
 async fn malformed_notifications_cannot_become_run_wide_evictions() {
     let h = Harness::new(Reply::default()).await;
-    h.runtime.ably_connected(true);
     let resolve = h.resolve(h.credential(true)).await;
     assert_eq!(terminal(&h.request(params()).await)["type"], "finished");
     for data in [
@@ -105,7 +101,6 @@ async fn malformed_notifications_cannot_become_run_wide_evictions() {
 #[tokio::test]
 async fn confirmed_first_use_pin_is_reused_without_repinning() {
     let h = Harness::new(Reply::default()).await;
-    h.runtime.ably_connected(true);
     let resolve = h.resolve(h.credential(false)).await;
     let pin = h
         .api
@@ -127,7 +122,6 @@ async fn confirmed_first_use_pin_is_reused_without_repinning() {
 async fn targeted_and_run_wide_notifications_evict_without_stale_fallback() {
     for connection in [json!(harness::CONNECTION), Value::Null] {
         let h = Harness::new(Reply::default()).await;
-        h.runtime.ably_connected(true);
         let old = h.resolve(h.credential(true)).await;
         assert_eq!(terminal(&h.request(params()).await)["type"], "finished");
         old.delete_async().await;
@@ -156,34 +150,26 @@ async fn targeted_and_run_wide_notifications_evict_without_stale_fallback() {
 }
 
 #[tokio::test]
-async fn disconnected_requests_bypass_cache_and_recovery_refills_lazily() {
+async fn notification_outages_preserve_cached_authority_and_idle_transport() {
     let h = Harness::new(Reply::default()).await;
     let resolve = h.resolve(h.credential(true)).await;
-    for _ in 0..2 {
+    let mut notifications = h.notifications();
+    // First use succeeds before there has ever been a subscription.
+    assert_eq!(terminal(&h.request(params()).await)["type"], "finished");
+    for event in super::notifications::outage_events() {
+        notifications.send(event).await;
         assert_eq!(terminal(&h.request(params()).await)["type"], "finished");
     }
-    resolve.assert_calls_async(2).await;
-    h.runtime.ably_connected(true);
-    for _ in 0..2 {
-        assert_eq!(terminal(&h.request(params()).await)["type"], "finished");
-    }
-    resolve.assert_calls_async(3).await;
-    h.runtime.ably_connected(false);
-    for _ in 0..2 {
-        assert_eq!(terminal(&h.request(params()).await)["type"], "finished");
-    }
-    resolve.assert_calls_async(5).await;
-    h.runtime.ably_connected(true);
-    for _ in 0..2 {
-        assert_eq!(terminal(&h.request(params()).await)["type"], "finished");
-    }
-    resolve.assert_calls_async(6).await;
+    drop(notifications);
+    assert_eq!(terminal(&h.request(params()).await)["type"], "finished");
+    resolve.assert_calls_async(1).await;
+    assert_eq!(h.observed.auth.load(Ordering::SeqCst), 1);
+    assert_eq!(h.observed.attempts.lock().unwrap().len(), 1);
 }
 
 #[tokio::test]
 async fn replacement_registrations_and_later_runs_never_reuse_authority() {
     let mut h = Harness::new(Reply::default()).await;
-    h.runtime.ably_connected(true);
     for run in [h.run, h.run, RunId::new_v4()] {
         h.restart(run).await;
         let resolve = h.resolve(h.credential(true)).await;
@@ -197,7 +183,6 @@ async fn replacement_registrations_and_later_runs_never_reuse_authority() {
 #[tokio::test]
 async fn authentication_failure_evicts_only_the_failed_snapshot_without_replay() {
     let h = Harness::new(Reply::default()).await;
-    h.runtime.ably_connected(true);
     let mut wrong = h.credential(true);
     wrong["privateKey"] = json!(
         harness::key(Algorithm::Ed25519)
@@ -223,7 +208,6 @@ async fn authentication_failure_evicts_only_the_failed_snapshot_without_replay()
 #[tokio::test]
 async fn full_retained_cache_bypasses_caching_without_rejecting_commands() {
     let h = Harness::new(Reply::default()).await;
-    h.runtime.ably_connected(true);
     let resolve = h
         .api
         .mock_async(|when, then| {
@@ -265,46 +249,60 @@ async fn full_retained_cache_bypasses_caching_without_rejecting_commands() {
 
 #[tokio::test]
 async fn invalidation_during_resolve_fences_the_late_result_before_authentication() {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let h = Harness::with_api(
-        Reply::default(),
-        harness::key(Algorithm::Ed25519),
-        harness::key(Algorithm::Ed25519),
-        Some(format!("http://{}", listener.local_addr().unwrap())),
-    )
-    .await;
-    h.runtime.ably_connected(true);
-    let server = async {
-        let (mut socket, _) = listener.accept().await.unwrap();
-        read_http_request(&mut socket).await;
-        notify(
-            &h,
-            json!({"runId":h.run, "connectionId":harness::CONNECTION}),
-        );
-        respond(&mut socket, h.credential(true)).await.unwrap();
-        let (mut socket, _) = listener.accept().await.unwrap();
-        read_http_request(&mut socket).await;
-        respond(&mut socket, json!({"outcome":"unavailable"}))
-            .await
-            .unwrap();
-    };
-    let client = async {
-        assert_eq!(
-            terminal(&h.request(params()).await)["failure_reason"],
-            "configuration_changed"
-        );
-        assert_eq!(
-            terminal(&h.request(params()).await)["failure_reason"],
-            "unavailable"
-        );
-    };
-    tokio::time::timeout(Duration::from_secs(10), async {
-        tokio::join!(server, client);
-    })
-    .await
-    .unwrap();
-    assert_eq!(h.observed.auth.load(Ordering::SeqCst), 0);
-    assert!(h.observed.commands.lock().unwrap().is_empty());
+    for cache_entries in [0, 256] {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let h = Harness::with_api(
+            Reply::default(),
+            harness::key(Algorithm::Ed25519),
+            harness::key(Algorithm::Ed25519),
+            Some(format!("http://{}", listener.local_addr().unwrap())),
+        )
+        .await;
+        let mut registrations = Vec::new();
+        for _ in 0..cache_entries {
+            let registration = h.runtime.cache.register(RunId::new_v4());
+            let _access = registration.lookup(uuid::Uuid::new_v4()).unwrap();
+            registrations.push(registration);
+        }
+        let server = async {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            read_http_request(&mut socket).await;
+            let mut notifications = h.notifications();
+            for event in super::notifications::outage_events() {
+                notifications.send(event).await;
+            }
+            notify(
+                &h,
+                json!({"runId":h.run, "connectionId":harness::CONNECTION}),
+            );
+            notifications
+                .send(Some(ably_subscriber::Event::Connected))
+                .await;
+            respond(&mut socket, h.credential(true)).await.unwrap();
+            let (mut socket, _) = listener.accept().await.unwrap();
+            read_http_request(&mut socket).await;
+            respond(&mut socket, json!({"outcome":"unavailable"}))
+                .await
+                .unwrap();
+        };
+        let client = async {
+            assert_eq!(
+                terminal(&h.request(params()).await)["failure_reason"],
+                "configuration_changed"
+            );
+            assert_eq!(
+                terminal(&h.request(params()).await)["failure_reason"],
+                "unavailable"
+            );
+        };
+        tokio::time::timeout(Duration::from_secs(10), async {
+            tokio::join!(server, client);
+        })
+        .await
+        .unwrap();
+        assert_eq!(h.observed.auth.load(Ordering::SeqCst), 0);
+        assert!(h.observed.commands.lock().unwrap().is_empty());
+    }
 }
 
 #[tokio::test]
@@ -321,7 +319,6 @@ async fn late_pin_results_cannot_repopulate_or_evict_a_replacement_snapshot() {
             Some(format!("http://{}", listener.local_addr().unwrap())),
         )
         .await;
-        h.runtime.ably_connected(true);
         let server = async {
             let (mut resolve, _) = listener.accept().await.unwrap();
             read_http_request(&mut resolve).await;

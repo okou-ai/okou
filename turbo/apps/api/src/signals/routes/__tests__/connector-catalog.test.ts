@@ -186,28 +186,31 @@ describe("GET /api/connector-catalog", () => {
     expect(response.body.error.code).toBe("UNAUTHORIZED");
   });
 
-  it("returns public catalog metadata including PostHog OAuth", async () => {
-    mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
+  it.each(["posthog", "calendly"])(
+    "returns public catalog metadata including %s OAuth",
+    async (connectorSlug) => {
+      mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
 
-    const client = setupApp({ context, routes: connectorCatalogRoutes })(
-      connectorCatalogContract,
-    );
-    const response = await accept(
-      client.list({ headers: { authorization: "Bearer clerk-session" } }),
-      [200],
-    );
+      const client = setupApp({ context, routes: connectorCatalogRoutes })(
+        connectorCatalogContract,
+      );
+      const response = await accept(
+        client.list({ headers: { authorization: "Bearer clerk-session" } }),
+        [200],
+      );
 
-    assertPublicConnectorCatalogHasNoPrivateFields(response.body);
-    assertCategoryMetadataMatchesVisibleConnectors(response.body);
-    expect(response.body.connectors).toContainEqual(
-      expect.objectContaining({
-        slug: "posthog",
-        authMethods: expect.arrayContaining([
-          expect.objectContaining({ id: "oauth", grantKind: "auth-code" }),
-        ]),
-      }),
-    );
-  });
+      assertPublicConnectorCatalogHasNoPrivateFields(response.body);
+      assertCategoryMetadataMatchesVisibleConnectors(response.body);
+      expect(response.body.connectors).toContainEqual(
+        expect.objectContaining({
+          slug: connectorSlug,
+          authMethods: expect.arrayContaining([
+            expect.objectContaining({ id: "oauth", grantKind: "auth-code" }),
+          ]),
+        }),
+      );
+    },
+  );
 
   it("returns compact public connector metadata", async () => {
     const userId = `user_${randomUUID()}`;

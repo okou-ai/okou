@@ -60,6 +60,8 @@ export const hostedSiteDownloadFileSchema = hostedSiteFileSchema.extend({
 
 export const hostedSitePrepareRequestSchema = z
   .object({
+    /** Fail before creating bytes when private artifact creation is unavailable. */
+    requirePrivateArtifact: z.boolean().optional(),
     site: hostedSiteSlugSchema,
     slugSuffix: hostedSiteSlugSuffixSchema.optional(),
     artifactKind: hostedArtifactKindSchema.default("hosted-site"),
@@ -146,6 +148,23 @@ export const hostedSiteDeploymentsResponseSchema = z.object({
   deployments: z.array(hostedSiteDeploymentSummarySchema),
 });
 
+const creationRoute = {
+  method: "POST",
+  path: "/api/host/deployments/prepare",
+  headers: authHeadersSchema,
+  body: hostedSitePrepareRequestSchema,
+  responses: {
+    200: hostedSitePrepareResponseSchema,
+    400: apiErrorSchema,
+    401: apiErrorSchema,
+    402: apiErrorSchema,
+    403: apiErrorSchema,
+    409: apiErrorSchema,
+    500: apiErrorSchema,
+  },
+  summary: "Prepare a static hosted-site deployment",
+} as const;
+
 export const hostContract = c.router({
   privatePreview: {
     method: "GET",
@@ -179,21 +198,10 @@ export const hostContract = c.router({
     summary: "Redirect an authorized owner to isolated HTML content",
   },
 
-  prepare: {
-    method: "POST",
-    path: "/api/host/deployments/prepare",
-    headers: authHeadersSchema,
-    body: hostedSitePrepareRequestSchema,
-    responses: {
-      200: hostedSitePrepareResponseSchema,
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      402: apiErrorSchema,
-      403: apiErrorSchema,
-      409: apiErrorSchema,
-      500: apiErrorSchema,
-    },
-    summary: "Prepare a static hosted-site deployment",
+  prepare: creationRoute,
+  preparePrivate: {
+    ...creationRoute,
+    path: "/api/host/deployments/prepare/private",
   },
   complete: {
     method: "POST",

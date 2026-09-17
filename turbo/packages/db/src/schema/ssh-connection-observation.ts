@@ -33,7 +33,7 @@ export const sshConnectionObservations = pgTable(
       ),
       check(
         "chk_ssh_connection_observation_failure",
-        sql`${table.failureReason} IS NULL OR ${table.failureReason} IN ('invalid_credential', 'unsupported_credential', 'credential_resource_limit', 'unsafe_destination', 'network_failure', 'host_key_mismatch', 'unsupported_host_key', 'authentication_failed', 'protocol', 'timed_out')`,
+        sql`${table.failureReason} IS NULL OR ${table.failureReason} IN ('invalid_credential', 'unsupported_credential', 'credential_resource_limit', 'unsafe_destination', 'network_failure', 'host_key_mismatch', 'unsupported_host_key', 'authentication_failed', 'protocol', 'timed_out', 'access_rejected', 'access_tls_failure', 'access_protocol_failure')`,
       ),
     ];
   },

@@ -1,6 +1,7 @@
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isCodexFastModeEnabled } from "@okouai/core/model-feature-switch";
+import {
+  isChatEffortEnabled,
+  isCodexFastModeEnabled,
+} from "@okouai/core/model-feature-switch";
 import type { FeatureSwitchContext } from "@okouai/core";
 
 import { badRequestMessage } from "../../lib/error";
@@ -43,10 +44,7 @@ export async function resolveRunChatThreadModelContext(params: {
     userId: params.userId,
     threadId: params.threadId,
     persistRequestedCodexServiceTier: false,
-    reasoningEffortEnabled: isFeatureEnabled(
-      FeatureSwitchKey.ChatReasoningEffort,
-      featureSwitchContext,
-    ),
+    reasoningEffortEnabled: isChatEffortEnabled(featureSwitchContext),
     codexFastModeEnabled: isCodexFastModeEnabled(featureSwitchContext),
   });
   if (!resolved) {

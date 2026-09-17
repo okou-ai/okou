@@ -2,6 +2,7 @@ import {
   isPiExecutionRoute,
   isPiNativeModel,
   isPiGptModel,
+  isPiDeepSeekModel,
 } from "@okouai/core/pi-execution";
 import {
   piThinkingLevelForEffort,
@@ -15,6 +16,7 @@ import {
 } from "@okouai/api-contracts/contracts/runners";
 import {
   getModelProviderPiEndpoint,
+  getBuiltInModelRouteCandidates,
   getProviderRuntimeModel,
   getSecretNameForType,
   isBuiltInModelProviderType,
@@ -87,7 +89,7 @@ const GPT_API_KEY_PI_ROUTES = {
 
 type GptApiKeyPiProviderType = keyof typeof GPT_API_KEY_PI_ROUTES;
 
-export function isGptApiKeyPiProviderType(
+function isGptApiKeyPiProviderType(
   value: string | null | undefined,
 ): value is GptApiKeyPiProviderType {
   return (
@@ -97,7 +99,7 @@ export function isGptApiKeyPiProviderType(
   );
 }
 
-function gptApiKeyPiRoute(
+export function gptApiKeyPiRoute(
   value: string | null | undefined,
 ): (typeof GPT_API_KEY_PI_ROUTES)[GptApiKeyPiProviderType] | null {
   return isGptApiKeyPiProviderType(value) ? GPT_API_KEY_PI_ROUTES[value] : null;
@@ -109,15 +111,7 @@ function piCatalogProvider(
   if (isPiGptModel(selectedModel)) {
     return "openai";
   }
-  switch (selectedModel) {
-    case "deepseek-v4-flash":
-    case "deepseek-v4-pro": {
-      return "deepseek";
-    }
-    default: {
-      return null;
-    }
-  }
+  return isPiDeepSeekModel(selectedModel) ? "deepseek" : null;
 }
 
 function piRuntimeContract(args: {
@@ -434,9 +428,14 @@ function resolveResponsesPiModelConfig(
     return null;
   }
   const model = provider.environment.OPENAI_MODEL ?? provider.selectedModel;
-  if (
-    model !== getProviderRuntimeModel(concreteType.data, provider.selectedModel)
-  ) {
+  const expectedModel = isBuiltInModelProviderType(provider.type)
+    ? getBuiltInModelRouteCandidates(provider.selectedModel).find(
+        (candidate) => {
+          return candidate.providerType === concreteType.data;
+        },
+      )?.upstreamModel
+    : getProviderRuntimeModel(concreteType.data, provider.selectedModel);
+  if (model !== expectedModel) {
     return null;
   }
   if (!model) {

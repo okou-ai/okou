@@ -8,7 +8,7 @@ import {
   type VideoModel,
 } from "@okouai/core/video-model-catalog";
 import {
-  chatReasoningEffortEnabled$,
+  chatEffortEnabled$,
   codexFastModeEnabled$,
 } from "../external/feature-switch.ts";
 import { orgModelPolicies$ } from "../external/org-model-policies.ts";
@@ -37,7 +37,7 @@ export const chatPageTaglineDisplayed$ = computed((get) => {
 });
 
 const startTaglineTypewriter$ = command(
-  async ({ set }, element: HTMLElement, signal: AbortSignal) => {
+  ({ set }, element: HTMLElement, signal: AbortSignal) => {
     const text = element.dataset.typewriterText ?? "";
     const parsedSpeed = Number.parseInt(
       element.dataset.typewriterSpeed ?? "40",
@@ -47,7 +47,7 @@ const startTaglineTypewriter$ = command(
 
     set(internalTaglineDisplayed$, "");
     let index = 0;
-    await setLoop(
+    setLoop(
       () => {
         index += 1;
         set(internalTaglineDisplayed$, text.slice(0, index));
@@ -88,7 +88,7 @@ export const chatPageModelSelection$ = computed(
       }
       const selection: ModelProviderSelection = {
         selectedModel: user.value.selectedModel,
-        modelSettings: get(chatReasoningEffortEnabled$)
+        modelSettings: get(chatEffortEnabled$)
           ? (user.value.modelSettings ?? {})
           : {},
       };

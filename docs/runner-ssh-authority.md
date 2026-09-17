@@ -66,8 +66,8 @@ That authorized snapshot is an
 in-flight handoff: revocation cannot retract a response already authorized.
 Every later resolve checks again and sees committed rotation/deletion/revocation.
 The Runner can reuse a successfully resolved snapshot and parsed key for the
-current Run while Ably is connected; it does not resolve on every command. This
-explicit application-owned retention is not HTTP/proxy caching.
+current Run independently of Ably connectivity; it does not resolve on every
+command. This explicit application-owned retention is not HTTP/proxy caching.
 KMS decryption runs outside transactions and row locks, so slow KMS does not
 block owner edits or revocation. Resolve never writes a learned host key.
 
@@ -95,14 +95,21 @@ actual resolve/pin calls; the accepted cache lifetime below remains unchanged.
 Notices are sent after commit and before the request observes cancellation. A
 failed publish is logged, not reported as failure of the already-committed edit.
 The Runner only evicts local authority; it obtains any replacement from the API.
-Before Ably readiness and during disconnect/failure it resolves per command,
-clears cached entries on observed connection loss, and refills lazily after recovery.
+Ably readiness, disconnects, reconnects and subscription errors do not change
+SSH authority. Existing Sessions/transports remain usable, and new Session/SFTP
+admission does not require notification availability. First use and cache misses
+still resolve through the API; denied authority or API failures never grant access.
+Delivered targeted/Run-wide invalidation, authentication/trust/configuration-failure
+eviction, exact Run replacement and Run/sandbox teardown retain their cleanup behavior.
+Cache-overflow operations remain tracked for invalidation without owning cache cells.
 
 There is no fixed TTL or periodic authorization poll. Missed publication or a
-dropped subscriber message may leave previous configuration/credentials/grants
+dropped subscriber message, including during an observed outage, may leave previous
+configuration/credentials/grants
 usable for the remainder of the Run, including after deletion/revocation. This
 Run-lifetime stale-authority window is explicitly accepted; Ably is not a reliable
-revocation protocol. Cached parsed keys remain bounded in process memory and are
+revocation protocol. Reconnection neither requires reauthorization nor revives
+invalidated authority. Cached parsed keys remain bounded in process memory and are
 retired on invalidation or Run teardown. Per-connection public-destination and
 cryptographic proof/pin checks remain mandatory, and invalidation never authorizes
 command replay or guarantees termination of a remote command already started.
@@ -180,6 +187,65 @@ otherwise valid late report. The existing credential cache and missed-Ably windo
 are unchanged.
 
 ## Deployment
+
+### Cloudflare Access authority preparation
+
+#34077 prepares the backend of #31996; #34080 and #34081 provide the native
+carrier and management UI. Direct and Cloudflare Access share the staff-only
+`sshAccess` switch, with no separate Access rollout switch.
+Each protected host binds one same-owner `(orgId, userId)`
+Access configuration. The saved DNS hostname is the exact approved token recipient;
+its port is 443, while the origin SSH port is configured in Cloudflare. No guest
+URL, wildcard, alternate recipient list or Direct fallback exists.
+
+SSH has one canonical contract, without a version/profile selector or duplicate
+legacy DTO. Protected authority requires the existing SSH checks, including
+`sshAccess`, plus a bound same-owner configuration. The existing SSH grant is
+the only Agent permission for either transport; configuration creation or edits
+never grant SSH. Direct handoffs retain their actual key/password variants.
+
+The protected `resolved_access` outcome contains the saved host, port, username,
+host generation and learned key; `authentication` holds SSH key/password data,
+while `access` holds `configId`, effective `generation`, `clientId` and
+`clientSecret`. Both secret sets stay inside the official Runner boundary.
+Generated `ResolveResponse` uses bounded zeroizing secret fields and has no Debug,
+Clone or Serialize implementation. #34080 consumes this handoff through the
+native WSS carrier, requiring port 443 and a canonical DNS recipient before
+network use. Public-destination validation pins the socket; verified TLS/SNI
+and the HTTP Host use that same saved hostname. No Direct fallback exists.
+An S1-only Runner still rejects protected handoffs as unavailable; the feature
+must not be activated on that Runner. See the activation gate below.
+
+Pin and observation retain host-first locking and recheck protected authority
+through the non-null configuration with a share lock, while retaining the
+existing SSH-grant lock. Owner mutations use the
+owner advisory lock, ordered affected-host locks, then configuration locks.
+SSH-grant edits retain their existing Agent-lock boundary. Token replacement
+advances both config generation and every referencing host generation atomically.
+Metadata rename advances only config revision. Configurations have no separate
+enabled state. Host pins survive rotation, rebinding and every transition
+involving Access; explicit reset clears protected trust. Direct-to-Direct endpoint edits retain their
+existing behavior.
+
+Access mutations publish identifier-only invalidations for captured affected
+connection IDs, scoped to owner Runs. SSH-grant changes invalidate both transport
+modes for that owner's affected Agent Runs, including after revocation. Direct
+hosts are not evicted by Access configuration changes. Browser notifications use
+the existing owner `ssh:changed` topic with `{orgId}`, including for unreferenced
+configurations and metadata-only edits.
+Rename does not interrupt runtime sessions. Notifications remain best effort;
+the accepted cached-authority lifetime is the remainder of the Run, not immediate
+revocation.
+
+Canonical observations accept `access_rejected`, `access_tls_failure` and
+`access_protocol_failure`. These are carrier-stage evidence, not SSH authentication
+failures. Platform translates them directly; there is no legacy projection.
+Guest inventory and CLI terminal enums are unchanged. Unauthorized protected
+hosts are omitted from inventory. DB/KMS failures and broken local references
+remain errors.
+
+See the [Cloudflare Access activation gate](deployment-compatibility.md#cloudflare-access-for-ssh)
+before writing protected configuration in any deployed environment.
 
 The observation table and endpoints are additive. Old Runners and clients do not
 use them and retain existing behavior. A new Runner treats an old API's missing

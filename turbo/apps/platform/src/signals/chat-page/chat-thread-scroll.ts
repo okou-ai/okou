@@ -1,6 +1,6 @@
 import { command, computed, state, type Command, type Computed } from "ccstate";
 import { logger } from "../log.ts";
-import { onDomEventFn, onRef, setLoop } from "../utils.ts";
+import { onDomEventFn, onRef, waitLoopUntil } from "../utils.ts";
 import type { ChatEvent } from "./chat-event-types.ts";
 
 const L = logger("AutoScroll");
@@ -835,7 +835,7 @@ export function createChatThreadScrollSignals(
       options: ScrollToEventOptions,
       signal: AbortSignal,
     ): Promise<void> => {
-      await setLoop(
+      await waitLoopUntil(
         () => {
           return get(initialEventsReady$);
         },

@@ -3,6 +3,7 @@ import {
   type OrgModelPolicy,
   type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
+import { getMemberModelPolicyRoute } from "@okouai/api-contracts/contracts/member-model-policy";
 import { useTranslation } from "react-i18next";
 
 import { formatLocalizedNumber } from "../../../i18n/format.ts";
@@ -21,10 +22,9 @@ const CHATGPT_FAST_MODEL_SPEED: Readonly<
 
 export function ModelFastImpact({ policy }: { policy: OrgModelPolicy }) {
   const { t } = useTranslation();
-  const builtIn = isBuiltInModelProviderType(policy.defaultProviderType);
-  const provider = builtIn
-    ? policy.runtimeProviderType
-    : policy.defaultProviderType;
+  const route = getMemberModelPolicyRoute(policy);
+  const builtIn = isBuiltInModelProviderType(route.providerType);
+  const provider = route.runtimeProviderType;
   let speed = t(($) => {
     return $.settings.models.picker.fastImpact.providerSpeed;
   });

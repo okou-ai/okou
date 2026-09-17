@@ -1,7 +1,8 @@
+import type { ChatLayoutSignals } from "../../signals/chat-page/chat-layout.ts";
 import type { ThinkingSummaries } from "../../signals/chat-page/thread-activity-summary.ts";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
+import { ScrollArea } from "@base-ui/react/scroll-area";
 import type {
-  CSSProperties,
   FormEvent,
   KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent,
@@ -72,6 +73,7 @@ import {
   Checkbox,
   Input,
   Skeleton,
+  ScrollBar,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -91,6 +93,7 @@ import {
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
+  BrandLangfuse,
   BrandSlack,
   ElapsedTime,
   ThinkingMessages,
@@ -109,7 +112,7 @@ import {
   messageDocumentToDisplayText,
   messageDocumentToPrompt,
 } from "../../signals/okou-page/user-message-document-codec.ts";
-import { avatarTemplateSelection } from "../../signals/okou-page/avatar-template-selection.ts";
+import { generationTemplateKind } from "@okouai/core/generation-template-kind";
 import type {
   ChatThreadWorkflowAutomation,
   WorkflowSchedule,
@@ -172,6 +175,7 @@ import {
   type RunWorkFolding,
   type RunWorkSection,
 } from "../../signals/chat-page/run-work-folding.ts";
+import { chatGroupForSharing } from "../../signals/chat-page/chat-thread-sharing.ts";
 import { ConnectModal } from "./components/settings/add-connection-dialog.tsx";
 import { CustomConnectorConnectDialog } from "./components/settings/custom-connector-connect-dialog.tsx";
 import {
@@ -243,7 +247,9 @@ import type {
 } from "../../signals/chat-page/chat-event-types.ts";
 import type { ChatRunModelSelection } from "../../signals/chat-page/chat-event-state.ts";
 import type { AgentReferenceSignals } from "../../signals/chat-page/agent-reference-signals.ts";
+import type { RunDetailSignals } from "../../signals/chat-page/run-detail.ts";
 import type { AssistantErrorRecovery } from "../../signals/chat-page/assistant-error-recovery.ts";
+import { localizedRunError } from "../../lib/run-error.ts";
 import { userMessageFileAttachments } from "../../signals/chat-page/user-message-files.ts";
 import type {
   ChatPanelSignals,
@@ -298,6 +304,8 @@ import {
   chatThreadContainerElement$,
   setChatKeyboardScrollRoot$,
 } from "../../signals/chat-page/chat-keyboard.ts";
+import { ChatCard } from "./components/chat-card.tsx";
+import { ChatCardDetails } from "./components/chat-card-details.tsx";
 import { PersonalClaudeCodeDeviceAuthDialog } from "./components/settings/claude-code-device-auth-dialog.tsx";
 import { PersonalCodexDeviceAuthDialog } from "./components/settings/codex-device-auth-dialog.tsx";
 import { IconTooltipButton } from "../components/icon-tooltip.tsx";
@@ -313,6 +321,7 @@ import {
   CHAT_THREAD_ASSISTANT_RESPONSE_COLUMN_CLASS,
   CHAT_THREAD_CONTENT_MAIN_CLASS,
   CHAT_THREAD_MESSAGE_LIST_CLASS,
+  CHAT_THREAD_MESSAGE_ROW_GAP_CLASS,
   CHAT_THREAD_MESSAGE_STACK_PULL_CLASS,
   CHAT_THREAD_RESPONSE_FLUSH_CLASS,
   CHAT_THREAD_RESPONSE_LINE_CLASS,
@@ -526,7 +535,8 @@ function ChatThreadHeaderIconButton({
             iconSize="md"
             className={cn(
               "shrink-0 duration-150",
-              open && "bg-primary/10 text-brand-text hover:text-brand-text",
+              open &&
+                "bg-primary/10 text-selected-foreground hover:text-selected-foreground",
             )}
             aria-label={label}
             aria-pressed={open}
@@ -2916,13 +2926,18 @@ function ThreadAutomationsSidebarSlot({
   return <HeaderAutomationSidebar thread={thread} onClose={close} />;
 }
 
-export function ChatThreadPage() {
+export function ChatThreadPage({
+  layout,
+}: {
+  readonly layout: ChatLayoutSignals;
+}) {
   const activeThreadSidebar = useGet(activeThreadSidebar$);
   const leftPane = useGet(currentLeftPane$);
   const rightPane = useGet(currentRightPane$);
   return withChatScrollLayout(
     <>
       <ChatThreadSidebarShell
+        layout={layout}
         animateEntry={activeThreadSidebar?.animateEntry ?? true}
         open={activeThreadSidebar !== null}
         sidebar={
@@ -3617,7 +3632,11 @@ function RunWorkSectionRow({
           })}
           onClick={onToggle}
           data-chat-run-work-range
-          className={cn(className, "h-auto p-0 pr-1")}
+          // The hover surface needs an inset on the side its glyph starts on,
+          // otherwise the hourglass sits flush against the left edge while the
+          // chevron keeps `pr-1`. The negative margin spends that inset on the
+          // overhang, so the glyph still starts on the response column.
+          className={cn(className, "h-auto p-0 pl-1.5 pr-1 -ml-1.5")}
         >
           {content}
         </Button>
@@ -3659,7 +3678,7 @@ function ChatThreadSkeletonOverlay({ thread }: { thread: ChatPanelSignals }) {
       <main className={CHAT_THREAD_CONTENT_MAIN_CLASS}>
         <div
           className={cn(
-            "okou-chat-skeleton-reveal",
+            "opacity-0 animate-chat-skeleton-reveal",
             CHAT_THREAD_MESSAGE_LIST_CLASS,
           )}
         >
@@ -3686,23 +3705,27 @@ function ChatThreadEventsPane({ thread }: { thread: ChatPanelSignals }) {
   };
 
   return (
-    <div className="flex-1 min-h-0 relative isolate">
-      <div
+    <ScrollArea.Root className="flex-1 min-h-0 isolate">
+      <ScrollArea.Viewport
         ref={scrollContainerOnRef}
+        data-slot="scroll-area-viewport"
         data-scroll-container
         tabIndex={-1}
         onScroll={handleScroll}
         className={cn(
-          "absolute inset-0 overflow-y-auto focus:outline-none [overflow-anchor:none] [scrollbar-gutter:stable]",
+          "absolute inset-0 focus:outline-none [overflow-anchor:none]",
           standalonePwa && "overscroll-contain",
         )}
       >
-        <ChatThreadEventsMain thread={thread} />
-      </div>
+        <ScrollArea.Content>
+          <ChatThreadEventsMain thread={thread} />
+        </ScrollArea.Content>
+      </ScrollArea.Viewport>
+      <ScrollBar data-testid="chat-message-scrollbar" />
       <ChatThreadSkeletonOverlay thread={thread} />
       <ScrollToBottomButton thread={thread} />
       <ChatConversationLocator thread={thread} />
-    </div>
+    </ScrollArea.Root>
   );
 }
 
@@ -3841,6 +3864,11 @@ function ChatThreadBottomBar({ thread }: { thread: ChatPanelSignals }) {
                   },
                   { count: selectedCount },
                 )}
+              </p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {t(($) => {
+                  return $.chat.sharing.publicDescription;
+                })}
               </p>
               {createLoadable.state === "hasError" ? (
                 <p className="mt-0.5 text-xs text-destructive">
@@ -4024,7 +4052,7 @@ function RecommendedFollowupList({
             type="button"
             title={followup.prompt}
             className={cn(
-              "group relative flex text-left transition-colors",
+              "group flex text-left transition-colors",
               // A quick reply sizes to its own text, so a short suggestion
               // stays small and more than one fits on screen. The rail equalises
               // their heights, which is why the contents align to the top: a
@@ -4076,7 +4104,7 @@ function RecommendedFollowupList({
               aria-hidden
               size={16}
               className={cn(
-                "pointer-events-none absolute right-2 top-1/2 box-content -translate-y-1/2 bg-state-hover pl-3 text-muted-foreground/60 opacity-0 transition-[color,opacity] group-hover:text-foreground group-hover:opacity-100",
+                "pointer-events-none ml-3 shrink-0 text-muted-foreground/60 opacity-0 transition-colors group-hover:text-foreground group-hover:opacity-100",
                 showFollowupCards && "hidden",
               )}
             />
@@ -4238,7 +4266,14 @@ function ShimmerText({
   return (
     <p
       className={cn(
-        "okou-shimmer-text h-auto min-w-0 flex-1 truncate",
+        // The bright band lives in the label's own background gradient, so the
+        // only thing that moves is the gradient's paint origin; nothing here
+        // moves a box that holds glyphs. `contain: paint` keeps the per-frame
+        // repaint inside the label. The `-webkit-` clip stays beside
+        // `bg-clip-text` because Tailwind emits only the unprefixed property.
+        // Chromium treats the two as aliases, so dropping the prefixed one is
+        // a browser-support decision rather than a styling change.
+        "h-auto min-w-0 flex-1 animate-shimmer truncate bg-shimmer-text bg-clip-text [background-size:200%_100%] [-webkit-background-clip:text] [-webkit-text-fill-color:transparent] [contain:paint]",
         CHAT_THREAD_RESPONSE_SUPPORTING_TEXT_CLASS,
         className,
       )}
@@ -4299,54 +4334,30 @@ function ThinkingLabel({
   return <ShimmerText>{thinkingLabel}</ShimmerText>;
 }
 
-function ThinkingLoader({
-  blockStyle,
-  spinnerEnabled,
-}: {
-  blockStyle: CSSProperties;
-  spinnerEnabled: boolean;
-}) {
-  if (spinnerEnabled) {
-    return (
-      <span
-        aria-hidden
-        data-thinking-loader="spinner"
-        className="okou-thinking-spinner-frame inline-flex size-4 shrink-0 items-center justify-center"
-      >
-        <img
-          src={thinkingSpinnerImg}
-          alt=""
-          // The 48px asset has a 4px inset. A 17px canvas makes its visible
-          // mark match the perceived size of the 16px line icons.
-          className="okou-thinking-spinner size-[17px] max-w-none shrink-0 animate-spin motion-reduce:animate-none"
-        />
-      </span>
-    );
-  }
-
+function ThinkingLoader() {
   return (
     <span
-      data-thinking-loader="blocks"
-      className="okou-blocks size-4 shrink-0 place-content-center"
-      style={blockStyle}
+      aria-hidden
+      data-thinking-loader="spinner"
+      className="inline-flex size-4 shrink-0 items-center justify-center"
     >
-      <span />
-      <span />
-      <span />
+      <img
+        src={thinkingSpinnerImg}
+        alt=""
+        // The 48px asset has a 4px inset. A 17px canvas makes its visible
+        // mark match the perceived size of the 16px line icons.
+        className="size-[17px] max-w-none shrink-0 animate-spin [animation-duration:1.4s] will-change-transform motion-reduce:animate-none"
+      />
     </span>
   );
 }
 
 function InlineThinkingRow({
-  blockStyle,
   isQueued,
-  spinnerEnabled,
   thinkingLabel,
   serverThinkingLabel,
 }: {
-  blockStyle: CSSProperties;
   isQueued: boolean;
-  spinnerEnabled: boolean;
   thinkingLabel: string;
   serverThinkingLabel?: ServerThinkingLabel;
 }) {
@@ -4358,10 +4369,7 @@ function InlineThinkingRow({
       )}
     >
       <span className={CHAT_THREAD_RESPONSE_LEADING_ICON_CLASS}>
-        <ThinkingLoader
-          blockStyle={blockStyle}
-          spinnerEnabled={spinnerEnabled}
-        />
+        <ThinkingLoader />
       </span>
       <ThinkingLabel
         isQueued={isQueued}
@@ -4417,17 +4425,13 @@ function FinishedRunRow({
 
 function WaitingForAssistantResponse({
   thread,
-  blockStyle,
   isQueued,
-  spinnerEnabled,
   thinkingLabel,
   serverThinkingLabel,
   inAssistantGroup,
 }: {
   thread: ChatPanelSignals;
-  blockStyle: CSSProperties;
   isQueued: boolean;
-  spinnerEnabled: boolean;
   thinkingLabel: string;
   serverThinkingLabel?: ServerThinkingLabel;
   inAssistantGroup: boolean;
@@ -4441,12 +4445,10 @@ function WaitingForAssistantResponse({
       <div
         {...thinkingIndicatorProps}
         data-role="assistant-thinking"
-        className="okou-thinking-enter min-w-0"
+        className="animate-thinking-in min-w-0"
       >
         <InlineThinkingRow
-          blockStyle={blockStyle}
           isQueued={isQueued}
-          spinnerEnabled={spinnerEnabled}
           thinkingLabel={thinkingLabel}
           serverThinkingLabel={serverThinkingLabel}
         />
@@ -4458,7 +4460,7 @@ function WaitingForAssistantResponse({
     <div
       {...thinkingIndicatorProps}
       data-role="assistant"
-      className="okou-thinking-enter flex flex-col gap-2"
+      className="animate-thinking-in flex flex-col gap-2"
     >
       <div className={CHAT_THREAD_ASSISTANT_MESSAGE_ROW_CLASS}>
         <AssistantBubbleAvatar thread={thread} />
@@ -4470,9 +4472,7 @@ function WaitingForAssistantResponse({
         >
           <ChatAssistantMessageBody>
             <InlineThinkingRow
-              blockStyle={blockStyle}
               isQueued={isQueued}
-              spinnerEnabled={spinnerEnabled}
               thinkingLabel={thinkingLabel}
               serverThinkingLabel={serverThinkingLabel}
             />
@@ -4485,9 +4485,7 @@ function WaitingForAssistantResponse({
 
 function AssistantThinkingStatusRow({
   active,
-  blockStyle,
   isQueued,
-  spinnerEnabled,
   thinkingLabel,
   serverThinkingLabel,
   thread,
@@ -4495,9 +4493,7 @@ function AssistantThinkingStatusRow({
   inAssistantGroup,
 }: {
   active: boolean;
-  blockStyle: CSSProperties;
   isQueued: boolean;
-  spinnerEnabled: boolean;
   thinkingLabel: string;
   serverThinkingLabel?: ServerThinkingLabel;
   thread: ChatPanelSignals;
@@ -4509,9 +4505,7 @@ function AssistantThinkingStatusRow({
 
   const content = active ? (
     <InlineThinkingRow
-      blockStyle={blockStyle}
       isQueued={isQueued}
-      spinnerEnabled={spinnerEnabled}
       thinkingLabel={thinkingLabel}
       serverThinkingLabel={serverThinkingLabel}
     />
@@ -4523,7 +4517,7 @@ function AssistantThinkingStatusRow({
       <div
         {...thinkingIndicatorProps}
         data-role="assistant-thinking"
-        className="okou-thinking-enter min-w-0"
+        className="animate-thinking-in min-w-0"
       >
         {content}
       </div>
@@ -4575,15 +4569,6 @@ function ThinkingIndicator({
   mode: ThinkingIndicatorMode;
   inAssistantGroup?: boolean;
 }) {
-  const featureSwitches = useGet(featureSwitch$);
-  const spinnerEnabled =
-    featureSwitches[FeatureSwitchKey.ChatThinkingSpinner] ?? false;
-  const [c1, c2, c3] = useGet(thread.blockColors$);
-  const blockStyle = {
-    "--zb-c1": c1,
-    "--zb-c2": c2,
-    "--zb-c3": c3,
-  } as CSSProperties;
   const summaries = useLastResolved(thread.thinkingSummaries$);
   const thinkingRunId = useLastResolved(thread.thinkingRunId$);
   const recommendedFollowupSource =
@@ -4607,9 +4592,7 @@ function ThinkingIndicator({
     return (
       <AssistantThinkingStatusRow
         active={active}
-        blockStyle={blockStyle}
         isQueued={isQueued}
-        spinnerEnabled={spinnerEnabled}
         thinkingLabel={thinkingLabel}
         serverThinkingLabel={serverThinkingLabel}
         thread={thread}
@@ -4623,9 +4606,7 @@ function ThinkingIndicator({
   return (
     <WaitingForAssistantResponse
       thread={thread}
-      blockStyle={blockStyle}
       isQueued={isQueued}
-      spinnerEnabled={spinnerEnabled}
       thinkingLabel={thinkingLabel}
       serverThinkingLabel={serverThinkingLabel}
       inAssistantGroup={inAssistantGroup}
@@ -4744,20 +4725,45 @@ function customCreditsFromForm(form: HTMLFormElement | null): number | null {
   return credits;
 }
 
+/**
+ * A notice card's height comes from its own rows, so a card that carries only a
+ * headline is one row tall. The supporting line keeps a reserved two-line box
+ * instead: billing status and failure-recovery classification both resolve
+ * asynchronously and swap this text inside an already mounted frame, and
+ * `docs/chat-cards.md` requires that swap to leave the frame's geometry
+ * untouched. Clamping alone would let a one-line message resize the transcript
+ * once the asynchronous read lands.
+ */
+const CHAT_NOTICE_DESCRIPTION_CLASS =
+  "line-clamp-2 h-10 text-sm leading-5 text-muted-foreground";
+
+/**
+ * The billing notice's action is the other row an asynchronous read introduces:
+ * it appears only once `billingStatusAsync$` and `isOrgAdmin$` resolve, and the
+ * credits-available state replaces the whole body without one. Below the card's
+ * 640px breakpoint the body is a column, so mounting that row late would add its
+ * own height plus the container gap and resize the transcript. Every billing
+ * state therefore keeps this slot, filled or empty, at the shared action height.
+ */
+const CHAT_NOTICE_ACTION_SLOT_CLASS = "flex h-8 shrink-0 items-center";
+
 function CreditsAvailableMessage() {
   const { t } = useTranslation();
   return (
-    <div className="max-w-md">
-      <p className="text-[0.9375rem] font-medium text-emerald-700 dark:text-emerald-300">
-        {t(($) => {
-          return $.chat.billing.creditsAvailable;
-        })}
-      </p>
-      <p className="mt-1 text-sm text-muted-foreground">
-        {t(($) => {
-          return $.chat.billing.creditsAdded;
-        })}
-      </p>
+    <div className="flex flex-col justify-between gap-3 p-3 @[640px]:flex-row @[640px]:items-center">
+      <div className="min-w-0">
+        <p className="truncate text-[0.9375rem] font-medium text-emerald-700 dark:text-emerald-300">
+          {t(($) => {
+            return $.chat.billing.creditsAvailable;
+          })}
+        </p>
+        <p className={cn("mt-1", CHAT_NOTICE_DESCRIPTION_CLASS)}>
+          {t(($) => {
+            return $.chat.billing.creditsAdded;
+          })}
+        </p>
+      </div>
+      <div className={CHAT_NOTICE_ACTION_SLOT_CLASS} />
     </div>
   );
 }
@@ -4968,32 +4974,46 @@ function InsufficientCreditsCard() {
   };
 
   return (
-    <div className="okou-chat-card max-w-md px-3 py-3">
-      <p className="text-[0.9375rem] font-medium text-foreground">{headline}</p>
-      <p className="mt-1 text-sm text-muted-foreground">{helper}</p>
-      {!canShowBillingAction ? null : shouldStartProCheckout ? (
-        <Button
-          type="button"
-          onClick={handleUpgradeClick}
-          disabled={checkoutRedirecting}
-          variant="default"
-          size="sm"
-          className="mt-3 disabled:opacity-60"
-        >
-          {checkoutRedirecting
-            ? t(($) => {
-                return $.chat.billing.redirecting;
-              })
-            : t(($) => {
-                return $.chat.billing.upgradeToPro;
-              })}
-        </Button>
-      ) : (
-        <PaidCreditCheckoutActions
-          preparing={creditCheckoutPreparing}
-          handleCreditClick={handleCreditClick}
-        />
-      )}
+    <div className="flex flex-col justify-between gap-3 p-3 @[640px]:flex-row @[640px]:items-center">
+      <div className="min-w-0">
+        <p className="truncate text-[0.9375rem] font-medium text-foreground">
+          {headline}
+        </p>
+        <p className={cn("mt-1", CHAT_NOTICE_DESCRIPTION_CLASS)}>{helper}</p>
+      </div>
+      <div className={CHAT_NOTICE_ACTION_SLOT_CLASS}>
+        {!canShowBillingAction ? null : shouldStartProCheckout ? (
+          <Button
+            type="button"
+            onClick={handleUpgradeClick}
+            disabled={checkoutRedirecting}
+            variant="default"
+            size="sm"
+            className="shrink-0 disabled:opacity-60"
+          >
+            {checkoutRedirecting
+              ? t(($) => {
+                  return $.chat.billing.redirecting;
+                })
+              : t(($) => {
+                  return $.chat.billing.upgradeToPro;
+                })}
+          </Button>
+        ) : (
+          <ChatCardDetails
+            title={headline}
+            triggerLabel={t(($) => {
+              return $.runErrors.actions.addCredits;
+            })}
+          >
+            <p>{helper}</p>
+            <PaidCreditCheckoutActions
+              preparing={creditCheckoutPreparing}
+              handleCreditClick={handleCreditClick}
+            />
+          </ChatCardDetails>
+        )}
+      </div>
     </div>
   );
 }
@@ -5048,7 +5068,7 @@ function AssistantRecoveryActions({
   const resetting = resetLoadable.state === "loading";
   const hasResetAction = recovery.actions.resetAndTryAgain !== null;
   const hasRetryAction = recovery.actions.tryAgain !== null;
-  const hasModelSelectionAction = recovery.kind !== "execution-timeout";
+  const hasModelSelectionAction = recovery.framework !== null;
   // `excludedModel` drops the failed model from the menu, so showing it as the
   // trigger label would offer a choice the user cannot make. Fall back to the
   // "Switch model" placeholder until they pick something else.
@@ -5066,7 +5086,7 @@ function AssistantRecoveryActions({
   };
 
   return (
-    <div className="col-start-2 row-start-2 flex max-w-full flex-wrap items-center gap-2 @[640px]:col-start-3 @[640px]:row-start-1 @[640px]:ml-auto @[640px]:shrink-0 @[640px]:justify-end @[640px]:self-center">
+    <div className="flex max-w-full flex-wrap items-center gap-2">
       {hasResetAction && (
         <Button
           type="button"
@@ -5110,8 +5130,7 @@ function AssistantRecoveryActions({
           }}
         >
           <AssistantRecoveryActionSpinner loading={retrying} />
-          {/* A timed-out run is resumed, not retried, and its copy says so. */}
-          {recovery.kind === "execution-timeout"
+          {recovery.framework === null
             ? t(($) => {
                 return $.chat.errors.recovery.continue;
               })
@@ -5128,12 +5147,14 @@ function AssistantErrorCard({
   icon: Icon,
   title,
   description,
+  details,
   actions,
   testId,
 }: {
   icon: LucideIcon;
   title: string;
-  description: ReactNode;
+  description: string;
+  details?: ReactNode;
   actions?: ReactNode;
   testId?: string;
 }) {
@@ -5141,19 +5162,29 @@ function AssistantErrorCard({
     <div
       role="status"
       data-testid={testId}
-      className="okou-chat-card grid min-h-[88px] w-full grid-cols-[auto_minmax(0,1fr)] items-start gap-x-2.5 gap-y-3 px-3.5 py-3 text-foreground @[640px]:grid-cols-[auto_minmax(0,1fr)_auto] @[640px]:content-center"
+      className="flex w-full flex-col justify-between gap-3 p-3 text-foreground @[640px]:flex-row @[640px]:items-center"
     >
-      <Icon
-        size={16}
-        className="col-start-1 row-start-1 mt-1 shrink-0 self-start text-brand-text"
-      />
-      <div className="col-start-2 row-start-1 min-w-0">
-        <div className="text-[0.9375rem] font-medium leading-6">{title}</div>
-        <div className="mt-0.5 text-sm leading-5 text-muted-foreground">
-          {description}
+      <div className="flex min-w-0 items-start gap-2.5 @[640px]:flex-1">
+        <Icon size={16} className="mt-1 shrink-0 text-brand-text" />
+        <div className="min-w-0">
+          <div className="truncate text-[0.9375rem] font-medium leading-6">
+            {title}
+          </div>
+          {description !== "" && (
+            <div className={cn("mt-0.5", CHAT_NOTICE_DESCRIPTION_CLASS)}>
+              {description}
+            </div>
+          )}
         </div>
       </div>
-      {actions}
+      {(description !== "" ||
+        details !== undefined ||
+        actions !== undefined) && (
+        <ChatCardDetails title={title}>
+          {details ?? <p>{description}</p>}
+          {actions}
+        </ChatCardDetails>
+      )}
     </div>
   );
 }
@@ -5168,9 +5199,19 @@ function AssistantErrorRecoveryCard({
   const { t } = useTranslation();
   const resetText = assistantRecoveryResetText(recovery);
   const title = (() => {
+    if (recovery.kind === "subscription-error") {
+      return t(($) => {
+        return $.chat.errors.genericTitle;
+      });
+    }
     if (recovery.kind === "execution-timeout") {
       return t(($) => {
         return $.chat.errors.recovery.timeoutTitle;
+      });
+    }
+    if (recovery.kind === "autonomy-budget-exhausted") {
+      return t(($) => {
+        return $.chat.errors.recovery.autonomyLimitTitle;
       });
     }
     if (recovery.kind === "model-unavailable") {
@@ -5199,88 +5240,93 @@ function AssistantErrorRecoveryCard({
     );
   })();
   const description =
-    recovery.kind === "execution-timeout"
-      ? t(($) => {
-          return $.chat.errors.recovery.timeoutDescription;
-        })
-      : recovery.kind === "usage-limit"
+    recovery.kind === "subscription-error"
+      ? recovery.providerMessage
+      : recovery.kind === "execution-timeout"
         ? t(($) => {
-            return $.chat.errors.recovery.usageDescription;
+            return $.chat.errors.recovery.timeoutDescription;
           })
-        : recovery.kind === "model-unavailable"
+        : recovery.kind === "autonomy-budget-exhausted"
           ? t(($) => {
-              return $.chat.errors.recovery.unavailableDescription;
+              return $.chat.errors.recovery.autonomyLimitDescription;
             })
-          : t(($) => {
-              return $.chat.errors.recovery.capacityDescription;
-            });
+          : recovery.kind === "usage-limit"
+            ? t(($) => {
+                return $.chat.errors.recovery.usageDescription;
+              })
+            : recovery.kind === "model-unavailable"
+              ? t(($) => {
+                  return $.chat.errors.recovery.unavailableDescription;
+                })
+              : t(($) => {
+                  return $.chat.errors.recovery.capacityDescription;
+                });
+  const personalSource = recovery.source?.credentialScope === "member";
+  const sourceDescription = personalSource
+    ? recovery.source?.account.status === "unavailable"
+      ? t(($) => {
+          return $.chat.errors.recovery.originalAccountUnavailable;
+        })
+      : recovery.source?.account.status === "unknown"
+        ? t(($) => {
+            return $.chat.errors.recovery.originalAccountUnknown;
+          })
+        : recovery.accountLabel
+          ? t(
+              ($) => {
+                return $.chat.errors.recovery.originalAccount;
+              },
+              { account: recovery.accountLabel },
+            )
+          : null
+    : null;
 
   return (
     <AssistantErrorCard
       icon={
-        recovery.kind === "usage-limit" || recovery.kind === "execution-timeout"
-          ? Clock
-          : Coffee
+        recovery.kind === "autonomy-budget-exhausted"
+          ? Hand
+          : recovery.kind === "usage-limit" ||
+              recovery.kind === "execution-timeout"
+            ? Clock
+            : Coffee
       }
       title={title}
       description={`${description}${resetText ? ` ${resetText}` : ""}`}
+      details={
+        <>
+          {`${description}${resetText ? ` ${resetText}` : ""}`}
+          {sourceDescription && <p className="mt-1">{sourceDescription}</p>}
+          {personalSource && (
+            <p className="mt-1">
+              {t(($) => {
+                return $.chat.errors.recovery.newRunCurrentSettings;
+              })}
+            </p>
+          )}
+        </>
+      }
       actions={<AssistantRecoveryActions recovery={recovery} thread={thread} />}
       testId="assistant-error-recovery"
     />
   );
 }
 
-function AssistantErrorLeadingIcon({ warning = false }: { warning?: boolean }) {
-  return (
-    <span
-      className={cn(
-        CHAT_THREAD_RESPONSE_LEADING_ICON_CLASS,
-        "mt-[3px]",
-        warning && "text-amber-500",
-      )}
-    >
-      <AlertCircle size={16} />
-    </span>
-  );
-}
-
-function AssistantErrorFallback({ error }: { error: string }) {
+function NoModelProviderErrorCard() {
   const { t } = useTranslation();
   const openSettings = useSet(openSettingsDialogAt$);
   const pageSignal = useGet(pageSignal$);
 
-  if (isBillingRecoveryError(error)) {
-    return <InsufficientCreditsCard />;
-  }
-
-  if (error.trim().toLowerCase() === "run cancelled") {
-    return (
-      <div
-        className="inline-flex items-center gap-2 bg-muted/50 px-3 py-1.5 text-[0.9375rem] text-muted-foreground"
-        style={{
-          border: "var(--border-width-surface) solid hsl(var(--border))",
-          borderRadius: "12px",
-        }}
-      >
-        <Hand size={16} className="shrink-0" />
-        <span>
-          {t(($) => {
-            return $.chat.errors.runCancelled;
-          })}
-        </span>
-      </div>
-    );
-  }
-
-  const noProviderGuidance = RUN_ERROR_GUIDANCE.NO_MODEL_PROVIDER;
-  const isNoModelProvider =
-    noProviderGuidance !== undefined &&
-    error.toLowerCase().includes(noProviderGuidance.title.toLowerCase());
-
-  if (isNoModelProvider) {
-    return (
-      <div className="flex items-start gap-0 text-foreground">
-        <AssistantErrorLeadingIcon warning />
+  return (
+    <AssistantErrorCard
+      icon={AlertCircle}
+      title={t(($) => {
+        return $.chat.errors.genericTitle;
+      })}
+      description={t(($) => {
+        return $.chat.errors.noModelProviderPrefix;
+      })}
+      details={
         <span>
           {t(($) => {
             return $.chat.errors.noModelProviderPrefix;
@@ -5300,8 +5346,37 @@ function AssistantErrorFallback({ error }: { error: string }) {
             return $.chat.errors.noModelProviderSuffix;
           })}
         </span>
-      </div>
+      }
+    />
+  );
+}
+
+function AssistantErrorFallback({ error }: { error: string }) {
+  const { t } = useTranslation();
+
+  if (isBillingRecoveryError(error)) {
+    return <InsufficientCreditsCard />;
+  }
+
+  if (error.trim().toLowerCase() === "run cancelled") {
+    return (
+      <AssistantErrorCard
+        icon={Hand}
+        title={t(($) => {
+          return $.chat.errors.runCancelled;
+        })}
+        description=""
+      />
     );
+  }
+
+  const noProviderGuidance = RUN_ERROR_GUIDANCE.NO_MODEL_PROVIDER;
+  const isNoModelProvider =
+    noProviderGuidance !== undefined &&
+    error.toLowerCase().includes(noProviderGuidance.title.toLowerCase());
+
+  if (isNoModelProvider) {
+    return <NoModelProviderErrorCard />;
   }
 
   const incompatibleGuidance = RUN_ERROR_GUIDANCE.PROVIDER_INCOMPATIBLE;
@@ -5313,22 +5388,30 @@ function AssistantErrorFallback({ error }: { error: string }) {
 
   if (isProviderIncompatible) {
     return (
-      <div className="flex items-start gap-0 text-foreground">
-        <AssistantErrorLeadingIcon warning />
-        <span>
-          {t(($) => {
-            return $.chat.errors.providerIncompatiblePrefix;
-          })}{" "}
-          <Link
-            pathname="/"
-            className="inline-flex items-center gap-1 text-amber-500 underline underline-offset-2 hover:text-amber-400"
-          >
+      <AssistantErrorCard
+        icon={AlertCircle}
+        title={t(($) => {
+          return $.chat.errors.genericTitle;
+        })}
+        description={t(($) => {
+          return $.chat.errors.providerIncompatiblePrefix;
+        })}
+        details={
+          <span>
             {t(($) => {
-              return $.chat.errors.providerIncompatibleAction;
-            })}
-          </Link>
-        </span>
-      </div>
+              return $.chat.errors.providerIncompatiblePrefix;
+            })}{" "}
+            <Link
+              pathname="/"
+              className="inline-flex items-center gap-1 text-amber-500 underline underline-offset-2 hover:text-amber-400"
+            >
+              {t(($) => {
+                return $.chat.errors.providerIncompatibleAction;
+              })}
+            </Link>
+          </span>
+        }
+      />
     );
   }
 
@@ -5340,25 +5423,33 @@ function AssistantErrorFallback({ error }: { error: string }) {
 
   if (isProviderDeleted) {
     return (
-      <div className="flex items-start gap-0 text-foreground">
-        <AssistantErrorLeadingIcon warning />
-        <span>
-          {t(($) => {
-            return $.chat.errors.providerDeletedPrefix;
-          })}{" "}
-          <Link
-            pathname="/"
-            className="inline-flex items-center gap-1 text-amber-500 underline underline-offset-2 hover:text-amber-400"
-          >
+      <AssistantErrorCard
+        icon={AlertCircle}
+        title={t(($) => {
+          return $.chat.errors.genericTitle;
+        })}
+        description={t(($) => {
+          return $.chat.errors.providerDeletedPrefix;
+        })}
+        details={
+          <span>
             {t(($) => {
-              return $.chat.errors.providerDeletedAction;
+              return $.chat.errors.providerDeletedPrefix;
+            })}{" "}
+            <Link
+              pathname="/"
+              className="inline-flex items-center gap-1 text-amber-500 underline underline-offset-2 hover:text-amber-400"
+            >
+              {t(($) => {
+                return $.chat.errors.providerDeletedAction;
+              })}
+            </Link>{" "}
+            {t(($) => {
+              return $.chat.errors.providerDeletedSuffix;
             })}
-          </Link>{" "}
-          {t(($) => {
-            return $.chat.errors.providerDeletedSuffix;
-          })}
-        </span>
-      </div>
+          </span>
+        }
+      />
     );
   }
 
@@ -5368,11 +5459,11 @@ function AssistantErrorFallback({ error }: { error: string }) {
       title={t(($) => {
         return $.chat.errors.genericTitle;
       })}
-      description={
+      description={localizedRunError(error)}
+      details={
         <Markdown
           className="!text-muted-foreground"
-          source={error}
-          style={{ fontSize: "inherit", lineHeight: "inherit" }}
+          source={localizedRunError(error)}
         />
       }
     />
@@ -5380,6 +5471,22 @@ function AssistantErrorFallback({ error }: { error: string }) {
 }
 
 function AssistantErrorContent({
+  error,
+  eventId,
+  thread,
+}: {
+  error: string;
+  eventId: string;
+  thread: ChatPanelSignals;
+}) {
+  return (
+    <ChatCard data-testid="assistant-error-card-shell" className="w-full">
+      <AssistantErrorState error={error} eventId={eventId} thread={thread} />
+    </ChatCard>
+  );
+}
+
+function AssistantErrorState({
   error,
   eventId,
   thread,
@@ -5516,17 +5623,7 @@ function SelectablePagedGroupRow({
   const selectedEventIds = useGet(thread.sharing.selectedEventIds$);
   const toggle = useSet(thread.sharing.toggle$);
   const sharing = phase !== "idle";
-  const displayGroup =
-    sharing && group.role === "assistant"
-      ? {
-          ...group,
-          events: group.events
-            .filter((event) => {
-              return event.eventType === "output.message";
-            })
-            .slice(-1),
-        }
-      : group;
+  const displayGroup = sharing ? chatGroupForSharing(group) : group;
   const content = (
     <PagedGroupRow
       group={displayGroup}
@@ -5589,7 +5686,12 @@ function SelectablePagedGroupRow({
           : undefined
       }
       className={cn(
-        "relative -my-1 rounded-lg py-1 transition-colors",
+        // Every row in the transcript is otherwise a direct child of the
+        // message list's flex column. This wrapper interrupts that column, so
+        // it carries the same rhythm itself; without it a group holding a burst
+        // of user messages renders them with no gap at all.
+        "relative -my-1 flex flex-col rounded-lg py-1 transition-colors",
+        CHAT_THREAD_MESSAGE_ROW_GAP_CLASS,
         phase === "selecting" && "cursor-pointer hover:bg-state-hover",
       )}
       onClick={(event) => {
@@ -5779,7 +5881,7 @@ function MessageAttachment({
           onImageClick(a);
         }}
         placeholderClassName="h-full w-full"
-        resourceUrl$={a.signals.resourceUrl$}
+        resourceUrl$={a.signals.linkUrl$}
         thumbnailUrl$={a.signals.thumbnailUrl$}
         url={a.url}
       />
@@ -5903,35 +6005,41 @@ function UserMessageAttachments({
   );
 }
 
+// The row below a user message is part of that message's frame, not a thing the
+// copy button brings with it. It stays even when there is no button to show —
+// a message nobody can copy, or a mode that offers no per-message action — so
+// the burst spacing that is measured against it does not collapse.
 function UserMessageActions({
-  canCopy,
+  showCopy,
   copied,
   onCopy,
 }: {
-  canCopy: boolean;
+  showCopy: boolean;
   copied: boolean;
   onCopy: () => void;
 }) {
   const { t } = useTranslation();
-  if (!canCopy) {
-    return null;
-  }
   return (
-    <div className={CHAT_THREAD_USER_MESSAGE_ACTIONS_CLASS}>
-      <Button
-        type="button"
-        variant="quiet"
-        size="icon-xs"
-        iconSize="sm"
-        showTooltip
-        onClick={onCopy}
-        className="text-muted-foreground/60"
-        aria-label={t(($) => {
-          return $.chat.actions.copyMessage;
-        })}
-      >
-        {copied ? <Check /> : <Copy />}
-      </Button>
+    <div
+      data-chat-user-message-actions
+      className={CHAT_THREAD_USER_MESSAGE_ACTIONS_CLASS}
+    >
+      {showCopy ? (
+        <Button
+          type="button"
+          variant="quiet"
+          size="icon-xs"
+          iconSize="sm"
+          showTooltip
+          onClick={onCopy}
+          className="text-muted-foreground/60"
+          aria-label={t(($) => {
+            return $.chat.actions.copyMessage;
+          })}
+        >
+          {copied ? <Check /> : <Copy />}
+        </Button>
+      ) : null}
     </div>
   );
 }
@@ -5942,34 +6050,43 @@ function generationTemplateTypeLabel(
   if (!value) {
     return null;
   }
-  if (avatarTemplateSelection(value)) {
-    return i18n.t(($) => {
-      return $.artifacts.templates.avatar;
-    });
+  switch (generationTemplateKind(value)) {
+    case "avatar": {
+      return i18n.t(($) => {
+        return $.artifacts.templates.avatar;
+      });
+    }
+    case "intro-video": {
+      return i18n.t(($) => {
+        return $.artifacts.templates.introVideo;
+      });
+    }
+    case "video": {
+      return i18n.t(($) => {
+        return $.chat.templates.categories.video;
+      });
+    }
+    case "illustration": {
+      return i18n.t(($) => {
+        return $.chat.templates.categories.illustration;
+      });
+    }
+    case "workflow": {
+      return i18n.t(($) => {
+        return $.chat.templates.categories.workflow;
+      });
+    }
+    case "website": {
+      return i18n.t(($) => {
+        return $.chat.templates.categories.website;
+      });
+    }
+    case "presentation": {
+      return i18n.t(($) => {
+        return $.chat.templates.categories.presentation;
+      });
+    }
   }
-  if (value.type === "video") {
-    return i18n.t(($) => {
-      return $.chat.templates.categories.video;
-    });
-  }
-  if (value.type === "illustration") {
-    return i18n.t(($) => {
-      return $.chat.templates.categories.illustration;
-    });
-  }
-  if (value.type === "workflow") {
-    return i18n.t(($) => {
-      return $.chat.templates.categories.workflow;
-    });
-  }
-  if (value.type === "website") {
-    return i18n.t(($) => {
-      return $.chat.templates.categories.website;
-    });
-  }
-  return i18n.t(($) => {
-    return $.chat.templates.categories.presentation;
-  });
 }
 
 const annotationIconImgs = {
@@ -5991,6 +6108,35 @@ function MessageAnnotation({
     "rounded-md px-1.5 text-xs font-medium text-muted-foreground";
   if (renderPart.type === "automation") {
     const { part } = renderPart;
+    const content = (
+      <>
+        <Route size={15} className="shrink-0" />
+        <span className="min-w-0 truncate">{part.workflowName}</span>
+      </>
+    );
+    if (part.workflowId !== undefined) {
+      const workflowTitle =
+        part.workflowName.trim() ||
+        t(($) => {
+          return $.chat.templates.categories.workflow;
+        });
+      return (
+        <Link
+          pathname={ROUTES.workflowDetailAutomations}
+          options={{ pathParams: { workflowId: part.workflowId } }}
+          aria-label={t(
+            ($) => {
+              return $.chat.workflows.open;
+            },
+            { title: workflowTitle },
+          )}
+          className={`${className} transition-colors hover:bg-state-hover hover:text-foreground`}
+          title={part.workflowName}
+        >
+          {content}
+        </Link>
+      );
+    }
     return (
       <div
         aria-label={t(
@@ -6004,8 +6150,7 @@ function MessageAnnotation({
         className={className}
         title={part.workflowName}
       >
-        <Route size={15} className="shrink-0" />
-        <span className="min-w-0 truncate">{part.workflowName}</span>
+        {content}
       </div>
     );
   }
@@ -6049,6 +6194,9 @@ function SourceMessageAnnotation({
     );
   }
   const { part } = renderPart;
+  const isLark =
+    part.kind === "feishu" &&
+    part.href?.startsWith("https://applink.larksuite.com/") === true;
   const sourceLabel =
     part.kind === "slack"
       ? t(($) => {
@@ -6056,7 +6204,7 @@ function SourceMessageAnnotation({
         })
       : part.kind === "feishu"
         ? t(($) => {
-            return $.chat.origins.feishu;
+            return $.chat.origins[isLark ? "lark" : "feishu"];
           })
         : part.kind === "teams"
           ? t(($) => {
@@ -6088,7 +6236,7 @@ function SourceMessageAnnotation({
         })
       : part.kind === "feishu"
         ? t(($) => {
-            return $.chat.origins.openFeishuChat;
+            return $.chat.origins[isLark ? "openLarkChat" : "openFeishuChat"];
           })
         : part.kind === "teams"
           ? t(($) => {
@@ -6417,7 +6565,23 @@ function equalFeedbackSources(
 
 function userMessageFeedbackHeading(
   parts: readonly UserMessageFeedbackRenderPart[],
+  agentRunSourceTitle: string | undefined,
 ): string {
+  if (agentRunSourceTitle) {
+    return parts.length === 1
+      ? i18n.t(
+          ($) => {
+            return $.chat.feedback.forwardPartHeading;
+          },
+          { title: agentRunSourceTitle },
+        )
+      : i18n.t(
+          ($) => {
+            return $.chat.feedback.forwardPartsHeading;
+          },
+          { count: parts.length, title: agentRunSourceTitle },
+        );
+  }
   const source = parts[0]?.part.source;
   if (!source) {
     return parts.length === 1
@@ -6435,32 +6599,12 @@ function userMessageFeedbackHeading(
   }
   const description =
     source.status === "draft"
-      ? i18n.t(
-          ($) => {
-            return $.chat.feedback.emailDraftDescription;
-          },
-          {
-            id: source.id,
-          },
-        )
-      : i18n.t(
-          ($) => {
-            return $.chat.feedback.sentEmailDescription;
-          },
-          {
-            id: source.id,
-            sentIdSuffix: source.sentId
-              ? i18n.t(
-                  ($) => {
-                    return $.chat.feedback.sentIdSuffix;
-                  },
-                  {
-                    sentId: source.sentId,
-                  },
-                )
-              : "",
-          },
-        );
+      ? i18n.t(($) => {
+          return $.chat.feedback.emailDraftDescription;
+        })
+      : i18n.t(($) => {
+          return $.chat.feedback.sentEmailDescription;
+        });
   return parts.length === 1
     ? i18n.t(
         ($) => {
@@ -6481,14 +6625,16 @@ function userMessageFeedbackHeading(
 
 function UserMessageFeedbackGroup({
   parts,
+  agentRunSourceTitle,
 }: {
   parts: readonly UserMessageFeedbackRenderPart[];
+  agentRunSourceTitle: string | undefined;
 }) {
   const partOccurrences = new Map<string, number>();
   let firstPart = true;
   return (
     <div data-structured-feedback-group="" className="space-y-3">
-      <div>{userMessageFeedbackHeading(parts)}</div>
+      <div>{userMessageFeedbackHeading(parts, agentRunSourceTitle)}</div>
       {parts.map((renderPart) => {
         const identity = JSON.stringify(renderPart.part);
         const occurrence = (partOccurrences.get(identity) ?? 0) + 1;
@@ -6500,12 +6646,12 @@ function UserMessageFeedbackGroup({
             {showDivider ? (
               <div
                 data-structured-feedback-divider=""
-                className="border-t border-border"
+                className="border-t border-border-on-fill"
               />
             ) : null}
             <blockquote
               data-structured-feedback-quote=""
-              className="border-l-2 border-border pl-3 text-muted-foreground"
+              className="border-l-2 border-border-on-fill pl-3 text-muted-foreground"
             >
               {renderPart.part.quote}
             </blockquote>
@@ -6576,6 +6722,9 @@ function UserMessageView({
   elevatedFileIds: ReadonlySet<string>;
 }) {
   const partOccurrences = new Map<string, number>();
+  const agentRunSourceTitle = document.parts.find((renderPart) => {
+    return renderPart.type === "source" && renderPart.kind === "agent";
+  })?.part.titleSnapshot;
   const bodyParts = document.parts.filter(
     (renderPart): renderPart is UserMessageContentRenderPart => {
       return (
@@ -6612,6 +6761,7 @@ function UserMessageView({
         <UserMessageFeedbackGroup
           key={`feedback:${String(index)}`}
           parts={feedbackParts}
+          agentRunSourceTitle={agentRunSourceTitle}
         />,
       );
       index = nextIndex;
@@ -6696,7 +6846,6 @@ function WorkflowUserMessage({
 }: {
   event: EnrichedChatEvent & ChatInputEvent;
 }) {
-  const { t } = useTranslation();
   const renderPart = userMessageAnnotationRenderPart(
     event.userMessageRenderDocument,
   );
@@ -6704,23 +6853,16 @@ function WorkflowUserMessage({
     return null;
   }
   const { part } = renderPart;
-  const workflowTitle =
-    part.workflowName.trim() ||
-    t(($) => {
-      return $.chat.templates.categories.workflow;
-    });
   const workflowBody =
     messageDocumentToDisplayText(event.userMessage)?.trim() ||
     part.automationBrief?.trim();
   const bubbleClassName =
-    "okou-chat-bubble-user rounded-xl max-w-[85%] text-[0.9375rem] leading-[1.7] [overflow-wrap:anywhere] overflow-hidden whitespace-pre-wrap transition-colors duration-150";
+    "rounded-xl max-w-[85%] text-[0.9375rem] leading-[1.7] [overflow-wrap:anywhere] overflow-hidden whitespace-pre-wrap transition-colors duration-150 bg-gray-200 text-foreground";
   const body = workflowBody ? (
     <div className={bubbleClassName}>
       <div className="px-4 py-3">{workflowBody}</div>
     </div>
   ) : null;
-  const workflowId = part.workflowId;
-  const linked = workflowId !== undefined;
 
   return (
     <div
@@ -6733,29 +6875,7 @@ function WorkflowUserMessage({
         <div className="hidden @[900px]:block @[900px]:w-9 @[900px]:h-9 @[900px]:shrink-0" />
         <div className="flex w-full flex-col items-end">
           <MessageAnnotation renderPart={renderPart} />
-          {linked && body ? (
-            <Link
-              pathname={ROUTES.workflowDetailAutomations}
-              options={{
-                pathParams: {
-                  workflowId,
-                },
-              }}
-              className="contents"
-              aria-label={t(
-                ($) => {
-                  return $.chat.workflows.open;
-                },
-                {
-                  title: workflowTitle,
-                },
-              )}
-            >
-              {body}
-            </Link>
-          ) : (
-            body
-          )}
+          {body}
         </div>
       </div>
     </div>
@@ -6787,7 +6907,7 @@ function GoalUserMessage({
         <div className="flex w-full flex-col items-end">
           <MessageAnnotation renderPart={renderPart} />
           {goalBrief ? (
-            <div className="okou-chat-bubble-user rounded-xl max-w-[85%] text-[0.9375rem] leading-[1.7] [overflow-wrap:anywhere] overflow-hidden ring-1 ring-emerald-900/10">
+            <div className="rounded-xl max-w-[85%] text-[0.9375rem] leading-[1.7] [overflow-wrap:anywhere] overflow-hidden ring-1 ring-emerald-900/10 bg-gray-200 text-foreground">
               <div className="px-4 py-3 whitespace-pre-wrap">{goalBrief}</div>
             </div>
           ) : null}
@@ -6917,18 +7037,22 @@ function PagedUserMessage({
             <MessageAnnotation renderPart={annotationPart} />
           ) : null}
           {renderDocument ? (
-            <UserMessageContent
-              document={renderDocument}
-              attachments={allAttachments}
-              onImageClick={openLightbox}
-            />
-          ) : null}
-          {sharingPhase === "idle" ? (
-            <UserMessageActions
-              canCopy={canCopy}
-              copied={copied}
-              onCopy={handleCopy}
-            />
+            <>
+              <UserMessageContent
+                document={renderDocument}
+                attachments={allAttachments}
+                onImageClick={openLightbox}
+              />
+              {/* The row belongs to the bubble, not to the button inside it.
+                  Sharing hides the button and a message nobody can copy has
+                  none, and in both cases the next message in the burst is
+                  still pulled up by the height this row holds. */}
+              <UserMessageActions
+                showCopy={canCopy && sharingPhase === "idle"}
+                copied={copied}
+                onCopy={handleCopy}
+              />
+            </>
           ) : null}
         </div>
       </div>
@@ -7322,6 +7446,7 @@ function PagedAssistantEventItem({
         data-chat-run-id={event.runId}
       >
         <MarkdownEventBody
+          chatBubble
           className={
             workHistory ? CHAT_THREAD_WORK_HISTORY_MARKDOWN_CLASS : undefined
           }
@@ -7633,8 +7758,62 @@ function RelatedArtifactsDialog({
   );
 }
 
+function RunLangfuseLink({ signals }: { readonly signals: RunDetailSignals }) {
+  const { t } = useTranslation();
+  const detail = useLoadable(signals.detail$);
+  const url =
+    detail.state === "hasData" ? detail.data?.langfuseTraceUrl : undefined;
+  if (!url) {
+    return null;
+  }
+  return (
+    <TooltipProvider delayDuration={300}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            asChild
+            variant="quiet"
+            size="icon-xs"
+            iconSize="sm"
+            className="text-muted-foreground/60"
+          >
+            <a
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={t(($) => {
+                return $.chat.run.viewLangfuseTrace;
+              })}
+            >
+              <BrandLangfuse aria-hidden />
+            </a>
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">
+          {t(($) => {
+            return $.chat.run.viewLangfuseTrace;
+          })}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
+function RunLangfuseAction({
+  thread,
+  runId,
+}: {
+  readonly thread: ChatPanelSignals;
+  readonly runId: string;
+}) {
+  const runDetails = useGet(thread.runDetails$);
+  const signals = runDetails.get(runId);
+  return signals ? <RunLangfuseLink signals={signals} /> : null;
+}
+
 function PagedGroupPrimaryActions({
   firstRunId,
+  thread,
   hasContent,
   usage,
   copied,
@@ -7642,6 +7821,7 @@ function PagedGroupPrimaryActions({
   relatedArtifacts,
 }: {
   firstRunId: string | undefined;
+  thread: ChatPanelSignals;
   hasContent: boolean;
   usage: ChatEventUsagePayload | undefined;
   copied: boolean;
@@ -7695,6 +7875,9 @@ function PagedGroupPrimaryActions({
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
+      )}
+      {showActivityLogs && firstRunId && (
+        <RunLangfuseAction thread={thread} runId={firstRunId} />
       )}
       {hasContent && (
         <TooltipProvider delayDuration={300}>
@@ -7780,6 +7963,7 @@ function PagedGroupActions({
     <div className={CHAT_THREAD_ASSISTANT_MESSAGE_ACTIONS_CLASS}>
       <PagedGroupPrimaryActions
         firstRunId={firstRunId}
+        thread={thread}
         hasContent={hasContent}
         usage={usage}
         copied={copied}

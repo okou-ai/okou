@@ -22,11 +22,22 @@ export const artifactSharePolicySchema = z
     publicBrand: z.enum(["vm0", "okou"]),
     // Absent only on persisted shares from before the delivery registry.
     delivery: z.literal("artifact-registry-v1").optional(),
+    // Existing shared links/policies remain valid until an explicit owner
+    // update allocates aliases. #32492 owns any later durable-link retirement.
+    organizationReference: z
+      .string()
+      .regex(/^[a-z0-9]{10}$/u)
+      .optional(),
+    publicSlug: z
+      .string()
+      .max(63)
+      .regex(/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/u)
+      .optional(),
     audience: audienceSchema,
     status: z.enum(["active", "revoked"]),
     publicToken: z
       .string()
-      .regex(/^[a-f0-9]{24}$/u)
+      .regex(/^(?:[a-z0-9]{10}|[a-f0-9]{24})$/u)
       .nullable(),
     target: z.discriminatedUnion("kind", [
       z.object({
@@ -94,13 +105,19 @@ export const artifactSharePolicySchema = z
 export type ArtifactSharePolicy = z.infer<typeof artifactSharePolicySchema>;
 
 const statusSchema = z.object({
+  // Stable owner reference for the requested version, independent of sharing.
+  ownerUrl: z.url(),
   shareId: z.uuid().nullable(),
   audience: audienceSchema,
   organization: z.object({ id: z.string(), name: z.string() }),
   selectedTarget: artifactShareTargetSchema.nullable(),
   selectedVersion: z.number().nullable(),
   candidateVersion: z.number().nullable(),
+  // Organization shares return the same short reference in both URL fields.
   url: z.url().nullable(),
+  // Existing-link compatibility (#32492): retire optionality when old API
+  // targets leave serving/rollback. Keep `url` available to existing clients.
+  shortUrl: z.url().nullable().optional(),
 });
 export type ArtifactShareStatus = z.infer<typeof statusSchema>;
 
@@ -112,6 +129,13 @@ const errors = {
   404: apiErrorSchema,
 };
 export const artifactSharesContract = c.router({
+  availability: {
+    method: "GET",
+    path: "/api/artifact-shares/availability",
+    headers: authHeadersSchema,
+    responses: { 200: z.object({ enabled: z.boolean() }), ...errors },
+    summary: "Read whether private artifact creation is currently available",
+  },
   status: {
     method: "POST",
     path: "/api/artifact-shares/status",

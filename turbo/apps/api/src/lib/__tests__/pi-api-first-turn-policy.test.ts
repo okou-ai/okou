@@ -91,7 +91,6 @@ describe("Pi API-first transition precedence", () => {
     expect(failure.code).toBe("PI_API_MODEL_FAILED");
     expect(decideApiFirstTurnRecovery({ ...attempt, failure })).toMatchObject({
       outcome: "arbitrate-terminal",
-      suppressCompletionFailureLog: false,
     });
   });
 
@@ -166,7 +165,6 @@ describe("Pi API-first transition precedence", () => {
       expect(decideApiFirstTurnRecovery(facts)).toMatchObject({
         outcome: "sandbox-first",
         reason: "api_attempt_timed_out",
-        suppressCompletionFailureLog: true,
       });
       for (const boundary of [
         { commitStarted: true },
@@ -185,6 +183,51 @@ describe("Pi API-first transition precedence", () => {
     { status: 403, failureReason: undefined, outcome: "arbitrate-terminal" },
     { status: 525, failureReason: undefined, outcome: "sandbox-first" },
     {
+      status: 429,
+      failureReason: "provider_rate_limited",
+      outcome: "sandbox-first",
+    },
+    {
+      status: 200,
+      failureReason: "provider_overloaded",
+      outcome: "sandbox-first",
+    },
+    {
+      status: 503,
+      failureReason: "provider_server_error",
+      outcome: "sandbox-first",
+    },
+    {
+      status: 200,
+      failureReason: "provider_stream_timeout",
+      outcome: "sandbox-first",
+    },
+    {
+      status: 200,
+      failureReason: "response_connection_lost",
+      outcome: "sandbox-first",
+    },
+    {
+      status: 400,
+      failureReason: "context_window_exceeded",
+      outcome: "arbitrate-terminal",
+    },
+    {
+      status: 429,
+      failureReason: "provider_insufficient_credits",
+      outcome: "arbitrate-terminal",
+    },
+    {
+      status: 200,
+      failureReason: "output_token_limit",
+      outcome: "arbitrate-terminal",
+    },
+    {
+      status: 401,
+      failureReason: "invalid_credentials",
+      outcome: "arbitrate-terminal",
+    },
+    {
       status: 525,
       failureReason: "reconnect_required" as const,
       outcome: "arbitrate-terminal",
@@ -192,6 +235,11 @@ describe("Pi API-first transition precedence", () => {
     {
       status: 525,
       failureReason: "usage_limit" as const,
+      outcome: "arbitrate-terminal",
+    },
+    {
+      status: 200,
+      failureReason: "safety_policy_refusal" as const,
       outcome: "arbitrate-terminal",
     },
   ])(

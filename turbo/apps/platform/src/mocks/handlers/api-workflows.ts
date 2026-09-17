@@ -38,8 +38,6 @@ function summary(workflow: WorkflowDetailResponse): WorkflowSummary {
     description: workflow.description,
     visibility: workflow.visibility,
     ownerUserId: workflow.ownerUserId,
-    ownerUserDisplayName: "Test User",
-    ownerUserImageUrl: null,
     createdAt: workflow.createdAt,
     canManage: workflow.canManage,
     canPublish: workflow.canPublish,
@@ -145,6 +143,12 @@ export const apiWorkflowsHandlers = [
     return respond(201, summary(created));
   }),
 
+  mockApi(workflowsDetailContract.ownerProfile, ({ params, respond }) => {
+    if (!mockWorkflows.some((workflow) => workflow.id === params.workflowId)) {
+      return respond(404, notFound(params.workflowId));
+    }
+    return respond(200, { displayName: "Test User", imageUrl: null });
+  }),
   mockApi(workflowsDetailContract.get, ({ params, respond }) => {
     const workflow = mockWorkflows.find((item) => {
       return item.id === params.workflowId;

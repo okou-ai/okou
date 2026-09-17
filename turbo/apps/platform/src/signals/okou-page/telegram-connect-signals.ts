@@ -49,14 +49,14 @@ const reloadTelegramConnectLinkStatus$ = command(({ set }) => {
 });
 
 export const pollTelegramConnectDomainStatus$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
+  ({ get, set }, signal: AbortSignal) => {
     const parsed = parseTelegramConnectParams(get(searchParams$));
     if (!parsed.ok || parsed.params.connectSignature) {
       return;
     }
 
     let first = true;
-    await setLoop(
+    setLoop(
       async (loopSignal) => {
         if (first) {
           first = false;

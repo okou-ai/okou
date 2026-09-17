@@ -30,7 +30,7 @@ import { featureSwitch$ } from "./external/feature-switch.ts";
 import { readClerkToken, waitForClerkSession } from "./clerk-token.ts";
 import { applyChatThreadReadCursorUpdated$ } from "./chat-thread-list-reload.ts";
 import { syncActiveChatEvents$ } from "./chat-page/chat-event-signal-registry.ts";
-import { syncEventDrivenChatThreads$ } from "./chat-page/chat-thread-event-sourcing.ts";
+import { catchUpChatThreadEventSource$ } from "./chat-page/chat-thread-event-sourcing.ts";
 import { reportForceUpgradeRequired } from "./force-upgrade.ts";
 import {
   installSharedDatabaseBridge$,
@@ -148,7 +148,7 @@ const syncSharedDatabaseInvalidation$ = command(
       await set(syncActiveChatEvents$, dataKey.threadId, signal);
       return;
     }
-    await set(syncEventDrivenChatThreads$, signal);
+    await set(catchUpChatThreadEventSource$, signal);
   },
 );
 

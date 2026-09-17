@@ -218,30 +218,6 @@ test("Slack Connect continues to user OAuth before opening Slack", async () => {
   });
 });
 
-test("Slack Connect accepts the existing backend response during rollout", async () => {
-  context.mocks.api(slackConnectContract.getStatus, ({ respond }) => {
-    return respond(200, { isConnected: false, isAdmin: false });
-  });
-  context.mocks.api(slackConnectContract.connect, ({ respond }) => {
-    return respond(200, {
-      success: true,
-      connectionId: "existing-connection",
-      role: "member",
-    });
-  });
-  await setupPage({
-    context,
-    path: "/settings/slack?w=T_WORKSPACE&u=U_MEMBER",
-  });
-  await expect(screen.findByText("Connect to Slack")).resolves.toBeVisible();
-  const connect = getAction("button", "Connect");
-  expect(connect).toBeEnabled();
-  click(connect);
-  await waitFor(() => {
-    expect(window.location.href).toBe("slack://open");
-  });
-});
-
 test("An invalid Telegram connection link is rejected", async () => {
   await setupPage({ context, path: telegramConnectPath("invalid") });
 

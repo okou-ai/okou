@@ -13,7 +13,6 @@ import {
 } from "../okou-page/agentphone.ts";
 import { hideAppSkeleton$ } from "../app-skeleton.ts";
 import { replaceSearchParams$, searchParams$ } from "../route.ts";
-import { detach, Reason } from "../utils.ts";
 import { i18n } from "../../i18n/index.ts";
 
 const initWorksRedirect$ = command(({ get, set }) => {
@@ -51,17 +50,13 @@ export const setupWorksPage$ = command(async ({ set }, signal: AbortSignal) => {
   set(initWorksRedirect$);
   set(initSlackOrg$);
 
-  // eslint-disable-next-line ccstate/no-detach-in-signals -- route-scoped realtime subscriptions run until the /works route signal aborts
-  detach(
-    Promise.all([
-      set(watchSlackConnection$, signal),
-      set(watchTeamsConnection$, signal),
-      set(watchGithubIntegration$, signal),
-      set(watchAgentPhoneConnection$, signal),
-    ]),
-    Reason.Entrance,
-    "works realtime subscriptions",
-  );
+  await Promise.all([
+    set(watchSlackConnection$, signal),
+    set(watchTeamsConnection$, signal),
+    set(watchGithubIntegration$, signal),
+    set(watchAgentPhoneConnection$, signal),
+  ]);
+  signal.throwIfAborted();
 
   await set(hideAppSkeleton$, signal);
 });

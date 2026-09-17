@@ -1,3 +1,4 @@
+import { retireImpactMetadata } from "../../lib/impact-marketing";
 import { compatibleGoogleAdsAttribution } from "@okouai/core/google-ads-attribution";
 import { command } from "ccstate";
 import { sql, eq } from "drizzle-orm";
@@ -8,10 +9,7 @@ import { writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 import { getStripeClient } from "../external/stripe-client";
 import { stripePreviewMetadata } from "./stripe-preview-metadata.service";
-import {
-  impactStripeMetadata$,
-  updateImpactCustomer,
-} from "./impact-attribution.service";
+import { writeOrgMetadataWithDefaultPlanEntitlement } from "./org-plan-entitlements.service";
 
 interface GetOrCreateStripeCustomerArgs {
   readonly orgId: string;
@@ -32,9 +30,8 @@ export const getOrCreateStripeCustomer$ = command(
     args: GetOrCreateStripeCustomerArgs,
     signal: AbortSignal,
   ): Promise<string> => {
-    const impactMetadata = await set(impactStripeMetadata$, args.orgId, signal);
     const writeDb = set(writeDb$);
-    return writeDb.transaction(async (tx) => {
+    return await writeDb.transaction(async (tx) => {
       await tx.execute(
         sql`SELECT pg_advisory_xact_lock(hashtext('stripe_customer_' || ${args.orgId}))`,
       );
@@ -48,39 +45,43 @@ export const getOrCreateStripeCustomer$ = command(
       signal.throwIfAborted();
 
       if (row?.stripeCustomerId) {
-        await updateImpactCustomer(
-          row.stripeCustomerId,
-          impactMetadata,
-          signal,
-        );
         return row.stripeCustomerId;
       }
 
       const stripe = getStripeClient();
       const metadata: Record<string, string> = { orgId: args.orgId };
       for (const [key, value] of Object.entries(
-        compatibleGoogleAdsAttribution(args.metadata ?? {}),
+        compatibleGoogleAdsAttribution(
+          retireImpactMetadata(args.metadata ?? {}),
+        ),
       )) {
         if (value) {
           metadata[key] = value;
         }
       }
       Object.assign(metadata, stripePreviewMetadata());
-      Object.assign(metadata, impactMetadata);
       const customer = await stripe.customers.create({ metadata });
       signal.throwIfAborted();
 
-      await tx
-        .insert(orgMetadataCanonicalWrites)
-        .values({
-          orgId: args.orgId,
-          stripeCustomerId: customer.id,
-          credits: 0,
-        })
-        .onConflictDoUpdate({
-          target: orgMetadataCanonicalWrites.orgId,
-          set: { stripeCustomerId: customer.id, updatedAt: nowDate() },
-        });
+      await writeOrgMetadataWithDefaultPlanEntitlement(
+        tx,
+        args.orgId,
+        async (writeTx) => {
+          return await writeTx
+            .insert(orgMetadataCanonicalWrites)
+            .values({
+              orgId: args.orgId,
+              stripeCustomerId: customer.id,
+              credits: 0,
+            })
+            .onConflictDoUpdate({
+              target: orgMetadataCanonicalWrites.orgId,
+              set: { stripeCustomerId: customer.id, updatedAt: nowDate() },
+            })
+            .returning({ orgId: orgMetadata.orgId, tier: orgMetadata.tier });
+        },
+      );
+
       signal.throwIfAborted();
 
       return customer.id;

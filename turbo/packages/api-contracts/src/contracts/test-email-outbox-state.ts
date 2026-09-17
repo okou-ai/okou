@@ -26,6 +26,8 @@ export const testEmailOutboxStateItemSchema = z.object({
   attempts: z.number().int().nonnegative(),
   last_error: z.string().nullable(),
   resend_id: z.string().nullable(),
+  provider_idempotency_key: z.string().nullable(),
+  has_provider_request: z.boolean(),
 });
 
 export const testOfficialAutomationResultEmailClaimSchema = z.object({

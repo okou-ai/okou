@@ -2,6 +2,11 @@ import { z } from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
+import { cloudflareAccessCredentialsSchema } from "./cloudflare-access";
+import {
+  sshAuthenticationSchema,
+  SSH_PASSWORD_MAX_LENGTH,
+} from "./ssh-credentials";
 import { runnerHeartbeatGenerationSchema } from "./runner-primitives";
 import { sshConnectionFailureReasonSchema } from "./ssh-connection-observations";
 import {
@@ -11,7 +16,6 @@ import {
   SSH_USERNAME_MAX_LENGTH,
 } from "./ssh-connections";
 
-import { SSH_PASSWORD_MAX_LENGTH } from "./ssh-credentials";
 export { SSH_PASSWORD_MAX_LENGTH } from "./ssh-credentials";
 const c = initContract();
 const generationSchema = z.int().positive().max(2_147_483_647);
@@ -64,6 +68,17 @@ const resolvedFields = {
   generation: generationSchema,
   learnedHostKey: sshHostKeySchema.nullable(),
 };
+export const runnerSshAccessResolvedSchema = z
+  .object({
+    outcome: z.literal("resolved_access"),
+    ...resolvedFields,
+    authentication: sshAuthenticationSchema,
+    access: cloudflareAccessCredentialsSchema.extend({
+      configId: z.uuid(),
+      generation: generationSchema,
+    }),
+  })
+  .strict();
 const resolveResponseSchema = z.discriminatedUnion("outcome", [
   unavailableSchema,
   z
@@ -81,6 +96,7 @@ const resolveResponseSchema = z.discriminatedUnion("outcome", [
       password: z.string().min(1).max(SSH_PASSWORD_MAX_LENGTH),
     })
     .strict(),
+  runnerSshAccessResolvedSchema,
 ]);
 
 const pinRequestSchema = resolveRequestSchema

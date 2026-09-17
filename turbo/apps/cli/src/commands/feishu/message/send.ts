@@ -1,3 +1,7 @@
+import {
+  FEISHU_PLATFORMS,
+  type FeishuPlatform,
+} from "@okouai/core/feishu-platform";
 import { readFileSync } from "node:fs";
 
 import chalk from "chalk";
@@ -22,6 +26,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function parseCard(
   input: string | undefined,
+  providerName: string,
 ): Record<string, unknown> | undefined {
   if (!input) {
     return undefined;
@@ -31,79 +36,88 @@ function parseCard(
     parsed = JSON.parse(input);
   } catch {
     throw new Error("Invalid JSON for --card flag", {
-      cause: new Error("Provide a valid Feishu card JSON object"),
+      cause: new Error(`Provide a valid ${providerName} card JSON object`),
     });
   }
   if (!isRecord(parsed)) {
     throw new Error("Invalid JSON for --card", {
-      cause: new Error("Provide a Feishu card JSON object"),
+      cause: new Error(`Provide a ${providerName} card JSON object`),
     });
   }
   return parsed;
 }
 
-export const sendCommand = new Command()
-  .name("send")
-  .description("Send a message to a Feishu chat or user")
-  .option("-i, --installation <id>", "Feishu installation ID")
-  .option("-c, --chat <id>", "Feishu chat ID")
-  .option("-u, --user <open-id>", 'Feishu user open ID (use "me" for yourself)')
-  .option("-r, --reply <message-id>", "Message ID to reply to")
-  .option("--thread", "Reply in a Feishu thread")
-  .option("-t, --text <message>", "Message text")
-  .option("--card <json>", "Feishu interactive card JSON")
-  .addHelpText(
-    "after",
-    `
+export function createFeishuSendCommand(platform: FeishuPlatform) {
+  const providerName = FEISHU_PLATFORMS[platform].name;
+  return new Command()
+    .name("send")
+    .description(`Send a message to a ${providerName} chat or user`)
+    .option("-i, --installation <id>", `${providerName} installation ID`)
+    .option("-c, --chat <id>", `${providerName} chat ID`)
+    .option(
+      "-u, --user <open-id>",
+      `${providerName} user open ID (use "me" for yourself)`,
+    )
+    .option("-r, --reply <message-id>", "Message ID to reply to")
+    .option("--thread", `Reply in a ${providerName} thread`)
+    .option("-t, --text <message>", "Message text")
+    .option("--card <json>", `${providerName} interactive card JSON`)
+    .addHelpText(
+      "after",
+      `
 Examples:
-  Chat message:          okou feishu message send -c oc_xxx -t "Hello!"
-  Direct message:        okou feishu message send -u ou_xxx -t "Hello!"
-  DM yourself:           okou feishu message send -u me -t "Hello!"
-  Thread reply:          okou feishu message send -r om_xxx --thread -t "Reply"
-  Interactive card:      okou feishu message send -c oc_xxx --card '{"schema":"2.0","body":{"elements":[]}}'
-  Select a custom app:   okou feishu message send -i <installation-id> -c oc_xxx -t "Hello!"
+  Chat message:          okou ${platform} message send -c oc_xxx -t "Hello!"
+  Direct message:        okou ${platform} message send -u ou_xxx -t "Hello!"
+  DM yourself:           okou ${platform} message send -u me -t "Hello!"
+  Thread reply:          okou ${platform} message send -r om_xxx --thread -t "Reply"
+  Interactive card:      okou ${platform} message send -c oc_xxx --card '{"schema":"2.0","body":{"elements":[]}}'
+  Select a custom app:   okou ${platform} message send -i <installation-id> -c oc_xxx -t "Hello!"
 
 Notes:
   - Exactly one of --chat, --user, or --reply is required
   - Exactly one of --text or --card is required
-  - --installation is required when the organization has multiple Feishu bots`,
-  )
-  .action(
-    withErrorHandler(async (options: SendFeishuOptions) => {
-      const targets = [options.chat, options.user, options.reply].filter(
-        Boolean,
-      );
-      if (targets.length !== 1) {
-        throw new Error(
-          "Exactly one of --chat, --user, or --reply must be provided",
+  - --installation is required when the organization has multiple ${providerName} bots`,
+    )
+    .action(
+      withErrorHandler(async (options: SendFeishuOptions) => {
+        const targets = [options.chat, options.user, options.reply].filter(
+          Boolean,
         );
-      }
-      if (options.thread && !options.reply) {
-        throw new Error("--thread requires --reply");
-      }
-
-      let text = options.text;
-      if (!text && !options.card && !process.stdin.isTTY) {
-        try {
-          text = readFileSync("/dev/stdin", "utf8").trim();
-        } catch {
-          // stdin is not readable; fall through to normal input validation.
+        if (targets.length !== 1) {
+          throw new Error(
+            "Exactly one of --chat, --user, or --reply must be provided",
+          );
         }
-      }
-      const card = parseCard(options.card);
-      if (Boolean(text) === Boolean(card)) {
-        throw new Error("Exactly one of --text or --card must be provided");
-      }
+        if (options.thread && !options.reply) {
+          throw new Error("--thread requires --reply");
+        }
 
-      const result = await sendFeishuMessage({
-        installationId: options.installation,
-        chat: options.chat,
-        user: options.user,
-        replyToMessageId: options.reply,
-        replyInThread: options.thread,
-        text,
-        card,
-      });
-      console.log(chalk.green(`✓ Message sent (message: ${result.messageId})`));
-    }),
-  );
+        let text = options.text;
+        if (!text && !options.card && !process.stdin.isTTY) {
+          try {
+            text = readFileSync("/dev/stdin", "utf8").trim();
+          } catch {
+            // stdin is not readable; fall through to normal input validation.
+          }
+        }
+        const card = parseCard(options.card, providerName);
+        if (Boolean(text) === Boolean(card)) {
+          throw new Error("Exactly one of --text or --card must be provided");
+        }
+
+        const result = await sendFeishuMessage({
+          ...(platform === "lark" ? { platform } : {}),
+          installationId: options.installation,
+          chat: options.chat,
+          user: options.user,
+          replyToMessageId: options.reply,
+          replyInThread: options.thread,
+          text,
+          card,
+        });
+        console.log(
+          chalk.green(`✓ Message sent (message: ${result.messageId})`),
+        );
+      }),
+    );
+}

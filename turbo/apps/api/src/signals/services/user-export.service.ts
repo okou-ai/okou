@@ -83,10 +83,10 @@ import {
 import { readCurrentChatEventHistory } from "./chat-event-history.service";
 import { loadWorkflowVolumeFiles } from "./workflow-volume.service";
 import { projectPiSessionJsonlForExport } from "@okouai/pi-agent-runtime/api";
+import { PRESIGNED_URL_TTL_SECONDS } from "@okouai/api-contracts/contracts/presigned-urls";
 
 const RATE_LIMIT_MS = 24 * 60 * 60 * 1000;
-const DOWNLOAD_URL_EXPIRY_SECONDS = 3600;
-const EXPORT_DOWNLOAD_EXPIRY_SECONDS = 72 * 60 * 60;
+const EXPORT_DOWNLOAD_EXPIRY_SECONDS = PRESIGNED_URL_TTL_SECONDS;
 const EXPORT_DOWNLOAD_EXPIRY_MS = EXPORT_DOWNLOAD_EXPIRY_SECONDS * 1000;
 const USER_CACHE_TTL_MS = 15 * 60 * 1000;
 const DATA_EXPORT_READY_SUBJECT = "Your data export is ready";
@@ -275,7 +275,6 @@ export function userExportStatus(userId: string) {
         generatePresignedGetUrl(
           env("R2_USER_STORAGES_BUCKET_NAME"),
           latestJob.s3Key,
-          DOWNLOAD_URL_EXPIRY_SECONDS,
           DATA_EXPORT_FILENAME,
           true,
         ),
@@ -1362,13 +1361,7 @@ const runExportJob$ = command(async function runExportJob(
   signal.throwIfAborted();
 
   const downloadUrl = await get(
-    generatePresignedGetUrl(
-      runtime.bucket,
-      s3Key,
-      EXPORT_DOWNLOAD_EXPIRY_SECONDS,
-      DATA_EXPORT_FILENAME,
-      true,
-    ),
+    generatePresignedGetUrl(runtime.bucket, s3Key, DATA_EXPORT_FILENAME, true),
   );
   signal.throwIfAborted();
 

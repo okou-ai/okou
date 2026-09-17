@@ -1,7 +1,7 @@
 import { command } from "ccstate";
 import { mailContract } from "@okouai/api-contracts/contracts/mail";
 
-import { conflict, notFound } from "../../lib/error";
+import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { env } from "../../lib/env";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -173,17 +173,18 @@ const deleteDraftInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 const sendDraftParams$ = pathParamsOf(mailContract.sendDraft);
 const sendDraftInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
-  return mutationResponse(
-    await set(
-      sendMailDraft$,
-      {
-        orgId: auth.orgId,
-        userId: auth.userId,
-        ...get(sendDraftParams$),
-      },
-      signal,
-    ),
+  const result = await set(
+    sendMailDraft$,
+    {
+      orgId: auth.orgId,
+      userId: auth.userId,
+      ...get(sendDraftParams$),
+    },
+    signal,
   );
+  return result.kind === "rejected"
+    ? badRequestMessage(result.message)
+    : mutationResponse(result);
 });
 
 const mailDraftLinkAuth = Object.freeze({

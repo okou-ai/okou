@@ -7,7 +7,6 @@ import { presentationTemplates } from "@okouai/db/schema/presentation-template";
 import { and, eq } from "drizzle-orm";
 
 import { notFound } from "../../lib/error";
-import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -26,6 +25,7 @@ import {
   type PresentationTemplateRow,
 } from "../services/presentation-template-data.service";
 import { deletePresentationTemplate$ } from "../services/presentation-template-delete.service";
+import { templateArtifactBucket } from "../services/private-artifact-storage.service";
 import { publishPresentationTemplate$ } from "../services/presentation-template-publish.service";
 import {
   presentationTemplatePreviewPresignedUrlCacheKey,
@@ -65,7 +65,6 @@ interface AccessiblePresentationTemplatePreviewAsset {
 function presentationTemplatePreviewAsset(args: {
   readonly row: PresentationTemplateRow;
   readonly objectKey: string;
-  readonly bucket: string;
   readonly orgId: string;
 }): AccessiblePresentationTemplatePreviewAsset {
   const previewAssetId = presentationTemplatePreviewAssetId(
@@ -79,7 +78,7 @@ function presentationTemplatePreviewAsset(args: {
   return {
     previewAssetId,
     request: {
-      bucket: args.bucket,
+      bucket: templateArtifactBucket(args.objectKey),
       objectKey: args.objectKey,
       storageVersionId: identity.storageVersionId,
       resolvedOrgId: args.orgId,
@@ -90,7 +89,6 @@ function presentationTemplatePreviewAsset(args: {
 
 function presentationTemplatePreviewAssetsForRow(args: {
   readonly row: PresentationTemplateRow;
-  readonly bucket: string;
   readonly orgId: string;
 }): readonly AccessiblePresentationTemplatePreviewAsset[] {
   return args.row.pageKeys.map((objectKey) => {
@@ -123,7 +121,6 @@ function resolvedPresentationTemplatePreviewAssets(
 function accessiblePresentationTemplatePreviewAssets(args: {
   readonly rows: readonly PresentationTemplateRow[];
   readonly previewAssetIds: readonly string[];
-  readonly bucket: string;
   readonly orgId: string;
 }): readonly AccessiblePresentationTemplatePreviewAsset[] {
   const rowById = new Map(
@@ -145,7 +142,6 @@ function accessiblePresentationTemplatePreviewAssets(args: {
           presentationTemplatePreviewAsset({
             row,
             objectKey,
-            bucket: args.bucket,
             orgId: args.orgId,
           }),
         ];
@@ -180,7 +176,6 @@ const publishInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const coverAsset = presentationTemplatePreviewAssetsForRow({
     row,
-    bucket: env("R2_USER_ARTIFACTS_BUCKET_NAME"),
     orgId: auth.orgId,
   })[0];
   const coverUrlsByCacheKey = await get(
@@ -212,14 +207,12 @@ const listInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     userId: auth.userId,
   });
   signal.throwIfAborted();
-  const bucket = env("R2_USER_ARTIFACTS_BUCKET_NAME");
   const previewAssetsByTemplateId = new Map(
     rows.map((row) => {
       return [
         row.id,
         presentationTemplatePreviewAssetsForRow({
           row,
-          bucket,
           orgId: auth.orgId,
         }),
       ] as const;
@@ -266,10 +259,8 @@ const getInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!row) {
     return templateNotFound(params.templateId);
   }
-  const bucket = env("R2_USER_ARTIFACTS_BUCKET_NAME");
   const previewAssets = presentationTemplatePreviewAssetsForRow({
     row,
-    bucket,
     orgId: auth.orgId,
   });
   const urlsByCacheKey = await get(
@@ -317,7 +308,6 @@ const resolvePreviewUrlsInner$ = command(
     const assets = accessiblePresentationTemplatePreviewAssets({
       rows,
       previewAssetIds: bodyResult.data.previewAssetIds,
-      bucket: env("R2_USER_ARTIFACTS_BUCKET_NAME"),
       orgId: auth.orgId,
     });
     const urlsByCacheKey = await get(
@@ -394,7 +384,6 @@ const updateInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const { row, workspaceVisible } = mutation;
   const coverAsset = presentationTemplatePreviewAssetsForRow({
     row,
-    bucket: env("R2_USER_ARTIFACTS_BUCKET_NAME"),
     orgId: auth.orgId,
   })[0];
   const coverUrlsByCacheKey = await get(

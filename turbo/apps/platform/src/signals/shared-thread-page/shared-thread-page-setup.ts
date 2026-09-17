@@ -17,7 +17,6 @@ import { updateDocumentTitle$ } from "../document-title.ts";
 import { pathParams$ } from "../route.ts";
 import { updatePage$ } from "../react-router.ts";
 import { setPageSignal$ } from "../page-signal.ts";
-import { agentMessageMathEnabled$ } from "../external/feature-switch.ts";
 import { createSharedThreadRichContentSignals } from "./shared-thread-rich-content.ts";
 
 export const setupSharedThreadPage$ = command(
@@ -32,7 +31,6 @@ export const setupSharedThreadPage$ = command(
       signal,
     );
     let sharedThread: SharedDisplayThread | null = null;
-    const mathEnabled = get(agentMessageMathEnabled$);
     if (result.status === 200) {
       const messages: SharedDisplayThread["messages"][number][] = [];
       const richMessages: (typeof result.body.messages)[number][] = [];
@@ -46,7 +44,9 @@ export const setupSharedThreadPage$ = command(
           message.runGroupIndex === undefined &&
           isRetiredGoalArchiveText(message.content)
             ? literalHistoryTree(message.content)
-            : createPlainMarkdownTree(message.content, { mathEnabled });
+            : createPlainMarkdownTree(message.content, {
+                mathEnabled: true,
+              });
         if (tree === null) {
           richMessages.push(message);
           messages.push({ ...message, tree: undefined });
@@ -54,18 +54,11 @@ export const setupSharedThreadPage$ = command(
         }
         messages.push({ ...message, tree });
       }
-      sharedThread = {
-        ...result.body,
-        messages,
-        richContent:
-          richMessages.length === 0
-            ? undefined
-            : createSharedThreadRichContentSignals(
-                richMessages,
-                mathEnabled,
-                signal,
-              ),
-      };
+      const richContent =
+        richMessages.length === 0
+          ? undefined
+          : createSharedThreadRichContentSignals(richMessages);
+      sharedThread = { ...result.body, messages, richContent };
     }
     set(
       updateDocumentTitle$,

@@ -335,13 +335,6 @@ const createAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     const transactionResult = await writeDb.transaction(async (tx) => {
       await lockCanonicalAgentMutation(tx, agentId);
       await lockCanonicalAgentPublicLimit(tx, auth.orgId);
-
-      await tx
-        .select({ id: agents.id })
-        .from(agents)
-        .where(eq(agents.orgId, auth.orgId))
-        .orderBy(agents.id)
-        .for("update");
       signal.throwIfAborted();
 
       if (visibility === "public") {
@@ -515,8 +508,7 @@ const updateAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     await tx
       .select({ id: agents.id })
       .from(agents)
-      .where(eq(agents.orgId, auth.orgId))
-      .orderBy(agents.id)
+      .where(and(eq(agents.orgId, auth.orgId), eq(agents.id, params.id)))
       .for("update");
 
     const existing = await findAgentForUpdate(tx, auth.orgId, params.id);
@@ -605,8 +597,7 @@ const updateAgentMetadataInner$ = command(
       await tx
         .select({ id: agents.id })
         .from(agents)
-        .where(eq(agents.orgId, auth.orgId))
-        .orderBy(agents.id)
+        .where(and(eq(agents.orgId, auth.orgId), eq(agents.id, params.id)))
         .for("update");
 
       const existing = await findAgentMetadataForUpdate(

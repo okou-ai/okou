@@ -1,0 +1,45 @@
+{
+  "test": "stage1-cost-scale",
+  "census": {
+    "raw": "134426",
+    "hourly": "321528"
+  },
+  "expandMs": 7,
+  "validateMs": 75,
+  "planningMs": 0.681,
+  "executionMs": 64.019,
+  "sharedHitBlocks": 11996,
+  "sharedReadBlocks": 0,
+  "scans": [
+    {
+      "Node Type": "Seq Scan",
+      "Relation Name": "usage_event_hourly_rollup",
+      "Actual Rows": 3572.67,
+      "Actual Loops": 3,
+      "Rows Removed by Filter": 103603
+    },
+    {
+      "Node Type": "Seq Scan",
+      "Relation Name": "usage_event",
+      "Actual Rows": 2242.5,
+      "Actual Loops": 2,
+      "Rows Removed by Filter": 64972
+    },
+    {
+      "Node Type": "Index Scan",
+      "Relation Name": "usage_pricing",
+      "Actual Rows": 1,
+      "Actual Loops": 1
+    },
+    {
+      "Node Type": "Index Scan",
+      "Relation Name": "usage_pricing",
+      "Actual Rows": 0,
+      "Actual Loops": 1
+    }
+  ],
+  "database": "local PostgreSQL 18, current-schema clones and controlled data",
+  "measuredAt": "2026-09-15",
+  "liveProductionValidation": false,
+  "limitations": "Volume matches the two non-atomic production aggregates. Synthetic 30-day distribution, cache state, concurrency and hardware do not establish production latency. Timings are not assertions."
+}

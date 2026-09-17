@@ -1,5 +1,69 @@
 # Changelog
 
+## [0.21.22](https://github.com/vm0-ai/okou/compare/guest-control-server-v0.21.21...guest-control-server-v0.21.22) (2026-09-17)
+
+## [0.21.21](https://github.com/vm0-ai/okou/compare/guest-control-server-v0.21.20...guest-control-server-v0.21.21) (2026-09-17)
+
+## [0.21.20](https://github.com/vm0-ai/okou/compare/guest-control-server-v0.21.19...guest-control-server-v0.21.20) (2026-09-17)
+
+
+### Bug Fixes
+
+* **runner:** downgrade successful slow storage downloads ([#34799](https://github.com/vm0-ai/okou/issues/34799)) ([79e19b6](https://github.com/vm0-ai/okou/commit/79e19b689fbba9e18f8074bb4dd194dc4a99e832))
+
+## [0.21.19](https://github.com/vm0-ai/okou/compare/guest-control-server-v0.21.18...guest-control-server-v0.21.19) (2026-09-17)
+
+## [0.21.18](https://github.com/vm0-ai/okou/compare/guest-control-server-v0.21.17...guest-control-server-v0.21.18) (2026-09-16)
+
+
+### Performance Improvements
+
+* **runner:** stream compressed session history with caller-owned policy ([#34603](https://github.com/vm0-ai/okou/issues/34603)) ([1376434](https://github.com/vm0-ai/okou/commit/1376434b697f5e39be6d569c6b20a4e33ed12342))
+
+## [0.21.17](https://github.com/vm0-ai/okou/compare/guest-control-server-v0.21.16...guest-control-server-v0.21.17) (2026-09-16)
+
+## [0.21.16](https://github.com/vm0-ai/okou/compare/guest-control-server-v0.21.15...guest-control-server-v0.21.16) (2026-09-16)
+
+## [0.21.15](https://github.com/vm0-ai/okou/compare/guest-control-server-v0.21.14...guest-control-server-v0.21.15) (2026-09-16)
+
+
+### Bug Fixes
+
+* **runner:** classify contained tool oom as informational ([#34520](https://github.com/vm0-ai/okou/issues/34520)) ([02e789d](https://github.com/vm0-ai/okou/commit/02e789d0129298079e23570bc319c5c0557a2d77))
+
+## [0.21.14](https://github.com/vm0-ai/okou/compare/guest-control-server-v0.21.13...guest-control-server-v0.21.14) (2026-09-16)
+
+## [0.21.13](https://github.com/vm0-ai/vm0/compare/guest-control-server-v0.21.12...guest-control-server-v0.21.13) (2026-09-15)
+
+## [0.21.12](https://github.com/vm0-ai/vm0/compare/guest-control-server-v0.21.11...guest-control-server-v0.21.12) (2026-09-15)
+
+
+### Bug Fixes
+
+* **runner:** protect native runtime memory from tool reclaim ([#34398](https://github.com/vm0-ai/vm0/issues/34398)) ([756b6bc](https://github.com/vm0-ai/vm0/commit/756b6bce47a0a4b341359971ebc7ae9a4c24c62e))
+
+## [0.21.11](https://github.com/vm0-ai/vm0/compare/guest-control-server-v0.21.10...guest-control-server-v0.21.11) (2026-09-15)
+
+## [0.21.10](https://github.com/vm0-ai/vm0/compare/guest-control-server-v0.21.9...guest-control-server-v0.21.10) (2026-09-15)
+
+
+### Performance Improvements
+
+* **runner:** persist extracted storage files for cache-hit delivery ([#33976](https://github.com/vm0-ai/vm0/issues/33976)) ([b961911](https://github.com/vm0-ai/vm0/commit/b961911d0516fbdc06d3e8387bedb0653eee5ea9))
+
+## [0.21.9](https://github.com/vm0-ai/vm0/compare/guest-control-server-v0.21.8...guest-control-server-v0.21.9) (2026-09-15)
+
+## [0.21.8](https://github.com/vm0-ai/vm0/compare/guest-control-server-v0.21.7...guest-control-server-v0.21.8) (2026-09-14)
+
+## [0.21.7](https://github.com/vm0-ai/vm0/compare/guest-control-server-v0.21.6...guest-control-server-v0.21.7) (2026-09-14)
+
+## [0.21.6](https://github.com/vm0-ai/vm0/compare/guest-control-server-v0.21.5...guest-control-server-v0.21.6) (2026-09-14)
+
+
+### Refactoring
+
+* **rust:** centralize exec process diagnostic labels ([#33938](https://github.com/vm0-ai/vm0/issues/33938)) ([cd8acd3](https://github.com/vm0-ai/vm0/commit/cd8acd3a7019ece7f5ba031529e508d929b0a1b1))
+
 ## [0.21.5](https://github.com/vm0-ai/vm0/compare/guest-control-server-v0.21.4...guest-control-server-v0.21.5) (2026-09-11)
 
 ## [0.21.4](https://github.com/vm0-ai/vm0/compare/guest-control-server-v0.21.3...guest-control-server-v0.21.4) (2026-09-11)

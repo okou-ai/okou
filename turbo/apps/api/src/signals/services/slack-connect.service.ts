@@ -1,3 +1,4 @@
+import { awardCompletedGetStartedQuest } from "./get-started-rewards.service";
 import { command, computed, type Computed } from "ccstate";
 import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
 import { agents } from "@okouai/db/schema/agent";
@@ -354,21 +355,32 @@ export const connectSlackWorkspace$ = command(
         return { kind: "forbidden", message: adminRequiredMessage };
       }
 
-      const [updated] = await writeDb
-        .update(slackOrgInstallations)
-        .set({
-          orgId: args.orgId,
-          installedByUserId: args.userId,
-          publicBrand: OFFICIAL_SLACK_PUBLIC_BRAND,
-          updatedAt: nowDate(),
-        })
-        .where(
-          and(
-            eq(slackOrgInstallations.slackWorkspaceId, args.workspaceId),
-            isNull(slackOrgInstallations.orgId),
-          ),
-        )
-        .returning();
+      const updated = await writeDb.transaction(async (tx) => {
+        const [bound] = await tx
+          .update(slackOrgInstallations)
+          .set({
+            orgId: args.orgId,
+            installedByUserId: args.userId,
+            publicBrand: OFFICIAL_SLACK_PUBLIC_BRAND,
+            updatedAt: nowDate(),
+          })
+          .where(
+            and(
+              eq(slackOrgInstallations.slackWorkspaceId, args.workspaceId),
+              isNull(slackOrgInstallations.orgId),
+            ),
+          )
+          .returning();
+        if (bound) {
+          await awardCompletedGetStartedQuest(tx, {
+            orgId: args.orgId,
+            userId: args.userId,
+            questKey: "slack",
+            sourceKey: args.workspaceId,
+          });
+        }
+        return bound;
+      });
       signal.throwIfAborted();
 
       let boundInstallation = updated;

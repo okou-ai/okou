@@ -1,5 +1,66 @@
 # Changelog
 
+## [0.43.2](https://github.com/vm0-ai/okou/compare/sandbox-firecracker-v0.43.1...sandbox-firecracker-v0.43.2) (2026-09-17)
+
+## [0.43.1](https://github.com/vm0-ai/okou/compare/sandbox-firecracker-v0.43.0...sandbox-firecracker-v0.43.1) (2026-09-17)
+
+
+### Performance Improvements
+
+* **runner:** preserve active guest memory capacity ([#34832](https://github.com/vm0-ai/okou/issues/34832)) ([4ad43f1](https://github.com/vm0-ai/okou/commit/4ad43f174745f327493b26104d44296aec1b7d49))
+
+## [0.43.0](https://github.com/vm0-ai/okou/compare/sandbox-firecracker-v0.42.15...sandbox-firecracker-v0.43.0) (2026-09-17)
+
+
+### Features
+
+* **runner:** expose history transfer measurements ([#34805](https://github.com/vm0-ai/okou/issues/34805)) ([445a170](https://github.com/vm0-ai/okou/commit/445a170a81a2fac9b1d42f361866c2ea70cfb7e7))
+
+## [0.42.15](https://github.com/vm0-ai/okou/compare/sandbox-firecracker-v0.42.14...sandbox-firecracker-v0.42.15) (2026-09-17)
+
+## [0.42.14](https://github.com/vm0-ai/okou/compare/sandbox-firecracker-v0.42.13...sandbox-firecracker-v0.42.14) (2026-09-16)
+
+
+### Performance Improvements
+
+* **runner:** stream compressed session history with caller-owned policy ([#34603](https://github.com/vm0-ai/okou/issues/34603)) ([1376434](https://github.com/vm0-ai/okou/commit/1376434b697f5e39be6d569c6b20a4e33ed12342))
+
+## [0.42.13](https://github.com/vm0-ai/okou/compare/sandbox-firecracker-v0.42.12...sandbox-firecracker-v0.42.13) (2026-09-16)
+
+## [0.42.12](https://github.com/vm0-ai/okou/compare/sandbox-firecracker-v0.42.11...sandbox-firecracker-v0.42.12) (2026-09-16)
+
+## [0.42.11](https://github.com/vm0-ai/okou/compare/sandbox-firecracker-v0.42.10...sandbox-firecracker-v0.42.11) (2026-09-16)
+
+## [0.42.10](https://github.com/vm0-ai/okou/compare/sandbox-firecracker-v0.42.9...sandbox-firecracker-v0.42.10) (2026-09-16)
+
+## [0.42.9](https://github.com/vm0-ai/okou/compare/sandbox-firecracker-v0.42.8...sandbox-firecracker-v0.42.9) (2026-09-16)
+
+## [0.42.8](https://github.com/vm0-ai/vm0/compare/sandbox-firecracker-v0.42.7...sandbox-firecracker-v0.42.8) (2026-09-15)
+
+## [0.42.7](https://github.com/vm0-ai/vm0/compare/sandbox-firecracker-v0.42.6...sandbox-firecracker-v0.42.7) (2026-09-15)
+
+## [0.42.6](https://github.com/vm0-ai/vm0/compare/sandbox-firecracker-v0.42.5...sandbox-firecracker-v0.42.6) (2026-09-15)
+
+## [0.42.5](https://github.com/vm0-ai/vm0/compare/sandbox-firecracker-v0.42.4...sandbox-firecracker-v0.42.5) (2026-09-15)
+
+## [0.42.4](https://github.com/vm0-ai/vm0/compare/sandbox-firecracker-v0.42.3...sandbox-firecracker-v0.42.4) (2026-09-15)
+
+## [0.42.3](https://github.com/vm0-ai/vm0/compare/sandbox-firecracker-v0.42.2...sandbox-firecracker-v0.42.3) (2026-09-14)
+
+
+### Bug Fixes
+
+* **rust:** reuse managed child pidfds for firecracker monitoring ([#34061](https://github.com/vm0-ai/vm0/issues/34061)) ([7112251](https://github.com/vm0-ai/vm0/commit/7112251220aa4268e6b0b1e154bff401eb2d09d1))
+
+## [0.42.2](https://github.com/vm0-ai/vm0/compare/sandbox-firecracker-v0.42.1...sandbox-firecracker-v0.42.2) (2026-09-14)
+
+## [0.42.1](https://github.com/vm0-ai/vm0/compare/sandbox-firecracker-v0.42.0...sandbox-firecracker-v0.42.1) (2026-09-14)
+
+
+### Bug Fixes
+
+* **rust:** stop host cpu fairness ticker on sampling failures ([#33939](https://github.com/vm0-ai/vm0/issues/33939)) ([16999c6](https://github.com/vm0-ai/vm0/commit/16999c63ada2b7e89f7a23a670670cc55932b84d))
+
 ## [0.42.0](https://github.com/vm0-ai/vm0/compare/sandbox-firecracker-v0.41.10...sandbox-firecracker-v0.42.0) (2026-09-14)
 
 

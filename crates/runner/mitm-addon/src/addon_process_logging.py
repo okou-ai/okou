@@ -2,6 +2,7 @@
 
 import json
 import os
+import stat
 from typing import Literal
 
 AddonProcessEventLevel = Literal["warn", "error"]
@@ -62,7 +63,7 @@ def emit_addon_process_event(
     /,
     **fields: object,
 ) -> None:
-    """Write one bounded addon log record directly to mitmdump stderr.
+    """Attempt one bounded, nonblocking record on the Runner's stderr pipe.
 
     The Runner recognizes only this versioned envelope. Other than the
     transport ``version`` and logger-owned ``level`` and ``message``, fields
@@ -77,9 +78,12 @@ def emit_addon_process_event(
     remaining encoded-record budget. If the record still exceeds the limit
     with an empty message, ``ValueError`` is raised before any write.
 
-    The stderr write is best effort: ``OSError`` is suppressed so a write
-    failure does not interrupt proxy traffic. Input validation, serialization,
-    and record-size errors propagate to the caller.
+    Delivery requires the Linux Runner's piped stderr. Reopening it through
+    procfs gives this write independent nonblocking flags without changing
+    mitmproxy's fd 2. A full pipe drops the entire record: no queue, retries,
+    recursive logging, or shutdown drain. Non-pipe sinks and ``OSError`` are
+    best-effort drops. Input validation, serialization, and record-size errors
+    still propagate to the caller.
     """
     if level not in ("warn", "error"):
         raise ValueError(f"invalid addon process event level: {level!r}")
@@ -92,6 +96,15 @@ def emit_addon_process_event(
 
     record = _bounded_event(payload, message)
     try:
-        os.write(2, record)
+        fd = os.open("/proc/self/fd/2", os.O_WRONLY | os.O_NONBLOCK | os.O_CLOEXEC)
+        try:
+            if not stat.S_ISFIFO(os.fstat(fd).st_mode):
+                return
+            # One write within PIPE_BUF is all-or-nothing, even with concurrent
+            # emitters. Never retry a partial record or change fd 2's flags.
+            if len(record) <= os.fpathconf(fd, "PC_PIPE_BUF"):
+                os.write(fd, record)
+        finally:
+            os.close(fd)
     except OSError:
         return

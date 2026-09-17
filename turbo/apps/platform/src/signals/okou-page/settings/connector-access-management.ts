@@ -33,7 +33,6 @@ interface SetConnectorAgentAuthorizationParams {
 
 const managedConnectorAccessSlugState$ = state<ConnectorSlug | null>(null);
 const connectorAccessManagementSearchState$ = state("");
-const connectorAccessManagementSavingAgentIdState$ = state<string | null>(null);
 const connectorAccessManagementPermissionAgentIdState$ = state<string | null>(
   null,
 );
@@ -44,10 +43,6 @@ export const managedConnectorAccessSlug$ = computed((get) => {
 
 export const connectorAccessManagementSearch$ = computed((get) => {
   return get(connectorAccessManagementSearchState$);
-});
-
-export const connectorAccessManagementSavingAgentId$ = computed((get) => {
-  return get(connectorAccessManagementSavingAgentIdState$);
 });
 
 export const connectorAccessManagementPermissionAgentId$ = computed((get) => {
@@ -63,19 +58,12 @@ export const setManagedConnectorAccessSlug$ = command(
 export const closeConnectorAccessManagement$ = command(({ set }) => {
   set(managedConnectorAccessSlugState$, null);
   set(connectorAccessManagementSearchState$, "");
-  set(connectorAccessManagementSavingAgentIdState$, null);
   set(connectorAccessManagementPermissionAgentIdState$, null);
 });
 
 export const setConnectorAccessManagementSearch$ = command(
   ({ set }, search: string) => {
     set(connectorAccessManagementSearchState$, search);
-  },
-);
-
-export const setConnectorAccessManagementSavingAgentId$ = command(
-  ({ set }, agentId: string | null) => {
-    set(connectorAccessManagementSavingAgentIdState$, agentId);
   },
 );
 
@@ -201,6 +189,8 @@ export const setConnectorAgentAuthorization$ = command(
         set(reloadAgentConnectorAuthorizations$);
       },
     );
+    signal.throwIfAborted();
+    await get(managedConnectorAgentAccessRows$);
     signal.throwIfAborted();
   },
 );

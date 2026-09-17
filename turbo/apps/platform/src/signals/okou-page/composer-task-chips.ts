@@ -10,15 +10,25 @@ import type {
   ComposerCreateSignals,
 } from "./composer-create.ts";
 import { createComposerVisualizationSignals } from "./composer-visualization.ts";
+import { onRef } from "../utils.ts";
+import { observeRail, type RailTravel } from "./rail-travel.ts";
 
 export type ComposerTask =
   | ComposerCreateMode
   | "workflow"
   | "website"
   | "visualization";
-export type ComposerIdeaTask = Exclude<
-  ComposerTask,
-  "presentation" | "visualization"
+export type ComposerIdeaTask = Exclude<ComposerTask, "visualization">;
+/** The tasks whose ideas render as a prompt row; workflow has its own surface. */
+export type ComposerPromptRowTask = Exclude<ComposerIdeaTask, "workflow">;
+/**
+ * The tasks served by the shared cover shelf. Presentation has ideas but not
+ * this shelf: its catalog carries uploaded decks and an import tile, so it
+ * builds its own row.
+ */
+export type ComposerTemplateTask = Exclude<
+  ComposerPromptRowTask,
+  "presentation"
 >;
 
 export function createComposerTaskChipsSignals(
@@ -33,7 +43,7 @@ export function createComposerTaskChipsSignals(
   >(null);
   const visualization = createComposerVisualizationSignals();
   const task$ = computed((get): ComposerTask | null => {
-    if (!get(enabled$) || get(create.choosing$)) {
+    if (!get(enabled$)) {
       return null;
     }
     return get(create.mode$) ?? get(internalGeneralTask$);
@@ -73,6 +83,7 @@ export function createComposerTaskChipsSignals(
     workflow: 0,
     video: 0,
     website: 0,
+    presentation: 0,
   });
   const ideaPages$ = computed((get) => {
     return get(internalIdeaPages$);
@@ -86,12 +97,48 @@ export function createComposerTaskChipsSignals(
       });
     },
   );
+  /**
+   * How far a rail can still travel, per rail. A rail that has never reported
+   * is assumed to fit, which hides both pagers until a measurement proves
+   * otherwise.
+   */
+  const internalRailTravel$ = state<Readonly<Record<string, RailTravel>>>({});
+  const railTravel$ = computed((get) => {
+    return get(internalRailTravel$);
+  });
+  const setRailTravel$ = command(
+    ({ get, set }, rail: string, travel: RailTravel) => {
+      const current = get(internalRailTravel$)[rail];
+      if (
+        current?.canScrollBack === travel.canScrollBack &&
+        current.canScrollForward === travel.canScrollForward
+      ) {
+        return;
+      }
+      set(internalRailTravel$, { ...get(internalRailTravel$), [rail]: travel });
+    },
+  );
+  /** Owns one row's DOM lifecycle; the observers report what layout knows. */
+  const bindRail$ = onRef(
+    command(({ set }, element: HTMLElement, signal: AbortSignal) => {
+      const rail = element.dataset.rail;
+      if (!rail) {
+        return;
+      }
+      observeRail(element, signal, (travel) => {
+        set(setRailTravel$, rail, travel);
+      });
+    }),
+  );
   return {
     enabled$,
     task$,
     selectTask$,
     ideaPages$,
     nextIdeas$,
+    railTravel$,
+    setRailTravel$,
+    bindRail$,
     workflows,
     visualization,
   };

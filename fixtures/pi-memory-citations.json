@@ -232,6 +232,76 @@
       "visibleText": "a\n```\n\n```\nsuffix"
     },
     {
+      "name": "short backtick run after opener with complete envelope",
+      "text": "before\n```\n$OPEN\n``\n```\n<citation_entries>\nprivate-synthetic.md:1-1|note=[synthetic note]\n</citation_entries>\n$CLOSE\nafter",
+      "visibleText": "before\n```\n\nafter"
+    },
+    {
+      "name": "short tilde run after opener with complete envelope",
+      "text": "before\n~~~~\n$OPEN\n~~~\n~~~~\n<citation_entries>\nprivate-synthetic.md:1-1|note=[synthetic note]\n</citation_entries>\n$CLOSE\nafter",
+      "visibleText": "before\n~~~~\n\nafter"
+    },
+    {
+      "name": "short backtick run before opener with complete envelope",
+      "text": "before\n```\n``\n$OPEN\n```\nprivate-synthetic.md synthetic note$CLOSE\nafter",
+      "visibleText": "before\n```\n``\n\nafter"
+    },
+    {
+      "name": "short tilde run before opener with complete envelope",
+      "text": "before\n~~~~\n~~~\n$OPEN\n~~~~\nprivate-synthetic.md synthetic note$CLOSE\nafter",
+      "visibleText": "before\n~~~~\n~~~\n\nafter"
+    },
+    {
+      "name": "short backtick run after opener with indentation and trailing whitespace",
+      "text": "before\r\n   ````text\r\n\t$OPEN \r\n   ` \t\r\n   ````` \t\r\nprivate-synthetic.md synthetic note$CLOSE\r\nafter",
+      "visibleText": "before\r\n   ````text\r\n\t\r\nafter"
+    },
+    {
+      "name": "short tilde run before opener with indentation and trailing whitespace",
+      "text": "before\r\n   ~~~~text\r\n   ~~~ \t\r\n\t$OPEN \r\n   ~~~~~ \t\r\nprivate-synthetic.md synthetic note$CLOSE\r\nafter",
+      "visibleText": "before\r\n   ~~~~text\r\n   ~~~ \t\r\n\t\r\nafter"
+    },
+    {
+      "name": "short backtick run after opener with incomplete envelope",
+      "text": "before\n```\n$OPEN\n``\n```\n<citation_entries>private-synthetic.md:1-1|note=[synthetic note]</citation_entries>",
+      "visibleText": "before\n```\n"
+    },
+    {
+      "name": "short tilde run before opener with incomplete envelope",
+      "text": "before\n~~~~\n~~~\n$OPEN\n~~~~\n<citation_entries>private-synthetic.md:1-1|note=[synthetic note]</citation_entries>",
+      "visibleText": "before\n~~~~\n~~~\n"
+    },
+    {
+      "name": "short backtick run before opener with closing fence at eof",
+      "text": "before\n```\n`\n$OPEN\n```",
+      "visibleText": "before\n```\n`\n"
+    },
+    {
+      "name": "short tilde run after opener with closing fence at eof",
+      "text": "before\n~~~~\n$OPEN\n~~\n~~~~",
+      "visibleText": "before\n~~~~\n"
+    },
+    {
+      "name": "short backtick run before closer",
+      "text": "before\n```\n``\n$CLOSE\n```\nafter",
+      "visibleText": "before\n```\n``\n\n```\nafter"
+    },
+    {
+      "name": "short backtick run after closer",
+      "text": "before\n```\n$CLOSE\n``\n```\nafter",
+      "visibleText": "before\n```\n\n``\n```\nafter"
+    },
+    {
+      "name": "short tilde run before closer",
+      "text": "before\n~~~~\n~~~\n$CLOSE\n~~~~\nafter",
+      "visibleText": "before\n~~~~\n~~~\n\n~~~~\nafter"
+    },
+    {
+      "name": "short tilde run after closer",
+      "text": "before\n~~~~\n$CLOSE\n~~~\n~~~~\nafter",
+      "visibleText": "before\n~~~~\n\n~~~\n~~~~\nafter"
+    },
+    {
       "name": "larger code with nested ticks",
       "text": "a ``some `$OPEN` body`` suffix",
       "visibleText": "a ``some `"

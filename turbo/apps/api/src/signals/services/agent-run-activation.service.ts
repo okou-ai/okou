@@ -9,14 +9,18 @@ import { waitUntil } from "../context/wait-until";
 import type { PendingRunActivation } from "./agent-run-activation.types";
 import { dispatchConfiguredPiApiFirstTurn$ } from "./pi-api-first-turn-dispatch.service";
 
+import type { PiApiFirstTurnPreparation } from "./pi-api-first-turn-preparation";
+
 interface PendingRunActivationRequest {
   readonly activation: PendingRunActivation;
   readonly activationScheduledAt: number;
+  readonly preparation?: PiApiFirstTurnPreparation;
 }
 
 const startPiApiFirstTurn$ = command(function startPiApiFirstTurn(
   { set },
   activation: NonNullable<PendingRunActivation["piApiFirstTurn"]>,
+  preparation: PiApiFirstTurnPreparation | undefined,
 ): void {
   const coordinationDeadlineAt =
     activation.executionContext.piLaunchConfig.apiFirstTurn.deadlineAt;
@@ -26,6 +30,7 @@ const startPiApiFirstTurn$ = command(function startPiApiFirstTurn(
     set(
       dispatchConfiguredPiApiFirstTurn$,
       activation,
+      preparation,
       AbortSignal.timeout(Math.max(1, coordinationDeadlineAt - now())),
     ),
   );
@@ -52,7 +57,7 @@ export const activatePendingRun$ = command(
 
     const apiFirstTurn = activation.piApiFirstTurn;
     if (apiFirstTurn) {
-      set(startPiApiFirstTurn$, apiFirstTurn);
+      set(startPiApiFirstTurn$, apiFirstTurn, input.preparation);
     }
 
     const db = set(writeDb$);

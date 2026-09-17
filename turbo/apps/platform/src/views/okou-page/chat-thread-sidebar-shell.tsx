@@ -1,4 +1,4 @@
-import { chatLayoutTransitionOnRef$ } from "../../signals/chat-page/chat-layout.ts";
+import type { ChatLayoutSignals } from "../../signals/chat-page/chat-layout.ts";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
 import type {
   CSSProperties,
@@ -72,16 +72,18 @@ function ChatThreadSidebarResizeHandle() {
 
 export function ChatThreadSidebarShell({
   children,
+  layout,
   animateEntry,
   open,
   sidebar,
 }: {
   readonly children: ReactNode;
+  readonly layout: ChatLayoutSignals;
   readonly animateEntry: boolean;
   readonly open: boolean;
   readonly sidebar: ReactNode;
 }) {
-  const transitionRef = useSet(chatLayoutTransitionOnRef$);
+  const transitionRef = useSet(layout.transitionOnRef$);
   const syncActiveBrowserFitAction = useSet(syncActiveBrowserFitAction$);
   const { style, transition } = chatThreadSidebarLayout(
     useGet(chatThreadSidebarWidth$),

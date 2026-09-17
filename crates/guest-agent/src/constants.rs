@@ -13,7 +13,7 @@ pub const TELEMETRY_INTERVAL_SECS: u64 = 30;
 /// Metrics collection interval in seconds.
 pub const METRICS_INTERVAL_SECS: u64 = 5;
 
-/// Maximum total HTTP attempts for retryable webhook calls and uploads.
+/// Maximum total HTTP attempts for retryable webhook calls.
 pub const HTTP_MAX_ATTEMPTS: u32 = 3;
 
 /// HTTP connect timeout in seconds.

@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
-import { sshConnectionResponseSchema } from "./ssh-connections";
+import { sshConnectionMetadataSchema } from "./ssh-connections";
 
 const c = initContract();
 export const sshChangedPayloadSchema = z
@@ -18,7 +18,7 @@ const errors = {
   500: apiErrorSchema,
 };
 
-export const sshHostSchema = sshConnectionResponseSchema.pick({
+export const sshHostSchema = sshConnectionMetadataSchema.pick({
   id: true,
   displayName: true,
   host: true,

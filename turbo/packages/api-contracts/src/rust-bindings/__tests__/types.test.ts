@@ -14,6 +14,7 @@ import { modelProviderCodexRuntimeConfigSchema } from "../../contracts/model-pro
 import { MAX_EVENT_SEQUENCE_NUMBER } from "../../contracts/runs";
 import {
   piLaunchConfigSchema,
+  piApiFirstTurnConfigSchema,
   piModelConfigLegacySchema,
   piModelConfigV2Schema,
   sessionHistoryEncodingSchema,
@@ -65,6 +66,16 @@ const expectedBindings = [
   },
   {
     rustModulePath: ["runners", "runs"],
+    rustTypeName: "PiDeferredLaunchConfig",
+    direction: "response",
+  },
+  {
+    rustModulePath: ["runners", "jobs", "pi_handoff"],
+    rustTypeName: "Response",
+    direction: "response",
+  },
+  {
+    rustModulePath: ["runners", "runs"],
     rustTypeName: "PiLaunchConfig",
     direction: "response",
   },
@@ -95,6 +106,11 @@ const expectedBindings = [
   },
   {
     rustModulePath: ["runners", "runs", "active_inputs", "receipt"],
+    rustTypeName: "Response",
+    direction: "response",
+  },
+  {
+    rustModulePath: ["runners", "runs", "cancellation"],
     rustTypeName: "Response",
     direction: "response",
   },
@@ -368,7 +384,6 @@ describe("Rust type bindings", () => {
     );
     expect(firstRender).toContain("pub struct PiModelConfig {");
     expect(firstRender).toContain("pub enum PiModelConfigProvider {");
-    expect(firstRender).toContain("pub enum PiModelConfigApi {");
     expect(firstRender).toContain("pub enum PiModelConfigThinkingLevel {");
     expect(firstRender).toContain("pub enum PiModelConfigServiceTier {");
     expect(firstRender).toContain("pub enum PiModelConfigApiKeyEnv {");
@@ -511,10 +526,18 @@ describe("Rust type bindings", () => {
       },
     );
 
-    expect(launchBinding?.schema).toBe(piLaunchConfigSchema);
+    if (!launchBinding) {
+      throw new Error("Missing legacy Pi launch binding");
+    }
+    const legacyLaunchSchema = piLaunchConfigSchema
+      .unwrap()
+      .safeExtend({ apiFirstTurn: piApiFirstTurnConfigSchema });
+    expect(z.toJSONSchema(launchBinding.schema)).toEqual(
+      z.toJSONSchema(legacyLaunchSchema),
+    );
     expect(modelBinding?.schema).toBe(piModelConfigLegacySchema);
     expect(modelV2Binding?.schema).toBe(piModelConfigV2Schema);
-    expect(z.toJSONSchema(piLaunchConfigSchema)).toMatchObject({
+    expect(z.toJSONSchema(legacyLaunchSchema)).toMatchObject({
       required: ["schemaVersion", "apiFirstTurn"],
       properties: {
         schemaVersion: { const: 2 },
@@ -566,13 +589,6 @@ describe("Rust type bindings", () => {
             "ANTHROPIC_AUTH_TOKEN",
             "OPENAI_API_KEY",
             "CHATGPT_ACCESS_TOKEN",
-          ],
-        },
-        api: {
-          enum: [
-            "openai-completions",
-            "openai-responses",
-            "openai-codex-responses",
           ],
         },
         thinkingLevel: {

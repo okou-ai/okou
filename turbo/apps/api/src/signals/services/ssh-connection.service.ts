@@ -29,8 +29,16 @@ import type { Db, ReadonlyDb } from "../external/db";
 import { visibleJoinedAgentCondition } from "./agent-data.service";
 import { decryptStoredSecretValue } from "./crypto.utils";
 import { publishSshRuntimeInvalidation } from "./ssh-runtime-wakeup.service";
+import { checkSshCreationId } from "./ssh-creation.service";
+import {
+  cloudflareAccessFailure,
+  findCloudflareAccessConfig,
+  insertCloudflareAccessConfig,
+  prepareCloudflareAccessConfig,
+} from "./cloudflare-access.service";
 
 type SshConnectionRow = typeof sshConnections.$inferSelect;
+type Transaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
 type SshConnectionFailure = {
   readonly kind: "bad_request" | "not_found" | "conflict";
   readonly message: string;
@@ -133,6 +141,14 @@ function toSshConnectionResponse(
   }
 
   return {
+    ...(row.cloudflareAccessId === null
+      ? {}
+      : {
+          transport: {
+            type: "cloudflare_access" as const,
+            configId: row.cloudflareAccessId,
+          },
+        }),
     id: row.id,
     displayName: row.displayName,
     host: row.host,
@@ -152,6 +168,81 @@ function toSshConnectionResponse(
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
+}
+
+async function validateAccessBinding(
+  db: Pick<ReadonlyDb, "select">,
+  owner: { readonly orgId: string; readonly userId: string },
+  binding: { readonly configId: string | null; readonly creating: boolean },
+  host: string,
+  port: number,
+) {
+  const { configId, creating } = binding;
+  if (configId === null && !creating) {
+    return null;
+  }
+  if (isIP(host) !== 0 || !host.includes(".") || port !== 443) {
+    return failure("invalidHost");
+  }
+  if (configId === null) {
+    return null;
+  }
+  const config = await findCloudflareAccessConfig(db, owner, configId);
+  return config ? null : cloudflareAccessFailure("notFound");
+}
+
+function prepareAccessCreation(
+  transport: CreateSshConnectionRequest["transport"],
+  context: FeatureSwitchContext,
+) {
+  return transport?.type === "cloudflare_access" && "create" in transport
+    ? prepareCloudflareAccessConfig(transport.create, context)
+    : undefined;
+}
+
+async function insertAccessBinding(
+  tx: Transaction,
+  owner: { readonly orgId: string; readonly userId: string },
+  prepared: Awaited<ReturnType<typeof prepareAccessCreation>>,
+  configId: string | null,
+) {
+  return prepared === undefined
+    ? configId
+    : (await insertCloudflareAccessConfig(tx, owner, prepared)).id;
+}
+
+async function validateAccessTransition(
+  db: Pick<ReadonlyDb, "select">,
+  args: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly body: UpdateSshConnectionRequest;
+  },
+  current: SshConnectionRow,
+  host: string,
+  port: number,
+): Promise<SshConnectionResult<string | null>> {
+  const accessId =
+    args.body.transport === undefined
+      ? current.cloudflareAccessId
+      : args.body.transport.type === "direct"
+        ? null
+        : "configId" in args.body.transport
+          ? args.body.transport.configId
+          : null;
+  const bindingFailure = await validateAccessBinding(
+    db,
+    args,
+    {
+      configId: accessId,
+      creating:
+        args.body.transport?.type === "cloudflare_access" &&
+        "create" in args.body.transport,
+    },
+    host,
+    port,
+  );
+  return bindingFailure ?? { ok: true, value: accessId };
 }
 
 async function findOwnerConnection(
@@ -236,11 +327,21 @@ export async function createSshConnection(args: {
   readonly userId: string;
   readonly body: CreateSshConnectionRequest;
   readonly featureContext: FeatureSwitchContext;
-}): Promise<SshConnectionResult<SshConnectionResponse>> {
+}): Promise<SshConnectionResult<SshConnectionResponse | undefined>> {
   const canonicalHost = canonicalizeSshHost(args.body.host);
   if (!canonicalHost.ok) {
     return canonicalHost;
   }
+
+  const accessId =
+    args.body.transport?.type === "cloudflare_access" &&
+    "configId" in args.body.transport
+      ? args.body.transport.configId
+      : null;
+  const preparedAccess = await prepareAccessCreation(
+    args.body.transport,
+    args.featureContext,
+  );
 
   const preparedCredential = await prepareSshCredentialSelection(
     args.body.credential,
@@ -249,10 +350,38 @@ export async function createSshConnection(args: {
 
   const result = await args.db.transaction(async (tx) => {
     await lockSshOwner(tx, args);
+    const creation = await checkSshCreationId(
+      tx,
+      args,
+      sshConnections,
+      args.body.id,
+    );
+    if (!creation.ok) {
+      return creation;
+    }
+    if (!creation.value) {
+      return { ok: true as const, value: undefined, authorizedAgents: false };
+    }
+    const bindingFailure = await validateAccessBinding(
+      tx,
+      args,
+      { configId: accessId, creating: preparedAccess !== undefined },
+      canonicalHost.value,
+      args.body.port,
+    );
+    if (bindingFailure) {
+      return bindingFailure;
+    }
     const credential = await selectSshCredential(tx, args, preparedCredential);
     if (!credential.ok) {
       return credential;
     }
+    const selectedAccessId = await insertAccessBinding(
+      tx,
+      args,
+      preparedAccess,
+      accessId,
+    );
     // Match Connector's zero-to-one account transition, including re-adding
     // after all hosts were deleted. The owner lock serializes concurrent adds.
     const firstHost =
@@ -273,12 +402,14 @@ export async function createSshConnection(args: {
     const [connection] = await tx
       .insert(sshConnections)
       .values({
+        id: args.body.id,
         orgId: args.orgId,
         userId: args.userId,
         displayName: args.body.displayName,
         host: canonicalHost.value,
         port: args.body.port,
         credentialId: credential.value.id,
+        cloudflareAccessId: selectedAccessId,
       })
       .returning();
     if (!connection) {
@@ -304,7 +435,7 @@ export async function createSshConnection(args: {
       authorizedAgents: visibleAgents.length > 0,
     };
   });
-  if (result.ok) {
+  if (result.ok && result.value) {
     await publishSshRuntimeInvalidation(args.db, {
       orgId: args.orgId,
       userId: args.userId,
@@ -337,6 +468,10 @@ export async function updateSshConnection(args: {
   if (preflight.generation !== args.body.expectedGeneration) {
     return failure("generationConflict");
   }
+  const preparedAccess = await prepareAccessCreation(
+    args.body.transport,
+    args.featureContext,
+  );
   const preparedCredential =
     args.body.credential === undefined
       ? undefined
@@ -364,6 +499,18 @@ export async function updateSshConnection(args: {
     if (!current) {
       return failure("notFound");
     }
+    const host = canonicalHost?.value ?? current.host;
+    const port = args.body.port ?? current.port;
+    const binding = await validateAccessTransition(
+      tx,
+      args,
+      current,
+      host,
+      port,
+    );
+    if (!binding.ok) {
+      return binding;
+    }
     if (current.generation !== args.body.expectedGeneration) {
       return failure("generationConflict");
     }
@@ -384,9 +531,16 @@ export async function updateSshConnection(args: {
     if (!credential) {
       throw new Error("SSH connection credential is missing");
     }
-    const host = canonicalHost?.value ?? current.host;
-    const port = args.body.port ?? current.port;
-    const endpointChanged = host !== current.host || port !== current.port;
+    const accessId = await insertAccessBinding(
+      tx,
+      args,
+      preparedAccess,
+      binding.value,
+    );
+    const endpointChanged =
+      (host !== current.host || port !== current.port) &&
+      current.cloudflareAccessId === null &&
+      accessId === null;
     const [updated] = await tx
       .update(sshConnections)
       .set({
@@ -394,6 +548,7 @@ export async function updateSshConnection(args: {
         host,
         port,
         credentialId: credential.id,
+        cloudflareAccessId: accessId,
         learnedHostKeyAlgorithm: endpointChanged
           ? null
           : current.learnedHostKeyAlgorithm,
@@ -430,6 +585,10 @@ export async function deleteSshConnection(args: {
   const result = await args.db.transaction<SshConnectionResult<undefined>>(
     async (tx) => {
       await lockSshOwner(tx, args);
+      const current = await findOwnerConnection(tx, args);
+      if (!current) {
+        return failure("notFound");
+      }
       const [deleted] = await tx
         .delete(sshConnections)
         .where(

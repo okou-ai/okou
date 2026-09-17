@@ -23,7 +23,11 @@ fail() {
 for file_name in \
   app-AbCd1234.js \
   index-QrSt7890.css \
-  vendor-EfGh5678.js \
+  vendor-1-EfGh5678.js \
+  vendor-2-EfGh5678.js \
+  vendor-3-EfGh5678.js \
+  vendor-4-EfGh5678.js \
+  vendor-5-EfGh5678.js \
   rolldown-runtime-IjKl9012.js \
   clerk-ui-AbCd123456789012.js \
   shared-database-worker-MnOp3456.js; do
@@ -39,7 +43,11 @@ cat > "$html_source" <<'HTML'
 <script id="okou-main-stylesheet-loader"></script>
 <script type="module" crossorigin src="https://static.test/okou-app/assets/app-AbCd1234.js"></script>
 <link rel="modulepreload" crossorigin href="https://static.test/okou-app/assets/rolldown-runtime-IjKl9012.js">
-<link rel="modulepreload" crossorigin href="https://static.test/okou-app/assets/vendor-EfGh5678.js">
+<link rel="modulepreload" crossorigin href="https://static.test/okou-app/assets/vendor-1-EfGh5678.js">
+<link rel="modulepreload" crossorigin href="https://static.test/okou-app/assets/vendor-2-EfGh5678.js">
+<link rel="modulepreload" crossorigin href="https://static.test/okou-app/assets/vendor-3-EfGh5678.js">
+<link rel="modulepreload" crossorigin href="https://static.test/okou-app/assets/vendor-4-EfGh5678.js">
+<link rel="modulepreload" crossorigin href="https://static.test/okou-app/assets/vendor-5-EfGh5678.js">
 HTML
 
 cat > "$old_html_source" <<'HTML'
@@ -62,6 +70,10 @@ write_out=""
 asset_url="${!#}"
 arguments=("$@")
 printf '%s\n' "$*" >> "$MOCK_CURL_LOG"
+if [[ "$asset_url" == "${MOCK_CURL_FAIL_URL:-}" ]]; then
+  echo "curl: (22) The requested URL returned error: 404: $asset_url" >&2
+  exit 22
+fi
 for (( index = 0; index < ${#arguments[@]}; index += 1 )); do
   case "${arguments[index]}" in
     --output) output_file="${arguments[index + 1]}" ;;
@@ -111,13 +123,17 @@ output="$({
 } 2>&1)"
 
 grep -Fq \
-  'Verified app runtime: stylesheet=https://static.test/okou-app/assets/index-QrSt7890.css app=https://static.test/okou-app/assets/app-AbCd1234.js vendor=https://static.test/okou-app/assets/vendor-EfGh5678.js runtime=https://static.test/okou-app/assets/rolldown-runtime-IjKl9012.js worker=https://app.test/okou-app/assets/shared-database-worker-MnOp3456.js' \
+  'Verified app runtime: stylesheet=https://static.test/okou-app/assets/index-QrSt7890.css app=https://static.test/okou-app/assets/app-AbCd1234.js vendor=https://static.test/okou-app/assets/vendor-1-EfGh5678.js' \
   <<< "$output" || fail "runtime verification summary is incorrect"
 for expected_url in \
   https://app.test/sign-up \
   https://static.test/okou-app/assets/index-QrSt7890.css \
   https://static.test/okou-app/assets/app-AbCd1234.js \
-  https://static.test/okou-app/assets/vendor-EfGh5678.js \
+  https://static.test/okou-app/assets/vendor-1-EfGh5678.js \
+  https://static.test/okou-app/assets/vendor-2-EfGh5678.js \
+  https://static.test/okou-app/assets/vendor-3-EfGh5678.js \
+  https://static.test/okou-app/assets/vendor-4-EfGh5678.js \
+  https://static.test/okou-app/assets/vendor-5-EfGh5678.js \
   https://static.test/okou-app/assets/rolldown-runtime-IjKl9012.js \
   https://static.test/okou-app/assets/clerk-ui-AbCd123456789012.js \
   https://app.test/okou-app/assets/shared-database-worker-MnOp3456.js; do
@@ -142,19 +158,63 @@ worker_preview_output="$({
       "$assets_directory"
 } 2>&1)"
 grep -Fq \
-  "Verified app runtime: stylesheet=${worker_preview_url}/okou-app/assets/index-QrSt7890.css app=${worker_preview_url}/okou-app/assets/app-AbCd1234.js vendor=${worker_preview_url}/okou-app/assets/vendor-EfGh5678.js runtime=${worker_preview_url}/okou-app/assets/rolldown-runtime-IjKl9012.js worker=${worker_preview_url}/okou-app/assets/shared-database-worker-MnOp3456.js" \
+  "Verified app runtime: stylesheet=${worker_preview_url}/okou-app/assets/index-QrSt7890.css app=${worker_preview_url}/okou-app/assets/app-AbCd1234.js vendor=${worker_preview_url}/okou-app/assets/vendor-1-EfGh5678.js" \
   <<< "$worker_preview_output" || fail "Worker preview runtime summary is incorrect"
 for expected_url in \
   "${worker_preview_url}/sign-up" \
   "${worker_preview_url}/okou-app/assets/index-QrSt7890.css" \
   "${worker_preview_url}/okou-app/assets/app-AbCd1234.js" \
-  "${worker_preview_url}/okou-app/assets/vendor-EfGh5678.js" \
+  "${worker_preview_url}/okou-app/assets/vendor-1-EfGh5678.js" \
+  "${worker_preview_url}/okou-app/assets/vendor-2-EfGh5678.js" \
+  "${worker_preview_url}/okou-app/assets/vendor-3-EfGh5678.js" \
+  "${worker_preview_url}/okou-app/assets/vendor-4-EfGh5678.js" \
+  "${worker_preview_url}/okou-app/assets/vendor-5-EfGh5678.js" \
   "${worker_preview_url}/okou-app/assets/rolldown-runtime-IjKl9012.js" \
   "${worker_preview_url}/okou-app/assets/clerk-ui-AbCd123456789012.js" \
   "${worker_preview_url}/okou-app/assets/shared-database-worker-MnOp3456.js"; do
   grep -Fq "$expected_url" "$curl_log" ||
     fail "Worker preview runtime verifier did not probe ${expected_url}"
 done
+
+for layout_case in missing-vendor duplicate-vendor; do
+  mv "${assets_directory}/vendor-5-EfGh5678.js" "${test_root}/vendor-5.js"
+  expected_failure='Expected exactly five numbered vendor assets'
+  if [[ "$layout_case" == duplicate-vendor ]]; then
+    printf 'duplicate vendor\n' > "${assets_directory}/vendor-4-Duplicate.js"
+    expected_failure='Expected exactly one vendor-4 JavaScript asset, found 2'
+  fi
+  if PATH="${fake_bin}:$PATH" \
+    MOCK_CURL_LOG="$curl_log" \
+    MOCK_HTML_SOURCE="$html_source" \
+    MOCK_SLEEP_LOG="$sleep_log" \
+    bash "$script" \
+      https://app.test \
+      https://static.test/okou-app/assets \
+      "$assets_directory" > "${test_root}/${layout_case}.log" 2>&1; then
+    fail "${layout_case} did not fail layout verification"
+  fi
+  grep -Fq "$expected_failure" "${test_root}/${layout_case}.log" ||
+    fail "${layout_case} was not identified"
+  if [[ "$layout_case" == duplicate-vendor ]]; then
+    rm "${assets_directory}/vendor-4-Duplicate.js"
+  fi
+  mv "${test_root}/vendor-5.js" "${assets_directory}/vendor-5-EfGh5678.js"
+done
+
+missing_vendor_url='https://static.test/okou-app/assets/vendor-5-EfGh5678.js'
+if PATH="${fake_bin}:$PATH" \
+  MOCK_CURL_LOG="$curl_log" \
+  MOCK_HTML_SOURCE="$html_source" \
+  MOCK_SLEEP_LOG="$sleep_log" \
+  MOCK_CURL_FAIL_URL="$missing_vendor_url" \
+  bash "$script" \
+    https://app.test \
+    https://static.test/okou-app/assets \
+    "$assets_directory" > "${test_root}/vendor-unavailable.log" 2>&1; then
+  fail "unavailable fifth vendor did not fail runtime verification"
+fi
+grep -Fq "$missing_vendor_url" "${test_root}/vendor-unavailable.log" ||
+  fail "unavailable fifth vendor was not identified"
 
 if OKOU_APP_RUNTIME_MAX_ATTEMPTS=0 \
   bash "$script" \
@@ -322,7 +382,23 @@ for ui_case in missing-source wrong-source eager-preload missing-asset; do
   fi
 done
 
-sed -i '/vendor-EfGh5678/d' "$html_source"
+duplicate_html_source="${test_root}/duplicate-vendor.html"
+cp "$html_source" "$duplicate_html_source"
+printf '<link rel="modulepreload" href="https://static.test/okou-app/assets/vendor-5-EfGh5678.js">\n' >> "$duplicate_html_source"
+if PATH="${fake_bin}:$PATH" \
+  MOCK_CURL_LOG="$curl_log" \
+  MOCK_HTML_SOURCE="$duplicate_html_source" \
+  MOCK_SLEEP_LOG="$sleep_log" \
+  bash "$script" \
+    https://app.test \
+    https://static.test/okou-app/assets \
+    "$assets_directory" > "${test_root}/duplicate-preload.log" 2>&1; then
+  fail "duplicate vendor preload did not fail HTML verification"
+fi
+grep -Fq 'Expected CDN runtime/vendor modulepreloads' \
+  "${test_root}/duplicate-preload.log" || fail "duplicate preload was not identified"
+
+sed -i '/vendor-5-EfGh5678/d' "$html_source"
 : > "$curl_log"
 : > "$sleep_log"
 if PATH="${fake_bin}:$PATH" \

@@ -1,5 +1,4 @@
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { artifactReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { createHash, randomUUID } from "node:crypto";
 
@@ -25,11 +24,7 @@ import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createHostMapsBddApi } from "./helpers/api-bdd-host-maps";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import {
-  insertHostedDeploymentAsPreviousApi,
-  insertHostedSiteAsPreviousApi,
-  insertLegacyArtifactCatalogFile,
-} from "./helpers/runtime-state";
+import { insertLegacyArtifactCatalogFile } from "./helpers/runtime-state";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -471,10 +466,8 @@ describe("GET /api/artifacts/catalog", () => {
         artifactKind,
         claimRun: false,
       });
-      const canonical = artifactReferencePath(
-        hosted.deploymentId,
-        "index.html",
-      );
+      const canonical = hosted.url;
+      expect(canonical).toMatch(/^\/artifacts\/[a-z0-9]{10}\.html$/u);
       const list = await chat.listArtifactCatalog(owner.actor);
       const entry = list.artifacts.find((item) => {
         return item.title === site;
@@ -505,7 +498,11 @@ describe("GET /api/artifacts/catalog", () => {
       expect(file?.previewImageUrl).toBeUndefined();
       expect(
         capture.puts.filter(({ key }) => {
-          return !key.startsWith("private-sites/") && !key.startsWith("agent");
+          return (
+            !key.startsWith("private-sites/") &&
+            !key.startsWith("agent") &&
+            !key.startsWith("artifact-references/")
+          );
         }),
       ).toStrictEqual([]);
       const colleague = bdd.user({ orgId: owner.actor.orgId });
@@ -873,66 +870,6 @@ describe("GET /api/artifacts/catalog", () => {
         return artifact.title === site;
       }),
     ).toHaveLength(1);
-  }, 180_000);
-
-  it("adopts previous-API site writes only within their owning chat", async () => {
-    const owner = await catalogActor(
-      "Artifact catalog previous API hosted owner",
-      bdd.user(),
-    );
-    if (!owner.actor.orgId) {
-      throw new Error("Expected previous API hosted owner to have an org");
-    }
-    host.captureHostedSitesS3();
-    const site = `catalog-previous-api-${randomUUID().slice(0, 8)}`;
-    const firstRun = await sendChatRun(owner.actor, {
-      agentId: owner.agentId,
-      prompt: `publish ${site} from the previous API`,
-    });
-    const previousSiteId = await insertHostedSiteAsPreviousApi(context, {
-      userId: owner.actor.userId,
-      orgId: owner.actor.orgId,
-      runId: firstRun.runId,
-      site,
-      publicSlug: site,
-    });
-    const body = {
-      site,
-      artifactKind: "hosted-site" as const,
-      spaFallback: false,
-      files: [hostedTextFile("/index.html", `<main>${site}</main>`)],
-    };
-
-    const firstBearer = `Bearer ${scopedOkouToken(owner, firstRun.runId, [
-      "host:write",
-    ])}`;
-    const first = await chat.prepareHostedSiteWithBearer(firstBearer, body);
-    expect(first).toMatchObject({
-      siteId: previousSiteId,
-      publicSlug: site,
-      deploymentVersion: 1,
-    });
-    await chat.completeHostedSiteWithBearer(firstBearer, first.deploymentId);
-
-    const secondRun = await sendChatRun(owner.actor, {
-      agentId: owner.agentId,
-      prompt: `publish ${site} from another chat`,
-    });
-    const secondBearer = `Bearer ${scopedOkouToken(owner, secondRun.runId, [
-      "host:write",
-    ])}`;
-    await expect(
-      insertHostedDeploymentAsPreviousApi(context, {
-        userId: owner.actor.userId,
-        orgId: owner.actor.orgId,
-        runId: secondRun.runId,
-        hostedSiteId: previousSiteId,
-      }),
-    ).resolves.toBeTruthy();
-    const second = await chat.prepareHostedSiteWithBearer(secondBearer, body);
-    expect(second).toMatchObject({ deploymentVersion: 1 });
-    expect(second.siteId).not.toBe(previousSiteId);
-    expect(second.publicSlug).not.toBe(site);
   }, 180_000);
 
   it("catalogues a published deck as a presentation", async () => {

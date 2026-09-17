@@ -2,17 +2,21 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { workflowsCollectionContract } from "@okouai/api-contracts";
+import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
+import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
 import {
   fill,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
+import { mockTemplateChat } from "./chat-composer-template-gallery-test-helpers.ts";
 import {
   AGENT_ID,
+  THREAD_ID,
   context,
   expectInlineTemplateInComposer,
   findComposerEditor,
@@ -75,15 +79,14 @@ function setupModels(): void {
   });
 }
 
-async function openSlashMenu(panel: boolean, query = ""): Promise<void> {
+async function openSlashMenu(query = ""): Promise<void> {
   setupModels();
   mockChatLifecycle(context);
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
-      [FeatureSwitchKey.ComposerCreateCommands]: true,
-      [FeatureSwitchKey.ComposerSlashTemplatePanel]: panel,
+      [FeatureSwitchKey.ComposerSlashTemplatePanel]: true,
     },
   });
   const editor = await findComposerEditor();
@@ -109,15 +112,8 @@ function slashButton(name: string): HTMLElement {
   return result;
 }
 
-test("The slash menu keeps its flat Create group until the panel switch is on", async () => {
-  await openSlashMenu(false);
-  expect(document.querySelector('[data-slot="slash-panel"]')).toBeNull();
-  expect(detailPane()).toBeNull();
-  expect(slashButton("Create")).toBeInTheDocument();
-});
-
 test("The slash panel initially previews the keyboard-selected type's covers", async () => {
-  await openSlashMenu(true);
+  await openSlashMenu();
   const pane = detailPane();
   if (!pane) {
     throw new Error("Expected the detail pane");
@@ -137,7 +133,7 @@ test("The slash panel initially previews the keyboard-selected type's covers", a
 });
 
 test("The pane carries more than one row of covers, so later templates are reachable", async () => {
-  await openSlashMenu(true);
+  await openSlashMenu();
   const pane = detailPane();
   if (!pane) {
     throw new Error("Expected the detail pane");
@@ -151,9 +147,41 @@ test("The pane carries more than one row of covers, so later templates are reach
   expect(within(pane).getByText(later.title)).toBeInTheDocument();
 });
 
+test("Illustration covers keep their own proportion; decks keep the 16:9 tile", async () => {
+  const user = userEvent.setup();
+  await openSlashMenu();
+
+  // A deck cover really is a slide, so it still asks for the 16:9 box.
+  const deckCover = detailPane()?.querySelector("img");
+  expect(deckCover?.getAttribute("src")).toContain("height=158");
+
+  await user.hover(slashButton("Illustration"));
+  await waitFor(() => {
+    expect(detailPane()).toHaveAttribute("data-category", "illustration");
+  });
+  const pane = detailPane();
+  if (!pane) {
+    throw new Error("Expected the detail pane");
+  }
+  const [style] = ILLUSTRATION_TEMPLATE_ITEMS;
+  if (!style) {
+    throw new Error("Expected an illustration style");
+  }
+  const cover = pane.querySelector("img");
+  // Width only: passing a 16:9 height too made the transform fit a portrait
+  // style inside it, so the card received a picture far smaller than it paints.
+  expect(cover?.getAttribute("src")).toContain("width=280");
+  expect(cover?.getAttribute("src")).not.toContain("height=");
+  // The tile declares the catalog's own ratio rather than a shared one, which
+  // is what stops the artwork being cropped.
+  expect(cover?.parentElement?.getAttribute("style")).toContain(
+    `${String(style.width)} / ${String(style.height)}`,
+  );
+});
+
 test("Hovering a website row previews the website catalog", async () => {
   const user = userEvent.setup();
-  await openSlashMenu(true);
+  await openSlashMenu();
   await user.hover(slashButton("Website"));
   await waitFor(() => {
     expect(detailPane()).toHaveAttribute("data-category", "website");
@@ -171,7 +199,7 @@ test("Hovering a website row previews the website catalog", async () => {
 
 test("Hovering a workflow closes the preview pane", async () => {
   const user = userEvent.setup();
-  await openSlashMenu(true);
+  await openSlashMenu();
   expect(detailPane()).not.toBeNull();
   await user.hover(slashButton(`/${WORKFLOW_NAME}`));
   await waitFor(() => {
@@ -183,7 +211,7 @@ test.each(WORKFLOW_NAVIGATION_CASES)(
   "Enter keeps the keyboard selection while another workflow is hovered for query '$query'",
   async ({ query, downCount }) => {
     const user = userEvent.setup();
-    await openSlashMenu(true, query);
+    await openSlashMenu(query);
     const editor = await findComposerEditor();
     const workflow = await waitFor(() => {
       return slashButton(`/${WORKFLOW_NAME}`);
@@ -212,7 +240,7 @@ test.each(WORKFLOW_NAVIGATION_CASES)(
   "Clicking a workflow activates the pointer target for query '$query'",
   async ({ query, downCount }) => {
     const user = userEvent.setup();
-    await openSlashMenu(true, query);
+    await openSlashMenu(query);
     const editor = await findComposerEditor();
     const workflow = await waitFor(() => {
       return slashButton(`/${WORKFLOW_NAME}`);
@@ -234,7 +262,7 @@ test.each(WORKFLOW_NAVIGATION_CASES)(
   "Arrow navigation continues from the keyboard selection after hover for query '$query'",
   async ({ query, downCount }) => {
     const user = userEvent.setup();
-    await openSlashMenu(true, query);
+    await openSlashMenu(query);
     const editor = await findComposerEditor();
     const workflow = await waitFor(() => {
       return slashButton(`/${WORKFLOW_NAME}`);
@@ -254,7 +282,7 @@ test.each(WORKFLOW_NAVIGATION_CASES)(
 
 test("Tab keeps the keyboard selection after the pointer leaves the menu", async () => {
   const user = userEvent.setup();
-  await openSlashMenu(true, "axi");
+  await openSlashMenu("axi");
   const editor = await findComposerEditor();
   const workflow = await waitFor(() => {
     return slashButton(`/${WORKFLOW_NAME}`);
@@ -278,7 +306,7 @@ test.each([
   "$action activates the appropriate category while Video is hovered",
   async ({ action, expectedMode }) => {
     const user = userEvent.setup();
-    await openSlashMenu(true);
+    await openSlashMenu();
     const video = slashButton("Video");
     await user.hover(video);
     await waitFor(() => {
@@ -300,7 +328,7 @@ test.each([
 
 test("Keyboard navigation restores its preview even at the first row boundary", async () => {
   const user = userEvent.setup();
-  await openSlashMenu(true);
+  await openSlashMenu();
   const website = slashButton("Website");
   await user.hover(website);
   await waitFor(() => {
@@ -327,7 +355,7 @@ test("Keyboard navigation restores its preview even at the first row boundary", 
 
 test("Leaving the panel restores the keyboard-selected category preview", async () => {
   const user = userEvent.setup();
-  await openSlashMenu(true);
+  await openSlashMenu();
   const website = slashButton("Website");
   await user.hover(website);
   await waitFor(() => {
@@ -342,7 +370,7 @@ test("Leaving the panel restores the keyboard-selected category preview", async 
 
 test("Changing the slash query resets the pointer preview to the filtered selection", async () => {
   const user = userEvent.setup();
-  await openSlashMenu(true);
+  await openSlashMenu();
   const editor = await findComposerEditor();
   await user.hover(slashButton("Website"));
   await waitFor(() => {
@@ -358,7 +386,7 @@ test("Changing the slash query resets the pointer preview to the filtered select
 
 test("Reopening the slash panel clears the previous pointer preview", async () => {
   const user = userEvent.setup();
-  await openSlashMenu(true);
+  await openSlashMenu();
   await user.hover(slashButton("Website"));
   await waitFor(() => {
     expect(detailPane()).toHaveAttribute("data-category", "website");
@@ -373,7 +401,7 @@ test("Reopening the slash panel clears the previous pointer preview", async () =
 
 test("A hovered category's template stays selectable when the pointer enters its preview", async () => {
   const user = userEvent.setup();
-  await openSlashMenu(true);
+  await openSlashMenu();
   const website = slashButton("Website");
   // user-event 14 omits relatedTarget on mouseout. Use the browser's exact
   // boundary events here so React can distinguish entering a child of the
@@ -400,6 +428,53 @@ test("A hovered category's template stays selectable when the pointer enters its
   expect(screen.queryByRole("dialog")).toBeNull();
 });
 
+test("A category row keeps no mark once the pointer is in its covers", async () => {
+  await openSlashMenu();
+  const presentation = slashButton("Presentation");
+  const website = slashButton("Website");
+  expect(presentation).toHaveAttribute("data-active", "true");
+
+  // Same boundary events as the test above: the pointer walks a category row
+  // and then crosses into the covers it previewed, without leaving the panel.
+  fireEvent.mouseOver(website);
+  fireEvent.mouseMove(website);
+  await waitFor(() => {
+    expect(detailPane()).toHaveAttribute("data-category", "website");
+  });
+  const [first] = WEBSITE_TEMPLATE_ITEMS;
+  if (!first) {
+    throw new Error("Expected a website template");
+  }
+  const cover = slashButton(first.title);
+  fireEvent.mouseOut(website, { relatedTarget: cover });
+  fireEvent.mouseOver(cover, { relatedTarget: website });
+  fireEvent.mouseMove(cover);
+
+  // Neither the row the pointer left nor the row it started on stays marked,
+  // so the left column never argues with the covers on the right.
+  expect(website).not.toHaveAttribute("data-active");
+  expect(presentation).not.toHaveAttribute("data-active");
+  expect(detailPane()).toHaveAttribute("data-category", "website");
+});
+
+test("The keyboard selection is marked again once the pointer leaves", async () => {
+  const user = userEvent.setup();
+  await openSlashMenu();
+  const presentation = slashButton("Presentation");
+  const website = slashButton("Website");
+
+  await user.hover(website);
+  await waitFor(() => {
+    expect(presentation).not.toHaveAttribute("data-active");
+  });
+
+  await user.unhover(website);
+  await waitFor(() => {
+    expect(presentation).toHaveAttribute("data-active", "true");
+  });
+  expect(detailPane()).toHaveAttribute("data-category", "slides");
+});
+
 test("The panel emphasizes the typed query inside a workflow name", async () => {
   setupModels();
   mockChatLifecycle(context);
@@ -407,7 +482,6 @@ test("The panel emphasizes the typed query inside a workflow name", async () => 
     context,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
-      [FeatureSwitchKey.ComposerCreateCommands]: true,
       [FeatureSwitchKey.ComposerSlashTemplatePanel]: true,
     },
   });
@@ -427,7 +501,7 @@ test("The panel emphasizes the typed query inside a workflow name", async () => 
 
 test("Choosing a cover in the pane attaches that template without opening the picker", async () => {
   const user = userEvent.setup();
-  await openSlashMenu(true);
+  await openSlashMenu();
   const [first] = PRESENTATION_TEMPLATE_PICKER_ITEMS;
   if (!first) {
     throw new Error("Expected a presentation template");
@@ -435,4 +509,85 @@ test("Choosing a cover in the pane attaches that template without opening the pi
   await user.click(slashButton(first.title));
   await expectInlineTemplateInComposer(first.title);
   expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+const IMPORT_PROMPT =
+  "Analyse this deck and save its visual language as a reusable presentation template.";
+
+function uploadedFilePart(message: UserMessageDocument) {
+  const part = message.parts.find((candidate) => {
+    return candidate.type === "file";
+  });
+  if (!part || part.type !== "file") {
+    throw new Error("Imported message has no uploaded file");
+  }
+  return part;
+}
+
+test("Only the Presentation pane offers the deck import, and it leads the covers", async () => {
+  const user = userEvent.setup();
+  await openSlashMenu();
+  const pane = detailPane();
+  if (!pane) {
+    throw new Error("Expected the detail pane");
+  }
+  const grid = pane.querySelector(
+    '[data-slot="slash-template-import"]',
+  )?.parentElement;
+  expect(grid?.firstElementChild).toHaveAttribute(
+    "data-slot",
+    "slash-template-import",
+  );
+  expect(within(pane).getByLabelText("Import your own deck")).toHaveAttribute(
+    "accept",
+    ".pptx,.ppt,.pdf",
+  );
+
+  // A deck is a presentation, so no other category carries the control.
+  await user.hover(slashButton("Website"));
+  await waitFor(() => {
+    expect(detailPane()).toHaveAttribute("data-category", "website");
+  });
+  expect(
+    document.querySelector('[data-slot="slash-template-import"]'),
+  ).toBeNull();
+});
+
+test("Importing a deck from the panel sends it for analysis", async () => {
+  const capture = mockTemplateChat();
+  context.mocks.upload.success({
+    id: "81000000-0000-4000-a000-000000000031",
+    filename: "panel-deck.pptx",
+    contentType:
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    size: 5,
+    url: "https://cdn.example.test/panel-deck.pptx",
+  });
+  const user = userEvent.setup();
+  await setupPage({
+    context,
+    path: `/chats/${THREAD_ID}`,
+    host: "app.okou.ai",
+    featureSwitches: {
+      [FeatureSwitchKey.ComposerSlashTemplatePanel]: true,
+    },
+  });
+  const editor = await findComposerEditor();
+  await fill(editor, "Draft /");
+  await screen.findByTestId("slash-workflow-menu");
+
+  await user.upload(
+    screen.getByLabelText("Import your own deck"),
+    new File(["deck"], "panel-deck.pptx", {
+      type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    }),
+  );
+
+  await waitFor(() => {
+    expect(capture.sentMessages).toHaveLength(1);
+  });
+  expect(uploadedFilePart(capture.sentMessages[0]!).filenameSnapshot).toBe(
+    "panel-deck.pptx",
+  );
+  expect(capture.runPrompts).toStrictEqual([IMPORT_PROMPT]);
 });

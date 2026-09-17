@@ -1,5 +1,6 @@
 import { command, computed, state } from "ccstate";
 import type { ChatEvent } from "@okouai/api-contracts/contracts/chat-threads";
+import type { SessionOutputDelta } from "@okouai/api-contracts/contracts/realtime";
 import { logger } from "../log.ts";
 import type {
   OptimisticChatEvent,
@@ -27,6 +28,75 @@ export function createOptimisticChatEventEntry(
 const L = logger("OptimisticChatEvents");
 
 const internalOptimisticChatEvents$ = state<OptimisticChatEventEntry[]>([]);
+
+export const appendOptimisticSessionOutput$ = command(
+  (
+    { get, set },
+    chunk: SessionOutputDelta,
+    events: readonly ChatEvent[],
+  ): boolean => {
+    if (
+      events.some((event) => {
+        return event.id === chunk.eventId;
+      })
+    ) {
+      return false;
+    }
+    const entries = get(internalOptimisticChatEvents$);
+    const existing = entries.find((entry) => {
+      return (
+        entry.threadId === chunk.threadId && entry.event.id === chunk.eventId
+      );
+    });
+    if (existing) {
+      if (
+        existing.event.eventType !== "output.message" ||
+        existing.event.runId !== chunk.runId ||
+        chunk.chunkIndex === 0
+      ) {
+        return false;
+      }
+      set(
+        internalOptimisticChatEvents$,
+        entries.map((entry) => {
+          return entry === existing
+            ? {
+                ...entry,
+                event: {
+                  ...existing.event,
+                  content: existing.event.content + chunk.delta,
+                },
+              }
+            : entry;
+        }),
+      );
+      return true;
+    }
+    if (chunk.chunkIndex !== 0) {
+      return false;
+    }
+    const runGroupId = events.find((event) => {
+      return event.runId === chunk.runId && event.runGroupId;
+    })?.runGroupId;
+    set(internalOptimisticChatEvents$, [
+      ...entries,
+      {
+        threadId: chunk.threadId,
+        event: {
+          id: chunk.eventId,
+          threadId: chunk.threadId,
+          runId: chunk.runId,
+          ...(runGroupId ? { runGroupId } : {}),
+          runEventId: chunk.runEventId,
+          eventType: "output.message",
+          content: chunk.delta,
+          createdAt: chunk.createdAt,
+        },
+      },
+    ]);
+    return true;
+  },
+);
 
 function pendingUserMessages(
   entries: readonly OptimisticChatEventEntry[],

@@ -1,7 +1,10 @@
 import { command } from "ccstate";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 
-import { badRequestMessage } from "../../lib/error";
+import {
+  artifactVisibilityUnavailable,
+  badRequestMessage,
+} from "../../lib/error";
 import {
   MAX_UPLOAD_SIZE_BYTES,
   MAX_UPLOAD_SIZE_LABEL,
@@ -17,23 +20,43 @@ import {
   generatePresignedUploadPartUrl,
   s3MetadataHeaders,
 } from "../external/s3";
+import { privateArtifactCreationEnabled } from "../services/private-artifact-storage.service";
 import { allocateUploadedArtifact$ } from "../services/uploaded-artifact.service";
 import { rejectSuspendedOrg$ } from "../services/org-suspension.service";
 import type { RouteEntry } from "../route-entry";
 import { onRejection, tapError } from "../utils";
 import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 
-const PUT_URL_TTL_SECONDS = 3600;
 const MULTIPART_PART_SIZE_BYTES = 5 * 1024 * 1024;
 
-const prepareUploadInner$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
+const allocatePreparedUpload$ = command(
+  async (
+    { get, set },
+    requirePrivateArtifact: boolean,
+    signal: AbortSignal,
+  ) => {
     const auth = get(authContext$);
 
     const bodyResult = await get(bodyResultOf(uploadsContract.prepare));
     signal.throwIfAborted();
     if (!bodyResult.ok) {
       return bodyResult.response;
+    }
+
+    const privacyRequired =
+      requirePrivateArtifact || bodyResult.data.requirePrivateArtifact === true;
+    let privateArtifacts: boolean | undefined;
+    if (privacyRequired) {
+      if (!auth.orgId) {
+        return artifactVisibilityUnavailable();
+      }
+      privateArtifacts = await get(
+        privateArtifactCreationEnabled(auth.orgId, auth.userId),
+      );
+      signal.throwIfAborted();
+      if (!privateArtifacts) {
+        return artifactVisibilityUnavailable();
+      }
     }
 
     const { filename, size } = bodyResult.data;
@@ -61,17 +84,40 @@ const prepareUploadInner$ = command(
         size,
         publicBrand: PUBLIC_BRAND,
         purpose: bodyResult.data.purpose,
+        privateArtifacts,
       },
       signal,
     );
+    return {
+      artifact,
+      filename,
+      contentType,
+      size,
+      multipart: bodyResult.data.multipart === true,
+    };
+  },
+);
+
+const prepareUploadInner$ = command(
+  async (
+    { get, set },
+    requirePrivateArtifact: boolean,
+    signal: AbortSignal,
+  ) => {
+    const prepared = await set(
+      allocatePreparedUpload$,
+      requirePrivateArtifact,
+      signal,
+    );
+    if ("status" in prepared) {
+      return prepared;
+    }
+    const { artifact, filename, contentType, size, multipart } = prepared;
     const bucket = artifact.bucket;
     const { id, key: s3Key, url, metadata } = artifact;
     const uploadHeaders = s3MetadataHeaders(metadata);
 
-    if (
-      bodyResult.data.multipart === true &&
-      size >= MULTIPART_PART_SIZE_BYTES
-    ) {
+    if (multipart && size >= MULTIPART_PART_SIZE_BYTES) {
       let uploadId: string | undefined;
       return await onRejection(
         (async () => {
@@ -97,7 +143,6 @@ const prepareUploadInner$ = command(
                 s3Key,
                 uploadId,
                 partNumber,
-                PUT_URL_TTL_SECONDS,
               ),
             );
             signal.throwIfAborted();
@@ -134,7 +179,7 @@ const prepareUploadInner$ = command(
         bucket,
         s3Key,
         contentType,
-        { expiresIn: PUT_URL_TTL_SECONDS, usePublicEndpoint: true, metadata },
+        { usePublicEndpoint: true, metadata },
         signal,
       ),
     );
@@ -157,10 +202,21 @@ const prepareUploadInner$ = command(
 
 export const uploadsPrepareRoutes: readonly RouteEntry[] = [
   {
+    route: uploadsContract.preparePrivate,
+    handler: authRoute(
+      { requiredCapability: "file:write" },
+      command(({ set }, signal: AbortSignal) => {
+        return set(prepareUploadInner$, true, signal);
+      }),
+    ),
+  },
+  {
     route: uploadsContract.prepare,
     handler: authRoute(
       { requiredCapability: "file:write" },
-      prepareUploadInner$,
+      command(({ set }, signal: AbortSignal) => {
+        return set(prepareUploadInner$, false, signal);
+      }),
     ),
   },
 ];

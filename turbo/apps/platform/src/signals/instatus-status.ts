@@ -127,12 +127,12 @@ export const dismissInstatusIssue$ = command(
 );
 
 export const pollInstatusIssues$ = command(
-  async ({ set }, signal: AbortSignal): Promise<void> => {
+  ({ set }, signal: AbortSignal): void => {
     if (!resolvePlatformServiceStatusConfig(window.location.hostname)) {
       return;
     }
 
-    await setLoop(
+    setLoop(
       async (loopSignal) => {
         await delay(STATUS_REFRESH_INTERVAL_MS, { signal: loopSignal });
         set(refreshVersion$, (version) => {

@@ -19,5 +19,7 @@ export function renderPiMemoryStage1Input(projectedHistory: string): string {
     "canonical-pi-history",
   )
     .replace("{{ rollout_cwd }}", "workspace")
-    .replace("{{ rollout_contents }}", projectedHistory);
+    .replace("{{ rollout_contents }}", () => {
+      return projectedHistory;
+    });
 }

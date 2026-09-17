@@ -9,7 +9,10 @@ import { piMemoryStage1Candidates } from "@okouai/db/schema/pi-memory-stage1-can
 import { storages } from "@okouai/db/schema/storage";
 
 import { db } from "../../../lib/db";
-import { commitPiMemoryStage1Candidate } from "../pi-memory-stage1-candidate.service";
+import {
+  commitPiMemoryStage1Candidate,
+  deleteStoragesWithPiMemoryCandidates,
+} from "../pi-memory-stage1-candidate.service";
 import {
   advancePiMemoryPhase2InputRevision,
   claimPiMemoryPhase2Job,
@@ -653,7 +656,12 @@ describe("Pi memory Phase 2 job transitions", () => {
       { piSessionId: "retained-history" },
     ]);
     await insertPendingPhase2Job(scope);
-    await db().delete(storages).where(eq(storages.id, scope.memoryStorageId));
+    await db().transaction(async (tx) => {
+      await deleteStoragesWithPiMemoryCandidates(
+        tx,
+        eq(storages.id, scope.memoryStorageId),
+      );
+    });
 
     await expect(readPhase2Job(scope)).resolves.toBeUndefined();
     const [candidate] = await db()
@@ -664,9 +672,9 @@ describe("Pi memory Phase 2 job transitions", () => {
       );
     expect(candidate).toBeUndefined();
     const [historyBlob] = await db()
-      .select({ hash: blobs.hash })
+      .select({ hash: blobs.hash, refCount: blobs.refCount })
       .from(blobs)
       .where(eq(blobs.hash, hash as string));
-    expect(historyBlob).toStrictEqual({ hash });
+    expect(historyBlob).toStrictEqual({ hash, refCount: 1 });
   });
 });

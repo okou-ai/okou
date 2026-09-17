@@ -64,16 +64,8 @@ export const setupRouter = (
       once: true,
     });
   }
-  detach(
-    store.set(listenForceUpgradeDialog$, signal),
-    Reason.Daemon,
-    "force-upgrade",
-  );
-  detach(
-    store.set(pollInstatusIssues$, signal),
-    Reason.Daemon,
-    "service status polling",
-  );
+  store.set(listenForceUpgradeDialog$, signal);
+  store.set(pollInstatusIssues$, signal);
   render(
     <StrictMode>
       <StoreProvider value={store}>

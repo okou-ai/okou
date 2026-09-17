@@ -1,7 +1,6 @@
 import { timeout } from "signal-timers";
 import {
   bestEffort,
-  createChildAbortController,
   createDeferredPromise,
   onRejection,
   withCleanup,
@@ -245,8 +244,6 @@ async function waitForSafariCaptureStart(
 ): Promise<void> {
   // Safari can initially supply only zeros after capture has started.
   // Bound the extra wait so a quiet room still becomes ready.
-  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-  const startupController = createChildAbortController(signal);
   timeout(
     () => {
       if (!ready.settled()) {
@@ -254,17 +251,16 @@ async function waitForSafariCaptureStart(
       }
     },
     SAFARI_CAPTURE_START_TIMEOUT_MS,
-    { signal: startupController.signal },
+    { signal },
   );
-  await withCleanup(ready.promise, () => {
-    startupController.abort();
-  });
+  await ready.promise;
   signal.throwIfAborted();
 }
 
 export async function startVoiceDraftPcmCapture(
   stream: MediaStream,
   persistence: VoiceDraftPcmPersistence,
+  startupSignal: AbortSignal,
   signal: AbortSignal,
 ): Promise<VoiceDraftPcmCapture> {
   signal.throwIfAborted();
@@ -382,7 +378,7 @@ export async function startVoiceDraftPcmCapture(
           await firstBatch.promise;
           signal.throwIfAborted();
           if (safariReady && !safariReady.settled()) {
-            await waitForSafariCaptureStart(safariReady, signal);
+            await waitForSafariCaptureStart(safariReady, startupSignal);
           }
           return capture;
         })(),

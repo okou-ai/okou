@@ -258,7 +258,7 @@ function PinPill() {
             disabled={pinSaving}
             variant="quiet"
             size="icon-2xs"
-            className="absolute -top-0.5 -right-0.5 rounded-full okou-border bg-background shadow-sm hover:shadow-md disabled:opacity-50"
+            className="absolute -top-0.5 -right-0.5 rounded-full border border-surface-border bg-background shadow-sm hover:shadow-md disabled:opacity-50"
             aria-label={t(($) => {
               return $.sidebar.pin;
             })}

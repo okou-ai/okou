@@ -18,6 +18,7 @@ import {
   isTestEndpointAllowed,
   testEndpointNotFoundResponse,
 } from "./test-endpoint-helpers";
+import { writeOrgMetadataWithDefaultPlanEntitlement } from "../services/org-plan-entitlements.service";
 
 const body$ = bodyResultOf(testUsageSettlementContract.process);
 const setupBody$ = bodyResultOf(testUsageSettlementContract.setup);
@@ -56,16 +57,28 @@ const setupUsageSettlement$ = command(
     }
 
     const db = set(writeDb$);
-    await db
-      .insert(orgMetadataCanonicalWrites)
-      .values({
-        orgId: bodyResult.data.org_id,
-        credits: bodyResult.data.credits,
-      })
-      .onConflictDoUpdate({
-        target: orgMetadataCanonicalWrites.orgId,
-        set: { credits: bodyResult.data.credits },
-      });
+    await db.transaction(async (tx) => {
+      await writeOrgMetadataWithDefaultPlanEntitlement(
+        tx,
+        bodyResult.data.org_id,
+        async (writeTx) => {
+          return await writeTx
+            .insert(orgMetadataCanonicalWrites)
+            .values({
+              orgId: bodyResult.data.org_id,
+              credits: bodyResult.data.credits,
+            })
+            .onConflictDoUpdate({
+              target: orgMetadataCanonicalWrites.orgId,
+              set: { credits: bodyResult.data.credits },
+            })
+            .returning({
+              orgId: orgMetadataCanonicalWrites.orgId,
+              tier: orgMetadataCanonicalWrites.tier,
+            });
+        },
+      );
+    });
     signal.throwIfAborted();
     await db
       .insert(orgPlanEntitlements)

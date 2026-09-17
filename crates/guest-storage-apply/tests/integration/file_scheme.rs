@@ -213,7 +213,7 @@ fn file_scheme_preexisting_symlink_ancestor_blocks_nested_entry() {
 
 // Storage with a missing file:// target fails the run. The runner only rewrites
 // archive_url to file:// after vsock-staging succeeds, so a missing file means a
-// broken runner contract: fatal and not retriable.
+// broken runner contract: a terminal error.
 #[test]
 fn file_scheme_missing_storage_fatal() {
     let dir = tempfile::tempdir().unwrap();

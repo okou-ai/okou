@@ -367,6 +367,7 @@
       "feishu": "Feishu",
       "github": "GitHub",
       "goal": "Objetivo",
+      "lark": "Lark",
       "slack": "Slack",
       "teams": "Teams",
       "telegram": "Telegram",
@@ -452,6 +453,18 @@
     }
   },
   "artifacts": {
+    "access": {
+      "backToBrand": "Voltar para {{brandName}}",
+      "description": "Ele pode ser privado ou não estar mais disponível.",
+      "help": "Peça à pessoa que compartilhou este link para verificar o acesso.",
+      "signedInAs": "Conectado como {{email}}",
+      "signIn": "Entrar",
+      "signInFailed": "Não foi possível abrir o login. Tente novamente.",
+      "switchAccount": "Trocar de conta",
+      "switchAccountFailed": "Não foi possível abrir o seletor de contas. Tente novamente.",
+      "title": "Você não pode visualizar este artefato",
+      "tryAgain": "Tentar novamente"
+    },
     "actions": {
       "backToAll": "Voltar para todos os artefatos",
       "backToArtifacts": "Voltar aos artefatos",
@@ -597,9 +610,20 @@
       "videoLabel": "Visualização de vídeo de {{filename}}"
     },
     "sharing": {
-      "shareOrganization": "Compartilhar com a organização",
-      "sharePublic": "Compartilhar publicamente",
-      "unavailable": "Este artefato não está disponível ou você não tem acesso."
+      "accessLabel": "Quem pode acessar",
+      "copyLink": "Copiar link",
+      "loadFailed": "Não foi possível carregar as permissões",
+      "loadingPermissions": "Carregando permissões",
+      "onlyMe": "Somente eu",
+      "onlyMeDescription": "Somente você pode ver este artefato",
+      "organization": "Organização",
+      "organizationDescription": "Qualquer pessoa de {{organization}} com o link",
+      "permissionsUpdated": "Acesso atualizado",
+      "publicAccess": "Acesso público",
+      "publicDescription": "Qualquer pessoa com o link pode ver",
+      "retry": "Tentar novamente",
+      "savedAutomatically": "As alterações são salvas automaticamente",
+      "saving": "Salvando…"
     },
     "sidebar": {
       "openSharedConversation": "Abrir conversa compartilhada",
@@ -639,6 +663,10 @@
       "importedSlides_one": "{{count}} slide",
       "importedSlides_many": "{{count}} slides",
       "importedSlides_other": "{{count}} slides",
+      "importFile": "Importe seu próprio arquivo",
+      "importFileHint": "({{formats}})",
+      "importStarted": "Analisando {{filename}}. Ele aparecerá em Custom quando estiver pronto.",
+      "importUnsupported": "Escolha um arquivo {{formats}} para criar um modelo.",
       "introVideo": "Vídeo de introdução",
       "introVideoUnavailable": "Este modelo de vídeo não está mais disponível. Remova-o para enviar sua mensagem.",
       "multiAccent": "Várias cores de destaque",
@@ -705,11 +733,6 @@
       "websitePreview": "Visualização do modelo de site {{title}}",
       "workflow": "Fluxo de trabalho",
       "workflowCatalog": {
-        "alert-metric-moves-slack": {
-          "description": "Monitore suas métricas-chave e avise o Slack quando uma mudar drasticamente.",
-          "shortDescription": "Avisa no Slack quando uma métrica-chave dispara.",
-          "title": "Alerta quando uma métrica muda"
-        },
         "auto-inbox-label": {
           "description": "Crie um fluxo que roda quando um marcador do Gmail é aplicado e cuida da mensagem marcada.",
           "shortDescription": "Roda um fluxo quando você aplica um marcador do Gmail.",
@@ -719,21 +742,6 @@
           "description": "Revise PRs rotulados como prontos para mesclar, aguarde o CI, depois mescle e publique no Slack.",
           "shortDescription": "Mescla os PRs prontos quando a CI passa.",
           "title": "Mesclar PRs do GitHub automaticamente"
-        },
-        "blog-posts-to-x": {
-          "description": "Transforme cada novo post do blog em variações sociais na fila do Buffer.",
-          "shortDescription": "Transforma cada novo post do blog em posts sociais.",
-          "title": "Transformar posts de blog em posts sociais"
-        },
-        "build-weekly-deck-gamma": {
-          "description": "Transforme as métricas da semana em um deck pronto para apresentação no Gamma.",
-          "shortDescription": "Transforma as métricas da semana em um deck no Gamma.",
-          "title": "Criar o deck semanal no Gamma"
-        },
-        "business-review-gamma": {
-          "description": "Transforme as métricas do mês em uma apresentação de revisão de negócios no Gamma.",
-          "shortDescription": "Transforma as métricas do mês em um deck de review.",
-          "title": "Construir a revisão de negócios no Gamma"
         },
         "catch-calendar-conflicts": {
           "description": "Verifique seu calendário em busca de reservas duplas e alerte você com antecedência.",
@@ -755,30 +763,15 @@
           "shortDescription": "Publica onde o funil de cadastro mais perde gente.",
           "title": "Verificar o funil de inscrição do PostHog"
         },
-        "clickup-slack-standup": {
-          "description": "Reúna as tarefas do ClickUp toda manhã e publique o standup do time no Slack.",
-          "shortDescription": "Publica o standup da manhã a partir do ClickUp.",
-          "title": "Standup do ClickUp no Slack"
-        },
         "compare-google-ads-last-month": {
           "description": "Compare investimento e ROAS com o mês passado e aponte as anomalias no Slack.",
           "shortDescription": "Compara investimento e ROAS com o mês passado.",
           "title": "Comparar Google Ads com o mês passado"
         },
-        "competitive-intel-monitor": {
-          "description": "Acompanhe preços e recursos nos sites dos concorrentes, registre no Notion e avise no Slack.",
-          "shortDescription": "Registra no Notion as mudanças de preço dos concorrentes.",
-          "title": "Monitor da concorrência"
-        },
-        "daily-company-brief-slack": {
-          "description": "Reúna dados de produto, crescimento e receita em um resumo diário no Slack.",
-          "shortDescription": "Junta produto, crescimento e receita em um resumo.",
-          "title": "Publicar um resumo diário da empresa no Slack"
-        },
-        "daily-industry-news-slack": {
-          "description": "Reúna as notícias relevantes do dia da indústria em um resumo no Slack.",
-          "shortDescription": "Reúne as notícias do setor para o Slack.",
-          "title": "Publicar notícias diárias da indústria no Slack"
+        "creator-shortlist-to-sheets": {
+          "description": "Avalie os creators que você está considerando por alcance e engajamento, ordenados em uma planilha.",
+          "shortDescription": "Classifica creators por alcance e engajamento.",
+          "title": "Montar uma lista de creators no Google Sheets"
         },
         "daily-standup-report": {
           "description": "Reúna todas as manhãs os sinais de produto e engenharia, monte um relatório curto e publique no Slack.",
@@ -795,11 +788,6 @@
           "shortDescription": "Reúne as novidades recentes em uma newsletter.",
           "title": "Rascunhar a newsletter no Mailchimp"
         },
-        "draft-replies-notion-faq": {
-          "description": "Redija respostas para tickets com base na sua FAQ do Notion.",
-          "shortDescription": "Escreve respostas a partir do seu FAQ no Notion.",
-          "title": "Redigir respostas da sua FAQ do Notion"
-        },
         "feedback-router": {
           "description": "Acompanhe um canal do Slack e leve o feedback de produto para o Notion com marcadores e responsáveis.",
           "shortDescription": "Leva o feedback de produto do Slack para o Notion.",
@@ -814,11 +802,6 @@
           "description": "Classifique novos erros do Sentry por impacto no usuário e registre os piores como problemas do GitHub.",
           "shortDescription": "Abre issues no GitHub para os piores erros do Sentry.",
           "title": "Registrar falhas do Sentry como problemas do GitHub"
-        },
-        "flag-figma-designs-no-task": {
-          "description": "Sinalizar designs do Figma que ainda não têm uma tarefa vinculada ao Linear.",
-          "shortDescription": "Aponta designs do Figma sem tarefa no Linear.",
-          "title": "Sinalizar designs do Figma sem uma tarefa"
         },
         "flagged-gmail-todoist-tasks": {
           "description": "Transforme os e-mails que você sinaliza em tarefas do Todoist automaticamente.",
@@ -835,11 +818,6 @@
           "shortDescription": "Reúne os pull requests mesclados em um relatório.",
           "title": "Resumo de PRs do GitHub"
         },
-        "gmail-followups-auto": {
-          "description": "Encontre contatos que não responderam e elabore o próximo follow-up.",
-          "shortDescription": "Escreve follow-ups para quem não respondeu.",
-          "title": "Enviar follow-ups do Gmail automaticamente"
-        },
         "gmail-reconnect-reminders": {
           "description": "Destaque contatos importantes com quem você não enviou e-mail há um tempo.",
           "shortDescription": "Mostra contatos com quem você não fala há tempo.",
@@ -850,25 +828,10 @@
           "shortDescription": "Destaca os e-mails que precisam de você.",
           "title": "Destacar e-mails importantes no Gmail"
         },
-        "investor-update-google-docs": {
-          "description": "Monte métricas e destaques em uma atualização para investidores no Docs.",
-          "shortDescription": "Reúne as métricas em um update para investidores.",
-          "title": "Redigir a atualização para investidores no Google Docs"
-        },
-        "log-gong-calls-hubspot": {
-          "description": "Puxe notas e próximos passos de uma chamada do Gong para o negócio no HubSpot.",
-          "shortDescription": "Leva as notas das calls do Gong para o negócio no HubSpot.",
-          "title": "Registrar chamadas do Gong no HubSpot"
-        },
-        "meeting-notes-asana-tasks": {
-          "description": "Transforme notas de reunião em tarefas atribuídas e com prazo no Asana.",
-          "shortDescription": "Transforma notas de reunião em tarefas no Asana.",
-          "title": "Transformar notas de reunião em tarefas do Asana"
-        },
-        "meeting-recaps-slack": {
-          "description": "Compartilhe um resumo com decisões e itens de ação após cada reunião.",
-          "shortDescription": "Compartilha decisões e próximos passos após reuniões.",
-          "title": "Receber resumos de reuniões no Slack"
+        "keyword-ranks-to-sheets": {
+          "description": "Veja em que posição suas páginas aparecem nas palavras-chave que importam e registre as mudanças.",
+          "shortDescription": "Registra a variação de posição toda semana.",
+          "title": "Acompanhar posições de palavras-chave no Google Sheets"
         },
         "morning-brief": {
           "description": "Transforme as novidades do Gmail, Agenda e Notion em um plano diário curto no Slack.",
@@ -880,20 +843,10 @@
           "shortDescription": "Adiciona ao HubSpot remetentes desconhecidos.",
           "title": "Adicionar novos contatos do Gmail ao HubSpot"
         },
-        "onboard-new-hires-asana": {
-          "description": "Crie a lista de verificação de tarefas de integração para cada novo contratado no Asana.",
-          "shortDescription": "Cria um checklist de integração por nova contratação.",
-          "title": "Integrar novos contratados no Asana"
-        },
         "personal-weekly-digest": {
           "description": "Resuma a atividade do GitHub, Gmail e Agenda em uma atualização semanal no Slack.",
           "shortDescription": "Resume sua semana no GitHub e no Gmail.",
           "title": "Resumo semanal pessoal"
-        },
-        "post-daily-metrics-slack": {
-          "description": "Publicar visitantes diários, inscrições e números de ativação no Slack.",
-          "shortDescription": "Publica visitantes e cadastros do dia no Slack.",
-          "title": "Publicar métricas diárias no Slack"
         },
         "post-release-notes-slack": {
           "description": "Rascunhe um changelog do trabalho recentemente enviado e publique no Slack.",
@@ -905,35 +858,10 @@
           "shortDescription": "Envia um resumo antes das reuniões externas.",
           "title": "Preparar reuniões do Google Calendar"
         },
-        "publish-scheduled-posts-buffer": {
-          "description": "Publique o conteúdo agendado do dia e coloque os posts sociais na fila.",
-          "shortDescription": "Publica os posts sociais agendados para hoje.",
-          "title": "Publicar posts agendados no Buffer"
-        },
         "research-calendar-meetings": {
           "description": "Pesquise as pessoas que você vai encontrar antes de cada evento no calendário.",
           "shortDescription": "Pesquisa quem você vai encontrar antes de cada evento.",
           "title": "Pesquise suas reuniões no calendário"
-        },
-        "research-new-signups-apollo": {
-          "description": "Pesquise cada nova inscrição e publique um rápido resumo.",
-          "shortDescription": "Pesquisa cada novo cadastro e publica um panorama.",
-          "title": "Pesquisar novas inscrições"
-        },
-        "revenuecat-subscription-digest": {
-          "description": "Acompanhe as assinaturas em uma planilha e avise no Slack quando o churn ou os cancelamentos mudarem.",
-          "shortDescription": "Acompanha assinaturas e avisa no Slack sobre churn.",
-          "title": "Resumo de assinaturas do RevenueCat"
-        },
-        "run-daily-query-sheets": {
-          "description": "Execute sua SQL salva em um cronograma e anexe os resultados a uma planilha.",
-          "shortDescription": "Roda um SQL salvo e adiciona o resultado à planilha.",
-          "title": "Executar uma consulta diária no Google Sheets"
-        },
-        "salesforce-pipeline-digest": {
-          "description": "Resuma toda semana no Slack as mudanças nas oportunidades do Salesforce e os riscos de data de fechamento.",
-          "shortDescription": "Resume toda semana os riscos do pipeline.",
-          "title": "Resumo do pipeline do Salesforce"
         },
         "send-bugs-github-slack": {
           "description": "Registre relatórios marcados como bugs como problemas no GitHub e avise a equipe no Slack.",
@@ -945,25 +873,20 @@
           "shortDescription": "Envia diariamente os problemas críticos do Sentry.",
           "title": "Resumo de problemas do Sentry"
         },
+        "social-posts-to-sheets": {
+          "description": "Reúna os posts públicos e o engajamento das contas que você acompanha em uma planilha.",
+          "shortDescription": "Reúne posts públicos em uma única planilha.",
+          "title": "Reunir posts de redes sociais no Google Sheets"
+        },
         "sort-gmail-draft-replies": {
           "description": "Classifique sua caixa de entrada e rascunhe respostas para os e-mails que precisam delas.",
           "shortDescription": "Organiza a caixa de entrada e rascunha as respostas.",
           "title": "Classificar Gmail e rascunhar respostas"
         },
-        "spot-churn-risk-stripe-zendesk": {
-          "description": "Marque contas em risco de churn e redija um e-mail de recuperação.",
-          "shortDescription": "Aponta risco de churn e escreve um e-mail.",
-          "title": "Identificar risco de churn no Stripe e Zendesk"
-        },
         "summarize-gmail-newsletters": {
           "description": "Resuma as newsletters na sua caixa de entrada em um breve resumo.",
           "shortDescription": "Condensa suas newsletters em um só resumo.",
           "title": "Resumir newsletters do Gmail"
-        },
-        "summarize-zendesk-tickets-daily": {
-          "description": "Resuma o último dia de tickets do Zendesk e publique no Slack.",
-          "shortDescription": "Publica um resumo diário dos tickets do Zendesk.",
-          "title": "Resumir tickets do Zendesk diariamente"
         },
         "support-ticket-router": {
           "description": "Classifique os e-mails de suporte, crie registros no Notion e avise no Slack sobre tickets críticos.",
@@ -985,30 +908,20 @@
           "shortDescription": "Mostra as maiores mudanças de uso da semana.",
           "title": "Rastrear uso de recursos com PostHog"
         },
-        "track-keyword-ranks-ahrefs": {
-          "description": "Acompanhe as posições das palavras-chave no Ahrefs e registre as maiores variações no Notion.",
-          "shortDescription": "Relata as variações de posição da semana.",
-          "title": "Rastrear posições de palavras-chave com Ahrefs"
-        },
-        "track-signup-sources-sheets": {
-          "description": "Atribua cada nova inscrição à sua fonte em uma planilha de rastreamento.",
-          "shortDescription": "Atribui cada cadastro à sua origem na planilha.",
-          "title": "Rastrear fontes de inscrição no Google Sheets"
-        },
         "vercel-deploy-digest": {
           "description": "Acompanhe os deploys da Vercel, ligue-os aos commits do GitHub e avise no Slack quando falharem.",
           "shortDescription": "Avisa no Slack quando um deploy da Vercel falha.",
           "title": "Resumo de deploys da Vercel"
         },
+        "web-data-to-sheets": {
+          "description": "Extraia os mesmos campos de uma lista de páginas com frequência e mantenha o histórico em uma planilha.",
+          "shortDescription": "Extrai campos de uma lista de páginas para a planilha.",
+          "title": "Reunir dados de páginas da web em uma planilha"
+        },
         "x-brand-monitor": {
           "description": "Acompanhe menções à marca no X, salve os posts relevantes no Notion e avise no Slack sobre os mais fortes.",
           "shortDescription": "Avisa no Slack sobre menções fortes à marca no X.",
           "title": "Monitor de marca no X"
-        },
-        "zendesk-knowledge-base": {
-          "description": "Encontre as perguntas recorrentes no Zendesk, escreva entradas de FAQ e salve no Notion.",
-          "shortDescription": "Transforma perguntas recorrentes em itens de FAQ.",
-          "title": "Base de conhecimento do Zendesk"
         }
       },
       "workflowCategories": {
@@ -1028,6 +941,10 @@
       "copyLinkFailed": "Falha ao copiar o link",
       "downloadFailed": "Falha no download",
       "linkCopied": "Link copiado"
+    },
+    "viewer": {
+      "continuePrompt": "Ajude-me a trabalhar com este artefato: {{url}}",
+      "continueWithBrand": "Continuar com {{brandName}}"
     }
   },
   "auth": {
@@ -1532,6 +1449,60 @@
       "title": "Ação indisponível"
     },
     "agentPage": {
+      "getStarted": {
+        "checkin": {
+          "action": "Fazer check-in",
+          "description": "Faça check-in uma vez por dia. Reinicia às 00:00 UTC.",
+          "name": "Entrar todo dia",
+          "unit": "por dia"
+        },
+        "connector": {
+          "action": "Conectar",
+          "description": "Gmail, Notion e mais de 100",
+          "name": "Conectar um conector",
+          "unit": "por conector"
+        },
+        "inReview": "Em análise",
+        "inReviewDescription": "Enviado, aguardando análise",
+        "invite": {
+          "action": "Convidar",
+          "description": "Cada pessoa que você adiciona conta",
+          "name": "Convide seu time",
+          "unit": "por membro"
+        },
+        "pendingInvitations": "Convites pendentes: {{amount}}",
+        "personalBalanceNote": "As recompensas expiram 7 dias após a concessão. As do Slack vão para a organização; as demais, para seu saldo pessoal.",
+        "progressLabel": "Progresso dos primeiros passos",
+        "rejectedDescription": "Esta publicação não atende aos requisitos. Envie outra publicação pública que mencione Okou.",
+        "reward": "+{{amount}}",
+        "rewardedConnections": "Conectores recompensados: {{amount}}",
+        "share": {
+          "action": "Compartilhar",
+          "description": "Publique e cole o link aqui",
+          "name": "Compartilhe o {{assistantName}} no X"
+        },
+        "shareDialog": {
+          "description": "Envie uma publicação pública para análise. Uma recompensa aprovada por pessoa.",
+          "helper": "A publicação precisa ser pública e mencionar o {{assistantName}}.",
+          "inputLabel": "Link da publicação",
+          "placeholder": "https://x.com/...",
+          "submit": "Enviar",
+          "title": "Compartilhe o {{assistantName}} no X"
+        },
+        "slack": {
+          "action": "Adicionar",
+          "description": "Onde seu time já trabalha",
+          "name": "Adicionar o {{assistantName}} ao Slack"
+        },
+        "stepCount": "{{completed}}/{{total}}",
+        "subtitle": "Experimente uma tarefa e ganhe créditos.",
+        "title": "Primeiros passos",
+        "workflow": {
+          "action": "Criar",
+          "description": "Transforme uma tarefa repetida em uma habilidade reutilizável",
+          "name": "Criar um workflow"
+        }
+      },
       "growth": {
         "addInSlack": "Adicionar {{assistantName}} no Slack",
         "connect": "Conectar",
@@ -1737,15 +1708,17 @@
       "upgradeToRun": "Faça upgrade para o Pro para executar o {{assistantName}}",
       "upgradeWorkspace": "Faça upgrade do seu workspace"
     },
+    "cards": {
+      "viewDetails": "Ver detalhes"
+    },
     "composer": {
+      "add": "Adicionar",
       "agentSuggestions": "Agentes",
       "configureModel": "Configurar modelo",
       "create": {
         "addStyle": "Adicionar estilo",
         "addTemplate": "Adicionar modelo",
-        "chooseScene": "Escolha o que criar",
         "chooseType": "Escolha um tipo",
-        "description": "Apresentações, vídeos e imagens",
         "exit": "Sair do modo de criação",
         "image": "Criar imagem",
         "imageDescription": "Transforme uma ideia em uma imagem",
@@ -1753,12 +1726,10 @@
         "presentation": "Criar apresentação",
         "presentationDescription": "Slides para sua história",
         "presentationPlaceholder": "Qual é o tema da sua apresentação?",
-        "question": "O que você gostaria de realizar?",
         "settingsAdjusted": "Algumas configurações de vídeo foram ajustadas para este modelo",
         "slideCount": "Número de slides",
         "slideCountAuto": "Automático",
         "slideCountRange": "{{range}} slides",
-        "title": "Criar",
         "video": "Criar vídeo",
         "videoDescription": "Dê movimento às suas ideias",
         "videoPlaceholder": "Descreva o vídeo que você quer criar…"
@@ -1773,16 +1744,11 @@
       "selectModel": "Selecionar modelo",
       "slashPanel": {
         "browseAll": "Ver todos os modelos",
-        "illustrationDescription": "Uma única imagem, no estilo que você escolher",
         "make": "Criar",
-        "slidesDescription": "Uma apresentação em HTML pronta para exibir",
         "templateCount_one": "{{count}} modelo",
         "templateCount_many": "{{count}} modelos",
         "templateCount_other": "{{count}} modelos",
-        "useTemplate": "Usar o modelo {{title}}",
-        "videoDescription": "Texto para vídeo, com parâmetros do modelo escolhido",
-        "websiteDescription": "Um site estático que você pode publicar",
-        "workflowDescription": "Um fluxo de trabalho salvo que você pode executar no compositor"
+        "useTemplate": "Usar o modelo {{title}}"
       },
       "temporarilySwitchTo": "Mudar temporariamente para",
       "threadSuggestions": "Conversas",
@@ -1862,6 +1828,7 @@
         "moreAccounts_many": "+{{count}}",
         "moreAccounts_other": "+{{count}}",
         "needsAttention": "Precisa de atenção",
+        "nextCategories": "Próximas categorias",
         "noResultsBody": "Tente o nome de um produto ou crie o seu a partir de uma API ou servidor MCP.",
         "noResultsTitle": "Nenhum conector corresponde a “{{query}}”",
         "openDetailAria": "Abrir detalhes de {{connector}}",
@@ -1869,6 +1836,7 @@
         "permissionCount_one": "{{count}} permissão",
         "permissionCount_many": "{{count}} permissões",
         "permissionCount_other": "{{count}} permissões",
+        "previousCategories": "Categorias anteriores",
         "showAll_one": "Ver todos os {{count}}",
         "showAll_many": "Ver todos os {{count}}",
         "showAll_other": "Ver todos os {{count}}",
@@ -1896,11 +1864,17 @@
       "providerIncompatibleAction": "Iniciar uma nova sessão",
       "providerIncompatiblePrefix": "Esta sessão foi iniciada com um provedor de modelo diferente e não pode continuar com o atual.",
       "recovery": {
+        "autonomyLimitDescription": "O limite de execuções automáticas consecutivas foi atingido. Confirme para continuar.",
+        "autonomyLimitTitle": "Limite de execuções automáticas atingido",
         "capacityDescription": "Tente novamente em instantes ou troque de modelo.",
         "capacityTitle": "Este modelo está ocupado no momento",
         "claudeCode": "Claude Code",
         "codex": "Codex",
         "continue": "Continuar",
+        "newRunCurrentSettings": "Ao continuar, uma nova execução será iniciada usando suas configurações atuais.",
+        "originalAccount": "Esta execução usou sua assinatura pessoal: {{account}}.",
+        "originalAccountUnavailable": "Esta execução usou uma assinatura pessoal. A conta original não está mais conectada.",
+        "originalAccountUnknown": "Esta execução usou uma assinatura pessoal. Não foi possível verificar a conta original.",
         "resetAndTryAgain": "Redefinir e tentar novamente",
         "resetsAt": "Redefine {{time}}",
         "selectModel": "Trocar modelo",
@@ -1915,25 +1889,29 @@
       "runCancelled": "Pausado no meio do raciocínio — retome quando quiser."
     },
     "feedback": {
-      "emailDraftDescription": "um rascunho de e-mail (ID do rascunho: {{id}})",
-      "partHeading": "Feedback sobre esta parte da resposta:",
-      "partsHeading_one": "Feedback sobre {{count}} parte da resposta:",
-      "partsHeading_many": "Feedback sobre {{count}} partes da resposta:",
-      "partsHeading_other": "Feedback sobre {{count}} partes da resposta:",
-      "placeholder": "O que deveria mudar aqui?",
+      "emailDraftDescription": "um rascunho de e-mail",
+      "forwardPartHeading": "Encaminhado de “{{title}}”",
+      "forwardPartsHeading_one": "{{count}} parte encaminhada de “{{title}}”",
+      "forwardPartsHeading_many": "{{count}} partes encaminhadas de “{{title}}”",
+      "forwardPartsHeading_other": "{{count}} partes encaminhadas de “{{title}}”",
+      "partHeading": "Citado da sua resposta",
+      "partsHeading_one": "{{count}} parte citada da sua resposta",
+      "partsHeading_many": "{{count}} partes citadas da sua resposta",
+      "partsHeading_other": "{{count}} partes citadas da sua resposta",
+      "placeholder": "Pergunte ou comente sobre esta citação",
       "quote": "Citar",
       "remove": "Remover feedback",
-      "sentEmailDescription": "um e-mail enviado (ID do e-mail: {{id}}{{sentIdSuffix}})",
-      "sentIdSuffix": ", ID de envio: {{sentId}}",
-      "sourcePartHeading": "Feedback sobre esta parte de {{description}}:",
-      "sourcePartsHeading_one": "Feedback sobre {{count}} parte de {{description}}:",
-      "sourcePartsHeading_many": "Feedback sobre {{count}} partes de {{description}}:",
-      "sourcePartsHeading_other": "Feedback sobre {{count}} partes de {{description}}:"
+      "sentEmailDescription": "um e-mail enviado",
+      "sourcePartHeading": "Citado de {{description}}",
+      "sourcePartsHeading_one": "{{count}} parte citada de {{description}}",
+      "sourcePartsHeading_many": "{{count}} partes citadas de {{description}}",
+      "sourcePartsHeading_other": "{{count}} partes citadas de {{description}}"
     },
     "forward": {
       "action": "Encaminhar",
       "agents": "Agentes",
       "back": "Voltar",
+      "composerPlaceholder": "Adicionar uma mensagem",
       "content": "Conteúdo",
       "description": "Envie o conteúdo selecionado para um agente ou uma conversa e continue trabalhando nele.",
       "noResults": "Nenhum agente ou conversa foi encontrado",
@@ -1964,10 +1942,8 @@
         "changeAvatar": "Alterar avatar",
         "chooseStyle": "Escolha um estilo",
         "chooseStyleAndVoice": "Escolha um estilo e uma voz.",
-        "noMatches": "Nenhum resultado. Tente outra busca ou categoria.",
+        "noMatches": "Nenhum resultado.",
         "ready": "Pronto para usar. Adicione seu conteúdo na conversa.",
-        "searchAvatars": "Buscar avatares",
-        "searchStyles": "Buscar estilos",
         "settings": "Configurações do vídeo de introdução",
         "style": "Estilo",
         "useSelection": "Usar seleção"
@@ -1984,8 +1960,7 @@
           "print": "Impressão e publicação",
           "retro-tech": "Tecnologia retrô e interfaces"
         },
-        "preview": "Prévia de {{title}}",
-        "previewUnavailable": "Não há prévia de vídeo disponível para este estilo."
+        "preview": "Prévia de {{title}}"
       },
       "voice": {
         "auto": "Deixar o Okou escolher",
@@ -2034,12 +2009,14 @@
     },
     "newChat": "Nova conversa",
     "origins": {
-      "agentphone": "AgentPhone",
+      "agentphone": "iMessage",
       "feishu": "Feishu",
       "github": "GitHub",
+      "lark": "Lark",
       "openChat": "Abrir conversa",
       "openFeishuChat": "Abrir conversa original no Feishu",
       "openGithubMessage": "Abrir a issue ou pull request original no GitHub",
+      "openLarkChat": "Abrir conversa original no Lark",
       "openMessage": "Abrir mensagem",
       "openSlackMessage": "Abrir mensagem original no Slack",
       "openTeamsMessage": "Abrir mensagem original no Microsoft Teams",
@@ -2153,6 +2130,7 @@
         "wiring": "Conectando tudo..."
       },
       "viewActivityLogs": "Ver logs de atividade",
+      "viewLangfuseTrace": "Ver trace do Langfuse",
       "viewLogs": "Ver logs da execução",
       "waitingIn": "Aguardando na",
       "workedFor": "Trabalhou por {{duration}}",
@@ -2167,6 +2145,7 @@
       "createFailed": "Não foi possível criar a conversa compartilhada. Tente novamente.",
       "deselectGroup": "Desmarcar grupo de mensagens",
       "linkCopied": "Link copiado",
+      "publicDescription": "As mensagens selecionadas e seus anexos serão públicos.",
       "selectedCount_one": "{{count}} selecionado",
       "selectedCount_many": "{{count}} selecionados",
       "selectedCount_other": "{{count}} selecionados",
@@ -2312,6 +2291,40 @@
             "prompt": "Criar uma imagem para meu site"
           }
         },
+        "presentation": {
+          "clientProposal": {
+            "label": "Escrever uma proposta para um cliente",
+            "prompt": "Crie uma apresentação de proposta para cliente. Pergunte sobre o cliente, o trabalho proposto, o prazo e o preço."
+          },
+          "companyOverview": {
+            "label": "Explicar o que minha empresa faz",
+            "prompt": "Crie uma apresentação institucional. Pergunte o que fazemos, quem atendemos e o que o público deve lembrar."
+          },
+          "eventTalk": {
+            "label": "Preparar uma palestra para um evento",
+            "prompt": "Crie uma apresentação para uma palestra. Pergunte sobre o evento, o público e a ideia central que quero transmitir."
+          },
+          "pitchDeck": {
+            "label": "Apresentar meu negócio a investidores",
+            "prompt": "Crie um pitch deck para investidores sobre meu negócio. Pergunte sobre o problema, o produto, a tração até agora e quanto quero captar."
+          },
+          "productIntro": {
+            "label": "Apresentar um produto novo",
+            "prompt": "Crie uma apresentação introduzindo um produto novo. Pergunte o que ele faz, para quem é e o que o diferencia."
+          },
+          "resultsReadout": {
+            "label": "Apresentar meus resultados",
+            "prompt": "Transforme meus resultados em uma apresentação de relatório. Pergunte os números, o período coberto e a decisão que sustentam."
+          },
+          "teamUpdate": {
+            "label": "Montar uma atualização para o time",
+            "prompt": "Crie uma apresentação para a atualização do meu time. Pergunte o que aconteceu no período, o que vem a seguir e quem estará presente."
+          },
+          "training": {
+            "label": "Ensinar algo ao meu time",
+            "prompt": "Crie uma apresentação de treinamento sobre um tema que eu escolher. Pergunte quem será treinado e o que deverão saber fazer depois."
+          }
+        },
         "video": {
           "animatePhoto": {
             "label": "Transformar uma foto em vídeo",
@@ -2421,6 +2434,15 @@
       "moreTemplates": "Mais modelos",
       "presentationTemplates": "Modelos de apresentação",
       "removeTask": "Remover {{task}}",
+      "shelf": {
+        "browseStyles": "Ver todos os estilos",
+        "browseTemplates": "Ver todos os modelos",
+        "image": "Estilos de imagem",
+        "nextPage": "Próxima página",
+        "previousPage": "Página anterior",
+        "video": "Modelos de vídeo",
+        "website": "Modelos de site"
+      },
       "tasks": {
         "image": "Imagem",
         "presentation": "Slides",
@@ -2508,7 +2530,6 @@
           "waterfall": "Waterfall chart",
           "word-cloud": "Word cloud"
         },
-        "chartSafety": "Leave blank and Okou will choose what fits your content.",
         "chooseAny": "Choose any",
         "chooseCharts": "Choose charts",
         "chooseOne": "Choose one",
@@ -2532,7 +2553,6 @@
         },
         "more": "More",
         "noCharts": "No matching charts",
-        "optional": "Optional",
         "outputFormat": "Output format",
         "outputs": {
           "presentation": "Presentation",
@@ -2548,7 +2568,6 @@
         "selectedCount_one": "{{count}} selecionado",
         "selectedCount_other": "{{count}} selecionados",
         "summary": "{{output}} · Métodos {{methodCount}} · Gráficos {{chartCount}}",
-        "title": "Visualização",
         "useWhenSuitable": "Use when suitable",
         "visualMethods": "Visual methods"
       },
@@ -2844,6 +2863,9 @@
         "website": "Site",
         "workflow": "Fluxo de trabalho"
       },
+      "importedLoadFailed": "Não foi possível carregar os modelos enviados.",
+      "importedLoading": "Carregando modelos enviados…",
+      "importedUnavailable": "Os modelos enviados estão temporariamente indisponíveis.",
       "previewTemplate": "Visualizar template {{title}}",
       "previewVideo": "Visualizar template de vídeo {{title}}",
       "previewWebsite": "Visualizar template de site {{title}}",
@@ -2852,8 +2874,11 @@
       "removeVideo": "Remover template de vídeo {{title}}",
       "removeWebsite": "Remover template de site {{title}}",
       "removeWorkflow": "Remover template de fluxo de trabalho {{title}}",
+      "retry": "Tentar novamente",
       "videoOptions": "Opções de vídeo",
       "videoOptionsAudio": "Gerar áudio",
+      "videoOptionsAudioOff": "Áudio desativado",
+      "videoOptionsAudioOn": "Áudio ativado",
       "videoOptionsDuration": "Duração",
       "videoOptionsLabel": "Opções de vídeo {{spec}}",
       "videoOptionsModel": "Modelo",
@@ -2898,27 +2923,6 @@
       "copied": "Copiado",
       "deleted": "Conversa excluída"
     },
-    "translation": {
-      "action": "Traduzir",
-      "close": "Fechar tradução",
-      "copy": "Copiar tradução",
-      "languages": {
-        "de": "Deutsch",
-        "en": "English",
-        "es": "Español",
-        "fr": "Français",
-        "hi": "हिन्दी",
-        "id": "Bahasa Indonesia",
-        "it": "Italiano",
-        "ja": "日本語",
-        "ko": "한국어",
-        "ptBR": "Português",
-        "zhCN": "简体中文",
-        "zhTW": "繁體中文"
-      },
-      "result": "Tradução",
-      "targetLanguage": "Idioma da tradução"
-    },
     "voice": {
       "checkingLimit": "Verificando limite da entrada de voz",
       "cleanupFailed": "O texto foi adicionado, mas não foi possível remover a gravação salva.",
@@ -2943,7 +2947,6 @@
       "storageFailed": "Não foi possível salvar o áudio. Tentar novamente recupera apenas o áudio já salvo neste dispositivo.",
       "textTakingShape": "O texto está tomando forma",
       "transcribing": "Transcrevendo",
-      "transcribingProgress": "Transcrevendo...",
       "transcriptionFailed": "Falha na transcrição de voz. Tente novamente."
     },
     "workflows": {
@@ -3181,9 +3184,11 @@
       "scope": {
         "aria": "Escopo dos conectores",
         "attention": "Requer atenção",
+        "connected": "Conectados",
+        "custom": "Personalizados",
         "discover": "Descobrir",
-        "mine": "Seus conectores",
-        "searchMine": "Buscar seus conectores"
+        "searchConnected": "Buscar conectores conectados",
+        "searchCustom": "Buscar conectores personalizados"
       },
       "search": "Buscar conectores",
       "shelf": {
@@ -3471,6 +3476,9 @@
         "wrongOrganizationDescription": "Sua organização ativa não corresponde a esta instalação do GitHub. Mude para a organização correta e abra o link novamente.",
         "wrongOrganizationTitle": "Mudar de organização"
       },
+      "lark": {
+        "connectTitle": "Conectar ao Lark"
+      },
       "slack": {
         "connectDescription": "Vincule sua conta a este workspace do Slack para interagir com seu agente diretamente pelo Slack.",
         "connectTitle": "Conectar ao Slack",
@@ -3616,7 +3624,7 @@
       },
       "feishu": {
         "addBot": "Adicionar bot",
-        "addDialogDescription": "Crie um app personalizado empresarial, ative o bot e conclua estas etapas no console de desenvolvedor do Feishu.",
+        "addDialogDescription": "Crie um app empresarial do tipo Agent e conclua estas etapas no console de desenvolvedor do Feishu.",
         "addDialogTitle": "Adicionar um bot do Feishu",
         "agentDescription": "Escolha o agente que deve processar as mensagens enviadas a este bot.",
         "backToIntegrations": "Voltar para integrações",
@@ -3629,14 +3637,14 @@
         "copied": "Copiado: {{label}}",
         "copy": "Copiar",
         "create": {
-          "descriptionAfter": ", crie um app personalizado empresarial com o nome e o ícone que preferir e adicione o recurso Bot.",
+          "descriptionAfter": ", crie um app empresarial e selecione o tipo Agent. Escolha o nome e o ícone que preferir; o modelo Agent inclui o recurso Bot.",
           "descriptionBefore": "No ",
           "downloadIcon": "Baixar o ícone opcional do {{brandName}}",
           "iconAlt": "Ícone opcional do app {{brandName}}",
           "iconHint": " ou use qualquer ícone de sua preferência.",
           "iconTitle": "Ícone opcional do app {{brandName}}",
           "imageAlt": "Formulário de criação de app do Feishu com o nome, o ícone e o botão Criar destacados",
-          "title": "Criar um app personalizado empresarial"
+          "title": "Criar um app do tipo Agent"
         },
         "credentials": {
           "appId": "ID do app",
@@ -3666,6 +3674,9 @@
         "faq": {
           "approvalAnswer": "Se a disponibilidade estiver definida como All members, um administrador do Feishu deverá aprovar a versão. O Feishu envia a solicitação de aprovação a um administrador por mensagem direta, e o app permanece pendente até a conclusão da revisão.",
           "approvalQuestion": "Por que a publicação do app está aguardando aprovação?",
+          "botFeatureAnswer": "Abra Features → Add Features no console de desenvolvedor do Feishu. Em By Feature, adicione o recurso Bot, depois continue este guia e publique o app. Apps do tipo Agent incluem o recurso Bot por padrão.",
+          "botFeatureImageAlt": "Console de desenvolvedor do Lark mostrando o recurso Bot em Add Features",
+          "botFeatureQuestion": "E se eu escolhi Custom App em vez de Agent?",
           "challengeAnswer": "Isso geralmente significa que o Encrypt Key ou o Verification Token salvo na etapa Tokens está incorreto. Volte à etapa Tokens, insira novamente os dois valores de Event Configuration → Encryption Strategy, salve-os e tente a Request URL outra vez.",
           "challengeQuestion": "Por que o Feishu mostra \"Challenge code didn't get a response\"?",
           "title": "Perguntas frequentes sobre a configuração"
@@ -3676,14 +3687,14 @@
         "moreOptions": "Mais opções para {{bot}}",
         "pageDescription": "Gerencie o encaminhamento dos bots neste workspace",
         "permissions": {
-          "description": "No console de desenvolvedor do Feishu, abra Permissions & Scopes, escolha Batch Import/Export > Import e cole o JSON abaixo. Isso importa todos os escopos do conector gerenciado em User identity. Essas são as permissões mínimas necessárias para que a integração funcione.",
-          "hint": "Mantenha todas as permissões importadas de User identity e depois crie e publique uma nova versão do app para que a tela de consentimento OAuth possa concedê-las. Remover qualquer permissão impedirá o funcionamento da integração, e talvez seja necessária a aprovação de um administrador do Feishu.",
-          "label": "JSON de escopos do token de usuário",
+          "description": "No console de desenvolvedor do Feishu, abra Permissions & Scopes, escolha Batch Import/Export > Import e cole o JSON abaixo. Ele inclui permissões de identidade do app para o bot e de identidade do usuário para sua conta conectada.",
+          "hint": "Mantenha todas as permissões importadas das duas identidades e crie e publique uma nova versão do app. A aprovação de um administrador do Feishu pode ser necessária.",
+          "label": "JSON de escopos do app e do usuário",
           "menuAlt": "Página Permissões e escopos do Feishu com o menu de importação/exportação em lote de escopos destacado",
           "menuLabel": "Abrir importação/exportação em lote de escopos",
           "reviewAlt": "Caixa de diálogo de importação/exportação em lote de escopos do Feishu com o JSON importado e o botão de revisão destacado",
           "reviewLabel": "Colar o JSON e revisar os novos escopos",
-          "title": "Importar escopos do token de usuário"
+          "title": "Importar escopos do app e do usuário"
         },
         "publish": {
           "allMembersAlt": "Configurações de disponibilidade do Feishu com All members selecionado",
@@ -3725,6 +3736,12 @@
           "verifying": "Verificando…",
           "waiting": "Aguardando callback"
         },
+        "toasts": {
+          "botInstalled": "Bot do Feishu instalado com sucesso",
+          "botUninstalled": "Bot do Feishu desinstalado",
+          "connected": "Feishu conectado com sucesso",
+          "disconnected": "Desconectado do Feishu"
+        },
         "tokens": {
           "descriptionAfter": ", selecione o app que você acabou de criar e abra sua página de configuração. Acesse Event Configuration → Encryption Strategy e copie o Encrypt Key e o Verification Token.",
           "descriptionBefore": "Abra o ",
@@ -3736,6 +3753,139 @@
         "uninstallDescription": "Isso desinstala {{bot}} do workspace e desconecta todas as contas do {{brandName}} que o utilizam. Esta ação não pode ser desfeita.",
         "uninstallTargetFallback": "este bot",
         "uninstallTitle": "Desinstalar o bot do Feishu?"
+      },
+      "lark": {
+        "addBot": "Adicionar bot",
+        "addDialogDescription": "Crie um app empresarial do tipo Agent e conclua estas etapas no console de desenvolvedor do Lark.",
+        "addDialogTitle": "Adicionar um bot do Lark",
+        "agentDescription": "Escolha o agente que deve processar as mensagens enviadas a este bot.",
+        "backToIntegrations": "Voltar para integrações",
+        "botFallback": "Bot do Lark",
+        "botIconAlt": "Ícone do bot {{bot}}",
+        "bots": "Bots do Lark",
+        "callbackStatusVerified": "Callback verificado",
+        "callbackStatusWaiting": "Aguardando callback",
+        "configured": "Configurado",
+        "copied": "Copiado: {{label}}",
+        "copy": "Copiar",
+        "create": {
+          "descriptionAfter": ", crie um app empresarial e selecione o tipo Agent. Escolha o nome e o ícone que preferir; o modelo Agent inclui o recurso Bot.",
+          "descriptionBefore": "No ",
+          "downloadIcon": "Baixar o ícone opcional do {{brandName}}",
+          "iconAlt": "Ícone opcional do app {{brandName}}",
+          "iconHint": " ou use qualquer ícone de sua preferência.",
+          "iconTitle": "Ícone opcional do app {{brandName}}",
+          "imageAlt": "Formulário de criação de app do Feishu com o nome, o ícone e o botão Criar destacados",
+          "title": "Criar um app do tipo Agent"
+        },
+        "credentials": {
+          "appId": "ID do app",
+          "appSecret": "Segredo do app",
+          "description": "Copie o ID e o segredo do app em Credentials & Basic Information.",
+          "imageAlt": "Resultado da criação do app do Feishu mostrando onde encontrar o App ID e o App Secret",
+          "title": "Adicionar as credenciais do app"
+        },
+        "defaultAgent": "Agente padrão",
+        "defaultAgentAria": "Agente padrão para {{appId}}",
+        "developerConsole": "console de desenvolvedor do Lark",
+        "dialogAdminRequired": "Um administrador da organização deve configurar o app. Você poderá conectar sua própria conta pela lista de bots do Lark após a conclusão da configuração.",
+        "documentTitle": "Lark",
+        "emptyAdmin": "Adicione um app personalizado para encaminhar mensagens do Lark a um agente.",
+        "emptyMember": "Peça a um administrador da organização para adicionar um bot do Lark.",
+        "emptyTitle": "Ainda não há bots do Lark",
+        "events": {
+          "callbackLabel": "URL de callback",
+          "continue": "Continue depois que o Lark verificar a URL de callback e o evento de mensagem estiver inscrito.",
+          "description": "Abra Event Configuration. Em Subscription mode, selecione “Send notifications to developer's server”. Depois, abra Callback Configuration e cole a URL de callback. Após a verificação do Lark, adicione o evento “Receive message v1”.",
+          "requestAlt": "Tela Event Configuration do Feishu com o campo Request URL destacado",
+          "requestLabel": "Adicionar a URL de solicitação de callback",
+          "subscriptionAlt": "Tela Event Configuration do Feishu com o controle de edição do modo de inscrição destacado",
+          "subscriptionLabel": "Selecionar o modo de inscrição de eventos",
+          "title": "Configurar a entrega de eventos"
+        },
+        "faq": {
+          "approvalAnswer": "Se a disponibilidade estiver definida como All members, um administrador do Lark deverá aprovar a versão. O Lark envia a solicitação de aprovação a um administrador por mensagem direta, e o app permanece pendente até a conclusão da revisão.",
+          "approvalQuestion": "Por que a publicação do app está aguardando aprovação?",
+          "botFeatureAnswer": "Abra Features → Add Features no console de desenvolvedor do Lark. Em By Feature, adicione o recurso Bot, depois continue este guia e publique o app. Apps do tipo Agent incluem o recurso Bot por padrão.",
+          "botFeatureImageAlt": "Console de desenvolvedor do Lark mostrando o recurso Bot em Add Features",
+          "botFeatureQuestion": "E se eu escolhi Custom App em vez de Agent?",
+          "challengeAnswer": "Isso geralmente significa que o Encrypt Key ou o Verification Token salvo na etapa Tokens está incorreto. Volte à etapa Tokens, insira novamente os dois valores de Event Configuration → Encryption Strategy, salve-os e tente a Request URL outra vez.",
+          "challengeQuestion": "Por que o Lark mostra \"Challenge code didn't get a response\"?",
+          "title": "Perguntas frequentes sobre a configuração"
+        },
+        "guideReference": "As capturas mostram o console do Feishu como referência. Siga estas etapas no console de desenvolvedores do Lark.",
+        "loadError": "Não foi possível carregar as configurações do Lark.",
+        "manage": "Gerenciar",
+        "manageDialogTitle": "Gerenciar bot do Lark",
+        "moreOptions": "Mais opções para {{bot}}",
+        "pageDescription": "Gerencie o encaminhamento dos bots neste workspace",
+        "permissions": {
+          "description": "No console de desenvolvedor do Lark, abra Permissions & Scopes, escolha Batch Import/Export > Import e cole o JSON abaixo. Ele inclui permissões de identidade do app para o bot e de identidade do usuário para sua conta conectada.",
+          "hint": "Mantenha todas as permissões importadas das duas identidades e crie e publique uma nova versão do app. A aprovação de um administrador do Lark pode ser necessária.",
+          "label": "JSON de escopos do app e do usuário",
+          "menuAlt": "Página Permissões e escopos do Feishu com o menu de importação/exportação em lote de escopos destacado",
+          "menuLabel": "Abrir importação/exportação em lote de escopos",
+          "reviewAlt": "Caixa de diálogo de importação/exportação em lote de escopos do Feishu com o JSON importado e o botão de revisão destacado",
+          "reviewLabel": "Colar o JSON e revisar os novos escopos",
+          "title": "Importar escopos do app e do usuário"
+        },
+        "publish": {
+          "allMembersAlt": "Configurações de disponibilidade do Feishu com All members selecionado",
+          "allMembersLabel": "Disponibilizar o app para todos os membros",
+          "createVersionAlt": "Página Version Management do Feishu com o botão Create a version destacado",
+          "createVersionLabel": "Criar uma versão do app",
+          "description": "Crie e publique uma versão do app, edite as configurações de disponibilidade e selecione All members. Outros membros da organização só poderão usar o app depois que você conceder acesso.",
+          "editAvailabilityAlt": "Página de detalhes da versão do Feishu com a ação de editar as configurações de disponibilidade destacada",
+          "editAvailabilityLabel": "Editar as configurações de disponibilidade",
+          "title": "Publicar o app"
+        },
+        "redirect": {
+          "descriptionAfter": ", abra Development Configuration → Security Settings. Adicione a URL abaixo em Redirect URLs para que os membros do workspace conectem suas contas do Lark ao {{brandName}}.",
+          "descriptionBefore": "No ",
+          "imageAlt": "Página Security Settings do Feishu mostrando onde adicionar uma URL de redirecionamento OAuth",
+          "label": "URL de redirecionamento OAuth",
+          "title": "Configurar a URL de redirecionamento OAuth"
+        },
+        "reviewGuide": "Revisar guia",
+        "reviewGuideDescription": "Revise as etapas concluídas da configuração deste bot do Lark.",
+        "reviewGuideTitle": "Guia de revisão do Lark",
+        "routeDescription": "Encaminhe mensagens do Lark para agentes",
+        "selectAgent": "Selecionar um agente",
+        "setupIncomplete": "Configuração incompleta",
+        "steps": {
+          "back": "Voltar",
+          "checking": "Verificando…",
+          "close": "Fechar",
+          "create": "Criar",
+          "credentials": "Credenciais",
+          "done": "Concluído",
+          "events": "Eventos",
+          "next": "Avançar",
+          "permissions": "Escopos",
+          "publish": "Publicar",
+          "redirect": "Redirecionar",
+          "tokens": "Tokens",
+          "verify": "Verificar e continuar",
+          "verifying": "Verificando…",
+          "waiting": "Aguardando callback"
+        },
+        "toasts": {
+          "botInstalled": "Bot do Lark instalado com sucesso",
+          "botUninstalled": "Bot do Lark desinstalado",
+          "connected": "Lark conectado com sucesso",
+          "disconnected": "Desconectado do Lark"
+        },
+        "tokens": {
+          "descriptionAfter": ", selecione o app que você acabou de criar e abra sua página de configuração. Acesse Event Configuration → Encryption Strategy e copie o Encrypt Key e o Verification Token.",
+          "descriptionBefore": "Abra o ",
+          "encryptKey": "Chave de criptografia",
+          "imageAlt": "Tela Encryption Strategy do Feishu mostrando o Encrypt Key e o Verification Token",
+          "title": "Adicionar os tokens de verificação de eventos",
+          "verificationToken": "Token de verificação"
+        },
+        "uninstallDescription": "Isso desinstala {{bot}} do workspace e desconecta todas as contas do {{brandName}} que o utilizam. Esta ação não pode ser desfeita.",
+        "uninstallTargetFallback": "este bot",
+        "uninstallTitle": "Desinstalar o bot do Lark?"
       },
       "telegram": {
         "addBot": "Adicionar bot",
@@ -3815,10 +3965,6 @@
       "toasts": {
         "agentphoneConnected": "AgentPhone conectado",
         "agentphoneDisconnected": "AgentPhone desconectado",
-        "feishuBotInstalled": "Bot do Feishu instalado com sucesso",
-        "feishuBotUninstalled": "Bot do Feishu desinstalado",
-        "feishuConnected": "Feishu conectado com sucesso",
-        "feishuDisconnected": "Desconectado do Feishu",
         "slackConnected": "Slack conectado com sucesso",
         "slackDisconnected": "Desconectado do Slack",
         "slackInstalled": "Slack instalado com sucesso",
@@ -5261,6 +5407,31 @@
       "teamDescription": "Para equipes que executam o {{assistantName}} em escala."
     }
   },
+  "runErrors": {
+    "actions": {
+      "addCredits": "Adicionar créditos",
+      "openModelProviders": "Abrir provedores de modelos",
+      "reconnectClaude": "Reconectar o Claude Code",
+      "shareWithAdmin": "Compartilhar com um administrador"
+    },
+    "anthropicKeyAdmin": "O Claude Code não conseguiu autenticar com a chave de API da Anthropic configurada. Atualize ou substitua a chave de API em Provedores de modelos e tente novamente.",
+    "anthropicKeyMember": "O Claude Code não conseguiu autenticar com a chave de API da Anthropic configurada. Peça a um administrador do espaço de trabalho para atualizar ou substituir a chave de API.",
+    "askAdmin": "Peça a um administrador do espaço de trabalho para adicionar créditos ou fazer upgrade do plano.",
+    "claudeReconnect": "A autenticação da assinatura do Claude Code falhou. Reconecte o Claude Code em Provedores de modelos e tente novamente.",
+    "claudeTerms": "O Claude Code exige a aceitação dos Termos de Uso e da Política de Privacidade atualizados. Entre em https://claude.ai com a conta Claude conectada em Provedores de modelos, aceite as atualizações e tente novamente.",
+    "codexOverloaded": "O modelo selecionado atingiu a capacidade. Tente outro modelo.",
+    "codexReconnect": "A sessão do ChatGPT precisa ser reconectada. Reconecte o ChatGPT (Codex) em Provedores de modelos e tente novamente.",
+    "contentPolicyRejected": "O provedor do modelo rejeitou esta solicitação devido à sua política de segurança de conteúdo. Tentar novamente com a mesma entrada falhará. Reformule a solicitação, inicie uma nova conversa ou mude de modelo.",
+    "executionTimeout": "Esta execução atingiu o limite de tempo.",
+    "failed": "Falha na execução",
+    "modelRoutesUnavailable": "Todas as rotas integradas deste modelo estão temporariamente indisponíveis. Tente novamente mais tarde.",
+    "modelTemporarilyUnavailable": "Modelo temporariamente indisponível",
+    "modelUnavailable": "O modelo atual não está disponível.",
+    "overloaded": "{{model}} está sobrecarregado. Aguarde alguns minutos e tente novamente ou mude para outro modelo.",
+    "providerBalance": "O saldo da sua conta do provedor de modelos conectado é insuficiente.",
+    "transient": "Ocorreu um erro. Tente novamente mais tarde.",
+    "vm0Credits": "Créditos insuficientes. Adicione créditos ou configure sua própria chave de API para continuar."
+  },
   "serviceStatus": {
     "dismiss": "Dispensar atualização de serviço",
     "label": "Atualizações de status do serviço",
@@ -5535,7 +5706,11 @@
         "categoryImage": "Imagem",
         "categoryVideo": "Vídeo",
         "chatModels": "Modelos de chat",
-        "effort": "Esforço de raciocínio",
+        "effort": "Esforço",
+        "effortScale": {
+          "faster": "Mais rápido",
+          "smarter": "Mais inteligente"
+        },
         "fast": "Rápido",
         "fastImpact": {
           "apiCost": "2× o custo de tokens da API",
@@ -5559,10 +5734,8 @@
         "loadError": "Não foi possível carregar os modelos.",
         "loading": "Carregando modelos...",
         "menu": {
-          "adjustSettings": "Ajustar configurações de {{model}}",
           "backToModels": "Voltar aos modelos",
-          "changeModel": "Alterar modelo de {{category}}, {{model}}",
-          "chatSettings": "Configurações de chat"
+          "changeModel": "Alterar modelo de {{category}}, {{model}}"
         },
         "models": "Modelos",
         "noConfiguredModels": "Nenhum modelo configurado",
@@ -5680,8 +5853,8 @@
             "cottonSky": "Cotton sky",
             "daydream": "Daydream",
             "deepLagoon": "Deep lagoon",
-            "goldenHour": "Golden hour",
-            "limelight": "Limelight"
+            "default": "Padrão",
+            "goldenHour": "Golden hour"
           },
           "title": "Tema de cores"
         },
@@ -5827,7 +6000,6 @@
         "loading": "Carregando as configurações do Morning Brief...",
         "missingDefaultAgent": "Escolha um Agent padrão utilizável antes de ativar o Morning Brief.",
         "missingTimezone": "Defina um fuso horário válido antes de ativar o Morning Brief.",
-        "multipleInstallations": "Existem várias instalações do Morning Brief. Resolva o conflito antes de alterar esta preferência.",
         "nextBrief": "Próximo resumo {{date}} ({{timezone}})",
         "paused": "Pausado",
         "preparationFailed": "A configuração será tentada novamente automaticamente. Você também pode tentar agora.",
@@ -6066,7 +6238,46 @@
     "cancel": "Cancelar",
     "chooseFile": "Escolher arquivo",
     "choosePrivateKeyFile": "Escolher arquivo de chave privada",
+    "cloudflare": {
+      "add": "Adicionar configuração do Access",
+      "changed": "Esta configuração do Access mudou durante a edição. Revise as configurações mais recentes antes de salvar.",
+      "clientId": "ID do cliente do Service Token",
+      "clientSecret": "Segredo do cliente do Service Token",
+      "configuration": "Configuração do Access",
+      "createNew": "Criar nova configuração",
+      "delete": "Excluir configuração",
+      "deleteHelp": "Excluir esta configuração do Access não utilizada? O Service Token salvo não poderá ser recuperado.",
+      "direct": "Direta",
+      "edit": "Editar configuração do Access",
+      "empty": "Nenhuma configuração do Access ainda. Adicione um Service Token para conectar hosts SSH protegidos pelo Cloudflare Access.",
+      "inUse": "Um host usa esta configuração do Access. Revise os hosts afetados e altere a configuração deles ou exclua-os primeiro.",
+      "inUseHelp": "Selecione outra configuração do Access para esses hosts, mude-os explicitamente para Direta ou exclua-os antes de excluir esta configuração.",
+      "keepChanges": "Aplicar minhas alterações a esta versão",
+      "latest": "Últimas configurações salvas",
+      "loadFailed": "Não foi possível carregar as configurações do Access. Tente novamente.",
+      "loading": "Carregando configurações do Access…",
+      "missing": "Esta configuração do Access não está mais disponível. Selecione outra ou crie uma.",
+      "mode": "Conexão",
+      "name": "Nome da configuração",
+      "protectedHost": "Cloudflare Access · {{name}}",
+      "publishedHost": "Nome de host publicado",
+      "replace": "Substituir Service Token",
+      "reviewHelp": "Seu rascunho foi preservado. Confirme as últimas configurações salvas antes de aplicar suas alterações.",
+      "select": "Selecione uma configuração",
+      "summary_one": "{{count}} configuração do Access definida",
+      "summary_many": "{{count}} configurações do Access definidas",
+      "summary_other": "{{count}} configurações do Access definidas",
+      "title": "Cloudflare Access",
+      "tokenHelp": "Use um Service Token permitido pela política Service Auth do aplicativo SSH. Ele é separado das suas credenciais SSH.",
+      "unavailable": "Cloudflare Access não está disponível para esta conta.",
+      "usedBy_one": "Usada por {{count}} host:",
+      "usedBy_many": "Usada por {{count}} hosts:",
+      "usedBy_other": "Usada por {{count}} hosts:"
+    },
     "connectionStatus": {
+      "accessProtocolFailure": "O Cloudflare Access não estabeleceu um túnel SSH. Verifique o nome do host publicado e o roteamento do Tunnel.",
+      "accessRejected": "O Cloudflare Access rejeitou a conexão. Verifique o token de serviço e a política Service Auth do aplicativo.",
+      "accessTlsFailure": "Não foi possível verificar a conexão segura com o Cloudflare Access. Verifique o nome do host e o certificado TLS.",
       "attention_one": "{{count}} host SSH precisa de atenção",
       "attention_many": "{{count}} hosts SSH precisam de atenção",
       "attention_other": "{{count}} hosts SSH precisam de atenção",
@@ -6097,6 +6308,7 @@
       "name": "Nome da credencial",
       "password": "Senha",
       "replaceAuthentication": "Substituir autenticação",
+      "select": "Selecionar uma credencial",
       "sharedHelp_one": "As alterações de login se aplicam a {{count}} host:",
       "sharedHelp_many": "As alterações de login se aplicam a todos os {{count}} hosts:",
       "sharedHelp_other": "As alterações de login se aplicam a todos os {{count}} hosts:",
@@ -6112,12 +6324,12 @@
     "description": "Configure hosts SSH para seus agentes executarem comandos remotos.",
     "displayName": "Nome de exibição",
     "edit": "Editar host",
-    "editHelp": "Selecionar outra credencial altera apenas este host. Alterar o endereço ou a porta limpa a chave de host aprendida.",
+    "editHelp": "Selecionar outra credencial altera apenas este host. Alterações no destino direto apagam a chave de host aprendida; alterações envolvendo Cloudflare Access a preservam.",
     "empty": "Nenhum host SSH configurado. Adicione um host para disponibilizá-lo aos Agents com acesso SSH.",
     "errors": {
       "agentUnavailable": "Este agente não está mais disponível. Escolha outro agente.",
-      "configurationChanged": "Este host mudou durante a edição. A lista foi atualizada. Abra o host novamente e revise as configurações atuais antes de salvar.",
-      "credentialChanged": "Esta credencial foi alterada. Abra-a novamente e revise as configurações e os hosts afetados antes de salvar.",
+      "configurationChanged": "Este host mudou durante a edição. Seu rascunho foi preservado. Revise as configurações mais recentes antes de aplicar suas alterações.",
+      "credentialChanged": "Esta credencial mudou enquanto você a editava. Seu rascunho foi preservado. Revise as configurações mais recentes e os hosts afetados antes de salvar.",
       "credentialInUse": "Esta credencial está em uso. Selecione outra para os hosts ou exclua esses hosts primeiro.",
       "credentialUnavailable": "Esta credencial SSH não está mais disponível. Selecione outra ou crie uma nova.",
       "failed": "Não foi possível salvar a alteração SSH. Tente novamente.",
@@ -6146,12 +6358,49 @@
     "resetHelp": "Redefina somente após verificar de forma independente a nova identidade do servidor. A próxima conexão confiará em uma nova chave de host e a armazenará.",
     "retry": "Tentar novamente",
     "save": "Salvar",
+    "saveRecovery": {
+      "resourceIdConflict": "Este ID de recurso não pode ser usado. Feche e reabra o formulário para tentar novamente.",
+      "uncertain": "Não foi possível confirmar se as alterações foram salvas. Tente salvar o mesmo conteúdo novamente ou feche e confira a lista antes de adicioná-las de novo."
+    },
     "summary_one": "{{count}} host configurado",
     "summary_many": "{{count}} hosts configurados",
     "summary_other": "{{count}} hosts configurados",
     "title": "Hosts SSH",
     "unavailable": "O acesso SSH não está disponível para esta conta.",
     "username": "Nome de usuário SSH"
+  },
+  "templates": {
+    "actions": {
+      "delete": "Excluir",
+      "menu": "Ações para {{title}}",
+      "preview": "Visualizar {{title}}",
+      "rename": "Renomear modelo"
+    },
+    "custom": "Personalizados",
+    "detail": {
+      "back": "Modelos personalizados",
+      "page": "Página {{number}}",
+      "source_one": "{{count}} página · de {{filename}}",
+      "source_many": "{{count}} páginas · de {{filename}}",
+      "source_other": "{{count}} páginas · de {{filename}}",
+      "sourceFile": "De {{filename}}"
+    },
+    "empty": {
+      "description": "O Okou transforma o design do seu arquivo em um modelo que você pode reutilizar."
+    },
+    "loadFailed": "Não foi possível carregar os modelos.",
+    "pageCount_one": "{{count}} página",
+    "pageCount_many": "{{count}} páginas",
+    "pageCount_other": "{{count}} páginas",
+    "retry": "Tentar novamente",
+    "sharedBy": "Compartilhado por {{owner}}",
+    "visibility": {
+      "change": "Alterar",
+      "organization": "Organização",
+      "organizationState": "Qualquer pessoa nesta organização pode usá-lo",
+      "private": "Privado",
+      "privateState": "Somente você pode vê-lo e usá-lo"
+    }
   },
   "usage": {
     "displayNames": {
@@ -6851,6 +7100,9 @@
       "noWorkflows": "Nenhum fluxo de trabalho",
       "open": "Abrir {{title}}",
       "openRecovery": "Abrir recuperação de {{title}}",
+      "ownerLoading": "Carregando autor…",
+      "ownerRetry": "Autor indisponível. Reabra para tentar novamente.",
+      "ownerUnavailable": "Autor indisponível",
       "runsAs": "Executado como",
       "runsAsAria": "Executado como {{agent}}",
       "section": {

@@ -1645,7 +1645,7 @@ describe("RUN-01: direct run admission boundaries", () => {
     await api.requestCancelRun(actor, accepted.body.runId, [200]);
   });
 
-  it("enforces direct-run concurrency, caps, and the production capture gate", async () => {
+  it("enforces direct-run concurrency until the cap is disabled", async () => {
     const actor = await entitledActor();
     const compose = await createClaudeAgent(actor, "bdd-admission");
 
@@ -1665,19 +1665,6 @@ describe("RUN-01: direct run admission boundaries", () => {
     expectApiError(limited.body);
     expect(limited.body.error.code).toBe("CONCURRENT_RUN_LIMIT");
 
-    const outsider = bdd.user();
-    const foreignCompose = await createClaudeAgent(outsider, "bdd-foreign");
-    const crossOrgCompose = await reads.requestCreateDirectRun(
-      actor,
-      {
-        agentId: foreignCompose.agentId,
-        prompt: "run a foreign compose",
-      },
-      [404],
-    );
-    expectApiError(crossOrgCompose.body);
-    expect(crossOrgCompose.body.error.message).toBe("Resource not found");
-
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "0");
     const uncapped = await reads.requestCreateDirectRun(
       actor,
@@ -1690,7 +1677,39 @@ describe("RUN-01: direct run admission boundaries", () => {
     await api.requestCancelRun(actor, uncapped.body.runId, [200]);
     await api.requestCancelRun(actor, first.runId, [200]);
     await api.requestCancelRun(actor, second.runId, [200]);
+  });
 
+  it("rejects a foreign agent before admitting a direct run", async () => {
+    const actor = await entitledActor();
+    const compose = await createClaudeAgent(actor, "bdd-admission");
+    const first = await api.createDirectRun(actor, {
+      agentId: compose.agentId,
+      prompt: "first concurrent run",
+    });
+    const second = await api.createDirectRun(actor, {
+      agentId: compose.agentId,
+      prompt: "second concurrent run",
+    });
+    const outsider = bdd.user();
+    const foreignCompose = await createClaudeAgent(outsider, "bdd-foreign");
+    const crossOrgCompose = await reads.requestCreateDirectRun(
+      actor,
+      {
+        agentId: foreignCompose.agentId,
+        prompt: "run a foreign compose",
+      },
+      [404],
+    );
+    expectApiError(crossOrgCompose.body);
+    expect(crossOrgCompose.body.error.message).toBe("Resource not found");
+    await api.requestCancelRun(actor, first.runId, [200]);
+    await api.requestCancelRun(actor, second.runId, [200]);
+  });
+
+  it("restricts production network-body capture to staff organizations", async () => {
+    const actor = await entitledActor();
+    const compose = await createClaudeAgent(actor, "bdd-admission");
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "0");
     mockEnv("ENV", "production");
     mockOptionalEnv("VERCEL_ENV", "preview");
     const legacyDomainActor = {

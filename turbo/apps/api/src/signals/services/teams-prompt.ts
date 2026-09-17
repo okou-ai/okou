@@ -3,7 +3,7 @@ import { CONVERSATION_GUIDANCE } from "../../lib/conversation-guidance";
 
 type TeamsPromptFile = Pick<
   ChatTeamsMessageFile,
-  "fileId" | "sourceId" | "name" | "contentType"
+  "fileId" | "sourceId" | "name" | "contentType" | "canonicalAsset"
 >;
 
 export function formatTeamsFileForContext(file: TeamsPromptFile): string {
@@ -24,7 +24,10 @@ export function appendTeamsFilesToPrompt(
 
   const fileContext = files
     .map((file) => {
-      return `[Web file] ${file.name} (${file.contentType})\n   [ID] ${file.fileId}`;
+      const asset = file.canonicalAsset;
+      return asset
+        ? `[Web file] ${asset.filename} (${asset.contentType})\n   [ID] ${asset.assetId}`
+        : formatTeamsFileForContext(file);
     })
     .join("\n");
   return [prompt, fileContext]

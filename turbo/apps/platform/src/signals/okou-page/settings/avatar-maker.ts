@@ -80,21 +80,12 @@ export const avatarMakerShuffling$ = computed((get) => {
   return get(internalShuffling$);
 });
 
-const internalSaving$ = state(false);
-export const avatarMakerSaving$ = computed((get) => {
-  return get(internalSaving$);
-});
-export const setAvatarMakerSaving$ = command(({ set }, value: boolean) => {
-  set(internalSaving$, value);
-});
-
 const releaseAvatarMakerSession$ = command(({ set }) => {
   set(internalDialogSignal$, null);
   set(internalOpen$, false);
   set(internalJustPicked$, null);
   set(internalShowSparkles$, false);
   set(internalShuffling$, false);
-  set(internalSaving$, false);
 });
 
 export const shuffleAvatar$ = command(async ({ set }, signal: AbortSignal) => {
@@ -135,7 +126,6 @@ export const openAvatarMaker$ = command(
     set(internalJustPicked$, null);
     set(internalShowSparkles$, false);
     set(internalShuffling$, false);
-    set(internalSaving$, false);
     set(internalOpen$, true);
   },
 );
@@ -178,3 +168,16 @@ export const closeAvatarMaker$ = command(({ set }) => {
   set(resetAvatarMakerDialogSignal$);
   set(releaseAvatarMakerSession$);
 });
+
+export const confirmAvatarMaker$ = command(
+  async (
+    { get, set },
+    onConfirm: (config: AvatarSvgConfig, signal: AbortSignal) => Promise<void>,
+    signal: AbortSignal,
+  ) => {
+    signal.throwIfAborted();
+    await onConfirm(get(avatarMakerConfig$), signal);
+    signal.throwIfAborted();
+    set(closeAvatarMaker$);
+  },
+);

@@ -1,10 +1,10 @@
-import { stopAndTranscribe$ } from "../voice-io/voice-io-stt.ts";
 import {
   createComposerTaskChipsSignals,
   type ComposerTaskChipsSignals,
 } from "./composer-task-chips.ts";
 import {
   createComposerVoiceInputSignals,
+  type ComposerVoiceInputOwner,
   type ComposerVoiceInputSignals,
 } from "./composer-voice-input.ts";
 import type {
@@ -13,7 +13,7 @@ import type {
   UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { VOICE_IO_POLISH_MAX_TEXT_CHARS } from "@okouai/api-contracts/contracts/voice-io-polish";
-import { INTRO_VIDEO_TEMPLATE_ID } from "@okouai/core/intro-video-template";
+import { generationTemplateKind } from "@okouai/core/generation-template-kind";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../../i18n/index.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -59,6 +59,7 @@ import {
 } from "./chat-composer.ts";
 import { videoRunOptionsForSend } from "./video-run-options.ts";
 import { buildComposerAdditionalInfo } from "./composer-additional-info.ts";
+import type { ComposerTaskSelection } from "./composer-task-handoff.ts";
 import {
   createImageAnnotationSignals,
   type ImageAnnotationSignals,
@@ -78,8 +79,8 @@ type ComposerEditorSignals = Pick<
   | "insertPromptMarkdown$"
   | "insertUserMessage$"
   | "insertText$"
-  | "appendText$"
   | "selectOrAppendText$"
+  | "replacePromptText$"
 > & {
   readonly singleLineOnMobile: boolean;
 };
@@ -124,6 +125,26 @@ export interface ComposerSubmission {
    * composers carry their settings in the message's additional_info part.
    */
   readonly videoRunOptions: ChatRunVideoOptionsRequest | undefined;
+  /**
+   * What the composer is set to make. A send inside a thread keeps it, so a
+   * send that creates one hands it to the thread it opens.
+   */
+  readonly taskSelection: ComposerTaskSelection;
+  /**
+   * Leave the member where they are rather than opening the thread this
+   * submission creates.
+   *
+   * A submission the member typed is the thing they want to watch, so the
+   * default is to follow it. One made on their behalf by a surface they are
+   * still using — a template upload started from the picker — is not, and
+   * pulling them out of that surface takes away the work they were doing.
+   */
+  readonly stayOnPage: boolean;
+}
+
+/** How a submission is delivered, as distinct from what it contains. */
+interface ComposerSubmissionOptions {
+  readonly stayOnPage: boolean;
 }
 
 export type ComposerSubmissionAction = "send" | "queue";
@@ -231,7 +252,7 @@ interface ComposerSubmissionSignals {
   readonly hasCurrentInvocation$: Computed<boolean>;
   readonly submitCurrentInput$: Command<
     Promise<boolean>,
-    [ComposerPrimaryAction, AbortSignal]
+    [ComposerPrimaryAction, ComposerSubmissionOptions, AbortSignal]
   >;
   readonly activatePrimaryAction$: Command<
     Promise<boolean>,
@@ -296,6 +317,7 @@ interface CreateComposerSignalsOptions {
   readonly voiceDraftTarget: string;
   readonly connector?: ComposerConnectorSignals;
   readonly singleLineOnMobile: boolean;
+  readonly forwardComposer?: boolean;
   readonly modelSelection$: ComposerModelSignals["modelSelection$"];
   readonly selectedModelOauthAvailable$: ComposerModelSignals["selectedModelOauthAvailable$"];
   readonly setModelSelection$: ComposerModelSignals["setModelSelection$"];
@@ -314,6 +336,12 @@ interface CreateComposerSignalsOptions {
   readonly cancellationRecoveryPending$: ComposerQueueSignals["cancellationRecoveryPending$"];
   readonly removeQueuedMessage$: ComposerQueueSignals["removeQueuedMessage$"];
   readonly removeAutomationEvent$: ComposerQueueSignals["removeAutomationEvent$"];
+}
+
+function forwardFeedbackPlaceholder(): string {
+  return i18n.t(($) => {
+    return $.chat.forward.composerPlaceholder;
+  });
 }
 
 function createComposerFileInputSignals() {
@@ -345,8 +373,8 @@ function composerEditorSignals(
     insertPromptMarkdown$: composer.insertPromptMarkdown$,
     insertUserMessage$: composer.insertUserMessage$,
     insertText$: composer.insertText$,
-    appendText$: composer.appendText$,
     selectOrAppendText$: composer.selectOrAppendText$,
+    replacePromptText$: composer.replacePromptText$,
   };
 }
 
@@ -522,7 +550,6 @@ function createComposerVoiceInput(
     },
   );
   return createComposerVoiceInputSignals(
-    workflowComposer.appendText$,
     deliverText$,
     workflowComposer.readVoiceContext$,
     lastAssistantMessage$,
@@ -548,6 +575,9 @@ export function createComposerSignals(
     agentId$,
     {
       autoFocus: true,
+      ...(options.forwardComposer
+        ? { feedbackPlaceholder: forwardFeedbackPlaceholder }
+        : {}),
     },
     feedback,
   );
@@ -557,7 +587,7 @@ export function createComposerSignals(
   });
   const taskChips = createComposerTaskChipsSignals(create, {
     insertTemplate$: workflowComposer.insertTemplate$,
-    insertPrompt$: workflowComposer.selectOrAppendText$,
+    insertPrompt$: workflowComposer.replacePromptText$,
     openTemplatePicker$: workflowComposer.openTemplatePicker$,
     focusEditor$: workflowComposer.focus$,
     saveDraft$: options.draft.save$,
@@ -768,8 +798,8 @@ function createComposerChatEventSignals(chatEvents$: Computed<ChatEvent[]>) {
 
 /**
  * Resolved at send rather than held settled, so the parameters follow a video
- * model the user changed after setting them. Nothing is sent when the run
- * would use that model's defaults anyway.
+ * model the user changed after setting them. Creative Video sends every
+ * displayed parameter, including the model's defaults.
  */
 function createVideoRunOptionsSignal(
   videoModel: ComposerVideoModelSignals | undefined,
@@ -780,9 +810,6 @@ function createVideoRunOptionsSignal(
       return undefined;
     }
     const patch = get(videoOptions.videoRunOptions$);
-    if (Object.keys(patch).length === 0) {
-      return undefined;
-    }
     const model = await get(videoModel.effectiveVideoModel$);
     signal.throwIfAborted();
     return videoRunOptionsForSend(patch, model);
@@ -850,14 +877,13 @@ function createSubmitCurrentInput({
     async (
       { get, set },
       action: ComposerPrimaryAction,
+      submissionOptions: ComposerSubmissionOptions,
       signal: AbortSignal,
     ): Promise<boolean> => {
       signal.throwIfAborted();
       if (action !== "send" && action !== "queue") {
         return false;
       }
-      await set(stopAndTranscribe$, signal);
-      signal.throwIfAborted();
       if (!get(draft.attachmentUploadsReady$)) {
         return false;
       }
@@ -879,8 +905,7 @@ function createSubmitCurrentInput({
           message?.parts.some((part) => {
             return (
               part.type === "template" &&
-              part.template.type === "video" &&
-              part.template.selection.stylePresetId === INTRO_VIDEO_TEMPLATE_ID
+              generationTemplateKind(part.template) === "intro-video"
             );
           })
         ) {
@@ -900,10 +925,9 @@ function createSubmitCurrentInput({
         return false;
       }
       const mode = get(create.mode$);
-      const videoRunOptions =
-        mode !== null && mode !== "video"
-          ? undefined
-          : await set(readVideoRunOptions$, signal);
+      const videoRunOptions = get(create.creativeVideo$)
+        ? await set(readVideoRunOptions$, signal)
+        : undefined;
       signal.throwIfAborted();
       // Keep the new persisted part within the existing Create rollout.
       const additionalInfo = get(create.enabled$)
@@ -924,7 +948,7 @@ function createSubmitCurrentInput({
             additionalInfo,
           )
         : submission.editorDocument;
-      return await set(
+      const submitted = await set(
         options.submitMessage$,
         action,
         {
@@ -932,9 +956,19 @@ function createSubmitCurrentInput({
           generationTemplate: get(draft.generationTemplate$),
           editorDocument,
           videoRunOptions: additionalInfo ? undefined : videoRunOptions,
+          taskSelection: {
+            task: get(taskChips.task$) ?? mode,
+            presentationSlideCount: get(create.presentationSlideCount$),
+            visualization: get(taskChips.visualization.preferences$),
+          },
+          stayOnPage: submissionOptions.stayOnPage,
         },
         signal,
       );
+      if (submitted) {
+        set(videoOptions.resetVideoRunOptions$);
+      }
+      return submitted;
     },
   );
 }
@@ -956,7 +990,7 @@ function createComposerSubmissionSignals(
 ) {
   const { state$: voiceState$, owner$ } = voice;
   const invocation$ = state<{
-    readonly owner: AbortController;
+    readonly owner: ComposerVoiceInputOwner;
     readonly action: ComposerPrimaryAction;
   } | null>(null);
   const hasCurrentInvocation$ = computed((get) => {
@@ -993,7 +1027,14 @@ function createComposerSubmissionSignals(
         await set(options.cancelRun$, signal);
         return true;
       }
-      return await set(submitCurrentInput$, action, signal);
+      // The member pressed the button, so the thread this opens is the thing
+      // they are waiting for.
+      return await set(
+        submitCurrentInput$,
+        action,
+        { stayOnPage: false },
+        signal,
+      );
     },
   );
 

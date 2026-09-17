@@ -142,7 +142,7 @@ export const watchSlackConnection$ = command(
     signal.throwIfAborted();
     set(internalSlackStatus$, current);
 
-    await set(
+    set(
       setAblyLoop$,
       {
         topic: "slack:changed",

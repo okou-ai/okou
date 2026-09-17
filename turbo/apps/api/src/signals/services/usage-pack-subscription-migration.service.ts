@@ -39,6 +39,7 @@ import {
   type StripeSubscriptionUpdateItemParam,
 } from "../external/stripe-client";
 import { lockUsagePackBillingOrg } from "./usage-pack-allocation-change.service";
+import { writeUsagePackPendingSnapshots } from "./usage-pack-pending-snapshot.service";
 import type { BillingReconciliationScope } from "./billing-reconciliation-scope";
 import {
   handleUsagePackInvoicePaid,
@@ -1646,65 +1647,76 @@ async function materializeUsagePackSnapshot(
 ): Promise<void> {
   await db.transaction(async (tx) => {
     await lockUsagePackBillingOrg(tx, migration.orgId);
-    const [locked] = await tx
-      .select()
-      .from(usagePackSubscriptionMigrations)
-      .where(eq(usagePackSubscriptionMigrations.id, migration.id))
-      .for("update")
-      .limit(1);
-    if (!locked || locked.status === "failed") {
-      throw new Error(`Usage pack migration ${migration.id} is not active`);
-    }
-    const [existing] = await tx
-      .select()
-      .from(usagePackSubscriptions)
-      .where(eq(usagePackSubscriptions.id, migration.id))
-      .limit(1);
-    if (!existing) {
-      await tx.insert(usagePackSubscriptions).values({
-        id: migration.id,
-        orgId: migration.orgId,
-        tier: migration.targetTier,
-        stripePlanPriceId: migration.stripePlanPriceId,
-        stripeCustomerId: migration.stripeCustomerId,
-        stripeSubscriptionId: migration.stripeSubscriptionId,
-        subscriptionStatus: subscription.status,
-        cancelAtPeriodEnd: subscription.cancel_at_period_end,
-      });
-      if (selections.length > 0) {
-        await tx.insert(usagePackAllocations).values(
-          selections.map((selection) => {
-            return {
-              usagePackSubscriptionId: migration.id,
-              orgId: migration.orgId,
-              userId: selection.userId,
-              invitationId: selection.invitationId,
-              usagePackUsd: selection.usagePackUsd,
-              stripePriceId: selection.stripePriceId,
-              status: "pending_payment" as const,
-            };
-          }),
-        );
-      }
-      return;
-    }
-    if (
-      existing.orgId !== migration.orgId ||
-      existing.stripeCustomerId !== migration.stripeCustomerId ||
-      existing.stripeSubscriptionId !== migration.stripeSubscriptionId ||
-      existing.stripePlanPriceId !== migration.stripePlanPriceId
-    ) {
-      throw new Error(`Usage pack migration ${migration.id} snapshot changed`);
-    }
-    const allocations = await tx
-      .select({ id: usagePackAllocations.id })
-      .from(usagePackAllocations)
-      .where(eq(usagePackAllocations.usagePackSubscriptionId, migration.id));
-    if (allocations.length !== selections.length) {
-      throw new Error(
-        `Usage pack migration ${migration.id} allocations changed`,
-      );
-    }
+    await writeUsagePackPendingSnapshots(
+      tx,
+      [migration.orgId],
+      async (tx) => {
+        const [locked] = await tx
+          .select()
+          .from(usagePackSubscriptionMigrations)
+          .where(eq(usagePackSubscriptionMigrations.id, migration.id))
+          .for("update")
+          .limit(1);
+        if (!locked || locked.status === "failed") {
+          throw new Error(`Usage pack migration ${migration.id} is not active`);
+        }
+        const [existing] = await tx
+          .select()
+          .from(usagePackSubscriptions)
+          .where(eq(usagePackSubscriptions.id, migration.id))
+          .limit(1);
+        if (!existing) {
+          await tx.insert(usagePackSubscriptions).values({
+            id: migration.id,
+            orgId: migration.orgId,
+            tier: migration.targetTier,
+            stripePlanPriceId: migration.stripePlanPriceId,
+            stripeCustomerId: migration.stripeCustomerId,
+            stripeSubscriptionId: migration.stripeSubscriptionId,
+            subscriptionStatus: subscription.status,
+            cancelAtPeriodEnd: subscription.cancel_at_period_end,
+          });
+          if (selections.length > 0) {
+            await tx.insert(usagePackAllocations).values(
+              selections.map((selection) => {
+                return {
+                  usagePackSubscriptionId: migration.id,
+                  orgId: migration.orgId,
+                  userId: selection.userId,
+                  invitationId: selection.invitationId,
+                  usagePackUsd: selection.usagePackUsd,
+                  stripePriceId: selection.stripePriceId,
+                  status: "pending_payment" as const,
+                };
+              }),
+            );
+          }
+          return;
+        }
+        if (
+          existing.orgId !== migration.orgId ||
+          existing.stripeCustomerId !== migration.stripeCustomerId ||
+          existing.stripeSubscriptionId !== migration.stripeSubscriptionId ||
+          existing.stripePlanPriceId !== migration.stripePlanPriceId
+        ) {
+          throw new Error(
+            `Usage pack migration ${migration.id} snapshot changed`,
+          );
+        }
+        const allocations = await tx
+          .select({ id: usagePackAllocations.id })
+          .from(usagePackAllocations)
+          .where(
+            eq(usagePackAllocations.usagePackSubscriptionId, migration.id),
+          );
+        if (allocations.length !== selections.length) {
+          throw new Error(
+            `Usage pack migration ${migration.id} allocations changed`,
+          );
+        }
+      },
+      [migration.id],
+    );
   });
 }
 

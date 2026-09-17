@@ -6,6 +6,7 @@ export function logDetailRunSelection() {
     completedAt: agentRuns.completedAt,
     createdAt: agentRuns.createdAt,
     error: agentRuns.error,
+    failureReason: agentRuns.failureReason,
     id: agentRuns.id,
     launchSnapshot: agentRuns.launchSnapshot,
     prompt: agentRuns.prompt,

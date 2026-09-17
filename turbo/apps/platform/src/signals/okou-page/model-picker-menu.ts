@@ -6,8 +6,7 @@ type ModelPickerCategory = "chat" | "image" | "video";
 
 type ModelPickerMenuPage =
   | { readonly kind: "overview" }
-  | { readonly kind: "models"; readonly category: ModelPickerCategory }
-  | { readonly kind: "settings" };
+  | { readonly kind: "models"; readonly category: ModelPickerCategory };
 
 /** Which side of the root panel the flyout has room to open towards. */
 type ModelPickerFlyoutSide = "left" | "right";
@@ -36,9 +35,6 @@ export function createModelPickerMenuSignals() {
   });
   const showModels$ = command(({ set }, category: ModelPickerCategory) => {
     set(internalPage$, { kind: "models", category });
-  });
-  const editSettings$ = command(({ set }) => {
-    set(internalPage$, { kind: "settings" });
   });
   const focusPanelRef$ = onRef(
     command((_context, element: HTMLElement, _signal: AbortSignal) => {
@@ -149,7 +145,6 @@ export function createModelPickerMenuSignals() {
     page$,
     reset$,
     showModels$,
-    editSettings$,
     focusPanelRef$,
     flyoutCategory$,
     setFlyoutCategory$,

@@ -1,3 +1,7 @@
+import {
+  FEISHU_PLATFORMS,
+  type FeishuPlatform,
+} from "@okouai/core/feishu-platform";
 import { createWriteStream } from "node:fs";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -7,6 +11,9 @@ import {
   integrationsFeishuUploadCompleteContract,
   integrationsFeishuUploadInitContract,
   integrationsFeishuMessageContract,
+  integrationsLarkMessageContract,
+  integrationsLarkUploadInitContract,
+  integrationsLarkUploadCompleteContract,
   type FeishuResourceType,
   type FeishuUploadCompleteBody,
   type FeishuUploadCompleteResponse,
@@ -31,40 +38,73 @@ interface DownloadFeishuFileResult {
   readonly size: number;
 }
 
-export async function sendFeishuMessage(
-  body: SendFeishuMessageBody,
-): Promise<SendFeishuMessageResponse> {
+export async function sendFeishuMessage({
+  platform = "feishu",
+  ...body
+}: SendFeishuMessageBody & {
+  readonly platform?: FeishuPlatform;
+}): Promise<SendFeishuMessageResponse> {
   const config = await getClientConfig();
-  const client = initClient(integrationsFeishuMessageContract, config);
+  const client = initClient(
+    platform === "lark"
+      ? integrationsLarkMessageContract
+      : integrationsFeishuMessageContract,
+    config,
+  );
   const result = await client.sendMessage({ body, headers: {} });
   if (result.status === 200) {
     return result.body;
   }
-  handleError(result, "Failed to send Feishu message");
+  handleError(
+    result,
+    `Failed to send ${FEISHU_PLATFORMS[platform].name} message`,
+  );
 }
 
-export async function initFeishuFileUpload(
-  body: FeishuUploadInitBody,
-): Promise<FeishuUploadInitResponse> {
+export async function initFeishuFileUpload({
+  platform = "feishu",
+  ...body
+}: FeishuUploadInitBody & {
+  readonly platform?: FeishuPlatform;
+}): Promise<FeishuUploadInitResponse> {
   const config = await getClientConfig();
-  const client = initClient(integrationsFeishuUploadInitContract, config);
+  const client = initClient(
+    platform === "lark"
+      ? integrationsLarkUploadInitContract
+      : integrationsFeishuUploadInitContract,
+    config,
+  );
   const result = await client.init({ body, headers: {} });
   if (result.status === 200) {
     return result.body;
   }
-  handleError(result, "Failed to initialize Feishu file upload");
+  handleError(
+    result,
+    `Failed to initialize ${FEISHU_PLATFORMS[platform].name} file upload`,
+  );
 }
 
-export async function completeFeishuFileUpload(
-  body: FeishuUploadCompleteBody,
-): Promise<FeishuUploadCompleteResponse> {
+export async function completeFeishuFileUpload({
+  platform = "feishu",
+  ...body
+}: FeishuUploadCompleteBody & {
+  readonly platform?: FeishuPlatform;
+}): Promise<FeishuUploadCompleteResponse> {
   const config = await getClientConfig();
-  const client = initClient(integrationsFeishuUploadCompleteContract, config);
+  const client = initClient(
+    platform === "lark"
+      ? integrationsLarkUploadCompleteContract
+      : integrationsFeishuUploadCompleteContract,
+    config,
+  );
   const result = await client.complete({ body, headers: {} });
   if (result.status === 200) {
     return result.body;
   }
-  handleError(result, "Failed to complete Feishu file upload");
+  handleError(
+    result,
+    `Failed to complete ${FEISHU_PLATFORMS[platform].name} file upload`,
+  );
 }
 
 export async function downloadFeishuFile(
@@ -73,6 +113,7 @@ export async function downloadFeishuFile(
   resourceType: FeishuResourceType,
   installationId: string | undefined,
   outPath: string,
+  platform: FeishuPlatform = "feishu",
 ): Promise<DownloadFeishuFileResult> {
   const baseUrl = await getBaseUrl();
   const token = await getActiveToken();
@@ -80,7 +121,7 @@ export async function downloadFeishuFile(
     throw new ApiRequestError("Not authenticated", "UNAUTHORIZED", 401);
   }
 
-  const url = new URL("/api/integrations/feishu/download-file", baseUrl);
+  const url = new URL(`/api/integrations/${platform}/download-file`, baseUrl);
   url.searchParams.set("message_id", messageId);
   url.searchParams.set("file_key", fileKey);
   url.searchParams.set("type", resourceType);
@@ -94,7 +135,7 @@ export async function downloadFeishuFile(
     headers: headersWithCliClientHeaders(headers),
   });
   if (!response.ok) {
-    let message = `Failed to download Feishu file (HTTP ${response.status})`;
+    let message = `Failed to download ${FEISHU_PLATFORMS[platform].name} file (HTTP ${response.status})`;
     let code = "UNKNOWN";
     try {
       const body = (await response.json()) as {
@@ -113,7 +154,7 @@ export async function downloadFeishuFile(
   }
   if (!response.body) {
     throw new ApiRequestError(
-      "Feishu download response has no body",
+      `${FEISHU_PLATFORMS[platform].name} download response has no body`,
       "EMPTY_BODY",
       502,
     );

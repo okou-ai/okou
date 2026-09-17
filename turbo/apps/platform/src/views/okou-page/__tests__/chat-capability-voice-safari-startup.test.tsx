@@ -1,5 +1,4 @@
 import { voiceIoQuotaContract } from "@okouai/api-contracts/contracts/voice-io-quota";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import * as timers from "signal-timers";
@@ -21,7 +20,6 @@ const SAFARI_MAC =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15";
 const SAFARI_IOS =
   "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1";
-const flags = { [FeatureSwitchKey.VoiceInputV2]: true } as const;
 
 vi.mock("signal-timers", async () => {
   return {
@@ -105,7 +103,7 @@ test.each([
         });
       },
     );
-    await setupPage({ context, path: RUN_PATH, featureSwitches: flags });
+    await setupPage({ context, path: RUN_PATH });
     click(await findEnabledButton("Voice input"));
     const emit = await connected.promise;
     await act(() => {
@@ -127,11 +125,15 @@ test.each([
     emit(openingAudio);
     const stop = await findEnabledButton("Stop recording");
     expect(deadline.signal.aborted).toBeTruthy();
+    const continuedAudio = new Float32Array(4096).fill(0.25);
+    emit(continuedAudio);
+    deadline.expire();
     click(stop);
     const samples = decodeVoiceDraftPcmWav(await uploaded.promise);
-    expect(samples).toHaveLength(12_288);
+    expect(samples).toHaveLength(16_384);
     expect(samples?.slice(0, 8192)).toStrictEqual(new Float32Array(8192));
-    expect(samples?.slice(8192)).toStrictEqual(openingAudio);
+    expect(samples?.slice(8192, 12_288)).toStrictEqual(openingAudio);
+    expect(samples?.slice(12_288)).toStrictEqual(continuedAudio);
     await findEnabledButton("Voice input");
   },
 );
@@ -139,7 +141,7 @@ test.each([
 test("Start Safari immediately when the first PCM batch contains any nonzero sample", async () => {
   const connected = installVoiceInput(SAFARI_MAC);
   const scheduled = holdStartupTimeout();
-  await setupPage({ context, path: RUN_PATH, featureSwitches: flags });
+  await setupPage({ context, path: RUN_PATH });
   click(await findEnabledButton("Voice input"));
   const emit = await connected.promise;
   const firstBatch = new Float32Array(4096);
@@ -154,7 +156,7 @@ test("Start Safari immediately when the first PCM batch contains any nonzero sam
 test("Start Safari when the five-second deadline expires even without further PCM", async () => {
   const connected = installVoiceInput(SAFARI_MAC);
   const scheduled = holdStartupTimeout();
-  await setupPage({ context, path: RUN_PATH, featureSwitches: flags });
+  await setupPage({ context, path: RUN_PATH });
   click(await findEnabledButton("Voice input"));
   const emit = await connected.promise;
   emit(new Float32Array(4096));
@@ -185,7 +187,7 @@ test.each([
   async ({ userAgent }) => {
     const connected = installVoiceInput(userAgent);
     const scheduled = holdStartupTimeout();
-    await setupPage({ context, path: RUN_PATH, featureSwitches: flags });
+    await setupPage({ context, path: RUN_PATH });
     click(await findEnabledButton("Voice input"));
     const emit = await connected.promise;
     emit(new Float32Array(4096));
@@ -210,14 +212,16 @@ test("Cancel Safari startup and its deadline when switching agents", async () =>
   const trackStopped = context.mocks.deferred<void>();
   const disconnected = context.mocks.deferred<void>();
   const portClosed = context.mocks.deferred<void>();
+  const contextClosed = context.mocks.deferred<void>();
   context.mocks.browser.voiceInput({
     rms: 0.12,
     onPcmCapture: connected.resolve,
     onTrackStop: trackStopped.resolve,
     onPcmDisconnect: disconnected.resolve,
     onPcmPortClose: portClosed.resolve,
+    onAudioContextClose: contextClosed.resolve,
   });
-  await setupPage({ context, path: NEW_CHAT_PATH, featureSwitches: flags });
+  await setupPage({ context, path: NEW_CHAT_PATH });
   click(await findEnabledButton("Voice input"));
   const emit = await connected.promise;
   emit(new Float32Array(4096));
@@ -227,6 +231,7 @@ test("Cancel Safari startup and its deadline when switching agents", async () =>
     trackStopped.promise,
     disconnected.promise,
     portClosed.promise,
+    contextClosed.promise,
   ]);
   await findEnabledButton("Voice input");
   expect(deadline.signal.aborted).toBeTruthy();

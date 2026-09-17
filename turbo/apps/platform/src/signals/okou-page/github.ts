@@ -68,8 +68,8 @@ const refreshGithubIntegrationFromChange$ = command(
 );
 
 export const watchGithubIntegration$ = command(
-  async ({ set }, signal: AbortSignal): Promise<void> => {
-    await set(
+  ({ set }, signal: AbortSignal): void => {
+    set(
       setAblyLoop$,
       {
         topic: "github:changed",

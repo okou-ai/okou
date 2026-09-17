@@ -158,11 +158,6 @@ impl SessionHistoryTelemetryMetadata {
         self
     }
 
-    pub(crate) fn without_response(mut self) -> Self {
-        self.response = None;
-        self
-    }
-
     pub(crate) fn encoding(self) -> &'static str {
         self.encoding
     }

@@ -2,7 +2,7 @@ import { Command } from "commander";
 import { z } from "zod";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { sessionRpc } from "./session-rpc";
-import { writeOutput } from "./rpc";
+import { createSessionReadCommand } from "./session-read";
 
 function id(value: string) {
   if (!z.uuid().safeParse(value).success)
@@ -24,7 +24,7 @@ async function output(
   switch (result.type) {
     case "started":
       console.log(
-        `${result.session_id}\nUse ssh session status to check setup, then read or write this session.`,
+        `${result.session_id}\nUse okou ssh session read ${result.session_id} to wait for the next output and inspect the observed state. Read or write this session again as needed.`,
       );
       break;
     case "sessions":
@@ -37,22 +37,6 @@ async function output(
           `${session.session_id}  ${session.ssh_connection_id}  ${session.state.type}`,
         );
       break;
-    case "read": {
-      const signal = AbortSignal.timeout(65_000);
-      if (result.lost)
-        console.error(
-          `Output bytes ${result.lost.from}–${result.lost.to} were discarded from the bounded buffer.`,
-        );
-      for (const chunk of result.chunks) {
-        const stream =
-          chunk.stream === "stdout" ? process.stdout : process.stderr;
-        await writeOutput(stream, Buffer.from(chunk.data, "base64"), signal);
-      }
-      console.error(
-        `next_cursor=${result.next_cursor}; state=${result.session.state.type}`,
-      );
-      break;
-    }
     case "status":
       console.log(JSON.stringify(result.session, null, 2));
       break;
@@ -85,9 +69,21 @@ async function output(
 }
 
 export function createSessionCommand(requireCapability: () => void) {
-  const session = new Command("session").description(
-    "Manage SSH commands and shells within the current Run (up to 8 retained sessions)",
-  );
+  const session = new Command("session")
+    .description(
+      "Manage SSH commands and shells within the current Run (up to 8 retained sessions)",
+    )
+    .addHelpText(
+      "after",
+      `
+Operational model:
+  - Start returns an ID before remote setup completes. Read for output and observed state; status is only one metadata snapshot.
+  - Read waits up to 10 seconds for progress by default. Follow next_command/next_cursor and respect lost ranges; avoid busy polling because only two reads per Run may wait concurrently.
+  - A successful read does not prove remote process success. Quiet wait expiry or read cancellation does not close the session.
+  - Recover admitted IDs with list after an uncertain start. Never automatically replay uncertain starts, writes, or signals.
+  - Include a newline when writing shell input. Closing retires Okou session state but does not prove a remote process stopped.
+  - Retained sessions belong to this Run and cannot be resumed from another Run.`,
+    );
   session.addCommand(
     new Command("start")
       .description(
@@ -98,6 +94,11 @@ export function createSessionCommand(requireCapability: () => void) {
       .option("--shell", "Start a persistent remote shell")
       .option("--pty", "Request an 80x24 xterm-256color terminal")
       .option("--json", "Print JSON")
+      .addHelpText(
+        "after",
+        `
+Start returns a session ID before remote setup completes; it is not proof that the command or shell started. Read the session for observed state and output. If admission is uncertain, recover IDs with okou ssh session list --json and never replay the start automatically.`,
+      )
       .action(
         withErrorHandler(
           async (
@@ -166,37 +167,7 @@ export function createSessionCommand(requireCapability: () => void) {
         ),
     );
   }
-  session.addCommand(
-    new Command("read")
-      .description(
-        "Read up to 8 KiB without consuming output; continue with next_cursor",
-      )
-      .argument("<session-id>", "Exact session ID")
-      .option("--cursor <offset>", "Nonnegative byte cursor", "0")
-      .option("--json", "Print JSON with base64 chunks and any lost range")
-      .action(
-        withErrorHandler(
-          async (
-            sessionId: string,
-            options: { cursor: string; json?: boolean },
-          ) => {
-            requireCapability();
-            const cursor = Number(options.cursor);
-            if (
-              !/^(0|[1-9][0-9]*)$/.test(options.cursor) ||
-              !Number.isSafeInteger(cursor)
-            )
-              throw new Error(
-                "Cursor must be a nonnegative safe integer from the previous read result.",
-              );
-            await output(
-              await sessionRpc("read", { sessionId: id(sessionId), cursor }),
-              options.json,
-            );
-          },
-        ),
-      ),
-  );
+  session.addCommand(createSessionReadCommand(requireCapability));
   session.addCommand(
     new Command("write")
       .description(
@@ -207,6 +178,13 @@ export function createSessionCommand(requireCapability: () => void) {
       .option("--base64 <data>", "Canonical base64 input")
       .option("--eof", "Close stdin after this input")
       .option("--json", "Print JSON")
+      .addHelpText(
+        "after",
+        `
+Shell input and recovery:
+  - For a persistent shell, terminate commands with an actual newline in --text (for Bash, --text $'whoami\\n'); the two characters \\ and n are not Enter.
+  - An uncertain write may already have had remote effects. Recover the exact session with okou ssh session list --json, then inspect okou ssh session status <session-id> --json and okou ssh session read <session-id> --json. Never automatically replay the input.`,
+      )
       .action(
         withErrorHandler(
           async (
@@ -252,6 +230,12 @@ export function createSessionCommand(requireCapability: () => void) {
       .argument("<session-id>", "Exact session ID")
       .requiredOption("--signal <signal>", "INT, TERM, KILL, HUP, USR1 or USR2")
       .option("--json", "Print JSON")
+      .addHelpText(
+        "after",
+        `
+Signal safety:
+  - Submission does not confirm remote handling or effects. After an uncertain outcome, inspect okou ssh session status <session-id> --json and okou ssh session read <session-id> --json. Never automatically replay the signal.`,
+      )
       .action(
         withErrorHandler(
           async (

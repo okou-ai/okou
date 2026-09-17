@@ -94,7 +94,12 @@ export const cronProjectChatEventSearchResponseSchema = z.object({
   indexedEvents: z.number(),
   deletedDocs: z.number(),
   orphanedThreads: z.number(),
+  /** Candidates denied by an account-erasure subject closure this tick. */
+  closedThreads: z.number().int().nonnegative(),
+  /** Candidates left for the next tick after a bounded lock or ownership race. */
+  deferredThreads: z.number().int().nonnegative(),
   convergence: z.object({
+    /** Threads with events whose canonical subjects are all still open. */
     eligibleThreads: z.number(),
     durableCaughtUpThreads: z.number(),
   }),
@@ -260,18 +265,16 @@ const cronRenewGoogleWorkspaceEventSubscriptionsResponseSchema = z.object({
   failed: z.number(),
 });
 
-const storagePresignedUrlRefreshResultSchema = z.object({
-  due: z.number(),
-  refreshed: z.number(),
+const storagePresignedUrlPruneResultSchema = z.object({
   pruned: z.number(),
 });
 
-const cronRefreshStoragePresignedUrlsResponseSchema = z.object({
+const cronPruneStoragePresignedUrlsResponseSchema = z.object({
   success: z.literal(true),
-  system: storagePresignedUrlRefreshResultSchema,
-  workflowSkill: storagePresignedUrlRefreshResultSchema,
-  readOnly: storagePresignedUrlRefreshResultSchema,
-  presentationTemplatePreview: storagePresignedUrlRefreshResultSchema,
+  system: storagePresignedUrlPruneResultSchema,
+  workflowSkill: storagePresignedUrlPruneResultSchema,
+  readOnly: storagePresignedUrlPruneResultSchema,
+  presentationTemplatePreview: storagePresignedUrlPruneResultSchema,
 });
 
 const cronMaterializeMemorySummariesResponseSchema = z.object({
@@ -611,16 +614,16 @@ export const cronExecuteWorkflowAutomationsContract = c.router({
   },
 });
 
-export const cronRefreshStoragePresignedUrlsContract = c.router({
-  refresh: {
+export const cronPruneStoragePresignedUrlsContract = c.router({
+  prune: {
     method: "GET",
-    path: "/api/cron/refresh-storage-presigned-urls",
+    path: "/api/cron/prune-storage-presigned-urls",
     headers: authHeadersSchema,
     responses: {
-      200: cronRefreshStoragePresignedUrlsResponseSchema,
+      200: cronPruneStoragePresignedUrlsResponseSchema,
       401: apiErrorSchema,
     },
-    summary: "Refresh cached storage presigned URLs",
+    summary: "Prune expired storage presigned URL cache entries",
   },
 });
 
@@ -693,8 +696,8 @@ export type CronMonitorChatEventQueueContract =
   typeof cronMonitorChatEventQueueContract;
 export type CronReconcileBillingEntitlementsContract =
   typeof cronReconcileBillingEntitlementsContract;
-export type CronRefreshStoragePresignedUrlsContract =
-  typeof cronRefreshStoragePresignedUrlsContract;
+export type CronPruneStoragePresignedUrlsContract =
+  typeof cronPruneStoragePresignedUrlsContract;
 export type CronMaterializeMemorySummariesContract =
   typeof cronMaterializeMemorySummariesContract;
 export type CronExtractPiMemoryStage1Contract =
@@ -746,7 +749,7 @@ export {
   cronRenewGoogleFormsWatchesResponseSchema,
   cronRenewGoogleCalendarWatchesResponseSchema,
   cronRenewGoogleWorkspaceEventSubscriptionsResponseSchema,
-  cronRefreshStoragePresignedUrlsResponseSchema,
+  cronPruneStoragePresignedUrlsResponseSchema,
   cronMaterializeMemorySummariesResponseSchema,
   cronExtractPiMemoryStage1ResponseSchema,
 };

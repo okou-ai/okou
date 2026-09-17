@@ -212,13 +212,18 @@ export const resetPersonalCodexSubscriptionUsage$ = command(
 );
 
 export const resetPersonalCodexAccountSubscriptionUsage$ = command(
-  ({ set }, id: string, signal: AbortSignal) => {
+  (
+    { set },
+    target: string | { readonly id: string; readonly runId: string },
+    signal: AbortSignal,
+  ) => {
+    const args = typeof target === "string" ? { id: target } : target;
     return set(
       runPersonalCodexSubscriptionUsageReset$,
       () => {
         return set(
           resetPersonalCodexAccountSubscriptionUsageRequest$,
-          { id, idempotencyKey: crypto.randomUUID() },
+          { ...args, idempotencyKey: crypto.randomUUID() },
           signal,
         );
       },

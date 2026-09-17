@@ -18,11 +18,11 @@ use guest_contracts::exec_terminal::{
     EXEC_PROCESS_CONTAINMENT_TERM_GRACE,
 };
 use guest_contracts::process_containment::{
-    CGROUP_V2_MOUNT_PATH, CONTROL_CGROUP_NAME, CONTROL_CPU_WEIGHT, EXEC_CGROUP_BASE_PATH,
-    EXEC_CGROUP_NAME_PREFIX, REQUIRED_CGROUP_CONTROLLERS, REQUIRED_CGROUP_SUBTREE_CONTROL,
-    RUNTIME_CGROUP_NAME, TOOL_CGROUP_NAME_PREFIX, TOOL_MEMORY_OOM_GROUP, TOOLS_CGROUP_NAME,
-    WORKLOAD_CGROUP_NAME, WORKLOAD_MEMORY_OOM_GROUP, WorkloadResourceEvents,
-    WorkloadResourcePolicy,
+    AGENT_MEMORY_MIN_BYTES, CGROUP_V2_MOUNT_PATH, CONTROL_CGROUP_NAME, CONTROL_CPU_WEIGHT,
+    EXEC_CGROUP_BASE_PATH, EXEC_CGROUP_NAME_PREFIX, REQUIRED_CGROUP_CONTROLLERS,
+    REQUIRED_CGROUP_SUBTREE_CONTROL, RUNTIME_CGROUP_NAME, TOOL_CGROUP_NAME_PREFIX,
+    TOOL_MEMORY_OOM_GROUP, TOOLS_CGROUP_NAME, WORKLOAD_CGROUP_NAME, WORKLOAD_MEMORY_OOM_GROUP,
+    WorkloadResourceEvents, WorkloadResourcePolicy,
 };
 use guest_contracts::storage_resources::StorageResourceUsage;
 use guest_control_proto::ExecProcessRole;
@@ -352,7 +352,7 @@ impl ExecProcessContainment {
         self,
         mode: ProcessContainmentCleanupMode,
     ) -> Result<(), ProcessContainmentError> {
-        self.cleanup_with_evidence(mode).map(|_| ())
+        self.cleanup_with_evidence(mode, false).map(|_| ())
     }
 
     pub(crate) fn capture_error(&self) {
@@ -367,8 +367,9 @@ impl ExecProcessContainment {
     pub(crate) fn cleanup_with_evidence(
         self,
         mode: ProcessContainmentCleanupMode,
+        process_completed: bool,
     ) -> Result<Option<String>, ProcessContainmentError> {
-        self.cleanup_with_outputs(mode, &mut None)
+        self.cleanup_with_outputs(mode, &mut None, process_completed)
     }
 
     pub(crate) fn cleanup_with_storage_resources(
@@ -376,16 +377,18 @@ impl ExecProcessContainment {
         mode: ProcessContainmentCleanupMode,
         resources: &mut Option<StorageResourceUsage>,
     ) -> Result<(), ProcessContainmentError> {
-        self.cleanup_with_outputs(mode, resources).map(|_| ())
+        self.cleanup_with_outputs(mode, resources, false)
+            .map(|_| ())
     }
 
     fn cleanup_with_outputs(
         self,
         mode: ProcessContainmentCleanupMode,
         resources: &mut Option<StorageResourceUsage>,
+        process_completed: bool,
     ) -> Result<Option<String>, ProcessContainmentError> {
         match self.backend {
-            ContainmentBackend::Cgroup(guard) => guard.cleanup(mode, resources),
+            ContainmentBackend::Cgroup(guard) => guard.cleanup(mode, resources, process_completed),
             ContainmentBackend::ProcessGroup | ContainmentBackend::TestNoop => Ok(None),
             ContainmentBackend::TestResourceFiles {
                 resource_path,
@@ -457,7 +460,7 @@ fn verify_exec_process_containment_empty_in(
 
 impl CgroupGuard {
     fn create(sequence: u32, role: ExecProcessRole) -> Result<Self, ProcessContainmentError> {
-        let policy = workload_resource_policy()?;
+        let policy = workload_resource_policy(role)?;
         Self::create_in(Path::new(EXEC_CGROUP_BASE_PATH), sequence, role, policy)
     }
 
@@ -504,6 +507,12 @@ impl CgroupGuard {
                     fs::create_dir(&runtime_path).map_err(|error| {
                         ProcessContainmentError::new("create runtime cgroup", error)
                     })?;
+                    write_cgroup_value(
+                        &runtime_path,
+                        MEMORY_MIN_FILE,
+                        &policy.runtime_memory_min_bytes.to_string(),
+                        "protect native agent runtime memory",
+                    )?;
                     fs::create_dir(&tools_path).map_err(|error| {
                         ProcessContainmentError::new("create tools cgroup", error)
                     })?;
@@ -714,6 +723,7 @@ impl CgroupGuard {
         self,
         mode: ProcessContainmentCleanupMode,
         resources: &mut Option<StorageResourceUsage>,
+        process_completed: bool,
     ) -> Result<Option<String>, ProcessContainmentError> {
         let started = Instant::now();
         let CgroupGuard {
@@ -729,19 +739,25 @@ impl CgroupGuard {
         drop(outer_placement);
         drop(workload_placement);
 
+        // Capture before any cleanup enumeration, signal or removal. Placement
+        // workers have joined, so this lock cannot wait behind socket IO.
+        let evidence = oom_evidence.and_then(|monitor| {
+            Some(
+                monitor
+                    .lock()
+                    .ok()?
+                    .capture(guest_contracts::oom_evidence::CaptureReason::Cleanup),
+            )
+        });
         log_resource_events(
             &group_name,
             &group_path.join(WORKLOAD_CGROUP_NAME),
             storage_operation.as_ref(),
             mode,
             resources,
+            evidence.as_ref().filter(|_| process_completed),
         );
-
-        // Capture before any cleanup enumeration, signal or removal. Placement
-        // workers have joined, so this lock cannot wait behind socket IO.
-        let oom_diagnostic = oom_evidence.and_then(|monitor| {
-            let mut monitor = monitor.lock().ok()?;
-            let evidence = monitor.capture(guest_contracts::oom_evidence::CaptureReason::Cleanup);
+        let oom_diagnostic = evidence.and_then(|evidence| {
             if evidence.incidents.is_empty() {
                 return None;
             }
@@ -778,10 +794,17 @@ impl CgroupGuard {
     }
 }
 
-fn workload_resource_policy() -> Result<WorkloadResourcePolicy, ProcessContainmentError> {
-    WorkloadResourcePolicy::for_current_guest_capacity().map_err(|message| {
-        ProcessContainmentError::new("derive workload resource policy", io::Error::other(message))
-    })
+fn workload_resource_policy(
+    role: ExecProcessRole,
+) -> Result<WorkloadResourcePolicy, ProcessContainmentError> {
+    WorkloadResourcePolicy::for_current_guest_capacity(role == ExecProcessRole::Agent).map_err(
+        |message| {
+            ProcessContainmentError::new(
+                "derive workload resource policy",
+                io::Error::other(message),
+            )
+        },
+    )
 }
 
 fn enable_required_controllers(group_path: &Path) -> Result<(), ProcessContainmentError> {
@@ -863,7 +886,7 @@ fn configure_resource_policy(
         write_cgroup_value(
             group_path,
             MEMORY_MIN_FILE,
-            &policy.control_memory_min_bytes.to_string(),
+            &AGENT_MEMORY_MIN_BYTES.to_string(),
             "protect controlled operation memory",
         )?;
         write_cgroup_value(
@@ -871,6 +894,12 @@ fn configure_resource_policy(
             MEMORY_MIN_FILE,
             &policy.control_memory_min_bytes.to_string(),
             "protect Guest Agent memory",
+        )?;
+        write_cgroup_value(
+            workload_path,
+            MEMORY_MIN_FILE,
+            &policy.runtime_memory_min_bytes.to_string(),
+            "preserve runtime ancestor memory protection",
         )?;
     }
     Ok(())
@@ -903,6 +932,7 @@ fn log_resource_events(
     storage_operation: Option<&StorageOperation>,
     mode: ProcessContainmentCleanupMode,
     resources: &mut Option<StorageResourceUsage>,
+    evidence: Option<&guest_contracts::oom_evidence::OomEvidence>,
 ) {
     let snapshot_started = Instant::now();
     let files = ResourceEventFiles::read(workload_path);
@@ -923,10 +953,18 @@ fn log_resource_events(
         }
     };
     if let Some(hard_limit) = events.hard_limit_diagnostic() {
+        let contained = mode == ProcessContainmentCleanupMode::Graceful
+            && evidence
+                .is_some_and(|evidence| evidence.proves_contained_resource_limit(&hard_limit));
+        let classification = if contained {
+            "contained_tool_oom"
+        } else {
+            "unproven_containment"
+        };
         log(
-            "WARN",
+            if contained { "INFO" } else { "WARN" },
             &format!(
-                "exec workload hard resource limit reached group={group_name} memory_max={} memory_oom={} memory_oom_kill={} memory_oom_group_kill={} pids_max={}",
+                "exec workload hard resource limit reached group={group_name} oom_classification={classification} memory_max={} memory_oom={} memory_oom_kill={} memory_oom_group_kill={} pids_max={}",
                 hard_limit.memory_max_events,
                 hard_limit.memory_oom_events,
                 hard_limit.memory_oom_kill_events,
@@ -1284,12 +1322,24 @@ fn serve_oom_evidence(
             return;
         }
         let reason = match request[0] {
-            1 => CaptureReason::Sample,
-            2 => CaptureReason::CliError,
+            1 | 3 => CaptureReason::Sample,
+            2 | 4 => CaptureReason::CliError,
             _ => return,
         };
+        let progress = if request[0] >= 3 {
+            let mut bytes = [0; 8];
+            if stream.read_exact(&mut bytes).is_err() {
+                return;
+            }
+            Some(u64::from_be_bytes(bytes))
+        } else {
+            None
+        };
         let evidence = match monitor.lock() {
-            Ok(mut monitor) => monitor.capture(reason),
+            Ok(mut monitor) => {
+                monitor.record_runtime_progress(progress);
+                monitor.capture(reason)
+            }
             Err(_) => return,
         };
         // Never retain the monitor lock while waiting for a recipient.
@@ -1889,7 +1939,7 @@ mod tests {
         };
         let mut resources = None;
         let diagnostic = guard
-            .cleanup(ProcessContainmentCleanupMode::Forced, &mut resources)
+            .cleanup(ProcessContainmentCleanupMode::Forced, &mut resources, false)
             .unwrap()
             .unwrap();
         assert!(!root.exists());
@@ -1937,6 +1987,24 @@ mod tests {
         assert!(first.incidents.is_empty());
         assert_eq!(error.incidents.len(), 1);
         assert!(error.incidents[0].kernel_events.is_empty());
+        let progress = 1_000_u64;
+        client.write_all(&[3]).unwrap();
+        client.write_all(&progress.to_be_bytes()).unwrap();
+        let continued = guest_contracts::oom_evidence::read_evidence(&client).unwrap();
+        assert_eq!(continued.runtime_progress_at, Some(progress));
+        assert_eq!(continued.operation_id, first.operation_id);
+        client.write_all(&[4]).unwrap();
+        client.write_all(&u64::MAX.to_be_bytes()).unwrap();
+        let future = guest_contracts::oom_evidence::read_evidence(&client).unwrap();
+        assert_eq!(
+            future.runtime_progress_at,
+            Some(progress),
+            "future timestamps cannot prove survival"
+        );
+        assert!(
+            !future.proves_contained_tool_oom(),
+            "native activity alone never proves tool containment"
+        );
         drop(cancel_writer);
         done_rx.recv_timeout(Duration::from_secs(2)).unwrap();
         worker.join().unwrap();
@@ -2508,11 +2576,83 @@ mod tests {
     }
 
     #[test]
+    fn controlled_operation_preserves_both_memory_floors_without_partitioning_workload() {
+        let operation = tempfile::tempdir().unwrap();
+        let control = operation.path().join(CONTROL_CGROUP_NAME);
+        let workload = operation.path().join(WORKLOAD_CGROUP_NAME);
+        fs::create_dir(&control).unwrap();
+        fs::create_dir(&workload).unwrap();
+        let policy =
+            WorkloadResourcePolicy::for_guest_capacity(2, 4096 * 1024 * 1024, true).unwrap();
+
+        configure_resource_policy(operation.path(), &control, &workload, true, policy).unwrap();
+
+        for (path, expected) in [
+            (operation.path(), 512 * 1024 * 1024),
+            (control.as_path(), 128 * 1024 * 1024),
+            (workload.as_path(), 384 * 1024 * 1024),
+        ] {
+            assert_eq!(
+                fs::read_to_string(path.join(MEMORY_MIN_FILE)).unwrap(),
+                expected.to_string()
+            );
+        }
+        assert_eq!(
+            fs::read_to_string(workload.join(MEMORY_MAX_FILE)).unwrap(),
+            (3968_u64 * 1024 * 1024).to_string()
+        );
+        assert_eq!(
+            fs::read_to_string(workload.join(MEMORY_HIGH_FILE)).unwrap(),
+            "max"
+        );
+    }
+
+    #[test]
+    fn ordinary_exec_does_not_receive_agent_memory_protection() {
+        let operation = tempfile::tempdir().unwrap();
+        let control = operation.path().join(CONTROL_CGROUP_NAME);
+        let workload = operation.path().join(WORKLOAD_CGROUP_NAME);
+        fs::create_dir(&control).unwrap();
+        fs::create_dir(&workload).unwrap();
+        for path in [operation.path(), control.as_path(), workload.as_path()] {
+            fs::write(path.join(MEMORY_MIN_FILE), "0").unwrap();
+        }
+        let policy =
+            WorkloadResourcePolicy::for_guest_capacity(2, 480 * 1024 * 1024, false).unwrap();
+
+        configure_resource_policy(operation.path(), &control, &workload, false, policy).unwrap();
+
+        for path in [operation.path(), control.as_path(), workload.as_path()] {
+            assert_eq!(fs::read_to_string(path.join(MEMORY_MIN_FILE)).unwrap(), "0");
+        }
+        assert_eq!(
+            fs::read_to_string(workload.join(MEMORY_MAX_FILE)).unwrap(),
+            (352 * 1024 * 1024).to_string()
+        );
+    }
+
+    #[test]
+    fn controlled_operation_rejects_failed_runtime_ancestor_protection() {
+        let operation = tempfile::tempdir().unwrap();
+        let control = operation.path().join(CONTROL_CGROUP_NAME);
+        let workload = operation.path().join(WORKLOAD_CGROUP_NAME);
+        fs::create_dir(&control).unwrap();
+        fs::create_dir_all(workload.join(MEMORY_MIN_FILE)).unwrap();
+        let policy =
+            WorkloadResourcePolicy::for_guest_capacity(2, 4096 * 1024 * 1024, true).unwrap();
+
+        let error = configure_resource_policy(operation.path(), &control, &workload, true, policy)
+            .unwrap_err();
+
+        assert_eq!(error.stage, "preserve runtime ancestor memory protection");
+    }
+
+    #[test]
     fn partial_creation_failure_removes_operation_cgroup() {
         let base = tempfile::tempdir().unwrap();
 
         let policy =
-            WorkloadResourcePolicy::for_guest_capacity(2, u64::from(4096_u32) * 1024 * 1024)
+            WorkloadResourcePolicy::for_guest_capacity(2, u64::from(4096_u32) * 1024 * 1024, true)
                 .unwrap();
         // A plain directory can supply the outer directory capability, but
         // cannot supply the Agent's kernel-created runtime cgroup.procs file.

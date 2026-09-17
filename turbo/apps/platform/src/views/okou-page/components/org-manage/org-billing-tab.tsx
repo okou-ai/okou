@@ -352,7 +352,7 @@ function DowngradeConfirmDialogContent({
               }}
               className={`flex items-center justify-between rounded-lg border p-3 text-left transition-colors ${
                 selectedTarget === "pro"
-                  ? "border-primary ring-2 ring-primary/20"
+                  ? "border-primary"
                   : "border-border hover:border-muted-foreground/30"
               }`}
             >
@@ -373,7 +373,7 @@ function DowngradeConfirmDialogContent({
               className={`flex items-center justify-between rounded-lg border p-3 text-left transition-colors ${
                 selectedTarget === "limited-free-1" ||
                 selectedTarget === "pro-suspend"
-                  ? "border-primary ring-2 ring-primary/20"
+                  ? "border-primary"
                   : "border-border hover:border-muted-foreground/30"
               }`}
             >
@@ -1718,7 +1718,7 @@ function ConcurrencyBillingSection({
           return $.billing.concurrency.title;
         })}
       </h3>
-      <div className="overflow-hidden rounded-xl bg-card okou-border">
+      <div className="overflow-hidden rounded-xl bg-card border border-surface-border">
         <div className="px-5 py-4">
           <p className="text-2xl font-medium tracking-tight text-foreground tabular-nums">
             {i18n.t(
@@ -1852,7 +1852,7 @@ function UsagePackMigrationAvailability({
           )}
         </p>
       </div>
-      <div className="flex items-center justify-between gap-4 rounded-xl bg-card px-5 py-4 okou-border">
+      <div className="flex items-center justify-between gap-4 rounded-xl bg-card px-5 py-4 border border-surface-border">
         <p className="text-sm text-muted-foreground">
           {configurable
             ? i18n.t(($) => {
@@ -1947,7 +1947,7 @@ function StandaloneBillingPricingDialog({
         aria-describedby={undefined}
         maxWidth={860}
         height={688}
-        contentClassName="okou-app flex flex-col gap-0 overflow-hidden p-0"
+        contentClassName="flex flex-col gap-0 overflow-hidden p-0"
       >
         <DialogTitle className="sr-only">
           {i18n.t(($) => {
@@ -2352,7 +2352,7 @@ export function OrgBillingTab({
             return $.billing.plans.sectionTitle;
           })}
         </h3>
-        <div className="overflow-hidden rounded-xl bg-card okou-border">
+        <div className="overflow-hidden rounded-xl bg-card border border-surface-border">
           {statusLoading && !status ? (
             <div className="flex items-center justify-between gap-4 px-5 py-4">
               <div className="min-w-0">

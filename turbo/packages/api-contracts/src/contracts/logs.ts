@@ -63,6 +63,35 @@ export const triggerSourceSchema = z.enum([
 export type TriggerSource = z.infer<typeof triggerSourceSchema>;
 
 /**
+ * Pi memory Stage 1 admission class of every trigger source. Only a
+ * human-initiated surface is `interactive` and may feed memory extraction,
+ * mirroring upstream Codex INTERACTIVE_SESSION_SOURCES. The CI-only `test`
+ * source is `synthetic`. Platform-initiated runs (agent delegation, webhooks,
+ * automations, goals) are `non_interactive` and never produce memory. The
+ * `satisfies` over the whole enum turns an unclassified new source into a
+ * type error instead of a silently eligible source.
+ */
+export const PI_MEMORY_TRIGGER_SOURCE_CLASSES = {
+  web: "interactive",
+  slack: "interactive",
+  teams: "interactive",
+  feishu: "interactive",
+  email: "interactive",
+  telegram: "interactive",
+  agentphone: "interactive",
+  github: "interactive",
+  test: "synthetic",
+  agent: "non_interactive",
+  webhook: "non_interactive",
+  "automation-schedule": "non_interactive",
+  "automation-event": "non_interactive",
+  goal: "non_interactive",
+} as const satisfies Record<
+  TriggerSource,
+  "interactive" | "non_interactive" | "synthetic"
+>;
+
+/**
  * Log entry in list response - includes basic fields for list display
  */
 const logEntrySchema = z.object({

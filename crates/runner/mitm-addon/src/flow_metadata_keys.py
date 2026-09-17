@@ -69,10 +69,6 @@ Firewall and auth context
 - ``FIREWALL_AUTH_CACHE_ENTRY_IDENTITY``: credential-free process-local object
   identifying the exact cached auth result applied to this flow. Written only
   after successful auth application and read by 401 cache invalidation.
-- ``FIREWALL_AUTH_PROBE_FAILURE``: ``Exception`` caught by header-phase auth
-  probing after restoring the probe snapshot. Popped by request-phase auth
-  handling to produce the same local auth failure without resolving auth a
-  second time; removed by terminal cleanup when it was not consumed.
 - ``FIREWALL_NAME``: ``str`` firewall connector/model name. Read by logging,
   model-provider gates, and connector usage dispatch.
 - ``FIREWALL_PERMISSION``: ``str`` matched permission name or empty string.
@@ -91,11 +87,14 @@ Firewall and auth context
   registry failures. It is orthogonal to ``FIREWALL_ACTION``: an ``ALLOW``
   decision can still have an auth or forwarding error.
 - ``CONNECTOR_DIAGNOSTIC_SLUG``: optional ``str`` connector slug stored under
-  the canonical slug key for a generic connector availability diagnostic. HTTP
-  request classification records this for an inactive built-in connector
-  candidate from the request-header stream path or the request hook; network
-  logs expose it only after the response/error hook turns the candidate into an
-  agent-visible diagnostic.
+  the canonical slug key for a generic connector availability diagnostic.
+  Ordinary allowed requests retain private eligibility and catalog lookup
+  context without setting this key. ``connector_diagnostics`` writes it when
+  creating a local shared-base 424 in ``requestheaders()`` or ``request()``, or
+  replacing an eligible upstream 401/403 in ``responseheaders()`` or
+  ``response()``. Connection-error handling only finalizes an already-installed
+  response-header diagnostic; it does not create one from pending lookup
+  context. Network logs copy the public diagnostic fields when present.
 - ``CONNECTOR_DIAGNOSTIC_REASON``: optional ``str`` generic diagnostic reason.
   First-version diagnostics use ``not_configured_for_run``.
 - ``CONNECTOR_DIAGNOSTIC_ENV_NAMES``: optional ``list[str]`` env aliases that
@@ -221,7 +220,6 @@ FIREWALL_BASE: Final = "firewall_base"
 FIREWALL_API_ID: Final = "firewall_api_id"
 FIREWALL_AUTH_CACHE_KEY: Final = "firewall_auth_cache_key"
 FIREWALL_AUTH_CACHE_ENTRY_IDENTITY: Final = "firewall_auth_cache_entry_identity"
-FIREWALL_AUTH_PROBE_FAILURE: Final = "firewall_auth_probe_failure"
 FIREWALL_NAME: Final = "firewall_name"
 FIREWALL_PERMISSION: Final = "firewall_permission"
 FIREWALL_RULE_MATCH: Final = "firewall_rule_match"

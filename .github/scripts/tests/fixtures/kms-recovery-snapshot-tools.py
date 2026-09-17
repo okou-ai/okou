@@ -128,14 +128,20 @@ if Path(sys.argv[0]).name == "aws":
     raise SystemExit(0)
 
 if Path(sys.argv[0]).name == "pnpm":
-    assert sys.argv[1:6] == [
-        "--dir",
-        "turbo/packages/db",
+    assert sys.argv[1:4] == [
         "exec",
         "tsx",
         "scripts/migrations/013-kms-account-rotation/backfill.ts",
     ]
+    # Model Corepack's project lookup before the package manager parses argv.
+    manifests = [p / "package.json" for p in [Path.cwd(), *Path.cwd().parents]]
+    assert any(
+        p.is_file()
+        and json.loads(p.read_text()).get("packageManager", "").startswith("pnpm@")
+        for p in manifests
+    ), "ERR_PNPM_BAD_PM_VERSION"
     assert "--verify" in sys.argv and "--migrate" not in sys.argv
+    assert "--recovery-schema" in sys.argv
     assert "--cursor" not in sys.argv and "--preflight" not in sys.argv
     assert os.environ["AWS_ACCESS_KEY_ID"] == "fixture-temporary-access"
     assert os.environ["AWS_SECRET_ACCESS_KEY"] == "fixture-private-session-secret"
@@ -146,10 +152,26 @@ if Path(sys.argv[0]).name == "pnpm":
     uri = urllib.parse.urlsplit(os.environ["DATABASE_URL"])
     assert uri.hostname == endpoint["host"] and uri.path == "/neondb"
     assert urllib.parse.parse_qs(uri.query) == {"sslmode": ["verify-full"]}
+    checkpoint = json.loads(
+        (state_path.parent / "kms-recovery-snapshot.json").read_text()
+    )
+    assert len(checkpoint["databases"]) == 1
+    assert checkpoint["databases"][0]["records"]
+    assert checkpoint["collectionComplete"] is False
+    assert "targetVerification" not in checkpoint["databases"][0]
     state["targetVerificationCalls"] = state.get("targetVerificationCalls", 0) + 1
     save()
-    if scenario == "target-verification-failed":
+    if scenario in {
+        "target-verification-failed",
+        "target-loader-failed",
+        "target-package-manager-failed",
+    }:
         sys.stderr.write("fixture-private-password")
+        if scenario == "target-loader-failed":
+            sys.stderr.write(" ERR_MODULE_NOT_FOUND fixture-private-password")
+            print("ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL fixture-private-password")
+        if scenario == "target-package-manager-failed":
+            sys.stderr.write(" ERR_PNPM_BAD_PM_VERSION fixture-private-password")
         raise SystemExit(1)
     totals = {
         key: 0
@@ -180,6 +202,7 @@ if Path(sys.argv[0]).name == "pnpm":
         "mode": "verify",
         "source": source,
         "target": target,
+        "recoverySchema": scenario != "target-legacy-manifest",
         "database": "wrong" if scenario == "target-report-wrong-database" else database,
         "manifest": "a" * 64,
         "complete": True,
@@ -190,9 +213,41 @@ if Path(sys.argv[0]).name == "pnpm":
         "totals": totals,
         "fields": {"fixture-private-password": {}},
     }
-    Path(sys.argv[sys.argv.index("--report-path") + 1]).write_text(json.dumps(report))
+    exit_code = 0
+    if scenario in {
+        "target-partial-failure",
+        "target-private-failure",
+        "target-invalid-report",
+        "target-bad-binding-failure",
+    }:
+        report.update(
+            complete=False,
+            databaseVerifiedOnTarget=False,
+            failure="migration_failed_at_cursor",
+            cursor="fixture-private-cursor",
+        )
+        report["totals"].update(rows=1, target=1, envelope=1, verified=1)
+        report["failureDetails"] = {
+            "stage": "process_rows",
+            "code": "AccessDeniedException",
+            "message": "fixture-private-password",
+        }
+        exit_code = 1
+        if scenario == "target-private-failure":
+            report["failureDetails"].update(
+                code="fixture-private-password", stage="fixture-private-password"
+            )
+            report["failure"] = "fixture-private-password"
+        if scenario == "target-bad-binding-failure":
+            report["database"] = "fixture-private-password"
+    encoded = (
+        "fixture-private-password"
+        if scenario == "target-invalid-report"
+        else json.dumps(report)
+    )
+    Path(sys.argv[sys.argv.index("--report-path") + 1]).write_text(encoded)
     print("fixture-private-password")
-    raise SystemExit(0)
+    raise SystemExit(exit_code)
 
 
 if Path(sys.argv[0]).name == "psql":
@@ -215,7 +270,10 @@ if Path(sys.argv[0]).name == "psql":
                 "readOnly": True,
                 "isolation": "repeatable read",
                 "supportsTidRangeScan": True,
-                "plannedTables": 1,
+                "plannedTables": 2
+                if scenario
+                in {"sql-timeout", "sql-process-timeout", "invalid-scan-progress"}
+                else 1,
                 "largeObjects": 0,
                 "foreignTables": 0,
             }
@@ -234,6 +292,19 @@ if Path(sys.argv[0]).name == "psql":
     print(
         json.dumps(
             {
+                "kind": "batch-start",
+                "relationOid": 123,
+                "firstBlock": 1 if scenario == "invalid-batch-range" else 0,
+                "endBlock": 1,
+                "startedAt": "fixture-private-password"
+                if scenario == "invalid-batch-time"
+                else "2026-09-14T08:41:00+00:00",
+            }
+        )
+    )
+    print(
+        json.dumps(
+            {
                 "kind": "table-chunk",
                 "relationOid": 123,
                 "firstBlock": 0,
@@ -246,6 +317,27 @@ if Path(sys.argv[0]).name == "psql":
         )
     )
     if scenario in {"sql-timeout", "sql-process-timeout", "invalid-scan-progress"}:
+        print(
+            json.dumps(
+                {
+                    "kind": "table-plan",
+                    "relationOid": 456,
+                    "blocks": 10000,
+                    "heapAccessMethod": True,
+                }
+            )
+        )
+        print(
+            json.dumps(
+                {
+                    "kind": "batch-start",
+                    "relationOid": 456,
+                    "firstBlock": 0,
+                    "endBlock": 8192,
+                    "startedAt": "2026-09-14T08:42:00+00:00",
+                }
+            )
+        )
         print(
             json.dumps(
                 {

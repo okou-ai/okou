@@ -25,6 +25,11 @@ import { bodyResultOf } from "../context/request";
 import { type Db, writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import { lockBillingPurchaseOrg } from "../services/billing-purchase-lock.service";
+import type { Tx } from "../../lib/db-types";
+import {
+  repairUsagePackPendingSnapshotGuards,
+  writeUsagePackPendingSnapshots,
+} from "../services/usage-pack-pending-snapshot.service";
 import { loadOrgPlanCapabilities } from "../services/org-plan-entitlement-read.service";
 import { prepareUsagePackMemberCreditRefunds } from "../services/usage-pack-credit-refund.service";
 import { createDeferredPromise, onRejection } from "../utils";
@@ -523,7 +528,7 @@ async function seedUsagePackState(
   body: SeedAction,
   signal: AbortSignal,
 ): Promise<string> {
-  return await db.transaction(async (tx) => {
+  const seed = async (tx: Tx) => {
     const orgRows = await tx
       .update(orgMetadata)
       .set({ stripeCustomerId: body.stripeCustomerId })
@@ -553,22 +558,7 @@ async function seedUsagePackState(
       throw new Error("Failed to seed usage pack subscription state");
     }
     if (body.preSerializationCutover === true) {
-      const [pendingState] = await tx
-        .select({ pendingSnapshotCount: count() })
-        .from(usagePackSubscriptions)
-        .where(
-          and(
-            eq(usagePackSubscriptions.orgId, body.orgId),
-            sql`${usagePackSubscriptions.subscriptionStatus} IN ('checkout_pending', 'purchase_pending')`,
-          ),
-        );
-      if (!pendingState) {
-        throw new Error("Failed to reconstruct pre-0954 pending state");
-      }
-      await tx
-        .update(usagePackPendingSnapshotGuards)
-        .set({ pendingSnapshotCount: pendingState.pendingSnapshotCount })
-        .where(eq(usagePackPendingSnapshotGuards.orgId, body.orgId));
+      await repairUsagePackPendingSnapshotGuards(tx, [body.orgId]);
     }
     await tx.insert(usagePackAllocations).values(
       body.allocations.map((allocation) => {
@@ -581,7 +571,13 @@ async function seedUsagePackState(
     );
     signal.throwIfAborted();
     return subscription.id;
-  });
+  };
+  // This fixture intentionally models rows predating admission serialization;
+  // current setup writes use the same explicit boundary as product writers.
+  if (body.preSerializationCutover === true) {
+    return await db.transaction(seed);
+  }
+  return await writeUsagePackPendingSnapshots(db, [body.orgId], seed);
 }
 
 async function seedLegacyMigrationState(
@@ -896,7 +892,7 @@ async function cleanupMigrationState(
   orgId: string,
   signal: AbortSignal,
 ): Promise<void> {
-  await db.transaction(async (tx) => {
+  await writeUsagePackPendingSnapshots(db, [orgId], async (tx) => {
     await tx
       .delete(usagePackCreditGrants)
       .where(eq(usagePackCreditGrants.orgId, orgId));
@@ -921,7 +917,7 @@ async function cleanupUsagePackState(
   >,
   signal: AbortSignal,
 ): Promise<void> {
-  await db.transaction(async (tx) => {
+  await writeUsagePackPendingSnapshots(db, [body.orgId], async (tx) => {
     if (body.deleteGrants) {
       await tx
         .delete(usagePackCreditGrants)

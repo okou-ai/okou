@@ -266,23 +266,29 @@ function activeVideoPricing(
 interface FalWebhookPayload {
   readonly status: string | undefined;
   readonly body: unknown;
+  readonly providerHttpStatus: number | undefined;
+}
+
+function falProviderHttpStatus(error: unknown): number | undefined {
+  if (typeof error !== "string") {
+    return undefined;
+  }
+  const match = /^(?:Invalid|Unexpected) status code: ([1-5]\d{2})$/u.exec(
+    error,
+  );
+  // JavaScript's $ also matches before a final newline; require the full value.
+  return match?.[0] === error ? Number(match[1]) : undefined;
 }
 
 function falPayloadBody(payload: unknown): FalWebhookPayload | null {
   if (!isRecord(payload)) {
     return null;
   }
-  const body =
-    isRecord(payload.payload) || Array.isArray(payload.payload)
-      ? payload.payload
-      : isRecord(payload.data) || Array.isArray(payload.data)
-        ? payload.data
-        : isRecord(payload.response) || Array.isArray(payload.response)
-          ? payload.response
-          : payload;
+  const body = payload.payload ?? payload.data ?? payload.response ?? payload;
   return {
     status: typeof payload.status === "string" ? payload.status : undefined,
     body,
+    providerHttpStatus: falProviderHttpStatus(payload.error),
   };
 }
 
@@ -304,8 +310,13 @@ const FAL_INVALID_ASPECT_RATIO_MESSAGE =
   "Input should be 'auto', '21:9', '16:9', '3:2', '4:3', '5:4', '1:1', '4:5', '3:4', '2:3', '9:16', '4:1', '1:4', '8:1' or '1:8'";
 const FAL_MISSING_FIELD_MESSAGE = "Field required";
 const FAL_PROMPT_TOO_SHORT_MESSAGE = "String should have at least 3 characters";
-const FAL_DOWNSTREAM_UNAVAILABLE_MESSAGE = "Downstream service unavailable";
-const FAL_DOWNSTREAM_ERROR_MESSAGE = "Downstream service error";
+const FAL_PROVIDER_FAILURE_TYPES = [
+  "downstream_service_error",
+  "downstream_service_unavailable",
+] as const;
+const FAL_PROVIDER_FAILURE_STATUSES: ReadonlySet<number> = Object.freeze(
+  new Set([429, 500, 502, 503, 504]),
+);
 
 type FalGenerationFailureRetryPolicy =
   | "manual_once"
@@ -320,6 +331,8 @@ interface FalGenerationFailure {
   readonly retryPolicy: FalGenerationFailureRetryPolicy;
   /** A failure the caller resolves by changing the request, not an operator. */
   readonly userInput: boolean;
+  readonly providerHttpStatus?: number;
+  readonly providerErrorType?: string;
 }
 
 function normalizeFalFailureMessage(message: string): string {
@@ -327,12 +340,17 @@ function normalizeFalFailureMessage(message: string): string {
 }
 
 interface FalFailureDiagnostic {
-  readonly message: string;
+  readonly message: string | undefined;
   readonly providerErrorType: string | undefined;
   readonly location: readonly (string | number)[] | undefined;
 }
 
-function falFailureDetailDiagnostics(detail: unknown): FalFailureDiagnostic[] {
+function falFailureDetailDiagnostics(
+  detail: unknown,
+): (FalFailureDiagnostic | null)[] {
+  if (detail === undefined) {
+    return [];
+  }
   if (typeof detail === "string") {
     return [
       {
@@ -343,9 +361,21 @@ function falFailureDetailDiagnostics(detail: unknown): FalFailureDiagnostic[] {
     ];
   }
   const entries = Array.isArray(detail) ? detail : [detail];
-  return entries.flatMap((entry) => {
-    if (!isRecord(entry) || typeof entry.msg !== "string") {
-      return [];
+  return entries.map((entry) => {
+    if (!isRecord(entry)) {
+      return null;
+    }
+    // Return only constants used by the business rules. Unknown/malformed types
+    // remain evidence against classifying the whole envelope from its status.
+    const providerErrorType =
+      FAL_PROVIDER_FAILURE_TYPES.find((type) => {
+        return type === entry.type;
+      }) ??
+      FAL_STRUCTURED_FAILURE_RULES.find((rule) => {
+        return rule.providerErrorType === entry.type;
+      })?.providerErrorType;
+    if (entry.type !== undefined && providerErrorType === undefined) {
+      return null;
     }
     const location =
       Array.isArray(entry.loc) &&
@@ -354,14 +384,14 @@ function falFailureDetailDiagnostics(detail: unknown): FalFailureDiagnostic[] {
       })
         ? entry.loc
         : undefined;
-    return [
-      {
-        message: normalizeFalFailureMessage(entry.msg),
-        providerErrorType:
-          typeof entry.type === "string" ? entry.type : undefined,
-        location,
-      },
-    ];
+    return {
+      message:
+        typeof entry.msg === "string"
+          ? normalizeFalFailureMessage(entry.msg)
+          : undefined,
+      providerErrorType,
+      location,
+    };
   });
 }
 
@@ -375,9 +405,8 @@ interface FalStructuredFailureRule {
 }
 
 // These tuples are an allowlist of sanitized diagnostics observed in Fal's
-// webhook contract. Keep all three fields exact: provider type alone is not a
-// safe classifier because content_policy_violation is used for both input and
-// generated-output moderation.
+// webhook contract. Keep all three input fields exact: content_policy_violation
+// is used for both input and generated-output moderation.
 const FAL_STRUCTURED_FAILURE_RULES: readonly FalStructuredFailureRule[] = [
   {
     providerErrorType: "content_policy_violation",
@@ -479,29 +508,17 @@ const FAL_STRUCTURED_FAILURE_RULES: readonly FalStructuredFailureRule[] = [
     },
     userInput: true,
   },
-  {
-    providerErrorType: "downstream_service_unavailable",
-    message: FAL_DOWNSTREAM_UNAVAILABLE_MESSAGE,
-    locations: ["body"],
-    retryPolicy: "retry_once",
-    error: {
-      message: "The image generation provider is temporarily unavailable.",
-      code: "GENERATION_PROVIDER_UNAVAILABLE",
-    },
-    userInput: false,
-  },
-  {
-    providerErrorType: "downstream_service_error",
-    message: FAL_DOWNSTREAM_ERROR_MESSAGE,
-    locations: ["body"],
-    retryPolicy: "retry_once",
-    error: {
-      message: "The image generation provider is temporarily unavailable.",
-      code: "GENERATION_PROVIDER_UNAVAILABLE",
-    },
-    userInput: false,
-  },
 ];
+
+const FAL_PROVIDER_UNAVAILABLE_FAILURE: FalGenerationFailure = Object.freeze({
+  error: {
+    message: "The image generation provider is temporarily unavailable.",
+    code: "GENERATION_PROVIDER_UNAVAILABLE",
+  },
+  // Existing metadata only; neither type nor status establishes retryability.
+  retryPolicy: "retry_once",
+  userInput: false,
+});
 
 function falFailureLocationMatches(
   location: readonly (string | number)[],
@@ -519,22 +536,19 @@ function falFailureLocationMatches(
   );
 }
 
-function falGenerationFailure(
-  type: BuiltInGenerationWebhookJob["type"],
-  payload: FalWebhookPayload,
-): FalGenerationFailure {
-  const diagnostics = isRecord(payload.body)
-    ? falFailureDetailDiagnostics(payload.body.detail)
-    : [];
-  const outputSafetyBlocked =
-    type === "image" &&
-    diagnostics.some((diagnostic) => {
-      return (
-        diagnostic.message ===
-        normalizeFalFailureMessage(FAL_OUTPUT_SAFETY_FILTER_MESSAGE)
-      );
-    });
-  if (outputSafetyBlocked) {
+function classifyFalFailureDiagnostic(
+  diagnostic: FalFailureDiagnostic | null,
+): FalGenerationFailure | undefined {
+  if (!diagnostic) {
+    return undefined;
+  }
+  if (diagnostic.message === FAL_OUTPUT_SAFETY_FILTER_MESSAGE) {
+    if (
+      diagnostic.providerErrorType !== undefined &&
+      diagnostic.providerErrorType !== "content_policy_violation"
+    ) {
+      return undefined;
+    }
     return {
       error: {
         message: FAL_OUTPUT_SAFETY_FILTER_MESSAGE,
@@ -544,35 +558,77 @@ function falGenerationFailure(
       userInput: true,
     };
   }
-  if (type === "image") {
-    for (const diagnostic of diagnostics) {
-      const diagnosticLocation = diagnostic.location;
-      const rule = FAL_STRUCTURED_FAILURE_RULES.find((candidate) => {
-        return (
-          candidate.providerErrorType === diagnostic.providerErrorType &&
-          normalizeFalFailureMessage(candidate.message) ===
-            diagnostic.message &&
-          diagnosticLocation !== undefined &&
-          candidate.locations.some((location) => {
-            return falFailureLocationMatches(diagnosticLocation, location);
-          })
-        );
-      });
-      if (rule) {
-        return {
-          error: rule.error,
-          retryPolicy: rule.retryPolicy,
-          userInput: rule.userInput,
-        };
-      }
-    }
+  // Only these two documented provider types are independent of prose/location.
+  if (
+    FAL_PROVIDER_FAILURE_TYPES.some((type) => {
+      return type === diagnostic.providerErrorType;
+    })
+  ) {
+    return FAL_PROVIDER_UNAVAILABLE_FAILURE;
   }
+  const diagnosticLocation = diagnostic.location;
+  const rule = FAL_STRUCTURED_FAILURE_RULES.find((candidate) => {
+    return (
+      candidate.providerErrorType === diagnostic.providerErrorType &&
+      normalizeFalFailureMessage(candidate.message) === diagnostic.message &&
+      diagnosticLocation !== undefined &&
+      candidate.locations.some((location) => {
+        return falFailureLocationMatches(diagnosticLocation, location);
+      })
+    );
+  });
+  return rule
+    ? {
+        error: rule.error,
+        retryPolicy: rule.retryPolicy,
+        userInput: rule.userInput,
+      }
+    : undefined;
+}
+
+function falGenerationFailure(
+  type: BuiltInGenerationWebhookJob["type"],
+  payload: FalWebhookPayload,
+): FalGenerationFailure {
   if (type !== "image") {
     return {
       error: failError("Generation failed"),
       retryPolicy: "retry_once",
       userInput: false,
     };
+  }
+  const diagnostics = isRecord(payload.body)
+    ? falFailureDetailDiagnostics(payload.body.detail)
+    : [null];
+  const classifications = diagnostics.map(classifyFalFailureDiagnostic);
+  const firstClassification = classifications[0];
+  const providerErrorType = diagnostics[0]?.providerErrorType;
+  const evidence = {
+    providerHttpStatus: payload.providerHttpStatus,
+    providerErrorType: diagnostics.every((diagnostic) => {
+      return diagnostic?.providerErrorType === providerErrorType;
+    })
+      ? providerErrorType
+      : undefined,
+  };
+  // Specific, consistent detail wins over the outer reported status, including
+  // Fal's 422 wrapper. Never choose the first entry of a mixed/unknown failure.
+  if (
+    firstClassification &&
+    classifications.every((failure) => {
+      return failure?.error.code === firstClassification.error.code;
+    })
+  ) {
+    return { ...firstClassification, ...evidence };
+  }
+  // Some endpoints omit structured details. Only the exact reported status is
+  // available here; it says nothing about transport, quota ownership or retries.
+  if (
+    diagnostics.length === 0 &&
+    payload.providerHttpStatus !== undefined &&
+    FAL_PROVIDER_FAILURE_STATUSES.has(payload.providerHttpStatus)
+  ) {
+    return { ...FAL_PROVIDER_UNAVAILABLE_FAILURE, ...evidence };
   }
   return {
     error: {
@@ -581,6 +637,7 @@ function falGenerationFailure(
     },
     retryPolicy: "retry_once",
     userInput: false,
+    ...evidence,
   };
 }
 
@@ -1382,6 +1439,8 @@ const postFalBuiltInGenerationWebhook$ = command(
           providerStatus: status,
           publicErrorCode: failure.error.code,
           retryPolicy: failure.retryPolicy,
+          providerHttpStatus: failure.providerHttpStatus,
+          providerErrorType: failure.providerErrorType,
         });
       }
       return okResponse();

@@ -462,10 +462,16 @@ export function CustomConnectorGrid({
   connectors,
   isAdmin,
   mcpEnabled,
+  className = "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3",
 }: {
   readonly connectors: readonly CustomConnectorResponse[];
   readonly isAdmin: boolean;
   readonly mcpEnabled: boolean;
+  /**
+   * The grid this owns, or `contents` when the caller has a grid of its own and
+   * wants these cards to sit in it beside connectors of another kind.
+   */
+  readonly className?: string;
 }) {
   const accountSummariesLoadable = useLoadable(
     connectorAccountSummaryByTarget$,
@@ -517,7 +523,7 @@ export function CustomConnectorGrid({
     openAccountConnect(connector, { kind: "add" });
   };
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+    <div className={className}>
       {connectors.map((connector) => {
         const accountSummary =
           accountSummariesLoadable.state === "hasData"

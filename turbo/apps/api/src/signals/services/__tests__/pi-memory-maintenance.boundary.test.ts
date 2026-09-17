@@ -65,7 +65,7 @@ import {
 import {
   createPhase2TestScope,
   insertPendingPhase2Job,
-  insertPhase2Candidates,
+  insertPhase2CandidatesWithSources as insertPhase2Candidates,
   readPhase2Job,
   insertPhase2StorageVersion,
   setPhase2StorageHead,
@@ -357,6 +357,7 @@ async function assertHistoricalMissingAgentRetry(args: {
       .where(
         and(
           eq(agentRuns.orgId, args.scope.orgId),
+          eq(agentRuns.triggerSource, "agent"),
           eq(agentRuns.userId, args.scope.userId),
         ),
       ),
@@ -862,7 +863,6 @@ async function launch(fault: Fault, noDiff = false, cleanupMode?: CleanupMode) {
       piModelConfig: JSON.stringify({
         provider: "openai",
         model: "gpt-5.6-terra",
-        api: "openai-responses",
         baseUrl: `${baseUrl}/v1`,
         apiKeyEnv: "OPENAI_API_KEY",
         credentialSecretName: "OPENAI_API_KEY",
@@ -1259,7 +1259,6 @@ describe("private maintenance across CLI, Guest, generic checkpoint and real Pos
   );
 
   it.each([
-    { label: "none", fault: "none", cleanupMode: undefined },
     {
       label: "represented_no_diff",
       fault: "represented_no_diff",

@@ -19,7 +19,7 @@ from tests.model_provider_flow_helpers import (
     make_model_provider_sse_flow,
     make_openai_responses_websocket_flow,
 )
-from tests.pending_helpers import assert_current_pending
+from tests.pending_helpers import assert_pending
 from tests.thread_helpers import ThreadUnderTest, wait_for_event
 from tests.usage_helpers import UsageWebhookServer
 from tests.webhook_test_helpers import QueuedUsageExecutor
@@ -61,8 +61,8 @@ class _RetryContentionLock:
 
 
 class _RetryConcurrencyHarness:
-    def __init__(self, pending_path: Path, *, retry_admitted: bool) -> None:
-        self.pending_path = pending_path
+    def __init__(self, control_root: Path, *, retry_admitted: bool) -> None:
+        self.control_root = control_root
         self.retry_admitted = retry_admitted
         self.executor = QueuedUsageExecutor()
         self.release_retry = threading.Event()
@@ -122,14 +122,12 @@ class _RetryConcurrencyHarness:
         *,
         buffered: int,
         reports: int,
-        flush_request_id: str,
     ) -> None:
-        assert_current_pending(
-            self.pending_path,
+        assert_pending(
+            self.control_root,
             flows=0,
             buffered=buffered,
             reports=reports,
-            flush_request_id=flush_request_id,
         )
         assert usage.webhook.pending_delivery_payload_count_for_tests() == reports
 
@@ -156,7 +154,6 @@ class _RetryConcurrencyHarness:
                 self.assert_pending(
                     buffered=1,
                     reports=0,
-                    flush_request_id="retry-capacity-rejected",
                 )
                 return False
             return self._admit_through_real_webhook(
@@ -165,7 +162,6 @@ class _RetryConcurrencyHarness:
                 payload,
                 proxy_log_path,
                 log_type,
-                attempt=2,
             )
         finally:
             self.retry_admission_resolved.set()
@@ -189,7 +185,6 @@ class _RetryConcurrencyHarness:
             payload,
             proxy_log_path,
             log_type,
-            attempt=3,
         )
 
     def _admit_through_real_webhook(
@@ -199,13 +194,10 @@ class _RetryConcurrencyHarness:
         payload: dict[str, object],
         proxy_log_path: str,
         log_type: str,
-        *,
-        attempt: int,
     ) -> bool:
         self.assert_pending(
             buffered=1,
             reports=self.successful_admissions,
-            flush_request_id=f"attempt-{attempt}-before-handoff",
         )
         assert self._original_enqueue(
             url,
@@ -219,7 +211,6 @@ class _RetryConcurrencyHarness:
         self.assert_pending(
             buffered=1,
             reports=self.successful_admissions,
-            flush_request_id=f"attempt-{attempt}-after-handoff",
         )
         return True
 
@@ -277,8 +268,7 @@ def test_provider_stores_keep_independent_lru_capacity(
     real_flow,
     mitm_ctx,
 ) -> None:
-    pending_path = tmp_path / "usage-pending"
-    usage.set_pending_path(str(pending_path))
+    control_root = tmp_path / "delivery-control"
     delivery_available = False
     admitted: list[tuple[str, str]] = []
 
@@ -330,12 +320,11 @@ def test_provider_stores_keep_independent_lru_capacity(
             None,
         )
 
-        assert_current_pending(
-            pending_path,
+        assert_pending(
+            control_root,
             flows=0,
             buffered=2,
             reports=0,
-            flush_request_id="before-claude-overflow",
         )
 
         claude_output_timing.observe_lifecycle_event(
@@ -344,32 +333,29 @@ def test_provider_stores_keep_independent_lru_capacity(
             None,
         )
 
-        assert_current_pending(
-            pending_path,
+        assert_pending(
+            control_root,
             flows=0,
             buffered=2,
             reports=0,
-            flush_request_id="after-claude-overflow",
         )
 
         delivery_available = True
         claude_output_timing.retry_all_pending()
-        assert_current_pending(
-            pending_path,
+        assert_pending(
+            control_root,
             flows=0,
             buffered=1,
             reports=0,
-            flush_request_id="after-claude-retry",
         )
 
         codex_output_timing.retry_all_pending()
 
-    assert_current_pending(
-        pending_path,
+    assert_pending(
+        control_root,
         flows=0,
         buffered=0,
         reports=0,
-        flush_request_id="after-codex-retry",
     )
     assert admitted == [
         ("claude_output_timing", "run-claude-recent"),
@@ -382,8 +368,7 @@ def test_retry_all_pending_visits_only_retryable_runs_in_current_lru_order(
     real_flow,
     mitm_ctx,
 ) -> None:
-    pending_path = tmp_path / "usage-pending"
-    usage.set_pending_path(str(pending_path))
+    control_root = tmp_path / "delivery-control"
     delivery_available = True
     admission_results: list[bool] = []
     attempted_run_ids: list[str] = []
@@ -450,12 +435,11 @@ def test_retry_all_pending_visits_only_retryable_runs_in_current_lru_order(
         observe_generated_response(older_pending_flow)
         observe_generated_response(newer_pending_flow)
 
-        assert_current_pending(
-            pending_path,
+        assert_pending(
+            control_root,
             flows=0,
             buffered=2,
             reports=0,
-            flush_request_id="before-pending-touch",
         )
 
         codex_output_timing.observe_server_event(older_pending_flow, "response.completed")
@@ -466,12 +450,11 @@ def test_retry_all_pending_visits_only_retryable_runs_in_current_lru_order(
         assert retry_and_capture_visits() == ["run-pending-newer", "run-pending-older"]
         assert attempted_run_ids == ["run-pending-newer", "run-pending-older"]
         assert admitted_run_ids == ["run-pending-newer"]
-        assert_current_pending(
-            pending_path,
+        assert_pending(
+            control_root,
             flows=0,
             buffered=1,
             reports=0,
-            flush_request_id="after-saturated-retry",
         )
 
         attempted_run_ids.clear()
@@ -479,12 +462,11 @@ def test_retry_all_pending_visits_only_retryable_runs_in_current_lru_order(
         assert retry_and_capture_visits() == ["run-pending-older"]
         assert attempted_run_ids == ["run-pending-older"]
         assert admitted_run_ids == ["run-pending-newer", "run-pending-older"]
-        assert_current_pending(
-            pending_path,
+        assert_pending(
+            control_root,
             flows=0,
             buffered=0,
             reports=0,
-            flush_request_id="after-final-retry",
         )
 
         attempted_run_ids.clear()
@@ -507,9 +489,8 @@ def test_retry_serializes_with_new_codex_milestone(
     usage_webhook_server: UsageWebhookServer,
     retry_admitted: bool,
 ) -> None:
-    pending_path = tmp_path / "usage-pending"
-    usage.set_pending_path(str(pending_path))
-    harness = _RetryConcurrencyHarness(pending_path, retry_admitted=retry_admitted)
+    control_root = tmp_path / "delivery-control"
+    harness = _RetryConcurrencyHarness(control_root, retry_admitted=retry_admitted)
 
     client_received_at = 1_700_000_000.125
     created_at = "2023-11-14T22:13:21.125000+00:00"
@@ -539,7 +520,6 @@ def test_retry_serializes_with_new_codex_milestone(
         harness.assert_pending(
             buffered=1,
             reports=0,
-            flush_request_id="before-concurrent-retry",
         )
 
         harness.retry_thread.start()
@@ -561,7 +541,6 @@ def test_retry_serializes_with_new_codex_milestone(
             harness.assert_pending(
                 buffered=0,
                 reports=harness.expected_successful_admissions,
-                flush_request_id="after-store-handoff",
             )
         finally:
             harness.finish_retry_and_deliver()
@@ -569,7 +548,6 @@ def test_retry_serializes_with_new_codex_milestone(
         harness.assert_pending(
             buffered=0,
             reports=0,
-            flush_request_id="after-delivery",
         )
 
     _assert_delivered_timing_operations(

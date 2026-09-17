@@ -85,7 +85,9 @@ pub struct ExecRequest<'a> {
 /// by that helper. Manifests outside the provider's bounded transport belong
 /// on the caller's established fallback path.
 pub struct StorageManifestRequest<'a> {
-    /// Canonical storage-manifest JSON passed to the fixed guest helper.
+    /// Canonical JSON or `guest_contracts::storage_files::encode_input` output
+    /// passed to the fixed guest helper. Binary input has its own bounded section;
+    /// it does not increase the generic exec-stdin limit.
     pub manifest_json: &'a [u8],
     /// Run identity exposed to the helper through the guest run-id contract.
     pub run_id: &'a str,

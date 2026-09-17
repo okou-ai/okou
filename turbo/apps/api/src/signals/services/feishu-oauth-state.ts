@@ -1,3 +1,4 @@
+import type { FeishuPlatform } from "@okouai/core/feishu-platform";
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { z } from "zod";
@@ -81,6 +82,7 @@ export function verifyFeishuOAuthState(state: string): FeishuOAuthState | null {
 }
 
 export function buildFeishuOAuthConnectUrl(args: {
+  readonly platform?: FeishuPlatform;
   readonly installationId: string;
   readonly orgId: string;
   readonly userId: string;
@@ -88,7 +90,7 @@ export function buildFeishuOAuthConnectUrl(args: {
   return feishuOAuthConnectUrl(
     createFeishuOAuthState({
       ...args,
-      redirectUri: feishuOAuthAppCallbackUrl(),
+      redirectUri: feishuOAuthAppCallbackUrl(args.platform),
     }),
   );
 }

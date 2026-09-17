@@ -148,11 +148,9 @@ def test_legacy_x_json_fallback_ignores_boolean_result_count(x_usage, tmp_path, 
 
 
 def test_truncated_buffer_with_no_hints_skips_billing(x_usage, tmp_path, real_flow):
-    """Unparseable body + no URL hints: skip emission and log an
-    error.  The previous blind fallback of 100 units was removed;
-    ops audits via the proxy error log instead."""
-    flow = x_usage.make_flow(real_flow, tmp_path, body=b"{")
-    set_response_stream_buffer(flow, b"{", truncated=True)
+    """A valid JSON prefix cannot supply counts when response bytes were omitted."""
+    flow = x_usage.make_flow(real_flow, tmp_path)
+    set_response_stream_buffer(flow, b'{"data":[{"id":"prefix-only"}]}', truncated=True)
     proxy_log = tmp_path / "proxy.jsonl"
 
     assert x_usage.call_and_get_billing(flow) == []
@@ -161,7 +159,7 @@ def test_truncated_buffer_with_no_hints_skips_billing(x_usage, tmp_path, real_fl
     assert entry["level"] == "error"
     assert "unparseable" in entry["message"].lower()
     assert entry["body_truncated"] is True
-    assert "parse_error" not in entry
+    assert entry["parse_error"] == "incomplete compressed body"
 
 
 def test_invalid_json_with_no_hints_skips_billing(x_usage, tmp_path, real_flow):

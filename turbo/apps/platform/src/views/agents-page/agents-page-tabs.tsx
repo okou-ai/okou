@@ -747,8 +747,10 @@ function AgentCard({ agent, creator, hasUnread, showCreator }: AgentProps) {
                     style={{
                       backgroundColor: "hsl(var(--popover))",
                       color: "hsl(var(--popover-foreground))",
-                      // Matches --okou-card-shadow; inlined because the tooltip
-                      // portal renders outside .okou-app where the var is scoped.
+                      // The light value of --okou-card-shadow, spelled out.
+                      // The token is declared at :root and would resolve here;
+                      // adopting it is a visual change, because it carries a
+                      // gradient-palette override this literal does not.
                       boxShadow:
                         "0 2px 12px hsl(30 6% 45% / 0.05), 0 0 0 0.5px hsl(30 6% 45% / 0.025)",
                       whiteSpace: "normal",

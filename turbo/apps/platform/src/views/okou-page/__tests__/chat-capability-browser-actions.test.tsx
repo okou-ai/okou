@@ -1,7 +1,3 @@
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-
 import {
   browserContract,
   type BrowserSession,
@@ -39,24 +35,17 @@ const SUSPENDED_SCREENSHOT_URL =
   "https://images.example.test/browser-suspended.png";
 const ACTIVE_BROWSER_URL = "https://browser.example.test/live/initial";
 const RESUMED_BROWSER_URL = "https://browser.example.test/live/resumed";
-const appStyles = readFileSync(
-  resolve(dirname(fileURLToPath(import.meta.url)), "../../css/index.css"),
-  "utf8",
-);
 
+/**
+ * The chat card surface is Tailwind utilities on the element itself, so the
+ * App's utility output is the whole style source; nothing has to be lifted out
+ * of the stylesheet. Colors are not observable here — happy-dom resolves
+ * neither `var()` nor `@layer`, which is why these checks stay on the border
+ * geometry the card's arbitrary width owns.
+ */
 async function createRenderedAppStyles(
   signal: AbortSignal,
 ): Promise<(element: HTMLElement) => void> {
-  const sharedCardRule = appStyles.match(
-    /\.okou-app \.okou-chat-card,\s*\.okou-app \.okou-chat-frame\s*\{[^}]+\}/u,
-  )?.[0];
-  if (!sharedCardRule) {
-    throw new Error("The shared chat card style rule was not found");
-  }
-  const renderedSharedCardRule = sharedCardRule.replace(
-    "hsl(var(--gray-400))",
-    "rgb(128, 128, 128)",
-  );
   const compiler = await compile("@tailwind utilities;");
   const styleElement = document.createElement("style");
   document.head.append(styleElement);
@@ -69,10 +58,7 @@ async function createRenderedAppStyles(
   );
 
   return (element) => {
-    styleElement.textContent = [
-      renderedSharedCardRule,
-      compiler.build([...element.classList]),
-    ].join("\n");
+    styleElement.textContent = compiler.build([...element.classList]);
   };
 }
 
@@ -209,6 +195,41 @@ async function openManagedBrowserChat() {
     },
   };
 }
+
+/**
+ * The unavailable card is the fail-closed branch: the browser does not belong to
+ * this chat or has been removed, so its control must not be actionable. Its
+ * `disabled`, label and markers reach the DOM through `ChatCard`'s render-prop
+ * merge rather than as direct JSX attributes, so the page-level guarantee is
+ * asserted here. A status outside the session fetch's accepted `200`/`404` is
+ * what drives the component into that branch.
+ */
+test("Keep the unavailable browser card inert when the session cannot be read", async () => {
+  installCapabilityChat({
+    events: completedConversation(
+      `[Research session](https://app.okou.ai/browsers/${RUN_THREAD_ID})`,
+    ),
+  });
+  context.mocks.api(browserContract.get, ({ params, respond }) => {
+    expect(params.threadId).toBe(RUN_THREAD_ID);
+    return respond(503, {
+      error: { code: "BROWSER_UNAVAILABLE", message: "Browser unavailable" },
+    });
+  });
+
+  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
+  await readyChat();
+
+  const card = await findButton("Browser unavailable");
+  expect(card).toBeDisabled();
+  expect(card).toHaveTextContent("Cloud browser");
+  expect(card).toHaveAttribute("data-browser-session-status", "unavailable");
+
+  click(card);
+  expect(
+    screen.queryByRole("complementary", { name: "Live browser" }),
+  ).toBeNull();
+});
 
 test("Render a managed browser card from loading to live", async () => {
   const { sessionReady } = await openManagedBrowserChat();

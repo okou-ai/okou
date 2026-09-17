@@ -1,3 +1,8 @@
+import {
+  prepareGetStartedInvitation,
+  linkGetStartedInvitation,
+  acceptGetStartedInvitation,
+} from "./get-started-invitation.service";
 import type {
   OrgInvitationPurchasePreviewResponse,
   OrgRole,
@@ -71,7 +76,6 @@ import {
   loadBillingOrganizationPendingInvitations,
 } from "./billing-clerk-directory.service";
 import { onRejection, settle } from "../utils";
-import { readOrgImpactMetadata } from "./impact-attribution.service";
 
 const PURPOSE = "usage_pack_invitation_purchase";
 const PURCHASE_ID_METADATA_KEY = "usagePackInvitationPurchaseId";
@@ -417,11 +421,14 @@ async function emailAlreadyBelongsToOrg(
   );
 }
 
-function checkoutMetadata(purchaseId: string): Record<string, string> {
+function checkoutMetadata(
+  purchase: UsagePackInvitationPurchaseRow,
+): Record<string, string> {
   return {
     ...stripePreviewMetadata(),
     purpose: PURPOSE,
-    [PURCHASE_ID_METADATA_KEY]: purchaseId,
+    [PURCHASE_ID_METADATA_KEY]: purchase.id,
+    purchaseCreatedAt: purchase.createdAt.toISOString(),
   };
 }
 
@@ -432,7 +439,7 @@ async function insertPendingInvitationPurchase(
 ): Promise<string | null> {
   return await db.transaction(async (tx) => {
     await lockInvitationEmail(tx, args.orgId, args.email);
-    const impact = await readOrgImpactMetadata(tx, args.orgId, signal);
+    signal.throwIfAborted();
     await tx
       .update(usagePackInvitationPurchases)
       .set({
@@ -456,10 +463,6 @@ async function insertPendingInvitationPurchase(
         normalizedEmail: args.email,
         role: args.role,
         inviterUserId: args.inviterUserId,
-        impactClickId: impact.impact_click_id ?? null,
-        impactClickAt: impact.impact_click_at
-          ? new Date(impact.impact_click_at)
-          : null,
         publicBrand: args.publicBrand,
         usagePackUsd: args.usagePackUsd,
         stripePriceId: args.stripePriceId,
@@ -1076,6 +1079,12 @@ async function ensurePaidInvitationCreated(
     }
     return;
   }
+  const rewardClaim = await prepareGetStartedInvitation(db, {
+    orgId: purchase.orgId,
+    userId: purchase.inviterUserId,
+    purchaseId: purchase.id,
+  });
+  signal.throwIfAborted();
   const invitation =
     existing ??
     (await clerk.organizations.createOrganizationInvitation({
@@ -1093,9 +1102,13 @@ async function ensurePaidInvitationCreated(
       ),
       privateMetadata: {
         [PURCHASE_ID_METADATA_KEY]: purchase.id,
+        ...(rewardClaim ? { getStartedClaimId: rewardClaim.id } : {}),
       },
     }));
   await persistInvitation(db, purchase, invitation.id);
+  if (rewardClaim) {
+    await linkGetStartedInvitation(db, rewardClaim.id, invitation.id);
+  }
 }
 
 async function finalizeRefund(
@@ -1254,7 +1267,7 @@ async function refundPurchase(
     {
       payment_intent: purchase.stripePaymentIntentId,
       amount: purchase.amountPaidCents,
-      metadata: checkoutMetadata(purchase.id),
+      metadata: checkoutMetadata(purchase),
     },
     {
       idempotencyKey: `usage-pack-invitation:${purchase.id}:refund:${purchase.refundAttempt}`,
@@ -1604,15 +1617,7 @@ async function createInvitationPurchaseInvoice(
       ...(args.paymentMethod
         ? stripeBillingPurchasePaymentParams(args.paymentMethod)
         : {}),
-      metadata: {
-        ...checkoutMetadata(purchase.id),
-        ...(purchase.impactClickId && purchase.impactClickAt
-          ? {
-              impact_click_id: purchase.impactClickId,
-              impact_click_at: purchase.impactClickAt.toISOString(),
-            }
-          : {}),
-      },
+      metadata: checkoutMetadata(purchase),
       discounts: "",
       ...(structuredCharge.preview.automaticTax
         ? { automatic_tax: structuredCharge.preview.automaticTax }
@@ -2195,6 +2200,11 @@ export async function handleUsagePackInvitationAccepted(
   if (!candidate) {
     return false;
   }
+  // Exact membership recovery has the same invitation evidence as the webhook.
+  await acceptGetStartedInvitation(db, {
+    ...args,
+    purchaseId: candidate.id,
+  });
   if (IGNORED_ACCEPTANCE_STATUSES.has(candidate.status)) {
     return true;
   }

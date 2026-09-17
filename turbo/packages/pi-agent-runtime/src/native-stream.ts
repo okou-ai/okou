@@ -5,7 +5,7 @@ import { streamSimple as streamMessages } from "@earendil-works/pi-ai/api/anthro
 import { streamSimple as streamBedrock } from "@earendil-works/pi-ai/api/bedrock-converse-stream";
 import { resolveHttpProxyUrlForTarget } from "@earendil-works/pi-ai/utils/node-http-proxy";
 import type { Api, Context, Model } from "@earendil-works/pi-ai";
-import { NodeHttpHandler } from "@smithy/node-http-handler";
+import { observePiUsageFetch, PiUsageHttpHandler } from "./usage-transport";
 import { HttpProxyAgent } from "http-proxy-agent";
 import { HttpsProxyAgent } from "https-proxy-agent";
 
@@ -15,7 +15,7 @@ import {
   observePiResponseStatus,
   type PiAgentStreamOptions,
 } from "./stream-options";
-import { guardPiUpstreamErrorBody } from "./upstream-error-body";
+import { streamWithModelRequestDiagnostics } from "./model-request-diagnostics";
 
 function isMessages(model: Model<Api>): model is Model<"anthropic-messages"> {
   return model.api === "anthropic-messages";
@@ -70,7 +70,11 @@ export function streamPiNative(
     ...options,
     maxRetries: 0,
     fetch: observePiResponseStatus(
-      guardPiUpstreamErrorBody(options.fetch ?? nativePublicFetch),
+      observePiUsageFetch(
+        options.fetch ?? nativePublicFetch,
+        "messages",
+        options.usageObserver,
+      ),
       options.onObservedResponseStatus,
     ),
     // Neither ambient cache policy nor provider authentication is inherited.
@@ -97,10 +101,19 @@ export function streamPiNative(
   // images and cache points. Only the final request uses the upstream alias.
   if (isMessages(model)) {
     if (config.transport !== "sse") throw new Error("Pi Messages requires SSE");
-    return streamMessages(
-      { ...model, id: config.catalogModel },
-      nativeContext,
-      nativeOptions,
+    return streamWithModelRequestDiagnostics(
+      (fetch) => {
+        return streamMessages(
+          { ...model, id: config.catalogModel },
+          nativeContext,
+          {
+            ...nativeOptions,
+            fetch,
+          },
+        );
+      },
+      nativeOptions.fetch,
+      nativeOptions.signal,
     );
   }
   if (
@@ -117,7 +130,7 @@ export function streamPiNative(
   const auth = config.bedrockAuth;
   for (const value of Object.values(auth)) assertPiNativeCredential(value);
   const proxy = resolveHttpProxyUrlForTarget(model.baseUrl);
-  const requestHandler = new NodeHttpHandler(
+  const requestHandler = new PiUsageHttpHandler(
     proxy
       ? {
           httpAgent: new HttpProxyAgent(proxy),
@@ -127,6 +140,7 @@ export function streamPiNative(
           httpAgent: new HttpAgent({ lookup: nativePublicLookup }),
           httpsAgent: new HttpsAgent({ lookup: nativePublicLookup }),
         },
+    options.usageObserver,
   );
   return streamBedrock(
     { ...model, id: config.catalogModel, name: config.catalogModel },

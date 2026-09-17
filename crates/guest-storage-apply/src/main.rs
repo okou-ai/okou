@@ -8,11 +8,13 @@ use std::time::Instant;
 
 const LOG_TAG: &str = "sandbox:guest-storage-apply";
 const MANIFEST_STDIN_ARG: &str = "--manifest-stdin";
-const USAGE: &str = "Usage: guest-storage-apply <manifest_path> | --manifest-stdin";
+const USAGE: &str =
+    "Usage: guest-storage-apply <manifest_path> | --manifest-stdin | --storage-files-stdin";
 
 enum ManifestInput {
     Path(String),
     Stdin,
+    FilesStdin,
 }
 
 fn main() {
@@ -68,7 +70,9 @@ fn manifest_input_from_args() -> Option<ManifestInput> {
     if args.next().is_some() {
         return None;
     }
-    if arg == MANIFEST_STDIN_ARG {
+    if arg == "--storage-files-stdin" {
+        Some(ManifestInput::FilesStdin)
+    } else if arg == MANIFEST_STDIN_ARG {
         Some(ManifestInput::Stdin)
     } else {
         Some(ManifestInput::Path(arg))
@@ -77,6 +81,23 @@ fn manifest_input_from_args() -> Option<ManifestInput> {
 
 fn run(input: ManifestInput) -> bool {
     match input {
+        ManifestInput::FilesStdin => {
+            if !remove_stale_manifest_file(runtime_paths::STORAGE_MANIFEST_PATH) {
+                return false;
+            }
+            let mut input = Vec::new();
+            let limit = guest_contracts::storage_files::MAX_INPUT_BYTES as u64;
+            if std::io::stdin()
+                .take(limit + 1)
+                .read_to_end(&mut input)
+                .is_err()
+                || input.len() as u64 > limit
+            {
+                log_error!(LOG_TAG, "Failed to read bounded storage files input");
+                return false;
+            }
+            guest_storage_apply::run_storage_files_bytes(&input)
+        }
         ManifestInput::Path(manifest_path) => run_path(&manifest_path),
         ManifestInput::Stdin => {
             if !remove_stale_manifest_file(runtime_paths::STORAGE_MANIFEST_PATH) {

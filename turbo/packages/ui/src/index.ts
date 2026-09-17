@@ -113,6 +113,7 @@ export {
   type ElapsedTimeProps,
 } from "./components/ui/elapsed-time";
 export { Skeleton } from "./components/ui/skeleton";
+export { ScrollBar } from "./components/ui/scroll-area";
 export { Slider } from "./components/ui/slider";
 export { Switch } from "./components/ui/switch";
 export {
@@ -138,6 +139,7 @@ export { cn } from "./lib/utils";
 export {
   BrandGithub,
   BrandGoogleDrive,
+  BrandLangfuse,
   BrandNotion,
   BrandSlack,
   BrandStripe,

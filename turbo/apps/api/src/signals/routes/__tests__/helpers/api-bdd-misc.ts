@@ -573,6 +573,7 @@ export function createMiscRoutesApi(context: TestContext) {
       actor: ApiTestUser,
       policies: OrgModelPoliciesResponse["policies"],
       statuses: readonly (200 | 400 | 401 | 403 | 404 | 500)[],
+      revision?: string,
     ) {
       return await accept(
         setupApp({ context, routes: modelPoliciesRoutes })(
@@ -580,6 +581,7 @@ export function createMiscRoutesApi(context: TestContext) {
         ).update({
           headers: authenticate(context, actor),
           body: {
+            revision,
             policies: policies.map((policy) => {
               return {
                 model: policy.model,

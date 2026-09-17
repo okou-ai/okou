@@ -317,7 +317,8 @@ fn open_dir_components(
     let mut current = open(start, dir_open_flags(), Mode::empty()).map_err(|e| {
         io::Error::other(format!("open {context} root for {}: {e}", path.display()))
     })?;
-    let mut current_path = start.to_path_buf();
+    let mut current_path = PathBuf::with_capacity(path.as_os_str().len().saturating_add(2));
+    current_path.push(start);
     let mut components = path.components().peekable();
     let mut saw_normal_component = false;
     let walk = DirWalk {
@@ -340,8 +341,8 @@ fn open_dir_components(
             Component::Normal(name) => {
                 saw_normal_component = true;
                 let is_final = components.peek().is_none();
+                current_path.push(name);
                 current = open_dir_component(&current, name, &current_path, &walk, is_final)?;
-                current_path = component_path(&current_path, name);
             }
             Component::Prefix(prefix) => {
                 return Err(io::Error::new(
@@ -391,30 +392,24 @@ fn validate_lexical_components(path: &Path) -> io::Result<()> {
 fn open_dir_component(
     parent: &(impl AsFd + AsRawFd),
     name: &OsStr,
-    parent_path: &Path,
+    component_path: &Path,
     walk: &DirWalk<'_>,
     is_final: bool,
 ) -> io::Result<OwnedFd> {
     ensure_parent_not_replaceable(
         parent,
-        parent_path,
+        file_parent(component_path),
         walk.full_path,
         walk.context,
         walk.expected_uid,
     )?;
     match openat(parent, name, dir_open_flags(), Mode::empty()) {
         Ok(fd) => {
-            secure_dir_component(
-                &fd,
-                &component_path(parent_path, name),
-                walk,
-                is_final,
-                false,
-            )?;
+            secure_dir_component(&fd, component_path, walk, is_final, false)?;
             Ok(fd)
         }
         Err(nix::errno::Errno::ENOENT) if walk.create_missing => {
-            create_and_open_dir_component(parent, name, parent_path, walk, is_final)
+            create_and_open_dir_component(parent, name, component_path, walk, is_final)
         }
         Err(e) => Err(dir_component_error(
             "open",
@@ -429,7 +424,7 @@ fn open_dir_component(
 fn create_and_open_dir_component(
     parent: &(impl AsFd + AsRawFd),
     name: &OsStr,
-    parent_path: &Path,
+    component_path: &Path,
     walk: &DirWalk<'_>,
     is_final: bool,
 ) -> io::Result<OwnedFd> {
@@ -461,13 +456,7 @@ fn create_and_open_dir_component(
 
     let fd = openat(parent, name, dir_open_flags(), Mode::empty())
         .map_err(|e| dir_component_error("open", name, walk.full_path, walk.context, e))?;
-    secure_dir_component(
-        &fd,
-        &component_path(parent_path, name),
-        walk,
-        is_final,
-        created,
-    )?;
+    secure_dir_component(&fd, component_path, walk, is_final, created)?;
     Ok(fd)
 }
 
@@ -672,12 +661,6 @@ fn validate_trusted_component_owner(
     Ok(())
 }
 
-fn component_path(parent_path: &Path, name: &OsStr) -> PathBuf {
-    let mut path = parent_path.to_path_buf();
-    path.push(Path::new(name));
-    path
-}
-
 fn fstat_raw<Fd: AsRawFd>(file: &Fd, path: &Path, context: &str) -> io::Result<nix::libc::stat> {
     let mut stat = std::mem::MaybeUninit::<nix::libc::stat>::uninit();
     // SAFETY: `stat` points to writable memory and `file` owns a live fd.
@@ -781,6 +764,98 @@ mod tests {
 
     fn mode(path: &Path) -> u32 {
         std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+    }
+
+    #[test]
+    fn ensure_dir_preserves_nested_relative_non_utf8_components() {
+        let dir = tempfile::tempdir_in(".").unwrap();
+        let relative = Path::new(".").join(dir.path().file_name().unwrap());
+        let parent = relative.join(OsStr::from_bytes(b"cache-\xff"));
+        let path = parent.join("nested/leaf");
+
+        ensure_dir(&path, DirMode::Private, "test cache").unwrap();
+        validate_dir(&path, DirMode::Private, "test cache").unwrap();
+        let file = path.join("state");
+        let mut writer = open_private_append_file(&file, false).unwrap();
+        std::io::Write::write_all(&mut writer, b"cached bytes").unwrap();
+
+        assert_eq!(std::fs::read(&file).unwrap(), b"cached bytes");
+        assert_eq!(mode(&parent), PRIVATE_DIR_MODE);
+        assert_eq!(mode(&parent.join("nested")), PRIVATE_DIR_MODE);
+        assert_eq!(mode(&path), PRIVATE_DIR_MODE);
+    }
+
+    #[test]
+    fn validate_dir_does_not_create_missing_nested_components() {
+        let dir = tempfile::tempdir().unwrap();
+        for dir_mode in [
+            DirMode::Private,
+            DirMode::TrustedParent,
+            DirMode::SharedTrustedParent,
+            DirMode::SharedTrusted,
+        ] {
+            let error = validate_dir(
+                &dir.path().join("missing/child"),
+                dir_mode,
+                "test directory",
+            )
+            .unwrap_err();
+
+            assert!(error.to_string().contains("missing"));
+            assert!(!dir.path().join("missing").exists());
+        }
+    }
+
+    #[test]
+    fn ensure_dir_reports_unsafe_nested_component_without_creating_descendants() {
+        let dir = tempfile::tempdir().unwrap();
+        let unsafe_parent = dir.path().join("safe/writable");
+        std::fs::create_dir_all(&unsafe_parent).unwrap();
+        std::fs::set_permissions(&unsafe_parent, std::fs::Permissions::from_mode(0o777)).unwrap();
+
+        let error = ensure_dir(
+            &unsafe_parent.join("missing/leaf"),
+            DirMode::TrustedParent,
+            "test cache",
+        )
+        .unwrap_err();
+
+        assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "test cache component {} is group/other writable without the sticky bit",
+                unsafe_parent.display()
+            )
+        );
+        assert!(!unsafe_parent.join("missing").exists());
+        assert_eq!(mode(&unsafe_parent), 0o777);
+    }
+
+    #[test]
+    fn ensure_dir_keeps_sticky_intermediate_but_rejects_writable_final_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let sticky = dir.path().join("sticky");
+        std::fs::create_dir(&sticky).unwrap();
+        std::fs::set_permissions(&sticky, std::fs::Permissions::from_mode(0o1777)).unwrap();
+        let leaf = sticky.join("shared/leaf");
+
+        ensure_dir(&leaf, DirMode::SharedTrustedParent, "test directory").unwrap();
+
+        assert_eq!(mode(&leaf), SHARED_TRUSTED_DIR_MODE);
+        assert_eq!(
+            std::fs::metadata(&sticky).unwrap().permissions().mode() & 0o7777,
+            0o1777
+        );
+        let error = validate_dir(&sticky, DirMode::TrustedParent, "test directory").unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "test directory {} is group/other writable",
+                sticky.display()
+            )
+        );
     }
 
     #[tokio::test]
@@ -1054,7 +1129,7 @@ mod tests {
         let component_fd = create_and_open_dir_component(
             &parent,
             Path::new("existing").as_os_str(),
-            dir.path(),
+            &component,
             &walk,
             false,
         )

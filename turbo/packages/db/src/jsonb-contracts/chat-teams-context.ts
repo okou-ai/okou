@@ -15,6 +15,12 @@ export interface ChatTeamsMessageFile {
   readonly contentType: string;
   readonly inCurrentMessage: boolean;
   readonly payload: ChatTeamsFileTokenPayload;
+  /** Ready copy imported at admission; older queued contexts retain native downloads. */
+  readonly canonicalAsset?: {
+    readonly assetId: string;
+    readonly filename: string;
+    readonly contentType: string;
+  };
 }
 
 export type ChatTeamsMessageFiles = readonly ChatTeamsMessageFile[];

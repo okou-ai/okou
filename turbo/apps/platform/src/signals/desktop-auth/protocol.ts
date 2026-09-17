@@ -9,7 +9,11 @@ import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { clerk$, resolveAppAuthUrl } from "../auth.ts";
 import { readClerkToken } from "../clerk-token.ts";
-import { createDeferredPromise, withCleanup } from "../utils.ts";
+import {
+  createDeferredPromise,
+  waitForOperation,
+  withCleanup,
+} from "../utils.ts";
 
 declare global {
   interface Window {
@@ -81,12 +85,7 @@ export function waitForDesktopOperation<T>(
   operation: Promise<T>,
   signal: AbortSignal,
 ): Promise<T> {
-  const cancelled = createDeferredPromise<never>(signal);
-  return withCleanup(Promise.race([operation, cancelled.promise]), () => {
-    if (!cancelled.settled()) {
-      cancelled.reject(new DOMException("Operation settled", "AbortError"));
-    }
-  });
+  return waitForOperation(operation, signal);
 }
 
 export const waitForDesktopIdentity$ = command(

@@ -15,7 +15,7 @@ export function PreferenceCardRow({
   readonly children: ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-3 bg-card p-4 rounded-xl okou-border sm:flex-row sm:items-center sm:gap-4">
+    <div className="flex flex-col gap-3 bg-card p-4 rounded-xl border border-surface-border sm:flex-row sm:items-center sm:gap-4">
       <div className="flex flex-1 items-center gap-4 min-w-0">
         <div className="shrink-0">
           <div className="flex h-7 w-7 items-center justify-center">

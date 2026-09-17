@@ -13,6 +13,7 @@ import {
 import { loadNewChatThreadModelSettings } from "./chat-thread-model-settings.service";
 import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import type { Tx } from "../../lib/db-types";
+import { isIntegrationDmSessionKey } from "../../lib/integration-dm-session";
 
 interface AgentPhoneChatThreadRouteKey {
   readonly agentphoneUserLinkId: string;
@@ -253,6 +254,10 @@ export async function ensureAgentPhoneChatThreadRoute(
   return await db.transaction(async (tx) => {
     const existing = await loadRoute(tx, args);
     if (existing) {
+      if (isIntegrationDmSessionKey(args.rootMessageId)) {
+        await updateRouteConversationContext(tx, existing, args.conversationId);
+        return existing;
+      }
       return await reconcileExistingRoute(tx, args, existing);
     }
 
@@ -280,6 +285,14 @@ export async function ensureAgentPhoneChatThreadRoute(
         throw new Error(
           "Failed to resolve AgentPhone chat thread route after conflict",
         );
+      }
+      if (isIntegrationDmSessionKey(args.rootMessageId)) {
+        await updateRouteConversationContext(
+          tx,
+          conflicted,
+          args.conversationId,
+        );
+        return conflicted;
       }
       return await reconcileExistingRoute(tx, args, conflicted);
     }

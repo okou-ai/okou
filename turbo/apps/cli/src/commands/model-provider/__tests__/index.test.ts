@@ -101,6 +101,40 @@ describe("okou model-provider command", () => {
     expect(logCalls).toContain("No personal subscription connected");
   });
 
+  it("shows reconnect guidance for the personal route instead of the admin API", async () => {
+    server.use(
+      http.get("http://localhost:3000/api/model-policies", () => {
+        return HttpResponse.json({
+          ...MODEL_POLICIES_RESPONSE,
+          policies: [
+            {
+              ...MODEL_POLICIES_RESPONSE.policies[1],
+              memberEffective: {
+                providerType: "codex-oauth-token",
+                runtimeProviderType: "codex-oauth-token",
+                credentialScope: "member",
+                availability: "reconnect_required",
+                accountSelection: "capture_required",
+              },
+            },
+          ],
+        });
+      }),
+    );
+
+    await modelProviderCommand.parseAsync(["node", "cli", "ls"]);
+
+    const output = mockConsoleLog.mock.calls.flat().join("\n");
+    expect(output).toContain("provider: subscription");
+    expect(output).toContain(
+      "provider type: codex-oauth-token (ChatGPT (Codex))",
+    );
+    expect(output).toContain(
+      "reconnect_required: Reconnect your personal subscription",
+    );
+    expect(output).not.toContain("provider type: openai-api-key");
+  });
+
   it("should show web-app provider routing guidance in set help", async () => {
     const helpChunks: string[] = [];
     setCommand.configureOutput({

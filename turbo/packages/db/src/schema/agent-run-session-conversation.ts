@@ -65,6 +65,10 @@ export const agentRuns = pgTable(
         sql`${table.autonomyBudget} >= 0 AND ${table.autonomyBudget} <= 10`,
       ),
       check(
+        "agent_runs_runner_cancellation_mode_check",
+        sql`${table.runnerCancellationMode} IN ('cooperative', 'hard')`,
+      ),
+      check(
         "agent_runs_metadata_presence_check",
         sql`(
           (
@@ -101,7 +105,8 @@ export const agentRuns = pgTable(
             ${table.launchSnapshot} ->> 'framework' = ANY (
               ARRAY['claude-code', 'codex', 'pi']
             ) AND
-            jsonb_typeof(
+            ((
+              jsonb_typeof(
               ${table.launchSnapshot} -> 'runnerProfile'
             ) = 'string' AND
             char_length(${table.launchSnapshot} ->> 'runnerProfile') >= 1 AND
@@ -153,6 +158,14 @@ export const agentRuns = pgTable(
                 ${table.launchSnapshot} -> 'schemaVersion' = '3'::jsonb
               )
             )
+            ) OR (
+              ${table.launchSnapshot} ?& ARRAY['schemaVersion', 'framework', 'executionMode', 'inferenceContractVersion'] AND
+              (${table.launchSnapshot} - 'schemaVersion' - 'framework' - 'executionMode' - 'inferenceContractVersion') = '{}'::jsonb AND
+              ${table.launchSnapshot}->'schemaVersion' = '4'::jsonb AND
+              ${table.launchSnapshot}->>'framework' = 'pi' AND
+              ${table.launchSnapshot}->'executionMode' = '"api-inference"'::jsonb AND
+              ${table.launchSnapshot}->'inferenceContractVersion' = '1'::jsonb
+            ))
           )
         )`,
       ),
@@ -260,6 +273,8 @@ export const agentSessions = pgTable(
     return [
       index("idx_agent_sessions_user_agent").on(table.userId, table.agentId),
       index("idx_agent_sessions_org").on(table.orgId),
+      index("idx_agent_sessions_agent").on(table.agentId),
+      index("idx_agent_sessions_conversation").on(table.conversationId),
     ];
   },
 );

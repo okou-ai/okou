@@ -13,7 +13,12 @@ import { now } from "../../../lib/time.ts";
 import { apiClient$ } from "../../api-client.ts";
 import { brandName$, type BrandName } from "../../branding.ts";
 import { reloadOrgModelProviders$ } from "../../external/org-model-providers.ts";
-import { bestEffort, resetSignal, setLoop, tapError } from "../../utils.ts";
+import {
+  bestEffort,
+  resetSignal,
+  waitLoopUntil,
+  tapError,
+} from "../../utils.ts";
 import { writeToClipboard } from "../clipboard.ts";
 import { reloadPersonalModelProvider$ } from "../model-first-personal-oauth.ts";
 
@@ -247,7 +252,7 @@ function createCodexPollFlow$(ctx: CodexDeviceAuthSignalContext) {
       let completed = false;
       let expired = false;
 
-      await setLoop(
+      await waitLoopUntil(
         async (loopSignal) => {
           const remainingMs =
             activeFlowOrExpired(get(ctx.internalFlowState$), requestId) - now();

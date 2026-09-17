@@ -46,12 +46,12 @@ import {
 } from "../../api-client.ts";
 import {
   resetSignal,
-  setLoop,
+  waitLoopUntil,
   settle,
   tapError,
   withCleanup,
 } from "../../utils.ts";
-import { setAblyPayloadLoop$ } from "../../realtime.ts";
+import { waitAblyPayloadLoopUntil$ } from "../../realtime.ts";
 import { agents$ } from "../../agent.ts";
 import { reloadAgentConnectorAuthorizations$ } from "../agent-connector-authorizations.ts";
 import { reloadConnectorAccountSummaries$ } from "../connector-accounts.ts";
@@ -462,7 +462,10 @@ export const connectorsConnectionFilter$ = computed(
     // The directory browses a catalog, and category is the only dimension that
     // organises it. The scope you already own is organised by who uses those
     // connectors instead, so that is the one place this control still applies.
-    if (get(connectorDirectoryEnabled$) && get(connectorsScope$) !== "mine") {
+    if (
+      get(connectorDirectoryEnabled$) &&
+      get(connectorsScope$) !== "connected"
+    ) {
       return { kind: "all" };
     }
     const raw = get(searchParams$).get(CONNECTORS_CONNECTION_FILTER_PARAM);
@@ -571,9 +574,9 @@ export const filteredConnectorCatalogItems$ = computed(async (get) => {
     if (category !== null && connector.category !== category) {
       return false;
     }
-    // The "yours" scope is membership, not a filter: whatever else is chosen,
-    // it only ever shows what this workspace has already connected.
-    if (scope === "mine" && !connector.connected) {
+    // The connected scope is membership, not a filter: whatever else is
+    // chosen, it only ever shows what this workspace has already connected.
+    if (scope === "connected" && !connector.connected) {
       return false;
     }
     if (effectiveFilter.kind === "connected") {
@@ -1579,7 +1582,7 @@ const pollConnectorOAuthDeviceAuth$ = command(
     let connectionId: string | null = null;
     let expired = false;
 
-    await setLoop(
+    await waitLoopUntil(
       async (sig) => {
         const outcome = await set(
           pollConnectorOAuthDeviceAuthOnce$,
@@ -2178,7 +2181,7 @@ async function waitForOAuthAuthCodePopupClosed(
   signal.throwIfAborted();
 
   let closed = false;
-  await setLoop(
+  await waitLoopUntil(
     () => {
       if (authWindow.closed) {
         closed = true;
@@ -2494,7 +2497,7 @@ const completeConnectorOAuthAuthCodeFlow$ = command(
     const waitSignal = set(resetOAuthAuthCodeWaitSignal$, signal);
     const changedPromise = (async () => {
       await set(
-        setAblyPayloadLoop$,
+        waitAblyPayloadLoopUntil$,
         {
           topic: "connector:changed",
           loopCommand$: onActiveConnectorChanged$,

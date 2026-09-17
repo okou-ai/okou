@@ -30,7 +30,6 @@ import { chatEventSnapshots } from "@okouai/db/schema/chat-event-snapshot";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { checkpoints } from "@okouai/db/schema/checkpoint";
 import { conversations } from "@okouai/db/schema/conversation";
-import { hostedSites } from "@okouai/db/schema/hosted-site";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { officialWorkflowDefinitionRevisions } from "@okouai/db/schema/official-workflow-catalog";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
@@ -47,11 +46,7 @@ import { writeDb$, type Db } from "../external/db";
 import { nowDate } from "../../lib/time";
 import { testOverride } from "../../lib/singleton";
 import type { RouteEntry } from "../route-entry";
-import {
-  createDeferredPromise,
-  onRejection,
-  settleIncludingAbort,
-} from "../utils";
+import { createDeferredPromise, onRejection } from "../utils";
 import {
   acquireBuiltInModelKeyFixture,
   releaseBuiltInModelKeyFixture,
@@ -1597,116 +1592,6 @@ async function insertLegacyArtifactCatalogFile(
   };
 }
 
-type PreviousApiHostedSiteAction = Extract<
-  TestRuntimeStateActionBody,
-  { action: "insert-hosted-site-as-previous-api" }
->;
-
-async function insertHostedSiteAsPreviousApi(
-  db: Db,
-  body: PreviousApiHostedSiteAction,
-  signal: AbortSignal,
-) {
-  // The previous API writes only the organization-level slug and originating
-  // run. Migration 0742 derives the canonical requested slug and chat owner.
-  const [site] = await db
-    .insert(hostedSites)
-    .values({
-      orgId: body.org_id,
-      userId: body.user_id,
-      slug: body.site,
-      publicBrand: "vm0",
-      publicSlug: body.public_slug,
-      createdFromRunId: body.run_id,
-    })
-    .returning({ id: hostedSites.id });
-  signal.throwIfAborted();
-  if (!site) {
-    throw new Error("Failed to insert a previous API hosted site");
-  }
-  return {
-    status: 200 as const,
-    body: { ok: true as const, hosted_site_id: site.id },
-  };
-}
-
-type PreviousApiHostedDeploymentAction = Extract<
-  TestRuntimeStateActionBody,
-  { action: "insert-hosted-deployment-as-previous-api" }
->;
-
-function isHostedDeploymentScopeConflict(error: unknown): boolean {
-  const databaseError =
-    error instanceof Error && error.cause instanceof Error
-      ? error.cause
-      : error;
-  return (
-    databaseError instanceof Error &&
-    "code" in databaseError &&
-    databaseError.code === "23514" &&
-    databaseError.message.includes("Hosted site belongs to a different chat")
-  );
-}
-
-async function writeHostedDeploymentAsPreviousApi(
-  db: Db,
-  body: PreviousApiHostedDeploymentAction,
-): Promise<void> {
-  await db.execute(sql`
-      INSERT INTO "hosted_deployments" (
-        "site_id",
-        "org_id",
-        "user_id",
-        "run_id",
-        "public_brand",
-        "status",
-        "r2_prefix",
-        "manifest",
-        "manifest_hash",
-        "content_hash",
-        "file_count",
-        "size_bytes",
-        "url"
-      )
-      VALUES (
-        ${body.hosted_site_id},
-        ${body.org_id},
-        ${body.user_id},
-        ${body.run_id},
-        'vm0',
-        'uploading',
-        'previous-api-scope-fixture',
-        '{}'::jsonb,
-        repeat('0', 64),
-        repeat('0', 64),
-        0,
-        0,
-        'https://previous-api-scope-fixture.invalid'
-      )
-    `);
-}
-
-async function insertHostedDeploymentAsPreviousApi(
-  db: Db,
-  body: PreviousApiHostedDeploymentAction,
-  signal: AbortSignal,
-) {
-  const inserted = await settleIncludingAbort(
-    writeHostedDeploymentAsPreviousApi(db, body),
-  );
-  signal.throwIfAborted();
-  if (!inserted.ok && !isHostedDeploymentScopeConflict(inserted.error)) {
-    throw inserted.error;
-  }
-  return {
-    status: 200 as const,
-    body: {
-      ok: true as const,
-      hosted_deployment_scope_blocked: !inserted.ok,
-    },
-  };
-}
-
 type PreviousApiComputerAccessAction = Extract<
   TestRuntimeStateActionBody,
   { action: "set-computer-use-host-as-previous-api" }
@@ -1833,8 +1718,6 @@ async function clearWorkflowAutomationEventConnectorAsPreviousApi(
 type CompatibilityFixtureAction =
   | AutonomyBudgetFixtureAction
   | LegacyArtifactCatalogFileAction
-  | PreviousApiHostedSiteAction
-  | PreviousApiHostedDeploymentAction
   | PreviousApiComputerAccessAction
   | PreviousApiBrowserTabSnapshotAction
   | PreviousApiRunnerJobContextProfileAction
@@ -2092,8 +1975,6 @@ function isCompatibilityFixtureAction(
     "read-workflow-automation-autonomy-state",
     "read-latest-workflow-automation-run",
     "insert-legacy-artifact-catalog-file",
-    "insert-hosted-site-as-previous-api",
-    "insert-hosted-deployment-as-previous-api",
     "set-computer-use-host-as-previous-api",
     "set-browser-tab-snapshot-as-previous-api",
     "set-runner-job-context-profile-as-previous-api",
@@ -2113,12 +1994,6 @@ async function compatibilityFixtureActionResponse(
   switch (body.action) {
     case "insert-legacy-artifact-catalog-file": {
       return await insertLegacyArtifactCatalogFile(db, body, signal);
-    }
-    case "insert-hosted-site-as-previous-api": {
-      return await insertHostedSiteAsPreviousApi(db, body, signal);
-    }
-    case "insert-hosted-deployment-as-previous-api": {
-      return await insertHostedDeploymentAsPreviousApi(db, body, signal);
     }
     case "set-computer-use-host-as-previous-api": {
       return await setComputerUseHostAsPreviousApi(db, body, signal);

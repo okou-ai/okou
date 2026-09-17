@@ -7,14 +7,7 @@ import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../../i18n/index.ts";
 import { authenticatedIdentity$ } from "../auth.ts";
 import { logger } from "../log.ts";
-import {
-  onDomEventFn,
-  onRef,
-  onRejection,
-  settle,
-  createChildAbortController,
-} from "../utils.ts";
-import { voiceInputV2Enabled$ } from "../external/feature-switch.ts";
+import { onRef, onRejection, resetSignal, settle } from "../utils.ts";
 import {
   readVoiceDraftRecording,
   createVoiceDraftRecording,
@@ -28,11 +21,6 @@ import {
   audioInputAvailable$,
   audioInputQuota$,
   openAudioInputQuotaRecovery$,
-  sttRecording$,
-  sttStarting$,
-  sttTranscribing$,
-  startRecording$,
-  stopAndTranscribe$,
 } from "../voice-io/voice-io-stt.ts";
 
 const L = logger("Composer:VoiceDraft");
@@ -58,6 +46,9 @@ interface OwnedVoiceDraftRecording {
 export type ComposerVoiceInputSignals = ReturnType<
   typeof createComposerVoiceInputSignals
 >;
+export interface ComposerVoiceInputOwner {
+  readonly signal: AbortSignal;
+}
 
 // Local audio/storage failures need a recovery message. API errors belong to
 // accept and must propagate directly to the action's loadable.
@@ -83,36 +74,6 @@ function voiceDraftStorageFailedMessage(): string {
   });
 }
 
-function createLegacyVoiceToggle(appendText$: Command<void, [string]>) {
-  return command(async ({ get, set }, signal: AbortSignal) => {
-    if (
-      !get(audioInputAvailable$) ||
-      get(sttStarting$) ||
-      get(sttTranscribing$)
-    ) {
-      return;
-    }
-    if (get(sttRecording$)) {
-      await set(stopAndTranscribe$, signal);
-      return;
-    }
-    const quota = await get(audioInputQuota$);
-    signal.throwIfAborted();
-    if (!quota.allowed) {
-      await set(openAudioInputQuotaRecovery$, signal);
-      return;
-    }
-    await set(
-      startRecording$,
-      onDomEventFn((text: string) => {
-        set(appendText$, text);
-      }),
-      { autoSegment: quota.limit === null, autoStopOnSilence: true },
-      signal,
-    );
-  });
-}
-
 function createVoiceDraftData(draftTarget: string) {
   const storageKey$ = computed(async (get): Promise<string> => {
     const identity = await get(authenticatedIdentity$);
@@ -129,9 +90,6 @@ function createVoiceDraftData(draftTarget: string) {
   // second storage read after this composer has changed it.
   const recording$ = computed(
     async (get): Promise<VoiceDraftRecordingRecord | null> => {
-      if (!get(voiceInputV2Enabled$)) {
-        return null;
-      }
       const owned = get(ownedRecording$);
       const key = await get(storageKey$);
       return owned?.key === key ? owned.recording : await get(storedRecording$);
@@ -265,7 +223,6 @@ function createVoiceDraftTranscription(
     transcribe$,
     initialize$: incremental.initialize$,
     append$: incremental.append$,
-    watch$: incremental.watch$,
     cancel$: incremental.cancel$,
   };
 }
@@ -381,36 +338,58 @@ function createVoiceDraftMutations(
 function createVoiceActionBindings(
   data: VoiceDraftData,
   mutations: ReturnType<typeof createVoiceDraftMutations>,
-  legacyToggle$: ReturnType<typeof createLegacyVoiceToggle>,
-  watch$: VoiceDraftCommand,
 ) {
   const { state$, capture, restoreRecording$ } = data;
   const { start$, finish$, discard$, transcribe$ } = mutations;
-  const internalOwner$ = state<AbortController | null>(null);
+  const internalOwner$ = state<ComposerVoiceInputOwner | null>(null);
+  const resetOwner$ = resetSignal();
   const owner$ = computed((get) => {
     return get(internalOwner$);
   });
-  const element$ = state<HTMLElement | null>(null);
+  // The page or forward-target command owns cancellation, independently of
+  // whether React currently mounts this composer's controls.
+  const setup$ = command(({ get, set }, parentSignal: AbortSignal) => {
+    parentSignal.throwIfAborted();
+    const signal = set(resetOwner$, parentSignal);
+    const owner = { signal };
+    set(internalOwner$, owner);
+    signal.addEventListener(
+      "abort",
+      () => {
+        if (get(internalOwner$) === owner) {
+          set(capture.cancel$);
+          set(internalOwner$, null);
+        }
+      },
+      { once: true },
+    );
+  });
   const invocation$ = state<{
     readonly action: "start" | "finish" | "retry" | "discard";
-    readonly owner: AbortController;
+    readonly owner: ComposerVoiceInputOwner;
   } | null>(null);
+  const execution$ = state<{
+    readonly owner: ComposerVoiceInputOwner | null;
+    readonly promise: Promise<void>;
+  } | null>(null);
+  const result$ = computed(async (get) => {
+    const execution = get(execution$);
+    if (execution && execution.owner === get(owner$)) {
+      await execution.promise;
+    }
+  });
   const action$ = computed((get) => {
     const invocation = get(invocation$);
     return invocation?.owner === get(owner$)
       ? (invocation?.action ?? null)
       : null;
   });
-  const run$ = command(
+  const execute$ = command(
     async (
       { get, set },
       action: ComposerVoiceAction,
       parentSignal: AbortSignal,
     ) => {
-      if (!get(voiceInputV2Enabled$)) {
-        await set(legacyToggle$, parentSignal);
-        return;
-      }
       const owner = get(owner$);
       if (!owner || !get(audioInputAvailable$)) {
         return;
@@ -441,35 +420,41 @@ function createVoiceActionBindings(
       signal.throwIfAborted();
     },
   );
-  const mount$ = onRef(
-    command(async ({ set }, element: HTMLElement, signal: AbortSignal) => {
-      set(element$, element);
-      // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-      set(internalOwner$, createChildAbortController(signal));
+  const run$ = command(
+    ({ get, set }, action: ComposerVoiceAction, signal: AbortSignal) => {
+      const owner = get(owner$);
+      const promise = set(execute$, action, signal);
+      set(execution$, { owner, promise });
+      return promise;
+    },
+  );
+  const root$ = state<{ readonly element: HTMLElement } | null>(null);
+  const setRootRef$ = onRef(
+    command(({ get, set }, element: HTMLElement, signal: AbortSignal) => {
+      const root = { element };
+      set(root$, root);
       signal.addEventListener(
         "abort",
         () => {
-          set(capture.cancel$);
-          set(internalOwner$, null);
-          set(element$, null);
+          if (get(root$) === root) {
+            set(root$, null);
+          }
         },
         { once: true },
       );
-      await set(watch$, signal);
     }),
   );
   // The global shortcut activates the same enabled control as a click, so it
-  // shares the React invocation's loadable state and cannot bypass disabled UI.
+  // shares the command's loadable state and cannot bypass disabled UI.
   const toggle$ = command(({ get }) => {
-    get(element$)
-      ?.querySelector<HTMLButtonElement>("[data-composer-voice-toggle]")
+    get(root$)
+      ?.element.querySelector<HTMLButtonElement>("[data-composer-voice-toggle]")
       ?.click();
   });
-  return { owner$, action$, run$, setRootRef$: mount$, toggle$ };
+  return { owner$, action$, result$, setup$, run$, setRootRef$, toggle$ };
 }
 
 export function createComposerVoiceInputSignals(
-  appendText$: Command<void, [string]>,
   deliverText$: DeliverVoiceTextCommand,
   readEditorContext$: Command<VoiceIoEditorContext, []>,
   lastAssistantMessage$: Computed<string | undefined>,
@@ -491,8 +476,6 @@ export function createComposerVoiceInputSignals(
       transcription.append$,
       transcription.cancel$,
     ),
-    createLegacyVoiceToggle(appendText$),
-    transcription.watch$,
   );
   return {
     ...actions,

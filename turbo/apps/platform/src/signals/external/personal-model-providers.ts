@@ -9,12 +9,18 @@ import type { ModelProviderType } from "@okouai/api-contracts/contracts/model-pr
 import { apiClient$ } from "../api-client.ts";
 import { accept } from "../../lib/accept.ts";
 import { now } from "../../lib/time.ts";
+import { invalidateOrgModelPolicies$ } from "./org-model-policies.ts";
 
 /**
  * Reload trigger for personal model provider signals.
  * Increment to force recomputation of personalModelProviders$.
  */
 const internalReloadPersonalModelProviders$ = state(0);
+
+/** Exact recovery reads share mutation invalidation without listing sibling usage. */
+export const personalModelProviderAccountRevision$ = computed((get) => {
+  return get(internalReloadPersonalModelProviders$);
+});
 
 /**
  * Listing personal providers makes the API read every connected subscription's
@@ -26,6 +32,7 @@ const PERSONAL_MODEL_PROVIDERS_STALE_MS = 60_000;
 const internalPersonalModelProvidersRefreshedAt$ = state<number | null>(null);
 
 const forcePersonalModelProvidersReload$ = command(({ set }) => {
+  set(invalidateOrgModelPolicies$);
   set(internalPersonalModelProvidersRefreshedAt$, now());
   set(internalReloadPersonalModelProviders$, (x) => {
     return x + 1;
@@ -99,19 +106,32 @@ export const deletePersonalModelProviderAccount$ = command(
 export const resetPersonalCodexAccountSubscriptionUsage$ = command(
   async (
     { get, set },
-    args: { readonly id: string; readonly idempotencyKey: string },
+    args: {
+      readonly id: string;
+      readonly idempotencyKey: string;
+      readonly runId?: string;
+    },
     signal: AbortSignal,
   ): Promise<ResetPersonalModelProviderSubscriptionUsageResponse> => {
     const createClient = get(apiClient$);
     const client = createClient(personalModelProviderAccountsByIdContract);
-    const result = await accept(
-      client.resetSubscriptionUsage({
-        params: { id: args.id },
-        body: { idempotencyKey: args.idempotencyKey },
-        fetchOptions: { signal },
-      }),
-      [200],
-    );
+    const result = args.runId
+      ? await accept(
+          client.resetFailedRunSubscriptionUsage({
+            params: { id: args.id, runId: args.runId },
+            body: { idempotencyKey: args.idempotencyKey },
+            fetchOptions: { signal },
+          }),
+          [200],
+        )
+      : await accept(
+          client.resetSubscriptionUsage({
+            params: { id: args.id },
+            body: { idempotencyKey: args.idempotencyKey },
+            fetchOptions: { signal },
+          }),
+          [200],
+        );
     signal.throwIfAborted();
     set(forcePersonalModelProvidersReload$);
     return result.body;

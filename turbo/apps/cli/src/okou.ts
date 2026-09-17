@@ -11,6 +11,7 @@ import {
 import { getOkouToken } from "./lib/okou-env.js";
 import { introVideoCatalogCommand } from "./commands/__intro-video-catalog.js";
 import { introVideoAgentCommand } from "./commands/__intro-video-agent.js";
+import { artifactCommand } from "./commands/artifact/index.js";
 
 interface CommandDefinition {
   name: string;
@@ -52,6 +53,7 @@ const COMMAND_CAPABILITY_MAP: Record<
   github: ["github:read", "github:write"],
   slack: ["slack:read", "slack:write"],
   feishu: "feishu:write",
+  lark: "lark:write",
   teams: "teams:write",
   telegram: ["telegram:read", "telegram:write"],
   phone: ["phone:read", "phone:write"],
@@ -63,6 +65,7 @@ const COMMAND_CAPABILITY_MAP: Record<
   web: null,
   video: null,
   host: ["host:read", "host:write"],
+  artifact: ["artifact:read", "artifact:write", "file:read"],
   presentation: null,
   "presentation-template": "presentation-template:write",
   maps: "maps:read",
@@ -80,6 +83,14 @@ const COMMAND_CAPABILITY_MAP: Record<
 const RUN_ONLY_COMMANDS = new Set(["mcp", "ssh", "image-recognition"]);
 
 const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
+  {
+    name: "artifact",
+    description:
+      "Read or set an owned artifact's visibility and return its URL",
+    load: async () => {
+      return artifactCommand;
+    },
+  },
   {
     name: "ssh",
     description: "List authorized SSH hosts and execute remote commands",
@@ -201,6 +212,13 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
       "List channels, read history, send messages, and transfer files as the Slack bot",
     load: async () => {
       return (await import("./commands/slack")).slackCommand;
+    },
+  },
+  {
+    name: "lark",
+    description: "Send messages and transfer files through Lark",
+    load: async () => {
+      return (await import("./commands/feishu")).createFeishuCommand("lark");
     },
   },
   {
@@ -331,6 +349,13 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     load: async () => {
       return (await import("./commands/presentation-template"))
         .presentationTemplateCommand;
+    },
+  },
+  {
+    name: "user-template",
+    description: "Publish custom templates compiled from a file you uploaded",
+    load: async () => {
+      return (await import("./commands/user-template")).userTemplateCommand;
     },
   },
   {
@@ -542,6 +567,11 @@ export function buildHelpText(
       payload,
     ),
     ...commandExampleIfVisible(
+      "lark",
+      "  Send Lark?            okou lark message send --help",
+      payload,
+    ),
+    ...commandExampleIfVisible(
       "mail",
       "  Link Gmail draft?     okou mail link --help",
       payload,
@@ -578,6 +608,11 @@ export function buildHelpText(
     ...(canReadHost
       ? ["  Clone hosted site?     okou host clone <public-slug>"]
       : []),
+    ...commandExampleIfVisible(
+      "artifact",
+      "  Artifact visibility?   okou artifact --help",
+      payload,
+    ),
     ...commandExampleIfVisible(
       "maps",
       '  Get directions?       okou maps directions --origin "SFO" --destination "Mountain View" --json',

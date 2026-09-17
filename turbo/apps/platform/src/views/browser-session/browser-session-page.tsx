@@ -33,8 +33,16 @@ function BrowserSessionPageContent({
 export function BrowserSessionPage() {
   const signals = useGet(browserSessionPageSignals$);
   return (
+    // A fixed cover is positioned against the viewport, so it inherits none of
+    // the insets `#root` applies and owns all four itself. It also pins its own
+    // height, because a percentage would resolve against the viewport rather
+    // than the `100dvh` the rest of the app measures, and
+    // `@media (display-mode: standalone)` moves that variable to `100lvh`.
+    // The shell class stays on `StandaloneLayout`, which this page renders
+    // inside: custom properties inherit through the DOM, which `position:
+    // fixed` does not change.
     <main
-      className="okou-app okou-fixed-viewport-shell fixed inset-0 flex min-h-0 flex-col bg-background"
+      className="fixed inset-0 box-border flex h-viewport max-h-viewport min-h-viewport flex-col overflow-hidden bg-background p-safe"
       data-testid="browser-session-page"
     >
       {signals ? (

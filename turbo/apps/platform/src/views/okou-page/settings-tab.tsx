@@ -160,7 +160,7 @@ function AvatarEditButton({
           >
             <AvatarSvgPreview
               config={config}
-              className="h-12 w-12 rounded-full border-2 border-primary ring-2 ring-primary/20"
+              className="h-12 w-12 rounded-full border-(length:--border-width-emphasis) border-primary ring-2 ring-primary/20"
             />
             <span className="absolute -right-0.5 -bottom-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-background text-muted-foreground shadow-sm border border-border">
               <Wand size={10} />
@@ -326,6 +326,7 @@ export function SettingsTab({
 
   const [settingsLoadable, triggerUpdateSettings] =
     useLoadableSet(updateSettings$);
+  const updateSettings = useSet(updateSettings$);
   const saving = settingsLoadable.state === "loading";
 
   const handleResetSettings = () => {
@@ -465,7 +466,7 @@ export function SettingsTab({
                         agentId,
                         patch: { avatarUrl: newAvatarUrl },
                       });
-                      await triggerUpdateSettings(
+                      await updateSettings(
                         {
                           displayName: omitForDefaultAgent(
                             agentName,
@@ -614,7 +615,7 @@ export function SettingsTab({
                       </div>
                     </div>
                     <div className="flex justify-start">
-                      <div className="okou-chat-bubble-assistant max-w-[85%] rounded-xl px-3 py-2 text-sm text-foreground leading-relaxed transition-colors duration-200">
+                      <div className="max-w-[85%] rounded-xl px-3 py-2 text-sm text-foreground leading-relaxed transition-colors duration-200 bg-transparent border-none border-current">
                         {toneCopy[tone].agent}
                       </div>
                     </div>

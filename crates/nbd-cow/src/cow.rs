@@ -12,7 +12,10 @@ use std::ops::Range;
 use std::os::unix::fs::FileExt;
 use std::path::Path;
 #[cfg(test)]
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{
+    Arc,
+    atomic::{AtomicUsize, Ordering},
+};
 
 use bitvec::prelude::*;
 
@@ -171,6 +174,8 @@ pub struct CowLayer {
     size: u64,
     #[cfg(test)]
     read_call_counts: ReadCallCounts,
+    #[cfg(test)]
+    bitmap_rename_attempts: Option<Arc<AtomicUsize>>,
 }
 
 impl CowLayer {
@@ -276,6 +281,8 @@ impl CowLayer {
             size,
             #[cfg(test)]
             read_call_counts: ReadCallCounts::default(),
+            #[cfg(test)]
+            bitmap_rename_attempts: None,
         })
     }
 
@@ -598,7 +605,19 @@ impl CowLayer {
 
     /// Save the dirty bitmap to a file.
     pub(crate) fn save_bitmap(&self, path: &Path) -> Result<()> {
+        #[cfg(test)]
+        if let Some(attempts) = &self.bitmap_rename_attempts {
+            return bitmap::save_bitmap_with_first_rename_failure(&self.dirty, path, attempts);
+        }
         bitmap::save_bitmap(&self.dirty, path)
+    }
+
+    /// Inject one filesystem rename failure without replacing the save transaction.
+    #[cfg(test)]
+    pub(crate) fn fail_first_bitmap_rename(&mut self) -> Arc<AtomicUsize> {
+        let attempts = Arc::new(AtomicUsize::new(0));
+        self.bitmap_rename_attempts = Some(attempts.clone());
+        attempts
     }
 }
 

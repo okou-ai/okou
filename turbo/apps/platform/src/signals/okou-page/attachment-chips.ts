@@ -17,10 +17,7 @@ import {
   type TextPreviewKind,
 } from "../text-preview.ts";
 import { onRef, resetSignal } from "../utils.ts";
-import {
-  createObjectUrlResource,
-  type ObjectUrlResource,
-} from "../object-url-resource.ts";
+import { createObjectUrlResource } from "../object-url-resource.ts";
 import { rootSignal$ } from "../root-signal.ts";
 import type {
   ChatThreadArtifactGoogleDriveRecovery,
@@ -77,11 +74,13 @@ type AttachmentDocumentLightboxInput =
   | AttachmentTextDocumentLightboxInput
   | AttachmentFramedDocumentLightboxInput;
 
-type AttachmentImageLightboxInput = {
-  readonly url: string;
+type AttachmentPreviewSource =
+  | { readonly url: string; readonly file?: undefined }
+  | { readonly url?: string; readonly file: File };
+
+type AttachmentImageLightboxInput = AttachmentPreviewSource & {
   /** Reuse the initiating thread image's already resolved credential. */
   readonly preview?: AttachmentPreviewSignals;
-  readonly file?: File;
   /**
    * Present only for an image the viewer is allowed to mark up — a composer
    * draft. Artifacts and sent messages open the same lightbox without it, so
@@ -118,7 +117,11 @@ function isAttachmentTextDocumentLightboxInput(
   return isTextPreviewKind(value.kind);
 }
 
-type AttachmentImageLightboxState = AttachmentImageLightboxInput & {
+type AttachmentImageLightboxState = Omit<
+  AttachmentImageLightboxInput,
+  "url"
+> & {
+  readonly url: string;
   readonly kind: "image";
 };
 
@@ -151,24 +154,12 @@ export const lightboxDialogElement$ = command(({ get }) => {
 const resetLightboxPreviewSignal$ = resetSignal();
 export const attachmentLightboxImageCanvasSignals =
   createZoomableImageCanvasSignals();
-const internalLightboxObjectUrlResources$ = state<readonly ObjectUrlResource[]>(
-  [],
-);
-
-const releaseLightboxObjectUrlResources$ = command(({ get, set }) => {
-  for (const resource of get(internalLightboxObjectUrlResources$)) {
-    resource.release();
-  }
-  set(internalLightboxObjectUrlResources$, []);
-});
-
 const disposeLightboxSession$ = command(({ set }) => {
   set(internalLightboxDialogVisible$, false);
   set(internalLightboxDialogFullscreen$, false);
   set(internalLightboxState$, null);
   set(attachmentLightboxImageCanvasSignals.reset$);
   set(resetLightboxPreviewSignal$);
-  set(releaseLightboxObjectUrlResources$);
 });
 
 /**
@@ -236,9 +227,7 @@ export const closeLightboxWithDialogExit$ = command(
  * the File metadata so each destination can create an object URL for its own
  * consumer lifetime while preserving the name and content type.
  */
-type AttachmentSidebarPreviewInput = {
-  readonly url: string;
-  readonly file?: File;
+type AttachmentSidebarPreviewInput = AttachmentPreviewSource & {
   readonly filename?: string;
   readonly contentType?: string;
   readonly shareAvailable?: boolean;
@@ -255,7 +244,7 @@ export function attachmentSidebarRef(
       ? {}
       : { shareAvailable: value.shareAvailable };
   if (value.file) {
-    return { file: value.file, url: value.url, ...share };
+    return { file: value.file, ...share };
   }
   if (value.filename) {
     const contentType =
@@ -290,6 +279,7 @@ const routeToOpenArtifactSidebar$ = command(
 
 function imageLightboxState(
   input: AttachmentImageLightboxInput,
+  signal: AbortSignal,
 ): AttachmentImageLightboxState {
   if (!input.file) {
     return { kind: "image", ...input };
@@ -297,6 +287,7 @@ function imageLightboxState(
   return {
     kind: "image",
     ...input,
+    url: createObjectUrlResource(input.file, signal).url,
     filename: input.filename ?? input.file.name,
   };
 }
@@ -313,20 +304,12 @@ export const openImageLightbox$ = command(
     }
     set(attachmentLightboxImageCanvasSignals.reset$);
     const previewSignal = set(resetLightboxPreviewSignal$, get(rootSignal$));
-    const resource = input.file
-      ? createObjectUrlResource(input.file, previewSignal)
-      : undefined;
-    if (resource) {
-      set(internalLightboxObjectUrlResources$, (current) => {
-        return [...current, resource];
-      });
-    }
+    const image = imageLightboxState(input, previewSignal);
     set(internalLightboxDialogVisible$, true);
     set(internalLightboxDialogFullscreen$, false);
     set(internalLightboxState$, {
-      ...imageLightboxState(resource ? { ...input, url: resource.url } : input),
-      ...(input.preview ??
-        createAttachmentPreviewSignals(resource?.url ?? input.url)),
+      ...image,
+      ...(input.preview ?? createAttachmentPreviewSignals(image.url)),
     });
   },
 );
@@ -369,7 +352,7 @@ export const openDocumentLightbox$ = command(
     if (set(routeToOpenArtifactSidebar$, value, target)) {
       return;
     }
-    const previewSignal = set(resetLightboxPreviewSignal$, get(rootSignal$));
+    set(resetLightboxPreviewSignal$, get(rootSignal$));
     set(internalLightboxDialogVisible$, true);
     set(internalLightboxDialogFullscreen$, false);
     const preview = createAttachmentPreviewSignals(value.url);
@@ -383,7 +366,7 @@ export const openDocumentLightbox$ = command(
           kind: "markdown",
           ...preview,
           text$,
-          markdownTree$: createMarkdownPreviewTree(text$, previewSignal),
+          markdownTree$: createMarkdownPreviewTree(text$),
         });
         return;
       }

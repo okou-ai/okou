@@ -4,7 +4,9 @@ import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 
 import type { HostedSiteFilesResponse } from "@okouai/api-contracts/contracts/host";
 import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
+import { resolveOwnedArtifactReference } from "../api/domains/artifact-references";
 import { privateHostedDeploymentId } from "@okouai/core/private-hosted-artifact";
+import { getPlatformOrigin } from "../platform-url";
 import { getBaseUrl } from "../api/core/client-factory";
 import { getHostedSiteFiles } from "../api/domains/host";
 import { checkDirectoryStatus } from "../utils/file-utils";
@@ -36,8 +38,16 @@ interface CloneHostedSiteOptions {
 
 export async function publicSlugFromSite(value: string): Promise<string> {
   const trimmed = value.trim();
-  const reference = parseArtifactReference(trimmed);
-  if (reference) return `dpl-${reference.id}`;
+  const reference = parseArtifactReference(trimmed, await getPlatformOrigin());
+  if (reference) {
+    const id =
+      reference.id ??
+      (await resolveOwnedArtifactReference(
+        `${reference.hash}${reference.extension}`,
+        "html",
+      ));
+    return `dpl-${id}`;
+  }
   if (URL.canParse(trimmed)) {
     const deploymentId = privateHostedDeploymentId(trimmed, await getBaseUrl());
     if (deploymentId) {

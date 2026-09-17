@@ -23,6 +23,36 @@ pub(super) fn save_bitmap(dirty: &BitVec, path: &Path) -> Result<()> {
     save_bitmap_with_io(dirty, path, &mut FileSystem)
 }
 
+#[cfg(test)]
+pub(super) fn save_bitmap_with_first_rename_failure(
+    dirty: &BitVec,
+    path: &Path,
+    rename_attempts: &std::sync::atomic::AtomicUsize,
+) -> Result<()> {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    struct FailFirstRename<'a>(&'a AtomicUsize);
+
+    impl BitmapIo for FailFirstRename<'_> {
+        fn write_all(&mut self, file: &mut File, bytes: &[u8]) -> io::Result<()> {
+            FileSystem.write_all(file, bytes)
+        }
+
+        fn sync_all(&mut self, file: &File) -> io::Result<()> {
+            FileSystem.sync_all(file)
+        }
+
+        fn rename(&mut self, from: &Path, to: &Path) -> io::Result<()> {
+            if self.0.fetch_add(1, Ordering::Relaxed) == 0 {
+                return Err(io::Error::from_raw_os_error(libc::EIO));
+            }
+            FileSystem.rename(from, to)
+        }
+    }
+
+    save_bitmap_with_io(dirty, path, &mut FailFirstRename(rename_attempts))
+}
+
 // Keep fault injection at filesystem operations, sharing the transaction and
 // serializer between production and tests without ambient fault state.
 trait BitmapIo {

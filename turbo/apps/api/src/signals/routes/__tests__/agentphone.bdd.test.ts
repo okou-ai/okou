@@ -7,7 +7,7 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import { HttpResponse, http } from "msw";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, beforeEach } from "vitest";
 
 import { DEFAULT_VIDEO_MODEL } from "@okouai/core/video-model-catalog";
 
@@ -34,6 +34,11 @@ import {
   type AgentPhoneProviderSend,
   type AgentPhoneSendCapture,
 } from "./helpers/api-bdd-agentphone";
+import {
+  captureIntegrationInputUploads,
+  expectIntegrationInputPreview,
+  listIntegrationInputFileParts,
+} from "./helpers/integration-input-assets";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -77,6 +82,74 @@ async function entitledLinkedActor(): Promise<LinkedAgentPhoneActor> {
   const phone = uniquePhoneHandle();
   await ap.linkViaWebhookConnectPrompt(actor, phone, sends);
   return { actor, phone, runnerGroup, sends, storage };
+}
+
+const modelSessionScenarios = [
+  { channel: "sms", withConversation: false },
+  { channel: "imessage", withConversation: true },
+  { channel: "imessage", withConversation: false },
+] as const;
+
+const modelResumeScenarios = modelSessionScenarios.flatMap((scenario) => {
+  return [
+    { ...scenario, model: "claude-sonnet-5", otherModel: "claude-opus-4-8" },
+    { ...scenario, model: "claude-opus-4-8", otherModel: "claude-sonnet-5" },
+  ] as const;
+});
+
+async function modelSessionScenario({
+  channel,
+  withConversation,
+}: (typeof modelSessionScenarios)[number]) {
+  const ap = createAgentPhoneBddApi(context);
+  const runs = createRunsApi(context);
+  const { actor, phone, runnerGroup, sends } = await entitledLinkedActor();
+  const provider = await runs.createOrgModelProvider(actor, {
+    type: "anthropic-api-key",
+    secret: "phone-dm-model-routing-key",
+  });
+  await runs.updateOrgModelPolicies(actor, [
+    {
+      model: "claude-sonnet-5",
+      isDefault: true,
+      defaultProviderType: "anthropic-api-key",
+      credentialScope: "org",
+      modelProviderId: provider.providerId,
+    },
+    {
+      model: "claude-opus-4-8",
+      isDefault: false,
+      defaultProviderType: "anthropic-api-key",
+      credentialScope: "org",
+      modelProviderId: provider.providerId,
+    },
+  ]);
+  const conversationId = withConversation ? uniqueConversationId() : undefined;
+  async function send(body: string) {
+    return await ap.postAgentPhoneInboundMessage({
+      channel,
+      from: phone,
+      body,
+      conversationId,
+    });
+  }
+  async function complete(body: string) {
+    const messageId = await send(body);
+    const run = await claimDispatchedRun(runnerGroup);
+    await completeSandboxRun(run.sandboxToken, run.runId, 0);
+    expect(lastSend(sends).body).toBe("Task completed successfully.");
+    if (channel === "imessage") {
+      expect(lastSend(sends)).toMatchObject({
+        conversationId,
+        replyToMessageId: messageId,
+      });
+    } else {
+      expect(lastSend(sends).toNumber).toBe(phone);
+      expect(lastSend(sends).replyToMessageId).toBeUndefined();
+    }
+    return await waitForRunSessionIdPresent(actor, run.runId);
+  }
+  return { send, complete, sends };
 }
 
 async function claimDispatchedRun(runnerGroup: string): Promise<{
@@ -359,7 +432,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
           agentphoneMessageText: "summarize my inbox",
           agentphoneThreadContext: "",
           agentphoneMessageId: messageId1,
-          agentphoneRootMessageId: "dm",
+          agentphoneRootMessageId: expect.stringMatching(/^direct-message:/u),
           agentphoneConversationId: conversationId,
           agentphoneChannel: "imessage",
           agentphoneIsGroup: false,
@@ -451,8 +524,9 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       });
       await waitForSendCount(sends, beforeCompletion + 1);
       const completionReply = lastSend(sends);
-      expect(completionReply.toNumber).toBe(phone);
-      expect(completionReply.conversationId).toBeUndefined();
+      expect(completionReply.toNumber).toBeUndefined();
+      expect(completionReply.conversationId).toBe(conversationId);
+      expect(completionReply.replyToMessageId).toBe(messageId1);
       expect(completionReply.body).toContain(EXPECTED_PLAIN_RUN_OUTPUT);
       expect(completionReply.body).toContain(
         `Audit: https://app.okou.ai/activities/${run1.runId}`,
@@ -560,6 +634,73 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     );
   });
 
+  describe.each(modelResumeScenarios)(
+    "resumes $model in its own $channel DM session (conversation: $withConversation)",
+    (scenario) => {
+      async function prepareScenario() {
+        const { send, complete, sends } = await modelSessionScenario(scenario);
+        return { send, sends, complete };
+      }
+      let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
+      beforeEach(async () => {
+        preparedScenario = await prepareScenario();
+      });
+      it("preserves the complete scenario", async () => {
+        const { send, sends, complete } = preparedScenario;
+        if (scenario.model !== "claude-sonnet-5") {
+          await send(`/model ${scenario.model}`);
+          expect(lastSend(sends).body).toContain("Switched to");
+        }
+        const originalSession = await complete(
+          "start the selected model session",
+        );
+        await send(`/model ${scenario.otherModel}`);
+        expect(lastSend(sends).body).toContain("Switched to");
+        const alternateSession = await complete(
+          "start the other model session",
+        );
+        expect(alternateSession).not.toBe(originalSession);
+
+        await send(`/model ${scenario.model}`);
+        await expect(
+          complete("return to the selected model session"),
+        ).resolves.toBe(originalSession);
+      });
+    },
+  );
+
+  describe.each(modelSessionScenarios)(
+    "resets the selected model's $channel DM session (conversation: $withConversation)",
+    (scenario) => {
+      async function prepareScenario() {
+        const { send, complete, sends } = await modelSessionScenario(scenario);
+        return { complete, send, sends };
+      }
+      let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
+      beforeEach(async () => {
+        preparedScenario = await prepareScenario();
+      });
+      it("preserves the complete scenario", async () => {
+        const { complete, send, sends } = preparedScenario;
+        const originalSession = await complete(
+          "start the default model session",
+        );
+        await send("/model claude-opus-4-8");
+        expect(lastSend(sends).body).toContain("Switched to");
+        const alternateSession = await complete(
+          "start the alternate model session",
+        );
+        expect(alternateSession).not.toBe(originalSession);
+
+        await send("/new_session");
+        expect(lastSend(sends).body).toContain("New session started");
+        await expect(
+          complete("start again after resetting the DM"),
+        ).resolves.not.toBe(alternateSession);
+      });
+    },
+  );
+
   it("shares one canonical session across AgentPhone and web messages on the same thread", async () => {
     const ap = createAgentPhoneBddApi(context);
     const chat = createChatFilesBddApi(context);
@@ -587,7 +728,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       agentphoneMessageText: "start on my phone",
       agentphoneThreadContext: "",
       agentphoneMessageId: smsMessageId,
-      agentphoneRootMessageId: "dm",
+      agentphoneRootMessageId: expect.stringMatching(/^direct-message:/u),
       agentphoneConversationId: null,
       agentphoneChannel: "sms",
       agentphoneIsGroup: false,
@@ -842,11 +983,79 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(sends.messages).toHaveLength(sendsAfterCompletion);
   });
 
+  it("imports phone media into canonical storage and preserves its message text", async () => {
+    const ap = createAgentPhoneBddApi(context);
+    const { actor, phone, runnerGroup } = await entitledLinkedActor();
+    const uploads = captureIntegrationInputUploads(context);
+    const bytes = Buffer.from("phone image bytes");
+    const mediaUrl = "https://media.agentphone.test/canonical-photo.png";
+    let downloads = 0;
+    server.use(
+      http.get(mediaUrl, () => {
+        downloads += 1;
+        return new HttpResponse(bytes, {
+          headers: { "content-type": "image/png" },
+        });
+      }),
+    );
+    const messageId = await ap.postAgentPhoneInboundMessage({
+      channel: "mms",
+      from: phone,
+      body: "inspect imported photo",
+      mediaUrl,
+    });
+    const run = await claimDispatchedRun(runnerGroup);
+    expect(run.prompt).toContain(
+      "inspect imported photo\n\n[Web file] canonical-photo.png (image/png)",
+    );
+    expect(run.prompt).not.toContain(mediaUrl);
+    const fileId = run.prompt.match(/ {3}\[ID\] ([^\n]+)/u)?.[1];
+    if (!fileId) {
+      throw new Error("Expected canonical phone file id");
+    }
+    expect(fileId).not.toBe(messageId);
+    await expectIntegrationInputPreview(context, {
+      actor,
+      fileId,
+      bytes,
+      contentType: "image/png",
+      uploads,
+      okouToken: run.okouToken,
+    });
+    expect(downloads).toBe(1);
+    await completeSandboxRun(run.sandboxToken, run.runId, 0);
+    await ap.postAgentPhoneInboundMessage({
+      channel: "mms",
+      from: phone,
+      body: "inspect the same photo again",
+      mediaUrl,
+    });
+    const nextRun = await claimDispatchedRun(runnerGroup);
+    expect(nextRun.prompt).toContain(`[ID] ${fileId}`);
+    expect(downloads).toBe(1);
+    expect(uploads).toHaveLength(1);
+    await expect(
+      listIntegrationInputFileParts(context, actor),
+    ).resolves.toStrictEqual([
+      expect.objectContaining({ fileId }),
+      expect.objectContaining({ fileId }),
+    ]);
+    await completeSandboxRun(nextRun.sandboxToken, nextRun.runId, 0);
+  });
+
   it("renders media prompts", async () => {
     const ap = createAgentPhoneBddApi(context);
-    const { phone, runnerGroup } = await entitledLinkedActor();
+    const { actor, phone, runnerGroup } = await entitledLinkedActor();
 
-    // A media DM walks both percent-decode branches of the filename.
+    server.use(
+      http.get(
+        "https://media.agentphone.test/photo%20one%2Bfinal%2zraw.png",
+        () => {
+          return new HttpResponse(null, { status: 503 });
+        },
+      ),
+    );
+    // A failed import retains the provider reference and its original filename.
     const mediaMessageId = await ap.postAgentPhoneInboundMessage({
       channel: "mms",
       from: phone,
@@ -860,6 +1069,14 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         `[AgentPhone file] photo one+final%2zraw.png (image/png)\n   [ID] ${mediaMessageId}`,
       ].join("\n\n"),
     );
+    await expect(
+      listIntegrationInputFileParts(context, actor),
+    ).resolves.toStrictEqual([
+      expect.objectContaining({
+        fileId: expect.stringMatching(/^[0-9a-f-]{36}$/u),
+        filenameSnapshot: "photo one+final%2zraw.png",
+      }),
+    ]);
     await completeSandboxRun(run1.sandboxToken, run1.runId, 0);
   });
 

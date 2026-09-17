@@ -108,7 +108,7 @@ test("A new message keeps its attachment, text, and selected model together", as
     readonly userMessage?: UserMessageDocument;
   }[] = [];
   context.mocks.data.userModelPreference({
-    selectedModel: "deepseek-v4.1-flash",
+    selectedModel: "gpt-5.6-luna",
     serviceTier: null,
     modelSettings: {},
     selectedImageModel: null,
@@ -140,7 +140,7 @@ test("A new message keeps its attachment, text, and selected model together", as
   await waitFor(() => {
     expect(buttonsNamed("Attach").length).toBeGreaterThan(0);
   });
-  await screen.findByText("DeepSeek V4.1 Flash");
+  await screen.findByText("GPT 5.6 Luna");
   const fileInput = document.querySelector('input[type="file"]');
   if (!(fileInput instanceof HTMLInputElement)) {
     throw new Error("Composer file input is not mounted");
@@ -173,7 +173,7 @@ test("A new message keeps its attachment, text, and selected model together", as
           contentType: "text/plain",
         },
         { type: "text", text: "Review the launch brief." },
-        { type: "model", selectedModel: "deepseek-v4.1-flash" },
+        { type: "model", selectedModel: "gpt-5.6-luna" },
       ],
     },
   });

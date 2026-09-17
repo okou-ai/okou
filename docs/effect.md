@@ -239,9 +239,22 @@ Shared stateful logic belongs in a sub-command, not in a plain helper that
 accepts or captures ccstate `get` or `set`. Await sub-commands and pass the
 owner's `AbortSignal` through operations that support cancellation.
 
-Do not use `detach()` inside the signals layer. A signal command can await its
-sub-command or return the promise to its caller. `detach()` is reserved for
-React DOM callbacks that cannot return a promise.
+Background loops start through `setLoop` or `setAbly*Loop$`. These synchronous
+starters detach their internal operation with `Reason.Daemon` and keep the
+caller's signal as its owner. Their return means started, not attached, loaded,
+or completed. Ably consumers that need attachment readiness use `onSubscribed`;
+feature-specific failure handling uses `onError`.
+
+Use `waitLoopUntil` or `waitAbly*LoopUntil$` when subsequent work depends on a
+loop finishing. These return the internal promise and propagate cancellation
+and failure. Both entry points share the same loop, retry, and cleanup logic.
+
+Do not add `detach()` to feature commands or wrap the background starters in
+another detach. `setDaemon(operation, signal)` is the shared primitive in
+`signals/utils.ts` that owns daemon detachment. Use it for an explicitly
+background, non-periodic process such as Desktop sign-in or realtime startup;
+keep ordinary finite command composition awaited. Other detached work belongs
+at an actual outer boundary, such as a React DOM callback.
 
 ### Separate loading state from business state
 

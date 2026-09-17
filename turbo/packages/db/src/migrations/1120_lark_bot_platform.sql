@@ -1,0 +1,1 @@
+ALTER TABLE "feishu_org_installations" ADD COLUMN "platform" text DEFAULT 'feishu' NOT NULL;

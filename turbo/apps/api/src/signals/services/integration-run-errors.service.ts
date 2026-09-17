@@ -46,7 +46,8 @@ export const formatIntegrationRunError$ = command(
       code: args.code,
       message: args.message,
       insufficientCredits: {
-        canManageBilling: membership?.role === "admin",
+        canManageBilling:
+          membership.kind === "member" && membership.role === "admin",
         ...(canBuyCredits
           ? { addCreditsUrl: addCreditsUrl() }
           : { comparePlansUrl: comparePlansUrl() }),

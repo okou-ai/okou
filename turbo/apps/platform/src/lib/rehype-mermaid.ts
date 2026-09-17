@@ -1,6 +1,6 @@
 /**
- * Rehype plugin that replaces ```mermaid fenced code blocks with a placeholder
- * `<div class="mermaid-block" data-mermaid-code="...">` element.
+ * Rehype plugin that replaces ```mermaid fenced code blocks with an empty
+ * placeholder `div` whose Mermaid source rides on the node's `data`.
  *
  * It runs last in the shared Markdown pipeline, after raw HTML and attributes
  * have settled, so it can recognize the final fenced-code node without a view
@@ -66,8 +66,8 @@ function mermaidCodeElement(node: HastNode): HastNode | undefined {
 /**
  * The diagram itself is a React component, so the tree only needs to say
  * "a diagram goes here". The payload rides on `data`, which `rehype-raw` cannot
- * produce — a message quoting `<div class="mermaid-block" data-mermaid-code>`
- * therefore stays a plain div instead of being swallowed by the renderer.
+ * produce — a message quoting the placeholder's markup therefore stays a plain
+ * div instead of being swallowed by the renderer.
  */
 function mermaidBlockNode(code: string): HastNode {
   return {

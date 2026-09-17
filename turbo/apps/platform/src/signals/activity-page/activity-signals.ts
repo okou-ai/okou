@@ -269,7 +269,7 @@ export const setupActivityEvents$ = command(
 
     let waitBeforeFirstPoll = true;
     let terminalStallPolls = 0;
-    await setLoop(
+    setLoop(
       async (loopSignal) => {
         if (waitBeforeFirstPoll) {
           waitBeforeFirstPoll = false;

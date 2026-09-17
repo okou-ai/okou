@@ -18,7 +18,10 @@ const COMMIT_SHA_PATTERN = /^[0-9a-f]{40}$/u;
 const COMMIT_SHA_META_NAME = "okou-app-git-commit-sha";
 const VERSION_META_NAME = "okou-app-version";
 const APP_FILE_PATTERN = /^index-[^/]+\.js$/u;
-const VENDOR_FILE_PATTERN = /^vendor-[^/]+\.js$/u;
+const VENDOR_GROUP_IDS = Object.freeze([1, 2, 3, 4, 5]);
+const VENDOR_LABELS = VENDOR_GROUP_IDS.map((group) => {
+  return `vendor-${group}`;
+});
 const RUNTIME_FILE_PATTERN = /^rolldown-runtime-[^/]+\.js$/u;
 const WORKER_FILE_PATTERN = /^shared-database-worker-[^/]+\.js$/u;
 const CLERK_UI_FILE_PATTERN = /^clerk-ui-[^/]+\.js$/u;
@@ -31,6 +34,10 @@ const appDirectory = process.cwd();
 const packageJson = JSON.parse(
   await readFile(path.join(appDirectory, "package.json"), "utf8"),
 );
+const vendorManifest = JSON.parse(
+  await readFile(path.join(appDirectory, "scripts/vendor-groups.json"), "utf8"),
+);
+const mermaidVendorLabel = `vendor-${vendorManifest.packages["@okouai/mermaid-lite"]}`;
 const appVersion = process.env.OKOU_APP_VERSION ?? packageJson.version;
 const appCommitSha = process.env.OKOU_APP_GIT_COMMIT_SHA;
 assert.match(
@@ -168,11 +175,15 @@ async function describeBuild(outputDirectory) {
   const javaScriptFiles = files.filter((fileName) => {
     return fileName.endsWith(".js");
   });
-  const vendorFile = exactlyOne(
-    javaScriptFiles,
-    VENDOR_FILE_PATTERN,
-    "vendor JavaScript file",
-  );
+  const vendors = {};
+  for (const group of VENDOR_GROUP_IDS) {
+    const fileName = exactlyOne(
+      javaScriptFiles,
+      new RegExp(`^vendor-${group}-[^/]+\\.js$`, "u"),
+      `vendor-${group} JavaScript file`,
+    );
+    vendors[`vendor-${group}`] = await describeFile(assetsDirectory, fileName);
+  }
   const runtimeFile = exactlyOne(
     javaScriptFiles,
     RUNTIME_FILE_PATTERN,
@@ -197,18 +208,21 @@ async function describeBuild(outputDirectory) {
       exactlyOne(javaScriptFiles, CLERK_UI_FILE_PATTERN, "optional Clerk UI"),
     ),
     app: await describeFile(assetsDirectory, appFile),
-    vendor: await describeFile(assetsDirectory, vendorFile),
+    ...vendors,
     runtime: await describeFile(assetsDirectory, runtimeFile),
     worker: await describeFile(assetsDirectory, workerFile),
   };
   if (sourceMaps) {
-    for (const label of ["app", "vendor", "worker"]) {
+    for (const label of ["app", ...VENDOR_LABELS, "worker"]) {
       const mapFile = `${artifacts[label].fileName}.map`;
       assert.ok(files.includes(mapFile), `Expected source map: ${mapFile}`);
     }
     const vendorSourceMap = JSON.parse(
       await readFile(
-        path.join(assetsDirectory, `${artifacts.vendor.fileName}.map`),
+        path.join(
+          assetsDirectory,
+          `${artifacts[mermaidVendorLabel].fileName}.map`,
+        ),
         "utf8",
       ),
     );
@@ -310,10 +324,16 @@ try {
     outputDirectory: path.join(appDirectory, "dist"),
     version: appVersion,
   });
-  for (const label of ["app", "vendor", "runtime", "worker", "clerkUi"]) {
+  for (const label of [
+    "app",
+    ...VENDOR_LABELS,
+    "runtime",
+    "worker",
+    "clerkUi",
+  ]) {
     assertStable([baseline, canonical], label);
   }
-  for (const label of ["vendor", "runtime", "clerkUi"]) {
+  for (const label of [...VENDOR_LABELS, "runtime", "clerkUi"]) {
     assertStable([versionChange, canonical], label);
   }
   assert.deepEqual(baseline.runtimeMetadata, {
@@ -338,10 +358,17 @@ try {
       canonical.artifacts[label].sha256,
     );
   }
-  for (const label of ["vendor", "runtime", "worker", "clerkUi"]) {
+  for (const label of [...VENDOR_LABELS, "runtime", "worker", "clerkUi"]) {
     assertStable([canonical, appMutation], label);
   }
-  for (const label of ["runtime", "worker", "clerkUi"]) {
+  for (const label of [
+    ...VENDOR_LABELS.filter((name) => {
+      return name !== mermaidVendorLabel;
+    }),
+    "runtime",
+    "worker",
+    "clerkUi",
+  ]) {
     assertStable([canonical, mermaidMutation], label);
   }
   assert.notEqual(
@@ -353,12 +380,12 @@ try {
     canonical.artifacts.app.sha256,
   );
   assert.notEqual(
-    mermaidMutation.artifacts.vendor.fileName,
-    canonical.artifacts.vendor.fileName,
+    mermaidMutation.artifacts[mermaidVendorLabel].fileName,
+    canonical.artifacts[mermaidVendorLabel].fileName,
   );
   assert.notEqual(
-    mermaidMutation.artifacts.vendor.sha256,
-    canonical.artifacts.vendor.sha256,
+    mermaidMutation.artifacts[mermaidVendorLabel].sha256,
+    canonical.artifacts[mermaidVendorLabel].sha256,
   );
   assert.notEqual(
     mermaidMutation.artifacts.app.fileName,
@@ -400,14 +427,27 @@ try {
           },
         },
         verifiedStable: {
-          appMutation: ["vendor", "runtime", "worker", "clerkUi"],
-          commitChange: ["app", "vendor", "runtime", "worker", "clerkUi"],
-          mermaidMutation: ["runtime", "worker", "clerkUi"],
-          versionChange: ["vendor", "runtime", "clerkUi"],
+          appMutation: [...VENDOR_LABELS, "runtime", "worker", "clerkUi"],
+          commitChange: [
+            "app",
+            ...VENDOR_LABELS,
+            "runtime",
+            "worker",
+            "clerkUi",
+          ],
+          mermaidMutation: [
+            ...VENDOR_LABELS.filter((name) => {
+              return name !== mermaidVendorLabel;
+            }),
+            "runtime",
+            "worker",
+            "clerkUi",
+          ],
+          versionChange: [...VENDOR_LABELS, "runtime", "clerkUi"],
         },
         verifiedInvalidated: {
           appMutation: ["app"],
-          mermaidMutation: ["app", "vendor"],
+          mermaidMutation: ["app", mermaidVendorLabel],
           versionChange: ["app", "worker"],
         },
       },

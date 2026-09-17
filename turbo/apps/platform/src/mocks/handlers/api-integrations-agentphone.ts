@@ -6,6 +6,7 @@ import { mockApi } from "../msw-contract.ts";
 
 let mockAgentPhoneStatus: AgentPhoneLinkStatusResponse = {
   linked: false,
+  publicBrand: "okou",
   agentPhoneNumber: "+19039853128",
   configured: true,
 };
@@ -13,6 +14,7 @@ let mockAgentPhoneStatus: AgentPhoneLinkStatusResponse = {
 export function resetMockAgentPhoneIntegration(): void {
   mockAgentPhoneStatus = {
     linked: false,
+    publicBrand: "okou",
     agentPhoneNumber: "+19039853128",
     configured: true,
   };
@@ -56,6 +58,7 @@ export const apiIntegrationsAgentPhoneHandlers = [
   mockApi(integrationsAgentPhoneContract.unlink, ({ respond }) => {
     mockAgentPhoneStatus = {
       linked: false,
+      publicBrand: "okou",
       agentPhoneNumber: mockAgentPhoneStatus.agentPhoneNumber,
       configured: mockAgentPhoneStatus.configured,
     };

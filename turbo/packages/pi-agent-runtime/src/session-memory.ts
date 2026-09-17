@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type {
   Api,
   AssistantMessage,
+  AssistantMessageEvent,
   AssistantMessageEventStream,
   Context,
   Message,
@@ -54,6 +55,7 @@ interface RunPiFirstModelTurnOptions<TApi extends Api = Api> {
   readonly streamOptions?: Omit<PiAgentStreamOptions, "sessionId">;
   readonly ownership: PiApiFirstTurnOwnership;
   readonly onPreparationTiming?: PiPreparationObserver;
+  readonly onEvent?: (event: AssistantMessageEvent) => void;
   readonly providerRequestBoundary?: (
     markProviderRequestMayHaveStarted: () => void,
   ) => Promise<void>;
@@ -212,7 +214,7 @@ export class MemoryPiSession {
     return this.#activeBranch();
   }
 
-  hasPendingToolCalls(): boolean {
+  pendingToolIds(): string[] {
     const messages = this.buildSessionContext().messages;
     const resolvedIds = new Set(
       messages.flatMap((message) => {
@@ -224,11 +226,17 @@ export class MemoryPiSession {
       if (message?.role !== "assistant") {
         continue;
       }
-      return message.content.some((content) => {
-        return content.type === "toolCall" && !resolvedIds.has(content.id);
+      return message.content.flatMap((content) => {
+        return content.type === "toolCall" && !resolvedIds.has(content.id)
+          ? [content.id]
+          : [];
       });
     }
-    return false;
+    return [];
+  }
+
+  hasPendingToolCalls(): boolean {
+    return this.pendingToolIds().length > 0;
   }
 
   isSettledCheckpoint(): boolean {
@@ -307,9 +315,10 @@ function piReasoningLevel(
 
 async function consumeAssistantMessage(
   stream: AssistantMessageEventStream,
+  onEvent?: (event: AssistantMessageEvent) => void,
 ): Promise<AssistantMessage> {
-  for await (const _event of stream) {
-    // The API slot commits only the final native Pi message.
+  for await (const event of stream) {
+    onEvent?.(event);
   }
   return await stream.result();
 }
@@ -375,12 +384,16 @@ export async function runPiFirstModelTurn<TApi extends Api>(
       context,
       streamOptions,
     );
-    assistantMessage = await consumeAssistantMessage(responseStream);
+    assistantMessage = await consumeAssistantMessage(
+      responseStream,
+      options.onEvent,
+    );
   } catch (error) {
     throw new PiApiModelRequestError(
       error,
       options.model.provider,
       responseStatus,
+      options.streamOptions?.usageObserver?.snapshot(true),
     );
   }
   options.session.appendMessage(assistantMessage);

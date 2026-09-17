@@ -28,9 +28,7 @@ import {
 import { logger } from "../signals/log.ts";
 import {
   createDeferredPromise,
-  detach,
   onDomEventFn,
-  Reason,
   setLoop,
   settle,
 } from "../signals/utils.ts";
@@ -41,20 +39,20 @@ const TAB_HEARTBEAT_INTERVAL_MS = 30_000;
 export type SharedDatabaseHeartbeatLoop = (
   heartbeat: () => void,
   signal: AbortSignal,
-) => Promise<void>;
+) => void;
 
-const runSharedDatabaseHeartbeatLoop: SharedDatabaseHeartbeatLoop = async (
+const runSharedDatabaseHeartbeatLoop: SharedDatabaseHeartbeatLoop = (
   heartbeat,
   signal,
-): Promise<void> => {
-  await setLoop(
+): void => {
+  setLoop(
     () => {
       heartbeat();
       return false;
     },
     TAB_HEARTBEAT_INTERVAL_MS,
     signal,
-    { retryTransientErrors: false },
+    { retryTransientErrors: false, testIntervalMs: 100 },
   );
 };
 
@@ -178,13 +176,9 @@ export class MessagePortSharedDatabaseBridge implements SharedDatabaseBridge {
       this.registration = Promise.resolve();
       this.registered = true;
       this.emit({ type: "register-tab" });
-      detach(
-        this.heartbeatLoop(() => {
-          this.emit({ type: "heartbeat" });
-        }, this.bridgeSignal),
-        Reason.Daemon,
-        "shared database tab heartbeat",
-      );
+      this.heartbeatLoop(() => {
+        this.emit({ type: "heartbeat" });
+      }, this.bridgeSignal);
     }
     return this.registration;
   }

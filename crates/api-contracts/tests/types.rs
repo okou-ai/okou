@@ -2,11 +2,12 @@ use std::collections::BTreeMap;
 
 use api_contracts::generated::types::{
     runners::{
+        jobs::pi_handoff,
         runs::{
             CodexRuntimeConfig, PiLaunchConfig, PiLaunchConfigApiFirstTurn,
             PiLaunchConfigApiFirstTurnBaseSession, PiLaunchConfigMemoryRecall, PiModelConfig,
             PiModelConfigApiKeyEnv, PiModelConfigProvider, PiModelConfigServiceTier,
-            PiModelConfigV2, PiModelConfigV3, model_provider_failures,
+            PiModelConfigV2, PiModelConfigV3, cancellation, model_provider_failures,
         },
         storage as runner_storage,
     },
@@ -19,11 +20,65 @@ use api_contracts::generated::types::{
 use serde_json::json;
 
 #[test]
+fn deferred_handoff_response_is_strict_and_deserialize_only() {
+    let response: pi_handoff::Response = serde_json::from_value(json!({
+        "chunk": "YWJj",
+        "nextOffset": 3,
+    }))
+    .unwrap();
+    assert_eq!(response.chunk, "YWJj");
+    assert_eq!(response.next_offset, Some(3));
+    assert!(
+        serde_json::from_value::<pi_handoff::Response>(json!({
+            "chunk": "YWJj",
+            "nextOffset": null,
+            "unexpected": true,
+        }))
+        .is_err()
+    );
+}
+
+#[test]
+fn generated_run_cancellation_response_preserves_absence_and_nullable_intent() {
+    for state in [
+        json!({ "state": "present", "mode": null }),
+        json!({ "state": "present", "mode": "cooperative" }),
+        json!({ "state": "present", "mode": "hard" }),
+        json!({ "state": "gone" }),
+        json!({ "state": "unavailable" }),
+    ] {
+        let mut value = state;
+        value["protocolVersion"] = json!(1);
+        value["runId"] = json!("00000000-0000-4000-8000-000000000001");
+        let response: cancellation::Response = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(serde_json::to_value(response).unwrap(), value);
+    }
+
+    assert!(
+        serde_json::from_value::<cancellation::Response>(json!({
+            "protocolVersion": 1,
+            "runId": "00000000-0000-4000-8000-000000000001",
+            "state": "present",
+            "mode": "unknown-mode",
+        }))
+        .is_err()
+    );
+    assert!(
+        serde_json::from_value::<cancellation::Response>(json!({
+            "protocolVersion": 1,
+            "state": "gone",
+        }))
+        .is_err()
+    );
+}
+
+#[test]
 fn generated_completion_failure_reason_tokens_preserve_the_wire_contract() {
     let failure_reasons = [
         "session_history_limit",
         "execution_timeout",
         "insufficient_credits",
+        "provider_insufficient_credits",
         "invalid_api_key",
         "invalid_credentials",
         "terms_acceptance_required",
@@ -202,7 +257,6 @@ fn generated_pi_runtime_configs_round_trip_full_wire_shapes() {
         base_url: "https://api.deepseek.com/".to_string(),
         model: "deepseek-v4-flash".to_string(),
         catalog_model: None,
-        api: None,
         thinking_level: None,
         service_tier: None,
         api_key_env: PiModelConfigApiKeyEnv::OPENAIAPIKEY,
@@ -250,7 +304,7 @@ fn generated_pi_runtime_configs_round_trip_full_wire_shapes() {
         model
     );
 
-    // Stored Gen1 payloads from before the writer cutoff remain readable.
+    // Unknown wire fields keep serde's existing policy: discard them on decode.
     for api in [
         "openai-responses",
         "openai-completions",
@@ -258,15 +312,18 @@ fn generated_pi_runtime_configs_round_trip_full_wire_shapes() {
     ] {
         let mut legacy_value = serde_json::to_value(&model).unwrap();
         legacy_value["api"] = json!(api);
-        let legacy: PiModelConfig = serde_json::from_value(legacy_value.clone()).unwrap();
-        assert_eq!(serde_json::to_value(legacy).unwrap(), legacy_value);
+        let decoded: PiModelConfig = serde_json::from_value(legacy_value).unwrap();
+        assert_eq!(decoded, model);
+        assert_eq!(
+            serde_json::to_value(decoded).unwrap(),
+            serde_json::to_value(&model).unwrap()
+        );
     }
 
     let priority_model_value = json!({
         "provider": "openai",
         "baseUrl": "https://api.openai.com/v1",
         "model": "gpt-5.6-terra",
-        "api": "openai-responses",
         "thinkingLevel": "low",
         "serviceTier": "priority",
         "apiKeyEnv": "OPENAI_API_KEY",

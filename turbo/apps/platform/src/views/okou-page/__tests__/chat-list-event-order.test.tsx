@@ -1,7 +1,7 @@
 import { waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
-import { setupPage } from "../../../__tests__/page-helper.ts";
+import { startPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { changeChatThreadList } from "../../../mocks/mock-helpers.ts";
 import {
@@ -42,7 +42,7 @@ test("Conversation lifecycle events produce the current list", async () => {
     remoteGate: remote.promise,
   });
 
-  await setupPage({
+  const page = await startPage({
     context,
     path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
     auth,
@@ -54,6 +54,7 @@ test("Conversation lifecycle events produce the current list", async () => {
   });
 
   remote.resolve();
+  await page.ready;
   await waitFor(() => {
     expect(sidebarThreadTitles()).toStrictEqual(["Current conversation"]);
   });
@@ -77,7 +78,7 @@ test("A pinned conversation stays above newer unpinned items", async () => {
     remoteGate: remote.promise,
   });
 
-  await setupPage({
+  const page = await startPage({
     context,
     path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
     auth,
@@ -92,6 +93,7 @@ test("A pinned conversation stays above newer unpinned items", async () => {
     ]);
   });
   remote.resolve();
+  await page.ready;
 
   await waitFor(() => {
     expect(sidebarThreadTitles()).toStrictEqual([
@@ -138,7 +140,7 @@ test("Pinned ordering follows pin time through activity updates", async () => {
     remoteGate: remote.promise,
   });
 
-  await setupPage({
+  const page = await startPage({
     context,
     path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
     auth,
@@ -155,6 +157,7 @@ test("Pinned ordering follows pin time through activity updates", async () => {
     ]);
   });
   remote.resolve();
+  await page.ready;
 
   await waitFor(() => {
     expect(sidebarThreadTitles()).toStrictEqual([
@@ -188,7 +191,7 @@ test("Unpinning restores activity order and repinning uses the new pin time", as
     remoteGate: remote.promise,
   });
 
-  await setupPage({
+  const page = await startPage({
     context,
     path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
     auth,
@@ -203,6 +206,7 @@ test("Unpinning restores activity order and repinning uses the new pin time", as
     ]);
   });
   remote.resolve();
+  await page.ready;
 
   await waitFor(() => {
     expect(sidebarThreadTitles()).toStrictEqual([

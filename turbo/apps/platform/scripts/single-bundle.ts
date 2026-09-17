@@ -126,6 +126,19 @@ function generatedChunks(
   });
 }
 
+function rawJavaScriptBytes(outputs: readonly GeneratedOutput[]): number {
+  const encoder = new TextEncoder();
+  return outputs.reduce((total, output) => {
+    const source = output.type === "chunk" ? output.code : output.source;
+    return (
+      total +
+      (typeof source === "string"
+        ? encoder.encode(source).byteLength
+        : source.byteLength)
+    );
+  }, 0);
+}
+
 function isLazyApplicationChunk(chunk: GeneratedChunk): boolean {
   return (
     chunk.isEntry !== true &&
@@ -214,31 +227,38 @@ function chunkViolations(
 
 function mermaidLiteVendorViolations(
   appChunk: GeneratedChunk,
-  vendorChunk: GeneratedChunk,
+  vendorChunks: readonly GeneratedChunk[],
   runtimeChunk: GeneratedChunk,
 ): string[] {
   const violations: string[] = [];
-  const mermaidLiteModules = (vendorChunk.moduleIds ?? []).filter(
-    isMermaidLiteModule,
-  );
+  const mermaidLiteModules = vendorChunks.flatMap((chunk) => {
+    return (chunk.moduleIds ?? []).filter(isMermaidLiteModule);
+  });
   if (mermaidLiteModules.length !== 1) {
     violations.push(
-      `${vendorChunk.fileName}: expected exactly one ${MERMAID_LITE_MODULE_PATH} module, found ${mermaidLiteModules.length}`,
+      `Vendor chunks: expected exactly one ${MERMAID_LITE_MODULE_PATH} module, found ${mermaidLiteModules.length}`,
     );
   }
-  const unrelatedVendorModules = (vendorChunk.moduleIds ?? []).filter(
-    (moduleId) => {
-      return (
-        !isNodeModule(moduleId) &&
-        !isMermaidLiteModule(moduleId) &&
-        !isVirtualModule(moduleId)
+  for (const vendorChunk of vendorChunks) {
+    if (!(vendorChunk.moduleIds ?? []).some(isVendorModule)) {
+      violations.push(
+        `${vendorChunk.fileName}: vendor chunk has no vendor modules`,
       );
-    },
-  );
-  if (unrelatedVendorModules.length > 0) {
-    violations.push(
-      `${vendorChunk.fileName}: only node_modules and ${MERMAID_LITE_MODULE_PATH} may be emitted in the vendor chunk: ${unrelatedVendorModules.join(", ")}`,
+    }
+    const unrelatedVendorModules = (vendorChunk.moduleIds ?? []).filter(
+      (moduleId) => {
+        return (
+          !isNodeModule(moduleId) &&
+          !isMermaidLiteModule(moduleId) &&
+          !isVirtualModule(moduleId)
+        );
+      },
     );
+    if (unrelatedVendorModules.length > 0) {
+      violations.push(
+        `${vendorChunk.fileName}: only node_modules and ${MERMAID_LITE_MODULE_PATH} may be emitted in the vendor chunk: ${unrelatedVendorModules.join(", ")}`,
+      );
+    }
   }
   for (const chunk of [appChunk, runtimeChunk]) {
     const misplacedMermaidLiteModules = (chunk.moduleIds ?? []).filter(
@@ -255,6 +275,7 @@ function mermaidLiteVendorViolations(
 
 export function applicationBundleViolations(
   outputs: readonly GeneratedOutput[],
+  vendorChunkCount = 1,
 ): string[] {
   const uiAssets = outputs.filter((output) => {
     return (
@@ -267,11 +288,12 @@ export function applicationBundleViolations(
   const javaScriptOutputs = outputs.filter((output) => {
     return output.fileName.endsWith(".js") && !uiAssets.includes(output);
   });
-  return eagerApplicationBundleViolations(javaScriptOutputs);
+  return eagerApplicationBundleViolations(javaScriptOutputs, vendorChunkCount);
 }
 
 function eagerApplicationBundleViolations(
   javaScriptOutputs: readonly GeneratedOutput[],
+  vendorChunkCount: number,
 ): string[] {
   const applicationChunks = generatedChunks(javaScriptOutputs);
   const workerAssets = javaScriptOutputs.filter(
@@ -301,9 +323,9 @@ function eagerApplicationBundleViolations(
   const runtimeChunk = runtimeChunks[0];
   const workerAsset = workerAssets[0];
   const invalidLayout = [
-    javaScriptOutputs.length !== 5,
+    javaScriptOutputs.length !== vendorChunkCount + 4,
     appChunks.length !== 1,
-    vendorChunks.length !== 1,
+    vendorChunks.length !== vendorChunkCount,
     lazyChunks.length !== 1,
     runtimeChunks.length !== 1,
     workerAssets.length !== 1,
@@ -317,12 +339,12 @@ function eagerApplicationBundleViolations(
     !workerAsset
   ) {
     return [
-      `Expected exactly one app entry, one lazy chunk, one vendor chunk, one Rolldown runtime chunk, and one shared database worker asset, but generated: ${outputDescription(javaScriptOutputs)}`,
+      `Expected exactly one app entry, one lazy chunk, ${vendorChunkCount} vendor chunk(s), one Rolldown runtime chunk, and one shared database worker asset, but generated: ${outputDescription(javaScriptOutputs)}`,
     ];
   }
 
   const allowedEagerStaticImports = new Set(
-    [appChunk, vendorChunk, runtimeChunk].map((chunk) => {
+    [appChunk, ...vendorChunks, runtimeChunk].map((chunk) => {
       return chunk.fileName;
     }),
   );
@@ -333,8 +355,17 @@ function eagerApplicationBundleViolations(
       new Set(),
       new Set([lazyChunk.fileName]),
     ),
-    ...chunkViolations(vendorChunk, allowedEagerStaticImports),
-    ...chunkViolations(runtimeChunk, allowedEagerStaticImports),
+    ...vendorChunks.flatMap((chunk) => {
+      return chunkViolations(
+        chunk,
+        new Set(
+          [runtimeChunk, ...vendorChunks].map((item) => {
+            return item.fileName;
+          }),
+        ),
+      );
+    }),
+    ...chunkViolations(runtimeChunk, new Set()),
     ...chunkViolations(
       lazyChunk,
       allowedEagerStaticImports,
@@ -370,26 +401,11 @@ function eagerApplicationBundleViolations(
       );
     }
   }
-  if (!(vendorChunk.moduleIds ?? []).some(isNodeModule)) {
-    violations.push(
-      `${vendorChunk.fileName}: vendor chunk has no node_modules`,
-    );
-  }
   violations.push(
-    ...mermaidLiteVendorViolations(appChunk, vendorChunk, runtimeChunk),
+    ...mermaidLiteVendorViolations(appChunk, vendorChunks, runtimeChunk),
   );
 
-  const rawBytes = javaScriptOutputs.reduce((total, output) => {
-    if (output.type === "chunk") {
-      return total + new TextEncoder().encode(output.code).byteLength;
-    }
-    return (
-      total +
-      (typeof output.source === "string"
-        ? new TextEncoder().encode(output.source).byteLength
-        : output.source.byteLength)
-    );
-  }, 0);
+  const rawBytes = rawJavaScriptBytes(javaScriptOutputs);
   if (rawBytes > RAW_JAVASCRIPT_OUTPUT_LIMIT_BYTES) {
     violations.push(
       `JavaScript output: ${rawBytes} raw bytes exceeds ${RAW_JAVASCRIPT_OUTPUT_LIMIT_BYTES}`,
@@ -414,13 +430,18 @@ export function singleWorkerBundleViolations(
   return chunkViolations(chunk, new Set(), new Set(["@clerk/clerk-js"]));
 }
 
-export function applicationJavaScriptBundlePlugin(): Plugin {
+export function applicationJavaScriptBundlePlugin(
+  vendorChunkCount = 1,
+): Plugin {
   return {
     apply: "build",
     enforce: "post",
     name: "platform-application-javascript-bundles",
     generateBundle(_options, bundle) {
-      const violations = applicationBundleViolations(Object.values(bundle));
+      const violations = applicationBundleViolations(
+        Object.values(bundle),
+        vendorChunkCount,
+      );
       if (violations.length > 0) {
         this.error(violations.join("\n"));
       }

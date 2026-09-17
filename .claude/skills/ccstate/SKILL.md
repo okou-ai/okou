@@ -20,9 +20,12 @@ React/DOM reference unless it also changes that surface.
 
 - Keep derivation in `computed` and semantic actions in commands. Do not create
   signals or mutate the store during React render.
-- Every async operation needs an owner and cancellation path. Await work or
-  return its promise inside signals; use `detach()` only at an actual outer
-  boundary with its ownership reason. Do not silence work with `void`.
+- Every async operation needs an owner and cancellation path. Await finite work
+  or return its promise inside signals. Start background loops with `setLoop`
+  or `setAbly*Loop$`; those primitives own `detach(..., Reason.Daemon)` internally.
+  Use `waitLoopUntil` / `waitAbly*LoopUntil$` when subsequent work needs completion.
+  Non-periodic background processes use `setDaemon(operation, signal)`.
+  Other `detach()` calls belong at an actual outer boundary with their reason. Do not silence work with `void`.
 - `resetSignal()` provides mutual exclusion. Add a parent when the work belongs
   to a page/route lifetime; parentless use still needs an explicit owner that
   cancels it. The lifecycle reference defines both valid patterns.

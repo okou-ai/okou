@@ -5,7 +5,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use guest_control_proto::{
-    ExecOutputPolicy, ExecOutputStream, ExecTermination, MSG_ERROR, MSG_EXEC_CANCEL, MSG_EXEC_START,
+    ExecCapturedOutput, ExecOutputPolicy, ExecOutputStream, ExecTermination, MSG_ERROR,
+    MSG_EXEC_CANCEL, MSG_EXEC_START,
 };
 use tokio::io::AsyncWriteExt;
 use tokio::net::UnixStream;
@@ -13,7 +14,8 @@ use tokio::task::JoinHandle;
 
 use super::super::support::{
     assert_connection_accepts_exec_operation, normal_operation_readiness, operation_count,
-    read_guest_message, send_exec_output, send_stream_exec_result, setup_host_and_guest,
+    read_guest_message, send_exec_output, send_raw_exec_result, send_stream_exec_result,
+    setup_host_and_guest,
 };
 use super::support::{
     ExecStartFrame, HostTempDir, HostTempPath, copy_options, default_copy_options,
@@ -98,6 +100,112 @@ impl CopyFileFixture {
     fn assert_no_temp_files(&self) {
         self.temp_dir.assert_no_vm0tmp_files();
     }
+}
+
+async fn assert_copy_terminal_failures(
+    stderr: &[u8],
+    stderr_truncated: bool,
+    diagnostic: &str,
+    existing_destination: bool,
+) {
+    for (termination, expected_kind, expected_reason) in [
+        (
+            ExecTermination::TimedOut,
+            io::ErrorKind::TimedOut,
+            "timed out",
+        ),
+        (
+            ExecTermination::Cancelled,
+            io::ErrorKind::Other,
+            "was cancelled",
+        ),
+        (
+            ExecTermination::StartFailed,
+            io::ErrorKind::Other,
+            "exec start failed",
+        ),
+        (
+            ExecTermination::WaitFailed,
+            io::ErrorKind::Other,
+            "exec wait failed",
+        ),
+    ] {
+        let mut fixture =
+            CopyFileFixture::new("guest-control-client-copy-terminal", "system.log").await;
+        if existing_destination {
+            fixture.write_host_bytes(b"original host log");
+        }
+        let copy_task = fixture.spawn_copy("/tmp/system.log", default_copy_options());
+        let start = fixture.expect_start().await;
+        if !matches!(termination, ExecTermination::StartFailed) {
+            send_exec_output(
+                &mut fixture.guest,
+                start.seq(),
+                0,
+                ExecOutputStream::Stdout,
+                b"incomplete guest log",
+                false,
+            )
+            .await;
+        }
+        let payload = guest_control_proto::encode_exec_result(
+            termination,
+            12,
+            ExecCapturedOutput::Discarded,
+            ExecCapturedOutput::Captured {
+                bytes: stderr,
+                truncated: stderr_truncated,
+            },
+            diagnostic,
+        )
+        .unwrap();
+        send_raw_exec_result(&mut fixture.guest, start.seq(), payload).await;
+
+        let error = copy_task.await.unwrap().unwrap_err();
+        assert_eq!(error.kind(), expected_kind);
+        if existing_destination {
+            fixture.assert_host_bytes(b"original host log");
+        } else {
+            fixture.assert_host_missing();
+        }
+        fixture.assert_no_temp_files();
+
+        let message = error.to_string();
+        let prefix = format!("copy_file {expected_reason} for /tmp/system.log");
+        assert!(message.starts_with(&prefix), "{message}");
+        if !stderr.is_empty() {
+            let expected_stderr = format!("stderr: {}", String::from_utf8_lossy(stderr));
+            assert!(message.contains(&expected_stderr), "{message}");
+        }
+        if stderr_truncated {
+            assert!(message.contains("stderr truncated"), "{message}");
+        }
+        if !diagnostic.is_empty() {
+            assert!(
+                message.contains(&format!("diagnostic: {diagnostic}")),
+                "{message}"
+            );
+        }
+        if stderr.is_empty() && !stderr_truncated && diagnostic.is_empty() {
+            assert_eq!(message, prefix);
+        }
+        assert_connection_accepts_exec_operation(&fixture.host, &mut fixture.guest).await;
+    }
+}
+
+#[tokio::test]
+async fn copy_file_reports_terminal_failures() {
+    assert_copy_terminal_failures(b"helper stderr", false, "guest diagnostic", true).await;
+}
+
+#[tokio::test]
+async fn copy_file_reports_terminal_failures_with_truncated_stderr() {
+    assert_copy_terminal_failures(b"helper stderr", true, "guest diagnostic", true).await;
+}
+
+#[tokio::test]
+async fn copy_file_reports_terminal_failures_without_details() {
+    assert_copy_terminal_failures(b"", false, "", false).await;
 }
 
 #[tokio::test]

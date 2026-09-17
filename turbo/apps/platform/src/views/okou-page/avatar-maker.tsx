@@ -1,4 +1,5 @@
 import { useGet, useSet } from "ccstate-react";
+import { useLoadableSet } from "ccstate-react/experimental";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import {
   Button,
@@ -28,12 +29,7 @@ import {
 } from "@okouai/core/agent-avatar";
 import type { AvatarSvgConfig } from "./avatar-svg-utils.ts";
 import { AvatarSvgPreview } from "./avatar-svg-preview.tsx";
-import {
-  detach,
-  onDomEventFn,
-  Reason,
-  withCleanup,
-} from "../../signals/utils.ts";
+import { detach, Reason } from "../../signals/utils.ts";
 import {
   type Step,
   avatarMakerOpen$,
@@ -52,8 +48,7 @@ import {
   goBackStep$,
   goForwardStep$,
   closeAvatarMaker$,
-  avatarMakerSaving$,
-  setAvatarMakerSaving$,
+  confirmAvatarMaker$,
 } from "../../signals/okou-page/settings/avatar-maker.ts";
 import { IconTooltipButton } from "../components/icon-tooltip.tsx";
 
@@ -102,7 +97,7 @@ function Sparkles({ active }: { active: boolean }) {
         return (
           <div
             key={key}
-            className="absolute rounded-full"
+            className="absolute animate-avatar-firework rounded-full"
             style={
               {
                 width: p.size,
@@ -110,7 +105,6 @@ function Sparkles({ active }: { active: boolean }) {
                 backgroundColor: p.color,
                 left: "50%",
                 top: "10%",
-                animation: "avatar-firework 0.6s ease-out forwards",
                 animationDelay: `${p.delay}s`,
                 transform: "translate(-50%, -50%) scale(1)",
                 "--fx": `${p.x}px`,
@@ -194,11 +188,10 @@ function StepOptions({
         disabled={disabled}
         className={cn(
           "flex size-14 shrink-0 items-center justify-center rounded-full transition-all hover:scale-110 disabled:opacity-30 disabled:hover:scale-100",
+          "animate-avatar-option-appear",
           isPicked && "scale-110 ring-2 ring-[#ed4e01] ring-offset-2",
         )}
-        style={{
-          animation: `avatar-option-appear 0.2s ease-out ${index * 0.05}s both`,
-        }}
+        style={{ animationDelay: `${index * 0.05}s` }}
         onClick={() => {
           return selectOption(selection);
         }}
@@ -248,11 +241,7 @@ function AvatarPreviewWithShuffle() {
             >
               <Dices
                 size={14}
-                style={
-                  shuffling
-                    ? { animation: "avatar-dice-spin 0.6s ease-out" }
-                    : undefined
-                }
+                className={shuffling ? "animate-avatar-dice-spin" : undefined}
               />
             </button>
           </TooltipTrigger>
@@ -332,9 +321,8 @@ function StepNavigator() {
           <ChevronLeft size={14} />
         </IconTooltipButton>
         <p
-          className="min-w-[3rem] text-center text-xs font-semibold text-foreground"
+          className="min-w-[3rem] animate-avatar-option-appear-fast text-center text-xs font-semibold text-foreground"
           key={step}
-          style={{ animation: "avatar-option-appear 0.15s ease-out" }}
         >
           {stepLabels[step]}
         </p>
@@ -365,12 +353,12 @@ function AvatarMakerDialogBody({
   const config = useGet(avatarMakerConfig$);
   const editing = useGet(avatarMakerEditing$);
   const step = useGet(avatarMakerStep$);
-  const saving = useGet(avatarMakerSaving$);
+  const [saveLoadable, confirm] = useLoadableSet(confirmAvatarMaker$);
+  const saving = saveLoadable.state === "loading";
 
   const selectOption = useSet(selectAvatarOption$);
   const dialogSignal = useGet(avatarMakerDialogSignal$);
   const closeMaker = useSet(closeAvatarMaker$);
-  const setSaving = useSet(setAvatarMakerSaving$);
 
   const title = editing
     ? t(($) => {
@@ -387,25 +375,11 @@ function AvatarMakerDialogBody({
         return $.avatar.description;
       });
 
-  const handleConfirm = onDomEventFn(async () => {
-    if (!dialogSignal) {
-      return;
+  const handleConfirm = () => {
+    if (dialogSignal) {
+      detach(confirm(onConfirm, dialogSignal), Reason.DomCallback);
     }
-    dialogSignal.throwIfAborted();
-    setSaving(true);
-    await withCleanup(
-      (async () => {
-        await onConfirm(config, dialogSignal);
-        dialogSignal.throwIfAborted();
-        closeMaker();
-      })(),
-      () => {
-        if (!dialogSignal.aborted) {
-          setSaving(false);
-        }
-      },
-    );
-  });
+  };
 
   return (
     <DialogContent
@@ -498,22 +472,6 @@ export function AvatarMaker({
 
   return (
     <>
-      <style>{`
-        @keyframes avatar-option-appear {
-          from { opacity: 0; transform: translateY(8px) scale(0.9); }
-          to { opacity: 1; transform: translateY(0) scale(1); }
-        }
-        @keyframes avatar-dice-spin {
-          0% { transform: rotate(0deg) scale(1); }
-          30% { transform: rotate(180deg) scale(1.3); }
-          100% { transform: rotate(360deg) scale(1); }
-        }
-        @keyframes avatar-firework {
-          0% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-          70% { opacity: 0.8; }
-          100% { opacity: 0; transform: translate(calc(-50% + var(--fx)), calc(-50% + var(--fy))) scale(0.3); }
-        }
-      `}</style>
       {trigger ? (
         trigger(openMaker)
       ) : (
@@ -549,7 +507,7 @@ export function AvatarMaker({
           }
         }}
       >
-        <AvatarMakerDialogBody onConfirm={onConfirm} />
+        {open ? <AvatarMakerDialogBody onConfirm={onConfirm} /> : null}
       </Dialog>
     </>
   );

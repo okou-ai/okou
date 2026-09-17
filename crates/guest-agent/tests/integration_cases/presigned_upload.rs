@@ -4,10 +4,6 @@ use api_contracts::generated::constants::client::headers::{
 };
 use bytes::Bytes;
 use httpmock::prelude::*;
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, AtomicUsize, Ordering},
-};
 
 // =========================================================================
 // put_presigned
@@ -90,32 +86,12 @@ async fn put_presigned_does_not_send_api_headers() {
     assert!(result.is_ok());
 }
 
-#[tokio::test]
-async fn put_presigned_retry_then_succeed() {
-    let api = SharedApiMock::new().await;
-    let server = api.server();
-
-    let mock = server.mock(|when, then| {
-        when.method(PUT).path("/test/put-retry");
-        then.respond_with(retry_then_response(1, http_status(200)));
-    });
-
-    let url = api.url("/test/put-retry");
-    let data = Bytes::from_static(b"retry data");
-    let result = http_client!()
-        .put_presigned(&url, data, "application/octet-stream")
-        .await;
-
-    assert!(result.is_ok());
-    mock.assert_calls_async(2).await;
-}
-
 // =========================================================================
 // put_presigned 4xx handling
 // =========================================================================
 
 #[tokio::test]
-async fn put_presigned_4xx_returns_immediately_no_retry() {
+async fn put_presigned_reports_http_error() {
     let api = SharedApiMock::new().await;
     let server = api.server();
 
@@ -136,36 +112,12 @@ async fn put_presigned_4xx_returns_immediately_no_retry() {
 }
 
 #[tokio::test]
-async fn put_presigned_429_retries() {
-    let api = SharedApiMock::new().await;
-    let server = api.server();
-
-    let mock = server.mock(|when, then| {
-        when.method(PUT).path("/test/put-429");
-        then.status(429);
-    });
-
-    let url = api.url("/test/put-429");
-    let data = Bytes::from_static(b"rate limited data");
-    let result = http_client!()
-        .put_presigned(&url, data, "application/octet-stream")
-        .await;
-
-    // 429 is retriable — should exhaust all retries.
-    mock.assert_calls_async(3).await;
-    let error = result.unwrap_err().to_string();
-    assert_eq!(
-        error,
-        "http: PUT presigned failed after 3 attempts; last failure: HTTP 429"
-    );
-}
-
-#[tokio::test]
 async fn put_presigned_connect_error_does_not_log_presigned_url() {
     let _api = SharedApiMock::new().await;
 
     let tmp = tempfile::tempdir().unwrap();
     let system_log_path = tmp.path().join("system.log");
+    std::fs::write(&system_log_path, "").unwrap();
     let _system_log_guard = SystemLogOverrideGuard::set(&system_log_path);
 
     let signature = "super-secret-signature";
@@ -180,15 +132,8 @@ async fn put_presigned_connect_error_does_not_log_presigned_url() {
         .await;
 
     let error = result.unwrap_err().to_string();
-    assert_eq!(
-        error,
-        "http: PUT presigned failed after 3 attempts; last failure: connect"
-    );
+    assert!(error.starts_with("http: PUT presigned:"));
     let system_log = std::fs::read_to_string(&system_log_path).unwrap();
-    assert!(
-        system_log.contains("HTTP PUT presigned failed (attempt 1/3)"),
-        "system log should keep retry context, got: {system_log}"
-    );
     assert!(
         !system_log.contains(&url),
         "system log leaked full presigned URL: {system_log}"
@@ -272,166 +217,6 @@ async fn put_presigned_file_sets_content_length() {
 }
 
 #[tokio::test]
-async fn put_presigned_file_retry_then_succeed() {
-    let api = SharedApiMock::new().await;
-    let server = api.server();
-
-    let dir = tempfile::tempdir().unwrap();
-    let file_path = dir.path().join("retry.bin");
-    let data: Vec<u8> = (0..600000).map(|i| (i % 251) as u8).collect();
-    std::fs::write(&file_path, &data).unwrap();
-
-    let mock = server.mock(|when, then| {
-        when.method(PUT).path("/test/put-file-retry");
-        let attempts = AtomicUsize::new(0);
-        then.respond_with(move |req| {
-            if !upload_request_matches(req, &data, "600000") {
-                return http_status(400);
-            }
-            if attempts.fetch_add(1, Ordering::SeqCst) == 0 {
-                return http_status(500);
-            }
-
-            http_status(200)
-        });
-    });
-
-    let url = api.url("/test/put-file-retry");
-    let path = file_path.clone();
-    let result = http_client!()
-        .put_presigned_file(&url, &path, "application/gzip")
-        .await;
-
-    assert!(result.is_ok());
-    mock.assert_calls_async(2).await;
-}
-
-#[tokio::test]
-async fn put_presigned_file_retry_fails_if_source_shrinks() {
-    let api = SharedApiMock::new().await;
-    let server = api.server();
-
-    let dir = tempfile::tempdir().unwrap();
-    let file_path = dir.path().join("retry-shrunk.bin");
-    std::fs::write(&file_path, b"retry file data").unwrap();
-
-    let mutation_done = Arc::new(AtomicBool::new(false));
-    let mutation_done_for_mock = Arc::clone(&mutation_done);
-    let file_path_for_mock = file_path.clone();
-    let mock = server.mock(|when, then| {
-        when.method(PUT).path("/test/put-file-retry-shrunk");
-        let attempts = AtomicUsize::new(0);
-        then.respond_with(move |req| {
-            if attempts.fetch_add(1, Ordering::SeqCst) == 0 {
-                mutation_done_for_mock.store(
-                    std::fs::write(&file_path_for_mock, b"short").is_ok(),
-                    Ordering::SeqCst,
-                );
-                return http_status(500);
-            }
-
-            upload_validation_response(req, b"retry file data", "15")
-        });
-    });
-
-    let url = api.url("/test/put-file-retry-shrunk");
-    let path = file_path.clone();
-    let result = http_client!()
-        .put_presigned_file(&url, &path, "application/gzip")
-        .await;
-
-    assert!(mutation_done.load(Ordering::SeqCst));
-    let error = result.unwrap_err().to_string();
-    assert_eq!(
-        error,
-        "http: PUT presigned failed after 3 attempts; last failure: transport"
-    );
-    let calls = mock.calls_async().await;
-    assert_eq!(calls, 1);
-}
-
-#[tokio::test]
-async fn put_presigned_file_retry_uses_original_length_if_source_grows() {
-    let api = SharedApiMock::new().await;
-    let server = api.server();
-
-    let dir = tempfile::tempdir().unwrap();
-    let file_path = dir.path().join("retry-grown.bin");
-    std::fs::write(&file_path, b"retry file data").unwrap();
-
-    let mutation_done = Arc::new(AtomicBool::new(false));
-    let mutation_done_for_mock = Arc::clone(&mutation_done);
-    let file_path_for_mock = file_path.clone();
-    let mock = server.mock(|when, then| {
-        when.method(PUT).path("/test/put-file-retry-grown");
-        let attempts = AtomicUsize::new(0);
-        then.respond_with(move |req| {
-            if attempts.fetch_add(1, Ordering::SeqCst) == 0 {
-                mutation_done_for_mock.store(
-                    std::fs::write(&file_path_for_mock, b"retry file data plus extra").is_ok(),
-                    Ordering::SeqCst,
-                );
-                return http_status(500);
-            }
-
-            upload_validation_response(req, b"retry file data", "15")
-        });
-    });
-
-    let url = api.url("/test/put-file-retry-grown");
-    let path = file_path.clone();
-    let result = http_client!()
-        .put_presigned_file(&url, &path, "application/gzip")
-        .await;
-
-    assert!(mutation_done.load(Ordering::SeqCst));
-    assert!(result.is_ok());
-    mock.assert_calls_async(2).await;
-}
-
-#[tokio::test]
-async fn put_presigned_file_retry_uses_original_handle_if_path_is_replaced() {
-    let api = SharedApiMock::new().await;
-    let server = api.server();
-
-    let dir = tempfile::tempdir().unwrap();
-    let file_path = dir.path().join("retry-replaced.bin");
-    let replacement_path = dir.path().join("replacement.bin");
-    std::fs::write(&file_path, b"retry file data").unwrap();
-    std::fs::write(&replacement_path, b"changed content").unwrap();
-
-    let mutation_done = Arc::new(AtomicBool::new(false));
-    let mutation_done_for_mock = Arc::clone(&mutation_done);
-    let file_path_for_mock = file_path.clone();
-    let replacement_path_for_mock = replacement_path.clone();
-    let mock = server.mock(|when, then| {
-        when.method(PUT).path("/test/put-file-retry-replaced");
-        let attempts = AtomicUsize::new(0);
-        then.respond_with(move |req| {
-            if attempts.fetch_add(1, Ordering::SeqCst) == 0 {
-                mutation_done_for_mock.store(
-                    std::fs::rename(&replacement_path_for_mock, &file_path_for_mock).is_ok(),
-                    Ordering::SeqCst,
-                );
-                return http_status(500);
-            }
-
-            upload_validation_response(req, b"retry file data", "15")
-        });
-    });
-
-    let url = api.url("/test/put-file-retry-replaced");
-    let path = file_path.clone();
-    let result = http_client!()
-        .put_presigned_file(&url, &path, "application/gzip")
-        .await;
-
-    assert!(mutation_done.load(Ordering::SeqCst));
-    assert!(result.is_ok());
-    mock.assert_calls_async(2).await;
-}
-
-#[tokio::test]
 async fn put_presigned_file_large_multi_chunk() {
     let api = SharedApiMock::new().await;
     let server = api.server();
@@ -459,7 +244,7 @@ async fn put_presigned_file_large_multi_chunk() {
 }
 
 #[tokio::test]
-async fn put_presigned_file_4xx_no_retry() {
+async fn put_presigned_file_reports_http_error() {
     let api = SharedApiMock::new().await;
     let server = api.server();
 
@@ -481,57 +266,6 @@ async fn put_presigned_file_4xx_no_retry() {
     assert!(result.is_err());
 }
 
-#[tokio::test]
-async fn put_presigned_file_retry_exhausted_includes_final_status() {
-    let api = SharedApiMock::new().await;
-    let server = api.server();
-
-    let dir = tempfile::tempdir().unwrap();
-    let file_path = dir.path().join("exhausted.bin");
-    std::fs::write(&file_path, b"exhausted file data").unwrap();
-
-    let mock = server.mock(|when, then| {
-        when.method(PUT).path("/test/put-file-exhaust");
-        then.status(503);
-    });
-
-    let url = api.url("/test/put-file-exhaust");
-    let result = http_client!()
-        .put_presigned_file(&url, &file_path, "application/gzip")
-        .await;
-
-    mock.assert_calls_async(3).await;
-    let error = result.unwrap_err().to_string();
-    assert_eq!(
-        error,
-        "http: PUT presigned failed after 3 attempts; last failure: HTTP 503"
-    );
-}
-
 // =========================================================================
 // Edge cases
 // =========================================================================
-
-#[tokio::test]
-async fn put_presigned_retry_exhausted() {
-    let api = SharedApiMock::new().await;
-    let server = api.server();
-
-    let mock = server.mock(|when, then| {
-        when.method(PUT).path("/test/put-exhaust");
-        then.status(500);
-    });
-
-    let url = api.url("/test/put-exhaust");
-    let data = Bytes::from_static(b"exhaust data");
-    let result = http_client!()
-        .put_presigned(&url, data, "application/octet-stream")
-        .await;
-
-    mock.assert_calls_async(3).await;
-    let error = result.unwrap_err().to_string();
-    assert_eq!(
-        error,
-        "http: PUT presigned failed after 3 attempts; last failure: HTTP 500"
-    );
-}

@@ -8,7 +8,7 @@ import { IN_VITEST } from "../../env.ts";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { localStorageSignals } from "../external/local-storage.ts";
-import { setLoop } from "../utils.ts";
+import { waitLoopUntil } from "../utils.ts";
 import {
   fireGoogleAdsConversion,
   GOOGLE_ADS_ADSMARCH_PAID_AFTER_ONBOARDING_SEND_TO,
@@ -48,7 +48,7 @@ export const fireGoogleAdsPaidConversion$ = command(
         ? GOOGLE_ADS_ADSMARCH_PAID_IN_ONBOARDING_SEND_TO
         : GOOGLE_ADS_ADSMARCH_PAID_AFTER_ONBOARDING_SEND_TO;
     const fired = fireGoogleAdsConversion({
-      accountId: conversion.googleAdsAccountId ?? null,
+      accountId: conversion.googleAdsAccountId,
       sendTo,
       dedupeValue: conversion.transactionId,
       value: kind === "paid_in_onboarding" ? conversion.valueUsd : 40,
@@ -72,7 +72,7 @@ export const completeGoogleAdsPaidCheckout$ = command(
   ): Promise<void> => {
     const client = get(apiClient$)(billingCheckoutContract);
     let attempts = 0;
-    await setLoop(
+    await waitLoopUntil(
       async (loopSignal) => {
         attempts += 1;
         const result = await accept(

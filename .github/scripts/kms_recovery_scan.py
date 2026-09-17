@@ -1,5 +1,6 @@
 """Decode snapshot aggregates and retain only bounded PostgreSQL diagnostics."""
 
+import datetime as dt
 import json
 import re
 import subprocess
@@ -35,6 +36,7 @@ def scan_records(result, database_hash):
     if isinstance(output, bytes):
         output = output.decode("utf-8")
     safe, headers, last_scan = [], [], None
+    last_batch, last_chunk, completed_chunks = None, None, 0
     plans = {}
     row_fields = {"rows", "rowsWithEnvelopeMarker", "rowsWithSourceReference"}
     fields = {
@@ -47,6 +49,30 @@ def scan_records(result, database_hash):
         record = json.loads(line)
         require(isinstance(record, dict), "invalid_scan_record")
         kind = record.get("kind")
+        if kind == "batch-start":
+            oid = counter(record, "relationOid")
+            first, end = counter(record, "firstBlock"), counter(record, "endBlock")
+            require(
+                oid in plans
+                and first == plans[oid]["nextBlock"]
+                and first % (128 * 64) == 0
+                and end == min(first + 128 * 64, plans[oid]["blocks"]),
+                "invalid_scan_batch",
+            )
+            started = record.get("startedAt")
+            require(isinstance(started, str), "invalid_batch_timestamp")
+            try:
+                moment = dt.datetime.fromisoformat(started)
+            except ValueError:
+                raise ScanReportError("invalid_batch_timestamp") from None
+            require(moment.tzinfo is not None, "invalid_batch_timestamp")
+            last_batch = {
+                "relationOid": oid,
+                "firstBlock": first,
+                "endBlock": end,
+                "startedAt": moment.isoformat(),
+            }
+            continue
         if kind == "table-plan":
             oid, blocks = counter(record, "relationOid"), counter(record, "blocks")
             require(oid not in plans and blocks > 0, "invalid_table_plan")
@@ -83,6 +109,13 @@ def scan_records(result, database_hash):
             for field, value in counts.items():
                 plan["aggregate"][field] += value
             plan["nextBlock"] = end
+            completed_chunks += 1
+            last_chunk = {
+                "relationOid": oid,
+                "firstBlock": first,
+                "endBlock": end,
+                "rows": counts["rows"],
+            }
             if end == plan["blocks"]:
                 safe.append(plan["aggregate"])
             continue
@@ -124,6 +157,12 @@ def scan_records(result, database_hash):
                 "psqlExitCode": None if timed_out else result.returncode,
                 "sqlState": states[0] if len(states) == 1 else None,
                 "completedTables": sum(r["kind"] == "table" for r in safe),
+                "plannedTables": headers[0]["plannedTables"]
+                if len(headers) == 1
+                else None,
+                "completedChunks": completed_chunks,
+                "lastCompletedChunk": last_chunk,
+                "lastStartedBatch": last_batch,
                 "lastStartedScan": last_scan,
                 **({"processTimeoutSeconds": result.timeout} if timed_out else {}),
             },

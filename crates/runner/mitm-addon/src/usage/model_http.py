@@ -12,8 +12,11 @@ from .json_selective import (
 from .json_selective import Path as JsonPath
 
 _MAX_FAILURE_STRING_BYTES = 128
+_BALANCE_MESSAGE_PATH = ("error", "message")
+_MAX_BALANCE_MESSAGE_BYTES = 512
 
 FAILURE_SCALAR_FIELDS: Mapping[JsonPath, ScalarField] = {
+    _BALANCE_MESSAGE_PATH: ScalarField("string", max_bytes=_MAX_BALANCE_MESSAGE_BYTES),
     ("type",): ScalarField("string", max_bytes=_MAX_FAILURE_STRING_BYTES),
     ("code",): ScalarField("string", max_bytes=_MAX_FAILURE_STRING_BYTES),
     ("status",): ScalarField("string", max_bytes=_MAX_FAILURE_STRING_BYTES),
@@ -61,9 +64,9 @@ class ModelHttpFailureEvidence:
     The fields are a bounded projection of the selected JSON values and SSE framing state. An
     evidence instance is invalid by default. For evidence created by
     :func:`failure_evidence_from_result`, ``is_valid`` is true only when extraction completed and
-    no failure-sensitive string exceeded the 128-byte bound. Incomplete or overflowed extraction
-    preserves the event identity and ``is_done`` marker, but must not be interpreted as a
-    successful or failed payload.
+    no failure-sensitive string exceeded the 128-byte bound. Incomplete extraction or
+    failure-sensitive overflow preserves the event identity and ``is_done`` marker, but must
+    not be interpreted as a successful or failed payload.
 
     Fields:
         event_name: The optional SSE framing event name. It is independent from ``payload_type``;
@@ -81,7 +84,14 @@ class ModelHttpFailureEvidence:
             ``response.error.error_type``, top-level ``error_type``, ``response.error.code``,
             ``error.code``, ``response.error.type``, and ``error.type``. When ``payload_type`` is
             ``"error"``, the top-level JSON ``code`` is appended after those values. Values are
-            not deduplicated.
+            not deduplicated. The exact Anthropic insufficient-balance message on an
+            ``invalid_request_error`` envelope appends the normalized ``billing`` code.
+            This optional message evidence is bounded separately to 512 bytes. Its absence does
+            not invalidate an otherwise recognized code. With both usage and failure inspection
+            enabled, an oversized message is discarded and recognized codes remain valid if
+            extraction otherwise completes within the failure-sensitive bounds. Failure-only
+            inspection and the strict buffered-body fallback instead stop extraction on message
+            overflow, producing invalid evidence with no failure codes.
         has_error: Whether a configured error value is present at ``error``, ``response.error``,
             or the first choice's ``error`` path. This records presence, not truthiness.
         has_choices: Whether the top-level ``choices`` value is present. This records presence,
@@ -197,6 +207,19 @@ def failure_evidence_from_result(
     top_level_code = _string_value(result, ("code",))
     if payload_type == "error" and top_level_code is not None:
         failure_codes = (*failure_codes, top_level_code)
+    balance_message = _string_value(result, _BALANCE_MESSAGE_PATH)
+    if (
+        payload_type == "error"
+        and _string_value(result, ("error", "type")) == "invalid_request_error"
+        and _BALANCE_MESSAGE_PATH not in result.discarded_scalar_paths
+        and result.selected_string_max_raw_bytes.get(_BALANCE_MESSAGE_PATH, 0)
+        <= _MAX_BALANCE_MESSAGE_BYTES
+        and balance_message is not None
+        and balance_message.startswith(
+            "Your credit balance is too low to access the Anthropic API."
+        )
+    ):
+        failure_codes = (*failure_codes, "billing")
     return ModelHttpFailureEvidence(
         event_name=event_name,
         payload_type=payload_type,
@@ -219,12 +242,13 @@ def failure_evidence_from_result(
 
 
 def _failure_fields_overflowed(result: JsonExtractionResult) -> bool:
-    if result.discarded_scalar_paths.intersection(FAILURE_SCALAR_FIELDS):
+    code_paths = FAILURE_SCALAR_FIELDS.keys() - {_BALANCE_MESSAGE_PATH}
+    if result.discarded_scalar_paths.intersection(code_paths):
         return True
     return any(
         raw_bytes > _MAX_FAILURE_STRING_BYTES
         for path, raw_bytes in result.selected_string_max_raw_bytes.items()
-        if path in FAILURE_SCALAR_FIELDS
+        if path in code_paths
     )
 
 

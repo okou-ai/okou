@@ -1487,8 +1487,6 @@ export const workflowSummarySchema = z.object({
   description: z.string().max(1024).nullable(),
   visibility: workflowVisibilitySchema,
   ownerUserId: z.string(),
-  ownerUserDisplayName: z.string().nullable().optional(),
-  ownerUserImageUrl: z.string().nullable().optional(),
   createdAt: z.string().datetime(),
   canManage: z.boolean(),
   canPublish: z.boolean(),
@@ -1611,7 +1609,29 @@ export const workflowsCollectionContract = c.router({
   },
 });
 
+export const workflowOwnerProfileSchema = z.object({
+  displayName: z.string().nullable(),
+  imageUrl: z.string().nullable(),
+});
+export type WorkflowOwnerProfile = z.infer<typeof workflowOwnerProfileSchema>;
+
 export const workflowsDetailContract = c.router({
+  ownerProfile: {
+    method: "GET",
+    path: "/api/workflows/:workflowId/owner-profile",
+    headers: authHeadersSchema,
+    pathParams: workflowIdParams,
+    responses: {
+      200: workflowOwnerProfileSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+      429: apiErrorSchema,
+      500: apiErrorSchema,
+      503: apiErrorSchema,
+    },
+    summary: "Get the display profile of a visible workflow's owner",
+  },
   get: {
     method: "GET",
     path: "/api/workflows/:workflowId",

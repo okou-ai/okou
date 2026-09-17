@@ -1,4 +1,3 @@
-import { artifactReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
 import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import {
@@ -206,12 +205,23 @@ async function enableVideoGeneration(fixture: Fixture) {
   );
 }
 
-async function queueImage(fixture: Fixture, imageUrls?: readonly string[]) {
+async function queueImage(
+  fixture: Fixture,
+  imageUrls?: readonly string[],
+  requirePrivateArtifact = false,
+) {
   mocks.clerk.session(fixture.actor.userId, fixture.actor.orgId);
+  const client = fixture.api(imageIoGenerateContract);
+  const create = requirePrivateArtifact ? client.postPrivate : client.post;
   const response = await accept(
-    fixture.api(imageIoGenerateContract).post({
+    create({
       headers,
-      body: { prompt: "A private landscape", model: "qwen-image", imageUrls },
+      body: {
+        prompt: "A private landscape",
+        model: "qwen-image",
+        imageUrls,
+        ...(requirePrivateArtifact ? { requirePrivateArtifact: true } : {}),
+      },
     }),
     [202],
   );
@@ -285,16 +295,23 @@ describe("managed artifact privacy", () => {
         const object = objects.get(
           `${command.input.Bucket}/${command.input.Key}`,
         );
-        if (!object || !(object.Body instanceof Uint8Array)) {
+        if (
+          !object ||
+          !(
+            object.Body instanceof Uint8Array || typeof object.Body === "string"
+          )
+        ) {
           return Promise.reject(
             Object.assign(new Error("Missing object"), { name: "NotFound" }),
           );
         }
+        const body = Buffer.from(object.Body);
         return Promise.resolve({
-          ContentLength: object.Body.byteLength,
+          ETag: '"stored-object"',
+          ContentLength: body.byteLength,
           ContentType: object.ContentType,
           Metadata: object.Metadata,
-          Body: Readable.from([object.Body]),
+          Body: Readable.from([body]),
         });
       }
       return Promise.resolve({});
@@ -320,11 +337,15 @@ describe("managed artifact privacy", () => {
     await flushWaitUntilForTest();
   });
 
-  it.each([false, true])(
-    "uses the image submission policy after the switch changes (private=%s)",
-    async (enabled) => {
+  it.each([
+    { enabled: false, guarded: false },
+    { enabled: true, guarded: false },
+    { enabled: true, guarded: true },
+  ])(
+    "uses the image submission policy after rollback (private=$enabled, guarded=$guarded)",
+    async ({ enabled, guarded }) => {
       const fixture = await createFixture(enabled);
-      const generationId = await queueImage(fixture);
+      const generationId = await queueImage(fixture, undefined, guarded);
       await billing.updateFeatureSwitches(fixture.actor, {
         [FeatureSwitchKey.PrivateArtifacts]: !enabled,
       });
@@ -336,9 +357,7 @@ describe("managed artifact privacy", () => {
       });
       expect(stored?.Bucket).toBe(enabled ? privateBucket : publicBucket);
       if (enabled) {
-        expect(result.url).toBe(
-          artifactReferencePath(result.id, result.filename),
-        );
+        expect(result.url).toMatch(/^\/artifacts\/[a-z0-9]{10}\.jpg$/u);
         expect(result.sourceUrl).toBeUndefined();
         expect(result.embedUrl).toBeUndefined();
         const serializedEvents = JSON.stringify(
@@ -423,7 +442,9 @@ describe("managed artifact privacy", () => {
         expect(contentWrite).toBeGreaterThan(registrationWrite);
         expect(result.url).toMatch(/^https:\/\/a\.okou\.io\//u);
         expect(result.sourceUrl).toBe(sourceUrl);
-        expect(result.embedUrl).toContain("cdn-cgi/image/");
+        expect(result.embedUrl).toBe(
+          `${result.url}?thumbnail=1&fit=scale-down&quality=85`,
+        );
         mocks.clerk.session(`user_${randomUUID()}`, fixture.actor.orgId);
         await accept(
           fixture
@@ -451,7 +472,7 @@ describe("managed artifact privacy", () => {
           Key: `private-artifacts/${image.id}/${image.filename}`,
         },
       },
-      2: { expiresIn: 3600 },
+      2: { expiresIn: 172_800 },
     });
     const next = await completeImage(fixture, nextId);
     expect(next.sourceImageUrls).toStrictEqual([image.url]);
@@ -705,9 +726,14 @@ describe("managed artifact privacy", () => {
     );
     mocks.clerk.session(fixture.actor.userId, fixture.actor.orgId);
     const speech = await accept(
-      fixture
-        .api(voiceIoSpeechContract)
-        .post({ headers, body: { text: "Private speech", voice: "alloy" } }),
+      fixture.api(voiceIoSpeechContract).postPrivate({
+        headers,
+        body: {
+          text: "Private speech",
+          voice: "alloy",
+          requirePrivateArtifact: true,
+        },
+      }),
       [200],
     );
     expect(speech.body.url).toContain("/artifacts/");

@@ -1,4 +1,4 @@
 {
   "extends": "./tsconfig.json",
-  "include": ["scripts/check-build-config.node.ts"]
+  "include": ["vite.config.ts", "scripts/check-build-config.node.ts"]
 }

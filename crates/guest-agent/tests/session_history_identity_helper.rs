@@ -29,7 +29,11 @@ type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
 
 const SESSION_HISTORY_HELPER_TIMEOUT: Duration = Duration::from_secs(10);
 
-fn assert_export_timings(output: &Output, metadata: &SessionHistorySidecarExportMetadata) {
+fn assert_export_timings(
+    output: &Output,
+    metadata: &SessionHistorySidecarExportMetadata,
+    resources_available: bool,
+) {
     let timings = &metadata.timings;
     let stages_us =
         timings.metadata_us + timings.resolve_us + timings.read_verify_us + timings.write_us;
@@ -37,13 +41,15 @@ fn assert_export_timings(output: &Output, metadata: &SessionHistorySidecarExport
     assert!(timings.total_us >= stages_us);
     assert!(timings.total_us - stages_us <= 3);
     assert!(
-        output.stdout.len() < 1024,
+        output.stdout.len() < 2048,
         "helper result must remain bounded"
     );
     assert!(
         output.stderr.is_empty(),
         "timings must not add stderr output"
     );
+    assert_eq!(timings.read_verify_resources.is_some(), resources_available);
+    assert_eq!(timings.write_resources.is_some(), resources_available);
 }
 
 fn claude_history_fixture(
@@ -298,6 +304,17 @@ async fn verify_session_history_identity_returns_stable_exit_codes() -> TestResu
 
 #[tokio::test]
 async fn export_session_history_sidecar_reads_raw_source_once() -> TestResult {
+    check_raw_export(false).await
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn export_session_history_sidecar_succeeds_when_resource_collection_is_denied() -> TestResult
+{
+    check_raw_export(true).await
+}
+
+async fn check_raw_export(deny_resource_syscall: bool) -> TestResult {
     let dir = tempfile::tempdir()?;
     let history = br#"{"type":"system"}"#;
     let session_id = "raw-sidecar-history";
@@ -315,7 +332,17 @@ async fn export_session_history_sidecar_reads_raw_source_once() -> TestResult {
     let export_path = dir.path().join("raw-sidecar");
     let source_watch = SourceOpenWatch::new(&history_path)?;
 
-    let output = run_export_helper(&metadata_path, &export_path).await?;
+    let mut command = export_helper_command(&metadata_path, &export_path);
+    #[cfg(target_os = "linux")]
+    if deny_resource_syscall {
+        deny_getrusage(&mut command);
+    }
+    let output = common::command_output_with_timeout(
+        &mut command,
+        SESSION_HISTORY_HELPER_TIMEOUT,
+        "raw sidecar export exceeded its completion budget",
+    )
+    .await?;
 
     assert!(
         output.status.success(),
@@ -331,7 +358,11 @@ async fn export_session_history_sidecar_reads_raw_source_once() -> TestResult {
         SessionHistorySidecarRepresentation::Raw
     );
     assert_eq!(export_metadata.encoded_size, history.len() as u64);
-    assert_export_timings(&output, &export_metadata);
+    assert_export_timings(
+        &output,
+        &export_metadata,
+        cfg!(target_os = "linux") && !deny_resource_syscall,
+    );
     assert_eq!(std::fs::read(export_path)?, history);
     Ok(())
 }
@@ -467,7 +498,7 @@ async fn export_session_history_sidecar_reads_native_codex_zstd_once() -> TestRe
         SessionHistorySidecarRepresentation::CodexZstd
     );
     assert_eq!(export_metadata.encoded_size, encoded.len() as u64);
-    assert_export_timings(&output, &export_metadata);
+    assert_export_timings(&output, &export_metadata, cfg!(target_os = "linux"));
     assert_eq!(std::fs::read(export_path)?, encoded);
     Ok(())
 }
@@ -809,16 +840,81 @@ async fn run_export_helper(
     metadata_path: &Path,
     export_path: &Path,
 ) -> Result<Output, std::io::Error> {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_guest-agent"));
-    command
-        .env_clear()
-        .arg("export-session-history-sidecar")
-        .arg(metadata_path)
-        .arg(export_path);
+    let mut command = export_helper_command(metadata_path, export_path);
     common::command_output_with_timeout(
         &mut command,
         SESSION_HISTORY_HELPER_TIMEOUT,
         "export-session-history-sidecar exceeded its completion budget",
     )
     .await
+}
+
+fn export_helper_command(metadata_path: &Path, export_path: &Path) -> Command {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_guest-agent"));
+    command
+        .env_clear()
+        .arg("export-session-history-sidecar")
+        .arg(metadata_path)
+        .arg(export_path);
+    command
+}
+
+#[cfg(target_os = "linux")]
+fn deny_getrusage(command: &mut Command) {
+    // SAFETY: the child hook only constructs stack data and invokes prctl. The
+    // filter survives exec, denies only getrusage and never changes the parent.
+    unsafe {
+        command.pre_exec(|| {
+            let mut filter = [
+                libc::sock_filter {
+                    code: (libc::BPF_LD | libc::BPF_W | libc::BPF_ABS) as u16,
+                    jt: 0,
+                    jf: 0,
+                    k: 0, // seccomp_data.nr
+                },
+                libc::sock_filter {
+                    code: (libc::BPF_JMP | libc::BPF_JEQ | libc::BPF_K) as u16,
+                    jt: 0,
+                    jf: 1,
+                    k: libc::SYS_getrusage as u32,
+                },
+                libc::sock_filter {
+                    code: (libc::BPF_RET | libc::BPF_K) as u16,
+                    jt: 0,
+                    jf: 0,
+                    k: libc::SECCOMP_RET_ERRNO | libc::EPERM as u32,
+                },
+                libc::sock_filter {
+                    code: (libc::BPF_RET | libc::BPF_K) as u16,
+                    jt: 0,
+                    jf: 0,
+                    k: libc::SECCOMP_RET_ALLOW,
+                },
+            ];
+            let program = libc::sock_fprog {
+                len: filter.len() as u16,
+                filter: filter.as_mut_ptr(),
+            };
+            // prctl's variadic numeric arguments have unsigned-long width.
+            let zero: libc::c_ulong = 0;
+            if libc::prctl(
+                libc::PR_SET_NO_NEW_PRIVS,
+                1 as libc::c_ulong,
+                zero,
+                zero,
+                zero,
+            ) != 0
+                || libc::prctl(
+                    libc::PR_SET_SECCOMP,
+                    libc::SECCOMP_MODE_FILTER as libc::c_ulong,
+                    &program,
+                    zero,
+                    zero,
+                ) != 0
+            {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
 }

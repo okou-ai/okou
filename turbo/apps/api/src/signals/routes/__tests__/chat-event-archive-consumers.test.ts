@@ -12,7 +12,7 @@ import { testChatEventRetentionContract } from "@okouai/api-contracts/contracts/
 import { testChatEventSearchProjectionContract } from "@okouai/api-contracts/contracts/test-chat-event-search-projection";
 import { testChatEventSnapshotContract } from "@okouai/api-contracts/contracts/test-chat-event-snapshot";
 import { createStore } from "ccstate";
-import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -24,11 +24,7 @@ import {
   seedRetentionOutputEvent$,
   seedRetentionRun$,
 } from "../../../test-fixtures/chat-event-retention";
-import {
-  holdChatEventReadsFixture,
-  queueChatEventPhysicalDeletionFixture,
-  queueOtherWorkerChatEventReadFixture,
-} from "../../../test-fixtures/chat-events";
+import { withChatEventDeletedAfterReadFixture } from "../../../test-fixtures/chat-events";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { sharedThreadRoutes } from "../shared-threads";
 import { testChatEventRetentionRoutes } from "../test-chat-event-retention";
@@ -418,7 +414,7 @@ describe("archived chat event consumers", () => {
     expect(excluded.body.error.code).toBe("NO_SHAREABLE_MESSAGES");
   }, 60_000);
 
-  it("shares one hot-table snapshot when physical deletion queues behind its read", async () => {
+  it("shares one hot-table snapshot when its event is deleted after the read without blocking other threads", async () => {
     const fixture = await createArchiveFixture("sharing-race");
     const hotVisible = `share-hot-race-${randomUUID()} \`${escapedOpen}\` suffix`;
     const hotText = withHiddenCitation(hotVisible);
@@ -427,61 +423,51 @@ describe("archived chat event consumers", () => {
       { chatThreadId: fixture.threadId, content: hotText },
       context.signal,
     );
+    const unrelated = await createArchiveFixture("unrelated-sharing");
+    const unrelatedText = `unrelated-hot-${randomUUID()}`;
+    const unrelatedEventId = await store.set(
+      seedRetentionOutputEvent$,
+      { chatThreadId: unrelated.threadId, content: unrelatedText },
+      context.signal,
+    );
 
     mockOptionalEnv("OPENROUTER_API_KEY", "hot-sharing-race-key");
     chatCallbacks.mockOpenRouterCompletions(() => {
       return "Hot selection";
     });
-    const heldReads = await holdChatEventReadsFixture({
-      signal: context.signal,
-    });
-    const otherWorkerRead = await queueOtherWorkerChatEventReadFixture({
-      signal: context.signal,
-    });
-    let createRequestDone: Promise<unknown> = Promise.resolve();
-    let deletionDone: Promise<void> = Promise.resolve();
-    onTestFinished(async () => {
-      heldReads.release();
-      await Promise.allSettled([
-        heldReads.done,
-        otherWorkerRead.done,
-        deletionDone,
-        createRequestDone,
-      ]);
-    });
-    await expect.poll(otherWorkerRead.blocked).toBe(true);
-    await expect.poll(heldReads.blockedStatementCounts).toStrictEqual({
-      hotSnapshotReads: 0,
-      physicalDeletions: 0,
-    });
-    const createRequest = sharedThreadClient().create({
-      params: { threadId: fixture.threadId },
-      headers: authenticate(fixture.actor),
-      body: { eventIds: [hotEventId] },
-    });
-    createRequestDone = createRequest;
-
-    await expect.poll(heldReads.blockedStatementCounts).toStrictEqual({
-      hotSnapshotReads: 1,
-      physicalDeletions: 0,
-    });
-    const deletion = await queueChatEventPhysicalDeletionFixture({
+    const created = await withChatEventDeletedAfterReadFixture({
+      threadId: fixture.threadId,
       eventId: hotEventId,
-      signal: context.signal,
+      whileResponseHeld: async () => {
+        // Another thread can finish real reads and writes while this response
+        // is paused. The fixture then deletes only the selected original event.
+        const otherCreated = await accept(
+          sharedThreadClient().create({
+            params: { threadId: unrelated.threadId },
+            headers: authenticate(unrelated.actor),
+            body: { eventIds: [unrelatedEventId] },
+          }),
+          [201],
+        );
+        const otherShared = await accept(
+          sharedThreadClient().get({ params: { id: otherCreated.body.id } }),
+          [200],
+        );
+        expect(otherShared.body.messages).toStrictEqual([
+          { messageIndex: 0, role: "assistant", content: unrelatedText },
+        ]);
+      },
+      work: async () => {
+        return await accept(
+          sharedThreadClient().create({
+            params: { threadId: fixture.threadId },
+            headers: authenticate(fixture.actor),
+            body: { eventIds: [hotEventId] },
+          }),
+          [201],
+        );
+      },
     });
-    deletionDone = deletion.done;
-    await expect.poll(heldReads.blockedStatementCounts).toStrictEqual({
-      hotSnapshotReads: 1,
-      physicalDeletions: 1,
-    });
-
-    heldReads.release();
-    const [created] = await Promise.all([
-      accept(createRequest, [201]),
-      heldReads.done,
-      otherWorkerRead.done,
-      deletionDone,
-    ]);
     await expect(
       store.set(readRetentionEvents$, [hotEventId], context.signal),
     ).resolves.toHaveLength(0);
@@ -502,6 +488,54 @@ describe("archived chat event consumers", () => {
       ],
     });
   }, 60_000);
+
+  it("restores sharing after the held hot-read response fails", async () => {
+    const fixture = await createArchiveFixture("failed-sharing-race");
+    const content = `retained-after-failed-read-${randomUUID()}`;
+    const eventId = await store.set(
+      seedRetentionOutputEvent$,
+      { chatThreadId: fixture.threadId, content },
+      context.signal,
+    );
+    mockOptionalEnv("OPENROUTER_API_KEY", "failed-sharing-race-key");
+    chatCallbacks.mockOpenRouterCompletions(() => {
+      return "Recovered selection";
+    });
+    const create = () => {
+      return sharedThreadClient().create({
+        params: { threadId: fixture.threadId },
+        headers: authenticate(fixture.actor),
+        body: { eventIds: [eventId] },
+      });
+    };
+
+    await expect(
+      withChatEventDeletedAfterReadFixture({
+        threadId: fixture.threadId,
+        eventId,
+        whileResponseHeld: () => {
+          // Fail after the real read but before physical deletion. A later
+          // request must still share the retained event through a fresh pool.
+          return Promise.reject(new Error("Held chat-event response failed"));
+        },
+        work: async () => {
+          return await accept(create(), [201]);
+        },
+      }),
+    ).rejects.toThrow("Unknown response status 500");
+
+    const created = await accept(create(), [201]);
+    const shared = await accept(
+      sharedThreadClient().get({ params: { id: created.body.id } }),
+      [200],
+    );
+    expect(shared.body).toStrictEqual({
+      id: created.body.id,
+      publicBrand: "okou",
+      title: "Recovered selection",
+      messages: [{ messageIndex: 0, role: "assistant", content }],
+    });
+  });
 
   it("keeps automatic session rotation best effort when old hot events are missing", async () => {
     const fixture = await createArchiveFixture("session-context");

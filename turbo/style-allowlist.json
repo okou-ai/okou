@@ -34,6 +34,16 @@
     {
       "file": "apps/platform/src/views/css/index.css",
       "atRules": [],
+      "selector": ".wmde-markdown p",
+      "kind": "third-party-dom-adapter",
+      "owner": "frontend-platform",
+      "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content. This paragraph rhythm previously shared its rule with the first-party okou-markdown-card class, which is why it is allowlisted later than its siblings.",
+      "upstream": "@uiw/react-markdown-preview generated DOM",
+      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
+    },
+    {
+      "file": "apps/platform/src/views/css/index.css",
+      "atRules": [],
       "selector": ".wmde-markdown h1,.wmde-markdown h2,.wmde-markdown h3,.wmde-markdown h4,.wmde-markdown h5,.wmde-markdown h6",
       "kind": "third-party-dom-adapter",
       "owner": "frontend-platform",
@@ -384,26 +394,6 @@
     {
       "file": "apps/platform/src/views/css/index.css",
       "atRules": [],
-      "selector": ".wmde-markdown pre .copied",
-      "kind": "third-party-dom-adapter",
-      "owner": "frontend-platform",
-      "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",
-      "upstream": "@uiw/react-markdown-preview generated DOM",
-      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
-    },
-    {
-      "file": "apps/platform/src/views/css/index.css",
-      "atRules": [],
-      "selector": ".wmde-markdown pre:hover .copied:hover",
-      "kind": "third-party-dom-adapter",
-      "owner": "frontend-platform",
-      "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",
-      "upstream": "@uiw/react-markdown-preview generated DOM",
-      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
-    },
-    {
-      "file": "apps/platform/src/views/css/index.css",
-      "atRules": [],
       "selector": ".wmde-markdown kbd",
       "kind": "third-party-dom-adapter",
       "owner": "frontend-platform",
@@ -569,6 +559,28 @@
       "rationale": "The presentation preview adapter normalizes generated HTML in its isolated document.",
       "upstream": "generated presentation HTML document",
       "removal": "Remove when generated presentation HTML exposes a stable attribute-only styling contract."
+    }
+  ],
+  "classDependencies": [
+    {
+      "file": "packages/ui/src/components/ui/sonner.tsx",
+      "token": "toaster",
+      "count": 1,
+      "kind": "third-party-dom-adapter",
+      "owner": "frontend-platform",
+      "rationale": "Sonner styles its toasts from an unlayered stylesheet it injects at module load, so the component anchors its own `group-[.toaster]:` variants on a class it hands to Sonner's `className` prop. Restyling the toast without that anchor is a visual decision tracked separately.",
+      "upstream": "sonner toast DOM",
+      "removal": "Remove when the toast adopts Sonner's `theme` prop or its own layered surface, and the `group-[.toaster]:` variants no longer need an anchor class."
+    },
+    {
+      "file": "apps/platform/src/views/components/markdown-frame.tsx",
+      "token": "wmde-markdown",
+      "count": 1,
+      "kind": "third-party-dom-adapter",
+      "owner": "frontend-platform",
+      "rationale": "The vendored `@uiw/react-markdown-preview` stylesheet and the App's allowlisted adapter rules both key on this class, so the frame must carry it for the Markdown body to receive either.",
+      "upstream": "@uiw/react-markdown-preview generated DOM",
+      "removal": "Remove when the Markdown renderer is replaced or its stylesheet is no longer imported."
     }
   ],
   "vendorFiles": [

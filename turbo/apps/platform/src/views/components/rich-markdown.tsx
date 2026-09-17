@@ -1,6 +1,5 @@
 import { withChatScrollLayout } from "./chat-scroll-layout.tsx";
 import "../css/vendor/uiw-react-markdown-preview-5.2.0.css";
-import { CopyButton } from "@okouai/ui";
 import { useGet, useLastResolved, useSet } from "ccstate-react";
 import type { Element, Root } from "hast";
 import { toJsxRuntime } from "hast-util-to-jsx-runtime";
@@ -19,10 +18,17 @@ import type {
   ArtifactKind,
   ArtifactSignals,
 } from "../../signals/chat-page/artifact-card-signals.ts";
+import type { HostedSiteCard } from "../../signals/hosted-site-card.ts";
 import type { ImageLoadSignals } from "../../signals/image-load.ts";
 import type { AttachmentPreviewSignals } from "../../signals/attachment-resource-url.ts";
 import { isImageUrl, isSafeMediaUrl } from "../../lib/media-url.ts";
 import { MarkdownCardView } from "../okou-page/chat-body-cards.tsx";
+import {
+  fallbackHtmlPreviewTitle,
+  SitePreviewCard,
+  SitePreviewViewport,
+} from "../okou-page/attachment-preview.tsx";
+import { CodeBlockCopyButton } from "./code-block-copy-button.tsx";
 import { MarkdownColorPreview } from "./markdown-color-preview.tsx";
 import { MarkdownFrame } from "./markdown-frame.tsx";
 import { MathFormulaView } from "./math-formula.tsx";
@@ -284,8 +290,33 @@ function MediaImageRenderer(props: MarkdownImageProps) {
   return <img {...omitMarkdownNodeProp(rest)} src={src} alt={alt} />;
 }
 
+/**
+ * A hosted site embedded as a Markdown image. Without artifact signals to open
+ * it in place, the card opens the site itself in a new tab.
+ */
+function MarkdownSitePreview({ site }: { readonly site: HostedSiteCard }) {
+  const title = fallbackHtmlPreviewTitle(
+    site.title.trim() || site.url,
+    site.url,
+  );
+  return (
+    <SitePreviewCard
+      href={site.url}
+      testId="markdown-site-preview"
+      openInNewTab
+      title={title}
+    >
+      <SitePreviewViewport src={site.url} title={title} />
+    </SitePreviewCard>
+  );
+}
+
 function LinkedMediaImageRenderer(props: MarkdownImageProps) {
   const { src, alt } = props;
+  const site = props.node?.data?.hostedSite;
+  if (site) {
+    return <MarkdownSitePreview site={site} />;
+  }
   const load = props.node?.data?.imageLoadSignals;
   if (typeof src === "string" && isSafeMediaUrl(src) && load) {
     return (
@@ -310,8 +341,8 @@ function containsBlockArtifact(node: Element): boolean {
     const card = child.data?.card;
     return (
       (child.tagName === "img" &&
-        card?.kind === "artifact" &&
-        card.signals.kind !== "image") ||
+        ((card?.kind === "artifact" && card.signals.kind !== "image") ||
+          child.data?.hostedSite !== undefined)) ||
       containsBlockArtifact(child)
     );
   });
@@ -323,9 +354,11 @@ function MediaParagraphRenderer({
   ...props
 }: ComponentPropsWithoutRef<"p"> & MarkdownNodeProp) {
   // Document cards contain block elements, which cannot live inside a <p>.
+  // The div leaves the renderer's `.wmde-markdown p` rhythm behind with the
+  // paragraph, so it restates that 6px block spacing.
   if (node && containsBlockArtifact(node)) {
     return (
-      <div {...props} className="okou-markdown-card">
+      <div {...props} data-slot="markdown-card" className="my-1.5">
         {children}
       </div>
     );
@@ -383,21 +416,13 @@ function MarkdownDivRenderer(props: MarkdownDivProps) {
   // consecutive cards sit border-to-border.
   if (data?.card) {
     return (
-      <div className="okou-markdown-card">
+      <div data-slot="markdown-card" className="my-1.5">
         <MarkdownCardView card={data.card} />
       </div>
     );
   }
   if (typeof data?.copyCode === "string") {
-    return (
-      <CopyButton
-        type="button"
-        text={data.copyCode}
-        showTooltip={false}
-        className="copied"
-        data-code={data.copyCode}
-      />
-    );
+    return <CodeBlockCopyButton code={data.copyCode} />;
   }
   if (data?.mermaidSignals) {
     return <MermaidDiagramView signals={data.mermaidSignals} />;
@@ -429,6 +454,8 @@ const MEDIA_MARKDOWN_COMPONENTS = {
 
 const LINKED_MEDIA_MARKDOWN_COMPONENTS = {
   ...PLAIN_MARKDOWN_COMPONENTS,
+  // A site card is a block, so its paragraph has to become a div here too.
+  p: MediaParagraphRenderer,
   img: LinkedMediaImageRenderer,
 } as const;
 

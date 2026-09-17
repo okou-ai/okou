@@ -174,8 +174,18 @@ const loadRoute$ = command(async ({ get, set }, signal: AbortSignal) => {
     set(recordAdAttribution$, get(searchParams$));
   }
 
-  await set(currentRoute.setup, routeSignal);
+  const [setup] = await Promise.allSettled([
+    set(currentRoute.setup, routeSignal),
+  ]);
   signal.throwIfAborted();
+  // Navigation may replace a route during its setup. The replacement owns the
+  // page now; cancellation of the old route does not cancel app bootstrap.
+  if (routeSignal.aborted) {
+    return;
+  }
+  if (setup.status === "rejected") {
+    throw setup.reason;
+  }
   if (currentRoute.analytics !== false) {
     capturePageView();
   }
@@ -185,10 +195,10 @@ const loadRoute$ = command(async ({ get, set }, signal: AbortSignal) => {
   // binding here would reject the superseded load with AbortError. The parent
   // signal mirrors the `signal.throwIfAborted()` gate above, so supersession
   // completes cleanly. The command early-returns when there is nothing to
-  // record, so this only performs network work on the first qualifying load.
-  // Attribution is best-effort so a final API failure cannot
-  // reject the route load; the command only persists its dedupe marker after a
-  // successful record, allowing a later route to retry.
+  // record. Equivalent successful checks, including server no-ops, are reused
+  // within the current root and user/session/org/attribution scope. Attribution
+  // is best-effort so a final API failure cannot reject the route load; failed
+  // checks remain eligible on a later route.
   if (currentRoute.analytics !== false) {
     await bestEffort(set(recordSignupAttribution$, signal), signal);
     await settle(set(bootstrapGoogleAdsConversionMilestones$, signal), signal);

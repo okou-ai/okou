@@ -15,7 +15,6 @@ import asyncio
 import base64
 import binascii
 import os
-import signal
 import tempfile
 from collections.abc import Awaitable
 from dataclasses import dataclass
@@ -70,10 +69,13 @@ import model_provider_failure
 import model_websocket_usage
 import platform_api
 import registry
+import registry_control
 import request_classification
 import request_streaming
 import response_encoding_negotiation
 import response_streaming
+import run_usage
+import runner_control
 import runner_flush_lifecycle
 import tcp_logging
 import terminal_usage
@@ -125,7 +127,6 @@ _HTTP_STATUS_ERROR_MIN = 400  # inclusive: start of 4xx/5xx error range
 # Consumer: request() and terminal cleanup.
 # Release: auth marker is popped by terminal cleanup.
 # _REQUEST_HEADERS_TERMINATED is a flow-local sentinel for request() early exit.
-_HTTP_STATUS_REQUEST_HEADER_FIELDS_TOO_LARGE = 431
 # Match the existing 64 KiB HTTP/2/SigV4 minimum per-field accounting budget.
 _MAX_REQUEST_HEADER_FIELDS = 2048
 _MAX_REQUEST_HEADER_NAME_BYTES = 4096
@@ -177,15 +178,9 @@ def load(loader: Loader) -> None:
     """Initialize compatibility and process-global state before addon options.
 
     Exact-version mitmproxy and wsproto compatibility is installed first. An
-    unreviewed runtime raises ``RuntimeError`` before the process-global runner
-    usage-flush signal handler or custom options are registered. The signal
-    handler is installed next, followed by custom option registration.
+    unreviewed runtime raises ``RuntimeError`` before custom options are registered.
     """
     mitmproxy_compat.install_runtime_compatibility()
-    signal.signal(
-        runner_flush_lifecycle.RUNNER_USAGE_FLUSH_SIGNAL,
-        runner_flush_lifecycle.handle_runner_usage_flush_signal,
-    )
     loader.add_option(
         name="okou_api_url",
         typespec=str,
@@ -214,13 +209,13 @@ def load(loader: Loader) -> None:
         name="okou_usage_state_id",
         typespec=str,
         default="",
-        help="Runner-generated usage-pending state id",
+        help="Runner-generated addon control generation",
     )
     loader.add_option(
-        name="okou_addon_ready_path",
+        name="okou_control_socket_dir",
         typespec=str,
         default="",
-        help="Path for the runner's addon initialization marker",
+        help="Runner-owned private launch directory for the control socket",
     )
     loader.add_option(
         name="okou_client_session_id",
@@ -255,21 +250,32 @@ def configure(updated: set[str]) -> None:
         usage.configure_usage_buffer(
             flush_interval_seconds=ctx.options.okou_usage_flush_interval_seconds
         )
-    if "okou_usage_state_id" in updated:
-        # Custom --set options are deferred until after load() registers them,
-        # so initialize this file here where ctx.options has the runner value.
-        usage.set_pending_path(
-            str(Path(__file__).resolve().parent / "usage-pending"),
-            usage_state_id=ctx.options.okou_usage_state_id or None,
-        )
+
+
+_runner_control: runner_control.ControlServer | None = None
+_registry_control: registry_control.RegistryControl | None = None
 
 
 def running() -> None:
-    ready_path = ctx.options.okou_addon_ready_path
+    global _runner_control, _registry_control
+
+    control_dir = ctx.options.okou_control_socket_dir
     usage_state_id = ctx.options.okou_usage_state_id
-    if ready_path and usage_state_id:
-        runner_flush_lifecycle.start_runner_jsonl_flush_worker()
-        Path(ready_path).write_text(usage_state_id, encoding="utf-8")
+    run_usage.initialize(usage_state_id or None)
+    if control_dir and usage_state_id:
+        registry_owner = registry_control.RegistryControl(
+            asyncio.get_running_loop(), get_registry_path()
+        )
+        control = runner_control.ControlServer(
+            Path(control_dir),
+            usage_state_id,
+            registry_owner,
+            runner_flush_lifecycle.DeliveryControl(),
+            usage_snapshot=run_usage.snapshot,
+        )
+        control.start()
+        _registry_control = registry_owner
+        _runner_control = control
 
 
 def get_api_url() -> str:
@@ -759,15 +765,15 @@ def requestheaders(flow: http.HTTPFlow) -> Awaitable[None] | None:
         flow.kill()
         return None
     if any(len(name) > _MAX_REQUEST_HEADER_NAME_BYTES for name, _value in request_header_fields):
-        # Mitmproxy performs an Expect lookup after this hook, so rejected names
-        # must be gone before control returns while ordinary protocol fields stay.
+        # A local response waits for body completion. Drop rejected names and
+        # kill before mitmproxy's Expect lookup or request-body buffering.
         flow.request.headers.fields = tuple(
             (name, value)
             for name, value in request_header_fields
             if len(name) <= _MAX_REQUEST_HEADER_NAME_BYTES
         )
-        flow.response = http.Response.make(_HTTP_STATUS_REQUEST_HEADER_FIELDS_TOO_LARGE)
         flow.metadata[_REQUEST_HEADERS_TERMINATED] = True
+        flow.kill()
         return None
 
     codex_model_catalog_cache.capture_and_strip_prefetch_marker(flow)
@@ -1073,6 +1079,16 @@ async def _try_firewall_request_stream_from_headers(
         restore_request_state()
         _restore_request_headers_probe_metadata(flow, metadata_snapshot)
         raise
+    if result is FirewallHeaderPhaseAuthResult.REJECTED:
+        restore_request_state()
+        # A local response waits for body EOF. Preserve auth diagnostics, but
+        # kill before mitmproxy sends 100 Continue or consumes the rejected body.
+        flow.response = None
+        release_aws_sigv4_request_inspection(flow)
+        request_classification.pop_cached_classification(flow)
+        flow.metadata[_REQUEST_HEADERS_TERMINATED] = True
+        flow.kill()
+        return
     if result is not FirewallHeaderPhaseAuthResult.APPLIED:
         fall_back()
         return
@@ -1262,6 +1278,9 @@ def _block_request_classification(
     if classification.kind == "platform_path_denied":
         _block_platform_path_denied(flow)
         return
+    if classification.kind == "gmail_send_blocked":
+        http_local_responses.block_gmail_send(flow)
+        return
     if classification.kind == "firewall_ambiguous":
         _set_firewall_ambiguous_response(flow, classification.firewall_ambiguous)
         return
@@ -1407,6 +1426,9 @@ async def request(flow: http.HTTPFlow) -> None:
             flow.metadata[metadata_keys.FIREWALL_BILLABLE] = False
             flow.metadata.pop(metadata_keys.MODEL_USAGE_PROVIDER, None)
             flow_metadata.set_firewall_decision(flow.metadata, "ALLOW")
+            if _is_websocket_upgrade_request(flow):
+                flow.metadata[metadata_keys.WEBSOCKET_UPGRADE_REQUEST] = True
+            run_usage.admit(flow)
             return
         if classification.kind == "firewall_allow":
             allow = classification.firewall_allow
@@ -1441,6 +1463,7 @@ async def request(flow: http.HTTPFlow) -> None:
                 )
                 return
             _maybe_normalize_accept_encoding_for_body_inspection(flow, allow, sandbox_info)
+            run_usage.admit(flow, namespace=allow.name)
             terminal_usage.track_flow_if_needed(
                 flow,
                 is_billable_firewall(allow.name, sandbox_info),
@@ -1630,7 +1653,8 @@ def websocket_message(flow: http.HTTPFlow) -> None:
         body = message.content.encode() if isinstance(message.content, str) else message.content
         if not failure_client_enabled and not usage_client_enabled:
             event = usage.inspect_openai_responses_event_json(body)
-            codex_output_timing.observe_client_event(flow, event.event_type, message.timestamp)
+            if usage.is_model_provider_usage_billable(flow):
+                codex_output_timing.observe_client_event(flow, event.event_type, message.timestamp)
             return
         event = usage.inspect_openai_responses_client_event_json(body)
         if failure_client_enabled:
@@ -1639,7 +1663,7 @@ def websocket_message(flow: http.HTTPFlow) -> None:
                 request_kind=event.request_kind,
                 is_prewarm=event.is_prewarm,
             )
-        if usage_enabled:
+        if usage_enabled and usage.is_model_provider_usage_billable(flow):
             codex_output_timing.observe_client_event(flow, event.event_type, message.timestamp)
         if usage_client_enabled:
             model_websocket_usage.observe_client_event(flow, event)
@@ -1650,7 +1674,7 @@ def websocket_message(flow: http.HTTPFlow) -> None:
     if not failure_enabled and not usage_enabled:
         return
     event = usage.inspect_openai_responses_event_json(body)
-    if usage_enabled:
+    if usage_enabled and usage.is_model_provider_usage_billable(flow):
         codex_output_timing.observe_server_event(flow, event.event_type)
     inspection = usage.inspect_openai_responses_server_event(
         event,
@@ -1705,7 +1729,6 @@ def _release_terminal_flow_state(
         codex_output_timing.release_flow_state(flow)
     request_classification.pop_cached_classification(flow)
     flow.metadata.pop(_FIREWALL_AUTH_APPLIED_IN_REQUESTHEADERS, None)
-    flow.metadata.pop(metadata_keys.FIREWALL_AUTH_PROBE_FAILURE, None)
     release_aws_sigv4_request_inspection(flow)
     flow.metadata.pop(metadata_keys.WEBSOCKET_UPGRADE_REQUEST, None)
     flow.metadata.pop(metadata_keys.RESPONSE_ENCODING_NEGOTIATION, None)
@@ -1879,6 +1902,10 @@ def _finish_response_handling(
     response_streaming.finalize_model_sse_usage(flow)
     response_streaming.finalize_model_json_usage(flow, proxy_log_path)
 
+    if not model_websocket_usage.is_enabled(flow):
+        run_usage.observe(flow, flow.metadata.get(metadata_keys.MODEL_PROVIDER_USAGE))
+        run_usage.finish(flow)
+
     terminal_usage.report_model_provider_usage_once(flow, run_id)
 
     # Billable connector usage observation (issue #9504, stage 0).
@@ -1966,6 +1993,9 @@ def _handle_error(flow: http.HTTPFlow) -> None:
     # The SSE parser may have partially populated model_provider_usage before the
     # connection error occurred.  Partial data is better than none.
     response_streaming.finalize_model_sse_usage(flow)
+    response_streaming.observe_interrupted_model_json(flow)
+    run_usage.observe(flow, flow.metadata.get(metadata_keys.MODEL_PROVIDER_USAGE))
+    run_usage.finish(flow, interrupted=True)
     terminal_usage.report_model_provider_usage_once(flow, run_id)
 
     # Connector parsers opt into interrupted reporting only when accumulated
@@ -1993,11 +2023,11 @@ def _handle_error(flow: http.HTTPFlow) -> None:
 def done():
     """Flush pending reports and forwarding workers before mitmproxy exits.
 
-    The runner flush lifecycle waits for any active SIGUSR1 delivery worker,
+    The runner flush lifecycle waits for any active delivery worker,
     retries buffered usage and retained diagnostic reports, drains accepted
     requests, and closes admission before this hook shuts down the usage
-    executor. It also performs a final JSONL marker observation and joins the
-    marker watcher before the JSONL writer stops. Any retryable usage outcome
+    executor. Control admission is already closed; pending log prefixes remain
+    owned by the JSONL writer. Any retryable usage outcome
     retained by completed workers is then retried synchronously.
     Auth.base forwarding does not need to finish running work during shutdown.
     Its `wait=False` worker shutdown closes admission, wakes or terminates
@@ -2011,6 +2041,20 @@ def done():
     Catalog validation and SigV4 hashing close admission and join their bounded
     off-loop work.
     """
+    global _runner_control, _registry_control
+
+    try:
+        if _registry_control is not None:
+            _registry_control.close()
+            _registry_control = None
+        if _runner_control is not None:
+            _runner_control.stop()
+            _runner_control = None
+    finally:
+        _drain_addon_workers()
+
+
+def _drain_addon_workers() -> None:
     try:
         runner_flush_lifecycle.drain_and_close()
     finally:

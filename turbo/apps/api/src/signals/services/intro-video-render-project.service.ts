@@ -218,9 +218,7 @@ export const prepareIntroVideoRenderProject$ = command(
       ),
     );
     signal.throwIfAborted();
-    const url = await get(
-      generatePrivatePresignedGetUrl(bucket, key, 26 * 60 * 60),
-    );
+    const url = await get(generatePrivatePresignedGetUrl(bucket, key));
     signal.throwIfAborted();
     return { digest, bucket, key, url };
   },

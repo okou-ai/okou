@@ -1,5 +1,44 @@
 # Changelog
 
+## [0.16.271](https://github.com/vm0-ai/okou/compare/guest-init-v0.16.270...guest-init-v0.16.271) (2026-09-17)
+
+## [0.16.270](https://github.com/vm0-ai/okou/compare/guest-init-v0.16.269...guest-init-v0.16.270) (2026-09-17)
+
+## [0.16.269](https://github.com/vm0-ai/okou/compare/guest-init-v0.16.268...guest-init-v0.16.269) (2026-09-17)
+
+## [0.16.268](https://github.com/vm0-ai/okou/compare/guest-init-v0.16.267...guest-init-v0.16.268) (2026-09-17)
+
+## [0.16.267](https://github.com/vm0-ai/okou/compare/guest-init-v0.16.266...guest-init-v0.16.267) (2026-09-16)
+
+## [0.16.266](https://github.com/vm0-ai/okou/compare/guest-init-v0.16.265...guest-init-v0.16.266) (2026-09-16)
+
+## [0.16.265](https://github.com/vm0-ai/okou/compare/guest-init-v0.16.264...guest-init-v0.16.265) (2026-09-16)
+
+## [0.16.264](https://github.com/vm0-ai/okou/compare/guest-init-v0.16.263...guest-init-v0.16.264) (2026-09-16)
+
+## [0.16.263](https://github.com/vm0-ai/okou/compare/guest-init-v0.16.262...guest-init-v0.16.263) (2026-09-16)
+
+## [0.16.262](https://github.com/vm0-ai/vm0/compare/guest-init-v0.16.261...guest-init-v0.16.262) (2026-09-15)
+
+## [0.16.261](https://github.com/vm0-ai/vm0/compare/guest-init-v0.16.260...guest-init-v0.16.261) (2026-09-15)
+
+
+### Bug Fixes
+
+* **runner:** protect native runtime memory from tool reclaim ([#34398](https://github.com/vm0-ai/vm0/issues/34398)) ([756b6bc](https://github.com/vm0-ai/vm0/commit/756b6bce47a0a4b341359971ebc7ae9a4c24c62e))
+
+## [0.16.260](https://github.com/vm0-ai/vm0/compare/guest-init-v0.16.259...guest-init-v0.16.260) (2026-09-15)
+
+## [0.16.259](https://github.com/vm0-ai/vm0/compare/guest-init-v0.16.258...guest-init-v0.16.259) (2026-09-15)
+
+## [0.16.258](https://github.com/vm0-ai/vm0/compare/guest-init-v0.16.257...guest-init-v0.16.258) (2026-09-15)
+
+## [0.16.257](https://github.com/vm0-ai/vm0/compare/guest-init-v0.16.256...guest-init-v0.16.257) (2026-09-14)
+
+## [0.16.256](https://github.com/vm0-ai/vm0/compare/guest-init-v0.16.255...guest-init-v0.16.256) (2026-09-14)
+
+## [0.16.255](https://github.com/vm0-ai/vm0/compare/guest-init-v0.16.254...guest-init-v0.16.255) (2026-09-14)
+
 ## [0.16.254](https://github.com/vm0-ai/vm0/compare/guest-init-v0.16.253...guest-init-v0.16.254) (2026-09-11)
 
 

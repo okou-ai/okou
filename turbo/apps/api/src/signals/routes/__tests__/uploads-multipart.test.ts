@@ -144,6 +144,15 @@ describe("multipart user artifact uploads", () => {
     expect(response.body.url).toMatch(
       /^https:\/\/a\.okou\.io\/[0-9a-z]{10}\.mp4$/u,
     );
+    expect(
+      context.mocks.s3.getSignedUrl.mock.calls.map((call) => {
+        return call[2];
+      }),
+    ).toStrictEqual(
+      Array.from({ length: 4 }, () => {
+        return { expiresIn: 172_800 };
+      }),
+    );
     const createCommand = context.mocks.s3.send.mock.calls
       .map(([command]) => {
         return command;

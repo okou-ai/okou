@@ -89,7 +89,7 @@
       "schedule": "0 * * * *"
     },
     {
-      "path": "/api/cron/refresh-storage-presigned-urls",
+      "path": "/api/cron/prune-storage-presigned-urls",
       "schedule": "* * * * *"
     },
     {
@@ -119,6 +119,10 @@
     {
       "path": "/api/cron/steer-run-time-budget",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/get-started-rewards",
+      "schedule": "0 * * * *"
     }
   ]
 }

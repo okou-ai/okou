@@ -17,16 +17,20 @@ import urllib.parse
 from collections.abc import Callable
 from concurrent.futures import Executor
 from functools import partial
-from typing import Literal
 
 import network_log_sanitization
 from logging_utils import log_proxy_entry
 from platform_api import build_api_opener, make_api_request
 
-from .counters import PendingReportLease, admit_pending_report
+from .counters import (
+    DeliveryOutcome,
+    PendingReportLease,
+    admit_pending_report,
+    record_delivery_outcome,
+)
 from .executor import WebhookExecutor
 
-WebhookDeliveryOutcome = Literal["success", "retryable_failure", "permanent_failure"]
+WebhookDeliveryOutcome = DeliveryOutcome
 _DeliveryOutcomeCallback = Callable[[WebhookDeliveryOutcome], None]
 _SUCCESS: WebhookDeliveryOutcome = "success"
 _RETRYABLE_FAILURE: WebhookDeliveryOutcome = "retryable_failure"
@@ -139,11 +143,13 @@ def _post_webhook_with_retry(
             url, bearer_credential, payload, proxy_log_path, log_type, max_retries
         )
     except Exception:
+        record_delivery_outcome(_PERMANENT_FAILURE)
         if delivery_outcome_callback is not None:
             delivery_outcome_callback(_PERMANENT_FAILURE)
         else:
             raise
     else:
+        record_delivery_outcome(outcome)
         if delivery_outcome_callback is not None:
             delivery_outcome_callback(outcome)
     finally:

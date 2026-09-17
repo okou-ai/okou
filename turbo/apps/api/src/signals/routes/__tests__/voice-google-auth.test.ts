@@ -1,5 +1,4 @@
 import { voiceIoPolishContract } from "@okouai/api-contracts/contracts/voice-io-polish";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -11,7 +10,6 @@ import { server } from "../../../mocks/server";
 import { createDeferredPromise } from "../../utils";
 import { voiceIoPolishRoutes } from "../voice-io-polish";
 import { createBddApi } from "./helpers/api-bdd";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 import {
   GOOGLE_IMPERSONATION_URL,
@@ -49,7 +47,7 @@ function stsToken() {
   };
 }
 
-beforeEach(async () => {
+beforeEach(() => {
   mockGoogleVoice();
   mockOptionalEnv("OPENROUTER_API_KEY", undefined);
   const actor = createBddApi(context).user();
@@ -57,13 +55,6 @@ beforeEach(async () => {
     throw new Error("Expected an organization");
   }
   mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
-  await updateFeatureSwitchesForUser(
-    context,
-    { userId: actor.userId, orgId: actor.orgId, orgRole: "org:admin" },
-    {
-      [FeatureSwitchKey.VoiceInputV2]: true,
-    },
-  );
   server.use(
     http.post(VERTEX_VOICE_URL, () => {
       return vertexVoiceResponse("Synthetic dictation.");

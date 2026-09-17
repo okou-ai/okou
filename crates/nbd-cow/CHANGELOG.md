@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.2](https://github.com/vm0-ai/vm0/compare/nbd-cow-v0.5.1...nbd-cow-v0.5.2) (2026-09-15)
+
+
+### Documentation
+
+* **nbd-cow:** clarify device flush and persistence behavior ([#34279](https://github.com/vm0-ai/vm0/issues/34279)) ([21e18cf](https://github.com/vm0-ai/vm0/commit/21e18cff8d8318c6eef18b797a736ef20c5854b6))
+
 ## [0.5.1](https://github.com/vm0-ai/vm0/compare/nbd-cow-v0.5.0...nbd-cow-v0.5.1) (2026-09-10)
 
 

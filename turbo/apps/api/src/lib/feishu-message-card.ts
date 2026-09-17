@@ -1,3 +1,7 @@
+import {
+  FEISHU_PLATFORMS,
+  type FeishuPlatform,
+} from "@okouai/core/feishu-platform";
 import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
 
 import type { FeishuOutboundMessage } from "../signals/external/feishu-client";
@@ -9,7 +13,7 @@ type FeishuCardTemplate = "blue" | "green" | "orange" | "red";
 function markdownElements(
   content: string,
 ): Readonly<Record<string, unknown>>[] {
-  const suffix = "\n\n_(Message too long to view in Feishu.)_";
+  const suffix = "\n\n_(Message too long to view in this chat.)_";
   const truncated =
     content.length > MARKDOWN_ELEMENT_MAX_LENGTH
       ? content.slice(0, MARKDOWN_ELEMENT_MAX_LENGTH - suffix.length) + suffix
@@ -47,17 +51,19 @@ function cardMessage(args: {
 }
 
 export function buildFeishuLoginMessage(args: {
+  readonly platform?: FeishuPlatform;
   readonly connectUrl: string;
 }): FeishuOutboundMessage {
+  const platformName = FEISHU_PLATFORMS[args.platform ?? "feishu"].name;
   const { assistantName } = PUBLIC_BRAND_PRESENTATION;
   return cardMessage({
     title: "Connect your account",
     template: "blue",
-    summary: `Connect your account to use ${assistantName} in Feishu.`,
+    summary: `Connect your account to use ${assistantName} in ${platformName}.`,
     elements: [
       {
         tag: "markdown",
-        content: `To use ${assistantName} in Feishu, please connect your account first.`,
+        content: `To use ${assistantName} in ${platformName}, please connect your account first.`,
       },
       {
         tag: "button",
@@ -71,24 +77,26 @@ export function buildFeishuLoginMessage(args: {
 }
 
 export function buildFeishuWelcomeMessage(args: {
+  readonly platform?: FeishuPlatform;
   readonly agentName: string | null;
   readonly botName: string | null;
 }): FeishuOutboundMessage {
+  const platformName = FEISHU_PLATFORMS[args.platform ?? "feishu"].name;
   const { brandName } = PUBLIC_BRAND_PRESENTATION;
   // Provider bot metadata is unavailable until Feishu discovery succeeds, so
   // keep the fallback provider-neutral while botName is nullable.
-  const botName = args.botName ?? "your Feishu bot";
+  const botName = args.botName ?? `your ${platformName} bot`;
   const agentLine = args.agentName
     ? `\n\nYour current agent is **${args.agentName}**.`
     : "";
   return cardMessage({
     title: "You're connected! 🎉",
     template: "green",
-    summary: `Your Feishu account is connected to ${brandName}.`,
+    summary: `Your ${platformName} account is connected to ${brandName}.`,
     elements: [
       {
         tag: "markdown",
-        content: `👋 **Hi! I'm ${botName}.**\n\nI connect Feishu conversations to AI agents to help with your tasks.${agentLine}`,
+        content: `👋 **Hi! I'm ${botName}.**\n\nI connect ${platformName} conversations to AI agents to help with your tasks.${agentLine}`,
       },
       {
         tag: "hr",
@@ -103,11 +111,13 @@ export function buildFeishuWelcomeMessage(args: {
 }
 
 export function buildFeishuHelpMessage(args: {
+  readonly platform?: FeishuPlatform;
   readonly botName: string | null;
 }): FeishuOutboundMessage {
+  const platformName = FEISHU_PLATFORMS[args.platform ?? "feishu"].name;
   const { brandName } = PUBLIC_BRAND_PRESENTATION;
   // Keep this fallback provider-neutral while Feishu bot metadata is nullable.
-  const botName = args.botName ?? "Feishu bot";
+  const botName = args.botName ?? `${platformName} bot`;
   return {
     msgType: "text",
     content: {

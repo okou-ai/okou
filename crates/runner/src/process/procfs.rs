@@ -32,8 +32,8 @@ fn parse_cmdline_bytes(bytes: &[u8]) -> Option<Vec<String>> {
 ///
 /// Returns `None` when the file cannot be read, when its contents are empty or
 /// NUL-free, or when every NUL-delimited segment is empty.
-pub(crate) async fn read_cmdline(pid: u32) -> Option<Vec<String>> {
-    let path = format!("/proc/{pid}/cmdline");
+pub(super) async fn read_cmdline(proc_root: &Path, pid: u32) -> Option<Vec<String>> {
+    let path = proc_root.join(pid.to_string()).join("cmdline");
     let bytes = tokio::fs::read(&path).await.ok()?;
     parse_cmdline_bytes(&bytes)
 }
@@ -94,7 +94,11 @@ fn cmdline_problem_for_comm(comm_read: ProcessCommRead, problem: &str) -> Cmdlin
 
 /// Read `/proc/{pid}/stat` and extract the PPid field.
 pub(super) async fn read_ppid(pid: u32) -> Option<u32> {
-    let path = format!("/proc/{pid}/stat");
+    read_ppid_from(Path::new("/proc"), pid).await
+}
+
+pub(super) async fn read_ppid_from(proc_root: &Path, pid: u32) -> Option<u32> {
+    let path = proc_root.join(pid.to_string()).join("stat");
     let content = tokio::fs::read(&path).await.ok()?;
     parse_process_ppid(&content)
 }
@@ -232,8 +236,8 @@ pub(crate) async fn read_process_stat(pid: u32) -> Option<ProcessStat> {
 }
 
 /// Read `/proc/{pid}/cwd` symlink to get the process working directory.
-pub(crate) async fn read_cwd(pid: u32) -> Option<PathBuf> {
-    let link = format!("/proc/{pid}/cwd");
+pub(super) async fn read_cwd(proc_root: &Path, pid: u32) -> Option<PathBuf> {
+    let link = proc_root.join(pid.to_string()).join("cwd");
     tokio::fs::read_link(&link).await.ok()
 }
 
@@ -387,9 +391,9 @@ impl ProcDirEntryReader {
     }
 }
 
-pub(super) async fn scan_proc_cmdlines() -> ProcCmdlineScan {
+pub(super) async fn scan_proc_cmdlines(proc_root: &Path) -> ProcCmdlineScan {
     scan_proc_cmdlines_with_reader(
-        Path::new("/proc"),
+        proc_root,
         ProcDirEntryReader::new(),
         CancellationToken::new(),
         #[cfg(test)]

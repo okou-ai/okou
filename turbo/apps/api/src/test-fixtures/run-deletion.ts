@@ -1,5 +1,11 @@
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { blobs } from "@okouai/db/schema/blob";
+import {
+  deleteLockedRuns,
+  deleteRunConversations,
+  releaseDeletedConversationReferences,
+} from "../signals/services/conversation-history-deletion.service";
 import { count, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
@@ -31,7 +37,19 @@ interface HeldDatabaseBoundary {
 
 /** Deletes one run root without invoking a global maintenance sweep. */
 export async function deleteAgentRunRootFixture(runId: string): Promise<void> {
-  await db().delete(agentRuns).where(eq(agentRuns.id, runId));
+  await db().transaction(async (tx) => {
+    const runs = await tx
+      .select({ id: agentRuns.id })
+      .from(agentRuns)
+      .where(eq(agentRuns.id, runId))
+      .for("update");
+    const ids = runs.map((run) => {
+      return run.id;
+    });
+    const removed = await deleteRunConversations(tx, ids);
+    await deleteLockedRuns(tx, ids);
+    await releaseDeletedConversationReferences(tx, removed);
+  });
 }
 
 /** Moves a run to a deterministic position in an oldest-first test sweep. */
@@ -178,7 +196,9 @@ export async function holdAgentRunDeletionFixture(args: {
     }
     started.resolve(pid);
     await released.promise;
-    await tx.delete(agentRuns).where(eq(agentRuns.id, args.runId));
+    const removed = await deleteRunConversations(tx, [args.runId]);
+    await deleteLockedRuns(tx, [args.runId]);
+    await releaseDeletedConversationReferences(tx, removed);
   });
   const pid = await started.promise;
   return {
@@ -192,4 +212,15 @@ export async function holdAgentRunDeletionFixture(args: {
       return await directBlockedWaiterCount(pid);
     },
   };
+}
+
+/** Infrastructure-only observation: no production endpoint exposes the ledger. */
+export async function readHistoryBlobReferenceCountFixture(
+  hash: string,
+): Promise<number | null> {
+  const [row] = await db()
+    .select({ count: blobs.refCount })
+    .from(blobs)
+    .where(eq(blobs.hash, hash));
+  return row?.count ?? null;
 }

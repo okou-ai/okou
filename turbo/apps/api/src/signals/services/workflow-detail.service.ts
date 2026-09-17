@@ -5,12 +5,10 @@ import type {
   WorkflowDetailResponse,
 } from "@okouai/api-contracts/contracts/workflows";
 
-import { db$, type Db } from "../external/db";
-import { clerk$ } from "../external/clerk";
+import { db$ } from "../external/db";
 import {
   loadWorkflowShadowWinner,
   loadVisibleWorkflowById,
-  loadWorkflowOwnerProfile,
   workflowSummary,
   type WorkflowMember,
 } from "./workflow-data.service";
@@ -48,12 +46,6 @@ export function workflowDetail(args: {
       workflow,
     });
 
-    const ownerProfile = await loadWorkflowOwnerProfile(
-      db as Db,
-      get(clerk$),
-      workflow.ownerUserId,
-    );
-
     const officialDefinition = workflow.officialDefinitionName
       ? await readAcceptedOfficialWorkflowDefinition(
           db,
@@ -71,7 +63,6 @@ export function workflowDetail(args: {
       workflow,
       agent,
       member: args.member,
-      ownerProfile,
       shadowedBy,
       officialDefinitionLifecycle: officialDefinition?.lifecycle,
     });

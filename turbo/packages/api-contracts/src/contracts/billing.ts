@@ -58,8 +58,9 @@ const concurrencySubscriptionSchema = z.object({
   // It stays optional so a new app reaching a draining older API still parses
   // the response; no client branches on its absence since #26152.
   canChangeInApp: z.boolean().optional(),
-  // Optional while older API deployments can still serve an already-loaded
-  // web/app client during rollout.
+  // The API omits both fields whenever no concurrency change is scheduled
+  // (billing-status.service.ts spreads them only for a scheduled change), so
+  // they are genuinely optional rather than a rollout tolerance.
   scheduledQuantity: z.number().int().positive().nullable().optional(),
   scheduledChangeAt: z.string().nullable().optional(),
 });
@@ -90,10 +91,10 @@ const billingStatusResponseSchema = z.object({
   showUsagePack: z.boolean(),
   autoRechargeAllowed: z.boolean(),
   supportByok: z.boolean(),
-  restrictedBuiltInModels: z.boolean().optional(),
-  // Retired brand alias of restrictedBuiltInModels, sent with an identical
-  // value from the same source while Apps older than this release are still
-  // installed. Remove once they are below the rollback floor: #33658 step 2.
+  restrictedBuiltInModels: z.boolean(),
+  // Retired brand alias of restrictedBuiltInModels, still emitted for Apps
+  // below 0.891.0 that read only this name. Drop it from the API and this
+  // schema once the App client-version floor reaches 0.891.0: #33658 step 2.
   restrictedVm0Models: z.boolean().optional(),
   videoGenerationAllowed: z.boolean(),
   workflowWebhookAutomationAllowed: z.boolean(),
@@ -140,7 +141,7 @@ const usagePackPurchasePreviewResponseSchema =
   });
 
 const googleAdsPaidConversionSchema = z.object({
-  googleAdsAccountId: z.string().optional(),
+  googleAdsAccountId: z.string(),
   transactionId: z.string().min(1),
   valueUsd: z.number().positive(),
 });
@@ -882,12 +883,6 @@ export const billingUsagePackMigrationContract = c.router({
     method: "GET",
     path: "/api/billing/usage-pack-migration",
     headers: authHeadersSchema,
-    // New Apps must still opt in when reaching a supported rollback API that
-    // otherwise omits all-Free configuration. Remove after the unconditional
-    // response API is serving and inside the rollback floor (#32575).
-    query: z
-      .object({ supportsFreeMembers: z.literal("true").optional() })
-      .optional(),
     responses: {
       200: usagePackMigrationStateResponseSchema,
       401: apiErrorSchema,
@@ -1213,8 +1208,9 @@ const invoiceSchema = z.object({
 
 const billingInvoicesResponseSchema = z.object({
   invoices: z.array(invoiceSchema),
-  // Optional while the frontend can overlap with API deployments that do not expose ZIP downloads yet.
-  receiptDownloadsSupported: z.literal(true).optional(),
+  // Apps older than this release gate the receipt download UI on this flag.
+  // Keep emitting it until the App client-version floor excludes those builds.
+  receiptDownloadsSupported: z.literal(true),
 });
 
 const billingReceiptsMonthSchema = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/u);

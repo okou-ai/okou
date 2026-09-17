@@ -84,6 +84,7 @@ class FirewallHeaderPhaseAuthResult(Enum):
 
     APPLIED = "applied"
     FALLBACK = "fallback"
+    REJECTED = "rejected"
 
 
 class _FirewallAuthPlanFailure(Enum):
@@ -1725,13 +1726,6 @@ async def handle_firewall_request(
                     FirewallAuthHandlingResult.LOCAL_RESPONSE,
                 )
 
-        if plan.needs_resolution:
-            probe_failure = flow.metadata.pop(metadata_keys.FIREWALL_AUTH_PROBE_FAILURE, None)
-            if isinstance(probe_failure, Exception):
-                return _finish_firewall_auth_result(
-                    flow,
-                    _set_firewall_auth_resolution_failure(flow, context, probe_failure),
-                )
         try:
             token_meta = await _resolve_firewall_auth(plan, context)
             resolved_auth = _validate_resolved_firewall_auth(plan, token_meta)
@@ -1778,13 +1772,12 @@ async def try_apply_stream_safe_firewall_auth_for_requestheaders(
     *,
     revalidate_current_firewall_authorization: CurrentFirewallAuthorizationGuard,
 ) -> FirewallHeaderPhaseAuthResult:
-    """Apply successful header/query firewall auth before request streaming.
+    """Resolve header/query firewall auth before request streaming.
 
-    This helper intentionally falls back instead of creating local responses.
-    The request hook owns auth failure semantics; requestheaders() only keeps a
-    success that is safe before mitmproxy sends upstream request headers. A
-    rejected current-authorization guard restores the probe snapshot and falls
-    back before mutation.
+    Resolution failures retain the canonical local response and diagnostics;
+    the caller must terminate the upload instead of waiting for its body. Other
+    unsuccessful probes, including current-authorization rejection, restore the
+    snapshot and fall back before mutation.
     """
     metadata_snapshot = dict(flow.metadata)
     request_headers_snapshot = http.Headers(flow.request.headers.fields)
@@ -1814,14 +1807,8 @@ async def try_apply_stream_safe_firewall_auth_for_requestheaders(
         )
         raise
     except Exception as exc:
-        _restore_header_phase_probe_state(
-            flow,
-            metadata_snapshot=metadata_snapshot,
-            request_headers_snapshot=request_headers_snapshot,
-            request_url_snapshot=request_url_snapshot,
-        )
-        flow.metadata[metadata_keys.FIREWALL_AUTH_PROBE_FAILURE] = exc
-        return FirewallHeaderPhaseAuthResult.FALLBACK
+        _set_firewall_auth_resolution_failure(flow, context, exc)
+        return FirewallHeaderPhaseAuthResult.REJECTED
 
     try:
         resolved_auth = _validate_resolved_firewall_auth(plan, token_meta)

@@ -1,5 +1,75 @@
 # Changelog
 
+## [0.21.2](https://github.com/vm0-ai/okou/compare/guest-control-client-v0.21.1...guest-control-client-v0.21.2) (2026-09-17)
+
+## [0.21.1](https://github.com/vm0-ai/okou/compare/guest-control-client-v0.21.0...guest-control-client-v0.21.1) (2026-09-17)
+
+## [0.21.0](https://github.com/vm0-ai/okou/compare/guest-control-client-v0.20.21...guest-control-client-v0.21.0) (2026-09-17)
+
+
+### Features
+
+* **runner:** expose history transfer measurements ([#34805](https://github.com/vm0-ai/okou/issues/34805)) ([445a170](https://github.com/vm0-ai/okou/commit/445a170a81a2fac9b1d42f361866c2ea70cfb7e7))
+
+
+### Bug Fixes
+
+* **runner:** downgrade successful slow storage downloads ([#34799](https://github.com/vm0-ai/okou/issues/34799)) ([79e19b6](https://github.com/vm0-ai/okou/commit/79e19b689fbba9e18f8074bb4dd194dc4a99e832))
+
+## [0.20.21](https://github.com/vm0-ai/okou/compare/guest-control-client-v0.20.20...guest-control-client-v0.20.21) (2026-09-17)
+
+## [0.20.20](https://github.com/vm0-ai/okou/compare/guest-control-client-v0.20.19...guest-control-client-v0.20.20) (2026-09-16)
+
+
+### Performance Improvements
+
+* **runner:** stream compressed session history with caller-owned policy ([#34603](https://github.com/vm0-ai/okou/issues/34603)) ([1376434](https://github.com/vm0-ai/okou/commit/1376434b697f5e39be6d569c6b20a4e33ed12342))
+
+## [0.20.19](https://github.com/vm0-ai/okou/compare/guest-control-client-v0.20.18...guest-control-client-v0.20.19) (2026-09-16)
+
+## [0.20.18](https://github.com/vm0-ai/okou/compare/guest-control-client-v0.20.17...guest-control-client-v0.20.18) (2026-09-16)
+
+## [0.20.17](https://github.com/vm0-ai/okou/compare/guest-control-client-v0.20.16...guest-control-client-v0.20.17) (2026-09-16)
+
+
+### Performance Improvements
+
+* **rust:** bound source reads for guest small files ([#34535](https://github.com/vm0-ai/okou/issues/34535)) ([7ab0782](https://github.com/vm0-ai/okou/commit/7ab07825a5f0d6394452d71c04a5c106be317b3b))
+
+## [0.20.16](https://github.com/vm0-ai/okou/compare/guest-control-client-v0.20.15...guest-control-client-v0.20.16) (2026-09-16)
+
+
+### Bug Fixes
+
+* **runner:** classify contained tool oom as informational ([#34520](https://github.com/vm0-ai/okou/issues/34520)) ([02e789d](https://github.com/vm0-ai/okou/commit/02e789d0129298079e23570bc319c5c0557a2d77))
+
+## [0.20.15](https://github.com/vm0-ai/okou/compare/guest-control-client-v0.20.14...guest-control-client-v0.20.15) (2026-09-16)
+
+## [0.20.14](https://github.com/vm0-ai/vm0/compare/guest-control-client-v0.20.13...guest-control-client-v0.20.14) (2026-09-15)
+
+## [0.20.13](https://github.com/vm0-ai/vm0/compare/guest-control-client-v0.20.12...guest-control-client-v0.20.13) (2026-09-15)
+
+## [0.20.12](https://github.com/vm0-ai/vm0/compare/guest-control-client-v0.20.11...guest-control-client-v0.20.12) (2026-09-15)
+
+## [0.20.11](https://github.com/vm0-ai/vm0/compare/guest-control-client-v0.20.10...guest-control-client-v0.20.11) (2026-09-15)
+
+## [0.20.10](https://github.com/vm0-ai/vm0/compare/guest-control-client-v0.20.9...guest-control-client-v0.20.10) (2026-09-15)
+
+## [0.20.9](https://github.com/vm0-ai/vm0/compare/guest-control-client-v0.20.8...guest-control-client-v0.20.9) (2026-09-14)
+
+## [0.20.8](https://github.com/vm0-ai/vm0/compare/guest-control-client-v0.20.7...guest-control-client-v0.20.8) (2026-09-14)
+
+
+### Documentation
+
+* **rust:** clarify dns readiness output truncation semantics ([#33931](https://github.com/vm0-ai/vm0/issues/33931)) ([35603a2](https://github.com/vm0-ai/vm0/commit/35603a2ed5c3773a326642219080f08d541c2c28))
+* **rust:** correct exec-stream queue sizing rationale ([#33930](https://github.com/vm0-ai/vm0/issues/33930)) ([e3ed240](https://github.com/vm0-ai/vm0/commit/e3ed240e9fb7658a93f8b0060088f47556c80baa))
+
+
+### Refactoring
+
+* **rust:** centralize exec process diagnostic labels ([#33938](https://github.com/vm0-ai/vm0/issues/33938)) ([cd8acd3](https://github.com/vm0-ai/vm0/commit/cd8acd3a7019ece7f5ba031529e508d929b0a1b1))
+
 ## [0.20.7](https://github.com/vm0-ai/vm0/compare/guest-control-client-v0.20.6...guest-control-client-v0.20.7) (2026-09-14)
 
 

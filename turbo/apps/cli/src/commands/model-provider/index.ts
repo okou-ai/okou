@@ -1,3 +1,4 @@
+import { getMemberModelPolicyRoute } from "@okouai/api-contracts/contracts/member-model-policy";
 import { Command } from "commander";
 import chalk from "chalk";
 import { listModelPolicies } from "../../lib/api/domains/model-policies";
@@ -13,7 +14,7 @@ export const MODEL_PROVIDER_SET_GUIDANCE = [
   "",
   "Organization admins: open https://app.okou.ai, use the top-left organization menu, choose Manage, then add, delete, or adjust model providers.",
   "",
-  "If an organization admin sets a model provider to subscription, members must use the bottom-left user menu, choose Preferences / Personal Models, and connect their personal subscription.",
+  "Members: use the bottom-left user menu, choose Preferences / Personal Models, and connect or reconnect your personal subscription. `okou model-provider ls` shows your effective provider for each model.",
 ].join("\n");
 
 const listCommand = new Command()
@@ -43,9 +44,10 @@ const listCommand = new Command()
         console.log(
           `  - ${policy.modelLabel} ${chalk.dim(`(${policy.model})`)}${defaultMarker}`,
         );
+        const route = getMemberModelPolicyRoute(policy);
         console.log(`    provider: ${getModelProviderRouteKind(policy)}`);
         console.log(
-          `    provider type: ${policy.defaultProviderType} (${getModelProviderTypeLabel(policy.defaultProviderType)})`,
+          `    provider type: ${route.providerType} (${getModelProviderTypeLabel(route.providerType)})`,
         );
 
         const status = formatModelPolicyStatus(policy);

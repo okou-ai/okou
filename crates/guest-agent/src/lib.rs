@@ -232,6 +232,7 @@ pub mod masker;
 pub mod metrics;
 mod nofollow_fs;
 pub mod paths;
+mod provider_failure;
 pub mod reuse_preparation;
 pub mod run_context;
 pub mod session_history;

@@ -4,7 +4,50 @@ import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { publicBrandSchema } from "./public-brand";
 
+import { feishuPlatformSchema } from "./feishu-platform";
+
 const c = initContract();
+
+// App identity permissions for both Feishu and Lark, including the Agent preset.
+// These belong in the console's tenant import, not the user OAuth request.
+export const FEISHU_TENANT_SCOPES = [
+  "application:app_slash_command:read",
+  "application:app_slash_command:write",
+  "application:application:self_manage",
+  "application:bot.menu:write",
+  "cardkit:card:read",
+  "cardkit:card:write",
+  "contact:contact.base:readonly",
+  "docs:document.comment:create",
+  "docs:document.comment:delete",
+  "docs:document.comment:read",
+  "docs:document.comment:update",
+  "docs:document.comment:write_only",
+  "docx:document.block:convert",
+  "docx:document:readonly",
+  "docx:document:write_only",
+  "drive:drive.metadata:readonly",
+  "im:chat.members:bot_access",
+  "im:chat:create",
+  "im:chat:read",
+  "im:chat:update",
+  "im:message.group_at_msg.include_bot:readonly",
+  "im:message.group_at_msg:readonly",
+  // Required alongside im:message:readonly to read group chat history.
+  "im:message.group_msg",
+  "im:message.p2p_msg:readonly",
+  "im:message.pins:read",
+  "im:message.pins:write_only",
+  "im:message.reactions:read",
+  "im:message.reactions:write_only",
+  "im:message:readonly",
+  "im:message:send_as_bot",
+  "im:message:send_multi_users",
+  "im:message:send_sys_msg",
+  "im:message:update",
+  "im:resource",
+  "wiki:node:read",
+] as const;
 
 export const FEISHU_OAUTH_SCOPES = [
   "offline_access",
@@ -43,13 +86,17 @@ export const FEISHU_OAUTH_SCOPES = [
   "board:whiteboard:node:read",
   "board:whiteboard:node:create",
   "calendar:calendar",
+  "calendar:calendar:read",
   "task:task:write",
   "task:tasklist:write",
+  "task:comment:write",
+  "task:section:write",
 ] as const;
 
 const feishuInstallationStatusSchema = z.object({
   id: z.string().uuid(),
   publicBrand: publicBrandSchema,
+  platform: feishuPlatformSchema.optional(),
   isConnected: z.boolean(),
   connectedUserName: z.string().nullable().optional(),
   appId: z.string(),
@@ -71,6 +118,7 @@ const feishuInstallationStatusSchema = z.object({
 const feishuConnectStatusSchema = z.object({
   /** Product brand of the Host that initiated this status flow. */
   publicBrand: publicBrandSchema,
+  platform: feishuPlatformSchema.optional(),
   isInstalled: z.boolean(),
   isConnected: z.boolean(),
   connectedUserName: z.string().nullable().optional(),
@@ -221,3 +269,64 @@ export type FeishuInstallationStatus = z.infer<
   typeof feishuInstallationStatusSchema
 >;
 export type FeishuConnectContract = typeof feishuConnectContract;
+
+export const larkConnectContract = c.router({
+  getStatus: {
+    ...feishuConnectContract.getStatus,
+    summary: feishuConnectContract.getStatus.summary.replaceAll(
+      "Feishu",
+      "Lark",
+    ),
+    path: "/api/integrations/lark",
+  },
+  checkAppId: {
+    ...feishuConnectContract.checkAppId,
+    summary: feishuConnectContract.checkAppId.summary.replaceAll(
+      "Feishu",
+      "Lark",
+    ),
+    path: "/api/integrations/lark/app-id",
+  },
+  setup: {
+    ...feishuConnectContract.setup,
+    summary: feishuConnectContract.setup.summary.replaceAll("Feishu", "Lark"),
+    path: "/api/integrations/lark",
+  },
+  updateInstallation: {
+    ...feishuConnectContract.updateInstallation,
+    summary: feishuConnectContract.updateInstallation.summary.replaceAll(
+      "Feishu",
+      "Lark",
+    ),
+    path: "/api/integrations/lark/installations/:installationId",
+  },
+  removeInstallation: {
+    ...feishuConnectContract.removeInstallation,
+    summary: feishuConnectContract.removeInstallation.summary.replaceAll(
+      "Feishu",
+      "Lark",
+    ),
+    path: "/api/integrations/lark/installations/:installationId",
+  },
+  disconnectInstallation: {
+    ...feishuConnectContract.disconnectInstallation,
+    summary: feishuConnectContract.disconnectInstallation.summary.replaceAll(
+      "Feishu",
+      "Lark",
+    ),
+    path: "/api/integrations/lark/installations/:installationId/connect",
+  },
+  remove: {
+    ...feishuConnectContract.remove,
+    summary: feishuConnectContract.remove.summary.replaceAll("Feishu", "Lark"),
+    path: "/api/integrations/lark",
+  },
+  disconnect: {
+    ...feishuConnectContract.disconnect,
+    summary: feishuConnectContract.disconnect.summary.replaceAll(
+      "Feishu",
+      "Lark",
+    ),
+    path: "/api/integrations/lark/connect",
+  },
+});

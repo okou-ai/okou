@@ -359,8 +359,8 @@ const onTelegramChanged$ = command(({ set }) => {
 });
 
 export const startTelegramSettingsRealtime$ = command(
-  async ({ set }, signal: AbortSignal) => {
-    await set(
+  ({ set }, signal: AbortSignal) => {
+    set(
       setAblyLoop$,
       {
         topic: "telegram:changed",

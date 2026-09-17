@@ -363,3 +363,143 @@ fn event_preparation_collision_scaling_benchmark() {
         }
     }
 }
+
+#[tokio::test]
+async fn event_preparation_finishes_for_long_single_key_cascades() -> TestResult {
+    in_child_process(
+        "event_preparation_finishes_for_long_single_key_cascades",
+        || {
+            let masker = masker_for(&["a***b".to_string()]);
+            for n in [4_096, 8_192, 16_384, 32_768, 262_144] {
+                let key = format!("{}***{}", "a".repeat(n), "b".repeat(n));
+                let event = Value::Object(Map::from_iter([(key, Value::Null)]));
+                let payload = prepare_event_payload_for_run_id(event, 7, &masker, "test-run");
+
+                assert_eq!(
+                    payload,
+                    json!({
+                        "runId": "test-run",
+                        "events": [{"***": null, "sequenceNumber": 7}]
+                    })
+                );
+            }
+        },
+    )
+    .await
+}
+
+#[tokio::test]
+async fn event_preparation_preserves_nested_values_after_whole_key_redaction() -> TestResult {
+    in_child_process(
+        "event_preparation_preserves_nested_values_after_whole_key_redaction",
+        || {
+            let mut secrets = blocked_decimal_secrets();
+            secrets.extend(["a***b".to_string(), "\u{10000}\u{10001}".to_string()]);
+            let masker = masker_for(&secrets);
+            let cascade = format!("{}***{}", "a".repeat(4_096), "b".repeat(4_096));
+            let probe = prepare_event_payload_for_run_id(
+                json!({"***": "reserved", (cascade.clone()): 0}),
+                1,
+                &masker,
+                "test-run",
+            );
+            let opaque_key = probe["events"][0]
+                .as_object()
+                .unwrap()
+                .iter()
+                .find_map(|(key, value)| (value == &json!(0)).then_some(key.clone()))
+                .unwrap();
+            let reserved = Map::from_iter([
+                ("***".to_string(), json!("reserved base")),
+                ("***#0".to_string(), json!("reserved numeric key")),
+                (opaque_key, json!("reserved opaque key")),
+                ("ordinary".to_string(), json!("unmatched value")),
+            ]);
+            let mut input = reserved.clone();
+            input.insert(cascade.clone(), json!(11));
+            input.insert(format!("prefix-{cascade}-suffix"), json!(22));
+            input.insert(
+                "nested".to_string(),
+                json!([{
+                    (cascade): "contains token-alpha here",
+                    "***": "reserved nested base"
+                }]),
+            );
+            let entry_count = input.len();
+            let event = json!({"type": "assistant", "tool_input": input});
+            let payload = prepare_event_payload_for_run_id(event.clone(), 42, &masker, "test-run");
+            let masked_input = payload["events"][0]["tool_input"].as_object().unwrap();
+
+            assert_eq!(masked_input.len(), entry_count);
+            for (key, value) in reserved {
+                assert_eq!(masked_input[&key], value);
+            }
+            let mut numbers = masked_input
+                .values()
+                .filter_map(Value::as_u64)
+                .collect::<Vec<_>>();
+            numbers.sort_unstable();
+            assert_eq!(numbers, [11, 22]);
+            for key in masked_input.keys() {
+                assert_eq!(masker.mask_string(key), *key);
+            }
+            let nested = masked_input["nested"][0].as_object().unwrap();
+            assert_eq!(nested.len(), 2);
+            assert_eq!(nested["***"], "reserved nested base");
+            assert!(nested.values().any(|value| value == "contains *** here"));
+            for key in nested.keys() {
+                assert_eq!(masker.mask_string(key), *key);
+            }
+            secrets.reverse();
+            assert_eq!(
+                payload,
+                prepare_event_payload_for_run_id(event, 42, &masker_for(&secrets), "test-run")
+            );
+            let serialized = serde_json::to_string(&payload).unwrap();
+            assert_eq!(serde_json::from_str::<Value>(&serialized).unwrap(), payload);
+        },
+    )
+    .await
+}
+
+#[tokio::test]
+async fn event_preparation_keeps_readable_short_and_encoded_cascades() -> TestResult {
+    in_child_process(
+        "event_preparation_keeps_readable_short_and_encoded_cascades",
+        || {
+            let masker = masker_for(&["a***b".to_string(), "é***ß".to_string()]);
+            let encoded_cascade =
+                format!("{}***{}", "%c3%a9".repeat(4_096), "%c3%9f".repeat(4_096));
+            let payload = prepare_event_payload_for_run_id(
+                json!({
+                    "prefix-aa***bb-suffix": 1,
+                    "unicode-éé***ßß-suffix": 2,
+                    "encoded-%c3%a9%c3%a9***%c3%9f%c3%9f-suffix": 3,
+                    "long": [{(encoded_cascade): 4}],
+                    "***": "reserved base",
+                    "***#2": "reserved suffix"
+                }),
+                7,
+                &masker,
+                "test-run",
+            );
+
+            assert_eq!(
+                payload,
+                json!({
+                    "runId": "test-run",
+                    "events": [{
+                        "prefix-***-suffix": 1,
+                        "unicode-***-suffix": 2,
+                        "encoded-***-suffix": 3,
+                        "long": [{"***": 4}],
+                        "***": "reserved base",
+                        "***#2": "reserved suffix",
+                        "sequenceNumber": 7
+                    }]
+                })
+            );
+        },
+    )
+    .await
+}

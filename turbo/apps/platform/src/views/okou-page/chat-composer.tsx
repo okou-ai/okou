@@ -8,12 +8,16 @@ import {
   type ComposerActions,
 } from "./composer-actions.ts";
 import {
-  ComposerCreateControls,
   ComposerCreatePicker,
   ComposerCreateImageModelPicker,
   ComposerCreateVideoModelPicker,
-  ComposerSelectedTask,
+  ComposerTaskControls,
 } from "./composer-create.tsx";
+import {
+  ComposerAddMenu,
+  type ComposerAddMenuGroup,
+} from "./composer-add-menu.tsx";
+import { ComposerVideoOptionsChip } from "./composer-video-options.tsx";
 import type { ComposerVoiceInputStatus } from "../../signals/okou-page/composer-voice-input.ts";
 // TODO(#8609): split large components to comply with max-lines-per-function (128)
 // oxlint-disable max-lines-per-function
@@ -39,6 +43,9 @@ import { i18n } from "../../i18n/index.ts";
 import { introVideoTemplateOptions } from "@okouai/core/intro-video-template";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { IntroVideoPicker } from "./intro-video-picker.tsx";
+import { TemplateEmptyPanel } from "./template-empty-panel.tsx";
+import { CustomTemplatePickerPane } from "./custom-template-picker-pane.tsx";
+import { resetCustomTemplatePicker$ } from "../../signals/okou-page/custom-template-library.ts";
 import {
   avatarSelectionLabel,
   styleSelectionLabel,
@@ -64,19 +71,22 @@ import { isMobileTextInputDevice } from "../../lib/visual-viewport-keyboard.ts";
 import {
   AlertTriangle,
   ArrowLeft,
+  ArrowRight,
   ArrowUp,
   Bolt,
   Check,
+  Clapperboard,
   Download,
   Globe,
   Image as ImageIcon,
   LayoutTemplate,
   Loader2,
+  Layers,
   Lock,
   Mic,
   Monitor,
-  Paperclip,
   Palette,
+  Paperclip,
   Play,
   Plug,
   Plus,
@@ -84,16 +94,16 @@ import {
   Route,
   Search,
   SlidersHorizontal,
-  Terminal,
   Square,
   SwatchBook,
+  Terminal,
   Trash2,
+  type LucideIcon,
   User,
   UserCheck,
   Users,
   Video,
   X,
-  type LucideIcon,
 } from "lucide-react";
 import {
   Dialog,
@@ -115,6 +125,7 @@ import {
   Select,
   SelectContent,
   SelectItem,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from "@okouai/ui/components/ui/select";
@@ -203,6 +214,11 @@ import {
   toVideoGenerationTemplate,
   toWebsiteGenerationTemplate,
 } from "./composer-template-catalog.ts";
+import {
+  ComposerRail,
+  RAIL_TILE,
+  RAIL_TILE_CAPTION,
+} from "./composer-rail.tsx";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type {
   ConnectorAccountConnection,
@@ -224,6 +240,7 @@ import {
   type MediaModelPanelState,
   type ModelProviderSelection,
 } from "./components/model-provider-picker.tsx";
+import { ChatEffortTrigger } from "./components/chat-effort-trigger.tsx";
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
 import { ConnectorCard } from "./components/settings/connector-card.tsx";
 import { CustomConnectorIcon } from "./components/settings/custom-connector-icon.tsx";
@@ -271,9 +288,7 @@ import {
 import {
   codexFastModeEnabled$,
   modelPickerFlyoutEnabled$,
-  modelPickerMenuEnabled$,
   customConnectorMcpEnabled$,
-  voiceInputV2Enabled$,
   featureSwitch$,
 } from "../../signals/external/feature-switch.ts";
 import { preferredChatReasoningEffort } from "../../signals/okou-page/model-reasoning-effort.ts";
@@ -305,10 +320,6 @@ import type {
 import {
   audioInputAvailable$,
   audioInputQuota$,
-  sttRecording$,
-  sttStarting$,
-  sttTranscribing$,
-  sttVoiceLevel$,
 } from "../../signals/voice-io/voice-io-stt.ts";
 import { readChatMessageFromClipboard } from "../../signals/okou-page/clipboard.ts";
 import { shouldUseUserMessage } from "../../signals/okou-page/user-message-document-codec.ts";
@@ -318,8 +329,11 @@ import {
   AvatarTemplatePickerContent,
   AvatarTemplatePickerToolbar,
 } from "./avatar-template-picker.tsx";
-import { ComposerVideoOptionsChip } from "./composer-video-options.tsx";
-import { ComposerPresentationOptions } from "./composer-presentation-options.tsx";
+import {
+  markVideoPreviewPlaying,
+  resetVideoPreview,
+  startVideoPreview,
+} from "./video-preview-hover.ts";
 import {
   localizedWorkflowTemplate,
   localizedWorkflowTemplateCategory,
@@ -864,43 +878,6 @@ function websiteTemplateCardImageUrl(item: WebsiteTemplateItem): string {
   return r2ImageTransformUrl(item.previewImageUrl, TEMPLATE_CARD_PREVIEW_SIZE);
 }
 
-function playVideoTemplatePreview(video: HTMLVideoElement | null): void {
-  if (!video) {
-    return;
-  }
-  video.defaultMuted = true;
-  video.muted = true;
-  video.playsInline = true;
-  video.preload = "metadata";
-  detach(video.play(), Reason.DomCallback);
-}
-
-function markVideoTemplatePreviewPlaying(
-  video: HTMLVideoElement | null,
-  playing: boolean,
-): void {
-  if (!video) {
-    return;
-  }
-  video.dataset.previewPlaying = playing ? "true" : "false";
-}
-
-function resetVideoTemplatePreview(video: HTMLVideoElement | null): void {
-  if (!video) {
-    return;
-  }
-  video.pause();
-  video.currentTime = 0;
-  markVideoTemplatePreviewPlaying(video, false);
-}
-
-function toggleVideoTemplatePreview(video: HTMLVideoElement | null): void {
-  if (!video || (!video.paused && !video.ended)) {
-    return;
-  }
-  playVideoTemplatePreview(video);
-}
-
 function videoTemplatePosterImage(item: VideoTemplateItem): string {
   if (item.cardPreviewImage !== undefined) {
     return r2ImageTransformUrl(
@@ -919,10 +896,10 @@ function VideoTemplatePreview({ item }: { item: VideoTemplateItem }) {
       data-video-template-preview=""
       className="group/video-template-preview relative h-full w-full overflow-hidden bg-muted"
       onMouseEnter={(event) => {
-        toggleVideoTemplatePreview(event.currentTarget.querySelector("video"));
+        startVideoPreview(event.currentTarget.querySelector("video"));
       }}
       onMouseLeave={(event) => {
-        resetVideoTemplatePreview(event.currentTarget.querySelector("video"));
+        resetVideoPreview(event.currentTarget.querySelector("video"));
       }}
     >
       <video
@@ -933,16 +910,16 @@ function VideoTemplatePreview({ item }: { item: VideoTemplateItem }) {
         muted
         loop
         onPlaying={(event) => {
-          markVideoTemplatePreviewPlaying(event.currentTarget, true);
+          markVideoPreviewPlaying(event.currentTarget, true);
         }}
         onPause={(event) => {
-          markVideoTemplatePreviewPlaying(event.currentTarget, false);
+          markVideoPreviewPlaying(event.currentTarget, false);
         }}
         onEnded={(event) => {
-          resetVideoTemplatePreview(event.currentTarget);
+          resetVideoPreview(event.currentTarget);
         }}
         onError={(event) => {
-          markVideoTemplatePreviewPlaying(event.currentTarget, false);
+          markVideoPreviewPlaying(event.currentTarget, false);
         }}
       >
         <source src={item.previewWebm} type="video/webm; codecs=vp9" />
@@ -953,7 +930,7 @@ function VideoTemplatePreview({ item }: { item: VideoTemplateItem }) {
         alt=""
         aria-hidden="true"
         data-video-template-poster=""
-        className="pointer-events-none absolute inset-0 h-full w-full object-cover transition-opacity duration-200 peer-data-[preview-playing=true]:opacity-0"
+        className="pointer-events-none absolute inset-0 h-full w-full object-cover peer-data-[preview-playing=true]:opacity-0"
       />
       <IconTooltipButton
         type="button"
@@ -969,7 +946,7 @@ function VideoTemplatePreview({ item }: { item: VideoTemplateItem }) {
         onClick={(event) => {
           event.preventDefault();
           event.stopPropagation();
-          toggleVideoTemplatePreview(
+          startVideoPreview(
             event.currentTarget.parentElement?.querySelector("video") ?? null,
           );
         }}
@@ -983,11 +960,15 @@ function VideoTemplatePreview({ item }: { item: VideoTemplateItem }) {
 }
 
 /**
- * Soft, cool-tinted card shadow matching the home chat composer
- * (`--okou-card-shadow`). The token is scoped to `.okou-app`, but the template
- * picker renders through a Base UI portal on `document.body` — outside that
- * scope — so the value is inlined here instead of referencing the CSS var.
- * Replaces Tailwind `shadow-sm`, whose hard black tint reads muddy on white.
+ * Soft, cool-tinted card shadow for the template picker. It reads as the home
+ * chat composer's elevation but is not that value: the blue-grey `220 12% 50%`
+ * here is a different tint from `--okou-card-shadow`'s warm `30 6% 45%`, and it
+ * carries slightly less alpha. Replaces Tailwind `shadow-sm`, whose hard black
+ * tint reads muddy on white.
+ *
+ * `--okou-card-shadow` is declared at `:root` and would resolve here, so this
+ * is a colour decision rather than a constraint. Adopting the token would also
+ * pick up its gradient-palette override, which this surface has never had.
  */
 const TEMPLATE_CARD_SHADOW =
   "shadow-[0_2px_12px_hsl(220_12%_50%/0.04),0_0_0_0.5px_hsl(220_12%_50%/0.02)]";
@@ -1005,12 +986,14 @@ const TEMPLATE_TILE_RING_SELECTED = "ring-1 ring-primary";
 const TEMPLATE_TILE_MEDIA =
   "relative overflow-hidden border border-border bg-muted";
 const TEMPLATE_TILE_SCRIM =
-  "pointer-events-none absolute inset-x-0 bottom-0 z-[15] h-14 bg-gradient-to-t from-black/45 to-transparent opacity-0 transition-opacity duration-150 group-hover/tile:opacity-100";
+  "pointer-events-none absolute inset-x-0 bottom-0 z-[15] h-14 bg-gradient-to-t from-black/45 to-transparent opacity-0 group-hover/tile:opacity-100";
 const TEMPLATE_TILE_USE =
-  "absolute bottom-2 right-2 z-20 h-[30px] rounded-lg bg-primary px-3 text-[12.5px] font-medium text-primary-foreground opacity-100 transition-opacity duration-150 hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:focus-visible:opacity-100 [@media(hover:hover)]:group-hover/tile:opacity-100";
+  "absolute bottom-2 right-2 z-20 h-[30px] rounded-lg bg-primary px-3 text-[12.5px] font-medium text-primary-foreground opacity-100 hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:focus-visible:opacity-100 [@media(hover:hover)]:group-hover/tile:opacity-100";
 // Caption metrics track the illustration card: same text size, and enough
 // breathing room under the artwork that the title never crowds it.
 const TEMPLATE_TILE_CAPTION = "flex items-baseline gap-2 px-2 pb-2 pt-2";
+/** The cover width every type's shelf uses, so the rows line up across tabs. */
+const PRESENTATION_SHELF_COVER = "w-[200px]";
 const TEMPLATE_TILE_NAME =
   "min-w-0 truncate text-sm font-medium leading-5 text-foreground";
 
@@ -1364,7 +1347,7 @@ function WorkflowTemplateCard({
           className={cn(
             "ml-auto h-8 shrink-0 rounded-md border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
             selected
-              ? "border-primary/40 bg-primary/10 text-brand-text"
+              ? "border-primary/40 bg-primary/10 text-selected-foreground"
               : "border-border bg-background text-foreground hover:bg-state-hover",
           )}
         >
@@ -1475,27 +1458,6 @@ function WorkflowTemplateGrid({
           />
         );
       })}
-    </div>
-  );
-}
-
-function TemplateEmptyPanel() {
-  const { t } = useTranslation();
-  return (
-    <div className="flex min-h-40 flex-1 items-center justify-center rounded-[22px] border-2 border-dashed border-border bg-background px-6 py-10 text-center">
-      <div className="flex max-w-xl flex-col items-center">
-        <Search className="mb-4 h-8 w-8" />
-        <p className="text-sm font-semibold text-muted-foreground">
-          {t(($) => {
-            return $.artifacts.templates.noMatches;
-          })}
-        </p>
-        <p className="mt-2 text-sm text-muted-foreground/80">
-          {t(($) => {
-            return $.artifacts.templates.tryDifferentSearch;
-          })}
-        </p>
-      </div>
     </div>
   );
 }
@@ -4209,7 +4171,7 @@ function IllustrationTemplateCard({
                 )}
                 aria-pressed={active}
                 className={cn(
-                  "relative h-12 w-12 shrink-0 overflow-hidden rounded-md border-2 bg-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  "relative h-12 w-12 shrink-0 overflow-hidden rounded-md border-(length:--border-width-emphasis) bg-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   active ? "border-primary" : "border-border",
                 )}
                 onFocus={() => {
@@ -4281,7 +4243,7 @@ function IllustrationTemplateCard({
           className={cn(
             "h-8 shrink-0 rounded-md border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
             selected
-              ? "border-primary/40 bg-primary/10 text-brand-text"
+              ? "border-primary/40 bg-primary/10 text-selected-foreground"
               : "border-border bg-background text-foreground hover:bg-state-hover",
           )}
         >
@@ -4297,8 +4259,12 @@ function IllustrationTemplateCard({
 function resolveTemplatePickerCategory(
   category: string,
   introVideoEnabled: boolean,
+  customTemplatesEnabled: boolean,
 ): string {
   switch (category) {
+    case "custom": {
+      return customTemplatesEnabled ? category : "slides";
+    }
     case "intro-video": {
       return introVideoEnabled ? category : "video";
     }
@@ -4319,18 +4285,36 @@ function resolveTemplatePickerCategory(
 function TemplatePickerCategoryNav({
   selectedCategory,
   introVideoEnabled,
+  customTemplatesEnabled,
+  creativeVideoOnly,
   onChange,
 }: {
   selectedCategory: string;
   introVideoEnabled: boolean;
+  customTemplatesEnabled: boolean;
+  creativeVideoOnly: boolean;
   onChange: (value: string) => void;
 }) {
   const { t } = useTranslation();
+  // Custom leads the list and is separated by a rule, because it answers who
+  // made a template while the seven below it answer what you are making. The
+  // format options keep their own order untouched.
   const categoryOptions: {
     value: string;
     label: string;
     Icon: LucideIcon;
   }[] = [
+    ...(customTemplatesEnabled
+      ? [
+          {
+            value: "custom",
+            label: t(($) => {
+              return $.templates.custom;
+            }),
+            Icon: Layers,
+          },
+        ]
+      : []),
     {
       value: "slides",
       label: t(($) => {
@@ -4368,7 +4352,7 @@ function TemplatePickerCategoryNav({
             label: t(($) => {
               return $.artifacts.templates.introVideo;
             }),
-            Icon: Presentation,
+            Icon: Clapperboard,
           },
         ]
       : []),
@@ -4387,6 +4371,9 @@ function TemplatePickerCategoryNav({
       Icon: Route,
     },
   ];
+  const visibleCategories = categoryOptions.filter(({ value }) => {
+    return !creativeVideoOnly || value === "video";
+  });
 
   return (
     <>
@@ -4401,15 +4388,18 @@ function TemplatePickerCategoryNav({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {categoryOptions.map(({ value, label, Icon }) => {
-              return (
+            {visibleCategories.flatMap(({ value, label, Icon }) => {
+              return [
                 <SelectItem key={value} value={value}>
                   <span className="flex items-center gap-2">
                     <Icon className="h-4 w-4" />
                     {label}
                   </span>
-                </SelectItem>
-              );
+                </SelectItem>,
+                ...(value === "custom"
+                  ? [<SelectSeparator key={`${value}-rule`} />]
+                  : []),
+              ];
             })}
           </SelectContent>
         </Select>
@@ -4426,60 +4416,72 @@ function TemplatePickerCategoryNav({
             data-template-picker-sidebar=""
             className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-3 pb-3"
           >
-            {categoryOptions.map(({ value, label, Icon }, categoryIndex) => {
-              const selected = value === selectedCategory;
-              return (
-                <button
-                  key={value}
-                  type="button"
-                  role="tab"
-                  aria-selected={selected}
-                  tabIndex={selected ? 0 : -1}
-                  onClick={() => {
-                    onChange(value);
-                  }}
-                  onKeyDown={(event) => {
-                    let nextIndex: number | null = null;
-                    if (event.key === "ArrowDown") {
-                      nextIndex = (categoryIndex + 1) % categoryOptions.length;
-                    } else if (event.key === "ArrowUp") {
-                      nextIndex =
-                        (categoryIndex - 1 + categoryOptions.length) %
-                        categoryOptions.length;
-                    } else if (event.key === "Home") {
-                      nextIndex = 0;
-                    } else if (event.key === "End") {
-                      nextIndex = categoryOptions.length - 1;
-                    }
-                    if (nextIndex === null) {
-                      return;
-                    }
-                    event.preventDefault();
-                    const nextTab = event.currentTarget.parentElement
-                      ?.querySelectorAll<HTMLElement>("[role=tab]")
-                      .item(nextIndex);
-                    nextTab?.focus();
-                    onChange(categoryOptions[nextIndex]?.value ?? value);
-                  }}
-                  className={cn(
-                    "group flex h-9 w-full shrink-0 items-center gap-2.5 rounded-lg px-2.5 text-left text-sm leading-5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-                    selected
-                      ? "bg-gray-50 font-medium text-foreground"
-                      : "text-gray-800 hover:bg-state-hover hover:text-foreground",
-                  )}
-                >
-                  <Icon
+            {visibleCategories.flatMap(
+              ({ value, label, Icon }, categoryIndex) => {
+                const selected = value === selectedCategory;
+                return [
+                  <button
+                    key={value}
+                    type="button"
+                    role="tab"
+                    aria-selected={selected}
+                    tabIndex={selected ? 0 : -1}
+                    onClick={() => {
+                      onChange(value);
+                    }}
+                    onKeyDown={(event) => {
+                      let nextIndex: number | null = null;
+                      if (event.key === "ArrowDown") {
+                        nextIndex =
+                          (categoryIndex + 1) % visibleCategories.length;
+                      } else if (event.key === "ArrowUp") {
+                        nextIndex =
+                          (categoryIndex - 1 + visibleCategories.length) %
+                          visibleCategories.length;
+                      } else if (event.key === "Home") {
+                        nextIndex = 0;
+                      } else if (event.key === "End") {
+                        nextIndex = visibleCategories.length - 1;
+                      }
+                      if (nextIndex === null) {
+                        return;
+                      }
+                      event.preventDefault();
+                      const nextTab = event.currentTarget.parentElement
+                        ?.querySelectorAll<HTMLElement>("[role=tab]")
+                        .item(nextIndex);
+                      nextTab?.focus();
+                      onChange(visibleCategories[nextIndex]?.value ?? value);
+                    }}
                     className={cn(
-                      "h-4 w-4 shrink-0 transition-colors",
+                      "group flex h-9 w-full shrink-0 items-center gap-2.5 rounded-lg px-2.5 text-left text-sm leading-5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
                       selected
-                        ? "text-foreground"
-                        : "text-gray-700 group-hover:text-gray-800",
+                        ? "bg-gray-50 font-medium text-foreground"
+                        : "text-gray-800 hover:bg-state-hover hover:text-foreground",
                     )}
-                  />
-                  <span className="truncate">{label}</span>
-                </button>
-              );
-            })}
+                  >
+                    <Icon
+                      className={cn(
+                        "h-4 w-4 shrink-0 transition-colors",
+                        selected
+                          ? "text-foreground"
+                          : "text-gray-700 group-hover:text-gray-800",
+                      )}
+                    />
+                    <span className="truncate">{label}</span>
+                  </button>,
+                  ...(value === "custom"
+                    ? [
+                        <div
+                          key={`${value}-rule`}
+                          role="presentation"
+                          className="my-2 shrink-0 border-t border-t-gray-400"
+                        />,
+                      ]
+                    : []),
+                ];
+              },
+            )}
           </nav>
         </div>
       </div>
@@ -4583,10 +4585,12 @@ function PptImportCard({
   signals,
   onImported,
   compact = false,
+  className,
 }: {
   signals: ComposerSignals;
   onImported: () => void;
   compact?: boolean;
+  className?: string;
 }) {
   const { t } = useTranslation();
   const rootSignal = useGet(rootSignal$);
@@ -4597,7 +4601,7 @@ function PptImportCard({
   return (
     <label
       data-presentation-template-import=""
-      className={TEMPLATE_TILE_WRAPPER}
+      className={cn(TEMPLATE_TILE_WRAPPER, className)}
     >
       <span
         className={cn(
@@ -4635,11 +4639,22 @@ function PptImportCard({
       <span
         className={cn(
           TEMPLATE_TILE_CAPTION,
-          compact && "flex-col items-stretch gap-0.5",
+          // On a shelf the import tile is one cover among many, so its caption
+          // takes the shelf's metrics rather than the picker dialog's.
+          compact
+            ? "flex-col items-stretch gap-0 px-0 pb-0 pt-0"
+            : "flex-col items-stretch gap-0.5",
         )}
       >
-        <span className={TEMPLATE_TILE_NAME}>{label}</span>
-        <span className="shrink-0 text-xs text-muted-foreground">
+        <span className={compact ? RAIL_TILE_CAPTION : TEMPLATE_TILE_NAME}>
+          {label}
+        </span>
+        <span
+          className={cn(
+            "shrink-0 truncate text-muted-foreground",
+            compact ? "text-[12px] leading-4" : "text-xs",
+          )}
+        >
           {t(($) => {
             return $.artifacts.templates.importDeckHint;
           })}
@@ -4769,16 +4784,14 @@ function importedPptImageCandidateSource(
     return null;
   }
   const resolvedPreviewSourceUrl = previewSourceUrl ?? desiredSourceUrl;
-  if (
-    state.active === null &&
-    resolvedPreviewSourceUrl !== desiredSourceUrl &&
-    !importedPptImageLoadFailed(
+  if (state.active === null && resolvedPreviewSourceUrl !== desiredSourceUrl) {
+    return importedPptImageLoadFailed(
       state.failed,
       desiredUrl,
       resolvedPreviewSourceUrl,
     )
-  ) {
-    return resolvedPreviewSourceUrl;
+      ? null
+      : resolvedPreviewSourceUrl;
   }
   return importedPptImageLoadFailed(state.failed, desiredUrl, desiredSourceUrl)
     ? null
@@ -5668,7 +5681,8 @@ function ImportedPresentationTemplatePreviewPage({
   const loadedDetail =
     currentDetail?.id === summary.id
       ? currentDetail
-      : lastResolvedDetail?.id === summary.id
+      : detailLoadable.state === "loading" &&
+          lastResolvedDetail?.id === summary.id
         ? lastResolvedDetail
         : null;
   const detail =
@@ -5744,10 +5758,18 @@ function ImportedPresentationTemplatePreviewPage({
 function useImportedPresentationTemplatePickerItems(
   signals: ComposerSignals,
 ): readonly ImportedPresentationTemplatePickerItem[] {
+  const current = useLoadable(
+    signals.template.importedPresentationTemplatePickerItems$,
+  );
+  const lastResolved = useLastResolved(
+    signals.template.importedPresentationTemplatePickerItems$,
+  );
   const items =
-    useLastResolved(
-      signals.template.importedPresentationTemplatePickerItems$,
-    ) ?? [];
+    current.state === "hasData"
+      ? current.data
+      : current.state === "loading"
+        ? (lastResolved ?? [])
+        : [];
   const deletedTemplateIds = useGet(
     signals.template.importedPresentationTemplateDeletedIds$,
   );
@@ -5756,6 +5778,64 @@ function useImportedPresentationTemplatePickerItems(
     : items.filter((item) => {
         return !deletedTemplateIds.has(item.template.id);
       });
+}
+
+function ImportedPresentationTemplateLibraryStatus({
+  signals,
+}: {
+  readonly signals: ComposerSignals;
+}) {
+  const { t } = useTranslation();
+  const templates = useLoadable(
+    signals.template.importedPresentationTemplatePickerItems$,
+  );
+  const lastResolvedTemplates = useLastResolved(
+    signals.template.importedPresentationTemplatePickerItems$,
+  );
+  const realtime = useLoadable(
+    signals.template.presentationTemplatesRealtimeReady$,
+  );
+  const retryCatalog = useSet(
+    signals.template.retryImportedPresentationTemplates$,
+  );
+  let message: string;
+  let retry: (() => void) | undefined;
+  if (templates.state === "loading") {
+    if (lastResolvedTemplates?.length) {
+      return null;
+    }
+    message = t(($) => {
+      return $.chat.templates.importedLoading;
+    });
+  } else if (templates.state === "hasError") {
+    if (realtime.state === "hasError") {
+      message = t(($) => {
+        return $.chat.templates.importedUnavailable;
+      });
+    } else {
+      message = t(($) => {
+        return $.chat.templates.importedLoadFailed;
+      });
+      retry = retryCatalog;
+    }
+  } else {
+    return null;
+  }
+  return (
+    <div
+      className="col-span-full flex flex-wrap items-center gap-2 text-sm text-muted-foreground"
+      role={templates.state === "hasError" ? "alert" : "status"}
+    >
+      <span>{message}</span>
+      {retry ? (
+        <Button type="button" variant="quiet" size="sm" onClick={retry}>
+          {t(($) => {
+            return $.chat.templates.retry;
+          })}
+        </Button>
+      ) : null}
+    </div>
+  );
 }
 
 function useImportedPresentationTemplates(
@@ -5779,22 +5859,20 @@ function ComposerPresentationSuggestion({
     <Button
       type="button"
       variant="quiet"
-      className="group/tile block h-auto min-w-0 rounded-xl p-0 text-left font-normal hover:bg-gray-50"
+      className={cn(RAIL_TILE, PRESENTATION_SHELF_COVER)}
       onClick={onSelect}
     >
       <span
         className={cn(
           TEMPLATE_TILE_MEDIA,
           TEMPLATE_TILE_RING,
-          "block aspect-video group-hover/tile:opacity-90",
+          "block aspect-video rounded-lg group-hover/tile:opacity-90",
         )}
       >
         {children}
       </span>
-      <span className={cn(TEMPLATE_TILE_CAPTION, "block")}>
-        <span className={cn(TEMPLATE_TILE_NAME, "block")} title={title}>
-          {title}
-        </span>
+      <span className={RAIL_TILE_CAPTION} title={title}>
+        {title}
       </span>
     </Button>
   );
@@ -5807,89 +5885,105 @@ export function ComposerPresentationRecommendations({
 }) {
   const { t } = useTranslation();
   const picker = useComposerTemplatePicker(signals);
-  const imported = useImportedPresentationTemplatePickerItems(signals).slice(
-    0,
-    3,
-  );
-  const builtIn = PRESENTATION_TEMPLATE_PICKER_ITEMS.slice(
-    0,
-    3 - imported.length,
-  );
+  const imported = useImportedPresentationTemplatePickerItems(signals);
+  const builtIn = PRESENTATION_TEMPLATE_PICKER_ITEMS;
   const openTemplates = useSet(signals.template.openTemplatePicker$);
   const setMode = useSet(signals.create.setMode$);
+  // The shelf keeps mixing uploaded and built-in covers — it recommends rather
+  // than classifies — but "more" has to land on the tab that now holds the
+  // uploaded ones.
+  const moreTemplatesCategory =
+    useGet(featureSwitch$)[FeatureSwitchKey.CustomTemplates] === true
+      ? "custom"
+      : "slides";
+  const label = t(($) => {
+    return $.chat.taskChips.presentationTemplates;
+  });
+  // The same header line, rail and cover metrics as every other type's shelf.
+  // The import tile leads the rail because uploading a deck is the one action
+  // this catalog has that the others do not.
   return (
     <div
-      className="flex flex-col gap-2"
+      className="flex min-w-0 flex-col gap-3"
       role="group"
-      aria-label={t(($) => {
-        return $.chat.taskChips.presentationTemplates;
-      })}
+      aria-label={label}
     >
-      <div className="flex justify-end">
+      <div className="flex min-w-0 items-center justify-between gap-3">
+        <p className="min-w-0 truncate text-[13px] font-medium">{label}</p>
         <Button
           type="button"
           variant="quiet"
           size="xs"
-          className="font-normal hover:bg-gray-50"
+          className="shrink-0 gap-1.5 font-normal"
           onClick={() => {
-            openTemplates({ kind: "insert", category: "slides" });
+            openTemplates({ kind: "insert", category: moreTemplatesCategory });
           }}
         >
           {t(($) => {
             return $.chat.taskChips.moreTemplates;
           })}
+          <ArrowRight className="size-3" aria-hidden />
         </Button>
       </div>
-      <div className="grid min-w-0 grid-cols-2 items-start gap-4 sm:grid-cols-4">
-        <PptImportCard
-          signals={signals}
-          compact
-          onImported={() => {
-            setMode(null);
-          }}
-        />
-        {imported.map(({ imageBuffers, template }) => {
-          return (
-            <ComposerPresentationSuggestion
-              key={template.id}
-              title={template.title}
-              onSelect={() => {
-                picker.onChange(
-                  toImportedPresentationGenerationTemplate(template),
-                );
-              }}
-            >
-              <ImportedPptImage
-                imageSignals={imageBuffers.card}
-                label=""
-                loading="eager"
-                fetchPriority="high"
-                size={TEMPLATE_CARD_PREVIEW_SIZE}
-                placeholder={<ImageIcon size={24} aria-hidden />}
-                className="pointer-events-none absolute inset-0 h-full w-full bg-background object-cover"
-              />
-            </ComposerPresentationSuggestion>
-          );
-        })}
-        {builtIn.map((item) => {
-          return (
-            <ComposerPresentationSuggestion
-              key={item.slug}
-              title={item.title}
-              onSelect={() => {
-                picker.onChange(toPresentationGenerationTemplate(item));
-              }}
-            >
-              <img
-                src={presentationTemplateCardSlideImage(item, 0)}
-                alt=""
-                loading="lazy"
-                className="absolute inset-0 h-full w-full object-cover"
-              />
-            </ComposerPresentationSuggestion>
-          );
-        })}
-      </div>
+      <ComposerRail
+        signals={signals}
+        rail="templates:presentation"
+        gap="gap-3"
+        items={[
+          <PptImportCard
+            key="import"
+            signals={signals}
+            compact
+            // A `label` is inline by default, so the shelf width only lands once
+            // the tile is a block.
+            className={cn("group/tile block", PRESENTATION_SHELF_COVER)}
+            onImported={() => {
+              setMode(null);
+            }}
+          />,
+          ...imported.map(({ imageBuffers, template }) => {
+            return (
+              <ComposerPresentationSuggestion
+                key={template.id}
+                title={template.title}
+                onSelect={() => {
+                  picker.onChange(
+                    toImportedPresentationGenerationTemplate(template),
+                  );
+                }}
+              >
+                <ImportedPptImage
+                  imageSignals={imageBuffers.card}
+                  label=""
+                  loading="eager"
+                  fetchPriority="high"
+                  size={TEMPLATE_CARD_PREVIEW_SIZE}
+                  placeholder={<ImageIcon size={24} aria-hidden />}
+                  className="pointer-events-none absolute inset-0 h-full w-full bg-background object-cover"
+                />
+              </ComposerPresentationSuggestion>
+            );
+          }),
+          ...builtIn.map((item) => {
+            return (
+              <ComposerPresentationSuggestion
+                key={item.slug}
+                title={item.title}
+                onSelect={() => {
+                  picker.onChange(toPresentationGenerationTemplate(item));
+                }}
+              >
+                <img
+                  src={presentationTemplateCardSlideImage(item, 0)}
+                  alt=""
+                  loading="lazy"
+                  className="absolute inset-0 h-full w-full object-cover"
+                />
+              </ComposerPresentationSuggestion>
+            );
+          }),
+        ]}
+      />
     </div>
   );
 }
@@ -5917,28 +6011,39 @@ function PptTemplateGrid({
   onImported: () => void;
   signals: ComposerSignals;
 }) {
-  // Import tile, then accessible uploaded decks (owned decks are sorted first),
-  // then the built-in templates.
+  // Uploading and the decks it produced belong to whichever catalog this
+  // member can open. Once Custom is theirs, both live there, and this tab is
+  // the built-in templates alone; until then it is the import tile, the
+  // accessible uploaded decks (owned decks first), then the built-ins.
+  const customTemplates =
+    useGet(featureSwitch$)[FeatureSwitchKey.CustomTemplates] === true;
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      <PptImportCard signals={signals} onImported={onImported} />
-      {importedItems.map(({ imageBuffers, template }) => {
-        return (
-          <ImportedPptCard
-            key={template.id}
-            imageSignals={imageBuffers.card}
-            template={template}
-            selected={
-              value?.type === "presentation" &&
-              value.selection.templateId ===
-                formatUserPresentationTemplateId(template.id)
-            }
-            onSelect={onSelectImported}
-            onPreview={onPreviewImported}
-            signals={signals}
-          />
-        );
-      })}
+      {customTemplates ? null : (
+        <>
+          <ImportedPresentationTemplateLibraryStatus signals={signals} />
+          <PptImportCard signals={signals} onImported={onImported} />
+        </>
+      )}
+      {(customTemplates ? [] : importedItems).map(
+        ({ imageBuffers, template }) => {
+          return (
+            <ImportedPptCard
+              key={template.id}
+              imageSignals={imageBuffers.card}
+              template={template}
+              selected={
+                value?.type === "presentation" &&
+                value.selection.templateId ===
+                  formatUserPresentationTemplateId(template.id)
+              }
+              onSelect={onSelectImported}
+              onPreview={onPreviewImported}
+              signals={signals}
+            />
+          );
+        },
+      )}
       {items.map((item) => {
         return (
           <PptCard
@@ -5983,6 +6088,8 @@ function TemplatePickerDialog({
   const openBillingPlans = useSet(openSettingsBillingPlans$);
   const openSettings = useSet(setSettingsDialogOpen$);
   const category = useGet(signals.template.templatePickerCategory$);
+  const creativeVideo = useGet(signals.create.creativeVideo$);
+  const creativeVideoOnly = creativeVideo && category === "video";
   const setCategory = useSet(signals.template.setTemplatePickerCategory$);
   const search = useGet(signals.template.templatePickerSearch$);
   const setSearch = useSet(signals.template.setTemplatePickerSearch$);
@@ -6008,6 +6115,7 @@ function TemplatePickerDialog({
   const resetImportedTemplatePicker = useSet(
     signals.template.resetImportedPresentationTemplatePicker$,
   );
+  const resetCustomTemplatePicker = useSet(resetCustomTemplatePicker$);
   const restorePresentationGridScroll = useSet(
     signals.template.restoreTemplatePickerPresentationScroll$,
   );
@@ -6079,9 +6187,12 @@ function TemplatePickerDialog({
 
   const features = useGet(featureSwitch$);
   const introVideoEnabled = features[FeatureSwitchKey.IntroVideo] === true;
+  const customTemplatesEnabled =
+    features[FeatureSwitchKey.CustomTemplates] === true;
   const selectedCategory = resolveTemplatePickerCategory(
     category,
     introVideoEnabled,
+    customTemplatesEnabled,
   );
   const showTemplatePickerSearch = selectedCategory === "workflow";
   const showAvatarPickerToolbar = selectedCategory === "avatar";
@@ -6123,6 +6234,7 @@ function TemplatePickerDialog({
   const completeTemplatePickerClose = () => {
     releasePreviewResources(runtime);
     resetImportedTemplatePicker();
+    resetCustomTemplatePicker();
     clearAvatarVoiceSelection();
     setPresentationGridScrollTop(0);
     onCloseComplete();
@@ -6369,6 +6481,8 @@ function TemplatePickerDialog({
               <TemplatePickerCategoryNav
                 selectedCategory={selectedCategory}
                 introVideoEnabled={introVideoEnabled}
+                customTemplatesEnabled={customTemplatesEnabled}
+                creativeVideoOnly={creativeVideoOnly}
                 onChange={handleCategoryChange}
               />
               <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
@@ -6535,6 +6649,13 @@ function TemplatePickerCategoryContent({
   onSelectWorkflow: (item: WorkflowTemplateItem) => void;
   runtime: TemplatePreviewRuntime;
 }) {
+  if (selectedCategory === "custom") {
+    return (
+      <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-6 pt-0.5">
+        <CustomTemplatePickerPane signals={signals} />
+      </div>
+    );
+  }
   if (selectedCategory === "slides") {
     return (
       <div
@@ -6761,44 +6882,31 @@ function selectedComposerTemplateAttachment(
     : undefined;
 }
 
-function ComposerImportedTemplateUrlRefreshLifecycle({
-  signals,
-}: {
-  signals: ComposerSignals;
-}) {
-  const setImportedTemplateUrlRefreshLifecycleRef = useSet(
-    signals.template.importedPresentationTemplateUrlRefreshLifecycleRef$,
-  );
-  return (
-    <span
-      ref={setImportedTemplateUrlRefreshLifecycleRef}
-      aria-hidden="true"
-      className="pointer-events-none absolute size-px overflow-hidden opacity-0"
-    />
-  );
-}
-
-function TemplatePickerButton({
-  picker,
-  presentationItems,
-  runtime,
-  signals,
-}: {
-  picker: ComposerTemplatePicker;
-  presentationItems: readonly PresentationTemplateItem[];
-  runtime: TemplatePreviewRuntime;
-  signals: ComposerSignals;
-}) {
+/**
+ * Which templates the picker should land on, what to call the affordance that
+ * opens it, and how to warm its covers. The toolbar button and the add menu's
+ * template row are two presentations of one decision, so neither recomputes
+ * the create-mode mapping for itself.
+ */
+function useTemplatePickerTrigger(signals: ComposerSignals) {
   const { t } = useTranslation();
-  const mounted = useGet(signals.template.templatePickerMounted$);
-  const open = useGet(signals.template.templatePickerOpen$);
   const category = useGet(signals.template.templatePickerCategory$);
+  const pickerFeatures = useGet(featureSwitch$);
   const introVideoEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.IntroVideo] === true;
-  const referenceValue = useGet(signals.template.templatePickerReferenceValue$);
+    pickerFeatures[FeatureSwitchKey.IntroVideo] === true;
+  const customTemplatesEnabled =
+    pickerFeatures[FeatureSwitchKey.CustomTemplates] === true;
   const createMode = useGet(signals.create.mode$);
-  const templateMode = createMode === "image" ? "illustration" : createMode;
-  const templateLabel =
+  const creativeVideo = useGet(signals.create.creativeVideo$);
+  const openTemplatePicker = useSet(signals.template.openTemplatePicker$);
+  const cardThemeIdBySlug = useGet(signals.template.templateCardThemeIdBySlug$);
+  const runtime = signals.template.templatePreview;
+  const templateMode = creativeVideo
+    ? "video"
+    : createMode === "image"
+      ? "illustration"
+      : createMode;
+  const label =
     templateMode === "illustration"
       ? t(($) => {
           return $.chat.composer.create.addStyle;
@@ -6810,19 +6918,16 @@ function TemplatePickerButton({
         : t(($) => {
             return $.artifacts.templates.template;
           });
-  const setOpen = useSet(signals.template.setTemplatePickerOpen$);
-  const completeClose = useSet(signals.template.completeTemplatePickerClose$);
-  const setReferenceValue = useSet(
-    signals.template.setTemplatePickerReferenceValue$,
-  );
-  const openTemplatePicker = useSet(signals.template.openTemplatePicker$);
-  const cardThemeIdBySlug = useGet(signals.template.templateCardThemeIdBySlug$);
   const selectedCategory =
     templateMode === "presentation"
       ? "slides"
       : (templateMode ??
-        resolveTemplatePickerCategory(category, introVideoEnabled));
-  const prewarmPicker = () => {
+        resolveTemplatePickerCategory(
+          category,
+          introVideoEnabled,
+          customTemplatesEnabled,
+        ));
+  const prewarm = () => {
     prewarmTemplatePreviewImages(
       runtime,
       initialTemplatePreviewImageUrlsForCategory({
@@ -6832,80 +6937,106 @@ function TemplatePickerButton({
       templatePreviewPrewarmImageCountForCategory(selectedCategory),
     );
   };
+  const open = () => {
+    prewarm();
+    openTemplatePicker({ kind: "insert", category: selectedCategory });
+  };
+  return { label, prewarm, open };
+}
 
+function TemplatePickerButton({ signals }: { signals: ComposerSignals }) {
+  const { label, prewarm, open } = useTemplatePickerTrigger(signals);
   return (
-    <>
-      <TooltipProvider delayDuration={300}>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              variant="quiet"
-              size={templateMode ? "sm" : "icon-sm"}
-              iconSize="md"
-              className={
-                templateMode
-                  ? "min-w-0 max-w-[13rem] gap-1 font-normal"
-                  : "shrink-0"
-              }
-              aria-label={templateLabel}
-              aria-pressed={false}
-              onPointerEnter={prewarmPicker}
-              onFocus={prewarmPicker}
-              onPointerDown={prewarmPicker}
-              onClick={() => {
-                prewarmPicker();
-                openTemplatePicker({
-                  kind: "insert",
-                  category: selectedCategory,
-                });
-              }}
-            >
-              {templateMode ? (
-                <>
-                  <Plus size={16} className="shrink-0" aria-hidden />
-                  <span className="min-w-0 truncate">{templateLabel}</span>
-                </>
-              ) : (
-                <SwatchBook size={18} aria-hidden="true" />
-              )}
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="top" className="text-xs">
-            {templateLabel}
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-      {mounted && (
-        <TemplatePickerDialog
-          value={referenceValue ?? undefined}
-          onChange={picker.onChange}
-          open={open}
-          onClose={() => {
-            setOpen(false);
-          }}
-          onCloseComplete={() => {
-            setReferenceValue(null);
-            completeClose();
-          }}
-          presentationItems={presentationItems}
-          runtime={runtime}
-          signals={signals}
-        />
-      )}
-    </>
+    <TooltipProvider delayDuration={300}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            variant="quiet"
+            size="icon-sm"
+            iconSize="md"
+            className="shrink-0"
+            aria-label={label}
+            aria-pressed={false}
+            onPointerEnter={prewarm}
+            onFocus={prewarm}
+            onPointerDown={prewarm}
+            onClick={open}
+          >
+            {/* The label stays in the tooltip and the accessible name; the
+                row beside it is all icons, and one worded control in it read
+                as a different kind of thing. */}
+            <SwatchBook size={18} aria-hidden="true" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="text-xs">
+          {label}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
+/**
+ * Mounted independently of the button that opens it: the slash panel and an
+ * inline template chip's edit action reach the same dialog, so hiding the
+ * toolbar button must not take the dialog with it.
+ */
+function TemplatePickerDialogSlot({
+  picker,
+  presentationItems,
+  runtime,
+  signals,
+}: {
+  picker: ComposerTemplatePicker;
+  presentationItems: readonly PresentationTemplateItem[];
+  runtime: TemplatePreviewRuntime;
+  signals: ComposerSignals;
+}) {
+  const mounted = useGet(signals.template.templatePickerMounted$);
+  const open = useGet(signals.template.templatePickerOpen$);
+  const referenceValue = useGet(signals.template.templatePickerReferenceValue$);
+  const setOpen = useSet(signals.template.setTemplatePickerOpen$);
+  const completeClose = useSet(signals.template.completeTemplatePickerClose$);
+  const setReferenceValue = useSet(
+    signals.template.setTemplatePickerReferenceValue$,
+  );
+  if (!mounted) {
+    return null;
+  }
+  return (
+    <TemplatePickerDialog
+      value={referenceValue ?? undefined}
+      onChange={picker.onChange}
+      open={open}
+      onClose={() => {
+        setOpen(false);
+      }}
+      onCloseComplete={() => {
+        setReferenceValue(null);
+        completeClose();
+      }}
+      presentationItems={presentationItems}
+      runtime={runtime}
+      signals={signals}
+    />
   );
 }
 
 function ComposerTemplatePickerSlot({ signals }: { signals: ComposerSignals }) {
   const picker = useComposerTemplatePicker(signals);
+  const addMenuEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ComposerAddMenu] === true;
   return (
-    <TemplatePickerButton
-      picker={picker}
-      presentationItems={PRESENTATION_TEMPLATE_PICKER_ITEMS}
-      runtime={signals.template.templatePreview}
-      signals={signals}
-    />
+    <>
+      {!addMenuEnabled && <TemplatePickerButton signals={signals} />}
+      <TemplatePickerDialogSlot
+        picker={picker}
+        presentationItems={PRESENTATION_TEMPLATE_PICKER_ITEMS}
+        runtime={signals.template.templatePreview}
+        signals={signals}
+      />
+    </>
   );
 }
 
@@ -6943,14 +7074,25 @@ function CreateWorkflowPromptButton({
   );
 }
 
-function ComposerWorkflowPromptSlot({ signals }: { signals: ComposerSignals }) {
+/** Turns the draft into a workflow prompt; a menu row once the add menu owns it. */
+function useCreateWorkflowPrompt(signals: ComposerSignals) {
   const createWorkflowPrompt = useSet(signals.workflow.createWorkflowPrompt$);
   const pageSignal = useGet(pageSignal$);
+  return () => {
+    detach(createWorkflowPrompt(pageSignal), Reason.DomCallback);
+  };
+}
+
+function ComposerWorkflowPromptSlot({ signals }: { signals: ComposerSignals }) {
+  const onCreateWorkflowPrompt = useCreateWorkflowPrompt(signals);
+  const addMenuEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ComposerAddMenu] === true;
+  if (addMenuEnabled) {
+    return null;
+  }
   return (
     <CreateWorkflowPromptButton
-      onCreateWorkflowPrompt={() => {
-        detach(createWorkflowPrompt(pageSignal), Reason.DomCallback);
-      }}
+      onCreateWorkflowPrompt={onCreateWorkflowPrompt}
     />
   );
 }
@@ -7193,7 +7335,7 @@ function AddConnectorsDialog({
       <DialogContent
         ref={registerConnectionDialog}
         maxWidth="2xl"
-        contentClassName="okou-app flex flex-col"
+        contentClassName="flex flex-col"
         aria-describedby={undefined}
       >
         <DialogHeader className="shrink-0">
@@ -8699,26 +8841,14 @@ function ComputerUseDownloadDialog({
 // ---------------------------------------------------------------------------
 
 interface MicButtonStatus {
-  readonly recording: boolean;
   readonly starting: boolean;
-  readonly transcribing: boolean;
   readonly quotaLoading: boolean;
 }
 
 function micButtonAriaLabel(status: MicButtonStatus): string {
-  if (status.recording) {
-    return i18n.t(($) => {
-      return $.chat.voice.stopRecording;
-    });
-  }
   if (status.starting) {
     return i18n.t(($) => {
       return $.chat.voice.starting;
-    });
-  }
-  if (status.transcribing) {
-    return i18n.t(($) => {
-      return $.chat.voice.transcribing;
     });
   }
   if (status.quotaLoading) {
@@ -8732,19 +8862,9 @@ function micButtonAriaLabel(status: MicButtonStatus): string {
 }
 
 function micButtonTooltip(status: MicButtonStatus): string {
-  if (status.recording) {
-    return i18n.t(($) => {
-      return $.chat.voice.stopRecording;
-    });
-  }
   if (status.starting) {
     return i18n.t(($) => {
       return $.chat.voice.openingMicrophone;
-    });
-  }
-  if (status.transcribing) {
-    return i18n.t(($) => {
-      return $.chat.voice.transcribingProgress;
     });
   }
   if (status.quotaLoading) {
@@ -8757,17 +8877,6 @@ function micButtonTooltip(status: MicButtonStatus): string {
   });
 }
 
-function voiceDraftMicButtonStatus(
-  recording: boolean,
-  action: ComposerActions["voiceAction"],
-) {
-  return {
-    recording: recording && action !== "start",
-    starting: action === "start",
-    transcribing: action === "finish" || action === "retry",
-  };
-}
-
 function MicButton({
   signals,
   actions,
@@ -8778,32 +8887,16 @@ function MicButton({
   const available = useGet(audioInputAvailable$);
   const quotaState = useLoadableState(audioInputQuota$);
   const quotaResolved = useLastResolved(audioInputQuota$) !== undefined;
-  const voiceInputV2Enabled = useGet(voiceInputV2Enabled$);
   // The last resolved status keeps this control stable while a composer
   // target reads its stored draft; run$ awaits that read before acting.
   const voiceDraftStatus = useLastResolved(signals.voice.state$)?.status;
-  const sttRecording = useGet(sttRecording$);
-  const sttStarting = useGet(sttStarting$);
-  const sttTranscribing = useGet(sttTranscribing$);
-  const capture = useGet(signals.voice.capture$);
-  const { recording, starting, transcribing } = voiceInputV2Enabled
-    ? voiceDraftMicButtonStatus(capture !== null, actions.voiceAction)
-    : {
-        recording: sttRecording,
-        starting: sttStarting,
-        transcribing: sttTranscribing,
-      };
-  const voiceLevel = useGet(sttVoiceLevel$);
-  const voiceLevelFill = `${Math.round((voiceLevel / 3) * 100)}%`;
+  const starting = actions.voiceAction === "start";
 
   const signal = useGet(pageSignal$);
-  const draftLoading = voiceInputV2Enabled && voiceDraftStatus === undefined;
-  const actionDisabled =
-    starting || transcribing || (!recording && !quotaResolved);
+  const draftLoading = voiceDraftStatus === undefined;
+  const actionDisabled = starting || !quotaResolved;
   const status = {
-    recording,
     starting,
-    transcribing,
     quotaLoading: quotaState === "loading" && !quotaResolved,
   };
 
@@ -8828,37 +8921,20 @@ function MicButton({
               // Background draft checks should not dim the mic on thread switches.
               "disabled:opacity-100": draftLoading && !actionDisabled,
               "bg-[#2E9E9F] text-white hover:bg-[#279394] hover:text-white":
-                recording || starting || transcribing,
+                starting,
             })}
             data-composer-voice-toggle
             onClick={handleClick}
             disabled={actionDisabled || draftLoading}
             aria-label={micButtonAriaLabel(status)}
-            aria-busy={starting || transcribing}
-            aria-keyshortcuts={
-              voiceInputV2Enabled
-                ? COMPOSER_VOICE_INPUT_ARIA_KEY_SHORTCUTS
-                : undefined
-            }
+            aria-busy={starting}
+            aria-keyshortcuts={COMPOSER_VOICE_INPUT_ARIA_KEY_SHORTCUTS}
           >
-            {starting || transcribing ? (
+            {starting ? (
               <span
                 className="block size-[17px] rounded-full border-2 border-[rgb(255_255_255_/_0.35)] border-t-[#ffffff] pointer-events-none [transform:rotate(0deg)_translateZ(0)] origin-center [backface-visibility:hidden] [will-change:transform] animate-mic-starting-spin"
                 aria-hidden="true"
               />
-            ) : recording ? (
-              <>
-                <span
-                  className="absolute bottom-4 left-1/2 h-2 w-[5px] rounded-full bg-[rgb(255_255_255_/_0.18)] overflow-hidden pointer-events-none [transform:translateX(-50%)] after:absolute after:right-0 after:bottom-0 after:left-0 after:h-[var(--mic-volume-fill,0%)] after:rounded-[inherit] after:bg-[linear-gradient(to_top,#bdf9ff,#ffffff)] after:content-[''] after:transition-[height] after:duration-[0.12s] after:ease-[cubic-bezier(0.25,0.1,0.25,1)]"
-                  aria-hidden="true"
-                  style={
-                    {
-                      "--mic-volume-fill": voiceLevelFill,
-                    } as CSSProperties
-                  }
-                />
-                <Mic size={17} className="relative" />
-              </>
             ) : (
               <Mic size={18} />
             )}
@@ -8870,11 +8946,9 @@ function MicButton({
           className="flex flex-col items-center gap-1 py-1.5"
         >
           <span>{micButtonTooltip(status)}</span>
-          {voiceInputV2Enabled && (
-            <kbd className="whitespace-nowrap font-sans text-xs opacity-70">
-              {getShortcutLabel(COMPOSER_VOICE_INPUT_SHORTCUT)}
-            </kbd>
-          )}
+          <kbd className="whitespace-nowrap font-sans text-xs opacity-70">
+            {getShortcutLabel(COMPOSER_VOICE_INPUT_SHORTCUT)}
+          </kbd>
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>
@@ -9087,6 +9161,74 @@ function ComposerAttachButton({ signals }: { signals: ComposerSignals }) {
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>
+  );
+}
+
+/**
+ * Exactly the three toolbar buttons the `+` replaces, in their old left-to-right
+ * order. The rule is separate because the first two add content to the message
+ * while the third rewrites the draft into a workflow prompt.
+ *
+ * Starting a presentation, image, video, website or visualization deliberately
+ * stays out: the task chips sit directly under the composer and already reach
+ * every one of them in a single click, so a second copy behind the `+` would be
+ * the longer route to the same place.
+ */
+function useComposerAddMenuGroups(
+  signals: ComposerSignals,
+): readonly ComposerAddMenuGroup[] {
+  const { t } = useTranslation();
+  const fileInput = useGet(signals.draft.composerFileInput$);
+  const template = useTemplatePickerTrigger(signals);
+  const onCreateWorkflowPrompt = useCreateWorkflowPrompt(signals);
+  return [
+    [
+      {
+        id: "attach",
+        Icon: Paperclip,
+        label: t(($) => {
+          return $.chat.attachments.attach;
+        }),
+        onSelect: () => {
+          fileInput?.click();
+        },
+      },
+      {
+        id: "template",
+        Icon: SwatchBook,
+        label: template.label,
+        onSelect: template.open,
+        onPrewarm: template.prewarm,
+      },
+    ],
+    [
+      {
+        id: "workflow",
+        Icon: Route,
+        label: t(($) => {
+          return $.chat.composer.createWorkflow;
+        }),
+        onSelect: onCreateWorkflowPrompt,
+      },
+    ],
+  ];
+}
+
+/**
+ * Split from the switch below so the paperclip path never subscribes to the
+ * template picker's signals just to build rows it will not render.
+ */
+function ComposerAddMenuSlot({ signals }: { signals: ComposerSignals }) {
+  return <ComposerAddMenu groups={useComposerAddMenuGroups(signals)} />;
+}
+
+function ComposerAddSlot({ signals }: { signals: ComposerSignals }) {
+  const addMenuEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ComposerAddMenu] === true;
+  return addMenuEnabled ? (
+    <ComposerAddMenuSlot signals={signals} />
+  ) : (
+    <ComposerAttachButton signals={signals} />
   );
 }
 
@@ -9635,7 +9777,7 @@ type ComposerResolvedVideoModelPickerState =
 // holding three of them read as the heaviest thing in the composer.
 function composerModelPickerTriggerClassName(): string {
   return cn(
-    "h-8 w-8 max-w-none gap-0 overflow-hidden border-transparent bg-transparent px-0 text-sm text-muted-foreground transition-colors sm:w-auto sm:max-w-[14rem] sm:gap-1 sm:px-3",
+    "h-8 w-8 max-w-none gap-0 overflow-hidden border-transparent bg-transparent px-0 text-sm text-muted-foreground transition-colors sm:w-auto sm:max-w-[14rem] sm:gap-1 sm:px-2",
     "[&>[data-slot=select-value]]:flex [&>[data-slot=select-value]]:items-center [&>[data-slot=select-value]]:justify-center sm:[&>[data-slot=select-value]]:justify-start",
     "[&>[data-slot=select-icon]]:hidden sm:[&>[data-slot=select-icon]]:block",
     "hover:bg-state-hover hover:text-foreground data-popup-open:bg-state-hover data-popup-open:text-foreground",
@@ -9659,10 +9801,13 @@ function ComposerRunModelPickerControl({
   mediaModelPanel: MediaModelPanelState | undefined;
 }) {
   const { t } = useTranslation();
-  const modelMenuEnabled = useGet(modelPickerMenuEnabled$);
+  // One switch owns how the picker looks. Effort keeps its own switch, because
+  // it is a run setting the composer shows beside the model rather than a way
+  // of drawing the model list.
+  const modelMenuEnabled = useGet(modelPickerFlyoutEnabled$);
   // The flyout needs the room a phone does not have; narrow viewports keep the
   // menu's pages until the sheet layout lands.
-  const modelFlyoutEnabled = useGet(modelPickerFlyoutEnabled$) && desktopLayout;
+  const modelFlyoutEnabled = modelMenuEnabled && desktopLayout;
   const modelPickerOpen = useGet(signals.model.modelPickerOpen$);
   const setModelPickerOpen = useSet(signals.model.setModelPickerOpen$);
   const setLifecycleRef = useSet(signals.model.desktopModelPickerLifecycleRef$);
@@ -9675,11 +9820,10 @@ function ComposerRunModelPickerControl({
           return $.chat.composer.selectModel;
         })}
         triggerClassName={composerModelPickerTriggerClassName()}
-        menuSignals={
-          modelMenuEnabled || modelFlyoutEnabled
-            ? signals.model.menu
-            : undefined
-        }
+        menuSignals={modelMenuEnabled ? signals.model.menu : undefined}
+        // The effort control beside it carries the bolt when Fast is on, so the
+        // model keeps its own name.
+        fastShownByCaller
         flyoutLayout={modelFlyoutEnabled}
         onSelected={() => {
           setModelPickerOpen(false);
@@ -9821,14 +9965,33 @@ function ComposerModelPickerControls({
       : undefined;
   return (
     <>
-      <ComposerRunModelPickerControl
-        signals={signals}
-        value={value}
-        onChange={onChange}
-        codexFastModeEnabled={codexFastModeEnabled}
-        desktopLayout={desktopLayout}
-        mediaModelPanel={mediaModelPanel}
-      />
+      {/* Effort and the model are one choice about the next message, so they sit
+          as a pair: no gap between them and 8px of padding each, which leaves
+          16px between the two labels. The row's own gap then separates the pair
+          from the controls that do something else.
+
+          Effort sits level with the model rather than behind it. It is the only
+          way to reach effort and Fast now that the picker's settings page is
+          gone, so it shows at every width; the level's name is one short word,
+          which the row can afford even on a phone. */}
+      <div className="flex items-center">
+        <ChatEffortTrigger
+          value={value}
+          onChange={onChange}
+          triggerClassName={cn(
+            "px-2 text-sm text-muted-foreground",
+            COMPOSER_CONTROL_FOCUS_CLASS,
+          )}
+        />
+        <ComposerRunModelPickerControl
+          signals={signals}
+          value={value}
+          onChange={onChange}
+          codexFastModeEnabled={codexFastModeEnabled}
+          desktopLayout={desktopLayout}
+          mediaModelPanel={mediaModelPanel}
+        />
+      </div>
       <div className="mx-0 h-5 w-px bg-divider/60 sm:mx-0.5" />
     </>
   );
@@ -10005,10 +10168,11 @@ function ComposerExistingMediaModelPickerSlot({
 
 function ComposerModelPickerSlot({ signals }: { signals: ComposerSignals }) {
   const createMode = useGet(signals.create.mode$);
+  const creativeVideo = useGet(signals.create.creativeVideo$);
   if (createMode === "image" && signals.imageModel) {
     return <ComposerCreateImageModelPicker model={signals.imageModel} />;
   }
-  if (createMode === "video" && signals.videoModel) {
+  if (creativeVideo && signals.videoModel) {
     return (
       <ComposerCreateVideoModelPicker
         model={signals.videoModel}
@@ -10057,16 +10221,21 @@ function ComposerModelScopeCard({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="relative z-0 mx-3 sm:ml-auto sm:mr-4 sm:w-fit sm:max-w-[calc(100%_-_2rem)]">
+    <div className="relative z-0">
       {/* The surface extends one content-height behind the composer. The
           composer stays above it (z-10), while the controls remain fully
-          visible in the half that protrudes below. */}
+          visible in the half that protrudes below. It spans the composer's
+          width and repeats the card's own rounded-3xl, so the only corners it
+          ever shows — the bottom two — continue the card's outline instead of
+          turning inside it. */}
       <div
-        className="pointer-events-none absolute inset-x-0 -top-full bottom-0 rounded-xl bg-gray-50"
+        className="pointer-events-none absolute inset-x-0 -top-full bottom-0 rounded-3xl bg-gray-50"
         aria-hidden="true"
       />
+      {/* Both ends sit 20px in, matching the text column of the card above:
+          the ghost action already carries 12px of its own padding. */}
       <div
-        className="relative flex flex-wrap items-center gap-2 p-1 pl-3 text-xs sm:flex-nowrap"
+        className="relative flex flex-wrap items-center gap-2 py-1 pl-5 pr-2 text-xs sm:flex-nowrap"
         role="group"
         aria-label={label}
         aria-live="polite"
@@ -10837,10 +11006,10 @@ function ComposerFooter({
   actions: ComposerActions;
   connectorActions: ComposerConnectorActions;
 }) {
-  const createMode = useGet(signals.create.mode$);
-  const narrowVideoGap =
-    createMode === "video" ? "@max-[344px]/composer:gap-0" : undefined;
-  const voiceInputV2Enabled = useGet(voiceInputV2Enabled$);
+  const creativeVideo = useGet(signals.create.creativeVideo$);
+  const narrowVideoGap = creativeVideo
+    ? "@max-[344px]/composer:gap-0"
+    : undefined;
   const voiceDraft = useResolved(signals.voice.state$);
   const capture = useGet(signals.voice.capture$);
   const status =
@@ -10857,7 +11026,6 @@ function ComposerFooter({
     ComposerVoiceInputStatus,
     "idle"
   > | null =
-    voiceInputV2Enabled &&
     status !== undefined &&
     status !== "idle" &&
     (status !== "recording" || capture !== null)
@@ -10866,10 +11034,13 @@ function ComposerFooter({
   return withChatScrollLayout(
     <div
       className={cn(
-        "flex shrink-0 items-center justify-between gap-1 sm:gap-2",
+        "shrink-0 items-center justify-between gap-1 sm:gap-2",
+        creativeVideo && !activeVoiceDraftStatus
+          ? "grid grid-cols-[minmax(0,1fr)_auto] @min-[640px]/composer:flex"
+          : "flex",
         activeVoiceDraftStatus ? "px-2 pb-3 pt-3" : "px-4 pb-4 pt-1",
         narrowVideoGap,
-        createMode === "video" && "@max-[344px]/composer:px-3",
+        creativeVideo && "@max-[344px]/composer:px-3",
       )}
     >
       {activeVoiceDraftStatus ? (
@@ -10882,24 +11053,35 @@ function ComposerFooter({
         />
       ) : (
         <>
-          <div
-            className={cn(
-              "flex min-w-0 items-center gap-1 text-muted-foreground sm:gap-1.5",
-              narrowVideoGap,
-            )}
-          >
-            <ComposerAttachButton signals={signals} />
-            <ComposerTemplatePickerSlot signals={signals} />
-            <ComposerWorkflowPromptSlot signals={signals} />
-            <ComposerConnectorsSlot
-              signals={signals}
-              actions={connectorActions}
-            />
-            {/* Sits with the other input-scoped controls rather than beside
-                the model picker: it configures the message being written,
-                not which model the composer points at. */}
+          <div className="contents @min-[640px]/composer:flex @min-[640px]/composer:min-w-0 @min-[640px]/composer:items-center @min-[640px]/composer:gap-1.5">
+            <div
+              className={cn(
+                "flex min-w-0 items-center gap-1 text-muted-foreground sm:gap-1.5",
+                narrowVideoGap,
+              )}
+            >
+              <ComposerAddSlot signals={signals} />
+              <ComposerTemplatePickerSlot signals={signals} />
+              <ComposerWorkflowPromptSlot signals={signals} />
+              <ComposerConnectorsSlot
+                signals={signals}
+                actions={connectorActions}
+              />
+              <ComposerTaskControls signals={signals} />
+            </div>
+            {/*
+              The video spec follows the type it describes, among the controls
+              that act on the run rather than on the message, and on the same
+              line as the model it is resolved against.
+
+              It is a sibling of the icon row rather than a member of it: below
+              640px this group is `display: contents`, so the chip reaches the
+              footer grid directly and its own `col-span-2 row-start-1 w-full`
+              gives it a full-width first row instead of competing with four
+              icons for a 344px line. Nested inside the row, those placements
+              would resolve against a flex box and do nothing.
+            */}
             <ComposerVideoOptionsChip signals={signals} />
-            <ComposerPresentationOptions signals={signals} />
           </div>
           <div
             className={cn(
@@ -10933,11 +11115,9 @@ function ComposerCard({ signals }: { signals: ComposerSignals }) {
   return (
     <Card
       data-slot="chat-composer-card"
+      surface="composer"
       className={cn(
-        // Paint focus on the existing border. A separately promoted border
-        // with a negative inset can snap differently from the card and SVGs.
-        "@container/composer relative z-10 overflow-visible rounded-3xl border-gray-300 bg-card shadow-[var(--okou-card-shadow)] transition-[border-color] duration-[220ms] ease-[cubic-bezier(0.4,0,0.2,1)] focus-within:border-surface-focus motion-reduce:transition-none",
-        "after:pointer-events-none after:absolute after:inset-0 after:rounded-[inherit] after:opacity-0 after:shadow-[var(--okou-composer-focus-veil)] after:transition-opacity after:duration-[220ms] after:ease-[cubic-bezier(0.4,0,0.2,1)] after:content-[''] focus-within:after:opacity-100 motion-reduce:after:transition-none",
+        "@container/composer z-10",
         "[@media(display-mode:standalone)]:[[data-chat-composer]_&]:scroll-mb-4",
         dragOver && "outline outline-2 outline-blue-400/60",
       )}
@@ -10967,10 +11147,7 @@ function ComposerCard({ signals }: { signals: ComposerSignals }) {
           ref={actions.bind}
           className={cn("flex flex-col", layoutHeightClassNames.shell)}
         >
-          <ComposerImportedTemplateUrlRefreshLifecycle signals={signals} />
-          <ComposerCreateControls signals={signals} />
           <ComposerAttachments signals={signals} />
-          <ComposerSelectedTask signals={signals} />
           <ComposerInputSlot
             signals={signals}
             actions={actions}

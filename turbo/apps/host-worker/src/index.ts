@@ -2,13 +2,26 @@ import {
   artifactDeliveryKey,
   artifactDeliveryRecordSchema,
   artifactDeliveryRegistrationKey,
-  isArtifactPublicationFilePath,
+  isArtifactDeliveryFilePath,
   type ArtifactDeliveryRecord,
 } from "@okouai/api-contracts/contracts/artifact-delivery";
 import {
   artifactSharePolicySchema,
   type ArtifactSharePolicy,
 } from "@okouai/api-contracts/contracts/artifact-shares";
+import {
+  sharedThreadArtifactPolicyKey,
+  sharedThreadArtifactPolicySchema,
+} from "@okouai/api-contracts/contracts/shared-thread-artifacts";
+import {
+  serveArtifactThumbnail,
+  type ImagesBinding,
+} from "./artifact-thumbnail";
+import { PRIVATE_VIDEO_POSTER_PATH } from "@okouai/api-contracts/contracts/artifact-video-preview";
+import {
+  servePrivateVideoPoster,
+  type MediaBinding,
+} from "./private-video-preview";
 
 interface R2ObjectBody {
   readonly size: number;
@@ -28,6 +41,8 @@ interface R2Bucket {
 }
 
 interface Env {
+  readonly IMAGES?: ImagesBinding;
+  readonly MEDIA?: MediaBinding;
   readonly HOSTED_SITES_BUCKET: R2Bucket;
   readonly PRIVATE_ARTIFACTS_BUCKET?: R2Bucket;
   readonly PUBLIC_ARTIFACTS_BUCKET?: R2Bucket;
@@ -386,6 +401,19 @@ async function serveHostedSite(
   env: Env,
   execution: ExecutionContext,
 ): Promise<Response> {
+  const url = new URL(request.url);
+  if (
+    url.pathname === PRIVATE_VIDEO_POSTER_PATH &&
+    [env.HOST_DOMAIN, env.OKOU_HOST_DOMAIN].some((domain) => {
+      return url.hostname === `files.${domain}`;
+    })
+  ) {
+    return servePrivateVideoPoster(
+      request,
+      env.PRIVATE_ARTIFACTS_BUCKET,
+      env.MEDIA,
+    );
+  }
   if (request.method !== "GET" && request.method !== "HEAD") {
     return new Response("Method not allowed", {
       status: 405,
@@ -393,7 +421,6 @@ async function serveHostedSite(
     });
   }
 
-  const url = new URL(request.url);
   const pathname = normalizeRequestPath(url.pathname);
   if (!pathname) return new Response("Bad path", { status: 400 });
   const fileHost = url.hostname === env.PUBLIC_ARTIFACT_HOST;
@@ -489,6 +516,58 @@ function artifactFileAlias(
   return pathname.slice(1);
 }
 
+async function serveGrantedArtifactDelivery(
+  request: Request,
+  env: Env,
+  delivery: {
+    readonly record: Extract<
+      ArtifactDeliveryRecord,
+      { kind: "publication" | "thread-resource" }
+    >;
+    readonly pathname: string;
+    readonly fileHost: boolean;
+  },
+  execution: ExecutionContext,
+): Promise<Response> {
+  const { record, pathname, fileHost } = delivery;
+  if ((record.targetKind === "file") !== fileHost)
+    return privateResponse(notFoundResponse());
+  // The legacy one-year cache rule excludes only canonical share paths.
+  // Decoding or trimming a different path must not expose share bytes there.
+  if (
+    fileHost &&
+    !isArtifactDeliveryFilePath(
+      `/${artifactFileAlias(new URL(request.url).pathname, env.PUBLIC_ARTIFACT_HOST)}`,
+    )
+  )
+    return privateResponse(notFoundResponse());
+  const policy =
+    record.kind === "thread-resource"
+      ? await readSharedThreadResource(env, record)
+      : await readPublicShare(
+          env,
+          [record.publicBrand],
+          record.shareId,
+          record.publicToken,
+        );
+  if (policy instanceof Response) return policy;
+  if (!policy || policy.target.kind !== record.targetKind)
+    return privateResponse(notFoundResponse());
+  const response = await serveAuthorizedArtifact(
+    request,
+    env,
+    fileHost ? "/" : pathname,
+    policy,
+    execution,
+  );
+  if (record.kind === "thread-resource" && response.ok)
+    response.headers.set(
+      "Cache-Control",
+      "private, max-age=31536000, immutable",
+    );
+  return response;
+}
+
 async function serveArtifactDelivery(
   request: Request,
   env: Env,
@@ -522,32 +601,11 @@ async function serveArtifactDelivery(
   );
   if (registered.length > 1) return privateResponse(notFoundResponse());
   const record = registered[0];
-  if (record?.kind === "publication") {
-    if ((record.targetKind === "file") !== fileHost)
-      return privateResponse(notFoundResponse());
-    // The legacy one-year cache rule excludes only canonical share paths.
-    // Decoding or trimming a different path must not expose share bytes there.
-    if (
-      fileHost &&
-      !isArtifactPublicationFilePath(
-        `/${artifactFileAlias(new URL(request.url).pathname, env.PUBLIC_ARTIFACT_HOST)}`,
-      )
-    )
-      return privateResponse(notFoundResponse());
-    const policy = await readPublicShare(
-      env,
-      [record.publicBrand],
-      record.shareId,
-      record.publicToken,
-    );
-    if (policy instanceof Response) return policy;
-    if (!policy || policy.target.kind !== record.targetKind)
-      return privateResponse(notFoundResponse());
-    return await serveAuthorizedArtifact(
+  if (record?.kind === "publication" || record?.kind === "thread-resource") {
+    return await serveGrantedArtifactDelivery(
       request,
       env,
-      fileHost ? "/" : pathname,
-      policy,
+      { record, pathname, fileHost },
       execution,
     );
   }
@@ -556,6 +614,7 @@ async function serveArtifactDelivery(
       return privateResponse(notFoundResponse());
     return serveLegacyArtifactFile(
       request,
+      env,
       env.PUBLIC_ARTIFACTS_BUCKET,
       record,
       execution,
@@ -570,10 +629,29 @@ async function serveArtifactDelivery(
 
 async function serveLegacyArtifactFile(
   request: Request,
+  env: Env,
   bucket: R2Bucket,
   file: Extract<ArtifactDeliveryRecord, { kind: "legacy-file" }>,
   execution: ExecutionContext,
 ): Promise<Response> {
+  if (new URL(request.url).searchParams.has("thumbnail")) {
+    const response = await serveArtifactThumbnail(request, {
+      sourceKey: `public:${file.key}`,
+      images: env.IMAGES,
+      readSource: () => {
+        return serveArtifactFile(new Request(request.url), bucket, file);
+      },
+      waitUntil: (promise) => {
+        return execution.waitUntil(promise);
+      },
+    });
+    if (!response.ok) return privateResponse(response);
+    response.headers.set(
+      "Cache-Control",
+      "public, max-age=31536000, immutable",
+    );
+    return response;
+  }
   const cache = (caches as CacheStorage & { readonly default: Cache }).default;
   const key = new Request(request.url);
   const ranged = request.headers.has("Range");
@@ -812,7 +890,9 @@ interface PrivatePreviewGrant {
 function privateResponse(response: Response): Response {
   const headers = new Headers(response.headers);
   headers.set("Cache-Control", "private, no-store");
-  headers.set("Referrer-Policy", "no-referrer");
+  // Let this isolated origin identify its own CSS/JS/image requests to the
+  // hosted-site WAF. Cross-origin requests must not disclose preview tokens.
+  headers.set("Referrer-Policy", "same-origin");
   // Generated code receives only its own short-lived origin, never app cookies.
   // Prevent service workers from bypassing the network authorization expiry.
   headers.set(
@@ -982,11 +1062,37 @@ async function readPublicShare(
 }
 
 /** Callers must read current authorization before every content-cache hit. */
+async function readSharedThreadResource(
+  env: Env,
+  record: Extract<ArtifactDeliveryRecord, { kind: "thread-resource" }>,
+): Promise<Pick<ArtifactSharePolicy, "publicBrand" | "target"> | null> {
+  const object = await env.HOSTED_SITES_BUCKET.get(
+    sharedThreadArtifactPolicyKey(record.publicBrand, record.threadId),
+  );
+  if (!object) return null;
+  const parsed = sharedThreadArtifactPolicySchema.safeParse(
+    await new Response(object.body).json(),
+  );
+  if (
+    !parsed.success ||
+    parsed.data.threadId !== record.threadId ||
+    parsed.data.publicBrand !== record.publicBrand ||
+    parsed.data.status !== "active"
+  )
+    return null;
+  const target = parsed.data.resources[record.publicToken];
+  return target?.kind === record.targetKind &&
+    (record.targetId === undefined || target.id === record.targetId)
+    ? { publicBrand: record.publicBrand, target }
+    : null;
+}
+
+/** Authorization is evaluated before reading these immutable cached bytes. */
 async function serveAuthorizedArtifact(
   request: Request,
   env: Env,
   pathname: string,
-  policy: ArtifactSharePolicy,
+  policy: Pick<ArtifactSharePolicy, "publicBrand" | "target">,
   execution: ExecutionContext,
 ): Promise<Response> {
   const denied = () => {
@@ -1000,12 +1106,31 @@ async function serveAuthorizedArtifact(
     (pathname !== "/" || request.headers.get("Via")?.includes("image-resizing"))
   )
     return denied();
+  if (
+    target.kind === "file" &&
+    new URL(request.url).searchParams.has("thumbnail")
+  ) {
+    const bucket = env.PRIVATE_ARTIFACTS_BUCKET;
+    if (!bucket) return denied();
+    return privateResponse(
+      await serveArtifactThumbnail(request, {
+        sourceKey: `private:${target.key}`,
+        images: env.IMAGES,
+        readSource: () => {
+          return serveArtifactFile(new Request(request.url), bucket, target);
+        },
+        waitUntil: (promise) => {
+          return execution.waitUntil(promise);
+        },
+      }),
+    );
+  }
   const cacheUrl = new URL(request.url);
-  cacheUrl.pathname = `/__artifact-content/${policy.publicBrand}/${target.kind === "html" ? target.snapshotId : encodeURIComponent(target.key)}${pathname}`;
+  cacheUrl.pathname = `/__artifact-content/${policy.publicBrand}/${target.kind === "html" ? `${target.snapshotId}/${target.id}` : encodeURIComponent(target.key)}${pathname}`;
   cacheUrl.search = `?html=${acceptsHtml(request)}`;
   const key = new Request(cacheUrl);
-  // Cache only bytes on this Worker's own host. Browser/CDN caches outside
-  // this Worker must re-enter authorization; public responses are no-store.
+  // Cache bytes separately from authorization. Delivery applies its browser
+  // cache policy after this lookup; every network request checks the grant.
   const cache = (caches as CacheStorage & { readonly default: Cache }).default;
   const rangedFile = target.kind === "file" && request.headers.has("Range");
   const cached = rangedFile ? undefined : await cache.match(key);

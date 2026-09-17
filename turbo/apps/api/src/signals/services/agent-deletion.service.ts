@@ -18,6 +18,11 @@ import { lockCanonicalAgentMutation } from "./agent-mutation-lock.service";
 import { removeAgentInstructionsStorageInTransaction } from "./agent-instructions-storage-transaction.service";
 import { reconcileAutomationEventWatches } from "./automation-event-watch-lifecycle.service";
 import { purgeDeletedStoragePrefix$ } from "./storage-prefix-purge.service";
+import {
+  deleteRunConversations,
+  logCommittedConversationDeletion,
+  releaseDeletedConversationReferences,
+} from "./conversation-history-deletion.service";
 
 export function agentExistsInOrg(args: {
   readonly orgId: string;
@@ -111,9 +116,10 @@ async function lockAgentLifecycleForDeletion(tx: Tx, args: DeleteAgentArgs) {
           .where(
             inArray(
               agentRuns.sessionId,
-              sessions.map((session) => {
-                return session.id;
-              }),
+              tx
+                .select({ id: agentSessions.id })
+                .from(agentSessions)
+                .where(eq(agentSessions.agentId, args.agentId)),
             ),
           )
           .orderBy(asc(agentRuns.id))
@@ -135,7 +141,13 @@ async function lockAgentLifecycleForDeletion(tx: Tx, args: DeleteAgentArgs) {
     return { kind: "active-run" as const };
   }
 
-  return { kind: "ready" as const, agentName: agent.name };
+  return {
+    kind: "ready" as const,
+    agentName: agent.name,
+    runIds: runs.map((run) => {
+      return run.id;
+    }),
+  };
 }
 
 async function deleteAgentInTransaction(tx: Tx, args: DeleteAgentArgs) {
@@ -162,6 +174,8 @@ async function deleteAgentInTransaction(tx: Tx, args: DeleteAgentArgs) {
       and(eq(workflows.orgId, args.orgId), eq(workflows.agentId, args.agentId)),
     );
 
+  const removed = await deleteRunConversations(tx, lifecycle.runIds);
+
   await tx
     .delete(agents)
     .where(and(eq(agents.id, args.agentId), eq(agents.orgId, args.orgId)));
@@ -175,6 +189,10 @@ async function deleteAgentInTransaction(tx: Tx, args: DeleteAgentArgs) {
     kind: "deleted" as const,
     s3Prefix,
     automations,
+    conversationDeletion: await releaseDeletedConversationReferences(
+      tx,
+      removed,
+    ),
   };
 }
 
@@ -195,6 +213,9 @@ export const deleteAgentById$ = command(
       throw transaction.error;
     }
     const result = transaction.value;
+    if (result.kind === "deleted") {
+      logCommittedConversationDeletion("agent", result.conversationDeletion);
+    }
     signal.throwIfAborted();
 
     if (result.kind === "ownership-conflict") {

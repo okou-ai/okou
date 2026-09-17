@@ -16,10 +16,8 @@ import flow_metadata
 import flow_metadata_keys as metadata_keys
 import matching
 import request_streaming
-from body_limits import (
-    LARGE_RESPONSE_DECOMPRESS_LIMIT,
-    REQUEST_BODY_BILLING_INSPECTION_LIMIT,
-)
+import stream_capture
+from body_limits import REQUEST_BODY_BILLING_INSPECTION_LIMIT
 from logging_utils import log_proxy_entry
 
 from ...buffer import UsageEvent, buffer_usage_events
@@ -409,22 +407,19 @@ def _parse_response_metadata(flow: http.HTTPFlow) -> dict:
     ``test_truncated_buffer_with_no_hints_skips_billing`` for the buffered
     fallback branch.
     """
-    state = flow.metadata.get(metadata_keys.STREAM_BUFFER_STATE) or {}
-    truncated = bool(state.get("truncated", False))
-    result: dict = {"body_parsed": False, "body_truncated": truncated}
+    result: dict = {"body_parsed": False, "body_truncated": False}
 
     # Streaming branch: NDJSON parser accumulated counts in flow.metadata
     # during response chunks.  Use those directly — the stream_buffer is
     # intentionally tiny (64 KB) for streams and does NOT hold the body.
     #
-    # Override body_truncated to False: the stream_buffer-derived truncated
-    # flag reflects only the forensic capture cap, while NDJSON billing uses
-    # parser state instead of bytes(buf). Reporting body_truncated=True here
+    # Keep body_truncated False: the capture truncation flag reflects only
+    # the forensic cap, while NDJSON billing uses parser state instead of
+    # the retained bytes. Reporting body_truncated=True here
     # would misleadingly tie billing reliability to capture truncation.
     ndjson_state = flow.metadata.get(metadata_keys.X_NDJSON_STATE)
     if ndjson_state is not None:
         result["body_parsed"] = True
-        result["body_truncated"] = False
         result["body_format"] = "ndjson"
         result["response_data_count"] = ndjson_state["data_count"]
         if ndjson_state["includes"]:
@@ -440,13 +435,14 @@ def _parse_response_metadata(flow: http.HTTPFlow) -> dict:
     if isinstance(json_state, dict):
         return {**result, **json_state}
 
-    buf = flow.metadata.get(metadata_keys.STREAM_BUFFER)
-    if not buf:
+    captured_body = stream_capture.captured_response_stream_body(flow)
+    if captured_body is None:
         return result
+    result["body_truncated"] = captured_body.truncated
     if not flow.response:
         return result
-    body, decode_error = body_decoding.decompress_json_usage_body(
-        bytes(buf), flow.response.headers, max_output=LARGE_RESPONSE_DECOMPRESS_LIMIT
+    body, decode_error = body_decoding.decode_captured_json_usage_body(
+        captured_body, flow.response.headers
     )
     if decode_error is not None:
         result["parse_error"] = decode_error

@@ -522,6 +522,85 @@ test("Enable custom connector access when an account becomes available", async (
   ).toBeInTheDocument();
 });
 
+test("Custom connector access rows keep independent save progress", async () => {
+  const researchSave = context.mocks.deferred<void>();
+  const supportSave = context.mocks.deferred<void>();
+  const connector = customConnector({
+    connected: true,
+    missingRequiredFields: [],
+    configuredFieldKeys: ["secret"],
+  });
+  const access = new Map<string, AgentCustomConnectorGrants>();
+  context.mocks.data.agents([
+    listAgent(RESEARCH_ID, "Research"),
+    listAgent(SUPPORT_ID, "Support"),
+  ]);
+  context.mocks.api(customConnectorsContract.list, ({ respond }) => {
+    return respond(200, { connectors: [connector] });
+  });
+  context.mocks.api(
+    agentCustomConnectorsContract.get,
+    ({ params, respond }) => {
+      return respond(200, access.get(params.id) ?? { grants: [] });
+    },
+  );
+  context.mocks.api(
+    agentCustomConnectorsContract.update,
+    async ({ params, body, respond }) => {
+      await (params.id === RESEARCH_ID
+        ? researchSave.promise
+        : supportSave.promise);
+      const grants = { grants: body.grants };
+      access.set(params.id, grants);
+      return respond(200, grants);
+    },
+  );
+  mockCustomAccountSummary(() => {
+    return connector;
+  });
+  await setupCustomPage();
+  click(
+    await waitFor(() => {
+      return getConnectorAction("button", "Manage Acme Search access");
+    }),
+  );
+  const dialog = await screen.findByRole("dialog", {
+    name: "Manage Acme Search access",
+  });
+  const research = getConnectorSwitch(
+    "Authorize Acme Search access for Research",
+    dialog,
+  );
+  const support = getConnectorSwitch(
+    "Authorize Acme Search access for Support",
+    dialog,
+  );
+  click(research);
+  await waitFor(() => {
+    expect(research).toHaveAttribute("aria-disabled", "true");
+  });
+  expect(support).not.toHaveAttribute("aria-disabled", "true");
+  click(support);
+  await waitFor(() => {
+    expect(support).toHaveAttribute("aria-disabled", "true");
+  });
+  expect(research).toHaveAttribute("aria-disabled", "true");
+
+  researchSave.resolve();
+  await waitFor(() => {
+    expect(
+      getConnectorSwitch("Revoke Acme Search access for Research", dialog),
+    ).not.toHaveAttribute("aria-disabled", "true");
+  });
+  expect(support).toHaveAttribute("aria-disabled", "true");
+  supportSave.resolve();
+  await waitFor(() => {
+    expect(
+      getConnectorSwitch("Revoke Acme Search access for Support", dialog),
+    ).not.toHaveAttribute("aria-disabled", "true");
+  });
+});
+
 test("Manage agent access and permissions for a custom connector", async () => {
   const connector = customConnector({
     connected: true,

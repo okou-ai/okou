@@ -1,7 +1,11 @@
+import { feishuRequestPlatform$ as feishuPlatform$ } from "../context/feishu-platform";
+import { FEISHU_PLATFORMS } from "@okouai/core/feishu-platform";
 import { command, computed } from "ccstate";
 import { eq } from "drizzle-orm";
-import { feishuConnectContract } from "@okouai/api-contracts/contracts/feishu-connect";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import {
+  feishuConnectContract,
+  larkConnectContract,
+} from "@okouai/api-contracts/contracts/feishu-connect";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import {
   PUBLIC_BRAND_PRESENTATION,
@@ -27,26 +31,32 @@ import {
   updateFeishuInstallationAgent$,
 } from "../services/feishu-connect.service";
 
-function adminRequired() {
+function adminRequired(platformName: string) {
   return {
     status: 403 as const,
     body: {
       error: {
-        message: "Only organization admins can manage Feishu bots",
+        message: `Only organization admins can manage ${platformName} bots`,
         code: "FORBIDDEN" as const,
       },
     },
   };
 }
 
-const feishuIntegrationDisabled = Object.freeze({
-  status: 403 as const,
-  body: Object.freeze({
-    error: Object.freeze({
-      message: "Feishu integration is not enabled",
-      code: "FORBIDDEN" as const,
+const feishuPlatformName$ = computed((get) => {
+  return FEISHU_PLATFORMS[get(feishuPlatform$)].name;
+});
+
+const feishuIntegrationDisabled$ = computed((get) => {
+  return Object.freeze({
+    status: 403 as const,
+    body: Object.freeze({
+      error: Object.freeze({
+        message: `${get(feishuPlatformName$)} integration is not enabled`,
+        code: "FORBIDDEN" as const,
+      }),
     }),
-  }),
+  });
 });
 
 const feishuIntegrationEnabled$ = computed(async (get) => {
@@ -56,23 +66,27 @@ const feishuIntegrationEnabled$ = computed(async (get) => {
     auth.orgId,
     auth.userId,
   );
-  return isFeatureEnabled(FeatureSwitchKey.FeishuIntegration, context);
+  return isFeatureEnabled(
+    FEISHU_PLATFORMS[get(feishuPlatform$)].featureSwitch,
+    context,
+  );
 });
 
-function appIdInUse() {
+function appIdInUse(platformName: string) {
   return conflict(
-    `This Feishu App ID is already registered in ${PUBLIC_BRAND_PRESENTATION.brandName}`,
+    `This ${platformName} App ID is already registered in ${PUBLIC_BRAND_PRESENTATION.brandName}`,
   );
 }
 
 const getStatus$ = computed(async (get) => {
   if (!(await get(feishuIntegrationEnabled$))) {
-    return feishuIntegrationDisabled;
+    return get(feishuIntegrationDisabled$);
   }
   const auth = get(organizationAuthContext$);
   const body = await get(
     feishuConnectStatus({
       orgId: auth.orgId,
+      platform: get(feishuPlatform$),
       userId: auth.userId,
       publicBrand: PUBLIC_BRAND,
       isAdmin: auth.orgRole === "admin",
@@ -83,11 +97,11 @@ const getStatus$ = computed(async (get) => {
 
 const checkAppId$ = computed(async (get) => {
   if (!(await get(feishuIntegrationEnabled$))) {
-    return feishuIntegrationDisabled;
+    return get(feishuIntegrationDisabled$);
   }
   const auth = get(organizationAuthContext$);
   if (auth.orgRole !== "admin") {
-    return adminRequired();
+    return adminRequired(get(feishuPlatformName$));
   }
   const query = get(queryOf(feishuConnectContract.checkAppId));
   const [installation] = await get(db$)
@@ -96,18 +110,18 @@ const checkAppId$ = computed(async (get) => {
     .where(eq(feishuOrgInstallations.appId, query.appId))
     .limit(1);
   return installation
-    ? appIdInUse()
+    ? appIdInUse(get(feishuPlatformName$))
     : { status: 200 as const, body: { available: true as const } };
 });
 
 const setup$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!(await get(feishuIntegrationEnabled$))) {
-    return feishuIntegrationDisabled;
+    return get(feishuIntegrationDisabled$);
   }
   const auth = get(organizationAuthContext$);
   const publicBrand = PUBLIC_BRAND;
   if (auth.orgRole !== "admin") {
-    return adminRequired();
+    return adminRequired(get(feishuPlatformName$));
   }
   const bodyResult = await get(bodyResultOf(feishuConnectContract.setup));
   signal.throwIfAborted();
@@ -119,6 +133,7 @@ const setup$ = command(async ({ get, set }, signal: AbortSignal) => {
       configureFeishuInstallation$,
       {
         orgId: auth.orgId,
+        platform: get(feishuPlatform$),
         userId: auth.userId,
         publicBrand,
         ...bodyResult.data,
@@ -131,7 +146,7 @@ const setup$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!configured.ok) {
     if (configured.error instanceof InvalidFeishuCredentialsError) {
       return badRequestMessage(
-        "Invalid App ID or App Secret. Check the credentials in Feishu and try again.",
+        `Invalid App ID or App Secret. Check the credentials in ${get(feishuPlatformName$)} and try again.`,
       );
     }
     throw configured.error;
@@ -141,22 +156,25 @@ const setup$ = command(async ({ get, set }, signal: AbortSignal) => {
     return badRequestMessage("Select an agent from this organization");
   }
   if (result.kind === "installation_not_found") {
-    return notFound("Feishu integration not found");
+    return notFound(`${get(feishuPlatformName$)} integration not found`);
   }
   if (result.kind === "app_identity_mismatch") {
     return conflict(
-      "A configured Feishu installation cannot be changed to a different App ID. Add a separate installation instead.",
+      `A configured ${get(feishuPlatformName$)} installation cannot be changed to a different App ID. Add a separate installation instead.`,
     );
   }
   if (result.kind === "app_in_use") {
-    return appIdInUse();
+    return appIdInUse(get(feishuPlatformName$));
   }
   if (result.kind === "installation_exists") {
-    return conflict("This workspace already has a Feishu bot");
+    return conflict(
+      `This workspace already has a ${get(feishuPlatformName$)} bot`,
+    );
   }
   const status = await get(
     feishuConnectStatus({
       orgId: auth.orgId,
+      platform: get(feishuPlatform$),
       userId: auth.userId,
       publicBrand,
       isAdmin: auth.orgRole === "admin",
@@ -169,15 +187,16 @@ const setup$ = command(async ({ get, set }, signal: AbortSignal) => {
 
 const remove$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!(await get(feishuIntegrationEnabled$))) {
-    return feishuIntegrationDisabled;
+    return get(feishuIntegrationDisabled$);
   }
   const auth = get(organizationAuthContext$);
   if (auth.orgRole !== "admin") {
-    return adminRequired();
+    return adminRequired(get(feishuPlatformName$));
   }
   const status = await get(
     feishuConnectStatus({
       orgId: auth.orgId,
+      platform: get(feishuPlatform$),
       userId: auth.userId,
       publicBrand: PUBLIC_BRAND,
       isAdmin: true,
@@ -185,27 +204,31 @@ const remove$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
   signal.throwIfAborted();
   if (!status.installationId) {
-    return notFound("Feishu integration not found");
+    return notFound(`${get(feishuPlatformName$)} integration not found`);
   }
   const removed = await set(
     removeFeishuInstallation$,
-    { orgId: auth.orgId, installationId: status.installationId },
+    {
+      orgId: auth.orgId,
+      platform: get(feishuPlatform$),
+      installationId: status.installationId,
+    },
     signal,
   );
   signal.throwIfAborted();
   return removed
     ? { status: 200 as const, body: { success: true as const } }
-    : notFound("Feishu integration not found");
+    : notFound(`${get(feishuPlatformName$)} integration not found`);
 });
 
 const updateInstallation$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     if (!(await get(feishuIntegrationEnabled$))) {
-      return feishuIntegrationDisabled;
+      return get(feishuIntegrationDisabled$);
     }
     const auth = get(organizationAuthContext$);
     if (auth.orgRole !== "admin") {
-      return adminRequired();
+      return adminRequired(get(feishuPlatformName$));
     }
     const params = get(pathParamsOf(feishuConnectContract.updateInstallation));
     const bodyResult = await get(
@@ -219,6 +242,7 @@ const updateInstallation$ = command(
       updateFeishuInstallationAgent$,
       {
         orgId: auth.orgId,
+        platform: get(feishuPlatform$),
         userId: auth.userId,
         installationId: params.installationId,
         defaultAgentId: bodyResult.data.defaultAgentId,
@@ -230,16 +254,17 @@ const updateInstallation$ = command(
       return badRequestMessage("Select an agent from this organization");
     }
     if (updated.kind === "installation_not_found") {
-      return notFound("Feishu integration not found");
+      return notFound(`${get(feishuPlatformName$)} integration not found`);
     }
     if (updated.kind === "bot_identity_mismatch") {
       return conflict(
-        "The Feishu app now resolves to a different bot identity. Restore the original app credentials or configure a separate installation.",
+        `The ${get(feishuPlatformName$)} app now resolves to a different bot identity. Restore the original app credentials or configure a separate installation.`,
       );
     }
     const status = await get(
       feishuConnectStatus({
         orgId: auth.orgId,
+        platform: get(feishuPlatform$),
         userId: auth.userId,
         publicBrand: PUBLIC_BRAND,
         isAdmin: auth.orgRole === "admin",
@@ -252,40 +277,45 @@ const updateInstallation$ = command(
     });
     return installation
       ? { status: 200 as const, body: installation }
-      : notFound("Feishu integration not found");
+      : notFound(`${get(feishuPlatformName$)} integration not found`);
   },
 );
 
 const removeInstallation$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     if (!(await get(feishuIntegrationEnabled$))) {
-      return feishuIntegrationDisabled;
+      return get(feishuIntegrationDisabled$);
     }
     const auth = get(organizationAuthContext$);
     if (auth.orgRole !== "admin") {
-      return adminRequired();
+      return adminRequired(get(feishuPlatformName$));
     }
     const params = get(pathParamsOf(feishuConnectContract.removeInstallation));
     const removed = await set(
       removeFeishuInstallation$,
-      { orgId: auth.orgId, installationId: params.installationId },
+      {
+        orgId: auth.orgId,
+        platform: get(feishuPlatform$),
+        installationId: params.installationId,
+      },
       signal,
     );
     signal.throwIfAborted();
     return removed
       ? { status: 200 as const, body: { success: true as const } }
-      : notFound("Feishu integration not found");
+      : notFound(`${get(feishuPlatformName$)} integration not found`);
   },
 );
 
 const disconnect$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!(await get(feishuIntegrationEnabled$))) {
-    return feishuIntegrationDisabled;
+    return get(feishuIntegrationDisabled$);
   }
   const auth = get(organizationAuthContext$);
   const status = await get(
     feishuConnectStatus({
       orgId: auth.orgId,
+      platform: get(feishuPlatform$),
       userId: auth.userId,
       publicBrand: PUBLIC_BRAND,
       isAdmin: auth.orgRole === "admin",
@@ -293,12 +323,13 @@ const disconnect$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
   signal.throwIfAborted();
   if (!status.installationId) {
-    return notFound("Feishu connection not found");
+    return notFound(`${get(feishuPlatformName$)} connection not found`);
   }
   const disconnected = await set(
     disconnectFeishuConnection$,
     {
       orgId: auth.orgId,
+      platform: get(feishuPlatform$),
       userId: auth.userId,
       installationId: status.installationId,
     },
@@ -307,13 +338,13 @@ const disconnect$ = command(async ({ get, set }, signal: AbortSignal) => {
   signal.throwIfAborted();
   return disconnected
     ? { status: 200 as const, body: { success: true as const } }
-    : notFound("Feishu connection not found");
+    : notFound(`${get(feishuPlatformName$)} connection not found`);
 });
 
 const disconnectInstallation$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     if (!(await get(feishuIntegrationEnabled$))) {
-      return feishuIntegrationDisabled;
+      return get(feishuIntegrationDisabled$);
     }
     const auth = get(organizationAuthContext$);
     const params = get(
@@ -323,6 +354,7 @@ const disconnectInstallation$ = command(
       disconnectFeishuConnection$,
       {
         orgId: auth.orgId,
+        platform: get(feishuPlatform$),
         userId: auth.userId,
         installationId: params.installationId,
       },
@@ -331,7 +363,7 @@ const disconnectInstallation$ = command(
     signal.throwIfAborted();
     return disconnected
       ? { status: 200 as const, body: { success: true as const } }
-      : notFound("Feishu connection not found");
+      : notFound(`${get(feishuPlatformName$)} connection not found`);
   },
 );
 
@@ -340,37 +372,45 @@ const auth = {
   missingOrganizationStatus: 401,
 } as const;
 
+function connectRoutes(
+  contract: typeof feishuConnectContract | typeof larkConnectContract,
+): readonly RouteEntry[] {
+  return [
+    {
+      route: contract.getStatus,
+      handler: authRoute(auth, getStatus$),
+    },
+    {
+      route: contract.checkAppId,
+      handler: authRoute(auth, checkAppId$),
+    },
+    {
+      route: contract.setup,
+      handler: authRoute(auth, setup$),
+    },
+    {
+      route: contract.updateInstallation,
+      handler: authRoute(auth, updateInstallation$),
+    },
+    {
+      route: contract.removeInstallation,
+      handler: authRoute(auth, removeInstallation$),
+    },
+    {
+      route: contract.disconnectInstallation,
+      handler: authRoute(auth, disconnectInstallation$),
+    },
+    {
+      route: contract.remove,
+      handler: authRoute(auth, remove$),
+    },
+    {
+      route: contract.disconnect,
+      handler: authRoute(auth, disconnect$),
+    },
+  ];
+}
 export const feishuConnectRoutes: readonly RouteEntry[] = [
-  {
-    route: feishuConnectContract.getStatus,
-    handler: authRoute(auth, getStatus$),
-  },
-  {
-    route: feishuConnectContract.checkAppId,
-    handler: authRoute(auth, checkAppId$),
-  },
-  {
-    route: feishuConnectContract.setup,
-    handler: authRoute(auth, setup$),
-  },
-  {
-    route: feishuConnectContract.updateInstallation,
-    handler: authRoute(auth, updateInstallation$),
-  },
-  {
-    route: feishuConnectContract.removeInstallation,
-    handler: authRoute(auth, removeInstallation$),
-  },
-  {
-    route: feishuConnectContract.disconnectInstallation,
-    handler: authRoute(auth, disconnectInstallation$),
-  },
-  {
-    route: feishuConnectContract.remove,
-    handler: authRoute(auth, remove$),
-  },
-  {
-    route: feishuConnectContract.disconnect,
-    handler: authRoute(auth, disconnect$),
-  },
+  ...connectRoutes(feishuConnectContract),
+  ...connectRoutes(larkConnectContract),
 ];

@@ -53,7 +53,7 @@ export function WorkerConnectionDiagnosticsBlock() {
   }
 
   return (
-    <div className="flex items-start gap-4 rounded-xl bg-card p-4 okou-border">
+    <div className="flex items-start gap-4 rounded-xl bg-card p-4 border border-surface-border">
       <span className="flex h-7 w-7 shrink-0 items-center justify-center">
         <RadioTower size={22} className="text-muted-foreground" />
       </span>

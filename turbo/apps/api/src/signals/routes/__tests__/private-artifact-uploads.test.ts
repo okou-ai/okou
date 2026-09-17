@@ -1,5 +1,5 @@
 import { mockNow } from "../../../lib/time";
-import { artifactReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
+import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
 import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import {
@@ -10,6 +10,7 @@ import {
   HeadObjectCommand,
   ListObjectsV2Command,
   ListPartsCommand,
+  PutObjectCommand,
 } from "@aws-sdk/client-s3";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
@@ -26,6 +27,8 @@ import { uploadsCompleteRoutes } from "../uploads-complete";
 import { uploadsMultipartRoutes } from "../uploads-multipart";
 import { webFileUrlRoutes } from "../web-file-url";
 import { webDownloadRoutes } from "../web-download";
+import { artifactReferenceRoutes } from "../artifact-references";
+import { installSharedThreadStorage } from "./helpers/shared-thread-storage";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -36,7 +39,6 @@ const body = Object.freeze({
   filename: "report.html",
   contentType: "text/html",
   size: 13,
-  purpose: "artifact" as const,
 });
 const routes = Object.freeze([
   ...featureSwitchesRoutes,
@@ -45,6 +47,7 @@ const routes = Object.freeze([
   ...uploadsMultipartRoutes,
   ...webFileUrlRoutes,
   ...webDownloadRoutes,
+  ...artifactReferenceRoutes,
 ]);
 
 function api() {
@@ -63,7 +66,14 @@ async function setPrivateArtifacts(enabled: boolean) {
 
 function mockStoredFile(id: string) {
   const key = `private-artifacts/${id}/report.html`;
+  const storage = context.mocks.s3.send.getMockImplementation()!;
   context.mocks.s3.send.mockImplementation((command) => {
+    if (
+      command instanceof GetObjectCommand &&
+      command.input.Key?.startsWith("artifact-references/")
+    ) {
+      return storage(command);
+    }
     if (
       command instanceof HeadObjectCommand ||
       command instanceof GetObjectCommand
@@ -83,14 +93,138 @@ function mockStoredFile(id: string) {
 beforeEach(() => {
   mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
   mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
+  const references = new Map<string, string>();
   mocks.s3.listObjects([]);
+  const storage = context.mocks.s3.send.getMockImplementation()!;
+  context.mocks.s3.send.mockImplementation((command) => {
+    if (
+      command instanceof GetObjectCommand &&
+      command.input.Key?.startsWith("artifact-references/")
+    ) {
+      return Promise.resolve({
+        Body: Readable.from([Buffer.from(references.get(command.input.Key)!)]),
+        ETag: '"reference"',
+      });
+    }
+    if (
+      command instanceof PutObjectCommand &&
+      command.input.Key?.startsWith("artifact-references/")
+    ) {
+      references.set(command.input.Key, String(command.input.Body));
+      return Promise.resolve({});
+    }
+    return storage(command);
+  });
   context.mocks.s3.getSignedUrl.mockResolvedValue(
     "https://private-r2.example/upload?signature=put",
   );
 });
 
 describe("private artifact uploads", () => {
-  it("keeps the shared switch off by default and enables artifact output only", async () => {
+  it("keeps a guarded upload private after the creation switch is disabled", async () => {
+    installSharedThreadStorage(context);
+    await setPrivateArtifacts(true);
+    const prepared = await accept(
+      api()(uploadsContract).preparePrivate({ headers, body }),
+      [200],
+    );
+    if (!("uploadUrl" in prepared.body)) {
+      throw new Error("Expected single upload");
+    }
+    expect(prepared.body.url).toMatch(/^\/artifacts\/[a-z0-9]{10}\.html$/u);
+    await setPrivateArtifacts(false);
+    await fetch(prepared.body.uploadUrl, {
+      method: "PUT",
+      body: "private bytes",
+    });
+    const completed = await accept(
+      api()(uploadsContract).complete({
+        headers,
+        body: { id: prepared.body.id },
+      }),
+      [200],
+    );
+    expect(completed.body.url).toBe(prepared.body.url);
+    const preview = await accept(
+      api()(webFilesContract).fileUrl({
+        headers,
+        query: { file_id: prepared.body.id },
+      }),
+      [200],
+    );
+    expect(preview.body.publicUrl).toBeNull();
+    const download = await accept(
+      api()(webFilesContract).download({
+        headers,
+        query: { file_id: prepared.body.id },
+      }),
+      [200],
+    );
+    expect(download.body).toBe("private bytes");
+  });
+
+  it("keeps old public uploads readable after private creation is enabled", async () => {
+    installSharedThreadStorage(context);
+    const prepared = await accept(
+      api()(uploadsContract).prepare({ headers, body }),
+      [200],
+    );
+    if (!("uploadUrl" in prepared.body)) {
+      throw new Error("Expected single upload");
+    }
+    await fetch(prepared.body.uploadUrl, {
+      method: "PUT",
+      body: "public bytes",
+    });
+    await accept(
+      api()(uploadsContract).complete({
+        headers,
+        body: { id: prepared.body.id },
+      }),
+      [200],
+    );
+    await setPrivateArtifacts(true);
+    const preview = await accept(
+      api()(webFilesContract).fileUrl({
+        headers,
+        query: { file_id: prepared.body.id },
+      }),
+      [200],
+    );
+    expect(preview.body.publicUrl).toBe(prepared.body.url);
+    const downloaded = await accept(
+      api()(webFilesContract).download({
+        headers,
+        query: { file_id: prepared.body.id },
+      }),
+      [200],
+    );
+    expect(downloaded.body).toBe("public bytes");
+  });
+
+  it("previews private bytes uploaded by an older composer without a complete request", async () => {
+    await setPrivateArtifacts(true);
+    const prepared = await accept(
+      api()(uploadsContract).prepare({ headers, body }),
+      [200],
+    );
+    mockStoredFile(prepared.body.id);
+    const preview = await accept(
+      api()(artifactReferencesContract).resolve({
+        headers,
+        params: { reference: prepared.body.url.slice("/artifacts/".length) },
+      }),
+      [200],
+    );
+    expect(preview.body.url).toBe(
+      "https://private-r2.example/upload?signature=put",
+    );
+    expect(context.mocks.s3.getSignedUrl.mock.calls.at(-1)?.[1]).toMatchObject({
+      input: { Bucket: bucket },
+    });
+  });
+
+  it("keeps uploads public by default and makes both attachments and outputs private when enabled", async () => {
     const flags = await accept(
       api()(featureSwitchesContract).get({ headers }),
       [200],
@@ -114,20 +248,16 @@ describe("private artifact uploads", () => {
       }),
       [200],
     );
-    expect(input.body.url).toMatch(
-      /^https:\/\/a\.okou\.io\/[0-9a-z]{10}\.png$/u,
-    );
+    expect(input.body.url).toMatch(/^\/artifacts\/[a-z0-9]{10}\.png$/u);
     const artifact = await accept(
       api()(uploadsContract).prepare({
         headers,
-        body,
+        body: { ...body, purpose: "artifact" },
         extraHeaders: { origin: "https://app.okou.ai" },
       }),
       [200],
     );
-    expect(artifact.body.url).toBe(
-      artifactReferencePath(artifact.body.id, "report.html"),
-    );
+    expect(artifact.body.url).toMatch(/^\/artifacts\/[a-z0-9]{10}\.html$/u);
   });
 
   it("returns a stable owner URL, signs only the private bucket, and downloads safely from the API origin", async () => {
@@ -143,6 +273,7 @@ describe("private artifact uploads", () => {
     const { id, url } = prepared.body;
     expect(prepared.body).toHaveProperty("uploadUrl");
     const put = context.mocks.s3.getSignedUrl.mock.calls.at(-1);
+    expect(put?.[2]).toMatchObject({ expiresIn: 172_800 });
     expect(put?.[1]).toMatchObject({
       input: { Bucket: bucket, Key: `private-artifacts/${id}/report.html` },
     });
@@ -316,7 +447,14 @@ describe("private artifact uploads", () => {
     "%s multipart uploads in their recorded bucket after rollout is disabled",
     async (action) => {
       await setPrivateArtifacts(true);
+      const storage = context.mocks.s3.send.getMockImplementation()!;
       context.mocks.s3.send.mockImplementation((command) => {
+        if (
+          command instanceof PutObjectCommand &&
+          command.input.Key?.startsWith("artifact-references/")
+        ) {
+          return storage(command);
+        }
         if (command instanceof CreateMultipartUploadCommand) {
           expect(command.input.Bucket).toBe(bucket);
           return Promise.resolve({ UploadId: "upload-1" });

@@ -124,7 +124,10 @@ describe("SSH connection routes", () => {
       context.mocks.ably.publish.mockClear();
       context.mocks.ably.channelGet.mockClear();
       await accept(
-        client().create({ headers: authHeaders(), body: createBody(host) }),
+        client().create({
+          headers: authHeaders(),
+          body: { id: randomUUID(), ...createBody(host) },
+        }),
         [201],
       );
       expect(context.mocks.ably.publish.mock.calls).toStrictEqual([
@@ -163,7 +166,10 @@ describe("SSH connection routes", () => {
     const disabledResponse = await accept(
       client().create({
         headers: authHeaders(),
-        body: createBody("disabled.example.com"),
+        body: {
+          id: randomUUID(),
+          ...createBody("disabled.example.com"),
+        },
       }),
       [404],
     );
@@ -198,6 +204,7 @@ describe("SSH connection routes", () => {
       client().create({
         headers: authHeaders(),
         body: {
+          id: randomUUID(),
           displayName: "  Production  ",
           host: "  BÜCHER.Example.  ",
           credential: inlineSshKey("  deploy  ", privateKey, passphrase),
@@ -374,7 +381,10 @@ describe("SSH connection routes", () => {
       client().update({
         headers: authHeaders(),
         params: { connectionId: created.body.id },
-        body: { expectedGeneration: 7, displayName: "Stale" },
+        body: {
+          expectedGeneration: 7,
+          displayName: "Stale",
+        },
       }),
       [409],
     );
@@ -430,7 +440,10 @@ describe("SSH connection routes", () => {
     ];
     for (const host of invalidHosts) {
       const response = await accept(
-        client().create({ headers: authHeaders(), body: createBody(host) }),
+        client().create({
+          headers: authHeaders(),
+          body: { id: randomUUID(), ...createBody(host) },
+        }),
         [400],
       );
       expect(response.body.error.code).toBe("SSH_INVALID_HOST");
@@ -440,7 +453,7 @@ describe("SSH connection routes", () => {
     const created = await accept(
       client().create({
         headers: authHeaders(),
-        body: createBody("EXAMPLE.com."),
+        body: { id: randomUUID(), ...createBody("EXAMPLE.com.") },
       }),
       [201],
     );
@@ -568,14 +581,17 @@ describe("SSH connection routes", () => {
     const original = await accept(
       client().create({
         headers: authHeaders(),
-        body: createBody("EXAMPLE.com.", { username: "ubuntu" }),
+        body: {
+          id: randomUUID(),
+          ...createBody("EXAMPLE.com.", { username: "ubuntu" }),
+        },
       }),
       [201],
     );
     const additional = await accept(
       client().create({
         headers: authHeaders(),
-        body: createBody("example.COM"),
+        body: { id: randomUUID(), ...createBody("example.COM") },
       }),
       [201],
     );
@@ -588,7 +604,10 @@ describe("SSH connection routes", () => {
     const other = await accept(
       client().create({
         headers: authHeaders(),
-        body: createBody("other.example.com", { port: 2222 }),
+        body: {
+          id: randomUUID(),
+          ...createBody("other.example.com", { port: 2222 }),
+        },
       }),
       [201],
     );
@@ -596,7 +615,11 @@ describe("SSH connection routes", () => {
       client().update({
         headers: authHeaders(),
         params: { connectionId: other.body.id },
-        body: { expectedGeneration: 1, host: "EXAMPLE.com.", port: 22 },
+        body: {
+          expectedGeneration: 1,
+          host: "EXAMPLE.com.",
+          port: 22,
+        },
       }),
       [200],
     );
@@ -624,7 +647,10 @@ describe("SSH connection routes", () => {
     const created = await accept(
       client().create({
         headers: authHeaders(),
-        body: createBody("isolated.example.com"),
+        body: {
+          id: randomUUID(),
+          ...createBody("isolated.example.com"),
+        },
       }),
       [201],
     );
@@ -661,14 +687,20 @@ describe("SSH connection routes", () => {
       accept(
         client().create({
           headers: authHeaders(),
-          body: createBody("RACE.example.com", { privateKey: "first-key" }),
+          body: {
+            id: randomUUID(),
+            ...createBody("RACE.example.com", { privateKey: "first-key" }),
+          },
         }),
         [201],
       ),
       accept(
         client().create({
           headers: authHeaders(),
-          body: createBody("race.example.com.", { privateKey: "second-key" }),
+          body: {
+            id: randomUUID(),
+            ...createBody("race.example.com.", { privateKey: "second-key" }),
+          },
         }),
         [201],
       ),
@@ -692,7 +724,10 @@ describe("SSH connection routes", () => {
       Array.from({ length: 63 }, (_, index) => {
         return client().create({
           headers: authHeaders(),
-          body: createBody(`seed-${index}.example.com`),
+          body: {
+            id: randomUUID(),
+            ...createBody(`seed-${index}.example.com`),
+          },
         });
       }),
     );
@@ -705,11 +740,17 @@ describe("SSH connection routes", () => {
     const results = await Promise.all([
       client().create({
         headers: authHeaders(),
-        body: createBody("final-a.example.com"),
+        body: {
+          id: randomUUID(),
+          ...createBody("final-a.example.com"),
+        },
       }),
       client().create({
         headers: authHeaders(),
-        body: createBody("final-b.example.com"),
+        body: {
+          id: randomUUID(),
+          ...createBody("final-b.example.com"),
+        },
       }),
     ]);
     expect(
@@ -745,7 +786,10 @@ describe("SSH connection routes", () => {
     const response = await accept(
       client().create({
         headers: authHeaders(),
-        body: createBody("kms-failure.example.com"),
+        body: {
+          id: randomUUID(),
+          ...createBody("kms-failure.example.com"),
+        },
       }),
       [500],
     );

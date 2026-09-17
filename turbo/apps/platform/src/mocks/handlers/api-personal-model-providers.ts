@@ -24,6 +24,22 @@ export function resetMockPersonalModelProviders(): void {
 }
 
 export const apiPersonalModelProvidersHandlers = [
+  mockApi(
+    personalModelProviderAccountsByIdContract.getById,
+    ({ params, respond }) => {
+      const provider = mockPersonalModelProviders.find(
+        (candidate) => candidate.id === params.id,
+      );
+      return provider
+        ? respond(200, provider)
+        : respond(404, {
+            error: {
+              message: "Model provider account not found",
+              code: "NOT_FOUND",
+            },
+          });
+    },
+  ),
   // GET /api/me/model-providers - List the user's personal model providers
   mockApi(personalModelProvidersMainContract.list, ({ respond }) => {
     return respond(200, { modelProviders: mockPersonalModelProviders });
@@ -167,6 +183,26 @@ export const apiPersonalModelProvidersHandlers = [
     },
   ),
 
+  mockApi(
+    personalModelProviderAccountsByIdContract.resetFailedRunSubscriptionUsage,
+    ({ params, respond }) => {
+      const selected = mockPersonalModelProviders.find((provider) => {
+        return provider.id === params.id;
+      });
+      if (!selected || selected.type !== "codex-oauth-token") {
+        return respond(404, {
+          error: {
+            message: "Model provider account not found",
+            code: "NOT_FOUND",
+          },
+        });
+      }
+      return respond(200, {
+        outcome:
+          (selected.subscriptionResetCredits ?? 0) > 0 ? "reset" : "noCredit",
+      });
+    },
+  ),
   mockApi(
     personalModelProviderAccountsByIdContract.resetSubscriptionUsage,
     ({ params, respond }) => {

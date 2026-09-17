@@ -26,10 +26,11 @@ export type DesktopProduct = (typeof DESKTOP_PRODUCTS)[number];
 
 export function desktopProductFromClientHeader(
   value: string | null | undefined,
-): DesktopProduct {
-  return value === DESKTOP_PRODUCT_OKOU
-    ? DESKTOP_PRODUCT_OKOU
-    : DESKTOP_PRODUCT_ZERO;
+): DesktopProduct | undefined {
+  if (value === DESKTOP_PRODUCT_ZERO || value === DESKTOP_PRODUCT_OKOU) {
+    return value;
+  }
+  return undefined;
 }
 
 export const CLIENT_HEADER_NAMES = [

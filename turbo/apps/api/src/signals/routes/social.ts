@@ -10,15 +10,18 @@ import { command } from "ccstate";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
-import { bodyResultOf, pathParamsOf } from "../context/request";
+import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
+import { setResHeader$ } from "../context/hono";
 import { waitUntil } from "../context/wait-until";
 import { notFound } from "../../lib/error";
 import type { RouteEntry } from "../route-entry";
 import { socialKitRequest$ } from "../services/social.service";
+import { socialStatus$ } from "../services/social-status.service";
 import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 import {
   createSocialKitDownload$,
   getSocialKitDownload$,
+  listSocialKitDownloads$,
   reconcileSocialKitDownload$,
   SOCIALKIT_RECONCILIATION_TIMEOUT_MS,
 } from "../services/socialkit-download.service";
@@ -27,6 +30,18 @@ const socialKitRequestBody$ = bodyResultOf(socialContract.request);
 const socialKitDownloadBody$ = bodyResultOf(socialContract.createDownload);
 const socialKitDownloadPathParams$ = pathParamsOf(socialContract.getDownload);
 const socialKitDownloadNotFound = notFound("SocialKit download not found");
+const socialStatusQuery$ = queryOf(socialContract.status);
+
+const socialStatusInner$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    set(setResHeader$, "Cache-Control", "private, no-store");
+    const { platform } = get(socialStatusQuery$);
+    return {
+      status: 200 as const,
+      body: await set(socialStatus$, platform, signal),
+    };
+  },
+);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -130,7 +145,57 @@ const createSocialKitDownloadInner$ = command(
         ),
       );
     }
+    if (response.status === 409) {
+      const active = await set(
+        listSocialKitDownloads$,
+        {
+          orgId: auth.orgId,
+          userId: auth.userId,
+          query: { limit: 1, status: "active" },
+        },
+        signal,
+      );
+      const download = active.downloads[0];
+      if (download?.resumeCommand) {
+        return agentSafeResponse(auth, {
+          ...response,
+          body: {
+            error: {
+              ...response.body.error,
+              recovery: {
+                downloadId: download.downloadId,
+                resumeCommand: download.resumeCommand,
+              },
+            },
+          },
+        });
+      }
+    }
     return agentSafeResponse(auth, response);
+  },
+);
+
+const listSocialKitDownloadsInner$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const auth = get(organizationAuthContext$);
+    const response = await set(
+      listSocialKitDownloads$,
+      {
+        orgId: auth.orgId,
+        userId: auth.userId,
+        query: get(queryOf(socialContract.listDownloads)),
+      },
+      signal,
+    );
+    return {
+      status: 200 as const,
+      body: {
+        ...response,
+        downloads: response.downloads.map((download) => {
+          return agentSafeResponse(auth, { body: download }).body;
+        }),
+      },
+    };
   },
 );
 
@@ -169,6 +234,17 @@ const getSocialKitDownloadInner$ = command(
 
 export const socialRoutes: readonly RouteEntry[] = [
   {
+    route: socialContract.status,
+    handler: authRoute(
+      {
+        requireOrganization: true,
+        missingOrganizationStatus: 401,
+        requiredCapability: "social:read",
+      },
+      socialStatusInner$,
+    ),
+  },
+  {
     route: socialContract.request,
     handler: authRoute(
       {
@@ -188,6 +264,17 @@ export const socialRoutes: readonly RouteEntry[] = [
         requiredCapability: "social:read",
       },
       createSocialKitDownloadInner$,
+    ),
+  },
+  {
+    route: socialContract.listDownloads,
+    handler: authRoute(
+      {
+        requireOrganization: true,
+        missingOrganizationStatus: 401,
+        requiredCapability: "social:read",
+      },
+      listSocialKitDownloadsInner$,
     ),
   },
   {

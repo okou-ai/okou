@@ -11,6 +11,7 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 import { sshCredentials } from "./ssh-credential";
+import { cloudflareAccessConfigs } from "./cloudflare-access-config";
 
 export const sshConnections = pgTable(
   "ssh_connections",
@@ -22,6 +23,7 @@ export const sshConnections = pgTable(
     host: varchar("host", { length: 253 }).notNull(),
     port: integer("port").notNull().default(22),
     credentialId: uuid("credential_id").notNull(),
+    cloudflareAccessId: uuid("cloudflare_access_id"),
     learnedHostKeyAlgorithm: varchar("learned_host_key_algorithm", {
       length: 64,
     }),
@@ -34,6 +36,23 @@ export const sshConnections = pgTable(
   },
   (table) => {
     return [
+      foreignKey({
+        name: "ssh_connections_cloudflare_access_owner_fk",
+        columns: [table.cloudflareAccessId, table.orgId, table.userId],
+        foreignColumns: [
+          cloudflareAccessConfigs.id,
+          cloudflareAccessConfigs.orgId,
+          cloudflareAccessConfigs.userId,
+        ],
+      }).onDelete("restrict"),
+      index("idx_ssh_connections_cloudflare_access").on(
+        table.cloudflareAccessId,
+        table.id,
+      ),
+      check(
+        "chk_ssh_connections_cloudflare_access_destination",
+        sql`${table.cloudflareAccessId} IS NULL OR (${table.port} = 443 AND ${table.host} ~ '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$' AND ${table.host} !~ '^[0-9.]+$')`,
+      ),
       foreignKey({
         name: "ssh_connections_credential_owner_fk",
         columns: [table.credentialId, table.orgId, table.userId],

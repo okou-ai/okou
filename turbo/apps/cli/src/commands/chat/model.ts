@@ -1,3 +1,4 @@
+import { isMemberModelPolicyAvailable } from "@okouai/api-contracts/contracts/member-model-policy";
 import chalk from "chalk";
 import { Command } from "commander";
 import type { ChatThreadMetadata } from "@okouai/api-contracts/contracts/chat-threads";
@@ -12,7 +13,10 @@ import {
 } from "../../lib/api/domains/chat";
 import { listModelPolicies } from "../../lib/api/domains/model-policies";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
-import { formatModelProviderRoute } from "../../lib/domain/model-policy-display";
+import {
+  formatModelProviderRoute,
+  formatModelPolicyStatus,
+} from "../../lib/domain/model-policy-display";
 import { isUuid } from "../../lib/utils/uuid";
 import { getOkouChatThreadId } from "../../lib/okou-env";
 
@@ -33,7 +37,7 @@ function printUsageError(message: string, hint: string): never {
 
 function switchablePolicies(policies: readonly OrgModelPolicy[]) {
   return policies.filter((policy) => {
-    return policy.routeStatus === "valid";
+    return isMemberModelPolicyAvailable(policy);
   });
 }
 
@@ -115,10 +119,9 @@ async function switchModel(threadId: string, model: string): Promise<void> {
     printUsageError(`Unknown model: ${model}`, "Run: okou chat model --help");
   }
 
-  if (policy.routeStatus !== "valid") {
-    const reason = policy.routeStatusReason
-      ? ` (${policy.routeStatusReason})`
-      : "";
+  if (!isMemberModelPolicyAvailable(policy)) {
+    const status = formatModelPolicyStatus(policy);
+    const reason = status ? ` (${status})` : "";
     printUsageError(
       `Model is not switchable: ${model}${reason}`,
       "Run: okou chat model --help",

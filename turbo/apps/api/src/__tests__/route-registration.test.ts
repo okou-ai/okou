@@ -1,5 +1,10 @@
+import { morningBriefCollectionPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-collection-preview";
+import { morningBriefGmailCollectionPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-gmail-collection-preview";
+
 import { ROUTES } from "../signals/route";
 import { assertUniqueRouteRegistrations } from "../signals/route-entry";
+import { morningBriefCollectionPreviewRoutes } from "../signals/routes/morning-brief-collection-preview";
+import { morningBriefGmailCollectionPreviewRoutes } from "../signals/routes/morning-brief-gmail-collection-preview";
 
 describe("API route registrations", () => {
   // Hono keeps both registrations for a duplicated path and answers with the
@@ -11,5 +16,46 @@ describe("API route registrations", () => {
     expect(() => {
       assertUniqueRouteRegistrations(ROUTES);
     }).not.toThrow();
+  });
+
+  // The Morning Brief collection preview only means anything if an operator can
+  // actually reach it on a development server or a protected preview
+  // deployment, and its own suite may not compose an app from this
+  // production-global table. Asserting the exact entry object keeps that suite's
+  // results statements about the deployed endpoint rather than about a
+  // look-alike slice: the handler it exercises is the handler `ROUTES` holds.
+  it("registers the Morning Brief collection preview an operator invokes", () => {
+    const [entry, ...extra] = morningBriefCollectionPreviewRoutes;
+    expect(extra).toHaveLength(0);
+    expect(entry?.route).toBe(morningBriefCollectionPreviewContract.collect);
+    expect(ROUTES).toContain(entry);
+    expect(
+      ROUTES.filter((registered) => {
+        return (
+          registered.route.path ===
+          morningBriefCollectionPreviewContract.collect.path
+        );
+      }),
+    ).toStrictEqual([entry]);
+  });
+
+  // Same requirement for the Gmail preview, which is the first real consumer of
+  // the shared connector reader. A route reachable only from a test harness
+  // would pass its own suite and still be absent from the deployed table.
+  it("registers the Morning Brief Gmail collection preview an operator invokes", () => {
+    const [entry, ...extra] = morningBriefGmailCollectionPreviewRoutes;
+    expect(extra).toHaveLength(0);
+    expect(entry?.route).toBe(
+      morningBriefGmailCollectionPreviewContract.collect,
+    );
+    expect(ROUTES).toContain(entry);
+    expect(
+      ROUTES.filter((registered) => {
+        return (
+          registered.route.path ===
+          morningBriefGmailCollectionPreviewContract.collect.path
+        );
+      }),
+    ).toStrictEqual([entry]);
   });
 });

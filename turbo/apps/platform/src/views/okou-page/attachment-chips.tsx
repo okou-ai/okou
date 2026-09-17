@@ -49,7 +49,6 @@ import {
 import type { ImageLoadSignals } from "../../signals/image-load.ts";
 import type { TextPreviewComputed } from "../../signals/text-preview.ts";
 import type { MarkdownPreviewTreeComputed } from "../../signals/markdown-preview-tree.ts";
-import { retryRichMarkdown$ } from "../../signals/rich-markdown-retry.ts";
 import { MarkdownEventBody } from "../components/markdown.tsx";
 import {
   attachmentSidebarRef,
@@ -105,7 +104,9 @@ import {
   type ImageArtifactNavigationItem,
 } from "./artifact-image-navigation.ts";
 import { ZoomableArtifactImageCanvas } from "./zoomable-image-canvas.tsx";
+import type { ZoomableImageCanvasSignals } from "../../signals/zoomable-image-canvas.ts";
 import { AutoFocusedArtifactIframe } from "./auto-focused-artifact-iframe.tsx";
+import { hostedArtifactReferrerPolicy } from "../../lib/platform-host.ts";
 import { PresentationArtifactViewport } from "./presentation-artifact-viewport.tsx";
 import { IconTooltipButton } from "../components/icon-tooltip.tsx";
 import { OfficeDocumentPreview } from "./office-document-preview.tsx";
@@ -410,13 +411,7 @@ function ArtifactDialogLoadingBody() {
   );
 }
 
-function ArtifactDialogUnavailableBody({
-  label,
-  onRetry,
-}: {
-  label: string;
-  onRetry?: () => void;
-}) {
+function ArtifactDialogUnavailableBody({ label }: { label: string }) {
   const { t } = useTranslation();
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-sm text-muted-foreground">
@@ -428,13 +423,6 @@ function ArtifactDialogUnavailableBody({
           { kind: label },
         )}
       </span>
-      {onRetry !== undefined && (
-        <Button type="button" variant="outline" size="sm" onClick={onRetry}>
-          {t(($) => {
-            return $.chat.errors.recovery.tryAgain;
-          })}
-        </Button>
-      )}
     </div>
   );
 }
@@ -482,9 +470,7 @@ function ArtifactDialogCard({
   return (
     <div
       className={`flex w-full flex-1 flex-col overflow-hidden ${
-        fillHeight
-          ? "h-full min-h-0 bg-transparent"
-          : "okou-chat-card min-h-[420px]"
+        fillHeight ? "h-full min-h-0 bg-transparent" : "min-h-[420px]"
       }`}
       data-testid="artifact-dialog-card"
     >
@@ -499,7 +485,6 @@ function ArtifactDialogMarkdownBody({
   tree$: MarkdownPreviewTreeComputed;
 }) {
   const { t } = useTranslation();
-  const retry = useSet(retryRichMarkdown$);
   const loadable = useLoadable(tree$);
   if (loadable.state === "loading") {
     return (
@@ -518,7 +503,6 @@ function ArtifactDialogMarkdownBody({
             label={t(($) => {
               return $.artifacts.kinds.markdown;
             })}
-            onRetry={retry}
           />
         </ArtifactDialogCard>
       </ArtifactDialogStage>
@@ -626,11 +610,13 @@ function ArtifactDialogTextBody({
 
 function ArtifactDialogImageStage({
   filename,
+  imageCanvasSignals,
   imageNavigation,
   preview,
   resourceUrl,
 }: {
   filename: string;
+  imageCanvasSignals: ZoomableImageCanvasSignals;
   imageNavigation?: ArtifactImageNavigationActions;
   preview: Extract<AttachmentLightboxState, { kind: "image" }>;
   resourceUrl: string | null;
@@ -659,7 +645,7 @@ function ArtifactDialogImageStage({
               key={resourceUrl}
               src={resourceUrl}
               alt={filename}
-              signals={attachmentLightboxImageCanvasSignals}
+              signals={imageCanvasSignals}
               imageTestId="attachment-lightbox-image"
               contentClassName="p-6"
               imageClassName="rounded-lg shadow-sm"
@@ -703,10 +689,12 @@ function ArtifactDialogImageStage({
 
 function ArtifactDialogImageBody({
   filename,
+  imageCanvasSignals,
   imageNavigation,
   preview,
 }: {
   filename: string;
+  imageCanvasSignals: ZoomableImageCanvasSignals;
   imageNavigation?: ArtifactImageNavigationActions;
   preview: Extract<AttachmentLightboxState, { kind: "image" }>;
 }) {
@@ -714,6 +702,7 @@ function ArtifactDialogImageBody({
   return (
     <ArtifactDialogImageStage
       filename={filename}
+      imageCanvasSignals={imageCanvasSignals}
       imageNavigation={imageNavigation}
       preview={preview}
       resourceUrl={resourceUrl}
@@ -734,7 +723,7 @@ function ArtifactDialogVideoBody({
   return (
     <ArtifactDialogStage centered>
       <div
-        className="okou-chat-frame w-full overflow-hidden bg-black"
+        className="w-full overflow-hidden bg-black"
         data-testid="artifact-dialog-video-stage"
       >
         {resourceUrl !== null && (
@@ -770,7 +759,7 @@ function ArtifactDialogAudioBody({
 
   return (
     <ArtifactDialogStage centered>
-      <div className="okou-chat-card flex w-full max-w-[520px] flex-col items-center gap-4 p-6">
+      <div className="flex w-full max-w-[520px] flex-col items-center gap-4 p-6">
         <span className="flex h-14 w-14 items-center justify-center rounded-2xl border border-border/70 bg-muted/50 text-muted-foreground">
           <FileMusic size={28} />
         </span>
@@ -810,14 +799,14 @@ function ArtifactDialogDocumentFrameBody({
   // PDF Open Parameters: #navpanes=0 hides Chromium's built-in left rail so the
   // embedded preview shows just the page and toolbar by default.
   const src =
-    resourceUrl !== null && preview.kind === "pdf"
+    resourceUrl !== null && preview.kind === "pdf" && !resourceUrl.includes("#")
       ? `${resourceUrl}#navpanes=0`
       : resourceUrl;
 
   return (
     <ArtifactDialogStage scrollable={false}>
       <div
-        className="okou-chat-card flex h-full min-h-0 w-full flex-1 overflow-hidden"
+        className="flex h-full min-h-0 w-full flex-1 overflow-hidden"
         data-testid="artifact-dialog-document-frame"
       >
         {src !== null && (
@@ -842,7 +831,7 @@ function ArtifactDialogGenericFileBody({ filename }: { filename: string }) {
   const { t } = useTranslation();
   return (
     <ArtifactDialogStage centered>
-      <div className="okou-chat-card flex w-full max-w-md flex-col items-center justify-center gap-3 p-6 text-center text-muted-foreground">
+      <div className="flex w-full max-w-md flex-col items-center justify-center gap-3 p-6 text-center text-muted-foreground">
         <p className="text-sm">
           {t(($) => {
             return $.artifacts.preview.noInline;
@@ -880,12 +869,16 @@ function ArtifactDialogOfficeDocumentBody({
   );
 }
 
-function ArtifactDialogBody({
+export function ArtifactPreviewBody({
   artifact,
+  fullscreen,
+  imageCanvasSignals,
   imageNavigation,
   preview,
 }: {
   artifact: AttachmentArtifactMetadata | undefined;
+  fullscreen: boolean;
+  imageCanvasSignals: ZoomableImageCanvasSignals;
   imageNavigation?: ArtifactImageNavigationActions;
   preview: AttachmentLightboxState;
 }) {
@@ -895,6 +888,7 @@ function ArtifactDialogBody({
     return (
       <ArtifactDialogImageBody
         filename={filename}
+        imageCanvasSignals={imageCanvasSignals}
         imageNavigation={imageNavigation}
         preview={preview}
       />
@@ -937,6 +931,7 @@ function ArtifactDialogBody({
       <ArtifactDialogHtmlBody
         artifact={artifact}
         filename={filename}
+        fullscreen={fullscreen}
         preview={preview}
       />
     );
@@ -950,14 +945,15 @@ function ArtifactDialogBody({
 function ArtifactDialogHtmlBody({
   artifact,
   filename,
+  fullscreen,
   preview,
 }: {
   artifact: AttachmentArtifactMetadata | undefined;
   filename: string;
+  fullscreen: boolean;
   preview: AttachmentLightboxState;
 }) {
   const { t } = useTranslation();
-  const fullscreen = useGet(lightboxDialogFullscreen$);
   const src = useLastResolved(preview.resourceUrl$) ?? null;
   const isPresentationHtml = artifact?.artifactKind === "presentation-html";
 
@@ -982,6 +978,7 @@ function ArtifactDialogHtmlBody({
         { filename },
       )}
       sandbox="allow-same-origin allow-scripts"
+      referrerPolicy={hostedArtifactReferrerPolicy(src)}
       tabIndex={isPresentationHtml ? -1 : undefined}
       scrolling="yes"
       className="block h-full w-full border-0 bg-background"
@@ -1255,6 +1252,7 @@ function ArtifactPreviewDialogActions({
       )}
       {showShare && (
         <ArtifactShareButton
+          surface="dialog"
           shareUrl={shareUrl}
           ariaLabel={t(($) => {
             return $.artifacts.actions.share;
@@ -1324,7 +1322,9 @@ function ArtifactPreviewDialogContent({
         ref={dialogMountRef}
         initialFocus={dialogElement}
         showCloseButton={false}
-        overlayClassName="okou-pwa-fixed-cover bg-gray-900/45 dark:bg-gray-900/45"
+        // The backdrop is fixed, so a standalone PWA clips it above the bottom
+        // safe inset; extending `bottom` keeps it covering the screen edge.
+        overlayClassName="[@media(display-mode:standalone)]:bottom-[calc(-1*var(--sab))] bg-gray-900/45 dark:bg-gray-900/45"
         maxWidth={1440}
         height={1000}
         surface="canvas"
@@ -1376,8 +1376,10 @@ function ArtifactPreviewDialogContent({
                 <ConnectorConnectionStatus />
               </div>
             ) : (
-              <ArtifactDialogBody
+              <ArtifactPreviewBody
                 artifact={artifact}
+                fullscreen={fullscreen}
+                imageCanvasSignals={attachmentLightboxImageCanvasSignals}
                 imageNavigation={imageNavigation}
                 preview={preview}
               />
@@ -1732,14 +1734,14 @@ function ComposerImagePreviewButton({
       <span className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover/image-preview:bg-black/30">
         <Image
           size={18}
-          className="text-white opacity-0 drop-shadow transition-opacity group-hover/image-preview:opacity-100"
+          className="text-white opacity-0 drop-shadow group-hover/image-preview:opacity-100"
         />
       </span>
       {markCount > 0 && (
         <span
           data-testid="composer-attachment-mark-count"
           style={{ background: DEFAULT_ANNOTATION_INK }}
-          className="absolute -bottom-0.5 -left-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full border-[1.5px] border-background px-1 text-[9px] font-bold leading-none text-white"
+          className="absolute -bottom-0.5 -left-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full border-(length:--border-width-emphasis) border-background px-1 text-[9px] font-bold leading-none text-white"
         >
           {markCount}
         </span>

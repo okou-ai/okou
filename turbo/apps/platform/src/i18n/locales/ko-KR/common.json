@@ -353,6 +353,7 @@
       "feishu": "Feishu",
       "github": "GitHub",
       "goal": "목표",
+      "lark": "Lark",
       "slack": "Slack",
       "teams": "Teams",
       "telegram": "Telegram",
@@ -438,6 +439,18 @@
     }
   },
   "artifacts": {
+    "access": {
+      "backToBrand": "{{brandName}}(으)로 돌아가기",
+      "description": "비공개이거나 더 이상 사용할 수 없을 수 있습니다.",
+      "help": "링크를 공유한 사람에게 접근 권한을 확인해 달라고 요청하세요.",
+      "signedInAs": "{{email}} 계정으로 로그인됨",
+      "signIn": "로그인",
+      "signInFailed": "로그인 화면을 열 수 없습니다. 다시 시도해 주세요.",
+      "switchAccount": "계정 전환",
+      "switchAccountFailed": "계정 전환 화면을 열 수 없습니다. 다시 시도해 주세요.",
+      "title": "이 아티팩트를 볼 수 없습니다",
+      "tryAgain": "다시 시도"
+    },
     "actions": {
       "backToAll": "모든 아티팩트로 돌아가기",
       "backToArtifacts": "아티팩트로 돌아가기",
@@ -578,9 +591,20 @@
       "videoLabel": "{{filename}} 비디오 미리보기"
     },
     "sharing": {
-      "shareOrganization": "조직에 공유",
-      "sharePublic": "공개적으로 공유",
-      "unavailable": "이 아티팩트를 사용할 수 없거나 액세스 권한이 없습니다."
+      "accessLabel": "액세스 권한",
+      "copyLink": "링크 복사",
+      "loadFailed": "권한을 불러올 수 없습니다",
+      "loadingPermissions": "권한을 불러오는 중",
+      "onlyMe": "나만",
+      "onlyMeDescription": "나만 이 아티팩트를 볼 수 있습니다",
+      "organization": "조직",
+      "organizationDescription": "링크가 있는 {{organization}} 구성원",
+      "permissionsUpdated": "액세스 권한이 업데이트되었습니다",
+      "publicAccess": "공개 액세스",
+      "publicDescription": "링크가 있는 모든 사람이 볼 수 있습니다",
+      "retry": "다시 시도",
+      "savedAutomatically": "변경 사항은 자동으로 저장됩니다",
+      "saving": "저장 중…"
     },
     "sidebar": {
       "openSharedConversation": "공유된 대화 열기",
@@ -619,6 +643,10 @@
       "importDeckHint": "(.pptx, .ppt, .pdf)",
       "importedSlides_one": "{{count}}장",
       "importedSlides_other": "{{count}}장",
+      "importFile": "내 파일 가져오기",
+      "importFileHint": "({{formats}})",
+      "importStarted": "{{filename}}을(를) 분석하고 있습니다. 준비되면 Custom에 표시됩니다.",
+      "importUnsupported": "템플릿을 만들려면 {{formats}} 파일을 선택하세요.",
       "introVideo": "인트로 영상",
       "introVideoUnavailable": "이 동영상 템플릿은 더 이상 사용할 수 없습니다. 메시지를 보내려면 삭제하세요.",
       "multiAccent": "다중 악센트",
@@ -685,11 +713,6 @@
       "websitePreview": "{{title}} 웹사이트 템플릿 미리보기",
       "workflow": "워크플로",
       "workflowCatalog": {
-        "alert-metric-moves-slack": {
-          "description": "핵심 지표를 모니터링하고 급격한 변동 시 Slack에 알림을 보냅니다.",
-          "shortDescription": "핵심 지표가 크게 움직이면 Slack에 알립니다.",
-          "title": "지표 변동 시 알림"
-        },
         "auto-inbox-label": {
           "description": "Gmail 라벨이 지정되면 실행되어 해당 메일을 처리하는 워크플로를 만듭니다.",
           "shortDescription": "Gmail 라벨을 붙이면 워크플로를 실행합니다.",
@@ -699,21 +722,6 @@
           "description": "준비 완료 라벨이 붙은 PR을 검토하고 CI를 기다린 후 병합하고 Slack에 게시합니다.",
           "shortDescription": "CI가 통과한 PR을 자동으로 머지합니다.",
           "title": "GitHub PR 자동 병합"
-        },
-        "blog-posts-to-x": {
-          "description": "새 블로그 글을 소셜용 문구로 바꿔 Buffer 대기열에 넣습니다.",
-          "shortDescription": "새 블로그 글을 소셜 게시물로 만듭니다.",
-          "title": "블로그 게시물을 소셜 게시물로 전환"
-        },
-        "build-weekly-deck-gamma": {
-          "description": "이번 주 지표를 Gamma에서 발표용 데크로 만듭니다.",
-          "shortDescription": "이번 주 지표를 Gamma 덱으로 만듭니다.",
-          "title": "Gamma에서 주간 데크 만들기"
-        },
-        "business-review-gamma": {
-          "description": "이번 달 지표를 Gamma에서 비즈니스 리뷰 데크로 만듭니다.",
-          "shortDescription": "이번 달 지표를 리뷰 덱으로 만듭니다.",
-          "title": "Gamma에서 비즈니스 리뷰 만들기"
         },
         "catch-calendar-conflicts": {
           "description": "캘린더에서 중복 예약을 찾아 미리 알림을 보냅니다.",
@@ -735,30 +743,15 @@
           "shortDescription": "가입 퍼널에서 이탈이 가장 큰 지점을 알려줍니다.",
           "title": "PostHog 가입 퍼널 확인"
         },
-        "clickup-slack-standup": {
-          "description": "매일 아침 ClickUp 작업을 모아 팀 스탠드업 요약을 Slack에 게시합니다.",
-          "shortDescription": "ClickUp 작업으로 아침 스탠드업을 게시합니다.",
-          "title": "ClickUp Slack 스탠드업"
-        },
         "compare-google-ads-last-month": {
           "description": "광고비와 ROAS를 지난달과 비교하고 이상 신호를 Slack에 알립니다.",
           "shortDescription": "광고비와 ROAS를 지난달과 비교합니다.",
           "title": "Google Ads와 지난달 비교"
         },
-        "competitive-intel-monitor": {
-          "description": "경쟁사 사이트의 가격과 기능 변화를 모니터링해 Notion에 기록하고 Slack에 알립니다.",
-          "shortDescription": "경쟁사 가격 변화를 Notion에 기록합니다.",
-          "title": "경쟁사 동향 모니터"
-        },
-        "daily-company-brief-slack": {
-          "description": "제품, 성장, 수익 데이터를 모아 Slack에 일일 브리핑을 게시합니다.",
-          "shortDescription": "제품·성장·매출을 한 편의 브리핑으로 모읍니다.",
-          "title": "Slack에 일일 회사 브리핑 게시"
-        },
-        "daily-industry-news-slack": {
-          "description": "당일 관련 산업 뉴스를 모아 Slack 브리핑으로 게시합니다.",
-          "shortDescription": "그날의 업계 소식을 Slack에 정리합니다.",
-          "title": "Slack에 일일 산업 뉴스 게시"
+        "creator-shortlist-to-sheets": {
+          "description": "검토 중인 크리에이터를 도달과 engagement로 평가해 시트 하나에 순위대로 정리합니다.",
+          "shortDescription": "도달과 engagement로 크리에이터 순위를 매깁니다.",
+          "title": "Google 스프레드시트로 크리에이터 후보 목록 만들기"
         },
         "daily-standup-report": {
           "description": "매일 아침 제품과 엔지니어링 지표를 모아 짧은 리포트를 만들고 Slack에 게시합니다.",
@@ -775,11 +768,6 @@
           "shortDescription": "최근 소식을 모아 뉴스레터를 만듭니다.",
           "title": "Mailchimp에서 뉴스레터 초안 작성"
         },
-        "draft-replies-notion-faq": {
-          "description": "Notion FAQ를 기반으로 티켓 답변 초안을 작성합니다.",
-          "shortDescription": "Notion FAQ로 문의 답변 초안을 씁니다.",
-          "title": "Notion FAQ에서 답변 초안 작성"
-        },
         "feedback-router": {
           "description": "Slack 채널을 지켜보다가 제품 피드백에 라벨과 담당자를 붙여 Notion으로 보냅니다.",
           "shortDescription": "Slack의 제품 피드백을 Notion으로 보냅니다.",
@@ -794,11 +782,6 @@
           "description": "새 Sentry 오류를 사용자 영향도별로 순위 매기고 심각한 오류를 GitHub 이슈로 등록합니다.",
           "shortDescription": "심각한 Sentry 오류를 GitHub 이슈로 등록합니다.",
           "title": "Sentry 충돌을 GitHub 이슈로 등록"
-        },
-        "flag-figma-designs-no-task": {
-          "description": "아직 연결된 Linear 작업이 없는 Figma 디자인을 표시합니다.",
-          "shortDescription": "Linear 작업이 없는 Figma 디자인을 찾아냅니다.",
-          "title": "작업 없는 Figma 디자인 표시"
         },
         "flagged-gmail-todoist-tasks": {
           "description": "표시한 이메일을 자동으로 Todoist 작업으로 전환합니다.",
@@ -815,11 +798,6 @@
           "shortDescription": "머지된 풀 리퀘스트를 리포트로 모읍니다.",
           "title": "GitHub PR 요약"
         },
-        "gmail-followups-auto": {
-          "description": "응답하지 않은 연락처를 찾아 다음 후속 조치를 초안 작성합니다.",
-          "shortDescription": "답장이 없는 상대에게 후속 메일 초안을 씁니다.",
-          "title": "Gmail 후속 조치를 자동으로 보내기"
-        },
         "gmail-reconnect-reminders": {
           "description": "오랫동안 이메일을 보내지 않은 중요한 연락처를 표시합니다.",
           "shortDescription": "한동안 연락하지 않은 사람을 알려줍니다.",
@@ -830,25 +808,10 @@
           "shortDescription": "지금 확인해야 할 메일을 골라줍니다.",
           "title": "Gmail에서 주요 이메일 강조하기"
         },
-        "investor-update-google-docs": {
-          "description": "지표와 하이라이트를 모아 Docs에 투자자 업데이트를 작성합니다.",
-          "shortDescription": "지표를 모아 투자자 업데이트를 만듭니다.",
-          "title": "Google Docs에서 투자자 업데이트 초안 작성하기"
-        },
-        "log-gong-calls-hubspot": {
-          "description": "Gong 통화에서 노트와 다음 단계를 HubSpot 거래에 가져옵니다.",
-          "shortDescription": "Gong 통화 메모를 HubSpot 거래에 기록합니다.",
-          "title": "Gong 통화를 HubSpot에 기록하기"
-        },
-        "meeting-notes-asana-tasks": {
-          "description": "회의 노트를 할당된 기한 있는 Asana 작업으로 전환합니다.",
-          "shortDescription": "회의록을 Asana 작업으로 만듭니다.",
-          "title": "회의 노트를 Asana 작업으로 전환하기"
-        },
-        "meeting-recaps-slack": {
-          "description": "각 회의 후 결정 사항과 액션 아이템이 포함된 요약을 공유합니다.",
-          "shortDescription": "회의 후 결정과 할 일을 공유합니다.",
-          "title": "Slack에서 회의 요약 받기"
+        "keyword-ranks-to-sheets": {
+          "description": "중요한 키워드에서 페이지가 몇 위인지 확인하고 변동을 기록합니다.",
+          "shortDescription": "주간 키워드 순위 변동을 시트에 기록합니다.",
+          "title": "Google 스프레드시트에서 키워드 순위 추적"
         },
         "morning-brief": {
           "description": "Gmail, 캘린더, Notion 업데이트를 짧은 하루 계획으로 만들어 Slack에 보냅니다.",
@@ -860,20 +823,10 @@
           "shortDescription": "처음 보는 발신자를 HubSpot에 추가합니다.",
           "title": "새 Gmail 연락처를 HubSpot에 추가하기"
         },
-        "onboard-new-hires-asana": {
-          "description": "각 신입 사원을 위한 온보딩 작업 체크리스트를 Asana에 생성합니다.",
-          "shortDescription": "신규 입사자별 온보딩 체크리스트를 만듭니다.",
-          "title": "Asana에서 신입 사원 온보딩하기"
-        },
         "personal-weekly-digest": {
           "description": "GitHub, Gmail, 캘린더 활동을 한 주 단위로 정리해 Slack에 보냅니다.",
           "shortDescription": "GitHub과 Gmail로 한 주를 정리합니다.",
           "title": "개인 주간 다이제스트"
-        },
-        "post-daily-metrics-slack": {
-          "description": "일일 방문자, 가입자 및 활성화 수치를 Slack에 게시합니다.",
-          "shortDescription": "일일 방문자와 가입자를 Slack에 게시합니다.",
-          "title": "일일 지표를 Slack에 게시하기"
         },
         "post-release-notes-slack": {
           "description": "최근 배포된 작업에서 변경 로그 초안을 작성해 Slack에 게시합니다.",
@@ -885,35 +838,10 @@
           "shortDescription": "외부 미팅 전에 사전 브리핑을 보냅니다.",
           "title": "Google 캘린더 회의 준비"
         },
-        "publish-scheduled-posts-buffer": {
-          "description": "그날 예약된 콘텐츠를 게시하고 소셜 게시물을 대기열에 넣습니다.",
-          "shortDescription": "그날 예약된 소셜 게시물을 발행합니다.",
-          "title": "Buffer에 예정된 게시물 게시"
-        },
         "research-calendar-meetings": {
           "description": "각 캘린더 이벤트 전에 만나는 사람을 조사합니다.",
           "shortDescription": "미팅 전에 만날 사람을 조사합니다.",
           "title": "캘린더 회의 조사"
-        },
-        "research-new-signups-apollo": {
-          "description": "새 가입자를 조사하고 빠른 스냅샷을 게시합니다.",
-          "shortDescription": "새 가입자를 조사해 요약을 게시합니다.",
-          "title": "신규 가입자 조사"
-        },
-        "revenuecat-subscription-digest": {
-          "description": "구독 현황을 시트로 추적하고 이탈이나 해지 패턴이 바뀌면 Slack에 알립니다.",
-          "shortDescription": "구독을 추적하고 이탈 신호를 Slack에 알립니다.",
-          "title": "RevenueCat 구독 다이제스트"
-        },
-        "run-daily-query-sheets": {
-          "description": "저장된 SQL을 예약 실행하고 결과를 시트에 추가합니다.",
-          "shortDescription": "저장된 SQL을 실행해 시트에 결과를 추가합니다.",
-          "title": "일일 쿼리를 Google Sheets에 실행"
-        },
-        "salesforce-pipeline-digest": {
-          "description": "매주 Salesforce 기회 변동과 마감일 리스크를 Slack에 정리합니다.",
-          "shortDescription": "매주 Salesforce 파이프라인 리스크를 정리합니다.",
-          "title": "Salesforce 파이프라인 다이제스트"
         },
         "send-bugs-github-slack": {
           "description": "버그 태그가 붙은 보고서를 GitHub 이슈로 등록하고 팀에 Slack 알림을 보냅니다.",
@@ -925,25 +853,20 @@
           "shortDescription": "심각한 Sentry 이슈를 매일 정리해 보냅니다.",
           "title": "Sentry 이슈 다이제스트"
         },
+        "social-posts-to-sheets": {
+          "description": "추적 중인 계정의 공개 게시물과 engagement를 시트 하나에 모읍니다.",
+          "shortDescription": "공개 소셜 게시물을 시트 하나에 모읍니다.",
+          "title": "소셜 게시물을 Google 스프레드시트에 모으기"
+        },
         "sort-gmail-draft-replies": {
           "description": "받은편지함을 정리하고 답장이 필요한 이메일에 답장 초안을 작성합니다.",
           "shortDescription": "받은편지함을 정리하고 답장 초안을 씁니다.",
           "title": "Gmail 정리 및 답장 초안 작성"
         },
-        "spot-churn-risk-stripe-zendesk": {
-          "description": "이탈 위험 계정을 표시하고 복구 이메일을 초안 작성합니다.",
-          "shortDescription": "이탈 위험을 찾아 회복 메일을 준비합니다.",
-          "title": "Stripe와 Zendesk에서 이탈 위험 감지"
-        },
         "summarize-gmail-newsletters": {
           "description": "받은편지함 뉴스레터를 한 줄 요약으로 정리합니다.",
           "shortDescription": "뉴스레터를 하나의 요약으로 정리합니다.",
           "title": "Gmail 뉴스레터 요약"
-        },
-        "summarize-zendesk-tickets-daily": {
-          "description": "지난 하루 Zendesk 티켓을 요약해 Slack에 게시합니다.",
-          "shortDescription": "Zendesk 티켓을 매일 요약해 게시합니다.",
-          "title": "Zendesk 티켓 일일 요약"
         },
         "support-ticket-router": {
           "description": "고객 문의 메일을 분류해 Notion에 기록하고 긴급 건은 Slack에 알립니다.",
@@ -965,30 +888,20 @@
           "shortDescription": "이번 주 사용량 변화가 큰 기능을 알려줍니다.",
           "title": "PostHog로 기능 사용량 추적"
         },
-        "track-keyword-ranks-ahrefs": {
-          "description": "Ahrefs에서 키워드 순위를 추적하고 변동이 큰 키워드를 Notion에 정리합니다.",
-          "shortDescription": "이번 주 키워드 순위 변동을 정리합니다.",
-          "title": "Ahrefs로 키워드 순위 추적"
-        },
-        "track-signup-sources-sheets": {
-          "description": "각 신규 가입을 추적 시트의 출처에 연결합니다.",
-          "shortDescription": "가입 경로를 시트에 정리합니다.",
-          "title": "Google 시트에서 가입 출처 추적"
-        },
         "vercel-deploy-digest": {
           "description": "Vercel 배포를 모니터링해 GitHub 커밋과 연결하고 실패하면 Slack에 알립니다.",
           "shortDescription": "Vercel 배포가 실패하면 Slack에 알립니다.",
           "title": "Vercel 배포 다이제스트"
         },
+        "web-data-to-sheets": {
+          "description": "지정한 페이지 목록에서 같은 항목을 주기적으로 수집하고 기록을 시트 하나에 남깁니다.",
+          "shortDescription": "페이지 목록에서 항목을 시트 하나로 모읍니다.",
+          "title": "웹 페이지 데이터를 스프레드시트에 모으기"
+        },
         "x-brand-monitor": {
           "description": "X에서 브랜드 언급을 추적해 관련 게시물을 Notion에 저장하고 중요한 언급은 Slack에 알립니다.",
           "shortDescription": "X에서 눈에 띄는 브랜드 언급을 Slack에 알립니다.",
           "title": "X 브랜드 모니터"
-        },
-        "zendesk-knowledge-base": {
-          "description": "Zendesk에서 반복되는 질문을 찾아 FAQ 초안을 만들고 Notion에 저장합니다.",
-          "shortDescription": "반복되는 질문을 FAQ 항목으로 만듭니다.",
-          "title": "Zendesk 지식베이스"
         }
       },
       "workflowCategories": {
@@ -1008,6 +921,10 @@
       "copyLinkFailed": "링크 복사 실패",
       "downloadFailed": "다운로드 실패",
       "linkCopied": "링크 복사됨"
+    },
+    "viewer": {
+      "continuePrompt": "이 결과물로 작업할 수 있도록 도와주세요: {{url}}",
+      "continueWithBrand": "{{brandName}}에서 계속하기"
     }
   },
   "auth": {
@@ -1507,6 +1424,60 @@
       "title": "작업을 사용할 수 없음"
     },
     "agentPage": {
+      "getStarted": {
+        "checkin": {
+          "action": "출석하기",
+          "description": "하루에 한 번 출석하세요. UTC 00:00에 초기화됩니다.",
+          "name": "매일 출석하기",
+          "unit": "하루당"
+        },
+        "connector": {
+          "action": "연결",
+          "description": "Gmail, Notion 등 100개 이상",
+          "name": "커넥터 연결하기",
+          "unit": "커넥터당"
+        },
+        "inReview": "검토 중",
+        "inReviewDescription": "제출됨, 검토 대기 중",
+        "invite": {
+          "action": "초대",
+          "description": "추가하는 사람마다 적립됩니다",
+          "name": "팀 초대하기",
+          "unit": "멤버당"
+        },
+        "pendingInvitations": "대기 중인 초대: {{amount}}",
+        "personalBalanceNote": "보상은 지급 후 7일이 지나면 만료돼요. Slack 보상은 조직에, 나머지는 개인 잔액에 지급돼요.",
+        "progressLabel": "시작하기 진행 상황",
+        "rejectedDescription": "이 게시물은 조건에 맞지 않아요. Okou를 언급한 다른 공개 게시물을 제출하세요.",
+        "reward": "+{{amount}}",
+        "rewardedConnections": "보상을 받은 커넥터: {{amount}}",
+        "share": {
+          "action": "공유",
+          "description": "게시한 뒤 링크를 붙여넣기",
+          "name": "X에 {{assistantName}} 공유하기"
+        },
+        "shareDialog": {
+          "description": "공개 게시물을 제출하면 검토해요. 1인당 한 번 보상을 받을 수 있어요.",
+          "helper": "게시물은 공개 상태여야 하고 {{assistantName}}을(를) 언급해야 합니다.",
+          "inputLabel": "게시물 링크",
+          "placeholder": "https://x.com/...",
+          "submit": "제출",
+          "title": "X에 {{assistantName}} 공유하기"
+        },
+        "slack": {
+          "action": "추가",
+          "description": "팀이 이미 일하고 있는 곳으로",
+          "name": "Slack에 {{assistantName}} 추가하기"
+        },
+        "stepCount": "{{completed}}/{{total}}",
+        "subtitle": "작업을 시도하고 크레딧을 받으세요.",
+        "title": "시작하기",
+        "workflow": {
+          "action": "만들기",
+          "description": "반복 작업을 재사용 가능한 스킬로 만들기",
+          "name": "워크플로 만들기"
+        }
+      },
       "growth": {
         "addInSlack": "Slack에 {{assistantName}} 추가",
         "connect": "연결",
@@ -1705,15 +1676,17 @@
       "upgradeToRun": "{{assistantName}}를 실행하려면 Pro로 업그레이드하세요",
       "upgradeWorkspace": "워크스페이스 업그레이드"
     },
+    "cards": {
+      "viewDetails": "세부 정보 보기"
+    },
     "composer": {
+      "add": "추가",
       "agentSuggestions": "에이전트",
       "configureModel": "모델 구성",
       "create": {
         "addStyle": "스타일 추가",
         "addTemplate": "템플릿 추가",
-        "chooseScene": "만들 항목 선택",
         "chooseType": "유형 선택",
-        "description": "프레젠테이션, 동영상, 이미지",
         "exit": "만들기 모드 종료",
         "image": "이미지 만들기",
         "imageDescription": "아이디어를 이미지로 표현",
@@ -1721,12 +1694,10 @@
         "presentation": "프레젠테이션 만들기",
         "presentationDescription": "이야기를 담은 슬라이드",
         "presentationPlaceholder": "프레젠테이션의 주제는 무엇인가요?",
-        "question": "무엇을 실현하고 싶으신가요?",
         "settingsAdjusted": "이 모델에 맞게 일부 동영상 설정을 조정했습니다",
         "slideCount": "슬라이드 수",
         "slideCountAuto": "자동",
         "slideCountRange": "{{range}}장",
-        "title": "만들기",
         "video": "동영상 만들기",
         "videoDescription": "아이디어를 영상으로 표현",
         "videoPlaceholder": "만들고 싶은 동영상을 설명하세요…"
@@ -1741,14 +1712,9 @@
       "selectModel": "모델 선택",
       "slashPanel": {
         "browseAll": "모든 템플릿 보기",
-        "illustrationDescription": "선택한 스타일로 이미지 한 장을 만듭니다",
         "make": "만들기",
-        "slidesDescription": "바로 발표할 수 있는 HTML 슬라이드",
         "templateCount_other": "템플릿 {{count}}개",
-        "useTemplate": "템플릿 {{title}} 사용",
-        "videoDescription": "텍스트로 영상을 만들며 매개변수는 선택한 모델을 따릅니다",
-        "websiteDescription": "게시할 수 있는 정적 사이트",
-        "workflowDescription": "작성 창에서 실행할 수 있는 저장된 워크플로"
+        "useTemplate": "템플릿 {{title}} 사용"
       },
       "temporarilySwitchTo": "임시로 전환할 모델",
       "threadSuggestions": "채팅 스레드",
@@ -1823,11 +1789,13 @@
         "matchCount_other": "{{count}}개 일치",
         "moreAccounts_other": "+{{count}}",
         "needsAttention": "확인 필요",
+        "nextCategories": "다음 카테고리",
         "noResultsBody": "제품 이름으로 검색하거나 API 또는 MCP 서버로 직접 만들어 보세요.",
         "noResultsTitle": "“{{query}}”와 일치하는 커넥터가 없습니다",
         "openDetailAria": "{{connector}} 세부 정보 열기",
         "otherCategory": "기타",
         "permissionCount_other": "권한 {{count}}개",
+        "previousCategories": "이전 카테고리",
         "showAll_other": "전체 {{count}}개 보기",
         "tabCustom": "커스텀",
         "tabDiscover": "탐색"
@@ -1853,11 +1821,17 @@
       "providerIncompatibleAction": "새 세션 시작",
       "providerIncompatiblePrefix": "이 세션은 다른 모델 공급자로 시작되어 현재 공급자로 계속할 수 없습니다.",
       "recovery": {
+        "autonomyLimitDescription": "연속 자동 실행 한도에 도달했습니다. 계속하려면 확인해 주세요.",
+        "autonomyLimitTitle": "자동 실행 한도에 도달했습니다",
         "capacityDescription": "잠시 후 다시 시도하거나 다른 모델로 전환하세요.",
         "capacityTitle": "이 모델은 지금 혼잡합니다",
         "claudeCode": "Claude Code",
         "codex": "Codex",
         "continue": "계속",
+        "newRunCurrentSettings": "계속하면 현재 설정을 사용하여 새 실행이 시작됩니다.",
+        "originalAccount": "이 실행은 개인 구독({{account}})을 사용했습니다.",
+        "originalAccountUnavailable": "이 실행은 개인 구독을 사용했습니다. 원래 계정이 더 이상 연결되어 있지 않습니다.",
+        "originalAccountUnknown": "이 실행은 개인 구독을 사용했습니다. 원래 계정을 확인할 수 없습니다.",
         "resetAndTryAgain": "재설정하고 다시 시도",
         "resetsAt": "{{time}}에 재설정",
         "selectModel": "모델 전환",
@@ -1872,23 +1846,26 @@
       "runCancelled": "중간에 일시 중지됨 — 언제든 다시 시작하세요."
     },
     "feedback": {
-      "emailDraftDescription": "이메일 초안 (메일 초안 ID: {{id}})",
-      "partHeading": "답변 이 부분에 대한 피드백:",
-      "partsHeading_one": "답변 {{count}}개 부분에 대한 피드백:",
-      "partsHeading_other": "답변 {{count}}개 부분에 대한 피드백:",
-      "placeholder": "무엇을 변경해야 하나요?",
+      "emailDraftDescription": "이메일 초안",
+      "forwardPartHeading": "\"{{title}}\"에서 전달됨",
+      "forwardPartsHeading_one": "\"{{title}}\"에서 {{count}}개 부분 전달됨",
+      "forwardPartsHeading_other": "\"{{title}}\"에서 {{count}}개 부분 전달됨",
+      "partHeading": "답변에서 인용",
+      "partsHeading_one": "답변에서 {{count}}개 부분 인용",
+      "partsHeading_other": "답변에서 {{count}}개 부분 인용",
+      "placeholder": "이 인용문에 대해 질문하거나 의견을 남기세요",
       "quote": "인용",
       "remove": "피드백 제거",
-      "sentEmailDescription": "발송된 이메일 (메일 ID: {{id}}{{sentIdSuffix}})",
-      "sentIdSuffix": ", 발송 ID: {{sentId}}",
-      "sourcePartHeading": "{{description}} 이 부분에 대한 피드백:",
-      "sourcePartsHeading_one": "{{description}} {{count}}개 부분에 대한 피드백:",
-      "sourcePartsHeading_other": "{{description}} {{count}}개 부분에 대한 피드백:"
+      "sentEmailDescription": "보낸 이메일",
+      "sourcePartHeading": "{{description}}에서 인용",
+      "sourcePartsHeading_one": "{{description}}에서 {{count}}개 부분 인용",
+      "sourcePartsHeading_other": "{{description}}에서 {{count}}개 부분 인용"
     },
     "forward": {
       "action": "전달",
       "agents": "에이전트",
       "back": "뒤로",
+      "composerPlaceholder": "메시지 추가",
       "content": "내용",
       "description": "선택한 내용을 에이전트 또는 채팅으로 보내 계속 작업하세요.",
       "noResults": "에이전트 또는 채팅을 찾을 수 없습니다",
@@ -1919,10 +1896,8 @@
         "changeAvatar": "아바타 변경",
         "chooseStyle": "스타일 선택",
         "chooseStyleAndVoice": "스타일과 음성을 선택하세요.",
-        "noMatches": "결과가 없습니다. 다른 검색어나 카테고리를 사용해 보세요.",
+        "noMatches": "결과가 없습니다.",
         "ready": "준비되었습니다. 채팅에 콘텐츠를 추가하세요.",
-        "searchAvatars": "아바타 검색",
-        "searchStyles": "스타일 검색",
         "settings": "인트로 영상 설정",
         "style": "스타일",
         "useSelection": "선택 항목 사용"
@@ -1939,8 +1914,7 @@
           "print": "인쇄와 출판",
           "retro-tech": "레트로 기술과 인터페이스"
         },
-        "preview": "{{title}} 미리보기",
-        "previewUnavailable": "이 스타일의 동영상 미리보기가 없습니다."
+        "preview": "{{title}} 미리보기"
       },
       "voice": {
         "auto": "Okou에게 맡기기",
@@ -1989,12 +1963,14 @@
     },
     "newChat": "새 채팅",
     "origins": {
-      "agentphone": "AgentPhone",
+      "agentphone": "iMessage",
       "feishu": "Feishu",
       "github": "GitHub",
+      "lark": "Lark",
       "openChat": "오픈 채팅",
       "openFeishuChat": "Feishu에서 원본 채팅 열기",
       "openGithubMessage": "GitHub에서 원본 이슈 또는 풀 리퀘스트 열기",
+      "openLarkChat": "Lark에서 원본 채팅 열기",
       "openMessage": "메시지 열기",
       "openSlackMessage": "Slack에서 원본 메시지 열기",
       "openTeamsMessage": "Microsoft Teams에서 원본 메시지 열기",
@@ -2100,6 +2076,7 @@
         "wiring": "연결 중..."
       },
       "viewActivityLogs": "활동 로그 보기",
+      "viewLangfuseTrace": "Langfuse 트레이스 보기",
       "viewLogs": "실행 로그 보기",
       "waitingIn": "대기 중",
       "workedFor": "{{duration}} 동안 작업 완료",
@@ -2114,6 +2091,7 @@
       "createFailed": "공유된 대화를 만들지 못했습니다. 다시 시도하세요.",
       "deselectGroup": "메시지 그룹 선택 해제",
       "linkCopied": "링크가 복사되었습니다",
+      "publicDescription": "선택한 메시지와 첨부 파일이 공개됩니다.",
       "selectedCount_other": "{{count}}개 선택됨",
       "selectGroup": "메시지 그룹 선택",
       "shareLink": "공유된 대화 링크",
@@ -2257,6 +2235,40 @@
             "prompt": "웹사이트 이미지 만들기"
           }
         },
+        "presentation": {
+          "clientProposal": {
+            "label": "고객사 제안서 작성하기",
+            "prompt": "고객 제안 덱을 만들어 주세요. 고객, 제안하는 업무, 일정, 가격을 물어봐 주세요."
+          },
+          "companyOverview": {
+            "label": "회사가 하는 일 설명하기",
+            "prompt": "회사 소개 덱을 만들어 주세요. 하는 일, 대상 고객, 청중이 기억했으면 하는 점을 물어봐 주세요."
+          },
+          "eventTalk": {
+            "label": "행사 발표 준비하기",
+            "prompt": "발표용 덱을 만들어 주세요. 행사, 청중, 전하고 싶은 핵심 메시지를 물어봐 주세요."
+          },
+          "pitchDeck": {
+            "label": "투자자에게 사업을 소개하기",
+            "prompt": "사업의 투자 유치용 피치덱을 만들어 주세요. 문제, 제품, 지금까지의 성과, 조달 규모를 물어봐 주세요."
+          },
+          "productIntro": {
+            "label": "새 제품 소개하기",
+            "prompt": "새 제품을 소개하는 덱을 만들어 주세요. 무엇을 하는지, 누구를 위한 것인지, 무엇이 다른지 물어봐 주세요."
+          },
+          "resultsReadout": {
+            "label": "성과 발표하기",
+            "prompt": "성과를 보고용 덱으로 만들어 주세요. 수치, 해당 기간, 뒷받침하는 의사결정을 물어봐 주세요."
+          },
+          "teamUpdate": {
+            "label": "팀 업데이트 자료 만들기",
+            "prompt": "팀 업데이트용 덱을 만들어 주세요. 이번 기간에 있었던 일, 다음 계획, 청중이 누구인지 물어봐 주세요."
+          },
+          "training": {
+            "label": "팀에게 무언가 가르치기",
+            "prompt": "제가 정한 주제로 교육용 덱을 만들어 주세요. 교육 대상과 교육 후 할 수 있어야 하는 일을 물어봐 주세요."
+          }
+        },
         "video": {
           "animatePhoto": {
             "label": "사진을 동영상으로 만들기",
@@ -2366,6 +2378,15 @@
       "moreTemplates": "더 많은 템플릿",
       "presentationTemplates": "프레젠테이션 템플릿",
       "removeTask": "{{task}} 제거",
+      "shelf": {
+        "browseStyles": "모든 스타일 보기",
+        "browseTemplates": "모든 템플릿 보기",
+        "image": "이미지 스타일",
+        "nextPage": "다음 페이지",
+        "previousPage": "이전 페이지",
+        "video": "동영상 템플릿",
+        "website": "웹사이트 템플릿"
+      },
       "tasks": {
         "image": "이미지",
         "presentation": "슬라이드",
@@ -2453,7 +2474,6 @@
           "waterfall": "Waterfall chart",
           "word-cloud": "Word cloud"
         },
-        "chartSafety": "Leave blank and Okou will choose what fits your content.",
         "chooseAny": "Choose any",
         "chooseCharts": "Choose charts",
         "chooseOne": "Choose one",
@@ -2477,7 +2497,6 @@
         },
         "more": "More",
         "noCharts": "No matching charts",
-        "optional": "Optional",
         "outputFormat": "Output format",
         "outputs": {
           "presentation": "Presentation",
@@ -2493,7 +2512,6 @@
         "selectedCount_one": "{{count}}개 선택됨",
         "selectedCount_other": "{{count}}개 선택됨",
         "summary": "{{output}} · 표현 방식 {{methodCount}} · 차트 {{chartCount}}",
-        "title": "시각화",
         "useWhenSuitable": "Use when suitable",
         "visualMethods": "Visual methods"
       },
@@ -2789,6 +2807,9 @@
         "website": "웹사이트",
         "workflow": "워크플로"
       },
+      "importedLoadFailed": "업로드한 템플릿을 불러오지 못했습니다.",
+      "importedLoading": "업로드한 템플릿 로딩 중…",
+      "importedUnavailable": "업로드한 템플릿을 일시적으로 사용할 수 없습니다.",
       "previewTemplate": "템플릿 미리보기 {{title}}",
       "previewVideo": "비디오 템플릿 미리보기 {{title}}",
       "previewWebsite": "웹사이트 템플릿 미리보기 {{title}}",
@@ -2797,8 +2818,11 @@
       "removeVideo": "비디오 템플릿 삭제 {{title}}",
       "removeWebsite": "웹사이트 템플릿 삭제 {{title}}",
       "removeWorkflow": "워크플로 템플릿 삭제 {{title}}",
+      "retry": "다시 시도",
       "videoOptions": "동영상 옵션",
       "videoOptionsAudio": "오디오 생성",
+      "videoOptionsAudioOff": "오디오 꺼짐",
+      "videoOptionsAudioOn": "오디오 켜짐",
       "videoOptionsDuration": "길이",
       "videoOptionsLabel": "동영상 옵션 {{spec}}",
       "videoOptionsModel": "모델",
@@ -2843,27 +2867,6 @@
       "copied": "복사됨",
       "deleted": "채팅 삭제됨"
     },
-    "translation": {
-      "action": "번역",
-      "close": "번역 닫기",
-      "copy": "번역 복사",
-      "languages": {
-        "de": "Deutsch",
-        "en": "English",
-        "es": "Español",
-        "fr": "Français",
-        "hi": "हिन्दी",
-        "id": "Bahasa Indonesia",
-        "it": "Italiano",
-        "ja": "日本語",
-        "ko": "한국어",
-        "ptBR": "Português",
-        "zhCN": "简体中文",
-        "zhTW": "繁體中文"
-      },
-      "result": "번역",
-      "targetLanguage": "번역 언어"
-    },
     "voice": {
       "checkingLimit": "음성 입력 제한 확인 중",
       "cleanupFailed": "텍스트가 추가되었지만 저장된 녹음을 삭제하지 못했습니다.",
@@ -2888,7 +2891,6 @@
       "storageFailed": "오디오를 저장하지 못했습니다. 재시도하면 이 기기에 이미 저장된 오디오만 복구됩니다.",
       "textTakingShape": "텍스트를 만드는 중",
       "transcribing": "전사 중",
-      "transcribingProgress": "전사 진행 중...",
       "transcriptionFailed": "음성 전사 실패. 다시 시도하세요."
     },
     "workflows": {
@@ -3118,9 +3120,11 @@
       "scope": {
         "aria": "커넥터 범위",
         "attention": "확인이 필요함",
+        "connected": "연결됨",
+        "custom": "사용자 지정",
         "discover": "둘러보기",
-        "mine": "내 커넥터",
-        "searchMine": "내 커넥터 찾기"
+        "searchConnected": "연결된 커넥터 찾기",
+        "searchCustom": "사용자 지정 커넥터 찾기"
       },
       "search": "커넥터 찾기",
       "shelf": {
@@ -3404,6 +3408,9 @@
         "wrongOrganizationDescription": "활성 조직이 이 GitHub 설치와 일치하지 않습니다. 올바른 조직으로 전환한 후 링크를 다시 여세요.",
         "wrongOrganizationTitle": "조직 전환"
       },
+      "lark": {
+        "connectTitle": "Lark 연결"
+      },
       "slack": {
         "connectDescription": "이 Slack 워크스페이스에 계정을 연결하여 Slack에서 직접 에이전트와 상호작용하세요.",
         "connectTitle": "Slack에 연결하기",
@@ -3549,7 +3556,7 @@
       },
       "feishu": {
         "addBot": "봇 추가",
-        "addDialogDescription": "기업 맞춤 앱을 생성하고 봇을 활성화한 후 Feishu 개발자 콘솔에서 이 단계를 완료하세요.",
+        "addDialogDescription": "Agent 유형의 기업 앱을 만든 다음 Feishu 개발자 콘솔에서 다음 단계를 완료하세요.",
         "addDialogTitle": "Feishu 봇 추가",
         "agentDescription": "이 봇으로 전송된 메시지를 처리할 에이전트를 선택하세요.",
         "backToIntegrations": "통합으로 돌아가기",
@@ -3562,14 +3569,14 @@
         "copied": "{{label}} 복사됨",
         "copy": "복사",
         "create": {
-          "descriptionAfter": ", 원하는 이름과 아이콘으로 기업 맞춤 앱을 생성한 다음 봇 기능을 추가하세요.",
+          "descriptionAfter": ", 기업 앱을 만들고 Agent 유형을 선택하세요. 원하는 이름과 아이콘을 선택할 수 있으며, Agent 템플릿에는 Bot 기능이 포함되어 있습니다.",
           "descriptionBefore": "에서 ",
           "downloadIcon": "선택 사항인 {{brandName}} 아이콘 다운로드",
           "iconAlt": "선택 사항인 {{brandName}} 앱 아이콘",
           "iconHint": ", 또는 원하는 아이콘을 사용하세요.",
           "iconTitle": "선택 사항인 {{brandName}} 앱 아이콘",
           "imageAlt": "앱 이름, 아이콘, 생성 버튼이 강조된 Feishu 앱 생성 양식",
-          "title": "기업 맞춤 앱 생성"
+          "title": "Agent 유형의 앱 만들기"
         },
         "credentials": {
           "appId": "앱 ID",
@@ -3599,6 +3606,9 @@
         "faq": {
           "approvalAnswer": "사용 가능 범위가 모든 구성원으로 설정된 경우 Feishu 관리자가 릴리스를 승인해야 합니다. Feishu는 관리자의 다이렉트 메시지로 승인 요청을 보내며, 관리자가 검토를 완료할 때까지 앱은 대기 상태로 유지됩니다.",
           "approvalQuestion": "앱 게시가 승인을 기다리는 이유는 무엇인가요?",
+          "botFeatureAnswer": "Feishu 개발자 콘솔에서 Features → Add Features를 여세요. By Feature에서 Bot 기능을 추가한 다음 이 가이드의 나머지 단계를 완료하고 앱을 게시하세요. Agent 유형의 앱에는 Bot 기능이 기본으로 포함되어 있습니다.",
+          "botFeatureImageAlt": "Add Features 아래의 Bot 기능을 보여주는 Lark 개발자 콘솔",
+          "botFeatureQuestion": "Agent 대신 Custom App을 선택했다면 어떻게 하나요?",
           "challengeAnswer": "이는 일반적으로 토큰 단계에서 저장한 암호화 키 또는 검증 토큰이 올바르지 않음을 의미합니다. 토큰 단계로 돌아가 이벤트 구성 → 암호화 전략에서 두 값을 다시 입력하고 저장한 후 요청 URL을 다시 시도하세요.",
           "challengeQuestion": "Feishu가 \"챌린지 코드에 응답이 없습니다\"를 표시하는 이유는 무엇인가요?",
           "title": "설정 FAQ"
@@ -3609,14 +3619,14 @@
         "moreOptions": "{{bot}}에 대한 추가 옵션",
         "pageDescription": "이 워크스페이스의 봇 라우팅 관리",
         "permissions": {
-          "description": "Feishu 개발자 콘솔에서 '권한 및 범위'를 열고 '일괄 가져오기/내보내기 > 가져오기'를 선택한 다음 아래 JSON을 붙여넣으세요. 관리형 커넥터에 필요한 모든 범위가 사용자 ID로 가져와집니다. 이는 연동이 작동하는 데 필요한 최소 권한입니다.",
-          "hint": "가져온 사용자 ID 권한을 모두 유지한 후 OAuth 동의 화면에서 권한을 부여할 수 있도록 새 앱 버전을 생성하고 게시하세요. 권한을 하나라도 제거하면 연동이 작동하지 않으며 Feishu 관리자의 승인이 필요할 수 있습니다.",
-          "label": "사용자 토큰 범위 JSON",
+          "description": "Feishu 개발자 콘솔에서 Permissions & Scopes를 열고 Batch Import/Export > Import를 선택한 다음 아래 JSON을 붙여 넣으세요. 봇의 앱 ID 권한과 연결된 계정의 사용자 ID 권한이 포함되어 있습니다.",
+          "hint": "두 ID에 대해 가져온 모든 권한을 유지한 다음 새 앱 버전을 만들고 게시하세요. Feishu 관리자의 승인이 필요할 수 있습니다.",
+          "label": "앱 및 사용자 범위 JSON",
           "menuAlt": "일괄 범위 가져오기/내보내기 메뉴가 강조 표시된 Feishu 권한 및 범위 페이지",
           "menuLabel": "일괄 범위 가져오기/내보내기 열기",
           "reviewAlt": "가져온 JSON과 검토 버튼이 강조 표시된 Feishu 일괄 범위 가져오기/내보내기 대화 상자",
           "reviewLabel": "JSON을 붙여넣고 새 범위 검토",
-          "title": "사용자 토큰 범위 가져오기"
+          "title": "앱 및 사용자 범위 가져오기"
         },
         "publish": {
           "allMembersAlt": "모든 구성원이 선택된 Feishu 사용 가능 설정",
@@ -3658,6 +3668,12 @@
           "verifying": "확인 중…",
           "waiting": "콜백을 기다리는 중"
         },
+        "toasts": {
+          "botInstalled": "Feishu 봇이 성공적으로 설치되었습니다",
+          "botUninstalled": "Feishu 봇이 제거되었습니다",
+          "connected": "Feishu가 성공적으로 연결되었습니다",
+          "disconnected": "Feishu 연결 해제됨"
+        },
         "tokens": {
           "descriptionAfter": ", 방금 생성한 앱을 선택하고 구성 페이지를 엽니다. 이벤트 구성 → 암호화 전략을 열고 암호화 키와 검증 토큰을 복사하세요.",
           "descriptionBefore": "열기 ",
@@ -3669,6 +3685,139 @@
         "uninstallDescription": "이 작업은 워크스페이스에서 {{bot}}을(를) 제거하고 이를 사용하는 모든 {{brandName}} 계정의 연결을 해제합니다. 이 작업은 취소할 수 없습니다.",
         "uninstallTargetFallback": "이 봇",
         "uninstallTitle": "Feishu 봇을 제거하시겠습니까?"
+      },
+      "lark": {
+        "addBot": "봇 추가",
+        "addDialogDescription": "Agent 유형의 기업 앱을 만든 다음 Lark 개발자 콘솔에서 다음 단계를 완료하세요.",
+        "addDialogTitle": "Lark 봇 추가",
+        "agentDescription": "이 봇으로 전송된 메시지를 처리할 에이전트를 선택하세요.",
+        "backToIntegrations": "통합으로 돌아가기",
+        "botFallback": "Lark 봇",
+        "botIconAlt": "{{bot}} 봇 아이콘",
+        "bots": "Lark 봇",
+        "callbackStatusVerified": "콜백 확인됨",
+        "callbackStatusWaiting": "콜백 대기 중",
+        "configured": "구성됨",
+        "copied": "{{label}} 복사됨",
+        "copy": "복사",
+        "create": {
+          "descriptionAfter": ", 기업 앱을 만들고 Agent 유형을 선택하세요. 원하는 이름과 아이콘을 선택할 수 있으며, Agent 템플릿에는 Bot 기능이 포함되어 있습니다.",
+          "descriptionBefore": "에서 ",
+          "downloadIcon": "선택 사항인 {{brandName}} 아이콘 다운로드",
+          "iconAlt": "선택 사항인 {{brandName}} 앱 아이콘",
+          "iconHint": ", 또는 원하는 아이콘을 사용하세요.",
+          "iconTitle": "선택 사항인 {{brandName}} 앱 아이콘",
+          "imageAlt": "앱 이름, 아이콘, 생성 버튼이 강조된 Feishu 앱 생성 양식",
+          "title": "Agent 유형의 앱 만들기"
+        },
+        "credentials": {
+          "appId": "앱 ID",
+          "appSecret": "앱 비밀키",
+          "description": "자격 증명 및 기본 정보에서 앱 ID와 앱 비밀키를 복사하세요.",
+          "imageAlt": "앱 ID와 앱 비밀키 위치를 보여주는 Feishu 앱 생성 결과",
+          "title": "앱 자격 증명 추가"
+        },
+        "defaultAgent": "기본 에이전트",
+        "defaultAgentAria": "{{appId}}의 기본 에이전트",
+        "developerConsole": "Lark 개발자 콘솔",
+        "dialogAdminRequired": "조직 관리자가 앱을 구성해야 합니다. 설정 완료 후 Lark 봇 목록에서 자신의 계정을 연결할 수 있습니다.",
+        "documentTitle": "Lark",
+        "emptyAdmin": "Lark 메시지를 에이전트로 라우팅하려면 맞춤 앱을 추가하세요.",
+        "emptyMember": "조직 관리자에게 Lark 봇 추가를 요청하세요.",
+        "emptyTitle": "아직 Lark 봇이 없습니다",
+        "events": {
+          "callbackLabel": "콜백 URL",
+          "continue": "Lark가 콜백 URL을 확인하고 메시지 이벤트가 구독된 후 계속 진행하세요.",
+          "description": "이벤트 구성을 엽니다. 구독 모드에서 '개발자 서버에 알림 전송'을 선택하세요. 그런 다음 콜백 구성을 열고 콜백 URL을 붙여넣습니다. Lark가 확인하면 '메시지 수신 v1' 이벤트를 추가하세요.",
+          "requestAlt": "요청 URL 필드가 강조된 Feishu 이벤트 구성 화면",
+          "requestLabel": "콜백 요청 URL 추가",
+          "subscriptionAlt": "구독 모드 편집 컨트롤이 강조된 Feishu 이벤트 구성 화면",
+          "subscriptionLabel": "이벤트 구독 모드 선택",
+          "title": "이벤트 전달 구성"
+        },
+        "faq": {
+          "approvalAnswer": "사용 가능 범위가 모든 구성원으로 설정된 경우 Lark 관리자가 릴리스를 승인해야 합니다. Lark는 관리자의 다이렉트 메시지로 승인 요청을 보내며, 관리자가 검토를 완료할 때까지 앱은 대기 상태로 유지됩니다.",
+          "approvalQuestion": "앱 게시가 승인을 기다리는 이유는 무엇인가요?",
+          "botFeatureAnswer": "Lark 개발자 콘솔에서 Features → Add Features를 여세요. By Feature에서 Bot 기능을 추가한 다음 이 가이드의 나머지 단계를 완료하고 앱을 게시하세요. Agent 유형의 앱에는 Bot 기능이 기본으로 포함되어 있습니다.",
+          "botFeatureImageAlt": "Add Features 아래의 Bot 기능을 보여주는 Lark 개발자 콘솔",
+          "botFeatureQuestion": "Agent 대신 Custom App을 선택했다면 어떻게 하나요?",
+          "challengeAnswer": "이는 일반적으로 토큰 단계에서 저장한 암호화 키 또는 검증 토큰이 올바르지 않음을 의미합니다. 토큰 단계로 돌아가 이벤트 구성 → 암호화 전략에서 두 값을 다시 입력하고 저장한 후 요청 URL을 다시 시도하세요.",
+          "challengeQuestion": "Lark가 \"챌린지 코드에 응답이 없습니다\"를 표시하는 이유는 무엇인가요?",
+          "title": "설정 FAQ"
+        },
+        "guideReference": "스크린샷은 참고용 Feishu 콘솔입니다. Lark 개발자 콘솔에서 이 단계를 진행하세요.",
+        "loadError": "Lark 설정을 불러올 수 없습니다.",
+        "manage": "관리",
+        "manageDialogTitle": "Lark 봇 관리",
+        "moreOptions": "{{bot}}에 대한 추가 옵션",
+        "pageDescription": "이 워크스페이스의 봇 라우팅 관리",
+        "permissions": {
+          "description": "Lark 개발자 콘솔에서 Permissions & Scopes를 열고 Batch Import/Export > Import를 선택한 다음 아래 JSON을 붙여 넣으세요. 봇의 앱 ID 권한과 연결된 계정의 사용자 ID 권한이 포함되어 있습니다.",
+          "hint": "두 ID에 대해 가져온 모든 권한을 유지한 다음 새 앱 버전을 만들고 게시하세요. Lark 관리자의 승인이 필요할 수 있습니다.",
+          "label": "앱 및 사용자 범위 JSON",
+          "menuAlt": "일괄 범위 가져오기/내보내기 메뉴가 강조 표시된 Feishu 권한 및 범위 페이지",
+          "menuLabel": "일괄 범위 가져오기/내보내기 열기",
+          "reviewAlt": "가져온 JSON과 검토 버튼이 강조 표시된 Feishu 일괄 범위 가져오기/내보내기 대화 상자",
+          "reviewLabel": "JSON을 붙여넣고 새 범위 검토",
+          "title": "앱 및 사용자 범위 가져오기"
+        },
+        "publish": {
+          "allMembersAlt": "모든 구성원이 선택된 Feishu 사용 가능 설정",
+          "allMembersLabel": "앱을 모든 구성원이 사용할 수 있도록 설정",
+          "createVersionAlt": "생성 버튼이 강조된 Feishu 버전 관리 페이지",
+          "createVersionLabel": "앱 버전 생성",
+          "description": "앱 버전을 생성 및 게시한 후 사용 가능 범위 설정을 편집하여 모든 구성원을 선택하세요. 권한을 부여한 조직 구성원만 앱을 사용할 수 있습니다.",
+          "editAvailabilityAlt": "사용 가능 설정 편집 작업이 강조된 Feishu 버전 상세 페이지",
+          "editAvailabilityLabel": "사용 가능 설정 편집",
+          "title": "앱 게시"
+        },
+        "redirect": {
+          "descriptionAfter": ", 개발 구성 → 보안 설정을 열고 아래 URL을 리디렉션 URL에 추가하여 워크스페이스 구성원이 Lark 계정을 {{brandName}}에 연결할 수 있도록 하세요.",
+          "descriptionBefore": "에서 ",
+          "imageAlt": "OAuth 리디렉션 URL을 추가할 위치를 보여주는 Feishu 보안 설정 페이지",
+          "label": "OAuth 리디렉션 URL",
+          "title": "OAuth 리디렉션 URL 구성"
+        },
+        "reviewGuide": "검토 가이드",
+        "reviewGuideDescription": "이 Lark 봇의 완료된 설정 단계를 검토하세요.",
+        "reviewGuideTitle": "Lark 검토 가이드",
+        "routeDescription": "Lark 메시지를 에이전트로 라우팅",
+        "selectAgent": "에이전트 선택",
+        "setupIncomplete": "설정 완료되지 않음",
+        "steps": {
+          "back": "뒤로",
+          "checking": "확인 중…",
+          "close": "닫기",
+          "create": "생성",
+          "credentials": "자격 증명",
+          "done": "완료",
+          "events": "이벤트",
+          "next": "다음",
+          "permissions": "범위",
+          "publish": "게시",
+          "redirect": "리디렉션",
+          "tokens": "토큰",
+          "verify": "확인 및 계속",
+          "verifying": "확인 중…",
+          "waiting": "콜백을 기다리는 중"
+        },
+        "toasts": {
+          "botInstalled": "Lark 봇이 성공적으로 설치되었습니다",
+          "botUninstalled": "Lark 봇이 제거되었습니다",
+          "connected": "Lark가 성공적으로 연결되었습니다",
+          "disconnected": "Lark 연결 해제됨"
+        },
+        "tokens": {
+          "descriptionAfter": ", 방금 생성한 앱을 선택하고 구성 페이지를 엽니다. 이벤트 구성 → 암호화 전략을 열고 암호화 키와 검증 토큰을 복사하세요.",
+          "descriptionBefore": "열기 ",
+          "encryptKey": "암호화 키",
+          "imageAlt": "암호화 키와 검증 토큰이 표시된 Feishu 암호화 전략 화면",
+          "title": "이벤트 검증 토큰 추가",
+          "verificationToken": "검증 토큰"
+        },
+        "uninstallDescription": "이 작업은 워크스페이스에서 {{bot}}을(를) 제거하고 이를 사용하는 모든 {{brandName}} 계정의 연결을 해제합니다. 이 작업은 취소할 수 없습니다.",
+        "uninstallTargetFallback": "이 봇",
+        "uninstallTitle": "Lark 봇을 제거하시겠습니까?"
       },
       "telegram": {
         "addBot": "봇 추가",
@@ -3748,10 +3897,6 @@
       "toasts": {
         "agentphoneConnected": "AgentPhone 연결됨",
         "agentphoneDisconnected": "AgentPhone 연결 해제됨",
-        "feishuBotInstalled": "Feishu 봇이 성공적으로 설치되었습니다",
-        "feishuBotUninstalled": "Feishu 봇이 제거되었습니다",
-        "feishuConnected": "Feishu가 성공적으로 연결되었습니다",
-        "feishuDisconnected": "Feishu 연결 해제됨",
         "slackConnected": "Slack이 성공적으로 연결되었습니다",
         "slackDisconnected": "Slack 연결 해제됨",
         "slackInstalled": "Slack이 성공적으로 설치되었습니다",
@@ -5191,6 +5336,31 @@
       "teamDescription": "10개 병렬 실행과 더 많은 크레딧으로 팀을 확장하세요."
     }
   },
+  "runErrors": {
+    "actions": {
+      "addCredits": "크레딧 추가",
+      "openModelProviders": "모델 제공업체 열기",
+      "reconnectClaude": "Claude Code 다시 연결",
+      "shareWithAdmin": "관리자와 공유"
+    },
+    "anthropicKeyAdmin": "설정된 Anthropic API 키로 Claude Code를 인증할 수 없습니다. 모델 제공업체에서 API 키를 업데이트하거나 교체한 후 다시 시도하세요.",
+    "anthropicKeyMember": "설정된 Anthropic API 키로 Claude Code를 인증할 수 없습니다. 워크스페이스 관리자에게 API 키 업데이트 또는 교체를 요청하세요.",
+    "askAdmin": "워크스페이스 관리자에게 크레딧 추가 또는 요금제 업그레이드를 요청하세요.",
+    "claudeReconnect": "Claude Code 구독 인증에 실패했습니다. 모델 제공업체에서 Claude Code를 다시 연결한 후 다시 시도하세요.",
+    "claudeTerms": "Claude Code를 사용하려면 업데이트된 이용약관 및 개인정보 처리방침에 동의해야 합니다. 모델 제공업체에 연결된 Claude 계정으로 https://claude.ai 에 로그인하고 업데이트된 내용에 동의한 후 다시 시도하세요.",
+    "codexOverloaded": "선택한 모델이 처리 한도에 도달했습니다. 다른 모델을 사용해 보세요.",
+    "codexReconnect": "ChatGPT 세션을 다시 연결해야 합니다. 모델 제공업체에서 ChatGPT (Codex)를 다시 연결한 후 다시 시도하세요.",
+    "contentPolicyRejected": "모델 제공업체가 콘텐츠 안전 정책에 따라 이 요청을 거부했습니다. 동일한 입력으로 재시도하면 다시 실패합니다. 요청을 바꾸거나 새 대화를 시작하거나 다른 모델로 전환하세요.",
+    "executionTimeout": "이 실행이 시간 제한에 도달했습니다.",
+    "failed": "실행 실패",
+    "modelRoutesUnavailable": "이 모델의 모든 기본 제공 경로를 일시적으로 사용할 수 없습니다. 나중에 다시 시도하세요.",
+    "modelTemporarilyUnavailable": "모델을 일시적으로 사용할 수 없음",
+    "modelUnavailable": "현재 모델을 사용할 수 없습니다.",
+    "overloaded": "{{model}}이(가) 과부하 상태입니다. 몇 분 후 다시 시도하거나 다른 모델로 전환하세요.",
+    "providerBalance": "연결된 모델 제공업체 계정의 잔액이 부족합니다.",
+    "transient": "오류가 발생했습니다. 나중에 다시 시도하세요.",
+    "vm0Credits": "크레딧이 부족합니다. 계속하려면 크레딧을 추가하거나 본인의 API 키를 설정하세요."
+  },
   "serviceStatus": {
     "dismiss": "서비스 업데이트 닫기",
     "label": "서비스 상태 업데이트",
@@ -5464,7 +5634,11 @@
         "categoryImage": "이미지",
         "categoryVideo": "동영상",
         "chatModels": "채팅 모델",
-        "effort": "추론 강도",
+        "effort": "강도",
+        "effortScale": {
+          "faster": "빠르게",
+          "smarter": "똑똑하게"
+        },
         "fast": "빠름",
         "fastImpact": {
           "apiCost": "API 토큰 비용 2×",
@@ -5488,10 +5662,8 @@
         "loadError": "모델을 불러올 수 없습니다.",
         "loading": "모델 불러오는 중...",
         "menu": {
-          "adjustSettings": "{{model}} 설정 조정",
           "backToModels": "모델로 돌아가기",
-          "changeModel": "{{category}} 모델 변경, {{model}}",
-          "chatSettings": "채팅 설정"
+          "changeModel": "{{category}} 모델 변경, {{model}}"
         },
         "models": "모델",
         "noConfiguredModels": "구성된 모델 없음",
@@ -5606,8 +5778,8 @@
             "cottonSky": "Cotton sky",
             "daydream": "Daydream",
             "deepLagoon": "Deep lagoon",
-            "goldenHour": "Golden hour",
-            "limelight": "Limelight"
+            "default": "기본",
+            "goldenHour": "Golden hour"
           },
           "title": "컬러 테마"
         },
@@ -5752,7 +5924,6 @@
         "loading": "Morning Brief 설정을 불러오는 중...",
         "missingDefaultAgent": "Morning Brief를 활성화하기 전에 사용 가능한 기본 Agent를 선택하세요.",
         "missingTimezone": "Morning Brief를 활성화하기 전에 유효한 시간대를 설정하세요.",
-        "multipleInstallations": "Morning Brief 설치가 여러 개 있습니다. 이 환경설정을 변경하기 전에 충돌을 해결하세요.",
         "nextBrief": "다음 브리핑 {{date}} ({{timezone}})",
         "paused": "일시 중지됨",
         "preparationFailed": "설정을 자동으로 다시 시도합니다. 지금 다시 시도할 수도 있습니다.",
@@ -5991,7 +6162,42 @@
     "cancel": "취소",
     "chooseFile": "파일 선택",
     "choosePrivateKeyFile": "개인 키 파일 선택",
+    "cloudflare": {
+      "add": "Access 구성 추가",
+      "changed": "편집 중 이 Access 구성이 변경되었습니다. 저장하기 전에 최신 설정을 검토하세요.",
+      "clientId": "Service Token 클라이언트 ID",
+      "clientSecret": "Service Token 클라이언트 시크릿",
+      "configuration": "Access 구성",
+      "createNew": "새 구성 만들기",
+      "delete": "구성 삭제",
+      "deleteHelp": "사용하지 않는 이 Access 구성을 삭제할까요? 저장된 Service Token은 복구할 수 없습니다.",
+      "direct": "직접 연결",
+      "edit": "Access 구성 편집",
+      "empty": "아직 Access 구성이 없습니다. Service Token을 추가하여 Cloudflare Access로 보호된 SSH 호스트에 연결하세요.",
+      "inUse": "호스트가 이 Access 구성을 사용 중입니다. 해당 호스트를 확인하고 먼저 다른 구성으로 변경하거나 삭제하세요.",
+      "inUseHelp": "이 구성을 삭제하기 전에 해당 호스트에 다른 Access 구성을 선택하거나, 명시적으로 직접 연결로 전환하거나, 호스트를 삭제하세요.",
+      "keepChanges": "이 버전에 내 변경 사항 적용",
+      "latest": "최근 저장된 설정",
+      "loadFailed": "Access 구성을 불러오지 못했습니다. 다시 시도하세요.",
+      "loading": "Access 구성 불러오는 중…",
+      "missing": "이 Access 구성은 더 이상 사용할 수 없습니다. 다른 구성을 선택하거나 새로 만드세요.",
+      "mode": "연결",
+      "name": "구성 이름",
+      "protectedHost": "Cloudflare Access · {{name}}",
+      "publishedHost": "공개 호스트 이름",
+      "replace": "Service Token 교체",
+      "reviewHelp": "초안이 보존되었습니다. 변경 사항을 적용하기 전에 최근 저장된 설정을 확인하세요.",
+      "select": "구성 선택",
+      "summary_other": "Access 구성 {{count}}개 설정됨",
+      "title": "Cloudflare Access",
+      "tokenHelp": "SSH 애플리케이션의 Service Auth 정책에서 허용하는 Service Token을 사용하세요. SSH 로그인 정보와는 별개입니다.",
+      "unavailable": "이 계정에서는 Cloudflare Access를 사용할 수 없습니다.",
+      "usedBy_other": "호스트 {{count}}개에서 사용:"
+    },
     "connectionStatus": {
+      "accessProtocolFailure": "Cloudflare Access가 SSH 터널을 설정하지 못했습니다. 게시된 호스트 이름과 Tunnel 라우팅을 확인하세요.",
+      "accessRejected": "Cloudflare Access가 연결을 거부했습니다. 서비스 토큰과 애플리케이션의 Service Auth 정책을 확인하세요.",
+      "accessTlsFailure": "Cloudflare Access와의 보안 연결을 검증할 수 없습니다. 호스트 이름과 TLS 인증서를 확인하세요.",
       "attention_other": "SSH 호스트 {{count}}개에 확인이 필요합니다",
       "authenticationFailed": "SSH 인증에 실패했습니다. 사용자 이름, 개인 키 또는 비밀번호와 서버 권한을 확인하세요. 자격 증명을 편집하거나 이 호스트에 다른 자격 증명을 선택하세요.",
       "credentialResourceLimit": "개인 키가 지원되는 처리 한도를 초과합니다. 지원되는 암호화 설정으로 다시 내보낸 후 자격 증명을 교체하세요.",
@@ -6020,6 +6226,7 @@
       "name": "자격 증명 이름",
       "password": "비밀번호",
       "replaceAuthentication": "인증 정보 교체",
+      "select": "인증 정보 선택",
       "sharedHelp_other": "로그인 변경 사항은 사용하는 모든 호스트 {{count}}개에 적용됩니다:",
       "summary_other": "자격 증명 {{count}}개 구성됨",
       "unused": "사용 중인 호스트 없음"
@@ -6031,12 +6238,12 @@
     "description": "에이전트가 원격 명령을 실행할 SSH 호스트를 구성하세요.",
     "displayName": "표시 이름",
     "edit": "호스트 편집",
-    "editHelp": "다른 자격 증명을 선택하면 이 호스트만 변경됩니다. 주소나 포트를 변경하면 저장된 호스트 키가 지워집니다.",
+    "editHelp": "다른 자격 증명을 선택하면 이 호스트만 변경됩니다. 직접 연결 대상 변경 시 저장된 호스트 키가 지워지며, Cloudflare Access 관련 변경 시에는 유지됩니다.",
     "empty": "구성된 SSH 호스트가 없습니다. 호스트를 추가하면 SSH 접근 권한이 있는 Agent가 사용할 수 있습니다.",
     "errors": {
       "agentUnavailable": "이 에이전트는 더 이상 사용할 수 없습니다. 다른 에이전트를 선택하세요.",
-      "configurationChanged": "편집 중에 이 호스트가 변경되었습니다. 목록이 업데이트되었습니다. 호스트를 다시 열어 현재 설정을 확인한 후 저장하세요.",
-      "credentialChanged": "이 자격 증명이 변경되었습니다. 다시 열어 현재 설정과 영향을 받는 호스트를 확인한 후 저장하세요.",
+      "configurationChanged": "편집 중에 이 호스트가 변경되었습니다. 입력 내용은 유지됩니다. 변경 사항을 적용하기 전에 최신 설정을 검토하세요.",
+      "credentialChanged": "편집하는 동안 이 인증 정보가 변경되었습니다. 입력 내용은 유지됩니다. 저장하기 전에 최신 설정과 영향을 받는 호스트를 확인하세요.",
       "credentialInUse": "이 자격 증명은 사용 중입니다. 호스트에 다른 자격 증명을 지정하거나 먼저 호스트를 삭제하세요.",
       "credentialUnavailable": "이 SSH 자격 증명을 더 이상 사용할 수 없습니다. 다른 자격 증명을 선택하거나 새로 만드세요.",
       "failed": "SSH 변경 사항을 저장하지 못했습니다. 다시 시도하세요.",
@@ -6065,11 +6272,44 @@
     "resetHelp": "새 서버의 신원을 독립적으로 확인한 후에만 재설정하세요. 다음 연결에서는 새 호스트 키를 신뢰하고 저장합니다.",
     "retry": "다시 시도",
     "save": "저장",
+    "saveRecovery": {
+      "resourceIdConflict": "이 리소스 ID는 사용할 수 없습니다. 양식을 닫았다가 다시 열어 시도하세요.",
+      "uncertain": "변경 사항이 저장되었는지 확인하지 못했습니다. 같은 내용으로 저장을 다시 시도하거나, 닫고 목록을 확인한 후 다시 추가하세요."
+    },
     "summary_one": "호스트 {{count}}개 구성됨",
     "summary_other": "호스트 {{count}}개 구성됨",
     "title": "SSH 호스트",
     "unavailable": "이 계정에서는 SSH 접근을 사용할 수 없습니다.",
     "username": "SSH 사용자 이름"
+  },
+  "templates": {
+    "actions": {
+      "delete": "삭제",
+      "menu": "{{title}} 작업",
+      "preview": "{{title}} 미리보기",
+      "rename": "템플릿 이름 바꾸기"
+    },
+    "custom": "커스텀",
+    "detail": {
+      "back": "커스텀 템플릿",
+      "page": "{{number}}페이지",
+      "source_other": "{{count}}페이지 · {{filename}}에서",
+      "sourceFile": "{{filename}}에서"
+    },
+    "empty": {
+      "description": "Okou가 파일의 디자인을 재사용할 수 있는 템플릿으로 만들어 줍니다."
+    },
+    "loadFailed": "템플릿을 불러오지 못했습니다.",
+    "pageCount_other": "{{count}}페이지",
+    "retry": "다시 시도",
+    "sharedBy": "{{owner}} 님이 공유함",
+    "visibility": {
+      "change": "변경",
+      "organization": "조직",
+      "organizationState": "이 조직의 모든 사람이 사용할 수 있습니다",
+      "private": "비공개",
+      "privateState": "나만 보고 사용할 수 있습니다"
+    }
   },
   "usage": {
     "displayNames": {
@@ -6763,6 +7003,9 @@
       "noWorkflows": "워크플로가 없습니다",
       "open": "{{title}} 열기",
       "openRecovery": "{{title}} 복구 열기",
+      "ownerLoading": "작성자 불러오는 중…",
+      "ownerRetry": "작성자 정보를 사용할 수 없습니다. 다시 열어 재시도하세요.",
+      "ownerUnavailable": "작성자 정보를 사용할 수 없습니다",
       "runsAs": "다음 에이전트로 실행됨",
       "runsAsAria": "{{agent}}로 실행됨",
       "section": {

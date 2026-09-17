@@ -38,7 +38,7 @@ pub(crate) fn open_archive(
     if let Some(path) = url.strip_prefix("file://") {
         log_info!(LOG_TAG, "Reading local archive");
         let file = std::fs::File::open(path)
-            .map_err(|e| DownloadError::fatal(format!("Failed to open local archive: {e}")))?;
+            .map_err(|e| DownloadError::new(format!("Failed to open local archive: {e}")))?;
         let compressed_bytes = file
             .metadata()
             .ok()
@@ -51,10 +51,7 @@ pub(crate) fn open_archive(
     let request_start = Instant::now();
     let response = HTTP_AGENT.get(url).call();
     metrics.record_request_to_response_headers(request_start.elapsed());
-    let response = response.map_err(|e| {
-        let (retriable, message) = classify_http_error(&e);
-        DownloadError::transport(message, retriable)
-    })?;
+    let response = response.map_err(|e| DownloadError::new(classify_http_error(&e)))?;
     if response.status().is_client_error() || response.status().is_server_error() {
         return Err(crate::http_failure::from_response(url, response));
     }
@@ -64,32 +61,27 @@ pub(crate) fn open_archive(
     ))
 }
 
-fn classify_http_error(error: &ureq::Error) -> (bool, String) {
+fn classify_http_error(error: &ureq::Error) -> String {
     // Never render the raw error: URI-bearing variants can expose presigned credentials.
     match error {
-        ureq::Error::HostNotFound => (true, request_error_message("dns")),
-        ureq::Error::Timeout(timeout) => (
-            true,
-            format!(
-                "HTTP request error (kind=timeout phase={})",
-                timeout_phase(*timeout)
-            ),
+        ureq::Error::HostNotFound => request_error_message("dns"),
+        ureq::Error::Timeout(timeout) => format!(
+            "HTTP request error (kind=timeout phase={})",
+            timeout_phase(*timeout)
         ),
-        ureq::Error::ConnectionFailed => (true, request_error_message("connection")),
-        ureq::Error::Io(error) if error.to_string().starts_with(LOOKUP_ERROR_PREFIX) => (
-            true,
-            "HTTP request error (kind=dns phase=resolve)".to_string(),
-        ),
-        ureq::Error::Io(error) => (
-            true,
-            format!("HTTP request error (kind=io io_kind={:?})", error.kind()),
-        ),
+        ureq::Error::ConnectionFailed => request_error_message("connection"),
+        ureq::Error::Io(error) if error.to_string().starts_with(LOOKUP_ERROR_PREFIX) => {
+            "HTTP request error (kind=dns phase=resolve)".to_string()
+        }
+        ureq::Error::Io(error) => {
+            format!("HTTP request error (kind=io io_kind={:?})", error.kind())
+        }
         ureq::Error::Tls(_)
         | ureq::Error::Pem(_)
         | ureq::Error::Rustls(_)
-        | ureq::Error::TlsRequired => (true, request_error_message("tls")),
+        | ureq::Error::TlsRequired => request_error_message("tls"),
         ureq::Error::InvalidProxyUrl | ureq::Error::ConnectProxyFailed(_) => {
-            (true, request_error_message("proxy"))
+            request_error_message("proxy")
         }
         ureq::Error::Protocol(_)
         | ureq::Error::RedirectFailed
@@ -97,12 +89,11 @@ fn classify_http_error(error: &ureq::Error) -> (bool, String) {
         | ureq::Error::TooManyRedirects
         | ureq::Error::LargeResponseHeader(_, _)
         | ureq::Error::Decompress(_, _)
-        | ureq::Error::BodyStalled => (true, request_error_message("protocol")),
+        | ureq::Error::BodyStalled => request_error_message("protocol"),
         ureq::Error::Http(_) | ureq::Error::BadUri(_) | ureq::Error::RequireHttpsOnly(_) => {
-            (false, request_error_message("invalid_request"))
+            request_error_message("invalid_request")
         }
-        ureq::Error::Other(_) => (true, request_error_message("unknown")),
-        _ => (true, request_error_message("unknown")),
+        _ => request_error_message("unknown"),
     }
 }
 
@@ -262,5 +253,114 @@ impl<R: Read> Read for HttpBodyReader<R> {
                 Err(e)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::mpsc::{self, Receiver, Sender};
+    use std::thread;
+
+    const WAIT_TIMEOUT: Duration = Duration::from_secs(5);
+
+    struct ControlledBodyReader {
+        read_entered: Option<Sender<()>>,
+        body: Receiver<Option<u8>>,
+        inner_duration: Rc<Cell<Duration>>,
+    }
+
+    impl Read for ControlledBodyReader {
+        fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+            if buffer.is_empty() {
+                return Ok(0);
+            }
+            let start = Instant::now();
+            if let Some(read_entered) = &self.read_entered {
+                read_entered.send(()).map_err(io::Error::other)?;
+            }
+            let byte = self
+                .body
+                .recv_timeout(WAIT_TIMEOUT)
+                .map_err(io::Error::other)?;
+            let bytes_read = if let Some(byte) = byte {
+                buffer[0] = byte;
+                1
+            } else {
+                0
+            };
+            self.inner_duration.set(start.elapsed());
+            Ok(bytes_read)
+        }
+    }
+
+    fn assert_body_read_attribution(body_ready_before_read: bool) {
+        // The binary exposes no read-entry signal. Control the underlying Read
+        // here so its timing can be checked without assumptions about scheduling.
+        thread::scope(|scope| {
+            let (read_entered_tx, read_entered_rx) = mpsc::channel();
+            let (body_tx, body_rx) = mpsc::channel();
+            let inner_duration = Rc::new(Cell::new(Duration::ZERO));
+            let metrics = RemoteArchiveAttemptMetrics::default();
+            let header_duration = Duration::from_millis(123);
+            metrics.record_request_to_response_headers(header_duration);
+            let source = ArchiveSource::http(
+                ControlledBodyReader {
+                    read_entered: (!body_ready_before_read).then_some(read_entered_tx),
+                    body: body_rx,
+                    inner_duration: inner_duration.clone(),
+                },
+                metrics.clone(),
+            );
+            let (mut reader, failure) = source.into_parts();
+            let producer = scope.spawn(move || {
+                for byte in [Some(b'a'), Some(b'b'), None] {
+                    if !body_ready_before_read {
+                        read_entered_rx.recv_timeout(WAIT_TIMEOUT).unwrap();
+                    }
+                    body_tx.send(byte).unwrap();
+                }
+            });
+            if body_ready_before_read {
+                // Deliberately hold the client until the entire body and EOF are
+                // available, reproducing the ordering that broke the binary test.
+                producer.join().unwrap();
+            }
+            assert_eq!(metrics.snapshot().body_read, Duration::ZERO);
+
+            let mut consumed = 0;
+            for expected in [Some(b'a'), Some(b'b'), None] {
+                let before = metrics.snapshot();
+                let mut buffer = [0];
+                let start = Instant::now();
+                let bytes_read = reader.read(&mut buffer).unwrap();
+                let outer_duration = start.elapsed();
+                let after = metrics.snapshot();
+                let measured = after.body_read.checked_sub(before.body_read).unwrap();
+
+                // These intervals are nested even if any participating thread is
+                // descheduled. No particular number of milliseconds is required.
+                assert!(measured >= inner_duration.get());
+                assert!(measured <= outer_duration);
+                assert_eq!(after.request_to_response_headers, header_duration);
+                assert_eq!(bytes_read, usize::from(expected.is_some()));
+                if let Some(byte) = expected {
+                    assert_eq!(buffer[0], byte);
+                    consumed += 1;
+                }
+                assert_eq!(after.compressed_bytes_consumed, consumed);
+                assert!(!failure.failed());
+            }
+        });
+    }
+
+    #[test]
+    fn body_read_timing_includes_wait_after_read_entry() {
+        assert_body_read_attribution(false);
+    }
+
+    #[test]
+    fn body_read_timing_accepts_body_ready_before_read() {
+        assert_body_read_attribution(true);
     }
 }

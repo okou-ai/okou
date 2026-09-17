@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
-import { SESSION_HISTORY_DOWNLOAD_SOURCE_CONFIGURED_PUBLIC_ENDPOINT } from "../runners";
+import {
+  RESUME_SESSION_HISTORY_MAX_BYTES,
+  SESSION_HISTORY_DOWNLOAD_SOURCE_CONFIGURED_PUBLIC_ENDPOINT,
+} from "../runners";
 import {
   knownRunFailureReasonSchema,
   runFailureReasonTokenSchema,
@@ -16,6 +19,7 @@ import {
   webhookCheckpointsContract,
   webhookCompleteContract,
   webhookEventsContract,
+  webhookSessionOutputContract,
   webhookStoragesCommitContract,
   webhookStoragesPrepareContract,
   webhookTelemetryContract,
@@ -23,6 +27,160 @@ import {
 
 const storageId = "00000000-0000-4000-8000-000000000000";
 const manifestHash = "a".repeat(64);
+
+describe("Sandbox transient session output", () => {
+  const body = {
+    runId: "00000000-0000-4000-8000-000000000001",
+    threadId: "00000000-0000-4000-8000-000000000002",
+    runEventId: "sandbox:00000000-0000-4000-8000-000000000003:0",
+    chunkIndex: 0,
+    delta: "hello",
+  };
+
+  it("accepts one bounded text delta", () => {
+    expect(webhookSessionOutputContract.send.body.safeParse(body).success).toBe(
+      true,
+    );
+  });
+
+  it("rejects channel authority, empty text, and oversized fields", () => {
+    for (const invalid of [
+      { ...body, userId: "another-user" },
+      { ...body, orgId: "another-org" },
+      { ...body, channel: "run-output:another" },
+      { ...body, delta: "" },
+      { ...body, delta: "x".repeat(4097) },
+      { ...body, runEventId: "x".repeat(513) },
+      { ...body, chunkIndex: -1 },
+      { ...body, chunkIndex: 2 ** 32 },
+    ]) {
+      expect(
+        webhookSessionOutputContract.send.body.safeParse(invalid).success,
+      ).toBe(false);
+    }
+  });
+});
+
+describe("workspace history restore telemetry", () => {
+  const operation = {
+    ts: "2026-09-15T00:00:00Z",
+    action_type: "session_history_workspace_cache_guest_restore",
+    duration_ms: 1234,
+    success: true,
+  };
+
+  it("preserves local source and completed payload measurements", () => {
+    const measured = {
+      ...operation,
+      session_history_framework: "codex",
+      session_history_raw_bytes: RESUME_SESSION_HISTORY_MAX_BYTES,
+      session_history_source_bytes: 1024,
+      session_history_guest_bytes: RESUME_SESSION_HISTORY_MAX_BYTES,
+      session_history_source_representation: "codex_zstd",
+      session_history_restore_representation: "raw",
+      session_history_restore_reason: "codex_pruning_guard",
+    };
+    const parsed = webhookTelemetryContract.send.body.parse({
+      runId: "run",
+      sandboxOperations: [{ ...measured, session_history_ref_hash: "private" }],
+    });
+    expect(parsed.sandboxOperations).toStrictEqual([measured]);
+  });
+
+  it("preserves zero measurements and accepts legacy operations without metadata", () => {
+    const zero = {
+      ...operation,
+      session_history_raw_bytes: 0,
+      session_history_source_bytes: 0,
+      session_history_guest_bytes: 0,
+    };
+    expect(
+      webhookTelemetryContract.send.body.parse({
+        runId: "run",
+        sandboxOperations: [operation, zero],
+      }).sandboxOperations,
+    ).toStrictEqual([operation, zero]);
+  });
+
+  it("rejects out-of-contract byte values and representation categories", () => {
+    for (const invalid of [
+      { session_history_raw_bytes: -1 },
+      { session_history_source_bytes: 1.5 },
+      { session_history_guest_bytes: RESUME_SESSION_HISTORY_MAX_BYTES + 1 },
+      { session_history_framework: "unknown-framework" },
+      { session_history_source_representation: "gzip" },
+      { session_history_restore_representation: "json" },
+      { session_history_restore_reason: "arbitrary" },
+      { session_history_wire_codec: "gzip" },
+      { session_history_codec_reason: "arbitrary" },
+      { session_history_transfer_source: "arbitrary-path" },
+      { session_history_wire_bytes: Number.MAX_SAFE_INTEGER + 1 },
+      { session_history_transfer_bytes: -1 },
+      { session_history_write_requests: 0 },
+      { session_history_write_requests: Number.MAX_SAFE_INTEGER + 1 },
+      { session_history_selection_ms: -1 },
+      { session_history_file_gate_wait_ms: 0.5 },
+      { session_history_requests_ms: -1 },
+      { session_history_encoder_pipeline_ms: -1 },
+      { session_history_publication_ms: -1 },
+    ]) {
+      expect(
+        webhookTelemetryContract.send.body.safeParse({
+          runId: "run",
+          sandboxOperations: [{ ...operation, ...invalid }],
+        }).success,
+      ).toBe(false);
+    }
+  });
+
+  it("preserves measured wire costs separately from logical history representation", () => {
+    const transfer = {
+      ...operation,
+      action_type: "session_history_transfer",
+      session_history_framework: "codex",
+      session_history_restore_representation: "raw",
+      session_history_transfer_source: "workspace_cache",
+      session_history_wire_codec: "zstd",
+      session_history_codec_reason: "sample_accepted",
+      session_history_transfer_bytes: RESUME_SESSION_HISTORY_MAX_BYTES,
+      session_history_wire_bytes: 144 * 1024 * 1024,
+      session_history_write_requests: 9,
+      session_history_selection_ms: 0,
+      session_history_file_gate_wait_ms: 0,
+      session_history_requests_ms: 20,
+      session_history_encoder_pipeline_ms: 15,
+      session_history_publication_ms: 0,
+    };
+    const failed = {
+      ...operation,
+      action_type: "session_history_transfer",
+      success: false,
+      session_history_transfer_source: "downloaded",
+    };
+    const empty = {
+      ...transfer,
+      session_history_transfer_source: "inline",
+      session_history_transfer_bytes: 0,
+      session_history_wire_bytes: 0,
+      session_history_write_requests: 1,
+      session_history_wire_codec: "none",
+      session_history_codec_reason: "below_threshold",
+    };
+    const largeInline = {
+      ...transfer,
+      session_history_transfer_source: "inline",
+      session_history_transfer_bytes: 256 * 1024 * 1024,
+      session_history_wire_bytes: 288 * 1024 * 1024,
+      session_history_write_requests: 18,
+    };
+    expect(
+      webhookTelemetryContract.send.body.parse({
+        runId: "run",
+        sandboxOperations: [transfer, failed, empty, largeInline, operation],
+      }).sandboxOperations,
+    ).toStrictEqual([transfer, failed, empty, largeInline, operation]);
+  });
+});
 
 describe("Pi memory citation event transport", () => {
   const citation = {
@@ -384,6 +542,7 @@ describe("agent completion failure reasons", () => {
       "session_history_limit",
       "execution_timeout",
       "insufficient_credits",
+      "provider_insufficient_credits",
       "invalid_api_key",
       "invalid_credentials",
       "terms_acceptance_required",
@@ -393,6 +552,7 @@ describe("agent completion failure reasons", () => {
       "provider_rate_limited",
       "provider_overloaded",
       "provider_stream_timeout",
+      "provider_queue_timeout",
       "provider_server_error",
       "response_connection_lost",
       "safety_policy_refusal",

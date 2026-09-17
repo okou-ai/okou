@@ -1,3 +1,4 @@
+import { acceptGetStartedInvitation } from "../services/get-started-invitation.service";
 import { webhookClerkContract } from "@okouai/api-contracts/contracts/webhooks";
 import { orgCache } from "@okouai/db/schema/org-cache";
 import { command } from "ccstate";
@@ -13,6 +14,7 @@ import { type Db, writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import { settle, tapError } from "../utils";
 import { ensureOrgLimitedFreeBootstrap$ } from "../services/org-limited-free-bootstrap.service";
+import { revokeSharedThreadArtifacts$ } from "../services/shared-thread-artifacts.service";
 import {
   cleanupClerkBannedUser$,
   cleanupClerkDeletedOrgBilling$,
@@ -75,6 +77,7 @@ function organizationMembershipIdentity(data: unknown):
       readonly membershipId?: string;
       readonly role?: string;
       readonly purchaseId?: string;
+      readonly getStartedClaimId?: string;
       readonly createdAt?: Date;
     }
   | undefined {
@@ -95,6 +98,10 @@ function organizationMembershipIdentity(data: unknown):
     privateMetadata,
     "usagePackInvitationPurchaseId",
   );
+  const getStartedClaimId = stringPropertyOf(
+    privateMetadata,
+    "getStartedClaimId",
+  );
   const createdAt =
     numberPropertyOf(data, "createdAt") ?? numberPropertyOf(data, "created_at");
 
@@ -105,6 +112,7 @@ function organizationMembershipIdentity(data: unknown):
         role,
         membershipId: eventDataId(data),
         ...(purchaseId ? { purchaseId } : {}),
+        ...(getStartedClaimId ? { getStartedClaimId } : {}),
         ...(createdAt === undefined ? {} : { createdAt: new Date(createdAt) }),
       }
     : undefined;
@@ -241,6 +249,7 @@ function organizationInvitationAcceptedIdentity(data: unknown):
       readonly acceptedAt: Date;
       readonly normalizedEmail: string;
       readonly purchaseId?: string;
+      readonly getStartedClaimId?: string;
     }
   | undefined {
   const orgId = stringPropertyOf(data, "organization_id");
@@ -253,6 +262,10 @@ function organizationInvitationAcceptedIdentity(data: unknown):
     "usagePackInvitationPurchaseId",
   );
 
+  const getStartedClaimId = stringPropertyOf(
+    propertyOf(data, "private_metadata"),
+    "getStartedClaimId",
+  );
   return orgId && invitationId && userId && normalizedEmail && updatedAt
     ? {
         orgId,
@@ -261,6 +274,7 @@ function organizationInvitationAcceptedIdentity(data: unknown):
         acceptedAt: new Date(updatedAt),
         normalizedEmail,
         ...(purchaseId ? { purchaseId } : {}),
+        ...(getStartedClaimId ? { getStartedClaimId } : {}),
       }
     : undefined;
 }
@@ -328,16 +342,18 @@ function enqueueUsagePackMembershipAcceptance(
   );
 }
 
-function handleOrganizationInvitationAcceptedWebhook(
+async function handleOrganizationInvitationAcceptedWebhook(
   data: unknown,
   db: Db,
   signal: AbortSignal,
-): Response {
+): Promise<Response> {
   const identity = organizationInvitationAcceptedIdentity(data);
   if (!identity) {
     L.error("organizationInvitation.accepted event missing identity", { data });
     return new Response("OK", { status: 200 });
   }
+  await acceptGetStartedInvitation(db, identity);
+  signal.throwIfAborted();
   enqueueUsagePackInvitationAcceptance(
     "organizationInvitation.accepted",
     identity,
@@ -371,6 +387,17 @@ async function handleOrganizationMembershipCreatedWebhook(
       data,
     });
     return new Response("OK", { status: 200 });
+  }
+
+  if (
+    (identity.getStartedClaimId || identity.purchaseId) &&
+    identity.createdAt
+  ) {
+    await acceptGetStartedInvitation(db, {
+      ...identity,
+      acceptedAt: identity.createdAt,
+    });
+    signal.throwIfAborted();
   }
 
   if (identity.purchaseId) {
@@ -419,6 +446,17 @@ function missingOrganizationDeletedIdResponse(data: unknown): Response {
 
 const handleOrganizationDeletedWebhook$ = command(
   async ({ set }, orgId: string, signal: AbortSignal): Promise<Response> => {
+    const revocation = await settle(
+      set(
+        revokeSharedThreadArtifacts$,
+        { kind: "organization", orgId },
+        signal,
+      ),
+      signal,
+    );
+    if (!revocation.ok) {
+      return jsonError("Organization artifact revocation failed", 503);
+    }
     const billingCleanup = await settle(
       set(cleanupClerkDeletedOrgBilling$, orgId, signal),
       signal,
@@ -646,6 +684,14 @@ const postClerkWebhook$ = command(
       if (!userId) {
         L.error("user.deleted event missing user ID", { data: event.data });
         return new Response("OK", { status: 200 });
+      }
+
+      const revocation = await settle(
+        set(revokeSharedThreadArtifacts$, { kind: "user", userId }, signal),
+        signal,
+      );
+      if (!revocation.ok) {
+        return jsonError("User artifact revocation failed", 503);
       }
 
       waitUntil(

@@ -1789,7 +1789,7 @@ function AnnotationSurface({
           // pressed before anything has been drawn.
           initialFocus={panelElement}
           overlayClassName="bg-gray-900/45 dark:bg-gray-900/45"
-          contentClassName="okou-app flex flex-col gap-0 overflow-hidden bg-background p-0"
+          contentClassName="flex flex-col gap-0 overflow-hidden bg-background p-0"
           aria-label={t(($) => {
             return $.artifacts.annotation.open;
           })}

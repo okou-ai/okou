@@ -20,12 +20,12 @@ import type {
 import { clampThinkingLevel } from "@earendil-works/pi-ai";
 
 import type { PiAgentModelConfig, PiAgentStreamConfig } from "./types";
-import { preserveProviderErrorStatus } from "./provider-error-body";
+import { streamWithModelRequestDiagnostics } from "./model-request-diagnostics";
+import { observePiUsageFetch } from "./usage-transport";
 import {
   observePiResponseStatus,
   type PiAgentStreamOptions,
 } from "./stream-options";
-import { guardPiUpstreamErrorBody } from "./upstream-error-body";
 
 const PI_AGENT_USER_AGENT = "okou-pi-agent/1.0";
 
@@ -72,6 +72,36 @@ function isCodexResponsesModel(
 }
 
 function sourceModel(provider: string, model: string): Model<Api> | undefined {
+  // pi-ai 0.85.1 predates V4.1. These exact identities use the provider
+  // metadata recorded in deepseek-v41-catalog.md, never the V4 text-only model.
+  if (
+    (provider === "deepseek" &&
+      (model === "deepseek-flash" || model === "deepseek-v4.1-flash")) ||
+    (provider === "openrouter" && model === "deepseek/deepseek-v4.1-flash")
+  ) {
+    return {
+      id: model,
+      name: "DeepSeek V4.1 Flash",
+      provider,
+      api: "openai-responses",
+      baseUrl:
+        provider === "deepseek"
+          ? "https://api.deepseek.com"
+          : "https://openrouter.ai/api/v1",
+      reasoning: true,
+      thinkingLevelMap: {
+        minimal: null,
+        low: "low",
+        medium: null,
+        high: "high",
+        max: "max",
+      },
+      input: ["text", "image"],
+      contextWindow: 1_048_576,
+      maxTokens: 384_000,
+      cost: { input: 0.3, output: 1.2, cacheRead: 0.006, cacheWrite: 0 },
+    };
+  }
   return providerModels(provider).find((candidate) => {
     return candidate.id === model;
   });
@@ -311,45 +341,51 @@ export function piAgentStreamForConfig(
     ) {
       return streamPiNative(config, model, context, configuredOptions);
     }
-    // Every public route drops an upstream markup error page before the
-    // adapter can fold it into its terminal message. Other opaque gateway
-    // bodies then retain their observed status in the terminal error.
-    const boundaryFetch = preserveProviderErrorStatus(
-      guardPiUpstreamErrorBody(configuredOptions.fetch ?? globalThis.fetch),
-    );
-    const responseOptions = {
-      ...configuredOptions,
-      fetch: configuredOptions.onObservedResponseStatus
-        ? observePiResponseStatus(
-            boundaryFetch,
-            configuredOptions.onObservedResponseStatus,
-          )
-        : boundaryFetch,
-    };
-    if (config.dialect === "openai-responses") {
-      if (!isResponsesModel(model)) {
+    const start = (fetch: NonNullable<PiAgentStreamOptions["fetch"]>) => {
+      // Observe transport evidence before a body guard can consume or reject it.
+      // Every public route still drops markup and bounds opaque gateway errors.
+      const responseOptions = {
+        ...configuredOptions,
+        fetch,
+      };
+      if (config.dialect === "openai-responses") {
+        if (!isResponsesModel(model)) {
+          throw new Error(
+            `Pi public Responses route received unexpected ${model.api} model`,
+          );
+        }
+        return piAgentStream(model, context, responseOptions);
+      }
+      if (!isCodexResponsesModel(model)) {
         throw new Error(
-          `Pi public Responses route received unexpected ${model.api} model`,
+          `Pi Codex Responses route received unexpected ${model.api} model`,
         );
       }
-      return piAgentStream(model, context, responseOptions);
-    }
-    if (!isCodexResponsesModel(model)) {
-      throw new Error(
-        `Pi Codex Responses route received unexpected ${model.api} model`,
+      if (config.transport !== "sse")
+        throw new Error("Pi Codex Responses requires SSE transport");
+      if (!config.accountId?.trim())
+        throw new Error("Pi Codex Responses requires an explicit account ID");
+      return piAgentCodexStream(
+        model,
+        context,
+        config.accountId,
+        responseOptions,
       );
-    }
-    if (config.transport !== "sse") {
-      throw new Error("Pi Codex Responses requires SSE transport");
-    }
-    if (!config.accountId?.trim()) {
-      throw new Error("Pi Codex Responses requires an explicit account ID");
-    }
-    return piAgentCodexStream(
-      model,
-      context,
-      config.accountId,
-      responseOptions,
+    };
+    const fetch = observePiResponseStatus(
+      observePiUsageFetch(
+        configuredOptions.fetch ?? globalThis.fetch,
+        config.dialect === "openai-codex-responses"
+          ? "codex-responses"
+          : "responses",
+        configuredOptions.usageObserver,
+      ),
+      configuredOptions.onObservedResponseStatus,
+    );
+    return streamWithModelRequestDiagnostics(
+      start,
+      fetch,
+      configuredOptions.signal,
     );
   };
 }

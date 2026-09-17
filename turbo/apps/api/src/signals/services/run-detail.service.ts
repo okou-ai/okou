@@ -26,6 +26,10 @@ import {
 } from "./log-pagination";
 import { sanitizeAxiomNetworkEvents } from "./network-log-sanitizer";
 import { normalizeRunContextSnapshot } from "./run-context-snapshot.service";
+import {
+  publicBuiltInBalanceEvent,
+  publicBuiltInBalanceNetworkLog,
+} from "./run-balance-presentation";
 
 type ServiceDb = Pick<Db, "select">;
 
@@ -238,6 +242,7 @@ export function runAgentEvents(
         createdAt: agentRuns.createdAt,
         status: agentRuns.status,
         lastEventSequence: agentRuns.lastEventSequence,
+        modelProvider: agentRuns.modelProvider,
       })
       .from(agentRuns)
       .where(
@@ -284,7 +289,13 @@ ${paginationFilter}
         return {
           sequenceNumber: e.sequenceNumber,
           eventType: e.eventType,
-          eventData: publicAgentEventData(e.eventData),
+          eventData: publicAgentEventData(
+            publicBuiltInBalanceEvent(
+              e.eventData,
+              run.modelProvider,
+              e.eventType,
+            ),
+          ),
           createdAt: e._time,
         } satisfies RunEvent;
       }),
@@ -302,13 +313,18 @@ export function runNetworkLogs(
   return computed(async (get): Promise<NetworkLogsResponse | null> => {
     const db = get(db$);
 
-    const owned = await verifyRunOwnership(
-      db,
-      params.runId,
-      params.userId,
-      params.orgId,
-    );
-    if (!owned) {
+    const [run] = await db
+      .select({ modelProvider: agentRuns.modelProvider })
+      .from(agentRuns)
+      .where(
+        and(
+          eq(agentRuns.id, params.runId),
+          eq(agentRuns.userId, params.userId),
+          eq(agentRuns.orgId, params.orgId),
+        ),
+      )
+      .limit(1);
+    if (!run) {
       return null;
     }
 
@@ -339,7 +355,9 @@ ${buildTimeCursorProjection()}
 
     const pageHasMore = events.length > limit;
     const records = pageHasMore ? events.slice(0, limit) : events;
-    const networkLogs = sanitizeAxiomNetworkEvents(records);
+    const networkLogs = sanitizeAxiomNetworkEvents(records).map((entry) => {
+      return publicBuiltInBalanceNetworkLog(entry, run.modelProvider);
+    });
     const timedRecords = filterTimedAxiomRecords(records);
     const nextCursor = nextTimeCursor(
       timedRecords,

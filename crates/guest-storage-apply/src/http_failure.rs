@@ -25,7 +25,7 @@ pub(crate) fn from_response(url: &str, mut response: Response<ureq::Body>) -> Do
         Err(_) => message.push_str(" response_body=unavailable"),
     }
 
-    DownloadError::transport(message, status >= 500 || status == 429)
+    DownloadError::new(message)
 }
 
 fn append_request_metadata(message: &mut String, url: &str) {

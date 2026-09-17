@@ -23,6 +23,7 @@ import {
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { http, HttpResponse } from "msw";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
+
 import { apiTestS3PresignedUrl } from "../../../__tests__/mocks";
 import { testContext } from "../../../__tests__/test-context";
 import { createAppWithRoutes } from "../../../app-factory-core";
@@ -30,7 +31,6 @@ import { mockEnv } from "../../../lib/env";
 import { now, nowDate, withMockNowForTest } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { createUsagePricingFixture } from "../../../test-fixtures/system-config-seeds";
-import { removeIntroVideoRenderProjectStorageFixture } from "../../../test-fixtures/built-in-generation";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { billingStatusRoutes } from "../billing-status";
 import { introVideoRenderRoutes } from "../intro-video-render";
@@ -273,23 +273,6 @@ function mockStorage() {
     }
     return Promise.resolve({});
   });
-  return {
-    moveRenderInput(generationId: string, bucket: string) {
-      const prefix = `test-user-storages/intro-video-render-inputs/${generationId}/`;
-      const entry = [...objects].find(([key]) => {
-        return key.startsWith(prefix);
-      });
-      if (!entry) {
-        throw new Error("Expected one render input snapshot");
-      }
-      const [key, object] = entry;
-      objects.set(
-        `${bucket}/${key.slice("test-user-storages/".length)}`,
-        object,
-      );
-      objects.delete(key);
-    },
-  };
 }
 
 async function upload(f: Fixture, bytes?: Buffer) {
@@ -469,18 +452,23 @@ describe("managed Intro Video cloud rendering", () => {
     mockStorage();
   });
 
-  it("gates new renders with Intro Video and requires dedicated pricing", async () => {
+  it("rejects new renders when Intro Video is disabled", async () => {
     const f = await fixture(false);
     const input = await upload(f);
     const cloud = provider();
     expect((await submit(f, input)).status).toBe(403);
+    expect(cloud.requests).toHaveLength(0);
+  });
+
+  it("rejects new renders without dedicated pricing", async () => {
     const unpriced = await fixture(true, false);
     const missingPriceInput = await upload(unpriced);
+    const cloud = provider();
     expect((await submit(unpriced, missingPriceInput)).status).toBe(503);
     expect(cloud.requests).toHaveLength(0);
   });
 
-  it("renders from user storage without private-artifact credentials and prevents input caching", async () => {
+  async function acceptUserStorageRender() {
     const f = await fixture();
     const input = await upload(f);
     mockEnv("R2_PRIVATE_ARTIFACTS_BUCKET_NAME", undefined);
@@ -495,6 +483,11 @@ describe("managed Intro Video cloud rendering", () => {
         `^test-user-storages/intro-video-render-inputs/${input.requestId}/[a-f0-9]{64}\\.zip$`,
       ),
     );
+    return { f, input, cloud, projectUrl };
+  }
+
+  it("keeps render input snapshots private and immutable without private-artifact credentials", async () => {
+    const { input, projectUrl } = await acceptUserStorageRender();
     const snapshot = await fetch(projectUrl);
     expect(snapshot.status).toBe(200);
     expect(snapshot.headers.get("cache-control")).toBe("private, no-store");
@@ -517,10 +510,24 @@ describe("managed Intro Video cloud rendering", () => {
       CacheControl: "private, no-store",
       IfNoneMatch: "*",
     });
-    const response = await getRender(f, input.requestId);
-    expect(JSON.stringify(response)).not.toContain(projectUrl.toString());
-    cloud.status = "completed";
-    expect((await getRender(f, input.requestId)).status).toBe("completed");
+  });
+
+  describe("with an accepted user storage render", () => {
+    async function prepareScenario() {
+      const { f, input, cloud, projectUrl } = await acceptUserStorageRender();
+      return { f, input, projectUrl, cloud };
+    }
+    let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
+    beforeEach(async () => {
+      preparedScenario = await prepareScenario();
+    });
+    it("hides provider input URLs while reporting user-storage render completion", async () => {
+      const { f, input, projectUrl, cloud } = preparedScenario;
+      const response = await getRender(f, input.requestId);
+      expect(JSON.stringify(response)).not.toContain(projectUrl.toString());
+      cloud.status = "completed";
+      expect((await getRender(f, input.requestId)).status).toBe("completed");
+    });
   });
 
   it.each([
@@ -558,29 +565,6 @@ describe("managed Intro Video cloud rendering", () => {
       );
       expect(projectUrl.searchParams.get("signed-at")).toBe(
         nowDate().toISOString(),
-      );
-      expect((await fetch(projectUrl)).status).toBe(200);
-      expect((await getRender(f, input.requestId)).providerRenderId).toBe(
-        "hfr_test",
-      );
-    });
-  });
-
-  it("resumes historical queued input from the original private bucket", async () => {
-    const storage = mockStorage();
-    const f = await fixture();
-    const cloud = provider();
-    const input = await queueRender(f);
-    // Only a pre-cutover writer can omit the input locator. Reproduce that
-    // historical persisted state, then exercise recovery through the real API.
-    storage.moveRenderInput(input.requestId, "test-private-artifacts");
-    await removeIntroVideoRenderProjectStorageFixture(input.requestId);
-    await withMockNowForTest(new Date(now() + 31 * 60 * 1000), async () => {
-      expect((await submit(f, input)).status).toBe(202);
-      expect(cloud.requests).toHaveLength(4);
-      const projectUrl = providerProjectUrl(cloud.requests[3]?.body);
-      expect(projectUrl.searchParams.get("object")).toContain(
-        `test-private-artifacts/intro-video-render-inputs/${input.requestId}/`,
       );
       expect((await fetch(projectUrl)).status).toBe(200);
       expect((await getRender(f, input.requestId)).providerRenderId).toBe(
@@ -827,40 +811,50 @@ describe("managed Intro Video cloud rendering", () => {
     expect(cloud.requests[1]).toStrictEqual(cloud.requests[0]);
   });
 
-  it("recovers transfer failures and settles the actual ledger once across duplicate callbacks", async () => {
-    const f = await fixture();
-    const input = await upload(f);
-    const cloud = provider();
-    const before = await balance(f);
-    await submit(f, input);
-    cloud.status = "completed";
-    cloud.downloadsFail = true;
-    const pending = await getRender(f, input.requestId);
-    expect(pending.phase).toBe("persisting");
-    expect(pending.billing.creditsCharged).toBeNull();
-    cloud.downloadsFail = false;
-    const callback = new URL(cloud.callbackUrl);
-    const event = {
-      event_data: { render_id: "hfr_test", callback_id: input.requestId },
-    };
-    for (let count = 0; count < 2; count += 1) {
-      const response = await app(f).request(
-        `${callback.pathname}${callback.search}`,
-        {
-          method: "POST",
-          body: JSON.stringify(event),
-          headers: { "content-type": "application/json" },
-        },
-      );
-      expect(response.status).toBe(200);
+  describe("with an uploaded render input", () => {
+    async function prepareScenario() {
+      const f = await fixture();
+      const input = await upload(f);
+      const cloud = provider();
+      const before = await balance(f);
+      return { f, input, cloud, before };
     }
-    const result = await getRender(f, input.requestId);
-    expect(result.status).toBe("completed");
-    expect(result.result?.contentType).toBe("video/mp4");
-    expect(result.result?.url).not.toBe(VIDEO_URL);
-    expect(result.billing.creditsCharged).toBe(before - (await balance(f)));
-    expect(result.billing.creditsCharged).toBe(110);
-    expect(cloud.requests).toHaveLength(1);
+    let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
+    beforeEach(async () => {
+      preparedScenario = await prepareScenario();
+    });
+    it("recovers transfer failures and settles the actual ledger once across duplicate callbacks", async () => {
+      const { f, input, cloud, before } = preparedScenario;
+      await submit(f, input);
+      cloud.status = "completed";
+      cloud.downloadsFail = true;
+      const pending = await getRender(f, input.requestId);
+      expect(pending.phase).toBe("persisting");
+      expect(pending.billing.creditsCharged).toBeNull();
+      cloud.downloadsFail = false;
+      const callback = new URL(cloud.callbackUrl);
+      const event = {
+        event_data: { render_id: "hfr_test", callback_id: input.requestId },
+      };
+      for (let count = 0; count < 2; count += 1) {
+        const response = await app(f).request(
+          `${callback.pathname}${callback.search}`,
+          {
+            method: "POST",
+            body: JSON.stringify(event),
+            headers: { "content-type": "application/json" },
+          },
+        );
+        expect(response.status).toBe(200);
+      }
+      const result = await getRender(f, input.requestId);
+      expect(result.status).toBe("completed");
+      expect(result.result?.contentType).toBe("video/mp4");
+      expect(result.result?.url).not.toBe(VIDEO_URL);
+      expect(result.billing.creditsCharged).toBe(before - (await balance(f)));
+      expect(result.billing.creditsCharged).toBe(110);
+      expect(cloud.requests).toHaveLength(1);
+    });
   });
 
   it("returns an actionable provider failure without a replacement charge", async () => {

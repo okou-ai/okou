@@ -342,7 +342,7 @@ function SettingsDialog({
         })}
         maxWidth={1200}
         height="fill"
-        contentClassName="okou-app flex flex-col p-0 gap-0 overflow-hidden bg-card"
+        contentClassName="flex flex-col p-0 gap-0 overflow-hidden bg-card"
       >
         <DialogTitle className="sr-only">
           {t(($) => {

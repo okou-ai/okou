@@ -36,6 +36,7 @@ import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-pr
 import {
   click,
   setupPage,
+  startPage,
   fill,
   holdElementAnimations,
   queryAllByRoleFast,
@@ -835,7 +836,7 @@ test("Refresh a long sidebar after deleting an offscreen chat", async () => {
   const cachedChatThreadEvents = mockLongSidebarHistory(remote.promise);
   mockSidebarViewport(200, 1000);
 
-  await setupSidebarPage({
+  const page = await startPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
     cachedChatThreadEvents,
@@ -844,6 +845,7 @@ test("Refresh a long sidebar after deleting an offscreen chat", async () => {
   // The existing-list scene must be usable before remote synchronization.
   const scrollArea = await scrollToArchivedContext();
   remote.resolve();
+  await page.ready;
   openThreadMenu("Archived context");
   click(menuItemByText("Delete chat"));
   const dialog = await screen.findByRole("dialog", {
@@ -1307,7 +1309,6 @@ test("Keep pin management usable with many pinned agents", async () => {
     return respond(200, {
       timezone: null,
       locale: null,
-      translationLanguage: null,
       supportedLocales: [
         "en-US",
         "pt-BR",
@@ -1330,7 +1331,7 @@ test("Keep pin management usable with many pinned agents", async () => {
     });
   });
 
-  await setupSidebarPage({
+  const page = await startPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
   });
@@ -1343,6 +1344,7 @@ test("Keep pin management usable with many pinned agents", async () => {
   expect(within(grid).queryByLabelText("Pin an agent")).toBeNull();
 
   preferencesGate.resolve();
+  await page.ready;
 
   await waitFor(() => {
     expect(within(grid).queryByTestId("pinned-agent-skeleton")).toBeNull();
@@ -1621,7 +1623,7 @@ test("Show mark all read in the mobile chat-list menu before conversations load"
     return [AGENT_ID];
   });
 
-  await setupSidebarPage({
+  const page = await startPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
   });
@@ -1641,6 +1643,7 @@ test("Show mark all read in the mobile chat-list menu before conversations load"
     within(list).queryByText("Unread conversation"),
   ).not.toBeInTheDocument();
   remote.resolve();
+  await page.ready;
 });
 
 test("Mark all of an agent’s chats read", async () => {
@@ -1996,9 +1999,6 @@ test("Show current shortcuts without stacking help over workspace search", async
   await setupSidebarPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: {
-      [FeatureSwitchKey.VoiceInputV2]: true,
-    },
   });
 
   await waitFor(() => {
@@ -2372,17 +2372,14 @@ test.each(["agent", "thread"] as const)(
       createThread(EXISTING_THREAD_ID, "Remote unread conversation"),
     ]);
     let hasUnread = false;
-    let unreadIndicatorsLoaded = false;
-    const unreadCatchUpReturned = context.mocks.deferred<void>();
     context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
-      unreadIndicatorsLoaded = hasUnread;
       return respond(200, {
         agents: hasUnread ? { [AGENT_ID]: "unread" } : {},
         threads: hasUnread ? { [EXISTING_THREAD_ID]: "unread" } : {},
       });
     });
     context.mocks.api(chatThreadEventsContract.catchUp, ({ body, respond }) => {
-      const response = respond(200, {
+      return respond(200, {
         events: Object.fromEntries(
           body.map(([threadId]) => {
             return [threadId, []];
@@ -2390,10 +2387,6 @@ test.each(["agent", "thread"] as const)(
         ),
         notFoundThreads: [],
       });
-      if (unreadIndicatorsLoaded && !unreadCatchUpReturned.settled()) {
-        unreadCatchUpReturned.resolve(undefined);
-      }
-      return response;
     });
     context.mocks.api(chatThreadsContract.unreads, ({ respond }) => {
       return respond(200, {
@@ -2436,14 +2429,103 @@ test.each(["agent", "thread"] as const)(
     hasUnread = true;
     changeChatThreadList();
 
-    // Indicator delivery follows the throttled batch, which may start after a
-    // trailing bootstrap request. Observe that response before checking the UI.
-    await unreadCatchUpReturned.promise;
     await waitFor(() => {
       expect(
         within(indicatorRow()).getByLabelText("Unread"),
       ).toBeInTheDocument();
     });
+  },
+);
+
+test.each([
+  ["thread list", "pending"],
+  ["thread list", "failed"],
+  ["read cursor", "pending"],
+  ["read cursor", "failed"],
+] as const)(
+  "Show the running indicator after a %s change while chat warming is %s",
+  async (notification, warmingOutcome) => {
+    mockMobileLayout();
+    prepareDefaultAgent();
+    mockSidebarThreadStory([
+      createThread(EXISTING_THREAD_ID, "Remote running conversation"),
+    ]);
+    let running = false;
+    let runningIndicatorsReturned = false;
+    const warmingStarted = context.mocks.deferred<void>();
+    const warmingResponse = context.mocks.deferred<void>();
+    context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
+      runningIndicatorsReturned = running;
+      return respond(200, {
+        agents: {},
+        threads: { [EXISTING_THREAD_ID]: running ? "active" : "unread" },
+      });
+    });
+    context.mocks.api(chatThreadsContract.unreads, ({ respond }) => {
+      return respond(200, {
+        unreads: [
+          {
+            threadId: EXISTING_THREAD_ID,
+            unreadAt: "2026-03-10T00:05:00Z",
+          },
+        ],
+      });
+    });
+    context.mocks.api(
+      chatThreadEventsContract.catchUp,
+      async ({ body, respond }) => {
+        if (runningIndicatorsReturned) {
+          if (!warmingStarted.settled()) {
+            warmingStarted.resolve();
+          }
+          if (warmingOutcome === "pending") {
+            await warmingResponse.promise;
+          }
+          return respond(500, {
+            error: {
+              message: "Chat warming failed",
+              code: "INTERNAL_SERVER_ERROR",
+            },
+          });
+        }
+        return respond(200, {
+          events: Object.fromEntries(
+            body.map(([threadId]) => {
+              return [threadId, []];
+            }),
+          ),
+          notFoundThreads: [],
+        });
+      },
+    );
+
+    await setupSidebarPage({
+      context,
+      path: "/agents",
+      sharedWorkerTestTransport: "message-port",
+    });
+    const indicatorRow = () => {
+      return threadRowByTitle("Remote running conversation", mobileSidebar());
+    };
+    await waitFor(() => {
+      expect(within(indicatorRow()).getByLabelText("Unread")).toBeVisible();
+    });
+
+    running = true;
+    if (notification === "thread list") {
+      changeChatThreadList();
+    } else {
+      changeChatThreadReadCursor({
+        threadId: EXISTING_THREAD_ID,
+        lastReadAt: null,
+      });
+    }
+
+    await warmingStarted.promise;
+    await waitFor(() => {
+      expect(within(indicatorRow()).getByLabelText("Running")).toBeVisible();
+    });
+    expect(within(indicatorRow()).queryByLabelText("Unread")).toBeNull();
   },
 );
 

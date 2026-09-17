@@ -3,6 +3,7 @@ import { modelProvidersMainContract } from "@okouai/api-contracts/contracts/mode
 import type { UpsertModelProviderRequest } from "@okouai/api-contracts/contracts/model-providers";
 import { apiClient$ } from "../api-client.ts";
 import { accept } from "../../lib/accept.ts";
+import { invalidateOrgModelPolicies$ } from "./org-model-policies.ts";
 
 /**
  * Reload trigger for org model provider signals.
@@ -43,6 +44,7 @@ export const createOrgModelProvider$ = command(
     set(internalReloadOrgModelProviders$, (x) => {
       return x + 1;
     });
+    set(invalidateOrgModelPolicies$);
 
     return result.body;
   },
@@ -54,6 +56,7 @@ export const createOrgModelProvider$ = command(
  * device login.
  */
 export const reloadOrgModelProviders$ = command(({ set }) => {
+  set(invalidateOrgModelPolicies$);
   set(internalReloadOrgModelProviders$, (x) => {
     return x + 1;
   });

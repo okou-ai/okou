@@ -32,19 +32,13 @@ const agentPhoneLinkStatusResponseSchema = z.discriminatedUnion("linked", [
     phoneHandle: z.string(),
     agentPhoneNumber: z.string().nullable(),
     configured: z.boolean(),
-    // New Platform -> old API compatibility for the full retained rollback
-    // lifetime, which has no fixed maximum evidenced. Remove with #27750 after
-    // the old API is no longer serving or retained as a rollback target.
-    publicBrand: publicBrandSchema.optional(),
+    publicBrand: publicBrandSchema,
   }),
   z.object({
     linked: z.literal(false),
     agentPhoneNumber: z.string().nullable(),
     configured: z.boolean(),
-    // New Platform -> old API compatibility for the full retained rollback
-    // lifetime, which has no fixed maximum evidenced. Remove with #27750 after
-    // the old API is no longer serving or retained as a rollback target.
-    publicBrand: publicBrandSchema.optional(),
+    publicBrand: publicBrandSchema,
   }),
 ]);
 

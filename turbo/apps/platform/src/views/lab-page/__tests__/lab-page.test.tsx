@@ -110,9 +110,7 @@ test("A user can filter Lab features by maintainer", async () => {
 
   await user.click(buttonNamed("bingjie"));
 
-  expect(
-    screen.getByText(FeatureSwitchKey.ComposerCreateCommands),
-  ).toBeVisible();
+  expect(screen.getByText(FeatureSwitchKey.ComposerTaskChips)).toBeVisible();
   expect(
     screen.queryByText(FeatureSwitchKey.AhrefsConnector),
   ).not.toBeInTheDocument();

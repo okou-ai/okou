@@ -7,8 +7,8 @@ use super::super::{FailureReason, output::Stream};
 
 const CHUNK_BYTES: usize = 4096;
 const CHUNKS: usize = 256;
-const READ_BYTES: usize = 8192;
-const READ_CHUNKS: usize = 32;
+pub(super) const READ_BYTES: usize = 8192;
+pub(super) const READ_CHUNKS: usize = 32;
 
 struct Retained {
     cursor: u64,
@@ -82,13 +82,18 @@ impl Buffer {
         Ok(())
     }
 
-    pub(super) fn read(&self, requested: u64) -> Result<Read, FailureReason> {
+    pub(super) fn read(
+        &self,
+        requested: u64,
+        max_bytes: usize,
+        max_chunks: usize,
+    ) -> Result<Read, FailureReason> {
         let mut cursor = requested.max(self.oldest());
         let lost = (requested < cursor).then_some(Lost {
             from: requested,
             to: cursor,
         });
-        let mut remaining = READ_BYTES;
+        let mut remaining = max_bytes;
         let mut chunks = Vec::new();
         for chunk in &self.chunks {
             let end = chunk.cursor + chunk.bytes.len() as u64;
@@ -109,7 +114,7 @@ impl Buffer {
             });
             cursor += take as u64;
             remaining -= take;
-            if remaining == 0 || chunks.len() == READ_CHUNKS {
+            if remaining == 0 || chunks.len() == max_chunks {
                 break;
             }
         }

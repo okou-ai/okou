@@ -12,7 +12,7 @@ import {
 import frFRCommon from "../i18n/locales/fr-FR/common.json";
 import frFRCommonUrl from "../i18n/locales/fr-FR/common.json?url";
 import { testContext } from "../signals/__tests__/test-helpers.ts";
-import { createChildAbortController } from "../signals/utils.ts";
+import { resetSignal } from "../signals/utils.ts";
 
 const context = testContext();
 
@@ -110,13 +110,13 @@ test("The SharedWorker owns realtime", async () => {
 test.each(["setupPage", "startPage"])(
   "%s does not report cancelled authentication startup as ready",
   async (entryPoint) => {
+    const resetPage$ = resetSignal();
+    const pageSignal = context.store.set(resetPage$, context.signal);
     const clerkLoad = context.mocks.clerk().runtimePending();
-    // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-    const controller = createChildAbortController(context.signal);
     const options = {
       context: {
         ...context,
-        signal: controller.signal,
+        signal: pageSignal,
       },
       host: "app.okou.ai",
       path: "/agents",
@@ -128,17 +128,44 @@ test.each(["setupPage", "startPage"])(
 
     const skeleton = await screen.findByTestId("app-skeleton");
     expect(skeleton).toBeVisible();
-    const reason = new DOMException("Page startup cancelled", "AbortError");
-    controller.abort(reason);
+    context.store.set(resetPage$);
     clerkLoad.resolve();
-    await expect(pageReady).rejects.toBe(reason);
+    await expect(pageReady).rejects.toBe(pageSignal.reason);
 
     expect(screen.queryByRole("heading", { name: "Agents" })).toBeNull();
     expect(skeleton).not.toBeInTheDocument();
   },
 );
 
+test.each(["setupPage", "startPage"])(
+  "%s preserves a custom parent cancellation reason",
+  async (entryPoint) => {
+    const resetPage$ = resetSignal();
+    const reason = new DOMException("Parent startup cancelled", "AbortError");
+    const pageSignal = context.store.set(
+      resetPage$,
+      context.signal,
+      AbortSignal.abort(reason),
+    );
+    const options = {
+      context: { ...context, signal: pageSignal },
+      host: "app.okou.ai",
+      path: "/agents",
+    };
+
+    await expect(
+      entryPoint === "setupPage" ? setupPage(options) : startPage(options),
+    ).rejects.toBe(reason);
+    expect(screen.queryByTestId("app-skeleton")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Agents" }),
+    ).not.toBeInTheDocument();
+  },
+);
+
 test("Cancelled locale startup does not adopt a replacement lifetime", async () => {
+  const resetPage$ = resetSignal();
+  const pageSignal = context.store.set(resetPage$, context.signal);
   const localeRequested = context.mocks.deferred<Request>();
   const localeResponse = context.mocks.deferred<void>();
   context.mocks.http.get(frFRCommonUrl, async ({ request }) => {
@@ -146,9 +173,7 @@ test("Cancelled locale startup does not adopt a replacement lifetime", async () 
     await localeResponse.promise;
     return HttpResponse.json(frFRCommon);
   });
-  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-  const controller = createChildAbortController(context.signal);
-  let currentSignal = controller.signal;
+  let currentSignal = pageSignal;
   const startup = startPage({
     context: {
       ...context,
@@ -161,13 +186,12 @@ test("Cancelled locale startup does not adopt a replacement lifetime", async () 
     locale: "fr-FR",
   });
   const request = await localeRequested.promise;
-  const reason = new DOMException("Locale startup cancelled", "AbortError");
-  controller.abort(reason);
   // Model testContext replacing its lifetime while old startup is suspended.
-  currentSignal = context.signal;
+  currentSignal = context.store.set(resetPage$, context.signal);
   localeResponse.resolve();
-  await expect(startup).rejects.toBe(reason);
+  await expect(startup).rejects.toBe(pageSignal.reason);
 
+  expect(currentSignal.aborted).toBeFalsy();
   expect(request.signal.aborted).toBeTruthy();
   expect(screen.queryByTestId("app-skeleton")).not.toBeInTheDocument();
   expect(
@@ -222,7 +246,7 @@ test("A Clerk core failure offers a visible refresh without an automatic retry",
   });
 
   const alert = await screen.findByRole("alert");
-  await page.ready;
+  await expect(page.ready).rejects.toBe(failure);
   expect(alert).toHaveTextContent("Oops! Something went sideways");
   expect(screen.queryByTestId("clerk-sign-in")).not.toBeInTheDocument();
   expect(screen.queryByTestId("app-skeleton")).not.toBeInTheDocument();

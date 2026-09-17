@@ -16,7 +16,6 @@ import {
 } from "../shared-database-bridge-state.ts";
 import { setupClerkUser$ } from "../auth.ts";
 import { setRootSignal$ } from "../root-signal.ts";
-import { detach, Reason } from "../utils.ts";
 import { testContext } from "./test-helpers.ts";
 
 const context = testContext();
@@ -129,7 +128,7 @@ function installSharedWorkerMock(): {
   return { constructorCalls, workers };
 }
 
-function setupBridge(): void {
+async function setupBridge(): Promise<void> {
   context.store.set(setRootSignal$, context.signal);
   const clerk = context.mocks.clerk();
   installMockedClerkBootstrap(context.signal);
@@ -147,22 +146,14 @@ function setupBridge(): void {
   });
   // Bootstrap owns `clerkUser$` in production; this test drives the bridge
   // directly, so it has to claim the same owner.
-  detach(
-    context.store.set(setupClerkUser$, context.signal),
-    Reason.Daemon,
-    "test clerk user owner",
-  );
-  detach(
-    context.store.set(setupSharedDatabaseBridge$, context.signal),
-    Reason.Daemon,
-    "test shared database bridge",
-  );
+  await context.store.set(setupClerkUser$, context.signal);
+  await context.store.set(setupSharedDatabaseBridge$, context.signal);
 }
 
 test("Pass the page identity through the Vite shared worker URL", async () => {
   context.mocks.browser.url("https://app.okou.ai/chats");
   const { constructorCalls, workers } = installSharedWorkerMock();
-  setupBridge();
+  await setupBridge();
   await vi.waitFor(() => {
     expect(workers).toHaveLength(1);
   });
@@ -180,7 +171,7 @@ test("Pass the page identity through the Vite shared worker URL", async () => {
 
 test("Return Clerk's cached token when the shared worker requests it", async () => {
   const { workers } = installSharedWorkerMock();
-  setupBridge();
+  await setupBridge();
   await vi.waitFor(() => {
     expect(workers).toHaveLength(1);
   });
@@ -228,14 +219,13 @@ test("Expose worker construction failures to bridge consumers", async () => {
     },
   );
 
-  setupBridge();
-
+  await expect(setupBridge()).rejects.toBe(error);
   await expect(context.store.get(bridgeConnected$)).rejects.toBe(error);
 });
 
 test("Return a worker query error to its caller", async () => {
   const { workers } = installSharedWorkerMock();
-  setupBridge();
+  await setupBridge();
   await context.store.get(bridgeConnected$);
   const bridge = context.store.get(installedSharedDatabaseBridge$);
   const query = bridge.query(
@@ -273,7 +263,7 @@ test("Return a worker query error to its caller", async () => {
 
 test("Reject pending requests when the worker fails", async () => {
   const { constructorCalls, workers } = installSharedWorkerMock();
-  setupBridge();
+  await setupBridge();
   await context.store.get(bridgeConnected$);
   const bridge = context.store.get(installedSharedDatabaseBridge$);
   const query = bridge.query(

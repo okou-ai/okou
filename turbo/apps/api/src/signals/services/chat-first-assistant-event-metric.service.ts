@@ -9,7 +9,12 @@ import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
 import { recordSandboxOperation } from "../external/sandbox-op-log";
 import { now } from "../../lib/time";
 import { tapError } from "../utils";
-import { writeRunMetadata } from "./agent-run-metadata-write.service";
+import { writeRunMetadataInTransaction } from "./agent-run-metadata-write.service";
+
+import {
+  withRunContentWrite,
+  type RunContentOwnership,
+} from "./run-content-erasure-admission.service";
 
 const L = logger("api:chat-first-assistant-message-metric");
 
@@ -29,6 +34,7 @@ export function recordFirstAssistantEventEligibility(args: {
 
 async function recordFirstAssistantEventAcknowledgement(args: {
   readonly db: Db;
+  readonly ownership: RunContentOwnership;
   readonly runId: string;
   readonly acknowledgedAt: number;
 }): Promise<void> {
@@ -40,12 +46,23 @@ async function recordFirstAssistantEventAcknowledgement(args: {
   if (!firstAssistantClaimWhere) {
     throw new Error("First assistant acknowledgement predicate is empty");
   }
-  const [claimed] = await writeRunMetadata(args.db, {
-    patch: {
-      firstAssistantEventAcknowledgedAt: new Date(args.acknowledgedAt),
+  const admitted = await withRunContentWrite(
+    args.db,
+    { runId: args.runId, ownership: args.ownership },
+    async (tx) => {
+      return await writeRunMetadataInTransaction(tx, {
+        patch: {
+          firstAssistantEventAcknowledgedAt: new Date(args.acknowledgedAt),
+        },
+        where: firstAssistantClaimWhere,
+      });
     },
-    where: firstAssistantClaimWhere,
-  });
+    AbortSignal.timeout(20_000),
+  );
+  if (admitted.outcome === "closed") {
+    return;
+  }
+  const [claimed] = admitted.value;
   if (!claimed?.apiStartedAt) {
     return;
   }
@@ -90,6 +107,7 @@ export async function publishFirstAssistantEventCreatedSignalSafely(args: {
 
 async function publishFirstAssistantEventCreated(args: {
   readonly db: Db;
+  readonly ownership: RunContentOwnership;
   readonly orgId: string;
   readonly threadId: string;
   readonly userId: string;
@@ -101,6 +119,7 @@ async function publishFirstAssistantEventCreated(args: {
     tapError(
       recordFirstAssistantEventAcknowledgement({
         db: args.db,
+        ownership: args.ownership,
         runId: args.runId,
         acknowledgedAt,
       }),
@@ -116,6 +135,7 @@ async function publishFirstAssistantEventCreated(args: {
 
 export async function publishFirstAssistantEventCreatedSafely(args: {
   readonly db: Db;
+  readonly ownership: RunContentOwnership;
   readonly orgId: string;
   readonly threadId: string;
   readonly userId: string;

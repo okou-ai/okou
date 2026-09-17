@@ -46,9 +46,7 @@ const ownedStorageSeedSchema = z.object({
   s3_prefix: z.string(),
 });
 
-const cacheRefreshResultSchema = z.object({
-  due: z.number().int().nonnegative(),
-  refreshed: z.number().int().nonnegative(),
+const cachePruneResultSchema = z.object({
   pruned: z.number().int().nonnegative(),
 });
 
@@ -98,7 +96,7 @@ export const testSystemStoragePresignedUrlCacheStateActionBodySchema =
       storage_id: z.string().uuid(),
     }),
     z.object({
-      action: z.literal("refresh-owned-storage-cache"),
+      action: z.literal("prune-owned-storage-cache"),
       storage_id: z.string().uuid(),
     }),
     z.object({
@@ -134,7 +132,7 @@ export const testSystemStoragePresignedUrlCacheStateActionResponseSchema =
     rows: z.array(cacheRowSchema).optional(),
     storage_state: storageStateSchema.nullable().optional(),
     storage_version: storageVersionStateSchema.nullable().optional(),
-    cache_refresh: cacheRefreshResultSchema.optional(),
+    cache_prune: cachePruneResultSchema.optional(),
   });
 
 export const testSystemStoragePresignedUrlCacheStateContract = c.router({

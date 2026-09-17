@@ -1,3 +1,4 @@
+import { cn } from "@okouai/ui";
 import type { Root } from "hast";
 import type { CSSProperties } from "react";
 
@@ -12,6 +13,31 @@ import {
   Markdown as RichMarkdown,
   MarkdownEventBody as RichMarkdownEventBody,
 } from "./rich-markdown.tsx";
+
+/**
+ * The Markdown treatment a chat bubble asks for: 8px block spacing so the
+ * bubble's 15px text does not read cramped, and no horizontal rules.
+ *
+ * Every declaration is important because its competitors are unlayered rules
+ * that a utility in `@layer utilities` cannot outrank — the App's own
+ * `.wmde-markdown p` spacing for the paragraphs, and the vendored
+ * `.wmde-markdown > *:first-child` / `:last-child` resets, which are themselves
+ * important. Stating those two at the same tier is what keeps the frame's own
+ * edge paragraphs flush. The card slot carries its own `my-1.5`, which this
+ * important declaration outranks from inside the same layer.
+ *
+ * A quote's own edges are padding, not margin. A blockquote here declares no
+ * block padding and no block border, so an inner paragraph's margin collapses
+ * straight out through the quote's edges: it never appears inside the quote and
+ * instead leaks space at the frame's own top and bottom. The blockquote pair
+ * flushes those inner margins and `py-2` puts the bubble's 8px where a quote
+ * actually shows it. See vm0-ai/vm0#34278.
+ *
+ * The card slot is addressed through `data-slot` rather than a class, which is
+ * the only handle the element has.
+ */
+const CHAT_BUBBLE_MARKDOWN_CLASS =
+  "[&_:is(p,[data-slot=markdown-card])]:my-2! [&>*:first-child]:mt-0! [&>*:last-child]:mb-0! [&_blockquote]:py-2! [&_blockquote>*:first-child]:mt-0! [&_blockquote>*:last-child]:mb-0! [&_hr]:hidden";
 
 interface MarkdownProps {
   readonly source: string;
@@ -85,21 +111,27 @@ function RichContentError({
 
 /** Renders prepared plain trees immediately and rich trees synchronously. */
 export function MarkdownEventBody({
+  chatBubble = false,
   className,
   onRetry,
   tree,
   mediaPreview,
 }: {
+  /** Opt into the chat bubble treatment described above. */
+  readonly chatBubble?: boolean;
   readonly className?: string;
   readonly onRetry?: () => void;
   readonly tree: Root | undefined;
   readonly mediaPreview: boolean | "link";
 }) {
+  const frameClassName = chatBubble
+    ? cn(CHAT_BUBBLE_MARKDOWN_CLASS, className)
+    : className;
   if (tree === undefined) {
     if (onRetry !== undefined) {
       return (
         <RichContentError
-          className={className}
+          className={frameClassName}
           onRetry={onRetry}
           style={{ fontSize: "inherit", lineHeight: "inherit" }}
         />
@@ -107,7 +139,7 @@ export function MarkdownEventBody({
     }
     return (
       <RichContentLoading
-        className={className}
+        className={frameClassName}
         style={{ fontSize: "inherit", lineHeight: "inherit" }}
       />
     );
@@ -116,7 +148,7 @@ export function MarkdownEventBody({
   if (plainText !== null) {
     return (
       <PlainMarkdown
-        className={className}
+        className={frameClassName}
         text={plainText}
         style={{ fontSize: "inherit", lineHeight: "inherit" }}
       />
@@ -124,7 +156,7 @@ export function MarkdownEventBody({
   }
   return (
     <RichMarkdownEventBody
-      className={className}
+      className={frameClassName}
       tree={tree}
       mediaPreview={mediaPreview}
     />

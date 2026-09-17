@@ -1,7 +1,23 @@
+import {
+  hasDurablePiApiRecoveryOwner,
+  recoverDurablePiApiInference$,
+} from "./pi-api-inference-recovery.service";
+import { recoverDeferredPiRuns$ } from "./pi-deferred-sandbox.service";
+import { reclaimPiInferenceObjects } from "./pi-inference-object.service";
+import {
+  isPiInferenceRun,
+  readPiInferenceLifecycle,
+  piInferenceDeadline,
+} from "./pi-inference-lifecycle.service";
+import type { AgentRunLaunchSnapshot } from "@okouai/db/jsonb-contracts/agent-run-session-conversation";
 import { cleanupExpiredRunActivity$ } from "./run-activity-snapshot.service";
 import { command } from "ccstate";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import {
+  COMPUTE_CLOSURE_ERROR,
+  transitionAgentRunsToTerminal,
+} from "./agent-run-terminal-transition.service";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { exportJobs } from "@okouai/db/schema/export-job";
@@ -55,7 +71,6 @@ import {
   finalizeActiveInputDelivery,
   type FinalizeActiveInputDeliveryResult,
 } from "./active-input-delivery.service";
-import { transitionAgentRunsToTerminal } from "./agent-run-terminal-transition.service";
 
 const L = logger("CronCleanupSandboxes");
 
@@ -100,6 +115,7 @@ type CleanupSandboxesScope =
     };
 
 interface StaleRun {
+  readonly launchSnapshot: AgentRunLaunchSnapshot | null;
   readonly id: string;
   readonly orgId: string;
   readonly userId: string;
@@ -131,6 +147,7 @@ interface MaintenanceTerminalSideEffectsInput {
 }
 
 interface LockedTimeoutRun {
+  readonly launchSnapshot: AgentRunLaunchSnapshot | null;
   readonly status: string;
   readonly orgId: string;
   readonly userId: string;
@@ -189,6 +206,7 @@ async function lockTimeoutRun(
   const [run] = await tx
     .select({
       status: agentRuns.status,
+      launchSnapshot: agentRuns.launchSnapshot,
       orgId: agentRuns.orgId,
       userId: agentRuns.userId,
       sandboxId: agentRuns.sandboxId,
@@ -368,7 +386,24 @@ async function commitStaleRunTimeout(
           return { kind: "skipped" };
         }
         const referenceTime = lockedRun.lastHeartbeatAt ?? lockedRun.createdAt;
-        if (referenceTime >= cutoff) {
+        const lifecycle = await readPiInferenceLifecycle(
+          tx,
+          run.id,
+          lockedRun.launchSnapshot,
+        );
+        if (lifecycle) {
+          if (hasDurablePiApiRecoveryOwner(lifecycle.inference)) {
+            return { kind: "skipped" };
+          }
+          const deadlineExpired =
+            piInferenceDeadline(lifecycle).getTime() <= now();
+          const heartbeatExpired =
+            lifecycle.inference.phase === "sandbox_running" &&
+            referenceTime < cutoff;
+          if (!deadlineExpired && !heartbeatExpired) {
+            return { kind: "skipped" };
+          }
+        } else if (referenceTime >= cutoff) {
           return { kind: "skipped" };
         }
 
@@ -385,6 +420,7 @@ async function commitStaleRunTimeout(
         const [updatedRun] = await transitionAgentRunsToTerminal(tx, {
           values: {
             status: "timeout",
+            runnerCancellationMode: "hard",
             completedAt: nowDate(),
             error: timeoutReason,
           },
@@ -432,8 +468,9 @@ const cleanupSingleRun$ = command(
     cutoffs: CleanupCutoffs,
     signal: AbortSignal,
   ): Promise<CleanupResult | undefined> => {
-    const timeoutReason =
-      run.status === "pending"
+    const timeoutReason = isPiInferenceRun(run.launchSnapshot)
+      ? "Pi inference or Sandbox phase deadline expired"
+      : run.status === "pending"
         ? "Run timed out while pending (never started)"
         : "Run timed out (no heartbeat)";
     const cutoff = staleRunCutoff(run, cutoffs);
@@ -603,17 +640,41 @@ async function cleanupExpiredRunnerJobs(
   runIds: readonly string[] | null,
   signal: AbortSignal,
 ): Promise<number> {
-  const { rowCount } = await db
-    .delete(runnerJobQueue)
-    .where(
+  const deletedCount = await db.transaction(async (tx) => {
+    // Lock run before queue, as claims do. Recheck closure after waiting so an
+    // in-flight TTL statement cannot discard a newly retained locator.
+    const candidates = await tx
+      .select({ runId: agentRuns.id })
+      .from(agentRuns)
+      .innerJoin(runnerJobQueue, eq(runnerJobQueue.runId, agentRuns.id))
+      .where(
+        and(
+          lte(runnerJobQueue.expiresAt, sql`now()`),
+          sql`${agentRuns.error} IS DISTINCT FROM ${COMPUTE_CLOSURE_ERROR}`,
+          runIds === null ? undefined : inArray(agentRuns.id, runIds),
+        ),
+      )
+      .orderBy(agentRuns.createdAt, agentRuns.id)
+      .limit(100)
+      .for("update", { of: agentRuns });
+    if (candidates.length === 0) {
+      return 0;
+    }
+    const { rowCount } = await tx.delete(runnerJobQueue).where(
       and(
+        inArray(
+          runnerJobQueue.runId,
+          candidates.map((row) => {
+            return row.runId;
+          }),
+        ),
         lte(runnerJobQueue.expiresAt, sql`now()`),
-        runIds === null ? undefined : inArray(runnerJobQueue.runId, runIds),
       ),
     );
+    return rowCount ?? 0;
+  });
   signal.throwIfAborted();
 
-  const deletedCount = rowCount ?? 0;
   if (deletedCount > 0) {
     L.debug("Cleaned up expired runner job queue entries", {
       count: deletedCount,
@@ -640,6 +701,7 @@ async function cleanupConnectorDiagnosticRegistrations(
           isNull(agentRuns.id),
           inArray(agentRuns.status, TERMINAL_RUN_STATUSES),
         ),
+        sql`${agentRuns.error} IS DISTINCT FROM ${COMPUTE_CLOSURE_ERROR}`,
         runIds === null
           ? undefined
           : inArray(agentRunConnectorDiagnosticRegistrations.runId, runIds),
@@ -727,6 +789,24 @@ const cleanupFixtureMaintenance$ = command(
   },
 );
 
+const recoverPiExecutionOwners$ = command(
+  async (
+    { set },
+    db: Db,
+    runIds: readonly string[] | null,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    await set(recoverDurablePiApiInference$, runIds, signal);
+    signal.throwIfAborted();
+    await set(recoverDeferredPiRuns$, runIds, signal);
+    signal.throwIfAborted();
+    if (runIds === null) {
+      await reclaimPiInferenceObjects(db);
+      signal.throwIfAborted();
+    }
+  },
+);
+
 export const cleanupSandboxes$ = command(
   async (
     { set },
@@ -735,6 +815,8 @@ export const cleanupSandboxes$ = command(
   ): Promise<CleanupSandboxesResult> => {
     const db = set(writeDb$);
     const runIds = scope.kind === "global" ? null : scope.runIds;
+    await set(recoverPiExecutionOwners$, db, runIds, signal);
+    signal.throwIfAborted();
     const orgIds = scope.kind === "global" ? null : scope.orgIds;
     const currentTime = now();
     const cutoffs = {
@@ -755,6 +837,7 @@ export const cleanupSandboxes$ = command(
         orgId: agentRuns.orgId,
         userId: agentRuns.userId,
         status: agentRuns.status,
+        launchSnapshot: agentRuns.launchSnapshot,
         sandboxId: agentRuns.sandboxId,
         runnerGroup: agentRuns.runnerGroup,
         chatThreadId: agentRuns.chatThreadId,
@@ -773,8 +856,9 @@ export const cleanupSandboxes$ = command(
       );
     signal.throwIfAborted();
 
+    // New owners are inspected under the per-run error boundary and run lock.
     const expiredRuns = staleRuns.filter((run) => {
-      return isExpiredRun(run, cutoffs);
+      return isPiInferenceRun(run.launchSnapshot) || isExpiredRun(run, cutoffs);
     });
 
     // Run before generic queue maintenance so an active threadless run always
@@ -824,13 +908,7 @@ export const cleanupSandboxes$ = command(
       drained: drainedCount,
     });
 
-    if (expiredRuns.length === 0) {
-      L.debug("No expired sandboxes found");
-    } else {
-      L.debug("Found expired sandboxes to cleanup", {
-        count: expiredRuns.length,
-      });
-    }
+    L.debug("Run timeout candidates", { count: expiredRuns.length });
 
     const queuedResults = await set(
       cleanupQueuedTerminalRuns$,

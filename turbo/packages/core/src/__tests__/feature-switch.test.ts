@@ -23,18 +23,54 @@ describe("FeatureSwitchKey", () => {
     expect(FeatureSwitchKey.ChatPreference).toBe("chatPreference");
     expect(FeatureSwitchKey.OkouDebug).toBe("_debug");
     expect(FeatureSwitchKey.RealAgentInPreview).toBe("_realAgentInPreview");
+    expect(FeatureSwitchKey.LangfuseTrace).toBe("_langfuseTrace");
     expect(FeatureSwitchKey.TestOauthConnector).toBe("_testOauthConnector");
     expect(FeatureSwitchKey.SshAccess).toBe("sshAccess");
     expect(FeatureSwitchKey.PiLoop).toBe("piLoop");
     expect(FeatureSwitchKey.PiMemory).toBe("piMemory");
-    expect(FeatureSwitchKey.AgentMessageMath).toBe("agentMessageMath");
-    expect(FeatureSwitchKey.ProgressiveArtifactPreview).toBe(
-      "progressiveArtifactPreview",
-    );
   });
 });
 
 describe("isFeatureEnabled", () => {
+  it("defaults personal subscription priority by workspace and honors explicit overrides", () => {
+    for (const context of [{}, { orgId: "org_external" }]) {
+      expect(
+        isFeatureEnabled(
+          FeatureSwitchKey.PersonalSubscriptionPriority,
+          context,
+        ),
+      ).toBe(false);
+      expect(
+        isFeatureEnabled(FeatureSwitchKey.PersonalSubscriptionPriority, {
+          ...context,
+          overrides: { [FeatureSwitchKey.PersonalSubscriptionPriority]: true },
+        }),
+      ).toBe(true);
+    }
+    const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.PersonalSubscriptionPriority, staff),
+    ).toBe(true);
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.PersonalSubscriptionPriority, {
+        ...staff,
+        overrides: { [FeatureSwitchKey.PersonalSubscriptionPriority]: false },
+      }),
+    ).toBe(false);
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.PersonalModelProviderAccounts, {
+        ...staff,
+        overrides: { [FeatureSwitchKey.PersonalSubscriptionPriority]: false },
+      }),
+    ).toBe(true);
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.PersonalModelProviderAccounts, {
+        orgId: "org_external",
+        overrides: { [FeatureSwitchKey.PersonalSubscriptionPriority]: true },
+      }),
+    ).toBe(false);
+  });
+
   it("keeps Pi memory off for everyone until an explicit override enables it", () => {
     const staffOrgId = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
     for (const context of [
@@ -105,7 +141,8 @@ describe("isFeatureEnabled", () => {
     expect(isFeatureEnabled(FeatureSwitchKey.SshAccess, {})).toBe(false);
     expect(getFeatureSwitchMetadata()[FeatureSwitchKey.SshAccess]).toEqual({
       maintainer: "liangyou@okou.ai",
-      description: "Enable standalone Runner-mediated SSH configuration",
+      description:
+        "Enable Runner-mediated SSH with Direct and Cloudflare Access transports",
       rolloutStage: "beta",
     });
   });
@@ -150,6 +187,26 @@ describe("isFeatureEnabled", () => {
       }),
     ).toBe(false);
     expect(isFeatureEnabled(FeatureSwitchKey.WelcomeThread, {})).toBe(false);
+  });
+
+  it("should default Langfuse tracing off for every org and accept user overrides", () => {
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.LangfuseTrace, {
+        orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
+      }),
+    ).toBe(false);
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.LangfuseTrace, {
+        orgId: "org_nonexistent",
+      }),
+    ).toBe(false);
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.LangfuseTrace, {
+        userId: "any-user",
+        orgId: "org_nonexistent",
+        overrides: { [FeatureSwitchKey.LangfuseTrace]: true },
+      }),
+    ).toBe(true);
   });
 
   it("should apply user overrides to the staff-default Official Workflows switch", () => {
@@ -201,6 +258,34 @@ describe("isFeatureEnabled", () => {
     });
   });
 
+  it("should keep the simple Morning Brief implementation switch off for everyone", () => {
+    expect(FeatureSwitchKey.SimpleMorningBrief).toBe("simpleMorningBrief");
+    for (const context of [
+      {},
+      { orgId: "org_nonexistent" },
+      { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
+    ]) {
+      expect(
+        isFeatureEnabled(FeatureSwitchKey.SimpleMorningBrief, context),
+      ).toBe(false);
+      // Selecting the replacement implementation never changes whether the
+      // user has Morning Brief.
+      expect(isFeatureEnabled(FeatureSwitchKey.MorningBrief, context)).toBe(
+        true,
+      );
+    }
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.SimpleMorningBrief, {
+        orgId: "org_nonexistent",
+        overrides: { [FeatureSwitchKey.SimpleMorningBrief]: true },
+      }),
+    ).toBe(true);
+    expect(
+      getFeatureSwitchMetadata()[FeatureSwitchKey.SimpleMorningBrief]
+        ?.rolloutStage,
+    ).toBe("alpha");
+  });
+
   it("should return true when orgId matches even if userId does not", () => {
     expect(
       isFeatureEnabled(FeatureSwitchKey.Lab, {
@@ -244,11 +329,6 @@ describe("getAllFeatureStates", () => {
     expect(staffOrgStates[FeatureSwitchKey.Lab]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.OkouDebug]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.Banking]).toBe(false);
-    expect(staffOrgStates[FeatureSwitchKey.AgentMessageMath]).toBe(true);
-    expect(staffOrgStates[FeatureSwitchKey.ProgressiveArtifactPreview]).toBe(
-      true,
-    );
-    expect(staffOrgStates[FeatureSwitchKey.ChatThinkingSpinner]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.PiLoop]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.PiMemory]).toBe(false);
     expect(staffOrgStates[FeatureSwitchKey.ChatPreference]).toBe(true);
@@ -256,8 +336,6 @@ describe("getAllFeatureStates", () => {
     expect(staffOrgStates[FeatureSwitchKey.PersonalModelProviderAccounts]).toBe(
       true,
     );
-    expect(staffOrgStates[FeatureSwitchKey.ChatTranslation]).toBe(false);
-    expect(staffOrgStates[FeatureSwitchKey.VoiceInputV2]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.IntroVideo]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.GradientColorThemes]).toBe(false);
     expect(staffOrgStates[FeatureSwitchKey.OfficialWorkflows]).toBe(true);
@@ -271,11 +349,6 @@ describe("getAllFeatureStates", () => {
     expect(otherOrgStates[FeatureSwitchKey.Lab]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.OkouDebug]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.Banking]).toBe(false);
-    expect(otherOrgStates[FeatureSwitchKey.AgentMessageMath]).toBe(true);
-    expect(otherOrgStates[FeatureSwitchKey.ProgressiveArtifactPreview]).toBe(
-      false,
-    );
-    expect(otherOrgStates[FeatureSwitchKey.ChatThinkingSpinner]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.PiLoop]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.PiMemory]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.ChatPreference]).toBe(false);
@@ -283,8 +356,6 @@ describe("getAllFeatureStates", () => {
     expect(otherOrgStates[FeatureSwitchKey.PersonalModelProviderAccounts]).toBe(
       false,
     );
-    expect(otherOrgStates[FeatureSwitchKey.ChatTranslation]).toBe(false);
-    expect(otherOrgStates[FeatureSwitchKey.VoiceInputV2]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.IntroVideo]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.GradientColorThemes]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.OfficialWorkflows]).toBe(false);
@@ -312,18 +383,18 @@ describe("getAllFeatureStates", () => {
     expect(colleagueStates[FeatureSwitchKey.PiLoop]).toBe(true);
   });
 
-  it("should enable the model picker menu for Bingjie by email outside the staff org", () => {
+  it("should enable effort for Bingjie by email outside the staff org", () => {
     const bingjieStates = getAllFeatureStates({
       email: "BINGJIE@OKOU.AI",
       orgId: "org_nonexistent",
     });
-    expect(bingjieStates[FeatureSwitchKey.ModelPickerMenu]).toBe(true);
+    expect(bingjieStates[FeatureSwitchKey.Effort]).toBe(true);
 
     const otherStates = getAllFeatureStates({
       email: "ethan@okou.ai",
       orgId: "org_nonexistent",
     });
-    expect(otherStates[FeatureSwitchKey.ModelPickerMenu]).toBe(false);
+    expect(otherStates[FeatureSwitchKey.Effort]).toBe(false);
   });
 
   it("should apply overrides to enable disabled features", () => {

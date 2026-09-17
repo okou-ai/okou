@@ -23,9 +23,9 @@ import { heyGenBuiltInGenerationWebhookUrl } from "../services/built-in-generati
 import {
   generateHeyGenSpeech,
   isHeyGenErrorResponse,
-  listHeyGenPublicAvatars,
+  listHeyGenAvatarsWithVoiceSamples,
   listHeyGenPublicStyles,
-  listHeyGenPublicVoices,
+  listHeyGenPublicVoicesWithSamples,
   submitHeyGenAvatarVideo,
   verifyHeyGenPublicAvatar,
   verifyHeyGenPublicVoice,
@@ -196,7 +196,7 @@ const getVoicesInner$ = command(async ({ get }, signal: AbortSignal) => {
     );
   }
   const query = get(voicesQuery$);
-  const result = await listHeyGenPublicVoices(
+  const result = await listHeyGenPublicVoicesWithSamples(
     {
       token: query.token,
       pageSize: query.pageSize ?? 24,
@@ -224,7 +224,7 @@ const getAvatarsInner$ = command(async ({ get }, signal: AbortSignal) => {
     );
   }
   const query = get(avatarsQuery$);
-  const result = await listHeyGenPublicAvatars(
+  const result = await listHeyGenAvatarsWithVoiceSamples(
     {
       token: query.token,
       pageSize: query.pageSize ?? 24,

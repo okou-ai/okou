@@ -288,7 +288,7 @@ const resolveTeamsOauthStateAuth$ = command(
     );
     signal.throwIfAborted();
 
-    if (!member) {
+    if (member.kind !== "member") {
       return null;
     }
 

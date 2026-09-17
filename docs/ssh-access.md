@@ -49,13 +49,18 @@ locally. File selection does not upload anything or parse the key format; Save
 submits the credential. Keys, passphrases and passwords preserve whitespace.
 Secrets are write-only and stay outside the sandbox. Use a least-privilege
 remote SSH user. Submitted input stays only in the open form while saving;
-controls are disabled until the request completes. A retryable failure preserves
-the input so the user can correct it or click Save again. Successful saves close
+controls are disabled until the request completes. A known input rejection preserves
+the input so the user can correct it or click Save again. An uncertain host save
+or credential/Access creation keeps the fields frozen and offers **Retry**.
+Retry explicitly resends the same input with the same resource ID for creation,
+or the original expected generation for a host edit. Successful saves close
 the form and clear its secrets, as do cancellation, navigation and owner changes.
 Changing authentication methods clears the previous method's inputs. Secrets
 are never stored in reactive state or browser caches. A background notification
-refreshes the lists without clearing an open form. Stale revisions still require
-reopening the refreshed item rather than retrying an outdated write.
+refreshes the lists without clearing an open form. A stale host edit preserves
+the draft, displays current metadata and requires explicit review before Save can
+use the newer generation. Credential revision conflicts still require reopening
+the refreshed item.
 
 Each saved connection has its own ID. Multiple configurations may use the same
 host and port, with different usernames or different keys for the same username.
@@ -72,8 +77,42 @@ explicitly selecting **Replace authentication** updates the login for every host
 currently using that credential, atomically advancing their generations while
 preserving learned host keys. Renaming a credential leaves host generations
 unchanged. Host/port changes clear only that host's learned identity. Stale host
-generations or credential revisions are not retried; reopen the refreshed item
-and review current settings and affected hosts.
+generations or credential revisions are not automatically retried. Review the
+latest host metadata in the dialog, or reopen a credential, before saving again.
+
+### Save retries
+
+Host creation and standalone credential/Access creation require a client-generated
+UUID `id`, stored as the existing resource's primary key. The first successful
+create returns `201`. A same-ID request reaching the write transaction returns
+`204` with no body when the resource already belongs to the same organization and
+user. It does not overwrite metadata or secrets, create more inline resources, or
+repeat grants and notifications. First commit wins even if the payload differs.
+An ID belonging to another owner returns an opaque `SSH_RESOURCE_ID_CONFLICT`;
+it never acknowledges or exposes that resource.
+
+Creation takes the existing SSH owner lock and a transaction-scoped resource-ID
+lock before any inserts. The latter also serializes different owners claiming
+the same ID. Host and inline credential/Access creation remain atomic. No new
+table, column, migration, receipt history, or confirmation endpoint is needed.
+Input validation and credential preparation still happen before the transaction
+and can reject a retry before the existing resource is acknowledged.
+
+After a network or server failure, the open form retains and freezes its input.
+Only explicit **Retry** resends it. A later rejected retry does not prove that the
+original request cannot still commit, so it does not unlock the draft. A host-edit
+generation conflict instead uses the existing explicit latest-version review;
+the client never automatically advances the generation or reapplies the edit.
+Choosing to save after that review is a new edit, not confirmation of the old one.
+
+Deduplication lasts only while the resource exists. Deleting it and then retrying
+an old create can recreate it; there are no tombstones or permanent operation
+history. Closing or navigating away clears the local draft and retry ID and
+aborts UI work, but does not claim to cancel a server commit. After abandoning an
+uncertain form, inspect the refreshed list before intentionally starting a new
+save. No background mutation retry or secret persistence is introduced. Normal
+edits to existing credentials/Access configurations, deletion and host-key reset
+keep their existing concurrency contracts.
 
 ### Owner storage and pre-GA cutover
 
@@ -148,6 +187,119 @@ do not trigger extra reads. These refreshes do not close dialogs, clear unsaved
 keys or automatically grant access. Browser notifications are separate from
 Runner authority invalidation and do not tighten
 the accepted Run-lifetime cache window.
+
+## Cloudflare Access for SSH
+
+The backend foundation (#34077, parent #31996) adds reusable, user-owned Service
+Token configurations as SSH connection settings, independently of SSH login
+credentials. Direct and Cloudflare Access share the existing staff-only
+`sshAccess` switch; there is no separate Access rollout switch. #34080 adds the
+native Runner carrier and #34081 adds management inside the SSH page. #34370
+records the completed integrated acceptance and owner-approved evidence boundaries.
+Removing the separate switch does not enable SSH for users outside its existing cohort.
+
+The carrier uses a customer-managed published SSH hostname on WSS/443 and a
+Service Token allowed by the application's **Service Auth** policy. The token's
+Client ID and Client Secret authenticate the gateway handshake; they are not SSH
+login credentials, Cloudflare management API tokens or Tunnel installation tokens.
+The origin SSH address/port belongs in Cloudflare. Okou does not install a Tunnel,
+start a client-side cloudflared process or join the customer's private network.
+The Runner uses verified TLS and then independently verifies the SSH host key
+before key/password login. Rejected Access connections never retry as Direct.
+
+Existing CLI commands use the saved connection ID with no proxy/token options.
+For a protected host, the hostname and port in `okou ssh host list` identify the
+gateway, not the origin SSH port. Exec, Sessions and SFTP share this transport and
+retain their existing limits. Ask the owner to inspect `/connectors/ssh` diagnostics
+when connection setup fails. An Access rejection can mean policy or token scope,
+not necessarily an expired token; gateway TLS/protocol failures remain distinct
+from SSH authentication and host-key failures.
+
+The canonical `/api/ssh/cloudflare-access/configs` endpoints create, list, rename,
+replace credentials and delete configurations. Client ID and
+Client Secret are write-only. Reads return metadata and referencing host IDs/names;
+updates/deletion require the expected edit revision, and referenced deletion is
+rejected. Names may change without invalidating Runs. Token replacement advances
+a separate authority generation and all referencing SSH host generations.
+Configurations have no separate enabled state; the saved host binding selects
+Access, the existing SSH Agent grant authorizes use, and `sshAccess`
+controls rollout. Switching to Direct is not a way to disable a protected host.
+
+An SSH host explicitly selects a same-owner configuration, published DNS hostname
+and port 443. The origin SSH port belongs to Cloudflare, not this binding. Sharing
+a configuration across hosts does not share it across users or workspaces.
+Protected execution uses the existing SSH Agent grant; there is no separate
+Access grant. Creating or changing an Access configuration does not create a
+host, grant SSH or restore a manual denial. Existing first-SSH-host onboarding
+remains unchanged, and later Agents can use bound configurations once authorized
+for SSH. SSH username/key/password and server host-key trust remain independent
+of the Service Token.
+
+When SSH is available, `/connectors/ssh` includes a **Cloudflare Access** view beside
+**Hosts** and **Credentials**. It lists the configuration count and affected hosts,
+and supports adding, editing and deleting unused
+configurations. Referenced configurations cannot be deleted until their hosts are
+rebound or deleted. Client ID and Client Secret are never read back, including
+when replacing a token. Both resource editors show public metadata and an
+explicit replacement checkbox: **Replace authentication** for an SSH credential,
+**Replace Service Token** for Access. Unchecked replacement fields are absent,
+not masked readback. Only changed metadata and explicitly requested replacements
+are submitted; effective shared changes apply to the displayed referencing hosts.
+
+Host forms explicitly select **Direct** or **Cloudflare Access**. Direct uses a
+public hostname/IP and a configurable SSH port. Access uses the published hostname
+and fixed gateway port 443. Host, Access configuration and SSH credential are
+separate sections of one form. Both resource selectors offer existing resources
+or an inline **Create new** form. An empty list initially expands creation, one
+resource is visibly selected, and multiple resources require a choice. These
+defaults apply once, after successful loading; notifications never reset a choice,
+and loading errors are not empty lists. Edits retain their saved bindings. A
+deleted selection requires explicit reselection or creation.
+
+One host Save creates any inline resources and binds them in the same owner-locked
+database transaction. Validation, reference or version failure creates neither
+resource nor host. Cancelling before Save creates nothing. Independent **Add**
+actions in the resource views intentionally save reusable resources without a
+host. Selecting an existing resource never edits it; rebinding or deleting a host
+does not delete the previously referenced resource. Saving does not test connectivity.
+
+Pending and failed saves retain input in the mounted form. Cancellation,
+navigation, owner changes and loss of feature access clear secret inputs and
+cancel pending UI work. Switching away from new-resource or secret-replacement
+fields clears their secrets; Direct excludes Access fields. Stale Credential and
+Access revisions preserve the draft and display
+latest metadata and affected hosts; the user must explicitly review it before
+saving against the new revision. A further concurrent change still fails the
+revision check. Load failures offer **Retry** and remain distinct from feature
+unavailability and translated business errors. A protected host remains visibly
+protected when Access is unavailable; it is never silently converted to Direct.
+Losing `sshAccess` disables management and fresh runtime authorization for both
+Direct and protected hosts. It does not remove saved configurations or bindings.
+
+Configuration mutations reuse the owner's `ssh:changed` notification to refresh
+metadata without clearing open drafts. There is no independent connector card,
+Agent Authorization row or Chat service, and no persistent Refresh button. Access
+configuration counts do not replace SSH host-based visibility and summaries.
+
+SSH management uses one canonical contract. Protected metadata includes
+`transport: {type: "cloudflare_access", configId}`. Direct hosts omit the binding.
+An omitted transport on edit preserves the current binding. The Platform submits
+the selected transport explicitly, including when retrying after reviewing a
+concurrent change. Switching to Direct requires SSH eligibility and the current
+host generation.
+
+Host writes additionally accept
+`transport: {type: "cloudflare_access", create: {name, credentials: {clientId, clientSecret}}}`.
+This secret-bearing write selection is separate from the resolved metadata response;
+Runner authority and stored bindings are unchanged. Failed responses do not prove
+rollback after an ambiguous network loss. Do not automatically replay saves;
+[#34503](https://github.com/vm0-ai/okou/issues/34503) tracks explicit save-result
+confirmation and duplicate prevention separately.
+
+See [private authority](runner-ssh-authority.md#cloudflare-access-authority-preparation)
+and the [activation gate](deployment-compatibility.md#cloudflare-access-for-ssh).
+The accepted missed-notification window still lasts until Run end; this feature
+does not promise immediate revocation.
 
 ## Recent connection failures
 
@@ -227,20 +379,52 @@ For work spanning several CLI calls, use a managed session:
 
 ```sh
 okou ssh session start <connection-id> --command 'sleep 90; uname -a' --json
-okou ssh session status <session-id> --json
-okou ssh session read <session-id> --cursor 0 --json
+okou ssh session read <session-id>
+# Follow next_command; use --json for exact base64 chunks and structured metadata.
+okou ssh session read <session-id> --cursor <next_cursor> --wait 0 --max-bytes 32768 --json
 okou ssh session close <session-id> --json
 ```
 
-Start returns a session ID immediately; status reports setup failure, running
-state, or observed exit. `--shell` starts a persistent shell instead of a command;
+Start returns a session ID immediately; read includes setup failure, running
+state, or observed exit, so a separate status poll is unnecessary. `--shell`
+starts a persistent shell instead of a command;
 later `write --text <text>` calls share its working directory, environment and
 stdin. Include newlines when submitting shell commands. Optional `--pty` requests
 a terminal. `write --base64 <data>` preserves binary input, and `--eof` closes
 stdin after the submitted bytes. Use `signal --signal TERM` to submit a signal.
 
+Read waits up to 10 seconds for output or terminal state, not process completion.
+`--wait` accepts 0–30 seconds with millisecond precision; `--wait 0` reads
+immediately. Available pages are collected without further waits until caught up
+or a budget is reached. `--max-bytes` defaults to 16384 (range 1–65536). Each
+invocation is also limited to 256 chunks, 64 page requests and 35 seconds
+collecting. Reporting gets at most 5 seconds, or 1 second after collection
+timeout/cancellation. Only two reads per Run may wait concurrently.
+
+Plain output shows readable UTF-8 on its original stream and labels binary or
+terminal-control bytes with base64 and their cursor range. Adjacent same-stream
+pieces are joined before decoding; a code point spanning separate reads may be
+shown as base64. JSON preserves the exact ordered base64 chunks. Both forms
+include the latest verified state, `next_cursor`, lost ranges and a continuation
+command when meaningful. JSON `more_available` is relative to that snapshot,
+not a guarantee about future output. Before any valid page, state and
+`more_available` are null. After a reader failure, prior pages and their cursor
+remain valid observations, not proof of current authority or state.
+
+`stop_reason` distinguishes `caught_up`, `wait_elapsed`, `byte_limit`,
+`chunk_limit`, `request_limit`, `time_limit`, `terminal` and `failed`. Terminal
+means the remote terminal state was observed **and its output was drained**;
+terminal backlog still gets a continuation. CLI exit 0 means reading succeeded,
+including quiet wait expiry and remote nonzero exit; reader/RPC/output failures
+exit 1. Inspect the separate remote exit or failure before deciding work succeeded.
+Cancelling a read or exhausting its budget does not stop the remote process.
+A disconnected reader may hold its Runner request/guest park reservation until
+the requested wait expires (up to 30 seconds plus bounded terminal reserve).
+If the output pipe fails, a complete result may be undeliverable; reuse a
+previously confirmed cursor, never replay the remote command to recover output.
+
 Continue output reads with the returned `next_cursor`. Reading does not consume
-output, and a `lost` range explicitly identifies discarded bytes. `session list`
+output, and the `lost` array explicitly identifies discarded byte ranges. `session list`
 recovers the current Run's IDs after a lost start reply. All session commands
 require `ssh:write`. There are eight retained sessions per current Run; completed
 records remain for five minutes or until closed. Running sessions last at most
@@ -248,9 +432,14 @@ two hours and always end with their Run; they cannot resume in another Run.
 
 Input/signal submission and closing SSH do not prove the remote process stopped
 or its effects completed. Never automatically replay uncertain starts or input.
-An older Runner returns `unknown_method`; there is no automatic conversion into
-independent exec calls. Observed authorization-notification disconnects cancel
-managed sessions and prevent new starts until the subscription recovers.
+This staff-gated session-read contract replaces the earlier defaults and payload
+without an old-reader compatibility path or automatic conversion into independent
+exec calls. Ably notification disconnects, reconnects and prolonged unavailability
+do not stop healthy SSH work or prevent new Sessions/file transfers. First use and
+cache misses still require API authorization. Delivered authority/configuration
+invalidation and Run/sandbox end retire affected Sessions and transports; missed
+notices can leave previously authorized access usable until the Run ends. There
+is no fixed revocation deadline or automatic replay of uncertain work.
 
 ### File upload and download
 

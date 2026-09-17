@@ -12,7 +12,10 @@ import {
   isAgentPhoneApiError,
   sendAgentPhoneMessage,
 } from "../external/agentphone-client";
-import { resolveArtifactObject$ } from "../services/artifact-storage.service";
+import {
+  materializeUploadedArtifact$,
+  uploadedArtifactFetchUrl,
+} from "../services/uploaded-artifact.service";
 import { recordAgentPhoneUploadedFile$ } from "../services/run-uploaded-files.service";
 import {
   normalizeAgentPhoneHandle,
@@ -85,8 +88,8 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
   const body = bodyResult.data;
 
   const object = await set(
-    resolveArtifactObject$,
-    { userId: auth.userId, id: body.uploadId },
+    materializeUploadedArtifact$,
+    { userId: auth.userId, orgId: auth.orgId, id: body.uploadId },
     signal,
   );
   if (!object) {
@@ -126,13 +129,15 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
 
   const mimetype = body.contentType ?? object.contentType;
+  const fetchUrl = await get(uploadedArtifactFetchUrl(object));
+  signal.throwIfAborted();
   const sendResult = await settle(
     sendAgentPhoneMessage(
       {
         agentphoneAgentId,
         toNumber: phoneHandle,
         body: body.caption ?? "",
-        mediaUrl: uploadedFile.fileUrl,
+        mediaUrl: fetchUrl,
       },
       signal,
     ),

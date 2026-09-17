@@ -232,9 +232,13 @@ function createAgentSubmitMessage(
         access.kind === "computerUse"
           ? selectedComputerUseHostId(hosts, access.hostId)
           : null;
-      const send = options.forward
-        ? sendNewThreadWithoutNavigation$
-        : sendNewThread$;
+      // A forward stays on this page by construction; a submission may also
+      // ask to, when it was made on behalf of a surface the member is still
+      // using rather than typed by them.
+      const send =
+        options.forward || submission.stayOnPage
+          ? sendNewThreadWithoutNavigation$
+          : sendNewThread$;
       let connectorSelections: readonly ConnectorAccountSelection[] = [];
       if (connectorPreference.selections.length > 0) {
         const connectorAuthorization = await get(
@@ -281,6 +285,11 @@ function createAgentSubmitMessage(
           ...(submission.videoRunOptions === undefined
             ? {}
             : { videoRunOptions: submission.videoRunOptions }),
+          // A forward stays on this page, so only a send that opens the new
+          // thread hands the selection over to it.
+          ...(options.forward
+            ? {}
+            : { composerTask: submission.taskSelection }),
           ...(access.kind === "computerUse"
             ? { computerUseHostId: hostId }
             : {}),
@@ -331,6 +340,7 @@ function createAgentComposerSignalsWithDraft(
     chatEvents$,
     voiceDraftTarget: `agent:${agentId}`,
     singleLineOnMobile: false,
+    forwardComposer: options.forward !== undefined,
     modelSelection$: chatPageModelSelection$,
     selectedModelOauthAvailable$: chatPageSelectedModelOauthAvailable$,
     setModelSelection$,

@@ -139,11 +139,11 @@ function AttachmentCardArtwork({
           testId={iconTestId}
         />
       </div>
-      <div className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-full bg-background/85 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground opacity-0 transition-opacity duration-200 group-hover/doc-preview:opacity-100">
+      <div className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-full bg-background/85 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground opacity-0 group-hover/doc-preview:opacity-100">
         {actionIcon}
         {actionLabel}
       </div>
-      <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 bg-gradient-to-t from-black/55 via-black/15 to-transparent px-2.5 py-2.5 text-white opacity-0 transition-opacity duration-200 group-hover/doc-preview:opacity-100">
+      <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 bg-gradient-to-t from-black/55 via-black/15 to-transparent px-2.5 py-2.5 text-white opacity-0 group-hover/doc-preview:opacity-100">
         <div className="min-w-0">
           <div className="truncate text-xs font-medium">{filename}</div>
         </div>
@@ -244,7 +244,10 @@ function titleCaseSiteSlug(slug: string): string {
     .join(" ");
 }
 
-function fallbackHtmlPreviewTitle(filename: string, url: string): string {
+export function fallbackHtmlPreviewTitle(
+  filename: string,
+  url: string,
+): string {
   if (filename !== url) {
     return filename;
   }
@@ -258,6 +261,86 @@ function fallbackHtmlPreviewTitle(filename: string, url: string): string {
   }
   const slug = subdomain.replace(/-[a-f0-9]{8}$/i, "");
   return titleCaseSiteSlug(slug) || filename;
+}
+
+/**
+ * The site card's frame. A public conversation renders the same card from
+ * Markdown without any artifact signals behind it, so the shell takes a plain
+ * destination and its framed content.
+ */
+export function SitePreviewCard({
+  ariaLabel,
+  children,
+  href,
+  onClick,
+  openInNewTab = false,
+  testId,
+  title,
+}: {
+  readonly ariaLabel?: string;
+  readonly children: ReactNode;
+  readonly href: string;
+  readonly onClick?: (event: ReactMouseEvent<HTMLAnchorElement>) => void;
+  readonly openInNewTab?: boolean;
+  readonly testId: string;
+  readonly title: string;
+}) {
+  return (
+    <a
+      href={href}
+      data-testid={testId}
+      onClick={onClick}
+      aria-label={ariaLabel}
+      title={title}
+      {...(openInNewTab
+        ? { target: "_blank", rel: "noopener noreferrer" }
+        : {})}
+      className={`group/site-preview flex-col ${MEDIA_PREVIEW_CARD_CLASS} ${MEDIA_PREVIEW_CARD_HOVER_CLASS}`}
+    >
+      <div className="flex min-h-10 items-center border-b border-border/60 bg-background/95 px-3 py-2">
+        {/* The card is a card, not a link: Markdown's anchor color reaches the
+            title through the enclosing <a> unless the title states its own. */}
+        <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+          {title}
+        </span>
+      </div>
+      <div className="relative aspect-[16/10] overflow-hidden bg-muted/30">
+        {children}
+      </div>
+    </a>
+  );
+}
+
+/** The site itself, scaled down to fill a card's frame. */
+export function SitePreviewViewport({
+  src,
+  title,
+}: {
+  readonly src: string | undefined;
+  readonly title: string;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div
+      data-testid="attachment-preview-html-viewport"
+      className="pointer-events-none absolute left-0 top-0 h-[400%] w-[400%] origin-top-left scale-[0.25]"
+    >
+      <iframe
+        src={src}
+        title={t(
+          ($) => {
+            return $.artifacts.preview.siteLabel;
+          },
+          { title },
+        )}
+        sandbox="allow-same-origin allow-scripts"
+        tabIndex={-1}
+        loading="lazy"
+        scrolling="no"
+        className="pointer-events-none h-full w-full bg-background"
+      />
+    </div>
+  );
 }
 
 function HtmlSitePreviewCard({
@@ -281,9 +364,9 @@ function HtmlSitePreviewCard({
   const title = fallbackHtmlPreviewTitle(filename, url);
 
   return (
-    <a
+    <SitePreviewCard
       href={publicUrl}
-      data-testid="attachment-preview-html"
+      testId="attachment-preview-html"
       onClick={(event) => {
         if (shouldUseNativeAnchorNavigation(event)) {
           return;
@@ -292,7 +375,7 @@ function HtmlSitePreviewCard({
         event.currentTarget.blur();
         openDocument({ kind: "html", url, filename });
       }}
-      aria-label={t(
+      ariaLabel={t(
         ($) => {
           return $.artifacts.preview.openKind;
         },
@@ -304,37 +387,29 @@ function HtmlSitePreviewCard({
         },
       )}
       title={title}
-      className={`group/site-preview flex-col ${MEDIA_PREVIEW_CARD_CLASS} ${MEDIA_PREVIEW_CARD_HOVER_CLASS}`}
     >
-      <div className="flex min-h-10 items-center border-b border-border/60 bg-background/95 px-3 py-2">
-        <span className="min-w-0 flex-1 truncate text-sm font-medium">
-          {title}
-        </span>
-      </div>
-      <div className="relative aspect-[16/10] overflow-hidden bg-muted/30">
-        {previewImageUrl && previewImageLoad ? (
-          <ArtifactThumbnailImage
-            src={previewImageUrl}
-            load={previewImageLoad}
-            testId="attachment-preview-thumbnail"
-            className="absolute inset-0 h-full w-full object-cover"
-            fallback={
-              <HtmlSitePreviewViewport
-                resourceUrl$={resourceUrl$}
-                title={title}
-              />
-            }
-          />
-        ) : previewImagePending ? (
-          <span
-            className="absolute inset-0 bg-muted/30"
-            data-testid="attachment-preview-thumbnail-pending"
-          />
-        ) : (
-          <HtmlSitePreviewViewport resourceUrl$={resourceUrl$} title={title} />
-        )}
-      </div>
-    </a>
+      {previewImageUrl && previewImageLoad ? (
+        <ArtifactThumbnailImage
+          src={previewImageUrl}
+          load={previewImageLoad}
+          testId="attachment-preview-thumbnail"
+          className="absolute inset-0 h-full w-full object-cover"
+          fallback={
+            <HtmlSitePreviewViewport
+              resourceUrl$={resourceUrl$}
+              title={title}
+            />
+          }
+        />
+      ) : previewImagePending ? (
+        <span
+          className="absolute inset-0 bg-muted/30"
+          data-testid="attachment-preview-thumbnail-pending"
+        />
+      ) : (
+        <HtmlSitePreviewViewport resourceUrl$={resourceUrl$} title={title} />
+      )}
+    </SitePreviewCard>
   );
 }
 
@@ -345,29 +420,8 @@ function HtmlSitePreviewViewport({
   resourceUrl$: ArtifactSignals["resourceUrl$"];
   title: string;
 }) {
-  const { t } = useTranslation();
-  const resourceUrl = useLastResolved(resourceUrl$) ?? null;
-  return (
-    <div
-      data-testid="attachment-preview-html-viewport"
-      className="pointer-events-none absolute left-0 top-0 h-[400%] w-[400%] origin-top-left scale-[0.25]"
-    >
-      <iframe
-        src={resourceUrl ?? undefined}
-        title={t(
-          ($) => {
-            return $.artifacts.preview.siteLabel;
-          },
-          { title },
-        )}
-        sandbox="allow-same-origin allow-scripts"
-        tabIndex={-1}
-        loading="lazy"
-        scrolling="no"
-        className="pointer-events-none h-full w-full bg-background"
-      />
-    </div>
-  );
+  const resourceUrl = useLastResolved(resourceUrl$);
+  return <SitePreviewViewport src={resourceUrl} title={title} />;
 }
 
 function DocumentThumbnailPreview({
@@ -574,13 +628,13 @@ function VideoThumbnailPreview({
             <Play size={20} />
           </span>
         </span>
-        <div className="absolute right-2 top-2 z-30 inline-flex items-center gap-1 rounded-full bg-background/85 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground opacity-0 transition-opacity duration-200 group-hover/video-preview:opacity-100">
+        <div className="absolute right-2 top-2 z-30 inline-flex items-center gap-1 rounded-full bg-background/85 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground opacity-0 group-hover/video-preview:opacity-100">
           <Video size={10} />
           {t(($) => {
             return $.artifacts.preview.badge;
           })}
         </div>
-        <div className="absolute inset-x-0 bottom-0 z-30 flex items-end justify-between gap-2 bg-gradient-to-t from-black/65 via-black/20 to-transparent px-2.5 py-2.5 text-white opacity-0 transition-opacity duration-200 group-hover/video-preview:opacity-100">
+        <div className="absolute inset-x-0 bottom-0 z-30 flex items-end justify-between gap-2 bg-gradient-to-t from-black/65 via-black/20 to-transparent px-2.5 py-2.5 text-white opacity-0 group-hover/video-preview:opacity-100">
           <div className="min-w-0">
             <div className="truncate text-xs font-medium">{filename}</div>
           </div>

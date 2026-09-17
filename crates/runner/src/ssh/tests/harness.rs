@@ -25,7 +25,8 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 
-use super::super::{SshRun, SshRuntime, network::Network};
+use super::super::{SshRuntime, network::Network};
+use crate::guest_rpc::{Run as RpcRun, Runtime as RpcRuntime};
 use crate::{
     http::{HttpClient, HttpClientConfig},
     ids::RunId,
@@ -175,7 +176,7 @@ pub(super) struct Harness {
     pub(super) lifecycle: CancellationToken,
     pub(super) control: guest_control_client::GuestControlClient,
     _control_peer: tokio::net::UnixStream,
-    dispatcher: Option<SshRun>,
+    dispatcher: Option<RpcRun>,
     incoming: mpsc::Sender<sandbox::AcceptedGuestRpc>,
     peer: JoinHandle<()>,
 }
@@ -187,14 +188,17 @@ pub(super) struct AdditionalRun {
     observed: Arc<Observed>,
     lifecycle: CancellationToken,
     incoming: mpsc::Sender<sandbox::AcceptedGuestRpc>,
-    dispatcher: SshRun,
+    dispatcher: RpcRun,
 }
 
 impl AdditionalRun {
     pub(super) async fn new(runtime: &Arc<SshRuntime>, sandbox: &str) -> Self {
         let (control, control_peer) = control_connection().await;
         let (incoming, receiver) = mpsc::channel(32);
-        let dispatcher = runtime.start(
+        let dispatcher = RpcRuntime {
+            ssh: Some(Arc::clone(runtime)),
+        }
+        .start(
             Arc::new(Acceptor(tokio::sync::Mutex::new(receiver))),
             sandbox.into(),
             RunId::new_v4(),
@@ -228,6 +232,18 @@ impl AdditionalRun {
 }
 
 impl Harness {
+    pub(super) fn notifications(&self) -> crate::provider::AblyTestEvents {
+        crate::provider::AblyTestEvents::new(
+            HttpClient::new(HttpClientConfig {
+                api_url: self.api.base_url(),
+                vercel_bypass: None,
+                client_session_id: "ssh-notification-test".into(),
+            })
+            .unwrap(),
+            Arc::clone(&self.runtime),
+        )
+    }
+
     pub(super) async fn new(reply: Reply) -> Self {
         Self::with_keys(reply, key(Algorithm::Ed25519), key(Algorithm::Ed25519)).await
     }
@@ -239,6 +255,27 @@ impl Harness {
         key: PrivateKey,
         host_key: PrivateKey,
         api_url: Option<String>,
+    ) -> Self {
+        Self::with_options(reply, key, host_key, api_url, None).await
+    }
+
+    pub(super) async fn with_tls(reply: Reply, tls: Arc<rustls::ClientConfig>) -> Self {
+        Self::with_options(
+            reply,
+            key(Algorithm::Ed25519),
+            key(Algorithm::Ed25519),
+            None,
+            Some(tls),
+        )
+        .await
+    }
+
+    async fn with_options(
+        reply: Reply,
+        key: PrivateKey,
+        host_key: PrivateKey,
+        api_url: Option<String>,
+        tls: Option<Arc<rustls::ClientConfig>>,
     ) -> Self {
         let api = MockServer::start_async().await;
         let (control, control_peer) = control_connection().await;
@@ -263,10 +300,16 @@ impl Harness {
             .unwrap()
             .unwrap();
         Arc::get_mut(&mut runtime).unwrap().network = network.clone();
+        if let Some(tls) = tls {
+            Arc::get_mut(&mut runtime).unwrap().access_tls = tls;
+        }
         let (incoming, receiver) = mpsc::channel(32);
         let cancel = CancellationToken::new();
         let lifecycle = CancellationToken::new();
-        let dispatcher = runtime.start(
+        let dispatcher = RpcRuntime {
+            ssh: Some(Arc::clone(&runtime)),
+        }
+        .start(
             Arc::new(Acceptor(tokio::sync::Mutex::new(receiver))),
             "sandbox-authoritative".into(),
             run,
@@ -383,7 +426,7 @@ impl Harness {
         super::wait_for(|| self.observed.closed.load(Ordering::SeqCst) > closed).await;
     }
 
-    pub(super) fn take_dispatcher(&mut self) -> SshRun {
+    pub(super) fn take_dispatcher(&mut self) -> RpcRun {
         self.dispatcher.take().unwrap()
     }
 
@@ -392,12 +435,17 @@ impl Harness {
         self.run = run;
         let (incoming, receiver) = mpsc::channel(32);
         self.incoming = incoming;
-        self.dispatcher = Some(self.runtime.start(
-            Arc::new(Acceptor(tokio::sync::Mutex::new(receiver))),
-            "sandbox-authoritative".into(),
-            run,
-            &self.cancel,
-        ));
+        self.dispatcher = Some(
+            RpcRuntime {
+                ssh: Some(Arc::clone(&self.runtime)),
+            }
+            .start(
+                Arc::new(Acceptor(tokio::sync::Mutex::new(receiver))),
+                "sandbox-authoritative".into(),
+                run,
+                &self.cancel,
+            ),
+        );
     }
 }
 impl Drop for Harness {

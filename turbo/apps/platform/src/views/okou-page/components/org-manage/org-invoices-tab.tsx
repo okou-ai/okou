@@ -304,9 +304,6 @@ export function OrgInvoicesTab() {
 
   const invoices =
     invoicesLoadable.state === "hasData" ? invoicesLoadable.data.invoices : [];
-  const receiptDownloadsSupported =
-    invoicesLoadable.state === "hasData" &&
-    invoicesLoadable.data.receiptDownloadsSupported === true;
   const months = invoiceMonths(invoices);
 
   if (!loading && invoices.length === 0) {
@@ -323,7 +320,7 @@ export function OrgInvoicesTab() {
 
   return (
     <div className="flex flex-col gap-4">
-      {!loading && receiptDownloadsSupported && (
+      {!loading && (
         <div className="flex justify-end">
           <DownloadReceiptsDialog months={months} />
         </div>

@@ -13,6 +13,7 @@ import {
   recordOpenRouterRequestFailure,
   recordOpenRouterTransportFailure,
   type OpenRouterFailureReason,
+  type OpenRouterDiagnostics,
   type OpenRouterTokenCounts,
 } from "./openrouter-failure";
 
@@ -21,11 +22,10 @@ const OPENROUTER_CHAT_COMPLETIONS_URL =
 const OPENROUTER_ERROR_RESPONSE_MAX_BYTES = 64 * 1024;
 
 /**
- * The model behind every internal fast-path generation: chat and shared-thread
- * titles, recommended follow-ups, notification summaries, initial thinking
- * copy, run summaries, and voice I/O polish. These are short, latency-sensitive
- * calls that are not user-selectable, so they share a single model rather than
- * one constant per service.
+ * The default model for internal fast-path generation: recommended follow-ups,
+ * notification summaries, initial thinking copy, and run/activity summaries.
+ * Chat and shared-thread titles use a separate, lighter model configured in
+ * chat-title.service.ts.
  */
 export const FAST_PATH_MODEL = "google/gemini-3.8-flash";
 
@@ -99,6 +99,8 @@ interface OpenRouterResponse {
 type OpenRouterReasoningEffort = "none" | "minimal" | "low" | "medium" | "high";
 
 interface OpenRouterGenerateTextOptions {
+  /** Passive observation only; no callbacks, logging, or changes to results. */
+  readonly diagnostics?: OpenRouterDiagnostics;
   readonly reasoning?: { readonly effort: OpenRouterReasoningEffort };
   readonly temperature?: number;
   /**
@@ -144,13 +146,13 @@ function objectProperty(value: unknown, property: string): unknown | undefined {
 
 // Provider diagnostics are untrusted data, including strings that look like
 // identifiers. Only retain enumerated values; never retain messages or raw data.
-function safeDiagnosticString(
+function safeDiagnosticString<T extends string>(
   value: unknown,
-  allowed: readonly string[],
-): string | undefined {
-  return typeof value === "string" && allowed.includes(value)
-    ? value
-    : undefined;
+  allowed: readonly T[],
+): T | undefined {
+  return allowed.find((candidate) => {
+    return candidate === value;
+  });
 }
 
 function safeErrorCode(error: unknown): string | number | undefined {
@@ -255,9 +257,15 @@ function retryAfterDelay(value: string | null): number | undefined {
     : undefined;
 }
 
-async function ensureOpenRouterResponseOk(response: Response): Promise<void> {
+async function ensureOpenRouterResponseOk(
+  response: Response,
+  diagnostics?: OpenRouterDiagnostics,
+): Promise<void> {
   if (response.ok) {
     return;
+  }
+  if (diagnostics) {
+    diagnostics.phase = "body_read";
   }
   const errorBody = await readBoundedResponseText(
     response,
@@ -265,6 +273,9 @@ async function ensureOpenRouterResponseOk(response: Response): Promise<void> {
   );
   const errorValue =
     errorBody.kind === "text" ? safeJsonParse(errorBody.text) : undefined;
+  if (diagnostics) {
+    diagnostics.phase = "status";
+  }
   throw openRouterRequestError({
     message: "OpenRouter request failed",
     status: response.status,
@@ -308,12 +319,30 @@ function incompleteFinishReason(
   return finishReason === "tool_calls" ? "unexpected_tool_calls" : undefined;
 }
 
+function recordOutputDetail(
+  diagnostics: OpenRouterDiagnostics | undefined,
+  detail: NonNullable<OpenRouterDiagnostics["detail"]>,
+): void {
+  if (diagnostics) {
+    diagnostics.detail = detail;
+  }
+}
+
 function parseOpenRouterGeneration(
   data: OpenRouterResponse,
   acceptTruncatedText: boolean,
+  diagnostics?: OpenRouterDiagnostics,
 ): OpenRouterTextGeneration {
+  if (diagnostics) {
+    diagnostics.phase = "output_validation";
+    Object.assign(diagnostics, openRouterTokenCounts(data.usage));
+  }
   const choice = data.choices?.[0];
   if (!choice) {
+    recordOutputDetail(
+      diagnostics,
+      data.error !== undefined ? "completion_error" : "missing_choices",
+    );
     if (data.error !== undefined) {
       throw openRouterRequestError({
         message: "OpenRouter request failed",
@@ -324,7 +353,21 @@ function parseOpenRouterGeneration(
     }
     throw new Error("OpenRouter returned no choices");
   }
+  if (diagnostics) {
+    diagnostics.finishReason = safeDiagnosticString(choice.finish_reason, [
+      "stop",
+      "length",
+      "content_filter",
+      "tool_calls",
+      "error",
+    ]);
+    diagnostics.nativeFinishReason = safeDiagnosticString(
+      choice.native_finish_reason,
+      ["MAX_TOKENS", "STOP", "SAFETY", "RECITATION", "OTHER"],
+    );
+  }
   if (choice.finish_reason === "error") {
+    recordOutputDetail(diagnostics, "completion_error");
     throw openRouterRequestError({
       message: "OpenRouter completion failed",
       status: 502,
@@ -334,6 +377,7 @@ function parseOpenRouterGeneration(
   }
   const rawContent = choice.message?.content;
   if (choice.finish_reason !== "stop") {
+    recordOutputDetail(diagnostics, "non_stop");
     const nativeFinishReason = safeDiagnosticString(
       choice.native_finish_reason,
       ["MAX_TOKENS", "STOP", "SAFETY", "RECITATION", "OTHER"],
@@ -365,10 +409,12 @@ function parseOpenRouterGeneration(
   }
 
   if (typeof rawContent !== "string") {
+    recordOutputDetail(diagnostics, "invalid_content");
     throw new Error("OpenRouter returned invalid content");
   }
   const content = rawContent.trim();
   if (!content) {
+    recordOutputDetail(diagnostics, "empty_content");
     throw new Error("OpenRouter returned empty content");
   }
   return generation(content, data.usage, false);
@@ -434,6 +480,10 @@ export async function generateTextWithUsage(
     return null;
   }
 
+  const diagnostics = options?.diagnostics;
+  if (diagnostics) {
+    diagnostics.phase = "fetch";
+  }
   const response = await onRejection(
     fetch(OPENROUTER_CHAT_COMPLETIONS_URL, {
       method: "POST",
@@ -454,23 +504,37 @@ export async function generateTextWithUsage(
     }),
     recordOpenRouterTransportFailure,
   );
+  if (diagnostics) {
+    diagnostics.upstreamStatus = response.status;
+    diagnostics.phase = "status";
+  }
   await onRejection(
-    ensureOpenRouterResponseOk(response),
+    ensureOpenRouterResponseOk(response, diagnostics),
     recordOpenRouterTransportFailure,
   );
+  if (diagnostics) {
+    diagnostics.phase = "body_read";
+  }
   const body = await onRejection(
     response.text(),
     recordOpenRouterTransportFailure,
   );
+  if (diagnostics) {
+    diagnostics.phase = "json_validation";
+  }
   const parsed = safeSync(() => {
     // Preserve the shared helper's payload-free parsing and throw contract.
     const data = safeJsonParse(body);
     if (typeof data !== "object" || data === null) {
+      if (diagnostics) {
+        diagnostics.detail = "invalid_json";
+      }
       throw new Error("OpenRouter returned invalid JSON");
     }
     return parseOpenRouterGeneration(
       data as OpenRouterResponse,
       options?.acceptTruncatedText === true,
+      diagnostics,
     );
   });
   if ("error" in parsed) {

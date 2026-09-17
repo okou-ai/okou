@@ -257,6 +257,9 @@ function isPrefix(value: string, candidate: string): boolean {
 }
 
 class CitationScanner {
+  constructor(
+    private readonly onVisible?: (source: number, text: string) => void,
+  ) {}
   readonly #literals = new CitationLiteralEscaper(
     PI_MEMORY_CITATION_OPEN,
     PI_MEMORY_CITATION_CLOSE,
@@ -297,6 +300,7 @@ class CitationScanner {
     const output = this.#visibleBySource.get(character.source) ?? [];
     output.push(character.value);
     this.#visibleBySource.set(character.source, output);
+    this.onVisible?.(character.source, character.value);
   }
 
   #pushCharacter(character: SourcedCharacter): void {
@@ -434,10 +438,14 @@ class CitationScanner {
 
 /** Stateful streaming parser with Codex-compatible EOF behavior. */
 export class PiMemoryCitationStreamParser {
-  readonly #scanner = new CitationScanner();
+  readonly #scanner: CitationScanner;
 
-  push(chunk: string): void {
-    this.#scanner.push(chunk);
+  constructor(onVisible?: (source: number, text: string) => void) {
+    this.#scanner = new CitationScanner(onVisible);
+  }
+
+  push(chunk: string, source = 0): void {
+    this.#scanner.push(chunk, source);
   }
 
   finish(): PiMemoryCitationProjection {

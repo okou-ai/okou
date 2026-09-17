@@ -12,6 +12,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createStore } from "ccstate";
 import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it } from "vitest";
+
 import { z } from "zod";
 
 import { createAppWithRoutes } from "../../../app-factory-core";
@@ -30,6 +31,11 @@ import { createComputerUseBddApi } from "./helpers/api-bdd-computer-use";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createUserConfigBddApi } from "./helpers/api-bdd-user-config";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import {
+  captureIntegrationInputUploads,
+  expectIntegrationInputPreview,
+  listIntegrationInputFileParts,
+} from "./helpers/integration-input-assets";
 import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
 import { readAgentRunCallbacks$ } from "./helpers/agent-run-callback";
 import {
@@ -1659,6 +1665,30 @@ describe("POST /api/webhooks/teams/bot", () => {
     });
 
     const contentUrl = "https://contoso.sharepoint.com/sites/docs/spec.png";
+    const fileBytes = Buffer.from("teams file bytes");
+    const expectedShareId = `u!${Buffer.from(contentUrl, "utf8").toString(
+      "base64url",
+    )}`;
+    server.use(
+      http.get(
+        "https://graph.microsoft.com/v1.0/shares/:shareId/driveItem/content",
+        ({ params, request }) => {
+          expect(params.shareId).toBe(expectedShareId);
+          expect(request.headers.get("authorization")).toBe(
+            "Bearer teams-graph-token",
+          );
+          return new HttpResponse(fileBytes, {
+            status: 200,
+            headers: {
+              "content-type": "image/png",
+              "content-length": String(fileBytes.length),
+            },
+          });
+        },
+      ),
+    );
+
+    const uploads = captureIntegrationInputUploads(context);
     const response = await postTeamsActivity({
       activity: teamsMessageActivity(fixture, {
         id: activityId,
@@ -1702,7 +1732,7 @@ describe("POST /api/webhooks/teams/bot", () => {
     const fileId = fileIdMatch?.[1];
     expect(fileId).toBeTruthy();
     expect(fileId).not.toContain(contentUrl);
-    expect(fileId).toMatch(/^teams_file_[A-Za-z0-9_-]{22}$/u);
+    expect(fileId).toMatch(/^[0-9a-f-]{36}$/u);
 
     mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
     const threadEvents = await accept(
@@ -1751,55 +1781,66 @@ describe("POST /api/webhooks/teams/bot", () => {
       }),
     );
 
-    const fileBytes = Buffer.from("teams file bytes");
-    const expectedShareId = `u!${Buffer.from(contentUrl, "utf8").toString(
-      "base64url",
-    )}`;
-    server.use(
-      http.get(
-        "https://graph.microsoft.com/v1.0/shares/:shareId/driveItem/content",
-        ({ params, request }) => {
-          expect(params.shareId).toBe(expectedShareId);
-          expect(request.headers.get("authorization")).toBe(
-            "Bearer teams-graph-token",
-          );
-          return new HttpResponse(fileBytes, {
-            status: 200,
-            headers: {
-              "content-type": "image/png",
-              "content-length": String(fileBytes.length),
-            },
-          });
-        },
-      ),
-    );
-
-    const app = createAppWithRoutes({
-      signal: context.signal,
-      routes: integrationsTeamsDownloadFileRoutes,
+    await expectIntegrationInputPreview(context, {
+      actor,
+      fileId: fileId ?? "",
+      contentType: "image/png",
+      bytes: fileBytes,
+      uploads,
+      okouToken: claim.platformEnvironment.OKOU_TOKEN,
     });
-    const downloadResponse = await app.request(
-      `/api/integrations/teams/download-file?${new URLSearchParams({
-        file_id: fileId ?? "",
-      }).toString()}`,
-      {
-        headers: {
-          authorization: `Bearer ${okouToken({
-            userId: fixture.userId,
-            orgId: fixture.orgId,
-            runId,
-          })}`,
-        },
-      },
-    );
-
-    expect(downloadResponse.status).toBe(200);
-    expect(downloadResponse.headers.get("content-type")).toBe("image/png");
-    expect(downloadResponse.headers.get("x-file-mimetype")).toBe("image/png");
-    expect(downloadResponse.headers.get("x-file-name")).toBe("spec.png");
-    const receivedBytes = Buffer.from(await downloadResponse.arrayBuffer());
-    expect(receivedBytes.equals(fileBytes)).toBeTruthy();
   });
+
+  it.each(["uniqueId", "resource URL"] as const)(
+    "deduplicates Teams files across messages by %s without mixing attachments",
+    async (identity) => {
+      const { fixture, actor } = await setupConnectedTeamsBotActor();
+      const uploads = captureIntegrationInputUploads(context);
+      let downloads = 0;
+      server.use(
+        http.get("https://contoso.sharepoint.com/input/:file", ({ params }) => {
+          downloads += 1;
+          return new HttpResponse(String(params.file), {
+            headers: { "content-type": "image/png" },
+          });
+        }),
+      );
+      for (const index of [0, 1, 2]) {
+        const file = index === 2 ? "second.png" : "first.png";
+        const response = await postTeamsActivity({
+          activity: {
+            ...teamsPersonalMessageActivity({
+              fixture,
+              id: teamsFixtureExternalId(fixture, `dedupe-file-${index}`),
+              text: `Inspect file ${index}`,
+            }),
+            attachments: [
+              {
+                id: "0",
+                contentType:
+                  "application/vnd.microsoft.teams.file.download.info",
+                content: {
+                  downloadUrl: `https://contoso.sharepoint.com/input/${file}${identity === "uniqueId" ? `?token=${index}` : ""}`,
+                  fileName: file,
+                  ...(identity === "uniqueId" ? { uniqueId: file } : {}),
+                },
+              },
+            ],
+          },
+          token: teamsToken(),
+        });
+        expect(response.status).toBe(200);
+        await readTeamsBotResponseAndFlush(response);
+      }
+      const parts = await listIntegrationInputFileParts(context, actor);
+      expect(parts).toHaveLength(3);
+      expect(parts[0]?.fileId).toMatch(/^[0-9a-f-]{36}$/u);
+      expect(parts[1]?.fileId).toBe(parts[0]?.fileId);
+      expect(parts[2]?.fileId).not.toBe(parts[0]?.fileId);
+      expect(downloads).toBe(2);
+      expect(uploads).toHaveLength(2);
+    },
+  );
 
   it("uses short file ids for Teams personal attachments", async () => {
     const { fixture, actor, runnerGroup } = await setupConnectedTeamsBotActor();
@@ -1813,8 +1854,12 @@ describe("POST /api/webhooks/teams/bot", () => {
     );
     downloadUrl.searchParams.set("tempauth", "a".repeat(1400));
     const fileBytes = Buffer.from("teams personal file bytes");
+    let importPending = true;
     server.use(
       http.get(downloadUrl.origin + downloadUrl.pathname, () => {
+        if (importPending) {
+          return new HttpResponse(null, { status: 503 });
+        }
         return new HttpResponse(fileBytes, {
           status: 200,
           headers: {
@@ -1860,7 +1905,16 @@ describe("POST /api/webhooks/teams/bot", () => {
     const fileId = claim.prompt.match(/ {3}\[ID\] ([^\n]+)/u)?.[1];
     expect(fileId).toMatch(/^teams_file_[A-Za-z0-9_-]{22}$/u);
     expect(fileId?.length).toBeLessThan(64);
+    await expect(
+      listIntegrationInputFileParts(context, actor),
+    ).resolves.toStrictEqual([
+      expect.objectContaining({
+        fileId: expect.stringMatching(/^[0-9a-f-]{36}$/u),
+        filenameSnapshot: "personal.png",
+      }),
+    ]);
 
+    importPending = false;
     const app = createAppWithRoutes({
       signal: context.signal,
       routes: integrationsTeamsDownloadFileRoutes,
@@ -2230,318 +2284,350 @@ describe("POST /api/webhooks/teams/bot", () => {
     );
   });
 
-  it.each(["agent", "model"] as const)(
-    "applies a Teams %s switch to an existing chat thread",
-    async (selection) => {
-      const { fixture, actor, runnerGroup } =
-        await setupConnectedTeamsBotActor();
-      const threadId = teamsFixtureExternalId(
-        fixture,
-        "activity-existing-switch-root",
-      );
-      const activityIds = {
-        initial: teamsFixtureExternalId(
+  describe.each(["agent", "model"] as const)(
+    "preserves the pinned Teams %s in an existing DM thread",
+    (selection) => {
+      async function prepareScenario() {
+        const { fixture, actor, runnerGroup } =
+          await setupConnectedTeamsBotActor();
+        const threadId = teamsFixtureExternalId(
           fixture,
-          "activity-existing-switch-initial",
-        ),
-        switchAgent: teamsFixtureExternalId(
-          fixture,
-          "activity-existing-switch-agent",
-        ),
-        switchedAgentRun: teamsFixtureExternalId(
-          fixture,
-          "activity-existing-switch-agent-run",
-        ),
-        switchModel: teamsFixtureExternalId(
-          fixture,
-          "activity-existing-switch-model",
-        ),
-        switchedModelRun: teamsFixtureExternalId(
-          fixture,
-          "activity-existing-switch-model-run",
-        ),
-      };
-      const supportAgent = await authOrgApi.createAgent(actor, {
-        displayName: "Teams switched agent",
-        visibility: "public",
-      });
-      const anthropic = await runsApi.createOrgModelProvider(actor, {
-        type: "anthropic-api-key",
-        secret: "teams-switch-anthropic-key",
-      });
-      const openai = await runsApi.createOrgModelProvider(actor, {
-        type: "openai-api-key",
-        secret: "teams-switch-openai-key",
-      });
-      await runsApi.updateOrgModelPolicies(actor, [
-        {
-          model: "claude-sonnet-5",
-          isDefault: true,
-          defaultProviderType: "anthropic-api-key",
-          credentialScope: "org",
-          modelProviderId: anthropic.providerId,
-        },
-        {
-          model: "gpt-5.6-sol",
-          isDefault: false,
-          defaultProviderType: "openai-api-key",
-          credentialScope: "org",
-          modelProviderId: openai.providerId,
-        },
-      ]);
-      teamsGraphHistoryHandlers({
-        fixture,
-        chatMessages: [],
-        channelMessages: [],
-        threadRoots: {},
-        threadReplies: {},
-      });
-
-      if (selection === "agent") {
-        const initialResponse = await postTeamsActivity({
-          activity: teamsPersonalThreadMessageActivity({
+          "activity-existing-switch-root",
+        );
+        const activityIds = {
+          initial: teamsFixtureExternalId(
             fixture,
-            id: activityIds.initial,
-            threadId,
-            text: "run before switching",
+            "activity-existing-switch-initial",
+          ),
+          switchAgent: teamsFixtureExternalId(
+            fixture,
+            "activity-existing-switch-agent",
+          ),
+          switchedAgentRun: teamsFixtureExternalId(
+            fixture,
+            "activity-existing-switch-agent-run",
+          ),
+          switchModel: teamsFixtureExternalId(
+            fixture,
+            "activity-existing-switch-model",
+          ),
+          switchedModelRun: teamsFixtureExternalId(
+            fixture,
+            "activity-existing-switch-model-run",
+          ),
+        };
+        const supportAgent = await authOrgApi.createAgent(actor, {
+          displayName: "Teams switched agent",
+          visibility: "public",
+        });
+        const anthropic = await runsApi.createOrgModelProvider(actor, {
+          type: "anthropic-api-key",
+          secret: "teams-switch-anthropic-key",
+        });
+        const openai = await runsApi.createOrgModelProvider(actor, {
+          type: "openai-api-key",
+          secret: "teams-switch-openai-key",
+        });
+        await runsApi.updateOrgModelPolicies(actor, [
+          {
+            model: "claude-sonnet-5",
+            isDefault: true,
+            defaultProviderType: "anthropic-api-key",
+            credentialScope: "org",
+            modelProviderId: anthropic.providerId,
+          },
+          {
+            model: "gpt-5.6-sol",
+            isDefault: false,
+            defaultProviderType: "openai-api-key",
+            credentialScope: "org",
+            modelProviderId: openai.providerId,
+          },
+        ]);
+        teamsGraphHistoryHandlers({
+          fixture,
+          chatMessages: [],
+          channelMessages: [],
+          threadRoots: {},
+          threadReplies: {},
+        });
+        return {
+          fixture,
+          activityIds,
+          threadId,
+          actor,
+          runnerGroup,
+          supportAgent,
+        };
+      }
+      let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
+      beforeEach(async () => {
+        preparedScenario = await prepareScenario();
+      });
+      it("preserves the complete scenario", async () => {
+        const {
+          fixture,
+          activityIds,
+          threadId,
+          actor,
+          runnerGroup,
+          supportAgent,
+        } = preparedScenario;
+
+        if (selection === "agent") {
+          const initialResponse = await postTeamsActivity({
+            activity: teamsPersonalThreadMessageActivity({
+              fixture,
+              id: activityIds.initial,
+              threadId,
+              text: "run before switching",
+            }),
+            token: teamsToken(),
+          });
+          expect(initialResponse.status).toBe(200);
+          await readTeamsBotResponseAndFlush(initialResponse);
+          const initialRunId = await runIdForPrompt(
+            actor,
+            "run before switching",
+          );
+          await runsApi.heartbeatRunner(runnerGroup);
+          const initialClaim = await runsApi.claimRunnerJob(initialRunId);
+          await runsApi.requestCancelRun(actor, initialRunId, [200]);
+          await completeCancelledRun(initialRunId, initialClaim.sandboxToken);
+        }
+
+        const switchAgentResponse = await postTeamsActivity({
+          activity: teamsPersonalMessageActivity({
+            fixture,
+            id: activityIds.switchAgent,
+            text: "",
+            value: {
+              okouTeamsAction: "switch_agent",
+              selectedAgentId: supportAgent.agentId,
+            },
           }),
           token: teamsToken(),
         });
-        expect(initialResponse.status).toBe(200);
-        await readTeamsBotResponseAndFlush(initialResponse);
-        const initialRunId = await runIdForPrompt(
+        expect(switchAgentResponse.status).toBe(200);
+        await readTeamsBotResponseAndFlush(switchAgentResponse);
+
+        const switchedAgentResponse = await postTeamsActivity({
+          activity: teamsPersonalThreadMessageActivity({
+            fixture,
+            id: activityIds.switchedAgentRun,
+            threadId,
+            text: "run after agent switch",
+          }),
+          token: teamsToken(),
+        });
+        expect(switchedAgentResponse.status).toBe(200);
+        await readTeamsBotResponseAndFlush(switchedAgentResponse);
+        const switchedAgentRunId = await runIdForPrompt(
           actor,
-          "run before switching",
+          "run after agent switch",
         );
         await runsApi.heartbeatRunner(runnerGroup);
-        const initialClaim = await runsApi.claimRunnerJob(initialRunId);
-        await runsApi.requestCancelRun(actor, initialRunId, [200]);
-        await completeCancelledRun(initialRunId, initialClaim.sandboxToken);
-      }
+        const switchedAgentClaim =
+          await runsApi.claimRunnerJob(switchedAgentRunId);
+        expect(switchedAgentClaim.appendSystemPrompt).toContain(
+          selection === "agent"
+            ? "Your name is Okou."
+            : "Your name is Teams switched agent.",
+        );
+        await runsApi.requestCancelRun(actor, switchedAgentRunId, [200]);
+        await completeCancelledRun(
+          switchedAgentRunId,
+          switchedAgentClaim.sandboxToken,
+        );
 
-      const switchAgentResponse = await postTeamsActivity({
-        activity: teamsPersonalMessageActivity({
-          fixture,
-          id: activityIds.switchAgent,
-          text: "",
-          value: {
-            okouTeamsAction: "switch_agent",
-            selectedAgentId: supportAgent.agentId,
-          },
-        }),
-        token: teamsToken(),
+        if (selection === "agent") {
+          return;
+        }
+
+        const switchModelResponse = await postTeamsActivity({
+          activity: teamsPersonalMessageActivity({
+            fixture,
+            id: activityIds.switchModel,
+            text: "",
+            value: {
+              okouTeamsAction: "switch_model",
+              selectedModel: "gpt-5.6-sol",
+            },
+          }),
+          token: teamsToken(),
+        });
+        expect(switchModelResponse.status).toBe(200);
+        await readTeamsBotResponseAndFlush(switchModelResponse);
+
+        const switchedModelResponse = await postTeamsActivity({
+          activity: teamsPersonalThreadMessageActivity({
+            fixture,
+            id: activityIds.switchedModelRun,
+            threadId,
+            text: "run after model switch",
+          }),
+          token: teamsToken(),
+        });
+        expect(switchedModelResponse.status).toBe(200);
+        await readTeamsBotResponseAndFlush(switchedModelResponse);
+        const switchedModelRunId = await runIdForPrompt(
+          actor,
+          "run after model switch",
+        );
+        await runsApi.heartbeatRunner(runnerGroup);
+        const switchedModelClaim =
+          await runsApi.claimRunnerJob(switchedModelRunId);
+        expect(switchedModelClaim.appendSystemPrompt).toContain(
+          "Your name is Teams switched agent.",
+        );
+        expect(switchedModelClaim.appendSystemPrompt).toContain(
+          "# Microsoft Teams Run Context",
+        );
+        expect(switchedModelClaim.appendSystemPrompt).toContain(
+          `- AGENT_SESSION_COMMAND: okou search "${switchedAgentRunId}" --source agent-session`,
+        );
+        expect(switchedModelClaim.appendSystemPrompt).toContain(
+          "Use the AGENT_SESSION_COMMAND for a run",
+        );
+        expect(switchedModelClaim.appendSystemPrompt).not.toContain(
+          "LOG_COMMAND",
+        );
+        expect(switchedModelClaim.modelUsageProvider).toBe("claude-sonnet-5");
+        await runsApi.requestCancelRun(actor, switchedModelRunId, [200]);
       });
-      expect(switchAgentResponse.status).toBe(200);
-      await readTeamsBotResponseAndFlush(switchAgentResponse);
-
-      const switchedAgentResponse = await postTeamsActivity({
-        activity: teamsPersonalThreadMessageActivity({
-          fixture,
-          id: activityIds.switchedAgentRun,
-          threadId,
-          text: "run after agent switch",
-        }),
-        token: teamsToken(),
-      });
-      expect(switchedAgentResponse.status).toBe(200);
-      await readTeamsBotResponseAndFlush(switchedAgentResponse);
-      const switchedAgentRunId = await runIdForPrompt(
-        actor,
-        "run after agent switch",
-      );
-      await runsApi.heartbeatRunner(runnerGroup);
-      const switchedAgentClaim =
-        await runsApi.claimRunnerJob(switchedAgentRunId);
-      expect(switchedAgentClaim.appendSystemPrompt).toContain(
-        "Your name is Teams switched agent.",
-      );
-      await runsApi.requestCancelRun(actor, switchedAgentRunId, [200]);
-      await completeCancelledRun(
-        switchedAgentRunId,
-        switchedAgentClaim.sandboxToken,
-      );
-
-      if (selection === "agent") {
-        return;
-      }
-
-      const switchModelResponse = await postTeamsActivity({
-        activity: teamsPersonalMessageActivity({
-          fixture,
-          id: activityIds.switchModel,
-          text: "",
-          value: {
-            okouTeamsAction: "switch_model",
-            selectedModel: "gpt-5.6-sol",
-          },
-        }),
-        token: teamsToken(),
-      });
-      expect(switchModelResponse.status).toBe(200);
-      await readTeamsBotResponseAndFlush(switchModelResponse);
-
-      const switchedModelResponse = await postTeamsActivity({
-        activity: teamsPersonalThreadMessageActivity({
-          fixture,
-          id: activityIds.switchedModelRun,
-          threadId,
-          text: "run after model switch",
-        }),
-        token: teamsToken(),
-      });
-      expect(switchedModelResponse.status).toBe(200);
-      await readTeamsBotResponseAndFlush(switchedModelResponse);
-      const switchedModelRunId = await runIdForPrompt(
-        actor,
-        "run after model switch",
-      );
-      await runsApi.heartbeatRunner(runnerGroup);
-      const switchedModelClaim =
-        await runsApi.claimRunnerJob(switchedModelRunId);
-      expect(switchedModelClaim.appendSystemPrompt).toContain(
-        "Your name is Teams switched agent.",
-      );
-      expect(switchedModelClaim.appendSystemPrompt).toContain(
-        "# Microsoft Teams Run Context",
-      );
-      expect(switchedModelClaim.appendSystemPrompt).toContain(
-        `- AGENT_SESSION_COMMAND: okou search "${switchedAgentRunId}" --source agent-session`,
-      );
-      expect(switchedModelClaim.appendSystemPrompt).toContain(
-        "Use the AGENT_SESSION_COMMAND for a run",
-      );
-      expect(switchedModelClaim.appendSystemPrompt).not.toContain(
-        "LOG_COMMAND",
-      );
-      expect(switchedModelClaim.modelUsageProvider).toBe("gpt-5.6-sol");
-      await runsApi.requestCancelRun(actor, switchedModelRunId, [200]);
     },
   );
 
-  it("replies when a connected Teams run is queued", async () => {
-    const { fixture, actor, outboundRequests } =
-      await setupConnectedTeamsBotActor();
-    const firstActivityId = teamsFixtureExternalId(
-      fixture,
-      "activity-queue-active-1",
-    );
-    const secondActivityId = teamsFixtureExternalId(
-      fixture,
-      "activity-queue-active-2",
-    );
-    const queuedActivityId = teamsFixtureExternalId(
-      fixture,
-      "activity-queue-third",
-    );
-    const firstThreadId = teamsFixtureExternalId(
-      fixture,
-      "activity-queue-thread-1",
-    );
-    const secondThreadId = teamsFixtureExternalId(
-      fixture,
-      "activity-queue-thread-2",
-    );
-    const queuedThreadId = teamsFixtureExternalId(
-      fixture,
-      "activity-queue-thread-3",
-    );
-    outboundRequests.splice(0, outboundRequests.length);
+  describe("queued runs for a connected Teams bot", () => {
+    let prepared: Awaited<ReturnType<typeof setupConnectedTeamsBotActor>>;
+    beforeEach(async () => {
+      prepared = await setupConnectedTeamsBotActor();
+    });
 
-    const [firstResponse, secondResponse] = await Promise.all([
-      postTeamsActivity({
-        activity: teamsPersonalThreadMessageActivity({
-          fixture,
-          id: firstActivityId,
-          threadId: firstThreadId,
-          text: "active run one",
-        }),
-        token: teamsToken(),
-      }),
-      postTeamsActivity({
-        activity: teamsPersonalThreadMessageActivity({
-          fixture,
-          id: secondActivityId,
-          threadId: secondThreadId,
-          text: "active run two",
-        }),
-        token: teamsToken(),
-      }),
-    ]);
-    expect(firstResponse.status).toBe(200);
-    const firstBody = await readTeamsBotResponseAndFlush(firstResponse);
-    expect(firstBody).not.toHaveProperty("dispatch");
-    const firstRunId = await runIdForPrompt(actor, "active run one");
-
-    expect(secondResponse.status).toBe(200);
-    const secondBody = await readTeamsBotResponseAndFlush(secondResponse);
-    expect(secondBody).not.toHaveProperty("dispatch");
-    const secondRunId = await runIdForPrompt(actor, "active run two");
-
-    const queuedResponse = await postTeamsActivity({
-      activity: teamsPersonalThreadMessageActivity({
+    it("replies when a connected Teams run is queued", async () => {
+      const { fixture, actor, outboundRequests } = prepared;
+      const firstActivityId = teamsFixtureExternalId(
         fixture,
-        id: queuedActivityId,
-        threadId: queuedThreadId,
-        text: "queued run three",
-      }),
-      token: teamsToken(),
-    });
-    expect(queuedResponse.status).toBe(200);
-    const queuedBody = await readTeamsBotResponseAndFlush(queuedResponse);
-    expect(queuedBody).not.toHaveProperty("dispatch");
-    const queuedRunId = await runIdForPrompt(actor, "queued run three");
+        "activity-queue-active-1",
+      );
+      const secondActivityId = teamsFixtureExternalId(
+        fixture,
+        "activity-queue-active-2",
+      );
+      const queuedActivityId = teamsFixtureExternalId(
+        fixture,
+        "activity-queue-third",
+      );
+      const firstThreadId = teamsFixtureExternalId(
+        fixture,
+        "activity-queue-thread-1",
+      );
+      const secondThreadId = teamsFixtureExternalId(
+        fixture,
+        "activity-queue-thread-2",
+      );
+      const queuedThreadId = teamsFixtureExternalId(
+        fixture,
+        "activity-queue-thread-3",
+      );
+      outboundRequests.splice(0, outboundRequests.length);
 
-    expect(outboundRequests).toHaveLength(4);
-    expect(
-      outboundRequests.slice(0, 3).map((request) => {
-        return request.body;
-      }),
-    ).toStrictEqual([
-      {
-        type: "typing",
-        channelData: { tenant: { id: fixture.teamsTenantId } },
-      },
-      {
-        type: "typing",
-        channelData: { tenant: { id: fixture.teamsTenantId } },
-      },
-      {
-        type: "typing",
-        channelData: { tenant: { id: fixture.teamsTenantId } },
-      },
-    ]);
-    expect(outboundRequests[3]).toMatchObject({
-      activityId: queuedActivityId,
-      body: {
-        type: "message",
-        summary: expect.stringContaining("Run queued"),
-        attachments: [
-          {
-            contentType: "application/vnd.microsoft.card.adaptive",
-            content: {
-              type: "AdaptiveCard",
-              version: "1.4",
-              body: expect.arrayContaining([
-                expect.objectContaining({ text: "Run queued" }),
-              ]),
-              actions: [
-                {
-                  type: "Action.OpenUrl",
-                  title: "View queue",
-                  url: `${APP_ORIGIN}/?queue=1`,
-                },
-              ],
+      const [firstResponse, secondResponse] = await Promise.all([
+        postTeamsActivity({
+          activity: teamsPersonalThreadMessageActivity({
+            fixture,
+            id: firstActivityId,
+            threadId: firstThreadId,
+            text: "active run one",
+          }),
+          token: teamsToken(),
+        }),
+        postTeamsActivity({
+          activity: teamsPersonalThreadMessageActivity({
+            fixture,
+            id: secondActivityId,
+            threadId: secondThreadId,
+            text: "active run two",
+          }),
+          token: teamsToken(),
+        }),
+      ]);
+      expect(firstResponse.status).toBe(200);
+      const firstBody = await readTeamsBotResponseAndFlush(firstResponse);
+      expect(firstBody).not.toHaveProperty("dispatch");
+      const firstRunId = await runIdForPrompt(actor, "active run one");
+
+      expect(secondResponse.status).toBe(200);
+      const secondBody = await readTeamsBotResponseAndFlush(secondResponse);
+      expect(secondBody).not.toHaveProperty("dispatch");
+      const secondRunId = await runIdForPrompt(actor, "active run two");
+
+      const queuedResponse = await postTeamsActivity({
+        activity: teamsPersonalThreadMessageActivity({
+          fixture,
+          id: queuedActivityId,
+          threadId: queuedThreadId,
+          text: "queued run three",
+        }),
+        token: teamsToken(),
+      });
+      expect(queuedResponse.status).toBe(200);
+      const queuedBody = await readTeamsBotResponseAndFlush(queuedResponse);
+      expect(queuedBody).not.toHaveProperty("dispatch");
+      const queuedRunId = await runIdForPrompt(actor, "queued run three");
+
+      expect(outboundRequests).toHaveLength(4);
+      expect(
+        outboundRequests.slice(0, 3).map((request) => {
+          return request.body;
+        }),
+      ).toStrictEqual([
+        {
+          type: "typing",
+          channelData: { tenant: { id: fixture.teamsTenantId } },
+        },
+        {
+          type: "typing",
+          channelData: { tenant: { id: fixture.teamsTenantId } },
+        },
+        {
+          type: "typing",
+          channelData: { tenant: { id: fixture.teamsTenantId } },
+        },
+      ]);
+      expect(outboundRequests[3]).toMatchObject({
+        activityId: queuedActivityId,
+        body: {
+          type: "message",
+          summary: expect.stringContaining("Run queued"),
+          attachments: [
+            {
+              contentType: "application/vnd.microsoft.card.adaptive",
+              content: {
+                type: "AdaptiveCard",
+                version: "1.4",
+                body: expect.arrayContaining([
+                  expect.objectContaining({ text: "Run queued" }),
+                ]),
+                actions: [
+                  {
+                    type: "Action.OpenUrl",
+                    title: "View queue",
+                    url: `${APP_ORIGIN}/?queue=1`,
+                  },
+                ],
+              },
             },
-          },
-        ],
-      },
-    });
-    expect(outboundRequests[3]?.body).not.toHaveProperty("text");
-    expect(outboundRequests.reactions).toHaveLength(0);
+          ],
+        },
+      });
+      expect(outboundRequests[3]?.body).not.toHaveProperty("text");
+      expect(outboundRequests.reactions).toHaveLength(0);
 
-    await runsApi.requestCancelRun(actor, queuedRunId, [200]);
-    await runsApi.requestCancelRun(actor, firstRunId, [200]);
-    await runsApi.requestCancelRun(actor, secondRunId, [200]);
+      await runsApi.requestCancelRun(actor, queuedRunId, [200]);
+      await runsApi.requestCancelRun(actor, firstRunId, [200]);
+      await runsApi.requestCancelRun(actor, secondRunId, [200]);
+    });
   });
 
   it("clears thinking and adds audit/footer text for Teams run admission failures", async () => {
@@ -3031,7 +3117,7 @@ describe("POST /api/webhooks/teams/bot", () => {
       );
       expect(claim.prompt).toContain("ship the Teams dispatch");
       expect(claim.prompt).toContain(
-        "[Web file] current-task.txt (text/plain)",
+        "[Teams file] current-task.txt (text/plain)",
       );
       expect(claim.prompt).not.toContain("deployment-plan.pdf");
       expect(claim.prompt).not.toContain("release-checklist.txt");

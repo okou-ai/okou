@@ -741,7 +741,6 @@ describe("official Pi AgentSession runtime", () => {
       for (const tier of [undefined, "priority", undefined] as const) {
         const config = {
           provider: "openai" as const,
-          api: "openai-responses" as const,
           baseUrl: provider.baseUrl.replace(/\/v1$/, "/custom/v1"),
           model: upstreamModel,
           catalogModel: selectedModel,
@@ -1184,30 +1183,8 @@ describe("official Pi AgentSession runtime", () => {
   it.each(
     GPT_MODELS.flatMap((selectedModel) => {
       return [
-        {
-          name: "standard without api",
-          selectedModel,
-          api: undefined,
-          serviceTier: undefined,
-        },
-        {
-          name: "fast public Responses",
-          selectedModel,
-          api: "openai-responses",
-          serviceTier: "priority",
-        },
-        {
-          name: "standard",
-          selectedModel,
-          api: "openai-completions",
-          serviceTier: undefined,
-        },
-        {
-          name: "fast",
-          selectedModel,
-          api: "openai-codex-responses",
-          serviceTier: "priority",
-        },
+        { name: "standard", selectedModel, serviceTier: undefined },
+        { name: "fast", selectedModel, serviceTier: "priority" },
       ] as const;
     }).flatMap((route) => {
       return (["openai", "openrouter"] as const).map((provider) => {
@@ -1222,8 +1199,8 @@ describe("official Pi AgentSession runtime", () => {
       });
     }),
   )(
-    "normalizes legacy transport for $name $provider $model Sandbox turns",
-    async ({ api, serviceTier, provider: catalogProvider, model }) => {
+    "preserves Gen1 request policy for $name $provider $model Sandbox turns",
+    async ({ serviceTier, provider: catalogProvider, model }) => {
       const provider = await startResponsesProvider();
       const sessionManager = SessionManager.inMemory("/home/user/workspace", {
         id: "00000000-0000-4000-8000-000000000126",
@@ -1237,7 +1214,6 @@ describe("official Pi AgentSession runtime", () => {
             provider: catalogProvider,
             model,
             baseUrl: provider.baseUrl,
-            ...(api === undefined ? {} : { api }),
             apiKeyEnv: "OPENAI_API_KEY",
             credentialSecretName: "OPENAI_API_KEY",
             thinkingLevel: TERRA_MODEL.thinkingLevel,
@@ -1279,11 +1255,11 @@ describe("official Pi AgentSession runtime", () => {
 
   it.each(
     CUSTOM_GATEWAY_CREDENTIAL_CASES.flatMap((credential) => {
-      return (["deepseek-v4-flash", ...GPT_MODELS] as const).map(
-        (selectedModel) => {
-          return { ...credential, selectedModel };
-        },
-      );
+      return (
+        ["deepseek-v4-flash", "deepseek-v4.1-flash", ...GPT_MODELS] as const
+      ).map((selectedModel) => {
+        return { ...credential, selectedModel };
+      });
     }),
   )(
     "uses the stable Pi identity with the custom gateway request model and $name credential header for $selectedModel",
@@ -1315,7 +1291,7 @@ describe("official Pi AgentSession runtime", () => {
           timestamp: 2,
         }),
         api: "openai-responses",
-        provider: selectedModel === "deepseek-v4-flash" ? "deepseek" : "openai",
+        provider: selectedModel.startsWith("deepseek-") ? "deepseek" : "openai",
         model: `company-${selectedModel}-production`,
       });
       const created = await createPiAgentSessionForRuntime({
@@ -1323,13 +1299,14 @@ describe("official Pi AgentSession runtime", () => {
         agentDir: join(cwd, ".pi"),
         sessionManager,
         model: {
-          provider:
-            selectedModel === "deepseek-v4-flash" ? "deepseek" : "openai",
+          provider: selectedModel.startsWith("deepseek-")
+            ? "deepseek"
+            : "openai",
           baseUrl: provider.baseUrl,
           apiKey: "unused",
           model: `company-${selectedModel}-production`,
           catalogModel: selectedModel,
-          ...(selectedModel === "deepseek-v4-flash"
+          ...(selectedModel.startsWith("deepseek-")
             ? {}
             : { thinkingLevel: "max" as const }),
           dialect: "openai-responses",
@@ -1358,7 +1335,7 @@ describe("official Pi AgentSession runtime", () => {
           "custom gateway tool result",
         );
         expect(provider.requests[0]?.body).not.toHaveProperty("service_tier");
-        if (selectedModel !== "deepseek-v4-flash") {
+        if (!selectedModel.startsWith("deepseek-")) {
           expect(provider.requests[0]?.body).toMatchObject({
             reasoning: { effort: "max" },
           });

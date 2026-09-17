@@ -1703,6 +1703,14 @@ def test_combined_sse_overlapping_escaped_field_keeps_failure_byte_limit(
         (
             "model-provider:anthropic-api-key",
             "/v1/messages",
+            b'{"type":"error","error":{"type":"invalid_request_error",'
+            b'"message":"Your credit balance is too low to access the Anthropic API. '
+            b'Please go to Plans & Billing to upgrade or purchase credits."}}',
+            "billing",
+        ),
+        (
+            "model-provider:anthropic-api-key",
+            "/v1/messages",
             b'{"type":"error","error":{"type":"overloaded_error"}}',
             "provider_unavailable",
         ),
@@ -1774,6 +1782,40 @@ def test_protocol_json_failures_are_reported(
     if expected_kind == "connection":
         expected_payload["connectionSource"] = "provider_response"
     assert _reported_payloads(model_provider_failure_api) == [expected_payload]
+
+
+@pytest.mark.parametrize(
+    ("error_type", "message", "expected"),
+    [
+        (
+            "invalid_request_error",
+            "The user said: Your credit balance is too low to access the Anthropic API.",
+            [],
+        ),
+        ("other_error", "Your credit balance is too low to access the Anthropic API.", []),
+        (
+            "invalid_request_error",
+            "Your credit balance is too low to access the Anthropic API." + "x" * 512,
+            [],
+        ),
+        ("billing_error", "x" * 1024, [{"failureKind": "billing"}]),
+    ],
+)
+def test_balance_message_evidence_is_bounded_without_masking_known_billing_codes(
+    tmp_path, real_flow, mitm_ctx, model_provider_failure_api, error_type, message, expected
+):
+    body = json.dumps({"type": "error", "error": {"type": error_type, "message": message}}).encode()
+    flow = _make_flow(
+        real_flow,
+        tmp_path / "proxy.jsonl",
+        firewall_name="model-provider:anthropic-api-key",
+        request_path="/v1/messages",
+        response_status=400,
+        response_body=body,
+    )
+    _finish_http_flow(flow, body=body, mitm_ctx=mitm_ctx)
+    assert _reported_payloads(model_provider_failure_api) == expected
+    assert flow.response.raw_content == body
 
 
 @pytest.mark.parametrize(
@@ -1879,6 +1921,13 @@ def test_overlapping_inference_flows_report_independent_failures(
             "/v1/messages",
             b'event: error\ndata: {"type":"error","error":{"type":"api_error"}}\n\n',
             "provider_unavailable",
+        ),
+        (
+            "model-provider:anthropic-api-key",
+            "/v1/messages",
+            b'event: error\ndata: {"type":"error","error":{"type":"invalid_request_error",'
+            b'"message":"Your credit balance is too low to access the Anthropic API."}}\n\n',
+            "billing",
         ),
         (
             "model-provider:openrouter-codex",

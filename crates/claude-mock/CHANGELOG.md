@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.21.159](https://github.com/vm0-ai/okou/compare/claude-mock-v0.21.158...claude-mock-v0.21.159) (2026-09-17)
+
+## [0.21.158](https://github.com/vm0-ai/okou/compare/claude-mock-v0.21.157...claude-mock-v0.21.158) (2026-09-17)
+
+## [0.21.157](https://github.com/vm0-ai/okou/compare/claude-mock-v0.21.156...claude-mock-v0.21.157) (2026-09-16)
+
+## [0.21.156](https://github.com/vm0-ai/okou/compare/claude-mock-v0.21.155...claude-mock-v0.21.156) (2026-09-16)
+
+## [0.21.155](https://github.com/vm0-ai/okou/compare/claude-mock-v0.21.154...claude-mock-v0.21.155) (2026-09-16)
+
+## [0.21.154](https://github.com/vm0-ai/okou/compare/claude-mock-v0.21.153...claude-mock-v0.21.154) (2026-09-16)
+
+## [0.21.153](https://github.com/vm0-ai/vm0/compare/claude-mock-v0.21.152...claude-mock-v0.21.153) (2026-09-15)
+
+## [0.21.152](https://github.com/vm0-ai/vm0/compare/claude-mock-v0.21.151...claude-mock-v0.21.152) (2026-09-15)
+
+## [0.21.151](https://github.com/vm0-ai/vm0/compare/claude-mock-v0.21.150...claude-mock-v0.21.151) (2026-09-15)
+
+## [0.21.150](https://github.com/vm0-ai/vm0/compare/claude-mock-v0.21.149...claude-mock-v0.21.150) (2026-09-15)
+
+## [0.21.149](https://github.com/vm0-ai/vm0/compare/claude-mock-v0.21.148...claude-mock-v0.21.149) (2026-09-15)
+
+
+### Bug Fixes
+
+* **runner:** prefer managed tools as oom victims ([#34237](https://github.com/vm0-ai/vm0/issues/34237)) ([7872a2a](https://github.com/vm0-ai/vm0/commit/7872a2afb7ed5779ec62823d45808ab65bf762f8))
+
+## [0.21.148](https://github.com/vm0-ai/vm0/compare/claude-mock-v0.21.147...claude-mock-v0.21.148) (2026-09-15)
+
+## [0.21.147](https://github.com/vm0-ai/vm0/compare/claude-mock-v0.21.146...claude-mock-v0.21.147) (2026-09-14)
+
 ## [0.21.146](https://github.com/vm0-ai/vm0/compare/claude-mock-v0.21.145...claude-mock-v0.21.146) (2026-09-11)
 
 ## [0.21.145](https://github.com/vm0-ai/vm0/compare/claude-mock-v0.21.144...claude-mock-v0.21.145) (2026-09-11)

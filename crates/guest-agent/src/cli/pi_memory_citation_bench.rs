@@ -7,9 +7,17 @@ use std::time::Instant;
 
 mod pi_memory_citation;
 
-use pi_memory_citation::{CLOSE, OPEN, project_segments};
+use pi_memory_citation::{CLOSE, CitationParser, OPEN, project_segments};
+
+fn validate_streaming_drain() {
+    let mut parser = CitationParser::new(0);
+    parser.push("visible", 0);
+    assert_eq!(parser.take_visible_segments(), [(0, "visible".to_string())]);
+    assert_eq!(parser.finish().visible_segments, [""]);
+}
 
 fn main() {
+    validate_streaming_drain();
     for size in [64 * 1024, 1024 * 1024, 8 * 1024 * 1024] {
         let text = "x".repeat(size);
         let hidden = format!("{OPEN}{text}{CLOSE}visible");

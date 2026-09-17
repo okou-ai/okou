@@ -1,6 +1,5 @@
+import { mockEnv } from "../../../lib/env";
 import { randomUUID } from "node:crypto";
-
-import { cronRefreshStoragePresignedUrlsContract } from "@okouai/api-contracts/contracts/cron";
 import type {
   TestWorkflowSkillStoragePresignedUrlCacheStateActionBody,
   TestWorkflowSkillStoragePresignedUrlCacheStateActionResponse,
@@ -12,10 +11,7 @@ import {
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { createAppWithRoutes } from "../../../app-factory-core";
-import { setupAppWithRoutes } from "../../../__tests__/test-app";
-import { accept, testContext } from "../../../__tests__/test-context";
-import { mockEnv } from "../../../lib/env";
-import { mockNow, nowDate } from "../../../lib/time";
+import { testContext } from "../../../__tests__/test-context";
 import { readStorageS3PrefixFixture } from "../../../test-fixtures/storage";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
@@ -25,15 +21,10 @@ import {
 } from "./helpers/api-bdd-runs";
 import { storageTextFile } from "./helpers/api-bdd-storage-files";
 import { createStoragesBddApi } from "./helpers/api-bdd-storages";
-import { cronRefreshStoragePresignedUrlsRoutes } from "../cron-refresh-storage-presigned-urls";
 import { testWorkflowSkillStoragePresignedUrlCacheStateRoutes } from "../test-workflow-skill-storage-presigned-url-cache-state";
 
 const context = testContext();
-const CRON_SECRET = "test-cron-secret";
 const BUCKET = "test-user-storages";
-const WORKFLOW_CACHE_TTL_SECONDS = 2 * 60 * 60;
-const WORKFLOW_CACHE_REFRESH_LIMIT = 32;
-const ISOLATED_CACHE_CRON_NOW = Date.parse("2000-01-02T00:00:00.000Z");
 
 interface CacheRow {
   readonly cache_key: string;
@@ -122,44 +113,6 @@ async function readCacheRowsByObjectKeyPrefix(
     ...(scope ? { scope } : {}),
   });
   return response.rows ?? [];
-}
-
-async function seedCacheRow(args: {
-  readonly bucket: string;
-  readonly objectKey: string;
-  readonly storageVersionId: string;
-  readonly resolvedOrgId: string;
-  readonly presignedUrl: string;
-  readonly expiresAt: Date;
-  readonly refreshAfter: Date;
-  readonly lastRequestedAt?: Date;
-}): Promise<void> {
-  await stateAction({
-    action: "seed-cache-row",
-    bucket: args.bucket,
-    object_key: args.objectKey,
-    storage_version_id: args.storageVersionId,
-    resolved_org_id: args.resolvedOrgId,
-    public_endpoint: true,
-    ttl_seconds: WORKFLOW_CACHE_TTL_SECONDS,
-    presigned_url: args.presignedUrl,
-    expires_at: args.expiresAt.toISOString(),
-    refresh_after: args.refreshAfter.toISOString(),
-    ...(args.lastRequestedAt
-      ? { last_requested_at: args.lastRequestedAt.toISOString() }
-      : {}),
-  });
-}
-
-function cronClient() {
-  return setupAppWithRoutes({
-    context,
-    routes: cronRefreshStoragePresignedUrlsRoutes,
-  })(cronRefreshStoragePresignedUrlsContract);
-}
-
-function cronHeaders(secret = CRON_SECRET) {
-  return { authorization: `Bearer ${secret}` };
 }
 
 function mockUniquePresignedUrls(): void {
@@ -283,12 +236,11 @@ async function createRunAndClaimWorkflowSkill(args: {
 
 beforeEach(() => {
   mockEnv("R2_USER_STORAGES_BUCKET_NAME", BUCKET);
-  mockEnv("CRON_SECRET", CRON_SECRET);
   mockUniquePresignedUrls();
 });
 
 describe("workflow skill storage presigned URL cache", () => {
-  it("issues and reuses two-hour URLs for ordinary read-only Storage mounts", async () => {
+  it("issues and reuses two-day URLs for ordinary read-only Storage mounts", async () => {
     const { actor, runnerGroup } = await entitledWorkflowActor();
     if (!actor.orgId) {
       throw new Error("Expected readonly cache test actor to have an org");
@@ -351,7 +303,7 @@ describe("workflow skill storage presigned URL cache", () => {
         const first = await createAndClaim("warm ordinary readonly DB cache");
         expect(
           new URL(first.archiveUrl).searchParams.get("X-Amz-Expires"),
-        ).toBe("7200");
+        ).toBe("172800");
         const rows = await readCacheRowsByObjectKeyPrefix(
           objectKeyPrefix,
           "readonly_storage",
@@ -360,7 +312,7 @@ describe("workflow skill storage presigned URL cache", () => {
         expect(rows[0]).toMatchObject({
           resolved_org_id: actor.orgId,
           storage_version_id: prepared.versionId,
-          ttl_seconds: 2 * 60 * 60,
+          ttl_seconds: 2 * 24 * 60 * 60,
           presigned_url: first.archiveUrl,
         });
         await api.requestCancelRun(actor, first.runId, [200]);
@@ -373,7 +325,7 @@ describe("workflow skill storage presigned URL cache", () => {
     );
   });
 
-  it("reuses cached workflow skill storage URLs and throttles active touches", async () => {
+  it("reuses cached workflow skill storage URLs", async () => {
     const fixture = await createWorkflowSkillRunFixture();
     await withCacheCleanup(fixture.objectKeyPrefix, async () => {
       mockUniquePresignedUrls();
@@ -400,209 +352,12 @@ describe("workflow skill storage presigned URL cache", () => {
       const api = createRunsApi(context);
       await api.requestCancelRun(fixture.actor, first.runId, [200]);
 
-      const touchedAt = new Date(
-        Date.parse(rowAfterFirst.last_requested_at) + 31 * 60 * 1000,
-      );
-      mockNow(touchedAt);
       const second = await createRunAndClaimWorkflowSkill({
         ...fixture,
         prompt: "reuse the workflow skill URL cache",
       });
       expect(second.archiveUrl).toBe(first.archiveUrl);
-      const [rowAfterTouch] = await readCacheRowsByObjectKeyPrefix(
-        fixture.objectKeyPrefix,
-      );
-      expect(rowAfterTouch?.last_requested_at).toBe(touchedAt.toISOString());
-
       await api.requestCancelRun(fixture.actor, second.runId, [200]);
-
-      mockNow(touchedAt.getTime() + 10 * 60 * 1000);
-      const third = await createRunAndClaimWorkflowSkill({
-        ...fixture,
-        prompt: "reuse the recently touched workflow skill URL cache",
-      });
-      expect(third.archiveUrl).toBe(first.archiveUrl);
-      const [rowWithinTouchInterval] = await readCacheRowsByObjectKeyPrefix(
-        fixture.objectKeyPrefix,
-      );
-      expect(rowWithinTouchInterval?.last_requested_at).toBe(
-        touchedAt.toISOString(),
-      );
-
-      await api.requestCancelRun(fixture.actor, third.runId, [200]);
-    });
-  });
-
-  it("reuses stale safe rows and sync-refreshes unsafe rows", async () => {
-    const fixture = await createWorkflowSkillRunFixture();
-    const api = createRunsApi(context);
-    await withCacheCleanup(fixture.objectKeyPrefix, async () => {
-      const initial = await createRunAndClaimWorkflowSkill({
-        ...fixture,
-        prompt: "create the workflow skill cache row",
-      });
-      const [cacheRow] = await readCacheRowsByObjectKeyPrefix(
-        fixture.objectKeyPrefix,
-      );
-      if (!cacheRow) {
-        throw new Error("Expected workflow skill cache row");
-      }
-      await api.requestCancelRun(fixture.actor, initial.runId, [200]);
-
-      const now = nowDate();
-      const staleUrl = "https://r2.example.com/stale-workflow-skill-url";
-      await seedCacheRow({
-        bucket: BUCKET,
-        objectKey: cacheRow.object_key,
-        storageVersionId: initial.versionId,
-        resolvedOrgId: fixture.actor.orgId ?? "",
-        presignedUrl: staleUrl,
-        expiresAt: new Date(now.getTime() + 60 * 60 * 1000),
-        refreshAfter: new Date(now.getTime() - 60 * 1000),
-        lastRequestedAt: now,
-      });
-
-      const staleRun = await createRunAndClaimWorkflowSkill({
-        ...fixture,
-        prompt: "reuse stale but safe workflow skill URL",
-      });
-      expect(staleRun.archiveUrl).toBe(staleUrl);
-      await api.requestCancelRun(fixture.actor, staleRun.runId, [200]);
-
-      const unsafeUrl = "https://r2.example.com/unsafe-workflow-skill-url";
-      await seedCacheRow({
-        bucket: BUCKET,
-        objectKey: cacheRow.object_key,
-        storageVersionId: initial.versionId,
-        resolvedOrgId: fixture.actor.orgId ?? "",
-        presignedUrl: unsafeUrl,
-        expiresAt: new Date(now.getTime() + 5 * 60 * 1000),
-        refreshAfter: new Date(now.getTime() - 60 * 1000),
-        lastRequestedAt: now,
-      });
-
-      const refreshedRun = await createRunAndClaimWorkflowSkill({
-        ...fixture,
-        prompt: "refresh unsafe workflow skill URL",
-      });
-      expect(refreshedRun.archiveUrl).not.toBe(unsafeUrl);
-      expect(refreshedRun.archiveUrl).toContain("?sig=");
-      await api.requestCancelRun(fixture.actor, refreshedRun.runId, [200]);
-    });
-  });
-
-  it("refreshes bounded active cache rows and prunes inactive expired rows from cron", async () => {
-    mockNow(ISOLATED_CACHE_CRON_NOW);
-    const prefix = `org_${randomUUID()}/volume/workflow-cache-cron-${randomUUID()}`;
-    await withCacheCleanup(prefix, async () => {
-      const now = nowDate();
-      const expiresAt = new Date(now.getTime() + 60 * 60 * 1000);
-      const expiredAt = new Date(now.getTime() - 60 * 60 * 1000);
-      const refreshAfter = new Date(now.getTime() - 60 * 1000);
-      const inactiveRequestedAt = new Date(now.getTime() - 48 * 60 * 60 * 1000);
-
-      const activeRowCount = WORKFLOW_CACHE_REFRESH_LIMIT + 2;
-      for (let index = 0; index < activeRowCount; index += 1) {
-        const versionId = index.toString(36).padStart(2, "0").repeat(32);
-        await seedCacheRow({
-          bucket: BUCKET,
-          objectKey: `${prefix}/${versionId}/archive.tar.gz`,
-          storageVersionId: versionId,
-          resolvedOrgId: "org_workflow_cache_cron",
-          presignedUrl: `https://r2.example.com/active-old-${index}`,
-          expiresAt,
-          refreshAfter: new Date(refreshAfter.getTime() + index),
-          lastRequestedAt: now,
-        });
-      }
-
-      const inactiveFreshVersionId = "f".repeat(64);
-      await seedCacheRow({
-        bucket: BUCKET,
-        objectKey: `${prefix}/${inactiveFreshVersionId}/archive.tar.gz`,
-        storageVersionId: inactiveFreshVersionId,
-        resolvedOrgId: "org_workflow_cache_cron",
-        presignedUrl: "https://r2.example.com/inactive-fresh-old",
-        expiresAt,
-        refreshAfter,
-        lastRequestedAt: inactiveRequestedAt,
-      });
-
-      for (let index = 0; index < 2; index += 1) {
-        const versionId = `p${index}`.repeat(32).slice(0, 64);
-        await seedCacheRow({
-          bucket: BUCKET,
-          objectKey: `${prefix}/${versionId}/archive.tar.gz`,
-          storageVersionId: versionId,
-          resolvedOrgId: "org_workflow_cache_cron",
-          presignedUrl: `https://r2.example.com/inactive-expired-${index}`,
-          expiresAt: expiredAt,
-          refreshAfter,
-          lastRequestedAt: inactiveRequestedAt,
-        });
-      }
-
-      await accept(
-        cronClient().refresh({ headers: cronHeaders("wrong") }),
-        [401],
-      );
-      const firstTick = await accept(
-        cronClient().refresh({ headers: cronHeaders() }),
-        [200],
-      );
-      expect(firstTick.body).toStrictEqual({
-        success: true,
-        system: expect.objectContaining({
-          due: expect.any(Number),
-          refreshed: expect.any(Number),
-          pruned: expect.any(Number),
-        }),
-        workflowSkill: {
-          due: WORKFLOW_CACHE_REFRESH_LIMIT + 1,
-          refreshed: WORKFLOW_CACHE_REFRESH_LIMIT,
-          pruned: 2,
-        },
-        readOnly: expect.objectContaining({
-          due: expect.any(Number),
-          refreshed: expect.any(Number),
-          pruned: expect.any(Number),
-        }),
-        presentationTemplatePreview: expect.objectContaining({
-          due: expect.any(Number),
-          refreshed: expect.any(Number),
-          pruned: expect.any(Number),
-        }),
-      });
-
-      const rowsAfterFirstTick = await readCacheRowsByObjectKeyPrefix(prefix);
-      expect(
-        rowsAfterFirstTick.filter((row) => {
-          return row.presigned_url.includes("?sig=");
-        }),
-      ).toHaveLength(WORKFLOW_CACHE_REFRESH_LIMIT);
-
-      const secondTick = await accept(
-        cronClient().refresh({ headers: cronHeaders() }),
-        [200],
-      );
-      expect(secondTick.body.workflowSkill).toStrictEqual({
-        due: 2,
-        refreshed: 2,
-        pruned: 0,
-      });
-
-      const rows = await readCacheRowsByObjectKeyPrefix(prefix);
-      expect(rows).toHaveLength(activeRowCount + 1);
-      expect(
-        rows.filter((row) => {
-          return row.presigned_url.includes("?sig=");
-        }),
-      ).toHaveLength(activeRowCount);
-      expect(
-        rows.find((row) => {
-          return row.storage_version_id === inactiveFreshVersionId;
-        })?.presigned_url,
-      ).toBe("https://r2.example.com/inactive-fresh-old");
     });
   });
 });

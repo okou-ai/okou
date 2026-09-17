@@ -6,6 +6,7 @@ import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import { mockNow } from "../../../lib/time.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   ATTACHMENT_RUN_ID,
@@ -26,6 +27,7 @@ const ORIGINAL_URL =
 test.each(["assistant", "user"] as const)(
   "%s BMP images display the original in the thread and lightbox",
   async (role) => {
+    mockNow(Date.parse("2026-09-11T00:00:00.000Z"), context.signal);
     const canonical =
       role === "assistant"
         ? artifactReferencePath(FILE_ID, FILENAME)

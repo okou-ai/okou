@@ -1,4 +1,8 @@
-import type { badRequestMessage } from "../../lib/error";
+import {
+  artifactVisibilityUnavailable,
+  type badRequestMessage,
+} from "../../lib/error";
+import { privateArtifactCreationEnabled } from "../services/private-artifact-storage.service";
 import { randomUUID } from "node:crypto";
 
 import { command } from "ccstate";
@@ -405,141 +409,183 @@ const startImageProviderJob$ = command(
   },
 );
 
-const postImageInner$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const auth = get(organizationAuthContext$);
-  const db = get(db$);
-  const bodyResult = await get(imageBody$);
-  signal.throwIfAborted();
-  if (!bodyResult.ok) {
-    return bodyResult.response;
-  }
-
-  const runId =
-    auth.tokenType === "agent" || auth.tokenType === "sandbox"
-      ? auth.runId
-      : undefined;
-  const publicBrand = PUBLIC_BRAND;
-  const runImageModelDefault = await loadRunImageModelDefault(
-    db,
-    auth.orgId,
-    auth.userId,
-    runId,
-    signal,
-  );
-  const options = parseImageOptions(bodyResult.data, {
-    defaultModel: runImageModelDefault ?? DEFAULT_IMAGE_MODEL,
-  });
-  if ("status" in options) {
-    return options;
-  }
-
-  const hasCredits = await set(
-    checkImageCredits$,
-    { orgId: auth.orgId, userId: auth.userId, runId },
-    signal,
-  );
-  if (!hasCredits) {
-    return insufficientCredits();
-  }
-
-  const pricing = await get(imagePricing$);
-  signal.throwIfAborted();
-  const missingPricing = getMissingImagePricing(pricing, options.model);
-  if (missingPricing.length > 0) {
-    L.error("Image generation pricing is not configured", {
-      model: options.model,
-      missingPricing,
-    });
-    return serviceUnavailable(
-      "Image generation pricing is not configured",
-      "NOT_CONFIGURED",
-    );
-  }
-
-  if (options.provider === "fal" && !env("FAL_KEY")) {
-    return serviceUnavailable(
-      "Fal image generation is not configured",
-      "NOT_CONFIGURED",
-    );
-  }
-  if (options.provider === "byteplus" && !env("BYTEPLUS_API_KEY")) {
-    return serviceUnavailable(
-      "BytePlus image generation is not configured",
-      "NOT_CONFIGURED",
-    );
-  }
-  if (options.provider === "openai" && !env("OPENAI_API_KEY")) {
-    return serviceUnavailable(
-      "OpenAI image generation is not configured",
-      "NOT_CONFIGURED",
-    );
-  }
-
-  const generationId = randomUUID();
-  const realtime = await createBuiltInGenerationRealtimeSubscription(
-    auth.userId,
-    generationId,
-  );
-  signal.throwIfAborted();
-  const admission = await set(
-    startRunBuiltInAdmission$,
-    { runId, kind: "image" },
-    signal,
-  );
-  if (isRunBuiltInAdmissionError(admission)) {
-    return admission;
-  }
-
-  const { privateArtifacts } = await set(
-    createBuiltInGenerationJob$,
-    {
-      generationId,
-      type: "image",
-      orgId: auth.orgId,
-      userId: auth.userId,
-      runId,
-      request: builtInGenerationRequestWithInternal(
-        imageRequestRecord(options),
-        {
-          admissionId: admission?.id,
-          publicBrand,
-          provider: options.provider,
-          providerTask: "image",
-        },
-      ),
-    },
-    signal,
-  );
-
-  const submitError = await set(
-    startImageProviderJob$,
-    {
-      generationId,
-      orgId: auth.orgId,
-      userId: auth.userId,
-      runId,
-      publicBrand,
-      privateArtifacts,
-      admission,
-      options,
-      pricing,
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-  if (submitError) {
-    await set(completeRunBuiltInAdmission$, {
-      admission,
-      status: "failed",
-    });
+const prepareImageRequest$ = command(
+  async ({ get }, requirePrivateArtifact: boolean, signal: AbortSignal) => {
+    const auth = get(organizationAuthContext$);
+    const db = get(db$);
+    const bodyResult = await get(imageBody$);
     signal.throwIfAborted();
-    return submitError;
-  }
+    if (!bodyResult.ok) {
+      return bodyResult.response;
+    }
 
-  return acceptedImageResponse(generationId, realtime);
-});
+    const privacyRequired =
+      requirePrivateArtifact || bodyResult.data.requirePrivateArtifact === true;
+    const requiredPrivateArtifacts = privacyRequired
+      ? await get(privateArtifactCreationEnabled(auth.orgId, auth.userId))
+      : undefined;
+    signal.throwIfAborted();
+    if (privacyRequired && !requiredPrivateArtifacts) {
+      return artifactVisibilityUnavailable();
+    }
+
+    const runId =
+      auth.tokenType === "agent" || auth.tokenType === "sandbox"
+        ? auth.runId
+        : undefined;
+    const runImageModelDefault = await loadRunImageModelDefault(
+      db,
+      auth.orgId,
+      auth.userId,
+      runId,
+      signal,
+    );
+    const options = parseImageOptions(bodyResult.data, {
+      defaultModel: runImageModelDefault ?? DEFAULT_IMAGE_MODEL,
+    });
+    if ("status" in options) {
+      return options;
+    }
+
+    return { auth, runId, requiredPrivateArtifacts, options };
+  },
+);
+
+const postImageInner$ = command(
+  async (
+    { get, set },
+    requirePrivateArtifact: boolean,
+    signal: AbortSignal,
+  ) => {
+    const prepared = await set(
+      prepareImageRequest$,
+      requirePrivateArtifact,
+      signal,
+    );
+    if ("status" in prepared) {
+      return prepared;
+    }
+    const { auth, runId, requiredPrivateArtifacts, options } = prepared;
+    const publicBrand = PUBLIC_BRAND;
+
+    const hasCredits = await set(
+      checkImageCredits$,
+      { orgId: auth.orgId, userId: auth.userId, runId },
+      signal,
+    );
+    if (!hasCredits) {
+      return insufficientCredits();
+    }
+
+    const pricing = await get(imagePricing$);
+    signal.throwIfAborted();
+    const missingPricing = getMissingImagePricing(pricing, options.model);
+    if (missingPricing.length > 0) {
+      L.error("Image generation pricing is not configured", {
+        model: options.model,
+        missingPricing,
+      });
+      return serviceUnavailable(
+        "Image generation pricing is not configured",
+        "NOT_CONFIGURED",
+      );
+    }
+
+    if (options.provider === "fal" && !env("FAL_KEY")) {
+      return serviceUnavailable(
+        "Fal image generation is not configured",
+        "NOT_CONFIGURED",
+      );
+    }
+    if (options.provider === "byteplus" && !env("BYTEPLUS_API_KEY")) {
+      return serviceUnavailable(
+        "BytePlus image generation is not configured",
+        "NOT_CONFIGURED",
+      );
+    }
+    if (options.provider === "openai" && !env("OPENAI_API_KEY")) {
+      return serviceUnavailable(
+        "OpenAI image generation is not configured",
+        "NOT_CONFIGURED",
+      );
+    }
+
+    const generationId = randomUUID();
+    const realtime = await createBuiltInGenerationRealtimeSubscription(
+      auth.userId,
+      generationId,
+    );
+    signal.throwIfAborted();
+    const admission = await set(
+      startRunBuiltInAdmission$,
+      { runId, kind: "image" },
+      signal,
+    );
+    if (isRunBuiltInAdmissionError(admission)) {
+      return admission;
+    }
+
+    const { privateArtifacts } = await set(
+      createBuiltInGenerationJob$,
+      {
+        generationId,
+        type: "image",
+        orgId: auth.orgId,
+        privateArtifacts: requiredPrivateArtifacts,
+        userId: auth.userId,
+        runId,
+        request: builtInGenerationRequestWithInternal(
+          imageRequestRecord(options),
+          {
+            admissionId: admission?.id,
+            publicBrand,
+            provider: options.provider,
+            providerTask: "image",
+          },
+        ),
+      },
+      signal,
+    );
+
+    const submitError = await set(
+      startImageProviderJob$,
+      {
+        generationId,
+        orgId: auth.orgId,
+        userId: auth.userId,
+        runId,
+        publicBrand,
+        privateArtifacts,
+        admission,
+        options,
+        pricing,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (submitError) {
+      await set(completeRunBuiltInAdmission$, {
+        admission,
+        status: "failed",
+      });
+      signal.throwIfAborted();
+      return submitError;
+    }
+
+    return acceptedImageResponse(generationId, realtime);
+  },
+);
 
 export const imageIoGenerateRoutes: readonly RouteEntry[] = [
+  {
+    route: imageIoGenerateContract.postPrivate,
+    handler: authRoute(
+      { requireOrganization: true, requiredCapability: "file:write" },
+      command(({ set }, signal: AbortSignal) => {
+        return set(postImageInner$, true, signal);
+      }),
+    ),
+  },
   {
     route: imageIoGenerateContract.post,
     handler: authRoute(
@@ -547,7 +593,9 @@ export const imageIoGenerateRoutes: readonly RouteEntry[] = [
         requireOrganization: true,
         requiredCapability: "file:write",
       },
-      postImageInner$,
+      command(({ set }, signal: AbortSignal) => {
+        return set(postImageInner$, false, signal);
+      }),
     ),
   },
 ];

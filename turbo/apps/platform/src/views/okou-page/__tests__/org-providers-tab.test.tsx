@@ -1,3 +1,11 @@
+import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
+import {
+  getCanonicalModelDisplayName,
+  type OrgModelPoliciesResponse,
+  type UpdateOrgModelPoliciesRequest,
+  type ModelProviderResponse,
+  type OrgModelPolicy,
+} from "@okouai/api-contracts/contracts/model-providers";
 import { codexDeviceAuthContract } from "@okouai/api-contracts/contracts/codex-device-auth";
 import { claudeCodeDeviceAuthContract } from "@okouai/api-contracts/contracts/claude-code-device-auth";
 import {
@@ -5,10 +13,6 @@ import {
   billingStatusContract,
   type BillingStatusResponse,
 } from "@okouai/api-contracts/contracts/billing";
-import type {
-  ModelProviderResponse,
-  OrgModelPolicy,
-} from "@okouai/api-contracts/contracts/model-providers";
 import {
   modelProviderConnectionsByIdContract,
   modelProviderConnectionsMainContract,
@@ -199,7 +203,6 @@ function billingStatus(
   modelCapabilities?: {
     readonly supportByok?: boolean;
     readonly restrictedBuiltInModels?: boolean;
-    readonly restrictedVm0Models?: boolean;
   },
 ): BillingStatusResponse {
   return {
@@ -229,16 +232,6 @@ function billingStatus(
 function mockBillingCapabilities(modelCapabilities: {
   readonly supportByok: boolean;
   readonly restrictedBuiltInModels: boolean;
-}): void {
-  context.mocks.api(billingStatusContract.get, ({ respond }) => {
-    return respond(200, billingStatus("pro", modelCapabilities));
-  });
-}
-
-/** Billing status as an API from before #33658 step 1 returns it. */
-function mockLegacyBillingCapabilities(modelCapabilities: {
-  readonly supportByok: boolean;
-  readonly restrictedVm0Models: boolean;
 }): void {
   context.mocks.api(billingStatusContract.get, ({ respond }) => {
     return respond(200, billingStatus("pro", modelCapabilities));
@@ -1115,39 +1108,6 @@ test("Offer an upgrade for restricted Pro models", async () => {
   });
 });
 
-test("Offer an upgrade for restricted Pro models from an API before the rename", async () => {
-  mockAdminOrg();
-  mockLegacyBillingCapabilities({
-    supportByok: false,
-    restrictedVm0Models: true,
-  });
-  context.mocks.data.orgModelProviders([]);
-  context.mocks.data.orgModelPolicies([
-    builtInPolicy(
-      "00000000-0000-4000-a000-000000000221",
-      "claude-fable-5-1",
-      "Claude Fable 5.1",
-      false,
-    ),
-    builtInPolicy(
-      "00000000-0000-4000-a000-000000000222",
-      "gpt-5.6-luna",
-      "GPT 5.6 Luna",
-      true,
-    ),
-  ]);
-  await openModelSettings();
-
-  const defaultRow = screen.getByTestId("default-model-row");
-  click(within(defaultRow).getByRole("combobox"));
-
-  // The restriction can only come from the retired alias, so seeing the Pro
-  // affordance proves the page honored it.
-  await expect(
-    screen.findByRole("option", { name: /Claude Fable 5.*Pro/u }),
-  ).resolves.toBeInTheDocument();
-});
-
 test("Offer a plan change when bring-your-own-key is unavailable", async () => {
   mockAdminOrg();
   mockBillingCapabilities({
@@ -1425,4 +1385,206 @@ test("Cancel an unfinished workspace Codex reconnection when Settings closes", a
   await expect(
     screen.findByTestId("codex-device-auth-code"),
   ).resolves.toHaveTextContent("WXYZ-1234");
+});
+
+function enabledPolicySnapshot(): OrgModelPoliciesResponse {
+  return {
+    revision: "administrative-snapshot-one",
+    writePreconditionRequired: true,
+    workspaceDefaultModel: "gpt-5.6-luna",
+    workspaceDefaultPolicyId: "00000000-0000-4000-a000-000000000211",
+    policies: [
+      builtInPolicy(
+        "00000000-0000-4000-a000-000000000211",
+        "gpt-5.6-luna",
+        "GPT 5.6 Luna",
+        true,
+      ),
+      {
+        ...builtInPolicy(
+          "00000000-0000-4000-a000-000000000212",
+          "gpt-6-astra",
+          "GPT 6 Astra",
+          false,
+        ),
+        defaultProviderType: "codex-oauth-token",
+        credentialScope: "member",
+      },
+    ],
+  };
+}
+
+function mockPriorityPolicyWrites() {
+  mockAdminOrg();
+  let snapshot = enabledPolicySnapshot();
+  let submitted: UpdateOrgModelPoliciesRequest | undefined;
+  context.mocks.api(modelPoliciesMainContract.list, ({ respond }) => {
+    return respond(200, snapshot);
+  });
+  context.mocks.api(modelPoliciesMainContract.update, ({ body, respond }) => {
+    submitted = body;
+    expect(body.revision).toBe(snapshot.revision);
+    const policies = body.policies.map((policy) => {
+      const previous = snapshot.policies.find((existing) => {
+        return existing.model === policy.model;
+      });
+      return {
+        ...builtInPolicy(
+          previous?.id ?? crypto.randomUUID(),
+          policy.model,
+          getCanonicalModelDisplayName(policy.model),
+          policy.isDefault,
+        ),
+        ...policy,
+      };
+    });
+    const defaultPolicy = policies.find((policy) => {
+      return policy.isDefault;
+    });
+    snapshot = {
+      revision: crypto.randomUUID(),
+      writePreconditionRequired: true,
+      workspaceDefaultModel: defaultPolicy?.model ?? null,
+      workspaceDefaultPolicyId: defaultPolicy?.id ?? null,
+      policies,
+    };
+    return respond(200, snapshot);
+  });
+  return () => {
+    return submitted;
+  };
+}
+
+test("Enabled priority adds a subscription while preserving the displayed defaults and revision", async () => {
+  const submitted = mockPriorityPolicyWrites();
+  await openProvidersTab();
+  const legacy = await screen.findByTestId("org-model-policy-row-gpt-6-astra");
+  expect(within(legacy).getByText("ChatGPT (Codex)")).toBeInTheDocument();
+  click(within(screen.getByTestId("default-model-row")).getByRole("combobox"));
+  click(await screen.findByRole("option", { name: "GPT 6 Astra" }));
+  await expect(
+    screen.findByText("Model provider settings updated"),
+  ).resolves.toBeInTheDocument();
+  expect(submitted()).toMatchObject({
+    revision: "administrative-snapshot-one",
+    policies: [
+      {
+        model: "gpt-5.6-luna",
+        isDefault: false,
+        credentialScope: "org",
+        defaultProviderType: "built-in",
+      },
+      {
+        model: "gpt-6-astra",
+        isDefault: true,
+        credentialScope: "member",
+        defaultProviderType: "codex-oauth-token",
+      },
+    ],
+  });
+  expect(within(legacy).getByText("ChatGPT (Codex)")).toBeInTheDocument();
+  click(buttonByText("Add model"));
+  await selectDialogModel("Claude Opus 4.8");
+  const dialog = screen.getByRole("dialog", { name: "Add model" });
+  expect(radioByName(/Built-in/u, dialog)).toBeInTheDocument();
+  expect(radioByName(/Claude subscription/u, dialog)).toBeEnabled();
+  click(radioByName(/Claude subscription/u, dialog));
+  click(buttonByText("Add model", dialog));
+  const added = await screen.findByTestId(
+    "org-model-policy-row-claude-opus-4-8",
+  );
+  expect(
+    within(added).getByText("Claude Code (OAuth token)"),
+  ).toBeInTheDocument();
+  expect(submitted()?.policies).toContainEqual(
+    expect.objectContaining({
+      model: "claude-opus-4-8",
+      defaultProviderType: "claude-code-oauth-token",
+      credentialScope: "member",
+      isDefault: false,
+    }),
+  );
+
+  expect(
+    within(screen.getByTestId("default-model-row")).getByRole("combobox"),
+  ).toHaveTextContent("GPT 6 Astra");
+});
+
+test("Enabled priority changes an API route to Subscription and keeps that choice editable", async () => {
+  const submitted = mockPriorityPolicyWrites();
+  await openProvidersTab();
+  await screen.findByTestId("org-model-policy-row-gpt-5.6-luna");
+  const luna = screen.getByTestId("org-model-policy-row-gpt-5.6-luna");
+  click(within(luna).getByLabelText("Actions for GPT 5.6 Luna"));
+  click(menuItemByText("Edit model"));
+  const edit = await screen.findByRole("dialog", { name: "Edit model" });
+  expect(radioByName(/Codex subscription/u, edit)).toBeEnabled();
+  click(radioByName(/Codex subscription/u, edit));
+  click(buttonByText("Save changes", edit));
+  await expect(
+    within(luna).findByText("ChatGPT (Codex)"),
+  ).resolves.toBeInTheDocument();
+  expect(submitted()?.policies).toContainEqual(
+    expect.objectContaining({
+      model: "gpt-5.6-luna",
+      defaultProviderType: "codex-oauth-token",
+      credentialScope: "member",
+      isDefault: true,
+    }),
+  );
+
+  click(within(luna).getByLabelText("Actions for GPT 5.6 Luna"));
+  click(menuItemByText("Edit model"));
+  const subscriptionEdit = await screen.findByRole("dialog", {
+    name: "Edit model",
+  });
+  expect(radioByName(/Codex subscription/u, subscriptionEdit)).toBeEnabled();
+  expect(radioByName(/Codex subscription/u, subscriptionEdit)).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  // An administrator can change their choice and return to Subscription before saving.
+  click(radioByName(/Built-in/u, subscriptionEdit));
+  click(radioByName(/Codex subscription/u, subscriptionEdit));
+  click(buttonByText("Save changes", subscriptionEdit));
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("dialog", { name: "Edit model" }),
+    ).not.toBeInTheDocument();
+    expect(within(luna).getByText("ChatGPT (Codex)")).toBeInTheDocument();
+  });
+  expect(
+    within(screen.getByTestId("default-model-row")).getByRole("combobox"),
+  ).toHaveTextContent("GPT 5.6 Luna");
+});
+
+test("A stale settings save displays refresh guidance and leaves the displayed legacy route intact", async () => {
+  mockAdminOrg();
+  const snapshot = enabledPolicySnapshot();
+  context.mocks.api(modelPoliciesMainContract.list, ({ respond }) => {
+    return respond(200, snapshot);
+  });
+  context.mocks.api(modelPoliciesMainContract.update, ({ body, respond }) => {
+    expect(body.revision).toBe(snapshot.revision);
+    return respond(409, {
+      error: {
+        code: "CONFLICT",
+        message:
+          "Model settings changed. Refresh model settings and try again.",
+      },
+    });
+  });
+  await openProvidersTab();
+  const legacy = await screen.findByTestId("org-model-policy-row-gpt-6-astra");
+  click(within(screen.getByTestId("default-model-row")).getByRole("combobox"));
+  click(await screen.findByRole("option", { name: "GPT 6 Astra" }));
+  await expect(
+    screen.findByText(
+      "Model settings changed. Refresh model settings and try again.",
+    ),
+  ).resolves.toBeInTheDocument();
+  expect(within(legacy).getByText("ChatGPT (Codex)")).toBeInTheDocument();
+  expect(
+    within(screen.getByTestId("default-model-row")).getByRole("combobox"),
+  ).toHaveTextContent("GPT 5.6 Luna");
 });

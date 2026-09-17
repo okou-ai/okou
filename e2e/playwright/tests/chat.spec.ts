@@ -289,7 +289,7 @@ test("chat page displays tagline after onboarding", async ({ page }) => {
   });
 });
 
-test("sidebar scrollbar meets the workspace edge without a mobile inset", async ({
+test("sidebar scrollbar thumb meets the workspace edge without a mobile inset", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 520 });
@@ -299,6 +299,7 @@ test("sidebar scrollbar meets the workspace edge without a mobile inset", async 
   const chatList = page.getByTestId("chat-list-column");
   const scrollViewport = page.getByRole("region", { name: "Chat threads" });
   const scrollbar = chatList.getByTestId("sidebar-scrollbar");
+  const scrollbarThumb = scrollbar.locator('[data-slot="scroll-area-thumb"]');
   const workspace = page.getByTestId("workspace-inset");
   await expect(chatList).toBeVisible({ timeout: 20_000 });
   await expect(scrollViewport).toBeVisible({ timeout: 20_000 });
@@ -346,13 +347,16 @@ test("sidebar scrollbar meets the workspace edge without a mobile inset", async 
     })
     .toBe(true);
   await expect(scrollbar).toBeVisible();
+  await expect(scrollbarThumb).toBeVisible();
 
-  const [chatListBox, scrollbarBox, workspaceBox] = await Promise.all([
-    chatList.boundingBox(),
-    scrollbar.boundingBox(),
-    workspace.boundingBox(),
-  ]);
-  if (!chatListBox || !scrollbarBox || !workspaceBox) {
+  const [chatListBox, scrollbarBox, scrollbarThumbBox, workspaceBox] =
+    await Promise.all([
+      chatList.boundingBox(),
+      scrollbar.boundingBox(),
+      scrollbarThumb.boundingBox(),
+      workspace.boundingBox(),
+    ]);
+  if (!chatListBox || !scrollbarBox || !scrollbarThumbBox || !workspaceBox) {
     throw new Error("Expected visible desktop sidebar geometry");
   }
   const desktopWorkspace = await workspace.evaluate((element) => {
@@ -370,10 +374,13 @@ test("sidebar scrollbar meets the workspace edge without a mobile inset", async 
   });
   const chatListRight = chatListBox.x + chatListBox.width;
   const scrollbarRight = scrollbarBox.x + scrollbarBox.width;
+  const scrollbarThumbRight = scrollbarThumbBox.x + scrollbarThumbBox.width;
   const workspaceSurfaceLeft = workspaceBox.x + desktopWorkspace.paddingLeft;
   expect(workspaceSurfaceLeft).toBeCloseTo(chatListRight, 0);
   expect(workspaceBox.x - scrollbarRight).toBeGreaterThanOrEqual(0);
   expect(workspaceBox.x - scrollbarRight).toBeLessThanOrEqual(2);
+  expect(workspaceBox.x - scrollbarThumbRight).toBeGreaterThanOrEqual(0);
+  expect(workspaceBox.x - scrollbarThumbRight).toBeLessThanOrEqual(2);
   expect(desktopWorkspace).toMatchObject({
     backgroundLeft: 0,
     marginBottom: 8,
@@ -443,9 +450,15 @@ test.describe("dark theme", () => {
   });
 });
 
-test("send a message through the deployed runner", async ({ page }) => {
+test("send a long reply through the deployed runner and scroll its messages", async ({
+  page,
+}) => {
   test.setTimeout(120_000);
+  await page.setViewportSize({ width: 1440, height: 800 });
   const marker = `PRODUCT_CHAT_E2E_${Date.now()}`;
+  const replyLines = Array.from({ length: 40 }, (_, index) => {
+    return `${marker} line ${index + 1}`;
+  });
 
   await page.goto(appUrl);
   await page.waitForURL(/agents\/.*\/chat/, { timeout: 30_000 });
@@ -453,10 +466,67 @@ test("send a message through the deployed runner", async ({ page }) => {
   const composer = page.locator('[data-slot="chat-composer-card"]');
   const editor = composer.getByRole("textbox", { name: "Message" });
   await expect(editor).toBeVisible();
-  await editor.fill(`printf ${marker}`);
+  await editor.fill(`printf '${replyLines.join("\\n\\n")}'`);
   await composer.getByRole("button", { name: "Send" }).click();
 
   await expect(
     page.locator('[data-role="assistant"]').filter({ hasText: marker }).first(),
-  ).toBeVisible({ timeout: 90_000 });
+  ).toContainText(`${marker} line 40`, { timeout: 90_000 });
+
+  const threadPage = page.getByRole("region", {
+    name: "Chat thread",
+    exact: true,
+  });
+  const viewport = threadPage.locator("[data-scroll-container]");
+  const scrollbar = threadPage.getByTestId("chat-message-scrollbar");
+  const thumb = scrollbar.locator('[data-slot="scroll-area-thumb"]');
+  await expect(thumb).toBeVisible();
+  await expect
+    .poll(async () => {
+      return viewport.evaluate((element) => {
+        return element.scrollHeight - element.scrollTop - element.clientHeight;
+      });
+    })
+    .toBeLessThanOrEqual(10);
+
+  const [viewportBox, thumbBox] = await Promise.all([
+    viewport.boundingBox(),
+    thumb.boundingBox(),
+  ]);
+  if (!viewportBox || !thumbBox) {
+    throw new Error("Expected the message viewport and scrollbar thumb");
+  }
+  const thumbGap =
+    viewportBox.x + viewportBox.width - (thumbBox.x + thumbBox.width);
+  expect(thumbGap).toBeGreaterThanOrEqual(0);
+  expect(thumbGap).toBeLessThanOrEqual(2);
+
+  const scrollTopBeforeDrag = await viewport.evaluate((element) => {
+    return element.scrollTop;
+  });
+  const thumbX = thumbBox.x + thumbBox.width / 2;
+  const thumbY = thumbBox.y + thumbBox.height / 2;
+  await page.mouse.move(thumbX, thumbY);
+  await page.mouse.down();
+  await page.mouse.move(thumbX, thumbY - 80);
+  await page.mouse.up();
+  await expect
+    .poll(async () => {
+      return viewport.evaluate((element) => {
+        return element.scrollTop;
+      });
+    })
+    .toBeLessThan(scrollTopBeforeDrag);
+
+  const scrollToBottom = threadPage.locator("[data-scroll-to-bottom]");
+  await expect(scrollToBottom).toBeVisible();
+  await scrollToBottom.click();
+  await expect(scrollToBottom).toBeHidden();
+  await expect
+    .poll(async () => {
+      return viewport.evaluate((element) => {
+        return element.scrollHeight - element.scrollTop - element.clientHeight;
+      });
+    })
+    .toBeLessThanOrEqual(10);
 });

@@ -20,7 +20,7 @@ export function AuthShell({ authBrand, children }: AuthShellProps) {
 
   return (
     <div
-      className="okou-app relative flex h-full min-h-0 overflow-x-hidden overflow-y-auto bg-background p-6 pb-[max(1.5rem,var(--sab))]"
+      className="relative flex h-full min-h-0 overflow-x-hidden overflow-y-auto bg-background p-6 pb-[max(1.5rem,var(--sab))]"
       data-testid="app-auth-layout"
     >
       <div
@@ -83,7 +83,7 @@ export function AuthShell({ authBrand, children }: AuthShellProps) {
             { brandName: authBrand.brandName },
           )}
           className={cn(
-            "absolute flex items-center gap-2 transition-opacity hover:opacity-75 focus-visible:opacity-75 focus-visible:outline-none",
+            "absolute flex items-center gap-2 hover:opacity-75 focus-visible:opacity-75 focus-visible:outline-none",
             "left-6 top-6",
           )}
         >

@@ -1,9 +1,8 @@
-import { piNativeTypeBindings } from "./pi-native-types";
-import type { z } from "zod";
-import { sshTypeBindings } from "./ssh-types";
-import { knownRunFailureReasonSchema } from "../contracts/run-failure-reasons";
-import { modelProviderCodexRuntimeConfigSchema } from "../contracts/model-providers";
+import { z } from "zod";
 import {
+  piApiFirstTurnConfigSchema,
+  piDeferredHandoffChunkSchema,
+  piDeferredSandboxConfigSchema,
   activeInputDeliveryReserveResponseSchema,
   activeInputDeliveryReceiptResponseSchema,
   artifactMissingRootPolicySchema,
@@ -13,9 +12,14 @@ import {
   piModelConfigV2Schema,
   piModelConfigV3Schema,
   runnersModelProviderFailuresContract,
+  runnerCancellationResponseSchema,
   sessionHistoryEncodingSchema,
   storageMountEntrySchema,
 } from "../contracts/runners";
+import { piNativeTypeBindings } from "./pi-native-types";
+import { sshTypeBindings } from "./ssh-types";
+import { knownRunFailureReasonSchema } from "../contracts/run-failure-reasons";
+import { modelProviderCodexRuntimeConfigSchema } from "../contracts/model-providers";
 import { fileEntryWithHashSchema } from "../contracts/storages";
 import {
   webhookCheckpointsContract,
@@ -56,6 +60,10 @@ export const rustTypeRootDoc = [
 
 export const rustTypeModuleDocs = [
   {
+    rustModulePath: ["runners", "runs", "cancellation"],
+    rustDoc: ["Authenticated Run cancellation reconciliation DTOs."],
+  },
+  {
     rustModulePath: ["runners", "ssh"],
     rustDoc: ["Private Runner SSH authority DTOs."],
   },
@@ -74,6 +82,14 @@ export const rustTypeModuleDocs = [
     rustDoc: [
       "Run-scoped DTOs exchanged between runners, guests, and the API.",
     ],
+  },
+  {
+    rustModulePath: ["runners", "jobs"],
+    rustDoc: ["Authenticated Runner job DTOs."],
+  },
+  {
+    rustModulePath: ["runners", "jobs", "pi_handoff"],
+    rustDoc: ["Authenticated deferred Pi handoff DTOs."],
   },
   {
     rustModulePath: ["runners", "runs", "active_inputs"],
@@ -128,6 +144,48 @@ export const rustTypeModuleDocs = [
 ] satisfies readonly RustTypeModuleDoc[];
 
 export const rustTypeBindings = [
+  {
+    schema: runnerCancellationResponseSchema,
+    rustModulePath: ["runners", "runs", "cancellation"],
+    rustTypeName: "Response",
+    direction: "response",
+    declarations: [
+      {
+        rustTypeName: "Response",
+        rustDoc: [
+          "Stop intent or authenticated physical absence for an exact Run.",
+        ],
+        fields: {
+          protocolVersion: ["Version of the cancellation response contract."],
+          runId: ["Exact Run authorized by the request's sandbox credential."],
+          mode: [
+            "Explicit committed stop mode; null cannot reconstruct a historical intent.",
+          ],
+        },
+        variants: {
+          present: [
+            "The matching Run exists; only an explicit mode requests cancellation.",
+          ],
+          gone: [
+            "The authenticated Run is physically absent; stop its remaining execution.",
+          ],
+          unavailable: [
+            "The present row does not match the expected owner or claim.",
+          ],
+        },
+      },
+      {
+        rustTypeName: "ResponsePresentMode",
+        rustDoc: [
+          "Effective mode persisted by the API's canonical stop decision.",
+        ],
+        variants: {
+          cooperative: ["Allow bounded cancellation recovery."],
+          hard: ["Stop without waiting for cooperative recovery."],
+        },
+      },
+    ],
+  },
   ...sshTypeBindings,
   ...piNativeTypeBindings,
   {
@@ -167,7 +225,92 @@ export const rustTypeBindings = [
     ],
   },
   {
-    schema: piLaunchConfigSchema,
+    schema: z.object({
+      schemaVersion: z.literal(2),
+      apiFirstTurn: piDeferredSandboxConfigSchema.unwrap().pick({
+        schemaVersion: true,
+        ownerEpoch: true,
+        generation: true,
+        deadlineAt: true,
+        resourceSnapshotDigest: true,
+        baseSession: true,
+        sandboxEventSequenceStart: true,
+        historyHash: true,
+        runId: true,
+        activeInput: true,
+      }),
+    }),
+    rustModulePath: ["runners", "runs"],
+    rustTypeName: "PiDeferredLaunchConfig",
+    direction: "response",
+    declarations: [
+      {
+        rustTypeName: "PiDeferredLaunchConfig",
+        rustDoc: [
+          "Deferred Pi Runner validation view. The CLI validates the full immutable payload.",
+        ],
+        fields: {
+          schemaVersion: ["Outer Pi launch version."],
+          apiFirstTurn: ["Generation-fenced durable continuation."],
+        },
+      },
+      {
+        rustTypeName: "PiDeferredLaunchConfigApiFirstTurn",
+        rustDoc: ["Minimum deferred handoff identity accepted by the Runner."],
+        fields: {
+          schemaVersion: ["Deferred continuation version."],
+          ownerEpoch: ["Claimed inference owner epoch."],
+          generation: ["Claimed demand generation."],
+          deadlineAt: ["Execution startup deadline in Unix milliseconds."],
+          resourceSnapshotDigest: [
+            "Digest of the frozen resources validated by the CLI.",
+          ],
+          baseSession: ["Original canonical Pi session checkpoint."],
+          sandboxEventSequenceStart: [
+            "First unpublished Sandbox event sequence.",
+          ],
+          historyHash: ["Digest of the exact H1 or untouched H0 bytes."],
+          runId: ["Original Run authorized by the Sandbox token."],
+          activeInput: [
+            "Original Run has a thread capable of receiving active input.",
+          ],
+        },
+      },
+      {
+        rustTypeName: "PiDeferredLaunchConfigApiFirstTurnBaseSession",
+        rustDoc: ["Captured H0 checkpoint."],
+        fields: {
+          sessionId: ["Canonical Pi session identifier."],
+          sha256: ["Original H0 history digest, or null for an empty session."],
+        },
+      },
+    ],
+  },
+  {
+    schema: piDeferredHandoffChunkSchema,
+    rustModulePath: ["runners", "jobs", "pi_handoff"],
+    rustTypeName: "Response",
+    direction: "response",
+    sensitive: true,
+    declarations: [
+      {
+        rustTypeName: "Response",
+        rustDoc: [
+          "One bounded chunk of authenticated deferred Pi handoff data.",
+        ],
+        fields: {
+          chunk: ["Base64-encoded handoff bytes."],
+          nextOffset: [
+            "Next exact byte offset, or null after the final chunk.",
+          ],
+        },
+      },
+    ],
+  },
+  {
+    schema: piLaunchConfigSchema
+      .unwrap()
+      .safeExtend({ apiFirstTurn: piApiFirstTurnConfigSchema }),
     rustModulePath: ["runners", "runs"],
     rustTypeName: "PiLaunchConfig",
     direction: "response",
@@ -275,9 +418,6 @@ export const rustTypeBindings = [
           catalogModel: [
             "Optional native Pi catalog model used only for trusted capabilities and limits.",
           ],
-          api: [
-            "Cross-version transport input. Current writers emit OpenAI Responses; readers normalize absent or legacy values until the previous API rollback, runner/Sandbox drain, and pre-cutover context gates in #31085 pass.",
-          ],
           thinkingLevel: [
             "Explicit Pi thinking level. Legacy payloads omit this field and retain Pi's medium default.",
           ],
@@ -313,15 +453,6 @@ export const rustTypeBindings = [
           openrouter: ["OpenRouter provider."],
           "vercel-ai-gateway": ["Vercel AI Gateway provider."],
           codex: ["Codex provider."],
-        },
-      },
-      {
-        rustTypeName: "PiModelConfigApi",
-        rustDoc: ["OpenAI-compatible transports supported by Pi."],
-        variants: {
-          "openai-completions": ["OpenAI Chat Completions transport."],
-          "openai-responses": ["OpenAI Responses transport."],
-          "openai-codex-responses": ["ChatGPT Codex Responses transport."],
         },
       },
       {
@@ -843,7 +974,10 @@ export const rustTypeBindings = [
         variants: {
           session_history_limit: ["Session history exceeded its size limit."],
           execution_timeout: ["The run reached its execution time limit."],
-          insufficient_credits: ["The provider account lacks credits."],
+          insufficient_credits: ["The vm0 workspace lacks credits."],
+          provider_insufficient_credits: [
+            "The upstream provider account lacks credits.",
+          ],
           invalid_api_key: ["The configured API key is invalid."],
           invalid_credentials: ["The configured credentials are invalid."],
           terms_acceptance_required: [
@@ -855,6 +989,9 @@ export const rustTypeBindings = [
           provider_rate_limited: ["The provider rate limited the request."],
           provider_overloaded: ["The provider reported overload."],
           provider_stream_timeout: ["The provider stream timed out."],
+          provider_queue_timeout: [
+            "The provider expired the request before processing started.",
+          ],
           provider_server_error: ["The provider returned a server error."],
           response_connection_lost: ["The response connection was lost."],
           safety_policy_refusal: ["The provider refused for safety policy."],

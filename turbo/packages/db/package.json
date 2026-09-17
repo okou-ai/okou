@@ -1,6 +1,6 @@
 {
   "name": "@okouai/db",
-  "version": "1.255.3",
+  "version": "1.269.6",
   "private": true,
   "type": "module",
   "exports": {
@@ -32,9 +32,25 @@
       "import": "./src/types.ts",
       "types": "./src/types.ts"
     },
+    "./operations/account-erasure": {
+      "import": "./src/operations/account-erasure.ts",
+      "types": "./src/operations/account-erasure.ts"
+    },
     "./migrations/014-goal-archive-search": {
       "import": "./scripts/migrations/014-goal-archive-search/recover.ts",
       "types": "./scripts/migrations/014-goal-archive-search/recover.ts"
+    },
+    "./erasure-journal": {
+      "import": "./src/erasure-journal/client.ts",
+      "types": "./src/erasure-journal/client.ts"
+    },
+    "./erasure-journal/migrate": {
+      "import": "./src/erasure-journal/migrate.ts",
+      "types": "./src/erasure-journal/migrate.ts"
+    },
+    "./operations/account-erasure-bridge": {
+      "import": "./src/operations/account-erasure-bridge.ts",
+      "types": "./src/operations/account-erasure-bridge.ts"
     }
   },
   "scripts": {
@@ -46,18 +62,29 @@
     "db:migrate": "tsx scripts/migrate.ts",
     "db:studio": "drizzle-kit studio",
     "db:reset": "tsx scripts/reset-db.ts",
-    "test:migration-consistency": "pnpm test:migration-runner && pnpm test:kms-rotation && pnpm test:pi-memory-checkpoint-settlement && pnpm test:pi-memory-citations && pnpm test:show-usage-pack-migration && pnpm test:member-invitation-retirement && pnpm test:reusable-ssh-credentials && pnpm test:morning-brief-enrollment-installation && pnpm test:billing-attribution && tsx scripts/test-migration-consistency-schema.ts",
+    "check:account-erasure-claim-scale": "tsx scripts/check-account-erasure-claim-scale.ts",
+    "test:migration-consistency": "pnpm test:pi-memory-stage1-alerts && pnpm test:migration-runner && pnpm test:kms-rotation && pnpm test:pi-memory-checkpoint-settlement && pnpm test:pi-memory-citations && pnpm test:show-usage-pack-migration && pnpm test:reusable-ssh-credentials && pnpm test:cloudflare-access && pnpm test:morning-brief-enrollment-installation && pnpm test:billing-attribution && pnpm test:pi-candidate-trigger-retirement && pnpm test:historical-blob-audit && pnpm test:erasure-journal && pnpm --filter api test:erasure-bridge && pnpm test:prepared-domain-trigger-retirement && pnpm test:pi-inference-lifecycle && pnpm test:marketing-privacy-retirement && tsx scripts/test-migration-consistency-schema.ts",
+    "test:cloudflare-access": "tsx scripts/test-cloudflare-access.ts",
     "test:kms-rotation": "tsx scripts/migrations/013-kms-account-rotation/test.ts && tsx scripts/migrations/013-kms-account-rotation/test-business.ts",
     "test:show-usage-pack-migration": "tsx scripts/test-show-usage-pack-migration.ts",
     "test:migration-runner": "tsx scripts/test-migration-runner-timeouts.ts",
     "lint:jsonb-contracts": "tsx scripts/check-jsonb-contracts.ts",
     "test:pi-memory-checkpoint-settlement": "tsx scripts/test-pi-memory-checkpoint-settlement.ts",
     "test:pi-memory-citations": "tsx scripts/test-pi-memory-citation-migration.ts",
-    "test:member-invitation-retirement": "tsx scripts/test-member-invitation-retirement.ts",
     "test:reusable-ssh-credentials": "tsx scripts/test-reusable-ssh-credentials.ts",
     "test:morning-brief-enrollment-installation": "tsx scripts/test-morning-brief-enrollment-installation.ts",
     "test:billing-attribution": "tsx scripts/test-billing-attribution.ts",
-    "billing:attribution": "tsx scripts/billing-attribution.ts"
+    "billing:attribution": "tsx scripts/billing-attribution.ts",
+    "test:pi-candidate-trigger-retirement": "tsx scripts/test-pi-candidate-trigger-retirement.ts",
+    "test:historical-blob-audit": "tsx scripts/test-historical-session-blob-audit.ts",
+    "journal:generate": "drizzle-kit generate --dialect postgresql --schema ./src/erasure-journal/schema.ts --out ./erasure-journal-migrations",
+    "test:erasure-journal": "tsx scripts/test-erasure-journal.ts",
+    "test:pi-inference-lifecycle": "tsx scripts/test-pi-inference-lifecycle.ts",
+    "test:prepared-domain-trigger-retirement": "tsx scripts/test-prepared-domain-trigger-retirement.ts",
+    "test:marketing-privacy-retirement": "tsx scripts/test-marketing-privacy-retirement.ts",
+    "billing:pi-memory-stage1": "tsx scripts/pi-memory-stage1-cost.ts",
+    "test:pi-memory-stage1-cost": "tsx scripts/test-pi-memory-stage1-cost.ts",
+    "test:pi-memory-stage1-alerts": "node --test ../../../ops/pi-memory-stage1/v1/fixtures.test.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-kms": "^3.1127.0",
@@ -82,6 +109,7 @@
     "tsx": "^4.21.0",
     "@typescript/native": "npm:typescript@7.0.2",
     "typescript": "npm:@typescript/typescript6@6.0.2",
-    "vitest": "^5.0.0"
+    "vitest": "^5.0.0",
+    "zod": "^4.5.4"
   }
 }

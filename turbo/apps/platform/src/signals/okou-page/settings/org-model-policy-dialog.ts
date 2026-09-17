@@ -212,6 +212,7 @@ export const submitModelPolicyApiKeyRoute$ = command(
     await set(
       updateOrgModelPolicies$,
       {
+        revision: latest.revision,
         policies: applyProviderRouteToPolicies(
           latest.policies,
           params.model,

@@ -4,8 +4,14 @@ import type { HTMLAttributes } from "react";
 export const CHAT_THREAD_CONTENT_MAIN_CLASS =
   "items-center py-4 pl-4 pr-4 sm:pl-6 sm:pr-6 @container";
 
-export const CHAT_THREAD_MESSAGE_LIST_CLASS =
-  "w-full max-w-[900px] mx-auto flex flex-col gap-6 pb-4 overflow-visible";
+// One gap separates the rows of the transcript. Anything that wraps rows and
+// interrupts this flex column has to reproduce it, so the value has one home.
+export const CHAT_THREAD_MESSAGE_ROW_GAP_CLASS = "gap-6";
+
+export const CHAT_THREAD_MESSAGE_LIST_CLASS = cn(
+  "w-full max-w-[900px] mx-auto flex flex-col pb-4 overflow-visible",
+  CHAT_THREAD_MESSAGE_ROW_GAP_CLASS,
+);
 
 // Turns use 24px, response sections use 8px, and related items within a section
 // use 4px. Section spacing must not become the density of a history/list row.
@@ -59,8 +65,12 @@ export const CHAT_THREAD_ASSISTANT_AVATAR_FRAME_CLASS =
 export const CHAT_THREAD_ASSISTANT_AVATAR_IMAGE_CLASS =
   "h-7 w-7 rounded-full object-cover object-top @[900px]:h-9 @[900px]:w-9";
 
+// Reveal immediately so hover does not create and remove a temporary opacity
+// layer in the scrolling transcript beside the assistant's SVG icons. The row
+// holds its own height because the stack pull below is measured against it: a
+// message that hides its button must not take that space away from the burst.
 export const CHAT_THREAD_USER_MESSAGE_ACTIONS_CLASS =
-  "flex justify-end gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150";
+  "flex h-7 justify-end gap-1 mt-1 opacity-0 group-hover:opacity-100";
 
 export const CHAT_THREAD_ASSISTANT_MESSAGE_ACTIONS_ROW_CLASS =
   "pl-1.5 @[900px]:grid @[900px]:grid-cols-[36px_minmax(0,1fr)] @[900px]:gap-2.5 @[900px]:-ml-[46px] @[900px]:pl-0";
@@ -70,6 +80,8 @@ export const CHAT_THREAD_ASSISTANT_MESSAGE_ACTIONS_CLASS =
 
 // Consecutive user messages read as one burst. The copy button already sits
 // `mt-1` below its message, so this pull keeps the gap below it equally tight.
+// It only ever cancels part of that reserved row, which is why the row above
+// has to exist on every user message, in every mode.
 export const CHAT_THREAD_MESSAGE_STACK_PULL_CLASS = "-mt-5";
 
 export function ChatUserMessageBubble({
@@ -78,8 +90,9 @@ export function ChatUserMessageBubble({
 }: HTMLAttributes<HTMLDivElement>) {
   return (
     <div
+      data-slot="chat-user-message"
       className={cn(
-        "okou-chat-bubble-user rounded-xl max-w-[85%] text-[0.9375rem] leading-[1.7] [overflow-wrap:anywhere] overflow-hidden",
+        "rounded-xl max-w-[85%] text-[0.9375rem] leading-[1.7] [overflow-wrap:anywhere] overflow-hidden bg-gray-200 text-foreground",
         className,
       )}
       {...props}
@@ -95,7 +108,7 @@ export function ChatAssistantMessageBody({
     <div
       data-chat-selection-source
       className={cn(
-        "okou-chat-bubble-assistant p-0 text-[0.9375rem] leading-[1.7] min-w-0 [overflow-wrap:anywhere]",
+        "p-0 text-[0.9375rem] leading-[1.7] min-w-0 [overflow-wrap:anywhere] bg-transparent border-none border-current",
         className,
       )}
       {...props}

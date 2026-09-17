@@ -507,30 +507,6 @@ export function resolvedArtifactObject(
   });
 }
 
-export const resolveArtifactObject$ = command(
-  async (
-    { get },
-    args: {
-      readonly userId: string;
-      readonly id: string;
-      readonly filenameHint?: string;
-      readonly variant?: string;
-    },
-    signal: AbortSignal,
-  ): Promise<ResolvedArtifactObject | null> => {
-    const resolved = await get(
-      resolvedArtifactObject(
-        args.userId,
-        args.id,
-        args.filenameHint,
-        args.variant,
-      ),
-    );
-    signal.throwIfAborted();
-    return resolved;
-  },
-);
-
 export const resolveArtifactMultipartUpload$ = command(
   async (
     { get },

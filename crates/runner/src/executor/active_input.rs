@@ -22,6 +22,9 @@ use crate::ids::RunId;
 
 mod read_failures;
 
+#[cfg(test)]
+mod tests;
+
 use read_failures::ReadFailures;
 
 const ACTIVE_INPUT_READ_RETRY_INTERVAL: Duration = Duration::from_millis(250);
@@ -263,6 +266,10 @@ async fn forward_with_retry(
     let mut warn_retryable_failure = true;
     let mut retry_interval = ACTIVE_INPUT_CONTROL_RETRY_INITIAL_INTERVAL;
     loop {
+        if stop.is_cancelled() || job_cancel.is_cancelled() {
+            return ForwardDisposition::Stop;
+        }
+        // Once started, retain the control future until its write outcome is known.
         let disposition =
             forward_once(run_id, &prepared, mode, control, warn_retryable_failure).await;
         if !matches!(disposition, ForwardDisposition::Retry) {

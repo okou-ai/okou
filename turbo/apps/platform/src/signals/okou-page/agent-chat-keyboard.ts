@@ -1,7 +1,6 @@
 import { command } from "ccstate";
 import { matchShortcut } from "@okouai/ui";
 import { currentChatThreadListIds$ } from "../agent-chat.ts";
-import { voiceInputV2Enabled$ } from "../external/feature-switch.ts";
 import { agentChatComposerSignals$ } from "./agent-composer-signals.ts";
 import { onDomEventFn } from "../utils.ts";
 import { COMPOSER_VOICE_INPUT_SHORTCUT } from "../../lib/composer-voice-input-shortcut.ts";
@@ -15,9 +14,6 @@ export const setupAgentChatKeyboardShortcuts$ = command(
         [COMPOSER_VOICE_INPUT_SHORTCUT]: {
           allowInEditableTarget: true,
           run: () => {
-            if (!get(voiceInputV2Enabled$)) {
-              return;
-            }
             set(get(agentChatComposerSignals$).voice.toggle$);
           },
         },

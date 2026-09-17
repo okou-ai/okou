@@ -3,11 +3,10 @@ import {
   MANAGED_SOCIALKIT_BILLING_CATEGORY,
   projectPublicSocialResponse,
   SOCIALKIT_MAX_INPUT_VALUE_CHARS,
-  SOCIALKIT_TRANSCRIPT_ERROR_CODES,
   type ManagedSocialKitPagination,
   type ManagedSocialKitReportedTotalField,
   type ManagedSocialKitTool,
-  type SocialKitTranscriptErrorReason,
+  type SocialErrorReason,
   type SocialKitCollectionProviderLimitedReason,
   type SocialKitRequest,
   type SocialKitResponse,
@@ -26,6 +25,7 @@ import {
   recordManagedUsage$,
   type ManagedUsageErrorResponse,
 } from "./managed-usage.service";
+import { normalizeSocialKitError } from "./socialkit-error";
 
 const PROVIDER = "socialkit";
 const USAGE_KIND = "social";
@@ -34,7 +34,59 @@ const SOCIALKIT_TIMEOUT_MS = 240_000;
 const MAX_SOCIALKIT_RESPONSE_BYTES = 4 * 1024 * 1024;
 const L = logger("ManagedSocialKit");
 
-type ErrorStatus = 400 | 404 | 502 | 503;
+/** Internal acquisition verification is paid by the platform, not the claimant. */
+export async function readGetStartedRewardPost(
+  url: string,
+  signal: AbortSignal,
+): Promise<
+  | { readonly kind: "post"; readonly id: string; readonly text: string }
+  | { readonly kind: "retry"; readonly reason: string }
+> {
+  const accessKey = env("OKOU_SOCIAL_SOCIALKIT_TOKEN");
+  if (!accessKey) {
+    return { kind: "retry", reason: "verification_unavailable" };
+  }
+  const tool = findManagedSocialKitTool("twitter_tweet");
+  if (!tool) {
+    throw new Error("Twitter post verification tool is missing");
+  }
+  const request: SocialKitRequest = { tool: "twitter_tweet", input: { url } };
+  const fetched = await settle(
+    fetchSocialKit(
+      accessKey,
+      request,
+      tool,
+      AbortSignal.any([signal, AbortSignal.timeout(20_000)]),
+    ),
+  );
+  signal.throwIfAborted();
+  if (!fetched.ok) {
+    if (
+      fetched.error instanceof Error &&
+      fetched.error.name === "TimeoutError"
+    ) {
+      return { kind: "retry", reason: "verification_timeout" };
+    }
+    throw fetched.error;
+  }
+  const response = fetched.value;
+  if (response.kind === "error") {
+    return { kind: "retry", reason: "verification_unavailable" };
+  }
+  const result = providerResult(response.body, accessKey, request, tool);
+  if (!result.ok || !isRecord(result.result)) {
+    return { kind: "retry", reason: "incomplete_response" };
+  }
+  const tweet = z
+    .object({ id: z.string().min(1), text: z.string().min(1) })
+    .safeParse(result.result.tweet);
+  if (!tweet.success || !tweet.data.text.trim()) {
+    return { kind: "retry", reason: "incomplete_response" };
+  }
+  return { kind: "post", id: tweet.data.id, text: tweet.data.text };
+}
+
+type ErrorStatus = 400 | 404 | 422 | 429 | 502 | 503;
 
 interface SocialKitErrorResponse {
   readonly status: ErrorStatus;
@@ -42,7 +94,9 @@ interface SocialKitErrorResponse {
     readonly error: {
       readonly message: string;
       readonly code: string;
-      readonly reason?: SocialKitTranscriptErrorReason;
+      readonly reason?: SocialErrorReason;
+      readonly retryable?: boolean;
+      readonly retryAfterSeconds?: number;
     };
   };
 }
@@ -81,11 +135,7 @@ type SocialKitCommandResponse =
   | SocialKitErrorResponse
   | ManagedUsageErrorResponse;
 
-function errorBody(
-  message: string,
-  code: string,
-  reason?: SocialKitTranscriptErrorReason,
-) {
+function errorBody(message: string, code: string, reason?: SocialErrorReason) {
   return {
     error: {
       message,
@@ -99,7 +149,7 @@ function errorResponse(
   status: ErrorStatus,
   message: string,
   code: string,
-  reason?: SocialKitTranscriptErrorReason,
+  reason?: SocialErrorReason,
 ): SocialKitErrorResponse {
   return { status, body: errorBody(message, code, reason) };
 }
@@ -107,7 +157,7 @@ function errorResponse(
 function badGateway(
   message: string,
   code: string,
-  reason?: SocialKitTranscriptErrorReason,
+  reason?: SocialErrorReason,
 ): SocialKitErrorResponse {
   return errorResponse(502, message, code, reason);
 }
@@ -121,124 +171,6 @@ function invalidResponse(): SocialKitErrorResponse {
     "SocialKit returned an invalid response",
     "SOCIALKIT_INVALID_RESPONSE",
   );
-}
-
-function providerErrorMessage(body: unknown): string | undefined {
-  return isRecord(body) && typeof body.message === "string"
-    ? body.message
-    : undefined;
-}
-
-const MAX_PROVIDER_ERROR_MESSAGE_CHARS = 256;
-const TRANSCRIPT_NO_DATA_MESSAGE = "no transcript available for this video";
-const TRANSCRIPT_AMBIGUOUS_MESSAGE =
-  "video not found or transcript not available";
-const TRANSCRIPT_ACCESS_DENIED_MESSAGE =
-  "access denied - transcript may be disabled";
-
-function normalizedProviderErrorMessage(body: unknown): string | undefined {
-  const message = providerErrorMessage(body)?.trim();
-  if (!message || message.length > MAX_PROVIDER_ERROR_MESSAGE_CHARS) {
-    return undefined;
-  }
-  return message.toLowerCase();
-}
-
-function transcriptProviderHttpError(
-  status: number,
-  body: unknown,
-): SocialKitErrorResponse | undefined {
-  const message = normalizedProviderErrorMessage(body);
-  if (status === 404) {
-    switch (message) {
-      case TRANSCRIPT_NO_DATA_MESSAGE: {
-        return errorResponse(
-          404,
-          "A transcript is not available for this video",
-          SOCIALKIT_TRANSCRIPT_ERROR_CODES.TRANSCRIPT_UNAVAILABLE,
-          "transcript_unavailable",
-        );
-      }
-      case TRANSCRIPT_AMBIGUOUS_MESSAGE:
-      default: {
-        return errorResponse(
-          404,
-          "SocialKit could not establish whether the source or transcript is unavailable",
-          SOCIALKIT_TRANSCRIPT_ERROR_CODES.AVAILABILITY_UNKNOWN,
-          "availability_unknown",
-        );
-      }
-    }
-  }
-  if (status === 403 && message === TRANSCRIPT_ACCESS_DENIED_MESSAGE) {
-    return badGateway(
-      "SocialKit denied transcript access; transcript availability is unknown",
-      SOCIALKIT_TRANSCRIPT_ERROR_CODES.ACCESS_DENIED,
-      "access_denied",
-    );
-  }
-  return undefined;
-}
-
-function providerHttpError(
-  status: number,
-  body: unknown,
-  tool: ManagedSocialKitTool,
-): SocialKitErrorResponse {
-  if (tool.availability === "transcript") {
-    const transcriptError = transcriptProviderHttpError(status, body);
-    if (transcriptError) {
-      return transcriptError;
-    }
-  }
-  switch (status) {
-    case 400: {
-      return errorResponse(
-        400,
-        "SocialKit rejected the request input",
-        "SOCIALKIT_INVALID_INPUT",
-      );
-    }
-    case 401: {
-      return badGateway(
-        "SocialKit provider authentication failed",
-        "SOCIALKIT_AUTH_ERROR",
-      );
-    }
-    case 403: {
-      const message = providerErrorMessage(body);
-      if (message === "Invalid Access key") {
-        return badGateway(
-          "SocialKit provider authentication failed",
-          "SOCIALKIT_AUTH_ERROR",
-        );
-      }
-      if (message === "Request limit exceeded for this month") {
-        return errorResponse(
-          503,
-          "SocialKit provider quota is exhausted",
-          "SOCIALKIT_QUOTA_EXHAUSTED",
-        );
-      }
-      return badGateway("SocialKit request failed", "SOCIALKIT_UPSTREAM_ERROR");
-    }
-    case 404: {
-      return errorResponse(
-        404,
-        "The requested social content is unavailable",
-        "SOCIALKIT_CONTENT_UNAVAILABLE",
-      );
-    }
-    case 429: {
-      return badGateway(
-        "SocialKit is temporarily rate limited",
-        "SOCIALKIT_RATE_LIMITED",
-      );
-    }
-    default: {
-      return badGateway("SocialKit request failed", "SOCIALKIT_UPSTREAM_ERROR");
-    }
-  }
 }
 
 function requestInputValue(request: SocialKitRequest, name: string): unknown {
@@ -351,21 +283,31 @@ async function fetchSocialKit(
     return settled.value;
   }
   if (!settled.value.response.ok) {
-    if (settled.value.response.status === 400) {
+    const normalized = normalizeSocialKitError(
+      settled.value.response.status,
+      settled.value.body,
+      {
+        accessKey,
+        headers: settled.value.response.headers,
+        transcript: tool.availability === "transcript",
+        requireInstagramViews:
+          request.tool === "instagram_stats" &&
+          request.input.requireViews === true,
+      },
+    );
+    // Structured provider codes can override an HTTP 400's input classification.
+    if (normalized.error.reason === "invalid_input") {
       L.warn("Managed SocialKit request failed", {
         tool: tool.name,
         path: tool.path,
         failureKind: "http_error",
-        httpStatus: settled.value.response.status,
+        ...normalized.evidence,
       });
     }
-    return errorResult(
-      providerHttpError(
-        settled.value.response.status,
-        settled.value.body,
-        tool,
-      ),
-    );
+    return errorResult({
+      status: normalized.status,
+      body: { error: normalized.error },
+    });
   }
   return { kind: "body", body: settled.value.body };
 }
@@ -693,6 +635,14 @@ function validatedCollection(
   );
   if (!reportedTotal.ok) {
     return undefined;
+  }
+  if (collection.sourceLimit) {
+    return {
+      state: "provider_limited",
+      itemsReturned: items.length,
+      reason: "provider_ceiling",
+      sourceLimit: collection.sourceLimit,
+    };
   }
   return validatedPagination(
     result,

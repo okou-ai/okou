@@ -197,18 +197,6 @@ const voiceIoTranscribeHandler$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const featureContext = await get(voiceIoFeatureContext$);
     signal.throwIfAborted();
-    if (!isFeatureEnabled(FeatureSwitchKey.VoiceInputV2, featureContext)) {
-      return {
-        status: 403 as const,
-        body: {
-          error: {
-            code: "FORBIDDEN" as const,
-            message: "Voice draft transcription is not enabled",
-          },
-        },
-      };
-    }
-    signal.throwIfAborted();
 
     const auth = get(organizationAuthContext$);
     const model = await get(selectedVoiceInputModel$);

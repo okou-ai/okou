@@ -40,11 +40,8 @@ const callbackPromptAvailable = connectorActionCallbackAvailable();
 if (!callbackPromptAvailable) {
   callbackPromptOption.hideHelp();
 }
-const callbackPromptExample = callbackPromptAvailable
-  ? '  okou mail link r-test-draft --callback-prompt "Confirm the email was sent, then offer reply tracking"\n'
-  : "";
 const callbackPromptNotes = callbackPromptAvailable
-  ? "  - Use --callback-prompt only when this turn links exactly one draft and needs no other callback action\n  - Callback prompts are included in the URL; keep them concise and do not include secrets\n"
+  ? "  - --callback-prompt remains available for nonstandard callers, but the standard web email handoff must omit it\n"
   : "";
 
 export const linkCommand = new Command()
@@ -57,10 +54,13 @@ export const linkCommand = new Command()
     `
 Examples:
   okou mail link r-test-draft
-${callbackPromptExample}
+
 Notes:
-  - Outputs the review URL to return to the user
-${callbackPromptNotes}  - The user reviews the draft and sends it from the linked email card`,
+  - Links an existing Gmail draft; it does not create, update, or send email
+  - Return the exact review URL, tell the user the draft remains editable, and end the turn so the user can review and send it
+  - For the standard web email handoff, do not add a mail callback prompt
+${callbackPromptNotes}  - Revise the same Gmail draft in place and reuse its link instead of creating a second draft
+  - Never assume the user sent it; verify the Gmail thread has the SENT label before reporting a send`,
   )
   .action(
     withErrorHandler(

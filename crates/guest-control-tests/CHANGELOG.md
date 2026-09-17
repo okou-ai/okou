@@ -1,5 +1,61 @@
 # Changelog
 
+## [0.12.2](https://github.com/vm0-ai/okou/compare/guest-control-tests-v0.12.1...guest-control-tests-v0.12.2) (2026-09-17)
+
+## [0.12.1](https://github.com/vm0-ai/okou/compare/guest-control-tests-v0.12.0...guest-control-tests-v0.12.1) (2026-09-17)
+
+## [0.12.0](https://github.com/vm0-ai/okou/compare/guest-control-tests-v0.11.22...guest-control-tests-v0.12.0) (2026-09-17)
+
+
+### Features
+
+* **runner:** expose history transfer measurements ([#34805](https://github.com/vm0-ai/okou/issues/34805)) ([445a170](https://github.com/vm0-ai/okou/commit/445a170a81a2fac9b1d42f361866c2ea70cfb7e7))
+
+## [0.11.22](https://github.com/vm0-ai/okou/compare/guest-control-tests-v0.11.21...guest-control-tests-v0.11.22) (2026-09-17)
+
+## [0.11.21](https://github.com/vm0-ai/okou/compare/guest-control-tests-v0.11.20...guest-control-tests-v0.11.21) (2026-09-16)
+
+
+### Performance Improvements
+
+* **runner:** stream compressed session history with caller-owned policy ([#34603](https://github.com/vm0-ai/okou/issues/34603)) ([1376434](https://github.com/vm0-ai/okou/commit/1376434b697f5e39be6d569c6b20a4e33ed12342))
+
+## [0.11.20](https://github.com/vm0-ai/okou/compare/guest-control-tests-v0.11.19...guest-control-tests-v0.11.20) (2026-09-16)
+
+## [0.11.19](https://github.com/vm0-ai/okou/compare/guest-control-tests-v0.11.18...guest-control-tests-v0.11.19) (2026-09-16)
+
+## [0.11.18](https://github.com/vm0-ai/okou/compare/guest-control-tests-v0.11.17...guest-control-tests-v0.11.18) (2026-09-16)
+
+
+### Performance Improvements
+
+* **rust:** bound source reads for guest small files ([#34535](https://github.com/vm0-ai/okou/issues/34535)) ([7ab0782](https://github.com/vm0-ai/okou/commit/7ab07825a5f0d6394452d71c04a5c106be317b3b))
+
+## [0.11.17](https://github.com/vm0-ai/okou/compare/guest-control-tests-v0.11.16...guest-control-tests-v0.11.17) (2026-09-16)
+
+## [0.11.16](https://github.com/vm0-ai/okou/compare/guest-control-tests-v0.11.15...guest-control-tests-v0.11.16) (2026-09-16)
+
+## [0.11.15](https://github.com/vm0-ai/vm0/compare/guest-control-tests-v0.11.14...guest-control-tests-v0.11.15) (2026-09-15)
+
+## [0.11.14](https://github.com/vm0-ai/vm0/compare/guest-control-tests-v0.11.13...guest-control-tests-v0.11.14) (2026-09-15)
+
+## [0.11.13](https://github.com/vm0-ai/vm0/compare/guest-control-tests-v0.11.12...guest-control-tests-v0.11.13) (2026-09-15)
+
+## [0.11.12](https://github.com/vm0-ai/vm0/compare/guest-control-tests-v0.11.11...guest-control-tests-v0.11.12) (2026-09-15)
+
+
+### Performance Improvements
+
+* **runner:** persist extracted storage files for cache-hit delivery ([#33976](https://github.com/vm0-ai/vm0/issues/33976)) ([b961911](https://github.com/vm0-ai/vm0/commit/b961911d0516fbdc06d3e8387bedb0653eee5ea9))
+
+## [0.11.11](https://github.com/vm0-ai/vm0/compare/guest-control-tests-v0.11.10...guest-control-tests-v0.11.11) (2026-09-15)
+
+## [0.11.10](https://github.com/vm0-ai/vm0/compare/guest-control-tests-v0.11.9...guest-control-tests-v0.11.10) (2026-09-14)
+
+## [0.11.9](https://github.com/vm0-ai/vm0/compare/guest-control-tests-v0.11.8...guest-control-tests-v0.11.9) (2026-09-14)
+
+## [0.11.8](https://github.com/vm0-ai/vm0/compare/guest-control-tests-v0.11.7...guest-control-tests-v0.11.8) (2026-09-14)
+
 ## [0.11.7](https://github.com/vm0-ai/vm0/compare/guest-control-tests-v0.11.6...guest-control-tests-v0.11.7) (2026-09-14)
 
 

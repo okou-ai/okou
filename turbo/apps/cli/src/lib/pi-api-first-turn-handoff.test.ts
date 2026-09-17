@@ -25,6 +25,13 @@ import {
 import { runInIsolatedProcess } from "../../../../scripts/run-isolated-test.mjs";
 
 const SESSION_ID = "11111111-1111-4111-8111-111111111111";
+const LANGFUSE_PARENT = {
+  traceId: "1".repeat(32),
+  spanId: "2".repeat(16),
+  traceFlags: 1,
+  sessionId: SESSION_ID,
+  sandboxWaitStartedAt: 1_000,
+} as const;
 const H0_HASH = "b".repeat(64);
 const temporaryDirectories: string[] = [];
 
@@ -297,7 +304,7 @@ describe("Pi API first-turn handoff loader", () => {
     const sessionDir = await mkdtemp(join(tmpdir(), "pi-handoff-loader-"));
     temporaryDirectories.push(sessionDir);
     const jsonl = HANDOFF_SESSION_JSONL;
-    const pointer = manifest(jsonl);
+    const pointer = manifest(jsonl, { langfuseParent: LANGFUSE_PARENT });
     let now = 1_000;
     let manifestRequests = 0;
     const fetchMock = vi.fn(async (input: Parameters<typeof fetch>[0]) => {
@@ -339,6 +346,7 @@ describe("Pi API first-turn handoff loader", () => {
       ownershipTransferMode: "pending-tool-continuation",
     });
     expect(restored.ownershipTransferMode).toBe("pending-tool-continuation");
+    expect(restored.langfuseParent).toStrictEqual(LANGFUSE_PARENT);
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
@@ -635,6 +643,17 @@ describe("Pi API first-turn handoff loader", () => {
       pointer: manifest(HANDOFF_SESSION_JSONL, {
         session: {
           ...manifest(HANDOFF_SESSION_JSONL).session,
+          sessionId: "22222222-2222-4222-8222-222222222222",
+        },
+      }),
+      session: HANDOFF_SESSION_JSONL,
+    },
+    {
+      name: "mismatched Langfuse parent session id",
+      expectedCode: "PI_HANDOFF_SESSION_MISMATCH",
+      pointer: manifest(HANDOFF_SESSION_JSONL, {
+        langfuseParent: {
+          ...LANGFUSE_PARENT,
           sessionId: "22222222-2222-4222-8222-222222222222",
         },
       }),

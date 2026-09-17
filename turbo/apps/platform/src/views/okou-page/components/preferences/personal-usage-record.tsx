@@ -333,7 +333,7 @@ function UsageBreakdownBar({ row, max }: { row: UsageRecordRow; max: number }) {
                 <div className="mt-1 flex flex-col gap-0.5">
                   {segment.providers.flatMap((provider) => {
                     const usageKinds =
-                      provider.usageKinds && provider.usageKinds.length > 0
+                      provider.usageKinds.length > 0
                         ? provider.usageKinds
                         : [{ kind: segment.kind, credits: provider.credits }];
                     return usageKinds.map((usageKind) => {

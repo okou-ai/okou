@@ -1,3 +1,4 @@
+import { feishuPlatform$ } from "./feishu.ts";
 import { command } from "ccstate";
 import { createElement } from "react";
 import { feishuOauthContract } from "@okouai/api-contracts/contracts/feishu-oauth";
@@ -25,7 +26,7 @@ export const setupFeishuOAuthCallbackPage$ = command(
     set(
       updateDocumentTitle$,
       i18n.t(($) => {
-        return $.connectors.providerConnect.feishu.connectTitle;
+        return $.connectors.providerConnect[get(feishuPlatform$)].connectTitle;
       }),
     );
     await set(hideAppSkeleton$, signal);

@@ -24,7 +24,7 @@ WORKFLOW = (
     "vm0-ai/vm0/.github/workflows/kms-recovery-snapshot-inspect.yml@refs/heads/main"
 )
 PREFIX = "kms-recovery-32264-"
-DEADLINE = time.monotonic() + 20 * 60
+DEADLINE = time.monotonic() + 90 * 60
 
 
 class InspectionError(Exception):
@@ -214,7 +214,9 @@ def validate_preview(branch, name, snapshot_id, existing_ids):
     return branch_id
 
 
-def inspect_database(database, endpoint, branch_id, target_environment, record_stage):
+def inspect_database(
+    database, endpoint, branch_id, target_environment, record_stage, record_scan
+):
     name, owner = database.get("name"), database.get("owner_name")
     require(database.get("branch_id") == branch_id, "database_branch_mismatch")
     require(
@@ -263,12 +265,16 @@ def inspect_database(database, endpoint, branch_id, target_environment, record_s
             "PGOPTIONS": "-c default_transaction_read_only=on -c statement_timeout=120000 -c lock_timeout=5000",
         }
     )
-    seconds = min(900, int(DEADLINE - time.monotonic()))
+    # Large retained databases exceeded the former cumulative 15-minute limit.
+    # Keep each SQL statement bounded and leave time for target verification.
+    seconds = min(60 * 60, int(DEADLINE - time.monotonic()))
     require(seconds > 0, "inspection_time_budget_exhausted")
     record_stage(database_hash, "marker_scan")
     try:
         result = subprocess.run(
             [
+                "stdbuf",
+                "-oL",
                 "psql",
                 "-X",
                 "-qAt",
@@ -287,6 +293,7 @@ def inspect_database(database, endpoint, branch_id, target_environment, record_s
         result = error
     safe = scan_records(result, database_hash)
     scanned = {"databaseNameSha256": database_hash, "readOnly": True, "records": safe}
+    record_scan(scanned)
     if target_environment is not None:
         record_stage(database_hash, "target_verification")
         scanned["targetVerification"] = verify_database(
@@ -328,6 +335,10 @@ def main():
         }
         checkpoint()
 
+    def record_scan(scanned):
+        report["databases"].append(scanned)
+        checkpoint()
+
     preview_id = None
     production = None
     before_endpoints = None
@@ -346,8 +357,6 @@ def main():
         )
         verification = os.environ.get("VERIFY_TARGET_CIPHERTEXT", "false")
         require(verification in {"true", "false"}, "invalid_target_verification_option")
-        if verification == "true":
-            DEADLINE = time.monotonic() + 90 * 60
         require(
             os.environ.get("NEON_PROJECT_ID") == PROJECT
             and os.environ.get("NEON_API_KEY"),
@@ -502,10 +511,13 @@ def main():
                     report["kmsCallsMade"] = None
                 report["targetVerificationStarted"] = True
                 checkpoint()
-            report["databases"].append(
-                inspect_database(
-                    database, endpoint, preview_id, target_environment, record_stage
-                )
+            inspect_database(
+                database,
+                endpoint,
+                preview_id,
+                target_environment,
+                record_stage,
+                record_scan,
             )
             if target_environment is not None:
                 report["kmsCallsMade"] = any(
@@ -536,6 +548,11 @@ def main():
         )
         if isinstance(error, ScanReportError) and error.diagnostics is not None:
             report["databaseScanFailure"] = error.diagnostics
+        if (
+            isinstance(error, RecoveryVerificationError)
+            and error.diagnostics is not None
+        ):
+            report["targetVerificationFailure"] = error.diagnostics
     finally:
         # Reserve cleanup and preservation read-back time inside the job budget.
         DEADLINE = time.monotonic() + 5 * 60

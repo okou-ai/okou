@@ -263,7 +263,6 @@ ruby -ryaml - \
   "${repo_root}/.github/workflows/cleanup-stale.yml" \
   "${repo_root}/.github/workflows/cleanup-clerk-test-resources.yml" <<'RUBY'
 turbo = YAML.load_file(ARGV.fetch(0))
-cleanup = YAML.load_file(ARGV.fetch(1))
 stale = YAML.load_file(ARGV.fetch(2))
 scheduled_clerk = YAML.load_file(ARGV.fetch(3))
 
@@ -376,27 +375,6 @@ if runner_account_cleanup_steps.any? do |step|
   raise "runner cleanup must not depend on complete preparation outputs"
 end
 
-closed_pr_cleanup = cleanup.fetch("jobs").fetch("cleanup-clerk-test-resources")
-unless closed_pr_cleanup.dig("permissions", "contents") == "read"
-  raise "closed-PR Clerk cleanup must use read-only repository permissions"
-end
-closed_pr_checkout = closed_pr_cleanup.fetch("steps").find do |step|
-  step.fetch("uses", "").start_with?("actions/checkout@")
-end
-raise "missing trusted checkout for closed-PR Clerk cleanup" unless closed_pr_checkout
-unless closed_pr_checkout.dig("with", "ref") == "${{ github.event.repository.default_branch }}" &&
-    closed_pr_checkout.dig("with", "persist-credentials") == false
-  raise "closed-PR Clerk cleanup must execute credential-free default-branch code"
-end
-closed_pr_step = closed_pr_cleanup.fetch("steps").find do |step|
-  step["name"] == "Delete Clerk test resources for closed PR"
-end
-raise "missing closed-PR Clerk cleanup command" unless closed_pr_step
-unless closed_pr_step.fetch("run").end_with?("clerk-test-resources.ts cleanup-job-ref") &&
-    closed_pr_step.dig("env", "JOB_REF") == "pr-${{ github.event.pull_request.number }}"
-  raise "closed-PR cleanup must use the tested strict JOB_REF selector"
-end
-
 stale_jobs = stale.fetch("jobs")
 if stale_jobs.key?("cleanup-clerk-test-resources")
   raise "general stale maintenance must not own frequent Clerk cleanup"
@@ -442,7 +420,7 @@ unless stale_steps.length == 1
   raise "stale Clerk cleanup must use one inventory pass"
 end
 stale_step = stale_steps.fetch(0)
-expected_roles = "browser,playwright,paid-onboarding,runner,runner-real-codex,runner-real-claude,runner-mock-claude"
+expected_roles = "browser,playwright,paid-onboarding,runner,runner-real-codex,runner-real-claude,runner-mock-claude,runner-real-codex-built-in"
 unless stale_step.fetch("run").include?(
     "cleanup-stale #{expected_roles} --ci-older-than-hours 2 --staging-browser-older-than-hours 8",
   ) && stale_step.dig("env", "CLERK_SECRET_KEY") == "${{ secrets.CLERK_SECRET_KEY }}" &&

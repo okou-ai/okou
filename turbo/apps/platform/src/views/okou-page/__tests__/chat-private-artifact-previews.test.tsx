@@ -7,6 +7,7 @@ import { HttpResponse } from "msw";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { expect, test } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import { mockNow } from "../../../lib/time.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   ATTACHMENT_RUN_ID,
@@ -20,6 +21,7 @@ import {
 } from "./chat-attachment-test-helpers.ts";
 
 const context = testContext();
+const NOW = Date.parse("2026-09-09T00:00:00.000Z");
 const FILE_ID = "f0000000-0000-4000-a000-000000000941";
 const R2_ORIGIN = `https://${"a".repeat(32)}.r2.cloudflarestorage.com`;
 const FIRST_URL = `${R2_ORIGIN}/private/photo%20%2B.png?X-Amz-Credential=key%2F20260911%2Fauto%2Fs3%2Faws4_request&X-Amz-Security-Token=token%2B%2F%3D&X-Amz-Signature=first&response-cache-control=private%2C%20no-store`;
@@ -28,8 +30,11 @@ const THUMBNAIL_PREFIX =
   "https://cdn.vm7.io/cdn-cgi/image/width=800,height=720,fit=scale-down,format=auto,quality=85,metadata=none/";
 const THUMBNAIL_URL = `${THUMBNAIL_PREFIX}${FIRST_URL}`;
 
-function mockPrivateImage(content?: string) {
-  const canonical = artifactReferencePath(FILE_ID, "photo.png");
+function mockPrivateImage(
+  content?: string,
+  canonical = artifactReferencePath(FILE_ID, "photo.png"),
+) {
+  mockNow(NOW, context.signal);
   mockAttachmentChat(context, {
     artifacts: [
       artifactFile("photo.png", {
@@ -80,29 +85,37 @@ async function closePreview() {
   });
 }
 
-test("production thread thumbnails use a.okou.io and open the same original", async () => {
-  mockPrivateImage();
-  await setupPage({
-    context,
-    path: `/chats/${ATTACHMENT_THREAD_ID}`,
-    host: "app.okou.ai",
-  });
-  const image = await screen.findByAltText("photo.png");
-  await waitFor(() => {
-    expect(image).toHaveAttribute(
-      "src",
-      THUMBNAIL_URL.replace("https://cdn.vm7.io/", "https://a.okou.io/"),
-    );
-  });
-  fireEvent.load(image);
-  click(image);
-  await waitFor(() => {
-    expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
-      "src",
-      FIRST_URL,
-    );
-  });
-});
+test.each([
+  artifactReferencePath(FILE_ID, "photo.png"),
+  `https://app.okou.ai${artifactReferencePath(FILE_ID, "photo.png")}`,
+  "https://app.okou.ai/artifacts/abcxyz1234.png#detail",
+])(
+  "production thread resolves %s to a thumbnail and opens the original",
+  async (url) => {
+    const fragment = new URL(url, "https://app.okou.ai").hash;
+    mockPrivateImage(undefined, url);
+    await setupPage({
+      context,
+      path: `/chats/${ATTACHMENT_THREAD_ID}`,
+      host: "app.okou.ai",
+    });
+    const image = await screen.findByAltText("photo.png");
+    await waitFor(() => {
+      expect(image).toHaveAttribute(
+        "src",
+        `${THUMBNAIL_URL.replace("https://cdn.vm7.io/", "https://a.okou.io/")}${fragment}`,
+      );
+    });
+    fireEvent.load(image);
+    click(image);
+    await waitFor(() => {
+      expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
+        "src",
+        `${FIRST_URL}${fragment}`,
+      );
+    });
+  },
+);
 
 test("opening and reopening an image uses the same presign as its thread thumbnail", async () => {
   mockPrivateImage();
@@ -183,6 +196,7 @@ test("downloads obtain a fresh credential without replacing the open image", asy
 test.each([null, "https://a.okou.io/0123456789.png"])(
   "uploaded images reuse their thread presign with publicUrl=%s",
   async (publicUrl) => {
+    mockNow(NOW, context.signal);
     const url = privateAttachmentUrl(FILE_ID);
     mockAttachmentChat(context, {
       artifacts: [
@@ -263,6 +277,7 @@ test("promoting a thread image to split view keeps the same original credential"
 test.each(["assistant", "user"] as const)(
   "navigating %s images reuses the original already resolved by each thread card",
   async (role) => {
+    mockNow(NOW, context.signal);
     const secondId = "f0000000-0000-4000-a000-000000000942";
     const files = [
       { id: FILE_ID, filename: "photo.png", original: FIRST_URL },

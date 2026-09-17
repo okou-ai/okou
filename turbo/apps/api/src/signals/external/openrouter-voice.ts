@@ -1,7 +1,8 @@
 import { optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { OpenRouterRequestError } from "./openrouter";
-import { readBoundedResponseText, safeJsonParse } from "../utils";
+import { readBoundedResponseText, safeJsonParse, safeSync } from "../utils";
+import { VoiceResponseError } from "./voice-response-error";
 import {
   isRetryableVoiceProviderStatus,
   requestVoiceProvider,
@@ -19,7 +20,6 @@ const OPENROUTER_VOICE_RESPONSE_MAX_BYTES = 1024 * 1024;
 
 interface OpenRouterVoiceChoice {
   readonly finish_reason?: unknown;
-  readonly native_finish_reason?: unknown;
   readonly error?: unknown;
   readonly message?: { readonly content?: unknown };
 }
@@ -96,40 +96,37 @@ function completionError(
     status,
     errorType,
   });
-  return new Error("OpenRouter voice completion failed");
+  return new VoiceResponseError("completion", "provider");
 }
 
 function parseCompletionText(
   value: unknown,
   context: { readonly model: string; readonly responseSchema: string },
 ): string {
+  if (typeof value !== "object" || value === null) {
+    throw new VoiceResponseError("invalid_response");
+  }
   const data = value as OpenRouterVoiceResponse;
   const choice = data.choices?.[0];
   if (data.error !== undefined) {
     throw completionError(data.error, context);
   }
   if (!choice) {
-    throw new Error("OpenRouter voice response contained no choices");
+    throw new VoiceResponseError("missing_choices");
   }
   if (choice.finish_reason === "error") {
     throw completionError(choice.error, context);
   }
   if (choice.finish_reason !== "stop") {
-    const nativeReason =
-      typeof choice.native_finish_reason === "string"
-        ? ` (native: ${choice.native_finish_reason})`
-        : "";
-    const finishReason =
-      typeof choice.finish_reason === "string"
-        ? choice.finish_reason
-        : "unknown";
-    throw new Error(
-      `OpenRouter voice completion finished with ${finishReason}${nativeReason}`,
+    throw new VoiceResponseError(
+      choice.finish_reason === "length" ? "output_truncated" : "non_stop",
     );
   }
   const content = choice.message?.content;
   if (typeof content !== "string" || !content.trim()) {
-    throw new Error("OpenRouter voice response contained invalid content");
+    throw new VoiceResponseError(
+      typeof content === "string" ? "empty_output" : "invalid_output",
+    );
   }
   return content.trim();
 }
@@ -203,14 +200,24 @@ export async function generateOpenRouterVoice<T>(
         throw error;
       }
       if (parsedBody === undefined) {
-        throw new Error("OpenRouter voice response was not valid JSON");
+        throw new VoiceResponseError(
+          responseBody.kind === "text"
+            ? "invalid_response"
+            : "response_too_large",
+        );
       }
 
       const content = parseCompletionText(parsedBody, {
         model: args.model,
         responseSchema: args.jsonSchema.name,
       });
-      return parseResponse(content);
+      const parsed = safeSync(() => {
+        return parseResponse(content);
+      });
+      if (!("ok" in parsed)) {
+        throw new VoiceResponseError("invalid_output");
+      }
+      return parsed.ok;
     },
     {
       provider: "openrouter",

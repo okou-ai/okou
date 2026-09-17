@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.23.1](https://github.com/vm0-ai/okou/compare/sandbox-v0.23.0...sandbox-v0.23.1) (2026-09-17)
+
+
+### Performance Improvements
+
+* **runner:** preserve active guest memory capacity ([#34832](https://github.com/vm0-ai/okou/issues/34832)) ([4ad43f1](https://github.com/vm0-ai/okou/commit/4ad43f174745f327493b26104d44296aec1b7d49))
+
+## [0.23.0](https://github.com/vm0-ai/okou/compare/sandbox-v0.22.9...sandbox-v0.23.0) (2026-09-17)
+
+
+### Features
+
+* **runner:** expose history transfer measurements ([#34805](https://github.com/vm0-ai/okou/issues/34805)) ([445a170](https://github.com/vm0-ai/okou/commit/445a170a81a2fac9b1d42f361866c2ea70cfb7e7))
+
+## [0.22.9](https://github.com/vm0-ai/okou/compare/sandbox-v0.22.8...sandbox-v0.22.9) (2026-09-16)
+
+
+### Performance Improvements
+
+* **runner:** stream compressed session history with caller-owned policy ([#34603](https://github.com/vm0-ai/okou/issues/34603)) ([1376434](https://github.com/vm0-ai/okou/commit/1376434b697f5e39be6d569c6b20a4e33ed12342))
+
+## [0.22.8](https://github.com/vm0-ai/vm0/compare/sandbox-v0.22.7...sandbox-v0.22.8) (2026-09-15)
+
+
+### Performance Improvements
+
+* **runner:** persist extracted storage files for cache-hit delivery ([#33976](https://github.com/vm0-ai/vm0/issues/33976)) ([b961911](https://github.com/vm0-ai/vm0/commit/b961911d0516fbdc06d3e8387bedb0653eee5ea9))
+
 ## [0.22.7](https://github.com/vm0-ai/vm0/compare/sandbox-v0.22.6...sandbox-v0.22.7) (2026-09-14)
 
 

@@ -1,3 +1,4 @@
+import { recordGetStartedWorkflow } from "./get-started-workflow.service";
 import {
   modelSettingsSchema,
   type ModelSettings,
@@ -131,7 +132,7 @@ import {
 import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import { registerCanonicalWebInputAssets } from "./canonical-asset.service";
-import { resolveArtifactObject$ } from "./artifact-storage.service";
+import { uploadedArtifactObject } from "./uploaded-artifact.service";
 import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import {
   resolveBuiltInModelRuntimeRoute,
@@ -157,7 +158,10 @@ import {
   type FeatureSwitchContext,
 } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isCodexFastModeEnabled } from "@okouai/core/model-feature-switch";
+import {
+  isChatEffortEnabled,
+  isCodexFastModeEnabled,
+} from "@okouai/core/model-feature-switch";
 import { buildGenerationTemplatePrompt } from "../../lib/generation-template-prompt";
 import { buildVideoRunOptionsPrompt } from "@okouai/core/video-run-options-prompt";
 import {
@@ -271,6 +275,7 @@ interface NormalSendArgs {
   readonly timing?: ApiDispatchTimingCollector;
   readonly agentRunPreCreateSource?: AgentRunPreCreateSource;
   readonly requiredOfficialWorkflowIds?: readonly string[];
+  readonly getStartedWorkflowId?: string;
 }
 
 interface PreparedNormalSend {
@@ -845,9 +850,10 @@ function unwrapSettledResult<T>(result: PromiseSettledResult<T>): T {
 
 const resolveIncomingAttachFileMetadata$ = command(
   async (
-    { set },
+    { get },
     args: {
       readonly userId: string;
+      readonly orgId: string;
       readonly userMessage: UserMessageDocument;
       readonly timing?: ApiDispatchTimingCollector;
     },
@@ -874,14 +880,13 @@ const resolveIncomingAttachFileMetadata$ = command(
           );
           const results = await Promise.allSettled(
             wave.map(async (file) => {
-              const object = await set(
-                resolveArtifactObject$,
-                {
+              const object = await get(
+                uploadedArtifactObject({
                   userId: args.userId,
+                  orgId: args.orgId,
                   id: file.fileId,
                   filenameHint: file.filenameSnapshot,
-                },
-                signal,
+                }),
               );
               return { file, object };
             }),
@@ -1120,10 +1125,7 @@ async function resolveNormalSendFeatureSwitches(
   const context = await loadUserFeatureSwitchContext(db, orgId, userId);
   return {
     codexFastModeEnabled: isCodexFastModeEnabled(context),
-    reasoningEffortEnabled: isFeatureEnabled(
-      FeatureSwitchKey.ChatReasoningEffort,
-      context,
-    ),
+    reasoningEffortEnabled: isChatEffortEnabled(context),
     introVideoEnabled: loadIntroVideoTemplateAccess(templates, context),
     featureSwitchContext: context,
   };
@@ -1869,6 +1871,7 @@ interface AppendUnassociatedUserMessageParams {
   readonly agentRunSource: ChatAgentRunSourceAnnotation | null;
   readonly publicBrand: PublicBrand;
   readonly requiredOfficialWorkflowIds?: readonly string[];
+  readonly getStartedWorkflowId?: string;
 }
 
 async function resolveExistingUnassociatedClientEventId(
@@ -1945,7 +1948,6 @@ async function appendUnassociatedUserMessageTransaction(
   );
 
   const explicitId = params.clientEventId ?? undefined;
-  const fileMetadata = params.attachFileMetadata;
   if (params.requiredOfficialWorkflowIds?.length === 0) {
     throw new Error("Official Workflow source claim cannot be empty");
   }
@@ -2002,6 +2004,15 @@ async function appendUnassociatedUserMessageTransaction(
     },
   );
   if (inserted) {
+    if (params.getStartedWorkflowId) {
+      await recordGetStartedWorkflow(tx, {
+        orgId: params.orgId,
+        userId: params.userId,
+        workflowId: params.getStartedWorkflowId,
+        sourceEventId: inserted.id,
+      });
+    }
+
     await measureApiDispatchTiming(
       params.timing,
       "api_dispatch_pre_create_agent_web_chat_queue_first_enqueue_register_input_assets",
@@ -2011,7 +2022,7 @@ async function appendUnassociatedUserMessageTransaction(
           chatThreadId: params.threadId,
           userId: params.userId,
           orgId: params.orgId,
-          files: fileMetadata ?? [],
+          files: params.attachFileMetadata ?? [],
         });
       },
     );
@@ -2958,6 +2969,7 @@ const prepareNormalSend$ = command(
 
     const attachFileMetadataArgs = {
       userId: args.userId,
+      orgId: args.orgId,
       userMessage: runtimeBody.userMessage,
       timing: args.timing,
     };
@@ -3035,6 +3047,7 @@ async function queueUnassociatedNormalEvent(params: {
   readonly orgId: string;
   readonly publicBrand: PublicBrand;
   readonly requiredOfficialWorkflowIds?: readonly string[];
+  readonly getStartedWorkflowId?: string;
 }): Promise<{
   readonly response:
     | CreatedChatEventResponse
@@ -3058,6 +3071,7 @@ async function queueUnassociatedNormalEvent(params: {
     triggerSource: params.prepared.triggerSource,
     agentRunSource: params.prepared.agentRunSource,
     publicBrand: params.publicBrand,
+    getStartedWorkflowId: params.getStartedWorkflowId,
     ...(params.requiredOfficialWorkflowIds === undefined
       ? {}
       : {
@@ -3991,6 +4005,7 @@ const sendQueueFirstNormalEvent$ = command(
           ),
           orgId: args.orgId,
           publicBrand: args.publicBrand,
+          getStartedWorkflowId: args.getStartedWorkflowId,
           ...(args.requiredOfficialWorkflowIds === undefined
             ? {}
             : {

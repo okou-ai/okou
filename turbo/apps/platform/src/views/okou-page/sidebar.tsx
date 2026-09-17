@@ -227,7 +227,17 @@ function ExpandedSidebar() {
         return $.appShell.sidebar.ariaLabel;
       })}
       className={cn(
-        "okou-mobile-sidebar okou-mobile-fixed-safe-area h-full w-[300px] shrink-0 flex-col border-r border-nav-border bg-sidebar transition-all duration-300 max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-40 max-md:h-auto max-md:shadow-xl",
+        // The `before` layer exists for one case: in a standalone PWA it extends
+        // the sidebar fill past the bottom of the viewport, into the home
+        // indicator, while the drawer's own content keeps its safe-area padding.
+        // `isolate` keeps that `-z-1` layer inside this element rather than
+        // letting it fall behind the page. The drawer's own scrim spells the
+        // same standalone extension inline in `sidebar-layout.tsx`.
+        "isolate before:pointer-events-none before:absolute before:inset-0 before:-z-1 before:bg-sidebar before:content-[''] before:[@media(display-mode:standalone)]:bottom-[calc(-1*var(--sab))]",
+        // A fixed mobile drawer escapes the page shell, so its content owns an
+        // immutable safe-area boundary.
+        "max-md:box-border max-md:p-safe",
+        "h-full w-[300px] shrink-0 flex-col border-r border-nav-border bg-sidebar transition-all duration-300 max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-40 max-md:h-auto max-md:shadow-xl",
         "hidden data-[sidebar-expanded]:max-md:flex md:hidden",
       )}
     >
@@ -247,11 +257,7 @@ function ExpandedHeader() {
     return $.appShell.sidebar.collapse;
   });
   return (
-    <div className="okou-sidebar-header shrink-0 px-2 pt-1.5 pb-0">
-      <div
-        className="okou-desktop-titlebar-drag-region hidden"
-        aria-hidden="true"
-      />
+    <div className="shrink-0 px-2 pt-1.5 pb-0">
       <div className="flex items-center justify-between gap-2 rounded-lg py-0.5 [-webkit-app-region:no-drag]">
         <div className="min-w-0 flex-1">
           <OrgSwitcher />
@@ -315,7 +321,7 @@ function ExpandedManageSection() {
           {t(($) => {
             return $.appShell.sidebar.manage;
           })}
-          <span className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+          <span className="shrink-0 opacity-0 group-hover:opacity-100">
             <ChevronRight
               className={`opacity-35 ${manageCollapsed ? "" : "rotate-90"}`}
               size={12}
@@ -465,7 +471,7 @@ function ExpandedFooter() {
    what puts the workspace logo and the account mark the same distance from
    the corner they sit in as from the edge beside them. */
 const RAIL_FRAME =
-  "okou-nav-rail hidden md:flex h-full w-[72px] shrink-0 flex-col items-center border-r border-nav-border bg-nav-rail px-1.5 py-[18px]";
+  "hidden md:flex h-full w-[72px] shrink-0 flex-col items-center border-r border-nav-border bg-nav-rail px-1.5 py-[18px]";
 
 function LabeledRailLink({
   id,
@@ -642,10 +648,6 @@ function LabeledNavRail() {
   };
   return (
     <aside data-testid="labeled-nav-rail" className={RAIL_FRAME}>
-      <div
-        className="okou-desktop-titlebar-drag-region hidden"
-        aria-hidden="true"
-      />
       <div className="mb-3 shrink-0">
         <OrgSwitcherCompact />
       </div>

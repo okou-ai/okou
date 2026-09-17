@@ -195,7 +195,7 @@ function PresentationTemplateCard({
       </div>
       <IconTooltipButton
         type="button"
-        className="absolute right-1.5 top-1.5 z-20 inline-flex h-[26px] w-[26px] items-center justify-center rounded-md border border-border bg-background opacity-0 shadow-sm transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+        className="absolute right-1.5 top-1.5 z-20 inline-flex h-[26px] w-[26px] items-center justify-center rounded-md border border-border bg-background opacity-0 shadow-sm group-hover:opacity-100 group-focus-within:opacity-100"
         aria-label={t(
           ($) => {
             return $.onboarding.templatePicker.presentation.viewTemplate;

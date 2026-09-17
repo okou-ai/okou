@@ -67,10 +67,12 @@ async function callTelegramApi<T>(
   token: string,
   method: string,
   params?: Record<string, string>,
+  signal?: AbortSignal,
 ): Promise<T> {
   const url = buildTelegramApiUrl(token, method);
   const response = await fetch(
     `${url}${params ? `?${new URLSearchParams(params).toString()}` : ""}`,
+    { signal },
   );
 
   const data: unknown = await response.json();
@@ -79,7 +81,7 @@ async function callTelegramApi<T>(
 
   if (!response.ok || errorPayload) {
     throw new TelegramApiError(
-      response.status,
+      errorPayload?.error_code ?? response.status,
       response.statusText,
       errorPayload?.description,
     );
@@ -112,11 +114,12 @@ interface TelegramFile {
 export async function getFile(
   token: string,
   fileId: string,
+  signal?: AbortSignal,
 ): Promise<TelegramFile> {
   const result = await callTelegramApi<{
     readonly ok: true;
     readonly result: TelegramFile;
-  }>(token, "getFile", { file_id: fileId });
+  }>(token, "getFile", { file_id: fileId }, signal);
   return result.result;
 }
 

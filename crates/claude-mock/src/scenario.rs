@@ -24,6 +24,8 @@ const EXIT_AFTER_RESULT_MARKER: &str = "@exit-after-result";
 const WRITE_ENV_JSON_MARKER: &str = "@write-env-json:";
 const APPEND_PROMPT_TRANSPORT_MARKER: &str = "@append-prompt-transport:";
 const PARALLEL_SHELL_TOOL_OOM_MARKER: &str = "@parallel-shell-tool-oom";
+const GUEST_WIDE_TOOL_OOM_MARKER: &str = "@guest-wide-tool-oom";
+const RUNTIME_ONLY_OOM_MARKER: &str = "@runtime-only-oom";
 const HANG_AFTER_RESULT_MARKER: &str = "@hang-after-result";
 
 #[derive(Debug, Eq, PartialEq)]
@@ -51,6 +53,8 @@ pub(crate) enum MockScenario<'a> {
     WriteEnvJson(&'a str),
     AppendPromptTransport(&'a str),
     ParallelShellToolOom,
+    GuestWideToolOom,
+    RuntimeOnlyOom,
     Shell,
 }
 
@@ -85,6 +89,8 @@ enum ScenarioKind {
     WriteEnvJson,
     AppendPromptTransport,
     ParallelShellToolOom,
+    GuestWideToolOom,
+    RuntimeOnlyOom,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -230,6 +236,16 @@ const SCENARIO_RULES: &[ScenarioRule] = &[
         scenario_kind: ScenarioKind::ParallelShellToolOom,
     },
     ScenarioRule {
+        marker: GUEST_WIDE_TOOL_OOM_MARKER,
+        match_kind: ScenarioMatchKind::Exact,
+        scenario_kind: ScenarioKind::GuestWideToolOom,
+    },
+    ScenarioRule {
+        marker: RUNTIME_ONLY_OOM_MARKER,
+        match_kind: ScenarioMatchKind::Exact,
+        scenario_kind: ScenarioKind::RuntimeOnlyOom,
+    },
+    ScenarioRule {
         marker: HANG_AFTER_RESULT_MARKER,
         match_kind: ScenarioMatchKind::Prefix,
         scenario_kind: ScenarioKind::HangAfterResult { deaf: false },
@@ -302,6 +318,8 @@ impl ScenarioKind {
             (Self::ParallelShellToolOom, ScenarioMatch::Marker) => {
                 MockScenario::ParallelShellToolOom
             }
+            (Self::GuestWideToolOom, ScenarioMatch::Marker) => MockScenario::GuestWideToolOom,
+            (Self::RuntimeOnlyOom, ScenarioMatch::Marker) => MockScenario::RuntimeOnlyOom,
             _ => return None,
         };
 
@@ -491,6 +509,8 @@ mod tests {
                 "@parallel-shell-tool-oom",
                 MockScenario::ParallelShellToolOom,
             ),
+            ("@guest-wide-tool-oom", MockScenario::GuestWideToolOom),
+            ("@runtime-only-oom", MockScenario::RuntimeOnlyOom),
             (
                 "@hang-after-result",
                 MockScenario::HangAfterResult { deaf: false },

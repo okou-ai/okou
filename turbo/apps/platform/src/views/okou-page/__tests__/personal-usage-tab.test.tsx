@@ -827,7 +827,9 @@ test("Identify the model used by limited-free runs", async () => {
           {
             kind: "model",
             credits: 100,
-            providers: [{ provider: "gpt-5.6-luna", credits: 100 }],
+            providers: [
+              { provider: "gpt-5.6-luna", credits: 100, usageKinds: [] },
+            ],
           },
         ],
       },
@@ -859,7 +861,9 @@ test("Label HeyGen Avatar III usage by the product feature", async () => {
         {
           kind: "video",
           credits: 100,
-          providers: [{ provider: "heygen-avatar-iii", credits: 100 }],
+          providers: [
+            { provider: "heygen-avatar-iii", credits: 100, usageKinds: [] },
+          ],
         },
       ],
     },

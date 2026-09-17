@@ -201,6 +201,7 @@ import {
   officialWorkflowConfigurationForm$,
   reconfigureOfficialWorkflow$,
   setOfficialWorkflowConfigurationForm$,
+  type OfficialWorkflowConfigurationForm,
   uninstallOfficialWorkflow$,
 } from "../../signals/workflows-page/official-workflows-signals.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
@@ -254,7 +255,7 @@ import {
   automationKindLabel,
   workflowTitle,
 } from "./workflow-shared.tsx";
-import { WorkflowHoverContent } from "./workflows-page.tsx";
+import { WorkflowTooltip } from "./workflows-page.tsx";
 import { AutomationListIcon } from "../okou-page/workflow-automations-page.tsx";
 import { emptyAutomationsImg } from "../okou-page/platform-assets.ts";
 import { WorkflowWebhookUpgradeDialog } from "./workflow-webhook-upgrade-dialog.tsx";
@@ -1125,28 +1126,14 @@ function DetailHeader({
             <div className="flex min-w-0 items-center gap-3">
               <WorkflowHeaderIcon automation={detail.automations[0]} />
               <div className="flex min-w-0 flex-col justify-center">
-                <TooltipProvider delayDuration={200}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <h1 className="w-fit max-w-full cursor-help truncate text-lg font-semibold tracking-tight text-foreground underline decoration-foreground/40 decoration-dotted decoration-[1px] underline-offset-2 sm:text-xl">
-                        {workflowTitle(detail)}
-                      </h1>
-                    </TooltipTrigger>
-                    <TooltipContent
-                      side="bottom"
-                      align="start"
-                      className="rounded-lg border border-[hsl(var(--gray-400))] p-3"
-                      style={{
-                        backgroundColor: "hsl(var(--card))",
-                        color: "hsl(var(--card-foreground))",
-                        boxShadow:
-                          "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)",
-                      }}
-                    >
-                      <WorkflowHoverContent workflow={detail} />
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
+                <WorkflowTooltip workflow={detail}>
+                  <h1
+                    tabIndex={0}
+                    className="w-fit max-w-full cursor-help truncate text-lg font-semibold tracking-tight text-foreground underline decoration-foreground/40 decoration-dotted decoration-[1px] underline-offset-2 sm:text-xl"
+                  >
+                    {workflowTitle(detail)}
+                  </h1>
+                </WorkflowTooltip>
                 <p className="mt-1.5 max-w-full truncate text-sm text-muted-foreground">
                   /{detail.name}
                 </p>
@@ -1505,6 +1492,7 @@ function OfficialWorkflowInstallationSettings({
 }: {
   readonly detail: WorkflowDetailResponse;
 }) {
+  const form = useGet(officialWorkflowConfigurationForm$);
   const installationLoadable = useLoadable(
     currentOfficialWorkflowInstallation$,
   );
@@ -1524,10 +1512,16 @@ function OfficialWorkflowInstallationSettings({
         />
       ) : null}
       <OfficialWorkflowUninstallCard />
-      {definition && canReconfigure ? (
+      {definition &&
+      canReconfigure &&
+      form?.target.operation === "reconfigure" &&
+      form.target.workflowId === detail.id &&
+      form.definitionName === definition.name ? (
         <OfficialWorkflowReconfigureDialog
+          key={detail.id}
           detail={detail}
           definition={definition}
+          form={form}
         />
       ) : null}
     </>
@@ -1632,34 +1626,27 @@ function OfficialWorkflowUninstallCard() {
 function OfficialWorkflowReconfigureDialog({
   detail,
   definition,
+  form,
 }: {
   readonly detail: WorkflowDetailResponse;
   readonly definition: OfficialWorkflowInstallationDefinition;
+  readonly form: OfficialWorkflowConfigurationForm;
 }) {
-  const form = useGet(officialWorkflowConfigurationForm$);
   const setForm = useSet(setOfficialWorkflowConfigurationForm$);
   const pageSignal = useGet(pageSignal$);
   const [reconfigureLoadable, reconfigure] = useLoadableSet(
     reconfigureOfficialWorkflow$,
   );
   const reconfiguring = reconfigureLoadable.state === "loading";
-  const activeForm =
-    form?.target.operation === "reconfigure" &&
-    form.target.workflowId === detail.id &&
-    form.definitionName === definition.name
-      ? form
-      : null;
-  const complete = activeForm
-    ? officialWorkflowConfigurationComplete(activeForm, definition.blueprints)
-    : false;
+  const complete = officialWorkflowConfigurationComplete(
+    form,
+    definition.blueprints,
+  );
   const submit = () => {
-    if (!activeForm) {
-      return;
-    }
     detach(
       (async () => {
         await reconfigure(
-          { workflowId: detail.id, blueprints: activeForm.blueprints },
+          { workflowId: detail.id, blueprints: form.blueprints },
           pageSignal,
         );
         setForm(null);
@@ -1675,7 +1662,7 @@ function OfficialWorkflowReconfigureDialog({
   };
   return (
     <Dialog
-      open={activeForm !== null}
+      open
       onOpenChange={(open) => {
         if (!open) {
           setForm(null);
@@ -1695,17 +1682,15 @@ function OfficialWorkflowReconfigureDialog({
             })}
           </DialogDescription>
         </DialogHeader>
-        {activeForm ? (
-          <OfficialWorkflowConfigurationFields
-            form={activeForm}
-            blueprints={definition.blueprints}
-            agents={[]}
-            agentsLoaded
-            showAgent={false}
-            disabled={reconfiguring}
-          />
-        ) : null}
-        {activeForm?.submitted && reconfigureLoadable.state === "hasError" ? (
+        <OfficialWorkflowConfigurationFields
+          form={form}
+          blueprints={definition.blueprints}
+          agents={[]}
+          agentsLoaded
+          showAgent={false}
+          disabled={reconfiguring}
+        />
+        {reconfigureLoadable.state === "hasError" ? (
           <Alert variant="destructive">
             <AlertTitle>
               {i18n.t(($) => {
@@ -1721,7 +1706,7 @@ function OfficialWorkflowReconfigureDialog({
         ) : null}
         <WorkflowDialogFooter
           busy={reconfiguring}
-          disabled={!activeForm || !complete || reconfiguring}
+          disabled={!complete || reconfiguring}
           cancelLabel={i18n.t(($) => {
             return $.workflows.common.cancel;
           })}
@@ -9027,7 +9012,7 @@ function AutomationControls({
   return (
     <div className="flex min-w-0 items-center justify-end pr-1.5">
       <TooltipProvider delayDuration={200}>
-        <div className="flex items-center justify-end gap-1 opacity-100 transition-opacity pointer-events-auto [@media(hover:hover)]:pointer-events-none [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:pointer-events-auto [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-focus-within:pointer-events-auto [@media(hover:hover)]:group-focus-within:opacity-100">
+        <div className="flex items-center justify-end gap-1 opacity-100 pointer-events-auto [@media(hover:hover)]:pointer-events-none [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:pointer-events-auto [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-focus-within:pointer-events-auto [@media(hover:hover)]:group-focus-within:opacity-100">
           <Tooltip>
             <TooltipTrigger asChild>
               <Button

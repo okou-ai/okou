@@ -2,12 +2,24 @@ import { z } from "zod";
 
 const brandSchema = z.enum(["vm0", "okou"]);
 export const artifactDeliveryRecordSchema = z.discriminatedUnion("kind", [
+  // A separate discriminator makes older Workers reject this delivery instead
+  // of ignoring the shared conversation's additional authorization boundary.
+  z.object({
+    version: z.literal(1),
+    kind: z.literal("thread-resource"),
+    publicBrand: brandSchema,
+    threadId: z.uuid(),
+    publicToken: z.string().regex(/^(?:[a-z0-9]{10}|[a-f0-9]{24})$/u),
+    targetKind: z.enum(["file", "html"]),
+    // New registrations bind the alias to one resource before publication.
+    targetId: z.uuid().optional(),
+  }),
   z.object({
     version: z.literal(1),
     kind: z.literal("publication"),
     publicBrand: brandSchema,
     shareId: z.uuid(),
-    publicToken: z.string().regex(/^[a-f0-9]{24}$/u),
+    publicToken: z.string().regex(/^(?:[a-z0-9]{10}|[a-f0-9]{24})$/u),
     targetKind: z.enum(["file", "html"]),
   }),
   z.object({
@@ -48,9 +60,14 @@ export function artifactFilenameExtension(filename: string): string {
   return filename.toLowerCase().match(/\.[a-z0-9]{1,12}$/u)?.[0] ?? ".bin";
 }
 
-/** Public share aliases are separate from the historical public object keys. */
+/** Only the old 24-character shape unambiguously identifies a publication. */
 export function isArtifactPublicationFilePath(pathname: string): boolean {
   return /^\/[a-f0-9]{24}\.[a-z0-9]{1,12}$/u.test(pathname);
+}
+
+/** Ten-character names require the delivery registry to distinguish old files from shares. */
+export function isArtifactDeliveryFilePath(pathname: string): boolean {
+  return /^\/(?:[a-z0-9]{10}|[a-f0-9]{24})\.[a-z0-9]{1,12}$/u.test(pathname);
 }
 
 /** The marker certifies completed registration, not a feature rollout flag. */

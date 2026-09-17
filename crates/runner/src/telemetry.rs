@@ -24,7 +24,14 @@ pub(crate) use session_history::{
 };
 
 mod dns_readiness;
+mod history_transfer;
 mod session_history;
+mod workspace_session_history;
+
+pub(crate) use history_transfer::{
+    HistoryCodecReason, HistoryTransferMeasurements, HistoryTransferSource,
+};
+pub(crate) use workspace_session_history::WorkspaceSessionHistoryTelemetry;
 
 /// How long before we auto-flush pending ops (matching TS: 30s).
 const FLUSH_THRESHOLD: Duration = Duration::from_secs(30);
@@ -278,6 +285,10 @@ struct SandboxOp {
     #[serde(flatten)]
     session_history: Option<SessionHistoryTelemetryFields>,
     #[serde(flatten)]
+    workspace_session_history: Option<WorkspaceSessionHistoryTelemetry>,
+    #[serde(flatten)]
+    history_transfer: Option<history_transfer::HistoryTransferTelemetry>,
+    #[serde(flatten)]
     dns_readiness: Option<dns_readiness::DnsReadinessTelemetryFields>,
 }
 
@@ -459,6 +470,51 @@ impl JobTelemetry {
         }
     }
 
+    /// Record the existing local restore interval with validated payload
+    /// measurements. Only successful restores report completed guest bytes.
+    pub(crate) fn record_workspace_session_history_restore(
+        &mut self,
+        duration: Duration,
+        success: bool,
+        error: Option<&str>,
+        metadata: WorkspaceSessionHistoryTelemetry,
+    ) {
+        let mut op = sandbox_op(
+            "session_history_workspace_cache_guest_restore",
+            duration,
+            success,
+            error,
+            None,
+            None,
+        );
+        op.workspace_session_history = Some(metadata.with_restore_outcome(success));
+        self.push_operation(op);
+    }
+
+    pub(crate) fn record_history_transfer(
+        &mut self,
+        duration: Duration,
+        source: HistoryTransferSource,
+        framework: &'static str,
+        measurements: Option<HistoryTransferMeasurements>,
+    ) {
+        let success = measurements.is_some();
+        let mut op = sandbox_op(
+            "session_history_transfer",
+            duration,
+            success,
+            (!success).then_some("restore_error"),
+            None,
+            None,
+        );
+        op.history_transfer = Some(history_transfer::HistoryTransferTelemetry {
+            session_history_transfer_source: source,
+            session_history_framework: framework,
+            measurements,
+        });
+        self.push_operation(op);
+    }
+
     pub(crate) async fn upload_oom_evidence(
         &self,
         evidence: &guest_contracts::oom_evidence::OomEvidence,
@@ -466,7 +522,7 @@ impl JobTelemetry {
     ) {
         let payload = serde_json::json!({
             "runId": self.run_id.to_string(), "sandboxId": sandbox_id,
-            "oomEvidence": evidence,
+            "oomEvidence": evidence.telemetry_evidence(),
         });
         let send = async {
             let mut response = match self
@@ -605,6 +661,24 @@ impl JobTelemetry {
         self.pending_ops
             .iter()
             .map(|op| (op.action_type.clone(), op.success, op.error.clone()))
+            .collect()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn pending_workspace_history_restore_payloads(&self) -> Vec<serde_json::Value> {
+        self.pending_ops
+            .iter()
+            .filter(|op| op.workspace_session_history.is_some())
+            .map(|op| serde_json::to_value(op).expect("serialize workspace restore operation"))
+            .collect()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn pending_history_transfer_payloads(&self) -> Vec<serde_json::Value> {
+        self.pending_ops
+            .iter()
+            .filter(|op| op.history_transfer.is_some())
+            .map(|op| serde_json::to_value(op).expect("serialize history transfer operation"))
             .collect()
     }
 
@@ -832,6 +906,8 @@ fn sandbox_op_at(
         runner_resource_budget_memory_utilization_bucket: None,
         runner_resource_budget_lease_count_bucket: None,
         session_history: metadata.map(SessionHistoryTelemetryFields::from),
+        workspace_session_history: None,
+        history_transfer: None,
         dns_readiness: None,
     }
 }
@@ -968,6 +1044,8 @@ mod tests {
             runner_resource_budget_memory_utilization_bucket: None,
             runner_resource_budget_lease_count_bucket: None,
             session_history: None,
+            workspace_session_history: None,
+            history_transfer: None,
             dns_readiness: None,
         };
         let json = serde_json::to_value(&op).unwrap();
@@ -1093,6 +1171,64 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn history_transfer_measurements_reach_the_webhook_without_rounding_away_zero_fields() {
+        use httpmock::prelude::*;
+        use sandbox::{FileCompression, FileWriteMeasurements};
+
+        let server = MockServer::start_async().await;
+        let telemetry_mock = server
+            .mock_async(|when, then| {
+                when.method(POST)
+                    .path("/api/webhooks/agent/telemetry")
+                    .body_includes(r#""action_type":"session_history_transfer""#)
+                    .body_includes(r#""session_history_transfer_source":"workspace_cache""#)
+                    .body_includes(r#""session_history_framework":"codex""#)
+                    .body_includes(r#""session_history_wire_codec":"zstd""#)
+                    .body_includes(r#""session_history_codec_reason":"sample_accepted""#)
+                    .body_includes(r#""session_history_restore_representation":"raw""#)
+                    .body_includes(r#""session_history_transfer_bytes":17825792"#)
+                    .body_includes(r#""session_history_wire_bytes":2048"#)
+                    .body_includes(r#""session_history_write_requests":2"#)
+                    .body_includes(r#""session_history_selection_ms":1"#)
+                    .body_includes(r#""session_history_file_gate_wait_ms":0"#)
+                    .body_includes(r#""session_history_requests_ms":4"#)
+                    .body_includes(r#""session_history_encoder_pipeline_ms":3"#)
+                    .body_includes(r#""session_history_publication_ms":2"#);
+                then.status(200)
+                    .json_body(serde_json::json!({"success": true, "id": "ok"}));
+            })
+            .await;
+        let mut telemetry = JobTelemetry::new(
+            http_client_for_api_url(&server.base_url()),
+            RunId::nil(),
+            "tok".into(),
+            None,
+        );
+        telemetry.record_history_transfer(
+            Duration::from_millis(10),
+            HistoryTransferSource::WorkspaceCache,
+            "codex",
+            Some(HistoryTransferMeasurements::new(
+                FileCompression::Zstd,
+                HistoryCodecReason::SampleAccepted,
+                Duration::from_millis(1),
+                17 * 1024 * 1024,
+                false,
+                Some(FileWriteMeasurements {
+                    wire_payload_bytes: 2048,
+                    requests: 2,
+                    file_gate_wait: Duration::from_micros(999),
+                    requests_elapsed: Duration::from_millis(4),
+                    encoder_pipeline_elapsed: Duration::from_millis(3),
+                    publication_elapsed: Duration::from_millis(2),
+                }),
+            )),
+        );
+        telemetry.flush().await;
+        telemetry_mock.assert_calls_async(1).await;
+    }
+
     #[test]
     fn resource_budget_occupancy_uses_fixed_buckets() {
         for (allocated, effective, expected) in [
@@ -1194,6 +1330,8 @@ mod tests {
                 runner_resource_budget_memory_utilization_bucket: None,
                 runner_resource_budget_lease_count_bucket: None,
                 session_history: Some(metadata.into()),
+                workspace_session_history: None,
+                history_transfer: None,
                 dns_readiness: None,
             }],
         };

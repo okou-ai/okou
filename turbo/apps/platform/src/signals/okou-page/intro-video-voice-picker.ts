@@ -44,7 +44,10 @@ function createIntroVideoVoicePickerSignals() {
       };
     };
   });
-  const catalog = createPagedCatalogSignals(loadPage$);
+  // HeyGen lists some voices under two ids that play the same sample.
+  const catalog = createPagedCatalogSignals(loadPage$, (voice) => {
+    return voice.sampleUrl ?? voice.id;
+  });
   return {
     ...catalog,
     filters$: computed((get) => {

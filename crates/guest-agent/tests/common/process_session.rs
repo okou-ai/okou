@@ -3,6 +3,7 @@ use std::os::fd::OwnedFd;
 use std::time::Duration;
 
 use rustix::process::{Pid, PidfdFlags, Signal};
+use tokio::io::unix::AsyncFd;
 use tokio::process::{Child, Command};
 
 const SESSION_SCAN_INTERVAL: Duration = Duration::from_millis(10);
@@ -64,6 +65,14 @@ impl CommandSession {
             )
         })?;
         Ok(Self { session_id })
+    }
+
+    pub(super) async fn wait_for_exit(&self) -> io::Result<()> {
+        // The caller keeps Child owned and unpolled until session cleanup ends.
+        // Readiness observes exit without reaping the leader and releasing its SID.
+        let pidfd = rustix::process::pidfd_open(self.session_id, PidfdFlags::empty())?;
+        let pidfd = AsyncFd::new(pidfd)?;
+        pidfd.readable().await.map(drop)
     }
 
     pub(super) async fn kill_members(

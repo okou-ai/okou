@@ -1,5 +1,10 @@
 # 005: Backfill Clerk Metadata to Local DB
 
+> Historical migration: this script preserves its original schema/write
+> contract and Clerk field mappings. For current metadata repairs and the
+> explicit entitlement write required by #33747, follow
+> [Database trigger retirement](../../../../../../docs/database-trigger-retirement.md#repair-and-backfill-writes).
+
 ## Clerk Metadata Migration Overview
 
 Issue #5508 migrates org/membership/user metadata from Clerk to local DB tables.

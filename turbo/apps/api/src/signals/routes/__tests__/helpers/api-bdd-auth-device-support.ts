@@ -133,14 +133,41 @@ export function createAuthDeviceSupportApi(context: TestContext) {
       id: string,
       idempotencyKey: string,
       statuses: readonly (200 | 400 | 401 | 404 | 500)[],
+      runId?: string,
+    ) {
+      const client = authDeviceSupportApp(context)(
+        personalModelProviderAccountsByIdContract,
+      );
+      const headers = authenticate(context, actor);
+      return await accept(
+        runId
+          ? client.resetFailedRunSubscriptionUsage({
+              headers,
+              params: { id, runId },
+              body: { idempotencyKey },
+            })
+          : client.resetSubscriptionUsage({
+              headers,
+              params: { id },
+              body: { idempotencyKey },
+            }),
+        statuses,
+      );
+    },
+
+    async readPersonalModelProviderAccount(
+      actor: ApiTestUser,
+      id: string,
+      runId: string,
+      statuses: readonly (200 | 401 | 404 | 500)[],
     ) {
       return await accept(
         authDeviceSupportApp(context)(
           personalModelProviderAccountsByIdContract,
-        ).resetSubscriptionUsage({
+        ).getById({
           headers: authenticate(context, actor),
           params: { id },
-          body: { idempotencyKey },
+          query: { runId },
         }),
         statuses,
       );

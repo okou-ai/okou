@@ -255,8 +255,8 @@ function createPendingSessionPoller(
   refresh$: BankingSignals["refresh$"],
 ): BankingSignals["pendingSessionPollerRef$"] {
   const pollPendingSession$ = command(
-    async ({ get, set }, _element: HTMLElement, signal: AbortSignal) => {
-      await setLoop(
+    ({ get, set }, _element: HTMLElement, signal: AbortSignal) => {
+      setLoop(
         async () => {
           const status = await get(status$);
           signal.throwIfAborted();

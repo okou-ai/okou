@@ -83,6 +83,41 @@ describe("okou model command", () => {
     expect(logCalls).toContain("okou model-provider set --help");
   });
 
+  it("lists the effective subscription without organization API prices", async () => {
+    server.use(
+      http.get("http://localhost:3000/api/model-policies", () => {
+        return HttpResponse.json({
+          ...MODEL_POLICIES_RESPONSE,
+          policies: MODEL_POLICIES_RESPONSE.policies.map((policy) => {
+            return {
+              ...policy,
+              memberEffective: {
+                providerType: policy.model.startsWith("claude")
+                  ? "claude-code-oauth-token"
+                  : "codex-oauth-token",
+                runtimeProviderType: policy.model.startsWith("claude")
+                  ? "claude-code-oauth-token"
+                  : "codex-oauth-token",
+                credentialScope: "member",
+                availability: "available",
+                accountSelection: "capture_required",
+              },
+            };
+          }),
+        });
+      }),
+    );
+
+    await modelCommand.parseAsync(["node", "cli", "ls"]);
+
+    const output = mockConsoleLog.mock.calls.flat().join("\n");
+    expect(output).toContain("provider: subscription");
+    expect(output).toContain("codex-oauth-token");
+    expect(output).not.toContain("price tier:");
+    expect(output).not.toContain("provider: built-in");
+    expect(output).not.toContain("provider: api key");
+  });
+
   it("should show Web switching guidance", async () => {
     await switchCommand.parseAsync(["node", "cli"]);
 

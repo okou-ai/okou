@@ -12,7 +12,7 @@ import time
 import urllib.error
 import uuid
 from collections.abc import AsyncIterator, Callable, Coroutine
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager, nullcontext, suppress
 from dataclasses import dataclass, field
 from pathlib import Path
 from unittest.mock import patch
@@ -208,9 +208,23 @@ async def _run_test_server(
     ssl_context: ssl.SSLContext | None = None,
 ) -> AsyncIterator[int]:
     client_tasks: set[asyncio.Task[None]] = set()
+    client_writers: set[asyncio.StreamWriter] = set()
+    closing = False
+
+    async def run_client(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        try:
+            await handler(reader, writer)
+        finally:
+            # Do not suspend here: teardown cancellation must not replace a
+            # handler failure while its writer is closing.
+            writer.close()
 
     def client_connected(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-        client_tasks.add(asyncio.create_task(handler(reader, writer)))
+        if closing:
+            writer.transport.abort()
+            return
+        client_writers.add(writer)
+        client_tasks.add(asyncio.create_task(run_client(reader, writer)))
 
     server = await asyncio.start_server(
         client_connected,
@@ -225,18 +239,20 @@ async def _run_test_server(
     try:
         yield port
     finally:
+        closing = True
         server.close()
-        await server.wait_closed()
         for task in client_tasks:
             if not task.done():
                 task.cancel()
-        if client_tasks:
-            results = await asyncio.gather(*client_tasks, return_exceptions=True)
-            for result in results:
-                if isinstance(result, BaseException) and not isinstance(
-                    result, asyncio.CancelledError
-                ):
-                    raise result
+        # wait_closed also waits for accepted connections. Abort them before
+        # joining handlers, including tasks cancelled before their wrapper starts.
+        for writer in client_writers:
+            writer.transport.abort()
+        results = await asyncio.gather(*client_tasks, return_exceptions=True)
+        await server.wait_closed()
+        for result in results:
+            if isinstance(result, BaseException) and not isinstance(result, asyncio.CancelledError):
+                raise result
 
 
 async def _read_raw_http_request(reader: asyncio.StreamReader) -> _RawHttpRequest:
@@ -256,6 +272,132 @@ async def _close_test_writer(writer: asyncio.StreamWriter) -> None:
     writer.close()
     with suppress(OSError):
         await writer.wait_closed()
+
+
+class TestRunTestServer:
+    @pytest.mark.parametrize("exit_kind", ["normal", "error", "cancel"])
+    async def test_exit_cleans_up_active_handler(self, exit_kind: str):
+        handler_started = asyncio.Event()
+        finish_body = asyncio.Event()
+        port_ready = asyncio.get_running_loop().create_future()
+        handler_tasks: list[asyncio.Task[None]] = []
+        server_writers: list[asyncio.StreamWriter] = []
+        body_error = ValueError("controlled test body failure")
+        client_writer: asyncio.StreamWriter | None = None
+
+        async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+            task = asyncio.current_task()
+            assert task is not None
+            handler_tasks.append(task)
+            server_writers.append(writer)
+            handler_started.set()
+            await asyncio.Event().wait()
+
+        async def run_server() -> None:
+            async with _run_test_server(handle_client) as port:
+                port_ready.set_result(port)
+                await finish_body.wait()
+                if exit_kind == "error":
+                    raise body_error
+
+        server_task = asyncio.create_task(run_server())
+        try:
+            async with asyncio.timeout(2.0):
+                port = await port_ready
+                client_reader, client_writer = await asyncio.open_connection("127.0.0.1", port)
+                await handler_started.wait()
+                if exit_kind == "cancel":
+                    server_task.cancel()
+                    with pytest.raises(asyncio.CancelledError):
+                        await server_task
+                elif exit_kind == "error":
+                    finish_body.set()
+                    with pytest.raises(
+                        ValueError, match="controlled test body failure"
+                    ) as exc_info:
+                        await server_task
+                    assert exc_info.value is body_error
+                else:
+                    finish_body.set()
+                    await server_task
+
+                assert handler_tasks[0].done()
+                assert handler_tasks[0].cancelled()
+                assert server_writers[0].is_closing()
+                assert await client_reader.read() == b""
+        finally:
+            # Rescue resources even when the helper under test fails to tear down.
+            server_task.cancel()
+            for task in handler_tasks:
+                task.cancel()
+            for writer in server_writers:
+                writer.transport.abort()
+            await asyncio.gather(server_task, *handler_tasks, return_exceptions=True)
+            if client_writer is not None:
+                await _close_test_writer(client_writer)
+
+    @pytest.mark.parametrize(
+        ("handler_fails", "wait_for_completion"),
+        [
+            pytest.param(False, True, id="success"),
+            pytest.param(True, True, id="exception"),
+            pytest.param(True, False, id="exception-during-exit"),
+        ],
+    )
+    async def test_completed_handler_closes_writer_and_preserves_error(
+        self, handler_fails: bool, wait_for_completion: bool
+    ):
+        handler_done = asyncio.Event()
+        handler_returning = asyncio.Event()
+        handler_tasks: list[asyncio.Task[None]] = []
+        server_writers: list[asyncio.StreamWriter] = []
+        handler_error = AssertionError("controlled handler failure")
+        client_writer: asyncio.StreamWriter | None = None
+
+        async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+            task = asyncio.current_task()
+            assert task is not None
+            handler_tasks.append(task)
+            server_writers.append(writer)
+            task.add_done_callback(lambda _: handler_done.set())
+            handler_returning.set()
+            if handler_fails:
+                raise handler_error
+
+        async def run_scenario() -> None:
+            nonlocal client_writer
+            with (
+                pytest.raises(AssertionError, match="controlled handler failure")
+                if handler_fails
+                else nullcontext()
+            ) as exc_info:
+                async with _run_test_server(handle_client) as port:
+                    client_reader, client_writer = await asyncio.open_connection("127.0.0.1", port)
+                    await (handler_done if wait_for_completion else handler_returning).wait()
+                    if not handler_fails:
+                        assert await client_reader.read() == b""
+            if handler_fails:
+                assert exc_info is not None
+                assert exc_info.value is handler_error
+            assert handler_tasks[0].done()
+            assert not handler_tasks[0].cancelled()
+            assert server_writers[0].is_closing()
+            assert await client_reader.read() == b""
+
+        scenario_task = asyncio.create_task(run_scenario())
+        try:
+            done, _ = await asyncio.wait({scenario_task}, timeout=2.0)
+            assert done, "test server did not close the completed handler's connection"
+            await scenario_task
+        finally:
+            for writer in server_writers:
+                writer.transport.abort()
+            for task in handler_tasks:
+                task.cancel()
+            scenario_task.cancel()
+            await asyncio.gather(scenario_task, *handler_tasks, return_exceptions=True)
+            if client_writer is not None:
+                await _close_test_writer(client_writer)
 
 
 def _success_response_bytes(

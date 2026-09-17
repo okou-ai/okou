@@ -565,7 +565,7 @@ export function ConnectorCatalogDiagnosticsBlock() {
   return (
     <section
       aria-labelledby="connector-catalog-diagnostics-title"
-      className="overflow-hidden rounded-xl bg-card okou-border"
+      className="overflow-hidden rounded-xl bg-card border border-surface-border"
     >
       {diagnostics ? (
         <details className="group">

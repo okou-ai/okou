@@ -52,6 +52,11 @@ interface ClerkFixture {
   readonly state: ClerkFixtureState;
 }
 
+interface FixtureOptions {
+  readonly failUserCreateAt?: number;
+  failOrganizationDelete?: boolean;
+}
+
 test("prepares and cleans one generation of runner accounts", async () => {
   const fixture = await startClerkFixture();
   const tempDirectory = await mkdtemp(join(tmpdir(), "runner-account-test-"));
@@ -80,6 +85,11 @@ test("prepares and cleans one generation of runner accounts", async () => {
         "e2e-runner-mock-claude-pr-123",
         "runner-mock-claude",
       ),
+      organizationRequest(
+        "user_5",
+        "e2e-runner-real-codex-built-in-pr-123",
+        "runner-real-codex-built-in",
+      ),
     ]);
     assert.equal(
       await readFile(githubOutput, "utf8"),
@@ -88,10 +98,12 @@ test("prepares and cleans one generation of runner accounts", async () => {
         "codex-organization-id=org_2",
         "claude-organization-id=org_3",
         "mock-claude-organization-id=org_4",
+        "codex-built-in-organization-id=org_5",
         "runner-email=pr-123+clerk_test+9001-3+runner@vm0-e2e.ai",
         "codex-email=pr-123+clerk_test+9001-3+runner-real-codex@vm0-e2e.ai",
         "claude-email=pr-123+clerk_test+9001-3+runner-real-claude@vm0-e2e.ai",
         "mock-claude-email=pr-123+clerk_test+9001-3+runner-mock-claude@vm0-e2e.ai",
+        "codex-built-in-email=pr-123+clerk_test+9001-3+runner-real-codex-built-in@vm0-e2e.ai",
         "",
       ].join("\n"),
     );
@@ -125,10 +137,12 @@ test("prepares and cleans one generation of runner accounts", async () => {
       "organization:org_2",
       "organization:org_3",
       "organization:org_4",
+      "organization:org_5",
       "user:user_1",
       "user:user_2",
       "user:user_3",
       "user:user_4",
+      "user:user_5",
     ]);
     assert.deepEqual(fixture.state.users, [
       {
@@ -155,14 +169,14 @@ test("runner resource records survive preparation and a later cleanup attempt", 
       E2E_CLERK_RESOURCE_DIR: join(directory, "resources"),
     });
     await runRunnerAccount("prepare", environment);
-    assert.equal(fixture.state.organizations.length, 4);
+    assert.equal(fixture.state.organizations.length, 5);
     await runRunnerAccount("cleanup-recorded-run", {
       ...environment,
       GITHUB_RUN_ATTEMPT: "4",
     });
     assert.deepEqual(fixture.state.organizations, []);
     assert.deepEqual(fixture.state.users, []);
-    assert.equal(fixture.state.deletionEvents.length, 8);
+    assert.equal(fixture.state.deletionEvents.length, 10);
   } finally {
     await rm(directory, { recursive: true, force: true });
     await closeServer(fixture.server);
@@ -245,6 +259,8 @@ test("run cleanup removes every runner generation for the exact workflow run", a
       "organization:org_6",
       "organization:org_7",
       "organization:org_8",
+      "organization:org_9",
+      "organization:org_10",
       "user:user_1",
       "user:user_2",
       "user:user_3",
@@ -253,6 +269,8 @@ test("run cleanup removes every runner generation for the exact workflow run", a
       "user:user_6",
       "user:user_7",
       "user:user_8",
+      "user:user_9",
+      "user:user_10",
     ]);
     assert.deepEqual(
       fixture.state.users.map((user) => user.id),
@@ -293,6 +311,7 @@ test("partial runner preparation cleans resources without outputs", async () => 
         "prepare",
         runnerEnvironment(fixture.apiUrl, {
           GITHUB_OUTPUT: join(tempDirectory, "github-output"),
+          E2E_CLERK_RESOURCE_DIR: join(tempDirectory, "resources"),
         }),
       ),
       /create Clerk user failed with HTTP 400 \(json\)/,
@@ -310,8 +329,46 @@ test("partial runner preparation cleans resources without outputs", async () => 
   }
 });
 
+test("failed preparation preserves its original error and recorded resources when cleanup fails", async () => {
+  const options: FixtureOptions = {
+    failUserCreateAt: 2,
+    failOrganizationDelete: true,
+  };
+  const fixture = await startClerkFixture(options);
+  const directory = await mkdtemp(join(tmpdir(), "runner-cleanup-failure-"));
+  const environment = runnerEnvironment(fixture.apiUrl, {
+    GITHUB_OUTPUT: join(directory, "github-output"),
+    E2E_CLERK_RESOURCE_DIR: join(directory, "resources"),
+  });
+  try {
+    await assert.rejects(
+      runRunnerAccount("prepare", environment),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.match(error.message, /Recorded runner cleanup failed/);
+        assert.match(
+          error.message,
+          /delete Clerk test organization failed with HTTP 403/,
+        );
+        assert.match(error.message, /create Clerk user failed with HTTP 400/);
+        return true;
+      },
+    );
+    assert.equal(fixture.state.users.length, 1);
+    assert.equal(fixture.state.organizations.length, 1);
+    assert.deepEqual(fixture.state.deletionEvents, []);
+    options.failOrganizationDelete = false;
+    await runRunnerAccount("cleanup-recorded-generation", environment);
+    assert.deepEqual(fixture.state.users, []);
+    assert.deepEqual(fixture.state.organizations, []);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+    await closeServer(fixture.server);
+  }
+});
+
 async function startClerkFixture(
-  options: { readonly failUserCreateAt?: number } = {},
+  options: FixtureOptions = {},
 ): Promise<ClerkFixture> {
   const state: ClerkFixtureState = {
     users: [],
@@ -351,7 +408,7 @@ async function handleClerkRequest(
   request: IncomingMessage,
   response: ServerResponse,
   state: ClerkFixtureState,
-  options: { readonly failUserCreateAt?: number },
+  options: FixtureOptions,
 ): Promise<void> {
   const path = request.url ?? "";
   const url = new URL(path, "http://clerk.test");
@@ -433,6 +490,10 @@ async function handleClerkRequest(
     request.method === "DELETE" &&
     url.pathname.startsWith("/v1/organizations/")
   ) {
+    if (options.failOrganizationDelete) {
+      sendJson(response, {}, 403);
+      return;
+    }
     const id = url.pathname.slice("/v1/organizations/".length);
     deleteStoredResource(
       state.organizations,
@@ -560,6 +621,7 @@ async function runRunnerAccount(
     | "prepare"
     | "cleanup-generation"
     | "cleanup-run"
+    | "cleanup-recorded-generation"
     | "cleanup-recorded-run",
   environment: Readonly<NodeJS.ProcessEnv>,
 ): Promise<void> {

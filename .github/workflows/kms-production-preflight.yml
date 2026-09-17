@@ -7,15 +7,16 @@ on:
   workflow_dispatch:
     inputs:
       operation:
-        description: "Full production verification or read-only old-key CloudTrail audit"
+        description: "Migration preflight, target-only current verification, or source audit"
         required: true
         default: verify
         type: choice
         options:
           - verify
+          - verify-target
           - source-audit
       expected_deployment_id:
-        description: "Required for verify: current production API deployment ID, recorded before approval"
+        description: "Required for verify and verify-target: current production API deployment ID"
         required: false
         type: string
 
@@ -51,7 +52,7 @@ jobs:
           pnpm install --frozen-lockfile --ignore-scripts --filter @okouai/db...
           command -v aws
       - name: Verify target runtime, rollback reads, and all production ciphertext
-        if: inputs.operation != 'source-audit'
+        if: inputs.operation != 'source-audit' && inputs.operation != 'verify-target'
         working-directory: turbo/packages/db
         env:
           KMS_OPERATION: ${{ inputs.operation }}
@@ -67,6 +68,18 @@ jobs:
           NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: python3 ../../../.github/scripts/kms-production-migration.py
+      - name: Verify current production ciphertext using only the target key
+        if: inputs.operation == 'verify-target'
+        env:
+          KMS_OPERATION: verify-target
+          EXPECTED_DEPLOYMENT_ID: ${{ inputs.expected_deployment_id }}
+          KMS_MIGRATION_ROLE_ARN: ${{ vars.KMS_MIGRATION_ROLE_ARN }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          SECRETS_KMS_KEY_ID: ${{ secrets.SECRETS_KMS_KEY_ID }}
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: python3 .github/scripts/kms-production-migration.py
       - name: Read source-key CloudTrail history without KMS calls
         if: inputs.operation == 'source-audit'
         env:

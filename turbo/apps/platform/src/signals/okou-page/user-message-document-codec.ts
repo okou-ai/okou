@@ -19,6 +19,7 @@ import { formatFeedbackPrompt, type FeedbackSource } from "./chat-feedback.ts";
 import { serializeChatThreadMention } from "./chat-thread-suggestion-domain.ts";
 import { avatarTemplateSelection } from "./avatar-template-selection.ts";
 import { introVideoTemplateOptions } from "@okouai/core/intro-video-template";
+import { generationTemplateKind } from "@okouai/core/generation-template-kind";
 import {
   serializeAgentMention,
   splitAgentMentionSegments,
@@ -501,11 +502,8 @@ function templateAttachmentType(template: GenerationTemplateRequest): string {
 }
 
 function templateCategory(template: GenerationTemplateRequest): string {
-  if (introVideoTemplateOptions(template)) {
-    return "intro-video";
-  }
-  const type = templateAttachmentType(template);
-  return type === "presentation" ? "slides" : type;
+  const kind = generationTemplateKind(template);
+  return kind === "presentation" ? "slides" : kind;
 }
 
 function templatePreviewImageUrl(
@@ -634,6 +632,7 @@ function feedbackNoteContent(note: readonly FeedbackNotePart[]): JSONContent[] {
 
 function formattedFeedbackParts(
   parts: readonly Extract<UserMessagePart, { type: "feedback" }>[],
+  agentRunSourceTitle: string | undefined,
 ): string {
   return formatFeedbackPrompt(
     parts.map((part) => {
@@ -643,7 +642,16 @@ function formattedFeedbackParts(
         ...(part.source ? { source: part.source } : {}),
       };
     }),
+    agentRunSourceTitle,
   );
+}
+
+function agentRunSourceTitle(
+  parts: readonly UserMessagePart[],
+): string | undefined {
+  return parts.find((part) => {
+    return part.type === "source" && part.kind === "agent";
+  })?.titleSnapshot;
 }
 
 interface RestoredEditorState {
@@ -786,6 +794,7 @@ export function messageDocumentToPrompt(value: unknown): string | null {
   const blocks: string[] = [];
   let inlineText = "";
   let feedbackParts: Extract<UserMessagePart, { type: "feedback" }>[] = [];
+  const sourceTitle = agentRunSourceTitle(parsed.data.parts);
   const flushInlineText = () => {
     if (inlineText.length > 0) {
       blocks.push(inlineText);
@@ -794,7 +803,7 @@ export function messageDocumentToPrompt(value: unknown): string | null {
   };
   const flushFeedback = () => {
     if (feedbackParts.length > 0) {
-      blocks.push(formattedFeedbackParts(feedbackParts));
+      blocks.push(formattedFeedbackParts(feedbackParts, sourceTitle));
       feedbackParts = [];
     }
   };
@@ -834,6 +843,7 @@ export function messageDocumentToDisplayText(value: unknown): string | null {
   const blocks: string[] = [];
   let inlineText = "";
   let feedbackParts: Extract<UserMessagePart, { type: "feedback" }>[] = [];
+  const sourceTitle = agentRunSourceTitle(parsed.data.parts);
   const flushInlineText = () => {
     if (inlineText.length > 0) {
       blocks.push(inlineText);
@@ -842,7 +852,7 @@ export function messageDocumentToDisplayText(value: unknown): string | null {
   };
   const flushFeedback = () => {
     if (feedbackParts.length > 0) {
-      blocks.push(formattedFeedbackParts(feedbackParts));
+      blocks.push(formattedFeedbackParts(feedbackParts, sourceTitle));
       feedbackParts = [];
     }
   };

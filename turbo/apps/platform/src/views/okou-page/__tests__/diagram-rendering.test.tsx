@@ -1,7 +1,9 @@
-import { screen } from "@testing-library/react";
-import { expect, test } from "vitest";
+import mermaid from "@okouai/mermaid-lite";
+import { screen, waitFor } from "@testing-library/react";
+import { expect, test, vi } from "vitest";
 
 import {
+  click,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
@@ -67,4 +69,50 @@ test("Sequence diagrams render in chat", async () => {
   const diagram = await screen.findByRole("img", { name: "Diagram" });
   expect(diagram).toBeVisible();
   expect(getButtonByName("Expand diagram")).toBeEnabled();
+});
+
+test("A failed Mermaid layout leaves its source readable and other diagrams usable", async () => {
+  vi.spyOn(mermaid, "render").mockRejectedValueOnce(
+    new Error("Diagram layout failed"),
+  );
+  const chat = createMarkdownChatFixture(context);
+  const failedSource = "flowchart TD\n  Failed --> Layout";
+  const source = [
+    "```mermaid",
+    failedSource,
+    "```",
+    "",
+    "```mermaid",
+    "sequenceDiagram",
+    "  Reader->>Platform: Surviving diagram",
+    "```",
+  ].join("\n");
+  const rows = completedMessageRows(chat, source);
+  chat.install({
+    rows: () => {
+      return rows;
+    },
+  });
+
+  await setupPage({
+    context,
+    path: chat.path,
+    host: "app.okou.ai",
+  });
+
+  await waitFor(() => {
+    const fallback = screen.getByText("flowchart TD Failed --> Layout", {
+      selector: "pre > code",
+    });
+    expect(fallback).toBeVisible();
+    expect(fallback.closest("details")).toBeNull();
+  });
+  await expect(
+    screen.findByRole("img", { name: "Diagram" }),
+  ).resolves.toBeVisible();
+  expect(screen.getAllByRole("img", { name: "Diagram" })).toHaveLength(1);
+  click(getButtonByName("Expand diagram"));
+  await expect(
+    screen.findByRole("dialog", { name: "diagram.svg preview" }),
+  ).resolves.toBeInTheDocument();
 });

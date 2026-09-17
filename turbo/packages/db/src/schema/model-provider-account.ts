@@ -34,6 +34,7 @@ export const modelProviderAccounts = pgTable(
     type: varchar("type", { length: 50 }).notNull(),
     authMethod: varchar("auth_method", { length: 50 }),
     isActive: boolean("is_active").notNull().default(false),
+    disconnectedAt: timestamp("disconnected_at"),
     externalAccountId: varchar("external_account_id", { length: 255 }),
     accountEmail: varchar("account_email", { length: 320 }),
     workspaceName: varchar("workspace_name", { length: 255 }),

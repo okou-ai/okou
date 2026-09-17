@@ -6,6 +6,27 @@ import { runnerGroupSchema } from "./runner-primitives";
 
 const c = initContract();
 
+/** Transient text only. Durable chat events remain the source of truth. */
+export const sessionOutputDeltaSchema = z.object({
+  threadId: z.uuid(),
+  runId: z.uuid(),
+  eventId: z.uuid(),
+  runEventId: z.string().min(1),
+  createdAt: z.iso.datetime(),
+  chunkIndex: z.number().int().nonnegative(),
+  delta: z.string(),
+});
+
+export type SessionOutputDelta = z.infer<typeof sessionOutputDeltaSchema>;
+
+export function sessionOutputChannelName(
+  userId: string,
+  orgId: string,
+  runId: string,
+): string {
+  return `run-output:${userId}:${orgId}:${runId}`;
+}
+
 export const connectorChangedPayloadSchema = z.object({
   connectorSlug: connectorSlugSchema,
 });

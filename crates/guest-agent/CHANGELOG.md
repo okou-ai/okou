@@ -1,5 +1,128 @@
 # Changelog
 
+## [0.91.11](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.10...guest-agent-v0.91.11) (2026-09-17)
+
+
+### Bug Fixes
+
+* unify agent failure classification and completion handling ([#34802](https://github.com/vm0-ai/okou/issues/34802)) ([8cf6c83](https://github.com/vm0-ai/okou/commit/8cf6c836cda07808f7536fc9ee35dcf36e71036b))
+
+## [0.91.10](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.9...guest-agent-v0.91.10) (2026-09-17)
+
+
+### Bug Fixes
+
+* **pi:** authenticate deferred handoff in guest ([#34845](https://github.com/vm0-ai/okou/issues/34845)) ([2562612](https://github.com/vm0-ai/okou/commit/2562612020484e515569c2cb78d11f672b5bff5d))
+
+## [0.91.9](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.8...guest-agent-v0.91.9) (2026-09-17)
+
+## [0.91.8](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.7...guest-agent-v0.91.8) (2026-09-17)
+
+## [0.91.7](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.6...guest-agent-v0.91.7) (2026-09-16)
+
+## [0.91.6](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.5...guest-agent-v0.91.6) (2026-09-16)
+
+## [0.91.5](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.4...guest-agent-v0.91.5) (2026-09-16)
+
+## [0.91.4](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.3...guest-agent-v0.91.4) (2026-09-16)
+
+## [0.91.3](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.2...guest-agent-v0.91.3) (2026-09-16)
+
+
+### Bug Fixes
+
+* **pi:** preserve causal transport failure diagnostics ([#34505](https://github.com/vm0-ai/okou/issues/34505)) ([9ae5a27](https://github.com/vm0-ai/okou/commit/9ae5a2748353914dce8bcf983dac554f7ae5a4af))
+* **runner:** classify contained tool oom as informational ([#34520](https://github.com/vm0-ai/okou/issues/34520)) ([02e789d](https://github.com/vm0-ai/okou/commit/02e789d0129298079e23570bc319c5c0557a2d77))
+
+## [0.91.2](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.1...guest-agent-v0.91.2) (2026-09-16)
+
+
+### Bug Fixes
+
+* align provider failure classification across pi, codex, and claude code ([#34396](https://github.com/vm0-ai/okou/issues/34396)) ([ff4f23f](https://github.com/vm0-ai/okou/commit/ff4f23fa72b471204d0a27bcbc5466679ab16042))
+
+## [0.91.1](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.91.0...guest-agent-v0.91.1) (2026-09-15)
+
+## [0.91.0](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.90.5...guest-agent-v0.91.0) (2026-09-15)
+
+
+### Features
+
+* stream Pi sandbox assistant output ([#34299](https://github.com/vm0-ai/vm0/issues/34299)) ([2c12008](https://github.com/vm0-ai/vm0/commit/2c12008061eaf9d1fc8e0d2c1240697433182c8d))
+
+
+### Bug Fixes
+
+* **runner:** protect native runtime memory from tool reclaim ([#34398](https://github.com/vm0-ai/vm0/issues/34398)) ([756b6bc](https://github.com/vm0-ai/vm0/commit/756b6bce47a0a4b341359971ebc7ae9a4c24c62e))
+
+## [0.90.5](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.90.4...guest-agent-v0.90.5) (2026-09-15)
+
+
+### Bug Fixes
+
+* distinguish balance ownership and localize run errors ([#34251](https://github.com/vm0-ai/vm0/issues/34251)) ([0367d97](https://github.com/vm0-ai/vm0/commit/0367d976a87fe1251fcb9b6cfe545a8b24e4f2b6))
+
+## [0.90.4](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.90.3...guest-agent-v0.90.4) (2026-09-15)
+
+
+### Bug Fixes
+
+* **guest-agent:** clean up quiet descendants of test commands ([#34350](https://github.com/vm0-ai/vm0/issues/34350)) ([6641b4a](https://github.com/vm0-ai/vm0/commit/6641b4a9dc7835eb918c7435c1d8e1c1d102d3db))
+
+## [0.90.3](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.90.2...guest-agent-v0.90.3) (2026-09-15)
+
+
+### Bug Fixes
+
+* **pi:** preserve codex rate-limit diagnostics ([#34266](https://github.com/vm0-ai/vm0/issues/34266)) ([48cb88f](https://github.com/vm0-ai/vm0/commit/48cb88fe5c6a70dd6519565211de55b710fee3af))
+
+
+### Refactoring
+
+* retire the pi langfuse credential bootstrap ([#34326](https://github.com/vm0-ai/vm0/issues/34326)) ([7d93840](https://github.com/vm0-ai/vm0/commit/7d93840dba64065a157662079527495623adb676))
+
+## [0.90.2](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.90.1...guest-agent-v0.90.2) (2026-09-15)
+
+## [0.90.1](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.90.0...guest-agent-v0.90.1) (2026-09-14)
+
+
+### Refactoring
+
+* use two-day presigned urls without renewal or retries ([#34149](https://github.com/vm0-ai/vm0/issues/34149)) ([a876fd2](https://github.com/vm0-ai/vm0/commit/a876fd28cd0a0fade04aa12fff33614ff156ba9b))
+
+## [0.90.0](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.89.10...guest-agent-v0.90.0) (2026-09-14)
+
+
+### Features
+
+* **pi:** add gated langfuse tracing ([#33756](https://github.com/vm0-ai/vm0/issues/33756)) ([5f5f9f3](https://github.com/vm0-ai/vm0/commit/5f5f9f3434f7770b0db8b8ccd7d94c9f37282160))
+
+## [0.89.10](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.89.9...guest-agent-v0.89.10) (2026-09-14)
+
+## [0.89.9](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.89.8...guest-agent-v0.89.9) (2026-09-14)
+
+
+### Bug Fixes
+
+* keep citation text private after short fence runs ([#33970](https://github.com/vm0-ai/vm0/issues/33970)) ([5781768](https://github.com/vm0-ai/vm0/commit/578176828ff6728a6febbd880a4dbf21e03e5188))
+
+
+### Performance Improvements
+
+* **guest-agent:** bound cascading json key masking ([#33942](https://github.com/vm0-ai/vm0/issues/33942)) ([abd1dc5](https://github.com/vm0-ai/vm0/commit/abd1dc5e8601481b46038688f959ae1f44e78658))
+
+## [0.89.8](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.89.7...guest-agent-v0.89.8) (2026-09-14)
+
+
+### Refactoring
+
+* **guest-agent:** unify codex app-server close finalization ([#33888](https://github.com/vm0-ai/vm0/issues/33888)) ([61c0c22](https://github.com/vm0-ai/vm0/commit/61c0c220d2a0559d64a05b91f8abfe076c876d51))
+
+
+### Performance Improvements
+
+* **guest-agent:** share masked key collision allocation progress ([#33943](https://github.com/vm0-ai/vm0/issues/33943)) ([309da39](https://github.com/vm0-ai/vm0/commit/309da39eecb4d08814f8eb64e47a7858f90fd7ac))
+
 ## [0.89.7](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.89.6...guest-agent-v0.89.7) (2026-09-14)
 
 

@@ -13,15 +13,16 @@ import {
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ArtifactThumbnailImage } from "./artifact-thumbnail.tsx";
+import { ChatCard } from "./components/chat-card.tsx";
 
 interface BrowserSessionCardProps {
   readonly signals: BrowserSessionSignals;
 }
 
 const BROWSER_SESSION_CARD_SHELL_CLASS =
-  "inline-flex w-[min(100%,400px)] align-top";
+  "relative inline-block w-[min(100%,400px)] align-top";
 const BROWSER_SESSION_CARD_CLASS =
-  "okou-chat-card flex w-full flex-col overflow-hidden text-left text-foreground transition-[background-color,border-color,transform] duration-200";
+  "absolute inset-0 flex h-full w-full flex-col overflow-hidden text-left text-foreground transition-[background-color,border-color,transform] duration-200";
 const BROWSER_SESSION_CARD_HOVER_CLASS =
   "hover:scale-[1.015] hover:border-gray-500";
 
@@ -35,6 +36,10 @@ function BrowserSessionCardShell({
       data-testid="browser-session-card-shell"
       className={BROWSER_SESSION_CARD_SHELL_CLASS}
     >
+      <div aria-hidden="true" className="border border-transparent">
+        <div className="h-10" />
+        <div className="aspect-[16/10] w-full" />
+      </div>
       {children}
     </div>
   );
@@ -102,19 +107,19 @@ function BrowserSessionPreview({
 
 function BrowserSessionCardSkeleton() {
   return (
-    <div
+    <ChatCard
       data-testid="browser-session-card-loading"
       className={cn(
         BROWSER_SESSION_CARD_CLASS,
         "animate-pulse border-border/70",
       )}
     >
-      <span className="flex min-h-10 items-center gap-2 border-b border-border/60 px-3 py-2">
+      <span className="flex h-10 shrink-0 items-center gap-2 border-b border-border/60 px-3 py-2">
         <span className="h-4 w-24 rounded bg-muted/70" />
         <span className="ml-auto h-3 w-10 rounded bg-muted/60" />
       </span>
       <span className="block aspect-[16/10] w-full bg-muted/40" />
-    </div>
+    </ChatCard>
   );
 }
 
@@ -127,25 +132,31 @@ function BrowserSessionUnavailable({
   const openSidebar = useSet(openThreadBrowserSession$);
   const unavailable = signals === undefined;
   return (
-    <button
-      type="button"
-      data-browser-session-card
-      data-browser-session-status={unavailable ? "unavailable" : "suspended"}
-      disabled={unavailable}
-      aria-label={
-        unavailable
-          ? t(($) => {
-              return $.browserSession.unavailable.title;
-            })
-          : t(($) => {
-              return $.browserSession.openAction;
-            })
+    <ChatCard
+      render={
+        <button
+          type="button"
+          data-browser-session-card
+          data-browser-session-status={
+            unavailable ? "unavailable" : "suspended"
+          }
+          disabled={unavailable}
+          aria-label={
+            unavailable
+              ? t(($) => {
+                  return $.browserSession.unavailable.title;
+                })
+              : t(($) => {
+                  return $.browserSession.openAction;
+                })
+          }
+          onClick={() => {
+            if (signals) {
+              openSidebar(signals.threadId);
+            }
+          }}
+        />
       }
-      onClick={() => {
-        if (signals) {
-          openSidebar(signals.threadId);
-        }
-      }}
       className={cn(
         BROWSER_SESSION_CARD_CLASS,
         unavailable
@@ -153,7 +164,7 @@ function BrowserSessionUnavailable({
           : BROWSER_SESSION_CARD_HOVER_CLASS,
       )}
     >
-      <span className="flex min-h-10 w-full items-center gap-2 border-b border-border/60 bg-background/95 px-3 py-2">
+      <span className="flex h-10 shrink-0 w-full items-center gap-2 border-b border-border/60 bg-background/95 px-3 py-2">
         <span className="min-w-0 flex-1 truncate text-sm font-medium">
           {t(($) => {
             return $.browserSession.cardTitle;
@@ -162,11 +173,11 @@ function BrowserSessionUnavailable({
         <BrowserSessionStatus live={false} />
       </span>
       <BrowserSessionPreview />
-    </button>
+    </ChatCard>
   );
 }
 
-export function BrowserSessionCard({ signals }: BrowserSessionCardProps) {
+function BrowserSessionCardState({ signals }: BrowserSessionCardProps) {
   const { t } = useTranslation();
   const sessionLoadable = useLastLoadable(signals.session$);
   const selectedBrowserThreadId = useGet(activeSidebarBrowserThreadId$);
@@ -175,67 +186,65 @@ export function BrowserSessionCard({ signals }: BrowserSessionCardProps) {
   const start = useSet(signals.start$);
 
   if (sessionLoadable.state === "loading") {
-    return (
-      <BrowserSessionCardShell>
-        <BrowserSessionCardSkeleton />
-      </BrowserSessionCardShell>
-    );
+    return <BrowserSessionCardSkeleton />;
   }
   if (sessionLoadable.state === "hasError") {
-    return (
-      <BrowserSessionCardShell>
-        <BrowserSessionUnavailable />
-      </BrowserSessionCardShell>
-    );
+    return <BrowserSessionUnavailable />;
   }
   if (sessionLoadable.data === null) {
-    return (
-      <BrowserSessionCardShell>
-        <BrowserSessionUnavailable signals={signals} />
-      </BrowserSessionCardShell>
-    );
+    return <BrowserSessionUnavailable signals={signals} />;
   }
 
   const session = sessionLoadable.data;
   const selected = selectedBrowserThreadId === signals.threadId;
   const live = session.status === "active";
   return (
-    <BrowserSessionCardShell>
-      <button
-        type="button"
-        data-browser-session-card
-        data-browser-session-status={session.status}
-        aria-label={t(
-          ($) => {
-            return $.browserSession.open;
-          },
-          { name: session.name },
-        )}
-        onClick={() => {
-          if (live && !selected) {
-            detach(start(pageSignal), Reason.DomCallback);
-          }
-          openSidebar(signals.threadId);
-        }}
-        className={cn(
-          BROWSER_SESSION_CARD_CLASS,
-          BROWSER_SESSION_CARD_HOVER_CLASS,
-          selected && "border-ring/60 bg-muted/20",
-        )}
-      >
-        <span className="flex min-h-10 w-full items-center gap-2 border-b border-border/60 bg-background/95 px-3 py-2">
-          <span className="min-w-0 flex-1 truncate text-sm font-medium">
-            {t(($) => {
-              return $.browserSession.cardTitle;
-            })}
-          </span>
-          <BrowserSessionStatus live={live} />
-        </span>
-        <BrowserSessionPreview
-          screenshotUrl={session.screenshotUrl ?? undefined}
-          load={signals.screenshotImageLoad}
+    <ChatCard
+      render={
+        <button
+          type="button"
+          data-browser-session-card
+          data-browser-session-status={session.status}
+          aria-label={t(
+            ($) => {
+              return $.browserSession.open;
+            },
+            { name: session.name },
+          )}
+          onClick={() => {
+            if (live && !selected) {
+              detach(start(pageSignal), Reason.DomCallback);
+            }
+            openSidebar(signals.threadId);
+          }}
         />
-      </button>
+      }
+      className={cn(
+        BROWSER_SESSION_CARD_CLASS,
+        BROWSER_SESSION_CARD_HOVER_CLASS,
+        selected && "border-ring/60 bg-muted/20",
+      )}
+    >
+      <span className="flex h-10 shrink-0 w-full items-center gap-2 border-b border-border/60 bg-background/95 px-3 py-2">
+        <span className="min-w-0 flex-1 truncate text-sm font-medium">
+          {t(($) => {
+            return $.browserSession.cardTitle;
+          })}
+        </span>
+        <BrowserSessionStatus live={live} />
+      </span>
+      <BrowserSessionPreview
+        screenshotUrl={session.screenshotUrl ?? undefined}
+        load={signals.screenshotImageLoad}
+      />
+    </ChatCard>
+  );
+}
+
+export function BrowserSessionCard({ signals }: BrowserSessionCardProps) {
+  return (
+    <BrowserSessionCardShell>
+      <BrowserSessionCardState signals={signals} />
     </BrowserSessionCardShell>
   );
 }

@@ -749,6 +749,9 @@ export function WorksPage() {
           <TeamsCard displayName={displayName} />
           <GithubCard />
           {feishuEnabled ? <FeishuCard /> : null}
+          {features[FeatureSwitchKey.LarkIntegration] ? (
+            <FeishuCard platform="lark" />
+          ) : null}
           <TelegramCard />
           <AgentPhoneCard />
         </div>

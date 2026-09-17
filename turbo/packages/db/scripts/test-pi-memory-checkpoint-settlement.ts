@@ -75,11 +75,12 @@ async function seed(shape: "pending" | "legacy" | "sandbox" | "expired") {
     VALUES ($1::uuid, 'migration-org', $1::text, 'memory', $1::text)`,
     [storageId],
   );
+  // Keep timestamp-without-time-zone fixtures on the migration's database clock.
   await client.query(
     `INSERT INTO pi_memory_phase2_jobs
     (memory_storage_id, org_id, user_id, status, claimed_revision,
      claimed_base_version_id, lease_token, sandbox_lease_token, lease_expires_at, claimed_selection_digest, claimed_selected_count, claimed_selected_utf8_bytes)
-    VALUES ($1::uuid, 'migration-org', $1::text, $2, $3, $4, $5, $6, $7, CASE WHEN $2::varchar = 'leased' THEN repeat('b',64) END, CASE WHEN $2::varchar = 'leased' THEN 0 END, CASE WHEN $2::varchar = 'leased' THEN 0 END)`,
+    VALUES ($1::uuid, 'migration-org', $1::text, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP + $7::interval, CASE WHEN $2::varchar = 'leased' THEN repeat('b',64) END, CASE WHEN $2::varchar = 'leased' THEN 0 END, CASE WHEN $2::varchar = 'leased' THEN 0 END)`,
     [
       storageId,
       shape === "pending" ? "pending" : "leased",
@@ -87,9 +88,7 @@ async function seed(shape: "pending" | "legacy" | "sandbox" | "expired") {
       shape === "pending" ? null : "a".repeat(64),
       shape === "pending" ? null : token,
       shape === "sandbox" ? token : null,
-      shape === "pending"
-        ? null
-        : new Date(Date.now() + (shape === "expired" ? -60_000 : 3_600_000)),
+      shape === "pending" ? null : shape === "expired" ? "-1 minute" : "1 hour",
     ],
   );
   return { storageId, token };

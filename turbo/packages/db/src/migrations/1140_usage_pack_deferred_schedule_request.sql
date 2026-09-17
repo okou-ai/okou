@@ -1,0 +1,1 @@
+ALTER TABLE "usage_pack_subscription_changes" ADD COLUMN "deferred_schedule" jsonb;

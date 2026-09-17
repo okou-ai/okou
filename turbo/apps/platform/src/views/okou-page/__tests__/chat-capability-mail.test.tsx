@@ -292,6 +292,91 @@ test("Reconnect the exact Gmail account required by a persisted mail card", asyn
   ).not.toBeInTheDocument();
 });
 
+test.each([404, 500] as const)(
+  "Keep a mail card through a %s read and retry",
+  async (status) => {
+    const gate = context.mocks.deferred<void>();
+    let available = false;
+    const subject = "Recovered draft";
+    installCapabilityChat({
+      events: completedConversation(mailCard(FIRST_MAIL_ID, subject)),
+    });
+    context.mocks.api(
+      mailContract.getDraft,
+      async ({ respond, withSignal }) => {
+        await withSignal(gate.promise);
+        if (available) {
+          return respond(
+            200,
+            mailResponse(FIRST_MAIL_ID, mailDraft(FIRST_MAIL_ID, { subject })),
+          );
+        }
+        return respond(status, {
+          error: {
+            code: status === 404 ? "NOT_FOUND" : "INTERNAL_SERVER_ERROR",
+            message: "Email unavailable",
+          },
+        });
+      },
+    );
+
+    await setupPage({ context, path: RUN_PATH, host: APP_HOST });
+    await readyChat();
+    await expect(
+      screen.findByTestId("mail-draft-card-loading"),
+    ).resolves.toBeInTheDocument();
+    gate.resolve();
+    await expect(
+      screen.findByText("This email is no longer available."),
+    ).resolves.toBeInTheDocument();
+    available = true;
+    click(await findControl("button", "Retry"));
+    await expect(screen.findByText(subject)).resolves.toBeInTheDocument();
+    click(await findMailCard(subject));
+    await expect(
+      screen.findByRole("complementary", { name: "Email details" }),
+    ).resolves.toBeInTheDocument();
+  },
+);
+
+test("A rejected Gmail send shows correction guidance and keeps the draft", async () => {
+  const subject = "Draft requiring review";
+  const draft = mailDraft(FIRST_MAIL_ID, { subject });
+  const message =
+    "Gmail rejected this draft. Open it in Gmail and check its recipients and content before trying again.";
+  installCapabilityChat({
+    events: completedConversation(mailCard(FIRST_MAIL_ID, subject)),
+  });
+  context.mocks.api(mailContract.getDraft, ({ respond }) => {
+    return respond(200, mailResponse(FIRST_MAIL_ID, draft));
+  });
+  context.mocks.api(mailContract.sendDraft, ({ respond }) => {
+    return respond(400, { error: { code: "BAD_REQUEST", message } });
+  });
+
+  await setupPage({ context, path: RUN_PATH, host: APP_HOST });
+  await readyChat();
+  click(await findMailCard(subject));
+  const sidebar = await screen.findByRole("complementary", {
+    name: "Email details",
+  });
+  click(await findControl("button", "Send", sidebar));
+
+  await expect(screen.findByText(message)).resolves.toBeInTheDocument();
+  expect(within(sidebar).getByText("Draft")).toBeInTheDocument();
+  expect(within(sidebar).getByText(draft.body)).toBeInTheDocument();
+  expect(within(sidebar).queryByText("Sent")).not.toBeInTheDocument();
+  await waitFor(() => {
+    expect(queryControl("button", "Send", sidebar)).toBeEnabled();
+  });
+  await expect(
+    findControl("link", "Open in Gmail", sidebar),
+  ).resolves.toHaveAttribute(
+    "href",
+    `https://mail.google.com/mail/?authuser=sender%40example.com#drafts?compose=${draft.gmailMessageId}`,
+  );
+});
+
 test("Send, revisit, and delete mail drafts from chat", async () => {
   const firstSubject = "Launch approval";
   const secondSubject = "Vendor follow-up";

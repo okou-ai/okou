@@ -1,4 +1,5 @@
 import type { PiAgentModelConfig } from "./types";
+import type { KnownRunFailureReason } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import type { PiApiModelFailureDiagnostic } from "./api-failure";
 import type { PiApiFirstTurnOwnership } from "./provider-ownership";
 import type { PiPreparationObserver } from "./preparation-timing";
@@ -85,6 +86,16 @@ export interface PiMemoryToolSourceUse {
 export interface PiApiAssistantTextContent {
   readonly type: "text";
   readonly text: string;
+  readonly runEventId?: string;
+}
+
+export interface PiApiTextStream {
+  readonly eventIdPrefix: string;
+  readonly onDelta: (chunk: {
+    readonly runEventId: string;
+    readonly chunkIndex: number;
+    readonly delta: string;
+  }) => void;
 }
 
 export interface PiApiAssistantToolCallContent {
@@ -114,7 +125,7 @@ interface PiApiAssistantMessageFields {
   readonly model: string;
   readonly responseId?: string;
   /** Content-free product classification; native provider diagnostics stay private. */
-  readonly failureReason?: "reconnect_required" | "usage_limit";
+  readonly failureReason?: KnownRunFailureReason;
   readonly timestamp: number;
   readonly usage: {
     readonly input: number;
@@ -145,6 +156,7 @@ export type PiApiAssistantMessage = PiApiAssistantMessageFields &
 export type PiObservedServiceTier = string | null | undefined;
 
 export interface PiApiFirstTurnArgs {
+  readonly textStream?: PiApiTextStream;
   readonly cwd: string;
   readonly agentDir: string;
   readonly sessionId: string;
@@ -165,17 +177,51 @@ export interface PiApiFirstTurnArgs {
   ) => Promise<void>;
 }
 
+/** Preparation has no provider ownership or durable publication authority. */
+export type PiApiTurnPreparationArgs = Omit<
+  PiApiFirstTurnArgs,
+  "ownership" | "providerRequestBoundary" | "textStream"
+>;
+
+export type PiApiTurnExecutionArgs = Pick<
+  PiApiFirstTurnArgs,
+  "ownership" | "providerRequestBoundary" | "textStream"
+>;
+
+/** A private, single-use session; never serialize or cache across attempts. */
+export interface PreparedPiApiTurn {
+  readonly execute: (
+    args: PiApiTurnExecutionArgs,
+    signal?: AbortSignal,
+  ) => Promise<PiApiFirstTurnResult>;
+  readonly dispose: () => void;
+}
+
 export interface PiApiFirstTurnResult {
   readonly assistantMessage: PiApiAssistantMessage;
   readonly handoffRequired: boolean;
   readonly observedServiceTier: PiObservedServiceTier;
+  /** Missing on reconstructed historical results; never infer it from SDK zeros. */
+  readonly usageObservation?: PiApiUsageObservation;
   readonly sessionJsonl: string;
+}
+
+/** Disjoint provider quantities; null means the provider did not establish a value. */
+export interface PiApiUsageObservation {
+  readonly tokens: {
+    readonly input: number | null;
+    readonly cacheRead: number | null;
+    readonly cacheCreation: number | null;
+    readonly output: number | null;
+  };
+  readonly coverage: "complete" | "partial" | "unavailable";
 }
 
 export interface PiSessionInspection {
   readonly sessionId: string;
   readonly messageCount: number;
   readonly hasPendingToolCalls: boolean;
+  readonly pendingToolIds: readonly string[];
   readonly isSettledCheckpoint: boolean;
 }
 

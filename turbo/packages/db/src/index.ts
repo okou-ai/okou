@@ -1,12 +1,15 @@
+import * as getStartedClaimSchema from "./schema/get-started-claim";
+import * as accountErasureBridgeSchema from "./schema/account-erasure-bridge";
+import * as accountErasureSchema from "./schema/account-erasure";
 import * as billingRunAttributionSchema from "./schema/billing-run-attribution";
 import * as runActivitySnapshotSchema from "./schema/run-activity-snapshot";
 import * as artifactShareSchema from "./schema/artifact-share";
 import * as userSchema from "./schema/user";
-import * as privacyChoiceSchema from "./schema/privacy-choice";
 import * as deviceCodesSchema from "./schema/device-codes";
 import * as cliTokensSchema from "./schema/cli-tokens";
 import * as desktopAuthHandoffCodeSchema from "./schema/desktop-auth-handoff-code";
 import * as agentSchema from "./schema/agent";
+import * as agentRunInferenceSchema from "./schema/agent-run-inference";
 import * as agentRunSchema from "./runtime/agent-run";
 import * as agentRunConnectorDiagnosticRegistrationSchema from "./schema/agent-run-connector-diagnostic-registration";
 import * as conversationSchema from "./schema/conversation";
@@ -42,6 +45,7 @@ import * as modelProviderAuthSessionSchema from "./schema/model-provider-auth-se
 import * as connectorOauthDeviceAuthorizationSessionSchema from "./schema/connector-oauth-device-authorization-session";
 import * as connectorOauthStateSchema from "./schema/connector-oauth-state";
 import * as usageEventSchema from "./schema/usage-event";
+import * as xResourceUsageSchema from "./schema/x-resource-usage";
 import * as usageEventHourlyRollupSchema from "./schema/usage-event-hourly-rollup";
 import * as usagePackCreditGrantSchema from "./schema/usage-pack-credit-grant";
 import * as usagePackCreditRefundSchema from "./schema/usage-pack-credit-refund";
@@ -131,7 +135,7 @@ import * as officialWorkflowCatalogSchema from "./schema/official-workflow-catal
 import * as mailDraftSchema from "./schema/mail-draft";
 import * as browserSessionSchema from "./schema/browser-session";
 import * as presentationTemplateSchema from "./schema/presentation-template";
-import * as imageReferenceSchema from "./schema/image-reference";
+import * as userTemplateSchema from "./schema/user-template";
 import * as piResourceSnapshotSchema from "./schema/pi-resource-snapshot";
 import * as piResourceVersionIndexSchema from "./schema/pi-resource-version-index";
 import * as memorySummaryProjectionSchema from "./schema/memory-summary-projection";
@@ -142,17 +146,21 @@ import * as piMemoryPublicationProvenanceSchema from "./schema/pi-memory-publica
 import * as sshConnectionSchema from "./schema/ssh-connection";
 import * as sshCredentialSchema from "./schema/ssh-credential";
 import * as agentSshAccessSchema from "./schema/agent-ssh-access";
+import * as cloudflareAccessConfigSchema from "./schema/cloudflare-access-config";
 
 export const schema = {
+  ...getStartedClaimSchema,
+  ...accountErasureSchema,
+  ...accountErasureBridgeSchema,
   ...runActivitySnapshotSchema,
   ...userSchema,
-  ...privacyChoiceSchema,
   ...artifactShareSchema,
   ...deviceCodesSchema,
   ...cliTokensSchema,
   ...desktopAuthHandoffCodeSchema,
   ...agentSchema,
   ...agentRunSchema,
+  ...agentRunInferenceSchema,
   ...agentRunConnectorDiagnosticRegistrationSchema,
   ...conversationSchema,
   ...checkpointSchema,
@@ -203,6 +211,7 @@ export const schema = {
   ...connectorOauthStateSchema,
   ...billingRunAttributionSchema,
   ...usageEventSchema,
+  ...xResourceUsageSchema,
   ...usageEventHourlyRollupSchema,
   ...usagePackCreditGrantSchema,
   ...usagePackCreditRefundSchema,
@@ -277,7 +286,7 @@ export const schema = {
   ...mailDraftSchema,
   ...browserSessionSchema,
   ...presentationTemplateSchema,
-  ...imageReferenceSchema,
+  ...userTemplateSchema,
   ...piResourceSnapshotSchema,
   ...piResourceVersionIndexSchema,
   ...memorySummaryProjectionSchema,
@@ -288,6 +297,7 @@ export const schema = {
   ...sshConnectionSchema,
   ...sshCredentialSchema,
   ...agentSshAccessSchema,
+  ...cloudflareAccessConfigSchema,
 };
 
 export type DatabaseSchema = typeof schema;

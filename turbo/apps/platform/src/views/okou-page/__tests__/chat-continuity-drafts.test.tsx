@@ -4,7 +4,12 @@ import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft"
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { expect, test } from "vitest";
 
-import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
+import {
+  click,
+  fill,
+  setupPage,
+  startPage,
+} from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   chatListAuth,
@@ -149,7 +154,7 @@ test("Protect local edits while a saved draft is loading", async () => {
     return respond(204);
   });
 
-  await setupPage({
+  const page = await startPage({
     context,
     path: "/agents/c7000000-0000-4000-a000-000000000001/chat",
     auth,
@@ -159,12 +164,15 @@ test("Protect local edits while a saved draft is loading", async () => {
   await userEvent.type(composer, "Fresh work typed locally");
   expect(composer).toHaveTextContent("Fresh work typed locally");
   delayedDraft.resolve();
+  await page.ready;
 
   await waitFor(() => {
     expect(draftResponseCompleted).toBeTruthy();
   });
-  expect(composer).toHaveTextContent("Fresh work typed locally");
-  expect(composer).not.toHaveTextContent("Older server draft");
+  expect(currentMessageComposer()).toHaveTextContent(
+    "Fresh work typed locally",
+  );
+  expect(currentMessageComposer()).not.toHaveTextContent("Older server draft");
   expect(document.body).not.toHaveTextContent("older-notes.txt");
 });
 

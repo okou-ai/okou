@@ -28,6 +28,7 @@ export async function notifyFeishuConnect(
       agentName: agents.name,
       agentDisplayName: agents.displayName,
       botName: feishuOrgInstallations.botName,
+      platform: feishuOrgInstallations.platform,
     })
     .from(feishuOrgConnections)
     .innerJoin(
@@ -54,6 +55,7 @@ export async function notifyFeishuConnect(
       receiveIdType: "open_id",
       receiveId: args.openId,
       message: buildFeishuWelcomeMessage({
+        platform: installation.platform,
         agentName: installation.agentDisplayName ?? installation.agentName,
         botName: installation.botName,
       }),

@@ -7,6 +7,7 @@ use nix::fcntl::FlockArg;
 
 use super::*;
 use crate::cmd::gc::test_support::{assert_is_symlink, old_gc_time, set_mtime, test_home};
+use crate::process::discovery_test_support::{ProcfsFixture, UNCERTAIN_STAT_FAULTS};
 
 fn discovered_base_dirs(leases: &[DeadRunnerBaseDirLease]) -> Vec<PathBuf> {
     leases
@@ -460,6 +461,52 @@ async fn gc_workspace_orphans_dry_run_preserves() {
     assert_eq!(summary.workspaces_cleaned, 1);
     assert!(summary.bytes_freed > 0 || cfg!(target_os = "macos"));
     assert_eq!(summary.base_dir_locks_removed, 1);
+}
+
+#[tokio::test]
+async fn gc_workspace_orphans_preserves_files_after_discovery_stat_faults() {
+    for fault in UNCERTAIN_STAT_FAULTS {
+        for successful_reads in 0..4 {
+            let dir = tempfile::tempdir().unwrap();
+            let home = test_home(dir.path());
+            std::fs::create_dir_all(home.locks_dir()).unwrap();
+            let base_dir = dir.path().join("runner-data");
+            let workspace = base_dir.join("workspaces").join("run-old");
+            std::fs::create_dir_all(&workspace).unwrap();
+            let image_path = workspace.join("cow.img");
+            std::fs::write(&image_path, b"live workspace data").unwrap();
+            set_mtime(&workspace, old_gc_time());
+            let lock_path = write_base_dir_lock(&home, &base_dir);
+            let candidates = discover_base_dir_lock_candidates(&home);
+
+            let fixture = ProcfsFixture::new(&workspace);
+            let discovered = fixture
+                .discover_with_stat_fault(successful_reads, fault)
+                .await;
+            assert!(discovered.proc_scan_complete);
+            let firecrackers = discovered.processes.firecrackers;
+            let uncertain = workspace_firecracker_discovery_uncertain(&firecrackers, &[]).await;
+            let summary = gc_workspace_orphans_with_candidates(
+                candidates,
+                &firecrackers,
+                &HashSet::new(),
+                uncertain,
+                SystemTime::now(),
+                false,
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(
+                summary.workspaces_cleaned, 0,
+                "{fault:?} after {successful_reads} successful stat reads"
+            );
+            assert_eq!(summary.bytes_freed, 0);
+            assert_eq!(summary.base_dir_locks_removed, 0);
+            assert_eq!(std::fs::read(&image_path).unwrap(), b"live workspace data");
+            assert!(lock_path.exists(), "lock must remain for a later retry");
+        }
+    }
 }
 
 #[tokio::test]

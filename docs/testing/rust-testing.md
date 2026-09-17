@@ -4,6 +4,14 @@
 
 Rust crates live in `crates/` and use `cargo test` for testing. The same principles from [testing.md](../testing.md) apply: integration tests are primary, mock at the boundary, use real infrastructure.
 
+Runner's full suite includes a real Rust/Python registry-control round trip.
+First run `uv sync --locked --project crates/runner/mitm-addon` from the repository
+root, as described in the [addon guide](mitm-addon-testing.md). The test uses that
+locked `.venv/bin/python` directly and fails if it is unavailable; it does not
+download dependencies, contact APIs, or silently skip the integration. Crates
+coverage prepares the same environment before running tests. The status/log-only
+control tests retain their standard-library Python boundary.
+
 ## Running Tests
 
 Use the `local` profile for routine local validation. It retains source locations in backtraces

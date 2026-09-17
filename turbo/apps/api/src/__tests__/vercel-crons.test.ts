@@ -1,3 +1,4 @@
+import { cronGetStartedContract } from "@okouai/api-contracts/contracts/get-started";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -27,10 +28,10 @@ import {
   cronRenewGoogleWorkspaceEventSubscriptionsContract,
   cronReconcileBillingEntitlementsContract,
   cronReconcileSocialKitDownloadsContract,
-  cronRefreshStoragePresignedUrlsContract,
   cronSteerRunTimeBudgetContract,
   cronSyncSkillsContract,
   cronTelegramCleanupContract,
+  cronPruneStoragePresignedUrlsContract,
 } from "@okouai/api-contracts/contracts/cron";
 import { describe, expect, it } from "vitest";
 
@@ -139,7 +140,7 @@ const expectedVercelCrons = [
     schedule: "0 * * * *",
   },
   {
-    path: cronRefreshStoragePresignedUrlsContract.refresh.path,
+    path: cronPruneStoragePresignedUrlsContract.prune.path,
     schedule: "* * * * *",
   },
   {
@@ -170,6 +171,7 @@ const expectedVercelCrons = [
     path: cronSteerRunTimeBudgetContract.steer.path,
     schedule: "* * * * *",
   },
+  { path: cronGetStartedContract.process.path, schedule: "0 * * * *" },
 ] satisfies readonly VercelCron[];
 
 describe("vercel cron config", () => {

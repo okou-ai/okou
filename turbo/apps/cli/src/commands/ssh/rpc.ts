@@ -313,7 +313,18 @@ export async function invokeSshRpc<T>(
   params: Readonly<Record<string, unknown>>,
   response: ResponseReader<T>,
   json = true,
+  parentSignal?: AbortSignal,
 ): Promise<T> {
+  const parentReason = () => {
+    return parentSignal?.reason instanceof DOMException &&
+      parentSignal.reason.name === "TimeoutError"
+      ? "timed_out"
+      : "cancelled";
+  };
+  if (parentSignal?.aborted) {
+    response.fail(parentReason(), "not_started");
+    return response.output();
+  }
   const controller = new AbortController();
   const signal = controller.signal;
   let localReason: "cancelled" | "timed_out" | "transport" = "transport";
@@ -346,6 +357,11 @@ export async function invokeSshRpc<T>(
     child.kill("SIGKILL");
   };
   signal.addEventListener("abort", kill, { once: true });
+  const cancelFromParent = () => {
+    localReason = parentReason();
+    controller.abort();
+  };
+  parentSignal?.addEventListener("abort", cancelFromParent, { once: true });
   child.stdin.on("error", () => {
     controller.abort();
   });
@@ -387,6 +403,7 @@ export async function invokeSshRpc<T>(
     clearTimeout(timer);
     process.removeListener("SIGINT", cancel);
     signal.removeEventListener("abort", kill);
+    parentSignal?.removeEventListener("abort", cancelFromParent);
   }
   return response.output();
 }

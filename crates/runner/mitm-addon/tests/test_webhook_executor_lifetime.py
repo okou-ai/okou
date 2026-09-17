@@ -17,7 +17,7 @@ import pytest
 
 import thread_pool
 import usage
-from tests.pending_helpers import assert_current_pending
+from tests.pending_helpers import assert_pending
 
 
 class _Payload(dict):
@@ -43,8 +43,7 @@ def observed_pools() -> Iterator[list[ThreadPoolExecutor]]:
 def test_repeated_start_failure_releases_completed_delivery_data(
     tmp_path, usage_webhook_server, fresh_usage_executor, observed_pools, error_type, failed_worker
 ):
-    pending_path = tmp_path / "usage-pending"
-    usage.set_pending_path(str(pending_path))
+    control_root = tmp_path / "delivery-control"
     payload_refs: list[weakref.ReferenceType[_Payload]] = []
     snapshot_refs: list[weakref.ReferenceType[_Payload]] = []
     outcomes: list[tuple[int, usage.webhook.WebhookDeliveryOutcome]] = []
@@ -65,7 +64,7 @@ def test_repeated_start_failure_releases_completed_delivery_data(
             assert snapshot["events"]
             outcomes.append((index, outcome))
             assert usage.webhook.pending_delivery_payload_count_for_tests() == 1
-            assert_current_pending(pending_path, flows=0, buffered=0, reports=1)
+            assert_pending(control_root, flows=0, buffered=0, reports=1)
 
         assert usage.webhook.enqueue_webhook_delivery(
             usage_webhook_server.url(),
@@ -92,7 +91,7 @@ def test_repeated_start_failure_releases_completed_delivery_data(
             assert usage_webhook_server.request_count == expected
             assert outcomes == [(index, "success") for index in range(expected)]
             assert usage.webhook.pending_delivery_payload_count_for_tests() == 0
-            assert_current_pending(pending_path, flows=0, buffered=0, reports=0)
+            assert_pending(control_root, flows=0, buffered=0, reports=0)
             gc.collect()
             assert all(ref() is None for ref in payload_refs)
             assert all(ref() is None for ref in snapshot_refs)
@@ -116,7 +115,7 @@ def test_repeated_start_failure_releases_completed_delivery_data(
         gc.collect()
         assert all(ref() is None for ref in payload_refs)
         assert all(ref() is None for ref in snapshot_refs)
-        assert_current_pending(pending_path, flows=0, buffered=0, reports=0)
+        assert_pending(control_root, flows=0, buffered=0, reports=0)
     finally:
         fresh_usage_executor.shutdown(wait=True, cancel_futures=True)
 
@@ -124,8 +123,7 @@ def test_repeated_start_failure_releases_completed_delivery_data(
 def test_healthy_pool_preserves_capacity_and_drains_admitted_work(
     tmp_path, usage_webhook_server, fresh_usage_executor
 ):
-    pending_path = tmp_path / "usage-pending"
-    usage.set_pending_path(str(pending_path))
+    control_root = tmp_path / "delivery-control"
     release_requests = threading.Event()
     outcomes: list[usage.webhook.WebhookDeliveryOutcome] = []
     capacity = usage.webhook.MAX_PENDING_WEBHOOK_PAYLOADS
@@ -150,11 +148,11 @@ def test_healthy_pool_preserves_capacity_and_drains_admitted_work(
         assert not enqueue(capacity)
         assert usage_webhook_server.request_count == workers
         assert usage.webhook.pending_delivery_payload_count_for_tests() == capacity
-        assert_current_pending(pending_path, flows=0, buffered=0, reports=capacity)
+        assert_pending(control_root, flows=0, buffered=0, reports=capacity)
 
         fresh_usage_executor.shutdown(wait=False)
         assert outcomes == []
-        assert_current_pending(pending_path, flows=0, buffered=0, reports=capacity)
+        assert_pending(control_root, flows=0, buffered=0, reports=capacity)
     finally:
         release_requests.set()
         fresh_usage_executor.shutdown(wait=True)
@@ -165,7 +163,7 @@ def test_healthy_pool_preserves_capacity_and_drains_admitted_work(
     assert usage_webhook_server.request_count == capacity
     assert outcomes == ["success"] * capacity
     assert usage.webhook.pending_delivery_payload_count_for_tests() == 0
-    assert_current_pending(pending_path, flows=0, buffered=0, reports=0)
+    assert_pending(control_root, flows=0, buffered=0, reports=0)
 
 
 def test_shutdown_before_first_delivery_uses_synchronous_fallback(

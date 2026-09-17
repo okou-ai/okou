@@ -147,6 +147,13 @@ impl ApiRequestBuilder {
         Ok(FinalizedApiRequest { request, context })
     }
 
+    pub(crate) fn deferred_pi_reader(self) -> Self {
+        Self {
+            builder: self.builder.header("X-Pi-Deferred-Sandbox", "1"),
+            ..self
+        }
+    }
+
     #[cfg(test)]
     fn header_for_test(self, name: &'static str, value: &'static str) -> Self {
         let Self {
@@ -163,6 +170,18 @@ impl ApiRequestBuilder {
 }
 
 impl PreparedApiRequest {
+    pub(crate) fn query(mut self, pairs: &[(&str, &str)]) -> Self {
+        self.request
+            .url_mut()
+            .query_pairs_mut()
+            .extend_pairs(pairs.iter().copied());
+        self
+    }
+
+    pub(crate) fn url(&self) -> &url::Url {
+        self.request.url()
+    }
+
     pub(crate) fn context(&self) -> &ApiRequestContext {
         &self.context
     }

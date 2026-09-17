@@ -3,7 +3,7 @@ import { Command } from "commander";
 
 import { listConnectorCatalogStatus } from "../../lib/api/domains/connectors";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
-import { getPlatformOrigin } from "../doctor/platform-url";
+import { getPlatformOrigin } from "../../lib/platform-url";
 import { connectorActionUrl } from "../connector/action-url";
 import { resolveAgentContext } from "../connector/agent-context";
 import { findConnectorStatusItem } from "../connector/public-catalog";

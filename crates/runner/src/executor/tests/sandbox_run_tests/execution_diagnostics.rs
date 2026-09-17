@@ -940,14 +940,22 @@ async fn execute_inner_abnormal_exit_collects_guest_diagnostics() {
     overrides.add_exec_matcher(sandbox_mock::ExecMatcher {
         pattern: "guest-agent-binary".to_string(),
         exit_code: 0,
-        stdout: b"/dev/root       7.8G  7.4G   20K 100% /\n/dev/vdb         16G   24K   15G   1% /home/user/workspace\nMem:            3934        3310         255           0         552         624\n".to_vec(),
+        stdout: format!(
+            "/dev/root       7.8G  7.4G   20K 100% /\n/dev/vdb         16G   24K   15G   1% /home/user/workspace\nMem:            3934        3310         255           0         552         624\n{}\n== rootfs-usage ==\n/tmp bytes=4194304 entries=4096 status=partial reason=entries\n== processes ==\n73\n",
+            "x".repeat(5000)
+        ).into_bytes(),
         stderr: Vec::new(),
     });
     let factory = sandbox_mock::MockSandboxFactory::with_overrides(Arc::clone(&overrides));
     let ctx = minimal_context();
-    let outcome = run_new_sandbox_outcome(&factory, &ctx, &config, &default_params())
-        .await
-        .unwrap();
+    let (outcome, events) = capture_async_events(run_new_sandbox_outcome(
+        &factory,
+        &ctx,
+        &config,
+        &default_params(),
+    ))
+    .await;
+    let outcome = outcome.unwrap();
 
     let failure = outcome.failure.as_ref().expect("expected failure");
     assert_eq!(failure.exit_code, 126);
@@ -1006,10 +1014,19 @@ async fn execute_inner_abnormal_exit_collects_guest_diagnostics() {
         );
     }
     assert!(active_diagnostic_cmd.contains("section rootfs-usage"));
-    assert!(active_diagnostic_cmd.contains("timeout 1s du -sxh -- \"$target_path\""));
-    assert!(active_diagnostic_cmd.contains("du -sxh -- \"$target_path\""));
-    assert!(active_diagnostic_cmd.contains("2>/dev/null"));
-    assert!(!active_diagnostic_cmd.contains("  /home/user/workspace \\"));
+    let mut syntax_check = std::process::Command::new("sh")
+        .arg("-n")
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    std::io::Write::write_all(&mut syntax_check.stdin.take().unwrap(), call.cmd.as_bytes())
+        .unwrap();
+    assert!(syntax_check.wait().unwrap().success());
+    let event = captured_event(&events, "agent abnormal exit in-vm diagnostics");
+    assert_eq!(
+        event.fields.get("guest_root_fs_usage").map(String::as_str),
+        Some("/tmp bytes=4194304 entries=4096 status=partial reason=entries")
+    );
     assert_eq!(call.timeout, AGENT_ABNORMAL_EXIT_DIAGNOSTIC_TIMEOUT);
     assert!(call.env_keys.is_empty());
     assert!(call.sudo);
@@ -1028,7 +1045,7 @@ async fn execute_inner_keeps_partial_resource_output_when_diagnostic_helper_fail
         ExecResult {
             termination: ExecTermination::WaitFailed,
             guest_duration_ms: None,
-            stdout: b"/dev/root       7.8G  7.4G   20K 100% /\n/dev/vdb         16G   24K   15G   1% /home/user/workspace\nMem:            3934        3310         255           0         552         624\n".to_vec(),
+            stdout: b"/dev/root       7.8G  7.4G   20K 100% /\n/dev/vdb         16G   24K   15G   1% /home/user/workspace\nMem:            3934        3310         255           0         552         624\n\n== rootfs-usage ==\n/tmp status=started\n".to_vec(),
             stderr: b"wait failed".to_vec(),
             diagnostic: String::new(),
             stdout_truncated: false,
@@ -1037,9 +1054,14 @@ async fn execute_inner_keeps_partial_resource_output_when_diagnostic_helper_fail
     );
     let factory = sandbox_mock::MockSandboxFactory::with_overrides(overrides);
     let ctx = minimal_context();
-    let outcome = run_new_sandbox_outcome(&factory, &ctx, &config, &default_params())
-        .await
-        .unwrap();
+    let (outcome, events) = capture_async_events(run_new_sandbox_outcome(
+        &factory,
+        &ctx,
+        &config,
+        &default_params(),
+    ))
+    .await;
+    let outcome = outcome.unwrap();
 
     let failure = outcome.failure.as_ref().expect("expected failure");
     assert_eq!(failure.exit_code, 126);
@@ -1050,6 +1072,11 @@ async fn execute_inner_keeps_partial_resource_output_when_diagnostic_helper_fail
             .expect("valid partial resource output should be retained")
             .failure_kind,
         Some(ResourceFailureKind::GuestRootFilesystemFull)
+    );
+    let event = captured_event(&events, "agent abnormal exit in-vm diagnostics");
+    assert_eq!(
+        event.fields.get("guest_root_fs_usage").map(String::as_str),
+        Some("/tmp status=started")
     );
 }
 

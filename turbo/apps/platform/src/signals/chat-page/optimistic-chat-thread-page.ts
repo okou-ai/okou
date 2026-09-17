@@ -1,6 +1,7 @@
 import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { command, computed } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { isChatEffortEnabled } from "@okouai/core/model-feature-switch";
 import type { ImageModel } from "@okouai/core/image-model-catalog";
 import type { VideoModel } from "@okouai/core/video-model-catalog";
 import {
@@ -52,6 +53,10 @@ import {
   textToMessageDocument,
   type EditorDocumentSnapshot,
 } from "../okou-page/user-message-document-codec.ts";
+import {
+  rememberComposerTaskForThread$,
+  type ComposerTaskSelection,
+} from "../okou-page/composer-task-handoff.ts";
 import type { ChatForwardContext } from "./chat-forward.ts";
 import { withOptimisticAgentRunSource } from "./chat-event-signals.ts";
 
@@ -77,6 +82,8 @@ interface SendNewThreadMessageRequest {
   imageModel?: ImageModel;
   videoModel?: VideoModel;
   videoRunOptions?: ChatRunVideoOptionsRequest;
+  /** What the composer was set to make, for the thread this send creates. */
+  composerTask?: ComposerTaskSelection;
   routeSearchParams?: URLSearchParams;
   forward?: ChatForwardContext;
   onOptimisticSend?: () => void;
@@ -476,8 +483,9 @@ const startNewChatThreadCreate$ = command(
           clientThreadId: threadId,
           eventId,
           modelSelection,
-          reasoningEffortEnabled:
-            featureSwitches[FeatureSwitchKey.ChatReasoningEffort] ?? false,
+          reasoningEffortEnabled: isChatEffortEnabled({
+            overrides: featureSwitches,
+          }),
         },
         signal,
       );
@@ -592,6 +600,9 @@ const sendNewThreadMessage$ = command(
       },
       signal,
     );
+    if (request.composerTask) {
+      set(rememberComposerTaskForThread$, threadId, request.composerTask);
+    }
     request.onOptimisticSend?.();
     set(draft.clear$);
     const clearDraftResult = request.forward
@@ -607,8 +618,7 @@ const sendNewThreadMessage$ = command(
         clientThreadId: threadId,
         eventId: chatThreadEventId,
         modelSelection: resolvedModelSelection,
-        reasoningEffortEnabled:
-          features[FeatureSwitchKey.ChatReasoningEffort] ?? false,
+        reasoningEffortEnabled: isChatEffortEnabled({ overrides: features }),
         imageModel,
         videoModel,
         connectorSelections: request.connectorSelections,

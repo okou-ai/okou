@@ -517,8 +517,12 @@ test("Built-in workflows can start without connector setup", async () => {
   expect(
     within(preview).getByText(/built-in Firecrawl and DataForSEO/u),
   ).toBeVisible();
-  expect(preview.querySelector(".owf-diagram-node-source")).toBeNull();
-  expect(preview.querySelector(".owf-diagram-dot-source")).toBeNull();
+  expect(
+    preview.querySelector('[data-slot="onboarding-diagram-source-node"]'),
+  ).toBeNull();
+  expect(
+    preview.querySelector('[data-slot="onboarding-diagram-source-dot"]'),
+  ).toBeNull();
   expect(preview.querySelector('path[d="M170 81H277"]')).toBeNull();
   expect(
     preview.querySelectorAll('[data-slot="onboarding-okou-avatar"]'),
@@ -1426,6 +1430,12 @@ test.each([
 ])(
   "Onboarding and checkout route only to $accountId",
   async ({ accountId, onboarding, checkout }) => {
+    const marketing = "https://www.okou.ai/api/marketing";
+    const requests: Request[] = [];
+    context.mocks.http.post(`${marketing}/finish-onboarding`, ({ request }) => {
+      requests.push(request);
+      return new Response(null, { status: 204 });
+    });
     context.mocks.api(
       acquisitionAttributionContract.resolveGoogleAdsAccount,
       ({ respond }) => {
@@ -1445,6 +1455,7 @@ test.each([
     await setupPage({
       context,
       path: "/onboarding/video-template?choice=video",
+      host: "app.okou.ai",
     });
 
     await expect(
@@ -1475,5 +1486,7 @@ test.each([
       expect(window.location.href).toContain("checkout.stripe.com");
       expect(sentConversions(gtag)).toStrictEqual([...onboarding, ...checkout]);
     });
+    expect(requests).toHaveLength(1);
+    await expect(requests[0]?.text()).resolves.toBe("");
   },
 );

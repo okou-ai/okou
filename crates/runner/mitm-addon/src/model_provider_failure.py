@@ -30,11 +30,14 @@ WebSocket lifecycle:
 * A terminal event must match the active response ID. Matching terminal and server-error events
   clear the correlation before applying their outcome; prewarm outcomes are not reported.
   Unfinished normal requests settle as unknown at WebSocket end and are also not reported.
-* Unknown client events, overlapping creates, invalid server events, and missing or mismatched
-  response IDs while an intent is outstanding make the lifecycle ambiguous. Ambiguity clears
-  correlation, emits one sanitized suppression entry, and remains sticky so later events cannot
-  revive or report the flow. Terminal/error events with no pending or active intent are ignored,
-  allowing a later request on the same WebSocket to be correlated normally.
+* Unknown client events, overlapping creates, invalid server evidence, and invalid
+  ``response.created`` transitions make the lifecycle ambiguous. Invalid server evidence and
+  ``response.created`` without a pending intent do so even with no pending or active intent.
+  Missing or mismatched terminal response IDs also make an outstanding lifecycle ambiguous.
+* Ambiguity clears correlation, emits one sanitized suppression entry, and remains sticky so
+  later events cannot revive correlation or report failures on this WebSocket. Valid terminal/error
+  events with no pending or active intent are ignored without introducing ambiguity, allowing a
+  later request on the same WebSocket to be correlated normally.
 
 ``websocket_end()`` settles any unfinished WebSocket state before terminal cleanup. The cleanup
 path calls ``release_flow()`` to remove the reducer state and the registered response finalizer.
@@ -544,9 +547,19 @@ def observe_websocket_server_event(
 ) -> None:
     """Correlate one parsed WebSocket server event and apply its terminal outcome.
 
-    ``response.created`` binds a pending intent to a response ID. Matching terminal or error
-    events clear that correlation before applying an outcome. Invalid events and contradictory
-    IDs make an outstanding lifecycle ambiguous; events with no outstanding intent are ignored.
+    ``response.created`` requires a pending intent, a response ID, and no active intent; it binds
+    that intent to the ID. Matching terminal or error events clear correlation before applying
+    an outcome. Missing or mismatched terminal response IDs make an outstanding lifecycle ambiguous.
+
+    Invalid evidence or an invalid ``response.created`` transition enters sticky ambiguity even
+    with no pending or active intent. Ambiguity clears correlation and prevents later events from
+    reporting failures on this WebSocket. Valid terminal/error events with no pending or active
+    intent are ignored without introducing ambiguity, allowing later requests to be correlated
+    normally.
+
+    See ``test_model_provider_failure_reporting.py``: ``invalid-server-json`` and
+    ``created-without-pending-request`` cover idle ambiguity;
+    ``test_websocket_unmatched_event_does_not_poison_later_request`` covers the valid idle no-ops.
     """
 
     flow_state = _websocket_flow_state(flow)

@@ -324,7 +324,7 @@ const isGithubInstallOrgAdmin$ = command(
       signal,
     );
     signal.throwIfAborted();
-    return membership?.role === "admin";
+    return membership.kind === "member" && membership.role === "admin";
   },
 );
 

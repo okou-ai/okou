@@ -1,0 +1,1 @@
+ALTER TABLE "org_members_metadata" DROP COLUMN "morning_brief_default_eligible_at";

@@ -165,6 +165,8 @@ fn plan_controls_and_private_bodies_never_enter_recovered_suffix() {
     for body in [
         format!("`{OPEN}secret{CLOSE}`"),
         format!("```\n{OPEN}secret\n```"),
+        format!("```\n{OPEN}\n``\n```\nsecret{CLOSE}"),
+        format!("~~~~\n~~~\n{OPEN}\n~~~~\nsecret"),
         format!("{OPEN}invalid unclosed secret"),
     ] {
         let visible = repair_text(&body, &native_citation_projection(&body)).unwrap();

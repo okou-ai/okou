@@ -1,38 +1,22 @@
-import { computed, type Computed, type State } from "ccstate";
+import { computed, type Computed } from "ccstate";
 import type { Root } from "hast";
 
 import { createPlainMarkdownTree } from "../lib/markdown/plain-markdown.ts";
 import { parseMarkdownTree } from "../lib/markdown/pipeline.ts";
-import { richMarkdownRetryVersion$ } from "./rich-markdown-retry.ts";
 import {
-  createMermaidDiagramSignals,
+  createMermaidDiagramRegistry,
   embedMermaidSignals,
 } from "./mermaid-diagram.ts";
 import type { TextPreviewComputed } from "./text-preview.ts";
 
 export type MarkdownPreviewTreeComputed = Computed<Promise<Root>>;
 
-/**
- * The rendered tree of a markdown preview (a `.md` artifact or attachment).
- * Created wherever the preview's text computed is attached — the command that
- * opens the preview — so the view renders a prepared tree with its diagram
- * signals embedded instead of parsing during render. Diagram signals are
- * created per tree rather than through the chat registry: a preview's content
- * only changes when the whole preview is replaced. A readable owner lets a
- * reusable computed pick up each newly opened preview session's lifetime.
- */
+/** Derive one preview tree and its diagram graph from the current text. */
 export function createMarkdownPreviewTree(
   text$: TextPreviewComputed,
-  owner: AbortSignal | Computed<AbortSignal> | State<AbortSignal>,
 ): MarkdownPreviewTreeComputed {
-  // eslint-disable-next-line ccstate/no-computed-signal -- migrate this computed away from AbortSignal ownership
   return computed(async (get): Promise<Root> => {
-    // The preview's error surface can explicitly retry preparation without
-    // replacing an otherwise unchanged file.
-    get(richMarkdownRetryVersion$);
-    const ownerSignal = "aborted" in owner ? owner : get(owner);
     const source = await get(text$);
-    ownerSignal.throwIfAborted();
     const plainTree = createPlainMarkdownTree(source, { mathEnabled: false });
     if (plainTree !== null) {
       return plainTree;
@@ -40,10 +24,8 @@ export function createMarkdownPreviewTree(
     const tree = parseMarkdownTree(source, {
       mermaid: true,
     });
-    ownerSignal.throwIfAborted();
-    embedMermaidSignals(tree, (code) => {
-      return createMermaidDiagramSignals(code, ownerSignal);
-    });
+    const diagrams = createMermaidDiagramRegistry();
+    embedMermaidSignals(tree, diagrams.register);
     return tree;
   });
 }

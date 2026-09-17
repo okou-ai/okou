@@ -35,6 +35,7 @@ const ONBOARDING_GUARDED_PATHS = [
   ROUTES.redeemCampaign,
   ROUTES.settings,
   ROUTES.settingsFeishu,
+  ROUTES.settingsLark,
   ROUTES.settingsSlack,
   ROUTES.settingsTeams,
   ROUTES.settingsTelegram,

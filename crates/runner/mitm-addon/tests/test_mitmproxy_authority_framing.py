@@ -14,6 +14,7 @@ from mitmproxy.proxy.layers.http._hooks import HttpRequestHeadersHook, HttpReque
 from mitmproxy.test import taddons
 
 import flow_metadata_keys as metadata_keys
+import host_normalization
 import mitm_addon
 import request_authority
 from tests.mitmproxy_http_framing_helpers import (
@@ -157,6 +158,79 @@ async def test_over_budget_http1_host_is_rejected_in_both_hooks_without_string_a
         isinstance(command, (commands.OpenConnection, commands.SendData))
         and isinstance(command.connection, connection.Server)
         for command in request_commands
+    )
+
+
+@pytest.mark.parametrize("mark_count", [128, 256, 512, 1023])
+async def test_http1_combining_host_is_rejected_before_normalization_or_auth(
+    tmp_path: Path,
+    fake_firewall_headers,
+    mark_count: int,
+) -> None:
+    registry_path = _write_github_firewall_registry(tmp_path)
+    host = ("a" + "\u0315" * mark_count + "\u0300" * mark_count).encode()
+    assert len(host) <= 4096
+
+    with (
+        patch.object(mitm_addon, "__file__", str(tmp_path / "mitm_addon.py")),
+        taddons.context(Proxyserver(), mitm_addon) as addon_context,
+        fake_firewall_headers(headers={"Authorization": "Bearer managed-secret"}) as get_headers,
+    ):
+        addon_context.options.update(
+            okou_api_url="https://api.okou.ai",
+            okou_proxy_registry_path=str(registry_path),
+        )
+        client, http_layer = start_http_layer(
+            addon_context,
+            alpn=b"http/1.1",
+            host="api.github.com",
+            server_host="203.0.113.10",
+            mode=HTTPMode.transparent,
+        )
+        initial_commands = list(
+            http_layer.handle_event(
+                events.DataReceived(
+                    client,
+                    b"GET /repos HTTP/1.1\r\nHost: " + host + b"\r\nContent-Length: 0\r\n\r\n",
+                )
+            )
+        )
+        request_headers_hook = next(
+            command for command in initial_commands if isinstance(command, HttpRequestHeadersHook)
+        )
+        flow = request_headers_hook.flow
+        original_head = http1.assemble_request_head(flow.request)
+        assert flow.request.headers.get_all("Host") == [host.decode()]
+
+        with patch.object(
+            host_normalization,
+            "normalize",
+            side_effect=AssertionError("impossible Host reached Unicode normalization"),
+        ):
+            await addon_context.master.addons.invoke_addon(mitm_addon, request_headers_hook)
+            get_headers.assert_not_awaited()
+            header_commands = list(
+                http_layer.handle_event(events.HookCompleted(request_headers_hook, None))
+            )
+            request_hook = next(
+                command for command in header_commands if isinstance(command, HttpRequestHook)
+            )
+            await addon_context.master.addons.invoke_addon(mitm_addon, request_hook)
+            request_commands = list(
+                http_layer.handle_event(events.HookCompleted(request_hook, None))
+            )
+
+    assert flow.response is not None
+    assert flow.response.status_code == 403
+    assert flow.response.content is not None
+    assert json.loads(flow.response.content)["error"] == "invalid_authority"
+    assert http1.assemble_request_head(flow.request) == original_head
+    assert "Authorization" not in flow.request.headers
+    get_headers.assert_not_awaited()
+    assert not any(
+        isinstance(command, (commands.OpenConnection, commands.SendData))
+        and isinstance(command.connection, connection.Server)
+        for command in (*header_commands, *request_commands)
     )
 
 

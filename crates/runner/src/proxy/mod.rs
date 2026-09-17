@@ -6,28 +6,32 @@
 //! metadata through the proxy registry, and coordinates crash notification,
 //! restart, webhook delivery drain, JSONL log flush, and graceful stop behavior.
 //!
-//! The Rust/Python boundary is intentionally file- and option-based:
+//! The private Rust/Python boundary uses control I/O plus existing files/options:
 //!
 //! - `okou_proxy_registry_path` points the addon at the registry JSON written
 //!   by [`ProxyRegistryHandle`].
 //! - `okou_usage_state_id` identifies the currently running mitmdump/addon
 //!   process. Restart rotates this value so stale addon state from an older
 //!   child is rejected.
-//! - `okou_addon_ready_path` points to a marker the addon writes only after its
-//!   hooks and runner options initialize successfully. Rust requires the
-//!   marker to contain the active usage state before accepting the TCP
-//!   listener as ready.
-//! - `usage-flush-request` is written by Rust before shutdown drain. The addon
-//!   acknowledges in `usage-pending` with the matching usage state, flush
-//!   request id, and pending flow/buffer/report counters.
-//! - `jsonl-flush-request` is written by Rust for one network log path before
-//!   upload. The addon acknowledges in `jsonl-flush-state` after accepted
-//!   writes for that path are visible.
+//! - `okou_control_socket_dir` selects the private launch directory containing
+//!   `control.sock`. A bounded, correlated `proxy.status` exchange confirms
+//!   initialized handlers for the active generation before the TCP probe.
+//! - `delivery.flush` admits a coalesced background wake. `delivery.drain`
+//!   observes bounded delivery progress; `delivery.status` reads pending work
+//!   and known outcomes without I/O. Quiescence does not certify all delivery.
+//! - `logs.flush` captures an accepted-write prefix for the original run/path
+//!   and generation before upload. Processing includes failed append attempts;
+//!   it does not certify persistence. Connections never own pending writes.
+//! - `registry.apply` correlates published bytes with the actual registry/catalog
+//!   view compiled by the addon. `registry.status` observes the last completed
+//!   load without file I/O. Neither replaces request-time file enforcement.
+//! - `usage.snapshot` reads cumulative per-run inference observations independently
+//!   of billing, using a frozen generation/run and bounded read admission.
 //!
 //! On supported Unix runner hosts, registry writes are target-path atomic so
-//! the addon never consumes partial JSON. Flush acknowledgements must match the
-//! active usage state and request id; missing, stale, invalid, or mismatched
-//! addon state is treated as "not ready" until the bounded wait times out.
+//! the addon never consumes partial JSON. Control replies must match the active
+//! generation and request id. Missing or invalid replies are unknown outcomes,
+//! not authorization to replay mutations against a replacement.
 //! Webhook delivery drain is a shutdown path for billing, usage, and timing
 //! reports, while JSONL flush is a per-upload network-log path.
 //!
@@ -41,36 +45,42 @@
 //! monitor. Recovery reaps the old process tree and removes its private launch
 //! directory before spawning; `complete_restart` stores the new child. Unknown
 //! old-child cleanup failures stop recovery instead of starting another child.
-//! Shutdown writes a usage flush request, signals the addon, waits
-//! boundedly for `usage-pending`, then calls `stop`. Recovery and shutdown only
+//! Shutdown observes delivery through the control socket for at most 30 seconds,
+//! then calls `stop`. Recovery and shutdown only
 //! act on runner-owned private paths and marked processes; legacy shared
 //! `/tmp/_MEI*` paths are deliberately left untouched.
 //!
 //! Addon-side details live in `crates/runner/mitm-addon/src/mitm_addon.py`
 //! (mitmproxy hook orchestration),
-//! `crates/runner/mitm-addon/src/runner_flush_lifecycle.py` (SIGUSR1 usage
-//! worker and JSONL marker watcher),
-//! `crates/runner/mitm-addon/src/usage/counters.py` (`usage-pending`),
+//! `crates/runner/mitm-addon/src/runner_control.py` (independent control I/O),
+//! `crates/runner/mitm-addon/src/runner_flush_lifecycle.py` (coalesced delivery
+//! worker),
+//! `crates/runner/mitm-addon/src/usage/counters.py` (in-memory delivery observations),
 //! `crates/runner/mitm-addon/src/registry.py` (registry loading), and
 //! `crates/runner/mitm-addon/src/jsonl_writer.py` (accepted-write flush
 //! semantics).
 
-mod flush;
+mod control;
+mod delivery;
+mod log_flush;
 mod managed_process;
 mod process;
 mod registry;
+mod registry_application;
+mod run_usage;
 mod runtime;
 mod stderr;
 
-pub use flush::{
-    MitmJsonlFlushHandle, USAGE_FLUSH_TIMEOUT, wait_usage_flush_requesting,
-    write_usage_flush_request,
-};
+pub use log_flush::{MitmJsonlFlushHandle, MitmRunLogFlush};
 pub(crate) use managed_process::ManagedMitmdump;
 pub(crate) use process::MitmRestartError;
 pub use process::{MitmProxy, ProxyConfig};
 pub(crate) use registry::{
-    ConnectorRuntimeFailCloseOutcome, ConnectorRuntimeRegistryUpdate,
+    ConnectorRuntimeFailCloseOutcome, ConnectorRuntimePublication, ConnectorRuntimeRegistryUpdate,
     CustomConnectorRuntimeRegistryState,
 };
 pub use registry::{ProxyRegistryHandle, SandboxRegistration};
+pub use run_usage::{
+    CoverageReason, MitmRunUsage, MitmUsageHandle, RunUsageObservation, RunUsageSnapshot,
+    TokenTotals,
+};

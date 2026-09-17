@@ -48,8 +48,11 @@ export function IntroVideoCatalogPagination({
   }
   if (loading) {
     return (
+      // The status row owns the containing block: an sr-only label is absolute,
+      // so without it the label escapes the catalog scroller's clip and lands
+      // thousands of pixels below, growing the dialog's scrollable area.
       <div
-        className="flex justify-center py-3 text-muted-foreground"
+        className="relative flex justify-center py-3 text-muted-foreground"
         role="status"
       >
         <Loader2 className="animate-spin" size={18} aria-hidden="true" />

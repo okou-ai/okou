@@ -31,8 +31,20 @@ async fn hold_blocking_worker() -> (mpsc::Sender<()>, tokio::task::JoinHandle<()
 
 fn command(value: &str) -> Value {
     let mut request = params();
+    // Distinct connections require independent key preparation, even with caching.
+    request["sshConnectionId"] = json!(uuid::Uuid::new_v4());
     request["command"] = json!(value);
     request
+}
+
+async fn resolve_any_connection(h: &Harness) -> httpmock::Mock<'_> {
+    h.api
+        .mock_async(|when, then| {
+            when.method("POST")
+                .path(format!("/api/runners/runs/{}/ssh/resolve", h.run));
+            then.status(200).json_body(h.credential(true));
+        })
+        .await
 }
 
 async fn expire_queued_request(h: &Harness) {
@@ -56,9 +68,7 @@ async fn expire_queued_request(h: &Harness) {
 fn cpu_waiters_resume_after_capacity_returns_without_running_expired_requests() {
     runtime().block_on(async {
         let mut h = Harness::new(Reply::default()).await;
-        // This authority mode performs a fresh preparation for each request.
-        h.runtime.ably_connected(false);
-        let _resolve = h.resolve(h.credential(true)).await;
+        let _resolve = resolve_any_connection(&h).await;
         let (release, occupied) = hold_blocking_worker().await;
         let (first, second, queued, ()) = tokio::time::timeout(Duration::from_secs(10), async {
             tokio::join!(
@@ -101,8 +111,7 @@ fn cancelled_cpu_waiters_release_run_slots_and_guest_park_before_host_jobs_finis
     for cancel in [Cancel::Run, Cancel::Sandbox] {
         runtime().block_on(async {
             let mut h = Harness::new(Reply::default()).await;
-            h.runtime.ably_connected(false);
-            let _resolve = h.resolve(h.credential(true)).await;
+            let _resolve = resolve_any_connection(&h).await;
             let (release, occupied) = hold_blocking_worker().await;
             let (first, second, queued, pending) =
                 tokio::time::timeout(Duration::from_secs(10), async {

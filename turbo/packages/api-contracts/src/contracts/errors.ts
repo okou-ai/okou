@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { formatRunBalanceError } from "./run-balance-errors";
 import {
   getCanonicalModelDisplayName,
   normalizeRunModelId,
@@ -249,25 +250,25 @@ export const CHAT_RUN_CONTENT_POLICY_REJECTED_MESSAGE =
 const AGENT_EXECUTION_TIMEOUT_RUN_ERROR =
   /^Agent execution timed out after [1-9]\d* seconds$/u;
 
-const CODEX_OAUTH_RECONNECT_REQUIRED_MESSAGE =
+export const CODEX_OAUTH_RECONNECT_REQUIRED_MESSAGE =
   "ChatGPT session needs reconnection. Reconnect ChatGPT (Codex) in Model Providers, then retry.";
 
-const CLAUDE_CODE_SUBSCRIPTION_RECONNECT_REQUIRED_MESSAGE =
+export const CLAUDE_CODE_SUBSCRIPTION_RECONNECT_REQUIRED_MESSAGE =
   "Claude Code subscription authentication failed. Reconnect Claude Code in Model Providers, then retry.";
 
-const CLAUDE_CODE_ANTHROPIC_API_KEY_ADMIN_MESSAGE =
+export const CLAUDE_CODE_ANTHROPIC_API_KEY_ADMIN_MESSAGE =
   "Claude Code could not authenticate with the configured Anthropic API key. Update or replace the API key in Model Providers, then retry.";
 
-const CLAUDE_CODE_ANTHROPIC_API_KEY_MEMBER_MESSAGE =
+export const CLAUDE_CODE_ANTHROPIC_API_KEY_MEMBER_MESSAGE =
   "Claude Code could not authenticate with the configured Anthropic API key. Ask a workspace admin to update or replace the API key.";
 
-const CLAUDE_CODE_TERMS_ACCEPTANCE_REQUIRED_MESSAGE =
+export const CLAUDE_CODE_TERMS_ACCEPTANCE_REQUIRED_MESSAGE =
   "Claude Code requires acceptance of updated Consumer Terms and Privacy Policy. Sign in to https://claude.ai with the Claude account connected in Model Providers, accept the updated terms and policy, then retry.";
 
 const CLAUDE_PROVIDER_OVERLOADED_FALLBACK_MODEL = "Claude Model";
-const CLAUDE_PROVIDER_OVERLOADED_GUIDANCE =
+export const CLAUDE_PROVIDER_OVERLOADED_GUIDANCE =
   "is overloaded. Please wait a few minutes and try again, or switch to another model.";
-const CODEX_PROVIDER_OVERLOADED_MESSAGE =
+export const CODEX_PROVIDER_OVERLOADED_MESSAGE =
   "Selected model is at capacity. Please try a different model.";
 
 const CLAUDE_CODE_LIMIT_SNIPPETS = [
@@ -698,6 +699,7 @@ type StructuredRunErrorBehavior =
   | "execution-timeout"
   | "generic"
   | "insufficient-credits"
+  | "provider-balance"
   | "overloaded"
   | "passthrough"
   | "reconnect"
@@ -710,6 +712,7 @@ const STRUCTURED_RUN_ERROR_BEHAVIOR: Record<
   session_history_limit: "generic",
   execution_timeout: "execution-timeout",
   insufficient_credits: "insufficient-credits",
+  provider_insufficient_credits: "provider-balance",
   invalid_api_key: "generic",
   invalid_credentials: "credential",
   terms_acceptance_required: "terms",
@@ -719,6 +722,7 @@ const STRUCTURED_RUN_ERROR_BEHAVIOR: Record<
   provider_rate_limited: "generic",
   provider_overloaded: "overloaded",
   provider_stream_timeout: "generic",
+  provider_queue_timeout: "generic",
   provider_server_error: "generic",
   response_connection_lost: "generic",
   safety_policy_refusal: "content-policy",
@@ -747,6 +751,7 @@ function formatStructuredRunError(params: {
   readonly errorMessage: string;
   readonly framework?: ModelProviderFramework | null;
   readonly selectedModel?: string | null;
+  readonly modelProviderType?: ModelProviderType | null;
   readonly claudeCodeCredentialRecovery?: ClaudeCodeCredentialRecovery;
 }): string {
   const knownReason = knownRunFailureReasonSchema.safeParse(
@@ -765,6 +770,12 @@ function formatStructuredRunError(params: {
     }
     case "insufficient-credits": {
       return "insufficient_credits";
+    }
+    case "provider-balance": {
+      return formatRunBalanceError({
+        failureReason: params.failureReason,
+        modelProvider: params.modelProviderType,
+      })!;
     }
     case "credential": {
       const recoveryMessage =
@@ -814,6 +825,7 @@ export function formatRunErrorForExternalSurface(params: {
   readonly failureReason?: RunFailureReasonToken;
   readonly framework?: ModelProviderFramework | null;
   readonly selectedModel?: string | null;
+  readonly modelProviderType?: ModelProviderType | null;
   readonly claudeCodeCredentialRecovery?: ClaudeCodeCredentialRecovery;
   readonly insufficientCredits?:
     | {
@@ -828,13 +840,14 @@ export function formatRunErrorForExternalSurface(params: {
       };
 }): string {
   const errorMessage = params.message.trim() || "Run failed";
-
+  const modelProviderType = params.modelProviderType;
   if (params.failureReason !== undefined) {
     return formatStructuredRunError({
       failureReason: params.failureReason,
       errorMessage,
       framework: params.framework,
       selectedModel: params.selectedModel,
+      modelProviderType,
       claudeCodeCredentialRecovery: params.claudeCodeCredentialRecovery,
     });
   }

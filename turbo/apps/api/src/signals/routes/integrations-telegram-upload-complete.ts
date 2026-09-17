@@ -15,7 +15,10 @@ import {
   getOfficialTelegramBotConfig,
   isOfficialTelegramBotId,
 } from "../external/telegram-official";
-import { resolveArtifactObject$ } from "../services/artifact-storage.service";
+import {
+  materializeUploadedArtifact$,
+  uploadedArtifactFetchUrl,
+} from "../services/uploaded-artifact.service";
 import { recordTelegramUploadedFile$ } from "../services/run-uploaded-files.service";
 import { telegramInstallation } from "../services/telegram-data.service";
 import type { RouteEntry } from "../route-entry";
@@ -125,8 +128,8 @@ const completeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
 
   const s3Object = await set(
-    resolveArtifactObject$,
-    { userId, id: body.uploadId },
+    materializeUploadedArtifact$,
+    { userId, orgId, id: body.uploadId },
     signal,
   );
   if (!s3Object) {
@@ -135,7 +138,9 @@ const completeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const filename = s3Object.filename;
   const fileUrl = s3Object.url;
 
-  const result = await sendDocument(botToken, body.chatId, fileUrl, {
+  const fetchUrl = await get(uploadedArtifactFetchUrl(s3Object));
+  signal.throwIfAborted();
+  const result = await sendDocument(botToken, body.chatId, fetchUrl, {
     caption: body.caption,
     messageThreadId: body.messageThreadId,
   });

@@ -1,11 +1,13 @@
 import { sql } from "drizzle-orm";
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
+import type { UsagePackDeferredSchedule } from "../jsonb-contracts/usage-pack-deferred-schedule";
 import {
   bigint,
   boolean,
   check,
   index,
   integer,
+  jsonb,
   pgTable,
   text,
   timestamp,
@@ -282,7 +284,8 @@ export const usagePackSubscriptions = pgTable(
 );
 
 /**
- * One database-owned pending count per organization. Migration 0954 preserves
+ * One persisted pending count per organization. Explicit API transactions and
+ * the retained 0954 trigger share this guard during rollout. Migration 0954 preserves
  * the exact count when legacy writers already left competing snapshots. New
  * writers may claim the organization only after reconciliation reaches zero.
  */
@@ -340,6 +343,8 @@ export const usagePackSubscriptionChanges = pgTable(
     previewExpiresAt: timestamp("preview_expires_at").notNull(),
     stripeInvoiceId: text("stripe_invoice_id"),
     stripePendingUpdateExpiresAt: timestamp("stripe_pending_update_expires_at"),
+    deferredSchedule:
+      jsonb("deferred_schedule").$type<UsagePackDeferredSchedule>(),
     effectiveAt: timestamp("effective_at").notNull(),
     failureReason: text("failure_reason"),
     completedAt: timestamp("completed_at"),

@@ -1,7 +1,12 @@
 import { Command } from "commander";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { program, registerCommands, registerRequestedCommand } from "../okou";
+import {
+  buildHelpText,
+  program,
+  registerCommands,
+  registerRequestedCommand,
+} from "../okou";
 
 function buildOkouToken(capabilities: readonly string[]): string {
   const header = Buffer.from(JSON.stringify({ alg: "HS256" })).toString(
@@ -61,6 +66,7 @@ describe("Okou CLI program", () => {
       "workflow",
       "slack",
       "feishu",
+      "lark",
       "teams",
       "telegram",
       "github",
@@ -73,8 +79,10 @@ describe("Okou CLI program", () => {
       "web",
       "video",
       "host",
+      "artifact",
       "presentation",
       "presentation-template",
+      "user-template",
       "maps",
       "weather",
       "scrape",
@@ -97,7 +105,6 @@ describe("Okou CLI program", () => {
       "auth",
       "compose",
       "volume",
-      "artifact",
       "run",
       "preference",
       "secret",
@@ -122,8 +129,8 @@ describe("Okou CLI program", () => {
     expect(canonicalCommandNames).not.toContain("__intro-video-voice");
   });
 
-  it("should have exactly 40 canonical commands", () => {
-    expect(canonicalCommandNames).toHaveLength(40);
+  it("should have exactly 43 canonical commands", () => {
+    expect(canonicalCommandNames).toHaveLength(43);
   });
 });
 
@@ -131,6 +138,35 @@ describe("Okou CLI lazy command loading", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
   });
+
+  it.each([
+    [],
+    ["file:write"],
+    ["file:read"],
+    ["artifact:read"],
+    ["artifact:write"],
+  ])(
+    "shows artifacts with a visibility or download capability: %j",
+    (...capabilities: string[]) => {
+      vi.stubEnv("OKOU_TOKEN", buildOkouToken(capabilities));
+      const cli = new Command("okou");
+      registerCommands(cli);
+      expect(cli.helpInformation().includes("artifact")).toBe(
+        capabilities.some((capability) => {
+          return (
+            capability.startsWith("artifact:") || capability === "file:read"
+          );
+        }),
+      );
+      expect(buildHelpText().includes("okou artifact --help")).toBe(
+        capabilities.some((capability) => {
+          return (
+            capability.startsWith("artifact:") || capability === "file:read"
+          );
+        }),
+      );
+    },
+  );
 
   it.each([[], ["ssh:read"], ["ssh:write"]])(
     "shows SSH only with an eligible Run capability: %j",
@@ -147,7 +183,34 @@ describe("Okou CLI lazy command loading", () => {
     },
   );
 
+  it.each([[], ["feishu:write"], ["lark:write"]])(
+    "shows Lark only with its own capability: %j",
+    (...capabilities: string[]) => {
+      vi.stubEnv("OKOU_TOKEN", buildOkouToken(capabilities));
+      const cli = new Command("okou");
+      registerCommands(cli);
+      expect(cli.helpInformation().includes("lark")).toBe(
+        capabilities.includes("lark:write"),
+      );
+      expect(buildHelpText().includes("okou lark message send --help")).toBe(
+        capabilities.includes("lark:write"),
+      );
+    },
+  );
+
   it.each([
+    {
+      label: "artifact sharing help invocation",
+      argv: ["node", "okou", "artifact", "--help"],
+      expectedName: "artifact",
+      expectedHelpCode: "commander.helpDisplayed",
+    },
+    {
+      label: "Lark help invocation",
+      argv: ["node", "okou", "lark", "--help"],
+      expectedName: "lark",
+      expectedHelpCode: "commander.helpDisplayed",
+    },
     {
       label: "direct canonical invocation",
       argv: ["node", "okou", "image-recognition", "--help"],
@@ -163,7 +226,16 @@ describe("Okou CLI lazy command loading", () => {
   ])(
     "should lazy-load $label",
     async ({ argv, expectedName, expectedHelpCode }) => {
-      vi.stubEnv("OKOU_TOKEN", buildOkouToken(["image-recognition:write"]));
+      vi.stubEnv(
+        "OKOU_TOKEN",
+        buildOkouToken([
+          expectedName === "lark"
+            ? "lark:write"
+            : expectedName === "artifact"
+              ? "artifact:read"
+              : "image-recognition:write",
+        ]),
+      );
       let helpOutput = "";
       const prog = new Command()
         .name("okou")

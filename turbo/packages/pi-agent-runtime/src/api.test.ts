@@ -12,8 +12,11 @@ import {
   fauxAssistantMessage,
   type AssistantMessage,
 } from "@earendil-works/pi-ai";
-import { CURRENT_SESSION_VERSION } from "@earendil-works/pi-coding-agent";
-import { describe, expect, it } from "vitest";
+import {
+  AgentSession,
+  CURRENT_SESSION_VERSION,
+} from "@earendil-works/pi-coding-agent";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   createPiApiFirstTurnOwnership,
@@ -22,12 +25,25 @@ import {
   projectPiSessionJsonlForExport,
   PiApiFirstTurnCompactionRequiredError,
   runPiApiFirstTurn,
+  preparePiApiTurn,
+  executePreparedPiApiTurn,
   UnsupportedPiSessionVersionError,
 } from "./api";
 import { projectPiApiAssistantMessage } from "./api-turn";
 import { resolvePiAgentModel } from "./model";
 import { MemoryPiSession } from "./session-memory";
 import type { PiApiAssistantMessage, PiApiFirstTurnArgs } from "./api-types";
+
+function promiseWithResolvers<T>() {
+  return (
+    Promise as PromiseConstructor & {
+      withResolvers<TValue>(): {
+        readonly promise: Promise<TValue>;
+        readonly resolve: (value: TValue) => void;
+      };
+    }
+  ).withResolvers<T>();
+}
 
 const publicEventFixture = JSON.parse(
   readFileSync(
@@ -61,6 +77,7 @@ function responsesTextSse(
   text: string,
   options?: {
     readonly fragmentTerminal?: boolean;
+    readonly onDeltaSent?: (finish: () => void) => void;
     readonly serviceTier?: string | null;
   },
 ): void {
@@ -133,6 +150,14 @@ function responsesTextSse(
       return `data: ${JSON.stringify(event)}\n\n`;
     })
     .join("");
+  if (options?.onDeltaSent) {
+    const boundary = body.indexOf('data: {"type":"response.output_item.done"');
+    response.write(body.slice(0, boundary));
+    options.onDeltaSent(() => {
+      response.end(body.slice(boundary));
+    });
+    return;
+  }
   if (!options?.fragmentTerminal) {
     response.end(body);
     return;
@@ -214,6 +239,190 @@ function responsesToolSse(
 }
 
 describe("Pi API facade", () => {
+  it("streams visible text before completion and preserves its durable block identity", async () => {
+    const firstDelta = promiseWithResolvers<void>();
+    const chunks: { runEventId: string; chunkIndex: number; delta: string }[] =
+      [];
+    let finishResponse: (() => void) | undefined;
+    const server = createServer((_request, response) => {
+      responsesTextSse(
+        response,
+        `Visible text${PI_MEMORY_CITATION_OPEN}private citation${PI_MEMORY_CITATION_CLOSE}`,
+        {
+          onDeltaSent(finish) {
+            finishResponse = finish;
+          },
+        },
+      );
+    });
+    await new Promise<void>((resolve) => {
+      server.listen(0, "127.0.0.1", resolve);
+    });
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      throw new Error("Expected test transport");
+    }
+    try {
+      const turn = runPiApiFirstTurn({
+        cwd: "/home/user/workspace",
+        agentDir: "/home/user/.pi/agent",
+        sessionId: SESSION_ID,
+        prompt: "Stream an answer",
+        appendSystemPrompt: null,
+        model: {
+          provider: "openai",
+          baseUrl: `http://127.0.0.1:${address.port}/v1`,
+          apiKey: "test-key",
+          model: "gpt-5.6-terra",
+          dialect: "openai-responses",
+          transport: "sse",
+          thinkingLevel: "low",
+        },
+        resourceSnapshot: { schemaVersion: 1, agentsFiles: [], skills: [] },
+        ownership: createPiApiFirstTurnOwnership(),
+        textStream: {
+          eventIdPrefix: "api-first:attempt",
+          onDelta(chunk) {
+            chunks.push(chunk);
+            firstDelta.resolve();
+          },
+        },
+      });
+      await firstDelta.promise;
+      expect(chunks).toEqual([
+        {
+          runEventId: "api-first:attempt:0",
+          chunkIndex: 0,
+          delta: "Visible text",
+        },
+      ]);
+      expect(finishResponse).toBeDefined();
+      finishResponse?.();
+      const result = await turn;
+      expect(result.assistantMessage.content).toEqual([
+        {
+          type: "text",
+          text: "Visible text",
+          runEventId: chunks[0]?.runEventId,
+        },
+      ]);
+      expect(result.sessionJsonl).toContain("private citation");
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => {
+        server.close(() => {
+          resolve();
+        });
+      });
+    }
+  });
+  it.each(["execute", "discard", "cancel", "late-initialization"] as const)(
+    "owns a prepared session through %s without speculative provider transport",
+    async (outcome) => {
+      let providerRequests = 0;
+      const server = createServer((_request, response) => {
+        providerRequests++;
+        responsesTextSse(response, "prepared answer");
+      });
+      await new Promise<void>((resolve) => {
+        return server.listen(0, "127.0.0.1", resolve);
+      });
+      const address = server.address();
+      if (!address || typeof address === "string")
+        throw new Error("Expected test transport");
+      const disposed = vi.spyOn(AgentSession.prototype, "dispose");
+      const controller = new AbortController();
+      const args = {
+        cwd: "/home/user/workspace",
+        agentDir: "/home/user/.pi/agent",
+        sessionId: SESSION_ID,
+        prompt: "use exactly the captured input",
+        appendSystemPrompt: "Captured final instruction",
+        model: {
+          provider: "openai",
+          baseUrl: `http://127.0.0.1:${address.port}/v1`,
+          apiKey: "test-key",
+          model: "gpt-5.6-terra",
+          dialect: "openai-responses",
+          transport: "sse",
+          thinkingLevel: "low",
+        },
+        resourceSnapshot: { schemaVersion: 1, agentsFiles: [], skills: [] },
+        onPreparationTiming(observation: { readonly phase: string }) {
+          // The official initializer is already running and does not stop at
+          // this abort. Preparation must dispose its eventual session.
+          if (
+            outcome === "late-initialization" &&
+            observation.phase === "model_runtime"
+          ) {
+            controller.abort(new Error("abandoned initializer"));
+          }
+        },
+      } as const;
+      try {
+        if (outcome === "late-initialization") {
+          await expect(
+            preparePiApiTurn(args, controller.signal),
+          ).rejects.toThrow("abandoned initializer");
+        } else {
+          const prepared = await preparePiApiTurn(args, controller.signal);
+          expect(providerRequests).toBe(0);
+          const ownership = createPiApiFirstTurnOwnership();
+          if (outcome === "discard") {
+            prepared.dispose();
+            prepared.dispose();
+          } else if (outcome === "cancel") {
+            controller.abort(new Error("cancel before transport"));
+            await expect(
+              executePreparedPiApiTurn(
+                prepared,
+                { ownership },
+                controller.signal,
+              ),
+            ).rejects.toThrow("cancel before transport");
+          } else {
+            const gate = promiseWithResolvers<void>();
+            const entered = promiseWithResolvers<void>();
+            const execution = executePreparedPiApiTurn(
+              prepared,
+              {
+                ownership,
+                async providerRequestBoundary(mark) {
+                  entered.resolve();
+                  await gate.promise;
+                  mark();
+                },
+              },
+              controller.signal,
+            );
+            await entered.promise;
+            expect(providerRequests).toBe(0);
+            expect(ownership.stage).toBe("pre-provider");
+            gate.resolve();
+            const result = await execution;
+            expect(result.assistantMessage.content).toEqual([
+              { type: "text", text: "prepared answer" },
+            ]);
+          }
+          await expect(
+            executePreparedPiApiTurn(prepared, { ownership }),
+          ).rejects.toThrow("already been consumed or disposed");
+          prepared.dispose();
+        }
+        expect(providerRequests).toBe(outcome === "execute" ? 1 : 0);
+        expect(disposed).toHaveBeenCalledTimes(1);
+      } finally {
+        disposed.mockRestore();
+        controller.abort();
+        await new Promise<void>((resolve, reject) => {
+          return server.close((error) => {
+            return error ? reject(error) : resolve();
+          });
+        });
+      }
+    },
+  );
+
   it("sends stable memory schemas and hands a call off without API execution", async () => {
     const requestBodies: Array<Record<string, unknown>> = [];
     const server = createServer((request, response) => {
@@ -375,6 +584,7 @@ describe("Pi API facade", () => {
       sessionId: SESSION_ID,
       messageCount: 0,
       hasPendingToolCalls: false,
+      pendingToolIds: [],
       isSettledCheckpoint: false,
     });
     expect(JSON.parse(jsonl.split("\n")[0] ?? "{}")).toMatchObject({
@@ -432,11 +642,6 @@ describe("Pi API facade", () => {
         let sessionJsonl: string | undefined;
         const runTurn = async (
           serviceTier: "priority" | "fast" | undefined,
-          api:
-            | "openai-completions"
-            | "openai-codex-responses"
-            | "openai-responses"
-            | undefined,
           thinkingLevel: "low" | "high" = "low",
         ) => {
           const result = await runPiApiFirstTurn({
@@ -483,7 +688,6 @@ describe("Pi API facade", () => {
                       provider: "openai",
                       baseUrl: `http://127.0.0.1:${address.port}/v1`,
                       model: "gpt-5.6-terra",
-                      ...(api === undefined ? {} : { api }),
                       apiKeyEnv: "OPENAI_API_KEY",
                       credentialSecretName: "OPENAI_API_KEY",
                       thinkingLevel,
@@ -500,23 +704,20 @@ describe("Pi API facade", () => {
           sessionJsonl = result.sessionJsonl;
           return result;
         };
-        const standardResult = await runTurn(undefined, "openai-completions");
+        const standardResult = await runTurn(undefined);
         const priorityResult = await runTurn(
           route === "native" ? "fast" : "priority",
-          "openai-codex-responses",
           "high",
         );
-        const standardReturnResult = await runTurn(undefined, undefined);
-        const publicResult = await runTurn(undefined, "openai-responses");
+        const standardReturnResult = await runTurn(undefined);
 
-        expect(providerRequests).toHaveLength(4);
+        expect(providerRequests).toHaveLength(3);
         if (route === "native") {
           expect(
             providerRequests.map((request) => {
               return request.accountId;
             }),
           ).toEqual([
-            "exact-account-id",
             "exact-account-id",
             "exact-account-id",
             "exact-account-id",
@@ -544,8 +745,7 @@ describe("Pi API facade", () => {
           },
         });
         expect(providerRequests[2]?.body).not.toHaveProperty("service_tier");
-        expect(providerRequests[3]?.body).not.toHaveProperty("service_tier");
-        expect(publicResult.assistantMessage.content).toStrictEqual([
+        expect(standardReturnResult.assistantMessage.content).toStrictEqual([
           { type: "text", text: "Terra API-first answer" },
         ]);
         expect(
@@ -587,9 +787,47 @@ describe("Pi API facade", () => {
     },
   );
 
-  it.each(["absent", "throwing"] as const)(
-    "preserves DeepSeek transport and pre-provider cancellation with a %s preparation observer",
-    async (observer) => {
+  it.each([
+    {
+      observer: "absent",
+      provider: "deepseek",
+      model: "deepseek-v4-flash",
+      withImage: false,
+    },
+    {
+      observer: "throwing",
+      provider: "deepseek",
+      model: "deepseek-v4-flash",
+      withImage: false,
+    },
+    {
+      observer: "absent",
+      provider: "deepseek",
+      model: "deepseek-flash",
+      withImage: true,
+    },
+    {
+      observer: "absent",
+      provider: "openrouter",
+      model: "deepseek/deepseek-v4.1-flash",
+      withImage: true,
+    },
+    {
+      observer: "absent",
+      provider: "deepseek",
+      model: "company-v41",
+      catalogModel: "deepseek-v4.1-flash",
+      withImage: true,
+    },
+    {
+      observer: "absent",
+      provider: "deepseek",
+      model: "deepseek-flash",
+      withImage: false,
+    },
+  ] as const)(
+    "preserves DeepSeek transport and pre-provider cancellation for $provider/$model (image=$withImage) with a $observer preparation observer",
+    async ({ observer, provider, model, withImage, ...catalog }) => {
       const providerRequests: Array<{
         readonly url: string | undefined;
         readonly body: Record<string, unknown>;
@@ -609,7 +847,7 @@ describe("Pi API facade", () => {
             >,
             userAgent: request.headers["user-agent"],
           });
-          responsesTextSse(response, "DeepSeek API-first answer");
+          responsesTextSse(response, "2");
         })().catch((error: unknown) => {
           response.destroy(
             error instanceof Error ? error : new Error(String(error)),
@@ -629,17 +867,56 @@ describe("Pi API facade", () => {
       }
 
       try {
+        const history = MemoryPiSession.create({
+          cwd: "/home/user/workspace",
+          id: SESSION_ID,
+        });
+        const image =
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZQmcAAAAASUVORK5CYII=";
+        if (withImage) {
+          history.appendMessage({
+            role: "user",
+            content: [
+              { type: "text", text: "Keep this image" },
+              { type: "image", data: image, mimeType: "image/png" },
+            ],
+            timestamp: 1,
+          });
+          history.appendMessage({
+            ...fauxAssistantMessage("Image received", { timestamp: 2 }),
+            api: "openai-responses",
+            provider,
+            model,
+            usage: {
+              input: 100,
+              output: 2,
+              cacheRead: 0,
+              cacheWrite: 0,
+              totalTokens: 102,
+              cost: {
+                input: 0,
+                output: 0,
+                cacheRead: 0,
+                cacheWrite: 0,
+                total: 0,
+              },
+            },
+          });
+        }
         const args: PiApiFirstTurnArgs = {
           cwd: "/home/user/workspace",
           agentDir: "/home/user/.pi/agent",
           sessionId: SESSION_ID,
-          prompt: "answer through direct DeepSeek",
+          sessionJsonl: history.toJsonl(),
+          prompt:
+            "Do not use tools, read files or other chats, or perform any other task. What is one plus one? Reply with a single digit only. Do not explain or add any other text.",
           appendSystemPrompt: null,
           model: {
-            provider: "deepseek",
+            provider,
+            ...catalog,
             baseUrl: `http://127.0.0.1:${address.port}`,
             apiKey: "test-key",
-            model: "deepseek-v4-flash",
+            model,
             dialect: "openai-responses",
             transport: "sse",
           },
@@ -659,16 +936,26 @@ describe("Pi API facade", () => {
           url: "/responses",
           userAgent: "okou-pi-agent/1.0",
           body: {
-            model: "deepseek-v4-flash",
+            model,
             stream: true,
             store: false,
           },
         });
+        if (withImage) {
+          expect(JSON.stringify(providerRequests[0]?.body)).toContain(
+            `data:image/png;base64,${image}`,
+          );
+          expect(resolvePiAgentModel(args.model)).toMatchObject({
+            input: ["text", "image"],
+            contextWindow: 1_048_576,
+            maxTokens: 384_000,
+          });
+        }
         expect(providerRequests[0]?.body).not.toHaveProperty("service_tier");
         expect(providerRequests[0]?.body).not.toHaveProperty("temperature");
         expect(providerRequests[0]?.body).not.toHaveProperty("top_p");
         expect(result.assistantMessage.content).toStrictEqual([
-          { type: "text", text: "DeepSeek API-first answer" },
+          { type: "text", text: "2" },
         ]);
         const cancellation = new AbortController();
         const reason = new DOMException("request cancelled", "AbortError");
@@ -1291,7 +1578,7 @@ describe("Pi API facade", () => {
         api: "openai-responses",
         provider: "deepseek",
       }),
-    ).not.toHaveProperty("failureReason");
+    ).toHaveProperty("failureReason", "usage_limit");
   });
 
   it("projects native session state into a narrow inspection result", () => {
@@ -1327,6 +1614,7 @@ describe("Pi API facade", () => {
       sessionId: SESSION_ID,
       messageCount: 1,
       hasPendingToolCalls: false,
+      pendingToolIds: [],
       isSettledCheckpoint: true,
     });
   });

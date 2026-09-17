@@ -142,6 +142,7 @@ fn is_real_host_work_message(msg_type: u8) -> bool {
             | MSG_EXEC_CANCEL
             | MSG_EXEC_CONTROL
             | MSG_WRITE_FILE
+            | guest_control_proto::MSG_WRITE_FILE_STREAM_BEGIN
             | MSG_WRITE_FILES
             | MSG_WRITE_PRIVATE_FILES
             | MSG_GUEST_DNS_READINESS
@@ -399,6 +400,13 @@ impl ConnectionDispatcher {
 
     fn dispatch(&self, msg: BorrowedRawMessage<'_>) -> io::Result<DispatchOutcome> {
         match msg.msg_type {
+            guest_control_proto::MSG_WRITE_FILE_STREAM_BEGIN => {
+                self.handle_file_write(msg, FileWriteKind::Stream)?
+            }
+            guest_control_proto::MSG_WRITE_FILE_STREAM_DATA
+            | guest_control_proto::MSG_WRITE_FILE_STREAM_END => {
+                self.file_write_worker.stream_data(msg)?;
+            }
             MSG_EXEC_START => self.handle_exec_start(msg)?,
             MSG_EXEC_CANCEL => self.handle_exec_cancel(msg)?,
             MSG_EXEC_CONTROL => self.handle_exec_control(msg)?,
@@ -1399,6 +1407,7 @@ mod tests {
             MSG_EXEC_CANCEL,
             MSG_EXEC_CONTROL,
             MSG_WRITE_FILE,
+            guest_control_proto::MSG_WRITE_FILE_STREAM_BEGIN,
             MSG_WRITE_FILES,
             MSG_WRITE_PRIVATE_FILES,
             MSG_GUEST_DNS_READINESS,

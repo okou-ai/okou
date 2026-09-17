@@ -279,6 +279,7 @@ run_action() {
   local input_job_ref="${9-pr-123}"
   local input_api_backend_url="${10-https://pr-123-api-backend.okou.test}"
   local machine_secret_repo_secrets_json="${11:-}"
+  local extra_repo_vars_json="${12:-}"
   local action_script="${test_dir}/web-api-env-action.sh"
   local github_output="${test_dir}/github-output"
   local repo_vars_json
@@ -290,10 +291,13 @@ run_action() {
   if [[ -z "$github_app_secrets_json" ]]; then
     github_app_secrets_json="{}"
   fi
+  if [[ -z "$extra_repo_vars_json" ]]; then
+    extra_repo_vars_json="{}"
+  fi
 
   repo_vars_json='{"GH_OAUTH_CLIENT_ID":"github-gh-client-id","SLACK_OAUTH_CLIENT_ID":"github-slack-client-id","GOOGLE_ADS_DEVELOPER_TOKEN":"github-google-ads-var","FINICITY_PARTNER_ID":"github-finicity-partner-id","POSTHOG_KEY":"github-posthog-key","POSTHOG_HOST":"https://posthog.github.test","ATOM_URL":"https://atom.github.test","STRIPE_OAUTH_CLIENT_ID":"ca_test_connect_client","STRIPE_CONCURRENCY_PORTAL_CONFIGURATION_ID":"bpc_test_concurrency","MICROSOFT_TEAMS_BOT_APP_ID":"github-teams-bot-app-id","MICROSOFT_TEAMS_APP_TENANT_ID":"github-teams-app-tenant-id","OKOU_PRICE_PRO":"price_test_pro","OKOU_PRICE_TEAM":"price_test_team","OKOU_PRICE_USAGE_PACK_PLAN_PRO":"price_test_usage_pack_plan_pro","OKOU_PRICE_USAGE_PACK_PLAN_TEAM":"price_test_usage_pack_plan_team","OKOU_PRICE_USAGE_PACK_20":"price_test_usage_pack_20","OKOU_PRICE_USAGE_PACK_50":"price_test_usage_pack_50","OKOU_PRICE_USAGE_PACK_100":"price_test_usage_pack_100","OKOU_PRICE_USAGE_PACK_200":"price_test_usage_pack_200","ATOM_GRANT_PRICE":"price_test_atom_grant","OKOU_PRICE_CUSTOM_CREDITS":"price_test_custom_credits","OKOU_PRICE_CUSTOM_CREDIT_UNIT":"price_test_custom_credit_unit","OKOU_PRICE_CONCURRENCY":"price_test_concurrency","GMAIL_PUBSUB_TOPIC_NAME":"projects/github/topics/gmail","GMAIL_PUBSUB_PUSH_AUDIENCE":"https://api.github.test/api/webhooks/gmail","GMAIL_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL":"gmail-push@github.test","GOOGLE_WORKSPACE_EVENTS_PUBSUB_TOPIC_NAME":"projects/github/topics/google-workspace-events","GOOGLE_WORKSPACE_EVENTS_PUBSUB_PUSH_AUDIENCE":"https://api.github.test/api/webhooks/google-workspace-events","GOOGLE_WORKSPACE_EVENTS_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL":"workspace-events-push@github.test"}'
   repo_vars_json="$(jq -c '. + {OKOU_PUBLIC_ARTIFACTS_BASE_URL: "https://cdn.okou.test", OKOU_PUBLIC_HOST_DOMAIN: "okou.app", OKOU_HOST_SCHEME: "https", OKOU_ONE_TIME_CAMPAIGN: "test-campaign"}' <<< "$repo_vars_json")"
-  repo_secrets_json='{"R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID":"private-prod-key","R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY":"private-prod-secret","R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID_DEV":"private-dev-key","R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY_DEV":"private-dev-secret","GH_OAUTH_CLIENT_SECRET":"github-gh-client-secret","SLACK_OAUTH_CLIENT_SECRET":"github-slack-client-secret","GOOGLE_ADS_DEVELOPER_TOKEN":"github-google-ads-secret","OKOU_MAPS_GOOGLE_MAPS_TOKEN":"github-google-maps-token","OKOU_WEATHER_GOOGLE_WEATHER_TOKEN":"github-google-weather-token","OKOU_FINANCE_APIDOJO_TOKEN":"github-apidojo-token","OKOU_SEO_DATAFORSEO_LOGIN":"github-dataforseo-login","OKOU_SEO_DATAFORSEO_PASSWORD":"github-dataforseo-password","OKOU_BROWSER_USE_API_KEY":"github-browser-use-api-key","OKOU_SCRAPE_FIRECRAWL_TOKEN":"github-firecrawl-token","OKOU_WEB_SEARCH_PERPLEXITY_TOKEN":"github-perplexity-token","OKOU_SOCIAL_SOCIALKIT_TOKEN":"github-socialkit-token","STEAM_WEB_API_KEY":"github-steam-web-api-key","FINICITY_APP_KEY":"github-finicity-app-key","FINICITY_APP_SECRET":"github-finicity-app-secret","OKOU_MACHINE_SECRET_KEY":"github-atom-machine-secret","MICROSOFT_TEAMS_BOT_APP_PASSWORD":"github-teams-bot-app-password","VERCEL_AUTOMATION_BYPASS_SECRET":"github-vercel-bypass-secret","CLOUDFLARE_BROWSER_RENDERING_API_TOKEN":"github-cloudflare-browser-rendering-token","ARTIFACT_PREVIEW_WAF_SECRET":"github-artifact-preview-waf-secret","JOGGAI_WEBHOOK_SECRET":"github-joggai-webhook-secret","HEYGEN_API_KEY":"github-heygen-api-key","STRIPE_WEBHOOK_SECRET":"github-stripe-billing-webhook-secret","STRIPE_AUTOMATION_WEBHOOK_SECRET":"github-stripe-automation-webhook-secret"}'
+  repo_secrets_json='{"R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID":"private-prod-key","R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY":"private-prod-secret","R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID_DEV":"private-dev-key","R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY_DEV":"private-dev-secret","GH_OAUTH_CLIENT_SECRET":"github-gh-client-secret","SLACK_OAUTH_CLIENT_SECRET":"github-slack-client-secret","GOOGLE_ADS_DEVELOPER_TOKEN":"github-google-ads-secret","OKOU_MAPS_GOOGLE_MAPS_TOKEN":"github-google-maps-token","OKOU_WEATHER_GOOGLE_WEATHER_TOKEN":"github-google-weather-token","OKOU_FINANCE_APIDOJO_TOKEN":"github-apidojo-token","OKOU_SEO_DATAFORSEO_LOGIN":"github-dataforseo-login","OKOU_SEO_DATAFORSEO_PASSWORD":"github-dataforseo-password","OKOU_BROWSER_USE_API_KEY":"github-browser-use-api-key","OKOU_SCRAPE_FIRECRAWL_TOKEN":"github-firecrawl-token","OKOU_WEB_SEARCH_PERPLEXITY_TOKEN":"github-perplexity-token","OKOU_SOCIAL_SOCIALKIT_TOKEN":"github-socialkit-token","STEAM_WEB_API_KEY":"github-steam-web-api-key","FINICITY_APP_KEY":"github-finicity-app-key","FINICITY_APP_SECRET":"github-finicity-app-secret","OKOU_MACHINE_SECRET_KEY":"github-atom-machine-secret","MICROSOFT_TEAMS_BOT_APP_PASSWORD":"github-teams-bot-app-password","VERCEL_AUTOMATION_BYPASS_SECRET":"github-vercel-bypass-secret","CLOUDFLARE_BROWSER_RENDERING_API_TOKEN":"github-cloudflare-browser-rendering-token","ARTIFACT_PREVIEW_WAF_SECRET":"github-artifact-preview-waf-secret","JOGGAI_WEBHOOK_SECRET":"github-joggai-webhook-secret","HEYGEN_API_KEY":"github-heygen-api-key","STRIPE_WEBHOOK_SECRET":"github-stripe-billing-webhook-secret","STRIPE_AUTOMATION_WEBHOOK_SECRET":"github-stripe-automation-webhook-secret","LANGFUSE_PUBLIC_KEY":"github-langfuse-public-key","LANGFUSE_SECRET_KEY":"github-langfuse-secret-key"}'
   if [[ "$branded_config" == "empty" ]]; then
     repo_vars_json="$(jq -c 'with_entries(select(.key | startswith("OKOU_") | not))' <<< "$repo_vars_json")"
     repo_secrets_json="$(jq -c 'with_entries(select(.key | startswith("OKOU_") | not))' <<< "$repo_secrets_json")"
@@ -302,6 +306,7 @@ run_action() {
   # the same resolved vars object used by the deployment workflow.
   repo_vars_json="$(jq -c '. + {GCP_LLM_PROJECT_ID: "vm0-ai-488909", GCP_LLM_WORKLOAD_IDENTITY_PROVIDER: "projects/662642595011/locations/global/workloadIdentityPools/vercel-vm0-api/providers/vercel", GCP_LLM_SERVICE_ACCOUNT_EMAIL: "llm-dev@vm0-ai-488909.iam.gserviceaccount.com"}' <<< "$repo_vars_json")"
   repo_vars_json="$(jq -c --argjson github_app_vars "$github_app_vars_json" '. + $github_app_vars' <<< "$repo_vars_json")"
+  repo_vars_json="$(jq -c --argjson extra_repo_vars "$extra_repo_vars_json" '. + $extra_repo_vars' <<< "$repo_vars_json")"
   repo_secrets_json="$(jq -c --argjson github_app_secrets "$github_app_secrets_json" '. + $github_app_secrets' <<< "$repo_secrets_json")"
   if [[ -n "$machine_secret_repo_secrets_json" ]]; then
     repo_secrets_json="$(
@@ -364,6 +369,26 @@ run_machine_secret_action() {
     pr-123 \
     "https://pr-123-api-backend.okou.test" \
     "$repo_secrets_json"
+}
+
+run_pi_memory_worker_switch_action() {
+  local test_dir="$1"
+  local input_app="$2"
+  local input_environment="$3"
+  local extra_repo_vars_json="$4"
+  run_action \
+    "$(build_doppler_secrets_json)" \
+    "$test_dir" \
+    "$input_app" \
+    "$input_environment" \
+    "https://static.okou.io/okou-cli/test-sha/package.tgz" \
+    canonical \
+    "" \
+    "" \
+    pr-123 \
+    "https://pr-123-api-backend.okou.test" \
+    "" \
+    "$extra_repo_vars_json"
 }
 
 assert_machine_secret_canonical_case() {
@@ -541,10 +566,15 @@ assert_env_key_count "$success_env_file" OKOU_PREVIEW_JOB_REF 1
 assert_env_value "$success_env_file" OKOU_PREVIEW_JOB_REF "pr-123"
 assert_api_backend_url_canonical "$success_env_file" "https://pr-123-api-backend.okou.test"
 assert_google_llm_config "$success_env_file" "llm-dev@vm0-ai-488909.iam.gserviceaccount.com"
+assert_env_value "$success_env_file" LANGFUSE_PUBLIC_KEY "github-langfuse-public-key"
+assert_env_value "$success_env_file" LANGFUSE_SECRET_KEY "github-langfuse-secret-key"
+assert_env_key_absent "$success_env_file" LANGFUSE_BASE_URL
 assert_env_value "$success_env_file" FEISHU_CALLBACK_BASE_URL "https://pr-123-api-backend.okou.test"
 assert_env_value "$success_env_file" FINICITY_WEBHOOK_BASE_URL "https://pr-123-api-backend.okou.test"
 assert_web_url_canonical "$success_env_file" "https://pr-123-www.okou.test"
 assert_env_value "$success_env_file" CLI_PKG_URL "https://static.okou.io/okou-cli/test-sha/package.tgz"
+assert_env_key_count "$success_env_file" PI_MEMORY_BACKGROUND_WORKERS_ENABLED 1
+assert_env_value "$success_env_file" PI_MEMORY_BACKGROUND_WORKERS_ENABLED "false"
 assert_env_value "$success_env_file" GIT_COMMIT_SHA "$EXPECTED_BUILD_COMMIT_SHA"
 assert_env_absent_value "$success_env_file" "ONBOARDING_URL="
 assert_env_value "$success_env_file" OKOU_PRICE_PRO "price_test_pro"
@@ -596,6 +626,9 @@ assert_web_url_absent "$preview_web_env_file"
 assert_env_key_absent "$preview_web_env_file" GCP_LLM_PROJECT_ID
 assert_env_key_absent "$preview_web_env_file" GCP_LLM_WORKLOAD_IDENTITY_PROVIDER
 assert_env_key_absent "$preview_web_env_file" GCP_LLM_SERVICE_ACCOUNT_EMAIL
+assert_env_key_absent "$preview_web_env_file" LANGFUSE_PUBLIC_KEY
+assert_env_key_absent "$preview_web_env_file" LANGFUSE_SECRET_KEY
+assert_env_key_absent "$preview_web_env_file" PI_MEMORY_BACKGROUND_WORKERS_ENABLED
 
 empty_job_ref_dir="$(mktemp -d)"
 TEMP_DIRS+=("$empty_job_ref_dir")
@@ -638,6 +671,9 @@ assert_web_url_absent "$production_web_env_file"
 assert_env_key_absent "$production_web_env_file" GCP_LLM_PROJECT_ID
 assert_env_key_absent "$production_web_env_file" GCP_LLM_WORKLOAD_IDENTITY_PROVIDER
 assert_env_key_absent "$production_web_env_file" GCP_LLM_SERVICE_ACCOUNT_EMAIL
+assert_env_key_absent "$production_web_env_file" LANGFUSE_PUBLIC_KEY
+assert_env_key_absent "$production_web_env_file" LANGFUSE_SECRET_KEY
+assert_env_key_absent "$production_web_env_file" PI_MEMORY_BACKGROUND_WORKERS_ENABLED
 assert_env_value "$production_web_env_file" POSTHOG_KEY "github-posthog-key"
 assert_env_value "$production_web_env_file" POSTHOG_HOST "https://posthog.github.test"
 assert_env_value "$production_web_env_file" GIT_COMMIT_SHA "$EXPECTED_BUILD_COMMIT_SHA"
@@ -667,6 +703,9 @@ assert_machine_secret_values_absent_from_output "$production_api_output" "github
 assert_env_value "$production_api_env_file" OKOU_HOST_SCHEME "https"
 assert_debug_absent "$production_api_env_file"
 assert_google_llm_config "$production_api_env_file" "llm-prod@vm0-ai-488909.iam.gserviceaccount.com"
+assert_env_value "$production_api_env_file" LANGFUSE_PUBLIC_KEY "github-langfuse-public-key"
+assert_env_value "$production_api_env_file" LANGFUSE_SECRET_KEY "github-langfuse-secret-key"
+assert_env_key_absent "$production_api_env_file" LANGFUSE_BASE_URL
 assert_env_value "$production_api_env_file" MAILCHIMP_OAUTH_CLIENT_ID "doppler-MAILCHIMP_OAUTH_CLIENT_ID"
 assert_env_value "$production_api_env_file" MAILCHIMP_OAUTH_CLIENT_SECRET "doppler-MAILCHIMP_OAUTH_CLIENT_SECRET"
 assert_env_value "$production_api_env_file" CAL_COM_OAUTH_CLIENT_ID "doppler-CAL_COM_OAUTH_CLIENT_ID"
@@ -702,6 +741,81 @@ assert_env_value "$production_api_env_file" STRIPE_AUTOMATION_WEBHOOK_SECRET "gi
 assert_env_absent_value "$production_api_env_file" "doppler-stripe-billing-webhook-secret"
 assert_env_absent_value "$production_api_env_file" "doppler-stripe-automation-webhook-secret"
 assert_preview_job_ref_absent "$production_api_env_file"
+assert_env_key_count "$production_api_env_file" PI_MEMORY_BACKGROUND_WORKERS_ENABLED 1
+assert_env_value "$production_api_env_file" PI_MEMORY_BACKGROUND_WORKERS_ENABLED "false"
+
+for worker_switch_case in \
+  '{"PI_MEMORY_BACKGROUND_WORKERS_ENABLED":""}|false' \
+  '{"PI_MEMORY_BACKGROUND_WORKERS_ENABLED":"false"}|false' \
+  '{"PI_MEMORY_BACKGROUND_WORKERS_ENABLED":"true"}|true'; do
+  IFS='|' read -r worker_switch_vars worker_switch_expected <<< "$worker_switch_case"
+  worker_switch_dir="$(mktemp -d)"
+  TEMP_DIRS+=("$worker_switch_dir")
+  worker_switch_output="$(
+    run_pi_memory_worker_switch_action \
+      "$worker_switch_dir" \
+      api \
+      production \
+      "$worker_switch_vars" \
+      2>&1
+  )"
+  worker_switch_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${worker_switch_dir}/github-output")"
+  assert_contains "$worker_switch_output" "Rendered"
+  assert_env_key_count "$worker_switch_env_file" PI_MEMORY_BACKGROUND_WORKERS_ENABLED 1
+  assert_env_value "$worker_switch_env_file" PI_MEMORY_BACKGROUND_WORKERS_ENABLED "$worker_switch_expected"
+done
+
+preview_worker_switch_dir="$(mktemp -d)"
+TEMP_DIRS+=("$preview_worker_switch_dir")
+preview_worker_switch_output="$(
+  run_pi_memory_worker_switch_action \
+    "$preview_worker_switch_dir" \
+    api \
+    preview \
+    '{"PI_MEMORY_BACKGROUND_WORKERS_ENABLED":"true"}' \
+    2>&1
+)"
+preview_worker_switch_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${preview_worker_switch_dir}/github-output")"
+assert_contains "$preview_worker_switch_output" "Rendered"
+assert_env_key_count "$preview_worker_switch_env_file" PI_MEMORY_BACKGROUND_WORKERS_ENABLED 1
+assert_env_value "$preview_worker_switch_env_file" PI_MEMORY_BACKGROUND_WORKERS_ENABLED "false"
+
+web_worker_switch_dir="$(mktemp -d)"
+TEMP_DIRS+=("$web_worker_switch_dir")
+web_worker_switch_output="$(
+  run_pi_memory_worker_switch_action \
+    "$web_worker_switch_dir" \
+    web \
+    production \
+    '{"PI_MEMORY_BACKGROUND_WORKERS_ENABLED":"true"}' \
+    2>&1
+)"
+web_worker_switch_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${web_worker_switch_dir}/github-output")"
+assert_contains "$web_worker_switch_output" "Rendered"
+assert_env_key_absent "$web_worker_switch_env_file" PI_MEMORY_BACKGROUND_WORKERS_ENABLED
+
+for invalid_worker_switch_vars in \
+  '{"PI_MEMORY_BACKGROUND_WORKERS_ENABLED":"enabled"}' \
+  '{"PI_MEMORY_BACKGROUND_WORKERS_ENABLED":"true\nINJECTED_ENV=true"}'; do
+  invalid_worker_switch_dir="$(mktemp -d)"
+  TEMP_DIRS+=("$invalid_worker_switch_dir")
+  status=0
+  invalid_worker_switch_output="$(
+    run_pi_memory_worker_switch_action \
+      "$invalid_worker_switch_dir" \
+      api \
+      production \
+      "$invalid_worker_switch_vars" \
+      2>&1
+  )" || status=$?
+  if [[ "$status" -eq 0 ]]; then
+    fail "expected invalid Pi memory background worker switch to fail"
+  fi
+  assert_contains "$invalid_worker_switch_output" "::error::PI_MEMORY_BACKGROUND_WORKERS_ENABLED must be true or false when set"
+  if [[ -e "${invalid_worker_switch_dir}/web-api-api-production.env" ]]; then
+    fail "invalid Pi memory background worker switch must fail before creating an environment file"
+  fi
+done
 
 missing_dir="$(mktemp -d)"
 TEMP_DIRS+=("$missing_dir")

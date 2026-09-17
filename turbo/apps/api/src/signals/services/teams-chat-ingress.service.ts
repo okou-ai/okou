@@ -248,6 +248,7 @@ async function reconcileExistingRoute(
 export async function ensureTeamsChatThreadRoute(
   db: Db,
   args: TeamsChatThreadRouteKey & {
+    readonly isDirectMessage: boolean;
     readonly orgId: string;
     readonly agentId: string;
     readonly selectedModel: string | null;
@@ -258,7 +259,9 @@ export async function ensureTeamsChatThreadRoute(
   return await db.transaction(async (tx) => {
     const existing = await loadRoute(tx, args);
     if (existing) {
-      return await reconcileExistingRoute(tx, args, existing);
+      return args.isDirectMessage
+        ? existing
+        : await reconcileExistingRoute(tx, args, existing);
     }
 
     const thread = await createCanonicalTeamsChatThread(tx, args);
@@ -298,7 +301,9 @@ export async function ensureTeamsChatThreadRoute(
           "Failed to resolve Teams chat thread route after conflict",
         );
       }
-      return await reconcileExistingRoute(tx, args, conflicted);
+      return args.isDirectMessage
+        ? conflicted
+        : await reconcileExistingRoute(tx, args, conflicted);
     }
 
     await appendCanonicalTeamsChatThreadCreatedEvent(tx, args, thread, null);

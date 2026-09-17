@@ -2,17 +2,23 @@ import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/
 import type { IntroVideoOptions } from "@okouai/api-contracts/contracts/intro-video-options";
 
 /**
- * Persisted in chat messages and drafts as the template's `stylePresetId`. The
- * product is named Intro Video; the stored id kept its original value.
+ * What an Intro Video selection is reported as. There is one Intro Video
+ * template, so the identifier is the product rather than a catalogue entry.
  */
-export const INTRO_VIDEO_TEMPLATE_ID = "explainer-video";
+export const INTRO_VIDEO_TEMPLATE_ID = "intro-video";
 
+/**
+ * The configuration on an Intro Video selection, if it has been chosen yet.
+ *
+ * `undefined` covers both "not an Intro Video selection" and "settings not
+ * picked yet", because every caller treats them the same: there is nothing to
+ * render or build a prompt from.
+ */
 export function introVideoTemplateOptions(
   template: GenerationTemplateRequest | null | undefined,
 ): IntroVideoOptions | undefined {
-  return template?.type === "video" &&
-    template.selection.stylePresetId === INTRO_VIDEO_TEMPLATE_ID
-    ? template.selection.explainerOptions
+  return template?.type === "intro-video"
+    ? template.selection.options
     : undefined;
 }
 

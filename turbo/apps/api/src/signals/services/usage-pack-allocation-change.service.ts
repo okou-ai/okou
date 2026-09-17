@@ -3058,7 +3058,7 @@ export async function calculateUsagePackUpgradeCreditGrants(
   });
 }
 
-async function usagePackInvoiceFulfillmentExists(
+export async function usagePackInvoiceFulfillmentExists(
   db: Pick<Db, "select">,
   invoiceId: string,
   usagePackSubscriptionId: string,

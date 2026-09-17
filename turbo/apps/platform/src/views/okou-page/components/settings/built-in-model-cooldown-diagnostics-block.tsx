@@ -352,7 +352,7 @@ export function BuiltInModelCooldownDiagnosticsBlock() {
   return (
     <section
       aria-labelledby="built-in-model-cooldown-diagnostics-title"
-      className="overflow-hidden rounded-xl bg-card okou-border"
+      className="overflow-hidden rounded-xl bg-card border border-surface-border"
     >
       {diagnostics ? (
         <details className="group">

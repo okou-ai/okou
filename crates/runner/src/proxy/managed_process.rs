@@ -65,8 +65,8 @@ impl ManagedMitmdump {
         self.child.as_ref()?.id()
     }
 
-    pub(super) fn child(&self) -> Option<&tokio::process::Child> {
-        self.child.as_ref()
+    pub(super) fn control_directory(&self) -> Option<&std::path::Path> {
+        self.launch.as_ref().map(|launch| launch.path())
     }
 
     pub(super) fn child_mut(&mut self) -> Option<&mut tokio::process::Child> {

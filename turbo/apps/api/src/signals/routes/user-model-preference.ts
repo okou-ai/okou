@@ -1,4 +1,5 @@
 import { command, computed } from "ccstate";
+import { isMemberModelPolicyConfigurable } from "@okouai/api-contracts/contracts/member-model-policy";
 import {
   getRunModelAccess,
   RETIRED_RUN_MODEL_MESSAGE,
@@ -10,9 +11,10 @@ import {
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import type { UserPreferenceChangedPayload } from "@okouai/api-contracts/contracts/realtime";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
-import { isCodexFastModeEnabled } from "@okouai/core/model-feature-switch";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import {
+  isChatEffortEnabled,
+  isCodexFastModeEnabled,
+} from "@okouai/core/model-feature-switch";
 
 import { badRequestMessage } from "../../lib/error";
 import { publishUserPreferenceChangedForUserSafely } from "../external/realtime";
@@ -60,7 +62,10 @@ function validatePriorityServiceTier(args: {
   if (!args.requested) {
     return undefined;
   }
-  if (!args.configuredPolicy || args.configuredPolicy.routeStatus !== "valid") {
+  if (
+    !args.configuredPolicy ||
+    !isMemberModelPolicyConfigurable(args.configuredPolicy)
+  ) {
     return badRequestMessage("Invalid request");
   }
   if (!args.enabled) {
@@ -129,10 +134,7 @@ const updateUserModelPreferenceInner$ = command(
       selectedModel: body.data.selectedModel,
       enabled:
         featureSwitchContext !== undefined &&
-        isFeatureEnabled(
-          FeatureSwitchKey.ChatReasoningEffort,
-          featureSwitchContext,
-        ),
+        isChatEffortEnabled(featureSwitchContext),
     });
     if (modelSettingsError) {
       return modelSettingsError;

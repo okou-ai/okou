@@ -1,8 +1,9 @@
-import { command, state } from "ccstate";
+import { command, computed, state } from "ccstate";
 
 import { now } from "../lib/time.ts";
 import { logger } from "../signals/log.ts";
 import { rootSignal$ } from "../signals/root-signal.ts";
+import { resetSignal } from "../signals/utils.ts";
 import type {
   SharedDatabasePortLike,
   SharedDatabaseTokenProvider,
@@ -40,9 +41,27 @@ type WorkerConnectionMessage = Extract<
   }
 >;
 
-const connectionControllersState$ = state<
-  ReadonlyMap<ConnectionId, AbortController>
+// A new port selects its identity before its graph is constructed. Active
+// connections retain their own graph when another port is selected.
+const openingConnectionId$ = state<ConnectionId | null>(null);
+const openingConnectionGraph$ = computed((get) => {
+  const connectionId = get(openingConnectionId$);
+  return connectionId === null
+    ? null
+    : { connectionId, resetConnection$: resetSignal() };
+});
+interface ConnectionGraph {
+  readonly connectionId: ConnectionId;
+  readonly resetConnection$: ReturnType<typeof resetSignal>;
+}
+interface ConnectionLifetime {
+  readonly graph: ConnectionGraph;
+  readonly signal: AbortSignal;
+}
+const connectionLifetimesState$ = state<
+  ReadonlyMap<ConnectionId, ConnectionLifetime>
 >(new Map());
+
 interface ConnectionRegistration {
   readonly getToken: SharedDatabaseTokenProvider;
   readonly port: SharedDatabasePortLike;
@@ -51,6 +70,7 @@ interface ConnectionRegistration {
 interface RegisteredConnection extends ConnectionRegistration {
   readonly heartbeatOrder: number | null;
   readonly lastHeartbeatAt: number | null;
+  readonly signal: AbortSignal;
 }
 
 const connectionsState$ = state<
@@ -91,13 +111,57 @@ export const sendSharedDatabaseWorkerMessageToConnection$ = command(
   },
 );
 
-const removeConnection$ = command(
+export const closeConnection$ = command(
   ({ get, set }, connectionId: ConnectionId): void => {
+    const lifetime = get(connectionLifetimesState$).get(connectionId);
+    if (!lifetime) {
+      return;
+    }
     set(
-      connectionControllersState$,
-      deleteMapKey(get(connectionControllersState$), connectionId),
+      connectionLifetimesState$,
+      deleteMapKey(get(connectionLifetimesState$), connectionId),
     );
     set(connectionsState$, deleteMapKey(get(connectionsState$), connectionId));
+    set(lifetime.graph.resetConnection$);
+  },
+);
+
+export const openConnection$ = command(
+  (
+    { get, set },
+    connectionId: ConnectionId,
+    signal: AbortSignal,
+  ): AbortSignal => {
+    signal.throwIfAborted();
+    if (get(connectionLifetimesState$).has(connectionId)) {
+      throw new Error("Shared database connection is already open");
+    }
+    set(openingConnectionId$, connectionId);
+    const graph = get(openingConnectionGraph$);
+    if (!graph) {
+      throw new Error("Shared database connection graph is unavailable");
+    }
+    const connectionSignal = set(graph.resetConnection$, signal);
+    set(
+      connectionLifetimesState$,
+      new Map(get(connectionLifetimesState$)).set(connectionId, {
+        graph,
+        signal: connectionSignal,
+      }),
+    );
+    connectionSignal.addEventListener(
+      "abort",
+      () => {
+        if (
+          get(connectionLifetimesState$).get(connectionId)?.signal ===
+          connectionSignal
+        ) {
+          set(closeConnection$, connectionId);
+        }
+      },
+      { once: true },
+    );
+    return connectionSignal;
   },
 );
 
@@ -105,37 +169,38 @@ export const registerConnection$ = command(
   (
     { get, set },
     connectionId: ConnectionId,
-    connectionController: AbortController,
     connection: ConnectionRegistration,
-    connectionControllerSignal: AbortSignal,
+    connectionSignal: AbortSignal,
   ): AbortSignal => {
-    connectionControllerSignal.throwIfAborted();
-    if (get(connectionControllersState$).has(connectionId)) {
+    connectionSignal.throwIfAborted();
+    const lifetime = get(connectionLifetimesState$).get(connectionId);
+    if (!lifetime) {
+      throw new Error("Shared database connection is not open");
+    }
+    if (get(connectionsState$).has(connectionId)) {
       throw new Error("Shared database connection is already registered");
     }
     const signal = AbortSignal.any([
       get(rootSignal$),
-      connectionControllerSignal,
+      lifetime.signal,
+      connectionSignal,
     ]);
-    set(
-      connectionControllersState$,
-      new Map(get(connectionControllersState$)).set(
-        connectionId,
-        connectionController,
-      ),
-    );
+    signal.throwIfAborted();
     set(
       connectionsState$,
       new Map(get(connectionsState$)).set(connectionId, {
         ...connection,
         heartbeatOrder: null,
         lastHeartbeatAt: null,
+        signal,
       }),
     );
     signal.addEventListener(
       "abort",
       () => {
-        set(removeConnection$, connectionId);
+        if (get(connectionsState$).get(connectionId)?.signal === signal) {
+          set(closeConnection$, connectionId);
+        }
       },
       { once: true },
     );
@@ -195,7 +260,7 @@ export const requestTokenFromLatestConnection$ = command(
 export const requireConnectionSignal$ = command(
   ({ get }, connectionId: ConnectionId, signal: AbortSignal): void => {
     signal.throwIfAborted();
-    if (!get(connectionControllersState$).has(connectionId)) {
+    if (!get(connectionsState$).has(connectionId)) {
       throw new Error("Shared database connection is not registered");
     }
   },

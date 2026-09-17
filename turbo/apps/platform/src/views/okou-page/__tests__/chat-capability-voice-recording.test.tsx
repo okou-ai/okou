@@ -1,12 +1,12 @@
 import { voiceIoQuotaContract } from "@okouai/api-contracts/contracts/voice-io-quota";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { cleanup, screen, waitFor } from "@testing-library/react";
 import { openDB, type DBSchema } from "idb";
 import { HttpResponse } from "msw";
-import { expect, test, vi } from "vitest";
+import { expect, test, vi, describe, beforeEach, it } from "vitest";
+
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { createChildAbortController } from "../../../signals/utils.ts";
+import { resetSignal } from "../../../signals/utils.ts";
 import { decodeVoiceDraftPcmWav } from "../../../signals/voice-io/voice-draft-pcm.ts";
 import {
   context,
@@ -37,13 +37,6 @@ function releasePageDom() {
   vi.mocked(window.history.pushState).mockRestore();
   vi.mocked(window.history.replaceState).mockRestore();
   vi.mocked(window.history.back).mockRestore();
-}
-
-function unload(page: AbortController) {
-  const error = new Error("Page reloaded");
-  error.name = "AbortError";
-  page.abort(error);
-  releasePageDom();
 }
 
 function installVoiceBoundaries() {
@@ -81,115 +74,126 @@ async function uploadedAudio(request: Request): Promise<ArrayBuffer> {
   return await file.arrayBuffer();
 }
 
-const flags = { [FeatureSwitchKey.VoiceInputV2]: true } as const;
-
-test.each([
+describe.each([
   { path: RUN_PATH, reloadAt: "recording" },
   { path: NEW_CHAT_PATH, reloadAt: "recording" },
   { path: RUN_PATH, reloadAt: "failed retries" },
   { path: NEW_CHAT_PATH, reloadAt: "failed retries" },
 ])(
-  "Recover committed PCM across a reload ($reloadAt) at $path",
-  async ({ path, reloadAt }) => {
-    // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-    const firstPage = createChildAbortController(context.signal);
-    const capture = context.mocks.deferred<(samples: Float32Array) => void>();
-    context.mocks.browser.voiceInput({
-      rms: 0.12,
-      onPcmCapture: capture.resolve,
-      finalPcmSamples: new Float32Array(0),
-    });
-    installVoiceBoundaries();
-    const uploads: ArrayBuffer[] = [];
-    const retries = Array.from(
-      { length: reloadAt === "failed retries" ? 2 : 0 },
-      () => {
-        return {
-          requested: context.mocks.deferred<void>(),
-          response: context.mocks.deferred<void>(),
-        };
-      },
-    );
-    context.mocks.http.post(
-      "*/api/voice-io/transcribe/segment",
-      async ({ request }) => {
-        uploads.push(await uploadedAudio(request));
-        const retry = retries[uploads.length - 1];
-        if (retry) {
-          retry.requested.resolve();
-          await retry.response.promise;
-          return HttpResponse.json(
-            { error: "Temporary outage" },
-            { status: 503 },
-          );
-        }
-        return HttpResponse.json({
-          transcript: "recovered",
-          polishedText: "Recovered audio.",
-          language: "en-US",
+  "recover committed PCM across a reload ($reloadAt) at $path",
+  ({ path, reloadAt }) => {
+    async function prepareScenario() {
+      const resetFirstPage$ = resetSignal();
+      const firstPageSignal = context.store.set(
+        resetFirstPage$,
+        context.signal,
+      );
+      const capture = context.mocks.deferred<(samples: Float32Array) => void>();
+      context.mocks.browser.voiceInput({
+        rms: 0.12,
+        onPcmCapture: capture.resolve,
+        finalPcmSamples: new Float32Array(0),
+      });
+      installVoiceBoundaries();
+      const uploads: ArrayBuffer[] = [];
+      const retries = Array.from(
+        { length: reloadAt === "failed retries" ? 2 : 0 },
+        () => {
+          return {
+            requested: context.mocks.deferred<void>(),
+            response: context.mocks.deferred<void>(),
+          };
+        },
+      );
+      context.mocks.http.post(
+        "*/api/voice-io/transcribe/segment",
+        async ({ request }) => {
+          uploads.push(await uploadedAudio(request));
+          const retry = retries[uploads.length - 1];
+          if (retry) {
+            retry.requested.resolve();
+            await retry.response.promise;
+            return HttpResponse.json(
+              { error: "Temporary outage" },
+              { status: 503 },
+            );
+          }
+          return HttpResponse.json({
+            transcript: "recovered",
+            polishedText: "Recovered audio.",
+            language: "en-US",
+          });
+        },
+      );
+      await setupPage({
+        locale: "en-US",
+        context: { ...context, signal: firstPageSignal },
+        path,
+      });
+      click(await findEnabledButton("Voice input"));
+      const emit = await capture.promise;
+      emit(new Float32Array(4096).fill(0.25));
+      await waitFor(async () => {
+        await expect(savedRecording()).resolves.toMatchObject({
+          sampleCount: 4096,
+          chunkCount: 1,
         });
-      },
-    );
-    await setupPage({
-      locale: "en-US",
-      context: { ...context, signal: firstPage.signal },
-      path,
-      featureSwitches: flags,
+      });
+      await findEnabledButton("Stop recording");
+      return { resetFirstPage$, retries, uploads };
+    }
+    let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
+    beforeEach(async () => {
+      preparedScenario = await prepareScenario();
+      const { resetFirstPage$, retries } = preparedScenario;
+      // Keep interrupted capture and repeated transcription failures independent:
+      // each case needs only one reload before its successful recovery.
+      if (reloadAt === "recording") {
+        context.store.set(resetFirstPage$);
+        releasePageDom();
+        await setupPage({
+          locale: "en-US",
+          context: secondContext,
+          path,
+        });
+      }
+      for (const retry of retries) {
+        const action = retry === retries[0] ? "Stop recording" : "Retry";
+        click(await findEnabledButton(action));
+        await retry.requested.promise;
+        await screen.findByText("Transcribing");
+        retry.response.resolve();
+        await findEnabledButton("Retry");
+      }
+      if (reloadAt === "failed retries") {
+        context.store.set(resetFirstPage$);
+        releasePageDom();
+        await setupPage({
+          locale: "en-US",
+          context: secondContext,
+          path,
+        });
+      }
     });
-    click(await findEnabledButton("Voice input"));
-    const emit = await capture.promise;
-    emit(new Float32Array(4096).fill(0.25));
-    await waitFor(async () => {
-      await expect(savedRecording()).resolves.toMatchObject({
-        sampleCount: 4096,
-        chunkCount: 1,
+    it("recovers the original PCM after reload and transcription failures", async () => {
+      const { retries, uploads } = preparedScenario;
+      const retryButton = await findEnabledButton("Retry");
+      expect(queryButton("Stop recording")).toBeNull();
+      click(retryButton);
+      await findEnabledButton("Voice input");
+      expect(
+        screen.getByRole("textbox", { name: "Message" }),
+      ).toHaveTextContent("Recovered audio.");
+      expect(uploads).toHaveLength(retries.length + 1);
+      for (const upload of uploads.slice(1)) {
+        expect(upload).toStrictEqual(uploads[0]);
+      }
+      const samples = decodeVoiceDraftPcmWav(uploads[0]!);
+      expect(samples).toHaveLength(4096);
+      expect(samples?.at(-1)).toBeCloseTo(0.25, 4);
+      await waitFor(async () => {
+        return await expect(savedRecording()).resolves.toBeNull();
       });
-    });
-    await findEnabledButton("Stop recording");
-    // Keep interrupted capture and repeated transcription failures independent:
-    // each case needs only one reload before its successful recovery.
-    if (reloadAt === "recording") {
-      unload(firstPage);
-      await setupPage({
-        locale: "en-US",
-        context: secondContext,
-        path,
-        featureSwitches: flags,
-      });
-    }
-    for (const retry of retries) {
-      const action = retry === retries[0] ? "Stop recording" : "Retry";
-      click(await findEnabledButton(action));
-      await retry.requested.promise;
-      await screen.findByText("Transcribing");
-      retry.response.resolve();
-      await findEnabledButton("Retry");
-    }
-    if (reloadAt === "failed retries") {
-      unload(firstPage);
-      await setupPage({
-        locale: "en-US",
-        context: secondContext,
-        path,
-        featureSwitches: flags,
-      });
-    }
-    const retryButton = await findEnabledButton("Retry");
-    expect(queryButton("Stop recording")).toBeNull();
-    click(retryButton);
-    await findEnabledButton("Voice input");
-    expect(screen.getByRole("textbox", { name: "Message" })).toHaveTextContent(
-      "Recovered audio.",
-    );
-    expect(uploads).toHaveLength(retries.length + 1);
-    for (const upload of uploads.slice(1)) {
-      expect(upload).toStrictEqual(uploads[0]);
-    }
-    const samples = decodeVoiceDraftPcmWav(uploads[0]!);
-    expect(samples).toHaveLength(4096);
-    expect(samples?.at(-1)).toBeCloseTo(0.25, 4);
-    await waitFor(async () => {
-      return await expect(savedRecording()).resolves.toBeNull();
     });
   },
 );
@@ -216,7 +220,7 @@ test.each([RUN_PATH, NEW_CHAT_PATH])(
         });
       },
     );
-    await setupPage({ context, path, featureSwitches: flags });
+    await setupPage({ context, path });
     click(await findEnabledButton("Voice input"));
     const emit = await capture.promise;
     emit(new Float32Array(4096).fill(0.25));
@@ -243,8 +247,8 @@ test.each([
 ])(
   "Do not restore a completed silent recording at $path (empty: $empty)",
   async ({ path, empty }) => {
-    // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-    const firstPage = createChildAbortController(context.signal);
+    const resetFirstPage$ = resetSignal();
+    const firstPageSignal = context.store.set(resetFirstPage$, context.signal);
     context.mocks.browser.voiceInput({
       rms: 0,
       onPcmCapture: (emit) => {
@@ -262,17 +266,17 @@ test.each([
       },
     );
     await setupPage({
-      context: { ...context, signal: firstPage.signal },
+      context: { ...context, signal: firstPageSignal },
       path,
-      featureSwitches: flags,
     });
     click(await findEnabledButton("Voice input"));
     click(await findEnabledButton("Stop recording"));
     await findEnabledButton("Voice input");
     expect(queryButton("Retry")).toBeNull();
     expect(uploads).toHaveLength(1);
-    unload(firstPage);
-    await setupPage({ context: secondContext, path, featureSwitches: flags });
+    context.store.set(resetFirstPage$);
+    releasePageDom();
+    await setupPage({ context: secondContext, path });
     await findEnabledButton("Voice input");
     expect(queryButton("Retry")).toBeNull();
     expect(queryButton("Stop recording")).toBeNull();
@@ -287,7 +291,7 @@ test("Stop capture and expose a failed chunk write without discarding the saved 
     onPcmCapture: capture.resolve,
   });
   const consoleErrors = installVoiceBoundaries();
-  await setupPage({ context, path: RUN_PATH, featureSwitches: flags });
+  await setupPage({ context, path: RUN_PATH });
   click(await findEnabledButton("Voice input"));
   const emit = await capture.promise;
   emit(new Float32Array(4096).fill(0.25));

@@ -1,0 +1,15 @@
+{
+  "role": "assistant",
+  "api": "openai-codex-responses",
+  "provider": "openai-codex",
+  "model": "gpt-5.6-terra",
+  "content": [],
+  "stopReason": "error",
+  "errorMessage": "{\"detail\":\"Rate limit exceeded\"}",
+  "diagnostics": [
+    {
+      "type": "okou_model_request",
+      "details": { "transportAttempts": 1, "httpStatus": 429 }
+    }
+  ]
+}

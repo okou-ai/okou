@@ -1,3 +1,4 @@
+import { onTestFinished } from "vitest";
 import { randomUUID } from "node:crypto";
 import {
   DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
@@ -10,6 +11,7 @@ import {
   type ModelProviderWriteType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
+import { modelProvidersByTypeContract } from "@okouai/api-contracts/contracts/model-provider-routes";
 import { modelProviderConnectionsMainContract } from "@okouai/api-contracts/contracts/model-provider-gateways";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import type { ImageModelId } from "@okouai/api-contracts/contracts/image-models";
@@ -20,7 +22,13 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { now } from "../../../lib/time";
-import { setOrgModelPolicyProviderTypeFixture } from "../../../test-fixtures/org-model-policies";
+import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
+import {
+  holdModelPolicyPreferenceFixture,
+  stageUnrepairedOrgModelPolicyFixture,
+  readUnrepairedOrgModelPolicyFixture,
+  setOrgModelPolicyProviderTypeFixture,
+} from "../../../test-fixtures/org-model-policies";
 import {
   withBuiltInModelRuntimeRouteCandidateUnavailableForTest,
   withBuiltInModelRuntimeRouteUnavailableForTest,
@@ -32,9 +40,12 @@ import {
   type ApiTestUser,
 } from "./helpers/api-bdd-auth-org";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
+import { makeCodexAuthJson } from "./helpers/api-bdd-auth-device";
 import { seedBuiltInModelCandidateKeys } from "./helpers/runtime-state";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { modelPoliciesRoutes } from "../model-policies";
+import { modelProvidersRoutes } from "../model-providers";
 import { modelProviderGatewayRoutes } from "../model-provider-gateways";
 import { userModelPreferenceRoutes } from "../user-model-preference";
 
@@ -191,18 +202,6 @@ describe("GET/PUT /api/model-policies", () => {
       [400],
     );
     expect(oldPreference.body.error.message).toBe(retired.body.error.message);
-    await accept(
-      client.update({
-        headers: authHeaders(),
-        body: {
-          policies: [
-            ...toUpdate(existing.body),
-            makeBuiltInPolicy("claude-fable-5-1"),
-          ],
-        },
-      }),
-      [200],
-    );
     const successor = await accept(
       preferences.update({
         headers: authHeaders(),
@@ -271,7 +270,7 @@ describe("GET/PUT /api/model-policies", () => {
     );
   });
 
-  it("lists seeded curated models and the explicit default", async () => {
+  it("seeds Fable 5.1, Astra, and Luna with Luna as the workspace default", async () => {
     const fixture = await seedFixture();
     useSession(fixture);
 
@@ -286,21 +285,19 @@ describe("GET/PUT /api/model-policies", () => {
       response.body.policies.map((policy) => {
         return policy.model;
       }),
-    ).toStrictEqual(DEFAULT_ORG_MODEL_POLICY_MODELS);
+    ).toStrictEqual(["claude-fable-5-1", "gpt-6-astra", "gpt-5.6-luna"]);
     expect(response.body.policies[0]).toMatchObject({
       defaultProviderType: "built-in",
       credentialScope: "org",
       modelProviderId: null,
       routeStatus: "valid",
     });
-    expect(response.body.workspaceDefaultModel).toBe(
-      DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
-    );
+    expect(response.body.workspaceDefaultModel).toBe("gpt-5.6-luna");
     expect(
       response.body.policies.find((policy) => {
         return policy.isDefault;
       })?.model,
-    ).toBe(DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL);
+    ).toBe("gpt-5.6-luna");
   });
 
   it("advertises the current built-in provider for route-specific effort controls", async () => {
@@ -416,18 +413,21 @@ describe("GET/PUT /api/model-policies", () => {
       response.body.policies.map((policy) => {
         return policy.model;
       }),
-    ).toStrictEqual(DEFAULT_ORG_MODEL_POLICY_MODELS);
-    expect(response.body.workspaceDefaultModel).toBe(
-      LIMITED_FREE1_DEFAULT_RUN_MODEL,
-    );
+    ).toStrictEqual(["claude-fable-5-1", "gpt-6-astra", "gpt-5.6-luna"]);
+    expect(response.body.workspaceDefaultModel).toBe("gpt-5.6-luna");
     expect(
       response.body.policies.find((policy) => {
         return policy.isDefault;
       })?.model,
-    ).toBe(LIMITED_FREE1_DEFAULT_RUN_MODEL);
+    ).toBe("gpt-5.6-luna");
   });
 
-  it.each(["deepseek-v4-pro", "deepseek-v4-flash", "gpt-5.6-luna"] as const)(
+  it.each([
+    "deepseek-v4.1-flash",
+    "deepseek-v4-pro",
+    "deepseek-v4-flash",
+    "gpt-5.6-luna",
+  ] as const)(
     "keeps an existing %s default for limited-free-1 workspaces",
     async (previousDefaultModel) => {
       const fixture = seedFixture();
@@ -1110,7 +1110,7 @@ describe("GET/PUT /api/model-policies", () => {
     });
   });
 
-  it.each([FeatureSwitchKey.CodexFastMode, FeatureSwitchKey.ModelPickerMenu])(
+  it.each([FeatureSwitchKey.CodexFastMode, FeatureSwitchKey.Effort])(
     "stores priority with a GPT 5.6 user model preference with %s",
     async (fastSwitch) => {
       const fixture = await seedFixture();
@@ -1168,6 +1168,93 @@ describe("GET/PUT /api/model-policies", () => {
       ).toBe("priority");
     },
   );
+
+  it("stores Fast for the effective personal route when the organization API provider is missing", async () => {
+    const fixture = seedFixture();
+    useSession(fixture);
+    const providerId = await createOrgProvider(fixture, "openai-api-key");
+    await accept(
+      apiClient().update({
+        headers: authHeaders(),
+        body: {
+          policies: [
+            {
+              model: "gpt-5.6-sol",
+              isDefault: true,
+              defaultProviderType: "openai-api-key",
+              credentialScope: "org",
+              modelProviderId: providerId,
+            },
+          ],
+        },
+      }),
+      [200],
+    );
+    const providers = createMiscRoutesApi(context);
+    await providers.deleteOrgModelProvider(fixture, "openai-api-key", [204]);
+    // Plan state is infrastructure-owned; subscriptions require a BYOK plan.
+    await seedOrgMetadata({ orgId: fixture.orgId, tier: "pro", credits: 0 });
+    await updateFeatureSwitchesForUser(context, fixture, {
+      [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
+      [FeatureSwitchKey.Effort]: true,
+      [FeatureSwitchKey.CodexFastMode]: false,
+    });
+    useSession(fixture);
+    const preferences = setupApp({
+      context,
+      routes: userModelPreferenceRoutes,
+    })(userModelPreferenceContract);
+    await accept(
+      preferences.update({
+        headers: authHeaders(),
+        body: { selectedModel: "gpt-5.6-sol", serviceTier: "priority" },
+      }),
+      [400],
+    );
+
+    await providers.upsertPersonalModelProvider(
+      fixture,
+      {
+        type: "codex-oauth-token",
+        authMethod: "auth_json",
+        secrets: {
+          CODEX_AUTH_JSON: makeCodexAuthJson({ accountId: randomUUID() }),
+        },
+      },
+      [200, 201],
+    );
+    useSession(fixture);
+    const projected = await accept(
+      apiClient().list({ headers: authHeaders() }),
+      [200],
+    );
+    expect(projected.body.policies).toContainEqual(
+      expect.objectContaining({
+        model: "gpt-5.6-sol",
+        defaultProviderType: "openai-api-key",
+        routeStatus: "missing_provider",
+        memberEffective: expect.objectContaining({
+          providerType: "codex-oauth-token",
+          availability: "available",
+        }),
+      }),
+    );
+    await accept(
+      preferences.update({
+        headers: authHeaders(),
+        body: { selectedModel: "gpt-5.6-sol", serviceTier: "priority" },
+      }),
+      [200],
+    );
+    const stored = await accept(
+      preferences.get({ headers: authHeaders() }),
+      [200],
+    );
+    expect(stored.body).toMatchObject({
+      selectedModel: "gpt-5.6-sol",
+      serviceTier: "priority",
+    });
+  });
 
   it("stores a member video default independent of the run model", async () => {
     const fixture = await seedFixture();
@@ -1801,3 +1888,521 @@ test.each([
     );
   },
 );
+
+describe("conditional organization model policy writes", () => {
+  async function enablePriority(fixture: ModelPolicyFixture) {
+    await updateFeatureSwitchesForUser(context, fixture, {
+      [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
+    });
+    useSession(fixture);
+  }
+
+  it("rejects missing and stale snapshots without erasing another admin's model or preference", async () => {
+    const fixture = seedFixture();
+    useSession(fixture);
+    // Full responses include live runtime routes. Retain each policy's keys so
+    // another fixture's acquisition or cleanup cannot change either snapshot.
+    for (const model of ["gpt-5.6-luna", "gpt-6-astra", "deepseek-v4-flash"]) {
+      await seedBuiltInModelCandidateKeys(context, model);
+    }
+    await accept(
+      apiClient().update({
+        headers: authHeaders(),
+        body: {
+          policies: [
+            makeBuiltInPolicy("gpt-5.6-luna", true),
+            makeBuiltInPolicy("gpt-6-astra"),
+          ],
+        },
+      }),
+      [200],
+    );
+    await enablePriority(fixture);
+    const first = await accept(
+      apiClient().list({ headers: authHeaders() }),
+      [200],
+    );
+    const secondAdmin = authOrgApi.user({
+      orgId: fixture.orgId,
+      orgRole: "org:admin",
+    });
+    useSession({ ...secondAdmin, orgId: fixture.orgId });
+    const second = await accept(
+      apiClient().list({ headers: authHeaders() }),
+      [200],
+    );
+    expect(second.body.revision).toBe(first.body.revision);
+    const added = await accept(
+      apiClient().update({
+        headers: authHeaders(),
+        body: {
+          policies: [
+            ...toUpdate(second.body),
+            makeBuiltInPolicy("deepseek-v4-flash"),
+          ],
+          revision: second.body.revision,
+        },
+      }),
+      [200],
+    );
+    const concurrentKey = await seedBuiltInModelCandidateKeys(
+      context,
+      "deepseek-v4-flash",
+    );
+    const preferences = setupApp({
+      context,
+      routes: userModelPreferenceRoutes,
+    })(userModelPreferenceContract);
+    await accept(
+      preferences.update({
+        headers: authHeaders(),
+        body: { selectedModel: "deepseek-v4-flash", serviceTier: null },
+      }),
+      [200],
+    );
+    useSession(fixture);
+    for (const revision of [undefined, first.body.revision]) {
+      const rejected = await accept(
+        apiClient().update({
+          headers: authHeaders(),
+          body: {
+            policies: [makeBuiltInPolicy("gpt-6-astra", true)],
+            revision,
+          },
+        }),
+        [409],
+      );
+      expect(rejected.body.error.message).toContain("Refresh model settings");
+    }
+    const unchanged = await accept(
+      apiClient().list({ headers: authHeaders() }),
+      [200],
+    );
+    expect(unchanged.body.revision).toBe(added.body.revision);
+    expect(unchanged.body.policies).toStrictEqual(added.body.policies);
+    await concurrentKey.release();
+    const afterKeyRelease = await accept(
+      apiClient().list({ headers: authHeaders() }),
+      [200],
+    );
+    expect(afterKeyRelease.body.policies).toStrictEqual(added.body.policies);
+    useSession({ ...secondAdmin, orgId: fixture.orgId });
+    const preference = await accept(
+      preferences.get({ headers: authHeaders() }),
+      [200],
+    );
+    expect(preference.body.selectedModel).toBe("deepseek-v4-flash");
+    const edited = await accept(
+      apiClient().update({
+        headers: authHeaders(),
+        body: {
+          policies: [
+            makeBuiltInPolicy("gpt-5.6-luna"),
+            makeBuiltInPolicy("deepseek-v4-flash", true),
+          ],
+          revision: unchanged.body.revision,
+        },
+      }),
+      [200],
+    );
+    expect(edited.body.workspaceDefaultModel).toBe("deepseek-v4-flash");
+    expect(
+      edited.body.policies.map((policy) => {
+        return policy.model;
+      }),
+    ).toStrictEqual(["gpt-5.6-luna", "deepseek-v4-flash"]);
+  });
+
+  it.each([
+    {
+      model: "gpt-6-astra",
+      addedModel: "gpt-5.6-sol",
+      subscription: "codex-oauth-token",
+      api: "openai-api-key",
+    },
+    {
+      model: "claude-opus-4-8",
+      addedModel: "claude-sonnet-5",
+      subscription: "claude-code-oauth-token",
+      api: "anthropic-api-key",
+    },
+  ] as const)(
+    "adds and edits $subscription policies with the current revision without changing unrelated settings",
+    async ({ model, addedModel, subscription, api }) => {
+      const fixture = seedFixture();
+      useSession(fixture);
+      // Keep the built-in policy's live route stable across response snapshots.
+      await seedBuiltInModelCandidateKeys(context, "gpt-5.6-luna");
+      const providerId = await createOrgProvider(fixture, api);
+      const initial = await accept(
+        apiClient().update({
+          headers: authHeaders(),
+          body: {
+            policies: [
+              makeBuiltInPolicy("gpt-5.6-luna", true),
+              {
+                ...makeBuiltInPolicy(model),
+                defaultProviderType: api,
+                modelProviderId: providerId,
+              },
+            ],
+          },
+        }),
+        [200],
+      );
+      const preferences = setupApp({
+        context,
+        routes: userModelPreferenceRoutes,
+      })(userModelPreferenceContract);
+      await accept(
+        preferences.update({
+          headers: authHeaders(),
+          body: { selectedModel: "gpt-5.6-luna", serviceTier: null },
+        }),
+        [200],
+      );
+      await enablePriority(fixture);
+      const read = await accept(
+        apiClient().list({ headers: authHeaders() }),
+        [200],
+      );
+      expect(toUpdate(read.body)).toStrictEqual(toUpdate(initial.body));
+      expect(read.body.writePreconditionRequired).toBeTruthy();
+      const subscriptionPolicy = (
+        selectedModel: typeof model | typeof addedModel,
+      ): UpdateOrgModelPolicy => {
+        return {
+          ...makeBuiltInPolicy(selectedModel),
+          defaultProviderType: subscription,
+          credentialScope: "member",
+          modelProviderSurfaceId: null,
+        };
+      };
+      const requested = [
+        ...toUpdate(read.body).map((policy) => {
+          return policy.model === model ? subscriptionPolicy(model) : policy;
+        }),
+        subscriptionPolicy(addedModel),
+      ];
+      const saved = await accept(
+        apiClient().update({
+          headers: authHeaders(),
+          body: { policies: requested, revision: read.body.revision },
+        }),
+        [200],
+      );
+      expect(toUpdate(saved.body)).toStrictEqual(
+        expect.arrayContaining(requested),
+      );
+      expect(saved.body.policies).toHaveLength(requested.length);
+      expect(saved.body.workspaceDefaultPolicyId).toBe(
+        initial.body.workspaceDefaultPolicyId,
+      );
+      expect(
+        saved.body.policies.find((policy) => {
+          return policy.model === model;
+        })?.id,
+      ).toBe(
+        initial.body.policies.find((policy) => {
+          return policy.model === model;
+        })?.id,
+      );
+      const edited = await accept(
+        apiClient().update({
+          headers: authHeaders(),
+          body: {
+            policies: toUpdate(saved.body).map((policy) => {
+              return { ...policy, isDefault: policy.model === model };
+            }),
+            revision: saved.body.revision,
+          },
+        }),
+        [200],
+      );
+      expect(edited.body.workspaceDefaultModel).toBe(model);
+      expect(
+        edited.body.policies.find((policy) => {
+          return policy.model === model;
+        }),
+      ).toMatchObject({
+        defaultProviderType: subscription,
+        credentialScope: "member",
+        isDefault: true,
+      });
+      const concurrentKey = await seedBuiltInModelCandidateKeys(
+        context,
+        "gpt-5.6-luna",
+      );
+      for (const revision of [undefined, saved.body.revision]) {
+        await accept(
+          apiClient().update({
+            headers: authHeaders(),
+            body: { policies: requested, revision },
+          }),
+          [409],
+        );
+      }
+      const unchanged = await accept(
+        apiClient().list({ headers: authHeaders() }),
+        [200],
+      );
+      expect(unchanged.body.policies).toStrictEqual(edited.body.policies);
+      await concurrentKey.release();
+      const afterKeyRelease = await accept(
+        apiClient().list({ headers: authHeaders() }),
+        [200],
+      );
+      expect(afterKeyRelease.body.policies).toStrictEqual(edited.body.policies);
+      const preference = await accept(
+        preferences.get({ headers: authHeaders() }),
+        [200],
+      );
+      expect(preference.body).toMatchObject({
+        selectedModel: "gpt-5.6-luna",
+        serviceTier: null,
+      });
+    },
+  );
+
+  it("keeps the revision decision protected while a replacement waits on member preferences", async () => {
+    const fixture = seedFixture();
+    useSession(fixture);
+    await accept(
+      apiClient().update({
+        headers: authHeaders(),
+        body: {
+          policies: [
+            makeBuiltInPolicy("gpt-5.6-luna", true),
+            makeBuiltInPolicy("gpt-6-astra"),
+          ],
+        },
+      }),
+      [200],
+    );
+    const preferences = setupApp({
+      context,
+      routes: userModelPreferenceRoutes,
+    })(userModelPreferenceContract);
+    await accept(
+      preferences.update({
+        headers: authHeaders(),
+        body: { selectedModel: "gpt-6-astra", serviceTier: null },
+      }),
+      [200],
+    );
+    await enablePriority(fixture);
+    const snapshot = await accept(
+      apiClient().list({ headers: authHeaders() }),
+      [200],
+    );
+    const boundary = await holdModelPolicyPreferenceFixture(
+      fixture.orgId,
+      context.signal,
+    );
+    onTestFinished(async () => {
+      boundary.release();
+      await boundary.done;
+    });
+    const first = apiClient().update({
+      headers: authHeaders(),
+      body: {
+        policies: [makeBuiltInPolicy("gpt-5.6-luna", true)],
+        revision: snapshot.body.revision,
+      },
+    });
+    await vi.waitFor(async () => {
+      return await expect(boundary.blockedTransactions()).resolves.toBe(1);
+    });
+    const second = apiClient().update({
+      headers: authHeaders(),
+      body: {
+        policies: [
+          ...toUpdate(snapshot.body),
+          makeBuiltInPolicy("deepseek-v4-flash"),
+        ],
+        revision: snapshot.body.revision,
+      },
+    });
+    await vi.waitFor(async () => {
+      return await expect(boundary.blockedTransactions()).resolves.toBe(2);
+    });
+    boundary.release();
+    await boundary.done;
+    await accept(first, [200]);
+    await accept(second, [409]);
+    const current = await accept(
+      apiClient().list({ headers: authHeaders() }),
+      [200],
+    );
+    expect(
+      current.body.policies.map((policy) => {
+        return policy.model;
+      }),
+    ).toStrictEqual(["gpt-5.6-luna"]);
+    const preference = await accept(
+      preferences.get({ headers: authHeaders() }),
+      [200],
+    );
+    expect(preference.body.selectedModel).toBe("gpt-5.6-luna");
+  });
+});
+
+describe("conditional policy writes and persisted repair boundaries", () => {
+  it("serializes a provider deletion behind a replacement that passed its precondition", async () => {
+    const fixture = seedFixture();
+    useSession(fixture);
+    const providerId = await createOrgProvider(fixture, "anthropic-api-key");
+    const retainedPolicy: UpdateOrgModelPolicy = {
+      model: "claude-opus-4-8",
+      isDefault: true,
+      defaultProviderType: "anthropic-api-key",
+      credentialScope: "org",
+      modelProviderId: providerId,
+      modelProviderSurfaceId: null,
+    };
+    await accept(
+      apiClient().update({
+        headers: authHeaders(),
+        body: { policies: [retainedPolicy, makeBuiltInPolicy("gpt-6-astra")] },
+      }),
+      [200],
+    );
+    const preferences = setupApp({
+      context,
+      routes: userModelPreferenceRoutes,
+    })(userModelPreferenceContract);
+    await accept(
+      preferences.update({
+        headers: authHeaders(),
+        body: { selectedModel: "gpt-6-astra", serviceTier: null },
+      }),
+      [200],
+    );
+    await updateFeatureSwitchesForUser(context, fixture, {
+      [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
+    });
+    useSession(fixture);
+    const snapshot = await accept(
+      apiClient().list({ headers: authHeaders() }),
+      [200],
+    );
+    const boundary = await holdModelPolicyPreferenceFixture(
+      fixture.orgId,
+      context.signal,
+    );
+    onTestFinished(async () => {
+      boundary.release();
+      await boundary.done;
+    });
+    const replacement = apiClient().update({
+      headers: authHeaders(),
+      body: { policies: [retainedPolicy], revision: snapshot.body.revision },
+    });
+    await vi.waitFor(async () => {
+      await expect(boundary.blockedTransactions()).resolves.toBe(1);
+    });
+    const providerClient = setupApp({ context, routes: modelProvidersRoutes })(
+      modelProvidersByTypeContract,
+    );
+    const deletion = providerClient.delete({
+      headers: authHeaders(),
+      params: { type: "anthropic-api-key" },
+    });
+    await vi.waitFor(async () => {
+      await expect(boundary.blockedTransactions()).resolves.toBe(2);
+    });
+    boundary.release();
+    await boundary.done;
+    await accept(replacement, [200]);
+    await accept(deletion, [204]);
+    const current = await accept(
+      apiClient().list({ headers: authHeaders() }),
+      [200],
+    );
+    expect(current.body.policies).toHaveLength(1);
+    expect(current.body.policies[0]).toMatchObject({
+      model: retainedPolicy.model,
+      defaultProviderType: retainedPolicy.defaultProviderType,
+      credentialScope: "org",
+      modelProviderId: null,
+      routeStatus: "missing_provider",
+      isDefault: true,
+    });
+    const preference = await accept(
+      preferences.get({ headers: authHeaders() }),
+      [200],
+    );
+    expect(preference.body.selectedModel).toBe(retainedPolicy.model);
+  });
+
+  it.each(["unseeded", "missing_default"] as const)(
+    "rejects missing and stale preconditions before repairing %s policies",
+    async (state) => {
+      const fixture = seedFixture();
+      useSession(fixture);
+      await accept(
+        apiClient().update({
+          headers: authHeaders(),
+          body: {
+            policies: [
+              makeBuiltInPolicy("gpt-5.6-luna", true),
+              makeBuiltInPolicy("gpt-6-astra"),
+            ],
+          },
+        }),
+        [200],
+      );
+      const preferences = setupApp({
+        context,
+        routes: userModelPreferenceRoutes,
+      })(userModelPreferenceContract);
+      await accept(
+        preferences.update({
+          headers: authHeaders(),
+          body: { selectedModel: "gpt-6-astra", serviceTier: null },
+        }),
+        [200],
+      );
+      await updateFeatureSwitchesForUser(context, fixture, {
+        [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
+      });
+      useSession(fixture);
+      const previous = await accept(
+        apiClient().list({ headers: authHeaders() }),
+        [200],
+      );
+      await stageUnrepairedOrgModelPolicyFixture({
+        orgId: fixture.orgId,
+        state,
+      });
+      const before = await readUnrepairedOrgModelPolicyFixture(fixture.orgId);
+      for (const revision of [undefined, previous.body.revision]) {
+        const rejected = await accept(
+          apiClient().update({
+            headers: authHeaders(),
+            body: {
+              policies: [makeBuiltInPolicy("gpt-5.6-luna", true)],
+              revision,
+            },
+          }),
+          [409],
+        );
+        expect(rejected.body.error.message).toContain("Refresh model settings");
+        await expect(
+          readUnrepairedOrgModelPolicyFixture(fixture.orgId),
+        ).resolves.toStrictEqual(before);
+      }
+      // The normal read still owns initialization/default repair after rejection.
+      const repaired = await accept(
+        apiClient().list({ headers: authHeaders() }),
+        [200],
+      );
+      expect(repaired.body.policies.length).toBeGreaterThan(0);
+      expect(
+        repaired.body.policies.filter((policy) => {
+          return policy.isDefault;
+        }),
+      ).toHaveLength(1);
+    },
+  );
+});

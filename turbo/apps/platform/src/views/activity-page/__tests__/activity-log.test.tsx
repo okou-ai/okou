@@ -62,10 +62,13 @@ function assistantText(sequenceNumber: number, text: string): AgentEvent {
   });
 }
 
-function lastSequence(events: readonly AgentEvent[]): number {
+function lastSequence(events: readonly AgentEvent[]): number | null {
+  if (events.length === 0) {
+    return null;
+  }
   return events.reduce((maximum, item) => {
     return Math.max(maximum, Math.floor(item.sequenceNumber));
-  }, -1);
+  }, 0);
 }
 
 function mockActivity(
@@ -73,11 +76,15 @@ function mockActivity(
   options: {
     readonly framework?: string;
     readonly status?: LogStatus;
+    readonly error?: string;
   } = {},
 ): void {
   const status = options.status ?? "completed";
   context.mocks.api(logsByIdContract.getById, ({ respond }) => {
-    return respond(200, makeLogDetail(status, options.framework));
+    return respond(200, {
+      ...makeLogDetail(status, options.framework),
+      ...(options.error === undefined ? {} : { error: options.error }),
+    });
   });
   context.mocks.api(runAgentEventsContract.getAgentEvents, ({ respond }) => {
     return respond(200, {
@@ -136,6 +143,39 @@ function expectBefore(first: Element, second: Element): void {
     first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING,
   ).not.toBe(0);
 }
+
+test.each([
+  ["The current model is unavailable.", "現在のモデルは利用できません。"],
+  [
+    "Your connected model provider account has insufficient balance.",
+    "接続されているモデルプロバイダーのアカウント残高が不足しています。",
+  ],
+  [
+    "This run reached its execution time limit.",
+    "この実行は時間制限に達しました。",
+  ],
+  ["Run failed", "実行に失敗しました"],
+  [
+    "Ask a workspace admin to add credits or upgrade the workspace plan.",
+    "ワークスペースの管理者にクレジットの追加またはプランのアップグレードを依頼してください。",
+  ],
+  [
+    "Claude Sonnet 4.6 is overloaded. Please wait a few minutes and try again, or switch to another model.",
+    "Claude Sonnet 4.6 は混雑しています。数分待ってからもう一度試すか、別のモデルに切り替えてください。",
+  ],
+  [
+    "Model temporarily unavailable. Every built-in model route for this model is temporarily unavailable. Please try again later.",
+    "モデルは一時的に利用できません",
+  ],
+  [
+    "Provider detail: Credit balance is too low",
+    "Provider detail: Credit balance is too low",
+  ],
+])("Localize the Activity run error: %s", async (error, expected) => {
+  mockActivity([], { status: "failed", error });
+  await setupPage({ context, path: "/activities/" + RUN_ID, locale: "ja-JP" });
+  await expect(screen.findByText(expected)).resolves.toBeInTheDocument();
+});
 
 test("Large plans and file-change lists remain readable", async () => {
   mockActivity(

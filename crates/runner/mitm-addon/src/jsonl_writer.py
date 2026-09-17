@@ -11,6 +11,7 @@ import addon_process_logging
 
 MAX_PENDING_JSONL_WRITES = 4096
 MAX_PENDING_JSONL_BYTES = 32 * 1024 * 1024
+MAX_PENDING_FLUSHES = 8
 MAX_JSONL_IOVECS = os.sysconf("SC_IOV_MAX")
 SHUTDOWN_JOIN_TIMEOUT_SECONDS = 1.0
 APPEND_FAILURE_WARNING_INTERVAL_SECONDS = 60.0
@@ -24,6 +25,19 @@ class _WriteItem:
     sequence: int
 
 
+@dataclass(eq=False)
+class FlushBoundary:
+    """A captured prefix, owned by the writer until processed, not by its caller."""
+
+    log_path: str
+    sequence: int
+    pending: int
+
+    def pending_count(self) -> int:
+        with _condition:
+            return self.pending
+
+
 _STOP = object()
 _lock = threading.Lock()
 _condition = threading.Condition(_lock)
@@ -34,6 +48,7 @@ _stop_enqueued = False
 _accepted_by_path: defaultdict[str, int] = defaultdict(int)
 _completed_by_path: defaultdict[str, int] = defaultdict(int)
 _flush_waiters_by_path: defaultdict[str, int] = defaultdict(int)
+_pending_flushes: list[FlushBoundary] = []
 _pending_bytes = 0
 _queued_writes = 0
 _drop_warning_logged = False
@@ -94,6 +109,25 @@ def write_jsonl_line(log_path: str, line: bytes, log_name: str) -> None:
 
     if dropped:
         _warn_drop_once(log_name)
+
+
+def capture_flush_boundary(log_path: str) -> FlushBoundary | None:
+    """Admit an observer without I/O; cancellation cannot release its writer slot.
+
+    Completion includes failed append attempts, not successful persistence. The
+    writer retires tickets and their sequence pins only after the captured prefix
+    is processed, even when the control connection no longer exists.
+    """
+    with _condition:
+        if len(_pending_flushes) >= MAX_PENDING_FLUSHES:
+            return None
+        target = _accepted_by_path.get(log_path, 0)
+        pending = target - _completed_by_path.get(log_path, 0)
+        boundary = FlushBoundary(log_path, target, pending)
+        if pending:
+            _increment_flush_waiter_locked(log_path)
+            _pending_flushes.append(boundary)
+        return boundary
 
 
 def flush_log_path(log_path: str, *, timeout: float | None = None) -> bool:
@@ -200,6 +234,7 @@ def reset_for_tests() -> None:
         _accepted_by_path = defaultdict(int)
         _completed_by_path = defaultdict(int)
         _flush_waiters_by_path = defaultdict(int)
+        _pending_flushes.clear()
         _pending_bytes = 0
         _queued_writes = 0
         _drop_warning_logged = False
@@ -373,6 +408,13 @@ def _complete_batch(items: list[object]) -> None:
             )
         _pending_bytes = max(0, _pending_bytes - completed_bytes)
         _queued_writes = max(0, _queued_writes - completed_writes)
+        for boundary in tuple(_pending_flushes):
+            boundary.pending = max(
+                0, boundary.sequence - _completed_by_path.get(boundary.log_path, 0)
+            )
+            if boundary.pending == 0:
+                _pending_flushes.remove(boundary)
+                _decrement_flush_waiter_locked(boundary.log_path)
         for log_path in completed_by_path:
             _prune_completed_path_locked(log_path)
         _condition.notify_all()

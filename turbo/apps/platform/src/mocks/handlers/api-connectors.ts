@@ -32,7 +32,6 @@ import {
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
-import { getAllFeatureStates } from "@okouai/core/feature-switch";
 import { mockApi } from "../msw-contract.ts";
 import {
   testConnectorCatalogCategoryMetadata,
@@ -42,8 +41,6 @@ import {
 } from "./connector-catalog-fixtures.ts";
 
 let mockConnectors: ConnectorResponse[] = [];
-let mockConnectorFeatureStates: Readonly<Record<string, boolean>> =
-  getAllFeatureStates({});
 const mockConnectorAccountDisplayNames = new Map<string, string | null>();
 const mockConnectorRequestedScopes = new Map<string, readonly string[]>();
 type MockOauthDeviceAuthSessionStartResponse = Omit<
@@ -171,16 +168,9 @@ export function setMockConnectors(
 
 export function resetMockConnectors(): void {
   mockConnectors = [];
-  mockConnectorFeatureStates = getAllFeatureStates({});
   mockConnectorAccountDisplayNames.clear();
   mockConnectorRequestedScopes.clear();
   resetMockOauthDeviceAuth();
-}
-
-export function setMockConnectorFeatureSwitches(
-  switches: Partial<Record<string, boolean>>,
-): void {
-  mockConnectorFeatureStates = getAllFeatureStates({ overrides: switches });
 }
 
 function mockAccountForConnector(
@@ -408,24 +398,15 @@ function mockConnectorCatalogStatus(): PublicConnectorCatalogStatusItem[] {
       return [connector.slug, connector];
     }),
   );
-  const featureStates = mockConnectorFeatureStates;
-  return testConnectorCatalogDefinitions.flatMap((definition) => {
-    const authMethods = definition.authMethods.flatMap((method) => {
-      return method.featureSwitch === undefined ||
-        featureStates[method.featureSwitch] === true
-        ? [method.detail]
-        : [];
+  return testConnectorCatalogDefinitions.map((definition) => {
+    const authMethods = definition.authMethods.map((method) => {
+      return method.detail;
     });
-    if (authMethods.length === 0) {
-      return [];
-    }
-    return [
-      mockConnectorCatalogStatusItem(
-        definition,
-        authMethods,
-        connectorsBySlug.get(definition.connectorSlug) ?? null,
-      ),
-    ];
+    return mockConnectorCatalogStatusItem(
+      definition,
+      authMethods,
+      connectorsBySlug.get(definition.connectorSlug) ?? null,
+    );
   });
 }
 

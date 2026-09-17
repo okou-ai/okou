@@ -92,7 +92,7 @@ impl IncidentUploads {
         };
         let mut payload = serde_json::Map::from_iter([
             ("runId".into(), json!(run_id)),
-            ("oomEvidence".into(), json!(evidence)),
+            ("oomEvidence".into(), json!(evidence.telemetry_evidence())),
         ]);
         if let Some(sandbox_id) = sandbox_id {
             payload.insert("sandboxId".into(), sandbox_id.into());

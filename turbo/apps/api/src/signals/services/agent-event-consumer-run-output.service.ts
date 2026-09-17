@@ -1,18 +1,17 @@
 import { command } from "ccstate";
-import {
-  runStatusSchema,
-  type RunStatus,
-} from "@okouai/api-contracts/contracts/runs";
 import { and, eq, isNotNull, isNull, lte, sql } from "drizzle-orm";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { agentRunInference } from "@okouai/db/schema/agent-run-inference";
 import { runOutputMaterializations } from "@okouai/db/schema/run-output-materialization";
 import { runOutputMemoryCitations } from "@okouai/db/schema/run-output-memory-citation";
+import { publicAssistantBalanceError } from "./run-balance-presentation";
 
 import type {
   AgentEvent,
   EventConsumerPayload,
 } from "../../lib/event-consumer/verify";
 import type { Tx } from "../../lib/db-types";
+import { settleIncludingAbort } from "../utils";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
@@ -24,16 +23,20 @@ import {
   publishFirstAssistantEventCreatedSignalSafely,
   recordFirstAssistantEventAcknowledgementMetric,
 } from "./chat-first-assistant-event-metric.service";
-import { chatThreadForRunFromDb } from "./chat-thread.service";
 import { writeRunMetadataInTransaction } from "./agent-run-metadata-write.service";
-import { lockChatQueueThread } from "./chat-event-queue.service";
+import { historicalRunGroupId } from "./run-event-provenance.service";
+import {
+  withRunContentWrite,
+  prepareRunOutputOwnership,
+  RunContentOwnershipChangedError,
+  type RunOutputDiagnostics,
+  type RunContentOwnership,
+} from "./run-content-erasure-admission.service";
 import {
   normalizeRunOutputEvents,
   type EventCitation,
 } from "./pi-memory-citation-events";
 
-const RUN_OUTPUT_PROJECTION_LOCK_TIMEOUT = "1s";
-const RUN_OUTPUT_PROJECTION_STATEMENT_TIMEOUT = "5s";
 interface OutputCandidate {
   readonly sequenceNumber: number;
   readonly content: string;
@@ -57,19 +60,22 @@ type RunOutputMaterializationResult =
       readonly outcome: "accepted";
       readonly chatProjection: MaterializedChatProjection | null;
       readonly payload: EventConsumerPayload;
+      readonly ownership: RunContentOwnership;
     }
-  | { readonly outcome: "ignored-timeout" };
+  | { readonly outcome: "ignored-timeout" | "ignored-closure" };
 
-interface RunOutputEventAdmission {
-  readonly payload: EventConsumerPayload;
-  readonly suppliedCitations: readonly EventCitation[];
+export interface RunOutputInferenceFence {
+  readonly ownerEpoch: number;
+  readonly phase: "publishing";
+  readonly providerAttemptId: string;
+  readonly providerAttemptState: "settled";
 }
 
-export class AgentEventRunNotFoundError extends Error {
-  constructor(runId: string) {
-    super(`Run ${runId} is missing during output materialization`);
-    this.name = "AgentEventRunNotFoundError";
-  }
+interface RunOutputEventAdmission {
+  readonly diagnostics: RunOutputDiagnostics;
+  readonly payload: EventConsumerPayload;
+  readonly suppliedCitations: readonly EventCitation[];
+  readonly inferenceFence?: RunOutputInferenceFence;
 }
 
 function recordOf(value: unknown): Record<string, unknown> | null {
@@ -184,6 +190,9 @@ function latestCandidate(
 }
 
 function eventOutputId(event: AgentEvent): string {
+  if (typeof event.runEventId === "string") {
+    return event.runEventId;
+  }
   const item = recordOf(event.item);
   if (typeof item?.id === "string") {
     return item.id;
@@ -194,6 +203,7 @@ function eventOutputId(event: AgentEvent): string {
 
 function assistantEventItems(args: {
   readonly events: readonly AgentEvent[];
+  readonly modelProvider: string | null;
 }): InsertAssistantEventsInput["items"] {
   const items: InsertAssistantEventsInput["items"][number][] = [];
   const events = [...args.events].sort((left, right) => {
@@ -202,11 +212,16 @@ function assistantEventItems(args: {
   for (const event of events) {
     const messageText = assistantMessageText(event);
     if (messageText !== null) {
+      const balanceError = publicAssistantBalanceError(
+        event,
+        args.modelProvider,
+      );
       items.push({
-        eventType: "output.message",
         runEventSequenceNumber: event.sequenceNumber,
-        content: messageText,
         runEventId: eventOutputId(event),
+        ...(balanceError === undefined
+          ? { eventType: "output.message", content: messageText }
+          : { eventType: "output.error", error: balanceError }),
       });
       continue;
     }
@@ -234,10 +249,15 @@ async function insertRunOutputChatEvents(
   tx: Tx,
   payload: EventConsumerPayload,
   thread: MaterializedChatProjection["thread"],
+  runContext: {
+    readonly runGroupId: string | undefined;
+    readonly modelProvider: string | null;
+  },
   signal: AbortSignal,
 ): Promise<AssistantEventInsertion> {
   const assistantItems = assistantEventItems({
     events: payload.events,
+    modelProvider: runContext.modelProvider,
   });
   return await insertAssistantEventsInTransaction(
     tx,
@@ -247,50 +267,11 @@ async function insertRunOutputChatEvents(
       userId: thread.userId,
       orgId: thread.orgId,
       items: assistantItems,
+      runGroupId: runContext.runGroupId,
     },
     signal,
   );
 }
-
-async function lockRunOutputProjection(
-  tx: Tx,
-  runId: string,
-  signal: AbortSignal,
-): Promise<void> {
-  await tx.execute(
-    sql`SELECT set_config('lock_timeout', ${RUN_OUTPUT_PROJECTION_LOCK_TIMEOUT}, true)`,
-  );
-  await tx.execute(
-    sql`SELECT set_config('statement_timeout', ${RUN_OUTPUT_PROJECTION_STATEMENT_TIMEOUT}, true)`,
-  );
-  const lockKey = `run_output_projection:${runId}`;
-  await tx.execute(
-    sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`,
-  );
-  signal.throwIfAborted();
-}
-
-async function lockAgentRunForOutputMaterialization(
-  tx: Tx,
-  runId: string,
-  signal: AbortSignal,
-): Promise<RunStatus> {
-  const [run] = await tx
-    .select({ status: agentRuns.status })
-    .from(agentRuns)
-    .where(eq(agentRuns.id, runId))
-    .for("update")
-    .limit(1);
-  signal.throwIfAborted();
-  if (!run) {
-    throw new AgentEventRunNotFoundError(runId);
-  }
-  return runStatusSchema.parse(run.status);
-}
-
-type OutputMaterializationTransactionResult =
-  | RunOutputMaterializationResult
-  | { readonly outcome: "retry" };
 
 async function insertMemoryCitations(
   tx: Tx,
@@ -337,11 +318,14 @@ function preparedRunOutputProjection(
 async function materializeAdmittedRunOutputEvents(
   args: {
     readonly tx: Tx;
+    readonly ownership: RunContentOwnership;
     readonly payload: EventConsumerPayload;
     readonly thread: MaterializedChatProjection["thread"] | null;
     readonly latestResult: OutputCandidate | null;
     readonly latestOutput: OutputCandidate | null;
     readonly citations: readonly EventCitation[];
+    readonly runGroupId: string | undefined;
+    readonly modelProvider: string | null;
   },
   signal: AbortSignal,
 ): Promise<RunOutputMaterializationResult> {
@@ -353,6 +337,7 @@ async function materializeAdmittedRunOutputEvents(
       tx,
       payload,
       thread,
+      { runGroupId: args.runGroupId, modelProvider: args.modelProvider },
       signal,
     );
     insertedRowCount = insertion.insertedRowCount;
@@ -399,7 +384,12 @@ async function materializeAdmittedRunOutputEvents(
   signal.throwIfAborted();
 
   if (!thread) {
-    return { outcome: "accepted", chatProjection: null, payload };
+    return {
+      outcome: "accepted",
+      chatProjection: null,
+      payload,
+      ownership: args.ownership,
+    };
   }
 
   const acknowledgedAt = nowDate();
@@ -423,6 +413,7 @@ async function materializeAdmittedRunOutputEvents(
   return {
     outcome: "accepted",
     payload,
+    ownership: args.ownership,
     chatProjection: {
       thread,
       insertedRowCount,
@@ -443,55 +434,91 @@ async function materializeRunOutputEvents(
   admission: RunOutputEventAdmission,
   signal: AbortSignal,
 ): Promise<RunOutputMaterializationResult> {
-  const { payload, suppliedCitations } = admission;
+  const { payload, suppliedCitations, diagnostics } = admission;
+  diagnostics.startAttempt("preparation");
   const prepared = preparedRunOutputProjection(payload, suppliedCitations);
 
-  let expectedThread = await chatThreadForRunFromDb(writeDb, payload.runId);
+  const ownership = await prepareRunOutputOwnership(
+    writeDb,
+    payload.runId,
+    diagnostics,
+  );
   signal.throwIfAborted();
-  while (true) {
-    const result: OutputMaterializationTransactionResult =
-      await writeDb.transaction(async (tx) => {
-        await lockRunOutputProjection(tx, payload.runId, signal);
-        const threadLocked = expectedThread
-          ? await lockChatQueueThread(tx, expectedThread.chatThreadId)
-          : false;
-        signal.throwIfAborted();
-        const status = await lockAgentRunForOutputMaterialization(
-          tx,
-          payload.runId,
-          signal,
-        );
-        const thread = await chatThreadForRunFromDb(tx, payload.runId);
-        signal.throwIfAborted();
-        if (thread?.chatThreadId !== expectedThread?.chatThreadId) {
-          return { outcome: "retry" };
-        }
-        if (expectedThread && !threadLocked) {
-          throw new Error("Agent run retained a missing chat thread");
-        }
-        if (status === "timeout") {
-          return { outcome: "ignored-timeout" };
-        }
-
-        return await materializeAdmittedRunOutputEvents(
-          {
-            tx,
-            payload: prepared.payload,
-            thread,
-            latestResult: prepared.latestResult,
-            latestOutput: prepared.latestOutput,
-            citations: prepared.citations,
-          },
-          signal,
-        );
-      });
-    signal.throwIfAborted();
-    if (result.outcome !== "retry") {
-      return result;
-    }
-    expectedThread = await chatThreadForRunFromDb(writeDb, payload.runId);
-    signal.throwIfAborted();
+  if (!ownership) {
+    return { outcome: "ignored-timeout" };
   }
+  diagnostics.enter("preparation");
+  const runGroupId =
+    ownership.thread &&
+    prepared.payload.events.some((event) => {
+      return (
+        assistantMessageText(event) !== null ||
+        codexReasoningText(event) !== null
+      );
+    })
+      ? await historicalRunGroupId(writeDb, payload.runId, undefined, signal)
+      : undefined;
+  const result = await withRunContentWrite(
+    writeDb,
+    { runId: payload.runId, runOwner: payload.context, ownership, diagnostics },
+    async (
+      tx,
+      ownership,
+      status,
+      modelProvider,
+    ): Promise<RunOutputMaterializationResult> => {
+      if (status === "timeout") {
+        return { outcome: "ignored-timeout" };
+      }
+      if (admission.inferenceFence) {
+        const [inference] = await tx
+          .select({
+            ownerEpoch: agentRunInference.ownerEpoch,
+            phase: agentRunInference.phase,
+            providerAttemptId: agentRunInference.providerAttemptId,
+            providerAttemptState: agentRunInference.providerAttemptState,
+          })
+          .from(agentRunInference)
+          .where(eq(agentRunInference.runId, payload.runId))
+          .for("update")
+          .limit(1);
+        if (
+          status !== "pending" ||
+          !inference ||
+          inference.ownerEpoch !== admission.inferenceFence.ownerEpoch ||
+          inference.phase !== admission.inferenceFence.phase ||
+          inference.providerAttemptId !==
+            admission.inferenceFence.providerAttemptId ||
+          inference.providerAttemptState !==
+            admission.inferenceFence.providerAttemptState
+        ) {
+          throw new RunContentOwnershipChangedError();
+        }
+      }
+      const thread =
+        ownership.triggerSource !== null && ownership.thread
+          ? { ...ownership.thread, orgId: ownership.orgId }
+          : null;
+      return await materializeAdmittedRunOutputEvents(
+        {
+          tx,
+          ownership,
+          payload: prepared.payload,
+          thread,
+          latestResult: prepared.latestResult,
+          latestOutput: prepared.latestOutput,
+          citations: prepared.citations,
+          runGroupId,
+          modelProvider,
+        },
+        signal,
+      );
+    },
+    signal,
+  );
+  return result.outcome === "closed"
+    ? { outcome: "ignored-closure" }
+    : result.value;
 }
 
 export const materializeRunOutputEvents$ = command(
@@ -500,7 +527,18 @@ export const materializeRunOutputEvents$ = command(
     admission: RunOutputEventAdmission,
     signal: AbortSignal,
   ): Promise<RunOutputMaterializationResult> => {
-    return await materializeRunOutputEvents(set(writeDb$), admission, signal);
+    const result = await settleIncludingAbort(
+      materializeRunOutputEvents(set(writeDb$), admission, signal),
+    );
+    if (signal.aborted) {
+      admission.diagnostics.clear();
+    }
+    if (!result.ok) {
+      admission.diagnostics.recordFailure(result.error);
+      throw result.error;
+    }
+    admission.diagnostics.clear();
+    return result.value;
   },
 );
 

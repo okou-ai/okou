@@ -129,7 +129,7 @@ export const watchTeamsConnection$ = command(
     signal.throwIfAborted();
     set(internalTeamsStatus$, current);
 
-    await set(
+    set(
       setAblyLoop$,
       { topic: "teams:changed", loopCommand$: onTeamsChanged$ },
       signal,

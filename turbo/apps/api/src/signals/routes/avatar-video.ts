@@ -1,3 +1,5 @@
+import { artifactVisibilityUnavailable } from "../../lib/error";
+import { privateArtifactCreationEnabled } from "../services/private-artifact-storage.service";
 import { randomUUID } from "node:crypto";
 
 import { command } from "ccstate";
@@ -151,20 +153,40 @@ const submitAvatarVideoJob$ = command(
   },
 );
 
-const postGenerateInner$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
+const prepareAvatarVideoRequest$ = command(
+  async ({ get }, requirePrivateArtifact: boolean, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
     const db = get(db$);
     const capabilities = await loadOrgPlanCapabilities(db, auth.orgId);
     signal.throwIfAborted();
-    if (capabilities?.videoGenerationAllowed !== true) {
+    // Keep the existing route's plan-before-validation response ordering.
+    if (
+      !requirePrivateArtifact &&
+      capabilities?.videoGenerationAllowed !== true
+    ) {
       return avatarVideoRequiresPaidPlan();
     }
-
     const bodyResult = await get(generateBody$);
     signal.throwIfAborted();
     if (!bodyResult.ok) {
       return bodyResult.response;
+    }
+
+    const privacyRequired =
+      requirePrivateArtifact || bodyResult.data.requirePrivateArtifact === true;
+    const privateArtifacts = privacyRequired
+      ? await get(privateArtifactCreationEnabled(auth.orgId, auth.userId))
+      : undefined;
+    signal.throwIfAborted();
+    if (privacyRequired && !privateArtifacts) {
+      return artifactVisibilityUnavailable();
+    }
+
+    if (
+      requirePrivateArtifact &&
+      capabilities?.videoGenerationAllowed !== true
+    ) {
+      return avatarVideoRequiresPaidPlan();
     }
     const options = parseAvatarVideoOptions(bodyResult.data);
     if (isAvatarVideoErrorResponse(options)) {
@@ -175,6 +197,26 @@ const postGenerateInner$ = command(
       auth.tokenType === "agent" || auth.tokenType === "sandbox"
         ? auth.runId
         : undefined;
+    return { auth, runId, privateArtifacts, options };
+  },
+);
+
+const postGenerateInner$ = command(
+  async (
+    { get, set },
+    requirePrivateArtifact: boolean,
+    signal: AbortSignal,
+  ) => {
+    const prepared = await set(
+      prepareAvatarVideoRequest$,
+      requirePrivateArtifact,
+      signal,
+    );
+    if ("status" in prepared) {
+      return prepared;
+    }
+    const { auth, runId, privateArtifacts, options } = prepared;
+
     const hasCredits = await set(
       checkAvatarVideoCredits$,
       { orgId: auth.orgId, userId: auth.userId, runId },
@@ -219,6 +261,7 @@ const postGenerateInner$ = command(
         generationId,
         type: "video",
         orgId: auth.orgId,
+        privateArtifacts,
         userId: auth.userId,
         runId,
         request: builtInGenerationRequestWithInternal(
@@ -290,10 +333,21 @@ const getVoicesInner$ = command(async ({ get }, signal: AbortSignal) => {
 
 export const avatarVideoRoutes: readonly RouteEntry[] = [
   {
+    route: avatarVideoContract.generatePrivate,
+    handler: authRoute(
+      { requireOrganization: true, requiredCapability: "file:write" },
+      command(({ set }, signal: AbortSignal) => {
+        return set(postGenerateInner$, true, signal);
+      }),
+    ),
+  },
+  {
     route: avatarVideoContract.generate,
     handler: authRoute(
       { requireOrganization: true, requiredCapability: "file:write" },
-      postGenerateInner$,
+      command(({ set }, signal: AbortSignal) => {
+        return set(postGenerateInner$, false, signal);
+      }),
     ),
   },
   {

@@ -1,10 +1,4 @@
-import {
-  boolean,
-  check,
-  index,
-  pgTable,
-  uniqueIndex,
-} from "drizzle-orm/pg-core";
+import { check, index, pgTable, uniqueIndex } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { orgPlanEntitlementColumns } from "../columns/org-plan-entitlement";
 
@@ -16,20 +10,7 @@ import { orgPlanEntitlementColumns } from "../columns/org-plan-entitlement";
  */
 export const orgPlanEntitlements = pgTable(
   "org_plan_entitlements",
-  {
-    ...orgPlanEntitlementColumns(),
-    // Migration-only declarations. Runtime code uses runtime/org-plan-entitlement.
-    // Keep the physical columns until that API is serving and every supported
-    // rollback target excludes them from generated SQL. Cleanup: #32575.
-    legacyMemberInviteUsagePackRequired: boolean(
-      "member_invite_usage_pack_required",
-    )
-      .notNull()
-      .default(false),
-    legacyMemberInvitationAllowed: boolean("member_invitation_allowed")
-      .notNull()
-      .default(false),
-  },
+  orgPlanEntitlementColumns(),
   (table) => {
     return [
       uniqueIndex("uq_org_plan_entitlements_stripe_subscription").on(

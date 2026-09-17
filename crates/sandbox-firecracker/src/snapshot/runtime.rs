@@ -256,8 +256,10 @@ fn build_snapshot_boot_config(
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
-    use std::path::PathBuf;
-    use std::time::Duration;
+    use std::path::{Path, PathBuf};
+    use std::sync::Arc;
+
+    use tokio::sync::Notify;
 
     use crate::api::test_support::{MOCK_REQUEST_READ_TIMEOUT, MockFirecrackerApi, MockResponse};
     use crate::sandbox::build_fresh_boot_firecracker_config;
@@ -504,81 +506,127 @@ mod tests {
         assert!(expected_bodies.is_empty());
     }
 
-    #[tokio::test]
-    async fn abort_on_drop_handle_aborts_vsock_listener() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let base = dir.path().join("snapshot-vsock");
-        let listener = std::path::PathBuf::from(format!(
+    fn spawn_snapshot_runtime(
+        api: &MockFirecrackerApi,
+        dir: &Path,
+    ) -> (
+        AbortOnDropHandle<Result<SnapshotConfig, SnapshotError>>,
+        PathBuf,
+    ) {
+        // The caller retains the tempdir so its teardown cannot hide a leaked listener.
+        let paths = SandboxPaths::new(dir.join("work"));
+        let sock_paths = SockPaths::new(dir.join("sock"));
+        std::fs::create_dir(sock_paths.dir()).unwrap();
+        std::fs::rename(api.socket_path(), sock_paths.api_sock()).unwrap();
+        let listener = PathBuf::from(format!(
             "{}_{}",
-            base.display(),
+            sock_paths.vsock().display(),
             guest_control_proto::VSOCK_PORT
         ));
-        let base = base.display().to_string();
+        let config = snapshot_create_config(dir.join("snapshot-output"));
+        let output = SnapshotOutputPaths::new(config.output_dir.clone());
 
-        let task = AbortOnDropHandle::new(tokio::spawn(async move {
-            guest_control_client::GuestControlClient::wait_for_connection(
-                &base,
-                Duration::from_secs(30),
-            )
-            .await
+        // Exercise the production listener owner without privileged VM acquisition.
+        let workflow = AbortOnDropHandle::new(tokio::spawn(async move {
+            run_with_firecracker(&config, &paths, &sock_paths, &output).await
         }));
 
-        tokio::time::timeout(Duration::from_secs(1), async {
-            while !listener.exists() {
+        (workflow, listener)
+    }
+
+    async fn wait_for_snapshot_listener(api: &mut MockFirecrackerApi, listener: &Path) {
+        tokio::time::timeout(MOCK_REQUEST_READ_TIMEOUT, async {
+            loop {
+                let request = api.next_request().await;
+                if request.path == "/actions" {
+                    assert_eq!(request.method, "PUT");
+                    let body: serde_json::Value = serde_json::from_str(&request.body).unwrap();
+                    assert_eq!(body["action_type"], "InstanceStart");
+                    break;
+                }
+            }
+            while !listener.try_exists().expect("stat vsock listener") {
                 tokio::task::yield_now().await;
             }
         })
         .await
-        .expect("vsock listener should bind");
-
-        drop(task);
-
-        tokio::time::timeout(Duration::from_secs(1), async {
-            while listener.exists() {
-                tokio::task::yield_now().await;
-            }
-        })
-        .await
-        .expect("dropped task should abort and remove vsock listener");
+        .expect("snapshot workflow should start the instance and bind its listener");
     }
 
     #[tokio::test]
-    async fn abort_on_drop_handle_explicit_abort_removes_vsock_listener() {
+    async fn cancelled_snapshot_workflow_removes_vsock_listener() {
+        let mut api = MockFirecrackerApi::repeating(MockResponse::no_content());
         let dir = tempfile::tempdir().expect("tempdir");
-        let base = dir.path().join("snapshot-vsock-explicit-abort");
-        let listener = std::path::PathBuf::from(format!(
-            "{}_{}",
-            base.display(),
-            guest_control_proto::VSOCK_PORT
-        ));
-        let base = base.display().to_string();
+        let (workflow, listener) = spawn_snapshot_runtime(&api, dir.path());
 
-        let task = AbortOnDropHandle::new(tokio::spawn(async move {
-            guest_control_client::GuestControlClient::wait_for_connection(
-                &base,
-                Duration::from_secs(30),
-            )
+        wait_for_snapshot_listener(&mut api, &listener).await;
+        assert!(
+            !workflow.is_finished(),
+            "workflow should be waiting for the guest"
+        );
+
+        workflow.abort();
+        let join = tokio::time::timeout(MOCK_REQUEST_READ_TIMEOUT, workflow)
             .await
-        }));
+            .expect("cancelled snapshot workflow should stop");
+        assert!(
+            join.is_err_and(|e| e.is_cancelled()),
+            "snapshot workflow should be cancelled"
+        );
 
-        tokio::time::timeout(Duration::from_secs(1), async {
-            while !listener.exists() {
+        tokio::time::timeout(MOCK_REQUEST_READ_TIMEOUT, async {
+            while listener.try_exists().expect("stat vsock listener") {
                 tokio::task::yield_now().await;
             }
         })
         .await
-        .expect("vsock listener should bind");
+        .expect("cancelling the snapshot workflow should remove its vsock listener");
+    }
 
-        task.abort();
-        let join = task.await;
+    #[tokio::test]
+    async fn rejected_snapshot_start_removes_vsock_listener() {
+        let reject_start = Arc::new(Notify::new());
+        let expected_error = "snapshot start rejected";
+        let rejection = MockResponse::bad_request_fault(expected_error);
+        let mut api = MockFirecrackerApi::with_handler({
+            let reject_start = Arc::clone(&reject_start);
+            move |request| {
+                let reject_start = Arc::clone(&reject_start);
+                let rejection = rejection.clone();
+                async move {
+                    if request.path == "/actions" {
+                        reject_start.notified().await;
+                        rejection
+                    } else {
+                        MockResponse::no_content()
+                    }
+                }
+            }
+        });
+        let dir = tempfile::tempdir().expect("tempdir");
+        let (workflow, listener) = spawn_snapshot_runtime(&api, dir.path());
+
+        wait_for_snapshot_listener(&mut api, &listener).await;
         assert!(
-            join.is_err_and(|e| e.is_cancelled()),
-            "explicit abort should cancel the listener task"
+            !workflow.is_finished(),
+            "start response should still be pending"
         );
+        reject_start.notify_one();
 
+        let result = tokio::time::timeout(MOCK_REQUEST_READ_TIMEOUT, workflow)
+            .await
+            .expect("rejected start should stop the snapshot workflow")
+            .expect("snapshot workflow should not panic");
+        match result {
+            Err(SnapshotError::Api(crate::api::ApiError::Http { status, body })) => {
+                assert_eq!(status, 400);
+                assert_eq!(body, expected_error);
+            }
+            other => panic!("expected the Firecracker start error, got {other:?}"),
+        }
         assert!(
-            !listener.exists(),
-            "explicit abort should remove the vsock listener socket"
+            !listener.try_exists().expect("stat vsock listener"),
+            "failed snapshot start should remove its listener before returning"
         );
     }
 }

@@ -77,8 +77,12 @@ function isProRequiredRunError(message: string): boolean {
 function isInsufficientCreditsRunError(message: string): boolean {
   const normalized = message.toLowerCase();
   return (
-    normalized.includes("insufficient_credits") ||
-    normalized.includes("insufficient credits")
+    normalized === "insufficient_credits" ||
+    normalized.startsWith("insufficient_credits: insufficient credits.") ||
+    normalized ===
+      "insufficient credits. add credits or configure your own api key to continue." ||
+    normalized ===
+      "api error: 402 insufficient credits. add credits or configure your own api key to continue."
   );
 }
 
@@ -189,6 +193,7 @@ function formatRunErrorLikeWebMessage(
       failureReason: params.failureReason,
       framework: params.framework,
       selectedModel,
+      modelProviderType,
       claudeCodeCredentialRecovery: {
         modelProviderType,
         modelProviderCredentialScope,
@@ -233,7 +238,8 @@ export const formatRunErrorForRunOwner$ = command(
         signal,
       );
       signal.throwIfAborted();
-      canManageOrgModelProviders = membership?.role === "admin";
+      canManageOrgModelProviders =
+        membership.kind === "member" && membership.role === "admin";
     }
 
     return await get(

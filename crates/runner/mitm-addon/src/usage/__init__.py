@@ -13,9 +13,9 @@ The stable facade covers:
   per-permission billable resource counts and buffer them for aggregate
   platform upload via ``/api/webhooks/agent/usage-event`` — see
   :mod:`usage.providers.connectors`.
-- Lifecycle coordination primitives for buffering and flushing usage events,
-  tracking in-flight flows, and publishing runner-visible pending snapshots
-  used by the runner's usage-flush and shutdown protocol.
+- Lifecycle coordination for buffering and flushing usage events, tracking
+  in-flight flows and exposing coherent process-local delivery observations
+  through the Runner-private control socket.
 
 Production consumers use this package facade for proxy hooks and response
 processing, runner flush lifecycle and terminal reporting, and retained
@@ -44,12 +44,9 @@ from .buffer import (
 from .counters import (
     BufferedReportLease,
     admit_buffered_report,
-    current_usage_state_id,
     decrement_in_flight_flows,
+    delivery_snapshot,
     increment_in_flight_flows,
-    read_usage_flush_request_id,
-    set_pending_path,
-    write_pending_snapshot,
 )
 from .model_json import (
     ModelJsonResponseInspection,
@@ -109,8 +106,8 @@ __all__ = [
     "create_model_json_response_inspector",
     "create_openai_chat_completions_sse_usage_extractor",
     "create_openai_responses_sse_usage_extractor",
-    "current_usage_state_id",
     "decrement_in_flight_flows",
+    "delivery_snapshot",
     "drain_usage_events_after_executor_shutdown",
     "extract_openai_responses_usage_from_event",
     "flush_usage_events",
@@ -125,13 +122,10 @@ __all__ = [
     "log_terminal_model_provider_usage_sources",
     "merge_openai_responses_usage_result",
     "needs_connector_response_buffer_fallback",
-    "read_usage_flush_request_id",
     "release_model_provider_usage_tiers",
     "report_connector_usage",
     "report_model_provider_usage",
     "report_model_provider_usage_source",
     "reset_usage_buffer_for_tests",
-    "set_pending_path",
     "webhook",
-    "write_pending_snapshot",
 ]

@@ -34,6 +34,9 @@ Notes:
   - --output-dir is required and receives grep-friendly raw history files
   - Repeated synchronization resumes from the latest local sequence ID
   - Reads a thread the current user owns, including one another agent run wrote into
+  - This is a point-in-time read/sync. Repeated calls are polling; they do not wait for a run or emit terminal completion
+  - For event-driven completion, add an enabled chat-run-finished workflow automation. It watches one user-owned thread (not one run ID), can filter completed/failed/cancelled and case-insensitive * wildcard final output, and remains enabled until disabled or removed
+  - A matching completion starts a new run in the workflow's automation thread; it never resumes the caller's run
   - Authenticates via OKOU_TOKEN (requires chat-event:read capability)`,
   )
   .action(

@@ -4,6 +4,7 @@ import { createClerkClient } from "@clerk/backend";
 import { isClerkAPIResponseError } from "@clerk/backend/errors";
 import { verifyWebhook } from "@clerk/backend/webhooks";
 import { delay } from "signal-timers";
+import { z } from "zod";
 import { singleton } from "../../lib/singleton";
 import { env } from "../../lib/env";
 import { settle } from "../utils";
@@ -78,6 +79,11 @@ export type ClerkOrganizationInvitationStatus =
   | "expired";
 
 export interface ClerkUsersApi {
+  getUser(
+    userId: string,
+    context?: ClerkReadContext,
+    signal?: AbortSignal,
+  ): Promise<ClerkUser>;
   getUserList(
     params?: {
       userId?: string[];
@@ -210,16 +216,25 @@ const CLERK_READ_MAX_JITTER_MS = 250;
 const CLERK_READ_PROVIDER_UNAVAILABLE_DELAY_MS = 1000;
 
 export interface ClerkReadUnavailable {
-  readonly providerStatus: number;
+  readonly providerStatus: number | null;
+  readonly failureClass:
+    | "transient_read_exhausted"
+    | "transport_read_exhausted";
 }
 
 class ClerkReadUnavailableError extends Error implements ClerkReadUnavailable {
+  readonly failureClass: ClerkReadUnavailable["failureClass"];
+
   constructor(
-    readonly providerStatus: number,
+    readonly providerStatus: number | null,
     cause: unknown,
   ) {
     super("Clerk read is temporarily unavailable", { cause });
     this.name = "ClerkReadUnavailableError";
+    this.failureClass =
+      providerStatus === null
+        ? "transport_read_exhausted"
+        : "transient_read_exhausted";
   }
 }
 
@@ -268,12 +283,30 @@ export function isClerkResourceNotFound(error: unknown): boolean {
 
 interface ClerkReadRetry {
   readonly delayMs: number;
-  readonly providerStatus: number;
+  readonly providerStatus: number | null;
 }
 
 function clerkReadRetry(error: unknown): ClerkReadRetry | null {
+  if (!isClerkAPIResponseError(error)) {
+    return null;
+  }
+
+  // Clerk 3.13.1 wraps fetch failures without a status. Its catch also wraps
+  // parsing errors, so only the observed singleton transport signature retries.
   if (
-    !isClerkAPIResponseError(error) ||
+    error.status === undefined &&
+    Array.isArray(error.errors) &&
+    error.errors.length === 1 &&
+    error.errors[0]?.code === "unexpected_error" &&
+    error.errors[0]?.message === "fetch failed"
+  ) {
+    return {
+      delayMs: CLERK_READ_PROVIDER_UNAVAILABLE_DELAY_MS,
+      providerStatus: null,
+    };
+  }
+
+  if (
     !Number.isInteger(error.status) ||
     error.status < 500 ||
     error.status > 599
@@ -287,7 +320,7 @@ function clerkReadRetry(error: unknown): ClerkReadRetry | null {
   };
 }
 
-/** Retry Clerk 5xx reads; rate limits are surfaced without another request. */
+/** Retry Clerk 5xx/transport reads; rate limits surface without another request. */
 export async function retryClerkRead<T>(
   read: () => Promise<T>,
   context: ClerkReadContext = createClerkReadContext(),
@@ -340,6 +373,68 @@ export interface ClerkWebhookEvent {
   readonly data: unknown;
 }
 
+export interface ClerkDeletionEnvelope {
+  readonly audience: string;
+  readonly eventId: string;
+  readonly subjectKind: "user" | "organization";
+  readonly subjectId: string;
+  readonly requestedAt: Date;
+}
+
+const deletionBody = z.object({
+  object: z.literal("event"),
+  type: z.enum(["user.deleted", "organization.deleted"]),
+  instance_id: z.string().min(1).max(192),
+  // Clerk's event timestamp is milliseconds since the Unix epoch. Keep it
+  // inside the supported 1970-9999 date range; never infer seconds or use Svix
+  // delivery time, which changes when an event is redelivered.
+  timestamp: z.number().int().min(0).max(253_402_300_799_999),
+  data: z.object({
+    id: z
+      .string()
+      .min(1)
+      .refine((id) => {
+        return Buffer.byteLength(id) <= 192 && !id.includes("\0");
+      }),
+    deleted: z.literal(true),
+  }),
+});
+
+/** Dormant bridge gateway. The configured instance and secret are trusted
+ * configuration, never request parameters. No production resolver is installed.
+ */
+export async function verifyClerkDeletion(
+  request: Request,
+  config: { readonly audience: string; readonly signingSecret: string },
+): Promise<ClerkDeletionEnvelope> {
+  if (!config.audience || !config.signingSecret) {
+    throw new Error("clerk_deletion:configuration_required");
+  }
+  const verifiedRequest = request.clone();
+  const original = verifiedRequest.clone();
+  const audience = config.audience;
+  const eventId = verifiedRequest.headers.get("svix-id")?.trim();
+  // @clerk/backend 3.13.1 verifies all bytes but drops timestamp/instance_id
+  // from its returned object. Decode the same bytes only AFTER SDK verification.
+  await verifyWebhook(verifiedRequest, { signingSecret: config.signingSecret });
+  const body: unknown = await original.json();
+  const event = deletionBody.parse(body);
+  if (
+    !eventId ||
+    Buffer.byteLength(eventId) > 192 ||
+    event.instance_id !== audience
+  ) {
+    throw new Error("clerk_deletion:identity_mismatch");
+  }
+  return {
+    audience,
+    eventId,
+    subjectKind: event.type === "user.deleted" ? "user" : "organization",
+    subjectId: event.data.id,
+    requestedAt: new Date(event.timestamp),
+  };
+}
+
 const clerkSdk = singleton(() => {
   return createClerkClient({
     secretKey: env("CLERK_SECRET_KEY"),
@@ -363,6 +458,15 @@ const clerkClient = singleton((): ClerkClient => {
   const sdk = clerkSdk();
   return {
     users: {
+      getUser: (userId, context, signal) => {
+        return clerkRead(
+          () => {
+            return sdk.users.getUser(userId);
+          },
+          context,
+          signal,
+        );
+      },
       getUserList: (params, context, signal) => {
         return clerkRead(
           () => {

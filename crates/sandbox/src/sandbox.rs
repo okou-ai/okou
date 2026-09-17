@@ -15,6 +15,30 @@ use crate::types::{
     StorageManifestRequest, WriteFileEntry,
 };
 
+/// Ephemeral file-transfer encoding, explicitly selected by the business caller.
+/// The bytes and format stored inside the guest are unchanged.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum FileCompression {
+    #[default]
+    /// Use the ordinary uncompressed transfer.
+    None,
+    /// Stream a checksummed zstd frame at the transport's fast compression level.
+    Zstd,
+}
+
+/// Measurements from one successfully completed file write, using Host clocks.
+/// Payload bytes exclude protocol framing. Request time includes transport and
+/// Guest work; encoder pipeline time overlaps it and includes backpressure.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct FileWriteMeasurements {
+    pub wire_payload_bytes: u64,
+    pub requests: u64,
+    pub file_gate_wait: Duration,
+    pub requests_elapsed: Duration,
+    pub encoder_pipeline_elapsed: Duration,
+    pub publication_elapsed: Duration,
+}
+
 /// Eligibility result after a sandbox successfully reaches the parked state.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SandboxParkOutcome {
@@ -441,7 +465,7 @@ pub enum SandboxFinalExecParkStage {
 /// Fixed low-cardinality provider operations inside the final physical park.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SandboxFinalExecParkSubstage {
-    /// Stops the reactive controller and submits the park-time balloon target.
+    /// Submits the park-time balloon target under lifecycle ownership.
     BalloonSetup,
     /// Waits for the guest balloon to reach the existing settle policy.
     BalloonSettle,
@@ -939,6 +963,17 @@ pub trait Sandbox: Send + Sync + Any {
     ///
     /// The guest path must be non-empty and must not contain NUL bytes.
     async fn write_file(&self, path: &str, content: &[u8]) -> Result<()>;
+
+    /// Write ordinary file bytes using the caller's immutable transport choice.
+    /// Implementations must honor it without sampling, switching codecs or retrying raw.
+    /// Successful backends with a measured transport return its diagnostics;
+    /// backends without a wire transport (such as the mock) return `None`.
+    async fn write_file_with_compression(
+        &self,
+        path: &str,
+        content: &[u8],
+        compression: FileCompression,
+    ) -> Result<Option<FileWriteMeasurements>>;
 
     /// Write multiple ordinary files inside the guest.
     ///

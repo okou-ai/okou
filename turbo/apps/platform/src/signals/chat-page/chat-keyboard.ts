@@ -23,7 +23,6 @@ import {
   currentChatThreadListIds$,
 } from "../agent-chat.ts";
 import { rootSignal$ } from "../root-signal.ts";
-import { voiceInputV2Enabled$ } from "../external/feature-switch.ts";
 import {
   setupGlobalShortcut,
   type GlobalShortcutBindings,
@@ -318,9 +317,6 @@ const setupChatPageShortcutActions$ = command(
             }
           },
           toggleVoiceInput: () => {
-            if (!get(voiceInputV2Enabled$)) {
-              return;
-            }
             const thread = focusedThread();
             if (thread) {
               set(thread.composer.voice.toggle$);

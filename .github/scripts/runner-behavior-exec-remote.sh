@@ -90,6 +90,55 @@ cleanup_spoof_address() {
   SPOOF_IP=""
 }
 
+check_dns_isolation_peer() {
+  local family=$1 address=$2 peer=$3 output
+  if output=$(sudo ip netns exec "$DNS_ISOLATION_NS" \
+    ping "-$family" -c 1 -W 1 "$address" 2>&1); then
+    return
+  fi
+
+  # Preserve the failed probe and its network state before teardown removes the
+  # fixture. A later service stop is not evidence of the original failure.
+  printf '%s\n' "$output"
+  sudo ip -details address show dev "$DNS_ISOLATION_HOST_IF" || true
+  sudo ip -n "$DNS_ISOLATION_NS" -details address show || true
+  sudo ip -n "$DNS_ISOLATION_NS" "-$family" route get "$address" || true
+  sudo ip -n "$DNS_ISOLATION_NS" "-$family" neighbour show || true
+  # A second connected route for these addresses means another interface still
+  # owns the fixture subnet: the host answers the probe's neighbour discovery on
+  # the new interface but sends the reply through the other one, so the probe
+  # times out even though the neighbour resolves.
+  sudo ip "-$family" route show to match "$address" || true
+  sudo ip "-$family" route get "$peer" || true
+  sudo iptables-save -c -t filter || true
+  sudo ip6tables-save -c -t filter || true
+  fail "temporary non-runner veth cannot reach its IPv${family} host peer"
+}
+
+reclaim_leaked_dns_isolation_fixtures() {
+  local namespace interface
+
+  # A killed run cannot execute the EXIT trap, so its namespace and host
+  # interface can outlive it on this long-lived host. Both the addresses and the
+  # namespace name are derived from this service, so a survivor keeps holding
+  # the subnet that the fixture below is about to claim. The caller already owns
+  # the DNS isolation lock, so no other fixture is inside its critical section
+  # and anything still using these names is leaked.
+  for namespace in $(sudo ip netns list | awk '{ print $1 }' \
+    | grep '^dns-isolation-'); do
+    echo "reclaiming leaked DNS isolation namespace $namespace"
+    sudo ip netns delete "$namespace" || true
+  done
+
+  # Deleting a namespace also removes the veth pair it holds, so this only finds
+  # a host interface whose namespace was already gone.
+  for interface in $(sudo ip -oneline link show | awk -F '[:@ ]+' '{ print $2 }' \
+    | grep '^vmdh'); do
+    echo "reclaiming leaked DNS isolation interface $interface"
+    sudo ip link delete "$interface" || true
+  done
+}
+
 cleanup_pool_lock_guard() {
   if [ -n "$POOL_LOCK_PUBLISH_RELEASE" ]; then
     touch "$POOL_LOCK_PUBLISH_RELEASE" 2>/dev/null || true
@@ -2119,6 +2168,7 @@ exec {DNS_ISOLATION_LOCK_FD}<>/tmp/vm0-runner-exec-dns-isolation.lock \
   || fail "failed to open DNS isolation lock"
 flock -w 30 "$DNS_ISOLATION_LOCK_FD" \
   || fail "timed out waiting for DNS isolation lock"
+reclaim_leaked_dns_isolation_fixtures
 DNS_ISOLATION_NS="dns-isolation-$$"
 DNS_ISOLATION_HOST_IF="vmdh$$"
 DNS_ISOLATION_PEER_IF="vmdp$$"
@@ -2149,12 +2199,8 @@ sudo ip -n "$DNS_ISOLATION_NS" -6 address add \
   "${DNS_ISOLATION_PEER_IPV6}/64" dev "$DNS_ISOLATION_PEER_IF" nodad
 sudo ip -n "$DNS_ISOLATION_NS" link set lo up
 sudo ip -n "$DNS_ISOLATION_NS" link set "$DNS_ISOLATION_PEER_IF" up
-sudo ip netns exec "$DNS_ISOLATION_NS" \
-  ping -c 1 -W 1 "$DNS_ISOLATION_HOST_IP" >/dev/null \
-  || fail "temporary non-runner veth cannot reach its host peer"
-sudo ip netns exec "$DNS_ISOLATION_NS" \
-  ping -6 -c 1 -W 1 "$DNS_ISOLATION_HOST_IPV6" >/dev/null \
-  || fail "temporary non-runner veth cannot reach its IPv6 host peer"
+check_dns_isolation_peer 4 "$DNS_ISOLATION_HOST_IP" "$DNS_ISOLATION_PEER_IP"
+check_dns_isolation_peer 6 "$DNS_ISOLATION_HOST_IPV6" "$DNS_ISOLATION_PEER_IPV6"
 
 if ! sudo ip netns exec "$DNS_ISOLATION_NS" \
   python3 - "$DNS_ISOLATION_HOST_IP" "$DNS_ISOLATION_HOST_IPV6" "$DNS_PORT" <<'PY'

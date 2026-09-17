@@ -54,7 +54,7 @@ impl InstructionCleanup {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum InstructionFilename {
+pub(crate) enum InstructionFilename {
     Claude,
     Agents,
 }
@@ -69,7 +69,7 @@ enum InstructionPathState {
 }
 
 impl InstructionFilename {
-    const ALL: [Self; 2] = [Self::Claude, Self::Agents];
+    pub(crate) const ALL: [Self; 2] = [Self::Claude, Self::Agents];
 
     fn parse(filename: &str) -> Option<Self> {
         match filename {
@@ -79,7 +79,7 @@ impl InstructionFilename {
         }
     }
 
-    fn as_str(self) -> &'static str {
+    pub(crate) fn as_str(self) -> &'static str {
         match self {
             Self::Claude => "CLAUDE.md",
             Self::Agents => "AGENTS.md",

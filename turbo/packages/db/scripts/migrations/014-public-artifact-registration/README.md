@@ -256,10 +256,11 @@ Releasing the Worker configuration attaches `a.okou.io/*` even while
    noncanonical paths. Confirm new shares remain `private, no-store`.
 
 Image Resizing has a separate derivative cache that cannot enforce current
-share permissions. New Public file previews keep their original URL and the
-Worker rejects Image Resizing source requests for publication records.
-Historical public images retain resizing. A future private-thumbnail path must
-authorize before every derivative-cache read.
+share permissions. The Worker rejects Image Resizing source requests for
+publication records. The [protected thumbnail and short-file rollout](../../../../../../docs/artifact-preview-rollout.md)
+adds binding-based thumbnails with authorization before every cache read and
+requires extending the cache exclusion to ten-character filenames. Follow that
+deployment order before an API emits the shorter Public file links.
 
 Immutable alias metadata has its own cache; the mutable policy remains an R2
 read on every share request. Missing aliases are not cached. File aliases use

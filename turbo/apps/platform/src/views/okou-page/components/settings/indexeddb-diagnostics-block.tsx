@@ -258,7 +258,7 @@ export function IndexedDbDiagnosticsBlock() {
   return (
     <section
       aria-labelledby="indexeddb-diagnostics-title"
-      className="overflow-hidden rounded-xl bg-card okou-border"
+      className="overflow-hidden rounded-xl bg-card border border-surface-border"
     >
       {diagnostics ? (
         <details className="group">
