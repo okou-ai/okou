@@ -587,7 +587,12 @@ fn model_request_diagnostic(message: &Value) -> Option<ModelRequestDiagnostic> {
 fn model_request_details(message: &Value) -> Option<&Value> {
     if !matches!(
         message.get("api").and_then(Value::as_str),
-        Some("openai-codex-responses" | "openai-responses" | "anthropic-messages")
+        Some(
+            "openai-codex-responses"
+                | "openai-responses"
+                | "anthropic-messages"
+                | "bedrock-converse-stream"
+        )
     ) {
         return None;
     }
@@ -1552,6 +1557,34 @@ mod tests {
                 .expect("terminal event");
             assert_eq!(result["modelRequest"], expected);
             assert_eq!(result["is_error"], !expected.is_null());
+        }
+    }
+
+    #[test]
+    fn bedrock_failed_results_preserve_model_request_evidence() {
+        for (status, reason) in [
+            (429, "provider_rate_limited"),
+            (503, "provider_server_error"),
+            (200, "provider_server_error"),
+        ] {
+            let (responses, _rx) = response_channel();
+            let mut projection = PiRpcProjection::new("run", "session");
+            projection.project(json!({"type": "message_end", "message": {
+                "role": "assistant", "api": "bedrock-converse-stream", "stopReason": "error",
+                "errorMessage": "Provider rejected request",
+                "diagnostics": [{"type": "okou_model_request", "details": {
+                    "httpStatus": status, "transportAttempts": 1, "failureReason": reason
+                }}]
+            }}), &responses, 0).unwrap();
+            let result = projection
+                .project(json!({"type": "agent_settled"}), &responses, 0)
+                .unwrap()
+                .unwrap();
+            assert_eq!(result["is_error"], true);
+            assert_eq!(result["failureReason"], reason);
+            assert_eq!(result["modelRequest"]["httpStatus"], status);
+            assert_eq!(result["modelRequest"]["transportAttempts"], 1);
+            assert_eq!(result["modelRequest"]["retryAttempts"], 0);
         }
     }
 

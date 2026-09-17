@@ -360,6 +360,16 @@ fn codex_error_failure_reason(error: Option<&Value>) -> Option<FailureReason> {
         return Some(FailureReason::ReconnectRequired);
     }
     if let Some(failure_reason) = codex_error_info_failure_reason(error) {
+        // A generic SDK server variant must not erase explicit provider queue
+        // expiry. Specific credential/quota/context/policy evidence still wins.
+        if matches!(
+            failure_reason,
+            FailureReason::ProviderServerError | FailureReason::ProviderOverloaded
+        ) && crate::provider_failure::provider_error_reason(error)
+            == Some(FailureReason::ProviderQueueTimeout)
+        {
+            return Some(FailureReason::ProviderQueueTimeout);
+        }
         return Some(failure_reason);
     }
     if let Some(reason) = crate::provider_failure::provider_error_reason(error) {

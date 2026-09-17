@@ -4,6 +4,8 @@ import {
   CHAT_RUN_CONTENT_POLICY_REJECTED_MESSAGE,
   CHAT_RUN_EXECUTION_TIMEOUT_MESSAGE,
   CHAT_RUN_TRANSIENT_ERROR_MESSAGE,
+  CHAT_RUN_USAGE_LIMIT_MESSAGE,
+  CHAT_RUN_UNSUPPORTED_MODEL_MESSAGE,
   formatRunErrorForExternalSurface,
   getCodexChatGptAccountUnsupportedModel,
   INSUFFICIENT_CREDITS_ASK_ADMIN_MESSAGE,
@@ -14,6 +16,26 @@ import {
 } from "../errors";
 
 describe("formatRunErrorForExternalSurface", () => {
+  it.each([
+    ["usage_limit", CHAT_RUN_USAGE_LIMIT_MESSAGE],
+    ["unsupported_model", CHAT_RUN_UNSUPPORTED_MODEL_MESSAGE],
+  ] as const)(
+    "renders actionable %s copy without exposing provider diagnostics",
+    (failureReason, expected) => {
+      for (const message of [
+        "[PI_API_MODEL_FAILED] Pi API first-turn model request failed",
+        "private upstream diagnostic",
+      ]) {
+        expect(
+          formatRunErrorForExternalSurface({
+            code: "UNKNOWN",
+            message,
+            failureReason,
+          }),
+        ).toBe(expected);
+      }
+    },
+  );
   it.each(["anthropic-api-key", "built-in"] as const)(
     "keeps platform credit rejection actionable when the run uses %s",
     (modelProviderType) => {
@@ -234,38 +256,50 @@ describe("formatRunErrorForExternalSurface", () => {
     );
   });
 
-  it("shows Codex usage limit errors verbatim", () => {
-    const codexUsageLimit =
-      "You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at 6:17 AM.";
-    const formatted = formatRunErrorForExternalSurface({
-      code: "UNKNOWN",
-      message: codexUsageLimit,
-    });
-    expect(formatted).toBe(codexUsageLimit);
-    expect(formatted).not.toContain("switch to another model");
-  });
-
-  it("shows Claude session limit errors verbatim", () => {
-    const sessionLimit =
-      "You've hit your session limit · resets 12:50pm (Asia/Shanghai)";
-    expect(
-      formatRunErrorForExternalSurface({
+  it.each([undefined, "usage_limit"] as const)(
+    "shows Codex usage limit errors verbatim with reason %s",
+    (failureReason) => {
+      const codexUsageLimit =
+        "You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at 6:17 AM.";
+      const formatted = formatRunErrorForExternalSurface({
         code: "UNKNOWN",
-        message: sessionLimit,
-      }),
-    ).toBe(sessionLimit);
-  });
+        message: codexUsageLimit,
+        failureReason,
+      });
+      expect(formatted).toBe(codexUsageLimit);
+      expect(formatted).not.toContain("switch to another model");
+    },
+  );
 
-  it("shows Claude weekly limit errors verbatim", () => {
-    const weeklyLimit =
-      "You've hit your weekly limit · resets 10am (Asia/Shanghai)";
-    expect(
-      formatRunErrorForExternalSurface({
-        code: "UNKNOWN",
-        message: weeklyLimit,
-      }),
-    ).toBe(weeklyLimit);
-  });
+  it.each([undefined, "usage_limit"] as const)(
+    "shows Claude session limit errors verbatim with reason %s",
+    (failureReason) => {
+      const sessionLimit =
+        "You've hit your session limit · resets 12:50pm (Asia/Shanghai)";
+      expect(
+        formatRunErrorForExternalSurface({
+          code: "UNKNOWN",
+          message: sessionLimit,
+          failureReason,
+        }),
+      ).toBe(sessionLimit);
+    },
+  );
+
+  it.each([undefined, "usage_limit"] as const)(
+    "shows Claude weekly limit errors verbatim with reason %s",
+    (failureReason) => {
+      const weeklyLimit =
+        "You've hit your weekly limit · resets 10am (Asia/Shanghai)";
+      expect(
+        formatRunErrorForExternalSurface({
+          code: "UNKNOWN",
+          message: weeklyLimit,
+          failureReason,
+        }),
+      ).toBe(weeklyLimit);
+    },
+  );
 
   it("shows Claude Code five-hour rate limit errors verbatim", () => {
     const rateLimit =
@@ -373,24 +407,28 @@ describe("formatRunErrorForExternalSurface", () => {
     }
   });
 
-  it("shows Codex ChatGPT account model support errors verbatim", () => {
-    const unsupportedModel =
-      '{"type":"error","status":400,"error":{"type":"invalid_request_error","message":"The \'gpt-5.6-sol\' model is not supported when using Codex with a ChatGPT account."}}';
-    expect(
-      formatRunErrorForExternalSurface({
-        code: "UNKNOWN",
-        message: unsupportedModel,
-      }),
-    ).toBe(unsupportedModel);
-    expect(isActionableRunError(unsupportedModel)).toBe(true);
-    expect(
-      isCodexChatGptAccountUnsupportedModelRunError(unsupportedModel),
-    ).toBe(true);
-    expect(getCodexChatGptAccountUnsupportedModel(unsupportedModel)).toBe(
-      "gpt-5.6-sol",
-    );
-    expect(isGenericRunErrorForDisplay(unsupportedModel)).toBe(false);
-  });
+  it.each([undefined, "unsupported_model"] as const)(
+    "shows Codex ChatGPT account model support errors verbatim with reason %s",
+    (failureReason) => {
+      const unsupportedModel =
+        '{"type":"error","status":400,"error":{"type":"invalid_request_error","message":"The \'gpt-5.6-sol\' model is not supported when using Codex with a ChatGPT account."}}';
+      expect(
+        formatRunErrorForExternalSurface({
+          code: "UNKNOWN",
+          message: unsupportedModel,
+          failureReason,
+        }),
+      ).toBe(unsupportedModel);
+      expect(isActionableRunError(unsupportedModel)).toBe(true);
+      expect(
+        isCodexChatGptAccountUnsupportedModelRunError(unsupportedModel),
+      ).toBe(true);
+      expect(getCodexChatGptAccountUnsupportedModel(unsupportedModel)).toBe(
+        "gpt-5.6-sol",
+      );
+      expect(isGenericRunErrorForDisplay(unsupportedModel)).toBe(false);
+    },
+  );
 
   it("keeps near-miss unsupported-model errors generic", () => {
     const message =
