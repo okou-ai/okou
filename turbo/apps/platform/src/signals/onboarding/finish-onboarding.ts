@@ -46,7 +46,10 @@ const sendFinishOnboarding$ = command(
     const record = (
       details: Pick<
         MarketingOnboardingTelemetry,
-        "phase" | "result" | "response_status_code" | "marketing_request_id"
+        | "phase"
+        | "result_code"
+        | "response_status_code"
+        | "marketing_request_id"
       >,
       outcome: "success" | "error" | "aborted" = "success",
     ) => {
@@ -55,15 +58,17 @@ const sendFinishOnboarding$ = command(
       // The request's owner and deadline are still checked outside the sink.
       return Promise.allSettled([
         (async () => {
-          recordClientTelemetry(
-            measurement,
-            {
-              event_name: "marketing.onboarding",
-              user_id: identity.userId,
-              org_id: identity.orgId,
-              ...details,
-            },
-            outcome,
+          await Promise.resolve(
+            recordClientTelemetry(
+              measurement,
+              {
+                event_name: "marketing.onboarding",
+                user_id: identity.userId,
+                org_id: identity.orgId,
+                ...details,
+              },
+              outcome,
+            ),
           );
         })(),
       ]);
@@ -75,13 +80,13 @@ const sendFinishOnboarding$ = command(
         const key = `${identity.userId}:${identity.orgId}`;
         const previous = (get(attempts.get$) ?? "").split("\n").filter(Boolean);
         if (previous.includes(key)) {
-          await record({ phase: "complete", result: "duplicate_attempt" });
+          await record({ phase: "complete", result_code: "duplicate_attempt" });
           return;
         }
         // Record the attempt before sending. Navigation, reloads and failures do
         // not retry this optional onboarding attribution request.
         set(attempts.set$, [...previous, key].join("\n"));
-        await record({ phase: "attempt", result: "started" });
+        await record({ phase: "attempt", result_code: "started" });
         signal.throwIfAborted();
         // Use the same session-token provider as the canonical App API client.
         // Marketing cookies carry attribution, not the authenticated identity.
@@ -89,10 +94,13 @@ const sendFinishOnboarding$ = command(
         const token = await get(apiClientRuntime$).getToken(signal);
         signal.throwIfAborted();
         if (!token) {
-          await record({ phase: "complete", result: "token_missing" }, "error");
+          await record(
+            { phase: "complete", result_code: "token_missing" },
+            "error",
+          );
           return;
         }
-        await record({ phase: "token", result: "received" });
+        await record({ phase: "token", result_code: "received" });
         const client = initClient(marketingOnboardingContract, {
           baseUrl: resolveApiBaseForTarget("www"),
           api: (args) => {
@@ -102,7 +110,7 @@ const sendFinishOnboarding$ = command(
           },
         });
         phase = "request";
-        await record({ phase: "request", result: "started" });
+        await record({ phase: "request", result_code: "started" });
         signal.throwIfAborted();
         const response = await client.record({
           headers: { authorization: `Bearer ${token}` },
@@ -118,7 +126,8 @@ const sendFinishOnboarding$ = command(
         await record(
           {
             phase: "complete",
-            result: response.status === 204 ? "acknowledged" : "http_error",
+            result_code:
+              response.status === 204 ? "acknowledged" : "http_error",
             response_status_code: response.status,
             ...(requestId && REQUEST_ID_PATTERN.test(requestId)
               ? { marketing_request_id: requestId }
@@ -144,7 +153,7 @@ const sendFinishOnboarding$ = command(
                   ? "request_error"
                   : "attempt_error";
         await record(
-          { phase: "complete", result },
+          { phase: "complete", result_code: result },
           result === "aborted" ? "aborted" : "error",
         );
       },

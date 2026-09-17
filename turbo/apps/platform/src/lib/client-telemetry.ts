@@ -70,7 +70,7 @@ export interface MarketingOnboardingTelemetry {
   readonly user_id: string;
   readonly org_id: string;
   readonly phase: "attempt" | "token" | "request" | "complete";
-  readonly result:
+  readonly result_code:
     | "started"
     | "received"
     | "acknowledged"
@@ -161,7 +161,7 @@ function operationAttributes(
       "okou.marketing.onboarding.user_id": operation.user_id,
       "okou.marketing.onboarding.org_id": operation.org_id,
       "okou.marketing.onboarding.phase": operation.phase,
-      "okou.marketing.onboarding.result": operation.result,
+      "okou.marketing.onboarding.result": operation.result_code,
       ...(operation.marketing_request_id === undefined
         ? {}
         : {
