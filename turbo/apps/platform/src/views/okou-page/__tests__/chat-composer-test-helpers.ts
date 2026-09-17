@@ -491,7 +491,12 @@ async function findComposerModel(label: string): Promise<HTMLElement> {
   return await waitFor(() => {
     const trigger =
       screen.queryByRole("combobox", { name: label }) ??
-      screen.getByRole("button", { name: label });
+      queryAllByRoleFast("button").find((button) => {
+        return (
+          button.getAttribute("aria-label") === label ||
+          button.textContent?.trim() === label
+        );
+      });
     expect(trigger).toBeInTheDocument();
     return trigger;
   });

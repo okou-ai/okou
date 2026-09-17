@@ -318,6 +318,17 @@ describe("AUTH-03 user model preference", () => {
     const admin = api.user();
     await onboardAdmin(admin, { slug: slug("bdd-uc-effort") });
 
+    if (!admin.orgId) {
+      throw new Error("Expected an organization-backed test actor");
+    }
+    const actor = {
+      userId: admin.userId,
+      orgId: admin.orgId,
+      orgRole: admin.orgRole,
+    };
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.Effort]: false,
+    });
     const disabled = await cfg.requestUpdateModelPreference(
       admin,
       {
@@ -332,20 +343,9 @@ describe("AUTH-03 user model preference", () => {
       "Reasoning effort selection is not enabled",
     );
 
-    if (!admin.orgId) {
-      throw new Error("Expected an organization-backed test actor");
-    }
-    await updateFeatureSwitchesForUser(
-      context,
-      {
-        userId: admin.userId,
-        orgId: admin.orgId,
-        orgRole: admin.orgRole,
-      },
-      {
-        [FeatureSwitchKey.Effort]: true,
-      },
-    );
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.Effort]: true,
+    });
     const astra = await cfg.updateModelPreference(admin, {
       selectedModel: "gpt-6-astra",
       serviceTier: null,
