@@ -3,13 +3,11 @@ import { expect, test } from "vitest";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
 import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createDeferredPromise } from "../../utils";
 import { sshConnectionsRoutes } from "../ssh-connections";
 import { cloudflareAccessRoutes } from "../cloudflare-access";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { createRouteMocks } from "./helpers/route-test";
 
@@ -40,14 +38,11 @@ const protection = Object.freeze({
 });
 type Kind = "host" | "credential" | "access";
 
-async function owner(existing?: { orgId?: string; userId?: string }) {
+function owner(existing?: { orgId?: string; userId?: string }) {
   const value = {
     orgId: existing?.orgId ?? `org_retry_${randomUUID()}`,
     userId: existing?.userId ?? `user_retry_${randomUUID()}`,
   };
-  await updateFeatureSwitchesForUser(context, value, {
-    [FeatureSwitchKey.SshAccess]: true,
-  });
   mocks.clerk.session(value.userId, value.orgId);
   return value;
 }
@@ -90,7 +85,7 @@ test.each<Kind>(["host", "credential", "access"])(
   "concurrent %s retries acknowledge the same resource without duplicate writes",
   async (kind) => {
     useSecretKmsProbe();
-    await owner();
+    owner();
     const id = randomUUID();
     const results = await Promise.all([
       create(kind, id),
@@ -127,7 +122,7 @@ test("a delayed original request and its retry create only one set of inline res
       encryptedDataKey: Buffer.from(`encrypted-data-key:${request.keyId}`),
     };
   });
-  await owner();
+  owner();
   const id = randomUUID();
   const pending = create("host", id);
   await entered.promise;
@@ -146,12 +141,12 @@ test.each(["orgId", "userId"] as const)(
   "same-ID creation never acknowledges another owner sharing the %s",
   async (shared) => {
     useSecretKmsProbe();
-    const first = await owner();
+    const first = owner();
     const id = randomUUID();
     for (const kind of ["host", "credential", "access"] as const) {
       await accept(create(kind, id), [201]);
     }
-    await owner({ [shared]: first[shared] });
+    owner({ [shared]: first[shared] });
     for (const kind of ["host", "credential", "access"] as const) {
       const denied = await accept(create(kind, id), [409]);
       expect(denied.body).toStrictEqual({
@@ -187,11 +182,11 @@ test("an owner whose delayed create loses an ID race has no orphan inline resour
       encryptedDataKey: Buffer.from(`encrypted-data-key:${request.keyId}`),
     };
   });
-  const first = await owner();
+  const first = owner();
   const id = randomUUID();
   const delayed = create("host", id);
   await entered.promise;
-  await owner({ orgId: first.orgId });
+  owner({ orgId: first.orgId });
   const winner = await create("host", id.toUpperCase());
   release.resolve();
   expect(winner.status).toBe(201);
@@ -207,7 +202,7 @@ test("an owner whose delayed create loses an ID race has no orphan inline resour
 
 test("a known invalid create can be corrected without consuming its resource ID", async () => {
   useSecretKmsProbe();
-  await owner();
+  owner();
   const id = randomUUID();
   await accept(
     connections().create({
@@ -231,7 +226,7 @@ test("a known invalid create can be corrected without consuming its resource ID"
 
 test("host edit retries retain the expected generation and do not repeat inline creation", async () => {
   useSecretKmsProbe();
-  await owner();
+  owner();
   const created = await accept(
     connections().create({
       headers,

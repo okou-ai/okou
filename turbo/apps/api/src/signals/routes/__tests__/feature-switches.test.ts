@@ -77,24 +77,6 @@ describe("/api/feature-switches", () => {
     ).toBeFalsy();
   });
 
-  it("enables SSH by default only in the staff organization", async () => {
-    const clerk = createRouteMocks(context).clerk;
-    const headers = { authorization: "Bearer clerk-session" };
-    const userId = `user_${randomUUID()}`;
-
-    clerk.session(userId, "org_3ANttyrbWYJk6JKRSTRLEsbsDLe", "org:member");
-    const staff = await accept(client().get({ headers }), [200]);
-    expect(
-      staff.body.effectiveSwitches[FeatureSwitchKey.SshAccess],
-    ).toBeTruthy();
-
-    clerk.session(userId, `org_${randomUUID()}`, "org:member");
-    const ordinary = await accept(client().get({ headers }), [200]);
-    expect(
-      ordinary.body.effectiveSwitches[FeatureSwitchKey.SshAccess],
-    ).toBeFalsy();
-  });
-
   it("defaults model selection refactoring to Bingjie and the staff org while excluding other orgs", async () => {
     const clerk = createRouteMocks(context).clerk;
     const headers = { authorization: "Bearer clerk-session" };

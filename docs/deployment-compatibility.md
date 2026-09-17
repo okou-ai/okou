@@ -1583,14 +1583,31 @@ These objects are contracts, not generic fallbacks. Verify the exact outgoing
 SQL against them, record the release they protect, and remove the functions,
 triggers, and views after that release drains.
 
+## SSH general availability
+
+SSH, including Direct and Cloudflare Access, is generally available. The
+`sshAccess` registry entry, overrides consumer, UI gates and API/Run gates are
+retired together. Existing registered-key filtering ignores retired overrides;
+no migration, data deletion or rewrite is needed. Owner isolation, Agent grants,
+winning Run/Runner authority, credential encryption and host trust remain required.
+The existing Run-lifetime authority cache and missed-notification window are unchanged.
+
+Promote the API before the App. An older API can still enforce its rollout switch;
+the App retains its existing unavailable/error handling for that response, never
+an authorization bypass. Older loaded Apps may hide SSH until refreshed. Already
+created Runs retain their minted capabilities and prompt snapshot; create a new
+Run to obtain SSH guidance and capabilities. Runner/guest/CLI DTOs and stored
+hosts, credentials, pins, grants and observations do not change. Source-level GA
+does not attest deployment state or waive the protected-reader constraints below.
+
 ## Cloudflare Access for SSH
 
 The #31996 delivery adds a protected transport to the existing SSH host domain.
 #34077 is additive database/API authority preparation, including the minimal
 current Runner contract reader and Platform diagnostic translations.
-Direct and Cloudflare Access now share the existing staff-only `sshAccess` switch;
-there is no independent Access switch. The SSH cohort and Agent grants are unchanged.
-Under the [pre-GA policy](fallback.md), this feature keeps one canonical contract:
+Direct and Cloudflare Access are generally available with no rollout switches;
+the SSH Agent grant still covers both. The initial delivery used the
+[pre-GA policy](fallback.md) and keeps one canonical contract:
 no profile selector, duplicate old/new DTO, or legacy diagnostic projection.
 
 Before the first protected configuration or binding is written in a deployed
@@ -1600,8 +1617,7 @@ environment, every serving API must understand protected authority, Runners from
 and the owner-approved evidence boundaries at closure.
 Management stays inside `/connectors/ssh`. Access is a reusable host connection
 setting under the existing SSH Agent grant, not a separately authorized service.
-The SSH feature switch controls rollout for both transports; it does not replace
-the existing Agent permission.
+General availability does not replace the existing Agent permission.
 Native Service Auth interoperability must be verified; S1 contract tests are not
 provider E2E evidence. Do not use a production feature override as a test fixture.
 
@@ -1609,27 +1625,25 @@ The management UI uses the existing canonical Access endpoints; it adds no
 schema or private Runner contract. Unified host forms also accept inline Access
 creation in the host write request. Existing `configId` selections remain valid;
 responses still return only the resolved binding. Deploy API support before the
-App uses inline creation. An older API rejects that write alternative; staff
+App uses inline creation. An older API rejects that write alternative;
 clients should refresh after the current API/App deployment, without a second
 save path or automatic fallback. Existing rows and older App requests remain
 valid, and Runner versions do not need a new decoder for this management change.
 
-With SSH enabled, Access management and
-protected host creation are available without an additional opt-in. With SSH off,
-both transports' management, guest inventory and fresh authority are unavailable.
+Access management and protected host creation require no additional opt-in.
 Already-bound hosts are never silently converted to Direct. Removing a binding
-requires SSH eligibility and an explicit Direct selection. Losing SSH eligibility or changing
-owner clears open secret forms and cancels their pending UI work. API authorization
-and same-owner foreign keys remain authoritative; frontend visibility is not an
+requires owner authorization and an explicit Direct selection. Changing owner
+clears open secret forms and cancels their pending UI work. API authorization and
+same-owner foreign keys remain authoritative; frontend visibility is not an
 access check.
 
 SSH save retries (#34503) require a client-generated resource `id` on host creation
 and standalone credential/Access creation. New resources return `201`; same-owner
 existing IDs return `204` without mutation. Host edits retain their existing
 `expectedGeneration` contract. There is no database migration or backfill, and
-Runner/guest protocols are unchanged. Deploy the API before the App. Under the
-staff-only pre-GA policy, stale Apps/APIs may reject the new/missing field or fail
-to handle `204`; refresh staff clients after deployment. Do not fall back to a
+Runner/guest protocols are unchanged. Deploy the API before the App. This change shipped
+under the staff-only pre-GA policy; stale Apps/APIs could reject the new/missing
+field or fail to handle `204`. Refresh clients after deployment. Do not fall back to a
 new-ID save or automatically replay it. Deduplication only covers the existing
 resource's lifetime, not deletion or abandoned forms; see
 [SSH access](ssh-access.md#save-retries).
@@ -1639,11 +1653,11 @@ resource's lifetime, not deletion or abandoned forms; see
 | Existing Direct data after the additive migration                  | Hosts, credentials, pins, grants and observations remain unchanged; bindings are null.                 |
 | Current API and S1 Runner with protected handoff                   | Runner returns unavailable without dialing Direct SSH or forwarding the token.                         |
 | Current API and S2 Runner with authorized protected handoff        | Runner uses native WSS/443, verifies gateway TLS and SSH identity separately, without Direct fallback. |
-| Current API with an unauthorized host or SSH feature off           | Private authority and guest inventory remain unavailable under the SSH gate and Agent grant.           |
+| Current API with an unauthorized host                              | Private authority and guest inventory remain unavailable under owner and Agent authorization.          |
 | Pre-Access API with protected rows                                 | Forbidden: the old reader can interpret the row as Direct.                                             |
 | Protected writes before the native carrier and real-Run acceptance | Forbidden outside controlled local tests.                                                              |
 
-Feature disable does not make a protected row safe for a pre-Access reader.
+A rollout switch does not make a protected row safe for a pre-Access reader.
 Do not deploy such a reader after protected writes exist; no automatic deletion
 or conversion is part of deployment.
 
@@ -1653,9 +1667,9 @@ missing/incompatible authority response fails closed; no pre-GA dual decoder is
 introduced. The separate switch removal changes API eligibility and Platform
 visibility only; Runner/guest wire contracts and stored credentials stay unchanged.
 Old pre-removal APIs may still enforce their Access switch, and old App bundles
-may hide Access until refreshed. Both remain pre-GA under `sshAccess`; deploy the
-current API/App and refresh staff clients rather than adding a compatibility alias
-or second decoder. Retired switch overrides are ignored by the existing registered-key
+may hide Access until refreshed. Deploy the current API/App and refresh clients
+rather than adding a compatibility alias or second decoder; see the SSH GA
+boundary above. Retired switch overrides are ignored by the existing registered-key
 filter; no database migration or destructive cleanup is required.
 
 Run cache invalidations are best-effort and identifier-only. Token/SSH-grant changes

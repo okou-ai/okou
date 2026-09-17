@@ -365,9 +365,9 @@ test("Search the full connector catalog", async () => {
     path: "/connectors",
   });
   await expect(screen.findByText("GitHub")).resolves.toBeInTheDocument();
-  expect(
-    screen.getByText("Connect 1,234 services for your agents to use."),
-  ).toBeInTheDocument();
+  await expect(
+    screen.findByText("Connect 1,235 services for your agents to use."),
+  ).resolves.toBeInTheDocument();
 
   await fill(screen.getByPlaceholderText("Find connectors"), "Slack");
 
@@ -376,9 +376,9 @@ test("Search the full connector catalog", async () => {
     expect(queryConnectorCard("GitHub")).not.toBeInTheDocument();
   });
   expect(keywords).toContain("Slack");
-  expect(
-    screen.getByText("Connect 1,234 services for your agents to use."),
-  ).toBeInTheDocument();
+  await expect(
+    screen.findByText("Connect 1,235 services for your agents to use."),
+  ).resolves.toBeInTheDocument();
 });
 
 test("Switch between built-in and custom connectors", async () => {

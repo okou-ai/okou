@@ -354,9 +354,12 @@ test("Show the filtered connector count in the add dialog", async () => {
   await openConnectors(user);
   const catalog = await openAddConnectors(user);
   const search = within(catalog).getByPlaceholderText("Find connectors...");
+  await expect(
+    findFastControl("link", "Manage SSH hosts", catalog),
+  ).resolves.toBeVisible();
   expect(
     within(catalog).getByRole("heading", {
-      name: "Available connectors to connect (3)",
+      name: "Available connectors to connect (4)",
     }),
   ).toBeVisible();
 
@@ -382,7 +385,7 @@ test("Show the filtered connector count in the add dialog", async () => {
   await waitFor(() => {
     expect(
       within(catalog).getByRole("heading", {
-        name: "Available connectors to connect (3)",
+        name: "Available connectors to connect (4)",
       }),
     ).toBeVisible();
   });
