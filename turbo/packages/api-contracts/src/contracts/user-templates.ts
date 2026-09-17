@@ -12,10 +12,11 @@ const c = initContract();
 const userTemplateVisibilitySchema = z.enum(["private", "organization"]);
 
 /**
- * What the template produces. One value today: the reverse run's conclusion is
- * carried so a client can place the template without parsing a filename.
+ * What the template produces, as the reverse run concluded it. Carried rather
+ * than derived so a client places the template without parsing a filename, and
+ * so a source that could compile either way says which it became.
  */
-const userTemplateKindSchema = z.enum(["presentation"]);
+const userTemplateKindSchema = z.enum(["presentation", "document"]);
 
 const userTemplatePreviewAssetIdSchema = z.string().min(1).max(128);
 const userTemplatePreviewAssetSchema = z.object({
@@ -42,6 +43,8 @@ export const USER_TEMPLATE_SOURCE_CONTENT_TYPES = [
   "application/vnd.ms-powerpoint",
   "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 ] as const;
 export const USER_TEMPLATE_PAGE_CONTENT_TYPE = "image/png";
 export const USER_TEMPLATE_PACKAGE_CONTENT_TYPE = "application/gzip";
@@ -58,7 +61,12 @@ const userTemplateSummarySchema = z.object({
   sourceFilename: z.string(),
   kind: userTemplateKindSchema,
   coverUrl: z.url().nullable(),
-  pageCount: z.number().int().positive(),
+  /**
+   * Null for a kind that has no pages. A document template is its styles, not
+   * a sequence of rendered pages, so counting them would report a zero that
+   * reads as "empty" rather than "not applicable".
+   */
+  pageCount: z.number().int().positive().nullable(),
   visibility: userTemplateVisibilitySchema,
   /**
    * Who uploaded it. The catalog lists the caller's own rows alongside every
@@ -115,13 +123,29 @@ const updateUserTemplateBodySchema = z
  * There is no create-then-fill pair. A row exists only once this call validates
  * a package, so an abandoned run leaves nothing behind.
  */
-const publishUserTemplateBodySchema = z.object({
+const publishUserTemplateBaseSchema = z.object({
   title: z.string().trim().min(1).max(255),
-  kind: userTemplateKindSchema,
   sourceFileId: z.uuid(),
-  pageFileIds: z.array(z.uuid()).min(1).max(MAX_USER_TEMPLATE_PAGES),
   packageFileId: z.uuid(),
 });
+
+/**
+ * Page images are a presentation's requirement, not a template's.
+ *
+ * A deck's cover is its first slide, so the pages are how it is recognised and
+ * previewed. A document's identity is its styles, and rendering it to images
+ * would add a dependency that buys nothing, so the document arm does not carry
+ * them and cannot be sent them by mistake.
+ */
+const publishUserTemplateBodySchema = z.discriminatedUnion("kind", [
+  publishUserTemplateBaseSchema.extend({
+    kind: z.literal("presentation"),
+    pageFileIds: z.array(z.uuid()).min(1).max(MAX_USER_TEMPLATE_PAGES),
+  }),
+  publishUserTemplateBaseSchema.extend({
+    kind: z.literal("document"),
+  }),
+]);
 
 export const userTemplatesContract = c.router({
   publish: {

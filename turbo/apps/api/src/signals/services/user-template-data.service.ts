@@ -67,7 +67,7 @@ export function parseUserTemplatePreviewAssetId(
  * template kind arrive without a migration.
  */
 export function userTemplatePageKeys(row: UserTemplateRow): readonly string[] {
-  return row.manifest.pageKeys;
+  return row.manifest.kind === "presentation" ? row.manifest.pageKeys : [];
 }
 
 function userTemplateKind(row: UserTemplateRow): UserTemplateKind {
@@ -85,7 +85,10 @@ export function userTemplateSummary(
     sourceFilename: row.sourceFilename,
     kind: userTemplateKind(row),
     coverUrl,
-    pageCount: userTemplatePageKeys(row).length,
+    pageCount:
+      row.manifest.kind === "presentation"
+        ? row.manifest.pageKeys.length
+        : null,
     visibility: row.visibility,
     ownerUserId: row.ownerUserId,
     canManage: row.ownerUserId === userId,

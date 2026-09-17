@@ -23,10 +23,14 @@ export async function publishUserTemplate(args: {
   readonly title: string;
   readonly kind: UserTemplateKind;
   readonly sourcePath: string;
-  readonly pagesDir: string;
+  /** Presentations only: a document template renders no pages. */
+  readonly pagesDir: string | undefined;
   readonly packageDir: string;
 }): Promise<UserTemplateSummary> {
-  const pagePaths = await orderedPagePaths(args.pagesDir);
+  const pagePaths =
+    args.kind === "presentation" && args.pagesDir !== undefined
+      ? await orderedPagePaths(args.pagesDir)
+      : [];
 
   const source = await uploadWebFile(args.sourcePath);
   const pageIds: string[] = [];
@@ -47,13 +51,21 @@ export async function publishUserTemplate(args: {
   const config = await getClientConfig();
   const client = initClient(userTemplatesContract, config);
   const result = await client.publish({
-    body: {
-      title: args.title,
-      kind: args.kind,
-      sourceFileId: source.id,
-      pageFileIds: pageIds,
-      packageFileId: packageId,
-    },
+    body:
+      args.kind === "presentation"
+        ? {
+            title: args.title,
+            kind: "presentation",
+            sourceFileId: source.id,
+            pageFileIds: pageIds,
+            packageFileId: packageId,
+          }
+        : {
+            title: args.title,
+            kind: "document",
+            sourceFileId: source.id,
+            packageFileId: packageId,
+          },
   });
   if (result.status === 200) {
     return result.body;

@@ -168,6 +168,52 @@ describe("POST /api/user-templates", () => {
     expect(response.body.sourceFilename).toBe("brand-system.pdf");
   });
 
+  it("publishes a document template without page images", async () => {
+    const fixture = installS3Fixture(context);
+    const actor = bdd.user();
+    await enableFor(actor);
+    const client = templateClient();
+
+    const body = await publishBody(actor, fixture);
+    const docxSourceId = await uploadTemplateFile(
+      context,
+      actor,
+      fixture,
+      {
+        filename: "brand-report.docx",
+        contentType:
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      },
+      Buffer.from("PK docx bytes", "utf8"),
+    );
+
+    const response = await accept(
+      client.publish({
+        headers: webHeaders(),
+        body: {
+          title: body.title,
+          kind: "document",
+          sourceFileId: docxSourceId,
+          packageFileId: body.packageFileId,
+        },
+      }),
+      [200],
+    );
+
+    // A document is its styles, so it has no pages and no cover — null rather
+    // than a zero that would read as an empty template.
+    expect(response.body).toMatchObject({
+      kind: "document",
+      sourceFilename: "brand-report.docx",
+      pageCount: null,
+      coverUrl: null,
+    });
+
+    const listed = await accept(client.list({ headers: webHeaders() }), [200]);
+    expect(listed.body).toHaveLength(1);
+    expect(listed.body[0]?.previewAssets).toStrictEqual([]);
+  });
+
   it("rejects a package that is missing its required guidance", async () => {
     const fixture = installS3Fixture(context);
     const actor = bdd.user();

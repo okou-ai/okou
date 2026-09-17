@@ -95,7 +95,9 @@ export const publishUserTemplate$ = command(
   ): Promise<PublishResult> => {
     const db = set(writeDb$);
     const { body } = args;
-    const ids = [body.sourceFileId, ...body.pageFileIds, body.packageFileId];
+    const pageFileIds =
+      body.kind === "presentation" ? body.pageFileIds : ([] as const);
+    const ids = [body.sourceFileId, ...pageFileIds, body.packageFileId];
     const uploads = await set(
       resolveTemplateUploads$,
       { ownerUserId: args.ownerUserId, orgId: args.orgId, ids },
@@ -112,7 +114,7 @@ export const publishUserTemplate$ = command(
     // Non-null: every id was just proven present.
     const source = uploads.get(body.sourceFileId)!;
     const packageUpload = uploads.get(body.packageFileId)!;
-    const pages = body.pageFileIds.map((id) => {
+    const pages = pageFileIds.map((id) => {
       return uploads.get(id)!;
     });
 
@@ -120,7 +122,9 @@ export const publishUserTemplate$ = command(
     if (sourceError) {
       return rejected(sourceError);
     }
-    const pageError = checkPages(pages);
+    // Only a presentation has pages to check; the document arm carries none,
+    // so the contract has already refused any that were sent.
+    const pageError = body.kind === "presentation" ? checkPages(pages) : null;
     if (pageError) {
       return rejected(pageError);
     }
@@ -144,12 +148,15 @@ export const publishUserTemplate$ = command(
         title: body.title,
         sourceStorageKey: source.storageKey,
         sourceFilename: source.filename,
-        manifest: {
-          kind: body.kind,
-          pageKeys: pages.map((page) => {
-            return page.storageKey;
-          }),
-        },
+        manifest:
+          body.kind === "presentation"
+            ? {
+                kind: "presentation",
+                pageKeys: pages.map((page) => {
+                  return page.storageKey;
+                }),
+              }
+            : { kind: "document" },
         createdBy: args.ownerUserId,
         updatedBy: args.ownerUserId,
         createdAt: currentTime,
