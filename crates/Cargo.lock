@@ -1738,7 +1738,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.91.10"
+version = "0.91.11"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -1792,7 +1792,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-client"
-version = "0.21.1"
+version = "0.21.2"
 dependencies = [
  "guest-contracts",
  "guest-control-proto",
@@ -1810,7 +1810,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-proto"
-version = "0.21.13"
+version = "0.21.14"
 dependencies = [
  "guest-contracts",
  "proptest",
@@ -1818,7 +1818,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-server"
-version = "0.21.21"
+version = "0.21.22"
 dependencies = [
  "chrono",
  "guest-contracts",
@@ -1834,7 +1834,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-tests"
-version = "0.12.1"
+version = "0.12.2"
 dependencies = [
  "guest-contracts",
  "guest-control-client",
@@ -1850,7 +1850,7 @@ dependencies = [
 
 [[package]]
 name = "guest-init"
-version = "0.16.270"
+version = "0.16.271"
 dependencies = [
  "guest-contracts",
  "guest-control-server",
@@ -1921,7 +1921,7 @@ dependencies = [
 
 [[package]]
 name = "guest-write-file"
-version = "0.1.167"
+version = "0.1.168"
 dependencies = [
  "guest-contracts",
  "guest-control-proto",
@@ -3493,7 +3493,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.197.1"
+version = "0.197.2"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -3850,7 +3850,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-firecracker"
-version = "0.43.1"
+version = "0.43.2"
 dependencies = [
  "async-trait",
  "clap",

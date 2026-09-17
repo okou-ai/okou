@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.14](https://github.com/vm0-ai/okou/compare/guest-control-proto-v0.21.13...guest-control-proto-v0.21.14) (2026-09-17)
+
+
+### Documentation
+
+* **rust:** correct guest-control streaming opcodes ([#34858](https://github.com/vm0-ai/okou/issues/34858)) ([d394e7f](https://github.com/vm0-ai/okou/commit/d394e7f60e0bd59124db91855a29bb754960252f))
+
 ## [0.21.13](https://github.com/vm0-ai/okou/compare/guest-control-proto-v0.21.12...guest-control-proto-v0.21.13) (2026-09-17)
 
 ## [0.21.12](https://github.com/vm0-ai/okou/compare/guest-control-proto-v0.21.11...guest-control-proto-v0.21.12) (2026-09-17)
