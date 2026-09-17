@@ -809,7 +809,6 @@ async function deleteOrgData(
     await cleanupWorkspaceInstallation(db, installation.slackWorkspaceId);
   }
 
-  await deleteOrgUsageData(db, orgId);
   await db.delete(sharedThreads).where(
     inArray(
       sharedThreads.id,
@@ -829,6 +828,9 @@ async function deleteOrgData(
   );
   await db.delete(artifacts).where(eq(artifacts.orgId, orgId));
   await deleteClerkAgentLifecycleData(db, { kind: "organization", orgId });
+  // Run deletion waits for admitted usage writers holding FOR SHARE. Remove
+  // their ledger rows afterward; later uploads can no longer find a live run.
+  await deleteOrgUsageData(db, orgId);
   await deleteConnectorOwnerState(db, { kind: "organization", orgId }, signal);
   await db.transaction(async (tx) => {
     await deleteStoragesWithPiMemoryCandidates(tx, eq(storages.orgId, orgId));
@@ -887,7 +889,6 @@ async function deleteUserData(
   await db
     .delete(telegramInstallations)
     .where(eq(telegramInstallations.ownerUserId, userId));
-  await deleteUserUsageData(db, userId);
   await db
     .delete(artifacts)
     .where(
@@ -898,6 +899,9 @@ async function deleteUserData(
     );
   await db.delete(sharedThreads).where(eq(sharedThreads.userId, userId));
   await deleteClerkAgentLifecycleData(db, { kind: "user", userId });
+  // Preserve the same run-deletion fence as organization cleanup before
+  // removing the personal ledger, including concurrent resource usage writes.
+  await deleteUserUsageData(db, userId);
   await db.transaction(async (tx) => {
     await deleteStoragesWithPiMemoryCandidates(tx, eq(storages.userId, userId));
   });
