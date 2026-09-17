@@ -12625,6 +12625,10 @@ describe("Morning Brief legacy schedule claim journal", () => {
       threadId,
       signal: context.signal,
     });
+    // Release the shared admission lock even when an assertion below throws.
+    onTestFinished(() => {
+      barrier.release();
+    });
     mockNow(secondAnchor + 60_000);
     const ticks = Promise.all([
       accept(
@@ -12933,6 +12937,10 @@ describe("Morning Brief legacy schedule claim journal", () => {
       threadId,
       signal: context.signal,
     });
+    // Release the shared admission lock even when an assertion below throws.
+    onTestFinished(() => {
+      barrier.release();
+    });
     mockNow(secondAnchor + 60_000);
     // The cancelled admission surfaces through the tick's own failure path, so
     // the cron route still completes normally.
@@ -13016,6 +13024,10 @@ describe("Morning Brief legacy schedule claim journal", () => {
       automationId: brief.automationId,
       signal: context.signal,
     });
+    // An open automation row lock would block unrelated agent deletion later.
+    onTestFinished(() => {
+      held.release();
+    });
     mockNow(boundary.getTime() - 60_000);
     const settlement = deliverBriefCallback(runId);
     await expect
@@ -13068,6 +13080,10 @@ describe("Morning Brief legacy schedule claim journal", () => {
       claimedAt,
       signal: context.signal,
     });
+    // Never leave the newer claim transaction holding the automation row.
+    onTestFinished(() => {
+      newerClaim.commit();
+    });
 
     // The older launch's late write begins now and waits on that row.
     const lateWrite = recordWorkflowAutomationLastRunFixture({
@@ -13116,6 +13132,10 @@ describe("Morning Brief legacy schedule claim journal", () => {
     const held = await holdWorkflowAutomationRowFixture({
       automationId: brief.automationId,
       signal: context.signal,
+    });
+    // An open automation row lock would block unrelated agent deletion later.
+    onTestFinished(() => {
+      held.release();
     });
     mockNow(secondAnchor + 60_000);
     const failingTick = accept(
