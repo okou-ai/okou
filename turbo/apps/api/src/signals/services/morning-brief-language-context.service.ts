@@ -53,7 +53,7 @@ import {
 import type { MorningBriefCollectionOwner } from "./morning-brief-collection-occurrence.service";
 
 /** Why the instruction text could not be read, distinctly from absence. */
-export type MorningBriefLanguageContextFailure =
+type MorningBriefLanguageContextFailure =
   /** The Agent is gone, private to somebody else, or not this org's. */
   | "agent-unavailable"
   /** The promised version exists but its data does not, or is unreadable. */
@@ -71,7 +71,7 @@ export type MorningBriefLanguageContextFailure =
   /** The 5-second storage phase elapsed. */
   | "timed-out";
 
-export type MorningBriefLanguageContext =
+type MorningBriefLanguageContext =
   /**
    * The owner has no configured instructions, or a valid empty file.
    *
@@ -157,7 +157,7 @@ function parseManifest(buffer: Buffer): StorageManifest | null {
  * a later instructions-only edit apply to the *next* occurrence instead of
  * silently changing the one already in flight.
  */
-async function resolveMorningBriefInstructionsVersion(
+export async function resolveMorningBriefInstructionsVersion(
   db: Pick<ReadonlyDb, "select">,
   owner: MorningBriefCollectionOwner,
   agentId: string,

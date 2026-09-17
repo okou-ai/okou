@@ -37,7 +37,7 @@ export const MORNING_BRIEF_ACCOUNT_REF_MAX_BYTES = 128;
  * descriptor that forgot a channel would make a later check pass by not asking
  * about it.
  */
-export const MORNING_BRIEF_MAX_DESCRIPTOR_CONTAINERS = 24;
+const MORNING_BRIEF_MAX_DESCRIPTOR_CONTAINERS = 24;
 
 /** S5 keeps accepted result content for 24 hours from reservation. */
 export const MORNING_BRIEF_RESULT_RETENTION_MS = 24 * 60 * 60 * 1000;

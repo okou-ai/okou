@@ -35,7 +35,7 @@ import type {
  * Digesting them is how a later narrowing becomes detectable without the
  * descriptor describing what a token can still do.
  */
-export const MORNING_BRIEF_GMAIL_READ_SURFACE: readonly string[] = [
+const MORNING_BRIEF_GMAIL_READ_SURFACE: readonly string[] = [
   "https://www.googleapis.com/auth/gmail.readonly",
 ];
 

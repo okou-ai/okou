@@ -43,7 +43,6 @@ import {
   MORNING_BRIEF_RESULT_RETENTION_MS,
   type MorningBriefRetainedSourceDescriptor,
 } from "../morning-brief-source-authority";
-import { MORNING_BRIEF_SLACK_COLLECTION_DEADLINE_MS } from "../morning-brief-slack-collection.service";
 import { serializeMorningBriefItem as serializeForTest } from "../morning-brief-source-item";
 import {
   morningBriefEnvelopeBytes,
@@ -62,56 +61,58 @@ import {
   type MorningBriefSourceKind,
 } from "../morning-brief-source-item";
 
-const bundleFixture = {
-  source: "slack" as const,
-  version: 1,
-  workspaceId: "T123",
-  windowStart: "2026-09-16T06:00:00.000Z",
-  windowEnd: "2026-09-17T06:00:00.000Z",
-  timezone: "Asia/Shanghai",
-  coverage: "complete" as const,
-  limits: [],
-  channels: [
-    {
-      id: "C1",
-      name: "general",
-      url: "https://example.slack.com/archives/C1",
-      isPrivate: false,
-      truncated: false,
+function bundleFixture() {
+  return {
+    source: "slack" as const,
+    version: 1,
+    workspaceId: "T123",
+    windowStart: "2026-09-16T06:00:00.000Z",
+    windowEnd: "2026-09-17T06:00:00.000Z",
+    timezone: "Asia/Shanghai",
+    coverage: "complete" as const,
+    limits: [],
+    channels: [
+      {
+        id: "C1",
+        name: "general",
+        url: "https://example.slack.com/archives/C1",
+        isPrivate: false,
+        truncated: false,
+      },
+    ],
+    entries: [
+      {
+        channelId: "C1",
+        channelName: "general",
+        channelUrl: "https://example.slack.com/archives/C1",
+        ts: "1789000000.000100",
+        threadTs: null,
+        authorId: "U9",
+        text: "older",
+        textTruncated: false,
+        fromThread: false,
+      },
+      {
+        channelId: "C1",
+        channelName: "general",
+        channelUrl: "https://example.slack.com/archives/C1",
+        ts: "1789000600.000200",
+        threadTs: "1789000000.000100",
+        authorId: "U9",
+        text: "newer reply",
+        textTruncated: true,
+        fromThread: true,
+      },
+    ],
+    counts: {
+      channels: 1,
+      threads: 1,
+      messages: 2,
+      requests: 3,
+      textBytes: 16,
     },
-  ],
-  entries: [
-    {
-      channelId: "C1",
-      channelName: "general",
-      channelUrl: "https://example.slack.com/archives/C1",
-      ts: "1789000000.000100",
-      threadTs: null,
-      authorId: "U9",
-      text: "older",
-      textTruncated: false,
-      fromThread: false,
-    },
-    {
-      channelId: "C1",
-      channelName: "general",
-      channelUrl: "https://example.slack.com/archives/C1",
-      ts: "1789000600.000200",
-      threadTs: "1789000000.000100",
-      authorId: "U9",
-      text: "newer reply",
-      textTruncated: true,
-      fromThread: true,
-    },
-  ],
-  counts: {
-    channels: 1,
-    threads: 1,
-    messages: 2,
-    requests: 3,
-    textBytes: 16,
-  },
-};
+  };
+}
 
 function item(
   source: MorningBriefSourceKind,
@@ -536,7 +537,7 @@ describe("language precedence", () => {
 
 describe("slack normalization", () => {
   it("keeps the exact fractional timestamp as the record identity", () => {
-    const normalized = normalizeMorningBriefSlack(bundleFixture, {
+    const normalized = normalizeMorningBriefSlack(bundleFixture(), {
       workspaceId: "T123",
       slackUserId: "U456",
     });
@@ -552,7 +553,7 @@ describe("slack normalization", () => {
   });
 
   it("ranks newest first and emits only program-resolved links", () => {
-    const normalized = normalizeMorningBriefSlack(bundleFixture, {
+    const normalized = normalizeMorningBriefSlack(bundleFixture(), {
       workspaceId: "T123",
       slackUserId: "U456",
     });
@@ -569,7 +570,7 @@ describe("slack normalization", () => {
 
   it("reports a healthy empty read as empty, not as complete", () => {
     const normalized = normalizeMorningBriefSlack(
-      { ...bundleFixture, entries: [], coverage: "empty" },
+      { ...bundleFixture(), entries: [], coverage: "empty" },
       { workspaceId: "T123", slackUserId: "U456" },
     );
 
@@ -726,7 +727,7 @@ describe("first-round source fairness under a tight ceiling", () => {
 
 describe("truncation provenance", () => {
   it("marks a clipped Slack message so the request cannot read it as whole", () => {
-    const normalized = normalizeMorningBriefSlack(bundleFixture, {
+    const normalized = normalizeMorningBriefSlack(bundleFixture(), {
       workspaceId: "T123",
       slackUserId: "U456",
     });
@@ -755,10 +756,8 @@ describe("declared bounds", () => {
       gmail: { deadlineMs: 20_000, maxRequests: 44 },
       calendar: { deadlineMs: 20_000, maxRequests: 18 },
       github: { deadlineMs: 20_000, maxRequests: 24 },
-      slack: {
-        deadlineMs: MORNING_BRIEF_SLACK_COLLECTION_DEADLINE_MS,
-        maxRequests: 40,
-      },
+      // Slack's ceiling is the collector's own declared deadline.
+      slack: { deadlineMs: 30_000, maxRequests: 40 },
       chat: { deadlineMs: 15_000, maxRequests: 0 },
     });
   });

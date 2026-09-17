@@ -85,7 +85,7 @@ import { slackUserInstallation } from "./slack-data.service";
 const MORNING_BRIEF_SLACK_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /** What one composition attempt produced, with no provider payload in it. */
-export interface MorningBriefCompositionResult {
+interface MorningBriefCompositionResult {
   readonly sources: readonly {
     readonly source: MorningBriefSourceKind;
     readonly coverage: string;
@@ -108,7 +108,7 @@ export interface MorningBriefCompositionResult {
 }
 
 /** Why a composition produced no model request. */
-export type MorningBriefCompositionOutcome =
+type MorningBriefCompositionOutcome =
   | {
       readonly kind: "composed";
       readonly result: MorningBriefCompositionResult;
@@ -139,47 +139,6 @@ export type MorningBriefCompositionOutcome =
     }
   /** The owner's authority moved while this attempt was reading. */
   | { readonly kind: "authority-changed" };
-
-/** Which sources this owner actually has, frozen for the attempt. */
-async function configuredSources(
-  get: (value: ReturnType<typeof slackUserInstallation>) => Promise<{
-    readonly kind: string;
-    readonly botToken?: string;
-    readonly workspaceId?: string;
-    readonly slackUserId?: string;
-  }>,
-  scope: MorningBriefCollectionScope,
-): Promise<{
-  readonly sources: readonly MorningBriefSourceKind[];
-  readonly slack: {
-    readonly botToken: string;
-    readonly workspaceId: string;
-    readonly slackUserId: string;
-  } | null;
-}> {
-  const installation = await get(
-    slackUserInstallation({ orgId: scope.orgId, userId: scope.userId }),
-  );
-  const slack =
-    installation.kind === "connected" &&
-    installation.botToken !== undefined &&
-    installation.workspaceId !== undefined &&
-    installation.slackUserId !== undefined
-      ? {
-          botToken: installation.botToken,
-          workspaceId: installation.workspaceId,
-          slackUserId: installation.slackUserId,
-        }
-      : null;
-  // Gmail is always attempted: the shared reader is the only thing that knows
-  // whether this member has a usable selected connection, and it reports an
-  // unconfigured source as an unavailable collection rather than throwing.
-  const sources: MorningBriefSourceKind[] = ["gmail"];
-  if (slack !== null) {
-    sources.push("slack");
-  }
-  return { sources, slack };
-}
 
 /**
  * Run one bounded, source-independent composition.
@@ -219,9 +178,27 @@ export const composeMorningBrief$ = command(
     }
     const { scope } = admitted;
 
-    const configured = await configuredSources(get, scope);
+    // Which sources this owner actually has, frozen for the attempt. Gmail is
+    // always attempted: only the shared reader knows whether this member has a
+    // usable selected connection, and it reports an unconfigured source as an
+    // unavailable collection rather than throwing.
+    const installation = await get(
+      slackUserInstallation({ orgId: scope.orgId, userId: scope.userId }),
+    );
     signal.throwIfAborted();
-    const waves = morningBriefSourceWaves(configured.sources);
+    const slackBinding =
+      installation.kind === "connected"
+        ? {
+            botToken: installation.botToken,
+            workspaceId: installation.workspaceId,
+            slackUserId: installation.slackUserId,
+          }
+        : null;
+    const configured: MorningBriefSourceKind[] = ["gmail"];
+    if (slackBinding !== null) {
+      configured.push("slack");
+    }
+    const waves = morningBriefSourceWaves(configured);
 
     const collections: MorningBriefSourceCollection[] = [];
     const descriptors: MorningBriefRetainedSourceDescriptor[] = [];
@@ -277,7 +254,7 @@ export const composeMorningBrief$ = command(
             }),
           };
         }
-        const slack = configured.slack;
+        const slack = slackBinding;
         if (slack === null) {
           return null;
         }

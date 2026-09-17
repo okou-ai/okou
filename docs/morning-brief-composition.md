@@ -61,15 +61,38 @@ start at all, because a read finishing after the commit window has nowhere to be
 finalized. Cancellation stops new admissions and joins work already owned —
 there are no detached readers, no sleeping retries and no unbounded queue.
 
+### Measuring, not estimating
+
+The 128 KiB ceiling is on the **whole serialized request**, so evidence is never
+budgeted against it directly. The fixed policy, the output schema, the coverage
+report and the frozen Agent instruction text are measured first — an instruction
+file may be 64 KiB on its own, half the request — and only what is left is
+available to items.
+
+Item sizes are measured the same way, by serializing the exact projection the
+request carries. Summing field lengths is not the same number and is not
+conservative: for 32 items whose text is entirely quote characters, a field sum
+reports about half the real size, because every `"` becomes `\"` and property
+names, separators, braces and `null`s cost nothing in the sum and real bytes in
+the request. A budget that undercounts by 2x does not bound anything.
+
 The combined ceiling and the request ceiling both drop **whole items**. A
 half sentence attributed to a real message is worse evidence than no message, so
-nothing is sliced and the omission counts are what the coverage note reports.
+nothing is sliced and the omission counts are what the coverage note reports. An
+item whose source clipped its own text is marked `truncated`, and that mark
+travels into the request: a fragment presented as a whole message is how a brief
+confidently summarizes only the half that happened to fit.
 
 Request capacity is filled in rounds, one item per nonempty source at a time, in
 the fixed order, each source drawing from its own priority ranking. Concatenating
 sources in order is the failure this replaces: a busy inbox would take every byte
 and the brief would silently claim the owner had no meetings. A single oversized
 item is skipped without ending its source's turns.
+
+Round-robin alone is not enough for the **first** round: one early item can be
+large enough to consume everything left, and a later source with a small first
+item then contributes nothing. So until every source has placed one item, an
+admission must also leave room for the first item of each source still waiting.
 
 Nonempty authorized evidence may produce one honestly partial brief even when
 every applicable source is partial. Only when no usable evidence remains does the
@@ -86,9 +109,17 @@ authorizer whether that exact input is still allowed.
 What is retained for those questions is a credential-free descriptor: source,
 the exact selected connection and account reference, a digest of the
 authorization surface actually exercised, the membership generation, the Agent,
-when it was captured, and whether it entered the model input. At most one per
-source, at most 512 bytes each and 2 KiB in total. No raw source body, prompt,
+when it was captured, **the containers the evidence actually came from**, and
+whether it entered the model input. At most one per source, at most 24
+containers, 2 KiB each and 8 KiB in total. No raw source body, prompt,
 credential or unrestricted URL blob is persisted or logged.
+
+The containers matter: a digest of constant method names proves which API was
+called, not which channels, threads or mailboxes the owner's evidence came from,
+so on its own it cannot tell a later check what to revalidate. A collection that
+drew from more containers than the bound is **rejected**, never trimmed — a
+descriptor set that quietly lost a source would let every later permission check
+pass by having nothing to check while the evidence went out anyway.
 
 It is evidence about an input, never a bearer capability and never a cached
 allow — every field exists so a later check can be re-run, and none of them can
