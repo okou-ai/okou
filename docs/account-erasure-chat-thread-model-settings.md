@@ -164,19 +164,20 @@ maps to an exact test in
 `turbo/apps/api/src/signals/routes/__tests__/chat-thread-model-settings-erasure.test.ts`,
 or to reused evidence that already exists.
 
-| Original criterion                                                                                                                    | Evidence                                                                                                                                                                                                           |
-| ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Deterministic same-thread overlap, both writers holding the retained `FOR KEY SHARE` before either asks for the settings row          | `serializes concurrent same-thread efforts for different models without losing either`, rebuilt on `withChatThreadContentBarriersFixture` with `stopAt: ["content-lock", "content-lock"]`                          |
-| The incompatible `FOR UPDATE` mode fails for the intended conflict                                                                    | `rejects the incompatible FOR UPDATE mode against a live writer's retained KEY SHARE`, using `probeChatThreadRowLockModesFixture` against a real paused writer                                                     |
-| Settings/rename overlap at a retained-lock and write boundary, without product-level serialization                                    | `overlaps a settings write with a rename under the shared helper`, `stopAt: ["content-lock", "content-update"]`, with an unrelated owner completing while both are paused                                          |
-| Old state visible and nothing published while a successful transaction is paused before `COMMIT`; the notification follows the commit | `publishes nothing until the transaction commits, then exactly one invalidation`                                                                                                                                   |
-| Denied and rolled-back writes publish nothing                                                                                         | `denies a model-selection update for a closed thread user ...` and `rolls the pin, effort, the first sidebar event and both sequences back when the second event fails`, both now counting `threadListChanged`     |
-| Real request cancellation after the admitted write, with guaranteed rollback                                                          | `rolls the thread update, both events and the policy repair back when the request is cancelled after the write`                                                                                                    |
-| Held `model-policy:<orgId>` slow path keeps its own bounded error and recovers                                                        | `propagates a held model-policy lock on the slow path instead of a fabricated response`                                                                                                                            |
-| Organization move and canonical parent deletion through this route                                                                    | `re-resolves a transferred Agent organization under the locks ...` and `keeps the existing 404 after the canonical Agent parent is deleted`                                                                        |
-| Owner transfer, pre-write lock failure, late second-event rollback, closure denials, policy bootstrap fencing                         | Already covered by the merged suite; unchanged and preserved                                                                                                                                                       |
-| Effort levels, retired/unavailable models, Fast mode, omission/null semantics, run tokens                                             | Reused from `chat-threads-model-selection.test.ts`; no duplicate matrix was added                                                                                                                                  |
-| Unchanged legacy provider columns and the `402` plan branch                                                                           | Source evidence: `chatThreadModelPinColumns` and the resolver branch are untouched by both this follow-up and the merged change. No database-read exception and no catalog/billing test project was added for them |
+| Original criterion                                                                                                                    | Evidence                                                                                                                                                                                                                                                                                 |
+| ------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Deterministic same-thread overlap, both writers holding the retained `FOR KEY SHARE` before either asks for the settings row          | `serializes concurrent same-thread efforts for different models without losing either`, rebuilt on `withChatThreadContentBarriersFixture` with `stopAt: ["content-lock", "content-lock"]`                                                                                                |
+| The incompatible `FOR UPDATE` mode fails for the intended conflict                                                                    | `rejects the incompatible FOR UPDATE mode against a live writer's retained KEY SHARE`, using `probeChatThreadRowLockModesFixture` against a real paused writer                                                                                                                           |
+| Settings/rename overlap at a retained-lock and write boundary, without product-level serialization                                    | `overlaps a settings write with a rename under the shared helper`, `stopAt: ["content-lock", "content-update"]`, with an unrelated owner completing while both are paused                                                                                                                |
+| Old state visible and nothing published while a successful transaction is paused before `COMMIT`; the notification follows the commit | `publishes nothing until the transaction commits, then exactly one invalidation`                                                                                                                                                                                                         |
+| Denied and rolled-back writes publish nothing                                                                                         | `denies a model-selection update for a closed thread user ...` and `rolls the pin, effort, the first sidebar event and both sequences back when the second event fails`, both now counting `threadListChanged`                                                                           |
+| Real cancellation after the admitted write, with guaranteed rollback                                                                  | `rolls the thread update, both events and the policy repair back when the request is cancelled after the write`, asserting the transaction's own statement sequence through `TransactionBarrier.statements()`                                                                            |
+| Held `model-policy:<orgId>` slow path keeps its own bounded error and recovers                                                        | `propagates a held model-policy lock on the slow path instead of a fabricated response`                                                                                                                                                                                                  |
+| Organization move and canonical parent deletion through this route                                                                    | `re-resolves a transferred Agent organization under the locks ...` and `keeps the existing 404 after the canonical Agent parent is deleted`                                                                                                                                              |
+| Owner transfer, pre-write lock failure, late second-event rollback, closure denials, policy bootstrap fencing                         | Already covered by the merged suite; unchanged and preserved                                                                                                                                                                                                                             |
+| Effort levels, retired/unavailable models, Fast mode, omission/null semantics, run tokens                                             | Reused from `chat-threads-model-selection.test.ts`; no duplicate matrix was added                                                                                                                                                                                                        |
+| Unchanged legacy provider columns and the `402` plan branch                                                                           | Source evidence: `chatThreadModelPinColumns` and the resolver branch are untouched by both this follow-up and the merged change. No database-read exception and no catalog/billing test project was added for them                                                                       |
+| Bounded baseline/candidate cost evidence, common and slow policy path                                                                 | The route interface-cost comparison below: baseline blob `dbff4c21` versus candidate blob `3e4308b7`, with exact statements, locks, roundtrips, server durations, small-sample request times and plans. The test-suite timings are reported separately and are explicitly not this item. |
 
 Three properties make the concurrency evidence deterministic rather than
 probabilistic:
@@ -193,51 +194,147 @@ probabilistic:
   `FOR KEY SHARE`, so the conflict is reported immediately instead of being
   inferred from a timeout.
 
-The cancellation case stops at the thread `UPDATE` and aborts there. The route's
-own `throwIfAborted` then runs after the `UPDATE` and both sidebar events, while
-`COMMIT` has not been sent. Aborting at the `commit` stop would be unsound
-evidence: once `COMMIT` is on the wire the transaction may already have
-succeeded, so such a case could not claim a rollback guarantee.
+### Which cancellation signal this is, and what the test actually proves
 
-## Local cost evidence
+The signal this route observes is the one `createAppWithRoutes` receives and
+`honoSignalHandler` threads into the handler. In production that is the
+instance-lifetime `AbortController` that `src/server.ts` and `src/index.ts`
+create and abort on shutdown or `SIGTERM` ("Aborted due to terminated function
+instance"). The route never reads the per-request fetch/connection signal
+(`c.req.raw.signal`), and this slice adds no public request-cancellation API.
+The test aborts that exact production-wired signal through the same constructor
+argument, so the cancellation path is production's own; calling it "request
+cancellation" is shorthand for the operation-lifetime abort the route really
+honours, not evidence of a per-connection cancel endpoint.
 
-Local synthetic measurements on one sandbox (2 vCPU class, PostgreSQL 18.6,
-`vitest run` single process, warm dependency install, no Turbo cache). These are
-wall-clock test timings, not production throughput, and they are not an upper
-bound for any environment.
+The case stops at the thread `UPDATE` and aborts while that statement is still
+undispatched. What ran afterwards is asserted from the transaction itself rather
+than inferred from unchanged final state: the barrier records every statement
+that exact connection issued, and the test asserts one `update "chat_threads"`,
+two `insert into "chat_thread_event_sequences"`, two
+`insert into "chat_thread_events"`, a matching `savepoint sp1` /
+`release savepoint sp1` pair for the policy repair, no `commit` at all, and a
+`rollback` after the last event insert.
 
-| Subject                                      | Baseline `eaf7590f51c70d79a0fdf05ac3effaa6e2026e47` | Candidate                                  |
-| -------------------------------------------- | --------------------------------------------------- | ------------------------------------------ |
-| `chat-thread-model-settings-erasure.test.ts` | 15 tests, 17.8s file duration                       | 21 tests, 20.4s file duration              |
-| Concurrency cases                            | `Promise.all` pair: 106ms + 120ms                   | barrier pair: see the per-case table below |
+The server's own log shows the same window for one such request, with the
+barrier's settings probe standing where the `UPDATE` had not yet been sent:
 
-Per-case timings for the added and rebuilt cases, from the same run:
+```text
+17:43:17.651  select ... from "org_model_policies" ...
+17:43:17.652  savepoint sp1
+17:43:17.653  SELECT pg_advisory_xact_lock(hashtextextended($1, 0))
+17:43:17.657  insert into "org_model_policies" ...
+17:43:17.658  update "org_model_policies" set "is_default" = $1 ...
+17:43:17.662  release savepoint sp1
+17:43:17.666  SELECT pg_backend_pid() ... current_setting('lock_timeout') ...  <- paused here; the abort lands
+17:43:17.668  update "chat_threads" set ... "selected_model" = $4 ...
+17:43:17.670  insert into "chat_thread_event_sequences" ...
+17:43:17.671  insert into "chat_thread_events" ...
+17:43:17.673  insert into "chat_thread_event_sequences" ...
+17:43:17.674  insert into "chat_thread_events" ...
+17:43:17.674  rollback
+```
 
-| Case                                                | Local time                                                |
-| --------------------------------------------------- | --------------------------------------------------------- |
-| Deterministic same-thread overlap                   | 157ms (baseline `Promise.all` pair: 106ms)                |
-| `FOR UPDATE` / `FOR NO KEY UPDATE` probe            | 152ms                                                     |
-| Settings vs rename overlap, plus an unrelated owner | 273ms (baseline `Promise.all` pair: 120ms)                |
-| Paused-before-commit visibility and publication     | 178ms                                                     |
-| Cancellation after the write                        | 190ms                                                     |
-| Organization move under the locks                   | 235ms                                                     |
-| Deleted canonical Agent parent                      | 126ms                                                     |
-| Held `model-policy` key, slow path                  | 1158ms, dominated by the route's unchanged 1s lock budget |
+The `UPDATE` matched its row: `writeModelSelection` returns early when the
+`RETURNING` row has no `agentId` and never reaches `appendChatThreadEvent`, so
+the two event inserts could not exist otherwise. Row counts are not observable
+at the statement level, and nothing here claims a measured one.
 
-The common policy path is already visible in the merged cases that do not stage
-an unrepaired state: they complete in roughly 100-300ms with no advisory lock at
-all, against the 1158ms slow-path case above whose cost is the production lock
-budget expiring, not added work.
+Aborting at the `commit` stop would be unsound evidence instead: once `COMMIT`
+is on the wire the transaction may already have succeeded, so such a case could
+not claim a rollback guarantee. No case in this suite does that.
 
-The two policy paths differ by design and by measured cost. The common path,
-where the organization already has policies and a valid default, returns from
-`ensureOrgModelPolicies` without taking any lock. The slow path -- an unseeded
-organization or a missing default -- opens the resolver's savepoint on the
-admitted transaction and takes `pg_advisory_xact_lock(hashtextextended(
-'model-policy:<orgId>', 0))` before seeding or repairing. Added SQL for this
-follow-up is zero: no statement, index or lock was added to the route. The only
-new database work is in test fixtures, which take one advisory key or two
-`NOWAIT` row locks and always roll back.
+## Interface cost of the fence: baseline versus candidate
+
+This is the acceptance item's own measurement: the **route before and after the
+R6 fence**, on the same fixture, the same single HTTP request, the same worktree
+and the same PostgreSQL instance. Only the route file differs.
+
+| Subject         | Pinned revision                                                                                                                                                                                     |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Baseline route  | blob `dbff4c21dac7b5bc5c3391ccd662ee52373f4591`, `turbo/apps/api/src/signals/routes/chat-threads-model-selection.ts` at `ba3b46f887e8f4425186a64a3dabedd417ae8736` (the commit before the R6 merge) |
+| Candidate route | blob `3e4308b7ff0b5a18d62b280761852ad05d7b2638`, the same path on `main`, unchanged since the R6 merge `ffe98626858cc8888bb9f135c1558471aa9ca968`                                                   |
+| Everything else | `main` at `e9001cdc0e69e7246209e62e2995a388a82077b5`, PostgreSQL 18.6, one 2 vCPU-class sandbox, one Vitest process                                                                                 |
+
+Method: run PostgreSQL with `log_statement=all`, `log_min_duration_statement=0`,
+`log_lock_waits=on` and `log_line_prefix='%m [%p] app=%a '`; create the fixture
+organization, Agent and pinned thread through the product routes; emit a marker
+statement, issue exactly one `POST /api/chat-threads/:id/model-selection`, emit a
+closing marker; then read the marked window of the log. Repeat with the baseline
+blob checked out in place of the candidate. No production query, no new
+production code path and no performance tuning is involved.
+
+### Existing-policy common path
+
+| Measure                          | Baseline                                                              | Candidate                                                                                              |
+| -------------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Statements in the marked window  | 17                                                                    | 27                                                                                                     |
+| Transactions the request commits | 1 (`begin`, server-default isolation), preceded by 9 autocommit reads | 1 (`begin isolation level read committed`) containing every statement                                  |
+| Transaction-local deadlines      | none                                                                  | `SET lock_timeout` and `SET statement_timeout`                                                         |
+| B1 admission                     | none                                                                  | isolation probe, 2 × `pg_advisory_xact_lock_shared`, closure lookup                                    |
+| Canonical identity               | none                                                                  | identity read, then a second identity read under the locks                                             |
+| Row locks                        | `chat_threads` `FOR UPDATE`                                           | `agents` + `chat_threads` `FOR KEY SHARE` retained to `COMMIT`, and `chat_threads` `FOR NO KEY UPDATE` |
+| Summed server statement duration | 3.81 ms over 50 logged parse/bind/execute records                     | 5.22 ms over 78 records                                                                                |
+| Request wall time, n = 5         | median 16.8 ms (16.4-18.6)                                            | median 23.0 ms (20.9-71.4; the 71.4 ms is the first, cold sample)                                      |
+
+### Initialization and default-repair slow path
+
+| Measure                              | Baseline                                                                                                        | Candidate                                                                        |
+| ------------------------------------ | --------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Statements in the marked window      | 27                                                                                                              | 37                                                                               |
+| Transactions the request commits     | **2**: the policy repair runs in its own `BEGIN ... COMMIT` and commits **before** the thread transaction opens | **1**: `savepoint sp1 ... release savepoint sp1` inside the admitted transaction |
+| `model-policy:<orgId>` advisory lock | exclusive, released when the separate policy transaction commits                                                | exclusive, held until the thread transaction commits                             |
+| Summed server statement duration     | 5.26 ms over 76 records                                                                                         | 5.24 ms over 104 records                                                         |
+| Request wall time, n = 5             | median 23.3 ms (22.2-29.1)                                                                                      | median 26.9 ms (19.3-37.2)                                                       |
+
+The two-transaction baseline is the measured form of the defect this slice
+fixed: the account-attributed `org_model_policies` seeding and default repair
+were durable before the thread write was even attempted. Making them roll back
+with the thread write is exactly what costs the extra statements and the longer
+advisory-lock window; that is a correctness cost, not an optimization target.
+
+### Plans for the statements the fence adds
+
+`EXPLAIN (COSTS OFF)` on the same local database:
+
+| Added statement                  | Plan                                                                                                         |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Canonical identity read          | `Limit -> Nested Loop Left Join -> Index Scan chat_threads_pkey` + `Index Only Scan idx_agents_id_org_owner` |
+| `agents ... FOR KEY SHARE`       | `LockRows -> Index Scan idx_agents_id_org_owner`                                                             |
+| `chat_threads ... FOR KEY SHARE` | `LockRows -> Index Scan chat_threads_pkey`                                                                   |
+| B1 closure lookup                | `Limit -> Seq Scan on account_erasure_jobs`                                                                  |
+
+The closure lookup's sequential scan is a local artifact: that table holds 0 rows
+in this sandbox. The unique index `account_erasure_subject_generation
+(subject_kind, subject_id, generation)` exists and can serve the predicate. No
+claim is made here about the plan production chooses.
+
+### Honest limits
+
+Local synthetic measurements from one sandbox with n = 5 per cell, including the
+cold first sample. They are wall-clock and server-side statement times for one
+request shape, not production throughput, not a latency bound, and not a
+statement about any other route. The statement and lock counts, by contrast, are
+exact: they are read from the server's own log of the marked request window.
+
+## Test-suite cost (not a substitute for the measurement above)
+
+Kept for continuity from the earlier revision of this document. These are the
+cost of running this slice's **test file**, which is a different thing from the
+route's interface cost and does not satisfy the acceptance item:
+
+| Subject                                      | Before this follow-up         | After                         |
+| -------------------------------------------- | ----------------------------- | ----------------------------- |
+| `chat-thread-model-settings-erasure.test.ts` | 15 tests, 17.8s file duration | 21 tests, 20.4s file duration |
+
+Per-case local times, same run: deterministic same-thread overlap 157ms,
+`FOR UPDATE` / `FOR NO KEY UPDATE` probe 152ms, settings-versus-rename overlap
+273ms, paused-before-commit visibility and publication 178ms, cancellation
+190ms, organization move 235ms, deleted canonical parent 126ms, held
+`model-policy` key 1158ms (dominated by the route's unchanged 1s lock budget).
+This follow-up adds no production statement, index or lock; the only new
+database work is in test fixtures, which take one advisory key or two `NOWAIT`
+row locks and always roll back.
 
 ## Residual work
 

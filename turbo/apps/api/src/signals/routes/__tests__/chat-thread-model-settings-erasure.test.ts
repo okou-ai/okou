@@ -653,6 +653,38 @@ describe("account erasure fences chat-thread model settings writes", () => {
           // request keeps its own failure: neither the accepted 204 nor the
           // closure 404.
           await expect(updating).rejects.toThrow(/Unknown response status 500/);
+
+          // What actually executed, read from the transaction itself rather
+          // than inferred from unchanged final state. The abort landed while
+          // the `UPDATE` was still undispatched, then the whole tail ran: the
+          // thread `UPDATE`, both sequence reservations and both sidebar event
+          // inserts, and the transaction ended in `ROLLBACK` with no `COMMIT`
+          // ever sent. The two event inserts are also what prove the `UPDATE`
+          // matched its row: `writeModelSelection` returns early on a missing
+          // `agentId` and never reaches `appendChatThreadEvent`.
+          const issued = barrier.statements();
+          const count = (prefix: string) => {
+            return issued.filter((statement) => {
+              return statement.startsWith(prefix);
+            }).length;
+          };
+          expect(count('update "chat_threads"')).toBe(1);
+          expect(count('insert into "chat_thread_event_sequences"')).toBe(2);
+          expect(count('insert into "chat_thread_events"')).toBe(2);
+          // The resolver's policy repair ran on this same transaction's
+          // savepoint, not on a second connection that could commit alone.
+          expect(issued).toContain("savepoint sp1");
+          expect(issued).toContain("release savepoint sp1");
+          expect(issued).not.toContain("commit");
+          const lastEventInsert = issued.reduce((last, statement, index) => {
+            return statement.startsWith('insert into "chat_thread_events"')
+              ? index
+              : last;
+          }, -1);
+          expect(lastEventInsert).toBeGreaterThan(-1);
+          expect(issued.lastIndexOf("rollback")).toBeGreaterThan(
+            lastEventInsert,
+          );
         },
       },
       context.signal,

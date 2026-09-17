@@ -152,6 +152,12 @@ export interface TransactionBarrier {
   /** Backends currently blocked by the paused transaction, so a test never
    * guesses at timing with a sleep. */
   readonly blockedWaiterCount: () => Promise<number>;
+  /** Every statement this exact transaction has issued so far, in order,
+   * including the ones after the barrier released. A test that needs to prove
+   * what actually ran — rather than infer it from unchanged final state — reads
+   * this instead of guessing from the outcome. The barrier's own settings probe
+   * bypasses the proxy, so it never appears here. */
+  readonly statements: () => readonly string[];
   readonly release: () => void;
 }
 
@@ -239,6 +245,36 @@ const barrierSettingsSchema = z.object({
 });
 
 /**
+ * Reads the paused transaction's backend pid and its live deadlines through the
+ * original driver method, reports them, then waits for the release and finally
+ * dispatches the statement the barrier stopped at. Splitting this out keeps the
+ * proxy handler small enough to read in one screen.
+ */
+function pauseBarrierSlot(
+  slot: BarrierSlot,
+  target: typeof Client.prototype.query,
+  receiver: unknown,
+  queryArgs: unknown[],
+): Promise<unknown> {
+  return (async () => {
+    const settings: unknown = await Reflect.apply(target, receiver, [
+      BARRIER_SETTINGS_QUERY,
+    ]);
+    const row = barrierSettingsSchema.parse(settings).rows[0];
+    if (!row) {
+      throw new Error("Expected the transaction barrier settings row");
+    }
+    slot.entered.resolve({
+      pid: row.pid,
+      lockTimeout: row.lock_timeout,
+      statementTimeout: row.statement_timeout,
+    });
+    await slot.released.promise;
+    return await Reflect.apply(target, receiver, queryArgs);
+  })();
+}
+
+/**
  * The same infrastructure exception for more than one transaction at a time,
  * and the single implementation the one-transaction form above delegates to.
  *
@@ -309,10 +345,16 @@ export async function withDatabaseTransactionBarriersFixture<T>(
         }
       }
       const slot = index === -1 ? undefined : slots[index];
-      if (!slot || slot.paused) {
+      if (!slot) {
         return Reflect.apply(target, receiver, queryArgs);
       }
       const text = barrierQueryText(queryArgs);
+      if (slot.paused) {
+        // Past its stop, this transaction keeps recording so a test can assert
+        // what really executed after the release and how it terminated.
+        slot.statements.push(text);
+        return Reflect.apply(target, receiver, queryArgs);
+      }
       if (
         !args.stopAt(
           queryArgs,
@@ -331,22 +373,8 @@ export async function withDatabaseTransactionBarriersFixture<T>(
         return Reflect.apply(target, receiver, queryArgs);
       }
       slot.paused = true;
-      return (async () => {
-        const settings: unknown = await Reflect.apply(target, receiver, [
-          BARRIER_SETTINGS_QUERY,
-        ]);
-        const row = barrierSettingsSchema.parse(settings).rows[0];
-        if (!row) {
-          throw new Error("Expected the transaction barrier settings row");
-        }
-        slot.entered.resolve({
-          pid: row.pid,
-          lockTimeout: row.lock_timeout,
-          statementTimeout: row.statement_timeout,
-        });
-        await slot.released.promise;
-        return await Reflect.apply(target, receiver, queryArgs);
-      })();
+      slot.statements.push(text);
+      return pauseBarrierSlot(slot, target, receiver, queryArgs);
     },
   });
   const result = await settleIncludingAbort(
@@ -356,6 +384,9 @@ export async function withDatabaseTransactionBarriersFixture<T>(
           entered: slot.entered.promise,
           blockedWaiterCount: async () => {
             return await blockedWaiterCount((await slot.entered.promise).pid);
+          },
+          statements: () => {
+            return [...slot.statements];
           },
           release: () => {
             releaseSlot(slot);
