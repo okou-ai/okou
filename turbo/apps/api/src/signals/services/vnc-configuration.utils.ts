@@ -6,6 +6,7 @@ import {
   VNC_CA_BUNDLE_MAX_LENGTH,
   VNC_CA_CERTIFICATES_MAX_COUNT,
   VNC_HOST_MAX_LENGTH,
+  type VncSecurity,
   type VncTrust,
 } from "@okouai/api-contracts/contracts/vnc-connections";
 import {
@@ -76,11 +77,6 @@ const failures = {
     code: VNC_ERROR_CODES.RESOURCE_ID_CONFLICT,
     message: "This resource ID cannot be used for this VNC configuration",
   },
-  endpointConflict: {
-    kind: "conflict",
-    code: VNC_ERROR_CODES.ENDPOINT_CONFLICT,
-    message: "A VNC connection already uses this host and port",
-  },
 } as const;
 
 export function vncFailure(reason: keyof typeof failures) {
@@ -142,7 +138,19 @@ export function canonicalizeVncHost(host: string): VncResult<string> {
   return { ok: true, value: ascii };
 }
 
-export function prepareVncTrust(trust: VncTrust): VncResult<{
+export function prepareVncSecurity(security: VncSecurity): VncResult<{
+  readonly securityType: "x509_vnc";
+  readonly trustMode: "system" | "custom_ca";
+  readonly caBundle: string | null;
+}> {
+  const trust = prepareVncTrust(security.trust);
+  if (!trust.ok) {
+    return trust;
+  }
+  return { ok: true, value: { securityType: security.type, ...trust.value } };
+}
+
+function prepareVncTrust(trust: VncTrust): VncResult<{
   readonly trustMode: "system" | "custom_ca";
   readonly caBundle: string | null;
 }> {

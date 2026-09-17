@@ -7,7 +7,6 @@ import {
   pgTable,
   text,
   timestamp,
-  unique,
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
@@ -23,6 +22,10 @@ export const vncConnections = pgTable(
     host: varchar("host", { length: 253 }).notNull(),
     port: integer("port").notNull().default(5900),
     credentialId: uuid("credential_id").notNull(),
+    securityType: varchar("security_type", {
+      length: 32,
+      enum: ["x509_vnc"],
+    }).notNull(),
     trustMode: varchar("trust_mode", {
       length: 16,
       enum: ["system", "custom_ca"],
@@ -43,12 +46,6 @@ export const vncConnections = pgTable(
           vncCredentials.userId,
         ],
       }).onDelete("restrict"),
-      unique("uq_vnc_connections_owner_endpoint").on(
-        table.orgId,
-        table.userId,
-        table.host,
-        table.port,
-      ),
       index("idx_vnc_connections_credential").on(table.credentialId, table.id),
       index("idx_vnc_connections_owner_created").on(
         table.orgId,
@@ -67,6 +64,10 @@ export const vncConnections = pgTable(
       ),
       check("chk_vnc_connections_port", sql`${table.port} BETWEEN 1 AND 65535`),
       check("chk_vnc_connections_generation", sql`${table.generation} > 0`),
+      check(
+        "chk_vnc_connections_security_type",
+        sql`${table.securityType} = 'x509_vnc'`,
+      ),
       check(
         "chk_vnc_connections_trust",
         sql`(${table.trustMode} = 'system' AND ${table.caBundle} IS NULL) OR (${table.trustMode} = 'custom_ca' AND ${table.caBundle} IS NOT NULL AND octet_length(${table.caBundle}) BETWEEN 1 AND 65536)`,

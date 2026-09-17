@@ -1,5 +1,5 @@
 {
-  "id": "c173f55a-48c9-482e-9d3f-cc613635f7cc",
+  "id": "af8de52e-4eba-491b-a175-34224c0af369",
   "prevId": "186a8b37-6ae5-4530-9a9d-622d79fa9815",
   "version": "7",
   "dialect": "postgresql",
@@ -34501,6 +34501,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "security_type": {
+          "name": "security_type",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true
+        },
         "trust_mode": {
           "name": "trust_mode",
           "type": "varchar(16)",
@@ -34632,18 +34638,7 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "uq_vnc_connections_owner_endpoint": {
-          "name": "uq_vnc_connections_owner_endpoint",
-          "nullsNotDistinct": false,
-          "columns": [
-            "org_id",
-            "user_id",
-            "host",
-            "port"
-          ]
-        }
-      },
+      "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
         "chk_vnc_connections_display_name": {
@@ -34661,6 +34656,10 @@
         "chk_vnc_connections_generation": {
           "name": "chk_vnc_connections_generation",
           "value": "\"vnc_connections\".\"generation\" > 0"
+        },
+        "chk_vnc_connections_security_type": {
+          "name": "chk_vnc_connections_security_type",
+          "value": "\"vnc_connections\".\"security_type\" = 'x509_vnc'"
         },
         "chk_vnc_connections_trust": {
           "name": "chk_vnc_connections_trust",
@@ -34695,6 +34694,12 @@
         "name": {
           "name": "name",
           "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "auth_method": {
+          "name": "auth_method",
+          "type": "varchar(32)",
           "primaryKey": false,
           "notNull": true
         },
@@ -34800,6 +34805,10 @@
         "chk_vnc_credentials_name": {
           "name": "chk_vnc_credentials_name",
           "value": "char_length(\"vnc_credentials\".\"name\") BETWEEN 1 AND 128"
+        },
+        "chk_vnc_credentials_auth_method": {
+          "name": "chk_vnc_credentials_auth_method",
+          "value": "\"vnc_credentials\".\"auth_method\" = 'vnc_password'"
         },
         "chk_vnc_credentials_password": {
           "name": "chk_vnc_credentials_password",

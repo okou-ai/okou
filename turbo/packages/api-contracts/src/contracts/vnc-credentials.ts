@@ -6,29 +6,36 @@ export const VNC_DISPLAY_NAME_MAX_LENGTH = 128;
 export const VNC_PASSWORD_MAX_LENGTH = 8;
 
 const nameSchema = z.string().trim().min(1).max(VNC_DISPLAY_NAME_MAX_LENGTH);
-const passwordSchema = z
-  .string()
-  .min(1)
-  .max(VNC_PASSWORD_MAX_LENGTH)
-  .refine((value) => {
-    return !/[^\x20-\x7e]/u.test(value);
-  }, "VNC passwords require printable ASCII bytes");
+export const vncAuthenticationSchema = z.discriminatedUnion("method", [
+  z
+    .object({
+      method: z.literal("vnc_password"),
+      password: z
+        .string()
+        .min(1)
+        .max(VNC_PASSWORD_MAX_LENGTH)
+        .refine((value) => {
+          return !/[^\x20-\x7e]/u.test(value);
+        }, "VNC passwords require printable ASCII bytes"),
+    })
+    .strict(),
+]);
 const revisionSchema = z.int().positive().max(2_147_483_647);
 
 export const createVncCredentialRequestSchema = z
-  .object({ name: nameSchema, password: passwordSchema })
+  .object({ name: nameSchema, authentication: vncAuthenticationSchema })
   .strict();
 
 export const updateVncCredentialRequestSchema = z
   .object({
     expectedRevision: revisionSchema,
     name: nameSchema.optional(),
-    password: passwordSchema.optional(),
+    authentication: vncAuthenticationSchema.optional(),
   })
   .strict()
   .refine(
     (value) => {
-      return value.name !== undefined || value.password !== undefined;
+      return value.name !== undefined || value.authentication !== undefined;
     },
     { message: "At least one VNC credential field must be updated" },
   );
@@ -42,6 +49,7 @@ export const vncCredentialResponseSchema = z
   .object({
     id: z.uuid(),
     name: z.string(),
+    authMethod: z.literal("vnc_password"),
     revision: revisionSchema,
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
@@ -103,6 +111,7 @@ export const vncCredentialsContract = c.router({
   },
 });
 
+export type VncAuthentication = z.infer<typeof vncAuthenticationSchema>;
 export type CreateVncCredentialRequest = z.infer<
   typeof createVncCredentialRequestSchema
 >;

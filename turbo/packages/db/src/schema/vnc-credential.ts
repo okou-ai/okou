@@ -18,6 +18,10 @@ export const vncCredentials = pgTable(
     orgId: text("org_id").notNull(),
     userId: text("user_id").notNull(),
     name: varchar("name", { length: 128 }).notNull(),
+    authMethod: varchar("auth_method", {
+      length: 32,
+      enum: ["vnc_password"],
+    }).notNull(),
     encryptedPassword: text("encrypted_password").notNull(),
     revision: integer("revision").default(1).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -40,6 +44,10 @@ export const vncCredentials = pgTable(
       check(
         "chk_vnc_credentials_name",
         sql`char_length(${table.name}) BETWEEN 1 AND 128`,
+      ),
+      check(
+        "chk_vnc_credentials_auth_method",
+        sql`${table.authMethod} = 'vnc_password'`,
       ),
       check(
         "chk_vnc_credentials_password",

@@ -60,8 +60,13 @@ function createConnection() {
       displayName: "Desktop",
       host: "desktop.example.com",
       port: 5900,
-      trust: { mode: "system" },
-      credential: { create: { name: "Desktop login", password: "pass123" } },
+      security: { type: "x509_vnc", trust: { mode: "system" } },
+      credential: {
+        create: {
+          name: "Desktop login",
+          authentication: { method: "vnc_password", password: "pass123" },
+        },
+      },
     },
   });
 }
@@ -162,7 +167,10 @@ test("requires current membership while retaining the same owner's configuration
       },
     ),
   ).toStrictEqual([previous.body.credentialId]);
-  await accept(createConnection(), [409]);
+  const additional = await accept(createConnection(), [201]);
+  expect(additional.body.id).not.toBe(previous.body.id);
+  expect(additional.body.host).toBe(previous.body.host);
+  expect(additional.body.port).toBe(previous.body.port);
   const renamed = await accept(
     credentials().update({
       headers,
@@ -179,7 +187,7 @@ test("requires current membership while retaining the same owner's configuration
         id: randomUUID(),
         displayName: "Shared credential",
         host: "other-desktop.example.com",
-        trust: { mode: "system" },
+        security: { type: "x509_vnc", trust: { mode: "system" } },
         credential: { id: previous.body.credentialId },
       },
     }),

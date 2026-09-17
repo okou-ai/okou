@@ -35,11 +35,11 @@ try {
     [{ value: "retained" }],
   );
   await client.query(`
-    INSERT INTO vnc_credentials (id,org_id,user_id,name,encrypted_password)
-      VALUES ('00000000-0000-4000-8000-000000000001','org','owner','Password','ciphertext'),
-             ('00000000-0000-4000-8000-000000000002','org','other','Other','other-ciphertext');
-    INSERT INTO vnc_connections (id,org_id,user_id,display_name,host,credential_id,trust_mode)
-      VALUES ('00000000-0000-4000-8000-000000000003','org','owner','Desktop','desktop.example.com','00000000-0000-4000-8000-000000000001','system');
+    INSERT INTO vnc_credentials (id,org_id,user_id,name,auth_method,encrypted_password)
+      VALUES ('00000000-0000-4000-8000-000000000001','org','owner','Password','vnc_password','ciphertext'),
+             ('00000000-0000-4000-8000-000000000002','org','other','Other','vnc_password','other-ciphertext');
+    INSERT INTO vnc_connections (id,org_id,user_id,display_name,host,credential_id,security_type,trust_mode)
+      VALUES ('00000000-0000-4000-8000-000000000003','org','owner','Desktop','desktop.example.com','00000000-0000-4000-8000-000000000001','x509_vnc','system');
   `);
 
   for (const assignment of [
@@ -59,17 +59,22 @@ try {
       constraint: "vnc_connections_credential_owner_fk",
     },
   );
-  await rejects(
-    "INSERT INTO vnc_connections (org_id,user_id,display_name,host,credential_id,trust_mode) VALUES ('org','owner','Duplicate','desktop.example.com','00000000-0000-4000-8000-000000000001','system')",
-    { code: "23505", constraint: "uq_vnc_connections_owner_endpoint" },
-  );
-  // Endpoint uniqueness is scoped to the owning user and organization.
+  // Independently saved configurations can share an endpoint and credential.
   await client.query(
-    "INSERT INTO vnc_connections (org_id,user_id,display_name,host,credential_id,trust_mode) VALUES ('org','other','Other desktop','desktop.example.com','00000000-0000-4000-8000-000000000002','system')",
+    "INSERT INTO vnc_connections (org_id,user_id,display_name,host,credential_id,security_type,trust_mode) VALUES ('org','owner','Alternate configuration','desktop.example.com','00000000-0000-4000-8000-000000000001','x509_vnc','system')",
+  );
+  await client.query(
+    "INSERT INTO vnc_connections (org_id,user_id,display_name,host,credential_id,security_type,trust_mode) VALUES ('org','other','Other desktop','desktop.example.com','00000000-0000-4000-8000-000000000002','x509_vnc','system')",
+  );
+  assert.deepEqual(
+    (await client.query("SELECT count(*)::int AS count FROM vnc_connections"))
+      .rows,
+    [{ count: 3 }],
   );
 
   for (const [assignment, constraint] of [
     ["revision=0", "chk_vnc_credentials_revision"],
+    ["auth_method='unsupported'", "chk_vnc_credentials_auth_method"],
     ["encrypted_password=''", "chk_vnc_credentials_password"],
     ["name=''", "chk_vnc_credentials_name"],
   ] as const) {
@@ -81,8 +86,15 @@ try {
   await rejects("UPDATE vnc_credentials SET encrypted_password=NULL", {
     code: "23502",
   });
+  await rejects("UPDATE vnc_credentials SET auth_method=NULL", {
+    code: "23502",
+  });
+  await rejects("UPDATE vnc_connections SET security_type=NULL", {
+    code: "23502",
+  });
   for (const [assignment, constraint] of [
     ["generation=0", "chk_vnc_connections_generation"],
+    ["security_type='unsupported'", "chk_vnc_connections_security_type"],
     ["port=0", "chk_vnc_connections_port"],
     ["port=65536", "chk_vnc_connections_port"],
     ["display_name=''", "chk_vnc_connections_display_name"],

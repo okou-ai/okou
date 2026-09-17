@@ -1,6 +1,7 @@
 import type {
   CreateVncCredentialRequest,
   UpdateVncCredentialRequest,
+  VncAuthentication,
   VncCredentialResponse,
   VncCredentialSelection,
 } from "@okouai/api-contracts/contracts/vnc-credentials";
@@ -25,6 +26,7 @@ import { enterVncWrite, type VncOwner } from "./vnc-owner-lifecycle.service";
 const metadata = Object.freeze({
   id: vncCredentials.id,
   name: vncCredentials.name,
+  authMethod: vncCredentials.authMethod,
   revision: vncCredentials.revision,
   createdAt: vncCredentials.createdAt,
   updatedAt: vncCredentials.updatedAt,
@@ -114,16 +116,26 @@ export async function listVncCredentials(
   return [...values.values()];
 }
 
+async function encryptAuthentication(
+  authentication: VncAuthentication,
+  featureContext: FeatureSwitchContext,
+) {
+  return {
+    authMethod: authentication.method,
+    encryptedPassword: await encryptStoredSecretValue(
+      authentication.password,
+      featureContext,
+    ),
+  };
+}
+
 async function prepareCredential(
   body: CreateVncCredentialRequest,
   featureContext: FeatureSwitchContext,
 ) {
   return {
     name: body.name,
-    encryptedPassword: await encryptStoredSecretValue(
-      body.password,
-      featureContext,
-    ),
+    ...(await encryptAuthentication(body.authentication, featureContext)),
   };
 }
 
@@ -223,10 +235,13 @@ export async function updateVncCredential(args: {
   if (initial.revision !== args.body.expectedRevision) {
     return vncFailure("credentialConflict");
   }
-  const encryptedPassword =
-    args.body.password === undefined
+  const encrypted =
+    args.body.authentication === undefined
       ? undefined
-      : await encryptStoredSecretValue(args.body.password, args.featureContext);
+      : await encryptAuthentication(
+          args.body.authentication,
+          args.featureContext,
+        );
   return args.db.transaction(async (tx) => {
     if (!(await enterVncWrite(tx, args.owner))) {
       return vncFailure("ownerChanged");
@@ -257,7 +272,7 @@ export async function updateVncCredential(args: {
     }
     if (
       current.revision === 2_147_483_647 ||
-      (encryptedPassword !== undefined &&
+      (encrypted !== undefined &&
         hosts.some((host) => {
           return host.generation === 2_147_483_647;
         }))
@@ -268,7 +283,7 @@ export async function updateVncCredential(args: {
       .update(vncCredentials)
       .set({
         name: args.body.name,
-        encryptedPassword,
+        ...encrypted,
         revision: current.revision + 1,
         updatedAt: nowDate(),
       })
@@ -277,7 +292,7 @@ export async function updateVncCredential(args: {
     if (!updated) {
       throw new Error("VNC credential update returned no row");
     }
-    if (encryptedPassword !== undefined && hosts.length > 0) {
+    if (encrypted !== undefined && hosts.length > 0) {
       await tx
         .update(vncConnections)
         .set({

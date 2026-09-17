@@ -6,12 +6,12 @@ import type {
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { vncCredentials } from "@okouai/db/schema/vnc-credential";
-import { and, asc, count, eq, ne } from "drizzle-orm";
+import { and, asc, count, eq } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import type { Db, ReadonlyDb } from "../external/db";
 import {
   canonicalizeVncHost,
-  prepareVncTrust,
+  prepareVncSecurity,
   vncFailure,
   type VncResult,
 } from "./vnc-configuration.utils";
@@ -32,6 +32,7 @@ const metadata = Object.freeze({
   host: vncConnections.host,
   port: vncConnections.port,
   credentialId: vncConnections.credentialId,
+  securityType: vncConnections.securityType,
   trustMode: vncConnections.trustMode,
   caBundle: vncConnections.caBundle,
   generation: vncConnections.generation,
@@ -68,37 +69,17 @@ function response(
     port: row.port,
     credentialId: row.credentialId,
     credentialName: credential.name,
-    trust:
-      row.trustMode === "custom_ca" && row.caBundle !== null
-        ? { mode: "custom_ca", caBundle: row.caBundle }
-        : { mode: "system" },
+    security: {
+      type: row.securityType,
+      trust:
+        row.trustMode === "custom_ca" && row.caBundle !== null
+          ? { mode: "custom_ca", caBundle: row.caBundle }
+          : { mode: "system" },
+    },
     generation: row.generation,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
-}
-
-async function endpointExists(
-  db: Pick<ReadonlyDb, "select">,
-  owner: VncOwner,
-  host: string,
-  port: number,
-  exceptId?: string,
-): Promise<boolean> {
-  const [row] = await db
-    .select({ id: vncConnections.id })
-    .from(vncConnections)
-    .where(
-      and(
-        eq(vncConnections.orgId, owner.orgId),
-        eq(vncConnections.userId, owner.userId),
-        eq(vncConnections.host, host),
-        eq(vncConnections.port, port),
-        exceptId === undefined ? undefined : ne(vncConnections.id, exceptId),
-      ),
-    )
-    .limit(1);
-  return row !== undefined;
 }
 
 export async function listVncConnections(
@@ -162,9 +143,9 @@ export async function createVncConnection(args: {
   if (!host.ok) {
     return host;
   }
-  const trust = prepareVncTrust(args.body.trust);
-  if (!trust.ok) {
-    return trust;
+  const security = prepareVncSecurity(args.body.security);
+  if (!security.ok) {
+    return security;
   }
   const preparedCredential = await prepareVncCredentialSelection(
     args.body.credential,
@@ -187,9 +168,6 @@ export async function createVncConnection(args: {
     if (!creation.value) {
       return { ok: true as const, value: undefined };
     }
-    if (await endpointExists(tx, owner, host.value, args.body.port)) {
-      return vncFailure("endpointConflict");
-    }
     const credential = await selectVncCredential(tx, owner, preparedCredential);
     if (!credential.ok) {
       return credential;
@@ -203,7 +181,7 @@ export async function createVncConnection(args: {
         host: host.value,
         port: args.body.port,
         credentialId: credential.value.id,
-        ...trust.value,
+        ...security.value,
       })
       .returning(metadata);
     if (!created) {
@@ -227,12 +205,12 @@ export async function updateVncConnection(args: {
   if (host !== undefined && !host.ok) {
     return host;
   }
-  const trust =
-    args.body.trust === undefined
+  const security =
+    args.body.security === undefined
       ? undefined
-      : prepareVncTrust(args.body.trust);
-  if (trust !== undefined && !trust.ok) {
-    return trust;
+      : prepareVncSecurity(args.body.security);
+  if (security !== undefined && !security.ok) {
+    return security;
   }
   const [initial] = await args.db
     .select({ generation: vncConnections.generation })
@@ -272,9 +250,6 @@ export async function updateVncConnection(args: {
     }
     const newHost = host?.value ?? current.host;
     const newPort = args.body.port ?? current.port;
-    if (await endpointExists(tx, owner, newHost, newPort, current.id)) {
-      return vncFailure("endpointConflict");
-    }
     const selected =
       preparedCredential === undefined
         ? undefined
@@ -295,7 +270,7 @@ export async function updateVncConnection(args: {
         host: newHost,
         port: newPort,
         credentialId: credential.id,
-        ...trust?.value,
+        ...security?.value,
         generation: current.generation + 1,
         updatedAt: nowDate(),
       })

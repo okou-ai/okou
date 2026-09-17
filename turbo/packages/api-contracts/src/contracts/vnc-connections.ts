@@ -29,6 +29,10 @@ export const vncTrustSchema = z.discriminatedUnion("mode", [
     .strict(),
 ]);
 
+export const vncSecuritySchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("x509_vnc"), trust: vncTrustSchema }).strict(),
+]);
+
 export const createVncConnectionRequestSchema = z
   .object({
     id: z.uuid(),
@@ -36,7 +40,7 @@ export const createVncConnectionRequestSchema = z
     host: hostSchema,
     port: portSchema.default(5900),
     credential: vncCredentialSelectionSchema,
-    trust: vncTrustSchema,
+    security: vncSecuritySchema,
   })
   .strict();
 
@@ -47,7 +51,7 @@ export const updateVncConnectionRequestSchema = z
     host: hostSchema.optional(),
     port: portSchema.optional(),
     credential: vncCredentialSelectionSchema.optional(),
-    trust: vncTrustSchema.optional(),
+    security: vncSecuritySchema.optional(),
   })
   .strict()
   .refine(
@@ -57,7 +61,7 @@ export const updateVncConnectionRequestSchema = z
         body.host !== undefined ||
         body.port !== undefined ||
         body.credential !== undefined ||
-        body.trust !== undefined
+        body.security !== undefined
       );
     },
     { message: "At least one VNC connection field must be updated" },
@@ -75,7 +79,7 @@ export const vncConnectionResponseSchema = z
     port: portSchema,
     credentialId: z.uuid(),
     credentialName: z.string(),
-    trust: vncTrustSchema,
+    security: vncSecuritySchema,
     generation: generationSchema,
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
@@ -150,3 +154,4 @@ export type UpdateVncConnectionRequest = z.infer<
 >;
 export type VncConnectionResponse = z.infer<typeof vncConnectionResponseSchema>;
 export type VncTrust = z.infer<typeof vncTrustSchema>;
+export type VncSecurity = z.infer<typeof vncSecuritySchema>;
