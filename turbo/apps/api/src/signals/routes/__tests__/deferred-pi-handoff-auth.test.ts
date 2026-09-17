@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { runnersJobClaimContract } from "@okouai/api-contracts/contracts/runners";
-import { describe, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -24,7 +24,8 @@ describe("deferred Pi handoff credential selection", () => {
     const runId = randomUUID();
     const ordinary = generateOkouToken("user-1", runId, "org-1");
 
-    await accept(readHandoff(runId, ordinary), [401]);
+    const response = await accept(readHandoff(runId, ordinary), [401]);
+    expect(response.status).toBe(401);
   });
 
   it("accepts the exact run-scoped Sandbox claim at the HTTP auth boundary", async () => {
@@ -36,7 +37,8 @@ describe("deferred Pi handoff credential selection", () => {
 
     // The run is intentionally absent. A 404 proves the Sandbox claim passed
     // route authentication; invalid credentials return 401 before lookup.
-    await accept(readHandoff(runId, sandbox), [404]);
+    const response = await accept(readHandoff(runId, sandbox), [404]);
+    expect(response.status).toBe(404);
   });
 
   it("rejects a valid Sandbox claim for another run", async () => {
@@ -46,6 +48,7 @@ describe("deferred Pi handoff credential selection", () => {
       generation: 3,
     });
 
-    await accept(readHandoff(runId, sandbox), [401]);
+    const response = await accept(readHandoff(runId, sandbox), [401]);
+    expect(response.status).toBe(401);
   });
 });
