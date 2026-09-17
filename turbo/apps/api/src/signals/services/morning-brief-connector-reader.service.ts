@@ -92,7 +92,42 @@ interface MorningBriefReaderBudget {
   readonly maxRequests: number;
   readonly maxResponseBytes: number;
   readonly maxTotalResponseBytes: number;
-  readonly deadlineMs: number;
+}
+
+/**
+ * The one absolute deadline a whole source read spends.
+ *
+ * It is started by the composition that performs the real source admission, so
+ * the identity preflight that admits the source, the credential preparation,
+ * every provider request and body and the release fence all spend the same
+ * budget. Nothing downstream starts a second one: a preflight that consumed the
+ * whole budget leaves no allowance behind, rather than earning a fresh one.
+ */
+export interface MorningBriefSourceDeadline {
+  /** Absolute `now()` milliseconds at which the source read expires. */
+  readonly at: number;
+  /** Aborts in-flight provider I/O once the wall clock is spent. */
+  readonly signal: AbortSignal;
+}
+
+export function startMorningBriefSourceDeadline(
+  budgetMs: number,
+): MorningBriefSourceDeadline {
+  return { at: now() + budgetMs, signal: AbortSignal.timeout(budgetMs) };
+}
+
+/**
+ * Has this source's budget run out, by the clock rather than by the timer?
+ *
+ * `AbortSignal.timeout` only reports `aborted` once its callback has been
+ * scheduled and run, so between the instant a budget expires and that callback
+ * the bit is still false. Every decision about whether the source may keep
+ * going — and above all the final release of a collected payload — compares the
+ * absolute deadline, and the timer is left to do what a clock cannot: interrupt
+ * I/O that is already in flight.
+ */
+function deadlineHasPassed(at: number, timer: AbortSignal): boolean {
+  return timer.aborted || now() >= at;
 }
 
 /**
@@ -199,6 +234,7 @@ interface MorningBriefReaderRequest {
   readonly apiBase: string;
   readonly environmentName: string;
   readonly budget: MorningBriefReaderBudget;
+  readonly deadline: MorningBriefSourceDeadline;
   readonly db: Db;
   readonly clerk: ClerkClient;
 }
@@ -921,10 +957,11 @@ async function performRead<T>(
 
   // Reserve the whole allowance before streaming, so concurrent readers cannot
   // each believe the same remaining bytes are theirs.
-  const allowance = Math.min(
-    request.budget.maxResponseBytes,
-    Math.max(0, request.budget.maxTotalResponseBytes - state.reservedBytes),
+  const remainingTotal = Math.max(
+    0,
+    request.budget.maxTotalResponseBytes - state.reservedBytes,
   );
+  const allowance = Math.min(request.budget.maxResponseBytes, remainingTotal);
   state.reservedBytes += allowance;
   const read = await settle(readBoundedResponseText(response, allowance));
   signal.throwIfAborted();
@@ -934,7 +971,14 @@ async function performRead<T>(
       : { kind: "provider-failed" };
   }
   if (read.value.kind === "too_large") {
-    state.truncatedTotalBytes = true;
+    // Name the allowance that actually bound this read. A response that
+    // overran the per-response ceiling while the cumulative budget still had a
+    // full ceiling to give says nothing about the cumulative budget, and
+    // reporting it as cumulative exhaustion overstates how much of the source
+    // was skipped.
+    if (remainingTotal < request.budget.maxResponseBytes) {
+      state.truncatedTotalBytes = true;
+    }
     return { kind: "too-large" };
   }
   // Release only what this response provably did not use.
@@ -1010,7 +1054,40 @@ function createConnectorReader(
           state.revoked = credential.reason;
           return { kind: "revoked" };
         }
+        // Preparing that credential can await a real OAuth refresh round trip
+        // and its persistence, so the decision above is no longer live. Authority
+        // withdrawn during that wait must not be spent: the same live identity
+        // and policy implementation answers again, for the account preparation
+        // actually produced and for this exact endpoint, before the first
+        // provider request of this source is issued.
+        const prepared = await authorizeUrl(
+          request,
+          credential.credential.pinned,
+          url,
+          "request",
+          bounded,
+        );
+        signal.throwIfAborted();
+        if (prepared.kind === "revoked" || state.revoked !== null) {
+          state.requests -= 1;
+          if (prepared.kind === "revoked") {
+            state.revoked = prepared.reason;
+          }
+          return { kind: "revoked" };
+        }
+        // Identity survived the wait, so this is still the source's pinned
+        // account. Keeping it is what stops a denied endpoint from driving a
+        // second refresh on the next sibling request.
         state.credential = credential.credential;
+        if (prepared.kind !== "allow") {
+          state.requests -= 1;
+          return { kind: "denied", scope: "policy", meta: EMPTY_METADATA };
+        }
+        // The refresh spent real time out of the same source deadline.
+        if (now() >= deadlineAt) {
+          state.requests -= 1;
+          return { kind: "budget-exhausted", limit: "deadline" };
+        }
       }
 
       const outcome = await performRead(
@@ -1061,12 +1138,15 @@ async function releaseIsAuthorized(
 /**
  * Run `collect` against an authorized, bounded reader for one source.
  *
- * One absolute deadline covers admission, the membership and credential reads,
- * every provider request and body, and the release fence. The final payload is
- * fenced against every permission it was actually read under, not only the last
- * one, so losing an earlier permission withholds the data that permission
- * produced. In-flight provider work cannot be retracted; this promises
- * admission and release fencing, not instantaneous revocation.
+ * The caller supplies the source's single absolute deadline, already started
+ * before the real source admission, and this reader spends what is left of it
+ * rather than starting a second one. It covers the reader's own identity
+ * admission, the membership and credential reads, every provider request and
+ * body, and the release fence. The final payload is fenced against every
+ * permission it was actually read under, not only the last one, so losing an
+ * earlier permission withholds the data that permission produced. In-flight
+ * provider work cannot be retracted; this promises admission and release
+ * fencing, not instantaneous revocation.
  */
 export async function withMorningBriefConnectorReader<T>(
   args: {
@@ -1075,6 +1155,7 @@ export async function withMorningBriefConnectorReader<T>(
     readonly apiBase: string;
     readonly environmentName: string;
     readonly budget: MorningBriefReaderBudget;
+    readonly deadline: MorningBriefSourceDeadline;
     readonly db: Db;
     readonly clerk: ClerkClient;
   },
@@ -1082,9 +1163,8 @@ export async function withMorningBriefConnectorReader<T>(
   signal: AbortSignal,
 ): Promise<MorningBriefAccessResult<T>> {
   const request: MorningBriefReaderRequest = args;
-  // One absolute deadline for the whole source, established before admission.
-  const deadlineAt = now() + args.budget.deadlineMs;
-  const deadline = AbortSignal.timeout(args.budget.deadlineMs);
+  const deadlineAt = args.deadline.at;
+  const deadline = args.deadline.signal;
   const bounded = AbortSignal.any([signal, deadline]);
   const state: ReaderState = {
     requests: 0,
@@ -1101,6 +1181,14 @@ export async function withMorningBriefConnectorReader<T>(
     bounded,
     deadline,
   };
+
+  // The budget the source admission already spent is not refunded here. A
+  // preflight that outlived the deadline leaves nothing to read with, so the
+  // source is refused before any identity, credential or provider work rather
+  // than restarting on a fresh allowance.
+  if (deadlineHasPassed(args.deadline.at, args.deadline.signal)) {
+    return unavailable("deadline-exceeded");
+  }
 
   // Identity admission only. No endpoint is authorized here, and no credential
   // is decrypted: the first allowed GET resolves it.
@@ -1129,7 +1217,7 @@ export async function withMorningBriefConnectorReader<T>(
   if (state.revoked !== null) {
     return unavailable(state.revoked);
   }
-  if (deadline.aborted) {
+  if (deadlineHasPassed(args.deadline.at, args.deadline.signal)) {
     return unavailable("deadline-exceeded");
   }
 
@@ -1144,6 +1232,13 @@ export async function withMorningBriefConnectorReader<T>(
   }
   if (release.value !== null) {
     return unavailable(release.value);
+  }
+  // The release fence re-derives identity and every retained permission, which
+  // takes real time and can outlast the budget. A payload handed back after the
+  // source's absolute deadline is late content, so acceptance is the last thing
+  // the clock guards rather than the one step it is trusted to have covered.
+  if (deadlineHasPassed(args.deadline.at, args.deadline.signal)) {
+    return unavailable("deadline-exceeded");
   }
   return {
     kind: "ok",
@@ -1167,16 +1262,51 @@ type MorningBriefCollectionAdmission =
         | "not-installed"
         | "disabled"
         | "no-membership";
-    };
+    }
+  /**
+   * The source's own budget ran out inside this preflight. It is not a refusal
+   * of authority and not a cancellation: the caller asked for a source that can
+   * no longer be read in time.
+   */
+  | { readonly kind: "unavailable"; readonly reason: "deadline-exceeded" };
+
+interface MorningBriefAdmissionArgs {
+  readonly db: Db;
+  readonly clerk: ClerkClient;
+  readonly orgId: string;
+  readonly userId: string;
+  readonly anchor: Date;
+  /**
+   * The source deadline, started by this caller before admission. Composing it
+   * here is what lets the preflight observe the source timeout its own reads
+   * are spending, instead of only the caller's cancellation.
+   */
+  readonly deadline: MorningBriefSourceDeadline;
+}
 
 export async function admitMorningBriefCollection(
-  args: {
-    readonly db: Db;
-    readonly clerk: ClerkClient;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly anchor: Date;
-  },
+  args: MorningBriefAdmissionArgs,
+  signal: AbortSignal,
+): Promise<MorningBriefCollectionAdmission> {
+  // Both boundaries reach every await below. The provider SDK is not claimed to
+  // cancel a request already issued; what this guarantees is that a held answer
+  // or failure released after the budget expired stops here, with no retry, no
+  // further admission read and no collection.
+  const bounded = AbortSignal.any([signal, args.deadline.signal]);
+  const admitted = await settle(admitWithinDeadline(args, bounded), signal);
+  if (admitted.ok) {
+    return admitted.value;
+  }
+  if (deadlineHasPassed(args.deadline.at, args.deadline.signal)) {
+    return { kind: "unavailable", reason: "deadline-exceeded" };
+  }
+  // A genuine preflight failure stays a failure; it is not relabelled as a
+  // refusal this member could act on.
+  throw admitted.error;
+}
+
+async function admitWithinDeadline(
+  args: MorningBriefAdmissionArgs,
   signal: AbortSignal,
 ): Promise<MorningBriefCollectionAdmission> {
   const featureSwitchContext = await loadUserFeatureSwitchContext(
@@ -1212,6 +1342,9 @@ export async function admitMorningBriefCollection(
   }
   if (!(await subjectIsWritable(args.db, args))) {
     return { kind: "denied", reason: "no-membership" };
+  }
+  if (deadlineHasPassed(args.deadline.at, args.deadline.signal)) {
+    return { kind: "unavailable", reason: "deadline-exceeded" };
   }
   return {
     kind: "ok",

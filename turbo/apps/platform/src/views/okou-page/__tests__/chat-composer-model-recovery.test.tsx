@@ -487,9 +487,9 @@ test("Reconnect Claude Code for an existing chat", async () => {
   expect(dialog).not.toHaveTextContent("inactive.claude@example.com");
 });
 
-test("Refresh model availability without losing useful options", async () => {
+async function openLimitedModelAvailability() {
   type BillingMode = "failed" | "limited" | "upgraded";
-  let billingMode: BillingMode = "limited";
+  const billing: { mode: BillingMode } = { mode: "limited" };
   const failedRefresh = context.mocks.deferred<void>();
   installRunChat({ selectedModel: "gpt-5.6-luna" });
   context.mocks.data.orgModelPolicies([
@@ -503,7 +503,7 @@ test("Refresh model availability without losing useful options", async () => {
     }),
   ]);
   context.mocks.api(billingStatusContract.get, ({ respond }) => {
-    if (billingMode === "failed") {
+    if (billing.mode === "failed") {
       failedRefresh.resolve();
       return respond(500, {
         error: {
@@ -512,7 +512,7 @@ test("Refresh model availability without losing useful options", async () => {
         },
       });
     }
-    if (billingMode === "upgraded") {
+    if (billing.mode === "upgraded") {
       return respond(
         200,
         billingStatus({
@@ -555,19 +555,40 @@ test("Refresh model availability without losing useful options", async () => {
   await waitFor(() => {
     expect(context.mocks.ably.hasSubscription("billing:changed")).toBeTruthy();
   });
+  return { billing, failedRefresh };
+}
 
-  billingMode = "upgraded";
+async function expectUpgradedModelsAvailable(
+  scenario: Awaited<ReturnType<typeof openLimitedModelAvailability>>,
+) {
+  scenario.billing.mode = "upgraded";
   context.mocks.ably.trigger("billing:changed");
 
-  const personalOption = await screen.findByRole("option", {
+  await waitFor(() => {
+    const personalOption = screen.getByRole("option", {
+      name: /Claude Opus 4\.8/iu,
+    });
+    expect(personalOption).toBeVisible();
+    expect(within(personalOption).queryByText("Pro")).toBeNull();
+  });
+}
+
+test("A billing upgrade makes previously gated personal models available", async () => {
+  const scenario = await openLimitedModelAvailability();
+  await expectUpgradedModelsAvailable(scenario);
+  const personalOption = screen.getByRole("option", {
     name: /Claude Opus 4\.8/iu,
   });
   expect(personalOption).toBeVisible();
   expect(within(personalOption).queryByText("Pro")).toBeNull();
+});
 
-  billingMode = "failed";
+test("A failed availability refresh keeps models resolved by the preceding billing upgrade", async () => {
+  const scenario = await openLimitedModelAvailability();
+  await expectUpgradedModelsAvailable(scenario);
+  scenario.billing.mode = "failed";
   context.mocks.ably.trigger("billing:changed");
-  await failedRefresh.promise;
+  await scenario.failedRefresh.promise;
 
   await expect(
     screen.findByText("Model availability could not be refreshed"),

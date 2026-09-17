@@ -27,6 +27,12 @@ exception is deletion — a bounded retention batch on an existing maintenance
 tick removes expired content, and it only ever deletes. **No result produced
 here is delivered, and none is a production candidate.**
 
+Those absences are read from this slice's own source: nothing in it constructs a
+schedule, a queue entry or a second invocation path. A measured footprint is a
+narrower claim and is asserted separately — the platform-paid test compares the
+owner's whole usage, allowance, Run, email, thread and credit footprint across a
+real invocation and requires it unchanged.
+
 ## The entrypoint
 
 `POST /api/morning-brief/preview/generation` is registered in the ordinary API
@@ -369,25 +375,65 @@ rather than closed by inference.
 | `unavailable`        | A response was read but carried no usable cost. The generation id is kept.       |
 | `invocation_unknown` | No usage payload was read at all, so whether anything was charged is unknown.    |
 
-A string, a negative number, `NaN`, a missing field and a missing `usage` object
-are all `unavailable`. Token counts never imply a known cost and are never
-converted into one.
+A string, a negative number, a missing field and a missing `usage` object are all
+`unavailable`. Token counts never imply a known cost and are never converted into
+one.
+
+### The reported number, not the float it parses into
+
+The domain below is judged on the digits the provider actually sent. That
+distinction is the whole contract, because `JSON.parse` answers with a double and
+a double silently rewrites what it cannot hold:
+
+| Response bytes                        | As a double     | Recorded       |
+| ------------------------------------- | --------------- | -------------- |
+| `"cost": 1e-400`                      | `0`             | `unavailable`  |
+| `"cost": -1e-400`                     | `0`             | `unavailable`  |
+| `"cost": 0.10000000000000001`         | `0.1`           | `unavailable`  |
+| `"prompt_tokens": 2147483647.0000001` | `2147483647`    | `unavailable`  |
+| `"cost": 999999999999.999999999999`   | `1000000000000` | stored exactly |
+
+Judging the parsed number would publish a durable **reported zero** for a real
+nonzero charge, an amount nobody reported, and a whole count for a fractional
+one. So both usage entrypoints parse through `safeExactJsonParse`, which is
+`safeJsonParse` with every number kept as the text it was written as. Structure,
+key identity, nesting and every non-numeric value are unchanged, a number stays
+distinguishable from a numeric string — a quoted `"0.5"` is still refused — and
+no other caller of `safeJsonParse` is affected.
+
+The digits come from the engine's own source-text reviver, available from V8
+12.4 and therefore on every Node version this workspace supports. `JSON.parse`
+stays the one thing that parses and validates the document, so text it would
+have rejected — `01`, `1.`, `+1`, a truncated body — is still rejected, and
+number-shaped text inside provider prose is never reached into: it is string
+content, and the reviver only ever sees the number values themselves.
+
+Only the selected `usage` fields and `data.total_cost` are read from that parse;
+nothing scans the body for number-shaped text, which would match a value in
+someone else's field. Bounds are decided by counting digits and shifting a
+decimal point, so `1e999999999` is refused by arithmetic rather than by sizing a
+string from an attacker-chosen exponent, and the response byte ceilings still
+bound the text itself. A body that is not a JSON document — including a bare
+number — remains `response_unreadable`.
 
 ### The durable domain
 
 Validation and storage share one domain, because a value the column cannot hold
 is not recorded more widely — it is recorded wrongly, or not at all.
 
-- **Token counts** are `integer`. A count above `2147483647` is `unavailable`
-  for that field alone. It previously passed validation and then failed the
-  whole INSERT with `integer out of range`, discarding the observed cost, the
-  sibling counts and the invocation record with it.
+- **Token counts** are `integer`. A count above `2147483647`, and any count with
+  a digit after the decimal point, is `unavailable` for that field alone. An
+  over-range count previously passed validation and then failed the whole INSERT
+  with `integer out of range`, discarding the observed cost, the sibling counts
+  and the invocation record with it. Integral exponent forms are ordinary
+  counts: `2.147483647e9` is the ceiling, exactly.
 - **The amount** is `numeric(24, 12)`: at most twelve integral digits and
   exactly twelve fractional digits. An amount needing finer digits — `1e-13` —
   or more integral digits — `1e12` — is `unavailable`, never rounded. Rounding
   into the scale would publish a durable **reported zero** for a real nonzero
   charge, and an over-range amount would fail the INSERT with
-  `numeric field overflow`.
+  `numeric field overflow`. An exactly representable amount is accepted however
+  it was written, including one no double could have carried.
 - An accepted amount is normalised to the exact decimal the column returns, so
   the initial response, the stored row and every later reread carry one
   identical value rather than two spellings of it.
@@ -420,10 +466,13 @@ The receipt's own bounded attempts finish **before** the caller's cancellation
 check and before the live-authority resolution that decides the owner write.
 Both of those can end the request — cancellation propagates, and resolving the
 authority can itself fail — and the charge was incurred at the provider either
-way. Those attempts are joined to this request and finite: nothing is detached
-to complete later, no queue is created, and nothing about them accepts or
-releases owner content. A cancelled request still cancels; it simply no longer
-discards an observation it already made.
+way. There are **three** such attempts, and an owner path that proceeds while
+the receipt still owes gives it up to **three more** before its own write; six
+attempts is the ceiling, not the usual number, and a receipt already durable is
+not attempted again. Those attempts are joined to this request and finite:
+nothing is detached to complete later, no queue is created, and nothing about
+them accepts or releases owner content. A cancelled request still cancels; it
+simply no longer discards an observation it already made.
 
 If the owner write then fails, the committed receipt is unaffected; if the
 receipt is still outstanding, the owner write does not wait on it.
@@ -513,6 +562,33 @@ database before it exists still runs the same bounded, `LIMIT`-ed statement —
 only its plan degrades. There is no backfill, no rewrite and no broad table lock:
 the table is new and empty in production, so the index build is immediate under
 the migration runner's `1s` lock timeout.
+
+Reading the reported digits instead of the parsed double changes no column, no
+stored value and no migration. It narrows what a _new_ observation may record:
+an amount or count outside the durable domain is now `unavailable` where it
+previously became a rounded amount or a truncated count, and an exactly
+representable amount is now accepted even when no double could carry it.
+Already-committed receipts are immutable and are not revisited, re-derived or
+corrected — a row written before this change still says what it said.
+
+### Evidence limits
+
+What the regressions actually establish, and what they do not:
+
+- The exactness cases drive the registered preview route, real PostgreSQL and
+  literal response bytes, on both the inline `usage.cost` and the delayed
+  `data.total_cost` path. They are not a real provider call: they establish this
+  system's behavior for given bytes, not that OpenRouter emits those bytes.
+- Overlap is proved by suspending one invocation at a real boundary — the
+  provider request, and the receipt INSERT inside PostgreSQL — and completing
+  further requests for the same owner while it is held. That is concurrency
+  within one process against one database, not a multi-process claim.
+- The reconciliation-deadline case waits out the real five-second deadline
+  rather than shortening it, so what it observes is the production wait.
+- `cost_unit` remains the cross-page inference recorded above, not a field-level
+  statement from the generation reference.
+- Finite exhaustion of the receipt's attempts stays `unresolved`. It is not made
+  durable by this change, and a permanent database failure still loses it.
 
 ## Scale
 

@@ -2423,3 +2423,677 @@ describe("Morning Brief platform-funded generation retention", () => {
     await expect(readMorningBriefGenerations(f)).resolves.toStrictEqual([]);
   });
 });
+
+/**
+ * The exact number the provider wrote, not the double it parses into.
+ *
+ * `HttpResponse.json` serializes a JavaScript number, so a fixture built from
+ * one has already rewritten the digits this contract is about before the route
+ * reads a byte: `0.10000000000000001` is `0.1` by the time it leaves the double
+ * it was written as. These bodies are text, so what the route reads is exactly
+ * what is written here, which is the only way a wire-level exactness claim can
+ * be tested at all.
+ */
+function rawCompletionBody(
+  usage: Readonly<Record<string, string>>,
+  options: { readonly content?: string; readonly id?: string } = {},
+): string {
+  const fields = Object.entries(usage)
+    .map(([field, token]) => {
+      return `${JSON.stringify(field)}:${token}`;
+    })
+    .join(",");
+  const content = JSON.stringify(options.content ?? deliverContent());
+  return (
+    `{"id":${JSON.stringify(options.id ?? "gen-01H0PLATFORM")},` +
+    `"model":"google/gemini-3.8-flash",` +
+    `"choices":[{"finish_reason":"stop","message":{"content":${content}}}],` +
+    `"usage":{${fields}}}`
+  );
+}
+
+/** Answer the single platform request with exactly these bytes. */
+function scriptRawProvider(body: string): ProviderTraffic {
+  return scriptProvider(() => {
+    return new HttpResponse(body, {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  });
+}
+
+/** The full usage payload, with one field replaced by a wire token. */
+function rawUsage(
+  field: string,
+  token: string,
+): Readonly<Record<string, string>> {
+  return {
+    prompt_tokens: "1200",
+    completion_tokens: "240",
+    total_tokens: "1440",
+    [field]: token,
+  };
+}
+
+/** Answer the read-only reconciliation with exactly these bytes. */
+function scriptRawLookup(body: (id: string) => string): string[] {
+  const lookups: string[] = [];
+  server.use(
+    http.get(OPENROUTER_GENERATION_URL, ({ request }) => {
+      const id = new URL(request.url).searchParams.get("id") ?? "";
+      lookups.push(id);
+      return new HttpResponse(body(id), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }),
+  );
+  return lookups;
+}
+
+/** Read one stored generation back through the endpoint a caller has. */
+async function rereadGeneration(
+  f: Fixture,
+): Promise<MorningBriefGenerationView> {
+  const response = await accept(generate(f), [200]);
+  if (response.body.result !== "already-generated") {
+    throw new Error(`Expected already-generated, got ${response.body.result}`);
+  }
+  return response.body.generation;
+}
+
+/**
+ * Exactness at the wire, not at the double.
+ *
+ * Every case below writes the provider's number as literal response bytes and
+ * asserts what the route reports, what PostgreSQL stores and what a later
+ * reread returns. An amount the receipt cannot hold exactly must stay
+ * *unavailable*: a real charge that becomes a durable reported zero, or a
+ * durable amount nobody reported, is worse than an honest unknown.
+ */
+describe("Morning Brief platform receipt wire amounts", () => {
+  it.each([
+    ["an ordinary amount", "0.012345678901", "0.012345678901"],
+    ["a reported zero", "0", "0.000000000000"],
+    ["a negative zero", "-0", "0.000000000000"],
+    ["the smallest storable amount", "1e-12", "0.000000000001"],
+    ["an exponent form", "1.25e-3", "0.001250000000"],
+    ["an integral exponent form", "2.5E2", "250.000000000000"],
+    [
+      "the widest exactly storable amount",
+      "999999999999.999999999999",
+      "999999999999.999999999999",
+    ],
+    ["a seventeenth significant digit", "0.10000000000000001", null],
+    ["digits past the stored scale", "0.123456789012000001", null],
+    ["an amount finer than the stored scale", "1e-13", null],
+    ["a subnormal amount", "1e-400", null],
+    ["a negative subnormal amount", "-1e-400", null],
+    ["a negative amount", "-0.001", null],
+    ["an amount wider than the stored precision", "1e12", null],
+    ["an exponent no allocation could hold", "1e999999999", null],
+  ])(
+    "reports %s from the completion exactly or not at all",
+    async (_label, token, value) => {
+      const f = await fixture();
+      slackWithMessages();
+      // An amount this receipt cannot hold is reconciled once, and the record
+      // it reads is deliberately empty: nothing may invent a second amount.
+      const lookups = scriptRawLookup(() => {
+        return `{"data":{}}`;
+      });
+      const traffic = scriptRawProvider(
+        rawCompletionBody(rawUsage("cost", token)),
+      );
+
+      const response = await accept(generate(f), [200]);
+      const body = expectGenerated(response.body);
+      expect(body.generation.state).toBe("succeeded");
+      expect(body.generation.receipt?.cost).toStrictEqual(
+        value === null
+          ? { state: "unavailable", value: null, unit: null, source: null }
+          : {
+              state: "reported",
+              value,
+              unit: "openrouter_credits",
+              source: "chat_completion_usage_cost",
+            },
+      );
+      // A refused amount never takes the counts, the content or the id with it.
+      expect(body.generation.receipt?.tokens.prompt).toBe(1200);
+      expect(body.generation.receipt?.providerGenerationId).toBe(
+        "gen-01H0PLATFORM",
+      );
+      expect(body.generation.result?.decision).toBe("deliver");
+
+      const [row, ...extraRows] = await readMorningBriefGenerations(f);
+      expect(extraRows).toStrictEqual([]);
+      const receipts = await readPlatformGenerationReceipts([
+        row?.attemptId ?? "",
+      ]);
+      expect(receipts).toHaveLength(1);
+      // What PostgreSQL holds, and what a later caller is told, are the same
+      // value the first answer carried — or the same honest unknown.
+      expect(receipts[0]?.costValue).toBe(value);
+      const reread = await rereadGeneration(f);
+      expect(reread.receipt?.cost.value).toBe(value);
+      expect(reread.receipt?.recorded).toBe("durable");
+      expect(lookups).toHaveLength(value === null ? 1 : 0);
+      expect(traffic.bodies).toHaveLength(1);
+    },
+  );
+
+  it.each([
+    ["an ordinary amount", "0.0015", "0.001500000000"],
+    ["a seventeenth significant digit", "0.10000000000000001", null],
+    ["a subnormal amount", "1e-400", null],
+    ["a negative subnormal amount", "-1e-400", null],
+  ])(
+    "reports %s from the delayed reconciliation exactly or not at all",
+    async (_label, token, value) => {
+      const f = await fixture();
+      slackWithMessages();
+      const lookups = scriptRawLookup((id) => {
+        return `{"data":{"id":${JSON.stringify(id)},"is_byok":false,"total_cost":${token}}}`;
+      });
+      // No inline amount, so the one bounded read-only lookup is what answers.
+      const traffic = scriptRawProvider(
+        rawCompletionBody({ prompt_tokens: "1200" }),
+      );
+
+      const response = await accept(generate(f), [200]);
+      const body = expectGenerated(response.body);
+      expect(body.generation.receipt?.cost).toStrictEqual(
+        value === null
+          ? { state: "unavailable", value: null, unit: null, source: null }
+          : {
+              state: "reported",
+              value,
+              unit: "openrouter_credits",
+              source: "generation_total_cost",
+            },
+      );
+      const [row] = await readMorningBriefGenerations(f);
+      const receipts = await readPlatformGenerationReceipts([
+        row?.attemptId ?? "",
+      ]);
+      expect(receipts[0]?.costValue).toBe(value);
+      await expect(rereadGeneration(f)).resolves.toMatchObject({
+        receipt: { cost: { value } },
+      });
+      // Reconciliation is read-only and happens once; it never re-sends.
+      expect(lookups).toStrictEqual(["gen-01H0PLATFORM"]);
+      expect(traffic.bodies).toHaveLength(1);
+    },
+  );
+
+  it("refuses a numeric string the provider sent as text", async () => {
+    const f = await fixture();
+    slackWithMessages();
+    const lookups = scriptRawLookup(() => {
+      return `{"data":{}}`;
+    });
+    const traffic = scriptRawProvider(
+      rawCompletionBody({
+        prompt_tokens: `"1200"`,
+        cost: `"0.5"`,
+      }),
+    );
+
+    const response = await accept(generate(f), [200]);
+    const body = expectGenerated(response.body);
+    // A quoted amount is a different value in the provider's own contract, and
+    // reading the wire text is not permission to start accepting it.
+    expect(body.generation.receipt?.cost.state).toBe("unavailable");
+    expect(body.generation.receipt?.tokens.prompt).toBeNull();
+    expect(lookups).toHaveLength(1);
+    expect(traffic.bodies).toHaveLength(1);
+  });
+
+  it.each([
+    ["a fractional count at the column ceiling", "2147483647.0000001", null],
+    ["the column ceiling itself", "2147483647", 2_147_483_647],
+    ["an integral exponent form", "2.147483647e9", 2_147_483_647],
+    ["one above the column ceiling", "2147483648", null],
+    ["a fractional count", "12.5", null],
+    ["a negative count", "-3", null],
+    ["a zero count", "0", 0],
+  ])(
+    "records %s as the count the receipt column holds",
+    async (_label, token, stored) => {
+      const f = await fixture();
+      slackWithMessages();
+      const traffic = scriptRawProvider(
+        rawCompletionBody({
+          ...rawUsage("prompt_tokens", token),
+          cost: "0.000125",
+        }),
+      );
+
+      const response = await accept(generate(f), [200]);
+      const body = expectGenerated(response.body);
+      expect(body.generation.receipt?.tokens.prompt).toBe(stored);
+      // Every independently valid sibling and the amount survive a refused one.
+      expect(body.generation.receipt?.tokens.completion).toBe(240);
+      expect(body.generation.receipt?.tokens.total).toBe(1440);
+      expect(body.generation.receipt?.cost.value).toBe("0.000125000000");
+      expect(body.generation.state).toBe("succeeded");
+
+      const [row] = await readMorningBriefGenerations(f);
+      const receipts = await readPlatformGenerationReceipts([
+        row?.attemptId ?? "",
+      ]);
+      expect(receipts[0]?.promptTokens).toBe(stored);
+      expect(receipts[0]?.costValue).toBe("0.000125000000");
+      const reread = await rereadGeneration(f);
+      expect(reread.receipt?.tokens.prompt).toBe(stored);
+      expect(traffic.bodies).toHaveLength(1);
+    },
+  );
+
+  it("keeps a malformed body a bounded unreadable outcome", async () => {
+    const f = await fixture();
+    slackWithMessages();
+    // Valid JSON up to the point it stops, which is exactly the shape a
+    // truncated transfer produces.
+    const traffic = scriptRawProvider(`{"usage":{"cost":0.5`);
+
+    const response = await accept(generate(f), [200]);
+    const body = expectGenerated(response.body);
+    expect(body.generation.state).toBe("provider_failed");
+    expect(body.generation.failureReason).toBe("response_unreadable");
+    expect(body.generation.receipt?.outcome).toBe("response_unreadable");
+    // Nothing was read, so nothing is claimed about what was charged.
+    expect(body.generation.receipt?.cost).toStrictEqual({
+      state: "invocation_unknown",
+      value: null,
+      unit: null,
+      source: null,
+    });
+    expect(traffic.bodies).toHaveLength(1);
+  });
+
+  it("keeps a body with an invalid number unreadable", async () => {
+    const f = await fixture();
+    slackWithMessages();
+    // `01` is not a JSON number. Preserving reported digits must not make a
+    // document readable that the parser would have refused.
+    const traffic = scriptRawProvider(
+      rawCompletionBody({ prompt_tokens: "01", cost: "0.5" }),
+    );
+
+    const response = await accept(generate(f), [200]);
+    const body = expectGenerated(response.body);
+    expect(body.generation.state).toBe("provider_failed");
+    expect(body.generation.failureReason).toBe("response_unreadable");
+    expect(body.generation.receipt?.cost.state).toBe("invocation_unknown");
+    expect(traffic.bodies).toHaveLength(1);
+  });
+
+  it("leaves number-shaped provider text inside the result alone", async () => {
+    const f = await fixture();
+    slackWithMessages();
+    const traffic = scriptRawProvider(
+      rawCompletionBody(rawUsage("cost", "0.012345678901"), {
+        content: JSON.stringify({
+          decision: "deliver",
+          title: "Release readiness",
+          sections: [
+            {
+              heading: "Decisions",
+              items: [
+                {
+                  // Numbers and a quote inside provider text, which the number
+                  // reading must never reach into or rewrite.
+                  text: 'Ship 1.5 at 0.10000000000000001 cost, "confirmed"',
+                  sourceIds: ["m1"],
+                },
+              ],
+            },
+          ],
+        }),
+      }),
+    );
+
+    const response = await accept(generate(f), [200]);
+    const body = expectGenerated(response.body);
+    expect(body.generation.state).toBe("succeeded");
+    const markdown =
+      body.generation.result?.decision === "deliver"
+        ? body.generation.result.markdown
+        : "";
+    expect(markdown).toContain("0.10000000000000001");
+    expect(markdown).toContain("Ship 1.5");
+    // The field that is a number is read exactly; the text that contains
+    // numbers is delivered unchanged.
+    expect(body.generation.receipt?.cost.value).toBe("0.012345678901");
+    expect(traffic.bodies).toHaveLength(1);
+  });
+
+  it("keeps a bare number body an unreadable outcome", async () => {
+    const f = await fixture();
+    slackWithMessages();
+    const traffic = scriptRawProvider("12.5");
+
+    const response = await accept(generate(f), [200]);
+    const body = expectGenerated(response.body);
+    // A number is not a completion document, and preserving its digits does not
+    // make it one.
+    expect(body.generation.state).toBe("provider_failed");
+    expect(body.generation.failureReason).toBe("response_unreadable");
+    expect(traffic.bodies).toHaveLength(1);
+  });
+});
+
+/**
+ * A provider request this test holds open, with the arrival it really observed.
+ *
+ * The completion is produced only after `release` settles, so everything a
+ * second caller does happens while the first request is genuinely in flight —
+ * an overlap, not two sequential calls with a suggestive name.
+ */
+function scriptSuspendedProvider(options: { readonly cost?: unknown } = {}): {
+  readonly traffic: ProviderTraffic;
+  readonly arrived: Promise<void>;
+  readonly release: () => void;
+} {
+  const arrived = createDeferredPromise<void>(context.signal);
+  const released = createDeferredPromise<void>(context.signal);
+  let held = false;
+  const traffic = scriptProvider(async () => {
+    if (!held) {
+      held = true;
+      arrived.resolve();
+      await released.promise;
+    }
+    return completion({ cost: options.cost ?? 0.0031 });
+  });
+  return { traffic, arrived: arrived.promise, release: released.resolve };
+}
+
+/**
+ * Overlapping callers, with the first one really suspended mid-flight.
+ *
+ * Each case suspends the invocation at a different real boundary — the provider
+ * request itself, and the receipt INSERT inside PostgreSQL — and then runs
+ * further complete requests for the same owner and anchor while it is held.
+ */
+describe("Morning Brief platform-funded generation overlap", () => {
+  it("converges overlapping callers on one reserved attempt and one POST", async () => {
+    const f = await fixture();
+    slackWithMessages();
+    const suspended = scriptSuspendedProvider({ cost: 0.0031 });
+
+    const pending = accept(generate(f), [200]);
+    await suspended.arrived;
+
+    // Two further callers arrive and finish while the first request is still
+    // open at the provider.
+    for (const _attempt of [1, 2]) {
+      const conflict = await accept(generate(f), [409]);
+      expect(conflict.body.error.code).toBe(
+        "MORNING_BRIEF_GENERATION_IN_PROGRESS",
+      );
+    }
+    // One slot, held by the first attempt, with no second reservation beside it.
+    const [held, ...extraHeld] = await readMorningBriefGenerations(f);
+    expect(extraHeld).toStrictEqual([]);
+    expect(held?.state).toBe("reserved");
+    expect(suspended.traffic.bodies).toHaveLength(1);
+
+    suspended.release();
+    const response = await pending;
+    const body = expectGenerated(response.body);
+    expect(body.generation.state).toBe("succeeded");
+    expect(body.generation.attemptId).toBe(held?.attemptId);
+    expect(body.generation.receipt?.recorded).toBe("durable");
+    // Still one POST, one slot and one immutable receipt for the whole overlap.
+    expect(suspended.traffic.bodies).toHaveLength(1);
+    await expect(readMorningBriefGenerations(f)).resolves.toHaveLength(1);
+    const receipts = await readPlatformGenerationReceipts([
+      body.generation.attemptId,
+    ]);
+    expect(receipts).toHaveLength(1);
+    expect(receipts[0]?.costValue).toBe("0.003100000000");
+  });
+
+  it("keeps one immutable receipt when callers overlap a blocked write", async () => {
+    const f = await fixture();
+    slackWithMessages();
+    // The receipt INSERT itself waits, inside PostgreSQL, on a lock this
+    // fixture holds — the recovery window a second caller can actually hit.
+    const { barrier } = await interceptPlatformGenerationReceiptWrites(
+      { generationId: "gen-01H0PLATFORM", suspend: true },
+      context.signal,
+    );
+    if (!barrier) {
+      throw new Error("Expected a suspended receipt write");
+    }
+    const traffic = scriptProvider(() => {
+      return completion({ cost: 0.00047 });
+    });
+
+    const pending = accept(generate(f), [200]);
+    await barrier.waitForArrival();
+    expect(traffic.bodies).toHaveLength(1);
+
+    const conflict = await accept(generate(f), [409]);
+    expect(conflict.body.error.code).toBe(
+      "MORNING_BRIEF_GENERATION_IN_PROGRESS",
+    );
+    // The overlapping caller neither sent a second request nor wrote a receipt
+    // of its own while the first write was still waiting.
+    expect(traffic.bodies).toHaveLength(1);
+    await expect(readPlatformGenerationReceipts([])).resolves.toStrictEqual([]);
+
+    await barrier.release();
+    const response = await pending;
+    const body = expectGenerated(response.body);
+    expect(body.generation.state).toBe("succeeded");
+    expect(body.generation.receipt?.recorded).toBe("durable");
+
+    const receipts = await readPlatformGenerationReceipts([
+      body.generation.attemptId,
+    ]);
+    expect(receipts).toHaveLength(1);
+    expect(receipts[0]?.costValue).toBe("0.000470000000");
+    // A later reread reports that same stored observation rather than a new one.
+    const reread = await rereadGeneration(f);
+    expect(reread.receipt).toStrictEqual(body.generation.receipt);
+    expect(traffic.bodies).toHaveLength(1);
+  });
+});
+
+/**
+ * Record what was sent, then lose the answer at a real transport boundary.
+ *
+ * This registers the reply directly rather than through `scriptProvider`, whose
+ * convenience wrapper would turn a network error into an ordinary JSON body and
+ * quietly test the opposite of what is intended here.
+ */
+function scriptProviderLoss(reply: () => Response): ProviderTraffic {
+  const traffic: ProviderTraffic = { bodies: [] };
+  server.use(
+    http.post(OPENROUTER_URL, async ({ request }) => {
+      traffic.bodies.push(await request.text());
+      return reply();
+    }),
+  );
+  return traffic;
+}
+
+/**
+ * The answer is lost, the charge may not be.
+ *
+ * A request the provider actually received and whose answer never arrived is
+ * *unknown*, which is a different fact from a request that was never sent. The
+ * cases below lose the response and the body at real HTTP boundaries and assert
+ * that difference survives into storage and into the reread.
+ */
+describe("Morning Brief platform-funded generation transport loss", () => {
+  it.each([
+    [
+      "the response never arrives",
+      (): Response => {
+        return HttpResponse.error();
+      },
+    ],
+    [
+      "the body is lost mid-read",
+      (): Response => {
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(
+              new TextEncoder().encode(
+                `{"id":"gen-01H0PLATFORM","usage":{"cost":0.5`,
+              ),
+            );
+            controller.error(new Error("connection reset"));
+          },
+        });
+        return new HttpResponse(stream, {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    ],
+  ])("records an invoked request as unknown when %s", async (_label, reply) => {
+    const f = await fixture();
+    slackWithMessages();
+    const traffic = scriptProviderLoss(reply);
+
+    const response = await accept(generate(f), [200]);
+    const body = expectGenerated(response.body);
+    // The request really left, so this is unknown rather than a proven
+    // failure-before-contact, and it is never a skip.
+    expect(traffic.bodies).toHaveLength(1);
+    expect(body.generation.state).toBe("invocation_outcome_unknown");
+    expect(body.generation.state).not.toBe("not_invoked");
+    expect(body.generation.failureReason).toBe("transport_failed");
+    expect(body.generation.result).toBeNull();
+    // Nothing is fabricated about the amount: not zero, and not "unavailable",
+    // which would claim a usage payload was read and carried no amount.
+    expect(body.generation.receipt).toMatchObject({
+      recorded: "durable",
+      outcome: "invocation_unknown",
+      cost: {
+        state: "invocation_unknown",
+        value: null,
+        unit: null,
+        source: null,
+      },
+      tokens: {
+        prompt: null,
+        completion: null,
+        reasoning: null,
+        cached: null,
+        total: null,
+      },
+    });
+
+    const [row, ...extraRows] = await readMorningBriefGenerations(f);
+    expect(extraRows).toStrictEqual([]);
+    expect(row?.state).toBe("invocation_outcome_unknown");
+    expect(row?.resultMarkdown).toBeNull();
+    const receipts = await readPlatformGenerationReceipts([
+      row?.attemptId ?? "",
+    ]);
+    expect(receipts).toHaveLength(1);
+    expect(receipts[0]?.costState).toBe("invocation_unknown");
+    expect(receipts[0]?.costValue).toBeNull();
+
+    // The reread reports the same unknown and sends nothing again: a lost
+    // answer is never a reason to repeat an invocation that may have happened.
+    const reread = await rereadGeneration(f);
+    expect(reread.state).toBe("invocation_outcome_unknown");
+    expect(reread.receipt?.cost.state).toBe("invocation_unknown");
+    expect(traffic.bodies).toHaveLength(1);
+    await expect(
+      readPlatformGenerationReceipts([row?.attemptId ?? ""]),
+    ).resolves.toHaveLength(1);
+  });
+
+  it("leaves the cost unknown when the reconciliation transport fails", async () => {
+    const f = await fixture();
+    slackWithMessages();
+    const lookups: string[] = [];
+    server.use(
+      http.get(OPENROUTER_GENERATION_URL, ({ request }) => {
+        lookups.push(new URL(request.url).searchParams.get("id") ?? "");
+        return HttpResponse.error();
+      }),
+    );
+    const traffic = scriptProvider(() => {
+      return completion({});
+    });
+
+    const response = await accept(generate(f), [200]);
+    const body = expectGenerated(response.body);
+    // The completion itself was read, so the invocation is known; only the
+    // amount is not, and it stays that way rather than becoming zero.
+    expect(body.generation.state).toBe("succeeded");
+    expect(body.generation.receipt?.outcome).toBe("response_received");
+    expect(body.generation.receipt?.cost).toStrictEqual({
+      state: "unavailable",
+      value: null,
+      unit: null,
+      source: null,
+    });
+    expect(body.generation.receipt?.providerGenerationId).toBe(
+      "gen-01H0PLATFORM",
+    );
+    expect(lookups).toStrictEqual(["gen-01H0PLATFORM"]);
+    expect(traffic.bodies).toHaveLength(1);
+    const [row] = await readMorningBriefGenerations(f);
+    const receipts = await readPlatformGenerationReceipts([
+      row?.attemptId ?? "",
+    ]);
+    expect(receipts[0]?.costState).toBe("unavailable");
+    expect(receipts[0]?.costValue).toBeNull();
+  });
+
+  it("leaves the cost unknown when the reconciliation never answers", async () => {
+    const f = await fixture();
+    slackWithMessages();
+    // The lookup is held past its own five-second deadline, which is the
+    // production wait this asserts: shortening it would test a different
+    // number, and observing the abort is what makes the outcome real.
+    const released = createDeferredPromise<void>(context.signal);
+    const lookups: string[] = [];
+    server.use(
+      http.get(OPENROUTER_GENERATION_URL, async ({ request }) => {
+        lookups.push(new URL(request.url).searchParams.get("id") ?? "");
+        await released.promise;
+        return HttpResponse.json({
+          data: { id: "gen-01H0PLATFORM", is_byok: false, total_cost: 0.5 },
+        });
+      }),
+    );
+    const traffic = scriptProvider(() => {
+      return completion({});
+    });
+
+    const response = await accept(generate(f), [200]);
+    released.resolve();
+    const body = expectGenerated(response.body);
+    expect(lookups).toStrictEqual(["gen-01H0PLATFORM"]);
+    // An answer that arrives after the deadline is not this invocation's
+    // amount, and the completion is never sent again to obtain one.
+    expect(body.generation.state).toBe("succeeded");
+    expect(body.generation.receipt?.cost).toStrictEqual({
+      state: "unavailable",
+      value: null,
+      unit: null,
+      source: null,
+    });
+    expect(traffic.bodies).toHaveLength(1);
+    const [row] = await readMorningBriefGenerations(f);
+    const receipts = await readPlatformGenerationReceipts([
+      row?.attemptId ?? "",
+    ]);
+    expect(receipts[0]?.costState).toBe("unavailable");
+    const reread = await rereadGeneration(f);
+    expect(reread.receipt?.cost.state).toBe("unavailable");
+    expect(traffic.bodies).toHaveLength(1);
+  }, 15_000);
+});

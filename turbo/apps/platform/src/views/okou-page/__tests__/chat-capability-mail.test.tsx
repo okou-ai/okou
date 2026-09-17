@@ -8,7 +8,7 @@ import {
 } from "@okouai/api-contracts/contracts/mail";
 import { screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse } from "msw";
-import { expect, test } from "vitest";
+import { describe, expect, it, test } from "vitest";
 
 import {
   click,
@@ -195,124 +195,161 @@ function openedAuthorizationWindow(): {
   };
 }
 
-test("Cancel and retry reconnecting the exact Gmail account required by a persisted mail card", async () => {
-  const subject = "Reconnect project mail";
-  let gmailReady = false;
-  installCapabilityChat({
-    events: completedConversation(mailCard(RECONNECT_MAIL_ID, subject)),
-  });
-  context.mocks.data.connectors([
-    connectorResponse({
-      connectionId: DEFAULT_GMAIL_CONNECTION_ID,
-      email: "default@example.com",
-      reconnectRequired: false,
-      updatedAt: "2026-08-01T09:00:00.000Z",
-    }),
-    connectorResponse({
-      connectionId: GMAIL_CONNECTION_ID,
-      email: "sender@example.com",
-      reconnectRequired: true,
-      updatedAt: "2026-08-01T09:00:00.000Z",
-    }),
-  ]);
-  context.mocks.api(mailContract.getDraft, ({ respond }) => {
-    return respond(
-      200,
-      mailResponse(
-        RECONNECT_MAIL_ID,
-        mailDraft(RECONNECT_MAIL_ID, {
-          subject,
-          accessStatus: gmailReady ? "ready" : "reconnect",
-          reconnectConnectionId: gmailReady ? undefined : GMAIL_CONNECTION_ID,
-        }),
-      ),
-    );
-  });
-  const completedAttempts = mockOAuthCompletions(context);
-  let oauthAttemptId = crypto.randomUUID();
-  const oauthAccounts: ConnectorAccountMutationIntent[] = [];
-  context.mocks.api(connectorOauthStartContract.start, ({ body, respond }) => {
-    oauthAccounts.push(body.account);
-    return respond(200, {
-      authorizationUrl: "https://accounts.example.test/gmail/authorize",
-      oauthAttemptId,
+describe("reconnecting the exact Gmail account required by a persisted mail card", () => {
+  async function prepareReconnect() {
+    const subject = "Reconnect project mail";
+    const attempt = {
+      gmailReady: false,
+      oauthAttemptId: crypto.randomUUID(),
+      authorization: openedAuthorizationWindow(),
+    };
+    installCapabilityChat({
+      events: completedConversation(mailCard(RECONNECT_MAIL_ID, subject)),
     });
-  });
-  let authorization = openedAuthorizationWindow();
-
-  await setupPage({ context, path: RUN_PATH, host: APP_HOST });
-
-  await readyChat();
-  const reconnectCard = await findMailCard(subject);
-  expect(reconnectCard).toHaveTextContent(subject);
-  click(reconnectCard);
-
-  await waitFor(() => {
-    expect(authorization.calls).toHaveLength(1);
-    expect(authorization.navigations).toContain(
-      "https://accounts.example.test/gmail/authorize",
-    );
-    expect(oauthAccounts).toStrictEqual([
-      { intent: "reconnect", connectionId: GMAIL_CONNECTION_ID },
+    context.mocks.data.connectors([
+      connectorResponse({
+        connectionId: DEFAULT_GMAIL_CONNECTION_ID,
+        email: "default@example.com",
+        reconnectRequired: false,
+        updatedAt: "2026-08-01T09:00:00.000Z",
+      }),
+      connectorResponse({
+        connectionId: GMAIL_CONNECTION_ID,
+        email: "sender@example.com",
+        reconnectRequired: true,
+        updatedAt: "2026-08-01T09:00:00.000Z",
+      }),
     ]);
-  });
-  const progress = screen.getByRole("dialog", {
-    name: "Connecting your account",
-  });
-  click(await findControl("button", "Cancel", progress));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).toBeNull();
+    context.mocks.api(mailContract.getDraft, ({ respond }) => {
+      return respond(
+        200,
+        mailResponse(
+          RECONNECT_MAIL_ID,
+          mailDraft(RECONNECT_MAIL_ID, {
+            subject,
+            accessStatus: attempt.gmailReady ? "ready" : "reconnect",
+            reconnectConnectionId: attempt.gmailReady
+              ? undefined
+              : GMAIL_CONNECTION_ID,
+          }),
+        ),
+      );
+    });
+    const completedAttempts = mockOAuthCompletions(context);
+    const oauthAccounts: ConnectorAccountMutationIntent[] = [];
+    context.mocks.api(
+      connectorOauthStartContract.start,
+      ({ body, respond }) => {
+        oauthAccounts.push(body.account);
+        return respond(200, {
+          authorizationUrl: "https://accounts.example.test/gmail/authorize",
+          oauthAttemptId: attempt.oauthAttemptId,
+        });
+      },
+    );
+    await setupPage({ context, path: RUN_PATH, host: APP_HOST });
+
+    await readyChat();
+    const reconnectCard = await findMailCard(subject);
+    expect(reconnectCard).toHaveTextContent(subject);
+    click(reconnectCard);
+
+    await waitFor(() => {
+      expect(attempt.authorization.calls).toHaveLength(1);
+      expect(attempt.authorization.navigations).toContain(
+        "https://accounts.example.test/gmail/authorize",
+      );
+      expect(oauthAccounts).toStrictEqual([
+        { intent: "reconnect", connectionId: GMAIL_CONNECTION_ID },
+      ]);
+    });
+    return {
+      subject,
+      attempt,
+      reconnectCard,
+      completedAttempts,
+      oauthAccounts,
+    };
+  }
+
+  async function expectCancelledReconnect() {
+    const progress = screen.getByRole("dialog", {
+      name: "Connecting your account",
+    });
+    click(await findControl("button", "Cancel", progress));
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(screen.queryByText("Reconnecting…")).toBeNull();
+    });
+  }
+
+  it("cancelling reconnect clears progress for the required account", async () => {
+    await prepareReconnect();
+    await expectCancelledReconnect();
     expect(screen.queryByText("Reconnecting…")).toBeNull();
   });
-  oauthAttemptId = crypto.randomUUID();
-  authorization = openedAuthorizationWindow();
-  click(await findMailCard(subject));
-  await waitFor(() => {
-    expect(authorization.navigations).toContain(
-      "https://accounts.example.test/gmail/authorize",
-    );
-    expect(oauthAccounts).toStrictEqual([
-      { intent: "reconnect", connectionId: GMAIL_CONNECTION_ID },
-      { intent: "reconnect", connectionId: GMAIL_CONNECTION_ID },
+
+  it("retrying a cancelled reconnect opens mail from the same required account", async () => {
+    const {
+      subject,
+      attempt,
+      reconnectCard,
+      completedAttempts,
+      oauthAccounts,
+    } = await prepareReconnect();
+    await expectCancelledReconnect();
+    attempt.oauthAttemptId = crypto.randomUUID();
+    attempt.authorization = openedAuthorizationWindow();
+    click(await findMailCard(subject));
+    await waitFor(() => {
+      expect(attempt.authorization.navigations).toContain(
+        "https://accounts.example.test/gmail/authorize",
+      );
+      expect(oauthAccounts).toStrictEqual([
+        { intent: "reconnect", connectionId: GMAIL_CONNECTION_ID },
+        { intent: "reconnect", connectionId: GMAIL_CONNECTION_ID },
+      ]);
+    });
+    expect(
+      screen.getByRole("dialog", { name: "Connecting your account" }),
+    ).toBeVisible();
+    expect(reconnectCard).toHaveTextContent("Reconnecting…");
+    expect(reconnectCard).toBeDisabled();
+
+    attempt.gmailReady = true;
+    context.mocks.data.connectors([
+      connectorResponse({
+        connectionId: DEFAULT_GMAIL_CONNECTION_ID,
+        email: "default@example.com",
+        reconnectRequired: false,
+        updatedAt: "2026-08-01T09:00:00.000Z",
+      }),
+      connectorResponse({
+        connectionId: GMAIL_CONNECTION_ID,
+        email: "sender@example.com",
+        reconnectRequired: false,
+        updatedAt: "2026-08-01T10:00:00.000Z",
+      }),
     ]);
-  });
-  expect(
-    screen.getByRole("dialog", { name: "Connecting your account" }),
-  ).toBeVisible();
-  expect(reconnectCard).toHaveTextContent("Reconnecting…");
-  expect(reconnectCard).toBeDisabled();
+    completedAttempts.set(attempt.oauthAttemptId, GMAIL_CONNECTION_ID);
+    attempt.authorization.complete();
+    context.mocks.ably.trigger("connector:changed", { connectorSlug: "gmail" });
 
-  gmailReady = true;
-  context.mocks.data.connectors([
-    connectorResponse({
-      connectionId: DEFAULT_GMAIL_CONNECTION_ID,
-      email: "default@example.com",
-      reconnectRequired: false,
-      updatedAt: "2026-08-01T09:00:00.000Z",
-    }),
-    connectorResponse({
-      connectionId: GMAIL_CONNECTION_ID,
-      email: "sender@example.com",
-      reconnectRequired: false,
-      updatedAt: "2026-08-01T10:00:00.000Z",
-    }),
-  ]);
-  completedAttempts.set(oauthAttemptId, GMAIL_CONNECTION_ID);
-  authorization.complete();
-  context.mocks.ably.trigger("connector:changed", { connectorSlug: "gmail" });
-
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+    click(await findOpenMailCard(subject));
+    const sidebar = await screen.findByRole("complementary", {
+      name: "Email details",
+    });
+    expect(within(sidebar).getByText(subject)).toBeVisible();
+    expect(
+      within(sidebar).getByText("A persisted email message."),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("dialog", { name: "Connecting your account" }),
+    ).not.toBeInTheDocument();
   });
-  click(await findOpenMailCard(subject));
-  const sidebar = await screen.findByRole("complementary", {
-    name: "Email details",
-  });
-  expect(within(sidebar).getByText(subject)).toBeVisible();
-  expect(within(sidebar).getByText("A persisted email message.")).toBeVisible();
-  expect(
-    screen.queryByRole("dialog", { name: "Connecting your account" }),
-  ).not.toBeInTheDocument();
 });
 
 test.each([404, 500] as const)(

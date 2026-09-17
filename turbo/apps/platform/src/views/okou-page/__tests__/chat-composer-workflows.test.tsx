@@ -459,40 +459,58 @@ test("A newly available workflow highlights the existing draft without changing 
   });
 });
 
-test.each([
+const workflowRefreshPanes = [
   { pane: "primary", threadId: THREAD_ID, input: " /latest", highlights: 2 },
   { pane: "split", threadId: SPLIT_THREAD_ID, input: "/latest", highlights: 1 },
-])(
-  "Successive workflow updates reach the $pane composer while both panes are open",
-  async ({ threadId, input, highlights }) => {
-    const { primaryEditor, user, traffic, updateWorkflows } =
-      await openWorkflowRefreshChat([workflow("release-report")]);
-    await waitFor(() => {
-      return expect(workflowHighlights(primaryEditor)).toHaveLength(1);
-    });
-    updateWorkflows([
-      workflow("release-report"),
-      workflow("first-live-change"),
-    ]);
-    await waitFor(() => {
-      expect(traffic.requests.length).toBeGreaterThanOrEqual(4);
-    });
-    updateWorkflows([
-      workflow("release-report"),
-      workflow("first-live-change"),
-      workflow("latest-attached"),
-    ]);
+] as const;
 
-    const editor = composerForThread(threadId);
-    await user.click(editor);
-    await user.keyboard(input);
-    await waitFor(() => {
-      expect(slashButton("/latest-attached")).toBeVisible();
-    });
+async function discoverLatestWorkflow({
+  threadId,
+  input,
+}: {
+  threadId: string;
+  input: string;
+}) {
+  const { primaryEditor, user, traffic, updateWorkflows } =
+    await openWorkflowRefreshChat([workflow("release-report")]);
+  await waitFor(() => {
+    return expect(workflowHighlights(primaryEditor)).toHaveLength(1);
+  });
+  updateWorkflows([workflow("release-report"), workflow("first-live-change")]);
+  await waitFor(() => {
+    expect(traffic.requests.length).toBeGreaterThanOrEqual(4);
+  });
+  updateWorkflows([
+    workflow("release-report"),
+    workflow("first-live-change"),
+    workflow("latest-attached"),
+  ]);
+
+  const editor = composerForThread(threadId);
+  await user.click(editor);
+  await user.keyboard(input);
+  await waitFor(() => {
+    expect(slashButton("/latest-attached")).toBeVisible();
+  });
+  return { primaryEditor, user, editor };
+}
+
+test.each(workflowRefreshPanes)(
+  "Successive workflow updates appear in the $pane composer while both panes are open",
+  async (pane) => {
+    await discoverLatestWorkflow(pane);
+    expect(slashButton("/latest-attached")).toBeVisible();
+  },
+);
+
+test.each(workflowRefreshPanes)(
+  "Insert the latest live workflow into the $pane composer without replacing its draft",
+  async (pane) => {
+    const { primaryEditor, user, editor } = await discoverLatestWorkflow(pane);
     await user.keyboard("{Enter}");
 
     await waitFor(() => {
-      expect(workflowHighlights(editor)).toHaveLength(highlights);
+      expect(workflowHighlights(editor)).toHaveLength(pane.highlights);
       expect(editor).toHaveTextContent("/latest-attached");
       expect(primaryEditor).toHaveTextContent("/release-report");
     });

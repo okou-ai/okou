@@ -178,7 +178,7 @@ test("Offer only the workspace's supported languages", async () => {
   expect(screen.queryByRole("option", { name: "Italiano" })).toBeNull();
 });
 
-test("Keep a saved single-language preference after closing and reopening Settings", async () => {
+async function saveSingleLanguagePreference() {
   await openSupportedLanguagePicker();
   click(screen.getByRole("option", { name: "English" }));
 
@@ -188,7 +188,10 @@ test("Keep a saved single-language preference after closing and reopening Settin
       screen.queryByRole("combobox", { name: "Language" }),
     ).not.toBeInTheDocument();
   });
+}
 
+test("Closing Settings preserves the saved language throughout its exit animation", async () => {
+  await saveSingleLanguagePreference();
   const settingsDialog = screen.getByRole("dialog", { name: "Settings" });
   const finishCloseTransition = holdElementAnimations(settingsDialog);
   click(screen.getByLabelText("Close"));
@@ -197,6 +200,16 @@ test("Keep a saved single-language preference after closing and reopening Settin
   ).toBeFalsy();
   expect(settingsDialog).toBeVisible();
   finishCloseTransition();
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("dialog", { name: "Settings" }),
+    ).not.toBeInTheDocument();
+  });
+});
+
+test("Reopening Settings retains the saved single-language preference", async () => {
+  await saveSingleLanguagePreference();
+  click(screen.getByLabelText("Close"));
   await waitFor(() => {
     expect(
       screen.queryByRole("dialog", { name: "Settings" }),
