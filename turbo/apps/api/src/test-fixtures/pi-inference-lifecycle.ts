@@ -243,9 +243,11 @@ export type PiInferenceFixture = Awaited<
   ReturnType<typeof seedPiInferenceFixture>
 >;
 
-export async function removePiInferenceFixture(
-  f: Pick<PiInferenceFixture, "runId" | "agentId" | "orgId">,
-) {
+export async function removePiInferenceFixture(f: {
+  readonly runId: string;
+  readonly agentId: string;
+  readonly orgId: string;
+}) {
   // These fixtures never allocate external resources; teardown owns all rows.
   await db().delete(usageEvent).where(eq(usageEvent.runId, f.runId));
   await db()
