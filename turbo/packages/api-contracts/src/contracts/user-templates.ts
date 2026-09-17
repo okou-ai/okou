@@ -55,11 +55,30 @@ export const USER_TEMPLATE_SOURCE_CONTENT_TYPES = [
 export const USER_TEMPLATE_PAGE_CONTENT_TYPE = "image/png";
 export const USER_TEMPLATE_PACKAGE_CONTENT_TYPE = "application/gzip";
 
-/** Guidance a later generation run reads. Assets are optional; these are not. */
-export const REQUIRED_USER_TEMPLATE_PACKAGE_FILES = [
-  "SKILL.md",
-  "design-system.md",
-] as const;
+/**
+ * What a later generation run must find in the package, per kind.
+ *
+ * `SKILL.md` is common because it is what the run loads; the second file is
+ * what that skill has nothing to say without, and it differs by kind. A deck's
+ * is `design-system.md`, the written account of its visual language. A
+ * document's is `reference.docx`, the artifact pandoc consumes — a document
+ * package without it describes a style it cannot apply.
+ *
+ * Keyed by kind rather than one flat list, so a kind added to
+ * `USER_TEMPLATE_KINDS` fails to compile until someone says what its package
+ * has to contain. A single shared list is how the document kind shipped
+ * demanding a `design-system.md` that its reverse skill never writes, which
+ * rejected every document package at publish.
+ *
+ * The source file is not here. The reverse skills copy it under its original
+ * name, so there is no fixed path to require.
+ */
+export const REQUIRED_USER_TEMPLATE_PACKAGE_FILES: Readonly<
+  Record<UserTemplateKind, readonly string[]>
+> = {
+  presentation: ["SKILL.md", "design-system.md"],
+  document: ["SKILL.md", "reference.docx"],
+};
 
 const userTemplateSummarySchema = z.object({
   id: z.uuid(),
