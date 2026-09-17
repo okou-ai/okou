@@ -2,6 +2,48 @@ import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import { Radio, surfaceVariants, cn } from "@okouai/ui";
 import { PreferenceCardRow } from "../okou-page/components/settings/preference-card-row.tsx";
+import { settingsIconAssetUrl } from "../okou-page/components/settings/settings-icon-assets.ts";
+
+/** Okou's own onboarding illustrations, already shipped for the make step. */
+const ILLUSTRATION_BASE = "https://static.okou.io/web/assets/onboarding/";
+
+export function OnboardingIllustration({
+  name,
+  alt,
+}: {
+  readonly name: "workflow-default" | "explore";
+  readonly alt: string;
+}) {
+  return (
+    <img
+      src={`${ILLUSTRATION_BASE}v2-choice-${name}_80x80.png`}
+      alt={alt}
+      className="h-7 w-7 object-contain"
+    />
+  );
+}
+
+/** A product mark from the settings icon set, at the row's icon size. */
+export function ProductMark({
+  name,
+  alt,
+  invertInDarkMode = false,
+}: {
+  readonly name: Parameters<typeof settingsIconAssetUrl>[0];
+  readonly alt: string;
+  readonly invertInDarkMode?: boolean;
+}) {
+  return (
+    <img
+      src={settingsIconAssetUrl(name)}
+      alt={alt}
+      className={cn(
+        "h-5 w-5 object-contain",
+        invertInDarkMode && "dark:invert",
+      )}
+    />
+  );
+}
 
 /**
  * The onboarding steps are settings surfaces: the same preference rows and page
@@ -15,7 +57,7 @@ export function OnboardingRow({
   status,
   children,
 }: {
-  readonly icon: LucideIcon;
+  readonly icon: LucideIcon | ReactNode;
   readonly title: ReactNode;
   readonly description: ReactNode;
   readonly status?: ReactNode;

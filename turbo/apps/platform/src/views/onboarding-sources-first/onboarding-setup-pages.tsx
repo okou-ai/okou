@@ -1,14 +1,6 @@
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import {
-  Check,
-  MessageSquare,
-  Sparkles,
-  Terminal,
-  Upload,
-  UserPlus,
-  Users,
-} from "lucide-react";
+import { Check, Upload, UserPlus } from "lucide-react";
 import {
   Button,
   Card,
@@ -37,8 +29,10 @@ import {
 } from "./onboarding-sources-first-data.ts";
 import {
   OnboardingChoiceCard,
+  OnboardingIllustration,
   OnboardingRow,
   OnboardingRowStack,
+  ProductMark,
 } from "./onboarding-step-parts.tsx";
 import { useWelcomeHandoff } from "./onboarding-welcome-dialog.tsx";
 import { useSourcesFirstFlow } from "./use-sources-first-flow.ts";
@@ -152,7 +146,7 @@ export function OnboardingTeamPage() {
             return $.onboarding.sourcesFirst.team.note;
           })}
         >
-          <div className="flex w-full gap-2 sm:w-[360px]">
+          <div className="flex w-full gap-2 sm:w-[420px]">
             <Input
               id="onboarding-invite-email"
               type="email"
@@ -246,7 +240,14 @@ export function OnboardingExperiencePage() {
       {welcomeDialog}
       <OnboardingRowStack>
         <OnboardingRow
-          icon={Sparkles}
+          icon={
+            <OnboardingIllustration
+              name="workflow-default"
+              alt={t(($) => {
+                return $.onboarding.sourcesFirst.experience.yes;
+              })}
+            />
+          }
           title={t(($) => {
             return $.onboarding.sourcesFirst.experience.yes;
           })}
@@ -267,7 +268,14 @@ export function OnboardingExperiencePage() {
           </Button>
         </OnboardingRow>
         <OnboardingRow
-          icon={Users}
+          icon={
+            <OnboardingIllustration
+              name="explore"
+              alt={t(($) => {
+                return $.onboarding.sourcesFirst.experience.no;
+              })}
+            />
+          }
           title={t(($) => {
             return $.onboarding.sourcesFirst.experience.no;
           })}
@@ -306,10 +314,16 @@ export function OnboardingSubscriptionPage() {
     const active = connected && flow.draft.provider === provider;
     return (
       <OnboardingRow
-        icon={provider === "codex" ? Terminal : Sparkles}
+        icon={
+          provider === "codex" ? (
+            <ProductMark name="openai" alt={title} invertInDarkMode />
+          ) : (
+            <ProductMark name="claude-code" alt={title} />
+          )
+        }
         title={title}
         description={t(($) => {
-          return $.onboarding.sourcesFirst.subscription.note;
+          return $.onboarding.sourcesFirst.subscription.rowCopy;
         })}
         status={
           active ? (
@@ -520,7 +534,13 @@ export function OnboardingSkillsPage() {
     >
       {welcomeDialog}
       <OnboardingRow
-        icon={imported ? Check : Upload}
+        icon={
+          imported ? (
+            <OnboardingIllustration name="workflow-default" alt={imported} />
+          ) : (
+            Upload
+          )
+        }
         title={
           imported ??
           t(($) => {
@@ -626,7 +646,14 @@ export function OnboardingSlackPage() {
       {welcomeDialog}
       <OnboardingRowStack>
         <OnboardingRow
-          icon={MessageSquare}
+          icon={
+            <ProductMark
+              name="slack"
+              alt={t(($) => {
+                return $.onboarding.sourcesFirst.slack.rowTitle;
+              })}
+            />
+          }
           title={t(($) => {
             return $.onboarding.sourcesFirst.slack.rowTitle;
           })}

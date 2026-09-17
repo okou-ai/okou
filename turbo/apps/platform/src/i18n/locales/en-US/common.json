@@ -4567,8 +4567,8 @@
         "codex": "Codex",
         "connect": "Connect",
         "connected": "Your subscription is connected.",
-        "copy": "Choose the service you already pay for.",
-        "note": "Your provider’s usage limits still apply.",
+        "copy": "Okou runs on Okou credits by default. Connect the plan you already pay for and it runs there instead.",
+        "rowCopy": "Runs your work on this plan, so it doesn't spend Okou credits.",
         "title": "Connect your subscription"
       },
       "team": {
@@ -4576,7 +4576,7 @@
         "invite": "Send invite",
         "invited": "Invited",
         "label": "Teammate’s email",
-        "note": "Inviting a teammate does not share your inbox or personal accounts.",
+        "note": "Their own accounts stay theirs.",
         "placeholder": "teammate@company.com",
         "title": "Invite a teammate"
       },
