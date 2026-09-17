@@ -21,6 +21,11 @@ import { expireMorningBriefGenerationRetention } from "../../../test-fixtures/mo
 import { rejectEmailOutboxCompletion } from "../../../test-fixtures/email-outbox";
 import {
   deleteOwnedChatThread,
+  holdDeliveryAgentRow,
+  holdDeliveryOwnerRow,
+  readBoundChatThreadId,
+  setGenerationExpiry,
+  sweepGenerations,
   discardMorningBriefDeliveries,
   drainEmailOutbox,
   elapseEmailOutboxRecoveryLease,
@@ -68,6 +73,8 @@ const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const ANCHOR_MS = Math.floor((now() - 60 * 60 * 1000) / 1000) * 1000;
 const ANCHOR = new Date(ANCHOR_MS).toISOString();
 const WINDOW_START_SECONDS = (ANCHOR_MS - 24 * 60 * 60 * 1000) / 1000;
+/** A second scheduled anchor, so one owner can hold two distinct occurrences. */
+const SECOND_ANCHOR = new Date(ANCHOR_MS - 60 * 60 * 1000).toISOString();
 
 beforeEach(() => {
   // The shared sender calls the globally mocked Resend SDK, not HTTP, so this
@@ -92,10 +99,12 @@ interface Fixture {
   readonly headers: { readonly authorization: string };
 }
 
-function deliveryClient() {
-  return setupApp({ context, routes: morningBriefDeliveryPreviewRoutes })(
-    morningBriefDeliveryPreviewContract,
-  );
+function deliveryClient(signal?: AbortSignal) {
+  return setupApp({
+    context,
+    routes: morningBriefDeliveryPreviewRoutes,
+    ...(signal === undefined ? {} : { signal }),
+  })(morningBriefDeliveryPreviewContract);
 }
 
 function generationClient() {
@@ -233,7 +242,13 @@ function emailSends(): readonly {
  * The generation count is what proves delivery never regenerates, and the
  * email count is what proves one logical intent reaches Resend once.
  */
-function scriptProviders(options: { readonly deliverTitle?: string } = {}): {
+function scriptProviders(
+  options: {
+    readonly deliverTitle?: string;
+    readonly itemText?: string;
+    readonly itemCount?: number;
+  } = {},
+): {
   readonly calls: ProviderCalls;
 } {
   const calls: ProviderCalls = { generation: [] };
@@ -253,12 +268,15 @@ function scriptProviders(options: { readonly deliverTitle?: string } = {}): {
                 sections: [
                   {
                     heading: "Decisions",
-                    items: [
-                      {
-                        text: "The release ships today.",
-                        sourceIds: ["m1"],
+                    items: Array.from(
+                      { length: options.itemCount ?? 1 },
+                      () => {
+                        return {
+                          text: options.itemText ?? "The release ships today.",
+                          sourceIds: ["m1"],
+                        };
                       },
-                    ],
+                    ),
                   },
                 ],
               }),
@@ -278,11 +296,14 @@ function scriptProviders(options: { readonly deliverTitle?: string } = {}): {
 }
 
 /** Produce one real accepted result and return its own reference. */
-async function generateAcceptedResult(f: Fixture): Promise<string> {
+async function generateAcceptedResult(
+  f: Fixture,
+  scheduledFor: string = ANCHOR,
+): Promise<string> {
   const response = await accept(
     generationClient().preview({
       headers: f.headers,
-      body: { scheduledFor: ANCHOR },
+      body: { scheduledFor },
     }),
     [200],
   );
@@ -296,10 +317,11 @@ async function generateAcceptedResult(f: Fixture): Promise<string> {
 }
 
 function deliver(f: Fixture, resultAttemptId: string, signal?: AbortSignal) {
-  return deliveryClient().preview({
+  // The request signal the handler itself receives, which is what production
+  // aborts when a caller goes away.
+  return deliveryClient(signal).preview({
     headers: f.headers,
     body: { resultAttemptId },
-    ...(signal === undefined ? {} : { fetchOptions: { signal } }),
   });
 }
 
@@ -803,5 +825,203 @@ describe("Morning Brief native delivery", () => {
     expect(settled?.status).toBe("sent");
     // No second Chat message and no second generation followed the replay.
     await expect(readDeliveries(f)).resolves.toHaveLength(1);
+  });
+
+  it(
+    "commits nothing when the request is cancelled while it waits",
+    { timeout: 40_000 },
+    async () => {
+      const f = await fixture();
+      scriptSlack();
+      scriptProviders();
+      const attemptId = await generateAcceptedResult(f);
+
+      // Hold the durable member row, the first lock the delivery takes.
+      const held = await holdDeliveryOwnerRow(
+        { orgId: f.orgId, userId: f.userId },
+        context.signal,
+      );
+
+      // Start the request first, then observe it actually blocking on that
+      // row. Waiting for the blocker before the request exists is what made an
+      // earlier attempt at this barrier time out.
+      const cancellation = new AbortController();
+      const attempt = deliver(f, attemptId, cancellation.signal).then(
+        () => {return undefined},
+        () => {return undefined},
+      );
+      await held.waitForBlocked();
+
+      cancellation.abort();
+      await held.release();
+      await attempt;
+
+      // Nothing survives a cancelled pre-acceptance attempt.
+      await expect(readDeliveries(f)).resolves.toHaveLength(0);
+      await expect(readOutbox(f)).resolves.toHaveLength(0);
+      expect(emailSends()).toHaveLength(0);
+      const boundThreadId = await readBoundChatThreadId(f.workflowId);
+      if (boundThreadId) {
+        const events = await readThreadEvents(boundThreadId);
+        expect(
+          events.filter((event) => {
+            return event.eventType === "output.message";
+          }),
+        ).toHaveLength(0);
+      }
+    },
+  );
+
+  it(
+    "refuses a delivery whose result reaches its deadline while it waits",
+    { timeout: 40_000 },
+    async () => {
+      const f = await fixture();
+      scriptSlack();
+      scriptProviders();
+      const attemptId = await generateAcceptedResult(f);
+
+      const held = await holdDeliveryOwnerRow(
+        { orgId: f.orgId, userId: f.userId },
+        context.signal,
+      );
+      const attempt = deliver(f, attemptId);
+      await held.waitForBlocked();
+
+      // The result's deadline passes while the transaction is held. Equality
+      // with the deadline is already expired, so this is the exact boundary.
+      await setGenerationExpiry(
+        { orgId: f.orgId, userId: f.userId },
+        new Date(now() - 1),
+      );
+      await held.release();
+
+      const response = await accept(attempt, [409]);
+      expect(JSON.stringify(response.body)).toContain(
+        "MORNING_BRIEF_RESULT_EXPIRED",
+      );
+      // The destination preparation unwinds with the rejection.
+      await expect(readDeliveries(f)).resolves.toHaveLength(0);
+      await expect(readOutbox(f)).resolves.toHaveLength(0);
+      const boundThreadId = await readBoundChatThreadId(f.workflowId);
+      if (boundThreadId) {
+        const events = await readThreadEvents(boundThreadId);
+        expect(
+          events.filter((event) => {
+            return event.eventType === "output.message";
+          }),
+        ).toHaveLength(0);
+      }
+    },
+  );
+
+  it(
+    "keeps chat delivery and the native drain on one lock order",
+    { timeout: 40_000 },
+    async () => {
+      const f = await fixture();
+      scriptSlack();
+      scriptProviders();
+
+      // Anchor one: delivered, so its native intent is queued for the drain.
+      const firstAttempt = await generateAcceptedResult(f);
+      await accept(deliver(f, firstAttempt), [200]);
+      const [queued] = await readOutbox(f);
+
+      // Anchor two: a second accepted result for the same owner, Agent and
+      // automation, ready to be delivered to Chat.
+      const secondAttempt = await generateAcceptedResult(f, SECOND_ANCHOR);
+
+      // Both the Chat delivery and the drain must take this Agent row before
+      // they take the automation. Holding it suspends both of them at the same
+      // point, so neither can be holding the automation while it waits here —
+      // which is the cycle this order exists to prevent.
+      const held = await holdDeliveryAgentRow(f.agentId, context.signal);
+      const chat = deliver(f, secondAttempt);
+      const drain = drainEmailOutbox([queued!.id], context.signal);
+      await held.waitForBlocked();
+      await held.release();
+
+      // Both complete; neither is aborted by a deadlock.
+      const delivered = await accept(chat, [200]);
+      await drain;
+
+      expect(delivered.body.result).toBe("delivered");
+      await expect(readDeliveries(f)).resolves.toHaveLength(2);
+      const sent = await readEmailOutboxRow(queued!.id);
+      expect(sent?.status).toBe("sent");
+      expect(emailSends()).toHaveLength(1);
+    },
+  );
+
+  it("recovers a delivery after the real generation sweep removes its result", async () => {
+    const f = await fixture();
+    scriptSlack();
+    scriptProviders();
+    const attemptId = await generateAcceptedResult(f);
+    const first = await accept(deliver(f, attemptId), [200]);
+
+    // Not an expiry timestamp: the rows are deleted, as retention does.
+    await sweepGenerations({ orgId: f.orgId, userId: f.userId });
+
+    const replay = await accept(deliver(f, attemptId), [200]);
+    expect(replay.body.result).toBe("already-delivered");
+    expect(replay.body.delivery).toStrictEqual(first.body.delivery);
+    await expect(readDeliveries(f)).resolves.toHaveLength(1);
+    const events = await readThreadEvents(first.body.delivery.chatThreadId);
+    expect(
+      events.filter((event) => {
+        return event.eventType === "output.message";
+      }),
+    ).toHaveLength(1);
+  });
+
+  it("carries a full-size adversarial body intact into Chat and both email parts", async () => {
+    const f = await fixture();
+    scriptSlack();
+    // Model output can never carry a link: S5's own schema rejects URL-shaped
+    // prose, and program code resolves every link from the collected map. What
+    // this template must still survive is raw HTML, entity expansion and
+    // Markdown metacharacters at full accepted size.
+    const adversarial = [
+      "<script>alert(\'x\')</script>",
+      "<img src=x onerror=alert(1)>",
+      "&".repeat(200),
+      '"><b>bold</b>',
+      "*".repeat(40),
+    ].join(" ");
+    // MAX_ITEMS_PER_SECTION is 8, so this fills one accepted section.
+    const { calls } = scriptProviders({ itemText: adversarial, itemCount: 8 });
+    const attemptId = await generateAcceptedResult(f);
+    expect(calls.generation).toHaveLength(1);
+
+    const response = await accept(deliver(f, attemptId), [200]);
+    const events = await readThreadEvents(response.body.delivery.chatThreadId);
+    const delivered = events.find((event) => {
+      return event.id === response.body.delivery.chatEventId;
+    });
+    const body = delivered?.content ?? "";
+    expect(Buffer.byteLength(body, "utf8")).toBeGreaterThan(3_000);
+
+    const [queued] = await readOutbox(f);
+    const template = queued?.template as {
+      props: { resultMarkdown: string };
+    };
+    // Chat and the queued email carry the identical accepted body.
+    expect(template.props.resultMarkdown).toBe(body);
+
+    await drainEmailOutbox([queued!.id], context.signal);
+    const sends = emailSends();
+    expect(sends).toHaveLength(1);
+    const html = String(sends[0]?.payload["html"]);
+    const text = String(sends[0]?.payload["text"]);
+    // Nothing is truncated, and the unsafe constructs are inert.
+    expect(html).not.toContain("<script>");
+    expect(html).not.toContain("javascript:");
+    // The long ampersand run is escaped rather than interpreted as entities.
+    expect(html.split("&amp;").length - 1).toBeGreaterThan(100);
+    expect(text).toContain("alert('x')");
+    // Neither part is shortened: the whole accepted body reaches both.
+    expect(text).toContain("*".repeat(40));
   });
 });

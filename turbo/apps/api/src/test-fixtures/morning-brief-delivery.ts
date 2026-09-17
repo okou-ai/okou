@@ -1,4 +1,5 @@
 import { createStore } from "ccstate";
+import { sql } from "drizzle-orm";
 import { and, asc, eq } from "drizzle-orm";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
@@ -6,9 +7,14 @@ import { emailOutbox } from "@okouai/db/schema/email-outbox";
 import { emailSuppressions } from "@okouai/db/schema/email-suppression";
 import { morningBriefDeliveries } from "@okouai/db/schema/morning-brief-delivery";
 import { userCache } from "@okouai/db/schema/user-cache";
+import { morningBriefGenerations } from "@okouai/db/schema/morning-brief-generation";
 import { users } from "@okouai/db/schema/user";
+import { workflowUserAutomationThreads } from "@okouai/db/schema/workflow";
+
+import { onTestFinished } from "vitest";
 
 import { db } from "../lib/db";
+import { holdDeferredRow } from "./pi-deferred-lock";
 import { nowDate } from "../lib/time";
 import { deleteChatThread$ } from "../signals/services/chat-thread.service";
 import { drainEmailOutboxItems$ } from "../signals/services/email-common.service";
@@ -304,4 +310,91 @@ export async function drainEmailOutbox(
     { currentTimeMs: nowDate().getTime(), itemIds },
     signal,
   );
+}
+
+/**
+ * Hold this owner's durable member row, the first lock a delivery takes.
+ *
+ * `waitForBlocked` resolves once some session is actually waiting on it, so a
+ * caller starts the request it wants to suspend **before** awaiting that — the
+ * barrier observes a real lock wait rather than a sleep.
+ */
+export async function holdDeliveryOwnerRow(
+  owner: DeliveryOwner,
+  signal: AbortSignal,
+): Promise<{
+  readonly waitForBlocked: () => Promise<number>;
+  readonly release: () => Promise<void>;
+}> {
+  const held = await holdDeferredRow(signal, async (tx) => {
+    await tx.execute(
+      sql`SELECT 1 FROM org_members_metadata
+          WHERE org_id = ${owner.orgId} AND user_id = ${owner.userId}
+          FOR UPDATE`,
+    );
+  });
+  onTestFinished(held.release);
+  return { waitForBlocked: held.waitForBlocked, release: held.release };
+}
+
+/**
+ * Hold this owner's installation Agent row, which Chat delivery takes before
+ * the automation and the native drain takes before its own automation lock.
+ *
+ * Both of them contending on this one row is what proves they share an order:
+ * neither can be holding the automation while it waits here.
+ */
+export async function holdDeliveryAgentRow(
+  agentId: string,
+  signal: AbortSignal,
+): Promise<{
+  readonly waitForBlocked: () => Promise<number>;
+  readonly release: () => Promise<void>;
+}> {
+  const held = await holdDeferredRow(signal, async (tx) => {
+    await tx.execute(
+      sql`SELECT 1 FROM agents WHERE id = ${agentId}::uuid FOR UPDATE`,
+    );
+  });
+  onTestFinished(held.release);
+  return { waitForBlocked: held.waitForBlocked, release: held.release };
+}
+
+/** Move one generation's retention deadline to an exact instant. */
+export async function setGenerationExpiry(
+  owner: DeliveryOwner,
+  expiresAt: Date,
+): Promise<void> {
+  await db()
+    .update(morningBriefGenerations)
+    .set({ expiresAt })
+    .where(
+      and(
+        eq(morningBriefGenerations.orgId, owner.orgId),
+        eq(morningBriefGenerations.userId, owner.userId),
+      ),
+    );
+}
+
+/** Remove the generation rows outright, as the real retention sweep does. */
+export async function sweepGenerations(owner: DeliveryOwner): Promise<void> {
+  await db()
+    .delete(morningBriefGenerations)
+    .where(
+      and(
+        eq(morningBriefGenerations.orgId, owner.orgId),
+        eq(morningBriefGenerations.userId, owner.userId),
+      ),
+    );
+}
+
+/** The canonical thread this member's Morning Brief installation is bound to. */
+export async function readBoundChatThreadId(
+  workflowId: string,
+): Promise<string | null> {
+  const [row] = await db()
+    .select({ chatThreadId: workflowUserAutomationThreads.chatThreadId })
+    .from(workflowUserAutomationThreads)
+    .where(eq(workflowUserAutomationThreads.workflowId, workflowId));
+  return row?.chatThreadId ?? null;
 }

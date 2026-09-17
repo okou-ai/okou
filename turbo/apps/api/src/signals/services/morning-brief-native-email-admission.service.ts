@@ -16,10 +16,9 @@ import {
   notInArray,
   or,
 } from "drizzle-orm";
-import { command } from "ccstate";
 
 import type { Tx } from "../../lib/db-types";
-import { clerk$ } from "../external/clerk";
+import type { ClerkClient } from "../external/clerk";
 import { settle } from "../utils";
 import { loadCurrentMembershipId } from "./morning-brief-membership.service";
 import type { Db } from "../external/db";
@@ -107,27 +106,25 @@ export async function peekNativeMorningBriefEmailOwner(
  * who exists now. This is a bounded remote read and is deliberately performed
  * before the claim transaction opens.
  */
-export const currentNativeMorningBriefMembership$ = command(
-  async (
-    { get },
-    candidate: NativeMorningBriefOwnerPreflight,
-    signal: AbortSignal,
-  ): Promise<NativeMorningBriefOwnerPreflight> => {
-    const resolved = await settle(
-      loadCurrentMembershipId(
-        get(clerk$),
-        { orgId: candidate.orgId, userId: candidate.userId },
-        signal,
-      ),
+export async function currentNativeMorningBriefMembership(
+  clerk: ClerkClient,
+  candidate: NativeMorningBriefOwnerPreflight,
+  signal: AbortSignal,
+): Promise<NativeMorningBriefOwnerPreflight> {
+  const resolved = await settle(
+    loadCurrentMembershipId(
+      clerk,
+      { orgId: candidate.orgId, userId: candidate.userId },
       signal,
-    );
-    // A remote failure is not evidence about the owner. It is contained to
-    // this one native candidate so the rest of the batch still drains.
-    return resolved.ok
-      ? { ...candidate, membershipId: resolved.value }
-      : { ...candidate, membershipId: null, unavailable: true };
-  },
-);
+    ),
+    signal,
+  );
+  // A remote failure is not evidence about the owner. It is contained to this
+  // one native candidate so the rest of the batch still drains.
+  return resolved.ok
+    ? { ...candidate, membershipId: resolved.value }
+    : { ...candidate, membershipId: null, unavailable: true };
+}
 
 function rejected(reason: string): NativeMorningBriefEmailAdmission {
   return { kind: "rejected", reason };
