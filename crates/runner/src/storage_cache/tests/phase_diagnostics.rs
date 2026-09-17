@@ -1,0 +1,497 @@
+use super::*;
+
+const PHASES: [&str; 4] = [
+    STORAGE_CACHE_FRESH_DELIVERY_HEADERS,
+    STORAGE_CACHE_FRESH_DELIVERY_BODY,
+    STORAGE_CACHE_FRESH_DELIVERY_APPLY_WAIT,
+    STORAGE_CACHE_FRESH_DELIVERY_PUBLICATION,
+];
+
+fn phase_ops(telemetry: &JobTelemetry) -> Vec<(String, bool, Option<String>)> {
+    telemetry
+        .pending_ops_snapshot()
+        .into_iter()
+        .filter(|(action, _, _)| PHASES.contains(&action.as_str()))
+        .collect()
+}
+
+async fn observe_phase(
+    delivery: &FreshArchiveDelivery,
+    telemetry: &mut JobTelemetry,
+    action: &str,
+) {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            delivery.phase_records.record_to(telemetry);
+            if phase_ops(telemetry)
+                .iter()
+                .any(|(name, _, _)| name == action)
+            {
+                return;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("the released HTTP phase must complete");
+}
+
+struct GatedResponse {
+    url: String,
+    requested: oneshot::Receiver<()>,
+    headers: oneshot::Sender<()>,
+    body: oneshot::Sender<()>,
+    task: ResponseTask,
+}
+
+struct ResponseTask(Option<JoinHandle<()>>);
+
+impl ResponseTask {
+    async fn finish(mut self) {
+        join_raw_http_task(self.0.take().unwrap(), "gated phase response").await;
+    }
+}
+
+impl Drop for ResponseTask {
+    fn drop(&mut self) {
+        if let Some(task) = &self.0 {
+            task.abort();
+        }
+    }
+}
+
+impl GatedResponse {
+    async fn start(bytes: Vec<u8>) -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!(
+            "http://{}/archive?secret=synthetic",
+            listener.local_addr().unwrap()
+        );
+        let (requested_tx, requested) = oneshot::channel();
+        let (headers, headers_rx) = oneshot::channel();
+        let (body, body_rx) = oneshot::channel();
+        let task = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            read_http_request(&mut socket).await.unwrap();
+            requested_tx.send(()).unwrap();
+            let mut eof = [0; 1];
+            tokio::select! {
+                released = headers_rx => released.unwrap(),
+                read = socket.read(&mut eof) => {
+                    assert_eq!(read.unwrap(), 0);
+                    return;
+                }
+            }
+            socket
+                .write_all(
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        bytes.len()
+                    )
+                    .as_bytes(),
+                )
+                .await
+                .unwrap();
+            tokio::select! {
+                released = body_rx => released.unwrap(),
+                read = socket.read(&mut eof) => {
+                    assert_eq!(read.unwrap(), 0);
+                    return;
+                }
+            }
+            socket.write_all(&bytes).await.unwrap();
+        });
+        Self {
+            url,
+            requested,
+            headers,
+            body,
+            task: ResponseTask(Some(task)),
+        }
+    }
+}
+
+#[tokio::test]
+async fn phase_records_follow_http_and_apply_boundaries_once() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = home_at(&temp);
+    let body = tarball_bytes();
+    let server = GatedResponse::start(body.clone()).await;
+    let mut plan =
+        fresh_storage_plan_with_archive_size(server.url, "phase-success", "v1", body.len() as u64);
+    let admission = FreshArchiveDeliveryAdmission::new();
+    let mut telemetry = new_telemetry();
+    let mut delivery = prepare_fresh_archive_delivery(
+        &mut plan,
+        &home,
+        &admission,
+        &CancellationToken::new(),
+        &mut telemetry,
+        None,
+    )
+    .await
+    .unwrap();
+    tokio::time::timeout(Duration::from_secs(5), server.requested)
+        .await
+        .unwrap()
+        .unwrap();
+    delivery.phase_records.record_to(&mut telemetry);
+    assert!(phase_ops(&telemetry).is_empty());
+
+    server.headers.send(()).unwrap();
+    observe_phase(&delivery, &mut telemetry, PHASES[0]).await;
+    assert_eq!(phase_ops(&telemetry), vec![(PHASES[0].into(), true, None)]);
+    server.body.send(()).unwrap();
+    observe_phase(&delivery, &mut telemetry, PHASES[1]).await;
+    assert_eq!(phase_ops(&telemetry).len(), 2);
+    assert!(!home.storage_cache_dir("phase-success", "v1").exists());
+
+    let sandbox = MockSandbox::new("phase-success");
+    populate_cache_with_fresh_delivery(
+        &mut plan,
+        &sandbox,
+        &home,
+        &mut telemetry,
+        Some(&mut delivery),
+        None,
+    )
+    .await
+    .unwrap();
+    server.task.finish().await;
+    assert_eq!(
+        phase_ops(&telemetry),
+        PHASES.map(|name| (name.into(), true, None))
+    );
+    let recorded = phase_ops(&telemetry);
+    delivery.cancel_and_drain(&mut telemetry).await;
+    delivery.cancel_and_drain(&mut telemetry).await;
+    assert_eq!(phase_ops(&telemetry), recorded);
+    assert_eq!(
+        fs::read(
+            home.storage_cache_dir("phase-success", "v1")
+                .join("archive.tar.gz")
+        )
+        .await
+        .unwrap(),
+        body
+    );
+    assert_eq!(sandbox.write_files_calls().len(), 1);
+    assert_eq!(
+        admission.permits.available_permits(),
+        FRESH_DELIVERY_RUNNER_LIMIT
+    );
+}
+
+#[tokio::test]
+async fn delayed_collection_preserves_the_measured_header_phase() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = home_at(&temp);
+    let body = tarball_bytes();
+    let server = GatedResponse::start(body.clone()).await;
+    let api = MockServer::start_async().await;
+    let mut telemetry = new_telemetry_for_api_url(&api.base_url());
+    let mut plan =
+        fresh_storage_plan_with_archive_size(server.url, "phase-timing", "v1", body.len() as u64);
+    let admission = FreshArchiveDeliveryAdmission::new();
+    let mut delivery = prepare_fresh_archive_delivery(
+        &mut plan,
+        &home,
+        &admission,
+        &CancellationToken::new(),
+        &mut telemetry,
+        None,
+    )
+    .await
+    .unwrap();
+    tokio::time::timeout(Duration::from_secs(5), server.requested)
+        .await
+        .unwrap()
+        .unwrap();
+
+    // This observable interval is entirely inside the request's header phase.
+    // Set up the telemetry receiver while headers are held instead of relying
+    // on a sleep or a machine-dependent minimum duration.
+    let held_since = Instant::now();
+    let payloads = Arc::new(Mutex::new(Vec::<serde_json::Value>::new()));
+    let sink = Arc::clone(&payloads);
+    let ingest = api
+        .mock_async(move |when, then| {
+            when.method(httpmock::Method::POST)
+                .path("/api/webhooks/agent/telemetry");
+            then.respond_with(move |request: &httpmock::HttpMockRequest| {
+                let payload = serde_json::from_slice(request.body_ref()).unwrap();
+                sink.lock().unwrap().push(payload);
+                httpmock::HttpMockResponse::builder()
+                    .status(200)
+                    .body(r#"{"success":true,"id":"ok"}"#)
+                    .build()
+            });
+        })
+        .await;
+    let held_duration = held_since.elapsed();
+    let before_headers = Utc::now();
+    server.headers.send(()).unwrap();
+    let (operation, completed_at) = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let header = delivery
+                .phase_records
+                .records
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|record| record.operation.action_type == PHASES[0])
+                .map(|record| (record.operation, record.completed_at));
+            if let Some(header) = header {
+                return header;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("headers must finish while the response body remains held");
+    assert!(operation.duration >= held_duration);
+    assert!(completed_at >= before_headers && completed_at <= Utc::now());
+    assert!(phase_ops(&telemetry).is_empty());
+
+    // Leave the observed record buffered until normal resolution. The emitted
+    // operation must retain this phase boundary rather than collection time.
+    server.body.send(()).unwrap();
+    let sandbox = MockSandbox::new("phase-timing");
+    populate_cache_with_fresh_delivery(
+        &mut plan,
+        &sandbox,
+        &home,
+        &mut telemetry,
+        Some(&mut delivery),
+        None,
+    )
+    .await
+    .unwrap();
+    server.task.finish().await;
+    delivery.cancel_and_drain(&mut telemetry).await;
+    tokio::time::timeout(Duration::from_secs(5), telemetry.flush())
+        .await
+        .expect("the local telemetry receiver must acknowledge the batch");
+    ingest.assert_calls_async(1).await;
+
+    let payloads = payloads.lock().unwrap();
+    let header_ops = payloads
+        .iter()
+        .flat_map(|payload| payload["sandboxOperations"].as_array().unwrap())
+        .filter(|record| record["action_type"] == PHASES[0])
+        .collect::<Vec<_>>();
+    assert_eq!(header_ops.len(), 1);
+    let header = header_ops[0];
+    assert_eq!(
+        header["duration_ms"],
+        u64::try_from(operation.duration.as_millis()).unwrap()
+    );
+    assert_eq!(
+        header["ts"],
+        completed_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+    );
+    assert_eq!(header["success"], true);
+    assert!(header.get("error").is_none());
+}
+
+#[tokio::test]
+async fn cancellation_preserves_completed_phases_and_marks_only_active_phase() {
+    for completed in 0..=2 {
+        let temp = tempfile::tempdir().unwrap();
+        let home = home_at(&temp);
+        let body = tarball_bytes();
+        let server = GatedResponse::start(body.clone()).await;
+        let mut plan = fresh_storage_plan_with_archive_size(
+            server.url,
+            "phase-cancel",
+            "v1",
+            body.len() as u64,
+        );
+        let admission = FreshArchiveDeliveryAdmission::new();
+        let mut telemetry = new_telemetry();
+        let mut delivery = prepare_fresh_archive_delivery(
+            &mut plan,
+            &home,
+            &admission,
+            &CancellationToken::new(),
+            &mut telemetry,
+            None,
+        )
+        .await
+        .unwrap();
+        tokio::time::timeout(Duration::from_secs(5), server.requested)
+            .await
+            .unwrap()
+            .unwrap();
+        if completed >= 1 {
+            server.headers.send(()).unwrap();
+            observe_phase(&delivery, &mut telemetry, PHASES[0]).await;
+        }
+        if completed >= 2 {
+            server.body.send(()).unwrap();
+            observe_phase(&delivery, &mut telemetry, PHASES[1]).await;
+        }
+        delivery.cancel_and_drain(&mut telemetry).await;
+        server.task.finish().await;
+        let ops = phase_ops(&telemetry);
+        assert_eq!(ops.len(), completed + 1);
+        for (index, op) in ops.iter().enumerate() {
+            assert_eq!(op.0, PHASES[index]);
+            assert_eq!(op.1, index < completed);
+            if index < completed {
+                assert!(op.2.is_none());
+            } else {
+                assert!(matches!(op.2.as_deref(), Some("interrupted" | "cancelled")));
+            }
+        }
+        delivery.cancel_and_drain(&mut telemetry).await;
+        assert_eq!(phase_ops(&telemetry), ops);
+        assert!(!home.storage_cache_dir("phase-cancel", "v1").exists());
+        assert_eq!(
+            admission.permits.available_permits(),
+            FRESH_DELIVERY_RUNNER_LIMIT
+        );
+        assert!(matches!(
+            lock::try_acquire_or_busy(home.storage_lock("phase-cancel", "v1"))
+                .await
+                .unwrap(),
+            lock::TryLock::Acquired(_)
+        ));
+    }
+}
+
+#[tokio::test]
+async fn rejected_headers_and_body_report_the_failed_phase_without_later_phases() {
+    for (response, expected_phase, reason) in [
+        (http_response("503 Service Unavailable", b"bad"), 0, "http-status"),
+        (b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n3\r\nabc\r\n0\r\n\r\n".to_vec(), 1, "body-size-mismatch"),
+    ] {
+        let temp = tempfile::tempdir().unwrap();
+        let home = home_at(&temp);
+        let (url, server) = raw_http_url(response).await;
+        let mut plan = fresh_storage_plan_with_archive_size(url, "phase-error", "v1", 5);
+        let mut telemetry = new_telemetry();
+        let sandbox = MockSandbox::new("phase-error");
+        assert!(populate_cache_through_fresh_delivery(&mut plan, &sandbox, &home, &mut telemetry).await.is_err());
+        server.assert_finished().await;
+        let ops = phase_ops(&telemetry);
+        assert_eq!(ops.len(), expected_phase + 1);
+        assert_eq!(ops[expected_phase], (PHASES[expected_phase].into(), false, Some(reason.into())));
+        assert!(ops[..expected_phase].iter().all(|(_, success, error)| *success && error.is_none()));
+        assert!(sandbox.write_files_calls().is_empty());
+    }
+}
+
+#[tokio::test]
+async fn publication_failure_is_timed_and_does_not_stage_the_archive() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = home_at(&temp);
+    let body = tarball_bytes();
+    let (url, server) = raw_http_url(http_response("200 OK", &body)).await;
+    let mut plan =
+        fresh_storage_plan_with_archive_size(url, "phase-publish", "v1", body.len() as u64);
+    let admission = FreshArchiveDeliveryAdmission::new();
+    let mut telemetry = new_telemetry();
+    let mut delivery = prepare_fresh_archive_delivery(
+        &mut plan,
+        &home,
+        &admission,
+        &CancellationToken::new(),
+        &mut telemetry,
+        None,
+    )
+    .await
+    .unwrap();
+    observe_phase(&delivery, &mut telemetry, PHASES[1]).await;
+    let cache_dir = home.storage_cache_dir("phase-publish", "v1");
+    fs::create_dir_all(cache_dir.parent().unwrap())
+        .await
+        .unwrap();
+    fs::write(&cache_dir, b"not-a-cache-directory")
+        .await
+        .unwrap();
+    let sandbox = MockSandbox::new("phase-publish");
+    assert!(
+        populate_cache_with_fresh_delivery(
+            &mut plan,
+            &sandbox,
+            &home,
+            &mut telemetry,
+            Some(&mut delivery),
+            None,
+        )
+        .await
+        .is_err()
+    );
+    server.assert_finished().await;
+    let ops = phase_ops(&telemetry);
+    assert_eq!(ops.len(), 4);
+    assert_eq!(
+        ops[3],
+        (PHASES[3].into(), false, Some("publication".into()))
+    );
+    assert!(sandbox.write_files_calls().is_empty());
+    assert_eq!(
+        admission.permits.available_permits(),
+        FRESH_DELIVERY_RUNNER_LIMIT
+    );
+}
+
+#[tokio::test]
+async fn full_admission_has_sixteen_phase_records_and_warm_delivery_has_none() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = home_at(&temp);
+    let body = tarball_bytes();
+    let server = MockServer::start_async().await;
+    let get = server
+        .mock_async(|when, then| {
+            when.method(GET).path("/archive");
+            then.status(200).body(body.clone());
+        })
+        .await;
+    let entries = (0..FRESH_DELIVERY_PER_RUN_LIMIT)
+        .map(|index| {
+            let mut entry = storage_entry(
+                format!("/mnt/phase-{index}"),
+                server.url("/archive"),
+                &format!("phase-{index}"),
+                "v1",
+            );
+            entry.archive_size = Some(body.len() as u64);
+            entry
+        })
+        .collect::<Vec<_>>();
+    for cold in [true, false] {
+        let mut plan = plan_from_entries(entries.clone(), Vec::new(), None);
+        let mut telemetry = new_telemetry();
+        let sandbox = MockSandbox::new("phase-capacity");
+        populate_cache_through_fresh_delivery(&mut plan, &sandbox, &home, &mut telemetry)
+            .await
+            .unwrap();
+        let ops = phase_ops(&telemetry);
+        if cold {
+            assert_eq!(ops.len(), 16);
+            for phase in PHASES {
+                assert_eq!(
+                    ops.iter()
+                        .filter(|(name, success, error)| name == phase
+                            && *success
+                            && error.is_none())
+                        .count(),
+                    4
+                );
+            }
+        } else {
+            assert!(ops.is_empty());
+        }
+        assert_eq!(
+            sandbox
+                .write_files_calls()
+                .iter()
+                .map(|call| call.files.len())
+                .sum::<usize>(),
+            4
+        );
+    }
+    get.assert_calls_async(4).await;
+}

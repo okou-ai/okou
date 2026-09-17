@@ -95,6 +95,8 @@ surface; the index does not replace their detailed rules.
   control/runtime reclaim protection, and tool OOM trade-offs.
 - [Workspace history restore telemetry](./workspace-history-restore-telemetry.md):
   local source and restored payload sizes, representation and timing semantics.
+- [Host archive phase diagnostics](./host-archive-phase-diagnostics.md): bounded
+  early download, apply-gate and publication timing with cancellation semantics.
 - [Guest file compression](./guest-file-compression.md): caller-owned history
   selection, bounded streaming, failure semantics and bundled compatibility.
 - [Runner multi-architecture rollout](./runner-multi-architecture.md): build,

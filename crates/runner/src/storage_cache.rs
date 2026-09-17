@@ -54,6 +54,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
+use chrono::{DateTime, Utc};
 use futures_util::{FutureExt, StreamExt};
 use reqwest::Client;
 use sandbox::{Sandbox, WriteFileEntry};
@@ -147,6 +148,10 @@ const STORAGE_CACHE_FRESH_DELIVERY_SIZE_MANIFEST: &str =
 const STORAGE_CACHE_FRESH_DELIVERY_SIZE_RESPONSE: &str =
     "storage_cache_fresh_delivery_size_response";
 const STORAGE_CACHE_FRESH_DELIVERY_DRAINED: &str = "storage_cache_fresh_delivery_drained";
+const STORAGE_CACHE_FRESH_DELIVERY_HEADERS: &str = "storage_cache_fresh_delivery_headers";
+const STORAGE_CACHE_FRESH_DELIVERY_BODY: &str = "storage_cache_fresh_delivery_body";
+const STORAGE_CACHE_FRESH_DELIVERY_APPLY_WAIT: &str = "storage_cache_fresh_delivery_apply_wait";
+const STORAGE_CACHE_FRESH_DELIVERY_PUBLICATION: &str = "storage_cache_fresh_delivery_publication";
 const STORAGE_CACHE_FRESH_DELIVERY_SCAN_GROUPS: &str = "storage_cache_fresh_delivery_scan_groups";
 const STORAGE_CACHE_FRESH_DELIVERY_SCAN_SUFFIX: &str = "storage_cache_fresh_delivery_scan_suffix";
 const STORAGE_CACHE_FRESH_DELIVERY_SCAN_SUFFIX_UNKNOWN: &str =
@@ -897,6 +902,89 @@ fn spawn_background_fill_reports(
     }
 }
 
+struct FreshArchivePhaseRecord {
+    operation: SandboxOpRecord,
+    completed_at: DateTime<Utc>,
+}
+
+/// At most four phases for each of the four archives admitted to one delivery.
+/// Records live outside fetch tasks so aborting and joining those tasks retains
+/// their last observed phase. Draining never holds the lock while recording
+/// telemetry.
+#[derive(Clone, Default)]
+struct FreshArchivePhaseRecords {
+    records: Arc<Mutex<Vec<FreshArchivePhaseRecord>>>,
+}
+
+impl FreshArchivePhaseRecords {
+    fn record_to(&self, telemetry: &mut JobTelemetry) {
+        let records = std::mem::take(
+            &mut *self
+                .records
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()),
+        );
+        for record in records {
+            let operation = record.operation;
+            telemetry.record_at(
+                operation.action_type,
+                operation.duration,
+                operation.success,
+                operation.error,
+                record.completed_at,
+            );
+        }
+    }
+}
+
+struct FreshArchivePhaseGuard {
+    records: FreshArchivePhaseRecords,
+    action_type: Option<&'static str>,
+    started_at: Instant,
+}
+
+impl FreshArchivePhaseGuard {
+    fn new(records: &FreshArchivePhaseRecords, action_type: &'static str) -> Self {
+        Self {
+            records: records.clone(),
+            action_type: Some(action_type),
+            started_at: Instant::now(),
+        }
+    }
+
+    fn finish(mut self, result: Result<(), &'static str>) {
+        self.record(result);
+    }
+
+    fn record(&mut self, result: Result<(), &'static str>) {
+        let Some(action_type) = self.action_type.take() else {
+            return;
+        };
+        let record = FreshArchivePhaseRecord {
+            operation: SandboxOpRecord::new(
+                action_type,
+                self.started_at.elapsed(),
+                result.is_ok(),
+                result.err(),
+            ),
+            completed_at: Utc::now(),
+        };
+        self.records
+            .records
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .push(record);
+    }
+}
+
+impl Drop for FreshArchivePhaseGuard {
+    fn drop(&mut self) {
+        // Cancellation, task abort and unwinding all mean the phase did not
+        // reach an observed terminal result. Do not fabricate successful time.
+        self.record(Err("interrupted"));
+    }
+}
+
 struct FreshArchiveDownloaded {
     group: CacheTargetGroup,
     bytes: Bytes,
@@ -946,6 +1034,7 @@ struct FreshArchiveResolved {
 /// cancelled midway.
 pub(crate) struct FreshArchiveDelivery {
     cancel: CancellationToken,
+    phase_records: FreshArchivePhaseRecords,
     classification: JoinSet<FreshArchiveClassification>,
     groups: Option<Vec<CacheTargetGroup>>,
     apply: Vec<oneshot::Sender<()>>,
@@ -981,6 +1070,8 @@ impl Drop for FreshArchiveDelivery {
         // Cache publication is an atomic fsync/rename transaction. Explicit
         // lifecycle paths drain it below; an unexpected owner drop must let an
         // already-started transaction finish instead of cancelling it midway.
+        // An unexpected owner drop also loses buffered phase telemetry; normal
+        // lifecycle paths await cleanup and drain these records explicitly.
         self.publications.detach_all();
     }
 }
@@ -1053,6 +1144,7 @@ impl FreshArchiveDelivery {
                 warn!(%error, "runner-owned archive publication task failed while draining");
             }
         }
+        self.phase_records.record_to(telemetry);
         if had_owned_work {
             telemetry.record(
                 STORAGE_CACHE_FRESH_DELIVERY_DRAINED,
@@ -1068,10 +1160,20 @@ impl FreshArchiveDelivery {
         home: &HomePaths,
         telemetry: &mut JobTelemetry,
     ) -> RunnerResult<Vec<FreshArchiveResolved>> {
-        if let Err(error) = self.finish_classification(telemetry).await {
+        let result = self.resolve_inner(home, telemetry).await;
+        if result.is_err() {
             self.cancel_and_drain(telemetry).await;
-            return Err(error);
         }
+        self.phase_records.record_to(telemetry);
+        result
+    }
+
+    async fn resolve_inner(
+        &mut self,
+        home: &HomePaths,
+        telemetry: &mut JobTelemetry,
+    ) -> RunnerResult<Vec<FreshArchiveResolved>> {
+        self.finish_classification(telemetry).await?;
         for apply in self.apply.drain(..) {
             let _ = apply.send(());
         }
@@ -1112,11 +1214,17 @@ impl FreshArchiveDelivery {
                         RunnerError::Internal("empty runner-owned archive target group".to_string())
                     })?;
                     let cache_dir = home.storage_cache_dir(&target.name, &target.version);
+                    let phase_records = self.phase_records.clone();
                     self.publications.spawn(async move {
                         let _writer = writer;
+                        let phase = FreshArchivePhaseGuard::new(
+                            &phase_records,
+                            STORAGE_CACHE_FRESH_DELIVERY_PUBLICATION,
+                        );
                         let result = write_to_cache(&cache_dir, &bytes)
                             .await
                             .map(|()| FreshArchivePublished { bytes, permit });
+                        phase.finish(result.as_ref().map(|_| ()).map_err(|_| "publication"));
                         FreshArchivePublicationTaskResult { group, result }
                     });
                 }
@@ -1127,7 +1235,6 @@ impl FreshArchiveDelivery {
                         STORAGE_CACHE_FRESH_DELIVERY_FAILED
                     };
                     telemetry.record(action, Duration::ZERO, reason == "cancelled", Some(reason));
-                    self.cancel_and_drain(telemetry).await;
                     return Err(if reason == "cancelled" {
                         RunnerError::Cancelled
                     } else {
@@ -1163,7 +1270,6 @@ impl FreshArchiveDelivery {
                         false,
                         Some("publication"),
                     );
-                    self.cancel_and_drain(telemetry).await;
                     return Err(error);
                 }
             }
@@ -2247,6 +2353,7 @@ pub(crate) async fn prepare_fresh_archive_delivery(
         .map(|group| !group_has_decoded(group, plan))
         .collect::<Vec<_>>();
     let owner_cancel = cancel.child_token();
+    let phase_records = FreshArchivePhaseRecords::default();
     let mut classification = JoinSet::new();
     classification.spawn(classify_fresh_archives(
         groups,
@@ -2255,9 +2362,11 @@ pub(crate) async fn prepare_fresh_archive_delivery(
         admission.clone(),
         owner_cancel.clone(),
         ordinary_required,
+        phase_records.clone(),
     ));
     Ok(FreshArchiveDelivery {
         cancel: owner_cancel,
+        phase_records,
         classification,
         groups: None,
         apply: Vec::new(),
@@ -2273,6 +2382,7 @@ async fn classify_fresh_archives(
     admission: FreshArchiveDeliveryAdmission,
     owner_cancel: CancellationToken,
     mut ordinary_required: bool,
+    phase_records: FreshArchivePhaseRecords,
 ) -> FreshArchiveClassification {
     let started = Instant::now();
     let mut scan_summary = FreshDeliveryScanSummary::from_groups(
@@ -2283,7 +2393,11 @@ async fn classify_fresh_archives(
         FRESH_DELIVERY_SCAN_LIMIT,
     );
     let mut metrics = CacheProcessMetrics::default();
-    let mut requests = FreshArchiveRequests::default();
+    let mut requests = FreshArchiveRequests {
+        apply: Vec::new(),
+        fetches: JoinSet::new(),
+        phase_records,
+    };
     let prepare = async {
         // Metadata hints do not pin bodies or locks. Preserve manifest order and
         // the original non-decoded prefix, including response-size admission.
@@ -2543,10 +2657,10 @@ async fn claim_fresh_archive(
     Ok(FreshArchiveClaim::Cold(writer))
 }
 
-#[derive(Default)]
 struct FreshArchiveRequests {
     apply: Vec<oneshot::Sender<()>>,
     fetches: JoinSet<FreshArchiveFetchTaskResult>,
+    phase_records: FreshArchivePhaseRecords,
 }
 
 impl FreshArchiveRequests {
@@ -2566,30 +2680,34 @@ impl FreshArchiveRequests {
         let archive_url = target.archive_url.clone();
         let group = group.clone();
         let cancel = cancel.clone();
+        let phase_records = self.phase_records.clone();
         let (apply_tx, apply_rx) = oneshot::channel();
         self.apply.push(apply_tx);
         self.fetches.spawn(async move {
             let fetch = tokio::select! {
                 biased;
                 () = cancel.cancelled() => Err("cancelled"),
-                result = fetch_fresh_archive(&http, &archive_url, group.archive_size) => result,
+                result = fetch_fresh_archive(&http, &archive_url, group.archive_size, &phase_records) => result,
             };
             let (bytes, size_source) = match fetch {
                 Ok(download) => download,
                 Err(reason) => return FreshArchiveFetchTaskResult::Terminal { reason },
             };
-            tokio::select! {
+            let phase = FreshArchivePhaseGuard::new(
+                &phase_records,
+                STORAGE_CACHE_FRESH_DELIVERY_APPLY_WAIT,
+            );
+            let result = tokio::select! {
                 biased;
-                () = cancel.cancelled() => FreshArchiveFetchTaskResult::Terminal { reason: "cancelled" },
-                ready = apply_rx => {
-                    if ready.is_err() {
-                        FreshArchiveFetchTaskResult::Terminal { reason: "cancelled" }
-                    } else {
-                        FreshArchiveFetchTaskResult::Downloaded(FreshArchiveDownloaded {
-                            group, bytes, size_source, writer, permit,
-                        })
-                    }
-                }
+                () = cancel.cancelled() => Err("cancelled"),
+                ready = apply_rx => ready.map_err(|_| "cancelled"),
+            };
+            phase.finish(result);
+            match result {
+                Ok(()) => FreshArchiveFetchTaskResult::Downloaded(FreshArchiveDownloaded {
+                    group, bytes, size_source, writer, permit,
+                }),
+                Err(reason) => FreshArchiveFetchTaskResult::Terminal { reason },
             }
         });
         metrics.record(
@@ -2614,69 +2732,83 @@ async fn fetch_fresh_archive(
     http: &Client,
     archive_url: &str,
     expected_size: Option<u64>,
+    phase_records: &FreshArchivePhaseRecords,
 ) -> Result<(Bytes, FreshArchiveSizeSource), &'static str> {
-    let mut response = http
-        .get(archive_url)
-        .timeout(OBJECT_DOWNLOAD_TIMEOUT)
-        .send()
-        .await
-        .map_err(|error| {
+    let phase = FreshArchivePhaseGuard::new(phase_records, STORAGE_CACHE_FRESH_DELIVERY_HEADERS);
+    let headers = async {
+        let response = http
+            .get(archive_url)
+            .timeout(OBJECT_DOWNLOAD_TIMEOUT)
+            .send()
+            .await
+            .map_err(|error| {
+                if error.is_timeout() {
+                    "timeout"
+                } else {
+                    "http"
+                }
+            })?;
+        if response.status() != reqwest::StatusCode::OK {
+            return Err("http-status");
+        }
+
+        let response_size = response.content_length();
+        let (exact_size, size_source) = match expected_size {
+            Some(expected) => {
+                if response_size.is_some_and(|size| size != expected) {
+                    return Err("response-size-mismatch");
+                }
+                (expected, FreshArchiveSizeSource::Manifest)
+            }
+            None => match response_size {
+                Some(0) => return Err("response-size-zero"),
+                Some(size) if size <= CACHE_MAX_SIZE => (size, FreshArchiveSizeSource::Response),
+                Some(_) => return Err("response-size-oversized"),
+                None => return Err("response-size-missing"),
+            },
+        };
+        if exact_size == 0 {
+            return Err("expected-size-zero");
+        }
+        if exact_size > CACHE_MAX_SIZE {
+            return Err("expected-size-oversized");
+        }
+        Ok((response, response_size, exact_size, size_source))
+    }
+    .await;
+    phase.finish(headers.as_ref().map(|_| ()).map_err(|reason| *reason));
+    let (mut response, response_size, exact_size, size_source) = headers?;
+
+    let phase = FreshArchivePhaseGuard::new(phase_records, STORAGE_CACHE_FRESH_DELIVERY_BODY);
+    let body = async {
+        let mut bytes = Vec::with_capacity(initial_body_capacity(
+            response_size,
+            Some(exact_size),
+            CACHE_MAX_SIZE,
+        ));
+        let mut downloaded = 0u64;
+        while let Some(chunk) = response.chunk().await.map_err(|error| {
             if error.is_timeout() {
                 "timeout"
             } else {
-                "http"
+                "body"
             }
-        })?;
-    if response.status() != reqwest::StatusCode::OK {
-        return Err("http-status");
-    }
-
-    let response_size = response.content_length();
-    let (exact_size, size_source) = match expected_size {
-        Some(expected) => {
-            if response_size.is_some_and(|size| size != expected) {
-                return Err("response-size-mismatch");
+        })? {
+            if append_limited_chunk(&mut bytes, &mut downloaded, &chunk, CACHE_MAX_SIZE)
+                .map_err(|_| "body-length-overflow")?
+                .is_some()
+            {
+                return Err("body-oversized");
             }
-            (expected, FreshArchiveSizeSource::Manifest)
         }
-        None => match response_size {
-            Some(0) => return Err("response-size-zero"),
-            Some(size) if size <= CACHE_MAX_SIZE => (size, FreshArchiveSizeSource::Response),
-            Some(_) => return Err("response-size-oversized"),
-            None => return Err("response-size-missing"),
-        },
-    };
-    if exact_size == 0 {
-        return Err("expected-size-zero");
-    }
-    if exact_size > CACHE_MAX_SIZE {
-        return Err("expected-size-oversized");
-    }
-
-    let mut bytes = Vec::with_capacity(initial_body_capacity(
-        response_size,
-        Some(exact_size),
-        CACHE_MAX_SIZE,
-    ));
-    let mut downloaded = 0u64;
-    while let Some(chunk) = response.chunk().await.map_err(|error| {
-        if error.is_timeout() {
-            "timeout"
-        } else {
-            "body"
+        if downloaded != exact_size {
+            return Err("body-size-mismatch");
         }
-    })? {
-        if append_limited_chunk(&mut bytes, &mut downloaded, &chunk, CACHE_MAX_SIZE)
-            .map_err(|_| "body-length-overflow")?
-            .is_some()
-        {
-            return Err("body-oversized");
-        }
+        Ok((Bytes::from(bytes), size_source))
     }
-    if downloaded != exact_size {
-        return Err("body-size-mismatch");
-    }
-    Ok((Bytes::from(bytes), size_source))
+    .await;
+    phase.finish(body.as_ref().map(|_| ()).map_err(|reason| *reason));
+    body
 }
 
 fn cache_target_from_entry(
@@ -3771,6 +3903,7 @@ mod tests {
     use super::*;
 
     mod http_reuse;
+    mod phase_diagnostics;
 
     use async_trait::async_trait;
     use httpmock::Method::{GET, HEAD};
@@ -5585,16 +5718,23 @@ mod tests {
         let (release_tx, release_rx) = oneshot::channel();
         let mut delivery = FreshArchiveDelivery {
             cancel: publication_cancel,
+            phase_records: FreshArchivePhaseRecords::default(),
             classification: JoinSet::new(),
             groups: None,
             apply: Vec::new(),
             fetches: JoinSet::new(),
             publications: JoinSet::new(),
         };
+        let phase_records = delivery.phase_records.clone();
         delivery.publications.spawn(async move {
+            let phase = FreshArchivePhaseGuard::new(
+                &phase_records,
+                STORAGE_CACHE_FRESH_DELIVERY_PUBLICATION,
+            );
             entered_tx.send(()).unwrap();
             release_rx.await.unwrap();
             *task_completed.lock().unwrap() = true;
+            phase.finish(Ok(()));
             FreshArchivePublicationTaskResult {
                 group,
                 result: Ok(FreshArchivePublished {
@@ -5615,6 +5755,14 @@ mod tests {
         let ops = telemetry.pending_ops_snapshot();
         assert_op(&ops, STORAGE_CACHE_FRESH_DELIVERY_CANCELLED, true);
         assert_op(&ops, STORAGE_CACHE_FRESH_DELIVERY_DRAINED, true);
+        assert_op(&ops, STORAGE_CACHE_FRESH_DELIVERY_PUBLICATION, true);
+        assert_op_count(&ops, STORAGE_CACHE_FRESH_DELIVERY_PUBLICATION, 1);
+        delivery.cancel_and_drain(&mut telemetry).await;
+        assert_op_count(
+            &telemetry.pending_ops_snapshot(),
+            STORAGE_CACHE_FRESH_DELIVERY_PUBLICATION,
+            1,
+        );
     }
 
     #[tokio::test]
