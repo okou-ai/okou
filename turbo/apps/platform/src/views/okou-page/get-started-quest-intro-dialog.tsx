@@ -2,6 +2,7 @@ import type { GetStartedQuestKey } from "@okouai/api-contracts/contracts/get-sta
 import type { ReactNode } from "react";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
+import { Play } from "lucide-react";
 import {
   Button,
   Dialog,
@@ -22,6 +23,16 @@ import {
   showQuestIntroPrompt$,
 } from "../../signals/okou-page/get-started.ts";
 import { formatLocalizedNumber } from "../../i18n/format.ts";
+import {
+  BAND_ALPHA,
+  FILL_ALPHA,
+  ILLUSTRATION_ACCENTS,
+  LINE_ALPHA,
+  NODE_CLASS,
+  SOFT_ALPHA,
+  THUMBNAIL_CLASS,
+  TILE_ALPHA,
+} from "./start-cards.tsx";
 
 /**
  * The quests that explain themselves before they hand the user off.
@@ -51,214 +62,339 @@ export function questHasIntro(key: GetStartedQuestKey): boolean {
 }
 
 /**
- * A figure, not a control.
- *
- * Each dialog opens on a drawing of the state it is about to change, because a
- * sentence about "your tools" or "the whole team" is abstract until the reader
- * sees the before and the after side by side.
+ * The illustrated tile the product already uses on its start cards: one washed
+ * square per idea, drawn from the avatar palette, with the art built out of
+ * bordered card nodes rather than flat glyphs. A quest is introduced with a row
+ * of these so the dialog reads as the same family as the page behind it.
  */
-function Figure({ children }: { children: ReactNode }) {
+function Tile({ accent, children }: { accent: string; children: ReactNode }) {
   return (
-    <div className="rounded-surface-compact bg-state-hover p-3">
-      <svg
-        viewBox="0 0 280 78"
-        className="block h-auto w-full"
-        fill="none"
-        aria-hidden="true"
-      >
-        {children}
-      </svg>
+    <div
+      className={THUMBNAIL_CLASS}
+      style={{ backgroundColor: `${accent}${TILE_ALPHA}` }}
+    >
+      {children}
     </div>
   );
 }
 
+function TileRow({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex items-center justify-center gap-2 py-1">
+      {children}
+    </div>
+  );
+}
+
+/** The join between two tiles: what the quest actually adds. */
+function Link({ accent }: { accent: string }) {
+  return (
+    <span
+      className="h-px w-4 shrink-0"
+      style={{ backgroundColor: `${accent}${LINE_ALPHA}` }}
+    />
+  );
+}
+
+/** A stack of lines standing in for a document, message or row. */
+function Lines({
+  accent,
+  width,
+  count = 2,
+}: {
+  accent: string;
+  width: number;
+  count?: number;
+}) {
+  return (
+    <span className="flex flex-col gap-[3px]">
+      {/* The last line is short, the way a paragraph ends. */}
+      {Array.from({ length: count }, (_, index) => {
+        return {
+          id: `line-${index}`,
+          width: index === count - 1 ? width * 0.6 : width,
+        };
+      }).map(({ id, width: lineWidth }) => {
+        return (
+          <span
+            key={id}
+            className="h-[2px] rounded-full"
+            style={{
+              width: lineWidth,
+              backgroundColor: `${accent}${SOFT_ALPHA}`,
+            }}
+          />
+        );
+      })}
+    </span>
+  );
+}
+
+/** A bust: the account glyph, reused wherever a person is meant. */
+function Person({ accent, size }: { accent: string; size: number }) {
+  return (
+    <span
+      className="relative shrink-0 overflow-hidden rounded-full border bg-card"
+      style={{
+        width: size,
+        height: size,
+        borderColor: `${accent}${LINE_ALPHA}`,
+      }}
+    >
+      <span
+        className="absolute left-1/2 rounded-full"
+        style={{
+          top: size * 0.22,
+          width: size * 0.3,
+          height: size * 0.3,
+          marginLeft: -size * 0.15,
+          backgroundColor: `${accent}${FILL_ALPHA}`,
+        }}
+      />
+      <span
+        className="absolute bottom-0 left-1/2 rounded-t-full"
+        style={{
+          width: size * 0.62,
+          height: size * 0.36,
+          marginLeft: -size * 0.31,
+          backgroundColor: `${accent}${FILL_ALPHA}`,
+        }}
+      />
+    </span>
+  );
+}
+
+/**
+ * What a connector adds: the assistant on one side, the user's own mail, docs
+ * and calendar on the other, joined by a link that the copy underneath says can
+ * be broken again.
+ */
 function ConnectorFigure({ assistantName }: { assistantName: string }) {
+  const accent = ILLUSTRATION_ACCENTS.website;
   return (
-    <Figure>
-      <rect
-        x="6"
-        y="22"
-        width="56"
-        height="34"
-        rx="9"
-        className="fill-primary"
-      />
-      <text
-        x="34"
-        y="44"
-        textAnchor="middle"
-        className="fill-primary-foreground text-[13px] font-semibold"
-      >
-        {assistantName}
-      </text>
-      <path
-        d="M66 39h40"
-        className="stroke-divider"
-        strokeWidth={1.6}
-        strokeDasharray="4 3"
-      />
-      <circle
-        cx="118"
-        cy="39"
-        r="12"
-        className="stroke-brand-text"
-        strokeWidth={1.5}
-      />
-      <path
-        d="M113 39h10M118 34v10"
-        className="stroke-brand-text"
-        strokeWidth={1.7}
-        strokeLinecap="round"
-      />
-      <path
-        d="M130 39h24M154 39v-22h14M154 39h14M154 39v22h14"
-        className="stroke-divider"
-        strokeWidth={1.6}
-      />
-      {/* Three of the user's own tools, drawn rather than named: the row
-          underneath already lists which ones, and a brand set baked into a
-          figure goes stale the moment the recommendations change. */}
-      {[7, 28, 49].map((y) => {
-        return (
-          <g key={y}>
-            <rect
-              x="170"
-              y={y}
-              width="52"
-              height="22"
-              rx="6"
-              className="fill-card stroke-divider"
-              strokeWidth={1}
+    <TileRow>
+      <Tile accent={accent}>
+        <span
+          className={`grid h-[34px] w-[44px] place-items-center px-1 text-[10px] font-semibold ${NODE_CLASS}`}
+          style={{ borderColor: `${accent}${LINE_ALPHA}`, color: accent }}
+        >
+          <span className="truncate">{assistantName}</span>
+        </span>
+      </Tile>
+      <Link accent={accent} />
+      <Tile accent={accent}>
+        {/* Three of the user's own things, stacked: an envelope, a page and a
+            dated sheet. Naming specific products would date the drawing. */}
+        <span className="flex flex-col gap-[3px]">
+          <span
+            className={`flex h-[15px] w-[46px] items-center gap-[3px] px-[4px] ${NODE_CLASS}`}
+            style={{ borderColor: `${accent}${LINE_ALPHA}` }}
+          >
+            <span
+              className="size-[7px] shrink-0 rounded-[2px]"
+              style={{ backgroundColor: `${accent}${FILL_ALPHA}` }}
             />
-            <rect
-              x="180"
-              y={y + 7}
-              width="8"
-              height="8"
-              rx="2"
-              className="fill-divider"
+            <Lines accent={accent} width={26} count={2} />
+          </span>
+          <span
+            className={`flex h-[15px] w-[46px] items-center gap-[3px] px-[4px] ${NODE_CLASS}`}
+            style={{ borderColor: `${accent}${LINE_ALPHA}` }}
+          >
+            <span
+              className="size-[7px] shrink-0 rounded-full"
+              style={{ backgroundColor: `${accent}${FILL_ALPHA}` }}
             />
-            <rect
-              x="193"
-              y={y + 8}
-              width="20"
-              height="2.5"
-              rx="1.25"
-              className="fill-divider"
+            <Lines accent={accent} width={26} count={2} />
+          </span>
+          <span
+            className={`h-[15px] w-[46px] px-[4px] pt-[3px] ${NODE_CLASS}`}
+            style={{ borderColor: `${accent}${LINE_ALPHA}` }}
+          >
+            <span
+              className="block h-[3px] w-full rounded-full"
+              style={{ backgroundColor: `${accent}${BAND_ALPHA}` }}
             />
-            <rect
-              x="193"
-              y={y + 13}
-              width="12"
-              height="2.5"
-              rx="1.25"
-              className="fill-divider"
-            />
-          </g>
-        );
-      })}
-    </Figure>
+          </span>
+        </span>
+      </Tile>
+    </TileRow>
   );
 }
 
+/** Personal account on the left, the channel everyone can call it from on the right. */
 function SlackFigure() {
+  const accent = ILLUSTRATION_ACCENTS.avatar;
   return (
-    <Figure>
-      <rect
-        x="4"
-        y="18"
-        width="72"
-        height="44"
-        rx="9"
-        className="fill-card stroke-divider"
-        strokeWidth={1}
-      />
-      <circle cx="40" cy="34" r="9" className="fill-divider" />
-      <path d="M29 52c2-7 20-7 22 0" className="fill-divider" />
-      <path d="M86 40h24" className="stroke-brand-text" strokeWidth={1.8} />
-      <path
-        d="M104 35l6 5-6 5"
-        className="stroke-brand-text"
-        strokeWidth={1.8}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <rect
-        x="120"
-        y="10"
-        width="156"
-        height="58"
-        rx="9"
-        className="fill-card stroke-divider"
-        strokeWidth={1}
-      />
-      {[136, 152, 168].map((cx) => {
-        return (
-          <circle key={cx} cx={cx} cy="42" r="8" className="fill-divider" />
-        );
-      })}
-      <circle cx="186" cy="42" r="9.5" className="fill-primary" />
-      <text
-        x="186"
-        y="46"
-        textAnchor="middle"
-        className="fill-primary-foreground text-[10px] font-semibold"
-      >
-        @
-      </text>
-      <rect
-        x="204"
-        y="33"
-        width="60"
-        height="18"
-        rx="5"
-        className="fill-state-hover"
-      />
-    </Figure>
+    <TileRow>
+      <Tile accent={accent}>
+        <Person accent={accent} size={34} />
+      </Tile>
+      <Link accent={accent} />
+      <Tile accent={accent}>
+        <span
+          className={`flex h-[44px] w-[52px] flex-col gap-[4px] p-[5px] ${NODE_CLASS}`}
+          style={{ borderColor: `${accent}${LINE_ALPHA}` }}
+        >
+          <span
+            className="h-[3px] w-[18px] rounded-full"
+            style={{ backgroundColor: `${accent}${BAND_ALPHA}` }}
+          />
+          <span className="flex items-center gap-[3px]">
+            <Person accent={accent} size={13} />
+            <Person accent={accent} size={13} />
+            <span
+              className="grid size-[15px] place-items-center rounded-full text-[8px] font-bold"
+              style={{
+                backgroundColor: `${accent}${FILL_ALPHA}`,
+                color: "#fff",
+              }}
+            >
+              @
+            </span>
+          </span>
+          <Lines accent={accent} width={38} count={2} />
+        </span>
+      </Tile>
+    </TileRow>
   );
 }
 
+/** One saved workflow, handed to everyone who joins. */
 function InviteFigure() {
+  const accent = ILLUSTRATION_ACCENTS.illustration;
   return (
-    <Figure>
-      <rect
-        x="86"
-        y="8"
-        width="108"
-        height="30"
-        rx="8"
-        className="fill-brand-subtle stroke-brand-text"
-        strokeWidth={1.2}
-      />
-      <path
-        d="M140 40v8M140 48H44v10M140 48h96v10M140 48v10"
-        className="stroke-divider"
-        strokeWidth={1.6}
-      />
-      {[44, 140, 236].map((cx) => {
-        return (
-          <circle key={cx} cx={cx} cy="66" r="9" className="fill-divider" />
-        );
-      })}
-    </Figure>
+    <TileRow>
+      <Tile accent={accent}>
+        <span
+          className={`flex h-[40px] w-[48px] flex-col gap-[4px] p-[5px] ${NODE_CLASS}`}
+          style={{ borderColor: `${accent}${LINE_ALPHA}` }}
+        >
+          <span
+            className="h-[4px] w-[22px] rounded-full"
+            style={{ backgroundColor: `${accent}${FILL_ALPHA}` }}
+          />
+          <Lines accent={accent} width={36} count={3} />
+        </span>
+      </Tile>
+      <Link accent={accent} />
+      <Tile accent={accent}>
+        <span className="flex items-center gap-[4px]">
+          <Person accent={accent} size={20} />
+          <Person accent={accent} size={20} />
+          <Person accent={accent} size={20} />
+        </span>
+      </Tile>
+    </TileRow>
   );
 }
 
-/** One of the three things a saved workflow is made of. */
+/** Step 1: a list of ready-made workflows with one of them chosen. */
+function TemplateArt({ accent }: { accent: string }) {
+  return (
+    <span className="flex flex-col gap-[3px]">
+      {[
+        { id: "above", chosen: false },
+        { id: "chosen", chosen: true },
+        { id: "below", chosen: false },
+      ].map(({ id, chosen }) => {
+        return (
+          <span
+            key={id}
+            className={`flex h-[13px] w-[44px] items-center gap-[4px] px-[4px] ${NODE_CLASS}`}
+            style={{
+              borderColor: chosen ? accent : `${accent}${LINE_ALPHA}`,
+              backgroundColor: chosen ? `${accent}${BAND_ALPHA}` : undefined,
+            }}
+          >
+            <span
+              className="size-[5px] shrink-0 rounded-[1px]"
+              style={{
+                backgroundColor: chosen ? accent : `${accent}${SOFT_ALPHA}`,
+              }}
+            />
+            <span
+              className="h-[2px] rounded-full"
+              style={{
+                width: 24,
+                backgroundColor: chosen ? accent : `${accent}${SOFT_ALPHA}`,
+              }}
+            />
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
+/** Step 2: it runs, and the result is already there. */
+function RunArt({ accent }: { accent: string }) {
+  return (
+    <span
+      className={`flex h-[42px] w-[48px] flex-col justify-center gap-[5px] px-[6px] ${NODE_CLASS}`}
+      style={{ borderColor: `${accent}${LINE_ALPHA}` }}
+    >
+      <span className="flex items-center gap-[4px]">
+        <span
+          className="grid size-[12px] place-items-center rounded-full"
+          style={{ backgroundColor: `${accent}${SOFT_ALPHA}`, color: accent }}
+        >
+          <Play size={6} fill="currentColor" />
+        </span>
+        <Lines accent={accent} width={20} count={1} />
+      </span>
+      <span
+        className="h-[12px] rounded-[2px]"
+        style={{ backgroundColor: `${accent}${FILL_ALPHA}` }}
+      />
+    </span>
+  );
+}
+
+/** Step 3: saved, and from then on it keeps its own time. */
+function SaveArt({ accent }: { accent: string }) {
+  return (
+    <span
+      className={`grid h-[42px] w-[48px] place-items-center ${NODE_CLASS}`}
+      style={{ borderColor: `${accent}${LINE_ALPHA}` }}
+    >
+      <span
+        className="relative grid size-[24px] place-items-center rounded-full border"
+        style={{ borderColor: `${accent}${LINE_ALPHA}` }}
+      >
+        <span
+          className="absolute left-1/2 top-1/2 h-[7px] w-[2px] origin-bottom rounded-full"
+          style={{
+            backgroundColor: accent,
+            transform: "translate(-50%,-100%)",
+          }}
+        />
+        <span
+          className="absolute left-1/2 top-1/2 h-[2px] w-[6px] origin-left rounded-full"
+          style={{ backgroundColor: accent, transform: "translateY(-50%)" }}
+        />
+      </span>
+    </span>
+  );
+}
+
+/**
+ * One of the three steps, drawn the way the start cards below the composer are:
+ * an illustrated tile, a title, and the sentence that explains it. The step is
+ * recognisable before it is read, and the row it forms is the same object the
+ * user already sees on the page it opens over.
+ */
 function WorkflowStep({
-  index,
+  art,
   title,
   description,
 }: {
-  index: number;
+  art: ReactNode;
   title: string;
   description: string;
 }) {
   return (
-    <div className="flex gap-3 py-2">
-      <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-brand-subtle text-xs font-semibold tabular-nums text-brand-text">
-        {formatLocalizedNumber(index)}
-      </span>
+    <div className="flex items-center gap-3 py-1.5">
+      {art}
       <span className="min-w-0 flex-1">
         <span className="block text-sm font-medium">{title}</span>
         <span className="block text-xs text-muted-foreground">
@@ -486,7 +622,11 @@ function WorkflowStepsIntro({ onConfirm, onClose }: IntroProps) {
     >
       <div>
         <WorkflowStep
-          index={1}
+          art={
+            <Tile accent={ILLUSTRATION_ACCENTS.illustration}>
+              <TemplateArt accent={ILLUSTRATION_ACCENTS.illustration} />
+            </Tile>
+          }
           title={t(($) => {
             return $.chat.agentPage.getStarted.intro.workflow.stepTemplate;
           })}
@@ -496,7 +636,11 @@ function WorkflowStepsIntro({ onConfirm, onClose }: IntroProps) {
           })}
         />
         <WorkflowStep
-          index={2}
+          art={
+            <Tile accent={ILLUSTRATION_ACCENTS.website}>
+              <RunArt accent={ILLUSTRATION_ACCENTS.website} />
+            </Tile>
+          }
           title={t(($) => {
             return $.chat.agentPage.getStarted.intro.workflow.stepRun;
           })}
@@ -506,7 +650,11 @@ function WorkflowStepsIntro({ onConfirm, onClose }: IntroProps) {
           })}
         />
         <WorkflowStep
-          index={3}
+          art={
+            <Tile accent={ILLUSTRATION_ACCENTS.slides}>
+              <SaveArt accent={ILLUSTRATION_ACCENTS.slides} />
+            </Tile>
+          }
           title={t(($) => {
             return $.chat.agentPage.getStarted.intro.workflow.stepSave;
           })}
