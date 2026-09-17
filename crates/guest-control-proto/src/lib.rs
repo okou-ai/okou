@@ -20,8 +20,8 @@
 //!
 //! ## Message Types
 //!
-//! Non-error message types currently occupy the contiguous range `0x00..=0x21`
-//! in allocation order; `0x22` is the next available non-error assignment.
+//! Non-error message types currently occupy the contiguous range `0x00..=0x25`
+//! in allocation order; `0x26` is the next available non-error assignment.
 //! Existing values are stable wire assignments: do not renumber or reuse them.
 //! Allocate new non-error messages at the next unused value below `0xFF`, even
 //! when related operations are not adjacent. `0xFF` is
@@ -64,15 +64,27 @@
 //! | 0x1F | G→H       | workspace_drive_mount_result | same payload as `exec_result`, with both streams captured and bounded to 64 KiB each |
 //! | 0x20 | H→G       | file_write_status | (empty); read-only, available while quiescing |
 //! | 0x21 | G→H       | file_write_status_result | `[4B latest_write_seq][1B stage]`; see [`FileWriteStatus`] |
+//! | 0x22 | H→G       | write_file_stream_begin | `[1B codec=1][4B raw_len][2B path_len][path][1B flags][4B content_len=0]` |
+//! | 0x23 | H→G       | write_file_stream_data | `[1..=65536B encoded_chunk]` |
+//! | 0x24 | H→G       | write_file_stream_end | (empty) |
+//! | 0x25 | G→H       | write_file_stream_credit | `[1B data_frame_count=1..=4]` |
 //! | 0xFF | G→H       | error             | `[2B error_len][error]` |
 //!
 //! Request-scoped operation messages must use non-zero sequence numbers. This
 //! covers `write_file`, `write_files`, `write_private_files`, `exec_start`, `exec_cancel`,
 //! `exec_control`, `guest_dns_readiness`, `guest_storage_manifest`, and
-//! `guest_state_restore`, `workspace_drive_mount`, and `file_write_status`; replies reuse
-//! the original non-zero request sequence. `exec_output.output_seq` is per exec
-//! operation and starts at 0, incrementing by 1 for each output frame across
-//! stdout and stderr.
+//! `guest_state_restore`, `workspace_drive_mount`, `file_write_status`, and
+//! `write_file_stream_begin`; replies reuse the original non-zero request sequence.
+//! `write_file_stream_begin`, `write_file_stream_data`, `write_file_stream_end`, and
+//! `write_file_stream_credit` share that sequence. Credits count DATA frames, not bytes;
+//! each DATA payload is non-empty and at most 64 KiB. Stream completion reuses
+//! `write_file_result` with the same sequence. See the [guest file compression guide]
+//! for the full lifecycle and resource bounds. `exec_output.output_seq` is per exec
+//! operation and starts at 0, incrementing by 1 for each output frame across stdout
+//! and stderr.
+//!
+//! [guest file compression guide]: https://github.com/vm0-ai/okou/blob/main/docs/guest-file-compression.md
+//!
 //! `write_file_result.success` / `write_files_result.success` use 0=false and
 //! 1=true.
 //! `exec_control_result.status` is an [`ExecControlStatus`] wire value.
