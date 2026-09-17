@@ -1,6 +1,6 @@
 {
   "name": "@okouai/pi-agent-runtime",
-  "version": "1.33.1",
+  "version": "1.33.2",
   "private": true,
   "type": "module",
   "exports": {
