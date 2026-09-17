@@ -160,6 +160,12 @@ lookup uses the exact organization bot token, connected Slack user and
 workspace, the same fixed `users.conversations` method discovery uses, and the
 same combined cancellation and deadline signal.
 
+Those lookups obey the same finite budgets as the reads, so an attempt that has
+already spent its request or wall-clock budget cannot buy the final lookup. Such
+an attempt is already `partial` under `requests` or `deadline`, and everything it
+returns still carries the per-read proof that preceded it. Raising a budget to
+buy the extra call would be a silent cap increase and is deliberately not done.
+
 A lookup produces one of three results, and only the first authorizes a read:
 
 | Result   | Meaning and effect                                                                                                                                                                                                                                                                               |

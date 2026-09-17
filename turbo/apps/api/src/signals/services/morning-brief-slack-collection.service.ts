@@ -26,10 +26,11 @@ import { settle } from "../utils";
  * **Live scope.** Enumerating the intersection once authorizes nothing later:
  * the bot keeps its own access after the member loses theirs. Every protected
  * history or reply page is therefore preceded by a fresh bounded proof that the
- * connected member still shares that conversation, and one final proof runs
- * before the bundle leaves this collector so a response held across a removal
- * is not released. Those proofs spend the same finite request and time budgets
- * as the reads, which lowers effective throughput and is reported as partial.
+ * connected member still shares that conversation, and one final proof covers
+ * the window in which a response is held across a removal. Those proofs spend
+ * the same finite request and time budgets as the reads, which lowers effective
+ * throughput and is reported as partial; an attempt that has already spent
+ * those budgets cannot buy the final proof and says so through its own limit.
  *
  * **Coverage limit.** Threads are discovered from the roots that windowed
  * history returns, so a new reply on a root older than the window is not found.
@@ -488,7 +489,9 @@ async function authorizeChannelRead(
  * Each read was authorized before it started, but its response can be held
  * across a removal. One bounded pass over the live intersection closes that gap;
  * it stops as soon as every pending conversation is named, so it normally costs
- * a single request.
+ * a single request. An attempt that has already exhausted its request or time
+ * budget cannot make this call without breaking that budget, and is already
+ * reported as bounded under `requests` or `deadline`.
  */
 async function confirmSharedScope(
   scope: MorningBriefSlackCollectionScope,
