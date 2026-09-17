@@ -93,6 +93,24 @@ export async function transferAgentOwnerFixture(args: {
   }
 }
 
+/** Moves one Agent into another organization, the other half of the ownership
+ * change its composite `(id, org_id, owner)` key exists to detect. No
+ * production writer updates this column today either.
+ */
+export async function transferAgentOrganizationFixture(args: {
+  readonly agentId: string;
+  readonly orgId: string;
+}): Promise<void> {
+  const updated = await db()
+    .update(agents)
+    .set({ orgId: args.orgId })
+    .where(eq(agents.id, args.agentId))
+    .returning({ id: agents.id });
+  if (updated.length !== 1) {
+    throw new Error("Expected one Agent organization to transfer");
+  }
+}
+
 export function barrierQueryText(queryArgs: unknown[]): string {
   const parsed = z
     .union([z.string(), z.object({ text: z.string() })])

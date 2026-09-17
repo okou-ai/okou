@@ -34,7 +34,7 @@ import {
 import { publishThreadListChanged } from "../external/realtime";
 import type { Db } from "../external/db";
 import { nowDate } from "../../lib/time";
-import { safeJsonParse, tapError } from "../utils";
+import { safeJsonParse, settle, tapError } from "../utils";
 import {
   generateAuxiliary,
   type RecordAuxiliaryGenerationDetail,
@@ -45,6 +45,11 @@ import {
   RECOMMENDED_FOLLOWUP_LIMIT,
   normalizeRecommendedFollowups,
 } from "./chat-recommended-followups.service";
+import {
+  ChatThreadContentOwnershipChangedError,
+  withChatThreadContentWrite,
+  type ChatThreadContentIdentity,
+} from "./chat-thread-content-erasure-admission.service";
 import { appendChatThreadEvent } from "./chat-thread-event.service";
 import { queuedUserMessageExists } from "./chat-queued-event.service";
 import {
@@ -57,6 +62,17 @@ import {
 } from "./canonical-chat-event-read.service";
 
 const log = logger("api:chat-title");
+/**
+ * The eager title runs as `waitUntil` background work whose HTTP response has
+ * already been delivered, so the request's own signal is not a lifetime for it:
+ * passing that signal would cancel a legitimate late completion the moment the
+ * client disconnects. Each fenced transaction instead carries its own real
+ * deadline, sized as an outer bound on the admission helper's own budget — at
+ * most three attempts, each statement capped at its `5s` statement timeout and
+ * each lock wait at its `1s` lock timeout. It is a bound on this background
+ * work, not a cancellation channel, and it never fences the provider itself.
+ */
+const TITLE_FENCE_DEADLINE_MS = 30_000;
 const TITLE_MODEL = "google/gemini-3.1-flash-lite";
 const TITLE_CONTEXT_CHAR_CAP = 150;
 const TITLE_PRIOR_MESSAGE_CAP = 10;
@@ -314,7 +330,7 @@ export async function generateSharedThreadTitle(
 }
 
 async function getLatestTitleContextMessages(
-  db: Db,
+  db: SelectDb,
   threadId: string,
 ): Promise<ChatCompletionContextMessage[]> {
   const rows = await db
@@ -343,58 +359,231 @@ async function getLatestTitleContextMessages(
   });
 }
 
-async function updateChatThreadTitle(
+/**
+ * The content-free canonical identity this one title operation is bound to,
+ * frozen before any prior-round content is read and before the provider request
+ * is sent. It exists because the generated title is prepared for the account
+ * that owned the thread at initiation: reading ownership again only after the
+ * provider answers would re-attribute that prepared content to whoever survives
+ * the change. The pin is transient and never reaches a provider prompt, a
+ * public contract, telemetry or a persisted copy.
+ */
+interface ChatTitleOwnershipPin {
+  readonly chatThreadId: string;
+  readonly userId: string;
+  readonly agentId: string;
+  readonly agentOwner: string;
+  readonly orgId: string;
+}
+
+/**
+ * The generated-title writer requires a resolved Agent, unlike the legal
+ * null-Agent draft thread. `agents.org_id` and `agents.owner` are `NOT NULL`,
+ * so a resolved Agent always carries both; they are nullable here only because
+ * the identity resolution left-joins a nullable parent reference. A thread
+ * whose Agent does not resolve therefore has no complete pin and no generated
+ * title, which is the existing `agent_id IS NOT NULL` omission.
+ */
+function chatTitleOwnershipPin(
+  identity: ChatThreadContentIdentity,
+): ChatTitleOwnershipPin | null {
+  if (
+    identity.agentId === null ||
+    identity.agentOwner === null ||
+    identity.orgId === null
+  ) {
+    return null;
+  }
+  return {
+    chatThreadId: identity.chatThreadId,
+    userId: identity.userId,
+    agentId: identity.agentId,
+    agentOwner: identity.agentOwner,
+    orgId: identity.orgId,
+  };
+}
+
+/**
+ * Compares the whole frozen pin, not just user and organization. An Agent owner
+ * transfer inside the same organization moves `agentOwner` alone, so a check
+ * that stopped at user and organization would hand a title generated for the
+ * previous owner to the survivor.
+ */
+function matchesChatTitleOwnershipPin(
+  identity: ChatThreadContentIdentity,
+  pin: ChatTitleOwnershipPin,
+): boolean {
+  return (
+    identity.chatThreadId === pin.chatThreadId &&
+    identity.userId === pin.userId &&
+    identity.agentId === pin.agentId &&
+    identity.agentOwner === pin.agentOwner &&
+    identity.orgId === pin.orgId
+  );
+}
+
+/**
+ * An optional generation whose canonical parents kept moving is a discarded
+ * result for this workflow, exactly like a closed subject or a deleted thread:
+ * the send that started it already succeeded and no title is owed. Every other
+ * failure — a lock wait, a statement timeout, a rolled back transaction — stays
+ * a failure and reaches the workflow's existing handler.
+ */
+async function discardOnOwnershipChange<T>(
+  work: Promise<T>,
+): Promise<T | null> {
+  const result = await settle(work);
+  if (result.ok) {
+    return result.value;
+  }
+  if (result.error instanceof ChatThreadContentOwnershipChangedError) {
+    return null;
+  }
+  throw result.error;
+}
+
+interface ChatTitleGenerationCapture {
+  readonly pin: ChatTitleOwnershipPin;
+  readonly priorRounds: readonly ChatCompletionContextMessage[];
+}
+
+/**
+ * The local initiation boundary. One bounded admitted transaction resolves the
+ * real persisted parents, compares the scheduling caller's user and
+ * organization against them, admits the subjects they represent through B1 and
+ * only then reads this thread's title eligibility and its bounded prior-round
+ * context. A subject already known closed therefore never starts another title
+ * generation, and the content-free identity is fixed before any account content
+ * is read.
+ *
+ * The context read stays inside this admitted transaction deliberately. It is a
+ * single bounded query under the same `5s` statement timeout, and running it
+ * under the retained locks is what makes it impossible for context acquisition
+ * to cross an ownership change, so no second pin validation is needed before
+ * generation. Every lock is released at `COMMIT`, strictly before the provider
+ * await below: no database transaction is ever held across that request.
+ *
+ * This is a local initiation boundary only. It is not external-provider fencing
+ * and it proves nothing about provider-side deletion.
+ */
+async function captureChatThreadTitleGeneration(args: {
+  readonly db: Db;
+  readonly threadId: string;
+  readonly userId: string;
+  readonly orgId: string;
+  readonly includePriorRounds: boolean;
+}): Promise<ChatTitleGenerationCapture | null> {
+  const captured = await discardOnOwnershipChange(
+    withChatThreadContentWrite(
+      args.db,
+      {
+        chatThreadId: args.threadId,
+        authorize: (identity) => {
+          return (
+            identity.userId === args.userId &&
+            identity.orgId === args.orgId &&
+            identity.agentId !== null
+          );
+        },
+      },
+      async (tx, identity) => {
+        const pin = chatTitleOwnershipPin(identity);
+        if (pin === null || !(await shouldGenerateChatThreadTitle(tx, pin))) {
+          return null;
+        }
+        return {
+          pin,
+          priorRounds: args.includePriorRounds
+            ? await getLatestTitleContextMessages(tx, pin.chatThreadId)
+            : [],
+        };
+      },
+      AbortSignal.timeout(TITLE_FENCE_DEADLINE_MS),
+    ),
+  );
+  return captured?.outcome === "written" ? captured.value : null;
+}
+
+/**
+ * The late persistence transaction. It starts fresh: a new bounded
+ * `READ COMMITTED` transaction resolves the current canonical identity,
+ * rejects anything that no longer equals the original pin, admits the subjects
+ * that matching identity represents, takes the Agent and thread identity locks
+ * and revalidates under them — all before the title `UPDATE`, the durable
+ * sidebar sequence and the `renamed` event, which stay in that one transaction.
+ *
+ * `authorize` compares the entire frozen pin, so a retry can only ever re-admit
+ * the identity this title was generated for. A canonical parent that moved is
+ * simply no longer authorized on the next attempt and the title is discarded;
+ * the pin itself never rebinds to the survivor.
+ */
+async function persistGeneratedChatThreadTitle(
   db: Db,
-  threadId: string,
-  userId: string,
-  orgId: string,
+  pin: ChatTitleOwnershipPin,
   title: string,
 ): Promise<void> {
-  const updated = await db.transaction(async (tx) => {
-    const [thread] = await tx
-      .update(chatThreads)
-      .set({ title, updatedAt: nowDate() })
-      .where(
-        and(
-          eq(chatThreads.id, threadId),
-          isNull(chatThreads.title),
-          isNull(chatThreads.renamedAt),
-          isNotNull(chatThreads.agentId),
-        ),
-      )
-      .returning({
-        id: chatThreads.id,
-        agentId: chatThreads.agentId,
-      });
-    if (!thread?.agentId) {
-      return false;
-    }
-    await appendChatThreadEvent(tx, {
-      kind: "renamed",
-      userId,
-      orgId,
-      chatThreadId: thread.id,
-      agentId: thread.agentId,
-      title,
-    });
-    return true;
-  });
+  const persisted = await discardOnOwnershipChange(
+    withChatThreadContentWrite(
+      db,
+      {
+        chatThreadId: pin.chatThreadId,
+        authorize: (identity) => {
+          return matchesChatTitleOwnershipPin(identity, pin);
+        },
+      },
+      async (tx) => {
+        const [thread] = await tx
+          .update(chatThreads)
+          .set({ title, updatedAt: nowDate() })
+          .where(
+            and(
+              eq(chatThreads.id, pin.chatThreadId),
+              isNull(chatThreads.title),
+              isNull(chatThreads.renamedAt),
+              isNotNull(chatThreads.agentId),
+            ),
+          )
+          .returning({
+            id: chatThreads.id,
+            agentId: chatThreads.agentId,
+          });
+        if (!thread?.agentId) {
+          return false;
+        }
+        // The sidebar labels come from the admitted identity: `authorize`
+        // proved the resolved parents equal this pin field by field and the
+        // helper revalidated that same identity under the retained locks, so
+        // the pin is the admitted identity rather than a stale caller label.
+        await appendChatThreadEvent(tx, {
+          kind: "renamed",
+          userId: pin.userId,
+          orgId: pin.orgId,
+          chatThreadId: thread.id,
+          agentId: thread.agentId,
+          title,
+        });
+        return true;
+      },
+      AbortSignal.timeout(TITLE_FENCE_DEADLINE_MS),
+    ),
+  );
 
-  if (!updated) {
-    return;
+  // Only a committed title invalidates a sidebar, and only for the identity
+  // that was admitted for it. A closed, missing, moved or no-longer-eligible
+  // thread publishes nothing.
+  if (persisted?.outcome === "written" && persisted.value) {
+    await publishThreadListChanged({ userId: pin.userId, orgId: pin.orgId });
   }
-
-  await publishThreadListChanged({ userId, orgId });
 }
 
 async function shouldGenerateChatThreadTitle(
   db: SelectDb,
-  threadId: string,
+  pin: ChatTitleOwnershipPin,
 ): Promise<boolean> {
   const [thread] = await db
     .select({ title: chatThreads.title, renamedAt: chatThreads.renamedAt })
     .from(chatThreads)
-    .where(eq(chatThreads.id, threadId))
+    .where(eq(chatThreads.id, pin.chatThreadId))
     .limit(1);
 
   return Boolean(thread && thread.title === null && thread.renamedAt === null);
@@ -410,13 +599,12 @@ async function generateAndPersistChatThreadTitle(args: {
 }): Promise<void> {
   await tapError(
     (async () => {
-      if (!(await shouldGenerateChatThreadTitle(args.db, args.threadId))) {
+      const captured = await captureChatThreadTitleGeneration(args);
+      if (!captured) {
         return;
       }
 
-      const priorRounds = args.includePriorRounds
-        ? await getLatestTitleContextMessages(args.db, args.threadId)
-        : [];
+      const { pin, priorRounds } = captured;
       const title = await generateAuxiliary({
         feature: "chat_title",
         generate: (record) => {
@@ -434,13 +622,7 @@ async function generateAndPersistChatThreadTitle(args: {
         diagnosticContext: { threadId: args.threadId },
       });
       if (title) {
-        await updateChatThreadTitle(
-          args.db,
-          args.threadId,
-          args.userId,
-          args.orgId,
-          title,
-        );
+        await persistGeneratedChatThreadTitle(args.db, pin, title);
       }
     })(),
     (err) => {

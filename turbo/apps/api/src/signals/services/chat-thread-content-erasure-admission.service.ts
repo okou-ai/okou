@@ -21,7 +21,7 @@ import { settle } from "../utils";
  * non-null Agent reference that does not resolve is a missing canonical parent,
  * never permission to admit the thread user alone.
  */
-interface ChatThreadContentIdentity {
+export interface ChatThreadContentIdentity {
   readonly chatThreadId: string;
   readonly userId: string;
   readonly agentId: string | null;
@@ -30,7 +30,7 @@ interface ChatThreadContentIdentity {
 }
 
 /** The canonical parents moved between the unlocked resolution and the locks. */
-class ChatThreadContentOwnershipChangedError extends Error {
+export class ChatThreadContentOwnershipChangedError extends Error {
   constructor() {
     super("Chat thread content ownership changed while acquiring locks");
     this.name = "ChatThreadContentOwnershipChangedError";
