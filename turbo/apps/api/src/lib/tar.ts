@@ -116,9 +116,13 @@ export function extractBinaryFilesFromTarGz(
   targetPaths?: readonly string[],
   maxOutputBytes?: number,
 ): readonly ExtractedBinaryTarFile[] {
-  return parseTarGz(gzBuffer, targetPaths, maxOutputBytes, false).map(
+  return parseTarGz(gzBuffer, targetPaths, maxOutputBytes, false).flatMap(
     (entry) => {
-      return { path: entry.path, content: entry.content ?? Buffer.alloc(0) };
+      // Nonregular entries were never collected for this caller, so there is
+      // no bodiless entry here to invent an empty buffer for.
+      return entry.content === null
+        ? []
+        : [{ path: entry.path, content: entry.content }];
     },
   );
 }
