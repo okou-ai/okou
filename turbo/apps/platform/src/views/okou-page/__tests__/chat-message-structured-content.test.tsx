@@ -176,7 +176,7 @@ test("Related feedback notes are grouped with clear source links", async () => {
   if (!group) {
     throw new Error("Structured feedback group not found");
   }
-  expect(group).toHaveTextContent("Feedback on 2 parts of your reply:");
+  expect(group).toHaveTextContent("Quoted 2 parts of your reply");
   const quotes = group.querySelectorAll("[data-structured-feedback-quote]");
   expect(quotes).toHaveLength(2);
   expect(quotes[0]).toHaveTextContent("The audience is not specific enough.");
@@ -192,6 +192,84 @@ test("Related feedback notes are grouped with clear source links", async () => {
   }
   assertBefore(before, group);
   assertBefore(group, after);
+});
+
+test("Forwarded feedback names its source chat", async () => {
+  const userMessage = {
+    version: 1,
+    parts: [
+      {
+        type: "feedback",
+        quote: "The deployment window is fifteen minutes.",
+        note: [],
+      },
+      {
+        type: "source",
+        kind: "agent",
+        runId: SOURCE_RUN_ID,
+        threadId: SOURCE_THREAD_ID,
+        agentId: SOURCE_AGENT_ID,
+        titleSnapshot: "Source thread",
+        href: `/chats/${SOURCE_THREAD_ID}#run-${SOURCE_RUN_ID}`,
+      },
+    ],
+  } satisfies UserMessageDocument;
+  installMessageExperienceChat({
+    threadId: context.resourceId,
+    chatEvents: [userEventWith(userMessage)],
+  });
+
+  await setupPage({ context, path: `/chats/${context.resourceId}` });
+
+  const group = await waitFor(() => {
+    const element = document.querySelector<HTMLElement>(
+      "[data-structured-feedback-group]",
+    );
+    if (!element) {
+      throw new Error("Structured feedback group not found");
+    }
+    return element;
+  });
+  expect(group).toHaveTextContent('Forwarded from "Source thread"');
+  expect(group).not.toHaveTextContent("Quoted from your reply");
+});
+
+test("Mail quote headings omit mail identifiers", async () => {
+  const userMessage = {
+    version: 1,
+    parts: [
+      {
+        type: "feedback",
+        quote: "The launch date is Thursday.",
+        note: [],
+        source: {
+          type: "mail",
+          id: "draft-mail-931",
+          sentId: "sent-mail-931",
+          status: "sent",
+        },
+      },
+    ],
+  } satisfies UserMessageDocument;
+  installMessageExperienceChat({
+    threadId: context.resourceId,
+    chatEvents: [userEventWith(userMessage)],
+  });
+
+  await setupPage({ context, path: `/chats/${context.resourceId}` });
+
+  const group = await waitFor(() => {
+    const element = document.querySelector<HTMLElement>(
+      "[data-structured-feedback-group]",
+    );
+    if (!element) {
+      throw new Error("Structured feedback group not found");
+    }
+    return element;
+  });
+  expect(group).toHaveTextContent("Quoted from a sent email");
+  expect(group).not.toHaveTextContent("draft-mail-931");
+  expect(group).not.toHaveTextContent("sent-mail-931");
 });
 
 async function openStructuredContextChat() {

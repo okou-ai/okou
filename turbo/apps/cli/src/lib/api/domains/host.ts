@@ -79,7 +79,12 @@ export async function prepareHostedSite(
 ): Promise<HostedSitePrepareResponse> {
   const { baseUrl, token } = await getAuthContext();
   const response = await fetch(
-    new URL("/api/host/deployments/prepare", baseUrl),
+    new URL(
+      body.requirePrivateArtifact
+        ? "/api/host/deployments/prepare/private"
+        : "/api/host/deployments/prepare",
+      baseUrl,
+    ),
     {
       method: "POST",
       headers: headersWithCliClientHeaders(authHeaders(token, { json: true })),

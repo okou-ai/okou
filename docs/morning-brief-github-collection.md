@@ -36,40 +36,61 @@ owned by the **shared** Morning Brief connector reader
 [#34809](https://github.com/vm0-ai/okou/issues/34809). This slice consumes that
 exact implementation and adds no second authorization engine:
 
-- `admitMorningBriefCollection` is the preview gate: the default-off
-  `simpleMorningBrief` switch, a canonical installed and enabled Morning Brief,
-  and live membership/erasure admission. It returns the frozen
+- `admitMorningBriefCollection({ db, clerk, orgId, userId, anchor }, signal)` is
+  the preview gate: the default-off `simpleMorningBrief` switch, a canonical
+  installed and enabled Morning Brief, the member's current Clerk membership
+  generation, and erasure-subject admission. It returns the frozen
   `MorningBriefCollectionScope` — owner, installation, pinned Agent, canonical
-  thread, anchor and timezone — none of which a caller can supply.
-- `withMorningBriefConnectorReader` re-derives live authority before the
-  credential is accessed, before every request, and again before the collected
-  payload is released: canonical ownership, membership, the pinned connector
-  account, the Agent's grants, accepted catalog visibility and effective URL
-  policy. Holding a credential is not permission; every gate must produce an
-  unambiguous `allow`.
+  thread, anchor, timezone and `membershipId`. None of it can be supplied by a
+  caller; a removal and rejoin issues a new `membershipId`, so a new membership
+  cannot release what the previous one collected.
+- `withMorningBriefConnectorReader(args, collect, signal)` takes the shared
+  `clerk` client alongside `db` and a separate final `AbortSignal`, and owns one
+  absolute deadline covering admission, credentials, every request and body, and
+  the release fence. It re-derives live authority before the credential is
+  resolved, before every request, and again before the payload is released:
+  canonical ownership, membership, the pinned connector account, the Agent's
+  grants, accepted catalog visibility and effective URL policy. Holding a
+  credential is not permission; every gate must produce an unambiguous `allow`.
 - An explicit account selection that no longer resolves fails closed
   (`not-connected`); it never falls back to the member's default account.
-- A URL the effective policy refuses is an endpoint-local `denied`, which this
-  adapter records as a branch coverage gap. A terminal loss of authority
-  latches and discards the whole source.
 
-This adapter supplies only the GitHub path vocabulary, its budget, its fixed
-API host and its token environment name. It never holds the credential, builds
-its own request, or decides whether it may read. There is no `GH_TOKEN` process
+This adapter supplies only the GitHub path vocabulary, its budget, its fixed API
+host and its token environment name. It never holds the credential, builds its
+own request, or decides whether it may read. There is no `GH_TOKEN` process
 credential, controller credential, organization admin account, GitHub App or
 installation token, and no Run materialization anywhere on this path.
 
-### Known shared-reader limitation
+### Endpoint-local refusal versus a lost source
 
-The shared reader currently latches **every** provider `401`/`403` as
-`reconnect-required` and discards the whole source. GitHub's secondary rate
-limit is delivered as a `403` carrying `Retry-After`, and a single repository
-can legitimately refuse one read while the rest remain authorized, so that
-classification is recorded here as present behaviour rather than the desired
-contract. The concrete capability is requested in #34809; until it lands, this
-adapter's endpoint-local denial coverage is exercised through the effective
-permission policy, which is the authorization path that actually decides
-access. No second engine is maintained to work around it.
+`getJson` distinguishes the two refusals that matter for GitHub, and neither
+terminates the source:
+
+- `denied` with `scope: "policy"` is this member's own effective permission
+  refusing the endpoint. The branch records `denied-endpoint` and its siblings
+  keep their data.
+- `denied` with `scope: "provider"` is GitHub answering `403`. One repository's
+  check surface can refuse while `/notifications` and `/search/issues` stay
+  authorized, so the branch records `provider-forbidden` and the rest of the
+  bundle survives.
+- A provider `403` carrying `Retry-After` is GitHub's **secondary rate limit**,
+  not a lost credential. It is recorded as `rate-limited` with the bounded
+  `retryAfterMs` the reader validated, and it is never reported as a permission
+  refusal.
+
+Only an established loss of authority — revoked membership, changed ownership,
+a different selected account, a credential that no longer loads — latches and
+discards the whole source.
+
+### Bounded response metadata
+
+Every successful read returns validated, allowlisted `meta`: `hasNextPage` and a
+bounded `nextPageNumber` derived from GitHub's own `Link` header, plus
+`rateLimitRemaining`, `rateLimitResetAt` and `retryAfterMs`. The collector uses
+`hasNextPage` to state truthfully whether a page it did not read exists, and
+carries the rate-limit facts into the envelope as metadata. **No provider URL is
+ever followed** — the next request is still a path this module constructs from a
+bounded page number.
 
 ## GitHub semantics
 
@@ -142,13 +163,14 @@ branch windows, normalized items with provenance, coverage, and sanitized
 failure and truncation codes. It distinguishes:
 
 - healthy `empty` from `partial`
-- endpoint policy denial (`denied`) from a missing item (`not-found`)
-- rate limiting, with the provider's bounded `Retry-After` as metadata
+- policy denial, provider `403` and a missing item (`not-found`) from each other
+- primary rate limiting (`429`) and GitHub's secondary rate limit (a `403`
+  carrying `Retry-After`), with the bounded hint as metadata
 - malformed, oversized and other provider failures
 - request, byte and deadline budget exhaustion
 - the shared reader's terminal source-unavailable reasons: `not-connected`,
-  `not-authorized`, `reconnect-required`, `source-revoked` and
-  `provider-failed`, none of which release a bundle
+  `not-authorized`, `reconnect-required`, `source-revoked`, `deadline-exceeded`
+  and `provider-failed`, none of which release a bundle
 
 An unread next page, `incomplete_results`, a `total_count` beyond what was
 read, an unprocessed relevant pull request, an unsupported notification

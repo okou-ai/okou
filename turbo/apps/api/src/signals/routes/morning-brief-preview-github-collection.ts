@@ -6,6 +6,7 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { request$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
+import { clerk$ } from "../external/clerk";
 import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import { executeMorningBriefGithubCollection } from "../services/morning-brief-github-collection.service";
@@ -41,7 +42,10 @@ const collect$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   const execution = await executeMorningBriefGithubCollection(
     {
+      // A legitimate credential refresh and the erasure-admission transaction
+      // both write, so this reader needs the writable handle even to collect.
       db: set(writeDb$),
+      clerk: get(clerk$),
       owner: { orgId: auth.orgId, userId: auth.userId },
       anchor: new Date(body.data.scheduledFor),
     },

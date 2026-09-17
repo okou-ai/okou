@@ -863,16 +863,24 @@ describe("Morning Brief GitHub collection preview", () => {
     });
     scriptGithub({
       search: (query) => {
-        return {
-          total_count: 500,
-          incomplete_results: true,
-          items: page.map((item, index) => {
-            return {
-              ...item,
-              number: index + 1 + Number(query.get("page") ?? "1") * 100,
-            };
-          }),
-        };
+        const current = Number(query.get("page") ?? "1");
+        // GitHub's own `Link` header. The reader validates it down to the
+        // existence of a next page and its bounded number; the URL itself is
+        // never followed, and the collector keeps building its own paths.
+        return HttpResponse.json(
+          {
+            total_count: 500,
+            incomplete_results: true,
+            items: page.map((item, index) => {
+              return { ...item, number: index + 1 + current * 100 };
+            }),
+          },
+          {
+            headers: {
+              link: `<https://api.github.com/search/issues?page=${current + 1}>; rel="next"`,
+            },
+          },
+        );
       },
     });
 
@@ -882,7 +890,10 @@ describe("Morning Brief GitHub collection preview", () => {
     expect(bundle.coverage).toBe("partial");
     expect(bundle.branches.assigned.limits).toContain("search-incomplete");
     expect(bundle.branches.assigned.limits).toContain("search-pages");
+    expect(bundle.branches.assigned.limits).toContain("unread-pages");
     expect(bundle.branches.assigned.limits).toContain("search-total-exceeded");
+    // Two bounded pages were read, and the third was refused by the budget.
+    expect(bundle.branches.assigned.pages).toBe(2);
   });
 
   it("keeps a policy-denied search branch from erasing allowed notification data", async () => {
@@ -973,24 +984,77 @@ describe("Morning Brief GitHub collection preview", () => {
     ).toBeFalsy();
   });
 
-  it("treats a provider 403 as a terminal loss of the whole source", async () => {
+  it("keeps a provider-forbidden branch from erasing allowed sibling data", async () => {
     const f = await fixture();
     scriptGithub({
       notifications: () => {
         return new HttpResponse(null, { status: 403 });
       },
+      search: searchByBranch({
+        assigned: searchPage([
+          searchItem({
+            repo: "acme/api",
+            number: 31,
+            updatedAt: MID_WINDOW,
+            isPullRequest: false,
+          }),
+        ]),
+      }),
     });
 
-    const response = await collect(f);
+    const bundle = collectedBundle((await collect(f)).body);
 
-    // The shared reader owned by #34809 latches 401/403 as a lost credential
-    // and discards the source. That is recorded here as the actual current
-    // shared behaviour, not as a healthy or partial read. The GitHub-specific
-    // secondary-rate-limit 403 distinction is requested in #34809.
-    expect(response.body).toMatchObject({
-      result: "not-executed",
-      reason: "reconnect-required",
+    // A provider 403 is endpoint-local: one repository or one endpoint can
+    // refuse while the selected credential keeps working everywhere else.
+    expect(
+      bundle.items.map((item) => {
+        return item.number;
+      }),
+    ).toStrictEqual([31]);
+    expect(bundle.branches.notifications.status).toBe("denied");
+    expect(bundle.branches.notifications.limits).toContain(
+      "provider-forbidden",
+    );
+    expect(bundle.branches.assigned.status).toBe("complete");
+    expect(bundle.outcome).toBe("partial");
+    expect(bundle.coverage).toBe("partial");
+  });
+
+  it("classifies a provider 403 carrying Retry-After as a secondary rate limit", async () => {
+    const f = await fixture();
+    scriptGithub({
+      notifications: () => {
+        return new HttpResponse(null, {
+          status: 403,
+          headers: { "retry-after": "30" },
+        });
+      },
+      search: searchByBranch({
+        reviewRequested: searchPage([
+          searchItem({ repo: "acme/api", number: 32, updatedAt: MID_WINDOW }),
+        ]),
+      }),
     });
+
+    const started = now();
+    const bundle = collectedBundle((await collect(f)).body);
+
+    // GitHub delivers its secondary rate limit as a 403 with `Retry-After`.
+    // It is throttling, not a lost credential and not a permission refusal.
+    expect(now() - started).toBeLessThan(10_000);
+    expect(bundle.retryAfterMs).toBe(30_000);
+    expect(bundle.branches.notifications.limits).toContain("rate-limited");
+    expect(bundle.branches.notifications.limits).not.toContain(
+      "provider-forbidden",
+    );
+    expect(bundle.branches.notifications.status).not.toBe("denied");
+    // The sibling branch that was never throttled still contributes.
+    expect(
+      bundle.items.map((item) => {
+        return item.number;
+      }),
+    ).toStrictEqual([32]);
+    expect(bundle.outcome).toBe("partial");
   });
 
   it("classifies a rate limit without sleeping on Retry-After", async () => {
@@ -1074,6 +1138,9 @@ describe("Morning Brief GitHub collection preview", () => {
     // The owner loses the organization membership while one GitHub request is
     // still in flight. Nothing after it may be issued, and the bundle that
     // request belongs to may not be released.
+    getApiTestMocks().clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+      { data: [] },
+    );
     await revokeMorningBriefMembership({ orgId: f.orgId, userId: f.userId });
     held.resolve();
     const response = await pending;

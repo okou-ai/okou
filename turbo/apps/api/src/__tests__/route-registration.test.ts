@@ -1,7 +1,9 @@
+import { morningBriefCollectionPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-collection-preview";
 import { morningBriefGithubCollectionContract } from "@okouai/api-contracts/contracts/morning-brief-github-collection";
 
 import { ROUTES } from "../signals/route";
 import { assertUniqueRouteRegistrations } from "../signals/route-entry";
+import { morningBriefCollectionPreviewRoutes } from "../signals/routes/morning-brief-collection-preview";
 import { morningBriefPreviewGithubCollectionRoutes } from "../signals/routes/morning-brief-preview-github-collection";
 
 describe("API route registrations", () => {
@@ -16,25 +18,44 @@ describe("API route registrations", () => {
     }).not.toThrow();
   });
 
-  /**
-   * The Morning Brief GitHub preview is environment-gated, not test-mounted.
-   *
-   * `api/no-global-sweep-test-routes` forbids composing the production table
-   * into a test app, so ingress is proven structurally instead: the deployed
-   * table must carry this module's *own* handler object for the contract's
-   * path. The behaviour suite then exercises that same handler through the
-   * exported slice, so a preview that existed only inside its own suite would
-   * fail here rather than pass quietly.
-   */
-  it("registers the Morning Brief GitHub collection preview handler", () => {
-    const expected = morningBriefPreviewGithubCollectionRoutes[0];
-    const registered = ROUTES.filter((entry) => {
-      return entry.route === morningBriefGithubCollectionContract.collect;
-    });
+  // The Morning Brief collection preview only means anything if an operator can
+  // actually reach it on a development server or a protected preview
+  // deployment, and its own suite may not compose an app from this
+  // production-global table. Asserting the exact entry object keeps that suite's
+  // results statements about the deployed endpoint rather than about a
+  // look-alike slice: the handler it exercises is the handler `ROUTES` holds.
+  it("registers the Morning Brief collection preview an operator invokes", () => {
+    const [entry, ...extra] = morningBriefCollectionPreviewRoutes;
+    expect(extra).toHaveLength(0);
+    expect(entry?.route).toBe(morningBriefCollectionPreviewContract.collect);
+    expect(ROUTES).toContain(entry);
+    expect(
+      ROUTES.filter((registered) => {
+        return (
+          registered.route.path ===
+          morningBriefCollectionPreviewContract.collect.path
+        );
+      }),
+    ).toStrictEqual([entry]);
+  });
 
-    expect(expected).toBeDefined();
-    expect(registered).toHaveLength(1);
-    expect(registered[0]?.handler).toBe(expected?.handler);
+  // The same statement for the GitHub priorities preview: the deployed table
+  // must hold this module's own entry object, so the behaviour suite that
+  // drives that handler through the exported slice is talking about the
+  // endpoint an operator actually reaches.
+  it("registers the Morning Brief GitHub collection preview an operator invokes", () => {
+    const [entry, ...extra] = morningBriefPreviewGithubCollectionRoutes;
+    expect(extra).toHaveLength(0);
+    expect(entry?.route).toBe(morningBriefGithubCollectionContract.collect);
+    expect(ROUTES).toContain(entry);
+    expect(
+      ROUTES.filter((registered) => {
+        return (
+          registered.route.path ===
+          morningBriefGithubCollectionContract.collect.path
+        );
+      }),
+    ).toStrictEqual([entry]);
     expect(morningBriefGithubCollectionContract.collect.path).toBe(
       "/api/morning-brief/preview/github-collection",
     );

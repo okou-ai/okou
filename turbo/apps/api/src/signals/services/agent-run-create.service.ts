@@ -436,7 +436,7 @@ import {
 import {
   piInferenceObjectHash,
   publishPiInferenceObject,
-  retainPiInferenceObject,
+  retainPiInferenceObjects,
 } from "./pi-inference-object.service";
 import {
   builtInModelRuntimeTarget,
@@ -865,11 +865,16 @@ interface ThreadSessionSnapshotStale {
   readonly reason: "binding_changed" | "session_changed";
 }
 
+const validatedThreadSessionTransaction = Symbol(
+  "validatedThreadSessionTransaction",
+);
+
 interface ValidatedThreadSessionSnapshot {
   readonly kind: "validated-thread-session-snapshot";
   readonly chatThreadId: string;
   readonly agentSessionId: string | null;
   readonly lockedSession: LockedComputeSessionSnapshot | undefined;
+  readonly [validatedThreadSessionTransaction]: DbTransaction;
 }
 
 type AtomicLaunchCommitResult =
@@ -6442,6 +6447,11 @@ interface LaunchRunRowsArgs {
   readonly orgId: string;
   readonly identity: LaunchRunIdentity;
   readonly status: LaunchRunStatus;
+  readonly capturedRuntimeRoute?: {
+    readonly provider: string;
+    readonly model: string;
+  };
+  readonly validatedAccountIdentity?: string | null;
   readonly resolved: ResolvedRunExecution;
   readonly body: CreateRunBody;
   readonly runStorageMounts: readonly PersistedStorageMount[] | undefined;
@@ -6513,6 +6523,11 @@ function launchRunValues(
     completedAt: args.status === "failed" ? createdAt : null,
     error: args.error ?? null,
     ...metadata,
+    ...(args.validatedAccountIdentity === undefined
+      ? {}
+      : {
+          modelProviderAccountIdentity: args.validatedAccountIdentity,
+        }),
   };
 }
 
@@ -6572,6 +6587,12 @@ function launchRunMetadataValues(args: LaunchRunRowsArgs): RunMetadataValues {
     modelProviderCredentialScope: modelPin.modelProviderCredentialScope,
     selectedModel: modelPin.selectedModel,
     ...builtInModelLaunchMetadataValues(args.modelProvider),
+    ...(args.capturedRuntimeRoute
+      ? {
+          modelRuntimeProvider: args.capturedRuntimeRoute.provider,
+          modelRuntimeModel: args.capturedRuntimeRoute.model,
+        }
+      : {}),
     selectedVideoModel: args.selectedVideoModel,
     selectedImageModel: args.selectedImageModel,
     chatThreadId: args.chatThreadId ?? null,
@@ -8269,15 +8290,12 @@ async function persistAtomicLaunchRows(
 
   const chatThreadId = args.commit.createArgs.chatThreadId;
   if (chatThreadId && !args.validatedThreadSession) {
-    const threadSessionBinding = await persistUnvalidatedThreadSessionBinding(
-      args.tx,
-      {
-        chatThreadId,
-        identity: context.rowsArgs.identity,
-        resolution: args.commit.createArgs.threadSessionResolution,
-        timing: args.commit.timing,
-      },
-    );
+    const threadSessionBinding = await persistThreadSessionBinding(args.tx, {
+      chatThreadId,
+      identity: context.rowsArgs.identity,
+      resolution: args.commit.createArgs.threadSessionResolution,
+      timing: args.commit.timing,
+    });
     return { ...persisted, threadSessionBinding };
   }
   return persisted;
@@ -8570,28 +8588,37 @@ function threadSessionBindingAction(args: {
   );
 }
 
-async function persistUnvalidatedThreadSessionBinding(
+async function persistThreadSessionBinding(
   tx: DbTransaction,
   args: {
     readonly chatThreadId: string;
     readonly identity: LaunchRunIdentity;
     readonly resolution: ChatThreadSessionResolution | undefined;
     readonly timing: ApiDispatchTimingCollector;
+    readonly validatedThreadSession?: ValidatedThreadSessionSnapshot;
   },
 ): Promise<ThreadSessionBindingWrite> {
   const chatThreadId = args.chatThreadId;
-  const [thread] = await args.timing.measure(
-    "api_dispatch_load_thread_session_binding",
-    "nested",
-    async () => {
-      return await tx
-        .select({ agentSessionId: chatThreads.agentSessionId })
-        .from(chatThreads)
-        .where(eq(chatThreads.id, chatThreadId))
-        .for("update")
-        .limit(1);
-    },
-  );
+  const validatedThreadSession =
+    args.validatedThreadSession?.[validatedThreadSessionTransaction] === tx &&
+    args.validatedThreadSession.chatThreadId === chatThreadId
+      ? args.validatedThreadSession
+      : undefined;
+  const thread = validatedThreadSession
+    ? { agentSessionId: validatedThreadSession.agentSessionId }
+    : await args.timing.measure(
+        "api_dispatch_load_thread_session_binding",
+        "nested",
+        async () => {
+          const [loaded] = await tx
+            .select({ agentSessionId: chatThreads.agentSessionId })
+            .from(chatThreads)
+            .where(eq(chatThreads.id, chatThreadId))
+            .for("update")
+            .limit(1);
+          return loaded;
+        },
+      );
   if (!thread) {
     throw new Error("Chat thread not found while persisting session binding");
   }
@@ -8699,12 +8726,13 @@ async function validateThreadSessionSnapshot(
 
   const expectedSessionId = resolution.expected.sessionId;
   if (expectedSessionId === null) {
-    return {
+    return Object.freeze({
       kind: "validated-thread-session-snapshot",
       chatThreadId,
       agentSessionId: thread.agentSessionId,
       lockedSession: undefined,
-    };
+      [validatedThreadSessionTransaction]: tx,
+    });
   }
   const session = await args.timing.measure(
     "api_dispatch_validate_thread_session_snapshot_session",
@@ -8723,12 +8751,13 @@ async function validateThreadSessionSnapshot(
       reason: "session_changed",
     });
   }
-  return {
+  return Object.freeze({
     kind: "validated-thread-session-snapshot",
     chatThreadId,
     agentSessionId: thread.agentSessionId,
     lockedSession: session,
-  };
+    [validatedThreadSessionTransaction]: tx,
+  });
 }
 
 async function commitQueuedPreparedLaunch(
@@ -12014,6 +12043,7 @@ interface DurablePiCommitAdmission {
   readonly kind: "admitted";
   readonly capturedAccount: string | null;
   readonly queueFirstClaim: QueueFirstRunClaimed | undefined;
+  readonly validatedThreadSession: ValidatedThreadSessionSnapshot | undefined;
 }
 
 type DurablePiAdmissionResult =
@@ -12148,14 +12178,18 @@ async function admitDurablePiInference(
     );
   }
   if (
-    !(await validateNewComputeSession(tx, {
-      userId: input.args.userId,
-      orgId: input.args.orgId,
-      agentId: input.context.resolved.agentId,
-      existingSessionId: prepared.identity.shouldCreateSession
-        ? undefined
-        : prepared.identity.sessionId,
-    }))
+    !(await validateNewComputeSession(
+      tx,
+      {
+        userId: input.args.userId,
+        orgId: input.args.orgId,
+        agentId: input.context.resolved.agentId,
+        existingSessionId: prepared.identity.shouldCreateSession
+          ? undefined
+          : prepared.identity.sessionId,
+      },
+      threadSessionValidation?.lockedSession,
+    ))
   ) {
     return conflict("Run admission is unavailable");
   }
@@ -12197,6 +12231,7 @@ async function admitDurablePiInference(
     capturedAccount,
     queueFirstClaim:
       queueFirstClaim?.kind === "claimed" ? queueFirstClaim : undefined,
+    validatedThreadSession: threadSessionValidation,
   };
 }
 
@@ -12236,17 +12271,12 @@ async function persistDurablePiInference(
     officialWorkflowProvenance: input.context.officialWorkflowRun?.provenance,
     error: undefined,
     creditAdmitted: input.creditAdmitted,
+    capturedRuntimeRoute: {
+      provider: prepared.configuration.runtimeProvider,
+      model: prepared.configuration.runtimeModel,
+    },
+    validatedAccountIdentity: admission.capturedAccount,
   });
-  await tx
-    .update(agentRuns)
-    .set({
-      modelRuntimeProvider: prepared.configuration.runtimeProvider,
-      modelRuntimeModel: prepared.configuration.runtimeModel,
-      ...(admission.capturedAccount
-        ? { modelProviderAccountIdentity: admission.capturedAccount }
-        : {}),
-    })
-    .where(eq(agentRuns.id, prepared.identity.runId));
   await tx.insert(agentRunInference).values({
     runId: prepared.identity.runId,
     sourceConversationId: prepared.sourceConversationId,
@@ -12268,31 +12298,30 @@ async function persistDurablePiInference(
     providerAttemptId: prepared.activation.inference.providerAttemptId,
     providerAttemptState: "not-started",
   });
-  for (const reference of [
-    { kind: "configuration" as const, hash: prepared.configurationHash },
-    { kind: "context" as const, hash: prepared.contextHash },
-    ...(prepared.deferredSecrets.kind === "encrypted"
-      ? [
-          {
-            kind: "secrets" as const,
-            hash: prepared.deferredSecrets.objectHash,
-          },
-        ]
-      : []),
-  ]) {
-    await retainPiInferenceObject(tx, {
-      runId: prepared.identity.runId,
-      userId: input.args.userId,
-      orgId: input.args.orgId,
-      ...reference,
-    });
-  }
+  await retainPiInferenceObjects(tx, {
+    runId: prepared.identity.runId,
+    userId: input.args.userId,
+    orgId: input.args.orgId,
+    references: [
+      { kind: "configuration", hash: prepared.configurationHash },
+      { kind: "context", hash: prepared.contextHash },
+      ...(prepared.deferredSecrets.kind === "encrypted"
+        ? [
+            {
+              kind: "secrets" as const,
+              hash: prepared.deferredSecrets.objectHash,
+            },
+          ]
+        : []),
+    ],
+  });
   const threadSessionBinding = input.args.chatThreadId
-    ? await persistUnvalidatedThreadSessionBinding(tx, {
+    ? await persistThreadSessionBinding(tx, {
         chatThreadId: input.args.chatThreadId,
         identity: prepared.identity,
         resolution: input.args.threadSessionResolution,
         timing: input.timing,
+        validatedThreadSession: admission.validatedThreadSession,
       })
     : undefined;
   if (isBuiltInModelProviderType(input.context.modelProvider?.type)) {

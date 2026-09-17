@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
+import { CHAT_RUN_CONTENT_POLICY_REJECTED_MESSAGE } from "@okouai/api-contracts/contracts/errors";
 import {
   OFFICIAL_RUNNER_TOKEN_PREFIX,
   PI_DEFERRED_SANDBOX_HEADER,
@@ -17,6 +19,7 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { env, mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import type { UsagePricingResolution } from "../../context/usage-pricing-resolution";
 import { createDeferredPromise, settle } from "../../utils";
 import { runnersRoutes } from "../runners";
 import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
@@ -26,21 +29,26 @@ import {
   createChatEventsFixture,
   createPiApiFirstTurnUsagePricingResolution,
   PI_RESOURCE_ARCHIVE_DOWNLOAD_URL,
+  USER_OWNED_GPT_FAST_BDD_ROUTES,
   requireOrgId,
 } from "./helpers/chat-events-fixture";
 import {
   piResponsesContentSse,
   piResponsesTextSse,
+  nativeCodexSseResponse,
 } from "./helpers/pi-responses";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
+import { removePiInferenceFixture } from "../../../test-fixtures/pi-inference-lifecycle";
 
 const context = testContext();
 const billing = createBillingMediaApi(context);
 const {
   api,
   chat,
+  webhooks,
   entitledChatActor,
   configureBuiltInPiModel,
+  configureUserOwnedGptPiModel,
   sendChatRun,
   waitForRunStatus,
   mockPiCheckpointObjectStore,
@@ -82,10 +90,12 @@ async function requestStateAction(body: Record<string, unknown>) {
 async function cleanupRuns(
   runIds: readonly string[],
   orgIds: readonly string[],
+  usagePricingResolution: UsagePricingResolution,
 ) {
   const app = createAppWithRoutes({
     signal: context.signal,
     routes: testCronCleanupSandboxesStateRoutes,
+    usagePricingResolution,
   });
   const response = await app.request(
     "/api/test/cron-cleanup-sandboxes-state/cleanup",
@@ -114,8 +124,12 @@ async function cleanupRuns(
   };
 }
 
-async function cleanupRun(runId: string, orgId: string) {
-  return await cleanupRuns([runId], [orgId]);
+async function cleanupRun(
+  runId: string,
+  orgId: string,
+  usagePricingResolution: UsagePricingResolution,
+) {
+  return await cleanupRuns([runId], [orgId], usagePricingResolution);
 }
 
 async function enableDurablePi(
@@ -293,6 +307,194 @@ async function releaseDeferredPiRun(
 }
 
 describe("durable Pi API producer", () => {
+  it.each(
+    (
+      [
+        {
+          provider: "codex-oauth-token",
+          status: 429,
+          code: "rate_limit_exceeded",
+          reason: "provider_rate_limited",
+        },
+        {
+          provider: "codex-oauth-token",
+          status: 429,
+          code: "usage_limit_reached",
+          reason: "usage_limit",
+        },
+        {
+          provider: "openai-api-key",
+          status: 429,
+          code: "rate_limit_exceeded",
+          reason: "provider_rate_limited",
+        },
+        {
+          provider: "built-in",
+          status: 503,
+          code: "overloaded_error",
+          reason: "provider_overloaded",
+        },
+        {
+          provider: "built-in",
+          status: 400,
+          code: "unknown_error",
+          reason: undefined,
+        },
+        ...(
+          ["codex-oauth-token", "openai-api-key", "built-in"] as const
+        ).flatMap((provider) => {
+          return [
+            {
+              provider,
+              status: 200,
+              code: "stream_overload",
+              message:
+                "Our servers are currently overloaded. Please try again later.",
+              reason: "provider_overloaded" as const,
+            },
+            {
+              provider,
+              status: 200,
+              code: "stream_safety_refusal",
+              message:
+                "Invalid prompt: your prompt was flagged as potentially violating our usage policy. Please try again with a different prompt: https://example.invalid/policy",
+              reason: "safety_policy_refusal" as const,
+            },
+          ];
+        }),
+      ] as const
+    ).flatMap((scenario) => {
+      return [
+        { ...scenario, execution: "api" },
+        ...("message" in scenario
+          ? [{ ...scenario, execution: "sandbox" }]
+          : []),
+      ];
+    }),
+  )(
+    "completes $execution $provider $code with its canonical reason without provider replay",
+    async (scenario) => {
+      configureNativeCliArtifact();
+      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      const selectedModel =
+        scenario.provider === "built-in" ? SELECTED_MODEL : "gpt-5.6-terra";
+      let providerUrl = PROVIDER_URL;
+      if (scenario.provider === "built-in") {
+        await configureBuiltInPiModel(actor, selectedModel);
+      } else {
+        const route = USER_OWNED_GPT_FAST_BDD_ROUTES.find((candidate) => {
+          return (
+            candidate.type === scenario.provider &&
+            candidate.selectedModel === selectedModel
+          );
+        });
+        if (!route) {
+          throw new Error("Expected a personal-provider Pi route fixture");
+        }
+        await configureUserOwnedGptPiModel(actor, route);
+        providerUrl = route.endpoint;
+      }
+      const orgId = await enableDurablePi(actor);
+      mockPiResourceArchiveDownloads();
+      mockPiCheckpointObjectStore();
+      let calls = 0;
+      server.use(
+        http.post(providerUrl, () => {
+          calls += 1;
+          if ("message" in scenario) {
+            return nativeCodexSseResponse(
+              `data: ${JSON.stringify(
+                scenario.provider === "codex-oauth-token"
+                  ? { type: "error", message: scenario.message }
+                  : {
+                      type: "response.failed",
+                      response: {
+                        status: "failed",
+                        error: { message: scenario.message },
+                      },
+                    },
+              )}\n\n`,
+            );
+          }
+          return HttpResponse.json(
+            {
+              error: {
+                code: scenario.code,
+                message: "Provider rejected request",
+              },
+            },
+            { status: scenario.status },
+          );
+        }),
+      );
+      const usagePricingResolution =
+        await createPiApiFirstTurnUsagePricingResolution(selectedModel);
+      const run = await sendChatRun(
+        actor,
+        {
+          agentId,
+          prompt:
+            scenario.execution === "sandbox"
+              ? "/native-command"
+              : "preserve the provider failure without replaying this turn",
+          model: selectedModel,
+          ...(scenario.provider === "built-in"
+            ? {}
+            : { runOptions: { codexServiceTier: "fast" as const } }),
+        },
+        usagePricingResolution,
+      );
+      onTestFinished(async () => {
+        await flushWaitUntilForTest();
+        await removePiInferenceFixture({ runId: run.runId, agentId, orgId });
+      });
+      if (scenario.execution === "sandbox" && "message" in scenario) {
+        await flushWaitUntilForTest();
+        await expect(
+          cleanupRun(run.runId, orgId, usagePricingResolution),
+        ).resolves.toMatchObject({
+          body: { errors: 0 },
+        });
+        const { claim } = await claimDeferredPiRun(run.runId, runnerGroup);
+        expect(claim.cliAgentType).toBe("pi");
+        await webhooks.requestAgentComplete(
+          {
+            runId: run.runId,
+            exitCode: 1,
+            error: scenario.message,
+            failureReason: scenario.reason,
+          },
+          { authorization: `Bearer ${claim.sandboxToken}` },
+          [200],
+        );
+      }
+      await waitForRunStatus(actor, run.runId, "failed", 10_000);
+      await flushWaitUntilForTest();
+      await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
+        status: "failed",
+      });
+      const events = (await chat.listThreadEvents(actor, run.threadId)).events;
+      const terminal = events.filter((event) => {
+        return (
+          event.runId === run.runId &&
+          isChatRunTerminalEventType(event.eventType)
+        );
+      });
+      expect(terminal).toMatchObject([{ eventType: "run.failed" }]);
+      const failureEvent = terminal.find((event) => {
+        return event.eventType === "run.failed";
+      });
+      expect(failureEvent?.failureReason).toBe(scenario.reason);
+      if (scenario.reason === "safety_policy_refusal") {
+        expect(failureEvent?.error).toBe(
+          CHAT_RUN_CONTENT_POLICY_REJECTED_MESSAGE,
+        );
+      }
+      await expectNoDeferredPiRun(run.runId, runnerGroup);
+      expect(calls).toBe(scenario.execution === "sandbox" ? 0 : 1);
+    },
+  );
+
   it("starts provider transport under held Sandbox capacity and completes without demand", async () => {
     configureNativeCliArtifact();
     const { actor, agentId, runnerGroup } = await entitledChatActor();
@@ -417,7 +619,9 @@ describe("durable Pi API producer", () => {
     );
     await flushWaitUntilForTest();
     expect(calls).toBe(0);
-    await expect(cleanupRun(run.runId, orgId)).resolves.toMatchObject({
+    await expect(
+      cleanupRun(run.runId, orgId, usagePricingResolution),
+    ).resolves.toMatchObject({
       body: { errors: 0 },
     });
     const { claim, runnerId } = await claimDeferredPiRun(
@@ -768,7 +972,9 @@ describe("durable Pi API producer", () => {
     await flushWaitUntilForTest();
     const recoveryRunId = await seedProducerRecoveryRun(source.runId, "ready");
 
-    await expect(cleanupRun(recoveryRunId, orgId)).resolves.toMatchObject({
+    await expect(
+      cleanupRun(recoveryRunId, orgId, usagePricingResolution),
+    ).resolves.toMatchObject({
       body: { errors: 0 },
     });
     await waitForRunStatus(actor, recoveryRunId, "completed", 10_000);
@@ -820,7 +1026,9 @@ describe("durable Pi API producer", () => {
         }),
       );
     }
-    await expect(cleanupRuns(recoveryRunIds, [orgId])).resolves.toMatchObject({
+    await expect(
+      cleanupRuns(recoveryRunIds, [orgId], usagePricingResolution),
+    ).resolves.toMatchObject({
       body: { errors: 0 },
     });
     expect(calls).toBe(21);
@@ -832,7 +1040,9 @@ describe("durable Pi API producer", () => {
       status: "pending",
     });
 
-    await expect(cleanupRun(overflowRunId, orgId)).resolves.toMatchObject({
+    await expect(
+      cleanupRun(overflowRunId, orgId, usagePricingResolution),
+    ).resolves.toMatchObject({
       body: { errors: 0 },
     });
     await waitForRunStatus(actor, overflowRunId, "completed", 10_000);
@@ -899,7 +1109,9 @@ describe("durable Pi API producer", () => {
       }),
     );
 
-    await expect(cleanupRuns(recoveryRunIds, [orgId])).resolves.toMatchObject({
+    await expect(
+      cleanupRuns(recoveryRunIds, [orgId], usagePricingResolution),
+    ).resolves.toMatchObject({
       body: { errors: 0 },
     });
     expect(recoveredCalls).toBe(2);
@@ -1013,7 +1225,9 @@ describe("durable Pi API producer", () => {
     const recoveryRunId = await seedProducerRecoveryRun(source.runId, "ready");
     await deleteCapturedPiModelKey(recoveryRunId);
 
-    await expect(cleanupRun(recoveryRunId, orgId)).resolves.toMatchObject({
+    await expect(
+      cleanupRun(recoveryRunId, orgId, usagePricingResolution),
+    ).resolves.toMatchObject({
       body: { errors: 0 },
     });
     await waitForRunStatus(actor, recoveryRunId, "failed", 10_000);
@@ -1061,7 +1275,9 @@ describe("durable Pi API producer", () => {
       "publishing",
     );
 
-    await expect(cleanupRun(recoveryRunId, orgId)).resolves.toMatchObject({
+    await expect(
+      cleanupRun(recoveryRunId, orgId, usagePricingResolution),
+    ).resolves.toMatchObject({
       body: { errors: 0 },
     });
     await waitForRunStatus(actor, recoveryRunId, "completed", 10_000);
@@ -1134,7 +1350,9 @@ describe("durable Pi API producer", () => {
     await flushWaitUntilForTest();
     await expirePiInference(recoveryRunId);
 
-    await expect(cleanupRun(recoveryRunId, orgId)).resolves.toMatchObject({
+    await expect(
+      cleanupRun(recoveryRunId, orgId, usagePricingResolution),
+    ).resolves.toMatchObject({
       body: { errors: 0 },
     });
     await flushWaitUntilForTest();
@@ -1205,7 +1423,9 @@ describe("durable Pi API producer", () => {
     await flushWaitUntilForTest();
     await expirePiInference(recoveryRunId);
 
-    await expect(cleanupRun(recoveryRunId, orgId)).resolves.toMatchObject({
+    await expect(
+      cleanupRun(recoveryRunId, orgId, usagePricingResolution),
+    ).resolves.toMatchObject({
       body: { errors: 0 },
     });
     await flushWaitUntilForTest();
@@ -1276,7 +1496,9 @@ describe("durable Pi API producer", () => {
     await flushWaitUntilForTest();
 
     expect(calls).toBe(1);
-    await expect(cleanupRun(run.runId, orgId)).resolves.toMatchObject({
+    await expect(
+      cleanupRun(run.runId, orgId, usagePricingResolution),
+    ).resolves.toMatchObject({
       body: { errors: 0 },
     });
     const { claim, runnerId } = await claimDeferredPiRun(
@@ -1338,7 +1560,9 @@ describe("durable Pi API producer", () => {
     await providerEntered.promise;
     await expirePiInference(run.runId);
 
-    await expect(cleanupRun(run.runId, orgId)).resolves.toMatchObject({
+    await expect(
+      cleanupRun(run.runId, orgId, usagePricingResolution),
+    ).resolves.toMatchObject({
       body: { errors: 0 },
     });
     await waitForRunStatus(actor, run.runId, "failed", 10_000);
@@ -1405,7 +1629,9 @@ describe("durable Pi API producer", () => {
     await flushWaitUntilForTest();
     expect(calls).toBe(1);
 
-    await expect(cleanupRun(run.runId, orgId)).resolves.toMatchObject({
+    await expect(
+      cleanupRun(run.runId, orgId, usagePricingResolution),
+    ).resolves.toMatchObject({
       body: { errors: 0 },
     });
     const { claim, runnerId } = await claimDeferredPiRun(

@@ -54,12 +54,13 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
+use chrono::{DateTime, Utc};
 use futures_util::{FutureExt, StreamExt};
 use reqwest::Client;
 use sandbox::{Sandbox, WriteFileEntry};
 use tokio::fs;
 use tokio::io::AsyncReadExt as _;
-use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc, oneshot};
+use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore, mpsc, oneshot};
 use tokio::task::{JoinHandle, JoinSet};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
@@ -85,6 +86,8 @@ const BACKGROUND_FILL_ACTIVE_LIMIT: usize = CONCURRENCY;
 const FRESH_DELIVERY_HTTP_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 /// Maximum number of unique cache-fill groups waiting for a worker across the runner.
 const BACKGROUND_FILL_QUEUE_CAPACITY: usize = 32;
+/// Bound the number of missing archives dispatched while maintenance is waiting.
+const BACKGROUND_FILL_MISSING_BURST: usize = 3;
 /// Maximum number of completed telemetry tasks reaped between scheduler polls.
 const BACKGROUND_FILL_REPORT_REAP_BATCH: usize = 32;
 const FRESH_DELIVERY_SCAN_LIMIT: usize = 64;
@@ -147,6 +150,10 @@ const STORAGE_CACHE_FRESH_DELIVERY_SIZE_MANIFEST: &str =
 const STORAGE_CACHE_FRESH_DELIVERY_SIZE_RESPONSE: &str =
     "storage_cache_fresh_delivery_size_response";
 const STORAGE_CACHE_FRESH_DELIVERY_DRAINED: &str = "storage_cache_fresh_delivery_drained";
+const STORAGE_CACHE_FRESH_DELIVERY_HEADERS: &str = "storage_cache_fresh_delivery_headers";
+const STORAGE_CACHE_FRESH_DELIVERY_BODY: &str = "storage_cache_fresh_delivery_body";
+const STORAGE_CACHE_FRESH_DELIVERY_APPLY_WAIT: &str = "storage_cache_fresh_delivery_apply_wait";
+const STORAGE_CACHE_FRESH_DELIVERY_PUBLICATION: &str = "storage_cache_fresh_delivery_publication";
 const STORAGE_CACHE_FRESH_DELIVERY_SCAN_GROUPS: &str = "storage_cache_fresh_delivery_scan_groups";
 const STORAGE_CACHE_FRESH_DELIVERY_SCAN_SUFFIX: &str = "storage_cache_fresh_delivery_scan_suffix";
 const STORAGE_CACHE_FRESH_DELIVERY_SCAN_SUFFIX_UNKNOWN: &str =
@@ -180,6 +187,9 @@ struct CacheTarget {
 struct CacheTargetGroup {
     targets: Vec<CacheTarget>,
     archive_size: Option<u64>,
+    // This plan already validated positive decoded contents. Only a hint for
+    // optional warming of archive hits; never suppress missing archive fills.
+    decoded_ready_observed: bool,
 }
 
 struct FreshDeliveryScanSummary {
@@ -351,8 +361,17 @@ enum BackgroundFillEntryState {
 
 #[derive(Clone)]
 enum BackgroundFillAction {
+    /// An archive miss observed during preparation; execution revalidates it.
     Fill(Option<decoded::DecodedCache>),
+    /// An archive hit observed during preparation; it may be evicted before execution.
+    WarmDecoded(decoded::DecodedCache),
     RetireArchive(decoded::DecodedCache),
+}
+
+impl BackgroundFillAction {
+    fn is_missing(&self) -> bool {
+        matches!(self, Self::Fill(_))
+    }
 }
 
 struct BackgroundFillEntry {
@@ -365,12 +384,11 @@ struct BackgroundFillEntry {
 
 struct BackgroundFillAdmissionState {
     entries: HashMap<(String, String), BackgroundFillEntry>,
-    queued: usize,
+    pending: VecDeque<(String, String)>,
     closed: bool,
 }
 
 enum BackgroundFillCommand {
-    Start((String, String)),
     Shutdown(oneshot::Sender<()>),
     #[cfg(test)]
     Checkpoint(oneshot::Sender<(usize, usize)>),
@@ -379,6 +397,7 @@ enum BackgroundFillCommand {
 struct BackgroundFillCoordinatorInner {
     state: Mutex<BackgroundFillAdmissionState>,
     commands: mpsc::Sender<BackgroundFillCommand>,
+    ready: Notify,
     http: Client,
     active_limit: usize,
     queue_capacity: usize,
@@ -433,10 +452,11 @@ impl StorageCacheBackgroundFillCoordinator {
         let inner = Arc::new(BackgroundFillCoordinatorInner {
             state: Mutex::new(BackgroundFillAdmissionState {
                 entries: HashMap::new(),
-                queued: 0,
+                pending: VecDeque::new(),
                 closed: false,
             }),
             commands,
+            ready: Notify::new(),
             http,
             active_limit,
             queue_capacity,
@@ -485,8 +505,33 @@ impl StorageCacheBackgroundFillCoordinator {
                         }
                     }
                     (
+                        BackgroundFillAction::Fill(cache),
+                        BackgroundFillAction::WarmDecoded(next),
+                    ) => {
+                        if cache.is_none() {
+                            *cache = Some(next);
+                        }
+                    }
+                    (
+                        BackgroundFillAction::WarmDecoded(cache),
+                        BackgroundFillAction::Fill(next),
+                    ) => {
+                        let next = next.or_else(|| Some(cache.clone()));
+                        entry.action = BackgroundFillAction::Fill(next);
+                        entry.group = group;
+                        entry.home = home;
+                    }
+                    (
                         current @ BackgroundFillAction::RetireArchive(_),
                         next @ BackgroundFillAction::Fill(_),
+                    ) => {
+                        *current = next;
+                        entry.group = group;
+                        entry.home = home;
+                    }
+                    (
+                        current @ BackgroundFillAction::RetireArchive(_),
+                        next @ BackgroundFillAction::WarmDecoded(_),
                     ) => {
                         *current = next;
                         entry.group = group;
@@ -498,7 +543,21 @@ impl StorageCacheBackgroundFillCoordinator {
             entry.subscribers.push(reporter);
             return BackgroundFillAdmission::Deduplicated;
         }
-        if state.queued >= inner.queue_capacity {
+        // Leave one worker wave of waiting positions for the other class.
+        // Already accepted same-key promotions above keep ownership even when
+        // they exceed this class cap; no entry is evicted to make room.
+        let reserved = inner.active_limit.min(inner.queue_capacity / 2);
+        let same_class = state
+            .entries
+            .values()
+            .filter(|entry| {
+                entry.state == BackgroundFillEntryState::Queued
+                    && entry.action.is_missing() == action.is_missing()
+            })
+            .count();
+        if state.pending.len() >= inner.queue_capacity
+            || same_class >= inner.queue_capacity - reserved
+        {
             return BackgroundFillAdmission::QueueSaturated;
         }
         state.entries.insert(
@@ -511,33 +570,12 @@ impl StorageCacheBackgroundFillCoordinator {
                 state: BackgroundFillEntryState::Queued,
             },
         );
-        state.queued += 1;
-
-        // Keep admission state and the nonblocking command enqueue atomic with
-        // respect to shutdown. A caller either owns a command in the bounded
-        // queue or gets its entry removed before another submit can observe it.
-        let command_closed = match inner
-            .commands
-            .try_send(BackgroundFillCommand::Start(key.clone()))
-        {
-            Ok(()) => return BackgroundFillAdmission::Accepted,
-            Err(mpsc::error::TrySendError::Full(_)) => false,
-            Err(mpsc::error::TrySendError::Closed(_)) => true,
-        };
-
-        if let Some(entry) = state.entries.remove(&key)
-            && entry.state == BackgroundFillEntryState::Queued
-        {
-            state.queued = state.queued.saturating_sub(1);
-        }
-        if command_closed {
-            state.closed = true;
-            BackgroundFillAdmission::Closed
-        } else if state.closed {
-            BackgroundFillAdmission::Closed
-        } else {
-            BackgroundFillAdmission::QueueSaturated
-        }
+        state.pending.push_back(key);
+        // The queue owns every accepted key before the supervisor is notified.
+        // Coalesced wakeups carry no separate FIFO or overflow work ownership.
+        drop(state);
+        inner.ready.notify_one();
+        BackgroundFillAdmission::Accepted
     }
 
     /// Close admissions, cancel queued work, drain active atomic operations,
@@ -631,7 +669,7 @@ async fn run_background_fill_supervisor(
     inner: Arc<BackgroundFillCoordinatorInner>,
     mut receiver: mpsc::Receiver<BackgroundFillCommand>,
 ) {
-    let mut pending = VecDeque::new();
+    let mut missing_streak = 0;
     let mut workers = JoinSet::new();
     let mut reports = JoinSet::new();
     let mut shutdown_complete: Option<oneshot::Sender<()>> = None;
@@ -644,11 +682,8 @@ async fn run_background_fill_supervisor(
         reap_completed_background_fill_reports(&mut reports);
 
         while workers.len() < inner.active_limit {
-            let Some(key) = pending.pop_front() else {
+            let Some(work) = take_background_fill_work(&inner, &mut missing_streak) else {
                 break;
-            };
-            let Some(work) = take_background_fill_work(&inner, &key) else {
-                continue;
             };
             let worker_key = work.key.clone();
             let http = inner.http.clone();
@@ -698,11 +733,10 @@ async fn run_background_fill_supervisor(
             biased;
             command = receiver.recv() => {
                 match command {
-                    Some(BackgroundFillCommand::Start(key)) => pending.push_back(key),
                     #[cfg(test)]
                     Some(BackgroundFillCommand::Checkpoint(complete)) => {
-                        // Earlier Start commands have passed the admission loop above.
-                        let _ = complete.send((workers.len(), pending.len()));
+                        let state = inner.state.lock().unwrap_or_else(|e| e.into_inner());
+                        let _ = complete.send((workers.len(), state.pending.len()));
                     }
                     Some(BackgroundFillCommand::Shutdown(complete)) => {
                         let mut state = inner
@@ -734,6 +768,7 @@ async fn run_background_fill_supervisor(
             result = workers.join_next(), if !workers.is_empty() => {
                 handle_background_fill_worker_result(&inner, &mut reports, result);
             }
+            () = inner.ready.notified() => {}
             result = reports.join_next(), if !reports.is_empty() => {
                 if let Some(Err(error)) = result {
                     warn!(%error, "storage_cache: background fill telemetry task failed");
@@ -745,7 +780,7 @@ async fn run_background_fill_supervisor(
 
 fn take_background_fill_work(
     inner: &BackgroundFillCoordinatorInner,
-    key: &(String, String),
+    missing_streak: &mut usize,
 ) -> Option<BackgroundFillWork> {
     let mut state = inner
         .state
@@ -756,8 +791,22 @@ fn take_background_fill_work(
     if state.closed {
         return None;
     }
+    // FIFO within each class. Once the missing burst is spent, dispatch the
+    // oldest maintenance item; an empty class never leaves a worker idle.
+    let prefer_missing = *missing_streak < BACKGROUND_FILL_MISSING_BURST;
+    let position = state
+        .pending
+        .iter()
+        .position(|key| {
+            state
+                .entries
+                .get(key)
+                .is_some_and(|entry| entry.action.is_missing() == prefer_missing)
+        })
+        .unwrap_or(0);
+    let key = state.pending.remove(position)?;
     let (group, home, action) = {
-        let entry = state.entries.get_mut(key)?;
+        let entry = state.entries.get_mut(&key)?;
         if entry.state != BackgroundFillEntryState::Queued {
             return None;
         }
@@ -768,9 +817,13 @@ fn take_background_fill_work(
             entry.action.clone(),
         )
     };
-    state.queued = state.queued.saturating_sub(1);
+    *missing_streak = if action.is_missing() {
+        (*missing_streak + 1).min(BACKGROUND_FILL_MISSING_BURST)
+    } else {
+        0
+    };
     Some(BackgroundFillWork {
-        key: key.clone(),
+        key,
         group,
         home,
         action,
@@ -795,17 +848,9 @@ fn cancel_queued_background_fills(
         .state
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let queued_keys = state
-        .entries
-        .iter()
-        .filter_map(|(key, entry)| {
-            (entry.state == BackgroundFillEntryState::Queued).then_some(key.clone())
-        })
-        .collect::<Vec<_>>();
     let mut subscribers = Vec::new();
-    for key in queued_keys {
+    while let Some(key) = state.pending.pop_front() {
         if let Some(entry) = state.entries.remove(&key) {
-            state.queued = state.queued.saturating_sub(1);
             subscribers.extend(entry.subscribers);
         }
     }
@@ -831,7 +876,8 @@ async fn run_background_fill_work(
         if matches!(
             outcome,
             BackgroundFillOutcome::Filled { .. } | BackgroundFillOutcome::AlreadyCached { .. }
-        ) && let BackgroundFillAction::Fill(Some(decoded)) = &work.action
+        ) && let BackgroundFillAction::Fill(Some(decoded))
+        | BackgroundFillAction::WarmDecoded(decoded) = &work.action
         {
             decoded
                 .warm_from_archive(&work.key.0, &work.key.1)
@@ -897,6 +943,89 @@ fn spawn_background_fill_reports(
     }
 }
 
+struct FreshArchivePhaseRecord {
+    operation: SandboxOpRecord,
+    completed_at: DateTime<Utc>,
+}
+
+/// At most four phases for each of the four archives admitted to one delivery.
+/// Records live outside fetch tasks so aborting and joining those tasks retains
+/// their last observed phase. Draining never holds the lock while recording
+/// telemetry.
+#[derive(Clone, Default)]
+struct FreshArchivePhaseRecords {
+    records: Arc<Mutex<Vec<FreshArchivePhaseRecord>>>,
+}
+
+impl FreshArchivePhaseRecords {
+    fn record_to(&self, telemetry: &mut JobTelemetry) {
+        let records = std::mem::take(
+            &mut *self
+                .records
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()),
+        );
+        for record in records {
+            let operation = record.operation;
+            telemetry.record_at(
+                operation.action_type,
+                operation.duration,
+                operation.success,
+                operation.error,
+                record.completed_at,
+            );
+        }
+    }
+}
+
+struct FreshArchivePhaseGuard {
+    records: FreshArchivePhaseRecords,
+    action_type: Option<&'static str>,
+    started_at: Instant,
+}
+
+impl FreshArchivePhaseGuard {
+    fn new(records: &FreshArchivePhaseRecords, action_type: &'static str) -> Self {
+        Self {
+            records: records.clone(),
+            action_type: Some(action_type),
+            started_at: Instant::now(),
+        }
+    }
+
+    fn finish(mut self, result: Result<(), &'static str>) {
+        self.record(result);
+    }
+
+    fn record(&mut self, result: Result<(), &'static str>) {
+        let Some(action_type) = self.action_type.take() else {
+            return;
+        };
+        let record = FreshArchivePhaseRecord {
+            operation: SandboxOpRecord::new(
+                action_type,
+                self.started_at.elapsed(),
+                result.is_ok(),
+                result.err(),
+            ),
+            completed_at: Utc::now(),
+        };
+        self.records
+            .records
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .push(record);
+    }
+}
+
+impl Drop for FreshArchivePhaseGuard {
+    fn drop(&mut self) {
+        // Cancellation, task abort and unwinding all mean the phase did not
+        // reach an observed terminal result. Do not fabricate successful time.
+        self.record(Err("interrupted"));
+    }
+}
+
 struct FreshArchiveDownloaded {
     group: CacheTargetGroup,
     bytes: Bytes,
@@ -946,6 +1075,7 @@ struct FreshArchiveResolved {
 /// cancelled midway.
 pub(crate) struct FreshArchiveDelivery {
     cancel: CancellationToken,
+    phase_records: FreshArchivePhaseRecords,
     classification: JoinSet<FreshArchiveClassification>,
     groups: Option<Vec<CacheTargetGroup>>,
     apply: Vec<oneshot::Sender<()>>,
@@ -981,6 +1111,8 @@ impl Drop for FreshArchiveDelivery {
         // Cache publication is an atomic fsync/rename transaction. Explicit
         // lifecycle paths drain it below; an unexpected owner drop must let an
         // already-started transaction finish instead of cancelling it midway.
+        // An unexpected owner drop also loses buffered phase telemetry; normal
+        // lifecycle paths await cleanup and drain these records explicitly.
         self.publications.detach_all();
     }
 }
@@ -1053,6 +1185,7 @@ impl FreshArchiveDelivery {
                 warn!(%error, "runner-owned archive publication task failed while draining");
             }
         }
+        self.phase_records.record_to(telemetry);
         if had_owned_work {
             telemetry.record(
                 STORAGE_CACHE_FRESH_DELIVERY_DRAINED,
@@ -1068,10 +1201,20 @@ impl FreshArchiveDelivery {
         home: &HomePaths,
         telemetry: &mut JobTelemetry,
     ) -> RunnerResult<Vec<FreshArchiveResolved>> {
-        if let Err(error) = self.finish_classification(telemetry).await {
+        let result = self.resolve_inner(home, telemetry).await;
+        if result.is_err() {
             self.cancel_and_drain(telemetry).await;
-            return Err(error);
         }
+        self.phase_records.record_to(telemetry);
+        result
+    }
+
+    async fn resolve_inner(
+        &mut self,
+        home: &HomePaths,
+        telemetry: &mut JobTelemetry,
+    ) -> RunnerResult<Vec<FreshArchiveResolved>> {
+        self.finish_classification(telemetry).await?;
         for apply in self.apply.drain(..) {
             let _ = apply.send(());
         }
@@ -1112,11 +1255,17 @@ impl FreshArchiveDelivery {
                         RunnerError::Internal("empty runner-owned archive target group".to_string())
                     })?;
                     let cache_dir = home.storage_cache_dir(&target.name, &target.version);
+                    let phase_records = self.phase_records.clone();
                     self.publications.spawn(async move {
                         let _writer = writer;
+                        let phase = FreshArchivePhaseGuard::new(
+                            &phase_records,
+                            STORAGE_CACHE_FRESH_DELIVERY_PUBLICATION,
+                        );
                         let result = write_to_cache(&cache_dir, &bytes)
                             .await
                             .map(|()| FreshArchivePublished { bytes, permit });
+                        phase.finish(result.as_ref().map(|_| ()).map_err(|_| "publication"));
                         FreshArchivePublicationTaskResult { group, result }
                     });
                 }
@@ -1127,7 +1276,6 @@ impl FreshArchiveDelivery {
                         STORAGE_CACHE_FRESH_DELIVERY_FAILED
                     };
                     telemetry.record(action, Duration::ZERO, reason == "cancelled", Some(reason));
-                    self.cancel_and_drain(telemetry).await;
                     return Err(if reason == "cancelled" {
                         RunnerError::Cancelled
                     } else {
@@ -1163,7 +1311,6 @@ impl FreshArchiveDelivery {
                         false,
                         Some("publication"),
                     );
-                    self.cancel_and_drain(telemetry).await;
                     return Err(error);
                 }
             }
@@ -1331,14 +1478,14 @@ struct ProcessedGroupTask {
 /// entries after disk eviction or redo a miss after prefetch has already begun.
 async fn prepare_decoded_storage(
     plan: &mut StoragePlan,
-    groups: &[CacheTargetGroup],
+    groups: &mut [CacheTargetGroup],
     cache: &decoded::DecodedCache,
     telemetry: &mut JobTelemetry,
 ) -> RunnerResult<()> {
     if plan.decoded_prepared() {
         return Ok(());
     }
-    for batch in groups.chunks(decoded::LOOKUP_BATCH_SIZE) {
+    for batch in groups.chunks_mut(decoded::LOOKUP_BATCH_SIZE) {
         let keys = batch
             .iter()
             .map(|group| {
@@ -1359,7 +1506,8 @@ async fn prepare_decoded_storage(
         let ready = result.map_err(|error| {
             RunnerError::Internal(format!("lookup extracted storage cache: {error}"))
         })?;
-        for (group, files) in batch.iter().zip(ready) {
+        for (group, files) in batch.iter_mut().zip(ready) {
+            group.decoded_ready_observed = files.is_some();
             reuse_decoded(plan, group, files)?;
         }
     }
@@ -1872,7 +2020,7 @@ pub(crate) async fn populate_cache_with_fresh_delivery(
     decoded: Option<&decoded::DecodedCache>,
 ) -> RunnerResult<Option<DeferredBackgroundFill>> {
     let mut fresh_delivery = fresh_delivery;
-    let target_groups = if let Some(delivery) = fresh_delivery.as_mut() {
+    let mut target_groups = if let Some(delivery) = fresh_delivery.as_mut() {
         if let Err(error) = delivery.finish_classification(telemetry).await {
             delivery.cancel_and_drain(telemetry).await;
             return Err(error);
@@ -1884,7 +2032,7 @@ pub(crate) async fn populate_cache_with_fresh_delivery(
         group_targets(collect_targets(plan.cache_candidates()))
     };
     if let Some(cache) = decoded {
-        prepare_decoded_storage(plan, &target_groups, cache, telemetry).await?;
+        prepare_decoded_storage(plan, &mut target_groups, cache, telemetry).await?;
     }
     if target_groups.is_empty() && fresh_delivery.is_none() {
         return Ok(None);
@@ -2042,10 +2190,10 @@ fn defer_background_fill_groups(
                     return None;
                 }
                 BackgroundFillAction::RetireArchive(decoded?.clone())
-            } else if should_background_fill(outcome)
-                || (decoded.is_some() && matches!(outcome, TargetOutcome::Hit))
-            {
+            } else if should_background_fill(outcome) {
                 BackgroundFillAction::Fill(decoded.cloned())
+            } else if matches!(outcome, TargetOutcome::Hit) && !group.decoded_ready_observed {
+                BackgroundFillAction::WarmDecoded(decoded?.clone())
             } else {
                 return None;
             };
@@ -2164,6 +2312,7 @@ fn group_targets(targets: Vec<CacheTarget>) -> Vec<CacheTargetGroup> {
             groups.push(CacheTargetGroup {
                 targets,
                 archive_size,
+                decoded_ready_observed: false,
             });
         }
     }
@@ -2238,15 +2387,16 @@ pub(crate) async fn prepare_fresh_archive_delivery(
     let ordinary_required = archives
         .iter()
         .any(|archive| archive.name.is_empty() || archive.version.is_empty());
-    let groups = group_targets(collect_targets(archives));
+    let mut groups = group_targets(collect_targets(archives));
     if let Some(cache) = decoded {
-        prepare_decoded_storage(plan, &groups, cache, telemetry).await?;
+        prepare_decoded_storage(plan, &mut groups, cache, telemetry).await?;
     }
     let candidates = groups
         .iter()
         .map(|group| !group_has_decoded(group, plan))
         .collect::<Vec<_>>();
     let owner_cancel = cancel.child_token();
+    let phase_records = FreshArchivePhaseRecords::default();
     let mut classification = JoinSet::new();
     classification.spawn(classify_fresh_archives(
         groups,
@@ -2255,9 +2405,11 @@ pub(crate) async fn prepare_fresh_archive_delivery(
         admission.clone(),
         owner_cancel.clone(),
         ordinary_required,
+        phase_records.clone(),
     ));
     Ok(FreshArchiveDelivery {
         cancel: owner_cancel,
+        phase_records,
         classification,
         groups: None,
         apply: Vec::new(),
@@ -2273,6 +2425,7 @@ async fn classify_fresh_archives(
     admission: FreshArchiveDeliveryAdmission,
     owner_cancel: CancellationToken,
     mut ordinary_required: bool,
+    phase_records: FreshArchivePhaseRecords,
 ) -> FreshArchiveClassification {
     let started = Instant::now();
     let mut scan_summary = FreshDeliveryScanSummary::from_groups(
@@ -2283,7 +2436,11 @@ async fn classify_fresh_archives(
         FRESH_DELIVERY_SCAN_LIMIT,
     );
     let mut metrics = CacheProcessMetrics::default();
-    let mut requests = FreshArchiveRequests::default();
+    let mut requests = FreshArchiveRequests {
+        apply: Vec::new(),
+        fetches: JoinSet::new(),
+        phase_records,
+    };
     let prepare = async {
         // Metadata hints do not pin bodies or locks. Preserve manifest order and
         // the original non-decoded prefix, including response-size admission.
@@ -2543,10 +2700,10 @@ async fn claim_fresh_archive(
     Ok(FreshArchiveClaim::Cold(writer))
 }
 
-#[derive(Default)]
 struct FreshArchiveRequests {
     apply: Vec<oneshot::Sender<()>>,
     fetches: JoinSet<FreshArchiveFetchTaskResult>,
+    phase_records: FreshArchivePhaseRecords,
 }
 
 impl FreshArchiveRequests {
@@ -2566,30 +2723,34 @@ impl FreshArchiveRequests {
         let archive_url = target.archive_url.clone();
         let group = group.clone();
         let cancel = cancel.clone();
+        let phase_records = self.phase_records.clone();
         let (apply_tx, apply_rx) = oneshot::channel();
         self.apply.push(apply_tx);
         self.fetches.spawn(async move {
             let fetch = tokio::select! {
                 biased;
                 () = cancel.cancelled() => Err("cancelled"),
-                result = fetch_fresh_archive(&http, &archive_url, group.archive_size) => result,
+                result = fetch_fresh_archive(&http, &archive_url, group.archive_size, &phase_records) => result,
             };
             let (bytes, size_source) = match fetch {
                 Ok(download) => download,
                 Err(reason) => return FreshArchiveFetchTaskResult::Terminal { reason },
             };
-            tokio::select! {
+            let phase = FreshArchivePhaseGuard::new(
+                &phase_records,
+                STORAGE_CACHE_FRESH_DELIVERY_APPLY_WAIT,
+            );
+            let result = tokio::select! {
                 biased;
-                () = cancel.cancelled() => FreshArchiveFetchTaskResult::Terminal { reason: "cancelled" },
-                ready = apply_rx => {
-                    if ready.is_err() {
-                        FreshArchiveFetchTaskResult::Terminal { reason: "cancelled" }
-                    } else {
-                        FreshArchiveFetchTaskResult::Downloaded(FreshArchiveDownloaded {
-                            group, bytes, size_source, writer, permit,
-                        })
-                    }
-                }
+                () = cancel.cancelled() => Err("cancelled"),
+                ready = apply_rx => ready.map_err(|_| "cancelled"),
+            };
+            phase.finish(result);
+            match result {
+                Ok(()) => FreshArchiveFetchTaskResult::Downloaded(FreshArchiveDownloaded {
+                    group, bytes, size_source, writer, permit,
+                }),
+                Err(reason) => FreshArchiveFetchTaskResult::Terminal { reason },
             }
         });
         metrics.record(
@@ -2614,69 +2775,83 @@ async fn fetch_fresh_archive(
     http: &Client,
     archive_url: &str,
     expected_size: Option<u64>,
+    phase_records: &FreshArchivePhaseRecords,
 ) -> Result<(Bytes, FreshArchiveSizeSource), &'static str> {
-    let mut response = http
-        .get(archive_url)
-        .timeout(OBJECT_DOWNLOAD_TIMEOUT)
-        .send()
-        .await
-        .map_err(|error| {
+    let phase = FreshArchivePhaseGuard::new(phase_records, STORAGE_CACHE_FRESH_DELIVERY_HEADERS);
+    let headers = async {
+        let response = http
+            .get(archive_url)
+            .timeout(OBJECT_DOWNLOAD_TIMEOUT)
+            .send()
+            .await
+            .map_err(|error| {
+                if error.is_timeout() {
+                    "timeout"
+                } else {
+                    "http"
+                }
+            })?;
+        if response.status() != reqwest::StatusCode::OK {
+            return Err("http-status");
+        }
+
+        let response_size = response.content_length();
+        let (exact_size, size_source) = match expected_size {
+            Some(expected) => {
+                if response_size.is_some_and(|size| size != expected) {
+                    return Err("response-size-mismatch");
+                }
+                (expected, FreshArchiveSizeSource::Manifest)
+            }
+            None => match response_size {
+                Some(0) => return Err("response-size-zero"),
+                Some(size) if size <= CACHE_MAX_SIZE => (size, FreshArchiveSizeSource::Response),
+                Some(_) => return Err("response-size-oversized"),
+                None => return Err("response-size-missing"),
+            },
+        };
+        if exact_size == 0 {
+            return Err("expected-size-zero");
+        }
+        if exact_size > CACHE_MAX_SIZE {
+            return Err("expected-size-oversized");
+        }
+        Ok((response, response_size, exact_size, size_source))
+    }
+    .await;
+    phase.finish(headers.as_ref().map(|_| ()).map_err(|reason| *reason));
+    let (mut response, response_size, exact_size, size_source) = headers?;
+
+    let phase = FreshArchivePhaseGuard::new(phase_records, STORAGE_CACHE_FRESH_DELIVERY_BODY);
+    let body = async {
+        let mut bytes = Vec::with_capacity(initial_body_capacity(
+            response_size,
+            Some(exact_size),
+            CACHE_MAX_SIZE,
+        ));
+        let mut downloaded = 0u64;
+        while let Some(chunk) = response.chunk().await.map_err(|error| {
             if error.is_timeout() {
                 "timeout"
             } else {
-                "http"
+                "body"
             }
-        })?;
-    if response.status() != reqwest::StatusCode::OK {
-        return Err("http-status");
-    }
-
-    let response_size = response.content_length();
-    let (exact_size, size_source) = match expected_size {
-        Some(expected) => {
-            if response_size.is_some_and(|size| size != expected) {
-                return Err("response-size-mismatch");
+        })? {
+            if append_limited_chunk(&mut bytes, &mut downloaded, &chunk, CACHE_MAX_SIZE)
+                .map_err(|_| "body-length-overflow")?
+                .is_some()
+            {
+                return Err("body-oversized");
             }
-            (expected, FreshArchiveSizeSource::Manifest)
         }
-        None => match response_size {
-            Some(0) => return Err("response-size-zero"),
-            Some(size) if size <= CACHE_MAX_SIZE => (size, FreshArchiveSizeSource::Response),
-            Some(_) => return Err("response-size-oversized"),
-            None => return Err("response-size-missing"),
-        },
-    };
-    if exact_size == 0 {
-        return Err("expected-size-zero");
-    }
-    if exact_size > CACHE_MAX_SIZE {
-        return Err("expected-size-oversized");
-    }
-
-    let mut bytes = Vec::with_capacity(initial_body_capacity(
-        response_size,
-        Some(exact_size),
-        CACHE_MAX_SIZE,
-    ));
-    let mut downloaded = 0u64;
-    while let Some(chunk) = response.chunk().await.map_err(|error| {
-        if error.is_timeout() {
-            "timeout"
-        } else {
-            "body"
+        if downloaded != exact_size {
+            return Err("body-size-mismatch");
         }
-    })? {
-        if append_limited_chunk(&mut bytes, &mut downloaded, &chunk, CACHE_MAX_SIZE)
-            .map_err(|_| "body-length-overflow")?
-            .is_some()
-        {
-            return Err("body-oversized");
-        }
+        Ok((Bytes::from(bytes), size_source))
     }
-    if downloaded != exact_size {
-        return Err("body-size-mismatch");
-    }
-    Ok((Bytes::from(bytes), size_source))
+    .await;
+    phase.finish(body.as_ref().map(|_| ()).map_err(|reason| *reason));
+    body
 }
 
 fn cache_target_from_entry(
@@ -3770,7 +3945,9 @@ fn rewrite_url(plan: &mut StoragePlan, target: &CacheTarget) {
 mod tests {
     use super::*;
 
+    mod decoded_observation;
     mod http_reuse;
+    mod phase_diagnostics;
 
     use async_trait::async_trait;
     use httpmock::Method::{GET, HEAD};
@@ -4362,7 +4539,7 @@ mod tests {
             fresh_storage_plan(long_url, "name", "v1"),
         ];
         for mut plan in plans {
-            populate_cache_with_fresh_delivery(
+            let deferred = populate_cache_with_fresh_delivery(
                 &mut plan,
                 &sandbox,
                 &home,
@@ -4372,6 +4549,7 @@ mod tests {
             )
             .await
             .unwrap();
+            assert!(deferred.is_none(), "validated contents need no warming");
             assert!(plan.take_decoded().is_empty());
             assert!(
                 storage_archive_url(&plan, 0)
@@ -4510,7 +4688,7 @@ mod tests {
             path: &str,
             content: &[u8],
             compression: sandbox::FileCompression,
-        ) -> sandbox::Result<()> {
+        ) -> sandbox::Result<Option<sandbox::FileWriteMeasurements>> {
             self.inner
                 .write_file_with_compression(path, content, compression)
                 .await
@@ -4565,6 +4743,7 @@ mod tests {
     struct GatedArchiveServer {
         url: String,
         requests: tokio::sync::mpsc::Receiver<usize>,
+        paths: Arc<Mutex<Vec<String>>>,
         release: Arc<Semaphore>,
         max_active: Arc<AtomicUsize>,
         task: tokio::task::JoinHandle<std::io::Result<()>>,
@@ -4577,6 +4756,8 @@ mod tests {
         let release = Arc::new(Semaphore::new(0));
         let active = Arc::new(AtomicUsize::new(0));
         let max_active = Arc::new(AtomicUsize::new(0));
+        let paths = Arc::new(Mutex::new(Vec::new()));
+        let task_paths = Arc::clone(&paths);
         let task_release = Arc::clone(&release);
         let task_active = Arc::clone(&active);
         let task_max_active = Arc::clone(&max_active);
@@ -4589,8 +4770,13 @@ mod tests {
                 let release = Arc::clone(&task_release);
                 let active = Arc::clone(&task_active);
                 let max_active = Arc::clone(&task_max_active);
+                let paths = Arc::clone(&task_paths);
                 handlers.spawn(async move {
-                    read_http_request(&mut socket).await?;
+                    let request = read_http_request(&mut socket).await?;
+                    paths
+                        .lock()
+                        .unwrap()
+                        .push(request.split_whitespace().nth(1).unwrap().to_string());
                     let current = active.fetch_add(1, Ordering::SeqCst) + 1;
                     max_active.fetch_max(current, Ordering::SeqCst);
                     request_tx.send(index).await.map_err(|_| {
@@ -4614,6 +4800,7 @@ mod tests {
         GatedArchiveServer {
             url: format!("http://{addr}/archive.tar.gz"),
             requests: request_rx,
+            paths,
             release,
             max_active,
             task,
@@ -4660,6 +4847,7 @@ mod tests {
         archive_size: Option<u64>,
     ) -> CacheTargetGroup {
         CacheTargetGroup {
+            decoded_ready_observed: false,
             targets: vec![CacheTarget {
                 handle: ArchiveHandle::storage(0),
                 name: name.to_string(),
@@ -5585,16 +5773,23 @@ mod tests {
         let (release_tx, release_rx) = oneshot::channel();
         let mut delivery = FreshArchiveDelivery {
             cancel: publication_cancel,
+            phase_records: FreshArchivePhaseRecords::default(),
             classification: JoinSet::new(),
             groups: None,
             apply: Vec::new(),
             fetches: JoinSet::new(),
             publications: JoinSet::new(),
         };
+        let phase_records = delivery.phase_records.clone();
         delivery.publications.spawn(async move {
+            let phase = FreshArchivePhaseGuard::new(
+                &phase_records,
+                STORAGE_CACHE_FRESH_DELIVERY_PUBLICATION,
+            );
             entered_tx.send(()).unwrap();
             release_rx.await.unwrap();
             *task_completed.lock().unwrap() = true;
+            phase.finish(Ok(()));
             FreshArchivePublicationTaskResult {
                 group,
                 result: Ok(FreshArchivePublished {
@@ -5615,6 +5810,14 @@ mod tests {
         let ops = telemetry.pending_ops_snapshot();
         assert_op(&ops, STORAGE_CACHE_FRESH_DELIVERY_CANCELLED, true);
         assert_op(&ops, STORAGE_CACHE_FRESH_DELIVERY_DRAINED, true);
+        assert_op(&ops, STORAGE_CACHE_FRESH_DELIVERY_PUBLICATION, true);
+        assert_op_count(&ops, STORAGE_CACHE_FRESH_DELIVERY_PUBLICATION, 1);
+        delivery.cancel_and_drain(&mut telemetry).await;
+        assert_op_count(
+            &telemetry.pending_ops_snapshot(),
+            STORAGE_CACHE_FRESH_DELIVERY_PUBLICATION,
+            1,
+        );
     }
 
     #[tokio::test]
@@ -6913,12 +7116,584 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn background_fill_reserves_admission_for_a_miss_after_other_runs_maintenance() {
+        let temp = tempfile::tempdir().unwrap();
+        let home = home_at(&temp);
+        let bytes = tarball_bytes();
+        let cache = decoded::DecodedCache::new(home.clone());
+        let mut server = gated_archive_server(bytes.clone(), 5).await;
+        let coordinator = StorageCacheBackgroundFillCoordinator::new().unwrap();
+        let other_run = coordinator.clone();
+        let reporter = new_telemetry().reporter();
+
+        for index in 0..4 {
+            assert_eq!(
+                coordinator.submit(
+                    background_fill_group(
+                        server.url.clone(),
+                        &format!("reservation-active-{index}"),
+                        "v1",
+                        Some(bytes.len() as u64),
+                    ),
+                    home.clone(),
+                    reporter.clone(),
+                    BackgroundFillAction::Fill(None),
+                ),
+                BackgroundFillAdmission::Accepted
+            );
+            tokio::time::timeout(Duration::from_secs(5), server.requests.recv())
+                .await
+                .unwrap()
+                .unwrap();
+        }
+        let mut admitted_maintenance = Vec::new();
+        for index in 0..32 {
+            let name = format!("reservation-maintenance-{index}");
+            write_cached_archive(&home, &name, "v1", &bytes);
+            write_storage_lock(&home, &name, "v1");
+            cache.warm_from_archive(&name, "v1").await.unwrap();
+            if coordinator.submit(
+                background_fill_group(server.url.clone(), &name, "v1", Some(bytes.len() as u64)),
+                home.clone(),
+                reporter.clone(),
+                BackgroundFillAction::RetireArchive(cache.clone()),
+            ) == BackgroundFillAdmission::Accepted
+            {
+                admitted_maintenance.push(name);
+            }
+        }
+        let missing_admission = other_run.submit(
+            background_fill_group(
+                server.url.clone(),
+                "reservation-missing",
+                "v1",
+                Some(bytes.len() as u64),
+            ),
+            home.clone(),
+            reporter,
+            BackgroundFillAction::Fill(None),
+        );
+        server.release.add_permits(5);
+        tokio::time::timeout(Duration::from_secs(5), coordinator.wait_idle_for_test())
+            .await
+            .expect("accepted background operations should finish after release");
+        coordinator.shutdown().await;
+        cache.shutdown().await;
+        if missing_admission == BackgroundFillAdmission::Accepted {
+            join_raw_http_task(server.task, "released background archive requests")
+                .await
+                .unwrap();
+        } else {
+            server.task.abort();
+            let _ = server.task.await;
+        }
+
+        assert_eq!(missing_admission, BackgroundFillAdmission::Accepted);
+        assert_eq!(
+            std::fs::read(
+                home.storage_cache_dir("reservation-missing", "v1")
+                    .join("archive.tar.gz")
+            )
+            .unwrap(),
+            bytes
+        );
+        assert_eq!(admitted_maintenance.len(), 28);
+        let mut retired = 0;
+        for name in admitted_maintenance {
+            let path = home.storage_cache_dir(&name, "v1").join("archive.tar.gz");
+            if path.exists() {
+                // The decoded worker/lock budget can legitimately report busy.
+                assert_eq!(std::fs::read(path).unwrap(), bytes);
+            } else {
+                retired += 1;
+            }
+        }
+        assert!(retired > 0, "maintenance must also make useful progress");
+        assert!(server.max_active.load(Ordering::SeqCst) <= 4);
+    }
+
+    #[tokio::test]
+    async fn background_fill_concurrent_runs_share_class_and_total_bounds() {
+        let temp = tempfile::tempdir().unwrap();
+        let home = home_at(&temp);
+        let bytes = tarball_bytes();
+        let cache = decoded::DecodedCache::new(home.clone());
+        let mut server = gated_archive_server(bytes.clone(), 36).await;
+        let coordinator = StorageCacheBackgroundFillCoordinator::new().unwrap();
+        let reporter = new_telemetry().reporter();
+        for index in 0..4 {
+            assert_eq!(
+                coordinator.submit(
+                    background_fill_group(
+                        server.url.clone(),
+                        &format!("active-{index}"),
+                        "v1",
+                        Some(bytes.len() as u64)
+                    ),
+                    home.clone(),
+                    reporter.clone(),
+                    BackgroundFillAction::Fill(None)
+                ),
+                BackgroundFillAdmission::Accepted
+            );
+            tokio::time::timeout(Duration::from_secs(5), server.requests.recv())
+                .await
+                .unwrap()
+                .unwrap();
+        }
+        // OS threads race the synchronous admission boundary used by distinct
+        // executor runs, while all active network operations remain gated.
+        let barrier = Arc::new(std::sync::Barrier::new(2));
+        let mut submitters = Vec::new();
+        for missing in [false, true] {
+            let coordinator = coordinator.clone();
+            let home = home.clone();
+            let reporter = reporter.clone();
+            let cache = cache.clone();
+            let barrier = Arc::clone(&barrier);
+            let url = server.url.clone();
+            let size = bytes.len() as u64;
+            submitters.push(std::thread::spawn(move || {
+                barrier.wait();
+                let mut accepted = Vec::new();
+                for index in 0..40 {
+                    let name = format!("concurrent-{missing}-{index}");
+                    let action = if missing {
+                        BackgroundFillAction::Fill(None)
+                    } else {
+                        BackgroundFillAction::WarmDecoded(cache.clone())
+                    };
+                    if coordinator.submit(
+                        background_fill_group(url.clone(), &name, "v1", Some(size)),
+                        home.clone(),
+                        reporter.clone(),
+                        action,
+                    ) == BackgroundFillAdmission::Accepted
+                    {
+                        accepted.push(name);
+                    }
+                }
+                accepted
+            }));
+        }
+        let accepted = submitters
+            .into_iter()
+            .map(|thread| thread.join().unwrap())
+            .collect::<Vec<_>>();
+        server.release.add_permits(36);
+        tokio::time::timeout(Duration::from_secs(5), coordinator.wait_idle_for_test())
+            .await
+            .expect("accepted background operations should finish after release");
+        coordinator.shutdown().await;
+        join_raw_http_task(server.task, "released background archive requests")
+            .await
+            .unwrap();
+        assert_eq!(accepted.iter().map(Vec::len).sum::<usize>(), 32);
+        for class in accepted {
+            assert!((4..=28).contains(&class.len()));
+            for name in class {
+                assert_eq!(
+                    std::fs::read(home.storage_cache_dir(&name, "v1").join("archive.tar.gz"))
+                        .unwrap(),
+                    bytes
+                );
+            }
+        }
+        assert!(server.max_active.load(Ordering::SeqCst) <= 4);
+        cache.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn background_fill_worker_failure_releases_capacity_for_missing_work() {
+        let temp = tempfile::tempdir().unwrap();
+        let home = home_at(&temp);
+        let bytes = tarball_bytes();
+        let cache = decoded::DecodedCache::new(home.clone());
+        write_cached_archive(&home, "failed-warm", "v1", &bytes);
+        write_storage_lock(&home, "failed-warm", "v1");
+        cache.shutdown().await;
+        let (archive_url, archive_server) = raw_http_url(http_response("200 OK", &bytes)).await;
+        let (telemetry_url, telemetry_server) = telemetry_capture_server(2).await;
+        let coordinator = StorageCacheBackgroundFillCoordinator::new_with_limits(1, 4).unwrap();
+        let reporter = new_telemetry_for_api_url(&telemetry_url).reporter();
+        assert_eq!(
+            coordinator.submit(
+                background_fill_group(
+                    archive_url.clone(),
+                    "failed-warm",
+                    "v1",
+                    Some(bytes.len() as u64)
+                ),
+                home.clone(),
+                reporter.clone(),
+                BackgroundFillAction::WarmDecoded(cache)
+            ),
+            BackgroundFillAdmission::Accepted
+        );
+        tokio::time::timeout(Duration::from_secs(5), coordinator.wait_idle_for_test())
+            .await
+            .expect("accepted background operations should finish after release");
+        assert_eq!(
+            coordinator.submit(
+                background_fill_group(archive_url, "after-failure", "v1", Some(bytes.len() as u64)),
+                home.clone(),
+                reporter,
+                BackgroundFillAction::Fill(None)
+            ),
+            BackgroundFillAdmission::Accepted
+        );
+        tokio::time::timeout(Duration::from_secs(5), coordinator.wait_idle_for_test())
+            .await
+            .expect("accepted background operations should finish after release");
+        coordinator.shutdown().await;
+        archive_server.assert_finished().await;
+        let reports = telemetry_server.assert_finished_with_requests().await;
+        assert!(
+            reports
+                .iter()
+                .any(|r| r.contains("storage_cache_background_fill_failed"))
+        );
+        assert!(
+            reports
+                .iter()
+                .any(|r| r.contains("storage_cache_background_fill_filled"))
+        );
+        assert_eq!(
+            std::fs::read(
+                home.storage_cache_dir("after-failure", "v1")
+                    .join("archive.tar.gz")
+            )
+            .unwrap(),
+            bytes
+        );
+    }
+
+    #[tokio::test]
+    async fn background_fill_reserves_maintenance_and_bounds_mixed_admission() {
+        let temp = tempfile::tempdir().unwrap();
+        let home = home_at(&temp);
+        let bytes = tarball_bytes();
+        let cache = decoded::DecodedCache::new(home.clone());
+        let mut server = gated_archive_server(bytes.clone(), 5).await;
+        let coordinator = StorageCacheBackgroundFillCoordinator::new_with_limits(1, 4).unwrap();
+        let reporter = new_telemetry().reporter();
+        let group = |name: &str| {
+            background_fill_group(server.url.clone(), name, "v1", Some(bytes.len() as u64))
+        };
+        assert_eq!(
+            coordinator.submit(
+                group("active"),
+                home.clone(),
+                reporter.clone(),
+                BackgroundFillAction::Fill(None)
+            ),
+            BackgroundFillAdmission::Accepted
+        );
+        tokio::time::timeout(Duration::from_secs(5), server.requests.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        for index in 0..3 {
+            assert_eq!(
+                coordinator.submit(
+                    group(&format!("missing-{index}")),
+                    home.clone(),
+                    reporter.clone(),
+                    BackgroundFillAction::Fill(None)
+                ),
+                BackgroundFillAdmission::Accepted
+            );
+        }
+        assert_eq!(
+            coordinator.submit(
+                group("excess-missing"),
+                home.clone(),
+                reporter.clone(),
+                BackgroundFillAction::Fill(None)
+            ),
+            BackgroundFillAdmission::QueueSaturated
+        );
+        assert_eq!(
+            coordinator.submit(
+                group("maintenance"),
+                home.clone(),
+                reporter.clone(),
+                BackgroundFillAction::WarmDecoded(cache.clone())
+            ),
+            BackgroundFillAdmission::Accepted
+        );
+        assert_eq!(
+            coordinator.submit(
+                group("excess-maintenance"),
+                home.clone(),
+                reporter.clone(),
+                BackgroundFillAction::WarmDecoded(cache.clone())
+            ),
+            BackgroundFillAdmission::QueueSaturated
+        );
+        // Promotion at capacity retains the accepted owner and decoded work,
+        // even though all four queued keys now have missing demand.
+        assert_eq!(
+            coordinator.submit(
+                group("maintenance"),
+                home.clone(),
+                reporter,
+                BackgroundFillAction::Fill(None)
+            ),
+            BackgroundFillAdmission::Deduplicated
+        );
+        server.release.add_permits(5);
+        tokio::time::timeout(Duration::from_secs(5), coordinator.wait_idle_for_test())
+            .await
+            .expect("accepted background operations should finish after release");
+        coordinator.shutdown().await;
+        join_raw_http_task(server.task, "released background archive requests")
+            .await
+            .unwrap();
+        assert!(
+            cache
+                .get_ready("maintenance", "v1")
+                .await
+                .unwrap()
+                .is_some()
+        );
+        for name in ["excess-missing", "excess-maintenance"] {
+            assert!(
+                !home
+                    .storage_cache_dir(name, "v1")
+                    .join("archive.tar.gz")
+                    .exists()
+            );
+        }
+        for index in 0..3 {
+            assert_eq!(
+                std::fs::read(
+                    home.storage_cache_dir(&format!("missing-{index}"), "v1")
+                        .join("archive.tar.gz")
+                )
+                .unwrap(),
+                bytes
+            );
+        }
+        cache.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn background_fill_serves_warming_and_retirement_during_missing_demand() {
+        let temp = tempfile::tempdir().unwrap();
+        let home = home_at(&temp);
+        let bytes = tarball_bytes();
+        let cache = decoded::DecodedCache::new(home.clone());
+        let mut server = gated_archive_server(bytes.clone(), 15).await;
+        let coordinator = StorageCacheBackgroundFillCoordinator::new_with_limits(1, 32).unwrap();
+        let reporter = new_telemetry().reporter();
+        let group = |name: &str| {
+            background_fill_group(
+                server.url.replace("archive.tar.gz", name),
+                name,
+                "v1",
+                Some(bytes.len() as u64),
+            )
+        };
+        assert_eq!(
+            coordinator.submit(
+                group("anchor"),
+                home.clone(),
+                reporter.clone(),
+                BackgroundFillAction::Fill(None)
+            ),
+            BackgroundFillAdmission::Accepted
+        );
+        tokio::time::timeout(Duration::from_secs(5), server.requests.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        // Warming observations can become stale before execution. These two
+        // missing sources must still download and publish decoded files.
+        for name in ["warm-0", "retire", "warm-1"] {
+            let action = if name == "retire" {
+                write_cached_archive(&home, name, "v1", &bytes);
+                write_storage_lock(&home, name, "v1");
+                cache.warm_from_archive(name, "v1").await.unwrap();
+                BackgroundFillAction::RetireArchive(cache.clone())
+            } else {
+                BackgroundFillAction::WarmDecoded(cache.clone())
+            };
+            assert_eq!(
+                coordinator.submit(group(name), home.clone(), reporter.clone(), action),
+                BackgroundFillAdmission::Accepted
+            );
+        }
+        for index in 0..12 {
+            assert_eq!(
+                coordinator.submit(
+                    group(&format!("cold-{index}")),
+                    home.clone(),
+                    reporter.clone(),
+                    BackgroundFillAction::Fill(None)
+                ),
+                BackgroundFillAdmission::Accepted
+            );
+        }
+        for _ in 0..14 {
+            server.release.add_permits(1);
+            tokio::time::timeout(Duration::from_secs(5), server.requests.recv())
+                .await
+                .unwrap()
+                .unwrap();
+        }
+        server.release.add_permits(1);
+        tokio::time::timeout(Duration::from_secs(5), coordinator.wait_idle_for_test())
+            .await
+            .expect("accepted background operations should finish after release");
+        coordinator.shutdown().await;
+        join_raw_http_task(server.task, "released background archive requests")
+            .await
+            .unwrap();
+
+        let paths = server.paths.lock().unwrap().clone();
+        assert_eq!(&paths[..4], ["/anchor", "/cold-0", "/cold-1", "/warm-0"]);
+        assert_eq!(
+            paths[10], "/warm-1",
+            "retirement also receives its FIFO maintenance turn"
+        );
+        assert!(
+            !home
+                .storage_cache_dir("retire", "v1")
+                .join("archive.tar.gz")
+                .exists()
+        );
+        for name in ["warm-0", "warm-1"] {
+            assert!(cache.get_ready(name, "v1").await.unwrap().is_some());
+        }
+        for index in 0..12 {
+            assert_eq!(
+                std::fs::read(
+                    home.storage_cache_dir(&format!("cold-{index}"), "v1")
+                        .join("archive.tar.gz")
+                )
+                .unwrap(),
+                bytes
+            );
+        }
+        cache.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn background_fill_promotes_queued_warming_without_losing_decoded_demand() {
+        for missing_first in [false, true] {
+            let temp = tempfile::tempdir().unwrap();
+            let home = home_at(&temp);
+            let bytes = tarball_bytes();
+            let cache = decoded::DecodedCache::new(home.clone());
+            let mut server = gated_archive_server(bytes.clone(), 3).await;
+            let coordinator = StorageCacheBackgroundFillCoordinator::new_with_limits(1, 4).unwrap();
+            let reporter = new_telemetry().reporter();
+            let group = |name: &str| {
+                background_fill_group(
+                    server.url.replace("archive.tar.gz", name),
+                    name,
+                    "v1",
+                    Some(bytes.len() as u64),
+                )
+            };
+            assert_eq!(
+                coordinator.submit(
+                    group("anchor"),
+                    home.clone(),
+                    reporter.clone(),
+                    BackgroundFillAction::Fill(None)
+                ),
+                BackgroundFillAdmission::Accepted
+            );
+            tokio::time::timeout(Duration::from_secs(5), server.requests.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                coordinator.submit(
+                    group("older-warming"),
+                    home.clone(),
+                    reporter.clone(),
+                    BackgroundFillAction::WarmDecoded(cache.clone())
+                ),
+                BackgroundFillAdmission::Accepted
+            );
+            let mut actions = [
+                BackgroundFillAction::WarmDecoded(cache.clone()),
+                BackgroundFillAction::Fill(None),
+            ];
+            if missing_first {
+                actions.reverse();
+            }
+            for (index, action) in actions.into_iter().enumerate() {
+                assert_eq!(
+                    coordinator.submit(group("promoted"), home.clone(), reporter.clone(), action),
+                    if index == 0 {
+                        BackgroundFillAdmission::Accepted
+                    } else {
+                        BackgroundFillAdmission::Deduplicated
+                    }
+                );
+            }
+            assert_eq!(
+                coordinator.submit(
+                    group("promoted"),
+                    home.clone(),
+                    reporter.clone(),
+                    BackgroundFillAction::RetireArchive(cache.clone())
+                ),
+                BackgroundFillAdmission::Deduplicated
+            );
+            server.release.add_permits(1);
+            tokio::time::timeout(Duration::from_secs(5), server.requests.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            // Active duplicate demand cannot spawn another request or retire a
+            // source while its accepted atomic operation is running.
+            assert_eq!(
+                coordinator.submit(
+                    group("promoted"),
+                    home.clone(),
+                    reporter,
+                    BackgroundFillAction::Fill(None)
+                ),
+                BackgroundFillAdmission::Deduplicated
+            );
+            server.release.add_permits(2);
+            tokio::time::timeout(Duration::from_secs(5), coordinator.wait_idle_for_test())
+                .await
+                .expect("accepted background operations should finish after release");
+            coordinator.shutdown().await;
+            join_raw_http_task(server.task, "released background archive requests")
+                .await
+                .unwrap();
+            assert_eq!(
+                server.paths.lock().unwrap().as_slice(),
+                ["/anchor", "/promoted", "/older-warming"]
+            );
+            assert!(cache.get_ready("promoted", "v1").await.unwrap().is_some());
+            assert_eq!(
+                std::fs::read(
+                    home.storage_cache_dir("promoted", "v1")
+                        .join("archive.tar.gz")
+                )
+                .unwrap(),
+                bytes
+            );
+            cache.shutdown().await;
+        }
+    }
+
+    #[tokio::test]
     async fn background_fill_coordinator_bounds_distinct_keys_globally() {
         let temp = tempfile::tempdir().unwrap();
         let home = home_at(&temp);
         let body = b"background-fill-body".to_vec();
         let mut server = gated_archive_server(body.clone(), 3).await;
-        let coordinator = StorageCacheBackgroundFillCoordinator::new_with_limits(2, 4).unwrap();
+        let coordinator = StorageCacheBackgroundFillCoordinator::new_with_limits(2, 6).unwrap();
         let reporter = new_telemetry().reporter();
 
         for (name, version) in [("global-a", "v1"), ("global-b", "v1"), ("global-c", "v1")] {
@@ -6944,7 +7719,7 @@ mod tests {
                 .expect("two admitted workers should reach the archive server")
                 .expect("archive request channel should remain open");
         }
-        // A FIFO checkpoint observes the third key's admission decision even if
+        // A supervisor checkpoint observes the third key's admission decision even if
         // an over-admitted worker has not reached its HTTP handler yet.
         let (complete, completed) = oneshot::channel();
         let (active_workers, pending_keys) = tokio::time::timeout(Duration::from_secs(5), async {

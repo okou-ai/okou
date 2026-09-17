@@ -33,6 +33,7 @@ export const morningBriefGithubSkipReasonSchema = z.enum([
   "not-authorized",
   "reconnect-required",
   "source-revoked",
+  "deadline-exceeded",
   "provider-failed",
 ]);
 
@@ -66,6 +67,8 @@ export const morningBriefGithubLimitSchema = z.enum([
   "unsupported-subject",
   "unsafe-link",
   "missing-item",
+  "provider-forbidden",
+  "unread-pages",
   "items",
   "requests",
   "response-bytes",
@@ -158,8 +161,10 @@ export const morningBriefGithubBundleSchema = z.object({
     requests: z.number().int().nonnegative(),
     textCharacters: z.number().int().nonnegative(),
   }),
-  /** Bounded provider hint; metadata only, never a sleep or retry budget. */
+  /** Bounded provider hints; metadata only, never a sleep or retry budget. */
   retryAfterMs: z.number().int().nonnegative().optional(),
+  rateLimitRemaining: z.number().int().nonnegative().optional(),
+  rateLimitResetAt: z.string().datetime().optional(),
 });
 
 const collectResponseSchema = z.discriminatedUnion("result", [

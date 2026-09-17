@@ -96,12 +96,13 @@ pub(super) async fn restore_codex_session(
     };
     let session_path = format!("{logical_path}{physical_suffix}");
 
-    write_session_history_file(sandbox, &session_path, session).await?;
+    let transfer = write_session_history_file(sandbox, &session_path, session).await?;
 
     let diagnostics = SessionRestoreDiagnostics {
         framework: "codex",
         session_id: session_id.to_string(),
         bytes_in: session_history.len(),
+        transfer,
     };
     info!(
         run_id = %context.run_id,

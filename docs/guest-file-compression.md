@@ -69,8 +69,19 @@ fallback is added. API contracts and persisted representations are unchanged.
 Existing raw and native-zstd histories remain readable by old and new Runners.
 Restored-byte telemetry continues to count logical file bytes, not wire bytes.
 
+The file client also returns successful per-file payload and Host timing
+measurements through the Sandbox compression API. History restores expose these
+separately from representation metadata; see
+[history transfer measurements](workspace-history-restore-telemetry.md#history-transfer-measurements).
+They do not change codec selection or file semantics. Encoder pipeline wall
+time includes backpressure and overlaps request time, rather than measuring
+isolated encoding CPU.
+
 Tests cover the public client/server/helper path, stream failure and cancellation,
 concurrent caller choices, preserved raw/private/batch writes and actual history
 restore selection. Isolated synthetic measurements are implementation evidence,
-not a claim about production startup p90 or zero CPU regression. Parent issue
-[#32931](https://github.com/vm0-ai/okou/issues/32931) retains post-release observation.
+not a claim about production startup p90 or zero CPU regression. Selective
+compression was delivered under the closed
+[#32931](https://github.com/vm0-ai/okou/issues/32931); follow-up attribution and
+the optimization/no-change decision belong to
+[#34728](https://github.com/vm0-ai/okou/issues/34728).

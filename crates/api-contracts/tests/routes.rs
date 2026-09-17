@@ -90,6 +90,22 @@ fn generated_routes_build_paths_with_params() {
 }
 
 #[test]
+fn generated_deferred_handoff_route_encodes_both_path_parameters() {
+    let route = routes::runners::jobs::by_id::pi_handoff::by_offset::route(
+        routes::runners::jobs::by_id::pi_handoff::by_offset::Params {
+            id: "run/one",
+            offset: "1048576",
+        },
+    );
+
+    assert_eq!(route.method, Method::Get);
+    assert_eq!(
+        route.url("https://api.vm0.dev"),
+        "https://api.vm0.dev/api/runners/jobs/run%2Fone/pi-handoff/1048576"
+    );
+}
+
+#[test]
 fn generated_routes_build_resolved_routes_with_params() {
     let resolved =
         routes::runners::jobs::by_id::claim::route(routes::runners::jobs::by_id::claim::Params {

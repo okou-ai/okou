@@ -530,49 +530,31 @@ test("denied links display no artifact metadata or content", async () => {
   expect(document.querySelector("iframe[src], iframe[srcdoc]")).toBeNull();
 });
 
-test("logged-out recipients use the existing login with a same-origin artifact return URL", async () => {
+test("sign-in treats an artifact query as part of the same-origin return URL", async () => {
   const redirect = vi
-    .spyOn(window.location, "replace")
+    .spyOn(window.location, "assign")
     .mockImplementation(() => {});
-  let resolves = 0;
-  context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
-    resolves++;
-    return respond(404, {
-      error: { code: "NOT_FOUND", message: "Artifact unavailable" },
-    });
-  });
-  await startPage({
+  const path = `${artifactReferencePath(shareId, "index.html")}?redirect_url=https://attacker.example#slide-2`;
+  await setupPage({
     context,
-    path: `${artifactReferencePath(shareId, "index.html")}?redirect_url=https://attacker.example#slide-2`,
+    path,
     host: "app.okou.ai",
     auth: null,
   });
+  expect(
+    screen.getByRole("heading", { name: "You can’t view this artifact" }),
+  ).toBeInTheDocument();
+  expect(redirect).not.toHaveBeenCalled();
+  click(action("button", "Sign in"));
   await waitFor(() => {
     return expect(redirect).toHaveBeenCalledWith(expect.any(String));
   });
-  const destination = String(redirect.mock.calls[0]?.[0]);
-  expect(destination).toContain("sign-in");
-  expect(decodeURIComponent(destination)).toContain(
-    `${artifactReferencePath(shareId, "index.html")}#slide-2`,
-  );
-  expect(destination).not.toContain("attacker.example");
-  expect(resolves).toBe(0);
-});
-
-test("public canonical links open without login and retain their fragment", async () => {
-  const redirect = vi
-    .spyOn(window.location, "replace")
-    .mockImplementation(() => {});
-  context.mocks.api(artifactReferencesContract.publicUrl, ({ respond }) => {
-    return respond(200, { url: publicUrl });
-  });
-  await startPage({
-    context,
-    path: `${canonical}#slide-2`,
-    host: "app.okou.ai",
-    auth: null,
-  });
-  await waitFor(() => {
-    return expect(redirect).toHaveBeenCalledWith(`${publicUrl}#slide-2`);
-  });
+  const destination = new URL(String(redirect.mock.calls[0]?.[0]));
+  expect(destination.pathname).toBe("/sign-in");
+  expect(destination.origin).toBe("https://app.okou.ai");
+  expect(
+    new URLSearchParams(destination.hash.slice("#/?".length)).get(
+      "redirect_url",
+    ),
+  ).toBe(`https://app.okou.ai${path}`);
 });

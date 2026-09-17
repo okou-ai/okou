@@ -1085,6 +1085,33 @@ const sandboxOperationSchema = z.object({
   session_history_restore_reason: z
     .enum(["raw_source", "retained_zstd", "codex_pruning_guard"])
     .optional(),
+  session_history_transfer_source: z
+    .enum(["workspace_cache", "downloaded", "inline"])
+    .optional(),
+  session_history_wire_codec: z.enum(["none", "zstd"]).optional(),
+  session_history_codec_reason: z
+    .enum([
+      "native_zstd",
+      "below_threshold",
+      "sample_rejected",
+      "sample_accepted",
+    ])
+    .optional(),
+  // These also describe inline history, whose existing contract has no
+  // reference-size ceiling. Keep safe integer measurements without imposing
+  // the local/ref 128 MiB limit on that separate restore path.
+  session_history_transfer_bytes: z.number().int().nonnegative().optional(),
+  session_history_wire_bytes: z.number().int().nonnegative().optional(),
+  session_history_write_requests: z.number().int().positive().optional(),
+  session_history_selection_ms: z.number().int().nonnegative().optional(),
+  session_history_file_gate_wait_ms: z.number().int().nonnegative().optional(),
+  session_history_requests_ms: z.number().int().nonnegative().optional(),
+  session_history_encoder_pipeline_ms: z
+    .number()
+    .int()
+    .nonnegative()
+    .optional(),
+  session_history_publication_ms: z.number().int().nonnegative().optional(),
 });
 
 /**

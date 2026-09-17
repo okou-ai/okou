@@ -13,12 +13,14 @@ import { z } from "zod";
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
 import { safeUrlParse } from "../utils";
+import type { ClerkClient } from "../external/clerk";
 import {
   admitMorningBriefCollection,
   withMorningBriefConnectorReader,
   type MorningBriefCollectionScope,
   type MorningBriefConnectorReader,
   type MorningBriefReadOutcome,
+  type MorningBriefResponseMetadata,
 } from "./morning-brief-connector-reader.service";
 
 /**
@@ -318,9 +320,18 @@ class BranchCoverage {
     }
   }
 
-  deny(): void {
+  /**
+   * The endpoint itself was refused, and the refusal is local to this branch.
+   *
+   * `policy` is the member's own effective permission and `provider` is
+   * GitHub answering `403`. Both are recorded distinctly so the summarization
+   * step can tell "you have not granted this" from "GitHub refused this".
+   */
+  deny(scope: "policy" | "provider"): void {
     this.status = "denied";
-    this.limits.add("denied-endpoint");
+    this.limits.add(
+      scope === "policy" ? "denied-endpoint" : "provider-forbidden",
+    );
   }
 
   fail(limit: MorningBriefGithubLimit): void {
@@ -388,7 +399,16 @@ function recordFailure(
   result: Exclude<MorningBriefReadOutcome<unknown>, { readonly kind: "ok" }>,
 ): { readonly retryAfterMs?: number; readonly revoked: boolean } {
   if (result.kind === "denied") {
-    coverage.deny();
+    // Both scopes are endpoint-local and leave this branch's siblings intact.
+    // A provider `403` carrying `Retry-After` is GitHub's secondary rate limit,
+    // not a lost credential, so it is recorded as throttling rather than as a
+    // permission refusal.
+    const retryAfterMs = result.meta.retryAfterMs;
+    if (result.scope === "provider" && retryAfterMs !== null) {
+      coverage.limit("rate-limited");
+      return { retryAfterMs, revoked: false };
+    }
+    coverage.deny(result.scope);
     return { revoked: false };
   }
   if (result.kind === "not-found") {
@@ -486,6 +506,8 @@ class GithubPrioritiesCollector {
   private readonly checks: BranchCoverage;
   private readonly windowStart: Date;
   private retryAfterMs: number | undefined;
+  private rateLimitRemaining: number | undefined;
+  private rateLimitResetAt: string | undefined;
   private requests = 0;
   private revoked = false;
   private login: string | null = null;
@@ -537,6 +559,25 @@ class GithubPrioritiesCollector {
   }): Promise<MorningBriefReadOutcome<T>> {
     this.requests += 1;
     return await this.reader.getJson(request);
+  }
+
+  /**
+   * Retain the provider's bounded rate-limit facts from a successful read.
+   *
+   * These are validated allowlisted headers the reader already parsed. They
+   * are metadata for the summarization step and the next occurrence; nothing
+   * here sleeps, retries or reacts to them.
+   */
+  private observeRateLimit(meta: MorningBriefResponseMetadata): void {
+    if (meta.rateLimitRemaining !== null) {
+      this.rateLimitRemaining =
+        this.rateLimitRemaining === undefined
+          ? meta.rateLimitRemaining
+          : Math.min(this.rateLimitRemaining, meta.rateLimitRemaining);
+    }
+    if (meta.rateLimitResetAt !== null) {
+      this.rateLimitResetAt = meta.rateLimitResetAt;
+    }
   }
 
   private outOfTime(): boolean {
@@ -682,17 +723,73 @@ class GithubPrioritiesCollector {
         accepted += 1;
       }
       this.notifications.counted(accepted);
-      if (
-        result.value.length < MORNING_BRIEF_GITHUB_BUDGET.notificationPerPage
-      ) {
+      this.observeRateLimit(result.meta);
+      // The reader validates GitHub's own `Link` header down to the existence
+      // of a next page and its bounded page number. No URL is followed; the
+      // next request is still this loop's own constructed path.
+      if (!result.meta.hasNextPage) {
         return;
       }
       if (page === MORNING_BRIEF_GITHUB_BUDGET.notificationPages) {
-        // A full last page means there is at least one more page this budget
-        // will not read. That is a coverage gap, not a complete read.
+        // A next page this budget will not read is a coverage gap, never a
+        // complete read.
         this.notifications.limit("notification-pages");
+        this.notifications.limit("unread-pages");
       }
     }
+  }
+
+  /**
+   * Normalize one bounded search page into merged drafts.
+   *
+   * Extracted from the page loop so both stay inside the repository's
+   * complexity limit; the normalization itself is unchanged.
+   */
+  private acceptSearchItems(
+    coverage: BranchCoverage,
+    items: readonly z.infer<typeof searchItemSchema>[],
+    branch: "assigned" | "review-requested",
+  ): number {
+    let accepted = 0;
+    for (const item of items) {
+      const repository = repositoryFromApiUrl(item.repository_url);
+      const updatedAt = isoOrNull(item.updated_at);
+      if (repository === null || updatedAt === null || item.number <= 0) {
+        coverage.limit("malformed-response");
+        continue;
+      }
+      const kind: SubjectKind =
+        item.pull_request === null || item.pull_request === undefined
+          ? "issue"
+          : "pull-request";
+      const ref: SubjectRef = { ...repository, kind, number: item.number };
+      const draft = this.draft(ref, updatedAt);
+      draft.title = boundedText(item.title, 200);
+      draft.state = itemState(item.state);
+      if (typeof item.draft === "boolean") {
+        draft.draft = item.draft;
+      }
+      if (item.user) {
+        draft.actor = boundedText(item.user.login, 50);
+      }
+      if (typeof item.body === "string" && item.body.length > 0) {
+        draft.excerpt = boundedText(
+          item.body,
+          MORNING_BRIEF_GITHUB_BUDGET.maxExcerptCharacters,
+        );
+      }
+      if (new Date(draft.updatedAt).getTime() < new Date(updatedAt).getTime()) {
+        draft.updatedAt = updatedAt;
+      }
+      draft.reasons.push({ branch });
+      if (branch === "review-requested") {
+        draft.reviewRequested = true;
+      } else {
+        draft.assigned = true;
+      }
+      accepted += 1;
+    }
+    return accepted;
   }
 
   /**
@@ -737,56 +834,25 @@ class GithubPrioritiesCollector {
       if (result.value.incomplete_results) {
         coverage.limit("search-incomplete");
       }
-      let accepted = 0;
-      for (const item of result.value.items) {
-        const repository = repositoryFromApiUrl(item.repository_url);
-        const updatedAt = isoOrNull(item.updated_at);
-        if (repository === null || updatedAt === null || item.number <= 0) {
-          coverage.limit("malformed-response");
-          continue;
-        }
-        const kind: SubjectKind =
-          item.pull_request === null || item.pull_request === undefined
-            ? "issue"
-            : "pull-request";
-        const ref: SubjectRef = { ...repository, kind, number: item.number };
-        const draft = this.draft(ref, updatedAt);
-        draft.title = boundedText(item.title, 200);
-        draft.state = itemState(item.state);
-        if (typeof item.draft === "boolean") {
-          draft.draft = item.draft;
-        }
-        if (item.user) {
-          draft.actor = boundedText(item.user.login, 50);
-        }
-        if (typeof item.body === "string" && item.body.length > 0) {
-          draft.excerpt = boundedText(
-            item.body,
-            MORNING_BRIEF_GITHUB_BUDGET.maxExcerptCharacters,
-          );
-        }
-        if (
-          new Date(draft.updatedAt).getTime() < new Date(updatedAt).getTime()
-        ) {
-          draft.updatedAt = updatedAt;
-        }
-        draft.reasons.push({ branch });
-        if (branch === "review-requested") {
-          draft.reviewRequested = true;
-        } else {
-          draft.assigned = true;
-        }
-        accepted += 1;
-      }
+      const accepted = this.acceptSearchItems(
+        coverage,
+        result.value.items,
+        branch,
+      );
       coverage.counted(accepted);
+      this.observeRateLimit(result.meta);
       const readSoFar = page * MORNING_BRIEF_GITHUB_BUDGET.searchPerPage;
-      if (
-        result.value.items.length < MORNING_BRIEF_GITHUB_BUDGET.searchPerPage
-      ) {
+      if (!result.meta.hasNextPage) {
+        // Search reports its own total independently of `Link`, so an
+        // unconsumed remainder is still a gap even without a next page.
+        if (result.value.total_count > readSoFar) {
+          coverage.limit("search-total-exceeded");
+        }
         return;
       }
       if (page === MORNING_BRIEF_GITHUB_BUDGET.searchPages) {
         coverage.limit("search-pages");
+        coverage.limit("unread-pages");
         if (result.value.total_count > readSoFar) {
           coverage.limit("search-total-exceeded");
         }
@@ -1112,6 +1178,12 @@ class GithubPrioritiesCollector {
       ...(this.retryAfterMs === undefined
         ? {}
         : { retryAfterMs: this.retryAfterMs }),
+      ...(this.rateLimitRemaining === undefined
+        ? {}
+        : { rateLimitRemaining: this.rateLimitRemaining }),
+      ...(this.rateLimitResetAt === undefined
+        ? {}
+        : { rateLimitResetAt: this.rateLimitResetAt }),
     };
   }
 }
@@ -1186,6 +1258,7 @@ function validateAnchor(
 export async function executeMorningBriefGithubCollection(
   args: {
     readonly db: Db;
+    readonly clerk: ClerkClient;
     readonly owner: { readonly orgId: string; readonly userId: string };
     readonly anchor: Date;
   },
@@ -1197,20 +1270,23 @@ export async function executeMorningBriefGithubCollection(
     return invalid;
   }
 
-  const admitted = await admitMorningBriefCollection(args.db, {
-    orgId: args.owner.orgId,
-    userId: args.owner.userId,
-    anchor: args.anchor,
-  });
+  const admitted = await admitMorningBriefCollection(
+    {
+      db: args.db,
+      clerk: args.clerk,
+      orgId: args.owner.orgId,
+      userId: args.owner.userId,
+      anchor: args.anchor,
+    },
+    signal,
+  );
   signal.throwIfAborted();
   if (admitted.kind !== "ok") {
     return { kind: "not-executed", reason: admitted.reason };
   }
 
-  const collectionSignal = AbortSignal.any([
-    signal,
-    AbortSignal.timeout(MORNING_BRIEF_GITHUB_BUDGET.deadlineMs),
-  ]);
+  // The shared reader owns the absolute deadline for the whole source, so this
+  // passes the caller's signal and lets the wrapper bound it.
   const access = await withMorningBriefConnectorReader(
     {
       scope: admitted.scope,
@@ -1225,7 +1301,7 @@ export async function executeMorningBriefGithubCollection(
         deadlineMs: MORNING_BRIEF_GITHUB_BUDGET.deadlineMs,
       },
       db: args.db,
-      signal: collectionSignal,
+      clerk: args.clerk,
     },
     async (reader) => {
       return await collectMorningBriefGithubPriorities(
@@ -1238,9 +1314,10 @@ export async function executeMorningBriefGithubCollection(
             return nowDate().getTime();
           },
         },
-        collectionSignal,
+        signal,
       );
     },
+    signal,
   );
   if (access.kind === "unavailable") {
     // Terminal loss of a whole source. Nothing collected under it is released.

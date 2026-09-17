@@ -1,3 +1,4 @@
+import { privateArtifactCreationEnabled } from "../services/private-artifact-storage.service";
 import { randomUUID } from "node:crypto";
 
 import { command } from "ccstate";
@@ -19,7 +20,10 @@ import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
 import { env } from "../../lib/env";
-import { badRequestMessage } from "../../lib/error";
+import {
+  artifactVisibilityUnavailable,
+  badRequestMessage,
+} from "../../lib/error";
 import { db$, type ReadonlyDb } from "../external/db";
 import { createBuiltInGenerationRealtimeSubscription } from "../external/realtime";
 import {
@@ -468,134 +472,187 @@ function parseVideoSubmissionOptions(body: VideoIoGenerateRequest) {
   return options;
 }
 
-const postVideoInner$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const auth = get(organizationAuthContext$);
-  const db = get(db$);
-  const capabilities = await loadOrgPlanCapabilities(db, auth.orgId);
-  signal.throwIfAborted();
-  if (capabilities?.videoGenerationAllowed !== true) {
-    return videoRequiresPaidPlan();
-  }
-
-  const bodyResult = await get(videoBody$);
-  signal.throwIfAborted();
-  if (!bodyResult.ok) {
-    return bodyResult.response;
-  }
-
-  const runId =
-    auth.tokenType === "agent" || auth.tokenType === "sandbox"
-      ? auth.runId
-      : undefined;
-  const publicBrand = PUBLIC_BRAND;
-  const runVideoModel = await loadDefaultRunVideoModel(db, runId, signal);
-  // The run's model is a default, not an override: it applies only when the
-  // request names no model of its own. A caller that asks for a specific model
-  // — because the user asked for it in the prompt — gets that model.
-  const options = parseVideoSubmissionOptions(
-    runVideoModel === null || namesVideoModel(bodyResult.data)
-      ? bodyResult.data
-      : withDefaultRunVideoModel(bodyResult.data, runVideoModel),
-  );
-  if ("status" in options) {
-    return options;
-  }
-
-  const hasCredits = await set(
-    checkVideoCredits$,
-    { orgId: auth.orgId, userId: auth.userId, runId },
-    signal,
-  );
-  if (!hasCredits) {
-    return videoInsufficientCredits();
-  }
-
-  const pricing = await get(videoPricing$);
-  signal.throwIfAborted();
-  if (getMissingVideoPricing(pricing, options).length > 0) {
-    return videoServiceUnavailable(
-      "Video generation pricing is not configured",
-      "NOT_CONFIGURED",
-    );
-  }
-
-  const provider = videoProviderForModel(options.model);
-  if (provider === "fal" && !env("FAL_KEY")) {
-    return videoServiceUnavailable(
-      "Fal video generation is not configured",
-      "NOT_CONFIGURED",
-    );
-  }
-  if (provider === "byteplus" && !env("BYTEPLUS_API_KEY")) {
-    return videoServiceUnavailable(
-      "BytePlus video generation is not configured",
-      "NOT_CONFIGURED",
-    );
-  }
-  if (provider === "minimax" && !env("MINIMAX_API_KEY")) {
-    return videoServiceUnavailable(
-      "MiniMax H3 video generation is not configured",
-      "NOT_CONFIGURED",
-    );
-  }
-
-  const generationId = randomUUID();
-  const realtime = await createBuiltInGenerationRealtimeSubscription(
-    auth.userId,
-    generationId,
-  );
-  signal.throwIfAborted();
-  const admission = await set(
-    startRunBuiltInAdmission$,
-    { runId, kind: "video" },
-    signal,
-  );
-  if (isRunBuiltInAdmissionError(admission)) {
-    return admission;
-  }
-
-  await set(
-    createBuiltInGenerationJob$,
-    {
-      generationId,
-      type: "video",
-      orgId: auth.orgId,
-      userId: auth.userId,
-      runId,
-      request: builtInGenerationRequestWithInternal(
-        videoRequestRecord(options),
-        {
-          admissionId: admission?.id,
-          publicBrand,
-        },
-      ),
-    },
-    signal,
-  );
-  const submitError = await set(
-    submitVideoProviderWebhookJob$,
-    {
-      generationId,
-      orgId: auth.orgId,
-      userId: auth.userId,
-      options,
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-  if (submitError) {
-    await set(completeRunBuiltInAdmission$, {
-      admission,
-      status: "failed",
-    });
+const prepareVideoRequest$ = command(
+  async ({ get }, requirePrivateArtifact: boolean, signal: AbortSignal) => {
+    const auth = get(organizationAuthContext$);
+    const db = get(db$);
+    const capabilities = await loadOrgPlanCapabilities(db, auth.orgId);
     signal.throwIfAborted();
-    return submitError;
-  }
+    // Existing callers receive the plan error before body validation. The
+    // guarded route reports unavailable private creation before the plan gate.
+    if (
+      !requirePrivateArtifact &&
+      capabilities?.videoGenerationAllowed !== true
+    ) {
+      return videoRequiresPaidPlan();
+    }
+    const bodyResult = await get(videoBody$);
+    signal.throwIfAborted();
+    if (!bodyResult.ok) {
+      return bodyResult.response;
+    }
 
-  return acceptedVideoResponse(generationId, realtime);
-});
+    const privacyRequired =
+      requirePrivateArtifact || bodyResult.data.requirePrivateArtifact === true;
+    const privateArtifacts = privacyRequired
+      ? await get(privateArtifactCreationEnabled(auth.orgId, auth.userId))
+      : undefined;
+    signal.throwIfAborted();
+    if (privacyRequired && !privateArtifacts) {
+      return artifactVisibilityUnavailable();
+    }
+
+    if (
+      requirePrivateArtifact &&
+      capabilities?.videoGenerationAllowed !== true
+    ) {
+      return videoRequiresPaidPlan();
+    }
+
+    const runId =
+      auth.tokenType === "agent" || auth.tokenType === "sandbox"
+        ? auth.runId
+        : undefined;
+    const runVideoModel = await loadDefaultRunVideoModel(db, runId, signal);
+    // The run's model is a default, not an override: it applies only when the
+    // request names no model of its own. A caller that asks for a specific model
+    // — because the user asked for it in the prompt — gets that model.
+    const options = parseVideoSubmissionOptions(
+      runVideoModel === null || namesVideoModel(bodyResult.data)
+        ? bodyResult.data
+        : withDefaultRunVideoModel(bodyResult.data, runVideoModel),
+    );
+    if ("status" in options) {
+      return options;
+    }
+
+    return { auth, runId, privateArtifacts, options };
+  },
+);
+
+const postVideoInner$ = command(
+  async (
+    { get, set },
+    requirePrivateArtifact: boolean,
+    signal: AbortSignal,
+  ) => {
+    const prepared = await set(
+      prepareVideoRequest$,
+      requirePrivateArtifact,
+      signal,
+    );
+    if ("status" in prepared) {
+      return prepared;
+    }
+    const { auth, runId, privateArtifacts, options } = prepared;
+    const publicBrand = PUBLIC_BRAND;
+
+    const hasCredits = await set(
+      checkVideoCredits$,
+      { orgId: auth.orgId, userId: auth.userId, runId },
+      signal,
+    );
+    if (!hasCredits) {
+      return videoInsufficientCredits();
+    }
+
+    const pricing = await get(videoPricing$);
+    signal.throwIfAborted();
+    if (getMissingVideoPricing(pricing, options).length > 0) {
+      return videoServiceUnavailable(
+        "Video generation pricing is not configured",
+        "NOT_CONFIGURED",
+      );
+    }
+
+    const provider = videoProviderForModel(options.model);
+    if (provider === "fal" && !env("FAL_KEY")) {
+      return videoServiceUnavailable(
+        "Fal video generation is not configured",
+        "NOT_CONFIGURED",
+      );
+    }
+    if (provider === "byteplus" && !env("BYTEPLUS_API_KEY")) {
+      return videoServiceUnavailable(
+        "BytePlus video generation is not configured",
+        "NOT_CONFIGURED",
+      );
+    }
+    if (provider === "minimax" && !env("MINIMAX_API_KEY")) {
+      return videoServiceUnavailable(
+        "MiniMax H3 video generation is not configured",
+        "NOT_CONFIGURED",
+      );
+    }
+
+    const generationId = randomUUID();
+    const realtime = await createBuiltInGenerationRealtimeSubscription(
+      auth.userId,
+      generationId,
+    );
+    signal.throwIfAborted();
+    const admission = await set(
+      startRunBuiltInAdmission$,
+      { runId, kind: "video" },
+      signal,
+    );
+    if (isRunBuiltInAdmissionError(admission)) {
+      return admission;
+    }
+
+    await set(
+      createBuiltInGenerationJob$,
+      {
+        generationId,
+        type: "video",
+        orgId: auth.orgId,
+        privateArtifacts,
+        userId: auth.userId,
+        runId,
+        request: builtInGenerationRequestWithInternal(
+          videoRequestRecord(options),
+          {
+            admissionId: admission?.id,
+            publicBrand,
+          },
+        ),
+      },
+      signal,
+    );
+    const submitError = await set(
+      submitVideoProviderWebhookJob$,
+      {
+        generationId,
+        orgId: auth.orgId,
+        userId: auth.userId,
+        options,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (submitError) {
+      await set(completeRunBuiltInAdmission$, {
+        admission,
+        status: "failed",
+      });
+      signal.throwIfAborted();
+      return submitError;
+    }
+
+    return acceptedVideoResponse(generationId, realtime);
+  },
+);
 
 export const videoIoGenerateRoutes: readonly RouteEntry[] = [
+  {
+    route: videoIoGenerateContract.postPrivate,
+    handler: authRoute(
+      { requireOrganization: true, requiredCapability: "file:write" },
+      command(({ set }, signal: AbortSignal) => {
+        return set(postVideoInner$, true, signal);
+      }),
+    ),
+  },
   {
     route: videoIoGenerateContract.post,
     handler: authRoute(
@@ -603,7 +660,9 @@ export const videoIoGenerateRoutes: readonly RouteEntry[] = [
         requireOrganization: true,
         requiredCapability: "file:write",
       },
-      postVideoInner$,
+      command(({ set }, signal: AbortSignal) => {
+        return set(postVideoInner$, false, signal);
+      }),
     ),
   },
 ];

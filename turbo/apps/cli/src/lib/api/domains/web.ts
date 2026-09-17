@@ -57,6 +57,7 @@ import { getActiveToken } from "../config";
 import { headersWithCliClientHeaders } from "../client-headers";
 import {
   absoluteArtifactUrl,
+  assertPrivateArtifactUrl,
   withAbsoluteArtifactUrl,
 } from "../../artifact-url";
 import { getPlatformOrigin } from "../../platform-url";
@@ -317,6 +318,7 @@ interface UploadWebFileResult {
 }
 
 interface GenerateWebVoiceOptions {
+  requirePrivateArtifact?: boolean;
   text: string;
   voice?: string;
   instructions?: string;
@@ -335,6 +337,7 @@ interface GenerateWebVoiceResult {
 }
 
 interface GenerateWebImageOptions {
+  requirePrivateArtifact?: boolean;
   prompt: string;
   model?: string;
   size?: string;
@@ -387,6 +390,7 @@ interface GenerateWebImageResult {
 }
 
 interface GenerateWebVideoOptions {
+  requirePrivateArtifact?: boolean;
   prompt: string;
   model?: string;
   aspectRatio?: string;
@@ -451,6 +455,7 @@ function generateWebVideoPayload(
   options: GenerateWebVideoOptions,
 ): Record<string, unknown> {
   return compactPayload([
+    ["requirePrivateArtifact", options.requirePrivateArtifact],
     ["prompt", options.prompt],
     ["model", options.model],
     ["aspectRatio", options.aspectRatio],
@@ -837,7 +842,11 @@ async function readBuiltInGenerationResponse<
  */
 export async function uploadWebFile(
   localPath: string,
-  options?: { contentType?: string; purpose?: "artifact" },
+  options?: {
+    contentType?: string;
+    purpose?: "artifact";
+    requirePrivateArtifact?: boolean;
+  },
 ): Promise<UploadWebFileResult> {
   const stats = statSync(localPath);
   if (!stats.isFile()) {
@@ -867,7 +876,12 @@ export async function uploadWebFile(
     "Content-Type": "application/json",
   };
 
-  const prepareUrl = new URL("/api/uploads/prepare", baseUrl);
+  const prepareUrl = new URL(
+    options?.requirePrivateArtifact
+      ? "/api/uploads/prepare/private"
+      : "/api/uploads/prepare",
+    baseUrl,
+  );
   const prepareRes = await fetch(prepareUrl, {
     method: "POST",
     headers: headersWithCliClientHeaders(prepareHeaders),
@@ -876,6 +890,7 @@ export async function uploadWebFile(
       contentType,
       size: stats.size,
       purpose: options?.purpose,
+      requirePrivateArtifact: options?.requirePrivateArtifact,
     }),
   });
 
@@ -888,6 +903,9 @@ export async function uploadWebFile(
   }
 
   const prepared = (await prepareRes.json()) as PrepareUploadResponse;
+  if (options?.requirePrivateArtifact) {
+    await assertPrivateArtifactUrl(prepared.url);
+  }
 
   const bytes = readFileSync(localPath);
   if (validateUtf8 && !isUtf8(bytes)) {
@@ -962,15 +980,24 @@ export async function generateWebVoice(
     "Content-Type": "application/json",
   };
 
-  const response = await fetch(new URL("/api/voice-io/speech", baseUrl), {
-    method: "POST",
-    headers: headersWithCliClientHeaders(headers),
-    body: JSON.stringify({
-      text: options.text,
-      ...(options.voice ? { voice: options.voice } : {}),
-      ...(options.instructions ? { instructions: options.instructions } : {}),
-    }),
-  });
+  const response = await fetch(
+    new URL(
+      options.requirePrivateArtifact
+        ? "/api/voice-io/speech/private"
+        : "/api/voice-io/speech",
+      baseUrl,
+    ),
+    {
+      method: "POST",
+      headers: headersWithCliClientHeaders(headers),
+      body: JSON.stringify({
+        text: options.text,
+        requirePrivateArtifact: options.requirePrivateArtifact,
+        ...(options.voice ? { voice: options.voice } : {}),
+        ...(options.instructions ? { instructions: options.instructions } : {}),
+      }),
+    },
+  );
 
   if (!response.ok) {
     const { message, code } = await parseErrorBody(
@@ -1004,39 +1031,48 @@ export async function generateWebImage(
     "Content-Type": "application/json",
   };
 
-  const response = await fetch(new URL("/api/image-io/generate", baseUrl), {
-    method: "POST",
-    headers: headersWithCliClientHeaders(headers),
-    body: JSON.stringify({
-      prompt: options.prompt,
-      ...(options.model ? { model: options.model } : {}),
-      ...(options.size ? { size: options.size } : {}),
-      ...(options.quality ? { quality: options.quality } : {}),
-      ...(options.background ? { background: options.background } : {}),
-      ...(options.outputFormat ? { outputFormat: options.outputFormat } : {}),
-      ...(options.outputCompression !== undefined
-        ? { outputCompression: options.outputCompression }
-        : {}),
-      ...(options.moderation ? { moderation: options.moderation } : {}),
-      ...(options.seed !== undefined ? { seed: options.seed } : {}),
-      ...(options.safetyTolerance
-        ? { safetyTolerance: options.safetyTolerance }
-        : {}),
-      ...(options.enhancePrompt !== undefined
-        ? { enhancePrompt: options.enhancePrompt }
-        : {}),
-      ...(options.imageUrls && options.imageUrls.length > 0
-        ? { imageUrls: options.imageUrls }
-        : {}),
-      ...(options.maskImageUrl ? { maskImageUrl: options.maskImageUrl } : {}),
-      ...(options.inputFidelity
-        ? { inputFidelity: options.inputFidelity }
-        : {}),
-      ...(options.imagePromptStrength !== undefined
-        ? { imagePromptStrength: options.imagePromptStrength }
-        : {}),
-    }),
-  });
+  const response = await fetch(
+    new URL(
+      options.requirePrivateArtifact
+        ? "/api/image-io/generate/private"
+        : "/api/image-io/generate",
+      baseUrl,
+    ),
+    {
+      method: "POST",
+      headers: headersWithCliClientHeaders(headers),
+      body: JSON.stringify({
+        prompt: options.prompt,
+        requirePrivateArtifact: options.requirePrivateArtifact,
+        ...(options.model ? { model: options.model } : {}),
+        ...(options.size ? { size: options.size } : {}),
+        ...(options.quality ? { quality: options.quality } : {}),
+        ...(options.background ? { background: options.background } : {}),
+        ...(options.outputFormat ? { outputFormat: options.outputFormat } : {}),
+        ...(options.outputCompression !== undefined
+          ? { outputCompression: options.outputCompression }
+          : {}),
+        ...(options.moderation ? { moderation: options.moderation } : {}),
+        ...(options.seed !== undefined ? { seed: options.seed } : {}),
+        ...(options.safetyTolerance
+          ? { safetyTolerance: options.safetyTolerance }
+          : {}),
+        ...(options.enhancePrompt !== undefined
+          ? { enhancePrompt: options.enhancePrompt }
+          : {}),
+        ...(options.imageUrls && options.imageUrls.length > 0
+          ? { imageUrls: options.imageUrls }
+          : {}),
+        ...(options.maskImageUrl ? { maskImageUrl: options.maskImageUrl } : {}),
+        ...(options.inputFidelity
+          ? { inputFidelity: options.inputFidelity }
+          : {}),
+        ...(options.imagePromptStrength !== undefined
+          ? { imagePromptStrength: options.imagePromptStrength }
+          : {}),
+      }),
+    },
+  );
 
   if (!response.ok) {
     const { message, code } = await parseErrorBody(
@@ -1073,11 +1109,19 @@ export async function generateWebVideo(
     "Content-Type": "application/json",
   };
 
-  const response = await fetch(new URL("/api/video-io/generate", baseUrl), {
-    method: "POST",
-    headers: headersWithCliClientHeaders(headers),
-    body: JSON.stringify(generateWebVideoPayload(options)),
-  });
+  const response = await fetch(
+    new URL(
+      options.requirePrivateArtifact
+        ? "/api/video-io/generate/private"
+        : "/api/video-io/generate",
+      baseUrl,
+    ),
+    {
+      method: "POST",
+      headers: headersWithCliClientHeaders(headers),
+      body: JSON.stringify(generateWebVideoPayload(options)),
+    },
+  );
 
   if (!response.ok) {
     const { message, code } = await parseErrorBody(
@@ -1106,14 +1150,22 @@ export async function generateWebAvatarVideo(
   if (!token) {
     throw new ApiRequestError("Not authenticated", "UNAUTHORIZED", 401);
   }
-  const response = await fetch(new URL("/api/avatar-video/generate", baseUrl), {
-    method: "POST",
-    headers: headersWithCliClientHeaders({
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    }),
-    body: JSON.stringify(options),
-  });
+  const response = await fetch(
+    new URL(
+      options.requirePrivateArtifact
+        ? "/api/avatar-video/generate/private"
+        : "/api/avatar-video/generate",
+      baseUrl,
+    ),
+    {
+      method: "POST",
+      headers: headersWithCliClientHeaders({
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      }),
+      body: JSON.stringify(options),
+    },
+  );
   if (!response.ok) {
     const { message, code } = await parseErrorBody(
       response,

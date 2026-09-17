@@ -14,6 +14,11 @@ import { server } from "../../../mocks/server";
 import { generateCommand } from "../index";
 import { imageCommand } from "../image";
 import { DEFAULT_IMAGE_MODEL_ENV } from "@okouai/core/image-model-catalog";
+import {
+  AVAILABILITY_URL,
+  GENERATION_ARTIFACT_ID,
+  serveGenerationVisibility,
+} from "./artifact-visibility-fixtures";
 
 const IMAGE_URL = "http://localhost:3000/api/image-io/generate";
 const IMAGE_GENERATION_ID = "00000000-0000-4000-8000-000000000001";
@@ -65,12 +70,113 @@ describe("okou generate image command", () => {
     chalk.level = 0;
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
+    vi.stubEnv(DEFAULT_IMAGE_MODEL_ENV, undefined);
+    imageCommand.setOptionValue("visibility", undefined);
   });
 
   afterEach(() => {
     mockConsoleLog.mockClear();
     mockConsoleError.mockClear();
     vi.unstubAllEnvs();
+  });
+
+  it.each(["only-me", "org", "public"] as const)(
+    "creates a private image and presents its requested %s visibility",
+    async (visibility) => {
+      vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
+      const artifact = serveGenerationVisibility("image.png", visibility);
+      server.use(
+        http.post(`${IMAGE_URL}/private`, async ({ request }) => {
+          expect(await request.json()).toMatchObject({
+            requirePrivateArtifact: true,
+          });
+          return HttpResponse.json({
+            ...IMAGE_RESULT,
+            id: GENERATION_ARTIFACT_ID,
+            url: artifact.reference,
+          });
+        }),
+      );
+
+      await generateCommand.parseAsync([
+        "node",
+        "cli",
+        "image",
+        "--raw-prompt",
+        "A watercolor fox",
+        "--visibility",
+        visibility,
+        "--json",
+      ]);
+
+      expect(
+        JSON.parse(mockConsoleLog.mock.calls.flat().join("\n")),
+      ).toMatchObject({
+        url: artifact.url,
+        ownerUrl: artifact.ownerUrl,
+        visibility,
+        inlineMarkdownLink: `[${IMAGE_RESULT.filename}](<${artifact.url}>)`,
+        previewMarkdownBlock: `![${IMAGE_RESULT.filename}](<${artifact.url}>)`,
+      });
+    },
+  );
+
+  it("rejects explicit visibility before billing when private artifacts are disabled", async () => {
+    let generated = false;
+    server.use(
+      http.get(AVAILABILITY_URL, () => {
+        return HttpResponse.json({ enabled: false });
+      }),
+      http.post(`${IMAGE_URL}/private`, () => {
+        generated = true;
+        return HttpResponse.json(IMAGE_RESULT);
+      }),
+    );
+    await expect(
+      generateCommand.parseAsync([
+        "node",
+        "cli",
+        "image",
+        "--raw-prompt",
+        "A watercolor fox",
+        "--visibility",
+        "only-me",
+      ]),
+    ).rejects.toThrow("process.exit called");
+    expect(generated).toBe(false);
+    expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
+      "--visibility requires privateArtifacts to be enabled",
+    );
+  });
+
+  it.each([
+    { mode: "provider listing", args: [] },
+    { mode: "connector guidance", args: ["--provider", "replicate"] },
+    {
+      mode: "prompt compilation",
+      args: [
+        "--style",
+        "image-style:ink-storefront",
+        "--prompt",
+        "A storefront",
+        "--compile",
+      ],
+    },
+  ])("rejects visibility during $mode", async ({ args }) => {
+    await expect(
+      generateCommand.parseAsync([
+        "node",
+        "cli",
+        "image",
+        ...args,
+        "--visibility",
+        "public",
+      ]),
+    ).rejects.toThrow("process.exit called");
+    expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
+      "--visibility is only available for direct built-in generation",
+    );
+    expect(mockConsoleLog).not.toHaveBeenCalled();
   });
 
   it("should generate an image and print the /f file URL", async () => {

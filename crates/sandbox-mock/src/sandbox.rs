@@ -1184,6 +1184,7 @@ impl Sandbox for MockSandbox {
     async fn write_file(&self, path: &str, content: &[u8]) -> Result<()> {
         self.write_file_with_compression(path, content, sandbox::FileCompression::None)
             .await
+            .map(|_| ())
     }
 
     async fn write_file_with_compression(
@@ -1191,7 +1192,7 @@ impl Sandbox for MockSandbox {
         path: &str,
         content: &[u8],
         compression: sandbox::FileCompression,
-    ) -> Result<()> {
+    ) -> Result<Option<sandbox::FileWriteMeasurements>> {
         let call = WriteFileCall {
             compression,
             path: path.to_string(),
@@ -1216,6 +1217,7 @@ impl Sandbox for MockSandbox {
             .lock_ignoring_poison()
             .pop_front()
             .unwrap_or(Ok(()))
+            .map(|()| None)
     }
 
     async fn write_files(&self, files: &[WriteFileEntry<'_>]) -> Result<()> {

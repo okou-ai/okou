@@ -265,7 +265,7 @@ test("Copy and paste a structured chat message without flattening it", async () 
     expect(composer).toHaveTextContent("Reuse the current project briefing.");
   });
   const feedback = await screen.findByRole("textbox", {
-    name: "What should change about this?",
+    name: "Ask or comment on this quote",
   });
   expect(feedback).toHaveTextContent("Adapt this for the new launch.");
   expect(buttonIn(document.body, "Preview template Paper cut")).toBeVisible();

@@ -620,6 +620,7 @@ export const bootstrap$ = command(
     set(captureInvitationRedirect$);
     set(markBootstrapLocaleInitStarted$);
     set(setRootSignal$, signal);
+    set(initBootstrapSkeleton$, signal);
     // Claims `clerkUser$` in this synchronous pass. The daemons and route
     // setups below read it, and without an owner it never settles.
     const clerkIdentitySetup = set(setupClerkUser$, signal);
@@ -637,7 +638,6 @@ export const bootstrap$ = command(
       oauthApiBaseUrl: resolveOAuthApiBase(),
       ...(vercelProtectionBypass ? { vercelProtectionBypass } : {}),
     });
-    set(initBootstrapSkeleton$);
     set(setupLoggers$);
 
     // Feature switches start from repository defaults until the API responds.

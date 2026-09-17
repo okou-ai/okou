@@ -40,6 +40,7 @@ fn new_provider_classification_does_not_match_unowned_output() {
     ] {
         for message in [
             "Our servers are currently overloaded. Please try again later.",
+            "Codex error: Invalid prompt: your prompt was flagged as potentially violating our usage policy. Please try again with a different prompt: https://example.invalid/policy",
             r#"{"error":{"code":"rate_limit_exceeded"}}"#,
             "API Error: 503 Service unavailable",
         ] {
