@@ -9,6 +9,7 @@ import { z } from "zod";
 import { nowDate } from "../../lib/time";
 import type { ClerkClient } from "../external/clerk";
 import type { Db } from "../external/db";
+import { joinAll, safeSync } from "../utils";
 import {
   withMorningBriefConnectorReader,
   type MorningBriefSourceDeadline,
@@ -18,12 +19,13 @@ import {
   type MorningBriefResponseMetadata,
 } from "./morning-brief-connector-reader.service";
 import {
-  allDayRangeOverlapsWindow,
+  checkAllDayRange,
+  checkTimedRange,
   formatCalendarDate,
   localDayOffsetOf,
   parseCalendarDate,
+  parseCalendarDateTime,
   resolveMorningBriefCalendarWindow,
-  timedRangeOverlapsWindow,
   type MorningBriefCalendarWindow,
 } from "./morning-brief-calendar-window";
 
@@ -71,6 +73,32 @@ const MORNING_BRIEF_CALENDAR_CAPS = Object.freeze({
  */
 export const MORNING_BRIEF_CALENDAR_SOURCE_BUDGET_MS =
   MORNING_BRIEF_CALENDAR_CAPS.deadlineMs;
+
+/**
+ * Ceilings for the retained fields the provider can make arbitrarily long.
+ *
+ * A provider string is transport-valid long before it is reasonable, and every
+ * one of these reaches composition, so each is projected to what its field
+ * legitimately carries and then charged to the final text budget. None of them
+ * widens a request, byte, event or aggregate cap: they only decide how much of
+ * an arrived response is kept.
+ *
+ * `identity` and `link` are different in kind. Shortening an event id, a
+ * recurrence id or a URL does not shorten a value — it names a different event
+ * or a different page — so those are kept whole or dropped, never clipped.
+ */
+const MORNING_BRIEF_CALENDAR_FIELD_CAPS = Object.freeze({
+  /** A Google calendar id, event id, `iCalUID` or recurrence id. */
+  identity: 512,
+  /** An RFC 3339 instant or a calendar date, with room for an offset. */
+  instant: 64,
+  /** An IANA timezone name. */
+  timezone: 64,
+  /** A documented provider label such as `needsAction` or `freeBusyReader`. */
+  label: 64,
+  /** A Google Calendar `htmlLink`; browsers stop honouring far longer URLs. */
+  link: 2048,
+});
 
 const READABLE_ACCESS_ROLES = ["reader", "writer", "owner"] as const;
 type ReadableAccessRole = (typeof READABLE_ACCESS_ROLES)[number];
@@ -143,6 +171,8 @@ const EVENT_FIELDS =
 
 interface SelectedCalendar {
   readonly id: string;
+  /** The encoded path segment, proven representable before selection. */
+  readonly pathId: string;
   readonly summary: string | null;
   readonly timezone: string | null;
   readonly accessRole: ReadableAccessRole;
@@ -161,11 +191,17 @@ interface CoverageEntry {
 /** Everything one collection accumulates outside the reader's own ceilings. */
 class CollectionState {
   readonly truncations = new Set<MorningBriefCalendarTruncation>();
+  /**
+   * Calendars the list named but never read. Read calendars are appended in
+   * the stable selection order once every worker has been joined, so two
+   * workers racing cannot reorder the reported coverage.
+   */
   readonly coverage: CoverageEntry[] = [];
-  readonly seen = new Set<string>();
   retryAfterMs: number | null = null;
-  events = 0;
-  characters = 0;
+  /** Set only by a proven `rate-limited` outcome, never by a retry hint. */
+  rateLimited = false;
+  /** Set when the list named a calendar whose access role is uninterpretable. */
+  unknownAccess = false;
   /** Latched once the reader reports the whole source is gone. */
   revoked = false;
 
@@ -197,24 +233,38 @@ class CollectionState {
           : Math.min(this.retryAfterMs, retryAfterMs);
     }
   }
+}
 
-  /** Accepts an item only while both the event and character caps allow it. */
-  admit(cost: number): boolean {
-    if (this.events >= MORNING_BRIEF_CALENDAR_CAPS.maxEvents) {
-      this.truncations.add("events");
-      return false;
-    }
-    if (
-      this.characters + cost >
-      MORNING_BRIEF_CALENDAR_CAPS.maxTextCharacters
-    ) {
-      this.truncations.add("text-characters");
-      return false;
-    }
-    this.events += 1;
-    this.characters += cost;
-    return true;
+/** What is left of the caps the whole collection shares. */
+interface OutputBudget {
+  events: number;
+  characters: number;
+}
+
+function emptyBudget(): OutputBudget {
+  return {
+    events: MORNING_BRIEF_CALENDAR_CAPS.maxEvents,
+    characters: MORNING_BRIEF_CALENDAR_CAPS.maxTextCharacters,
+  };
+}
+
+/** Why one item could not be admitted, or `null` when it was. */
+function admit(
+  budget: OutputBudget,
+  cost: number,
+): Extract<
+  MorningBriefCalendarTruncation,
+  "events" | "text-characters"
+> | null {
+  if (budget.events <= 0) {
+    return "events";
   }
+  if (cost > budget.characters) {
+    return "text-characters";
+  }
+  budget.events -= 1;
+  budget.characters -= cost;
+  return null;
 }
 
 /** How a failed read maps onto this calendar's coverage. */
@@ -234,6 +284,9 @@ function outcomeForFailure(
       return "not-found";
     }
     case "rate-limited": {
+      // The provider throttled this read whether or not it said for how long,
+      // so the fact is latched here rather than inferred from a retry hint.
+      state.rateLimited = true;
       state.noteMetadata(outcome.meta);
       state.noteRetryAfter(outcome.retryAfterMs);
       return "rate-limited";
@@ -256,8 +309,11 @@ function outcomeForFailure(
   }
 }
 
-function truncate(value: string | undefined, max: number): string | null {
-  if (value === undefined) {
+function truncate(
+  value: string | null | undefined,
+  max: number,
+): string | null {
+  if (value === undefined || value === null) {
     return null;
   }
   const trimmed = value.trim();
@@ -267,8 +323,17 @@ function truncate(value: string | undefined, max: number): string | null {
   return trimmed.length <= max ? trimmed : `${trimmed.slice(0, max)}…`;
 }
 
-/** Only an absolute HTTP(S) display link survives, and it is never fetched. */
-function safeDisplayLink(value: string | undefined): string | null {
+/**
+ * Only an absolute HTTP(S) display link survives, and it is never fetched.
+ *
+ * A link past its ceiling is dropped rather than clipped: the prefix of a URL
+ * is a different URL, so rebuilding one would hand the reader a link the
+ * provider never issued.
+ */
+function safeDisplayLink(
+  value: string | undefined,
+  truncations: Set<MorningBriefCalendarTruncation>,
+): string | null {
   if (value === undefined) {
     return null;
   }
@@ -276,9 +341,51 @@ function safeDisplayLink(value: string | undefined): string | null {
   if (parsed === null) {
     return null;
   }
-  return parsed.protocol === "https:" || parsed.protocol === "http:"
-    ? parsed.toString()
-    : null;
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+    return null;
+  }
+  const href = parsed.toString();
+  if (href.length > MORNING_BRIEF_CALENDAR_FIELD_CAPS.link) {
+    truncations.add("oversized-link");
+    return null;
+  }
+  return href;
+}
+
+/**
+ * A value that is kept exactly or not at all.
+ *
+ * `false` means the provider sent one this collection cannot carry. Fields
+ * that name something — an id, a recurrence instant, a URL — have no shorter
+ * form: a prefix is a different name, so their owner declares a gap instead.
+ */
+function exact(value: string, max: number): string | false {
+  return value.length <= max ? value : false;
+}
+
+/** The optional form of {@link exact}; `null` is a normal absence. */
+function exactOrAbsent(
+  value: string | undefined,
+  max: number,
+): string | null | false {
+  return value === undefined ? null : exact(value, max);
+}
+
+/**
+ * The path segment this calendar id becomes, or `null` when it has none.
+ *
+ * A lone surrogate is a valid JSON string and an impossible URL component, so
+ * the encoding is proven here, once, instead of throwing out of the worker
+ * that would have issued the request.
+ */
+function calendarPathId(id: string): string | null {
+  if (exact(id, MORNING_BRIEF_CALENDAR_FIELD_CAPS.identity) === false) {
+    return null;
+  }
+  const encoded = safeSync(() => {
+    return encodeURIComponent(id);
+  });
+  return "ok" in encoded ? encoded.ok : null;
 }
 
 function readableAccessRole(
@@ -300,7 +407,9 @@ interface CalendarListOutcome {
  * Enumerates the calendars this account may actually read events from.
  *
  * A denied list stays denied. Falling back to `primary` would claim coverage
- * the account never proved it has.
+ * the account never proved it has. Every entry the list names leaves the loop
+ * either selected or declared: an entry that is silently skipped would make an
+ * account this reader cannot interpret look like an account with nothing on.
  */
 async function enumerateCalendars(
   reader: MorningBriefConnectorReader,
@@ -345,30 +454,47 @@ async function enumerateCalendars(
       if (entry.deleted === true) {
         continue;
       }
+      const pathId = calendarPathId(entry.id);
+      if (pathId === null) {
+        // Its own coverage entry would have to name it, and a clipped calendar
+        // id names a different calendar, so the limit is reported without one.
+        state.truncations.add("oversized-identity");
+        continue;
+      }
       const summary = truncate(
         entry.summaryOverride ?? entry.summary,
         MORNING_BRIEF_CALENDAR_CAPS.maxSummaryCharacters,
       );
       const role = readableAccessRole(entry.accessRole);
       if (role === null) {
-        // `freeBusyReader` sees busy blocks, never event detail. Reporting it
-        // as a coverage limit is the only truthful representation.
-        if (entry.accessRole === "freeBusyReader") {
-          state.coverage.push({
-            calendarId: entry.id,
-            summary,
-            accessRole: entry.accessRole,
-            primary: entry.primary === true,
-            outcome: "free-busy-only",
-            retryAfterMs: null,
-          });
+        // `freeBusyReader` sees busy blocks, never event detail, and an
+        // unrecognized or missing role is a calendar whose contents stay
+        // unknown. Both are coverage limits rather than silent omissions.
+        const known = entry.accessRole === "freeBusyReader";
+        if (!known) {
+          state.unknownAccess = true;
         }
+        state.coverage.push({
+          calendarId: entry.id,
+          summary,
+          accessRole: truncate(
+            entry.accessRole,
+            MORNING_BRIEF_CALENDAR_FIELD_CAPS.label,
+          ),
+          primary: entry.primary === true,
+          outcome: known ? "free-busy-only" : "unknown-access",
+          retryAfterMs: null,
+        });
         continue;
       }
       readable.push({
         id: entry.id,
+        pathId,
         summary,
-        timezone: entry.timeZone ?? null,
+        timezone: truncate(
+          entry.timeZone,
+          MORNING_BRIEF_CALENDAR_FIELD_CAPS.timezone,
+        ),
         accessRole: role,
         primary: entry.primary === true,
       });
@@ -443,6 +569,107 @@ function localDateOf(
   );
 }
 
+type EventTime = z.infer<typeof eventDateTimeSchema>;
+
+/**
+ * Which representation one endpoint actually states.
+ *
+ * Google states exactly one of `date` or `dateTime` per endpoint. Carrying
+ * both, or neither, describes two different moments or none, so it is not a
+ * value this collector is willing to pick a winner from.
+ */
+function endpointKind(time: EventTime): "date" | "dateTime" | null {
+  const hasDate = time.date !== undefined;
+  const hasDateTime = time.dateTime !== undefined;
+  if (hasDate === hasDateTime) {
+    return null;
+  }
+  return hasDate ? "date" : "dateTime";
+}
+
+/** The zone an event declares for itself, used only as reported provenance. */
+function declaredTimezone(start: EventTime, end: EventTime): string | null {
+  return start.timeZone ?? end.timeZone ?? null;
+}
+
+/** An all-day pair: calendar dates with an exclusive end, never instants. */
+function normalizeAllDay(
+  start: EventTime,
+  end: EventTime,
+  window: MorningBriefCalendarWindow,
+): NormalizedTime | null {
+  const startDate =
+    start.date === undefined ? null : parseCalendarDate(start.date);
+  const endDate = end.date === undefined ? null : parseCalendarDate(end.date);
+  if (startDate === null || endDate === null) {
+    return null;
+  }
+  const placement = checkAllDayRange({
+    start: startDate,
+    endExclusive: endDate,
+    window,
+  });
+  if (placement === "invalid-range") {
+    return null;
+  }
+  return {
+    allDay: true,
+    start: formatCalendarDate(startDate),
+    end: formatCalendarDate(endDate),
+    timezone: declaredTimezone(start, end),
+    localDayOffset: localDayOffsetOf(window, startDate),
+    inWindow: placement === "in-window",
+  };
+}
+
+/** A timed pair, resolved to instants without consulting the machine clock. */
+function normalizeTimed(
+  start: EventTime,
+  end: EventTime,
+  window: MorningBriefCalendarWindow,
+): NormalizedTime | null {
+  if (start.dateTime === undefined || end.dateTime === undefined) {
+    return null;
+  }
+  // Each endpoint is resolved against its own declared zone: a flight may
+  // legitimately start and end in different ones, and neither borrows context
+  // from the other.
+  const startParsed = parseCalendarDateTime({
+    value: start.dateTime,
+    timeZone: start.timeZone,
+  });
+  const endParsed = parseCalendarDateTime({
+    value: end.dateTime,
+    timeZone: end.timeZone,
+  });
+  if (!startParsed.ok || !endParsed.ok) {
+    return null;
+  }
+  const startAt = startParsed.instant;
+  const endAt = endParsed.instant;
+  const placement = checkTimedRange({ startAt, endAt, window });
+  if (placement === "invalid-range") {
+    return null;
+  }
+  const localDate = localDateOf(startAt, window.timezone);
+  return {
+    allDay: false,
+    start: startAt.toISOString(),
+    end: endAt.toISOString(),
+    timezone: declaredTimezone(start, end),
+    localDayOffset:
+      localDate === null ? null : localDayOffsetOf(window, localDate),
+    inWindow: placement === "in-window",
+  };
+}
+
+/**
+ * The window placement of one event, or `null` when its time is unreadable.
+ *
+ * Every `null` here is an explicit coverage gap at the call site, never a
+ * silent drop. The alternative — letting a lenient parse or a reversed interval
+ * through — turns an impossible date into a meeting the recipient never had.
+ */
 function normalizeTime(
   event: z.infer<typeof eventSchema>,
   window: MorningBriefCalendarWindow,
@@ -452,54 +679,47 @@ function normalizeTime(
   if (start === undefined || end === undefined) {
     return null;
   }
-
-  if (start.date !== undefined || end.date !== undefined) {
-    const startDate =
-      start.date === undefined ? null : parseCalendarDate(start.date);
-    const endDate = end.date === undefined ? null : parseCalendarDate(end.date);
-    if (startDate === null || endDate === null) {
-      return null;
-    }
-    return {
-      allDay: true,
-      start: formatCalendarDate(startDate),
-      end: formatCalendarDate(endDate),
-      timezone: start.timeZone ?? end.timeZone ?? null,
-      localDayOffset: localDayOffsetOf(window, startDate),
-      inWindow: allDayRangeOverlapsWindow({
-        start: startDate,
-        endExclusive: endDate,
-        window,
-      }),
-    };
-  }
-
-  if (start.dateTime === undefined || end.dateTime === undefined) {
+  const kind = endpointKind(start);
+  // A mixed event claims to be all-day at one end and timed at the other.
+  if (kind === null || kind !== endpointKind(end)) {
     return null;
   }
-  const startAt = new Date(start.dateTime);
-  const endAt = new Date(end.dateTime);
-  if (Number.isNaN(startAt.getTime()) || Number.isNaN(endAt.getTime())) {
-    return null;
-  }
-  const localDate = localDateOf(startAt, window.timezone);
-  return {
-    allDay: false,
-    start: startAt.toISOString(),
-    end: endAt.toISOString(),
-    timezone: start.timeZone ?? end.timeZone ?? null,
-    localDayOffset:
-      localDate === null ? null : localDayOffsetOf(window, localDate),
-    inWindow: timedRangeOverlapsWindow({ startAt, endAt, window }),
-  };
+  return kind === "date"
+    ? normalizeAllDay(start, end, window)
+    : normalizeTimed(start, end, window);
 }
 
+/**
+ * Normalize one event, or report that it cannot be represented.
+ *
+ * `null` means an identity this item is addressed by arrived longer than the
+ * ceiling. Keeping a prefix would silently rename the event, collide it with a
+ * sibling or point a recurrence instance at the wrong occurrence, so the whole
+ * item is dropped and its calendar declares the gap.
+ */
 function normalizeEvent(
   event: z.infer<typeof eventSchema>,
   calendar: SelectedCalendar,
   time: NormalizedTime,
   state: CollectionState,
-): MorningBriefCalendarItem {
+): MorningBriefCalendarItem | null {
+  const identity = MORNING_BRIEF_CALENDAR_FIELD_CAPS.identity;
+  const eventId = exact(event.id, identity);
+  const iCalUID = exactOrAbsent(event.iCalUID, identity);
+  const recurringEventId = exactOrAbsent(event.recurringEventId, identity);
+  const originalStartTime = exactOrAbsent(
+    event.originalStartTime?.dateTime ?? event.originalStartTime?.date,
+    MORNING_BRIEF_CALENDAR_FIELD_CAPS.instant,
+  );
+  if (
+    eventId === false ||
+    iCalUID === false ||
+    recurringEventId === false ||
+    originalStartTime === false
+  ) {
+    return null;
+  }
+
   const attendees = (event.attendees ?? []).filter((attendee) => {
     return attendee.resource !== true;
   });
@@ -518,13 +738,10 @@ function normalizeEvent(
     calendarId: calendar.id,
     calendarSummary: calendar.summary,
     calendarTimezone: calendar.timezone,
-    eventId: event.id,
-    iCalUID: event.iCalUID ?? null,
-    recurringEventId: event.recurringEventId ?? null,
-    originalStartTime:
-      event.originalStartTime?.dateTime ??
-      event.originalStartTime?.date ??
-      null,
+    eventId,
+    iCalUID,
+    recurringEventId,
+    originalStartTime,
     summary: truncate(
       event.summary,
       MORNING_BRIEF_CALENDAR_CAPS.maxSummaryCharacters,
@@ -540,13 +757,19 @@ function normalizeEvent(
     allDay: time.allDay,
     start: time.start,
     end: time.end,
-    eventTimezone: time.timezone,
+    eventTimezone: truncate(
+      time.timezone,
+      MORNING_BRIEF_CALENDAR_FIELD_CAPS.timezone,
+    ),
     localDayOffset: time.localDayOffset,
     organizer: truncate(
       event.organizer?.displayName ?? event.organizer?.email,
       MORNING_BRIEF_CALENDAR_CAPS.maxSummaryCharacters,
     ),
-    selfResponseStatus: self?.responseStatus ?? null,
+    selfResponseStatus: truncate(
+      self?.responseStatus,
+      MORNING_BRIEF_CALENDAR_FIELD_CAPS.label,
+    ),
     attendees: kept.flatMap((attendee) => {
       const label = truncate(
         attendee.displayName ?? attendee.email,
@@ -557,27 +780,55 @@ function normalizeEvent(
         : [
             {
               label,
-              responseStatus: attendee.responseStatus ?? null,
+              responseStatus: truncate(
+                attendee.responseStatus,
+                MORNING_BRIEF_CALENDAR_FIELD_CAPS.label,
+              ),
               optional: attendee.optional === true,
             },
           ];
     }),
     attendeesTruncated,
-    link: safeDisplayLink(event.htmlLink),
+    link: safeDisplayLink(event.htmlLink, state.truncations),
   };
 }
 
-function itemCost(item: MorningBriefCalendarItem): number {
-  return (
-    (item.summary?.length ?? 0) +
-    (item.location?.length ?? 0) +
-    (item.descriptionExcerpt?.length ?? 0) +
-    item.attendees.reduce((total, attendee) => {
-      return total + attendee.label.length;
-    }, 0) +
-    item.start.length +
-    item.end.length
-  );
+/**
+ * The characters this item actually contributes to the final output.
+ *
+ * Every provider-derived string a composed brief can read is charged, the
+ * provenance repeated on each item included. A calendar name, an organizer or a
+ * display link that is retained for free is still text the brief has to carry,
+ * and counting a subset of the retained fields is what let 200 items promise
+ * 40,000 characters while holding 100,000.
+ */
+function itemTextCost(item: MorningBriefCalendarItem): number {
+  // The inventory is written out so that a field added to the contract without
+  // being charged here is visible as an omission rather than hidden in a sum.
+  const retained: readonly (string | null)[] = [
+    item.calendarId,
+    item.calendarSummary,
+    item.calendarTimezone,
+    item.eventId,
+    item.iCalUID,
+    item.recurringEventId,
+    item.originalStartTime,
+    item.summary,
+    item.location,
+    item.descriptionExcerpt,
+    item.start,
+    item.end,
+    item.eventTimezone,
+    item.organizer,
+    item.selfResponseStatus,
+    item.link,
+    ...item.attendees.flatMap((attendee) => {
+      return [attendee.label, attendee.responseStatus];
+    }),
+  ];
+  return retained.reduce((total, value) => {
+    return total + (value?.length ?? 0);
+  }, 0);
 }
 
 /**
@@ -596,15 +847,33 @@ function failureRetryAfterMs(
   return outcome.kind === "denied" ? outcome.meta.retryAfterMs : null;
 }
 
-/** Reads one calendar's events over the frozen window. */
+/** What one calendar produced, before the shared caps are applied to it. */
+interface CalendarRead {
+  readonly calendar: SelectedCalendar;
+  readonly items: readonly MorningBriefCalendarItem[];
+  readonly outcome: MorningBriefCalendarOutcome;
+  readonly retryAfterMs: number | null;
+}
+
+/**
+ * Reads one calendar's events over the frozen window.
+ *
+ * Nothing is charged to the shared caps here. A worker that spent the shared
+ * budget as its pages arrived would let network timing decide which calendars
+ * reach the brief, so a calendar only collects up to what the shared caps could
+ * ever grant it and the allocation itself happens once, in a stable order,
+ * after every worker has been joined.
+ */
 async function readCalendar(args: {
   readonly reader: MorningBriefConnectorReader;
   readonly calendar: SelectedCalendar;
   readonly window: MorningBriefCalendarWindow;
   readonly state: CollectionState;
-}): Promise<readonly MorningBriefCalendarItem[]> {
+}): Promise<CalendarRead> {
   const { calendar, reader, state, window } = args;
   const items: MorningBriefCalendarItem[] = [];
+  const seen = new Set<string>();
+  const budget = emptyBudget();
   let outcome: MorningBriefCalendarOutcome = "complete";
   let retryAfterMs: number | null = null;
   let pageToken: string | undefined;
@@ -619,7 +888,7 @@ async function readCalendar(args: {
       break;
     }
     const result = await reader.getJson({
-      pathname: `calendars/${encodeURIComponent(calendar.id)}/events`,
+      pathname: `calendars/${calendar.pathId}/events`,
       query: {
         timeMin: window.startAt.toISOString(),
         timeMax: window.endAt.toISOString(),
@@ -651,8 +920,7 @@ async function readCalendar(args: {
       if (event.status === "cancelled") {
         continue;
       }
-      const key = `${calendar.id} ${event.id}`;
-      if (state.seen.has(key)) {
+      if (seen.has(event.id)) {
         continue;
       }
       const time = normalizeTime(event, window);
@@ -665,12 +933,22 @@ async function readCalendar(args: {
         continue;
       }
       const item = normalizeEvent(event, calendar, time, state);
-      if (!state.admit(itemCost(item))) {
+      if (item === null) {
+        // A valid sibling in the same response still survives it.
+        state.truncations.add("oversized-identity");
+        outcome = "truncated";
+        continue;
+      }
+      const refused = admit(budget, itemTextCost(item));
+      if (refused !== null) {
+        // One calendar alone reached a shared cap, so the limit that stopped
+        // it is named here as well as on this calendar's coverage entry.
+        state.truncations.add(refused);
         capped = true;
         outcome = "truncated";
         break;
       }
-      state.seen.add(key);
+      seen.add(event.id);
       items.push(item);
     }
     if (capped) {
@@ -689,25 +967,25 @@ async function readCalendar(args: {
     }
   }
 
-  state.coverage.push({
-    calendarId: calendar.id,
-    summary: calendar.summary,
-    accessRole: calendar.accessRole,
-    primary: calendar.primary,
-    outcome,
-    retryAfterMs,
-  });
-  return items;
+  return { calendar, items, outcome, retryAfterMs };
 }
 
-/** Runs the per-calendar reads at the allowed concurrency, in stable order. */
+/**
+ * Runs the per-calendar reads at the allowed concurrency, in stable order.
+ *
+ * Both workers are started, so both are joined. A worker that rejects — the
+ * shared reader turns caller cancellation into exactly that — must not let this
+ * function settle while its sibling is still reading: the collection would
+ * return while a started provider read was still in flight and unobserved. The
+ * first error still propagates, and cancellation is never masked.
+ */
 async function readCalendars(args: {
   readonly reader: MorningBriefConnectorReader;
   readonly calendars: readonly SelectedCalendar[];
   readonly window: MorningBriefCalendarWindow;
   readonly state: CollectionState;
-}): Promise<readonly MorningBriefCalendarItem[]> {
-  const collected = new Map<number, readonly MorningBriefCalendarItem[]>();
+}): Promise<readonly CalendarRead[]> {
+  const collected = new Map<number, CalendarRead>();
   let next = 0;
 
   const worker = async (): Promise<void> => {
@@ -730,7 +1008,7 @@ async function readCalendars(args: {
     }
   };
 
-  await Promise.all(
+  await joinAll(
     Array.from(
       {
         length: Math.min(
@@ -743,13 +1021,64 @@ async function readCalendars(args: {
   );
 
   return args.calendars.flatMap((_, index) => {
-    return collected.get(index) ?? [];
+    const read = collected.get(index);
+    return read === undefined ? [] : [read];
   });
+}
+
+/**
+ * Applies the shared event and character caps, once, in the selection order.
+ *
+ * This is where the collection's promised output size is actually enforced, so
+ * it charges what each item really retains. The first item that does not fit
+ * stops the allocation: everything after it belongs to a brief that was already
+ * full, and reporting a later small event while dropping an earlier one would
+ * reorder the owner's day.
+ */
+function admitReadCalendars(
+  reads: readonly CalendarRead[],
+  state: CollectionState,
+): readonly MorningBriefCalendarItem[] {
+  const budget = emptyBudget();
+  const admitted: MorningBriefCalendarItem[] = [];
+  let full = false;
+
+  for (const read of reads) {
+    const kept: MorningBriefCalendarItem[] = [];
+    for (const item of read.items) {
+      if (full) {
+        break;
+      }
+      const refused = admit(budget, itemTextCost(item));
+      if (refused !== null) {
+        state.truncations.add(refused);
+        full = true;
+        break;
+      }
+      kept.push(item);
+    }
+    admitted.push(...kept);
+    state.coverage.push({
+      calendarId: read.calendar.id,
+      summary: read.calendar.summary,
+      accessRole: read.calendar.accessRole,
+      primary: read.calendar.primary,
+      // A calendar that was read completely but could not be carried whole is
+      // still a shortened calendar, never a complete one.
+      outcome:
+        kept.length < read.items.length && read.outcome === "complete"
+          ? "truncated"
+          : read.outcome,
+      retryAfterMs: read.retryAfterMs,
+    });
+  }
+  return admitted;
 }
 
 interface CollectedCalendars {
   readonly items: readonly MorningBriefCalendarItem[];
   readonly listCoverage: MorningBriefCalendarCollection["coverage"]["calendarList"];
+  readonly readable: number;
   readonly state: CollectionState;
 }
 
@@ -760,30 +1089,42 @@ async function collectCalendarsWithReader(args: {
 }): Promise<CollectedCalendars> {
   const state = new CollectionState();
   const list = await enumerateCalendars(args.reader, state);
-  if (list.selected.length === 0) {
-    return { items: [], listCoverage: list.listCoverage, state };
+  const readable = list.selected.length;
+  if (readable === 0) {
+    return { items: [], listCoverage: list.listCoverage, readable, state };
   }
-  const items = await readCalendars({
+  const reads = await readCalendars({
     reader: args.reader,
     calendars: list.selected,
     window: args.window,
     state,
   });
-  return { items, listCoverage: list.listCoverage, state };
+  return {
+    items: admitReadCalendars(reads, state),
+    listCoverage: list.listCoverage,
+    readable,
+    state,
+  };
 }
 
 /**
  * A cap, a denied calendar, an unfollowed page or a provider failure is never
  * a healthy empty day. Only a complete read with nothing in it is `empty`.
+ *
+ * An account with no readable calendar read nothing at all, so it cannot be
+ * quiet either: `empty` has to mean a calendar was actually opened and found
+ * to hold nothing.
  */
 function collectionStatus(args: {
   readonly itemCount: number;
   readonly listCoverage: CollectedCalendars["listCoverage"];
+  readonly readable: number;
   readonly coverage: readonly CoverageEntry[];
   readonly truncations: ReadonlySet<MorningBriefCalendarTruncation>;
 }): MorningBriefCalendarCollection["status"] {
   const complete =
     args.listCoverage === "complete" &&
+    args.readable > 0 &&
     args.truncations.size === 0 &&
     args.coverage.every((entry) => {
       return entry.outcome === "complete";
@@ -918,7 +1259,7 @@ export async function collectMorningBriefCalendar(
     });
   }
 
-  const { items, listCoverage, state } = access.value;
+  const { items, listCoverage, readable, state } = access.value;
   if (access.truncatedTotalBytes) {
     state.truncations.add("total-response-bytes");
   }
@@ -926,6 +1267,7 @@ export async function collectMorningBriefCalendar(
   const status = collectionStatus({
     itemCount: items.length,
     listCoverage,
+    readable,
     coverage: state.coverage,
     truncations: state.truncations,
   });
@@ -945,25 +1287,42 @@ export async function collectMorningBriefCalendar(
     // failure, so an unreadable day can never look like an empty one.
     failure:
       status === "unavailable"
-        ? sourceFailure(listCoverage, state, truncations)
+        ? sourceFailure({ listCoverage, readable, state, truncations })
         : null,
   };
 }
 
-/** The one reason an unreadable day is attributed to, most specific first. */
-function sourceFailure(
-  listCoverage: CollectedCalendars["listCoverage"],
-  state: CollectionState,
-  truncations: readonly MorningBriefCalendarTruncation[],
-): MorningBriefCalendarCollection["failure"] {
-  if (listCoverage === "denied") {
+/**
+ * The one reason an unreadable day is attributed to, most specific first.
+ *
+ * Every branch names something this collection observed. A bounded retry hint
+ * is not one of them: a provider `403` carries `Retry-After` while denying an
+ * endpoint, and a real `429` often carries none, so throttling is claimed only
+ * when a read was actually throttled.
+ */
+function sourceFailure(args: {
+  readonly listCoverage: CollectedCalendars["listCoverage"];
+  readonly readable: number;
+  readonly state: CollectionState;
+  readonly truncations: readonly MorningBriefCalendarTruncation[];
+}): MorningBriefCalendarCollection["failure"] {
+  if (args.listCoverage === "denied") {
     return "not-authorized";
   }
-  if (state.retryAfterMs !== null) {
+  if (args.state.rateLimited) {
     return "rate-limited";
   }
-  if (truncations.includes("deadline")) {
+  if (args.truncations.includes("deadline")) {
     return "deadline-exceeded";
+  }
+  if (
+    args.readable === 0 &&
+    args.listCoverage === "complete" &&
+    !args.state.unknownAccess
+  ) {
+    // The whole list was enumerated and nothing in it grants event detail.
+    // That is a scope the account does not hold, not a provider that failed.
+    return "not-authorized";
   }
   return "provider-failed";
 }

@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.676.2](https://github.com/vm0-ai/okou/compare/core-v8.676.1...core-v8.676.2) (2026-09-17)
+
+
+### Bug Fixes
+
+* retire gpt 5.5 from run models ([#34450](https://github.com/vm0-ai/okou/issues/34450)) ([d68750c](https://github.com/vm0-ai/okou/commit/d68750c8cfea642e0c94ab547ec1c683ecbab41e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.460.0
+
 ## [8.676.1](https://github.com/vm0-ai/okou/compare/core-v8.676.0...core-v8.676.1) (2026-09-17)
 
 

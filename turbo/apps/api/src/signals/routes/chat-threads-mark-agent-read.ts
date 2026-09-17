@@ -14,7 +14,7 @@ import { executeRawRows } from "../../lib/db-raw-rows";
 import type { Tx } from "../../lib/db-types";
 import { resourceUnavailable } from "../../lib/error";
 import { withChatThreadAgentReadWrite } from "../services/chat-thread-agent-read-erasure-admission.service";
-import { latestRunFinishEventSubquery } from "../services/chat-thread-read-state-query";
+import { latestReadWatermarkEventSubquery } from "../services/chat-thread-read-state-query";
 import type { RouteEntry } from "../route-entry";
 
 const markAgentReadBody$ = bodyResultOf(
@@ -55,15 +55,18 @@ async function markAgentThreadsRead(
     readonly orgId: string;
   },
 ): Promise<readonly string[]> {
-  const latestRunFinish = latestRunFinishEventSubquery(tx, chatThreads.id);
+  const latestReadWatermark = latestReadWatermarkEventSubquery(
+    tx,
+    chatThreads.id,
+  );
   const unreadThreads = tx
     .select({
       threadId: chatThreads.id,
-      latestRunFinishAt: latestRunFinish.createdAt,
+      latestReadWatermarkAt: latestReadWatermark.createdAt,
     })
     .from(chatThreads)
     .innerJoin(agents, eq(agents.id, chatThreads.agentId))
-    .crossJoinLateral(latestRunFinish)
+    .crossJoinLateral(latestReadWatermark)
     .where(
       and(
         eq(chatThreads.userId, args.userId),
@@ -71,14 +74,14 @@ async function markAgentThreadsRead(
         eq(chatThreads.agentId, args.agentId),
         or(
           isNull(chatThreads.lastReadAt),
-          gt(latestRunFinish.createdAt, chatThreads.lastReadAt),
+          gt(latestReadWatermark.createdAt, chatThreads.lastReadAt),
         ),
       ),
     )
     .as("unread_threads");
   const updateEveryMatchingThread = tx
     .update(chatThreads)
-    .set({ lastReadAt: unreadThreads.latestRunFinishAt })
+    .set({ lastReadAt: unreadThreads.latestReadWatermarkAt })
     .from(unreadThreads)
     .where(
       and(
@@ -87,7 +90,7 @@ async function markAgentThreadsRead(
         eq(chatThreads.agentId, args.agentId),
         or(
           isNull(chatThreads.lastReadAt),
-          gt(unreadThreads.latestRunFinishAt, chatThreads.lastReadAt),
+          gt(unreadThreads.latestReadWatermarkAt, chatThreads.lastReadAt),
         ),
       ),
     )

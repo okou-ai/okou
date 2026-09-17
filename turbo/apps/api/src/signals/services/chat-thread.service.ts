@@ -58,7 +58,8 @@ import type { Tx } from "../../lib/db-types";
 import { now, nowDate } from "../../lib/time";
 import { type Db, db$, type ReadonlyDb, writeDb$ } from "../external/db";
 import { inferMimetype } from "./chat-event-shared.service";
-import { latestRunFinishEventSubquery } from "./chat-thread-read-state-query";
+import { latestReadWatermarkEventSubquery } from "./chat-thread-read-state-query";
+import { revokeMorningBriefDeliveryOwnership } from "./morning-brief-delivery.service";
 import {
   appendChatThreadEvent,
   chatThreadServiceTierFromCodex,
@@ -320,15 +321,18 @@ export function chatThreadUnreads(args: {
 }): Computed<Promise<readonly { threadId: string; unreadAt: string }[]>> {
   return computed(async (get) => {
     const db = get(db$);
-    const lastRunFinish = latestRunFinishEventSubquery(db, chatThreads.id);
+    const latestReadWatermark = latestReadWatermarkEventSubquery(
+      db,
+      chatThreads.id,
+    );
     const rows = await db
       .select({
         threadId: chatThreads.id,
-        unreadAt: lastRunFinish.createdAt,
+        unreadAt: latestReadWatermark.createdAt,
       })
       .from(chatThreads)
       .innerJoin(agents, eq(agents.id, chatThreads.agentId))
-      .crossJoinLateral(lastRunFinish)
+      .crossJoinLateral(latestReadWatermark)
       .where(
         and(
           eq(chatThreads.userId, args.userId),
@@ -336,7 +340,7 @@ export function chatThreadUnreads(args: {
           eq(chatThreads.agentId, args.agentId),
           or(
             isNull(chatThreads.lastReadAt),
-            gt(lastRunFinish.createdAt, chatThreads.lastReadAt),
+            gt(latestReadWatermark.createdAt, chatThreads.lastReadAt),
           ),
           noActiveRunsForCurrentThreadCondition(db),
         ),
@@ -380,7 +384,10 @@ export function chatIndicators(args: {
           ),
         ),
     );
-    const lastRunFinish = latestRunFinishEventSubquery(db, chatThreads.id);
+    const latestReadWatermark = latestReadWatermarkEventSubquery(
+      db,
+      chatThreads.id,
+    );
     const unreadThreads = db.$with("unread_threads").as(
       db
         .select({
@@ -390,7 +397,7 @@ export function chatIndicators(args: {
         .from(chatThreads)
         .innerJoin(agents, eq(agents.id, chatThreads.agentId))
         .leftJoin(activeThreads, eq(activeThreads.threadId, chatThreads.id))
-        .crossJoinLateral(lastRunFinish)
+        .crossJoinLateral(latestReadWatermark)
         .where(
           and(
             eq(chatThreads.userId, args.userId),
@@ -401,14 +408,14 @@ export function chatIndicators(args: {
               isNull(chatThreads.lastReadAt),
               gt(chatThreads.lastMessageAt, chatThreads.lastReadAt),
             ),
-            gte(lastRunFinish.createdAt, unreadCutoff),
+            gte(latestReadWatermark.createdAt, unreadCutoff),
             or(
               isNull(chatThreads.lastReadAt),
-              gt(lastRunFinish.createdAt, chatThreads.lastReadAt),
+              gt(latestReadWatermark.createdAt, chatThreads.lastReadAt),
             ),
           ),
         )
-        .orderBy(desc(lastRunFinish.createdAt), desc(chatThreads.id))
+        .orderBy(desc(latestReadWatermark.createdAt), desc(chatThreads.id))
         .limit(INDICATOR_UNREAD_LIMIT),
     );
     const indicatorRows = db.$with("indicator_rows").as(
@@ -906,6 +913,14 @@ export const deleteChatThread$ = command(
       await tx
         .delete(chatEventSearchMessages)
         .where(eq(chatEventSearchMessages.chatThreadId, ownedThread.id));
+
+      // A native Morning Brief delivery cascades away with this thread, and it
+      // is the only association to its still-unsent mail. Remove both here, so
+      // the cascade cannot orphan content-bearing email.
+      await revokeMorningBriefDeliveryOwnership(tx, {
+        kind: "thread",
+        chatThreadId: ownedThread.id,
+      });
 
       // Delete the thread after cleanup under its row lock. Cascades chat_events.
       // Captured active runs lose their canonical chatThreadId, while any retained legacy

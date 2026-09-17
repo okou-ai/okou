@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createStore } from "ccstate";
 import { sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
@@ -27,6 +28,8 @@ import { holdChatEventQueueAdmissionLockFixture } from "../../../test-fixtures/c
 import { admitWorkflowAutomationEventFixture } from "../../../test-fixtures/workflow-queue";
 import { writeDb$ } from "../../external/db";
 import { settle } from "../../utils";
+import { updateFeatureSwitchesForUser } from "../../routes/__tests__/helpers/feature-switches";
+import { seedOrgMembership$ } from "../../routes/__tests__/helpers/org-membership";
 import { collectMorningBriefChat$ } from "../morning-brief-chat-collection.service";
 import { ensureWorkflowUserAutomationThread } from "../workflow-user-automation-thread.service";
 
@@ -67,6 +70,17 @@ describe("Morning Brief unread Chat collection boundaries", () => {
     readonly threadId: string;
   }> {
     const member = await seedMorningBriefChatMemberFixture();
+    // Collection admits and releases on the member's live Clerk generation, not
+    // on the durable row request authentication can answer from, and it admits
+    // on the same default-off implementation switch the route gates with.
+    await store.set(
+      seedOrgMembership$,
+      { orgId: member.orgId, userId: member.userId },
+      context.signal,
+    );
+    await updateFeatureSwitchesForUser(context, member, {
+      [FeatureSwitchKey.SimpleMorningBrief]: true,
+    });
     const threadId = await store.set(
       seedOrdinaryChatThreadFixture$,
       { member },
@@ -127,24 +141,21 @@ describe("Morning Brief unread Chat collection boundaries", () => {
     });
   }, 60_000);
 
-  it("releases pre-admission content when the read wins the boundary", async () => {
+  it("releases pre-admission content of the same thread when the read wins", async () => {
     const { member, threadId, automationId } = await seedCollectableMember();
-    const destination = await store.set(
-      seedOrdinaryChatThreadFixture$,
-      { member },
-      context.signal,
-    );
     // The real admission transaction takes the queue lock as its first
     // statement, before it can reach the thread row, so holding that lock
-    // suspends a genuine Brief admission ahead of its classification write.
+    // suspends a genuine Brief admission — for this exact unread thread —
+    // ahead of its classification write. Both sides therefore meet on one row
+    // rather than on two unrelated threads.
     const queueLock = await holdChatEventQueueAdmissionLockFixture({
-      threadId: destination,
+      threadId,
       signal: context.signal,
     });
     const admission = settle(
       admitWorkflowAutomationEventFixture({
         automationId,
-        chatThreadId: destination,
+        chatThreadId: threadId,
         triggerBrief: "brief-admission-loses",
       }),
     );
@@ -153,6 +164,9 @@ describe("Morning Brief unread Chat collection boundaries", () => {
         return await queueLock.directWaiterCount();
       })
       .toBeGreaterThan(0);
+    await expect(readChatThreadProvenanceFixture(threadId)).resolves.toBe(
+      "ordinary",
+    );
 
     const result = await collect(member);
 
@@ -163,20 +177,31 @@ describe("Morning Brief unread Chat collection boundaries", () => {
     if (result.kind !== "collected") {
       throw new Error("Expected a collected envelope");
     }
+    const [item] = result.collection.items;
+    expect(item?.threadId).toBe(threadId);
+    // Pre-admission content of the contested thread, not a neighbour's.
     expect(
-      result.collection.items.map((item) => {
-        return item.threadId;
+      item?.excerpts.map((excerpt) => {
+        return excerpt.text;
       }),
-    ).toStrictEqual([threadId]);
+    ).toStrictEqual([
+      "billing rollout status",
+      "The invoice migration is blocked.",
+    ]);
 
     queueLock.release();
     await admission;
     await queueLock.done;
-    // The admission that lost the boundary still committed its exclusion, so
-    // the thread is excluded from every later collection.
-    await expect(readChatThreadProvenanceFixture(destination)).resolves.toBe(
+    // The admission that lost the boundary still committed its exclusion on
+    // that same thread, so no later collection can release it again.
+    await expect(readChatThreadProvenanceFixture(threadId)).resolves.toBe(
       "morning_brief",
     );
+    const afterwards = await collect(member);
+    expect(afterwards).toMatchObject({
+      kind: "collected",
+      collection: { items: [] },
+    });
   }, 60_000);
 
   it("abandons a thread whose Run starts after it was selected", async () => {
