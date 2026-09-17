@@ -91,6 +91,27 @@ runs:
           json_get "$vars_json" "$1"
         }
 
+        boolean_repo_var() {
+          local key="$1"
+          local value
+          if ! value="$({
+            jq -er --arg key "$key" '
+              (if has($key) then .[$key] else "" end) as $value
+              | if (
+                  ($value | type) == "string"
+                  and ($value == "" or $value == "true" or $value == "false")
+                )
+                then if $value == "" then "false" else $value end
+                else error("invalid boolean repository variable")
+                end
+            ' <<< "$vars_json"
+          } 2>/dev/null)"; then
+            echo "::error::${key} must be true or false when set" >&2
+            return 1
+          fi
+          printf '%s' "$value"
+        }
+
         repo_secret() {
           json_get "$secrets_json" "$1"
         }
@@ -148,6 +169,14 @@ runs:
         github_app_private_key="$(repo_secret OKOU_GITHUB_APP_PRIVATE_KEY)"
         machine_secret_key="$(repo_secret OKOU_MACHINE_SECRET_KEY)"
         api_backend_url="$INPUT_API_BACKEND_URL"
+        pi_memory_background_workers_enabled=""
+        if [[ "$INPUT_APP" == "api" ]]; then
+          if [[ "$INPUT_ENVIRONMENT" == "production" ]]; then
+            pi_memory_background_workers_enabled="$(boolean_repo_var PI_MEMORY_BACKGROUND_WORKERS_ENABLED)"
+          else
+            pi_memory_background_workers_enabled="false"
+          fi
+        fi
 
         : > "$env_file"
 
@@ -216,6 +245,7 @@ runs:
           add_env OKOU_WEB_URL "$web_url"
           add_env ENV "$deploy_env"
           add_env CLI_PKG_URL "$INPUT_CLI_PKG_URL"
+          add_env PI_MEMORY_BACKGROUND_WORKERS_ENABLED "$pi_memory_background_workers_enabled"
           if [[ "$INPUT_ENVIRONMENT" == "production" ]]; then
             add_secret CLOUDFLARE_BROWSER_RENDERING_API_TOKEN CLOUDFLARE_BROWSER_RENDERING_API_TOKEN
             add_secret ARTIFACT_PREVIEW_WAF_SECRET ARTIFACT_PREVIEW_WAF_SECRET
