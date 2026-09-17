@@ -66,12 +66,25 @@ an already issued token can remain usable until expiry, subject to membership an
 feature checks. Short token lifetimes and the provider's actual revoke/refresh
 behavior must be verified before rollout.
 
-`user:org:read` and `okou:chat:read` are required for the current endpoint and
-`get_indicators`. Both appear in the authentication challenge so clients request
-organization selection along with read access.
-Metadata also reserves `okou:chat:send`, `okou:chat:manage`, and `okou:run:cancel`
-for the remaining planned tools. Do not grant these scopes merely to read
-indicators. A tool argument cannot select or override the organization.
+Initial and invalid-token `401` challenges request the complete default grant:
+
+```text
+openid email profile user:org:read okou:chat:read okou:chat:send okou:chat:manage okou:run:cancel offline_access
+```
+
+Protected-resource metadata advertises the same nine scopes for clients that
+select scopes through discovery. The defaults include identity information,
+organization selection, the planned chat operations and refresh-token access, so
+clients can request them in one consent flow without relying on incremental
+authorization support.
+
+Only `user:org:read` and `okou:chat:read` are required for the current endpoint and
+`get_indicators`. Tokens with just these two scopes remain valid. A
+`403 insufficient_scope` challenge names those required scopes. Each future tool
+must enforce its own permissions; listing a scope does not
+implement or authorize that operation. A tool argument cannot select or override
+the organization. Existing grants do not automatically gain scopes; clients must
+reauthorize to obtain additional permissions.
 
 ## Provider setup gate
 
@@ -81,8 +94,12 @@ token exchange, client registration or a consent UI. Before hosted acceptance:
 1. In **OAuth applications → Settings**, enable **Publish CIMD support**, disable
    **Publish DCR support**, and select **Any compatible CIMD client**. Use JWT
    access tokens with **Include Audience**, require PKCE S256, and configure the
-   supported scopes. Compatible clients identify themselves through their HTTPS
-   metadata document; no manual OAuth application or callback registration is
+   supported scopes. Under **Client onboarding → Default scopes for dynamic
+   clients**, set the same nine default scopes listed above. Clerk applies these
+   defaults when a client omits `scope`; it does not expand an explicitly requested
+   scope set. Creating or advertising scopes alone does not set these defaults.
+   Compatible clients identify themselves through their HTTPS metadata document;
+   no manual OAuth application or callback registration is
    required for each client. Verify that issuer metadata advertises CIMD and
    omits the DCR registration endpoint.
 2. Configure organization selection during consent and the provider's organization

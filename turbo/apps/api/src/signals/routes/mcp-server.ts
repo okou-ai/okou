@@ -4,9 +4,9 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command, computed } from "ccstate";
 
 import {
+  MCP_DEFAULT_SCOPES,
   MCP_READ_SCOPE,
   MCP_REQUIRED_SCOPES,
-  MCP_SCOPES,
   mcpServerConfig,
 } from "../../lib/mcp-server-config";
 import type { McpPrincipal } from "../../types/mcp";
@@ -35,9 +35,11 @@ function challenge(
   error?: "invalid_token" | "insufficient_scope",
 ): Response {
   const status = error === "insufficient_scope" ? 403 : 401;
+  const scopes =
+    error === "insufficient_scope" ? MCP_REQUIRED_SCOPES : MCP_DEFAULT_SCOPES;
   const fields = [
     `resource_metadata="${metadataUrl}"`,
-    `scope="${MCP_REQUIRED_SCOPES.join(" ")}"`,
+    `scope="${scopes.join(" ")}"`,
     ...(error ? [`error="${error}"`] : []),
   ];
   return Response.json(
@@ -61,7 +63,7 @@ const metadata$ = computed(() => {
     {
       resource: config.resource,
       authorization_servers: [config.issuer],
-      scopes_supported: [...MCP_SCOPES],
+      scopes_supported: [...MCP_DEFAULT_SCOPES],
       bearer_methods_supported: ["header"],
       resource_name: "Okou MCP",
     },

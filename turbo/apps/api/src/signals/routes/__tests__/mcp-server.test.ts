@@ -30,6 +30,8 @@ const issuer = "https://clerk.mcp.example.test";
 const readScope = "okou:chat:read";
 const orgScope = "user:org:read";
 const requiredScopes = `${orgScope} ${readScope}`;
+const defaultScopes =
+  "openid email profile user:org:read okou:chat:read okou:chat:send okou:chat:manage okou:run:cancel offline_access";
 const modernVersion = "2026-07-28";
 
 function client() {
@@ -165,6 +167,7 @@ describe("external MCP entry", () => {
     expect(response.body).toMatchObject({
       resource,
       authorization_servers: [issuer],
+      scopes_supported: defaultScopes.split(" "),
       bearer_methods_supported: ["header"],
     });
     expect(response.headers.get("access-control-allow-origin")).toBe("*");
@@ -199,16 +202,21 @@ describe("external MCP entry", () => {
     );
     expect(response.body).toStrictEqual({ error: "unauthorized" });
     expect(response.headers.get("www-authenticate")).toBe(
-      `Bearer resource_metadata="https://api.mcp.example.test/.well-known/oauth-protected-resource/mcp", scope="${requiredScopes}"`,
+      `Bearer resource_metadata="https://api.mcp.example.test/.well-known/oauth-protected-resource/mcp", scope="${defaultScopes}"`,
     );
     expect(response.headers.get("cache-control")).toBe("no-store");
   });
 
-  it.each([true, false])(
-    "discovers and calls indicators with modern=%s",
-    async (modern) => {
+  it.each([
+    { modern: true, scopes: requiredScopes },
+    { modern: false, scopes: requiredScopes },
+    { modern: true, scopes: defaultScopes },
+    { modern: false, scopes: defaultScopes },
+  ])(
+    "discovers and calls indicators with modern=$modern and scopes=$scopes",
+    async ({ modern, scopes }) => {
       const auth = await fixture();
-      const token = auth.token();
+      const token = auth.token({ scope: scopes });
       if (!modern) {
         const initialized = await accept(
           client().request({
@@ -365,6 +373,9 @@ describe("external MCP entry", () => {
       [401],
     );
     expect(response.body).toStrictEqual({ error: "invalid_token" });
+    expect(response.headers.get("www-authenticate")).toContain(
+      `scope="${defaultScopes}"`,
+    );
   });
 
   it("denies discovery and manual invocation without the read grant", async () => {

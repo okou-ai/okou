@@ -2,11 +2,16 @@ import { env } from "./env";
 
 export const MCP_READ_SCOPE = "okou:chat:read";
 export const MCP_REQUIRED_SCOPES = ["user:org:read", MCP_READ_SCOPE] as const;
-export const MCP_SCOPES = [
+// Request the complete initial grant even when clients cannot add scopes later.
+export const MCP_DEFAULT_SCOPES = [
+  "openid",
+  "email",
+  "profile",
   ...MCP_REQUIRED_SCOPES,
   "okou:chat:send",
   "okou:chat:manage",
   "okou:run:cancel",
+  "offline_access",
 ] as const;
 
 // Add browser clients here as exact HTTPS origins when support is needed.
