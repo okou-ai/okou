@@ -256,11 +256,22 @@ export async function withDatabaseTransactionBarrierFixture<T>(
       return (async () => {
         // `after-result` dispatches the chosen statement first and keeps its
         // settled result, so the caller resumes on exactly that outcome and
-        // nothing is replaced.
-        const held: { readonly result: unknown } | undefined =
-          pause === "after-result"
-            ? { result: await Reflect.apply(target, receiver, queryArgs) }
-            : undefined;
+        // nothing is replaced. A statement that fails instead of returning is
+        // reported through `entered`, so a test waiting for the pause fails on
+        // the real error rather than on a pause that can never arrive.
+        let held: { readonly result: unknown } | undefined;
+        if (pause === "after-result") {
+          const dispatched = await settleIncludingAbort(
+            (async (): Promise<unknown> => {
+              return await Reflect.apply(target, receiver, queryArgs);
+            })(),
+          );
+          if (!dispatched.ok) {
+            entered.reject(dispatched.error);
+            throw dispatched.error;
+          }
+          held = { result: dispatched.value };
+        }
         const settings: unknown = await Reflect.apply(target, receiver, [
           "SELECT pg_backend_pid() AS pid, current_setting('lock_timeout') AS lock_timeout, current_setting('statement_timeout') AS statement_timeout",
         ]);
