@@ -282,27 +282,45 @@ export function OnboardingSubscriptionPage() {
         return $.onboarding.sourcesFirst.subscription.copy;
       })}
       footer={
-        <OnboardingFooter
-          onBack={flow.goBack}
-          onPrimary={
-            connected
-              ? flow.goNext
-              : () => {
+        connected ? (
+          <OnboardingFooter
+            onBack={flow.goBack}
+            onPrimary={flow.goNext}
+            primaryLabel={t(($) => {
+              return $.onboarding.sourcesFirst.common.continue;
+            })}
+          />
+        ) : (
+          <div className="flex w-full items-center justify-between gap-3">
+            <Button type="button" variant="ghost" onClick={flow.goBack}>
+              {t(($) => {
+                return $.onboarding.sourcesFirst.common.back;
+              })}
+            </Button>
+            <div className="flex items-center gap-2">
+              {/* Connecting a subscription stays optional, as it is in the
+                  prototype: skipping lands on the skills step. */}
+              <Button type="button" variant="ghost" onClick={flow.goNext}>
+                {t(($) => {
+                  return $.onboarding.sourcesFirst.common.skip;
+                })}
+              </Button>
+              <Button
+                type="button"
+                size="lg"
+                onClick={() => {
                   // Frontend pass: the personal model-provider connect flow is
                   // wired in the follow-up that adds the onboarding endpoints.
                   updateDraft({ providerConnected: true });
-                }
-          }
-          primaryLabel={
-            connected
-              ? t(($) => {
-                  return $.onboarding.sourcesFirst.common.continue;
-                })
-              : t(($) => {
+                }}
+              >
+                {t(($) => {
                   return $.onboarding.sourcesFirst.subscription.connect;
-                })
-          }
-        />
+                })}
+              </Button>
+            </div>
+          </div>
+        )
       }
     >
       {welcomeDialog}
