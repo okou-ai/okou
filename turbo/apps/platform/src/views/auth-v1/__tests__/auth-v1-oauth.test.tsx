@@ -202,10 +202,9 @@ test("An incomplete Clerk session finishes its task before OAuth consent", async
 });
 
 test("A failed OAuth continuation offers visible recovery", async () => {
-  // oxlint-disable-next-line no-console -- Suppress only the asserted SDK failure.
-  const unexpectedError = vi.mocked(console.error).getMockImplementation();
-  // oxlint-disable-next-line no-console -- All unrelated errors remain fatal.
-  vi.mocked(console.error).mockImplementation((...args) => {
+  const consoleError = vi.spyOn(console, "error");
+  const unexpectedError = consoleError.getMockImplementation();
+  consoleError.mockImplementation((...args) => {
     if (!args.includes("Clerk OAuth continuation failed")) {
       unexpectedError?.(...args);
     }
