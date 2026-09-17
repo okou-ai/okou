@@ -84,36 +84,13 @@ export async function seedMorningBriefChatMemberFixture(
 }
 
 /**
- * A second Agent the same member may read Chat under.
+ * Take this member's access to an Agent away.
  *
- * Unread collection spans every Agent a member is authorized for, and the
- * brief's own Agent is a separate question from the Agent a thread lives on.
- * One Agent per member cannot tell those two apart.
- */
-export async function seedMemberChatAgentFixture(args: {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly visibility?: "public" | "private";
-  readonly owner?: string;
-}): Promise<string> {
-  const agentId = randomUUID();
-  await db()
-    .insert(agents)
-    .values({
-      id: agentId,
-      orgId: args.orgId,
-      owner: args.owner ?? args.userId,
-      name: `chat-${agentId.slice(0, 8)}`,
-      visibility: args.visibility ?? "public",
-    });
-  return agentId;
-}
-
-/**
- * Take this member's access to an Agent away, the way a transfer does.
- *
- * A private Agent someone else owns is invisible to this member, which is what
- * losing access to the Agent hosting their brief looks like.
+ * A private Agent owned by somebody else is invisible to this member, which is
+ * what losing access to the Agent hosting their brief looks like. No endpoint
+ * hands an Agent to another user: the Agent API changes visibility but never
+ * the owner, so this state cannot be built through the product and is written
+ * here, exactly as the existing held-transfer fixture below already does.
  */
 export async function restrictAgentAccessFixture(args: {
   readonly agentId: string;
@@ -130,7 +107,11 @@ export async function restrictAgentAccessFixture(args: {
  *
  * The new installation is a complete, working brief on its own Agent: it is
  * exactly the "merely enabled replacement" that must not be able to authorize
- * content the previous installation's collection had already gathered.
+ * content the previous installation's collection had already gathered. It
+ * reuses the shared installed-brief fixture rather than the Official Workflow
+ * install path, because the canonical legacy installation every Morning Brief
+ * suite starts from is already seeded that way; driving one member through a
+ * real install while the other is seeded would compare two different states.
  */
 export async function replaceMorningBriefInstallationFixture(member: {
   readonly orgId: string;
@@ -232,32 +213,14 @@ function isOwnerMembershipLookup(
   );
 }
 
-/** The member's persisted read watermark, to prove collection never moves it. */
-export async function readChatThreadReadStateFixture(
-  chatThreadId: string,
-): Promise<{
-  readonly lastReadAt: Date | null;
-  readonly lastChatEventSeqId: number;
-}> {
-  const [thread] = await db()
-    .select({
-      lastReadAt: chatThreads.lastReadAt,
-      lastChatEventSeqId: chatThreads.lastChatEventSeqId,
-    })
-    .from(chatThreads)
-    .where(eq(chatThreads.id, chatThreadId))
-    .limit(1);
-  if (!thread) {
-    throw new Error("Expected the seeded chat thread to exist");
-  }
-  return thread;
-}
-
 /**
  * Everything a collection must not create for this owner.
  *
  * Counted rather than sampled, so a Run, a Chat event, a usage event or a
- * queued e-mail appearing anywhere under this owner fails the assertion.
+ * queued e-mail appearing anywhere under this owner fails the assertion. There
+ * is no endpoint that reports "this owner produced no Run, usage event or
+ * queued e-mail", so this one assertion is made against the database; the read
+ * watermark, which *is* observable through a second collection, is not.
  */
 export async function countMorningBriefChatWritesFixture(owner: {
   readonly orgId: string;

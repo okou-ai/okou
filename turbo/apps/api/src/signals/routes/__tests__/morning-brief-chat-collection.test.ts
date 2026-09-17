@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
 import {
   MORNING_BRIEF_CHAT_COLLECTION_BUDGET,
   morningBriefChatCollectionPreviewContract,
@@ -21,18 +22,17 @@ import {
   holdChatThreadReadBarrierFixture,
   holdMorningBriefChatMembershipLookupFixture,
   markChatThreadReadFixture,
-  readChatThreadReadStateFixture,
   renameChatThreadFixture,
   replaceMorningBriefInstallationFixture,
   restrictAgentAccessFixture,
   seedFinishedChatRunFixture$,
-  seedMemberChatAgentFixture,
   seedMorningBriefChatMemberFixture,
   seedOrdinaryChatThreadFixture$,
   setUnsupportedChatThreadProvenanceFixture,
   startActiveChatRunFixture$,
   type MorningBriefChatMember,
 } from "../../../test-fixtures/morning-brief-chat-collection";
+import { agentsRoutes } from "../agents";
 import { morningBriefChatCollectionPreviewRoutes } from "../morning-brief-chat-collection-preview";
 import { createRouteMocks } from "./helpers/route-test";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
@@ -185,6 +185,20 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
       context.signal,
     );
     return { threadId, run };
+  }
+
+  /** A second Agent this member owns, created through the production endpoint. */
+  async function createMemberAgent(member: MorningBriefChatMember) {
+    authenticate(member);
+    context.mocks.s3.send.mockResolvedValue({});
+    const created = await accept(
+      setupApp({ context, routes: agentsRoutes })(agentsMainContract).create({
+        headers: authHeaders(),
+        body: { displayName: "Second agent", visibility: "public" },
+      }),
+      [201],
+    );
+    return created.body.agentId;
   }
 
   /**
@@ -646,10 +660,7 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
       const member = await briefMember();
       // The unread Chat lives on a different Agent, so losing the brief's Agent
       // is the only authority this case removes.
-      const chatAgentId = await seedMemberChatAgentFixture({
-        orgId: member.orgId,
-        userId: member.userId,
-      });
+      const chatAgentId = await createMemberAgent(member);
       const { threadId } = await seedUnreadThread(member, {
         agentId: chatAgentId,
         prompt: "prompt behind a lost brief agent",
@@ -674,10 +685,7 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
 
     it("collects a member's unread Chat across every Agent they may read", async () => {
       const member = await briefMember();
-      const secondAgentId = await seedMemberChatAgentFixture({
-        orgId: member.orgId,
-        userId: member.userId,
-      });
+      const secondAgentId = await createMemberAgent(member);
       const onBriefAgent = await seedUnreadThread(member, {
         prompt: "brief agent prompt",
         reply: "brief agent reply",
@@ -957,25 +965,25 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
         prompt: "prompt that stays unread",
         reply: "reply that stays unread",
       });
-      const before = await readChatThreadReadStateFixture(threadId);
       const writesBefore = await countMorningBriefChatWritesFixture(member);
 
       const response = await collect(member);
 
       expect(response.result).toBe("collected");
-      await expect(
-        readChatThreadReadStateFixture(threadId),
-      ).resolves.toStrictEqual(before);
-      await expect(
-        countMorningBriefChatWritesFixture(member),
-      ).resolves.toStrictEqual(writesBefore);
-      // The thread is still unread, so a second collection reports it again.
+      // The watermark is observable through the endpoint: an advanced read
+      // state would drop the thread from the next collection's candidates.
       const again = await collect(member);
       expect(
         again.items.map((item) => {
           return item.threadId;
         }),
       ).toStrictEqual([threadId]);
+      // Runs, usage events and queued e-mail have no endpoint that reports
+      // "this owner produced none", so those three are counted directly. Chat
+      // events are counted beside them to keep one snapshot.
+      await expect(
+        countMorningBriefChatWritesFixture(member),
+      ).resolves.toStrictEqual(writesBefore);
     }, 60_000);
   });
 });
