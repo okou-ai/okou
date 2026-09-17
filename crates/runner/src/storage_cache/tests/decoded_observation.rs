@@ -111,6 +111,7 @@ async fn positive_observation_does_not_suppress_an_archive_evicted_after_prepara
     )
     .await
     .unwrap();
+    fresh.finish_classification(&mut telemetry).await.unwrap();
     let archive = home.storage_cache_dir(NAME, VERSION).join("archive.tar.gz");
     std::fs::remove_file(&archive).unwrap();
     let deferred = populate_cache_with_fresh_delivery(
