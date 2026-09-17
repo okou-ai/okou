@@ -216,7 +216,7 @@ export function parseCalendarDate(
  * Every reason is reported as a coverage gap rather than repaired: a guessed
  * instant is indistinguishable from a real meeting once it reaches a brief.
  */
-export type MorningBriefCalendarTimeFailure =
+type MorningBriefCalendarTimeFailure =
   /** Not a supported RFC3339 shape, or a component no calendar can hold. */
   | "malformed"
   /** No offset and no usable IANA zone: the instant is simply not stated. */
@@ -226,7 +226,7 @@ export type MorningBriefCalendarTimeFailure =
   /** A wall time a daylight-saving repeat makes true twice in that zone. */
   | "ambiguous-local-time";
 
-export type MorningBriefCalendarTimeResult =
+type MorningBriefCalendarTimeResult =
   | { readonly ok: true; readonly instant: Date }
   | { readonly ok: false; readonly reason: MorningBriefCalendarTimeFailure };
 
@@ -365,8 +365,10 @@ export function parseCalendarDateTime(args: {
 }
 
 /** Where a provider range sits, or that it is not a usable range at all. */
-export type MorningBriefCalendarRangePlacement =
-  "in-window" | "out-of-window" | "invalid-range";
+type MorningBriefCalendarRangePlacement =
+  | "in-window"
+  | "out-of-window"
+  | "invalid-range";
 
 /**
  * Where an all-day event sits against the window's local days.
