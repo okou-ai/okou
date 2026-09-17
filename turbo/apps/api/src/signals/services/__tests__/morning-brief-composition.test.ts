@@ -43,7 +43,6 @@ import {
   MORNING_BRIEF_RESULT_RETENTION_MS,
   type MorningBriefRetainedSourceDescriptor,
 } from "../morning-brief-source-authority";
-import { serializeMorningBriefItem as serializeForTest } from "../morning-brief-source-item";
 import {
   morningBriefEnvelopeBytes,
   morningBriefRequestBytes,
@@ -58,6 +57,7 @@ import {
   MORNING_BRIEF_COMBINED_NORMALIZED_MAX_BYTES,
   type MorningBriefSourceCollection,
   type MorningBriefSourceItem,
+  serializeMorningBriefItem as serializeForTest,
   type MorningBriefSourceKind,
 } from "../morning-brief-source-item";
 

@@ -31,7 +31,7 @@ import { MORNING_BRIEF_COLLECTION_VERSION } from "@okouai/db/schema/morning-brie
 import { command } from "ccstate";
 
 import { nowDate } from "../../lib/time";
-import { clerk$ } from "../external/clerk";
+import { clerk$, type ClerkClient } from "../external/clerk";
 import { writeDb$, type Db } from "../external/db";
 import {
   admitMorningBriefCollection,
@@ -80,6 +80,13 @@ import {
   type MorningBriefSourceKind,
 } from "./morning-brief-source-item";
 import { slackUserInstallation } from "./slack-data.service";
+
+/** The native Slack installation this member reads through. */
+interface SlackBinding {
+  readonly botToken: string;
+  readonly workspaceId: string;
+  readonly slackUserId: string;
+}
 
 /** Slack's frozen window is the 24 hours ending at the anchor. */
 const MORNING_BRIEF_SLACK_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -200,131 +207,18 @@ export const composeMorningBrief$ = command(
     }
     const waves = morningBriefSourceWaves(configured);
 
-    const collections: MorningBriefSourceCollection[] = [];
-    const descriptors: MorningBriefRetainedSourceDescriptor[] = [];
-    const capturedAt = nowDate();
-
-    // Waves are joined one after another, so at most three provider reads are
-    // ever in flight and every started read has an owner waiting on it.
-    for (const wave of waves) {
-      const started = wave.map(async (source) => {
-        const budget = morningBriefSourceBudget(
-          source,
-          phaseStartedAt,
-          nowDate(),
-          phaseDeadlineAt,
-        );
-        const budgetMs = Math.max(
-          0,
-          budget.deadlineAt.getTime() - nowDate().getTime(),
-        );
-        if (budgetMs === 0) {
-          return null;
-        }
-        const sourceSignal = AbortSignal.any([
-          signal,
-          AbortSignal.timeout(budgetMs),
-        ]);
-        if (source === "gmail") {
-          const collection = await collectMorningBriefGmail(
-            { db, clerk, scope },
-            sourceSignal,
-          );
-          // The item identity's account segment is the owning member: the
-          // collector does not currently return the mailbox the shared reader
-          // resolved, so inventing one here would be worse than naming the
-          // member the connection belongs to. The exact mailbox is requested
-          // from the Gmail collector as `accountEmail` on its collection;
-          // until it is returned, `accountRef` stays null rather than holding
-          // a value nothing observed.
-          const normalized = normalizeMorningBriefGmail(
-            collection,
-            scope.userId,
-          );
-          return {
-            normalized,
-            descriptor: morningBriefGmailDescriptor({
-              accountEmail: null,
-              connectionId: null,
-              membershipId: scope.membershipId,
-              agentId: scope.agentId,
-              capturedAt,
-              contributed: false,
-              containers: containerIds(normalized),
-            }),
-          };
-        }
-        const slack = slackBinding;
-        if (slack === null) {
-          return null;
-        }
-        const collected = await collectMorningBriefSlackBundle(
-          {
-            botToken: slack.botToken,
-            slackUserId: slack.slackUserId,
-            workspaceId: slack.workspaceId,
-            windowStart: new Date(
-              scope.anchor.getTime() - MORNING_BRIEF_SLACK_WINDOW_MS,
-            ),
-            windowEnd: scope.anchor,
-            timezone: scope.timezone,
-            version: MORNING_BRIEF_COLLECTION_VERSION,
-          },
-          {
-            clock: () => {
-              return nowDate().getTime();
-            },
-            deadline: nowDate().getTime() + budgetMs,
-          },
-          sourceSignal,
-        );
-        if (collected.kind !== "collected") {
-          return {
-            normalized: {
-              source: "slack" as const,
-              coverage: "failed" as const,
-              items: [],
-              requests: 0,
-              omittedBySource: 0,
-            },
-            descriptor: morningBriefSlackDescriptor({
-              workspaceId: slack.workspaceId,
-              slackUserId: slack.slackUserId,
-              membershipId: scope.membershipId,
-              agentId: scope.agentId,
-              capturedAt,
-              contributed: false,
-              containers: [],
-            }),
-          };
-        }
-        const normalized = normalizeMorningBriefSlack(collected.bundle, {
-          workspaceId: slack.workspaceId,
-          slackUserId: slack.slackUserId,
-        });
-        return {
-          normalized,
-          descriptor: morningBriefSlackDescriptor({
-            workspaceId: slack.workspaceId,
-            slackUserId: slack.slackUserId,
-            membershipId: scope.membershipId,
-            agentId: scope.agentId,
-            capturedAt,
-            contributed: false,
-            containers: containerIds(normalized),
-          }),
-        };
-      });
-      const finished = await Promise.all(started);
-      signal.throwIfAborted();
-      for (const entry of finished) {
-        if (entry !== null) {
-          collections.push(entry.normalized);
-          descriptors.push(entry.descriptor);
-        }
-      }
-    }
-
+    const { collections, descriptors } = await collectMorningBriefWaves(
+      {
+        waves,
+        db,
+        clerk,
+        scope,
+        slack: slackBinding,
+        phaseStartedAt,
+        phaseDeadlineAt,
+      },
+      signal,
+    );
     const deduped = collections.map((collection) => {
       return {
         ...collection,
@@ -361,16 +255,8 @@ export const composeMorningBrief$ = command(
       };
     }
 
-    const summary = bounded.collections.map((collection) => {
-      return {
-        source: collection.source,
-        coverage: collection.coverage,
-        items: collection.items.length,
-        requests: collection.requests,
-      };
-    });
     const base = {
-      sources: summary,
+      sources: sourceSummary(bounded.collections),
       waves,
       normalizedBytes: bounded.bytes,
       omittedByNormalizedCap: bounded.omitted,
@@ -384,6 +270,212 @@ export const composeMorningBrief$ = command(
         result: { ...base, request: null, language: null },
       };
     }
+    const planned = await set(
+      planMorningBriefRequest$,
+      { scope, collections: bounded.collections, phaseDeadlineAt, args },
+      signal,
+    );
+    if (planned.kind !== "planned") {
+      return planned;
+    }
+    const { language, envelopeBytes, totalBytes, allocation } = planned;
+    return {
+      kind: "composed",
+      result: {
+        ...base,
+        language,
+        request: {
+          envelopeBytes,
+          totalBytes,
+          maxBytes: MORNING_BRIEF_REQUEST_MAX_BYTES,
+          items: allocation.items.length,
+          omittedItems: allocation.omittedItems,
+          omittedBytes: allocation.omittedBytes,
+        },
+      },
+    };
+  },
+);
+
+/** The distinct containers a normalized collection drew from, in first-seen order. */
+function containerIds(
+  collection: MorningBriefSourceCollection,
+): readonly string[] {
+  const seen = new Set<string>();
+  for (const item of collection.items) {
+    seen.add(item.identity.container);
+  }
+  return [...seen];
+}
+
+/** One source's bounded read, normalized with the descriptor it proves. */
+type CollectedSource = {
+  readonly normalized: MorningBriefSourceCollection;
+  readonly descriptor: MorningBriefRetainedSourceDescriptor;
+} | null;
+
+/**
+ * Read one source inside the budget the plan allows it.
+ *
+ * A source whose budget has already run out returns null rather than a failed
+ * read: it was never started, which is a different fact from a read that failed.
+ */
+async function readMorningBriefSource(
+  args: {
+    readonly source: MorningBriefSourceKind;
+    readonly db: Db;
+    readonly clerk: ClerkClient;
+    readonly scope: MorningBriefCollectionScope;
+    readonly slack: SlackBinding | null;
+    readonly phaseStartedAt: Date;
+    readonly phaseDeadlineAt: Date;
+    readonly capturedAt: Date;
+  },
+  signal: AbortSignal,
+): Promise<CollectedSource> {
+  const { source, db, clerk, scope, capturedAt } = args;
+  const budget = morningBriefSourceBudget(
+    source,
+    args.phaseStartedAt,
+    nowDate(),
+    args.phaseDeadlineAt,
+  );
+  const budgetMs = Math.max(
+    0,
+    budget.deadlineAt.getTime() - nowDate().getTime(),
+  );
+  if (budgetMs === 0) {
+    return null;
+  }
+  const sourceSignal = AbortSignal.any([signal, AbortSignal.timeout(budgetMs)]);
+  if (source === "gmail") {
+    const collection = await collectMorningBriefGmail(
+      { db, clerk, scope },
+      sourceSignal,
+    );
+    // The item identity's account segment is the owning member: the
+    // collector does not currently return the mailbox the shared reader
+    // resolved, so inventing one here would be worse than naming the
+    // member the connection belongs to. The exact mailbox is requested
+    // from the Gmail collector as `accountEmail` on its collection;
+    // until it is returned, `accountRef` stays null rather than holding
+    // a value nothing observed.
+    const normalized = normalizeMorningBriefGmail(collection, scope.userId);
+    return {
+      normalized,
+      descriptor: morningBriefGmailDescriptor({
+        accountEmail: null,
+        connectionId: null,
+        membershipId: scope.membershipId,
+        agentId: scope.agentId,
+        capturedAt,
+        contributed: false,
+        containers: containerIds(normalized),
+      }),
+    };
+  }
+  const slack = args.slack;
+  if (slack === null) {
+    return null;
+  }
+  const collected = await collectMorningBriefSlackBundle(
+    {
+      botToken: slack.botToken,
+      slackUserId: slack.slackUserId,
+      workspaceId: slack.workspaceId,
+      windowStart: new Date(
+        scope.anchor.getTime() - MORNING_BRIEF_SLACK_WINDOW_MS,
+      ),
+      windowEnd: scope.anchor,
+      timezone: scope.timezone,
+      version: MORNING_BRIEF_COLLECTION_VERSION,
+    },
+    {
+      clock: () => {
+        return nowDate().getTime();
+      },
+      deadline: nowDate().getTime() + budgetMs,
+    },
+    sourceSignal,
+  );
+  if (collected.kind !== "collected") {
+    return {
+      normalized: {
+        source: "slack" as const,
+        coverage: "failed" as const,
+        items: [],
+        requests: 0,
+        omittedBySource: 0,
+      },
+      descriptor: morningBriefSlackDescriptor({
+        workspaceId: slack.workspaceId,
+        slackUserId: slack.slackUserId,
+        membershipId: scope.membershipId,
+        agentId: scope.agentId,
+        capturedAt,
+        contributed: false,
+        containers: [],
+      }),
+    };
+  }
+  const normalized = normalizeMorningBriefSlack(collected.bundle, {
+    workspaceId: slack.workspaceId,
+    slackUserId: slack.slackUserId,
+  });
+  return {
+    normalized,
+    descriptor: morningBriefSlackDescriptor({
+      workspaceId: slack.workspaceId,
+      slackUserId: slack.slackUserId,
+      membershipId: scope.membershipId,
+      agentId: scope.agentId,
+      capturedAt,
+      contributed: false,
+      containers: containerIds(normalized),
+    }),
+  };
+}
+
+/**
+ * Resolve the language, assemble the request, and prove the authority again.
+ *
+ * Everything here awaits the network, so the authority recheck lives at the end
+ * of it rather than before it: the point of the check is that nothing observed
+ * during those awaits has already been released.
+ */
+const planMorningBriefRequest$ = command(
+  async (
+    { get, set },
+    input: {
+      readonly scope: MorningBriefCollectionScope;
+      readonly collections: readonly MorningBriefSourceCollection[];
+      readonly phaseDeadlineAt: Date;
+      readonly args: {
+        readonly orgId: string;
+        readonly userId: string;
+        readonly anchor: Date;
+      };
+    },
+    signal: AbortSignal,
+  ): Promise<
+    | {
+        readonly kind: "planned";
+        readonly language: MorningBriefLanguagePlan;
+        readonly envelopeBytes: number;
+        readonly totalBytes: number;
+        readonly allocation: ReturnType<typeof allocateMorningBriefRequest>;
+      }
+    | {
+        readonly kind: "incomplete";
+        readonly reason: "language-context-unavailable" | "no-item-fits";
+        readonly detail: string;
+      }
+    | { readonly kind: "authority-changed" }
+  > => {
+    const db = set(writeDb$);
+    const clerk = get(clerk$);
+    const { scope, phaseDeadlineAt, args } = input;
+    const bounded = { collections: input.collections };
 
     const context = await set(
       readMorningBriefLanguageContext$,
@@ -484,32 +576,78 @@ export const composeMorningBrief$ = command(
         return { kind: "authority-changed" };
       }
     }
-
-    return {
-      kind: "composed",
-      result: {
-        ...base,
-        language,
-        request: {
-          envelopeBytes,
-          totalBytes,
-          maxBytes: MORNING_BRIEF_REQUEST_MAX_BYTES,
-          items: allocation.items.length,
-          omittedItems: allocation.omittedItems,
-          omittedBytes: allocation.omittedBytes,
-        },
-      },
-    };
+    return { kind: "planned", language, envelopeBytes, totalBytes, allocation };
   },
 );
 
-/** The distinct containers a normalized collection drew from, in first-seen order. */
-function containerIds(
-  collection: MorningBriefSourceCollection,
-): readonly string[] {
-  const seen = new Set<string>();
-  for (const item of collection.items) {
-    seen.add(item.identity.container);
+/** What each source contributed, with no evidence in it. */
+function sourceSummary(
+  collections: readonly MorningBriefSourceCollection[],
+): MorningBriefCompositionResult["sources"] {
+  return collections.map((collection) => {
+    return {
+      source: collection.source,
+      coverage: collection.coverage,
+      items: collection.items.length,
+      requests: collection.requests,
+    };
+  });
+}
+
+/**
+ * Run the waves in order, joining each before the next one starts.
+ *
+ * Joining is what bounds concurrency to the wave size: nothing is detached, and
+ * a cancelled attempt cannot leave a reader running past it.
+ */
+async function collectMorningBriefWaves(
+  input: {
+    readonly waves: readonly (readonly MorningBriefSourceKind[])[];
+    readonly db: Db;
+    readonly clerk: ClerkClient;
+    readonly scope: MorningBriefCollectionScope;
+    readonly slack: SlackBinding | null;
+    readonly phaseStartedAt: Date;
+    readonly phaseDeadlineAt: Date;
+  },
+  signal: AbortSignal,
+): Promise<{
+  readonly collections: readonly MorningBriefSourceCollection[];
+  readonly descriptors: readonly MorningBriefRetainedSourceDescriptor[];
+}> {
+  const { waves, db, clerk, scope, phaseStartedAt, phaseDeadlineAt } = input;
+  const slackBinding = input.slack;
+  const capturedAt = nowDate();
+  const collections: MorningBriefSourceCollection[] = [];
+  const descriptors: MorningBriefRetainedSourceDescriptor[] = [];
+
+  // Waves are joined one after another, so at most three provider reads are
+  // ever in flight and every started read has an owner waiting on it.
+  for (const wave of waves) {
+    const finished = await Promise.all(
+      wave.map(async (source) => {
+        return await readMorningBriefSource(
+          {
+            source,
+            db,
+            clerk,
+            scope,
+            slack: slackBinding,
+            phaseStartedAt,
+            phaseDeadlineAt,
+            capturedAt,
+          },
+          signal,
+        );
+      }),
+    );
+    signal.throwIfAborted();
+    for (const entry of finished) {
+      if (entry !== null) {
+        collections.push(entry.normalized);
+        descriptors.push(entry.descriptor);
+      }
+    }
   }
-  return [...seen];
+  return { collections, descriptors };
 }
