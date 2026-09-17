@@ -4131,10 +4131,10 @@
     },
     "sourcesFirst": {
       "common": {
+        "back": "Back",
         "cancel": "Cancel",
         "continue": "Continue",
-        "skip": "Skip for now",
-        "back": "Back"
+        "skip": "Skip for now"
       },
       "documentTitles": {
         "experience": "Your AI experience",
@@ -4226,14 +4226,14 @@
         "title": "Add Okou to Slack"
       },
       "sources": {
-        "copy": "Okou is your AI teammate. Connect at least one source so it can understand your work.",
+        "copy": "Okou is your team's AI teammate, working in the cloud. Connect at least one source so it can start from the work your team already has.",
         "note": "You choose which accounts to connect.",
         "searchAction": "Find a source for your work",
         "searchCopy": "Search the full catalog by task or app name.",
         "searchEmpty": "No matching sources",
         "searchPlaceholder": "Search by task or app name",
         "searchTitle": "Find a source for your work",
-        "title": "Where do you keep your work?"
+        "title": "Built for the team, not one terminal."
       },
       "startingPrompt": {
         "exact": {
@@ -4300,9 +4300,9 @@
         },
         "fallback": {
           "calendar": {
-            "text": "Review my upcoming {{short}} meetings in {{source}} and draft a short preparation checklist. Ask me which calendar to use.",
+            "outcome": "Your upcoming meetings, prepared",
             "question": "Which calendar and meetings should we prepare for?",
-            "outcome": "Your upcoming meetings, prepared"
+            "text": "Review my upcoming {{short}} meetings in {{source}} and draft a short preparation checklist. Ask me which calendar to use."
           },
           "generic": {
             "outcome": "A useful first task with {{source}}",
@@ -4313,9 +4313,9 @@
             "question": "What would you like me to focus on first?"
           },
           "projects": {
-            "text": "Review my {{short}} work in {{source}} and summarize open tasks, blockers, and next steps. Ask me which project to use.",
+            "outcome": "Your next project priorities",
             "question": "Which project or workspace should we start with?",
-            "outcome": "Your next project priorities"
+            "text": "Review my {{short}} work in {{source}} and summarize open tasks, blockers, and next steps. Ask me which project to use."
           }
         },
         "family": {
