@@ -227,6 +227,107 @@ enrollment materialization, the durable ownership above, and the cutover. The
 production counts below are automation inventory: they are not a native-row
 census, and they do not show that any preference has been migrated.
 
+## The legacy schedule claim journal
+
+The legacy poller destroys the occurrence it fires. It clears `next_run_at`,
+stamps the poll clock into `last_run_at`, and only afterwards creates the queue
+event and the Run. Nothing records which scheduled instant that work belonged
+to, so a completion callback can advance the schedule twice, or advance it after
+a newer execution already took ownership. Comparing `last_run_id` cannot fix it:
+that column is written after the Run transaction returns.
+
+`morning_brief_schedule_claims` records the occurrence the poller actually
+claimed. One row is written per fired occurrence, inside the transaction that
+clears `next_run_at` and inserts the queue event, holding:
+
+- the authenticated owner, organization, workflow and automation;
+- a server-generated execution identity and the exact pre-claim `next_run_at`
+  as `scheduled_anchor_at`;
+- a monotonic `claim_sequence` and the actual `claimed_at` poll clock;
+- the exact original queue event and, once the launch transaction creates it,
+  the exact Run;
+- a bounded queue disposition and a bounded settlement state and time.
+
+`(automation_id, scheduled_anchor_at)` is unique, and the queue-event and Run
+bindings are unique where present, so retrying the same admission can never
+produce a second occurrence, queue item or Run binding. `fired_at` keeps its
+existing meaning: it is the real fire time, never relabelled as the scheduled
+instant.
+
+Only the installation this document's canonical selection reports as a member's
+installed Morning Brief is journaled. Additional installations, manual runs and
+every other automation kind keep their existing untracked behavior, and the
+journal activates no native work: the `simpleMorningBrief` switch stays off and
+is not consulted here. The table is additive and unconditional — it has no
+feature-gated creation, and it is written only on the legacy path.
+
+### What the claim sequence does and does not prove
+
+The highest `claim_sequence` for an automation is the current claim. A callback
+from any lower sequence settles nothing. That fences newer journaled claims
+only. It does not prove that Settings, enrollment, reconciliation, a generic
+enable/disable, a thread deletion and recreation, or a rollback writer did not
+replace ownership and restore the same values in between, so it is not a
+complete schedule-replacement or ABA fence. S7b has to make those writers
+consume a durable owner and revocation epoch together with the current user
+choice.
+
+### Settlement
+
+One operation advances the schedule. The completion callback and the outer
+pre-run failure path both call it. Under the automation and occurrence row
+locks it verifies the exact execution or Run binding, that the occurrence is
+the current claim, that it is still unsettled, that the automation is enabled,
+and that `next_run_at` is still NULL. It then reads the current schedule and
+timezone, applies the existing recurrence and failure policy, and commits the
+schedule update and the settlement together.
+
+That makes a duplicate callback, a failed-Run callback overlapping the outer
+pre-run error path, and a callback from a superseded claim all no-ops. A user
+action that already published a non-null `next_run_at` keeps that schedule, and
+a timezone edited while the claim was active is the timezone its own completion
+uses. Insufficient-credit handling and the existing failure-count and
+auto-disable behavior are unchanged.
+
+### Compatibility branches and their removal gates
+
+- **Unjournaled callback.** A callback whose Run has no journal binding keeps
+  the exact previous behavior. It carries no journaled protection and never
+  infers an anchor for an execution it does not recognize. Remove it when no
+  unjournaled legacy execution can still call back.
+- **Untracked pending event.** A coalescing tick that finds a pending event
+  belonging to no recorded occurrence does not attach its anchor to it and does
+  not consume the schedule. `next_run_at` keeps the same due instant and the
+  existing cron rereads the row on its next tick. Remove it when every pending
+  legacy event is journaled.
+- **Old code, new schema.** The table is additive, so an API instance running
+  older code during a rolling deployment ignores it and keeps claiming and
+  settling unjournaled work through the path above. This slice gives forward
+  identity on the new path only; it does not make a mixed fleet safe for native
+  activation. Native switch rollback stays a later protocol and cannot simply
+  re-enable the legacy path alongside unresolved native work.
+
+### Evidence lifetime
+
+Rows are content-free execution and dedupe history: no prompt, provider payload,
+result, email address, credential or free-form error string is stored. They are
+kept for the lifetime of the automation and are removed with it, through the
+`automation_id` cascade, which is also how owner and organization deletion
+removes them. There is deliberately no shorter TTL: deleting a row while its
+callback can still arrive would restore exactly the double-advance this table
+prevents, and losing a known record must never reclassify it as an old
+untracked execution that may advance again. Nothing here authorizes historical
+deletion or backfill, and missing historical evidence is not proof of a drain.
+S7b and S9 have to account for this retained history before removing it.
+
+### What this slice does not do
+
+It does not transfer Morning Brief to native execution, create a Run for the
+native pipeline, change legacy billing, or establish a native user-choice
+authority. It adds no email disposition field and does not touch the outbox: a
+late result callback can still create fresh email and a provider request can
+already be in flight. Global callback and outbox counts are not drain proof.
+
 ## Observed production scale
 
 A paginated MaskDB read on 2026-09-16 at 09:50:15–09:50:17 UTC, including

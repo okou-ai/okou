@@ -23,6 +23,17 @@ import {
   type RunWorkflowAutomationNowArgs,
   type RunWorkflowAutomationResult,
 } from "./workflow-automation-launch.service";
+import {
+  bindMorningBriefScheduleClaimQueueEvent,
+  claimMorningBriefSchedule,
+  isCanonicalMorningBriefAutomation,
+  loadMorningBriefScheduleClaimByQueueEvent,
+  settleMorningBriefSchedulePreRunFailure,
+} from "./morning-brief-schedule-claim.service";
+import type {
+  ScheduleUnclaimed,
+  WorkflowScheduleClaimPlan,
+} from "./workflow-chat-event-queue.service";
 import { workflowAutomationCanFire } from "./workflow-automation-access.service";
 import { buildWorkflowScheduleAutomationBrief } from "./workflow-automation-brief.service";
 import { ensureWorkflowUserAutomationThread } from "./workflow-user-automation-thread.service";
@@ -56,6 +67,7 @@ async function startDueWorkflowAutomation(
     readonly row: DueWorkflowAutomationRow;
     readonly currentTime: Date;
     readonly scheduleContext: ReturnType<typeof scheduleTriggerContext>;
+    readonly scheduleClaim: WorkflowScheduleClaimPlan | undefined;
   },
   signal: AbortSignal,
 ): Promise<RunWorkflowAutomationResult> {
@@ -65,6 +77,7 @@ async function startDueWorkflowAutomation(
       due: args.due,
       automationContext: args.scheduleContext,
       apiStartTime: now(),
+      ...(args.scheduleClaim ? { scheduleClaim: args.scheduleClaim } : {}),
       triggerBrief:
         buildWorkflowScheduleAutomationBrief({
           createdAt: args.currentTime,
@@ -158,6 +171,125 @@ async function claimAutomation(
   return claimed ?? null;
 }
 
+/**
+ * The journaled variant of the claim above.
+ *
+ * It does not consume the schedule here. The plan runs inside the queue
+ * admission transaction, so clearing `next_run_at`, recording the occurrence
+ * and inserting the queue event either all commit or all roll back.
+ */
+function morningBriefScheduleClaimPlan(args: {
+  readonly automation: AutomationRow;
+  readonly scheduledAnchorAt: Date;
+  readonly claimedAt: Date;
+  readonly onClaimed: (claimId: string) => void;
+  readonly onUnclaimed: (reason: ScheduleUnclaimed) => void;
+}): WorkflowScheduleClaimPlan {
+  return {
+    claim: async (tx) => {
+      const attempt = await claimMorningBriefSchedule(tx, {
+        automationId: args.automation.id,
+        owner: {
+          orgId: args.automation.orgId,
+          ownerUserId: args.automation.ownerUserId,
+          workflowId: args.automation.workflowId,
+        },
+        scheduledAnchorAt: args.scheduledAnchorAt,
+        claimedAt: args.claimedAt,
+      });
+      if (attempt.kind === "unavailable") {
+        args.onUnclaimed("superseded");
+        return { kind: "unavailable" };
+      }
+      args.onClaimed(attempt.claim.id);
+      return { kind: "claimed", claimId: attempt.claim.id };
+    },
+    bindQueueEvent: bindMorningBriefScheduleClaimQueueEvent,
+    recordedClaimForQueueEvent: async (tx, queueEventId) => {
+      const recorded = await loadMorningBriefScheduleClaimByQueueEvent(
+        tx,
+        queueEventId,
+      );
+      if (!recorded) {
+        args.onUnclaimed("untracked_pending_event");
+      }
+      return recorded?.id;
+    },
+  };
+}
+
+interface JournaledScheduleExecution {
+  readonly scheduleClaim: WorkflowScheduleClaimPlan | undefined;
+  /** Whether the occurrence was left unconsumed, logged once when it was. */
+  readonly unclaimed: () => boolean;
+  readonly recordFailure: (error: unknown) => Promise<void>;
+}
+
+/**
+ * The per-tick state a journaled occurrence needs: the claim plan the queue
+ * admission runs, whether that plan consumed the schedule, and the settlement
+ * the failure paths use. An unjournaled tick gets no plan and keeps the legacy
+ * pre-run failure update.
+ */
+function journaledScheduleExecution(
+  args: {
+    readonly db: Db;
+    readonly automation: AutomationRow;
+    readonly scheduledAnchorAt: Date | null;
+    readonly claimedAt: Date;
+  },
+  signal: AbortSignal,
+): JournaledScheduleExecution {
+  const { automation } = args;
+  let claimId: string | undefined;
+  let unclaimedReason: ScheduleUnclaimed | undefined;
+  return {
+    scheduleClaim:
+      args.scheduledAnchorAt === null
+        ? undefined
+        : morningBriefScheduleClaimPlan({
+            automation,
+            scheduledAnchorAt: args.scheduledAnchorAt,
+            claimedAt: args.claimedAt,
+            onClaimed: (claimed) => {
+              claimId = claimed;
+            },
+            onUnclaimed: (reason) => {
+              unclaimedReason = reason;
+            },
+          }),
+    unclaimed: () => {
+      if (unclaimedReason === undefined) {
+        return false;
+      }
+      // The schedule was never consumed, so this tick fired nothing and the
+      // same due instant remains for the next one.
+      log.debug("Workflow automation schedule occurrence was not claimed", {
+        automationId: automation.id,
+        orgId: automation.orgId,
+        userId: automation.ownerUserId,
+        reason: unclaimedReason,
+      });
+      return true;
+    },
+    recordFailure: async (error) => {
+      // A journaled occurrence settles through the shared operation that the
+      // completion callback uses; only an unjournaled tick keeps the legacy
+      // update that can overlap a failed-Run callback.
+      if (claimId === undefined) {
+        await recordPreRunFailure(args.db, automation, error, signal);
+        return;
+      }
+      await settleMorningBriefSchedulePreRunFailure(args.db, {
+        automationId: automation.id,
+        claimId,
+        isCreditError: isInsufficientCreditsFailure(error),
+      });
+      logPreRunFailure(automation, error);
+    },
+  };
+}
+
 function advanceAfterPreRunFailure(
   automation: AutomationRow,
   failureTime: Date,
@@ -179,6 +311,21 @@ function advanceAfterPreRunFailure(
   return null;
 }
 
+function logPreRunFailure(automation: AutomationRow, error: unknown): void {
+  const context = {
+    automationId: automation.id,
+    workflowId: automation.workflowId,
+    orgId: automation.orgId,
+    userId: automation.ownerUserId,
+    error: failureMessage(error),
+  };
+  if (isInsufficientCreditsFailure(error)) {
+    log.debug("Workflow automation skipped: insufficient credits", context);
+  } else {
+    log.error("Workflow automation pre-run failed", context);
+  }
+}
+
 async function recordPreRunFailure(
   db: Db,
   automation: AutomationRow,
@@ -193,11 +340,7 @@ async function recordPreRunFailure(
     userId: automation.ownerUserId,
     error: failureMessage(error),
   };
-  if (isCreditError) {
-    log.debug("Workflow automation skipped: insufficient credits", context);
-  } else {
-    log.error("Workflow automation pre-run failed", context);
-  }
+  logPreRunFailure(automation, error);
 
   const failureTime = nowDate();
   const newFailureCount = isCreditError
@@ -310,6 +453,56 @@ async function dueWorkflowAutomationRows(
   return rows;
 }
 
+/**
+ * Membership and pause gates, unchanged. A departed owner disables the
+ * automation and clears its schedule exactly as before.
+ */
+async function dueWorkflowAutomationIsFireable(
+  db: Db,
+  row: DueWorkflowAutomationRow,
+  currentTime: Date,
+  signal: AbortSignal,
+): Promise<boolean> {
+  const context = {
+    automationId: row.automation.id,
+    workflowId: row.automation.workflowId,
+    orgId: row.automation.orgId,
+    userId: row.automation.ownerUserId,
+  };
+  const ownerIsMember = await hasOrgMembership(db, {
+    orgId: row.automation.orgId,
+    userId: row.automation.ownerUserId,
+  });
+  signal.throwIfAborted();
+  if (!ownerIsMember) {
+    log.warn(
+      "Disabling workflow automation: owner is no longer an org member",
+      context,
+    );
+    await db
+      .update(workflowAutomations)
+      .set({ enabled: false, nextRunAt: null, updatedAt: currentTime })
+      .where(eq(workflowAutomations.id, row.automation.id));
+    signal.throwIfAborted();
+    return false;
+  }
+
+  const canFire = await workflowAutomationCanFire(
+    db,
+    { automation: row.automation, agentId: row.agentId },
+    signal,
+  );
+  signal.throwIfAborted();
+  if (!canFire) {
+    log.debug("Workflow automation skipped: automation is paused", {
+      ...context,
+      agentId: row.agentId,
+    });
+    return false;
+  }
+  return true;
+}
+
 async function executeDueWorkflowAutomations(
   args: {
     readonly db: Db;
@@ -332,51 +525,30 @@ async function executeDueWorkflowAutomations(
   let skipped = 0;
 
   for (const row of rows) {
-    const ownerIsMember = await hasOrgMembership(args.db, {
-      orgId: row.automation.orgId,
-      userId: row.automation.ownerUserId,
-    });
-    signal.throwIfAborted();
-    if (!ownerIsMember) {
-      log.warn(
-        "Disabling workflow automation: owner is no longer an org member",
-        {
-          automationId: row.automation.id,
-          orgId: row.automation.orgId,
-          userId: row.automation.ownerUserId,
-        },
-      );
-      await args.db
-        .update(workflowAutomations)
-        .set({ enabled: false, nextRunAt: null, updatedAt: currentTime })
-        .where(eq(workflowAutomations.id, row.automation.id));
-      signal.throwIfAborted();
+    if (
+      !(await dueWorkflowAutomationIsFireable(
+        args.db,
+        row,
+        currentTime,
+        signal,
+      ))
+    ) {
       skipped++;
       continue;
     }
 
-    const canFire = await workflowAutomationCanFire(
-      args.db,
-      {
-        automation: row.automation,
-        agentId: row.agentId,
-      },
-      signal,
-    );
+    // The journaled path keeps the pre-claim `next_run_at` and consumes it
+    // inside the queue admission transaction, so its preparation runs before
+    // anything touches the schedule.
+    const scheduledAnchorAt = row.automation.nextRunAt;
+    const journaled =
+      scheduledAnchorAt !== null &&
+      (await isCanonicalMorningBriefAutomation(args.db, row.automation));
     signal.throwIfAborted();
-    if (!canFire) {
-      log.debug("Workflow automation skipped: automation is paused", {
-        automationId: row.automation.id,
-        workflowId: row.automation.workflowId,
-        agentId: row.agentId,
-        orgId: row.automation.orgId,
-        userId: row.automation.ownerUserId,
-      });
-      skipped++;
-      continue;
-    }
 
-    const claimed = await claimAutomation(args.db, row.automation, currentTime);
+    const claimed = journaled
+      ? row.automation
+      : await claimAutomation(args.db, row.automation, currentTime);
     signal.throwIfAborted();
     if (!claimed) {
       skipped++;
@@ -401,6 +573,16 @@ async function executeDueWorkflowAutomations(
       chatThreadId,
     };
 
+    const execution = journaledScheduleExecution(
+      {
+        db: args.db,
+        automation: claimed,
+        scheduledAnchorAt: journaled ? scheduledAnchorAt : null,
+        claimedAt: currentTime,
+      },
+      signal,
+    );
+
     // The tick owns the fire time, so it builds the trigger line here rather
     // than letting a later drain guess it from its own clock.
     const scheduleContext = scheduleTriggerContext({
@@ -410,11 +592,18 @@ async function executeDueWorkflowAutomations(
     });
     const result = await tapError(
       startDueWorkflowAutomation(
-        { startRun: args.startRun, due, row, currentTime, scheduleContext },
+        {
+          startRun: args.startRun,
+          due,
+          row,
+          currentTime,
+          scheduleContext,
+          scheduleClaim: execution.scheduleClaim,
+        },
         signal,
       ),
       async (error) => {
-        await recordPreRunFailure(args.db, claimed, error, signal);
+        await execution.recordFailure(error);
         skipped++;
       },
     );
@@ -422,12 +611,16 @@ async function executeDueWorkflowAutomations(
     if (!result) {
       continue;
     }
+    if (execution.unclaimed()) {
+      skipped++;
+      continue;
+    }
     if (result.kind === "enqueued") {
       executed++;
       continue;
     }
     if (result.kind !== "ok") {
-      await recordPreRunFailure(args.db, claimed, result, signal);
+      await execution.recordFailure(result);
       skipped++;
       continue;
     }

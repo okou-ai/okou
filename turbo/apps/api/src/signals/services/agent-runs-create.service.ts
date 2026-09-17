@@ -30,6 +30,8 @@ import { agentSessions } from "@okouai/db/schema/agent-session";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { command } from "ccstate";
+
+import type { Tx } from "../../lib/db-types";
 import { and, eq } from "drizzle-orm";
 import type { z } from "zod";
 
@@ -207,6 +209,8 @@ interface CreateQueueFirstAgentRunCommandArgs extends Omit<
 > {
   readonly chatThreadId: string;
   readonly queueFirstAssociation: QueueFirstRunAssociation;
+  /** Binds a caller-journaled occurrence inside the launch transaction. */
+  readonly bindClaimedQueueFirstRun?: (tx: Tx, runId: string) => Promise<void>;
   readonly agentRunModelPin: AgentRunModelPin;
 }
 
@@ -1078,6 +1082,10 @@ function buildCreateAgentRunArgs(args: {
     piExecution: command.piExecution,
     ...("queueFirstAssociation" in command
       ? { queueFirstAssociation: command.queueFirstAssociation }
+      : {}),
+    ...("bindClaimedQueueFirstRun" in command &&
+    command.bindClaimedQueueFirstRun
+      ? { bindClaimedQueueFirstRun: command.bindClaimedQueueFirstRun }
       : {}),
     timing: args.timing,
     timingDimensions: agentRunTimingDimensions({
