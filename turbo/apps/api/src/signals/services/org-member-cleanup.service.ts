@@ -162,7 +162,8 @@ async function revokeOrgMemberRunAuthority(
       tx,
       { orgId: args.orgId, userId: args.userId },
       revokedAt,
-    );    await tx
+    );
+    await tx
       .delete(agentRunQueue)
       .where(
         and(

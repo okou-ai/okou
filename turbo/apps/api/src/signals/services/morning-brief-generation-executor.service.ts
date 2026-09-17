@@ -956,11 +956,7 @@ async function releaseStoredGeneration(
   if (!(await lockCollectionOwner(tx, args.key.owner))) {
     return { kind: "owner-revoked" };
   }
-  const row = await readMorningBriefGeneration(
-    tx,
-    args.key,
-    args.purpose,
-  );
+  const row = await readMorningBriefGeneration(tx, args.key, args.purpose);
   if (!row || row.attemptId !== args.attemptId) {
     return { kind: "gone" };
   }
