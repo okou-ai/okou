@@ -542,7 +542,7 @@ async fn axiom_ingests_only_scoped_storage_latency_info() {
         );
         tracing::info!(target: "guest_control_client::exec_operation::diagnostics", "other terminal info");
         tracing::info!(storage_download_latency = true, "unrelated target");
-        tracing::debug!(target: "guest_control_client::exec_operation::diagnostics", storage_download_latency = true, "debug latency");
+        tracing::event!(target: "guest_control_client::exec_operation::diagnostics", tracing::Level::DEBUG, storage_download_latency = true, "debug latency");
         tracing::warn!(target: "guest_control_client::exec_operation::diagnostics", label = "storage-download", terminal_reason = "notable", "storage failure");
     }
     guard.shutdown().await;
