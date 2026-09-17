@@ -3,7 +3,6 @@ import {
   filterFeatureSwitchOverrides,
   type FeatureSwitchContext,
 } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { and, eq, inArray } from "drizzle-orm";
 
@@ -13,88 +12,15 @@ import {
   invalidatePiStableContextsForOrg,
   invalidatePiStableContextsForUser,
 } from "./pi-stable-context-generation.service";
-
-export const ORG_SENTINEL_USER_ID = "__org__";
-
-const ORG_SCOPED_FEATURE_SWITCH_KEYS: readonly string[] = [
-  FeatureSwitchKey.PersonalSubscriptionPriority,
-  FeatureSwitchKey.PiLoop,
-  FeatureSwitchKey.PiDeferredSandbox,
-  // Bot setup and native command availability must agree for all members.
-  FeatureSwitchKey.LarkIntegration,
-];
-
-function isOrgScopedFeatureSwitchKey(key: string): boolean {
-  return ORG_SCOPED_FEATURE_SWITCH_KEYS.includes(key);
-}
-
-function splitFeatureSwitchesByScope(switches: Record<string, boolean>): {
-  readonly userSwitches: Record<string, boolean>;
-  readonly orgSwitches: Record<string, boolean>;
-} {
-  const registeredSwitches = filterFeatureSwitchOverrides(switches);
-  const userSwitches: Record<string, boolean> = {};
-  const orgSwitches: Record<string, boolean> = {};
-
-  for (const [key, value] of Object.entries(registeredSwitches)) {
-    if (isOrgScopedFeatureSwitchKey(key)) {
-      orgSwitches[key] = value;
-    } else {
-      userSwitches[key] = value;
-    }
-  }
-
-  return { userSwitches, orgSwitches };
-}
+import {
+  ORG_SENTINEL_USER_ID,
+  splitFeatureSwitchesByScope,
+  userFeatureSwitchOverridesFromRows,
+  withoutOrgScopedFeatureSwitches,
+} from "./feature-switch-scope";
 
 function hasSwitches(switches: Record<string, boolean>): boolean {
   return Object.keys(switches).length > 0;
-}
-
-function mergeScopedFeatureSwitches(
-  userSwitches: Record<string, boolean>,
-  orgSwitches: Record<string, boolean>,
-): Record<string, boolean> {
-  const merged: Record<string, boolean> = {};
-
-  for (const [key, value] of Object.entries(userSwitches)) {
-    if (!isOrgScopedFeatureSwitchKey(key)) {
-      merged[key] = value;
-    }
-  }
-
-  for (const [key, value] of Object.entries(orgSwitches)) {
-    if (isOrgScopedFeatureSwitchKey(key)) {
-      merged[key] = value;
-    }
-  }
-
-  return merged;
-}
-
-export interface UserFeatureSwitchOverrideRow {
-  readonly userId: string;
-  readonly switches: Record<string, boolean>;
-}
-
-export function userFeatureSwitchOverridesFromRows(
-  rows: readonly UserFeatureSwitchOverrideRow[],
-  userId: string,
-): Record<string, boolean> {
-  let userSwitches: Record<string, boolean> = {};
-  let orgSwitches: Record<string, boolean> = {};
-
-  for (const row of rows) {
-    const switches = filterFeatureSwitchOverrides(row.switches);
-    if (row.userId === userId) {
-      userSwitches = switches;
-    }
-    if (row.userId === ORG_SENTINEL_USER_ID) {
-      orgSwitches = switches;
-    }
-  }
-
-  return mergeScopedFeatureSwitches(userSwitches, orgSwitches);
 }
 
 async function loadUserFeatureSwitchOverrides(
@@ -289,10 +215,7 @@ async function removeOrgScopedFeatureSwitches(
     return;
   }
 
-  const next = { ...existingRow.switches };
-  for (const key of ORG_SCOPED_FEATURE_SWITCH_KEYS) {
-    delete next[key];
-  }
+  const next = withoutOrgScopedFeatureSwitches(existingRow.switches);
 
   if (Object.keys(next).length === 0) {
     await writeDb

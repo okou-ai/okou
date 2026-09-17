@@ -27,7 +27,7 @@ import {
 import type { ReadonlyDb } from "../external/db";
 import {
   agentConnectorScopeFromRows,
-  type AgentConnectorScope,
+  type AgentConnectorScopeSnapshot,
   type AgentConnectorSlugRow,
   type AgentCustomConnectorRow,
 } from "./agent-connector-scope.service";
@@ -35,7 +35,7 @@ import {
   ORG_SENTINEL_USER_ID,
   userFeatureSwitchOverridesFromRows,
   type UserFeatureSwitchOverrideRow,
-} from "./feature-switches.service";
+} from "./feature-switch-scope";
 import { activeUserPermissionGrantCondition } from "./user-permission-grants.service";
 import { customConnectorPermissionBundleDependencySlug } from "./custom-connector-permission-bundle.service";
 import {
@@ -76,6 +76,9 @@ const nullablePermissionGrantExpiresAtDecoder = nullableDriverValueDecoder(
 );
 const nullableCustomConnectorPermissionNamesDecoder =
   nullableDriverValueDecoder(customConnectorPermissionNamesDecoder);
+const nullableCustomConnectorStorageVersionDecoder = nullableDriverValueDecoder(
+  orgCustomConnectors.storageVersion,
+);
 
 interface BootstrapMetadataQueryRow {
   readonly kind: BootstrapMetadataRowKind;
@@ -89,6 +92,8 @@ interface BootstrapMetadataQueryRow {
   readonly action: FirewallPermissionGrantAction | null;
   readonly permissionNames: readonly string[] | null;
   readonly permissionBundleRef: string | null;
+  readonly storageVersion: number | null;
+  readonly skillStorageVersionId: string | null;
   readonly expiresAt: Date | null;
 }
 
@@ -111,7 +116,7 @@ export interface UserInfo {
   readonly agentphoneHandle?: string;
 }
 
-export interface RunBootstrapContext extends AgentConnectorScope {
+export interface RunBootstrapContext extends AgentConnectorScopeSnapshot {
   readonly userInfo: UserInfo;
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly workflows: readonly RunWorkflowRef[];
@@ -154,6 +159,12 @@ function emptyBootstrapMetadataFields() {
     permissionBundleRef: sql`NULL::text`
       .mapWith(nullableTextDecoder)
       .as("permission_bundle_ref"),
+    storageVersion: sql`NULL::bigint`
+      .mapWith(nullableCustomConnectorStorageVersionDecoder)
+      .as("storage_version"),
+    skillStorageVersionId: sql`NULL::text`
+      .mapWith(nullableTextDecoder)
+      .as("skill_storage_version_id"),
     expiresAt: sql`NULL::timestamp`
       .mapWith(nullablePermissionGrantExpiresAtDecoder)
       .as("expires_at"),
@@ -173,12 +184,19 @@ function agentRunCustomConnectorMetadataQuery(
       id: sql`${userCustomConnectors.customConnectorId}::text`
         .mapWith(nullableTextDecoder)
         .as("id"),
+      detail: sql`${orgCustomConnectors.slug}`
+        .mapWith(nullableTextDecoder)
+        .as("detail"),
       permissionNames: sql`${userCustomConnectors.permissionNames}`
         .mapWith(nullableCustomConnectorPermissionNamesDecoder)
         .as("permission_names"),
       permissionBundleRef: sql`${orgCustomConnectors.permissionBundleRef}`
         .mapWith(nullableTextDecoder)
         .as("permission_bundle_ref"),
+      storageVersion: orgCustomConnectors.storageVersion,
+      skillStorageVersionId: sql`${orgCustomConnectors.skillStorageVersionId}`
+        .mapWith(nullableTextDecoder)
+        .as("skill_storage_version_id"),
     })
     .from(userCustomConnectors)
     .innerJoin(
@@ -401,12 +419,20 @@ export function materializeRunBootstrapContext(
         break;
       }
       case "custom_connector": {
-        if (row.id === null || row.permissionNames === null) {
+        if (
+          row.id === null ||
+          row.detail === null ||
+          row.permissionNames === null ||
+          row.storageVersion === null
+        ) {
           throw new Error("Invalid bootstrap metadata custom connector row");
         }
         customConnectorRows.push({
           customConnectorId: row.id,
           permissionNames: row.permissionNames,
+          connectorSlug: row.detail,
+          storageVersion: row.storageVersion,
+          skillStorageVersionId: row.skillStorageVersionId,
         });
         if (row.permissionBundleRef !== null) {
           const dependency = customConnectorPermissionBundleDependencySlug(

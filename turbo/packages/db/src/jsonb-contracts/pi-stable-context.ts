@@ -1,3 +1,6 @@
+import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
+import type { FeishuPlatform } from "@okouai/core/feishu-platform";
+
 import type { PersistedStorageMount } from "../types";
 import type { PiResourceSnapshotV1 } from "./pi-resource-snapshot";
 
@@ -47,13 +50,32 @@ export interface PiStableContextPromptProjection {
   readonly tools: string;
 }
 
+export interface PiStableContextPromptInputs {
+  readonly privateArtifactsEnabled: boolean;
+  readonly sshEnabled: boolean;
+  readonly bankingEnabled: boolean;
+  readonly larkEnabled: boolean;
+  readonly deliveryFormatGuidanceEnabled: boolean;
+  readonly introVideoEnabled: boolean;
+  readonly triggerSource: TriggerSource;
+  readonly cloudBrowserEnabled: boolean | undefined;
+}
+
 export interface PiStableContextSemanticInput {
+  readonly promptInputs: PiStableContextPromptInputs;
+  readonly feishuPlatform: FeishuPlatform | null;
   readonly connectorScope: {
     readonly allowedConnectorSlugs: readonly string[];
     readonly allowedCustomConnectorIds: readonly string[];
     readonly customConnectorGrants: readonly {
       readonly customConnectorId: string;
       readonly permissionNames: readonly string[];
+    }[];
+    readonly customConnectorDefinitions: readonly {
+      readonly customConnectorId: string;
+      readonly connectorSlug: string;
+      readonly storageVersion: number;
+      readonly skillStorageVersionId: string | null;
     }[];
     readonly workflows: readonly {
       readonly name: string;

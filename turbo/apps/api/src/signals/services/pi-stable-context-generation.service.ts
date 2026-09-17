@@ -17,6 +17,7 @@ import {
   piStableContextInputDigest,
   piStableContextVariantDigest,
 } from "./pi-stable-context-digest.service";
+import { recapturePiStableContextInput } from "./pi-stable-context-recapture.service";
 
 export const PI_STABLE_CONTEXT_AGENT_SUBJECT = "@agent";
 export const PI_STABLE_CONTEXT_AGENT_INSTRUCTIONS_PUBLICATION_KEY =
@@ -66,7 +67,7 @@ export function piStableContextWorkflowInvalidationOptions(args: {
       };
       return {
         ...input,
-        semantic: { connectorScope },
+        semantic: { ...input.semantic, connectorScope },
         source: {
           ...input.source,
           connectorScopeDigest: piStableContextVariantDigest(connectorScope),
@@ -275,13 +276,16 @@ async function invalidateHeadSet(
     const transformed = options?.transformInput
       ? await options.transformInput(head.input)
       : head.input;
-    if (!transformed) {
+    const recaptured = transformed
+      ? await recapturePiStableContextInput(db, transformed, invalidatedAt)
+      : null;
+    if (!recaptured) {
       continue;
     }
     const input: PiStableContextBuildInput = {
-      ...transformed,
+      ...recaptured,
       source: {
-        ...transformed.source,
+        ...recaptured.source,
         agentGeneration,
         userGeneration,
       },

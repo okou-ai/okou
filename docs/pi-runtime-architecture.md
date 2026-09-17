@@ -116,10 +116,19 @@ captured heads to the committed version, and removes only that obligation.
 Agent instruction metadata, generation, Storage HEAD and demand commit in one
 transaction after archive preparation, so they have no cross-connection lock
 window. A superseded publisher may retain immutable Storage history but cannot
-publish a ready mixed metadata/volume generation. Agent/workflow create, update, delete,
-installation, custom connector, connector catalog, official workflow catalog,
-feature and grant writers invalidate known heads in their authoritative
-transactions. Storage encoding repair under the same logical version also
+publish a ready mixed metadata/volume generation. Agent/workflow create,
+update, delete, installation, custom connector, connector catalog, official
+workflow catalog, feature and grant writers invalidate known heads in their
+authoritative transactions. For each bounded captured variant, the writer then
+recaptures one post-write snapshot of effective Workflow and connector
+membership, custom-definition versions, catalog identity, permission policies
+and horizon, feature-dependent tool text, and exact dynamic skill mounts. The
+worker receives only that immutable recaptured input. A referenced artifact
+that is not authoritatively published leaves the head `missing`; copying an old
+input under a new generation is not valid demand. Mutable feature values are a
+source-vector dimension, not a request-variant identity, so feature writes
+rebuild the existing trigger/browser/platform variant instead of creating an
+unreachable key. Storage encoding repair under the same logical version also
 invalidates every retained dependent head.
 
 | Prompt/runtime input                                                                                                                                                        | Classification and authority                                                                                                                                             |

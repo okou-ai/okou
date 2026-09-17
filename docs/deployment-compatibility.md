@@ -31,10 +31,14 @@ Mixed-version API operation is safe by construction. A new reader with no
 generation/head treats the exact variant as missing and uses canonical
 exact-version discovery. An old writer that does not publish demand likewise
 causes a later read-time repair; this is compatibility and recovery, not the
-normal invalidation path. A pending multi-stage source generation is never read
-as ready. Source-keyed publication obligations allow independent Workflow
-writers to coexist while a replacement supersedes only the same source. Old API code ignores the additive tables and continues the canonical
-path. Rollback therefore consists of rolling API code back while retaining the
+normal invalidation path. Current writers recapture the exact post-write
+semantic source and dynamic skill mounts for a bounded set of known variants;
+they leave a head missing when a referenced immutable artifact is not yet
+published. A pending multi-stage source generation is never read as ready.
+Source-keyed publication obligations allow independent Workflow writers to
+coexist while a replacement supersedes only the same source. Old API code
+ignores the additive tables and continues the canonical path. Rollback
+therefore consists of rolling API code back while retaining the
 tables; do not drop them until all new writers/workers and rollback binaries
 have drained.
 

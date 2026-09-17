@@ -43,6 +43,10 @@ import {
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { removePiInferenceFixture } from "../../../test-fixtures/pi-inference-lifecycle";
+import {
+  installApiTestConnectorCatalog,
+  invalidateApiTestConnectorCatalogCompatibility,
+} from "../../../test-fixtures/connector-catalog";
 
 const context = testContext();
 const billing = createBillingMediaApi(context);
@@ -325,10 +329,6 @@ describe("durable Pi API producer", () => {
       await createPiApiFirstTurnUsagePricingResolution(SELECTED_MODEL);
     mockPiResourceArchiveDownloads();
     mockPiCheckpointObjectStore();
-    const workflowId = await workflows.createWorkflow(actor, {
-      agentId,
-      name: `stable-membership-${randomUUID()}`,
-    });
     const providerBodies: string[] = [];
     let providerCalls = 0;
     server.use(
@@ -353,6 +353,45 @@ describe("durable Pi API producer", () => {
     );
     await waitForRunStatus(actor, first.runId, "completed", 10_000);
 
+    const workflowId = await workflows.createWorkflow(actor, {
+      agentId,
+      name: `stable-membership-${randomUUID()}`,
+    });
+    const creationWork = await accept(
+      setupApp({ context, routes: testPiResourceIndexWorkRoutes })(
+        testPiResourceIndexWorkContract,
+      ).run({
+        body: {
+          versionIds: ["0".repeat(64)],
+          stableContextOwner: { orgId, userId: actor.userId, agentId },
+        },
+      }),
+      [200],
+    );
+    expect(creationWork.body.stableContext.ready).toBeGreaterThanOrEqual(1);
+    let archiveReadsAfterWorkflowCreate = 0;
+    server.use(
+      http.get(PI_RESOURCE_ARCHIVE_DOWNLOAD_URL, () => {
+        archiveReadsAfterWorkflowCreate += 1;
+        return HttpResponse.json(
+          { error: "workflow-add publication unexpectedly fetched an archive" },
+          { status: 503 },
+        );
+      }),
+    );
+    const workflowAdded = await sendChatRun(
+      actor,
+      {
+        agentId,
+        prompt: "use the workflow-add publication",
+        model: SELECTED_MODEL,
+      },
+      usagePricingResolution,
+    );
+    await waitForRunStatus(actor, workflowAdded.runId, "completed", 10_000);
+    expect(archiveReadsAfterWorkflowCreate).toBe(0);
+    mockPiResourceArchiveDownloads();
+
     await misc.deleteWorkflow(actor, workflowId, [204]);
     await api.applyUserPermissionGrant(actor, {
       agentId,
@@ -361,6 +400,7 @@ describe("durable Pi API producer", () => {
       action: "allow",
       expiresIn: "1h",
     });
+    await api.enableAgentConnectors(actor, agentId, ["slack"]);
     const expiringInstructions = `Expiring projection ${randomUUID()}`;
     await bdd.updateAgentInstructions(actor, agentId, expiringInstructions);
     const firstWork = await accept(
@@ -376,6 +416,51 @@ describe("durable Pi API producer", () => {
     );
     expect(firstWork.body.stableContext.ready).toBeGreaterThanOrEqual(1);
 
+    let archiveReadsAfterWorkflowDelete = 0;
+    server.use(
+      http.get(PI_RESOURCE_ARCHIVE_DOWNLOAD_URL, () => {
+        archiveReadsAfterWorkflowDelete += 1;
+        return HttpResponse.json(
+          { error: "write-published context unexpectedly fetched an archive" },
+          { status: 503 },
+        );
+      }),
+    );
+    const workflowDeleted = await sendChatRun(
+      actor,
+      {
+        agentId,
+        prompt: "use the workflow-deletion publication",
+        model: SELECTED_MODEL,
+      },
+      usagePricingResolution,
+    );
+    await waitForRunStatus(actor, workflowDeleted.runId, "completed", 10_000);
+    expect(archiveReadsAfterWorkflowDelete).toBe(0);
+
+    onTestFinished(async () => {
+      await installApiTestConnectorCatalog();
+    });
+    await installApiTestConnectorCatalog({
+      catalogVersion: `stable-context-authority-${randomUUID()}`,
+    });
+    await invalidateApiTestConnectorCatalogCompatibility();
+    const callsBeforeCatalogRejection = providerCalls;
+    await expect(
+      sendChatRun(
+        actor,
+        {
+          agentId,
+          prompt: "reject invalid catalog authority before transport",
+          model: SELECTED_MODEL,
+        },
+        usagePricingResolution,
+      ),
+    ).rejects.toThrow("Unknown response status 500 for POST /api/chat/events");
+    expect(providerCalls).toBe(callsBeforeCatalogRejection);
+    await installApiTestConnectorCatalog();
+
+    mockPiResourceArchiveDownloads();
     mockNow(capturedAt + 60 * 60 * 1000 + 1);
     const expired = await sendChatRun(
       actor,
@@ -393,6 +478,12 @@ describe("durable Pi API producer", () => {
       connectorSlug: "slack",
       grants: [],
     });
+    await api.enableAgentConnectors(actor, agentId, []);
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId },
+      { [FeatureSwitchKey.DeliveryFormatGuidance]: true },
+    );
     const instructions = `Worker-published instructions ${randomUUID()}`;
     const displayName = `Published identity ${randomUUID()}`;
     await bdd.updateAgentInstructions(actor, agentId, instructions);
@@ -432,15 +523,24 @@ describe("durable Pi API producer", () => {
     );
     onTestFinished(async () => {
       await flushWaitUntilForTest();
-      for (const runId of [first.runId, expired.runId, ready.runId]) {
+      for (const runId of [
+        first.runId,
+        workflowAdded.runId,
+        workflowDeleted.runId,
+        expired.runId,
+        ready.runId,
+      ]) {
         await removePiInferenceFixture({ runId, agentId, orgId });
       }
     });
     await waitForRunStatus(actor, ready.runId, "completed", 10_000);
     expect(archiveReadsAfterWorker).toBe(0);
-    expect(providerCalls).toBe(3);
+    expect(providerCalls).toBe(5);
     expect(providerBodies.at(-1)).toContain(instructions);
     expect(providerBodies.at(-1)).toContain(displayName);
+    expect(providerBodies.at(-1)).toContain(
+      "Pick the delivery format before authoring",
+    );
   }, 45_000);
 
   it.each(

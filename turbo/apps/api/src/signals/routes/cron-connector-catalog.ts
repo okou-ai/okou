@@ -4,7 +4,7 @@ import { command } from "ccstate";
 import type { RouteEntry } from "../route-entry";
 import { reconcileConnectorCatalogCompatibility$ } from "../services/connector-catalog-compatibility.service";
 import { connectorCatalogDiagnostics$ } from "../services/connector-catalog-diagnostics.service";
-import { reconcileConnectorCatalogRuntimeProjection$ } from "../services/connector-catalog-runtime-projection.service";
+import { reconcileConnectorCatalogRuntimeProjection$ } from "../services/connector-catalog-runtime-reconciliation.service";
 import { syncConnectorCatalog$ } from "../services/connector-catalog-sync.service";
 import { cronUnauthorized, hasValidCronSecret$ } from "./cron-auth";
 
