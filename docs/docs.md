@@ -63,6 +63,10 @@ surface; the index does not replace their detailed rules.
   Slack source contract, occurrence/attempt/lease ownership, owner revocation
   boundary, live shared-scope revalidation, and the coverage limits this first
   collector declares.
+- [Morning Brief Gmail collection](./morning-brief-gmail-collection.md): the
+  shared Morning Brief OAuth authorization boundary, Gmail's two bounded
+  branches and caps, source outcome classification, and the preview-only
+  deployment boundary.
 - [Marketing privacy rollback](./marketing-privacy-choices.md): withdrawn runtime
   behavior, storage retirement, and rollout boundaries.
 - [Google Cloud LLM voice routing](./google-llm-voice.md): shared Vercel workload
