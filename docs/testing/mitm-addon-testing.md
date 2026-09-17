@@ -319,7 +319,9 @@ suites before committing the upgrade.
 
 ### Fixtures (conftest.py)
 
-Shared test data via pytest fixtures:
+Shared test data via pytest fixtures. Valid sandbox entries require a nonempty
+`cliAgentType`; this example uses `claude-code` to match the shared fixture in
+`crates/runner/mitm-addon/tests/conftest.py`:
 
 ```python
 @pytest.fixture
@@ -330,6 +332,7 @@ def registry_file(tmp_path):
             "10.200.0.1": {
                 "runId": "run-abc-123",
                 "billableFirewalls": [],
+                "cliAgentType": "claude-code",
                 "sandboxToken": "tok-xyz",
                 "networkLogPath": str(tmp_path / "network.jsonl"),
             },
