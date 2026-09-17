@@ -70,8 +70,13 @@ export async function installMorningBriefFixture(
       cronExpression: "0 7 * * *",
       timezone: args.timezone ?? "Asia/Shanghai",
       enabled: args.enabled ?? true,
+      // `workflow_automations_official_binding_check` requires the whole
+      // official binding, not only the fields this reader happens to consult.
       officialBlueprintKey: MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
+      officialAppliedFingerprint: "0".repeat(64),
       officialReconciliationStatus: "current",
+      officialParameterBindings: [],
+      officialIntendedEnabled: args.enabled ?? true,
       officialResultEmailEnabled: true,
     })
     .returning({ id: workflowAutomations.id });
