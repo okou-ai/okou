@@ -68,6 +68,32 @@ async fn accepts_valid_native_formats_before_normalizing_wire_pixels() {
 }
 
 #[tokio::test]
+async fn normalizes_native_true_color_formats_with_unused_channels() {
+    // A zero-width channel has max = 2^0 - 1. These formats pack the other
+    // two channels into eight bits; the unused channel may sit at the boundary.
+    let formats = [
+        ([8, 8, 0, 1, 0, 7, 0, 31, 0, 0, 0, 3, 0, 0, 0, 0], 12),
+        ([8, 8, 0, 1, 0, 0, 0, 31, 0, 7, 0, 0, 5, 0, 0, 0], 10),
+        ([8, 8, 0, 1, 0, 31, 0, 0, 0, 7, 0, 0, 5, 0, 0, 0], 11),
+    ];
+    for (mut format, unused_shift) in formats {
+        for shift in [0, 8] {
+            format[unused_shift] = shift;
+            let (client, mut peer) = initialized_with_format(1, 1, format).await;
+            let client = apply(client, &mut peer, false, &[raw(0, 0, 1, 1, &[WHITE])]).await;
+            assert_eq!(client.pixels().unwrap(), WHITE);
+            drop(client);
+            disconnected(&mut peer).await;
+        }
+        format[unused_shift] = 9;
+        assert!(matches!(
+            rejected_init(&server_init(1, 1, format, b"desktop")).await,
+            Error::InvalidPixelFormat
+        ));
+    }
+}
+
+#[tokio::test]
 async fn rejects_initialization_bounds_and_invalid_pixel_formats() {
     for (width, height) in [(0, 1), (1, 0), (8193, 1), (4096, 4096)] {
         let result = rejected_init(&server_init(width, height, RGBX, b"desktop")).await;

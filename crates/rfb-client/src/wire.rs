@@ -101,7 +101,8 @@ pub(crate) fn validate_format(format: [u8; 16]) -> Result<(), Error> {
         (u16::from_be_bytes([b0, b1]), bs),
     ] {
         let max = u32::from(max);
-        if max == 0 || (max + 1).count_ones() != 1 || shift >= bpp {
+        // An unused channel has max = 2^0 - 1 and may start at the bpp boundary.
+        if (max + 1).count_ones() != 1 || u32::from(shift) + max.count_ones() > u32::from(bpp) {
             return Err(Error::InvalidPixelFormat);
         }
         let mask = u64::from(max) << shift;
