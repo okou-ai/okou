@@ -1,3 +1,4 @@
+import { mockClerkUsers } from "./clerk-users";
 import { randomUUID } from "node:crypto";
 
 import type StripeSDK from "stripe";
@@ -242,9 +243,7 @@ function authenticate(
     nextActor.orgId,
     nextActor.orgRole,
   );
-  context.mocks.clerk.users.getUserList.mockResolvedValue({
-    data: [clerkUserProfile(nextActor)],
-  });
+  mockClerkUsers(context, [clerkUserProfile(nextActor)]);
   context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
     {
       data: clerkOrganizationMemberships(nextActor),

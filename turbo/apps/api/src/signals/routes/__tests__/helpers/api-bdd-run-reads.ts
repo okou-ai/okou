@@ -1,3 +1,4 @@
+import { mockClerkUsers } from "./clerk-users";
 import type { z } from "zod";
 import {
   logsByIdContract,
@@ -86,9 +87,7 @@ function authenticate(
     nextActor.orgId,
     nextActor.orgRole,
   );
-  context.mocks.clerk.users.getUserList.mockResolvedValue({
-    data: [clerkUserProfile(nextActor)],
-  });
+  mockClerkUsers(context, [clerkUserProfile(nextActor)]);
   return { authorization: "Bearer clerk-session" };
 }
 

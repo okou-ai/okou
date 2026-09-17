@@ -814,14 +814,21 @@ describe("AUTH-01 sandbox and agent bearers", () => {
       email: admin.email,
       orgId: admin.orgId,
     });
+    expect(context.mocks.clerk.users.getUser).toHaveBeenCalledExactlyOnceWith(
+      admin.userId,
+    );
+    expect(context.mocks.clerk.users.getUserList).not.toHaveBeenCalled();
 
     const rotatedEmail = `rotated-${shortId()}@example.test`;
     cfg.mockClerkUsers([{ ...admin, email: rotatedEmail }]);
     const cached = await cfg.readMe(admin);
     expect(cached.email).toBe(admin.email);
+    expect(context.mocks.clerk.users.getUser).toHaveBeenCalledOnce();
 
     mockNow(base + 16 * 60 * 1000);
     const refreshed = await cfg.readMe(admin);
     expect(refreshed.email).toBe(rotatedEmail);
+    expect(context.mocks.clerk.users.getUser).toHaveBeenCalledTimes(2);
+    expect(context.mocks.clerk.users.getUserList).not.toHaveBeenCalled();
   });
 });
