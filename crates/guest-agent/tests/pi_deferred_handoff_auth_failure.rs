@@ -154,7 +154,7 @@ async fn handoff_unauthorized_failure_prevents_child_spawn_and_masks_credentials
         "handoff auth failure child did not complete assertions; stdout:\n{stdout}\nstderr:\n{stderr}"
     );
 
-    rejected.assert_hits(1);
+    rejected.assert_calls_async(1).await;
     assert!(!child_started.exists());
     assert!(!guest_contracts::runtime_paths::pi_deferred_handoff_file(&runtime_dir).exists());
     Ok(())

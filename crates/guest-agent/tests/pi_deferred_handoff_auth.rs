@@ -220,8 +220,8 @@ fi
         "authenticated handoff child did not complete assertions; stdout:\n{stdout}\nstderr:\n{stderr}"
     );
 
-    first_handoff.assert_hits(1);
-    final_handoff.assert_hits(1);
+    first_handoff.assert_calls_async(1).await;
+    final_handoff.assert_calls_async(1).await;
     assert!(child_started.is_file());
     let actual_handoff = guest_contracts::runtime_paths::pi_deferred_handoff_file(&runtime_dir);
     assert_eq!(std::fs::read(&actual_handoff)?, handoff_bytes);
