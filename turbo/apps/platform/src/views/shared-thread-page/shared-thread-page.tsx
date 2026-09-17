@@ -34,6 +34,7 @@ import {
   CHAT_THREAD_CONTENT_MAIN_CLASS,
   CHAT_THREAD_MESSAGE_LIST_CLASS,
   CHAT_THREAD_MESSAGE_STACK_PULL_CLASS,
+  CHAT_THREAD_SCROLL_EDGE_FADE_CLASS,
   CHAT_THREAD_USER_MESSAGE_ACTIONS_CLASS,
   CHAT_THREAD_USER_MESSAGE_ROW_CLASS,
 } from "../okou-page/chat-message-surface.tsx";
@@ -297,15 +298,16 @@ function SharedThreadHandoff({
   readonly signInUrl: string | null;
 }) {
   const { t } = useTranslation();
+  // The canvas runs behind this bar the way it runs behind the header, for the
+  // reason the chat composer's footer records.
   return (
     <footer
       data-shared-thread-handoff=""
-      className="relative shrink-0 bg-[hsl(var(--background))]"
+      className="relative shrink-0"
       style={{
         paddingBottom: "max(0.5rem, var(--sab))",
       }}
     >
-      <div className="pointer-events-none absolute inset-x-0 -top-5 h-[21px] bg-gradient-to-t from-[hsl(var(--background))] to-transparent" />
       <div className="pb-2 pl-4 pr-4 pt-3 sm:pl-6 sm:pr-6">
         <div className="mx-auto max-w-[900px]">
           <Card surface="composer" className="z-10">
@@ -474,7 +476,10 @@ function SharedThreadTranscript({
       <div
         data-testid="shared-thread-scroll"
         tabIndex={-1}
-        className="absolute inset-0 overflow-y-auto focus:outline-none [overflow-anchor:none] [scrollbar-gutter:stable]"
+        className={cn(
+          "absolute inset-0 overflow-y-auto focus:outline-none [overflow-anchor:none] [scrollbar-gutter:stable]",
+          CHAT_THREAD_SCROLL_EDGE_FADE_CLASS,
+        )}
       >
         <main className={CHAT_THREAD_CONTENT_MAIN_CLASS}>
           <div

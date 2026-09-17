@@ -107,6 +107,47 @@ async function tokenFields(dialog: HTMLElement, name = config.name) {
   );
 }
 
+test.each(["host", "configuration"])(
+  "The new Access %s form shows input hints without prefilling tokens",
+  async (kind) => {
+    await page(kind === "host");
+    if (kind === "configuration") {
+      click(getAction("radio", "Cloudflare Access"));
+      const add = await waitFor(() => {
+        return getAction("button", "Add Access configuration");
+      });
+      click(add);
+    }
+    const dialog = await screen.findByRole("dialog", {
+      name: kind === "host" ? "Add host" : "Add Access configuration",
+    });
+    if (kind === "host") {
+      click(getAction("radio", "Cloudflare Access", dialog));
+    }
+    await within(dialog).findByLabelText("Configuration name");
+    const hints = {
+      "Configuration name": "e.g. Production access",
+      "Service Token Client ID": "Paste the Service Token Client ID",
+      "Service Token Client Secret": "Paste the Service Token Client Secret",
+    };
+    for (const [label, hint] of Object.entries(hints)) {
+      const field = within(dialog).getByLabelText(label);
+      expect(field).toHaveAttribute("placeholder", hint);
+      expect(field).toHaveValue("");
+      expect(field).toBeInvalid();
+    }
+    for (const label of [
+      "Service Token Client ID",
+      "Service Token Client Secret",
+    ]) {
+      expect(within(dialog).getByLabelText(label)).toHaveAttribute(
+        "type",
+        "password",
+      );
+    }
+  },
+);
+
 test.each([0, 1, 2])(
   "Resource selectors initialize once for %i saved resources",
   async (count) => {
@@ -314,6 +355,9 @@ test("Direct and protected mode retain their port and configuration drafts but s
   await fill(within(dialog).getByLabelText("Port"), "2222");
   click(getAction("radio", "Cloudflare Access", dialog));
   await within(dialog).findByLabelText("Access configuration");
+  const publishedHost = within(dialog).getByLabelText("Published hostname");
+  expect(publishedHost).toHaveAttribute("placeholder", "e.g. ssh.example.com");
+  expect(publishedHost).toHaveValue("ssh.example.com");
   expect(within(dialog).getByLabelText("Port")).not.toBeVisible();
   await selectConfig(dialog);
   click(getAction("radio", "Direct", dialog));

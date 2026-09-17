@@ -17,6 +17,7 @@ import type {
   SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -27,6 +28,7 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
+import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
 import { fillComposer } from "./chat-test-helpers.ts";
 import {
   context,
@@ -247,9 +249,7 @@ test("Connect Codex before sending with a personal route", async () => {
   await setupPage({ context, path: NEW_CHAT_PATH });
 
   const composer = await screen.findByRole("textbox", { name: "Message" });
-  await expect(
-    screen.findByRole("combobox", { name: "GPT 5.5" }),
-  ).resolves.toBeVisible();
+  await expect(composerModelTrigger("GPT 5.5")).resolves.toBeVisible();
 
   await user.click(composer);
   await user.keyboard("Hello");
@@ -327,9 +327,7 @@ test("Complete Claude Code login from a blocked message", async () => {
   await setupPage({ context, path: NEW_CHAT_PATH });
 
   const composer = await screen.findByRole("textbox", { name: "Message" });
-  await expect(
-    screen.findByRole("combobox", { name: "Claude Opus 4.8" }),
-  ).resolves.toBeVisible();
+  await expect(composerModelTrigger("Claude Opus 4.8")).resolves.toBeVisible();
   await fillComposer(composer, "Explain this failure");
   const sendButton = await findButton("Send");
   expect(sendButton).toBeDisabled();
@@ -411,9 +409,7 @@ test("Reconnect the personal provider used by the selected model", async () => {
 
   await setupPage({ context, path: NEW_CHAT_PATH });
 
-  await expect(
-    screen.findByRole("combobox", { name: "GPT 5.6 Sol" }),
-  ).resolves.toBeVisible();
+  await expect(composerModelTrigger("GPT 5.6 Sol")).resolves.toBeVisible();
   const configureButton = await findButton("Configure model");
 
   click(configureButton);
@@ -472,9 +468,7 @@ test("Reconnect Claude Code for an existing chat", async () => {
   await setupPage({ context, path: RUN_PATH });
 
   await readyChat();
-  await expect(
-    screen.findByRole("combobox", { name: "Claude Opus 4.8" }),
-  ).resolves.toBeVisible();
+  await expect(composerModelTrigger("Claude Opus 4.8")).resolves.toBeVisible();
   const configureButton = await findButton("Configure model");
 
   click(configureButton);
@@ -538,12 +532,18 @@ test("Refresh model availability without losing useful options", async () => {
     );
   });
 
-  await setupPage({ context, path: RUN_PATH });
+  // One row per model: a Fast row would make the option names ambiguous.
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    featureSwitches: {
+      [FeatureSwitchKey.Effort]: false,
+      [FeatureSwitchKey.CodexFastMode]: false,
+    },
+  });
 
   await readyChat();
-  const picker = await screen.findByRole("combobox", {
-    name: "GPT 5.6 Luna",
-  });
+  const picker = await composerModelTrigger("GPT 5.6 Luna");
   click(picker);
   await expect(
     screen.findByRole("option", { name: /GPT 5\.6 Luna/iu }),
@@ -606,9 +606,7 @@ test("Show the last resolved chat model after visiting Agents", async () => {
 
   await setupPage({ context, path: NEW_CHAT_PATH });
 
-  await expect(
-    screen.findByRole("combobox", { name: "Claude Opus 4.8" }),
-  ).resolves.toBeVisible();
+  await expect(composerModelTrigger("Claude Opus 4.8")).resolves.toBeVisible();
   await waitFor(() => {
     expect(context.mocks.ably.hasSubscription("billing:changed")).toBeTruthy();
   });
@@ -623,8 +621,6 @@ test("Show the last resolved chat model after visiting Agents", async () => {
   await refreshStarted.promise;
   click(await findLink("Chat"));
 
-  await expect(
-    screen.findByRole("combobox", { name: "Claude Opus 4.8" }),
-  ).resolves.toBeVisible();
+  await expect(composerModelTrigger("Claude Opus 4.8")).resolves.toBeVisible();
   releaseRefresh.resolve();
 });

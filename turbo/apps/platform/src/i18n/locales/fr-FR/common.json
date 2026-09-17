@@ -1938,13 +1938,14 @@
       "picker": {
         "autoVoiceDescription": "Trouvez une voix adaptée à votre contenu.",
         "avatarVoice": "Voix de l’avatar",
-        "changeAvatar": "Changer d’avatar",
+        "back": "Retour",
         "chooseStyle": "Choisir un style",
-        "chooseStyleAndVoice": "Choisissez un style et une voix.",
+        "closeOptions": "Fermer les options",
+        "moreOptions": "Plus d’options",
         "noMatches": "Aucun résultat.",
-        "ready": "Prêt à utiliser. Ajoutez votre contenu dans le chat.",
+        "searchStyles": "Rechercher des styles",
+        "selectionSummary": "Voix: {{voice}} · Avatar: {{avatar}}",
         "settings": "Paramètres de la vidéo d’intro",
-        "style": "Style",
         "useSelection": "Utiliser la sélection"
       },
       "style": {
@@ -6366,6 +6367,18 @@
     "manage": "Gérer les hôtes SSH",
     "notLearned": "Aucune clé d’hôte mémorisée",
     "passphrase": "Phrase secrète (facultative)",
+    "placeholders": {
+      "accessName": "p. ex. Accès à la production",
+      "clientId": "Collez le Client ID du Service Token",
+      "clientSecret": "Collez le Client Secret du Service Token",
+      "credentialName": "p. ex. Accès de déploiement",
+      "displayName": "p. ex. Serveur de production",
+      "host": "p. ex. ssh.example.com",
+      "passphrase": "Laissez vide si la clé n’est pas chiffrée",
+      "password": "Saisissez le mot de passe de l’utilisateur SSH",
+      "privateKey": "Collez la clé privée complète",
+      "username": "p. ex. ubuntu"
+    },
     "port": "Port",
     "privateKey": "Clé privée",
     "reset": "Réinitialiser la clé d’hôte",

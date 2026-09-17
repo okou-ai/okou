@@ -1892,13 +1892,14 @@
       "picker": {
         "autoVoiceDescription": "Temukan suara yang cocok dengan konten Anda.",
         "avatarVoice": "Suara avatar",
-        "changeAvatar": "Ubah avatar",
+        "back": "Kembali",
         "chooseStyle": "Pilih gaya",
-        "chooseStyleAndVoice": "Pilih gaya dan suara.",
+        "closeOptions": "Tutup opsi",
+        "moreOptions": "Opsi lainnya",
         "noMatches": "Tidak ada hasil.",
-        "ready": "Siap digunakan. Tambahkan konten Anda di obrolan.",
+        "searchStyles": "Cari gaya",
+        "selectionSummary": "Suara: {{voice}} · Avatar: {{avatar}}",
         "settings": "Pengaturan video intro",
-        "style": "Gaya",
         "useSelection": "Gunakan pilihan"
       },
       "style": {
@@ -6280,6 +6281,18 @@
     "manage": "Kelola host SSH",
     "notLearned": "Kunci host belum tersimpan",
     "passphrase": "Frasa sandi (opsional)",
+    "placeholders": {
+      "accessName": "mis. Akses produksi",
+      "clientId": "Tempel Client ID Service Token",
+      "clientSecret": "Tempel Client Secret Service Token",
+      "credentialName": "mis. Login deployment",
+      "displayName": "mis. Server produksi",
+      "host": "mis. ssh.example.com",
+      "passphrase": "Kosongkan jika kunci tidak dienkripsi",
+      "password": "Masukkan kata sandi pengguna SSH",
+      "privateKey": "Tempel seluruh kunci privat",
+      "username": "mis. ubuntu"
+    },
     "port": "Port",
     "privateKey": "Kunci privat",
     "reset": "Reset kunci host",

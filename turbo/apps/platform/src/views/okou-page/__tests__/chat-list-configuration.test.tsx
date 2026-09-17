@@ -30,6 +30,22 @@ import {
 const context = testContext();
 const HOST_ID = "a7000000-0000-4000-a000-000000000001";
 
+/**
+ * These cases read the model through the legacy select's controls, which the
+ * switch's off lever still serves.
+ */
+async function setupLegacyPickerPage(
+  options: Parameters<typeof setupPage>[0],
+): Promise<void> {
+  await setupPage({
+    ...options,
+    featureSwitches: {
+      [FeatureSwitchKey.ModelPickerFlyout]: false,
+      ...options.featureSwitches,
+    },
+  });
+}
+
 async function openMediaCategory(name: "Image" | "Video"): Promise<void> {
   if (!screen.queryByRole("radiogroup", { name: "Models" })) {
     const picker = await waitFor(() => {
@@ -200,7 +216,7 @@ test("Conversation configuration arriving before creation is retained", async ()
   });
   installActiveChatBoundaries(context, { hosts: [host] });
 
-  await setupPage({
+  await setupLegacyPickerPage({
     context,
     path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
     auth,
@@ -246,7 +262,7 @@ test("Media models do not overwrite one another or the run model", async () => {
   });
   installActiveChatBoundaries(context, { metadata: thread });
 
-  await setupPage({
+  await setupLegacyPickerPage({
     context,
     path: `/chats/${thread.id}`,
     auth,
@@ -299,7 +315,10 @@ test("Service tier and Computer Use settings update independently", async () => 
     path: `/chats/${target.id}`,
     auth,
     cachedChatThreadEvents: cachedChatListEvents(14, [target, newer]),
-    featureSwitches: { [FeatureSwitchKey.CodexFastMode]: true },
+    featureSwitches: {
+      [FeatureSwitchKey.CodexFastMode]: true,
+      [FeatureSwitchKey.ModelPickerFlyout]: false,
+    },
   });
 
   const order = ["Newer conversation", "Configured conversation"];

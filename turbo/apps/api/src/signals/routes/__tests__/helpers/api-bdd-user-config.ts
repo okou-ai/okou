@@ -1,3 +1,4 @@
+import { mockClerkUsers } from "./clerk-users";
 import { randomUUID } from "node:crypto";
 
 import { initContract } from "@okouai/api-contracts/contracts/trpc-contract";
@@ -154,8 +155,9 @@ export function createUserConfigBddApi(context: TestContext) {
     },
 
     mockClerkUsers(actors: readonly ApiTestUser[]): void {
-      context.mocks.clerk.users.getUserList.mockResolvedValue({
-        data: actors.map((actor) => {
+      mockClerkUsers(
+        context,
+        actors.map((actor) => {
           const emailId = `email_${actor.userId}`;
           return {
             id: actor.userId,
@@ -165,7 +167,7 @@ export function createUserConfigBddApi(context: TestContext) {
             lastName: "Actor",
           };
         }),
-      });
+      );
     },
 
     mockMembership(actor: ApiTestUser, role: ClerkOrgRole | null): void {

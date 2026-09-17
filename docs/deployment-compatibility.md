@@ -185,7 +185,11 @@ switching it to Only me; recipients lose access.
 CLI artifact output qualifies hostless references with its configured app origin
 (`OKOU_APP_URL`, or the existing API-to-App origin mapping). Production output is
 `https://app.okou.ai/artifacts/<reference>`. Generation, upload, hosting and media
-download results use the same complete URL in text, JSON and Markdown. Public
+download results use the same complete URL in text, JSON and Markdown. Integration
+upload completion (Teams, Telegram, Feishu/Lark, AgentPhone and GitHub) and Slack
+canonical publication apply the same CLI normalization before printing. Image
+batch waits also qualify stored artifact and owner references in JSON output,
+including the generated Markdown, without rewriting the batch files. Public
 URLs keep their original bytes, including query strings. API responses and stored
 references retain their existing shapes, so older pinned CLIs retain their prior
 output and the new CLI can consume an older API. Downloading or cloning newly
@@ -2209,3 +2213,44 @@ only that no result of such a request is accepted, persisted or returned after
 the revoking transaction commits. See
 [the collection contract](morning-brief-collection.md) for the source contract,
 lease semantics, finite budgets and declared coverage limits.
+
+## Marketing browser funnel events
+
+The App posts onboarding entry to `/api/marketing/onboarding-start` and actual
+Stripe redirect actions to `/api/marketing/checkout-start` on the Marketing
+origin. The owner confirmed this feature has not launched and requested removal
+of `/api/marketing/finish-onboarding` without an alias, with a client force
+upgrade as the supported-client boundary.
+
+Deploy the Marketing receiver before this App. Verify the production App version
+and commit contain the new callers, then raise `minimumSupportedVersion` in
+`turbo/apps/api/src/lib/web-client-compatibility.json` to that verified version
+in a separate release. Do not guess a version from this PR or raise the floor
+with the first replacement App deployment: production promotes the API first,
+so a refresh could still load an unsupported build. This PR does not activate
+the floor increase before the replacement App is live.
+
+The existing App API check prompts old clients to refresh on their next handled
+API request. Direct Marketing requests do not pass through that middleware;
+cached old callers before the floor takes effect are outside this prelaunch
+support boundary. Do not roll the App back below the floor or Marketing back
+behind the new receivers while those App builds are supported.
+
+Onboarding remains bodyless and preserves the existing
+`marketing_onboarding_attempts` user/org attempt marker. Changing the URL does
+not replay past attempts, including failed attempts. Checkout sends only a fresh
+UUID, its UTC occurrence time and the bounded source `onboarding_video` or
+`paywall`; Marketing derives identity from the bearer token and attribution from
+its own consented cookies. Both requests include credentials, run under the App
+root with a ten-second deadline and never delay navigation for their response.
+There is no periodic check or browser retry.
+
+The new receiver records Google Ads funnel shadows only. Marketing deduplicates
+onboarding by user/org and checkout by user/org/event UUID. These counts differ
+intentionally from the legacy gtag browser-session/account deduplication: another
+checkout action produces another event. A shadow acknowledgement is neither
+proof of eligible consent nor a Google Ads delivery receipt. Existing App gtag
+and PostHog reporting remain active; this change adds no GA4/PostHog sender,
+provider cutover, historical replay, App table or MaskDB scan. Checkout coverage
+matches the existing `RedirectToStripe` producers, excluding previews and other
+payment paths without that producer.

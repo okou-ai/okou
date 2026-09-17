@@ -77,6 +77,50 @@ async function selectNewCredential(dialog: HTMLElement) {
   );
 }
 
+test.each(["host", "credential"])(
+  "The new %s form shows input hints without prefilling credentials",
+  async (kind) => {
+    context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
+      return respond(200, { connections: [] });
+    });
+    await page(kind === "host" ? "/connectors/ssh?add=1" : "/connectors/ssh");
+    if (kind === "credential") {
+      click(getAction("radio", "Credentials"));
+      const add = await waitFor(() => {
+        return getAction("button", "Add credential");
+      });
+      click(add);
+    }
+    const dialog = await screen.findByRole("dialog", {
+      name: kind === "host" ? "Add host" : "Add credential",
+    });
+    if (kind === "host") {
+      await selectNewCredential(dialog);
+    }
+    const hints = {
+      "Credential name": "e.g. Deployment login",
+      "SSH username": "e.g. ubuntu",
+      "Private key": "Paste the complete private key",
+      "Passphrase (optional)": "Leave blank if not encrypted",
+    };
+    for (const [label, hint] of Object.entries(hints)) {
+      const field = within(dialog).getByLabelText(label);
+      expect(field).toHaveAttribute("placeholder", hint);
+      expect(field).toHaveValue("");
+    }
+    expect(within(dialog).getByLabelText("Private key")).toBeInvalid();
+    click(getAction("radio", "Password", dialog));
+    const password = within(dialog).getByLabelText("Password");
+    expect(password).toHaveAttribute(
+      "placeholder",
+      "Enter the SSH user's password",
+    );
+    expect(password).toHaveAttribute("type", "password");
+    expect(password).toHaveValue("");
+    expect(password).toBeInvalid();
+  },
+);
+
 test("An existing credential can be reused without entering or reading its secrets", async () => {
   context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
     return respond(200, { connections: [] });
@@ -92,6 +136,14 @@ test("An existing credential can be reused without entering or reading its secre
   const credentialFields = within(dialog).getByRole("group", {
     name: "Credential",
   });
+  const name = within(hostFields).getByLabelText("Display name");
+  expect(name).toHaveAttribute("placeholder", "e.g. Production server");
+  expect(name).toHaveValue("");
+  const host = within(hostFields).getByLabelText(
+    "Public hostname or IP address",
+  );
+  expect(host).toHaveAttribute("placeholder", "e.g. ssh.example.com");
+  expect(host).toHaveValue("");
   expect(within(hostFields).getByLabelText("Port")).toHaveValue(22);
   expect(within(hostFields).queryByLabelText("Credential name")).toBeNull();
   await waitFor(() => {

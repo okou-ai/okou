@@ -1900,13 +1900,14 @@
       "picker": {
         "autoVoiceDescription": "अपने कंटेंट के अनुकूल आवाज़ खोजें।",
         "avatarVoice": "अवतार की आवाज़",
-        "changeAvatar": "अवतार बदलें",
+        "back": "वापस",
         "chooseStyle": "शैली चुनें",
-        "chooseStyleAndVoice": "एक शैली और आवाज़ चुनें।",
+        "closeOptions": "विकल्प बंद करें",
+        "moreOptions": "अधिक विकल्प",
         "noMatches": "कोई परिणाम नहीं मिला।",
-        "ready": "इस्तेमाल के लिए तैयार। चैट में अपना कंटेंट जोड़ें।",
+        "searchStyles": "शैलियाँ खोजें",
+        "selectionSummary": "आवाज़: {{voice}} · अवतार: {{avatar}}",
         "settings": "इंट्रो वीडियो की सेटिंग",
-        "style": "शैली",
         "useSelection": "चयन इस्तेमाल करें"
       },
       "style": {
@@ -6299,6 +6300,18 @@
     "manage": "SSH होस्ट प्रबंधित करें",
     "notLearned": "होस्ट कुंजी अभी सहेजी नहीं गई है",
     "passphrase": "पासफ़्रेज़ (वैकल्पिक)",
+    "placeholders": {
+      "accessName": "जैसे, प्रोडक्शन एक्सेस",
+      "clientId": "Service Token का Client ID पेस्ट करें",
+      "clientSecret": "Service Token का Client Secret पेस्ट करें",
+      "credentialName": "जैसे, डिप्लॉयमेंट लॉगिन",
+      "displayName": "जैसे, प्रोडक्शन सर्वर",
+      "host": "जैसे, ssh.example.com",
+      "passphrase": "कुंजी एन्क्रिप्टेड न हो तो खाली छोड़ें",
+      "password": "SSH उपयोगकर्ता का पासवर्ड दर्ज करें",
+      "privateKey": "पूरी निजी कुंजी पेस्ट करें",
+      "username": "जैसे, ubuntu"
+    },
     "port": "पोर्ट",
     "privateKey": "निजी कुंजी",
     "reset": "होस्ट कुंजी रीसेट करें",

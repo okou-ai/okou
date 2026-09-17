@@ -23,6 +23,7 @@ import {
   AGENT_ID,
   composerInlineTemplates,
   context,
+  queryComposerModelTrigger,
   mockAgent,
   mockBillingCapabilities,
   mockOrgModelRoutes,
@@ -63,9 +64,26 @@ function installVideoEnvironment(): void {
   });
 }
 
+/**
+ * These cases reach the video catalog through the legacy select's category
+ * control, which the switch's off lever still serves. The cases that never open
+ * the picker call `setupPage` directly.
+ */
+async function setupLegacyPickerPage(
+  options: Parameters<typeof setupPage>[0],
+): Promise<void> {
+  await setupPage({
+    ...options,
+    featureSwitches: {
+      [FeatureSwitchKey.ModelPickerFlyout]: false,
+      ...options.featureSwitches,
+    },
+  });
+}
+
 function pickerTrigger(label: string): HTMLElement {
-  const trigger = screen.queryByRole("combobox", { name: label });
-  if (!(trigger instanceof HTMLElement)) {
+  const trigger = queryComposerModelTrigger(label);
+  if (!trigger) {
     throw new Error(`${label} composer model picker not found`);
   }
   return trigger;
@@ -259,7 +277,7 @@ test.each([false, true])(
   "Submit default video options with the slash panel on: %s",
   async (enabled) => {
     const submissions = installVideoSubmissionCapture();
-    await setupPage({
+    await setupLegacyPickerPage({
       locale: "en-US",
       context,
       path: `/agents/${AGENT_ID}/chat`,
@@ -325,7 +343,7 @@ test.each([false, true])(
   "Submit a selected video ratio with the slash panel on: %s",
   async (enabled) => {
     const submissions = installVideoSubmissionCapture();
-    await setupPage({
+    await setupLegacyPickerPage({
       locale: "en-US",
       context,
       path: `/agents/${AGENT_ID}/chat`,
@@ -453,7 +471,7 @@ test.each(["task", "command"] as const)(
 
 test("Selecting a video model alone keeps Creative Video settings hidden and unsent", async () => {
   const submissions = installVideoSubmissionCapture();
-  await setupPage({
+  await setupLegacyPickerPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
   });

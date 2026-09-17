@@ -1938,13 +1938,14 @@
       "picker": {
         "autoVoiceDescription": "Encontre uma voz que combine com seu conteúdo.",
         "avatarVoice": "Voz do avatar",
-        "changeAvatar": "Alterar avatar",
+        "back": "Voltar",
         "chooseStyle": "Escolha um estilo",
-        "chooseStyleAndVoice": "Escolha um estilo e uma voz.",
+        "closeOptions": "Fechar opções",
+        "moreOptions": "Mais opções",
         "noMatches": "Nenhum resultado.",
-        "ready": "Pronto para usar. Adicione seu conteúdo na conversa.",
+        "searchStyles": "Pesquisar estilos",
+        "selectionSummary": "Voz: {{voice}} · Avatar: {{avatar}}",
         "settings": "Configurações do vídeo de introdução",
-        "style": "Estilo",
         "useSelection": "Usar seleção"
       },
       "style": {
@@ -6366,6 +6367,18 @@
     "manage": "Gerenciar hosts SSH",
     "notLearned": "Chave de host ainda não armazenada",
     "passphrase": "Frase secreta (opcional)",
+    "placeholders": {
+      "accessName": "ex.: Acesso à produção",
+      "clientId": "Cole o Client ID do Service Token",
+      "clientSecret": "Cole o Client Secret do Service Token",
+      "credentialName": "ex.: Login de implantação",
+      "displayName": "ex.: Servidor de produção",
+      "host": "ex.: ssh.example.com",
+      "passphrase": "Deixe em branco se a chave não for criptografada",
+      "password": "Digite a senha do usuário SSH",
+      "privateKey": "Cole a chave privada completa",
+      "username": "ex.: ubuntu"
+    },
     "port": "Porta",
     "privateKey": "Chave privada",
     "reset": "Redefinir chave de host",

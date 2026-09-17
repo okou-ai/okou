@@ -1900,13 +1900,14 @@
       "picker": {
         "autoVoiceDescription": "Finde eine Stimme, die zu deinem Inhalt passt.",
         "avatarVoice": "Stimme des Avatars",
-        "changeAvatar": "Avatar ändern",
+        "back": "Zurück",
         "chooseStyle": "Stil auswählen",
-        "chooseStyleAndVoice": "Wähle einen Stil und eine Stimme.",
+        "closeOptions": "Optionen schließen",
+        "moreOptions": "Weitere Optionen",
         "noMatches": "Keine Treffer.",
-        "ready": "Bereit. Füge deinen Inhalt im Chat hinzu.",
+        "searchStyles": "Stile suchen",
+        "selectionSummary": "Stimme: {{voice}} · Avatar: {{avatar}}",
         "settings": "Einstellungen für Intro-Videos",
-        "style": "Stil",
         "useSelection": "Auswahl verwenden"
       },
       "style": {
@@ -6299,6 +6300,18 @@
     "manage": "SSH-Hosts verwalten",
     "notLearned": "Noch kein Hostschlüssel gespeichert",
     "passphrase": "Passphrase (optional)",
+    "placeholders": {
+      "accessName": "z. B. Produktionszugriff",
+      "clientId": "Client-ID des Service-Tokens einfügen",
+      "clientSecret": "Client-Secret des Service-Tokens einfügen",
+      "credentialName": "z. B. Deployment-Zugang",
+      "displayName": "z. B. Produktionsserver",
+      "host": "z. B. ssh.example.com",
+      "passphrase": "Leer lassen, wenn unverschlüsselt",
+      "password": "Passwort des SSH-Benutzers eingeben",
+      "privateKey": "Vollständigen privaten Schlüssel einfügen",
+      "username": "z. B. ubuntu"
+    },
     "port": "Port",
     "privateKey": "Privater Schlüssel",
     "reset": "Hostschlüssel zurücksetzen",

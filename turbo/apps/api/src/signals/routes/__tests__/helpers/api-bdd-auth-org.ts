@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 
+import { mockClerkUsers as mockClerkDirectory } from "./clerk-users";
+
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
   cliAuthApproveContract,
@@ -409,6 +411,7 @@ export function createAuthOrgAgentsBddApi(context: TestContext) {
       }),
     );
 
+    mockClerkDirectory(context, [...profiles.values()]);
     context.mocks.clerk.users.getUserList.mockImplementation(
       (input: unknown) => {
         const ids = stringArrayValue(input, "userId");

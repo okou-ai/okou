@@ -329,6 +329,7 @@ import {
   CHAT_THREAD_RESPONSE_SUPPORTING_TEXT_CLASS,
   CHAT_THREAD_RESPONSE_COMPACT_STACK_CLASS,
   CHAT_THREAD_RESPONSE_STACK_CLASS,
+  CHAT_THREAD_SCROLL_EDGE_FADE_CLASS,
   CHAT_THREAD_WORK_HISTORY_MARKDOWN_CLASS,
   CHAT_THREAD_WORK_HISTORY_TEXT_CLASS,
   CHAT_THREAD_USER_MESSAGE_ACTIONS_CLASS,
@@ -3670,10 +3671,14 @@ function ChatThreadSkeletonOverlay({ thread }: { thread: ChatPanelSignals }) {
     return null;
   }
 
+  // The overlay covers the pane while the transcript loads, so it takes the
+  // canvas fill rather than the page's: over a gradient palette a `--background`
+  // cover is a flat block that snaps to the canvas the moment the first events
+  // arrive.
   return (
     <div
       data-chat-skeleton
-      className="absolute inset-0 z-10 overflow-hidden pointer-events-none bg-background"
+      className="absolute inset-0 z-10 overflow-hidden pointer-events-none bg-workspace-canvas"
     >
       <main className={CHAT_THREAD_CONTENT_MAIN_CLASS}>
         <div
@@ -3714,6 +3719,7 @@ function ChatThreadEventsPane({ thread }: { thread: ChatPanelSignals }) {
         onScroll={handleScroll}
         className={cn(
           "absolute inset-0 focus:outline-none [overflow-anchor:none]",
+          CHAT_THREAD_SCROLL_EDGE_FADE_CLASS,
           standalonePwa && "overscroll-contain",
         )}
       >
@@ -3796,7 +3802,7 @@ function ChatThreadBottomBar({ thread }: { thread: ChatPanelSignals }) {
     ? `${window.location.origin}/share/threads/${sharedThreadId}`
     : null;
   return withChatScrollLayout(
-    <footer className="relative shrink-0 border-t border-border/60 bg-background px-4 py-3 sm:px-6">
+    <footer className="relative shrink-0 border-t border-border/60 px-4 py-3 sm:px-6">
       <div className="mx-auto flex w-full max-w-[900px] flex-col gap-2">
         {shareUrl ? (
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -4165,16 +4171,19 @@ function ChatThreadComposer({ thread }: { thread: ChatPanelSignals }) {
   const composerLayoutRef = useSet(thread.composerLayoutOnRef$);
   const standalonePwa = isStandalonePwa();
 
+  // The pane's canvas runs behind the composer the way it runs behind the
+  // header. A fill of its own can only match a flat canvas, and a gradient
+  // palette's is not one, so the footer stays transparent and the transcript's
+  // own edge fade handles the boundary above it.
   return (
     <footer
       data-chat-composer
       ref={composerLayoutRef}
-      className="relative shrink-0 bg-[hsl(var(--background))]"
+      className="relative shrink-0"
       style={{
         paddingBottom: "max(0.5rem, var(--okou-composer-safe-bottom))",
       }}
     >
-      <div className="pointer-events-none absolute inset-x-0 -top-5 h-[21px] bg-gradient-to-t from-[hsl(var(--background))] to-transparent" />
       {/* `overflow-y-auto` clips at this element's padding box. The composer's
           focus veil is offset down and blurred well past the gap the footer
           leaves, so it is still painting at that boundary and gets sliced off in

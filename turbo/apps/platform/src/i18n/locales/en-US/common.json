@@ -1900,13 +1900,14 @@
       "picker": {
         "autoVoiceDescription": "Find a voice that fits your content.",
         "avatarVoice": "Avatar’s voice",
-        "changeAvatar": "Change avatar",
+        "back": "Back",
         "chooseStyle": "Choose a style",
-        "chooseStyleAndVoice": "Choose a style and a voice.",
+        "closeOptions": "Close options",
+        "moreOptions": "More options",
         "noMatches": "No matches found.",
-        "ready": "Ready to use. Add your content in the chat.",
+        "searchStyles": "Search styles",
+        "selectionSummary": "Voice: {{voice}} · Avatar: {{avatar}}",
         "settings": "Intro video settings",
-        "style": "Style",
         "useSelection": "Use selection"
       },
       "style": {
@@ -6291,6 +6292,18 @@
     "manage": "Manage SSH hosts",
     "notLearned": "Host key not learned yet",
     "passphrase": "Passphrase (optional)",
+    "placeholders": {
+      "accessName": "e.g. Production access",
+      "clientId": "Paste the Service Token Client ID",
+      "clientSecret": "Paste the Service Token Client Secret",
+      "credentialName": "e.g. Deployment login",
+      "displayName": "e.g. Production server",
+      "host": "e.g. ssh.example.com",
+      "passphrase": "Leave blank if not encrypted",
+      "password": "Enter the SSH user's password",
+      "privateKey": "Paste the complete private key",
+      "username": "e.g. ubuntu"
+    },
     "port": "Port",
     "privateKey": "Private key",
     "reset": "Reset host key",

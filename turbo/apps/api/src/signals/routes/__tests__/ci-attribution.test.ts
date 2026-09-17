@@ -29,7 +29,7 @@ describe("CI attribution", () => {
       mockEnv("ENV", "preview");
       mockOptionalEnv("OKOU_PREVIEW_JOB_REF", jobRef);
       mocks.clerk.session(`user_${randomUUID()}`, null);
-      context.mocks.clerk.users.getUserList.mockRejectedValue(
+      context.mocks.clerk.users.getUser.mockRejectedValue(
         new Error("Clerk directory quota exhausted"),
       );
       context.mocks.clerk.users.updateUserMetadata.mockRejectedValue(
@@ -64,7 +64,7 @@ describe("CI attribution", () => {
         milestones: [],
         googleAdsAccountId: null,
       });
-      expect(context.mocks.clerk.users.getUserList).not.toHaveBeenCalled();
+      expect(context.mocks.clerk.users.getUser).not.toHaveBeenCalled();
       expect(
         context.mocks.clerk.users.updateUserMetadata,
       ).not.toHaveBeenCalled();
@@ -82,8 +82,9 @@ describe("CI attribution", () => {
       mockOptionalEnv("OKOU_PREVIEW_JOB_REF", jobRef);
       const userId = `user_${randomUUID()}`;
       mocks.clerk.session(userId, null);
-      context.mocks.clerk.users.getUserList.mockResolvedValue({
-        data: [{ id: userId, privateMetadata: {} }],
+      context.mocks.clerk.users.getUser.mockResolvedValue({
+        id: userId,
+        privateMetadata: {},
       });
 
       const signup = await accept(

@@ -19,6 +19,7 @@ import { logger } from "../../lib/log";
 import { now, nowDate } from "../../lib/time";
 import { webUrl } from "../../lib/web-url";
 import type { ClerkClient } from "../external/clerk";
+import { findClerkUser } from "../external/clerk-users";
 import { writeDb$, type Db } from "../external/db";
 import type { Tx } from "../../lib/db-types";
 import { renderOfficialAutomationResultEmail } from "./official-automation-result-email-renderer";
@@ -871,8 +872,7 @@ export async function getUserEmail(
     return cached.email;
   }
 
-  const usersResponse = await clerk.users.getUserList({ userId: [userId] });
-  const user = usersResponse.data[0];
+  const user = await findClerkUser(clerk, userId);
   if (!user) {
     return null;
   }

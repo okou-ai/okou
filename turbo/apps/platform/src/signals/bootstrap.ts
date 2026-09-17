@@ -73,7 +73,7 @@ import {
   setupOnboardingWorkflowRunPage$,
 } from "./onboarding/onboarding-page-setup.ts";
 import { setupIdeationPage$ } from "./okou-page/ideation-page-setup.ts";
-import { setupFinishOnboarding$ } from "./onboarding/finish-onboarding.ts";
+import { setupMarketingOnboardingStart$ } from "./marketing/onboarding-start.ts";
 import { setupConnectorsPage$ } from "./connectors-page/connectors-page-setup.ts";
 import { setupComputerUseAuthorizationPage$ } from "./computer-use-authorization/computer-use-authorization-page-setup.ts";
 import { setupBrowserAuthorizationPage$ } from "./browser-authorization/browser-authorization-page-setup.ts";
@@ -656,7 +656,7 @@ export const bootstrap$ = command(
       : set(setupSharedDatabaseBridge$, signal);
     if (!isDesktopAuthFlow()) {
       set(setupAuthenticatedRealtime$, signal);
-      set(setupFinishOnboarding$, signal);
+      set(setupMarketingOnboardingStart$, signal);
     }
     const ready = set(completeBootstrap$, render, signal);
 

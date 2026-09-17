@@ -23,6 +23,7 @@ import {
 } from "./chat-thread-event.service";
 import { loadNewChatThreadMediaModels } from "./chat-thread-media-model.service";
 import { loadNewChatThreadModelSettings } from "./chat-thread-model-settings.service";
+import { recordOfficialWorkflowThreadProvenance } from "./morning-brief-thread-provenance.service";
 import {
   readAcceptedOfficialWorkflowDefinition,
   readAcceptedOfficialWorkflowRevision,
@@ -295,6 +296,14 @@ export async function ensureWorkflowUserAutomationThread(
     .limit(1)
     .for("update");
   if (existing?.chatThreadId) {
+    // A reused binding is as much a Morning Brief destination as a fresh one,
+    // and this thread may predate the classification column entirely.
+    await recordOfficialWorkflowThreadProvenance(db, {
+      chatThreadId: existing.chatThreadId,
+      userId: args.userId,
+      orgId: args.orgId,
+      workflowIds: [args.workflowId],
+    });
     return existing.chatThreadId;
   }
 
@@ -330,6 +339,12 @@ export async function ensureWorkflowUserAutomationThread(
         .limit(1)
         .for("update");
       if (conflicting?.chatThreadId) {
+        await recordOfficialWorkflowThreadProvenance(db, {
+          chatThreadId: conflicting.chatThreadId,
+          userId: args.userId,
+          orgId: args.orgId,
+          workflowIds: [args.workflowId],
+        });
         return conflicting.chatThreadId;
       }
     }
@@ -347,6 +362,15 @@ export async function ensureWorkflowUserAutomationThread(
     agentId: args.agentId,
     title,
     currentTime: args.currentTime,
+  });
+  // An automation thread is not ordinary Chat, so it stays unknown unless this
+  // workflow is the official Morning Brief, whose destination is excluded from
+  // the moment it exists.
+  await recordOfficialWorkflowThreadProvenance(db, {
+    chatThreadId,
+    userId: args.userId,
+    orgId: args.orgId,
+    workflowIds: [args.workflowId],
   });
 
   const [updated] = await db

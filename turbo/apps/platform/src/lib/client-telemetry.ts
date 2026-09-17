@@ -92,6 +92,21 @@ export interface MarketingOnboardingTelemetry {
   readonly marketing_request_id?: string;
 }
 
+export interface MarketingCheckoutTelemetry {
+  readonly event_name: "marketing.checkout";
+  readonly checkout_source: "onboarding_video" | "paywall";
+  readonly result_code:
+    | "acknowledged"
+    | "token_missing"
+    | "token_error"
+    | "http_error"
+    | "request_error"
+    | "timeout"
+    | "aborted";
+  readonly response_status_code?: number;
+  readonly marketing_request_id?: string;
+}
+
 export type ClientTelemetryOperation =
   | IndexedDbOpenTelemetry
   | IndexedDbTransactionCreateTelemetry
@@ -100,13 +115,17 @@ export type ClientTelemetryOperation =
   | SharedWorkerFailureTelemetry
   | SkeletonTimeoutTelemetry
   | HttpRequestTelemetry
-  | MarketingOnboardingTelemetry;
+  | MarketingOnboardingTelemetry
+  | MarketingCheckoutTelemetry;
 
 function runtimeName(): "shared_worker" | "window" {
   return typeof window === "undefined" ? "shared_worker" : "window";
 }
 
 function scopeName(operation: ClientTelemetryOperation): string {
+  if (operation.event_name === "marketing.checkout") {
+    return "okou-app/marketing-checkout";
+  }
   if (operation.event_name === "marketing.onboarding") {
     return "okou-app/marketing-onboarding";
   }
@@ -148,6 +167,7 @@ function operationName(operation: ClientTelemetryOperation): string {
   if (
     operation.event_name === "shared_worker.failure" ||
     operation.event_name === "marketing.onboarding" ||
+    operation.event_name === "marketing.checkout" ||
     operation.event_name === "app.skeleton.timeout"
   ) {
     return operation.event_name;
@@ -167,6 +187,18 @@ function operationName(operation: ClientTelemetryOperation): string {
 function operationAttributes(
   operation: ClientTelemetryOperation,
 ): ClientTelemetryAttributes {
+  if (operation.event_name === "marketing.checkout") {
+    return {
+      "okou.marketing.checkout.source": operation.checkout_source,
+      "okou.marketing.checkout.result": operation.result_code,
+      ...(operation.marketing_request_id === undefined
+        ? {}
+        : {
+            "okou.marketing.checkout.request_id":
+              operation.marketing_request_id,
+          }),
+    };
+  }
   if (operation.event_name === "marketing.onboarding") {
     return {
       "okou.marketing.onboarding.user_id": operation.user_id,
@@ -220,7 +252,10 @@ function operationAttributes(
 function httpAttributes(
   operation: ClientTelemetryOperation,
 ): ClientTelemetryAttributes {
-  if (operation.event_name === "marketing.onboarding") {
+  if (
+    operation.event_name === "marketing.onboarding" ||
+    operation.event_name === "marketing.checkout"
+  ) {
     return operation.response_status_code === undefined
       ? {}
       : {

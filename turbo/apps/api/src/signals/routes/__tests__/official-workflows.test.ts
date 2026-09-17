@@ -1,3 +1,4 @@
+import { mockClerkUsers } from "./helpers/clerk-users";
 import { createHash, randomUUID } from "node:crypto";
 import { gunzipSync } from "node:zlib";
 
@@ -1844,18 +1845,16 @@ function configureResultEmailRecipient(actor: ApiTestUser): void {
   mockEnv("APP_URL", "https://app.okou.ai");
   mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
   mockEnv("RESEND_FROM_DOMAIN", "mail.example.com");
-  context.mocks.clerk.users.getUserList.mockResolvedValue({
-    data: [
-      {
-        id: actor.userId,
-        emailAddresses: [{ id: emailId, emailAddress: actor.email }],
-        primaryEmailAddressId: emailId,
-        firstName: "Official",
-        lastName: "Automation",
-        imageUrl: null,
-      },
-    ],
-  });
+  mockClerkUsers(context, [
+    {
+      id: actor.userId,
+      emailAddresses: [{ id: emailId, emailAddress: actor.email }],
+      primaryEmailAddressId: emailId,
+      firstName: "Official",
+      lastName: "Automation",
+      imageUrl: null,
+    },
+  ]);
 }
 
 async function completeSuccessfulRun(

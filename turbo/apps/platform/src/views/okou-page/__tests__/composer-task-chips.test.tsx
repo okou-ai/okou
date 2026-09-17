@@ -13,6 +13,7 @@ import {
   composerInlineTemplates,
   findComposerEditor,
   tabByText,
+  composerModelTrigger,
 } from "./chat-composer-test-helpers.ts";
 import {
   AGENT_ID,
@@ -636,7 +637,7 @@ test("Task changes preserve uploaded files and the draft, and toggling off resto
   click(portrait);
   await user.keyboard("{Escape}");
   click(selectedTask(editor, "Video"));
-  await screen.findByRole("combobox", { name: "Claude Sonnet 4.6" });
+  await composerModelTrigger("Claude Sonnet 4.6");
   expect(screen.queryByTestId("composer-create-mode")).toBeNull();
   expect(editor).toHaveTextContent("Keep my draft");
   expect(screen.getByText("brief.txt")).toBeInTheDocument();
