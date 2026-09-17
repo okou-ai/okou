@@ -1260,6 +1260,13 @@ export async function loadResumableOccurrences(
  * installation and *its* automation, never the disposable projection, the
  * enrollment state or a title match. It is the cron's bootstrap input, so a GET
  * never creates or repairs anything.
+ *
+ * The scan window is deliberately wider than the work budget and deterministically
+ * ordered. Membership is resolved per candidate against Clerk, and an owner whose
+ * membership no longer resolves cannot be materialized — an unordered window the
+ * size of the budget would let a backlog of those owners occupy every slot and
+ * starve the members that can still be migrated. The caller stops after its own
+ * budget, so widening the window costs one bounded query, not unbounded work.
  */
 export async function loadBootstrapCandidates(
   db: MorningBriefNativeReader,
@@ -1288,6 +1295,7 @@ export async function loadBootstrapCandidates(
         isNull(morningBriefNativeSchedules.orgId),
       ),
     )
+    .orderBy(workflowAutomations.createdAt, workflowAutomations.id)
     .limit(args.limit);
   return rows.map((row) => {
     return { orgId: row.orgId, userId: row.userId };

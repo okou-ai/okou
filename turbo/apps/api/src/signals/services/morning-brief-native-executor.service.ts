@@ -59,6 +59,16 @@ const log = logger("MorningBriefNativeCron");
 /** Owners examined per tick. Keeps one tick's work inside its budget. */
 const DUE_OWNER_BATCH = 25;
 
+/**
+ * How far the bootstrap scan looks for materializable owners.
+ *
+ * Wider than the work budget on purpose: candidates whose membership no longer
+ * resolves cannot be materialized, and a window the size of the budget would
+ * let a backlog of them consume every slot. The loop still stops at
+ * {@link DUE_OWNER_BATCH} materializations or the tick deadline.
+ */
+const BOOTSTRAP_SCAN_WINDOW = 200;
+
 /** Pending delivery recoveries examined per tick. */
 const DELIVERY_RECOVERY_BATCH = 25;
 
@@ -594,14 +604,17 @@ export const executeNativeMorningBriefTick$ = command(
     //    installed brief has no durable native row yet. It only ever writes a
     //    `legacy`-phase row, so it is never a cutover on its own.
     for (const owner of await loadBootstrapCandidates(db, {
-      limit: DUE_OWNER_BATCH,
+      limit: BOOTSTRAP_SCAN_WINDOW,
     })) {
-      if (overBudget()) {
-        return exhausted();
+      if (overBudget() || counters.materialized >= DUE_OWNER_BATCH) {
+        break;
       }
       const membershipId = await set(currentMembershipId$, owner, deadline);
       signal.throwIfAborted();
       if (membershipId === null) {
+        // The member no longer resolves, so nothing can be materialized for
+        // them. Skipping without consuming the work budget is what keeps a
+        // backlog of such owners from starving members that can still migrate.
         continue;
       }
       await db.transaction(async (tx) => {

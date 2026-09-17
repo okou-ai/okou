@@ -16,6 +16,7 @@ import { tapError } from "../utils";
 import { transitionAgentRunsToTerminal } from "./agent-run-terminal-transition.service";
 import { revokeMorningBriefNativeAuthority } from "./morning-brief-native-schedule.service";
 import { revokeMorningBriefCollectionOwnership } from "./morning-brief-collection-occurrence.service";
+import { revokeMorningBriefScheduleOwnership } from "./morning-brief-schedule-claim.service";
 
 import type { Db } from "../external/db";
 
@@ -154,6 +155,14 @@ async function revokeOrgMemberRunAuthority(
       { kind: "membership", orgId: args.orgId, userId: args.userId },
       revokedAt,
     );
+
+    // The departing member's legacy schedule occurrences lose the same
+    // authority here, before the rows they hang from are torn down.
+    await revokeMorningBriefScheduleOwnership(tx, {
+      kind: "membership",
+      orgId: args.orgId,
+      userId: args.userId,
+    });
 
     // The durable native authority goes with them: the epoch is bumped so no
     // admitted occurrence can still deliver or settle, and the scheduling
