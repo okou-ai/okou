@@ -5628,9 +5628,12 @@
         "codexDescription": "Codex 지원 모델 경로를 위한 Codex 기기 로그인 연결",
         "codexTitle": "ChatGPT (Codex)",
         "description": "본인의 자격 증명으로 실행 시에만 사용됩니다.",
+        "disconnectAccount": "계정 연결 해제",
+        "disconnectDescription": "Okou에서 계정을 제거합니다. 공급자 구독은 취소되지 않습니다.",
+        "disconnecting": "연결 해제 중…",
+        "disconnectTitle": "{{account}}의 연결을 해제할까요?",
         "noAccounts": "연결된 계정이 없습니다.",
         "reconnectAccount": "다시 연결",
-        "removeAccount": "삭제",
         "sectionTitle": "개인",
         "status": {
           "connected": "연결됨",
@@ -5756,7 +5759,7 @@
         "codexTitle": "ChatGPT 세션 재연결 필요"
       },
       "toasts": {
-        "accountRemoved": "계정이 삭제되었습니다",
+        "accountDisconnected": "계정 연결이 해제되었습니다",
         "accountSwitched": "활성 계정이 변경되었습니다",
         "disconnected": "{{provider}} 연결 해제됨",
         "policiesUpdated": "모델 공급자 설정이 업데이트되었습니다.",

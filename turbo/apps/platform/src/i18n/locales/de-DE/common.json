@@ -5641,9 +5641,12 @@
         "codexDescription": "Stellen Sie eine Verbindung mit der Codex-Geräteanmeldung her, um von Codex unterstützte Modellrouten zu erhalten.",
         "codexTitle": "ChatGPT (Codex)",
         "description": "Wird nur bei Ihren Ausführungen mit Ihren eigenen Anmeldeinformationen verwendet.",
+        "disconnectAccount": "Konto trennen",
+        "disconnectDescription": "Dadurch wird das Konto aus Okou entfernt. Ihr Abonnement beim Anbieter wird nicht gekündigt.",
+        "disconnecting": "Verbindung wird getrennt…",
+        "disconnectTitle": "{{account}} trennen?",
         "noAccounts": "Keine Konten verbunden.",
         "reconnectAccount": "Erneut verbinden",
-        "removeAccount": "Entfernen",
         "sectionTitle": "Persönlich",
         "status": {
           "connected": "Verbunden",
@@ -5770,7 +5773,7 @@
         "codexTitle": "Die ChatGPT-Sitzung muss erneut verbunden werden"
       },
       "toasts": {
-        "accountRemoved": "Konto entfernt",
+        "accountDisconnected": "Konto getrennt",
         "accountSwitched": "Aktives Konto gewechselt",
         "disconnected": "{{provider}} getrennt",
         "policiesUpdated": "Modellanbietereinstellungen aktualisiert",

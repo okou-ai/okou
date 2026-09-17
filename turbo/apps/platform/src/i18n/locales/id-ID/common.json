@@ -5628,9 +5628,12 @@
         "codexDescription": "Hubungkan dengan login perangkat Codex untuk rute model berbasis Codex.",
         "codexTitle": "ChatGPT (Codex)",
         "description": "Hanya digunakan di eksekusi Anda, dengan kredensial Anda sendiri.",
+        "disconnectAccount": "Putuskan akun",
+        "disconnectDescription": "Ini menghapus akun dari Okou. Langganan Anda dengan penyedia tidak akan dibatalkan.",
+        "disconnecting": "Memutuskan…",
+        "disconnectTitle": "Putuskan {{account}}?",
         "noAccounts": "Belum ada akun terhubung.",
         "reconnectAccount": "Hubungkan ulang",
-        "removeAccount": "Hapus",
         "sectionTitle": "Pribadi",
         "status": {
           "connected": "Terhubung",
@@ -5756,7 +5759,7 @@
         "codexTitle": "Sesi ChatGPT perlu disambungkan ulang"
       },
       "toasts": {
-        "accountRemoved": "Akun dihapus",
+        "accountDisconnected": "Akun diputuskan",
         "accountSwitched": "Akun aktif diganti",
         "disconnected": "{{provider}} terputus",
         "policiesUpdated": "Pengaturan provider model diperbarui",

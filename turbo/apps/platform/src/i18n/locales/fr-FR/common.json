@@ -5700,9 +5700,12 @@
         "codexDescription": "Connectez-vous avec l'appareil Codex pour les itinéraires de modèles soutenus par Codex.",
         "codexTitle": "ChatGPT (Codex)",
         "description": "Utilisé uniquement dans vos sessions, avec vos propres identifiants.",
+        "disconnectAccount": "Déconnecter le compte",
+        "disconnectDescription": "Cette action supprime le compte d’Okou. Elle n’annule pas votre abonnement auprès du fournisseur.",
+        "disconnecting": "Déconnexion…",
+        "disconnectTitle": "Déconnecter {{account}} ?",
         "noAccounts": "Aucun compte connecté.",
         "reconnectAccount": "Reconnecter",
-        "removeAccount": "Supprimer",
         "sectionTitle": "Personnel",
         "status": {
           "connected": "Connecté",
@@ -5831,7 +5834,7 @@
         "codexTitle": "La session ChatGPT nécessite une reconnexion"
       },
       "toasts": {
-        "accountRemoved": "Compte supprimé",
+        "accountDisconnected": "Compte déconnecté",
         "accountSwitched": "Compte actif changé",
         "disconnected": "{{provider}} déconnecté",
         "policiesUpdated": "Paramètres du fournisseur de modèle mis à jour",

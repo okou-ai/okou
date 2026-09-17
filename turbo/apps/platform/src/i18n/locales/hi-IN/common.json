@@ -5641,9 +5641,12 @@
         "codexDescription": "Codex-समर्थित मॉडल मार्गों के लिए Codex डिवाइस लॉगिन से कनेक्ट करें।",
         "codexTitle": "ChatGPT (Codex)",
         "description": "केवल आपके रनों में, आपकी अपनी साख के साथ उपयोग किया जाता है।",
+        "disconnectAccount": "खाता डिस्कनेक्ट करें",
+        "disconnectDescription": "इससे खाता Okou से हट जाएगा। इससे प्रदाता की आपकी सदस्यता रद्द नहीं होगी।",
+        "disconnecting": "डिस्कनेक्ट हो रहा है…",
+        "disconnectTitle": "{{account}} को डिस्कनेक्ट करें?",
         "noAccounts": "कोई खाता कनेक्ट नहीं है।",
         "reconnectAccount": "फिर से कनेक्ट करें",
-        "removeAccount": "हटाएँ",
         "sectionTitle": "निजी",
         "status": {
           "connected": "जुड़े हुए",
@@ -5770,7 +5773,7 @@
         "codexTitle": "ChatGPT सत्र को पुनः कनेक्ट करने की आवश्यकता है"
       },
       "toasts": {
-        "accountRemoved": "खाता हटा दिया गया",
+        "accountDisconnected": "खाता डिस्कनेक्ट हो गया",
         "accountSwitched": "सक्रिय खाता बदल दिया गया",
         "disconnected": "{{provider}} डिस्कनेक्ट हो गया",
         "policiesUpdated": "मॉडल प्रोवाइडर सेटिंग अपडेट की गईं",

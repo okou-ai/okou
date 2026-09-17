@@ -5700,9 +5700,12 @@
         "codexDescription": "Conecta tu cuenta mediante el inicio de sesión de dispositivo de Codex para usar rutas de modelos basadas en Codex.",
         "codexTitle": "ChatGPT (Codex)",
         "description": "Solo se usa en tus ejecuciones y con tus propias credenciales.",
+        "disconnectAccount": "Desconectar cuenta",
+        "disconnectDescription": "Esto elimina la cuenta de Okou. No cancelará tu suscripción con el proveedor.",
+        "disconnecting": "Desconectando…",
+        "disconnectTitle": "¿Desconectar {{account}}?",
         "noAccounts": "No hay cuentas conectadas.",
         "reconnectAccount": "Volver a conectar",
-        "removeAccount": "Eliminar",
         "sectionTitle": "Personal",
         "status": {
           "connected": "Conectado",
@@ -5831,7 +5834,7 @@
         "codexTitle": "La sesión de ChatGPT necesita reconexión"
       },
       "toasts": {
-        "accountRemoved": "Cuenta eliminada",
+        "accountDisconnected": "Cuenta desconectada",
         "accountSwitched": "Cuenta activa cambiada",
         "disconnected": "{{provider}} desconectado",
         "policiesUpdated": "Configuración del proveedor de modelos actualizada",
