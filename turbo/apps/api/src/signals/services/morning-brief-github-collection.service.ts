@@ -16,8 +16,11 @@ import { safeUrlParse } from "../utils";
 import type { ClerkClient } from "../external/clerk";
 import {
   admitMorningBriefCollection,
+  freezeMorningBriefSourceSelection,
+  startMorningBriefSourceDeadline,
   withMorningBriefConnectorReader,
   type MorningBriefCollectionScope,
+  type MorningBriefSourceAuthorityLedger,
   type MorningBriefConnectorReader,
   type MorningBriefReadOutcome,
   type MorningBriefResponseMetadata,
@@ -170,8 +173,17 @@ function safeSegment(segment: string): boolean {
   );
 }
 
+/** The exact authority a provider URL has to spell for this module to read it. */
+const GITHUB_API_AUTHORITY = "api.github.com";
+
+/** The literal path a provider URL spells, kept next to its own segments. */
+interface LiteralPath {
+  readonly path: string;
+  readonly segments: readonly string[];
+}
+
 /**
- * The path segments a provider URL literally contains, or `null`.
+ * The path a provider URL literally contains, or `null`.
  *
  * A general URL parser normalizes before anything can inspect it: it
  * percent-decodes and then resolves dot segments, so
@@ -180,41 +192,55 @@ function safeSegment(segment: string): boolean {
  * provider never named. The raw text is therefore read first, and any percent
  * escape, backslash or `.`/`..` segment is refused before a parser can
  * normalize the evidence away.
+ *
+ * The scan has to start at the authority rather than at the first `/`. A URL
+ * parser treats a backslash as a path separator for a special scheme, so
+ * `https://api.github.com\extra/repos/acme/api/pulls/7` really names the path
+ * `/extra/repos/acme/api/pulls/7`, while a scan that begins at the first
+ * forward slash reads `/repos/acme/api/pulls/7` and hands back an identity that
+ * URL never named. `https://api.github.com\../repos/acme/api/pulls/7` hides a
+ * dot segment the same way. The authority is therefore matched literally, and
+ * the first separator after it must be the `/` that starts the path.
  */
-function literalPathSegments(value: string): readonly string[] | null {
+function literalPathSegments(value: string): LiteralPath | null {
   const scheme = "https://";
   if (!value.startsWith(scheme)) {
     return null;
   }
   const afterScheme = value.slice(scheme.length);
-  const pathStart = afterScheme.search(/[/?#]/);
+  // Every character that can end an authority, not only the ones that look
+  // like a path separator in this source file.
+  const pathStart = afterScheme.search(/[/\\?#]/);
   if (pathStart < 0 || afterScheme[pathStart] !== "/") {
     return null;
   }
-  const rawPath = afterScheme.slice(pathStart).split(/[?#]/)[0] ?? "";
-  if (rawPath.includes("%") || rawPath.includes("\\")) {
+  // The host is the only case-insensitive part of a URL, and a port, userinfo
+  // or any other authority text is not this API's authority.
+  if (afterScheme.slice(0, pathStart).toLowerCase() !== GITHUB_API_AUTHORITY) {
     return null;
   }
-  const segments = rawPath.split("/").filter((segment) => {
+  const path = afterScheme.slice(pathStart).split(/[?#]/)[0] ?? "";
+  if (path.includes("%") || path.includes("\\")) {
+    return null;
+  }
+  const segments = path.split("/").filter((segment) => {
     return segment.length > 0;
   });
   return segments.some((segment) => {
     return segment === "." || segment === "..";
   })
     ? null
-    : segments;
+    : { path, segments };
 }
 
 /**
  * Exactly the expected HTTPS API origin, with nothing a credential could ride
  * on: no userinfo, no other host or port, no query and no fragment.
  */
-function isGithubApiOrigin(value: string): boolean {
-  const url = safeUrlParse(value);
+function isGithubApiOrigin(url: URL): boolean {
   return (
-    url !== undefined &&
     url.protocol === "https:" &&
-    url.host === "api.github.com" &&
+    url.host === GITHUB_API_AUTHORITY &&
     url.username === "" &&
     url.password === "" &&
     url.hash === "" &&
@@ -222,9 +248,23 @@ function isGithubApiOrigin(value: string): boolean {
   );
 }
 
-/** The literal segments of a provider URL that is also on the API origin. */
+/**
+ * The literal segments of a provider URL that is also on the API origin.
+ *
+ * The identity may only come from exactly the path that was validated, so the
+ * literal text and the parser have to agree on what that path is. Any
+ * disagreement means the URL was ambiguous, whatever the ambiguity was, and an
+ * ambiguous URL names no identity here.
+ */
 function apiUrlSegments(value: string): readonly string[] | null {
-  return isGithubApiOrigin(value) ? literalPathSegments(value) : null;
+  const url = safeUrlParse(value);
+  if (url === undefined || !isGithubApiOrigin(url)) {
+    return null;
+  }
+  const literal = literalPathSegments(value);
+  return literal === null || url.pathname !== literal.path
+    ? null
+    : literal.segments;
 }
 
 /**
@@ -563,6 +603,97 @@ function recordFailure(
         : "provider-failed",
   );
   return { revoked: false, throttled: false };
+}
+
+/**
+ * GitHub's own documented check vocabulary.
+ *
+ * A schema that accepts `z.string()` proves the payload had a string there, not
+ * that the string is a state this reader knows how to interpret, so the
+ * recognized values are written out. Every one of them comes from the
+ * provider's published contract: check-run `status` and `conclusion` from
+ * [the checks API](https://docs.github.com/en/rest/checks/runs), where `stale`
+ * is documented as a conclusion only GitHub itself sets, and commit-status
+ * `state` from
+ * [the statuses API](https://docs.github.com/en/rest/commits/statuses).
+ */
+const GITHUB_CHECK_RUN_COMPLETED_STATUS = "completed";
+
+/** Statuses that mean the run has not finished yet. */
+const GITHUB_CHECK_RUN_IN_FLIGHT_STATUSES: Readonly<Set<string>> = new Set([
+  "queued",
+  "in_progress",
+  "waiting",
+  "requested",
+  "pending",
+]);
+
+/** Conclusions GitHub documents as a completed run that does not block. */
+const GITHUB_CHECK_RUN_PASSING_CONCLUSIONS: Readonly<Set<string>> = new Set([
+  "success",
+  "neutral",
+  "skipped",
+]);
+
+/** Conclusions GitHub documents as a completed run that did not pass. */
+const GITHUB_CHECK_RUN_FAILING_CONCLUSIONS: Readonly<Set<string>> = new Set([
+  "action_required",
+  "cancelled",
+  "failure",
+  "stale",
+  "startup_failure",
+  "timed_out",
+]);
+
+/** Commit-status context states that are neither pending nor success. */
+const GITHUB_STATUS_FAILING_STATES: Readonly<Set<string>> = new Set([
+  "error",
+  "failure",
+]);
+
+/**
+ * What one check contributed, including "nothing this reader can interpret".
+ *
+ * `unrecognized` is deliberately its own answer. An absent conclusion on a
+ * `completed` run, a status outside the documented lifecycle and a context
+ * state GitHub never defined are all payloads this reader cannot turn into a
+ * fact, and inventing the nearest one would report a failure or a pending run
+ * the provider never described.
+ */
+type CheckVerdict = "failing" | "pending" | "succeeded" | "unrecognized";
+
+function checkRunVerdict(run: {
+  readonly status: string;
+  readonly conclusion?: string | null;
+}): CheckVerdict {
+  if (GITHUB_CHECK_RUN_IN_FLIGHT_STATUSES.has(run.status)) {
+    return "pending";
+  }
+  if (run.status !== GITHUB_CHECK_RUN_COMPLETED_STATUS) {
+    return "unrecognized";
+  }
+  // GitHub's own contract requires a conclusion once a run is `completed`, so a
+  // missing one is a payload that contradicts itself rather than a failure.
+  const conclusion = run.conclusion;
+  if (typeof conclusion !== "string") {
+    return "unrecognized";
+  }
+  if (GITHUB_CHECK_RUN_PASSING_CONCLUSIONS.has(conclusion)) {
+    return "succeeded";
+  }
+  return GITHUB_CHECK_RUN_FAILING_CONCLUSIONS.has(conclusion)
+    ? "failing"
+    : "unrecognized";
+}
+
+function statusContextVerdict(state: string): CheckVerdict {
+  if (state === "pending") {
+    return "pending";
+  }
+  if (state === "success") {
+    return "succeeded";
+  }
+  return GITHUB_STATUS_FAILING_STATES.has(state) ? "failing" : "unrecognized";
 }
 
 /** The running check tally for one pull request head. */
@@ -1062,9 +1193,10 @@ class GithubPrioritiesCollector {
    * Record that a check surface was read only in part.
    *
    * A provider-declared next page is a page this single-page budget will not
-   * read, and it stays a gap even when `total_count` claims the returned array
-   * is everything: conflicting pagination facts resolve to an explicit gap,
-   * never to green.
+   * read, and a reported total that disagrees with the returned array — in
+   * either direction — is the provider contradicting itself about how much of
+   * the surface this page holds. Either way the surface is not fully read, and
+   * conflicting pagination facts resolve to an explicit gap, never to green.
    */
   private incompleteChecks(
     tally: CheckTally,
@@ -1078,6 +1210,37 @@ class GithubPrioritiesCollector {
     this.checks.limit(limit);
   }
 
+  /**
+   * Fold one recognized check into the tally, or record that it was not one.
+   *
+   * An uninterpretable state contributes no count in any direction. It is a
+   * coverage gap on this head, so the summarization step sees an explicitly
+   * incomplete check surface instead of a fact GitHub never stated, while the
+   * siblings this page did describe keep counting normally. The gap is the same
+   * kind of unusable payload a bad search row records, so it takes the same
+   * `malformed-response` limit.
+   */
+  private applyCheckVerdict(
+    tally: CheckTally,
+    verdict: CheckVerdict,
+    name: string,
+  ): void {
+    if (verdict === "failing") {
+      recordFailingName(tally, name);
+      return;
+    }
+    if (verdict === "pending") {
+      tally.pending += 1;
+      return;
+    }
+    if (verdict === "succeeded") {
+      tally.succeeded += 1;
+      return;
+    }
+    tally.incomplete = true;
+    this.checks.limit("malformed-response");
+  }
+
   /** Fold one bounded check-runs page into the running tally. */
   private tallyCheckRuns(
     tally: CheckTally,
@@ -1086,24 +1249,12 @@ class GithubPrioritiesCollector {
   ): void {
     this.checks.page();
     for (const run of page.check_runs) {
-      if (run.status !== "completed") {
-        tally.pending += 1;
-        continue;
-      }
-      if (
-        run.conclusion === "success" ||
-        run.conclusion === "neutral" ||
-        run.conclusion === "skipped"
-      ) {
-        tally.succeeded += 1;
-        continue;
-      }
-      recordFailingName(tally, run.name);
+      this.applyCheckVerdict(tally, checkRunVerdict(run), run.name);
     }
     this.incompleteChecks(
       tally,
       "check-runs",
-      meta.hasNextPage || page.total_count > page.check_runs.length,
+      meta.hasNextPage || page.total_count !== page.check_runs.length,
     );
   }
 
@@ -1115,20 +1266,16 @@ class GithubPrioritiesCollector {
   ): void {
     this.checks.page();
     for (const context of page.statuses) {
-      if (context.state === "pending") {
-        tally.pending += 1;
-        continue;
-      }
-      if (context.state === "success") {
-        tally.succeeded += 1;
-        continue;
-      }
-      recordFailingName(tally, context.context);
+      this.applyCheckVerdict(
+        tally,
+        statusContextVerdict(context.state),
+        context.context,
+      );
     }
     this.incompleteChecks(
       tally,
       "commit-status",
-      meta.hasNextPage || page.total_count > page.statuses.length,
+      meta.hasNextPage || page.total_count !== page.statuses.length,
     );
   }
 
@@ -1456,6 +1603,14 @@ export async function executeMorningBriefGithubCollection(
     readonly clerk: ClerkClient;
     readonly owner: { readonly orgId: string; readonly userId: string };
     readonly anchor: Date;
+    /**
+     * The account choice frozen for this attempt, and this read's proof.
+     *
+     * Null lets this collector own its own admission and freeze the choice
+     * itself, which is what its single-source preview does. The composition
+     * freezes every source before any of them reads and supplies it here.
+     */
+    readonly authority: MorningBriefSourceAuthorityLedger | null;
   },
   signal: AbortSignal,
 ): Promise<MorningBriefGithubExecution> {
@@ -1465,6 +1620,13 @@ export async function executeMorningBriefGithubCollection(
     return invalid;
   }
 
+  // One absolute deadline covers this whole source, and it starts before the
+  // admission that reads canonical state and this member's live membership, so
+  // a slow preflight shortens the collection rather than earning a fresh
+  // budget.
+  const deadline = startMorningBriefSourceDeadline(
+    MORNING_BRIEF_GITHUB_BUDGET.deadlineMs,
+  );
   const admitted = await admitMorningBriefCollection(
     {
       db: args.db,
@@ -1472,6 +1634,7 @@ export async function executeMorningBriefGithubCollection(
       orgId: args.owner.orgId,
       userId: args.owner.userId,
       anchor: args.anchor,
+      deadline,
     },
     signal,
   );
@@ -1480,8 +1643,18 @@ export async function executeMorningBriefGithubCollection(
     return { kind: "not-executed", reason: admitted.reason };
   }
 
-  // The shared reader owns the absolute deadline for the whole source, so this
-  // passes the caller's signal and lets the wrapper bound it.
+  // A caller that reads several sources freezes every account choice before any
+  // of them starts; this single-source entry point has nothing to read beside
+  // it, so its own admission is that moment.
+  const authority =
+    args.authority ??
+    (await freezeMorningBriefSourceSelection(
+      args.db,
+      admitted.scope,
+      GITHUB_CONNECTOR_SLUG,
+    ));
+  signal.throwIfAborted();
+
   const access = await withMorningBriefConnectorReader(
     {
       scope: admitted.scope,
@@ -1493,10 +1666,11 @@ export async function executeMorningBriefGithubCollection(
         maxResponseBytes: MORNING_BRIEF_GITHUB_BUDGET.maxResponseBytes,
         maxTotalResponseBytes:
           MORNING_BRIEF_GITHUB_BUDGET.maxTotalResponseBytes,
-        deadlineMs: MORNING_BRIEF_GITHUB_BUDGET.deadlineMs,
       },
+      deadline,
       db: args.db,
       clerk: args.clerk,
+      authority,
     },
     async (reader) => {
       return await collectMorningBriefGithubPriorities(

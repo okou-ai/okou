@@ -148,10 +148,33 @@ bounded page number.
   denied, paginated or unreadable check surface is `unknown`, never `success`.
   Check runs and combined status each get one bounded page, and a `Link` next
   page keeps that surface incomplete even when `total_count` claims the
-  returned array is all of it. Conflicting pagination facts resolve to an
-  explicit gap, never to green. An actually observed failing or pending context
-  is a stronger fact than the unread page and still reports `failing` or
-  `pending`. Page two is never requested.
+  returned array is all of it. A `total_count` that disagrees with the array it
+  arrived with — in **either** direction — is the provider contradicting itself
+  about how much of the surface this page holds, and is recorded the same way.
+  Conflicting pagination facts resolve to an explicit gap, never to green. An
+  actually observed failing or pending context is a stronger fact than the
+  unread page and still reports `failing` or `pending`. Page two is never
+  requested.
+- Check state is interpreted through **GitHub's own documented vocabulary**,
+  written out rather than inferred from what a state is not. A response schema
+  that accepts a string proves the payload had a string there, not that the
+  string is a state this reader knows.
+
+  | Surface                | Recognized values                                                                                                               |
+  | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+  | Check-run `status`     | `completed`; `queued`, `in_progress`, `waiting`, `requested`, `pending` are still running                                       |
+  | Check-run `conclusion` | `success`, `neutral`, `skipped` pass; `action_required`, `cancelled`, `failure`, `stale`, `startup_failure`, `timed_out` do not |
+  | Status context `state` | `pending`, `success`, and `error`/`failure` as failures                                                                         |
+
+  Anything else is a state this reader cannot interpret, and an uninterpretable
+  state is a **coverage gap rather than a new fact**: it adds nothing to
+  `failing`, `pending` or `succeeded`, marks the summary `incomplete`, and
+  records `malformed-response` on the checks branch. `completed` with an absent
+  or `null` conclusion contradicts GitHub's own contract and is treated the same
+  way — it is not a failure. One uninterpretable entry never discards a readable
+  sibling: a real failing or pending check on the same head still reports
+  `failing` or `pending`, alongside the explicit incompleteness, and a head
+  whose checks were all read and all passed still reports `success`.
 
 ### Provider-supplied URLs are data
 
@@ -168,7 +191,22 @@ parser percent-decodes and then resolves dot segments, so
 check against the parsed pathname would find nothing wrong with a repository
 the provider never named. Any percent escape, backslash, `.` or `..` segment is
 therefore refused first, and the surviving literal segments are validated
-individually. Paths are then **rebuilt** from those segments. Pagination is
+individually.
+
+The raw read starts at the **authority**, not at the first `/`. A URL parser
+treats a backslash as a path separator for a special scheme, so
+`https://api.github.com\extra/repos/acme/api/pulls/7` really names the path
+`/extra/repos/acme/api/pulls/7`, and `https://api.github.com\../repos/acme/api/pulls/7`
+hides a dot segment the same way. A scan that begins at the first forward slash
+reads `/repos/acme/api/pulls/7` in both cases and returns an identity neither
+URL names. The authority is therefore matched literally against
+`api.github.com` — case-insensitively, since the host is the one
+case-insensitive part of a URL — and the first separator after it must be the
+`/` that starts the path. The literal path and the parsed `pathname` must then
+agree exactly: a URL the text and the parser read differently is ambiguous, and
+an ambiguous URL names no identity here, whatever the ambiguity was.
+
+Paths are then **rebuilt** from the validated segments. Pagination is
 constructed internally from bounded page numbers. Display links are likewise
 rebuilt, so an HTTP(S) link in the bundle is data the summarization step may
 show, not a fetch instruction.
@@ -203,10 +241,13 @@ documented projection of the items the bundle actually emits:
 
 Every one of those is provider-influenced text that reaches the summarization
 step, so charging only the title and excerpt would report a bound that is not
-being enforced: fifty items with a 140-character repository name and a
-39-character actor are already past 40,000 characters before a single title is
-counted. Fixed enum-like fields, numbers and timestamps are bounded by the item
-cap instead and are deliberately not charged.
+being enforced. Fifty items at the field bounds — a 140-character repository
+name, a 200-character title, a 500-character excerpt, a 39-character actor and
+the 169-character display link rebuilt from that repository — project
+`50 × 1,048 = 52,400` characters. A counter that charged only the title and
+excerpt would see `50 × 700 = 35,000`, admit all fifty, and report a 40,000
+bound it was not enforcing. Fixed enum-like fields, numbers and timestamps are
+bounded by the item cap instead and are deliberately not charged.
 
 Items are emitted most-recently-updated first, and the first item that would
 cross the cap stops the projection. Dropping items that way records
@@ -265,6 +306,29 @@ not re-derive coverage from the items:
   plus excerpt, so the same bundle now reports a larger number and can carry
   fewer items. Consumers must not assume the collector's cap leaves room for
   their own budget; they should measure the items they receive.
+- `checks.state` distinguishes three things a consumer must not merge.
+  `failing` and `pending` are facts GitHub stated; `success` means the whole
+  surface was read and nothing failed or was pending; `unknown` means the
+  surface was denied, truncated, contradictory, or carried state outside
+  GitHub's documented vocabulary. `unknown` is never a quiet `success`, and
+  `checks.incomplete` can be `true` alongside a `failing` or `pending` state,
+  because a readable failure and an unread remainder are both true at once.
+  Consumers should report `unknown` as unread rather than as a healthy head.
+- `limits` gains `malformed-response` on the checks branch when a check surface
+  carried an uninterpretable state, which is the same value an unusable search
+  row already records. Consumers that validate through
+  `morningBriefGithubLimitSchema` need no change.
+
+### Evidence boundary
+
+Behavior here is established through the **registered preview route**, the real
+shared connector reader and HTTP boundary doubles for `api.github.com`. A probe
+that calls the collector's own functions with synthetic reader responses can
+show a local decision, but it does not exercise the route, admission, the
+credential path, the reader's budgets or the real response handling, so it
+cannot establish that the deployed application behaves the same way. Claims
+about this collector should cite the route suite rather than a source-extracted
+probe.
 
 ## Non-goals
 

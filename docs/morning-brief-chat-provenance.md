@@ -128,13 +128,75 @@ Per thread the collector returns at most 10 visible message excerpts belonging
 to the unread terminal Run, bounded by the thread's frozen sequence position.
 Thinking, control rows, automation instruction bodies, budget and usage rows,
 and revoked or replaced inputs are excluded by construction. Each excerpt is
-capped at 4 KiB UTF-8, the whole collection at 64 KiB of text and 15 seconds,
-and a stored event larger than 64 KiB becomes an explicit coverage gap rather
-than a decoded excerpt. No snapshot or archive is read. Source text is data,
-never instructions.
+capped at 4 KiB UTF-8, the whole collection at 64 KiB of text, and a stored
+event larger than 64 KiB becomes an explicit coverage gap rather than a decoded
+excerpt. No snapshot or archive is read. Source text is data, never
+instructions.
 
 Collection writes nothing: no read watermark, message, Run, result or e-mail,
 and no provenance repair.
+
+### The admitted authority, and the fence that releases it
+
+Admission goes through the shared connector-free
+[`admitMorningBriefCollection`](../turbo/apps/api/src/signals/services/morning-brief-connector-reader.service.ts),
+so unread Chat admits on the same authority the OAuth sources do, including the
+default-off `simpleMorningBrief` switch. It freezes one scope for the whole
+attempt:
+
+| Frozen field       | What a change to it means                                                        |
+| ------------------ | -------------------------------------------------------------------------------- |
+| `orgId` / `userId` | The authenticated caller. Never accepted as input.                               |
+| `membershipId`     | The immutable Clerk membership generation. A removal and rejoin issues a new id. |
+| `installationId`   | The canonical Morning Brief installation this attempt speaks for.                |
+| `agentId`          | The Agent that installation runs on.                                             |
+| `chatThreadId`     | The destination thread, excluded from its own collection.                        |
+
+Before any envelope is released, `morningBriefScopeIsCurrent` re-derives all of
+it live: the subjects are still open, the member still holds **that same**
+membership generation, the canonical brief is still **that same** installed and
+enabled installation on **that same** Agent, and the Agent is still visible to
+them. A different enabled installation, a membership that left and rejoined, and
+a brief Agent that became private under another owner all withhold the payload.
+The same function runs once at admission, so an admitted scope is one the
+release check would accept; that costs one extra membership read per attempt and
+is deliberate.
+
+This is admission and release fencing, not instantaneous revocation. Work
+already executing inside PostgreSQL is not retracted, and a collection that
+already returned a body is not recalled by a later change — the guarantee is
+that nothing is _released_ under authority that no longer holds.
+
+The per-thread erasure admission, the source-Agent and thread-owner checks and
+the thread row lock below are unchanged and still authoritative for the thread
+a body comes from. The whole-owner fence is about the member and their brief.
+
+### One attempt budget
+
+A single absolute 15-second budget starts **before** admission and is shared by
+admission's network membership read, candidate discovery, every thread read and
+the final authority check. Nothing in the attempt starts a second clock. It is
+the shared `MorningBriefSourceDeadline` every Morning Brief source spends, so
+the admission preflight observes this attempt's own budget rather than opening
+one of its own; the attempt adds the candidate reserve below on top of it.
+
+- The last 3 seconds are reserved for the final authority check. Candidate work
+  stops there, because content that cannot be re-authorized may not be released
+  at all, and a loop that spent the whole budget would leave the fence nothing.
+- The clock is re-read _after_ every blocking boundary and before content is
+  accepted, including at equality: a thread read that returns exactly at the
+  boundary is expired. Neither its excerpts nor its refusal reason is reported;
+  the attempt records `deadline_exceeded` and partial coverage instead.
+- Each transaction takes the smaller of its own cap and the remaining budget as
+  its `lock_timeout` and `statement_timeout`, so a wait is cancelled by
+  PostgreSQL rather than abandoned behind a promise race.
+- An attempt that cannot finish admission, discovery or the final check inside
+  the budget answers `503 REQUEST_DEADLINE_EXCEEDED` and releases nothing — not
+  items, and not the thread ids that would describe them. A deadline is never
+  reported as a healthy empty inbox: `result: "empty"` with complete coverage
+  only ever describes an attempt that finished.
+- Caller cancellation still propagates and fails the request; it is not
+  converted into an envelope.
 
 ### The linearization point
 
@@ -161,6 +223,27 @@ closed subject must not release that subject's Chat content either, and taking
 the same shared admission means a closure waits for an in-flight collection
 instead of completing while one is still reading. A whole-owner invalidation
 discards the entire payload rather than part of it.
+
+### What the tests do and do not establish
+
+Every authority and budget case runs through the registered preview route with a
+real request, a real PostgreSQL wait and the real authorizer; only Clerk's own
+HTTP answers are doubled. The limits worth stating:
+
+- Suspension points are the ones a request really has — the Agent row lock, the
+  thread row lock and the live membership lookup. There is no test that stalls
+  candidate discovery itself; discovery's wait is bounded by its transaction's
+  budget-derived timeouts rather than staged in a case of its own.
+- The budget cases advance the process clock at a proven-blocked boundary
+  instead of waiting 15 real seconds. That exercises every clock comparison the
+  service makes, including equality, but not the wall-clock `AbortSignal`
+  timeout that bounds a genuinely hung network read in production.
+- `payloadBytes === null` — a stored event with no payload at all — is
+  unreachable through the content filter, which already requires decodable text,
+  so it stays a defensive branch rather than a covered case. The oversized
+  branch beside it is covered with a real oversized event.
+- The bounded-read failure case holds a row past the per-thread lock timeout, so
+  it proves a real timeout rather than an injected one.
 
 ## Migration and rollout
 

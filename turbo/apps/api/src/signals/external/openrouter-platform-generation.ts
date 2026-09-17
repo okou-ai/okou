@@ -5,8 +5,9 @@ import {
 } from "@okouai/db/schema/morning-brief-generation";
 
 import {
+  JsonNumberToken,
   readBoundedResponseText,
-  safeJsonParse,
+  safeExactJsonParse,
   settleIncludingAbort,
 } from "../utils";
 import { OPENROUTER_CHAT_COMPLETIONS_URL } from "./openrouter";
@@ -33,10 +34,11 @@ import { OPENROUTER_CHAT_COMPLETIONS_URL } from "./openrouter";
  *   zero and never derived from token counts. An explicitly reported zero is a
  *   known zero.
  * - **Every observation is durable as observed.** Counts and amounts are
- *   accepted against the exact domain the receipt columns hold, so what this
- *   adapter reports is what PostgreSQL stores and returns. A value outside that
- *   domain is *unavailable*: it is never rounded into an invented measurement,
- *   and it never takes a valid sibling field or a valid cost down with it.
+ *   accepted against the exact domain the receipt columns hold, judged on the
+ *   digits the provider actually sent, so what this adapter reports is what
+ *   PostgreSQL stores and returns. A value outside that domain is
+ *   *unavailable*: it is never rounded into an invented measurement, and it
+ *   never takes a valid sibling field or a valid cost down with it.
  * - **No payload escapes.** It never throws provider text, never logs a body
  *   and never carries the credential into its result.
  *
@@ -144,23 +146,86 @@ function property(value: unknown, key: string): unknown {
   return value[key as keyof typeof value];
 }
 
+/** `-?<digits>[.<digits>][e<±digits>]` — the entire JSON number grammar. */
+const JSON_NUMBER_TEXT = /^(-?)(\d+)(?:\.(\d+))?(?:[eE]([+-]?\d+))?$/;
+
+/**
+ * One reported number as the exact decimal it is, with no float in between.
+ *
+ * `digits` holds the significant digits — leading and trailing zeros removed —
+ * and `pointIndex` says how many of them precede the decimal point. It may be
+ * negative or larger than the digit count, which is how an exponent is
+ * described without ever materializing the zeros it stands for: `1e-400` is one
+ * digit at index `-399`, decided by arithmetic rather than by allocating four
+ * hundred characters. A token with no significant digits is exactly zero.
+ */
+interface ExactDecimal {
+  readonly negative: boolean;
+  readonly digits: string;
+  readonly pointIndex: number;
+}
+
+/**
+ * The exact decimal a provider field carries, or `null` if it carries none.
+ *
+ * Only a real JSON number qualifies. A numeric *string* is a different value in
+ * the provider's own contract and stays refused, which the token type enforces
+ * structurally rather than by inspecting text that happens to look numeric.
+ */
+function exactDecimal(value: unknown): ExactDecimal | null {
+  if (!(value instanceof JsonNumberToken)) {
+    return null;
+  }
+  const parsed = JSON_NUMBER_TEXT.exec(value.text);
+  if (!parsed) {
+    return null;
+  }
+  const [, sign = "", whole = "", fraction = "", exponent = "0"] = parsed;
+  const digits = `${whole}${fraction}`;
+  const leadingZeros = digits.length - digits.replace(/^0+/, "").length;
+  const significant = digits.slice(leadingZeros).replace(/0+$/, "");
+  return {
+    // `-0`, and `-0.000e9`, are exactly zero rather than a negative amount.
+    negative: sign === "-" && significant.length > 0,
+    digits: significant,
+    pointIndex: whole.length + Number(exponent) - leadingZeros,
+  };
+}
+
+/** The digits the receipt's `integer` column can hold at its widest. */
+const TOKEN_MAX_DIGITS = String(
+  MORNING_BRIEF_PLATFORM_RECEIPT_MAX_TOKENS,
+).length;
+
 /**
  * Provider counts are untrusted numbers; keep only counts the receipt holds.
  *
  * A fractional or out-of-range count is *unavailable*, not something to round:
  * truncating it would manufacture an exact-looking number the provider never
- * reported. The ceiling is the receipt column's own domain rather than
- * `Number.MAX_SAFE_INTEGER`, because a count above it is not stored wider — it
- * fails the whole INSERT and takes the observed cost and every sibling count
- * with it.
+ * reported. `2147483647.0000001` is a fractional count, not the ceiling, and
+ * only the reported digits can tell the two apart. The ceiling is the receipt
+ * column's own domain rather than `Number.MAX_SAFE_INTEGER`, because a count
+ * above it is not stored wider — it fails the whole INSERT and takes the
+ * observed cost and every sibling count with it.
  */
 function tokenCount(value: unknown): number | null {
-  return typeof value === "number" &&
-    Number.isInteger(value) &&
-    value >= 0 &&
-    value <= MORNING_BRIEF_PLATFORM_RECEIPT_MAX_TOKENS
-    ? value
-    : null;
+  const decimal = exactDecimal(value);
+  if (decimal === null || decimal.negative) {
+    return null;
+  }
+  if (decimal.digits.length === 0) {
+    return 0;
+  }
+  if (
+    // A digit after the point, or more integral digits than the column's
+    // largest value can have.
+    decimal.digits.length > decimal.pointIndex ||
+    decimal.pointIndex > TOKEN_MAX_DIGITS
+  ) {
+    return null;
+  }
+  const count = Number(decimal.digits.padEnd(decimal.pointIndex, "0"));
+  return count <= MORNING_BRIEF_PLATFORM_RECEIPT_MAX_TOKENS ? count : null;
 }
 
 function readTokens(usage: unknown): PlatformGenerationTokens {
@@ -185,65 +250,65 @@ const COST_MAX_INTEGRAL_DIGITS =
   MORNING_BRIEF_PLATFORM_RECEIPT_COST_PRECISION -
   MORNING_BRIEF_PLATFORM_RECEIPT_COST_SCALE;
 
-/** `<digits>[.<digits>][e<±digits>]`, the only shapes `String(number)` emits. */
-const NUMBER_TEXT = /^(\d+)(?:\.(\d+))?(?:[eE]([+-]?\d+))?$/;
-
 /**
  * The exact decimal the receipt column will hold, or `null` if it cannot.
  *
- * `String` gives the shortest decimal that round-trips the reported double, and
- * this shifts that decimal by its own exponent rather than reformatting through
- * floating point, so no digit is introduced or lost on the way. The result is
- * padded to the column's scale because that is the text PostgreSQL returns, so
- * one accepted amount reads back byte-identical to the amount first reported.
+ * The reported digits are placed around the decimal point by their own
+ * exponent, never reformatted through floating point, so no digit is introduced
+ * or lost on the way. The result is padded to the column's scale because that is
+ * the text PostgreSQL returns, so one accepted amount reads back byte-identical
+ * to the amount first reported.
  *
  * An amount needing finer digits than the scale, or more integral digits than
- * the precision leaves, has no exact representation here. Rounding `1e-13` into
- * the scale would publish a *durable reported zero* for a real nonzero charge,
- * so such an amount stays unavailable — an honest unknown, with the generation
- * id retained for out-of-band reconciliation.
+ * the precision leaves, has no exact representation here. Rounding `1e-13`, or
+ * `0.10000000000000001`, into the scale would publish a *durable reported
+ * amount the provider never named* — and for `1e-400` a durable reported zero
+ * for a real nonzero charge. Such an amount stays unavailable instead: an honest
+ * unknown, with the generation id retained for out-of-band reconciliation.
+ *
+ * Both bounds are checked by counting digits, so an absurd exponent is refused
+ * by arithmetic and never sized into a string.
  */
-function durableCostValue(cost: number): string | null {
-  const parsed = NUMBER_TEXT.exec(String(cost));
-  if (!parsed) {
+function durableCostValue(decimal: ExactDecimal): string | null {
+  if (decimal.negative) {
     return null;
   }
-  const [, whole = "", fraction = "", exponent = "0"] = parsed;
-  const digits = `${whole}${fraction}`;
-  const pointIndex = whole.length + Number(exponent);
+  const { digits, pointIndex } = decimal;
+  if (digits.length === 0) {
+    return `0.${"0".repeat(MORNING_BRIEF_PLATFORM_RECEIPT_COST_SCALE)}`;
+  }
+  if (
+    pointIndex > COST_MAX_INTEGRAL_DIGITS ||
+    digits.length - pointIndex > MORNING_BRIEF_PLATFORM_RECEIPT_COST_SCALE
+  ) {
+    return null;
+  }
   const integral =
-    pointIndex <= 0 ? "0" : digits.slice(0, pointIndex).padEnd(pointIndex, "0");
+    pointIndex <= 0 ? "0" : digits.padEnd(pointIndex, "0").slice(0, pointIndex);
   const fractional =
     pointIndex <= 0
       ? `${"0".repeat(-pointIndex)}${digits}`
       : digits.slice(pointIndex);
-  const significantIntegral = integral.replace(/^0+(?=\d)/, "");
-  const significantFractional = fractional.replace(/0+$/, "");
-  if (
-    significantIntegral.length > COST_MAX_INTEGRAL_DIGITS ||
-    significantFractional.length > MORNING_BRIEF_PLATFORM_RECEIPT_COST_SCALE
-  ) {
-    return null;
-  }
-  return `${significantIntegral}.${significantFractional.padEnd(MORNING_BRIEF_PLATFORM_RECEIPT_COST_SCALE, "0")}`;
+  return `${integral}.${fractional.padEnd(MORNING_BRIEF_PLATFORM_RECEIPT_COST_SCALE, "0")}`;
 }
 
 /**
  * Accept one reported amount, or report that none is known.
  *
- * Only a finite, non-negative JSON number the receipt column holds exactly
- * counts. A string, a negative value, `NaN`, a missing `usage` object, a
- * missing field and an amount outside the durable domain are all *unavailable*,
- * which is distinct from a reported `0`.
+ * Only a non-negative JSON number the receipt column holds exactly counts. A
+ * string, a negative value, a missing `usage` object, a missing field and an
+ * amount outside the durable domain are all *unavailable*, which is distinct
+ * from a reported `0`.
  */
 function reportedCost(
   cost: unknown,
   source: PlatformGenerationCostSource,
 ): PlatformGenerationCost {
-  if (typeof cost !== "number" || !Number.isFinite(cost) || cost < 0) {
+  const decimal = exactDecimal(cost);
+  if (decimal === null) {
     return { state: "unavailable" };
   }
-  const value = durableCostValue(cost);
+  const value = durableCostValue(decimal);
   return value === null
     ? { state: "unavailable" }
     : { state: "reported", value, unit: OPENROUTER_COST_UNIT, source };
@@ -353,8 +418,14 @@ export async function requestPlatformGeneration(
   if (body.value.kind !== "text") {
     return { kind: "response-unreadable" };
   }
-  const data = safeJsonParse(body.value.text);
-  if (typeof data !== "object" || data === null) {
+  // Parsed with the reported numbers preserved: an amount's exactness is part
+  // of this contract, and an ordinary parse decides it before anything here can.
+  const data = safeExactJsonParse(body.value.text);
+  if (
+    typeof data !== "object" ||
+    data === null ||
+    data instanceof JsonNumberToken
+  ) {
     return { kind: "response-unreadable" };
   }
   return { kind: "response", observation: observe(data) };
@@ -418,7 +489,7 @@ export async function lookupPlatformGenerationCost(
   if (!body.ok || body.value.kind !== "text") {
     return { state: "unavailable" };
   }
-  const data = property(safeJsonParse(body.value.text), "data");
+  const data = property(safeExactJsonParse(body.value.text), "data");
   if (property(data, "id") !== request.generationId) {
     // A record for a different generation says nothing about this one.
     return { state: "unavailable" };

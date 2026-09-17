@@ -558,15 +558,22 @@
     {
       "idx": 1157,
       "version": "7",
-      "when": 1789672637017,
-      "tag": "1157_morning_brief_deliveries_and_claims",
+      "when": 1789669312159,
+      "tag": "1157_morning_brief_deliveries",
       "breakpoints": true
     },
     {
       "idx": 1158,
       "version": "7",
-      "when": 1789672640783,
-      "tag": "1158_morning_brief_native_schedules",
+      "when": 1789675216970,
+      "tag": "1158_morning_brief_schedule_claims",
+      "breakpoints": true
+    },
+    {
+      "idx": 1159,
+      "version": "7",
+      "when": 1789675220847,
+      "tag": "1159_morning_brief_native_schedules",
       "breakpoints": true
     }
   ]

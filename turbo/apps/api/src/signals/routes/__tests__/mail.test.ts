@@ -623,7 +623,7 @@ describe("POST /api/mail/drafts/link", () => {
     ).resolves.toMatchObject({ connectionStatus: "connected" });
   });
 
-  it("uses the default for new drafts while preserving and deleting an exact pinned account", async () => {
+  async function preparePinnedNonDefaultGmailDraft() {
     const fixture = await seedGmailMailCardFixture();
     mockGmailDraftApi();
     const linked = await linkDraft(fixture);
@@ -648,14 +648,24 @@ describe("POST /api/mail/drafts/link", () => {
       isDefault: false,
     });
 
-    await accept(
+    return { fixture, linked, connectorId };
+  }
+
+  it("reads an existing draft pinned to a Gmail account that is no longer default", async () => {
+    const { linked } = await preparePinnedNonDefaultGmailDraft();
+
+    const response = await accept(
       client().getDraft({
         headers: authHeaders(),
         params: { mailDraftId: linked.body.mailDraftId },
       }),
       [200],
     );
+    expect(response.status).toBe(200);
+  });
 
+  it("requires a default Gmail account when linking a draft in a new thread", async () => {
+    const { fixture } = await preparePinnedNonDefaultGmailDraft();
     const newThread = await chat.createThread(fixture.actor, {
       agentId: fixture.agent.agentId,
       title: "Default Gmail projection",
@@ -674,7 +684,10 @@ describe("POST /api/mail/drafts/link", () => {
     expect(newDraft.body.error.message).toBe(
       "Connect and authorize Gmail for this agent first",
     );
+  });
 
+  it("clears the exact thread selection when its pinned Gmail account is deleted", async () => {
+    const { fixture, connectorId } = await preparePinnedNonDefaultGmailDraft();
     await connectors.deleteBuiltinConnectorAccount(
       fixture.actor,
       "gmail",
@@ -686,84 +699,70 @@ describe("POST /api/mail/drafts/link", () => {
         connectorId,
       }),
     ).resolves.toBeFalsy();
-
-    const deleteDefaultCustomConnectorAccountId = randomUUID();
-    const deleteCustomConnectorId = randomUUID();
-    await seedCustomConnectorRuntimeConnectors(context, {
-      orgId: fixture.actor.orgId ?? "",
-      userId: fixture.actor.userId,
-      agentId: fixture.agent.agentId,
-      customConnectors: [
-        {
-          id: deleteDefaultCustomConnectorAccountId,
-          slug: "_disconnect-selection-cleanup",
-          displayName: "Disconnect selection cleanup",
-          prefixTemplate: "https://disconnect-selection.example.com/",
-        },
-        {
-          id: deleteCustomConnectorId,
-          slug: "_delete-selection-cleanup",
-          displayName: "Delete selection cleanup",
-          prefixTemplate: "https://delete-selection.example.com/",
-        },
-      ],
-    });
-    const disconnectCustomStorage =
-      await readCustomConnectorCredentialStorageParent(context, {
-        orgId: fixture.actor.orgId ?? "",
-        userId: fixture.actor.userId,
-        customConnectorId: deleteDefaultCustomConnectorAccountId,
-      });
-    const disconnectMemberConnectorId = disconnectCustomStorage.connector?.id;
-    if (!disconnectMemberConnectorId) {
-      throw new Error("Expected a custom connector account to disconnect");
-    }
-    await seedCustomThreadConnectorSelection(context, {
-      chatThreadId: fixture.thread.id,
-      connectorId: disconnectMemberConnectorId,
-      customConnectorId: deleteDefaultCustomConnectorAccountId,
-    });
-    await connectors.deleteDefaultCustomConnectorAccount(
-      fixture.actor,
-      deleteDefaultCustomConnectorAccountId,
-    );
-    await expect(
-      readThreadConnectorSelectionState(context, {
-        chatThreadId: fixture.thread.id,
-        connectorId: disconnectMemberConnectorId,
-      }),
-    ).resolves.toBeFalsy();
-
-    const deleteCustomStorage =
-      await readCustomConnectorCredentialStorageParent(context, {
-        orgId: fixture.actor.orgId ?? "",
-        userId: fixture.actor.userId,
-        customConnectorId: deleteCustomConnectorId,
-      });
-    const deleteMemberConnectorId = deleteCustomStorage.connector?.id;
-    if (!deleteMemberConnectorId) {
-      throw new Error("Expected a custom connector account to delete");
-    }
-    await seedCustomThreadConnectorSelection(context, {
-      chatThreadId: fixture.thread.id,
-      connectorId: deleteMemberConnectorId,
-      customConnectorId: deleteCustomConnectorId,
-    });
-    await connectors.deleteCustomConnector(
-      fixture.actor,
-      deleteCustomConnectorId,
-    );
-    await expect(
-      readThreadConnectorSelectionState(context, {
-        chatThreadId: fixture.thread.id,
-        connectorId: deleteMemberConnectorId,
-      }),
-    ).resolves.toBeFalsy();
-    await connectors.deleteCustomConnector(
-      fixture.actor,
-      deleteDefaultCustomConnectorAccountId,
-    );
   });
+
+  it.each(["disconnect", "delete"] as const)(
+    "clears the exact thread selection after custom connector %s",
+    async (operation) => {
+      const fixture = await seedGmailMailCardFixture();
+      const customConnectorId = randomUUID();
+      await seedCustomConnectorRuntimeConnectors(context, {
+        orgId: fixture.actor.orgId ?? "",
+        userId: fixture.actor.userId,
+        agentId: fixture.agent.agentId,
+        customConnectors: [
+          {
+            id: customConnectorId,
+            slug: `_${operation}-selection-cleanup`,
+            displayName: `${operation} selection cleanup`,
+            prefixTemplate: `https://${operation}-selection.example.com/`,
+          },
+        ],
+      });
+      const customStorage = await readCustomConnectorCredentialStorageParent(
+        context,
+        {
+          orgId: fixture.actor.orgId ?? "",
+          userId: fixture.actor.userId,
+          customConnectorId,
+        },
+      );
+      const connectorId = customStorage.connector?.id;
+      if (!connectorId) {
+        throw new Error(
+          "Expected a custom connector account with a thread selection",
+        );
+      }
+      await seedCustomThreadConnectorSelection(context, {
+        chatThreadId: fixture.thread.id,
+        connectorId,
+        customConnectorId,
+      });
+      if (operation === "disconnect") {
+        await connectors.deleteDefaultCustomConnectorAccount(
+          fixture.actor,
+          customConnectorId,
+        );
+      } else {
+        await connectors.deleteCustomConnector(
+          fixture.actor,
+          customConnectorId,
+        );
+      }
+      await expect(
+        readThreadConnectorSelectionState(context, {
+          chatThreadId: fixture.thread.id,
+          connectorId,
+        }),
+      ).resolves.toBeFalsy();
+      if (operation === "disconnect") {
+        await connectors.deleteCustomConnector(
+          fixture.actor,
+          customConnectorId,
+        );
+      }
+    },
+  );
 
   it("links without injecting a duplicate card and sends without rebuilding MIME", async () => {
     mockEnv("APP_URL", "https://app.okou.ai");

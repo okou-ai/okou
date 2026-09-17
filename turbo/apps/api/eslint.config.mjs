@@ -633,6 +633,13 @@ export default [
       "src/signals/services/__tests__/pi-memory-phase2-worker.service.test.ts",
       // #31937 requires the real Guest/CLI and PostgreSQL control boundary.
       "src/signals/services/__tests__/pi-memory-maintenance.boundary.test.ts",
+      // The Morning Brief source budget is a deployed 20-second constant, not
+      // a request input, and shortening it through the preview endpoint would
+      // ship a debug parameter. This suite drives the route's own admission
+      // and collection composition so the deadline and a caller's
+      // cancellation can reach a provider body that is still streaming; every
+      // other reader contract stays on the Gmail preview endpoint.
+      "src/signals/services/__tests__/morning-brief-connector-reader.service.test.ts",
       "src/signals/services/__tests__/storage-write-phase2-reconciliation.service.test.ts",
       // Morning Brief composition reduces five providers to one bounded
       // request. The preview route can only exercise the sources an owner
@@ -866,6 +873,13 @@ export default [
       // erasure closure and refresh outcome have no HTTP ingress; the Settings
       // routes own everything else.
       "src/signals/services/__tests__/morning-brief-preference-projection.service.test.ts",
+      // The source budget is a deployed 20-second constant, not a request
+      // input, and shortening it through the endpoint would ship a debug
+      // parameter. This suite drives the route's own admission and collection
+      // composition so a deadline and a cancellation can reach a provider body
+      // that is still streaming; every other reader contract stays on the
+      // Gmail preview endpoint.
+      "src/signals/services/__tests__/morning-brief-connector-reader.service.test.ts",
       // #34815's classification/read commit orders, mid-read Agent transfer and
       // workflow-driven provenance producers need suspended PostgreSQL
       // transactions and a chosen destination thread, neither of which an HTTP

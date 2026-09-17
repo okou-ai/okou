@@ -139,6 +139,9 @@ export function morningBriefChatDescriptor(args: {
     connectionId: null,
     accountRef: args.userId,
     scopeDigest: morningBriefScopeDigest(MORNING_BRIEF_CHAT_READ_SURFACE),
+    // Chat authorizes against its own threads rather than an HTTP policy, so
+    // the containers below are the whole endpoint surface a later check re-asks.
+    endpoints: [],
     membershipId: args.membershipId,
     agentId: args.agentId,
     capturedAt: args.capturedAt.toISOString(),

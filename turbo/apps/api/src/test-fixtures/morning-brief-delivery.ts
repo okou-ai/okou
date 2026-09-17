@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { createStore } from "ccstate";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { chatEvents } from "@okouai/db/schema/chat-event";
@@ -396,4 +398,59 @@ export async function readBoundChatThreadId(
     .from(workflowUserAutomationThreads)
     .where(eq(workflowUserAutomationThreads.workflowId, workflowId));
   return row?.chatThreadId ?? null;
+}
+
+/**
+ * Fail this owner's delivery row insert, the last write the transaction makes.
+ *
+ * No product input can reject one specific write inside the delivery
+ * transaction, so the fault is injected at the row itself. The trigger matches
+ * only this owner's organization, so a concurrent suite is never affected.
+ */
+export async function rejectMorningBriefDeliveryInsert(
+  orgId: string,
+  signal: AbortSignal,
+): Promise<() => Promise<void>> {
+  const functionName = `test_mb_delivery_insert_${randomUUID().replaceAll("-", "")}`;
+  // The trigger carries the owner in its own name, so the function body needs
+  // no parameter: a bind placeholder inside a function body would be stored as
+  // literal text rather than substituted.
+  const triggerName = orgId;
+  await db().transaction(async (tx) => {
+    await tx.execute(sql`
+      CREATE FUNCTION ${sql.identifier(functionName)}() RETURNS trigger
+      LANGUAGE plpgsql AS $$
+      BEGIN
+        IF NEW.org_id = TG_NAME THEN
+          RAISE EXCEPTION 'Test Morning Brief delivery insert failed'
+            USING ERRCODE = '23514';
+        END IF;
+        RETURN NEW;
+      END;
+      $$
+    `);
+    signal.throwIfAborted();
+    await tx.execute(sql`
+      CREATE TRIGGER ${sql.identifier(triggerName)}
+      BEFORE INSERT ON morning_brief_deliveries
+      FOR EACH ROW EXECUTE FUNCTION ${sql.identifier(functionName)}()
+    `);
+    signal.throwIfAborted();
+  });
+
+  let dropped = false;
+  const drop = async () => {
+    if (dropped) {
+      return;
+    }
+    dropped = true;
+    await db().transaction(async (tx) => {
+      await tx.execute(
+        sql`DROP TRIGGER ${sql.identifier(triggerName)} ON morning_brief_deliveries`,
+      );
+      await tx.execute(sql`DROP FUNCTION ${sql.identifier(functionName)}()`);
+    });
+  };
+  onTestFinished(drop);
+  return drop;
 }

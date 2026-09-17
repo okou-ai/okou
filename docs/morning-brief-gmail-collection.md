@@ -15,12 +15,19 @@ durable occurrence ownership.
 exposes one entry point:
 
 ```ts
+startMorningBriefSourceDeadline(budgetMs: number): MorningBriefSourceDeadline;
+
 withMorningBriefConnectorReader<T>(
-  { scope, connectorSlug, apiBase, environmentName, budget, db, clerk },
+  { scope, connectorSlug, apiBase, environmentName, budget, deadline, db, clerk },
   collect: (reader: MorningBriefConnectorReader) => Promise<T>,
   signal: AbortSignal,
 ): Promise<MorningBriefAccessResult<T>>;
 ```
+
+`budget` carries the request and byte caps only. The source deadline is a
+separate `MorningBriefSourceDeadline` — an absolute `at` and the `AbortSignal`
+that enforces it — because it is started by the composition that admits the
+source, not by the reader.
 
 The signal is a separate final parameter, as the repository's lint boundary
 requires. `clerk` is the mirrored `ClerkClient`, because membership is read from
@@ -31,7 +38,7 @@ sees a credential, never chooses a host and never decides whether it may read.
 The reader performs GET only, against the source's fixed provider base; it is
 not an authenticated fetch proxy.
 
-`admitMorningBriefCollection({ db, clerk, orgId, userId, anchor }, signal)`
+`admitMorningBriefCollection({ db, clerk, orgId, userId, anchor, deadline }, signal)`
 derives the `MorningBriefCollectionScope` — owner, installation, Agent, bound
 thread, anchor, timezone and the immutable membership id — from
 `simpleMorningBrief`, the canonical
@@ -119,16 +126,66 @@ before a single provider request. Gmail's expiring credential still refreshes
 inside its buffer, and a method that genuinely cannot refresh still fails closed
 at the next authorization.
 
+### Authority is re-derived after credential preparation
+
+The credential is resolved behind the first endpoint a live policy allowed, and
+resolving it can await a real OAuth refresh round trip and its persistence. That
+wait is long enough for the authority the decision was made under to be
+withdrawn, so the same live identity and policy implementation answers a second
+time — for the account preparation actually produced, and for that exact URL —
+immediately before the source's first provider request. A withdrawn grant,
+membership, installation or account choice refuses there: the source spends no
+request, never falls back to another mailbox and never refreshes again. An
+endpoint whose own permission was denied during the wait keeps the prepared
+credential, because a sibling endpoint that is still allowed must not pay for a
+second refresh. The deadline and cancellation are re-read at the same boundary.
+
 ### One absolute deadline
 
-`budget.deadlineMs` is established once, before admission, and covers admission,
-the membership and credential reads, every provider request and body, and the
-release fence. It is both an `AbortSignal` composed into the provider request and
+The deadline is started by the composition that admits the source, **before**
+the public admission runs, and is then carried unchanged: the preview starts it,
+`admitMorningBriefCollection` runs inside it, and the reader spends what is left
+rather than starting a second one. A slow preflight therefore shortens the
+collection instead of earning it a fresh allowance, and a source whose budget
+was already spent is refused before any identity, credential or provider work.
+
+It is both an `AbortSignal` composed into the provider request and its body, and
 a clock the reader re-reads **after authorization returns and before the request
 is admitted**, so authorization that takes real time cannot start a request past
-its own deadline. Caller cancellation keeps its own propagation; deadline
-exhaustion surfaces as `budget-exhausted / deadline` per request and
-`deadline-exceeded` for the source, never as a healthy empty read.
+its own deadline. Caller cancellation keeps its own propagation — it stays a
+cancellation and never becomes a collected envelope — while deadline exhaustion
+surfaces as `budget-exhausted / deadline` per request and `deadline-exceeded`
+for the source, never as a healthy empty read.
+
+The deadline is read from the **clock**, not from the timer.
+`AbortSignal.timeout` only reports `aborted` once its callback has been
+scheduled and run, so between the instant a budget expires and that callback the
+bit is still false. Every decision about whether the source may continue
+compares the absolute deadline; the timer is left to do the one thing a clock
+cannot, which is interrupt I/O already in flight.
+
+That includes the last decision of all. The release fence re-derives identity
+and every retained permission, which takes real time and can outlast the budget,
+so the clock is compared again **after** that fence and before any payload is
+handed back. A collection accepted after its absolute deadline is late content,
+not a healthy read. The boundary is inclusive: arriving exactly at it is already
+too late, and the millisecond before it is still inside.
+
+The preflight spends the same budget. `admitMorningBriefCollection` composes the
+caller's signal with the source deadline for its own reads and compares the
+clock before it returns a scope, so a membership answer or failure released
+after the budget expired stops there — no retry, no further admission read and
+no provider request. It reports that as its own `unavailable / deadline-exceeded`
+outcome, which the preview answers as `504`: a spent budget is not a refusal of
+authority a member could act on, and admission is the one phase with no
+collection envelope to answer with, because the installation and timezone that
+envelope names are exactly what it had not read yet. Caller cancellation
+released under an unspent budget still surfaces as cancellation.
+
+Passing that composed signal to a provider SDK is not a claim that an in-flight
+SDK request is physically cancelled; what is guaranteed is that nothing further
+runs once it returns. The shared Clerk gateway's own bounding remains
+[#34946](https://github.com/vm0-ai/okou/issues/34946).
 
 ### Limits this reader does not exceed
 
@@ -219,15 +276,28 @@ plaintext part may simply never have been reached.
 | MIME depth / nodes             | 12 / 200 |
 
 Byte ceilings are enforced while streaming, never after an unbounded
-`response.text()`. A request slot and its byte allowance are **reserved before
-the first await**, so concurrent readers cannot each observe the same remaining
-budget. An unattempted request returns its slot. The byte accounting is
-deliberately stated as an upper bound rather than an exact count: the bounded
-reader stops at the allowance and reports no consumed count for an oversized
-body, so an abandoned body keeps its whole reservation charged and only a
-completed body releases the difference. Redirects are disabled, so a credential
-cannot follow a provider redirect off-host. The earliest cap wins and every
-truncation is named in `coverage.truncations`.
+`response.text()`. A request slot is reserved before the first await and a
+response's whole byte allowance before it is streamed, so concurrent readers
+cannot each observe the same remaining budget. An unattempted request returns
+its slot.
+
+`reservedBytes` bounds **reserved** bytes, not consumed ones. The bounded reader
+stops at the allowance and reports no consumed count for an oversized body, so an
+abandoned body keeps its whole reservation charged and only a completed body
+releases the difference between its allowance and its actual size. It is an upper
+bound on what this source was permitted to consume, and the underlying streaming
+helper cannot establish a tighter one.
+
+Each refusal names the allowance that actually bound it. A response that overran
+the 256 KiB per-response ceiling while the cumulative budget still had a full
+ceiling left reports `response-bytes` alone; `total-response-bytes` is reported
+when the cumulative budget is what clipped a response's allowance, or when it
+refuses a request outright. Reporting every oversized body as cumulative
+exhaustion overstates how much of the source was skipped.
+
+Redirects are disabled, so a credential cannot follow a provider redirect
+off-host. The earliest cap wins and every truncation is named in
+`coverage.truncations`.
 
 `Retry-After` is surfaced as bounded metadata (≤ 60 s); the reader never sleeps
 or retries on it. The rate limit itself is recorded as an occurrence, separately
@@ -297,10 +367,41 @@ the reader a real consumed boundary, not to ship a feature:
   survive depends on how many detail requests were already in flight when the
   malformed one arrived; the guarantee is that authorized siblings already read
   are kept, not that every remaining candidate is still fetched.
-- **The in-flight body deadline is proven as admission, not as a timed abort.**
-  The clock re-read before provider admission is covered deterministically; the
-  `AbortSignal.timeout` that bounds a body already streaming is not exercised by
-  a test that would have to wait out the real 20-second budget.
+- **The in-flight body deadline is proven with a short real budget.** The
+  20-second production budget cannot be waited out in a test, and a production
+  parameter for shortening it would be a debug surface rather than a contract, so
+  the deadline case drives the deployed `admitMorningBriefCollection` →
+  `collectMorningBriefGmail` composition with the same budget argument the route
+  supplies and a value a test can spend. Bodies that never finish are left open,
+  and the invocation returning `deadline-exceeded` at all is the deadline
+  reaching work already in flight.
+- **The mocked transport does not break a delivered body by itself.** A real
+  socket fails an in-flight body when its request is aborted; the HTTP double
+  fails the stream with the request's own abort reason to match. The reason is
+  always the request's, so the reader still distinguishes its own timeout from
+  its caller's cancellation from what actually aborted.
+- **Cumulative byte exhaustion is proven by arithmetic, not by timing.** Message
+  bodies are released in exact concurrency-sized batches, so at each release
+  every earlier batch is already charged and the number of requests the budget
+  still admits is deterministic. Sixteen full 256 KiB allowances exhaust 4 MiB
+  exactly; without the refund of what the two list responses did not use, their
+  reservations alone would stop the same run a whole batch earlier.
+- **The last allowance is proven to be spent once, by allocation rather than by
+  labels.** The cumulative budget is filled until what remains is smaller than
+  one per-response ceiling, and exactly one concurrency-sized batch of ordinary
+  bodies is then parked _after_ each reader has taken its allowance and before
+  any of them reads. Exactly one of the three becomes content, because the
+  remainder belonged to whichever reader claimed it. Taking the allowance after
+  the body instead — the one-line reordering of the production reservation —
+  hands all three the same bytes and all three succeed, so the case fails. That
+  reordering is a test counterexample; the deployed reservation is already
+  before the await.
+- **Cleanup is observed, not inferred from arrival counts.** One socket is made
+  to finish tearing down after its siblings, and the number of settled bodies is
+  read at the instant the public operation completes. Joining every started
+  worker keeps that number at the full concurrency; propagating the first
+  rejection instead completes with the lagging body still unravelling, which
+  fails the case.
 
 ## Rollout, scale and compatibility
 

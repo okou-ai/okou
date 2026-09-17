@@ -850,7 +850,7 @@ async function drainEmailOutboxBatch(
         clerk,
         currentTime: new Date(context.currentTimeMs),
         deferredIds,
-        itemIds,
+        ...(itemIds === undefined ? {} : { itemIds }),
       },
       signal,
     );
@@ -899,18 +899,17 @@ async function resolveNativeOwnerPreflight(
   },
   signal: AbortSignal,
 ): Promise<NativeMorningBriefOwnerPreflight | null> {
-  const { db, clerk, currentTime, deferredIds, itemIds } = args;
   const candidate = await peekNativeMorningBriefEmailOwner(
-    db,
-    currentTime,
+    args.db,
+    args.currentTime,
     OUTBOX_TTL_MS,
-    deferredIds,
-    itemIds,
+    args.deferredIds,
+    args.itemIds,
   );
   signal.throwIfAborted();
   return candidate === null
     ? null
-    : await currentNativeMorningBriefMembership(clerk, candidate, signal);
+    : await currentNativeMorningBriefMembership(args.clerk, candidate, signal);
 }
 
 export const drainEmailOutboxBatch$ = command(

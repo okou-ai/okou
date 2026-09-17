@@ -1,6 +1,6 @@
 import { screen, waitFor } from "@testing-library/react";
 import { HttpResponse } from "msw";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, test } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { decodeVoiceDraftPcmWav } from "../../../signals/voice-io/voice-draft-pcm.ts";
 import {
@@ -11,75 +11,77 @@ import {
   RUN_PATH,
 } from "./chat-run-test-fixtures.ts";
 
+async function prepareIdleComposer() {
+  const capture = context.mocks.deferred<(samples: Float32Array) => void>();
+  const requested = context.mocks.deferred<void>();
+  const responseReady = context.mocks.deferred<void>();
+  const drained = context.mocks.deferred<void>();
+  context.mocks.browser.voiceInput({
+    rms: 0.1,
+    onPcmCapture: capture.resolve,
+    onPcmPortClose: drained.resolve,
+    finalPcmSamples: new Float32Array(16_000).fill(0.3),
+  });
+  installRunChat();
+  const uploads: ArrayBuffer[] = [];
+  const prefixes: string[] = [];
+  context.mocks.http.post(
+    "*/api/voice-io/transcribe/segment",
+    async ({ request }) => {
+      const form = await request.formData();
+      const file = form.get("file");
+      if (!(file instanceof File)) {
+        throw new Error("Expected a recorded audio segment");
+      }
+      uploads.push(await file.arrayBuffer());
+      const options = JSON.parse(String(form.get("options"))) as {
+        final: boolean;
+        previousTranscript: string;
+      };
+      prefixes.push(options.previousTranscript);
+      if (!options.final) {
+        requested.resolve();
+        await responseReady.promise;
+        return HttpResponse.json({
+          transcript: "First part.",
+          language: "en",
+        });
+      }
+      return HttpResponse.json({
+        transcript: "Last part.",
+        polishedText: "First part. Last part.",
+        language: "en",
+      });
+    },
+  );
+  await setupPage({ context, path: RUN_PATH });
+  const voiceInput = await findEnabledButton("Voice input");
+  return {
+    capture,
+    requested,
+    responseReady,
+    drained,
+    uploads,
+    prefixes,
+    voiceInput,
+  };
+}
+
+test("Sharing remounts an idle composer without acquiring or uploading audio", async () => {
+  const { capture, uploads } = await prepareIdleComposer();
+  // Sharing replaces the composer subtree without ending the thread's page.
+  click(await findEnabledButton("Share messages"));
+  const cancelShare = await findEnabledButton("Cancel");
+  expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
+  click(cancelShare);
+  await findEnabledButton("Voice input");
+  expect(capture.settled()).toBeFalsy();
+  expect(uploads).toStrictEqual([]);
+});
+
 describe.each(["recording", "transcribing"])(
   "preserve the voice session when sharing remounts the composer during %s",
   (phase) => {
-    async function prepareIdleComposer() {
-      const capture = context.mocks.deferred<(samples: Float32Array) => void>();
-      const requested = context.mocks.deferred<void>();
-      const responseReady = context.mocks.deferred<void>();
-      const drained = context.mocks.deferred<void>();
-      context.mocks.browser.voiceInput({
-        rms: 0.1,
-        onPcmCapture: capture.resolve,
-        onPcmPortClose: drained.resolve,
-        finalPcmSamples: new Float32Array(16_000).fill(0.3),
-      });
-      installRunChat();
-      const uploads: ArrayBuffer[] = [];
-      const prefixes: string[] = [];
-      context.mocks.http.post(
-        "*/api/voice-io/transcribe/segment",
-        async ({ request }) => {
-          const form = await request.formData();
-          const file = form.get("file");
-          if (!(file instanceof File)) {
-            throw new Error("Expected a recorded audio segment");
-          }
-          uploads.push(await file.arrayBuffer());
-          const options = JSON.parse(String(form.get("options"))) as {
-            final: boolean;
-            previousTranscript: string;
-          };
-          prefixes.push(options.previousTranscript);
-          if (!options.final) {
-            requested.resolve();
-            await responseReady.promise;
-            return HttpResponse.json({
-              transcript: "First part.",
-              language: "en",
-            });
-          }
-          return HttpResponse.json({
-            transcript: "Last part.",
-            polishedText: "First part. Last part.",
-            language: "en",
-          });
-        },
-      );
-      await setupPage({ context, path: RUN_PATH });
-      await findEnabledButton("Voice input");
-
-      // Sharing replaces the composer subtree without ending the thread's page.
-      // An idle remount must not acquire media or send transcription requests.
-      click(await findEnabledButton("Share messages"));
-      const cancelIdleShare = await findEnabledButton("Cancel");
-      expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
-      click(cancelIdleShare);
-      const voiceInput = await findEnabledButton("Voice input");
-      expect(capture.settled()).toBeFalsy();
-      expect(uploads).toStrictEqual([]);
-      return {
-        capture,
-        requested,
-        responseReady,
-        drained,
-        uploads,
-        prefixes,
-        voiceInput,
-      };
-    }
-
     let prepared: Awaited<ReturnType<typeof prepareIdleComposer>>;
     beforeEach(async () => {
       prepared = await prepareIdleComposer();

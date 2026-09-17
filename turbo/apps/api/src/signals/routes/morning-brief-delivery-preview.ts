@@ -26,21 +26,13 @@ import {
  * result that already exists for that owner.
  */
 
-interface DeliveryRejectionResponse {
-  readonly status: 404 | 409;
-  readonly code: string;
-  readonly message: string;
-}
-
-/**
- * The response each rejection maps to.
- *
- * A function rather than a package-scope object: the repository forbids mutable
- * module state, and this table is read once per rejected request.
- */
-function rejectionResponses(): Record<
+function rejectionCatalog(): Record<
   MorningBriefDeliveryRejection,
-  DeliveryRejectionResponse
+  {
+    readonly status: 404 | 409;
+    readonly code: string;
+    readonly message: string;
+  }
 > {
   return {
     "result-not-found": {
@@ -107,7 +99,7 @@ const deliver$ = command(async ({ get, set }, signal: AbortSignal) => {
   signal.throwIfAborted();
 
   if (outcome.kind === "rejected") {
-    const rejection = rejectionResponses()[outcome.reason];
+    const rejection = rejectionCatalog()[outcome.reason];
     if (rejection.status === 404) {
       return createErrorResponse("NOT_FOUND", rejection.message);
     }

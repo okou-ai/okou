@@ -57,6 +57,11 @@ export const ApiError = {
     status: 503 as const,
     code: "EVENT_DELIVERY_UNAVAILABLE",
   },
+  /** A bounded attempt ran out of its own budget and released nothing. */
+  REQUEST_DEADLINE_EXCEEDED: {
+    status: 503 as const,
+    code: "REQUEST_DEADLINE_EXCEEDED",
+  },
   PROVIDER_DELETED: {
     status: 422 as const,
     code: "PROVIDER_DELETED",

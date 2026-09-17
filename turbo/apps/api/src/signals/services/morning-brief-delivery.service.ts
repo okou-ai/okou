@@ -128,10 +128,9 @@ function rejectionOf(reason: string): MorningBriefDeliveryRejection {
  * The validated native execution authority a production delivery must present.
  *
  * It is the epoch and membership generation the occurrence was *claimed* under,
- * not whatever the row holds now. A currently enabled native row is not proof
- * that an older occurrence still owns the member: a disable and re-enable, a
- * destination replacement or a transfer all bump the epoch, and an occurrence
- * admitted before that must not deliver.
+ * not whatever the row holds now: a disable and re-enable, a destination
+ * replacement or a transfer all bump the epoch, and an occurrence admitted
+ * before that must not deliver.
  */
 interface MorningBriefNativeDeliveryAuthority {
   readonly ownerEpoch: number;
@@ -143,10 +142,7 @@ interface MorningBriefDeliveryRequest {
   readonly userId: string;
   /** The opaque attempt the generation returned. Never an owner. */
   readonly resultAttemptId: string;
-  /**
-   * Which purpose's result this call may consume. Defaults to `preview` so the
-   * operator endpoint is unchanged; the native scheduler passes `production`.
-   */
+  /** Which purpose's result this call may consume. Defaults to `preview`. */
   readonly purpose?: MorningBriefDeliveryPurpose;
   /** Required for `production`; rejected when absent or stale. */
   readonly nativeAuthority?: MorningBriefNativeDeliveryAuthority;

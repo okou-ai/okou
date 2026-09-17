@@ -472,7 +472,7 @@ test("The options layer opens from the keyboard and leaves the gallery selection
   );
 });
 
-test("Desktop recording handoff keeps both uploaded files without opening the template picker", async () => {
+async function prepareDesktopRecordingHandoff() {
   const capture = installCatalogs();
   context.mocks.api(webFilesContract.fileUrl, ({ query, respond }) => {
     return respond(200, {
@@ -499,9 +499,21 @@ test("Desktop recording handoff keeps both uploaded files without opening the te
   await waitFor(() => {
     expect(message).toHaveTextContent("desktop screen recording");
   });
+  return { capture, message };
+}
+
+test("Desktop recording handoff leaves the composer ready without opening the template picker", async () => {
+  await prepareDesktopRecordingHandoff();
   // The recording arrives as a plain attachment, so the composer stays in the
   // user's hands instead of forcing the intro video template picker open.
   expect(screen.queryByRole("dialog")).toBeNull();
+  await waitFor(() => {
+    expect(control("Send")).toBeEnabled();
+  });
+});
+
+test("Desktop recording handoff submits both uploaded files without selecting a template", async () => {
+  const { capture, message } = await prepareDesktopRecordingHandoff();
   await waitFor(() => {
     expect(control("Send")).toBeEnabled();
   });
@@ -530,7 +542,7 @@ test("Desktop recording handoff keeps both uploaded files without opening the te
   expect(capture.selectedTemplates).toStrictEqual([]);
 });
 
-test("A saved intro video draft cannot send outside the rollout and remains editable", async () => {
+async function rejectUnavailableIntroDraft() {
   const capture = mockTemplateChat();
   context.mocks.api(agentDraftContract.get, ({ respond }) => {
     return respond(200, {
@@ -573,9 +585,19 @@ test("A saved intro video draft cannot send outside the rollout and remains edit
   await screen.findByText(
     "This video template is no longer available. Remove it to send your message.",
   );
+  return { capture, message, user };
+}
+
+test("An unavailable saved intro video draft rejects sending and preserves its text and template", async () => {
+  const { capture, message } = await rejectUnavailableIntroDraft();
   expect(capture.sentMessages).toHaveLength(0);
   expect(message).toHaveTextContent("Explain this product");
   await expectInlineTemplate("Intro video");
+});
+
+test("An unavailable saved intro video draft can send ordinary text after its rejected template is removed", async () => {
+  const { capture, user } = await rejectUnavailableIntroDraft();
+  expect(capture.sentMessages).toHaveLength(0);
   await user.keyboard(
     "{Control>}a{/Control}{Backspace}A regular message{Enter}",
   );
@@ -585,7 +607,7 @@ test("A saved intro video draft cannot send outside the rollout and remains edit
   expect(capture.selectedTemplates).toHaveLength(0);
 });
 
-test("Intro Video never displays or submits the preceding Creative Video settings", async () => {
+async function replaceCreativeVideoWithIntroVideo() {
   const capture = installCatalogs();
   await setupPage({
     context,
@@ -624,6 +646,11 @@ test("Intro Video never displays or submits the preceding Creative Video setting
   });
   click(control("Use selection", dialog));
   await expectInlineTemplate("Intro video");
+  return { capture, editor, user };
+}
+
+test("Intro Video hides the preceding Creative Video controls", async () => {
+  await replaceCreativeVideoWithIntroVideo();
   expect(screen.queryByLabelText("Video options")).not.toBeInTheDocument();
   expect(
     queryAllByRoleFast("button").some((button) => {
@@ -633,6 +660,10 @@ test("Intro Video never displays or submits the preceding Creative Video setting
   expect(
     screen.queryByRole("combobox", { name: "Video models" }),
   ).not.toBeInTheDocument();
+});
+
+test("Intro Video submits its template without the preceding Creative Video settings", async () => {
+  const { capture, editor, user } = await replaceCreativeVideoWithIntroVideo();
   await user.click(editor);
   await user.keyboard(" Explain our product{Enter}");
   await waitFor(() => {

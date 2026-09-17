@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import { morningBriefCollectionPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-collection-preview";
+import { morningBriefPreferenceContract } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createStore } from "ccstate";
@@ -23,13 +24,16 @@ import {
   readMorningBriefCollectionOccurrences,
   readMorningBriefCollectionOwnerRow,
   repointMorningBriefInstallationAgent,
+  restrictMorningBriefAgent,
   seedInstalledMorningBrief,
 } from "../../../test-fixtures/morning-brief-collection";
+import { rebindMorningBriefSlackAccount } from "../../../test-fixtures/morning-brief-generation";
 import { waitForDeferredBlocker } from "../../../test-fixtures/pi-deferred-lock";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
 import { morningBriefCollectionPreviewRoutes } from "../morning-brief-collection-preview";
+import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
 import { userPreferencesRoutes } from "../user-preferences";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createRouteMocks } from "./helpers/route-test";
@@ -1611,6 +1615,191 @@ describe("Morning Brief collection ownership lifetime", () => {
     await expect(
       readMorningBriefCollectionOccurrences(survivor),
     ).resolves.toHaveLength(1);
+  });
+});
+
+/**
+ * The final admission a completion is accepted by, after its own lock waits.
+ *
+ * Every case here suspends one attempt on the committed occurrence row — the
+ * real `FOR UPDATE` wait finalization queues on — and changes the world while
+ * it is blocked there. Comparing the persisted occurrence with the frozen
+ * admission cannot answer any of them: both copies are frozen and still agree.
+ */
+describe("Morning Brief collection completion admission", () => {
+  /**
+   * Suspend one attempt exactly where its completion waits for its own row.
+   *
+   * The claim is already committed when the Slack script parks, so the row
+   * really exists and holding it is the wait the guarded update queues behind.
+   * `pg_blocking_pids` proves the arrival; nothing here sleeps.
+   */
+  async function heldCompletion(
+    f: Fixture,
+    controller?: AbortController,
+  ): Promise<{
+    readonly pending: ReturnType<typeof collect>;
+    readonly release: () => Promise<void>;
+  }> {
+    const suspended = scriptSuspendedSlack();
+    const pending = setupApp({
+      context,
+      routes: morningBriefCollectionPreviewRoutes,
+      ...(controller && { signal: controller.signal, rethrowErrors: true }),
+    })(morningBriefCollectionPreviewContract).collect({
+      headers: f.headers,
+      body: { scheduledFor: ANCHOR },
+    });
+    await suspended.arrived;
+    const held = await holdMorningBriefCollectionOccurrence(f, context.signal);
+    suspended.release();
+    await held.waitForArrival();
+    return { pending, release: held.release };
+  }
+
+  /** Enable the Settings surface a member changes their own brief through. */
+  async function enableSettingsSurface(f: Fixture): Promise<void> {
+    await updateFeatureSwitchesForUser(
+      context,
+      { orgId: f.orgId, userId: f.userId },
+      {
+        [FeatureSwitchKey.MorningBrief]: true,
+        [FeatureSwitchKey.SimpleMorningBrief]: true,
+      },
+    );
+  }
+
+  /**
+   * Pause the brief the way its owner does, through the production endpoint.
+   *
+   * `PUT /api/morning-brief/preference` is the writer for the canonical enabled
+   * choice, so this lands the same committed transaction a real Settings
+   * disable does rather than a fixture write against the schedule row.
+   */
+  async function disableBriefThroughSettings(f: Fixture): Promise<void> {
+    const disabled = await accept(
+      setupApp({ context, routes: morningBriefPreferenceRoutes })(
+        morningBriefPreferenceContract,
+      ).update({
+        headers: memberSessionHeaders(f),
+        body: { enabled: false },
+      }),
+      [200],
+    );
+    expect(disabled.body).toMatchObject({ enabled: false, status: "paused" });
+  }
+
+  it("commits no completion when the caller cancels while it waits for its row", async () => {
+    const f = await fixture();
+    const cancellation = new Error(`cancelled ${randomUUID()}`);
+    const controller = new AbortController();
+    const held = await heldCompletion(f, controller);
+
+    // The caller goes away only once the completion is genuinely blocked on the
+    // row, which is the window a check after the commit reaches too late.
+    controller.abort(cancellation);
+    await held.release();
+    await expect(held.pending).rejects.toThrow(cancellation.message);
+
+    const [row, ...extra] = await readMorningBriefCollectionOccurrences(f);
+    expect(extra).toStrictEqual([]);
+    expect(row).toMatchObject({ status: "running", attempt: 1 });
+    expect(row?.outcome).toBeNull();
+    expect(row?.finishedAt).toBeNull();
+    expect(row?.leaseToken).not.toBeNull();
+    // Nothing completed, so the occurrence is still this attempt's: the next
+    // explicit invocation is refused as in progress without reaching Slack.
+    const traffic = scriptSlack({});
+    const retried = await accept(collect(f), [409]);
+    expect(retried.body.error.code).toBe(
+      "MORNING_BRIEF_COLLECTION_IN_PROGRESS",
+    );
+    expect(traffic.requests).toStrictEqual([]);
+  });
+
+  it.each([
+    [
+      "its owner disables the brief in Settings",
+      async (f: Fixture) => {
+        await disableBriefThroughSettings(f);
+      },
+      "MORNING_BRIEF_COLLECTION_OWNER_REVOKED",
+    ],
+    [
+      "the installation moves onto another Agent",
+      async (f: Fixture) => {
+        await repointMorningBriefInstallationAgent(f);
+      },
+      "MORNING_BRIEF_COLLECTION_BINDING_CHANGED",
+    ],
+    [
+      "the installation Agent stops being reachable",
+      async (f: Fixture) => {
+        await restrictMorningBriefAgent(f.agentId);
+      },
+      "MORNING_BRIEF_COLLECTION_OWNER_REVOKED",
+    ],
+    [
+      "the connected Slack account is rebound",
+      async (f: Fixture) => {
+        await rebindMorningBriefSlackAccount(
+          f.userId,
+          `U${randomUUID().slice(0, 8)}`,
+        );
+      },
+      "MORNING_BRIEF_COLLECTION_BINDING_CHANGED",
+    ],
+  ])(
+    "releases no bundle when %s while the completion waits for its row",
+    async (_label, mutate, expectedCode) => {
+      const f = await fixture();
+      await enableSettingsSurface(f);
+      const held = await heldCompletion(f);
+
+      // The change commits while the completion is blocked, so only a local
+      // re-resolution taken after that wait can refuse it.
+      await mutate(f);
+      await held.release();
+
+      const refused = await accept(held.pending, [409]);
+      expect(refused.body.error.code).toBe(expectedCode);
+      const [row, ...extra] = await readMorningBriefCollectionOccurrences(f);
+      expect(extra).toStrictEqual([]);
+      expect(row).toMatchObject({ status: "running", attempt: 1 });
+      expect(row?.outcome).toBeNull();
+      expect(row?.finishedAt).toBeNull();
+    },
+  );
+
+  it("completes an unchanged attempt and leaves another owner's brief alone", async () => {
+    const f = await fixture();
+    const other = await fixture();
+    await enableSettingsSurface(f);
+    const held = await heldCompletion(f);
+
+    // The positive control: the same suspended wait, with nothing changing
+    // underneath it, still accepts the bundle it collected.
+    await held.release();
+    const collected = await accept(held.pending, [200]);
+    if (collected.body.result !== "collected") {
+      throw new Error(
+        `Expected a collected bundle, got ${collected.body.result}`,
+      );
+    }
+    expect(collected.body.occurrence).toMatchObject({
+      status: "completed",
+      attempt: 1,
+    });
+
+    // Another owner is unaffected by this owner's suspended completion.
+    scriptSlack({
+      channels: channelPage([{ id: "C1", name: "general" }]),
+      history: noMessages(),
+    });
+    const unrelated = await accept(collect(other), [200]);
+    expect(unrelated.body.result).toBe("collected");
+    const [survivor] = await readMorningBriefCollectionOccurrences(other);
+    expect(survivor).toMatchObject({ status: "completed", attempt: 1 });
   });
 });
 
