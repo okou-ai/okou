@@ -416,9 +416,10 @@ const runResumePass$ = command(
         return true;
       }
       const owner = { orgId: stale.orgId, userId: stale.userId };
-      if (!(await nativeAdmissionAllowed(db, owner))) {
-        continue;
-      }
+      // Deliberately not gated on the implementation switch. Switching off must
+      // stop *new* admission, which the due-owner claim enforces; an obligation
+      // this scheduler already recorded still has to be reconciled, or it
+      // wedges the rollback drain that is waiting on that same unsettled row.
       const membershipId = await set(currentMembershipId$, owner, signal);
       signal.throwIfAborted();
       if (membershipId === null) {
@@ -437,6 +438,36 @@ const runResumePass$ = command(
       if (resumed.kind !== "claimed") {
         continue;
       }
+
+      // Reconciliation, not execution. A member the switch no longer selects, or
+      // one already rolling back, must not have this slot run: the correct
+      // action is to close the recorded obligation under the current authority
+      // so the drain can finish. Nothing it already produced is erased — a slot
+      // that bound an attempt is not resumable at all and stays with the
+      // receipt consumer.
+      const suppress =
+        resumed.schedule.phase === "rollback-draining" ||
+        !(await nativeAdmissionAllowed(db, owner));
+      signal.throwIfAborted();
+      if (suppress) {
+        const token = resumed.occurrence.leaseToken;
+        if (token !== null) {
+          await db.transaction(async (tx) => {
+            await settleMorningBriefNativeOccurrence(tx, owner, {
+              scheduledFor: resumed.occurrence.scheduledFor,
+              outcome: "revoked",
+              deliveryPending: false,
+              expectedEpoch: resumed.occurrence.ownerEpoch,
+              leaseToken: token,
+              at: nowDate(),
+            });
+          });
+          signal.throwIfAborted();
+          counters.settled += 1;
+        }
+        continue;
+      }
+
       counters.claimed += 1;
       await set(runOneSlot$, { deps, claim: resumed, counters }, signal);
       signal.throwIfAborted();

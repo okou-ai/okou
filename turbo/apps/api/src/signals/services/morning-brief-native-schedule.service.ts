@@ -1162,7 +1162,13 @@ export async function resumeMorningBriefNativeOccurrence(
   if (schedule === undefined) {
     return { kind: "inadmissible", reason: "absent" };
   }
-  if (schedule.phase !== "native") {
+  // Resuming is reconciliation of an obligation this member's scheduler already
+  // recorded, not admission of new work, so a rollback drain must still be able
+  // to finish it. Without this, a crashed or deferred slot is excluded the
+  // moment the switch flips, `proveNativeMorningBriefDrain` keeps refusing on
+  // that same unsettled row, and the rollback can never complete. New claims
+  // stay restricted to `native` in `claimMorningBriefNativeOccurrence`.
+  if (schedule.phase !== "native" && schedule.phase !== "rollback-draining") {
     return { kind: "inadmissible", reason: `phase:${schedule.phase}` };
   }
   if (!schedule.enabled) {

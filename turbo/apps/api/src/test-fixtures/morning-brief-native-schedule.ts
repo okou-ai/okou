@@ -235,3 +235,35 @@ export async function revokeNativeAuthorityForTest(
       ),
     );
 }
+
+/**
+ * Leave a claimed slot abandoned, the way a worker that died before reaching
+ * the provider does: still unsettled, no attempt bound, lease long expired.
+ *
+ * Unlike {@link interruptNativeSettlement} nothing was delivered here, so this
+ * is the work a rollback drain has to reconcile before it can hand the member
+ * back to legacy.
+ */
+export async function abandonClaimedOccurrence(
+  owner: MorningBriefNativeOwner,
+  scheduledFor: Date,
+): Promise<void> {
+  await db()
+    .update(morningBriefNativeOccurrences)
+    .set({
+      settledAt: null,
+      settledNextRunAt: null,
+      outcome: null,
+      state: "claimed",
+      deliveryPending: false,
+      generationAttemptId: null,
+      leaseExpiresAt: new Date(now() - 60 * 60 * 1000),
+    })
+    .where(
+      and(
+        eq(morningBriefNativeOccurrences.orgId, owner.orgId),
+        eq(morningBriefNativeOccurrences.userId, owner.userId),
+        eq(morningBriefNativeOccurrences.scheduledFor, scheduledFor),
+      ),
+    );
+}

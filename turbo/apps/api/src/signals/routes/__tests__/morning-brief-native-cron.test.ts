@@ -14,6 +14,7 @@ import { server } from "../../../mocks/server";
 import { seedInstalledMorningBrief } from "../../../test-fixtures/morning-brief-collection";
 import { expireMorningBriefGenerationRetention } from "../../../test-fixtures/morning-brief-generation";
 import {
+  abandonClaimedOccurrence,
   countEmailOutboxRows,
   countOrgAgentRuns,
   interruptNativeSettlement,
@@ -497,6 +498,52 @@ describe("native Morning Brief cron", () => {
     expect(calls.generation).toHaveLength(0);
     await expect(readNativeGenerations(f)).resolves.toHaveLength(0);
     await expect(readNativeDeliveries(f)).resolves.toHaveLength(0);
+  });
+
+  // Switching off must stop new admission without stranding work the scheduler
+  // already recorded. An abandoned claim is exactly what the rollback drain
+  // waits on, so if the switch also excluded it from recovery the member could
+  // never return to legacy.
+  it("reconciles abandoned native work and completes the rollback after switch-off", async () => {
+    const f = await fixture();
+    scriptSlack();
+    const { calls } = scriptProviders();
+
+    await tickUntilNative(f);
+    const due = await makeNativeOccurrenceDue(f);
+    await accept(tick(), [200]);
+    expect(calls.generation).toHaveLength(1);
+
+    // A worker that died before contacting the provider: claimed, unsettled,
+    // nothing bound, lease long gone.
+    await abandonClaimedOccurrence(f, due);
+    await updateFeatureSwitchesForUser(
+      context,
+      { orgId: f.orgId, userId: f.userId },
+      { [FeatureSwitchKey.SimpleMorningBrief]: false },
+    );
+
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      await accept(tick(), [200]);
+      if ((await readNativeSchedule(f))?.phase === "legacy") {
+        break;
+      }
+    }
+
+    const rolled = await readNativeSchedule(f);
+    expect(rolled?.phase).toBe("legacy");
+    // Every recorded obligation was settled rather than abandoned, and the
+    // member owes a future occurrence again under the restored owner.
+    const occurrences = await readNativeOccurrences(f);
+    expect(
+      occurrences.every((row) => {
+        return row.settledAt !== null;
+      }),
+    ).toBeTruthy();
+    expect(rolled?.scheduleOwner).toBe("legacy");
+    expect(rolled?.nextRunAt?.getTime()).toBeGreaterThan(now());
+    // Reconciliation is not admission: no second brief was generated.
+    expect(calls.generation).toHaveLength(1);
   });
 
   it("admits no native occurrence while the implementation switch is off", async () => {
