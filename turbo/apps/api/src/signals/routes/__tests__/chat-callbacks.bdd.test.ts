@@ -734,6 +734,11 @@ describe("CHAT-02: completed chat callback", () => {
     });
 
     const prompt = "How do I debug my Node app?";
+    function titlePromptsForThisThread(): string[] {
+      return titlePrompts.filter((titlePrompt) => {
+        return titlePrompt.includes(prompt);
+      });
+    }
     const first = await startChatRun(actor, {
       agentId,
       prompt,
@@ -783,7 +788,10 @@ describe("CHAT-02: completed chat callback", () => {
     await api.requestCancelRun(actor, sentinel.runId, [200]);
     await waitForRunStatus(actor, sentinel.runId, "cancelled");
     await waitForThreadTitle(actor, first.threadId, "Debugging Node Apps");
-    const titlePromptCountBeforeComplete = titlePrompts.length;
+    // The sentinel thread titles itself on its own detached schedule, so count
+    // only this thread's requests. A shared counter would otherwise measure
+    // whichever background title work happened to land first.
+    const titlePromptCountBeforeComplete = titlePromptsForThisThread().length;
 
     await chatCallbacks.registerPushSubscription(actor);
     chatCallbacks.enableVapid();
@@ -848,7 +856,9 @@ describe("CHAT-02: completed chat callback", () => {
     );
 
     await waitForThreadTitle(actor, first.threadId, "Debugging Node Apps");
-    expect(titlePrompts).toHaveLength(titlePromptCountBeforeComplete);
+    expect(titlePromptsForThisThread()).toHaveLength(
+      titlePromptCountBeforeComplete,
+    );
     const initialTitlePrompt = titlePrompts.find((titlePrompt) => {
       return titlePrompt.includes(`Most recent user message:\n${prompt}`);
     });
