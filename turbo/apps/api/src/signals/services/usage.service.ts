@@ -47,10 +47,18 @@ export const usageMembers$ = command(
     }
 
     const db = set(writeDb$);
-    const [rows, breakdownByUser] = await Promise.all([
-      getMemberUsageTotals(db, args.orgId, period),
-      getMemberUsageBreakdowns(db, args.orgId, period),
-    ]);
+    const { rows, breakdownByUser } = await db.transaction(
+      async (tx) => {
+        const rows = await getMemberUsageTotals(tx, args.orgId, period);
+        const breakdownByUser = await getMemberUsageBreakdowns(
+          tx,
+          args.orgId,
+          period,
+        );
+        return { rows, breakdownByUser };
+      },
+      { isolationLevel: "repeatable read", accessMode: "read only" },
+    );
     signal.throwIfAborted();
 
     if (rows.length === 0) {

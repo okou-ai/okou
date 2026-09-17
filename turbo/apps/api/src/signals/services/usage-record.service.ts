@@ -149,6 +149,9 @@ function threadedUsageRecordWith(db: Db, runs: UsageRecordRuns) {
   );
 }
 
+// Persisted usage can legitimately outlive its thread or originate without one.
+// Keep this non-navigable row until that historical data is migrated or retired;
+// #35077 tracks the durable-data boundary.
 function threadlessUsageRecordWith(db: Db, runs: UsageRecordRuns) {
   return db.$with("threadless").as(
     db
@@ -444,7 +447,9 @@ export const usageRecord$ = command(
         : null,
       rows: rows.map((row) => {
         return {
-          // Rollout bridge for older Apps. New Apps use the thread id only.
+          // Old App -> new API rollout bridge. Remove source/runId after the
+          // replacement App is live and its client floor excludes old readers;
+          // tracked by #35077.
           source: "chat",
           threadId: row.threadId,
           runId: null,

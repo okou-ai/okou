@@ -16,8 +16,7 @@ const memberUsageSchema = z.object({
   cacheReadInputTokens: z.number(),
   cacheCreationInputTokens: z.number(),
   creditsCharged: z.number(),
-  // Optional during the API/App rollout so a new App can read an older API.
-  breakdown: z.array(usageRecordKindBreakdownSchema).default([]),
+  breakdown: z.array(usageRecordKindBreakdownSchema),
 });
 
 const usageMembersResponseSchema = z.object({

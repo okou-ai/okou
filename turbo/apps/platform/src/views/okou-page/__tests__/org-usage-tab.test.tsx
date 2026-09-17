@@ -5,6 +5,7 @@ import {
 } from "@okouai/api-contracts/contracts/billing";
 import { orgMembersContract } from "@okouai/api-contracts/contracts/org-member-routes";
 import { usageMembersContract } from "@okouai/api-contracts/contracts/usage";
+import type { UsageRecordRange } from "@okouai/api-contracts/contracts/usage-record";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -111,7 +112,12 @@ function mockBillingStatus(
   });
 }
 
-function mockUsageStory(): void {
+interface UsageStoryRequests {
+  readonly teamUsageRanges: UsageRecordRange[];
+}
+
+function mockUsageStory(): UsageStoryRequests {
+  const requests: UsageStoryRequests = { teamUsageRanges: [] };
   const orgMembers: OrgMembersResponse = {
     name: "Test Org",
     role: "admin",
@@ -148,7 +154,11 @@ function mockUsageStory(): void {
   context.mocks.api(orgMembersContract.members, ({ respond }) => {
     return respond(200, orgMembers);
   });
-  context.mocks.api(usageMembersContract.get, ({ respond }) => {
+  context.mocks.api(usageMembersContract.get, ({ query, respond }) => {
+    requests.teamUsageRanges.push(query.range);
+    const lastSevenDays = query.range === "7d";
+    const aliceModelCredits = lastSevenDays ? 6100 : 6000;
+    const bobModelCredits = lastSevenDays ? 2200 : 2100;
     return respond(200, {
       period: {
         start: "2026-03-01T00:00:00Z",
@@ -162,16 +172,16 @@ function mockUsageStory(): void {
           outputTokens: 3000,
           cacheReadInputTokens: 0,
           cacheCreationInputTokens: 0,
-          creditsCharged: 7500,
+          creditsCharged: aliceModelCredits + 1500,
           breakdown: [
             {
               kind: "model",
-              credits: 6000,
+              credits: aliceModelCredits,
               providers: [
                 {
                   provider: "gpt-5.6-sol",
-                  credits: 6000,
-                  usageKinds: [{ kind: "model", credits: 6000 }],
+                  credits: aliceModelCredits,
+                  usageKinds: [{ kind: "model", credits: aliceModelCredits }],
                 },
               ],
             },
@@ -195,16 +205,16 @@ function mockUsageStory(): void {
           outputTokens: 1200,
           cacheReadInputTokens: 0,
           cacheCreationInputTokens: 0,
-          creditsCharged: 2100,
+          creditsCharged: bobModelCredits,
           breakdown: [
             {
               kind: "model",
-              credits: 2100,
+              credits: bobModelCredits,
               providers: [
                 {
                   provider: "gpt-5.6-luna",
-                  credits: 2100,
-                  usageKinds: [{ kind: "model", credits: 2100 }],
+                  credits: bobModelCredits,
+                  usageKinds: [{ kind: "model", credits: bobModelCredits }],
                 },
               ],
             },
@@ -213,6 +223,7 @@ function mockUsageStory(): void {
       ],
     });
   });
+  return requests;
 }
 
 async function openCreditBalance(): Promise<void> {
@@ -226,18 +237,28 @@ async function openCreditBalance(): Promise<void> {
   });
 }
 
-async function openCreditUsage(): Promise<void> {
+async function openCreditUsage(teamUsageBreakdown = true): Promise<void> {
   await setupPage({
     context,
     path: "/?settings=usage-records",
     featureSwitches: {
-      [FeatureSwitchKey.TeamUsageBreakdown]: true,
+      [FeatureSwitchKey.TeamUsageBreakdown]: teamUsageBreakdown,
     },
   });
   await waitFor(() => {
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     expect(screen.getAllByText("Credit usage")[0]).toBeInTheDocument();
   });
+}
+
+function selectTeamUsage(): void {
+  const teamUsageTab = queryAllByRoleFast("tab").find((element) => {
+    return element.textContent === "Team usage";
+  });
+  if (!teamUsageTab) {
+    throw new Error("Team usage tab not found");
+  }
+  click(teamUsageTab);
 }
 
 beforeEach(() => {
@@ -356,24 +377,19 @@ test("Explain the composition of a workspace credit balance", async () => {
   ).resolves.toBeInTheDocument();
 });
 
-test("Review credit usage by workspace member", async () => {
+test("Review credit usage by workspace member and period", async () => {
   const user = userEvent.setup();
-  mockUsageStory();
+  const requests = mockUsageStory();
   await openCreditUsage();
 
-  const teamUsageTab = queryAllByRoleFast("tab").find((element) => {
-    return element.textContent === "Team usage";
-  });
-  if (!teamUsageTab) {
-    throw new Error("Team usage tab not found");
-  }
-  click(teamUsageTab);
+  selectTeamUsage();
   await waitFor(() => {
     expect(screen.getByText("Alice Admin")).toBeInTheDocument();
     expect(screen.getByText("bob@example.com")).toBeInTheDocument();
   });
   expect(screen.getByText("7,500")).toBeInTheDocument();
   expect(screen.getByText("2,100")).toBeInTheDocument();
+  expect(requests.teamUsageRanges).toContain("billingPeriod");
   expect(
     screen.getByTestId("member-usage-kind-test-user-123-model"),
   ).toBeInTheDocument();
@@ -384,9 +400,38 @@ test("Review credit usage by workspace member", async () => {
     screen.getByTestId("member-usage-kind-user-bob-model"),
   ).toBeInTheDocument();
 
-  await user.hover(screen.getByTestId("member-usage-kind-test-user-123-model"));
+  const modelSegment = screen.getByTestId(
+    "member-usage-kind-test-user-123-model",
+  );
+  await user.hover(modelSegment);
   await expect(
     screen.findByText("Models - 6,000"),
   ).resolves.toBeInTheDocument();
   expect(screen.getByText("GPT 5.6 Sol")).toBeInTheDocument();
+  await user.unhover(modelSegment);
+
+  click(screen.getByText("Billing period"));
+  click(await screen.findByText("Last 7 days"));
+  await waitFor(() => {
+    expect(requests.teamUsageRanges.at(-1)).toBe("7d");
+    expect(screen.getByText("7,600")).toBeInTheDocument();
+    expect(screen.getByText("2,200")).toBeInTheDocument();
+  });
+
+  await user.hover(screen.getByTestId("member-usage-kind-test-user-123-model"));
+  await expect(
+    screen.findByText("Models - 6,100"),
+  ).resolves.toBeInTheDocument();
+});
+
+test("Hide member breakdowns while their rollout switch is off", async () => {
+  mockUsageStory();
+  await openCreditUsage(false);
+
+  selectTeamUsage();
+  await expect(screen.findByText("Alice Admin")).resolves.toBeInTheDocument();
+  expect(screen.getByText("7,500")).toBeInTheDocument();
+  expect(
+    screen.queryByTestId("member-usage-kind-test-user-123-model"),
+  ).not.toBeInTheDocument();
 });

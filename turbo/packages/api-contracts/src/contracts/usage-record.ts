@@ -73,12 +73,12 @@ const usageRecordMemberSchema = z.object({
 // user/thread, independent of trigger source. Historical usage without a
 // recoverable thread id aggregates into one non-navigable fallback row.
 const usageRecordRowSchema = z.object({
-  // Deprecated rollout bridge for Apps that still choose an icon by source.
-  // New consumers must not use this field as attribution.
+  // Old App -> new API rollout bridge for source-icon and run-link readers.
+  // New consumers must not use these fields. Remove after the replacement App
+  // is live and the client floor excludes those readers; tracked by #35077.
   source: usageRecordSourceSchema,
   // Set for navigable thread usage.
   threadId: z.string().nullable(),
-  // Deprecated rollout bridge. Thread-grouped records are never run links.
   runId: z.string().nullable(),
   title: z.string().nullable(),
   credits: z.number(),
@@ -118,9 +118,6 @@ export const usageRecordContract = c.router({
       scope: usageRecordScopeSchema.default("mine"),
       range: usageRecordRangeSchema.default("today"),
       tz: z.string().default("UTC"),
-      // Deprecated rollout bridge. The thread-grouped endpoint accepts this
-      // parameter from older Apps but no longer filters by source.
-      source: usageRecordSourceSchema.optional(),
     }),
     responses: {
       200: usageRecordResponseSchema,

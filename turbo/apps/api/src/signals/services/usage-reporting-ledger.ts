@@ -38,8 +38,10 @@ interface UsageMemberTotalsRow {
   readonly creditsCharged: number;
 }
 
+type UsageReportingDb = Pick<Db, "select">;
+
 export async function getMemberUsageTotals(
-  db: Db,
+  db: UsageReportingDb,
   orgId: string,
   billingWindow: BillingWindow,
 ): Promise<UsageMemberTotalsRow[]> {
@@ -79,7 +81,7 @@ export async function getMemberUsageTotals(
 }
 
 export async function getMemberUsageBreakdowns(
-  db: Db,
+  db: UsageReportingDb,
   orgId: string,
   billingWindow: BillingWindow,
 ) {

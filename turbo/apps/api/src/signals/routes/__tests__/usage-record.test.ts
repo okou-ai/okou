@@ -655,7 +655,7 @@ describe("GET /api/usage/record", () => {
 
     const response = await accept(
       apiClient().get({
-        query: { source: "automation", range: "7d", tz: "UTC" },
+        query: { range: "7d", tz: "UTC" },
         headers: authHeaders(),
       }),
       [200],
@@ -775,54 +775,6 @@ describe("GET /api/usage/record", () => {
     });
   });
 
-  it("accepts but ignores the deprecated source filter", async () => {
-    const fixture = await entitledRecordActor();
-    const connectorProvider = uniqueProvider("bdd-connector");
-    await seedConnectorPricing(connectorProvider);
-
-    const thread = await createChatThreadRun(fixture, {
-      title: "A thread",
-      createdAt: createdAt(20),
-    });
-    await recordConnectorUsage(
-      fixture.actor,
-      thread.runId,
-      connectorProvider,
-      1,
-    );
-
-    const historical = await createUnthreadedRun(fixture.actor, {
-      prompt: "Historical Slack usage",
-      triggerSource: "slack",
-      createdAt: createdAt(10),
-    });
-    await recordConnectorUsage(
-      fixture.actor,
-      historical.runId,
-      connectorProvider,
-      12,
-    );
-
-    await billing.processOrgUsageEvents(fixture.actor);
-    mocks.clerk.session(fixture.actor.userId, fixture.actor.orgId);
-
-    const response = await accept(
-      apiClient().get({
-        query: { source: "slack" },
-        headers: authHeaders(),
-      }),
-      [200],
-    );
-    expect(response.body.rows).toHaveLength(2);
-    expect(response.body.pagination.total).toBe(2);
-    expect(response.body.totalCredits).toBe(130);
-    expect(
-      response.body.rows.map((row) => {
-        return row.threadId;
-      }),
-    ).toStrictEqual(expect.arrayContaining([thread.threadId, null]));
-  });
-
   it("keeps historical threadless usage without a run link", async () => {
     const fixture = await entitledRecordActor();
     const model = uniqueProvider("bdd-model");
@@ -844,10 +796,7 @@ describe("GET /api/usage/record", () => {
     mocks.clerk.session(fixture.actor.userId, fixture.actor.orgId);
 
     const response = await accept(
-      apiClient().get({
-        query: { source: "other" },
-        headers: authHeaders(),
-      }),
+      apiClient().get({ query: {}, headers: authHeaders() }),
       [200],
     );
 
