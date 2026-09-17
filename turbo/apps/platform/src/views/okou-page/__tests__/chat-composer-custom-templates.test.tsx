@@ -491,6 +491,45 @@ test("A document is sent with the command that publishes a document", async () =
   );
 });
 
+test("Uploading leaves the member in the picker they started from", async () => {
+  mockCustomTemplates([]);
+  context.mocks.upload.success({
+    id: "81000000-0000-4000-a000-000000000013",
+    filename: "brand-report.docx",
+    contentType:
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    size: 5,
+    url: "https://cdn.example.test/brand-report.docx",
+  });
+
+  const { user, dialog, capture } = await openCustomPanel();
+
+  click(tabByText("Custom"));
+  await user.upload(
+    await within(dialog).findByLabelText("Import your own file"),
+    new File(["docx"], "brand-report.docx", {
+      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    }),
+  );
+
+  await waitFor(() => {
+    expect(capture.runPrompts).toHaveLength(1);
+  });
+  // The upload was started from inside the picker, so the member is mid-task.
+  // Opening the analysis thread would discard what they were doing to answer a
+  // question they did not ask.
+  expect(window.location.pathname).toBe(`/agents/${AGENT_ID}/chat`);
+  // A tile that swallows a click and changes nothing visible reads as broken,
+  // so the send has to say it happened.
+  await waitFor(() => {
+    expect(
+      document.body.textContent?.includes(
+        "Analysing brand-report.docx. It will appear under Custom when it is ready.",
+      ),
+    ).toBe(true);
+  });
+});
+
 test("A deck uploaded from the same entry keeps the presentation command", async () => {
   mockCustomTemplates([]);
   context.mocks.upload.success({

@@ -159,6 +159,12 @@ test("Import a presentation deck from a new chat", async () => {
     "new-chat-deck.pptx",
   );
   expect(capture.runPrompts).toStrictEqual([IMPORT_PROMPT]);
+  // This tile still opens the thread it created. Watching the analysis is the
+  // only place this path reports progress, so leaving the member behind would
+  // leave them with nothing.
+  await waitFor(() => {
+    expect(window.location.pathname).toMatch(/^\/chats\//);
+  });
 });
 
 test("The Presentation tile still offers exactly the decks it always has", async () => {
