@@ -98,6 +98,7 @@ async fn explicit_zstd_preserves_the_callers_choice_and_bytes() {
                     &guest_control_proto::encode_write_file_result(true, ""),
                 )
                 .await;
+            encoded.len() as u64
         };
         let write = host.write_file_with_compression(
             "/tmp/explicit",
@@ -105,12 +106,16 @@ async fn explicit_zstd_preserves_the_callers_choice_and_bytes() {
             false,
             crate::FileCompression::Zstd,
         );
-        let (result, ()) = tokio::time::timeout(Duration::from_secs(5), async {
+        let (result, received_wire_bytes) = tokio::time::timeout(Duration::from_secs(5), async {
             tokio::join!(write, receive)
         })
         .await
         .unwrap();
-        result.unwrap();
+        let measurements = result.unwrap();
+        assert_eq!(measurements.wire_payload_bytes, received_wire_bytes);
+        assert_eq!(measurements.requests, 1);
+        assert_eq!(measurements.publication_elapsed, Duration::ZERO);
+        assert!(measurements.encoder_pipeline_elapsed <= measurements.requests_elapsed);
     }
 }
 

@@ -26,6 +26,19 @@ pub enum FileCompression {
     Zstd,
 }
 
+/// Measurements from one successfully completed file write, using Host clocks.
+/// Payload bytes exclude protocol framing. Request time includes transport and
+/// Guest work; encoder pipeline time overlaps it and includes backpressure.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct FileWriteMeasurements {
+    pub wire_payload_bytes: u64,
+    pub requests: u64,
+    pub file_gate_wait: Duration,
+    pub requests_elapsed: Duration,
+    pub encoder_pipeline_elapsed: Duration,
+    pub publication_elapsed: Duration,
+}
+
 /// Eligibility result after a sandbox successfully reaches the parked state.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SandboxParkOutcome {
@@ -953,12 +966,14 @@ pub trait Sandbox: Send + Sync + Any {
 
     /// Write ordinary file bytes using the caller's immutable transport choice.
     /// Implementations must honor it without sampling, switching codecs or retrying raw.
+    /// Successful backends with a measured transport return its diagnostics;
+    /// backends without a wire transport (such as the mock) return `None`.
     async fn write_file_with_compression(
         &self,
         path: &str,
         content: &[u8],
         compression: FileCompression,
-    ) -> Result<()>;
+    ) -> Result<Option<FileWriteMeasurements>>;
 
     /// Write multiple ordinary files inside the guest.
     ///

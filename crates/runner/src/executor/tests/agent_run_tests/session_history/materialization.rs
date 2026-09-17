@@ -618,6 +618,21 @@ async fn run_in_sandbox_restores_session_history_from_workspace_sidecar() {
     assert_successful_action_once(&ops, "session_history_workspace_cache_restore");
     assert_successful_action_once(&ops, "session_restore");
     assert_no_action(&ops, "session_history_download");
+    let transfers = telemetry.pending_history_transfer_payloads();
+    assert_eq!(transfers.len(), 1);
+    assert_eq!(
+        transfers[0]["session_history_transfer_source"],
+        "workspace_cache"
+    );
+    assert_eq!(
+        transfers[0]["session_history_codec_reason"],
+        "below_threshold"
+    );
+    assert_eq!(
+        transfers[0]["session_history_transfer_bytes"],
+        history.len()
+    );
+    assert!(transfers[0].get("session_history_wire_bytes").is_none());
     assert_workspace_restore_metadata(
         &telemetry,
         serde_json::json!({
@@ -871,6 +886,26 @@ async fn run_in_sandbox_falls_back_when_workspace_sidecar_guest_restore_fails() 
         &ops,
         "session_history_workspace_cache_guest_restore",
         "workspace session history phase failed",
+    );
+    let transfers = telemetry.pending_history_transfer_payloads();
+    assert_eq!(transfers.len(), 2);
+    assert_eq!(transfers[0]["success"], false);
+    assert_eq!(
+        transfers[0]["session_history_transfer_source"],
+        "workspace_cache"
+    );
+    assert_eq!(transfers[0]["error"], "restore_error");
+    assert!(transfers[0].get("session_history_transfer_bytes").is_none());
+    assert!(transfers[0].get("session_history_wire_bytes").is_none());
+    assert!(transfers[0].get("session_history_selection_ms").is_none());
+    assert_eq!(transfers[1]["success"], true);
+    assert_eq!(
+        transfers[1]["session_history_transfer_source"],
+        "downloaded"
+    );
+    assert_eq!(
+        transfers[1]["session_history_transfer_bytes"],
+        history.len()
     );
     assert_successful_action_once(&ops, "session_history_download");
     assert_workspace_restore_metadata(
@@ -1232,6 +1267,18 @@ async fn run_in_sandbox_restores_large_inline_codex_history_without_cleanup() {
             .iter()
             .all(|call| !call.cmd.contains("collect_matching_session_entries")),
         "completed fresh cold restore must not scan retained Codex sessions"
+    );
+    let transfers = telemetry.pending_history_transfer_payloads();
+    assert_eq!(transfers.len(), 1);
+    assert_eq!(transfers[0]["session_history_transfer_source"], "inline");
+    assert_eq!(transfers[0]["session_history_framework"], "codex");
+    assert_eq!(
+        transfers[0]["session_history_transfer_bytes"],
+        history.len()
+    );
+    assert_eq!(
+        transfers[0]["session_history_codec_reason"],
+        "below_threshold"
     );
 }
 

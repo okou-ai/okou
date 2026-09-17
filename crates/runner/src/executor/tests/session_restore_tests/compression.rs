@@ -17,6 +17,26 @@ async fn history_business_selects_compression_without_changing_restored_bytes() 
             assert_eq!(writes.len(), 1);
             assert_eq!(writes[0].content, history);
             assert_eq!(diagnostics.bytes_in, size);
+            let metadata = serde_json::to_value(&diagnostics.transfer).unwrap();
+            assert_eq!(metadata["session_history_transfer_bytes"], size);
+            assert_eq!(metadata["session_history_restore_representation"], "raw");
+            assert_eq!(
+                metadata["session_history_codec_reason"],
+                if size < 16 * 1024 * 1024 {
+                    "below_threshold"
+                } else {
+                    "sample_accepted"
+                }
+            );
+            assert_eq!(
+                metadata["session_history_wire_codec"],
+                if size < 16 * 1024 * 1024 {
+                    "none"
+                } else {
+                    "zstd"
+                }
+            );
+            assert!(metadata.get("session_history_wire_bytes").is_none());
             assert_eq!(
                 writes[0].compression,
                 if size < 16 * 1024 * 1024 {
@@ -49,9 +69,16 @@ async fn native_codex_zstd_representation_is_not_recompressed() {
         "2026-06-04T07:18:08Z".parse().unwrap(),
     );
     let sandbox = MockSandbox::new("native-zstd");
-    restore_session_in_fresh_sandbox(&sandbox, &codex_context(), &session)
+    let diagnostics = restore_session_in_fresh_sandbox(&sandbox, &codex_context(), &session)
         .await
         .unwrap();
+    let metadata = serde_json::to_value(&diagnostics.transfer).unwrap();
+    assert_eq!(metadata["session_history_codec_reason"], "native_zstd");
+    assert_eq!(metadata["session_history_wire_codec"], "none");
+    assert_eq!(
+        metadata["session_history_restore_representation"],
+        "codex_zstd"
+    );
     let writes = sandbox.write_file_calls();
     assert_eq!(writes.len(), 1);
     assert_eq!(writes[0].compression, FileCompression::None);
@@ -100,9 +127,12 @@ async fn compressible_prefix_does_not_enable_low_benefit_history() {
     // Sampling must inspect the interior, not just a highly compressible header.
     history[..64 * 1024].fill(b'x');
     let session = materialized_bytes_session(CODEX_SESSION_ID, &history);
-    restore_session_in_fresh_sandbox(&sandbox, &codex_context(), &session)
+    let diagnostics = restore_session_in_fresh_sandbox(&sandbox, &codex_context(), &session)
         .await
         .unwrap();
+    let metadata = serde_json::to_value(&diagnostics.transfer).unwrap();
+    assert_eq!(metadata["session_history_codec_reason"], "sample_rejected");
+    assert_eq!(metadata["session_history_wire_codec"], "none");
     let writes = sandbox.write_file_calls();
     assert_eq!(writes.len(), 1);
     assert_eq!(writes[0].compression, FileCompression::None);

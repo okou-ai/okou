@@ -4,6 +4,7 @@ use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
 
 use crate::connection::FrameWriteDecision;
 use crate::{FrameWriteObserver, Shared};
@@ -65,6 +66,8 @@ pub(crate) struct Transfer {
     raw: Option<Vec<u8>>,
     started: Arc<AtomicBool>,
     terminal: bool,
+    pub(crate) wire_payload_bytes: u64,
+    pub(crate) encoder_pipeline_elapsed: Duration,
 }
 
 impl Transfer {
@@ -91,6 +94,8 @@ impl Transfer {
             raw: Some(raw.to_vec()),
             started: Arc::new(AtomicBool::new(false)),
             terminal: false,
+            wire_payload_bytes: 0,
+            encoder_pipeline_elapsed: Duration::ZERO,
         })
     }
 
@@ -155,6 +160,7 @@ impl Transfer {
             .raw
             .take()
             .ok_or_else(|| io::Error::other("stream input already consumed"))?;
+        let encoder_started = Instant::now();
         let mut producer = Producer::start(raw)?;
         while let Some(bytes) = producer.next().await {
             if credits == 0 {
@@ -166,8 +172,10 @@ impl Transfer {
             self.shared
                 .write_frame(&frame, || Ok(FrameWriteDecision::Write), |_, _| {})
                 .await?;
+            self.wire_payload_bytes += bytes.len() as u64;
         }
         producer.finish()?;
+        self.encoder_pipeline_elapsed = encoder_started.elapsed();
         let frame = guest_control_proto::encode(MSG_WRITE_FILE_STREAM_END, seq, &[])
             .map_err(io::Error::other)?;
         self.shared

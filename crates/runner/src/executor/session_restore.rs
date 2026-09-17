@@ -4,6 +4,7 @@ mod codex;
 mod compression;
 
 use std::sync::Arc;
+use std::time::Instant;
 
 use chrono::{DateTime, Utc};
 use guest_contracts::cli_agent_session_id::is_valid_cli_agent_session_id;
@@ -17,6 +18,7 @@ use super::cli_framework::{EffectiveCliFramework, effective_cli_framework};
 use super::env::validate_resume_session_id;
 use super::{RunnerError, RunnerResult};
 use crate::restored_session_identity::RestoredSessionIdentity;
+use crate::telemetry::HistoryTransferMeasurements;
 use crate::types::{ExecutionContext, ResumeSessionHistoryRefKind, SandboxReuseResult};
 use api_contracts::generated::constants::runners::paths::{
     CANONICAL_CLAUDE_CONFIG_DIR, CANONICAL_WORKING_DIR,
@@ -137,6 +139,7 @@ pub(super) struct SessionRestoreDiagnostics {
     pub(super) framework: &'static str,
     pub(super) session_id: String,
     pub(super) bytes_in: usize,
+    pub(super) transfer: HistoryTransferMeasurements,
 }
 
 pub(super) async fn restore_session(
@@ -181,11 +184,12 @@ async fn restore_pi_session(
     let session_id = session.cli_agent_session_id();
     let session_dir = api_contracts::generated::constants::runners::paths::CANONICAL_PI_SESSION_DIR;
     let session_path = format!("{session_dir}/restored-{session_id}.jsonl");
-    write_session_history_file(sandbox, &session_path, session).await?;
+    let transfer = write_session_history_file(sandbox, &session_path, session).await?;
     let diagnostics = SessionRestoreDiagnostics {
         framework: "pi",
         session_id: session_id.to_string(),
         bytes_in: session_history.len(),
+        transfer,
     };
     info!(
         run_id = %context.run_id,
@@ -211,11 +215,12 @@ pub(super) async fn restore_claude_session(
     let session_id = session.cli_agent_session_id();
     let session_path = format!("{session_dir}/{session_id}.jsonl");
 
-    write_session_history_file(sandbox, &session_path, session).await?;
+    let transfer = write_session_history_file(sandbox, &session_path, session).await?;
     let diagnostics = SessionRestoreDiagnostics {
         framework: "claude-code",
         session_id: session_id.to_string(),
         bytes_in: session_history.len(),
+        transfer,
     };
     info!(
         run_id = %context.run_id,
@@ -231,10 +236,20 @@ async fn write_session_history_file(
     sandbox: &dyn Sandbox,
     session_path: &str,
     session: &MaterializedResumeSession,
-) -> RunnerResult<()> {
-    let compression = compression::select(session).await?;
-    sandbox
+) -> RunnerResult<HistoryTransferMeasurements> {
+    let selection_started = Instant::now();
+    let (compression, reason) = compression::select(session).await?;
+    let selection_elapsed = selection_started.elapsed();
+    let wire = sandbox
         .write_file_with_compression(session_path, session.history_bytes(), compression)
         .await
-        .map_err(RunnerError::Sandbox)
+        .map_err(RunnerError::Sandbox)?;
+    Ok(HistoryTransferMeasurements::new(
+        compression,
+        reason,
+        selection_elapsed,
+        session.history_bytes().len(),
+        session.codex_zstd_history().is_some(),
+        wire,
+    ))
 }

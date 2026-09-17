@@ -1,13 +1,14 @@
 use std::future::Future;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::{fmt, io};
 
 use guest_contracts::file_write::WRITE_FILE_REQUEST_DEADLINE;
 use guest_control_proto::{
     ExecTermination, MSG_ERROR, MSG_WRITE_FILE_RESULT, MSG_WRITE_FILES_RESULT,
 };
+use sandbox::FileWriteMeasurements;
 use shell_quote::quote_shell_arg;
 
 use crate::{
@@ -496,7 +497,8 @@ impl GuestControlClient {
             let _path_guard = self.file_write_path_locks.acquire_shared(path).await;
             return self
                 .write_file_chunk(request, WriteFileChunkTracking::Tracked, write_observer)
-                .await;
+                .await
+                .map(|_| ());
         }
 
         for (i, chunk) in content.chunks(chunk_limit).enumerate() {
@@ -567,6 +569,7 @@ impl GuestControlClient {
             crate::FileCompression::None,
         )
         .await
+        .map(|_| ())
     }
 
     /// Write unchanged guest bytes with an explicit per-file transport choice.
@@ -577,7 +580,7 @@ impl GuestControlClient {
         content: &[u8],
         sudo: bool,
         options: crate::FileCompression,
-    ) -> io::Result<()> {
+    ) -> io::Result<FileWriteMeasurements> {
         self.write_file_with_compression_and_observer(
             path,
             content,
@@ -595,7 +598,7 @@ impl GuestControlClient {
         sudo: bool,
         options: crate::FileCompression,
         observer: FrameWriteObserver,
-    ) -> io::Result<()> {
+    ) -> io::Result<FileWriteMeasurements> {
         self.write_file_with_compression_and_chunk_limit(
             path,
             content,
@@ -615,7 +618,7 @@ impl GuestControlClient {
         write_observer: FrameWriteObserver,
         chunk_limit: usize,
         options: crate::FileCompression,
-    ) -> io::Result<()> {
+    ) -> io::Result<FileWriteMeasurements> {
         validate_guest_file_path(path)?;
         if content.len() <= chunk_limit {
             let request = WriteFileChunkRequest::standard(path, content, sudo, false)
@@ -649,15 +652,22 @@ impl GuestControlClient {
             cleanup_armed,
         );
 
+        let mut measurements = FileWriteMeasurements::default();
         let result = async {
             for (i, chunk) in content.chunks(chunk_limit).enumerate() {
-                self.write_file_chunk(
-                    WriteFileChunkRequest::standard(&tmp, chunk, sudo, i > 0)
-                        .with_compression(options),
-                    WriteFileChunkTracking::Composite(&mut normal_operation),
-                    write_observer.clone(),
-                )
-                .await?;
+                let part = self
+                    .write_file_chunk(
+                        WriteFileChunkRequest::standard(&tmp, chunk, sudo, i > 0)
+                            .with_compression(options),
+                        WriteFileChunkTracking::Composite(&mut normal_operation),
+                        write_observer.clone(),
+                    )
+                    .await?;
+                measurements.wire_payload_bytes += part.wire_payload_bytes;
+                measurements.requests += part.requests;
+                measurements.file_gate_wait += part.file_gate_wait;
+                measurements.requests_elapsed += part.requests_elapsed;
+                measurements.encoder_pipeline_elapsed += part.encoder_pipeline_elapsed;
             }
             io::Result::Ok(())
         }
@@ -675,6 +685,7 @@ impl GuestControlClient {
 
         // `-T` keeps directory targets from being treated as destination directories.
         let mv_cmd = format!("mv -fT -- {quoted_tmp} {}", quote_shell_arg(path));
+        let publication_started = Instant::now();
         let rename_result =
             exec_operation::exec_operation_capture_with_composite_on_shared_and_observer(
                 &self.shared,
@@ -699,7 +710,8 @@ impl GuestControlClient {
             ExecOperationWaitOutcome::Terminal(Ok(())) => {
                 cleanup_guard.disarm();
                 normal_operation.complete()?;
-                Ok(())
+                measurements.publication_elapsed = publication_started.elapsed();
+                Ok(measurements)
             }
             ExecOperationWaitOutcome::Terminal(Err(error)) => {
                 // Terminal proof only releases the tracker after cleanup also
@@ -875,10 +887,13 @@ impl GuestControlClient {
         request: WriteFileChunkRequest<'_>,
         tracking: WriteFileChunkTracking<'_>,
         write_observer: FrameWriteObserver,
-    ) -> io::Result<()> {
+    ) -> io::Result<FileWriteMeasurements> {
         validate_write_file_chunk_request(request)?;
 
+        let gate_started = Instant::now();
         let _file_write_guard = self.shared.file_write_gate.lock().await;
+        let file_gate_wait = gate_started.elapsed();
+        let request_started = Instant::now();
         let timeout = WRITE_FILE_REQUEST_DEADLINE;
         let sequence = AtomicU32::new(0);
         if request.compression == crate::FileCompression::Zstd {
@@ -931,7 +946,14 @@ impl GuestControlClient {
             let (success, error) = guest_control_proto::decode_write_file_result(&response.payload)
                 .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
             return if success {
-                Ok(())
+                Ok(FileWriteMeasurements {
+                    wire_payload_bytes: stream.wire_payload_bytes,
+                    requests: 1,
+                    file_gate_wait,
+                    requests_elapsed: request_started.elapsed(),
+                    encoder_pipeline_elapsed: stream.encoder_pipeline_elapsed,
+                    publication_elapsed: Duration::ZERO,
+                })
             } else {
                 Err(write_file_guest_error(error))
             };
@@ -986,7 +1008,14 @@ impl GuestControlClient {
             return Err(write_file_guest_error(error));
         }
 
-        Ok(())
+        Ok(FileWriteMeasurements {
+            wire_payload_bytes: request.content.len() as u64,
+            requests: 1,
+            file_gate_wait,
+            requests_elapsed: request_started.elapsed(),
+            encoder_pipeline_elapsed: Duration::ZERO,
+            publication_elapsed: Duration::ZERO,
+        })
     }
 }
 
