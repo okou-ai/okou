@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.675.0](https://github.com/vm0-ai/okou/compare/core-v8.674.2...core-v8.675.0) (2026-09-17)
+
+
+### Features
+
+* **cli:** support artifact visibility during creation ([#34862](https://github.com/vm0-ai/okou/issues/34862)) ([f1c2168](https://github.com/vm0-ai/okou/commit/f1c216821b6942fc83533abef752089d3cd925d2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.456.0
+
 ## [8.674.2](https://github.com/vm0-ai/okou/compare/core-v8.674.1...core-v8.674.2) (2026-09-17)
 
 

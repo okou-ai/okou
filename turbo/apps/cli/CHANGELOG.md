@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.339.0](https://github.com/vm0-ai/okou/compare/cli-v9.338.2...cli-v9.339.0) (2026-09-17)
+
+
+### Features
+
+* **cli:** support artifact visibility during creation ([#34862](https://github.com/vm0-ai/okou/issues/34862)) ([f1c2168](https://github.com/vm0-ai/okou/commit/f1c216821b6942fc83533abef752089d3cd925d2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.456.0
+    * @okouai/core bumped to 8.675.0
+    * @okouai/pi-agent-runtime bumped to 1.33.1
+
 ## [9.338.2](https://github.com/vm0-ai/okou/compare/cli-v9.338.1...cli-v9.338.2) (2026-09-17)
 
 

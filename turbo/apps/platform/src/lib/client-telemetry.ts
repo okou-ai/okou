@@ -71,6 +71,27 @@ interface HttpRequestTelemetry {
   readonly response_status_code?: number;
 }
 
+export interface MarketingOnboardingTelemetry {
+  readonly event_name: "marketing.onboarding";
+  readonly user_id: string;
+  readonly org_id: string;
+  readonly phase: "attempt" | "token" | "request" | "complete";
+  readonly result_code:
+    | "started"
+    | "received"
+    | "acknowledged"
+    | "duplicate_attempt"
+    | "attempt_error"
+    | "token_missing"
+    | "token_error"
+    | "http_error"
+    | "request_error"
+    | "timeout"
+    | "aborted";
+  readonly response_status_code?: number;
+  readonly marketing_request_id?: string;
+}
+
 export type ClientTelemetryOperation =
   | IndexedDbOpenTelemetry
   | IndexedDbTransactionCreateTelemetry
@@ -78,13 +99,17 @@ export type ClientTelemetryOperation =
   | SharedDatabaseQueryTelemetry
   | SharedWorkerFailureTelemetry
   | SkeletonTimeoutTelemetry
-  | HttpRequestTelemetry;
+  | HttpRequestTelemetry
+  | MarketingOnboardingTelemetry;
 
 function runtimeName(): "shared_worker" | "window" {
   return typeof window === "undefined" ? "shared_worker" : "window";
 }
 
 function scopeName(operation: ClientTelemetryOperation): string {
+  if (operation.event_name === "marketing.onboarding") {
+    return "okou-app/marketing-onboarding";
+  }
   if (operation.event_name === "app.skeleton.timeout") {
     return "okou-app/startup";
   }
@@ -122,6 +147,7 @@ function statusCode(
 function operationName(operation: ClientTelemetryOperation): string {
   if (
     operation.event_name === "shared_worker.failure" ||
+    operation.event_name === "marketing.onboarding" ||
     operation.event_name === "app.skeleton.timeout"
   ) {
     return operation.event_name;
@@ -141,6 +167,20 @@ function operationName(operation: ClientTelemetryOperation): string {
 function operationAttributes(
   operation: ClientTelemetryOperation,
 ): ClientTelemetryAttributes {
+  if (operation.event_name === "marketing.onboarding") {
+    return {
+      "okou.marketing.onboarding.user_id": operation.user_id,
+      "okou.marketing.onboarding.org_id": operation.org_id,
+      "okou.marketing.onboarding.phase": operation.phase,
+      "okou.marketing.onboarding.result": operation.result_code,
+      ...(operation.marketing_request_id === undefined
+        ? {}
+        : {
+            "okou.marketing.onboarding.request_id":
+              operation.marketing_request_id,
+          }),
+    };
+  }
   if (operation.event_name === "app.skeleton.timeout") {
     return {
       "okou.skeleton.threshold_ms": operation.threshold_ms,
@@ -180,6 +220,14 @@ function operationAttributes(
 function httpAttributes(
   operation: ClientTelemetryOperation,
 ): ClientTelemetryAttributes {
+  if (operation.event_name === "marketing.onboarding") {
+    return operation.response_status_code === undefined
+      ? {}
+      : {
+          "attributes.http.response.status_code":
+            operation.response_status_code,
+        };
+  }
   if (operation.event_name !== "http.request") {
     return {};
   }

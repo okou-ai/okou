@@ -644,6 +644,10 @@
       "importDeckHint": "(.pptx, .ppt, .pdf)",
       "importedSlides_one": "{{count}} स्लाइड",
       "importedSlides_other": "{{count}} स्लाइड",
+      "importFile": "अपनी फ़ाइल इंपोर्ट करें",
+      "importFileHint": "({{formats}})",
+      "importStarted": "{{filename}} का विश्लेषण हो रहा है। तैयार होने पर यह Custom में दिखाई देगा।",
+      "importUnsupported": "टेम्पलेट बनाने के लिए {{formats}} फ़ाइल चुनें।",
       "introVideo": "इंट्रो वीडियो",
       "introVideoUnavailable": "यह वीडियो टेम्पलेट अब उपलब्ध नहीं है। अपना संदेश भेजने के लिए इसे हटाएँ।",
       "multiAccent": "बहु-उच्चारण",
@@ -6313,8 +6317,7 @@
       "sourceFile": "{{filename}} से"
     },
     "empty": {
-      "description": "आपके द्वारा अपलोड की गई फ़ाइल से बने टेम्पलेट यहाँ दिखाई देंगे।",
-      "title": "अभी तक कोई टेम्पलेट नहीं"
+      "description": "Okou आपकी फ़ाइल के डिज़ाइन को ऐसे टेम्पलेट में बदल देता है जिसे आप दोबारा इस्तेमाल कर सकते हैं।"
     },
     "loadFailed": "टेम्पलेट लोड नहीं हो सके।",
     "pageCount_one": "{{count}} पृष्ठ",

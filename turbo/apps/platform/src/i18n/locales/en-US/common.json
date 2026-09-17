@@ -644,6 +644,10 @@
       "importDeckHint": "(.pptx, .ppt, .pdf)",
       "importedSlides_one": "{{count}} slide",
       "importedSlides_other": "{{count}} slides",
+      "importFile": "Import your own file",
+      "importFileHint": "({{formats}})",
+      "importStarted": "Analysing {{filename}}. It will appear under Custom when it is ready.",
+      "importUnsupported": "Choose a {{formats}} file to make a template.",
       "introVideo": "Intro video",
       "introVideoUnavailable": "This video template is no longer available. Remove it to send your message.",
       "multiAccent": "Multi-accent",
@@ -6305,8 +6309,7 @@
       "sourceFile": "From {{filename}}"
     },
     "empty": {
-      "description": "Templates built from a file you upload will appear here.",
-      "title": "No templates yet"
+      "description": "Okou turns your file's design into a template you can reuse."
     },
     "loadFailed": "Couldn't load templates.",
     "pageCount_one": "{{count}} page",

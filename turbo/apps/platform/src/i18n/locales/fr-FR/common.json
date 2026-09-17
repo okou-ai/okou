@@ -663,6 +663,10 @@
       "importedSlides_one": "{{count}} diapositive",
       "importedSlides_many": "{{count}} diapositives",
       "importedSlides_other": "{{count}} diapositives",
+      "importFile": "Importer votre propre fichier",
+      "importFileHint": "({{formats}})",
+      "importStarted": "Analyse de {{filename}} en cours. Le modèle apparaîtra dans Custom une fois prêt.",
+      "importUnsupported": "Choisissez un fichier {{formats}} pour créer un modèle.",
       "introVideo": "Vidéo d’intro",
       "introVideoUnavailable": "Ce modèle vidéo n’est plus disponible. Retirez-le pour envoyer votre message.",
       "multiAccent": "Multi-accents",
@@ -6382,8 +6386,7 @@
       "sourceFile": "À partir de {{filename}}"
     },
     "empty": {
-      "description": "Les modèles créés à partir d'un fichier que vous importez apparaîtront ici.",
-      "title": "Aucun modèle pour l'instant"
+      "description": "Okou transforme le design de votre fichier en un modèle que vous pouvez réutiliser."
     },
     "loadFailed": "Impossible de charger les modèles.",
     "pageCount_one": "{{count}} page",

@@ -643,6 +643,10 @@
       "importDeckHint": "(.pptx, .ppt, .pdf)",
       "importedSlides_one": "{{count}}장",
       "importedSlides_other": "{{count}}장",
+      "importFile": "내 파일 가져오기",
+      "importFileHint": "({{formats}})",
+      "importStarted": "{{filename}}을(를) 분석하고 있습니다. 준비되면 Custom에 표시됩니다.",
+      "importUnsupported": "템플릿을 만들려면 {{formats}} 파일을 선택하세요.",
       "introVideo": "인트로 영상",
       "introVideoUnavailable": "이 동영상 템플릿은 더 이상 사용할 수 없습니다. 메시지를 보내려면 삭제하세요.",
       "multiAccent": "다중 악센트",
@@ -6293,8 +6297,7 @@
       "sourceFile": "{{filename}}에서"
     },
     "empty": {
-      "description": "업로드한 파일로 만든 템플릿이 여기에 표시됩니다.",
-      "title": "아직 템플릿이 없습니다"
+      "description": "Okou가 파일의 디자인을 재사용할 수 있는 템플릿으로 만들어 줍니다."
     },
     "loadFailed": "템플릿을 불러오지 못했습니다.",
     "pageCount_other": "{{count}}페이지",

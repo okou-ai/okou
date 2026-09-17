@@ -644,6 +644,10 @@
       "importDeckHint": "(.pptx, .ppt, .pdf)",
       "importedSlides_one": "{{count}} Folie",
       "importedSlides_other": "{{count}} Folien",
+      "importFile": "Eigene Datei importieren",
+      "importFileHint": "({{formats}})",
+      "importStarted": "{{filename}} wird analysiert. Die Vorlage erscheint unter „Custom“, sobald sie fertig ist.",
+      "importUnsupported": "Wählen Sie eine {{formats}}-Datei, um eine Vorlage zu erstellen.",
       "introVideo": "Intro-Video",
       "introVideoUnavailable": "Diese Videovorlage ist nicht mehr verfügbar. Entferne sie, um deine Nachricht zu senden.",
       "multiAccent": "Multi-Akzent",
@@ -6313,8 +6317,7 @@
       "sourceFile": "Aus {{filename}}"
     },
     "empty": {
-      "description": "Vorlagen, die aus einer hochgeladenen Datei erstellt werden, erscheinen hier.",
-      "title": "Noch keine Vorlagen"
+      "description": "Okou macht aus dem Design Ihrer Datei eine Vorlage, die Sie wiederverwenden können."
     },
     "loadFailed": "Vorlagen konnten nicht geladen werden.",
     "pageCount_one": "{{count}} Seite",

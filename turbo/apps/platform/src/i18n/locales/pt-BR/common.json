@@ -663,6 +663,10 @@
       "importedSlides_one": "{{count}} slide",
       "importedSlides_many": "{{count}} slides",
       "importedSlides_other": "{{count}} slides",
+      "importFile": "Importe seu próprio arquivo",
+      "importFileHint": "({{formats}})",
+      "importStarted": "Analisando {{filename}}. Ele aparecerá em Custom quando estiver pronto.",
+      "importUnsupported": "Escolha um arquivo {{formats}} para criar um modelo.",
       "introVideo": "Vídeo de introdução",
       "introVideoUnavailable": "Este modelo de vídeo não está mais disponível. Remova-o para enviar sua mensagem.",
       "multiAccent": "Várias cores de destaque",
@@ -6382,8 +6386,7 @@
       "sourceFile": "De {{filename}}"
     },
     "empty": {
-      "description": "Os modelos criados a partir de um arquivo que você enviar aparecerão aqui.",
-      "title": "Ainda não há modelos"
+      "description": "O Okou transforma o design do seu arquivo em um modelo que você pode reutilizar."
     },
     "loadFailed": "Não foi possível carregar os modelos.",
     "pageCount_one": "{{count}} página",

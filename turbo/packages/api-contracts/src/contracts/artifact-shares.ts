@@ -129,6 +129,13 @@ const errors = {
   404: apiErrorSchema,
 };
 export const artifactSharesContract = c.router({
+  availability: {
+    method: "GET",
+    path: "/api/artifact-shares/availability",
+    headers: authHeadersSchema,
+    responses: { 200: z.object({ enabled: z.boolean() }), ...errors },
+    summary: "Read whether private artifact creation is currently available",
+  },
   status: {
     method: "POST",
     path: "/api/artifact-shares/status",

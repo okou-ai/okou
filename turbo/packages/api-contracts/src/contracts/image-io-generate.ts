@@ -13,6 +13,8 @@ const numberOrStringSchema = z.union([z.number(), z.string()]);
 
 export const imageIoGenerateRequestSchema = z
   .object({
+    /** Fail before creating bytes when private artifact creation is unavailable. */
+    requirePrivateArtifact: z.boolean().optional(),
     prompt: z.string().optional(),
     model: z.string().optional(),
     size: z.string().optional(),
@@ -73,24 +75,30 @@ export type ImageIoGenerateResponse = z.infer<
   typeof imageIoGenerateResponseSchema
 >;
 
+const creationRoute = {
+  method: "POST",
+  path: "/api/image-io/generate",
+  headers: authHeadersSchema,
+  body: imageIoGenerateRequestSchema,
+  responses: {
+    200: imageIoGenerateResponseSchema,
+    202: builtInGenerationAcceptedResponseSchema,
+    400: apiErrorSchema,
+    401: apiErrorSchema,
+    402: apiErrorSchema,
+    403: apiErrorSchema,
+    500: apiErrorSchema,
+    502: apiErrorSchema,
+    503: apiErrorSchema,
+  },
+  summary: "Generate and persist an image file",
+} as const;
+
 export const imageIoGenerateContract = c.router({
-  post: {
-    method: "POST",
-    path: "/api/image-io/generate",
-    headers: authHeadersSchema,
-    body: imageIoGenerateRequestSchema,
-    responses: {
-      200: imageIoGenerateResponseSchema,
-      202: builtInGenerationAcceptedResponseSchema,
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      402: apiErrorSchema,
-      403: apiErrorSchema,
-      500: apiErrorSchema,
-      502: apiErrorSchema,
-      503: apiErrorSchema,
-    },
-    summary: "Generate and persist an image file",
+  post: creationRoute,
+  postPrivate: {
+    ...creationRoute,
+    path: "/api/image-io/generate/private",
   },
 });
 

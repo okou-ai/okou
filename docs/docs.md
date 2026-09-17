@@ -61,7 +61,8 @@ surface; the index does not replace their detailed rules.
   invariants, and the boundary the `simple-morning-brief` cutover must respect.
 - [Morning Brief source collection](./morning-brief-collection.md): the bounded
   Slack source contract, occurrence/attempt/lease ownership, owner revocation
-  boundary, and the coverage limits this first collector declares.
+  boundary, live shared-scope revalidation, and the coverage limits this first
+  collector declares.
 - [Marketing privacy rollback](./marketing-privacy-choices.md): withdrawn runtime
   behavior, storage retirement, and rollout boundaries.
 - [Google Cloud LLM voice routing](./google-llm-voice.md): shared Vercel workload

@@ -663,6 +663,10 @@
       "importedSlides_one": "{{count}} diapositiva",
       "importedSlides_many": "{{count}} diapositivas",
       "importedSlides_other": "{{count}} diapositivas",
+      "importFile": "Importa tu propio archivo",
+      "importFileHint": "({{formats}})",
+      "importStarted": "Analizando {{filename}}. Aparecerá en Custom cuando esté lista.",
+      "importUnsupported": "Elige un archivo {{formats}} para crear una plantilla.",
       "introVideo": "Vídeo de introducción",
       "introVideoUnavailable": "Esta plantilla de vídeo ya no está disponible. Elimínala para enviar tu mensaje.",
       "multiAccent": "Multiacentos",
@@ -6382,8 +6386,7 @@
       "sourceFile": "De {{filename}}"
     },
     "empty": {
-      "description": "Las plantillas creadas a partir de un archivo que subas aparecerán aquí.",
-      "title": "Aún no hay plantillas"
+      "description": "Okou convierte el diseño de tu archivo en una plantilla que puedes reutilizar."
     },
     "loadFailed": "No se pudieron cargar las plantillas.",
     "pageCount_one": "{{count}} página",

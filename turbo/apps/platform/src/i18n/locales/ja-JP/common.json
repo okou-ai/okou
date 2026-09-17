@@ -643,6 +643,10 @@
       "importDeckHint": "(.pptx, .ppt, .pdf)",
       "importedSlides_one": "{{count}} 枚",
       "importedSlides_other": "{{count}} 枚",
+      "importFile": "自分のファイルをインポート",
+      "importFileHint": "({{formats}})",
+      "importStarted": "{{filename}} を解析しています。完成すると Custom に表示されます。",
+      "importUnsupported": "テンプレートを作成するには {{formats}} のファイルを選択してください。",
       "introVideo": "イントロ動画",
       "introVideoUnavailable": "この動画テンプレートは現在利用できません。削除してメッセージを送信してください。",
       "multiAccent": "マルチアクセント",
@@ -6293,8 +6297,7 @@
       "sourceFile": "{{filename}} から"
     },
     "empty": {
-      "description": "アップロードしたファイルから作成されたテンプレートがここに表示されます。",
-      "title": "テンプレートはまだありません"
+      "description": "Okou がファイルのデザインを、繰り返し使えるテンプレートに変換します。"
     },
     "loadFailed": "テンプレートを読み込めませんでした。",
     "pageCount_other": "{{count}} ページ",

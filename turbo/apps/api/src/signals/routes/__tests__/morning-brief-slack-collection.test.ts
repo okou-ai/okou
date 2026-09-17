@@ -252,6 +252,48 @@ function noMessages(): SlackReply {
   };
 }
 
+/** A history page whose messages all sit inside the frozen window. */
+function historyPage(
+  messages: readonly {
+    ts: string;
+    text?: string;
+    thread_ts?: string;
+    reply_count?: number;
+  }[],
+  extra: { readonly has_more?: boolean; readonly next_cursor?: string } = {},
+): SlackReply {
+  return () => {
+    return {
+      ok: true,
+      messages: messages.map((message) => {
+        return { type: "message", user: "U1", text: "", ...message };
+      }),
+      ...(extra.has_more !== undefined && { has_more: extra.has_more }),
+      ...(extra.next_cursor !== undefined && {
+        response_metadata: { next_cursor: extra.next_cursor },
+      }),
+    };
+  };
+}
+
+/** `count` distinct in-window timestamps, one second apart. */
+function windowTimestamps(count: number, offsetSeconds = 60): string[] {
+  return Array.from({ length: count }, (_value, index) => {
+    return `${WINDOW_START_SECONDS + offsetSeconds + index}.000100`;
+  });
+}
+
+/** The queries one Slack method received, in order. */
+function queriesFor(traffic: SlackTraffic, url: string): URLSearchParams[] {
+  return traffic.queries.filter((_query, index) => {
+    return traffic.requests[index]?.url === url;
+  });
+}
+
+function clipping(entry: { readonly textTruncated: boolean }): boolean {
+  return entry.textTruncated;
+}
+
 describe("Morning Brief Slack collection preview", () => {
   it("claims, reads the exact shared scope, normalizes and finalizes one occurrence", async () => {
     const f = await fixture();
@@ -351,11 +393,14 @@ describe("Morning Brief Slack collection preview", () => {
       { ts: THREAD_ROOT, text: "root", fromThread: false },
       { ts: THREAD_REPLY, text: "reply", fromThread: true },
     ]);
+    expect(bundle.entries.map(clipping)).toStrictEqual([false, false, false]);
     expect(bundle.counts).toStrictEqual({
       channels: 2,
       threads: 1,
+      // Discovery, a live proof before each of the three protected reads, the
+      // three reads themselves, and one final proof before release.
+      requests: 8,
       messages: 3,
-      requests: 4,
       textBytes: "boundary message".length + "root".length + "reply".length,
     });
 
@@ -363,19 +408,29 @@ describe("Morning Brief Slack collection preview", () => {
     for (const request of traffic.requests) {
       expect(request.token).toBe(`Bearer ${f.botToken}`);
     }
-    expect(Object.fromEntries(traffic.queries[0] ?? [])).toStrictEqual({
-      limit: "200",
-      user: f.slackUserId,
-      types: "public_channel,private_channel",
-      exclude_archived: "true",
-    });
-    expect(Object.fromEntries(traffic.queries[1] ?? [])).toStrictEqual({
+    // Every authorization lookup asks the same exact intersection question as
+    // discovery, on the fixed set of allowed Slack methods.
+    const enumerations = queriesFor(traffic, SLACK_USER_CONVERSATIONS_URL);
+    expect(enumerations).toHaveLength(5);
+    for (const query of enumerations) {
+      expect(Object.fromEntries(query)).toStrictEqual({
+        limit: "200",
+        user: f.slackUserId,
+        types: "public_channel,private_channel",
+        exclude_archived: "true",
+      });
+    }
+    expect(
+      Object.fromEntries(queriesFor(traffic, SLACK_HISTORY_URL)[0] ?? []),
+    ).toStrictEqual({
       channel: "C100",
       limit: "200",
       oldest: EXPECTED_OLDEST,
       latest: EXPECTED_LATEST,
     });
-    expect(traffic.queries.at(-1)?.get("ts")).toBe(THREAD_ROOT);
+    expect(queriesFor(traffic, SLACK_REPLIES_URL)[0]?.get("ts")).toBe(
+      THREAD_ROOT,
+    );
 
     const [row, ...extra] = await readMorningBriefCollectionOccurrences(f);
     expect(extra).toHaveLength(0);
@@ -441,13 +496,17 @@ describe("Morning Brief Slack collection preview", () => {
 
   it("stops a repeated enumeration cursor instead of looping or claiming completeness", async () => {
     const f = await fixture();
-    let page = 0;
     const traffic = scriptSlack({
-      channels: () => {
-        page += 1;
+      // Every page hands back the same cursor, so an unbounded reader would
+      // never stop. The page contents stay addressable by cursor, which keeps
+      // the later authorization lookups answerable.
+      channels: (query) => {
         return {
           ok: true,
-          channels: [{ id: `C${page}`, name: `c${page}`, is_private: false }],
+          channels:
+            query.get("cursor") === null
+              ? [{ id: "C1", name: "c1", is_private: false }]
+              : [{ id: "C2", name: "c2", is_private: false }],
           response_metadata: { next_cursor: "same" },
         };
       },
@@ -460,10 +519,12 @@ describe("Morning Brief Slack collection preview", () => {
     expect(response.body.bundle.limits).toContain("cursor-anomaly");
     expect(response.body.occurrence.outcome).toBe("partial");
     expect(
-      traffic.requests.filter((request) => {
-        return request.url === SLACK_USER_CONVERSATIONS_URL;
+      response.body.bundle.channels.map((channel) => {
+        return channel.id;
       }),
-    ).toHaveLength(2);
+    ).toStrictEqual(["C1", "C2"]);
+    // Two discovery pages, then one lookup proving C1 and two proving C2.
+    expect(queriesFor(traffic, SLACK_USER_CONVERSATIONS_URL)).toHaveLength(5);
   });
 
   it("caps enumeration at the documented channel budget", async () => {
@@ -1024,5 +1085,525 @@ describe("Morning Brief collection ownership lifetime", () => {
     await expect(
       readMorningBriefCollectionOccurrences(survivor),
     ).resolves.toHaveLength(1);
+  });
+});
+
+describe("Morning Brief Slack live shared scope", () => {
+  it("stops reading a channel the member left after discovery", async () => {
+    const f = await fixture();
+    let discovered = false;
+    const traffic = scriptSlack({
+      channels: () => {
+        const shared = discovered
+          ? [{ id: "C1", name: "general", is_private: false }]
+          : [
+              { id: "C1", name: "general", is_private: false },
+              { id: "C2", name: "left", is_private: false },
+            ];
+        discovered = true;
+        return { ok: true, channels: shared, response_metadata: {} };
+      },
+      history: historyPage([{ ts: FIRST_IN_WINDOW, text: "still shared" }]),
+    });
+
+    const response = await accept(collect(f), [200]);
+    if (response.body.result !== "collected") {
+      throw new Error(
+        `Expected a collected bundle, got ${response.body.result}`,
+      );
+    }
+    const { bundle } = response.body;
+    // The bot alone can still see C2; the connected member no longer can, so
+    // no protected page is read for it.
+    expect(
+      traffic.queries.some((query) => {
+        return query.get("channel") === "C2";
+      }),
+    ).toBeFalsy();
+    expect(
+      bundle.channels.map((channel) => {
+        return channel.id;
+      }),
+    ).toStrictEqual(["C1"]);
+    expect(bundle.limits).toContain("scope-lost");
+    expect(bundle.coverage).toBe("partial");
+    expect(response.body.occurrence.outcome).toBe("partial");
+    expect(
+      bundle.entries.map((entry) => {
+        return entry.text;
+      }),
+    ).toStrictEqual(["still shared"]);
+
+    // Every extra authorization call stays on the exact org bot, connected
+    // member, workspace scope and allowed Slack methods.
+    for (const request of traffic.requests) {
+      expect(request.token).toBe(`Bearer ${f.botToken}`);
+      expect([
+        SLACK_USER_CONVERSATIONS_URL,
+        SLACK_HISTORY_URL,
+        SLACK_REPLIES_URL,
+      ]).toContain(request.url);
+    }
+    for (const [index, request] of traffic.requests.entries()) {
+      if (request.url !== SLACK_USER_CONVERSATIONS_URL) {
+        continue;
+      }
+      const query = traffic.queries[index];
+      expect(query?.get("user")).toBe(f.slackUserId);
+      expect(query?.get("types")).toBe("public_channel,private_channel");
+      expect(query?.get("exclude_archived")).toBe("true");
+    }
+  });
+
+  it("does not release a held response after the shared scope is lost", async () => {
+    const f = await fixture();
+    const survivor = await fixture();
+    const held = createDeferredPromise<void>(context.signal);
+    const arrived = createDeferredPromise<void>(context.signal);
+    let lost = false;
+    let holding = false;
+    scriptSlack({
+      channels: () => {
+        return {
+          ok: true,
+          channels: lost
+            ? []
+            : [{ id: "C1", name: "general", is_private: false }],
+          response_metadata: {},
+        };
+      },
+      history: () => {
+        return { ok: true, messages: [] };
+      },
+    });
+    server.use(
+      http.get(SLACK_HISTORY_URL, async () => {
+        if (!holding) {
+          holding = true;
+          arrived.resolve();
+          await held.promise;
+        }
+        return HttpResponse.json({
+          ok: true,
+          messages: [
+            { type: "message", ts: FIRST_IN_WINDOW, user: "U1", text: "held" },
+          ],
+        });
+      }),
+    );
+
+    const request = collect(f);
+    await arrived.promise;
+    // The member loses the channel while its history response is still held.
+    lost = true;
+    held.resolve();
+
+    const response = await accept(request, [200]);
+    if (response.body.result !== "collected") {
+      throw new Error(
+        `Expected a collected bundle, got ${response.body.result}`,
+      );
+    }
+    const { bundle } = response.body;
+    expect(JSON.stringify(bundle)).not.toContain("held");
+    expect(bundle.entries).toStrictEqual([]);
+    expect(bundle.channels).toStrictEqual([]);
+    expect(bundle.limits).toContain("scope-lost");
+    expect(bundle.coverage).toBe("partial");
+    expect(response.body.occurrence.outcome).toBe("partial");
+
+    // An owner whose scope never moved still collects normally.
+    lost = false;
+    holding = true;
+    const unaffected = await accept(collect(survivor), [200]);
+    if (unaffected.body.result !== "collected") {
+      throw new Error("Expected the unaffected owner to collect");
+    }
+    expect(unaffected.body.bundle.coverage).toBe("complete");
+    expect(unaffected.body.bundle.limits).toStrictEqual([]);
+  });
+
+  it("fails closed when a bounded authorization lookup proves nothing", async () => {
+    const f = await fixture();
+    let page = 0;
+    const traffic = scriptSlack({
+      channels: () => {
+        page += 1;
+        return page === 1
+          ? {
+              ok: true,
+              channels: [{ id: "C1", name: "general", is_private: false }],
+              response_metadata: {},
+            }
+          : {
+              // The member's conversation list keeps advancing without ever
+              // naming C1, so no page proves membership either way.
+              ok: true,
+              channels: [
+                { id: `C${page}0`, name: `other-${page}`, is_private: false },
+              ],
+              response_metadata: { next_cursor: `cursor-${page}` },
+            };
+      },
+      history: historyPage([{ ts: FIRST_IN_WINDOW, text: "unreachable" }]),
+    });
+
+    const response = await accept(collect(f), [200]);
+    if (response.body.result !== "collected") {
+      throw new Error(
+        `Expected a collected bundle, got ${response.body.result}`,
+      );
+    }
+    const { bundle } = response.body;
+    expect(
+      traffic.requests.some((request) => {
+        return request.url === SLACK_HISTORY_URL;
+      }),
+    ).toBeFalsy();
+    expect(bundle.limits).toContain("scope-unproven");
+    // An unavailable proof is neither an allow nor a healthy empty day.
+    expect(bundle.coverage).toBe("partial");
+    expect(response.body.occurrence.outcome).toBe("partial");
+    expect(bundle.entries).toStrictEqual([]);
+  });
+});
+
+describe("Morning Brief Slack bounded coverage", () => {
+  it("reports the thread cap when one complete page holds more replied roots", async () => {
+    const f = await fixture();
+    const roots = windowTimestamps(11);
+    scriptSlack({
+      channels: channelPage([{ id: "C1", name: "general" }]),
+      history: historyPage(
+        roots.map((ts, index) => {
+          return {
+            ts,
+            text: `root ${index}`,
+            thread_ts: ts,
+            reply_count: 2,
+          };
+        }),
+      ),
+      replies: (query) => {
+        const root = query.get("ts") ?? "";
+        return {
+          ok: true,
+          messages: [
+            {
+              type: "message",
+              ts: root,
+              user: "U1",
+              text: "root",
+              thread_ts: root,
+            },
+          ],
+        };
+      },
+    });
+
+    const response = await accept(collect(f), [200]);
+    if (response.body.result !== "collected") {
+      throw new Error(
+        `Expected a collected bundle, got ${response.body.result}`,
+      );
+    }
+    const { bundle } = response.body;
+    // Ten roots are expanded; the eleventh is skipped work and must be named.
+    expect(bundle.counts.threads).toBe(10);
+    expect(bundle.limits).toContain("threads");
+    expect(bundle.coverage).toBe("partial");
+    expect(response.body.occurrence.outcome).toBe("partial");
+  });
+
+  it("clips an oversized message on a code point boundary and reports it", async () => {
+    const f = await fixture();
+    // 4094 single-byte characters plus one three-byte character: one byte over
+    // the per-message ceiling, and the overflow splits a code point.
+    const oversized = `${"a".repeat(4094)}中`;
+    expect(Buffer.byteLength(oversized, "utf8")).toBe(4097);
+    scriptSlack({
+      channels: channelPage([{ id: "C1", name: "general" }]),
+      history: historyPage([{ ts: FIRST_IN_WINDOW, text: oversized }]),
+    });
+
+    const response = await accept(collect(f), [200]);
+    if (response.body.result !== "collected") {
+      throw new Error(
+        `Expected a collected bundle, got ${response.body.result}`,
+      );
+    }
+    const { bundle } = response.body;
+    const [entry, ...extra] = bundle.entries;
+    expect(extra).toHaveLength(0);
+    expect(Buffer.byteLength(entry?.text ?? "", "utf8")).toBe(4094);
+    expect(entry?.text).not.toContain("�");
+    expect(bundle.counts.textBytes).toBe(4094);
+    expect(bundle.limits).toContain("entry-text-bytes");
+    expect(bundle.coverage).toBe("partial");
+    expect(response.body.occurrence.outcome).toBe("partial");
+  });
+});
+
+describe("Morning Brief Slack finite budgets", () => {
+  it("caps enumeration pages and names the bound", async () => {
+    const f = await fixture();
+    scriptSlack({
+      // Pages stay addressable by cursor, so a later authorization lookup can
+      // still walk to whichever page names its conversation.
+      channels: (query) => {
+        const cursor = query.get("cursor");
+        const page = cursor === null ? 1 : Number(cursor);
+        return {
+          ok: true,
+          channels: [{ id: `C${page}`, name: `c${page}`, is_private: false }],
+          response_metadata: { next_cursor: String(page + 1) },
+        };
+      },
+      history: noMessages(),
+    });
+
+    const response = await accept(collect(f), [200]);
+    if (response.body.result !== "collected") {
+      throw new Error("Expected a collected bundle");
+    }
+    expect(
+      response.body.bundle.channels.map((channel) => {
+        return channel.id;
+      }),
+    ).toStrictEqual(["C1", "C2", "C3"]);
+    expect(response.body.bundle.limits).toContain("channel-pages");
+    expect(response.body.occurrence.outcome).toBe("partial");
+  });
+
+  it("caps history pages per channel and names the bound", async () => {
+    const f = await fixture();
+    const [first, second] = windowTimestamps(2);
+    scriptSlack({
+      channels: channelPage([{ id: "C1", name: "general" }]),
+      history: (query) => {
+        const cursor = query.get("cursor");
+        return {
+          ok: true,
+          messages: [
+            {
+              type: "message",
+              ts: cursor === null ? first : second,
+              user: "U1",
+              text: cursor === null ? "page one" : "page two",
+            },
+          ],
+          response_metadata: { next_cursor: cursor === null ? "h2" : "h3" },
+        };
+      },
+    });
+
+    const response = await accept(collect(f), [200]);
+    if (response.body.result !== "collected") {
+      throw new Error("Expected a collected bundle");
+    }
+    const { bundle } = response.body;
+    expect(bundle.counts.messages).toBe(2);
+    expect(bundle.limits).toContain("history-pages");
+    expect(bundle.channels[0]?.truncated).toBeTruthy();
+    expect(response.body.occurrence.outcome).toBe("partial");
+  });
+
+  it("stops a repeated history cursor for one channel", async () => {
+    const f = await fixture();
+    scriptSlack({
+      channels: channelPage([{ id: "C1", name: "general" }]),
+      history: historyPage([{ ts: FIRST_IN_WINDOW, text: "looping" }], {
+        next_cursor: "same",
+      }),
+    });
+
+    const response = await accept(collect(f), [200]);
+    if (response.body.result !== "collected") {
+      throw new Error("Expected a collected bundle");
+    }
+    expect(response.body.bundle.limits).toContain("cursor-anomaly");
+    expect(response.body.bundle.channels[0]?.truncated).toBeTruthy();
+    expect(response.body.occurrence.outcome).toBe("partial");
+  });
+
+  it("expands exactly one reply page per thread and names a longer thread", async () => {
+    const f = await fixture();
+    scriptSlack({
+      channels: channelPage([{ id: "C1", name: "general" }]),
+      history: historyPage([
+        {
+          ts: THREAD_ROOT,
+          text: "root",
+          thread_ts: THREAD_ROOT,
+          reply_count: 5,
+        },
+      ]),
+      replies: () => {
+        return {
+          ok: true,
+          messages: [
+            {
+              type: "message",
+              ts: THREAD_REPLY,
+              user: "U5",
+              text: "reply",
+              thread_ts: THREAD_ROOT,
+            },
+          ],
+          has_more: true,
+        };
+      },
+    });
+
+    const response = await accept(collect(f), [200]);
+    if (response.body.result !== "collected") {
+      throw new Error("Expected a collected bundle");
+    }
+    const { bundle } = response.body;
+    expect(bundle.counts.threads).toBe(1);
+    expect(bundle.limits).toContain("reply-pages");
+    expect(response.body.occurrence.outcome).toBe("partial");
+  });
+
+  it("never exceeds the total provider request budget, authorization included", async () => {
+    const f = await fixture();
+    const traffic = scriptSlack({
+      channels: channelPage(
+        Array.from({ length: 20 }, (_value, index) => {
+          return { id: `C${index}`, name: `channel-${index}` };
+        }),
+      ),
+      history: noMessages(),
+    });
+
+    const response = await accept(collect(f), [200]);
+    if (response.body.result !== "collected") {
+      throw new Error("Expected a collected bundle");
+    }
+    expect(response.body.bundle.counts.requests).toBe(40);
+    expect(traffic.requests).toHaveLength(40);
+    expect(response.body.bundle.limits).toContain("requests");
+    expect(response.body.occurrence.outcome).toBe("partial");
+  });
+
+  it("caps normalized messages and names the bound", async () => {
+    const f = await fixture();
+    const timestamps = windowTimestamps(200);
+    scriptSlack({
+      channels: channelPage([
+        { id: "C1", name: "one" },
+        { id: "C2", name: "two" },
+        { id: "C3", name: "three" },
+      ]),
+      history: historyPage(
+        timestamps.map((ts) => {
+          return { ts, text: "m" };
+        }),
+      ),
+    });
+
+    const response = await accept(collect(f), [200]);
+    if (response.body.result !== "collected") {
+      throw new Error("Expected a collected bundle");
+    }
+    expect(response.body.bundle.counts.messages).toBe(500);
+    expect(response.body.bundle.limits).toContain("messages");
+    expect(response.body.occurrence.outcome).toBe("partial");
+  });
+
+  it("caps total projected text at the documented ceiling", async () => {
+    const f = await fixture();
+    const timestamps = windowTimestamps(33);
+    scriptSlack({
+      channels: channelPage([{ id: "C1", name: "general" }]),
+      history: historyPage(
+        timestamps.map((ts) => {
+          return { ts, text: "x".repeat(4 * 1024) };
+        }),
+      ),
+    });
+
+    const response = await accept(collect(f), [200]);
+    if (response.body.result !== "collected") {
+      throw new Error("Expected a collected bundle");
+    }
+    const { bundle } = response.body;
+    expect(bundle.counts.textBytes).toBe(128 * 1024);
+    expect(bundle.counts.messages).toBe(32);
+    // A message exactly at the per-entry ceiling is carried whole.
+    expect(bundle.entries.map(clipping)).not.toContain(true);
+    expect(bundle.limits).toContain("text-bytes");
+    expect(response.body.occurrence.outcome).toBe("partial");
+  });
+
+  it("reads nothing protected once the collection deadline has passed", async () => {
+    const f = await fixture();
+    mockNow(ANCHOR_MS);
+    const traffic = scriptSlack({
+      channels: () => {
+        // The clock crosses the attempt's 30 second deadline while discovery's
+        // own response is being produced.
+        mockNow(ANCHOR_MS + 31_000);
+        return {
+          ok: true,
+          channels: [{ id: "C1", name: "general", is_private: false }],
+          response_metadata: {},
+        };
+      },
+      history: historyPage([{ ts: FIRST_IN_WINDOW, text: "too late" }]),
+    });
+
+    const response = await accept(collect(f), [200]);
+    if (response.body.result !== "collected") {
+      throw new Error("Expected a collected bundle");
+    }
+    const { bundle } = response.body;
+    expect(
+      traffic.requests.some((request) => {
+        return request.url === SLACK_HISTORY_URL;
+      }),
+    ).toBeFalsy();
+    expect(bundle.limits).toContain("deadline");
+    expect(bundle.entries).toStrictEqual([]);
+    expect(bundle.channels[0]?.truncated).toBeTruthy();
+    expect(response.body.occurrence.outcome).toBe("partial");
+  });
+
+  it("abandons the attempt when the caller cancels during an authorization lookup", async () => {
+    const f = await fixture();
+    const cancellation = new Error(`cancelled ${randomUUID()}`);
+    const controller = new AbortController();
+    const traffic = scriptSlack({ history: historyPage([]) });
+    let discovered = false;
+    server.use(
+      http.get(SLACK_USER_CONVERSATIONS_URL, () => {
+        if (discovered) {
+          controller.abort(cancellation);
+        }
+        discovered = true;
+        return HttpResponse.json({
+          ok: true,
+          channels: [{ id: "C1", name: "general", is_private: false }],
+          response_metadata: {},
+        });
+      }),
+    );
+
+    await expect(
+      setupApp({
+        context,
+        routes: morningBriefCollectionPreviewRoutes,
+        signal: controller.signal,
+        rethrowErrors: true,
+      })(morningBriefCollectionPreviewContract).collect({
+        headers: f.headers,
+        body: { scheduledFor: ANCHOR },
+      }),
+    ).rejects.toThrow(cancellation.message);
+    expect(
+      traffic.requests.some((request) => {
+        return request.url === SLACK_HISTORY_URL;
+      }),
+    ).toBeFalsy();
   });
 });

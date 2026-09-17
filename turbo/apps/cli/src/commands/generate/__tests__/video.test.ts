@@ -14,6 +14,10 @@ import chalk from "chalk";
 import { server } from "../../../mocks/server";
 import { generateCommand } from "../index";
 import { videoCommand } from "../video";
+import {
+  GENERATION_ARTIFACT_ID,
+  serveGenerationVisibility,
+} from "./artifact-visibility-fixtures";
 
 const VIDEO_URL = "http://localhost:3000/api/video-io/generate";
 const FIRST_FRAME_URL = "https://example.com/first.png";
@@ -116,6 +120,7 @@ describe("okou generate video command", () => {
     chalk.level = 0;
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
+    videoCommand.setOptionValue("visibility", undefined);
     server.use(stubBillingStatus(true));
   });
 
@@ -152,6 +157,61 @@ describe("okou generate video command", () => {
       autoFix: true,
       safetyTolerance: "4",
     });
+  });
+
+  it("publishes a generated video using the selected public URL", async () => {
+    vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
+    const artifact = serveGenerationVisibility("video.mp4", "public");
+    server.use(
+      http.post(`${VIDEO_URL}/private`, async ({ request }) => {
+        expect(await request.json()).toMatchObject({
+          requirePrivateArtifact: true,
+        });
+        return HttpResponse.json({
+          ...VIDEO_RESULT,
+          id: GENERATION_ARTIFACT_ID,
+          url: artifact.reference,
+        });
+      }),
+    );
+    await generateCommand.parseAsync([
+      "node",
+      "cli",
+      "video",
+      "--prompt",
+      "A city panorama",
+      "--visibility",
+      "public",
+      "--json",
+    ]);
+    expect(
+      JSON.parse(mockConsoleLog.mock.calls.flat().join("\n")),
+    ).toMatchObject({
+      url: artifact.url,
+      ownerUrl: artifact.ownerUrl,
+      visibility: "public",
+      previewMarkdownBlock: `![${VIDEO_RESULT.filename}](<${artifact.url}>)`,
+    });
+  });
+
+  it("carries template visibility only to the final built-in video command", async () => {
+    serveGenerationVisibility("video.mp4", "public");
+    await generateCommand.parseAsync([
+      "node",
+      "cli",
+      "video",
+      "--template",
+      "video-template:epic-grandeur",
+      "--prompt",
+      "A city panorama",
+      "--visibility",
+      "public",
+    ]);
+    const stdout = mockConsoleLog.mock.calls.flat().join("\n");
+    expect(stdout).toContain(
+      "Pass --visibility public to the final built-in okou generate video command",
+    );
+    expect(stdout).toContain("keep intermediate assets private");
   });
 
   it("should send an explicit model inside an agent run", async () => {

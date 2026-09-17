@@ -44,7 +44,8 @@ the displayed version and copies its link. If that version already has the
 chosen audience, the action copies the existing link. An explicit share action
 also allocates a short organization reference or named public site URL for an
 older share that lacks one. Opening the menu is read-only. Upload, generation,
-hosting create no artifact grants. Thread sharing creates independent resource
+and hosting create no artifact grants unless their CLI command explicitly
+requests organization or public visibility. Thread sharing creates independent resource
 snapshots under its own grant; see [shared-thread snapshots](shared-thread-artifact-snapshots.md).
 Recipients cannot edit or reshare the original artifact.
 
@@ -97,6 +98,41 @@ the Share menu. Run tokens receive `artifact:read` and `artifact:write` when
 not authorize sharing. When that switch is enabled, the run system prompt adds
 short pointers to `okou artifact --help` and `okou artifact download -h`.
 Command help provides the detailed usage. Existing session/PAT callers remain supported.
+
+Creation commands also accept `--visibility only-me|org|public`: `okou web
+upload-file`, `okou host`, managed image/video/avatar-video/voice generation,
+and `okou generate image-batch start`. HTML, presentation, sprite, and video
+template authoring packets carry the selected visibility into their final
+delivery command. Supporting media keeps its default visibility.
+
+With `privateArtifacts` enabled, new artifacts default to `only-me`. Omitting
+the option preserves the existing creation flow, including legacy behavior when
+the switch is off. An explicit option requires the switch and a compatible API;
+it is never silently ignored. `org` and `public` share the completed artifact
+through the same owner endpoints as `okou artifact`, and text, JSON, and Markdown
+outputs use the returned audience-specific URL. Explicit `only-me` leaves a new
+private artifact unshared. For hosted sites it does not revoke an older version's
+existing share; use `okou artifact --visibility only-me` to revoke that share.
+
+```bash
+okou web upload-file -f report.pdf --visibility org
+okou generate image --raw-prompt "A watercolor fox" --visibility only-me
+okou host ./dist --site quarterly-report --visibility public
+```
+
+Explicit creation first reads `/api/artifact-shares/availability`, then uses a
+guarded `/private` variant of the creation endpoint. These variants require the
+live switch before accepting bytes or starting paid generation and capture that
+same private storage policy for the operation. An older API rejects the new
+route rather than ignoring an unknown request field and creating public bytes.
+Old CLI requests keep using existing routes, and new CLI commands without the
+option remain compatible with old APIs. No rollout activation or storage
+migration is part of this change.
+
+If creation succeeds but sharing fails, the command exits unsuccessfully and
+returns the created artifact's owner URL plus a read-state recovery command.
+Inspect that state before retrying sharing; do not repeat the upload or paid
+generation. Image batches apply sharing outside their generation retry loop.
 
 ```bash
 okou artifact /artifacts/abc123def4.pdf --json
