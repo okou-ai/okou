@@ -2,7 +2,7 @@ import type { GetStartedQuestKey } from "@okouai/api-contracts/contracts/get-sta
 import type { ReactNode } from "react";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { Play, User } from "lucide-react";
+import { ArrowRight, Link2, Play, User } from "lucide-react";
 import {
   Button,
   Dialog,
@@ -93,19 +93,19 @@ function TileRow({ children }: { children: ReactNode }) {
   );
 }
 
-/** The join between two tiles: what the quest actually adds. */
-function Link({ accent }: { accent: string }) {
+/**
+ * What happens between the two tiles.
+ *
+ * Three neutral dots said only "these are related". A link means the two are
+ * joined and can be unjoined; an arrow means one moves into the other. The
+ * figure is the only place that can carry this, because the copy under it is
+ * down to two lines.
+ */
+function Joint({ accent, kind }: { accent: string; kind: "link" | "arrow" }) {
+  const Glyph = kind === "link" ? Link2 : ArrowRight;
   return (
-    <span className="flex shrink-0 items-center gap-[3px]">
-      {["a", "b", "c"].map((id) => {
-        return (
-          <span
-            key={id}
-            className="size-[3px] rounded-full"
-            style={{ backgroundColor: `${accent}${SOFT_ALPHA}` }}
-          />
-        );
-      })}
+    <span className="shrink-0" style={{ color: `${accent}${FILL_ALPHA}` }}>
+      <Glyph size={16} strokeWidth={2.2} />
     </span>
   );
 }
@@ -234,7 +234,7 @@ function ConnectorFigure() {
       <Tile accent={accent}>
         <OkouAvatar size={44} />
       </Tile>
-      <Link accent={accent} />
+      <Joint accent={accent} kind="link" />
       <Tile accent={accent}>
         <ToolStackArt accent={accent} />
       </Tile>
@@ -268,18 +268,13 @@ function ChannelArt({ accent }: { accent: string }) {
           style={{ backgroundColor: accent }}
         />
       </span>
-      <span className="flex items-center gap-[3px] px-[4px] pt-[4px]">
-        <OkouAvatar size={11} />
-        <span className="flex flex-col gap-[2px]">
-          <span
-            className="h-[2px] w-[22px] rounded-full"
-            style={{ backgroundColor: `${accent}${SOFT_ALPHA}` }}
-          />
-          <span
-            className="h-[2px] w-[14px] rounded-full"
-            style={{ backgroundColor: `${accent}${SOFT_ALPHA}` }}
-          />
-        </span>
+      {/* The team is already in the channel; the assistant joins them. A
+          channel drawn with nobody in it says nothing about "where your team
+          already works". */}
+      <span className="flex items-center gap-[2px] px-[4px] pt-[5px]">
+        <Person accent={accent} size={13} />
+        <Person accent={accent} size={13} />
+        <OkouAvatar size={14} />
       </span>
     </span>
   );
@@ -293,7 +288,7 @@ function SlackFigure() {
       <Tile accent={accent}>
         <OkouAvatar size={44} />
       </Tile>
-      <Link accent={accent} />
+      <Joint accent={accent} kind="arrow" />
       <Tile accent={accent}>
         <ChannelArt accent={accent} />
       </Tile>
@@ -323,7 +318,7 @@ function InviteFigure() {
           />
         </span>
       </Tile>
-      <Link accent={accent} />
+      <Joint accent={accent} kind="arrow" />
       <Tile accent={accent}>
         {/* A member list: overlapped, each with a ring of paper. */}
         <span className="flex items-center">
