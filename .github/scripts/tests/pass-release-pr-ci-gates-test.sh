@@ -211,6 +211,25 @@ for ios_input in ios/Okou/App/OkouApp.swift .github/workflows/ios.yml .github/sc
   assert_contains "$ios_output" "cannot skip iOS validation"
 done
 
+# A large diff must not turn an early iOS match into an unearned successful gate.
+long_changed_files=$(
+  printf '%s\n' ios/Okou/App/OkouApp.swift
+  for ((i = 0; i < 2000; i++)); do
+    printf 'docs/release-changelog-fixture-with-a-long-filename-to-exercise-large-changed-file-lists-%04d.md\n' "$i"
+  done
+)
+: >"$GH_LOG"
+ios_output=""
+if ios_output=$(MOCK_ADDITIONAL_CHANGED_FILE="$long_changed_files" run_gates "$VALID_HEAD" 2>&1); then
+  fail "a large release PR diff containing iOS changes must not skip iOS validation"
+fi
+grep -Eq 'name=ci-gate-ios .*conclusion=failure' "$GH_LOG" ||
+  fail "a large diff containing iOS changes must receive a failing iOS gate"
+if grep -Eq 'name=ci-gate-ios .*conclusion=success' "$GH_LOG"; then
+  fail "a large diff containing iOS changes received an unearned successful iOS gate"
+fi
+assert_contains "$ios_output" "cannot skip iOS validation"
+
 command -v yq >/dev/null || fail "yq is required"
 security_json=$(yq -o=json '.' "$SECURITY_WORKFLOW")
 jq -e '

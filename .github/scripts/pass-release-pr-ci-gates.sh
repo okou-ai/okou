@@ -52,7 +52,7 @@ create_gate_check() {
 
 # iOS has no release-please package. Only an unrelated release may report this
 # gate without running the iOS workflow; changes to the client still require CI.
-if printf '%s\n' "$CHANGED_FILES" | grep -qE '^ios/|^\.github/workflows/ios\.yml$|^\.github/scripts/changed-base-ref\.sh$'; then
+if grep -qE '^ios/|^\.github/workflows/ios\.yml$|^\.github/scripts/changed-base-ref\.sh$' <<<"$CHANGED_FILES"; then
   create_gate_check \
     ci-gate-ios \
     failure \
