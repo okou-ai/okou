@@ -17,6 +17,8 @@ import {
   or,
   sql,
 } from "drizzle-orm";
+import { logger } from "../../lib/log";
+import { isLockNotAvailable, safeSqlStateCode } from "../../lib/pg-errors";
 import {
   ACTIVITY_RETENTION_MS,
   activityExcerpt,
@@ -49,6 +51,8 @@ import {
   type ActivitySnapshot,
   type ActivityTx,
 } from "./run-activity-snapshot.service";
+
+const log = logger("api:chat-activity-summary");
 
 const ATTEMPT_INTERVAL_MS = 15_000;
 // The lease must outlive one whole generation attempt. A completion that lands
@@ -158,6 +162,18 @@ function retentionAfterMessage(row: ActivitySnapshot, expiresAt: Date): Date {
   return new Date(Math.max(row.expiresAt.getTime(), expiresAt.getTime()));
 }
 
+function summaryAlreadyAttempted(
+  row: ActivitySnapshot,
+  revision: string,
+  clock: Date,
+): boolean {
+  return (
+    row.summaryRevision === revision ||
+    (row.nextAttemptAt !== null && row.nextAttemptAt > clock) ||
+    (row.claimExpiresAt !== null && row.claimExpiresAt > clock)
+  );
+}
+
 async function claimSummary(
   db: Db,
   identity: ActivityRunIdentity,
@@ -196,80 +212,85 @@ async function claimSummary(
           }
         : stored;
       const revision = summaryRevision(row.activityRevision, context.cursor);
-      if (context.cursor > row.messageCursor && context.expiresAt !== null) {
-        await tx
-          .update(runActivitySnapshots)
-          .set({
-            messageCursor: context.cursor,
-            expiresAt: retentionAfterMessage(row, context.expiresAt),
-            ...(expired
-              ? {
-                  entries: row.entries,
-                  activityRevision: row.activityRevision,
-                  summary: null,
-                  summaryRevision: null,
-                  claimId: null,
-                  claimRevision: null,
-                  claimExpiresAt: null,
-                }
-              : {}),
-          })
-          .where(eq(runActivitySnapshots.runId, identity.runId));
-      }
-      if (
-        row.summaryRevision === revision ||
-        (row.nextAttemptAt && row.nextAttemptAt > row.clock) ||
-        (row.claimExpiresAt && row.claimExpiresAt > row.clock)
-      ) {
-        return {
-          kind: "response" as const,
-          response: response(row),
-        };
-      }
+      const refresh =
+        context.cursor > row.messageCursor && context.expiresAt !== null
+          ? {
+              messageCursor: context.cursor,
+              expiresAt: retentionAfterMessage(row, context.expiresAt),
+              ...(expired
+                ? {
+                    entries: row.entries,
+                    activityRevision: row.activityRevision,
+                    summary: null,
+                    summaryRevision: null,
+                    claimId: null,
+                    claimRevision: null,
+                    claimExpiresAt: null,
+                  }
+                : {}),
+            }
+          : undefined;
+      const alreadyAttempted = summaryAlreadyAttempted(
+        row,
+        revision,
+        row.clock,
+      );
       // Leave enough retention for the whole claim/cooldown. Cleanup must not
       // erase a live attempt and permit a second one inside the shared interval.
-      if (
+      const retentionEnding =
         context.cursor <= stored.messageCursor &&
-        row.expiresAt.getTime() - row.clock.getTime() <= ATTEMPT_INTERVAL_MS
-      ) {
-        return {
-          kind: "response" as const,
-          response: emptyResponse(identity.runId, "unavailable"),
-        };
-      }
-      const claimId = randomUUID();
-      const [claimed] = await tx
-        .update(runActivitySnapshots)
-        .set({
-          claimId,
-          claimRevision: revision,
-          claimExpiresAt: sql`${activityClock} + ${CLAIM_MS} * interval '1 millisecond'`,
-          nextAttemptAt: sql`${activityClock} + ${ATTEMPT_INTERVAL_MS} * interval '1 millisecond'`,
-        })
-        .where(
-          and(
-            eq(runActivitySnapshots.runId, identity.runId),
-            gt(
-              runActivitySnapshots.expiresAt,
-              sql`${activityClock} + ${ATTEMPT_INTERVAL_MS} * interval '1 millisecond'`,
+        row.expiresAt.getTime() - row.clock.getTime() <= ATTEMPT_INTERVAL_MS;
+      if (!alreadyAttempted && !retentionEnding) {
+        const claimId = randomUUID();
+        // WHERE reads the pre-update row. Check the refreshed expiry using the
+        // column's timestamp encoder, while retaining the actual statement clock.
+        const expiresAt = refresh
+          ? sql`${sql.param(refresh.expiresAt, runActivitySnapshots.expiresAt)}::timestamp`
+          : sql`${runActivitySnapshots.expiresAt}`;
+        const [claimed] = await tx
+          .update(runActivitySnapshots)
+          .set({
+            ...refresh,
+            claimId,
+            claimRevision: revision,
+            claimExpiresAt: sql`${activityClock} + ${CLAIM_MS} * interval '1 millisecond'`,
+            nextAttemptAt: sql`${activityClock} + ${ATTEMPT_INTERVAL_MS} * interval '1 millisecond'`,
+          })
+          .where(
+            and(
+              eq(runActivitySnapshots.runId, identity.runId),
+              gt(
+                expiresAt,
+                sql`${activityClock} + ${ATTEMPT_INTERVAL_MS} * interval '1 millisecond'`,
+              ),
+              exists(eligibleActivityRun(tx, identity)),
             ),
-            exists(eligibleActivityRun(tx, identity)),
-          ),
-        )
-        .returning({ claimId: runActivitySnapshots.claimId });
-      if (!claimed) {
-        return {
-          kind: "response" as const,
-          response: emptyResponse(identity.runId, "unavailable"),
-        };
+          )
+          .returning({ claimId: runActivitySnapshots.claimId });
+        if (claimed) {
+          return {
+            kind: "claim" as const,
+            claimId,
+            revision,
+            row,
+            context,
+            ownership,
+          };
+        }
+      }
+      // A cached batch, cooldown, live claim or failed eligibility check still
+      // refreshes context/retention. No claim UPDATE has changed this row here.
+      if (refresh) {
+        await tx
+          .update(runActivitySnapshots)
+          .set(refresh)
+          .where(eq(runActivitySnapshots.runId, identity.runId));
       }
       return {
-        kind: "claim" as const,
-        claimId,
-        revision,
-        row,
-        context,
-        ownership,
+        kind: "response" as const,
+        response: alreadyAttempted
+          ? response(row)
+          : emptyResponse(identity.runId, "unavailable"),
       };
     },
     signal,
@@ -281,7 +302,21 @@ async function generateSummary(
   identity: ActivityRunIdentity,
   signal: AbortSignal,
 ): Promise<ActivitySummaryResponse> {
-  const claimed = await claimSummary(db, identity, signal);
+  const claim = await settleIncludingAbort(claimSummary(db, identity, signal));
+  signal.throwIfAborted();
+  if (!claim.ok) {
+    // The optional claim transaction has rolled back. Real contention can also
+    // occur on a new snapshot's FK check; leave a later viewer to try again.
+    if (!isLockNotAvailable(claim.error)) {
+      throw claim.error;
+    }
+    log.debug("Activity summary claim unavailable", {
+      operation: "claim",
+      code: safeSqlStateCode(claim.error),
+    });
+    return emptyResponse(identity.runId, "unavailable");
+  }
+  const claimed = claim.value;
   if (!claimed) {
     return emptyResponse(identity.runId, "ineligible");
   }
@@ -419,9 +454,9 @@ export async function requestActivitySummary(
   if (!(await activityEnabled(db, identity.orgId, identity.userId))) {
     return { kind: "disabled" as const };
   }
-  // A storage failure is this service's own defect, not a degraded optional
-  // generation: it propagates to the app's standard error handling. The viewer
-  // treats a non-200 exactly as it treats `unavailable` and keeps its last batch.
+  // Only claim lock contention degrades to unavailable. All other storage
+  // failures propagate to the app's standard error handling; the viewer keeps
+  // its last batch for either outcome.
   return {
     kind: "summary" as const,
     response: await generateSummary(db, identity, signal),
