@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import { morningBriefCollectionPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-collection-preview";
+import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createStore } from "ccstate";
 import { http, HttpResponse } from "msw";
@@ -29,7 +30,9 @@ import { signSandboxJwtForTests } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
 import { morningBriefCollectionPreviewRoutes } from "../morning-brief-collection-preview";
+import { userPreferencesRoutes } from "../user-preferences";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { createRouteMocks } from "./helpers/route-test";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import {
   deleteSlackIntegrationFixture$,
@@ -184,6 +187,25 @@ async function fixture(
     workspaceId: installation?.slackWorkspaceId ?? "",
     headers: agentToken(userId, orgId, options.capabilities),
   };
+}
+
+/**
+ * The production preference endpoint, used to restore a rejoined member's row.
+ *
+ * Recreating `org_members_metadata` by hand would hide the very thing under
+ * test: the ordinary preference write is what a real rejoin runs, and it
+ * inserts a parent with no revocation stamp.
+ */
+function preferencesClient() {
+  return setupApp({ context, routes: userPreferencesRoutes })(
+    userPreferencesContract,
+  );
+}
+
+/** The ordinary signed-in session a member edits their own preferences with. */
+function memberSessionHeaders(f: Pick<Fixture, "orgId" | "userId">) {
+  createRouteMocks(context).clerk.session(f.userId, f.orgId, "org:admin");
+  return { authorization: "Bearer clerk-session" };
 }
 
 function collect(f: Pick<Fixture, "headers">, scheduledFor = ANCHOR) {
@@ -896,10 +918,18 @@ describe("Morning Brief Slack collection preview", () => {
     expect(row).toMatchObject({ attempt: 2, status: "completed" });
   });
 
-  it("stops an occurrence past its lifetime before any provider call", async () => {
+  /**
+   * A failed first attempt at the anchor, leaving a claimable occurrence whose
+   * lifetime started exactly there.
+   *
+   * The lifetime is a day, so the operator's own credential has to outlive the
+   * clock move rather than expire with it.
+   */
+  async function agedOccurrence(): Promise<{
+    readonly fixture: Fixture;
+    readonly aged: Pick<Fixture, "headers">;
+  }> {
     const f = await fixture();
-    // The lifetime is a day, so the operator's own credential has to outlive
-    // the clock move rather than expire with it.
     const aged = {
       headers: agentToken(f.userId, f.orgId, ["slack:read"], 48 * 3600),
     };
@@ -911,10 +941,40 @@ describe("Morning Brief Slack collection preview", () => {
       },
     });
     await accept(collect(aged), [200]);
+    return { fixture: f, aged };
+  }
 
-    mockNow(ANCHOR_MS + 24 * 60 * 60 * 1000 + 1);
+  it("stops an occurrence at exactly its lifetime deadline before any provider call", async () => {
+    const { fixture: f, aged } = await agedOccurrence();
+    const [before] = await readMorningBriefCollectionOccurrences(f);
+
+    // Equality with the lifetime deadline is already expired, the same rule the
+    // lease boundary uses. One millisecond later is not the boundary.
+    mockNow(ANCHOR_MS + 24 * 60 * 60 * 1000);
     const traffic = scriptSlack({});
     const expired = await accept(collect(aged), [409]);
+    expect(expired.body.error.code).toBe("MORNING_BRIEF_COLLECTION_EXPIRED");
+    expect(traffic.requests).toStrictEqual([]);
+    const [after, ...extra] = await readMorningBriefCollectionOccurrences(f);
+    expect(extra).toHaveLength(0);
+    expect(after).toStrictEqual(before);
+  });
+
+  it("expires an occurrence whose lifetime elapses while a reclaim waits for its row", async () => {
+    const { fixture: f, aged } = await agedOccurrence();
+
+    // One millisecond inside the lifetime when the reclaim starts.
+    mockNow(ANCHOR_MS + 24 * 60 * 60 * 1000 - 1);
+    const held = await holdMorningBriefCollectionOccurrence(f, context.signal);
+    const traffic = scriptSlack({});
+    const reclaim = collect(aged);
+    await held.waitForArrival();
+    // The deadline is reached while the reclaim is blocked on that row, so only
+    // a clock read after the wait can refuse it.
+    mockNow(ANCHOR_MS + 24 * 60 * 60 * 1000);
+    await held.release();
+
+    const expired = await accept(reclaim, [409]);
     expect(expired.body.error.code).toBe("MORNING_BRIEF_COLLECTION_EXPIRED");
     expect(traffic.requests).toStrictEqual([]);
     const [row] = await readMorningBriefCollectionOccurrences(f);
@@ -1191,6 +1251,91 @@ describe("Morning Brief collection ownership lifetime", () => {
     await expect(
       readMorningBriefCollectionOwnerRow(survivor),
     ).resolves.toMatchObject({ revokedAt: null });
+  });
+
+  it("refuses a claim admitted under a membership generation that was deleted before a rejoin", async () => {
+    const f = await fixture({ membershipId: "orgmem_first" });
+    const survivor = await fixture();
+    scriptSlack({
+      channels: channelPage([{ id: "C1", name: "general" }]),
+      history: noMessages(),
+    });
+    await accept(collect(survivor), [200]);
+
+    // The first generation's positive answer is resolved and then held, before
+    // anything is claimed.
+    const lookup = holdMorningBriefMembershipLookup(f, context.signal);
+    const traffic = scriptSlack({});
+    const stale = collect(f);
+    await lookup.waitForArrival();
+
+    // Real membership cleanup runs to completion, so the durable parent and
+    // everything hanging from it are gone rather than merely stamped.
+    await removeMembership(f);
+    await flushWaitUntilForTest();
+    await expect(
+      readMorningBriefCollectionOwnerRow(f),
+    ).resolves.toBeUndefined();
+
+    // A legitimate rejoin: a new membership generation, preferences restored
+    // through the production endpoint, and the native Slack account
+    // reconnected. That recreated parent carries no revocation stamp.
+    await store.set(
+      seedOrgMembership$,
+      {
+        userId: f.userId,
+        orgId: f.orgId,
+        role: "admin",
+        membershipId: "orgmem_rejoined",
+      },
+      context.signal,
+    );
+    await accept(
+      preferencesClient().update({
+        headers: memberSessionHeaders(f),
+        body: { timezone: "Asia/Shanghai" },
+      }),
+      [200],
+    );
+    await store.set(
+      seedSlackOrgConnection$,
+      {
+        slackWorkspaceId: f.workspaceId,
+        userId: f.userId,
+        slackUserId: f.slackUserId,
+      },
+      context.signal,
+    );
+
+    lookup.release();
+    const refused = await accept(stale, [409]);
+    expect(refused.body.error.code).toBe(
+      "MORNING_BRIEF_COLLECTION_OWNER_REVOKED",
+    );
+    // The deleted generation reaches no source and leaves nothing behind.
+    expect(traffic.requests).toStrictEqual([]);
+    await expect(
+      readMorningBriefCollectionOccurrences(f),
+    ).resolves.toStrictEqual([]);
+
+    // So the rejoined member owns the same anchor rather than colliding with a
+    // stale attempt admitted under the generation they replaced.
+    scriptSlack({
+      channels: channelPage([{ id: "C1", name: "general" }]),
+      history: noMessages(),
+    });
+    const rejoined = await accept(collect(f), [200]);
+    expect(rejoined.body.result).toBe("collected");
+    const [row, ...extra] = await readMorningBriefCollectionOccurrences(f);
+    expect(extra).toHaveLength(0);
+    expect(row).toMatchObject({
+      membershipId: "orgmem_rejoined",
+      attempt: 1,
+      status: "completed",
+    });
+    await expect(
+      readMorningBriefCollectionOccurrences(survivor),
+    ).resolves.toHaveLength(1);
   });
 
   it("revokes a committed occurrence inside the cleanup's first transaction", async () => {

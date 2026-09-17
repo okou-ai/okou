@@ -25,6 +25,7 @@ import {
   claimMorningBriefCollection,
   collectionLeaseHeld,
   finalizeMorningBriefCollection,
+  loadMorningBriefCollectionOwnerRow,
   type MorningBriefCollectionAdmission,
   type MorningBriefCollectionClaim,
   type MorningBriefCollectionCompletion,
@@ -36,7 +37,6 @@ import {
   MORNING_BRIEF_SLACK_COLLECTION_DEADLINE_MS,
   type MorningBriefSlackCollectionResult,
 } from "./morning-brief-slack-collection.service";
-import { loadOfficialWorkflowUserTimezone } from "./official-workflow-installation.service";
 import { slackUserInstallation } from "./slack-data.service";
 
 /**
@@ -251,11 +251,19 @@ const admitMorningBriefCollection$ = command(
       return { kind: "not-executed", reason: "brief-paused" };
     }
 
-    const timezone = await loadOfficialWorkflowUserTimezone(db, owner);
+    // One read of the durable member row supplies both the timezone an enabled
+    // brief requires and the generation of the parent this admission may write
+    // under. A member row that a cleanup removed is simply absent here.
+    const member = await loadMorningBriefCollectionOwnerRow(db, owner);
     signal.throwIfAborted();
-    if (timezone === null || !isValidTimeZone(timezone)) {
+    if (
+      member === null ||
+      member.timezone === null ||
+      !isValidTimeZone(member.timezone)
+    ) {
       return { kind: "not-executed", reason: "missing-timezone" };
     }
+    const timezone = member.timezone;
     const agentId = await loadInstallationAgentId(
       db,
       owner,
@@ -292,6 +300,7 @@ const admitMorningBriefCollection$ = command(
         botToken: installation.botToken,
         admission: {
           owner,
+          memberCreatedAt: member.memberCreatedAt,
           scheduledFor: args.scheduledFor,
           collectionKind: MORNING_BRIEF_COLLECTION_KIND_SLACK,
           windowStart: new Date(
@@ -337,6 +346,8 @@ const admissionStillCurrent$ = command(
     }
     const current = revalidated.admitted.admission;
     return (
+      current.memberCreatedAt.getTime() ===
+        admission.memberCreatedAt.getTime() &&
       current.membershipId === admission.membershipId &&
       current.workflowId === admission.workflowId &&
       current.automationId === admission.automationId &&

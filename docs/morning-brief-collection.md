@@ -75,6 +75,10 @@ installation, schedule and Agent, and the Slack workspace and user.
   A live lease is never stolen and a completed occurrence is never re-collected.
 - **Finite leases and attempts.** A lease lasts 60 seconds; an occurrence allows
   3 attempts and stays claimable for 24 hours after it was first admitted.
+  Equality with either deadline is already elapsed: an occurrence is refused at
+  exactly `created_at + 24 hours`, not a millisecond later. A re-claim never
+  rewrites `created_at`, so the lifetime measures the logical occurrence rather
+  than its latest attempt.
 - **Frozen binding.** No existing occurrence is reused unless its window,
   timezone, membership generation, installation, schedule, Agent and Slack
   binding are all unchanged. This is checked before the row's status is even
@@ -91,7 +95,13 @@ installation, schedule and Agent, and the Slack workspace and user.
   admission, then the member row, then the occurrence row with `FOR UPDATE`, and
   only then sample the instant they decide against. A request timestamp, a
   transaction-start `now()` or a statement clock read before a row wait is not
-  that instant.
+  that instant. One case is deliberately narrower: when no occurrence row exists
+  yet, the first attempt's lease clock is read before its own `INSERT`, which
+  can still wait — on the parent's foreign-key lock, or on a concurrent
+  claimant's in-doubt tuple. Any such wait only shortens that first lease, and
+  the executor rechecks `collectionLeaseHeld` before the first provider call, so
+  an already-elapsed first claim reads no source. The post-wait clock claim
+  applies to the existing-row transitions, not to that initial insert.
 - **Guarded completion.** Finalization is one conditional update matching the
   exact occurrence, attempt, lease token, membership generation, running status
   and a lease deadline strictly after that freshly sampled instant. Equality
@@ -151,9 +161,25 @@ otherwise closed, and neither depends on the foreign-key cascade:
 Only the member row's own deletion clears the stamp, so a member who leaves and
 rejoins starts from a fresh row and a new membership generation. A cleanup that
 fails after that first commit leaves the owner fenced out of collection, which
-is the intended fail-closed direction. Other owners are untouched, and a cleanup
-that wins before finalization causes the bundle to be discarded and leaves
-nothing that could later complete or resurrect.
+is the intended fail-closed direction.
+
+That deletion is also why the stamp alone is not the whole fence. Once a cleanup
+has run to completion, an ordinary preference write — the same one a rejoining
+member's client performs — inserts a parent with no stamp on it. An admission
+whose external membership answer was resolved before the cleanup would otherwise
+find that replacement perfectly writable. So the admission also carries the
+parent's `created_at`, and the claim requires it to be unchanged:
+
+- Preference upserts never rewrite `created_at`, so a live admission is
+  unaffected by ordinary timezone, theme or model writes.
+- A deleted and recreated row has a new `created_at`, so the older generation's
+  request is refused before it claims an attempt, before it reads any source,
+  and without leaving an occurrence in the rejoined member's way at that anchor.
+- It is not part of the occurrence's frozen binding, because deleting the parent
+  cascades every occurrence away: a surviving row always hangs from the
+  generation that admitted it. Other owners are untouched, and a cleanup
+  that wins before finalization causes the bundle to be discarded and leaves
+  nothing that could later complete or resurrect.
 
 **Linearization boundary.** Requests already in flight to Slack cannot be
 retracted. What revocation guarantees is that no result of such a request is

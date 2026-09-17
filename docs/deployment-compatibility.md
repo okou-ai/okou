@@ -2119,6 +2119,12 @@ found no occurrence to delete, and long before the member row itself is removed.
   the end of each cleanup path. There is no dual-write window and nothing to
   contract later.
 
+The companion parent-generation check needs no schema of its own: the admission
+carries the member row's existing `created_at`, and the claim requires it to be
+unchanged. Ordinary preference upserts preserve that value, so no deployed
+writer has to change; only a deleted and recreated row reads differently, which
+is exactly the case it refuses. An older artifact simply does not compare it.
+
 This repair changes no route registration, environment gate, feature switch,
 schedule, Run, credit, Chat or email behavior, and it does not activate the
 still-unregistered Clerk erasure bridge. It is a local serialization boundary
