@@ -253,12 +253,15 @@
    through a 1px inset of the inner one. Both are fixed to the handle's
    18x36 / 16x34 geometry. */
 :root {
-  /* The dots drawn on the texture the top step reveals. That texture's colours
-     are fixed rather than theme-paired, so a mark on it cannot take a grey ramp
-     stop: the ramp inverts in dark and the dots would turn light against a
-     light ground. It is much fainter than the dots on the plain track, because
-     the texture is busy where they sit: the weight that reads as a scale on
-     flat grey reads as specks on the aurora. */
+  /* The dots drawn on the texture the top step reveals. They are paired with
+     that texture rather than taken from the grey ramp: the ramp is calibrated
+     against the neutral page surfaces, and these sit on a saturated warm
+     ground, where a neutral speck reads as dirt instead of as a mark. So each
+     value is warm-tinted and its alpha is tuned to the texture underneath it --
+     the dark pair is below, beside the aurora's own. They are much fainter than
+     the dots on the plain track, because the texture is busy where they sit:
+     the weight that reads as a scale on flat grey reads as specks on the
+     aurora. */
   --okou-effort-dot-on-texture: rgb(106 105 104 / 0.18);
   --okou-effort-thumb-clip: polygon(
     0px 8.2px,
@@ -370,11 +373,10 @@
   );
 }
 
-/* The aurora's dark pair. The texture's own colours are fixed rather than
-   theme-paired -- that is what the dot above records -- but "fixed" was only
-   ever right for a mark drawn *on* the texture, never for the texture itself:
-   a ground that runs from near-white to peach is a light-mode object, and in
-   dark it lands in a near-black popover as a lit slab.
+/* The aurora's dark pair. These three images were declared once and shared by
+   both themes, which a texture cannot be: a ground that runs from near-white to
+   peach is a light-mode object, and in dark it lands in a near-black popover as
+   a lit slab.
 
    Pairing it also removes the warm hairline that used to trace the track's four
    corner arcs. The plain track is an opaque layer over this ground and both
