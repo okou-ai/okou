@@ -431,6 +431,41 @@ export async function publishPiSandboxDemand(
   return accepted;
 }
 
+async function deferredDemandProjection(db: Db, runId: string) {
+  const [projection] = await db
+    .select({
+      orgId: agentRuns.orgId,
+      state: agentRunSandboxIntent.state,
+    })
+    .from(agentRunSandboxIntent)
+    .innerJoin(agentRuns, eq(agentRuns.id, agentRunSandboxIntent.runId))
+    .where(eq(agentRunSandboxIntent.runId, runId));
+  return projection;
+}
+
+async function publishDeferredDemandProjectionChanged(
+  db: Db,
+  runId: string,
+): Promise<void> {
+  const projection = await deferredDemandProjection(db, runId);
+  if (projection) {
+    await publishRunQueueChangedForOrgSafely(projection.orgId);
+  }
+}
+
+async function publishTerminalDeferredDemandRemoval(
+  db: Db,
+  runId: string,
+): Promise<void> {
+  const projection = await deferredDemandProjection(db, runId);
+  if (
+    projection &&
+    ["cancelled", "expired", "settled"].includes(projection.state)
+  ) {
+    await publishRunQueueChangedForOrgSafely(projection.orgId);
+  }
+}
+
 async function reserveDeferredPiRun(db: Db, runId: string) {
   return await withDeferredAdmission(db, runId, async (tx, run) => {
     const lifecycle = await readPiInferenceLifecycle(
@@ -474,6 +509,9 @@ async function reserveDeferredPiRun(db: Db, runId: string) {
           ),
         ),
       );
+    if (!legacyEarlier) {
+      throw new Error("Earlier queued demand count query returned no row");
+    }
     const earlierDeferredDemand = await countEarlierDeferredDemand(
       tx,
       run.orgId,
@@ -491,7 +529,7 @@ async function reserveDeferredPiRun(db: Db, runId: string) {
     });
     if (
       capacity.activeRunCount +
-        Number(legacyEarlier?.count ?? 0) +
+        Number(legacyEarlier.count) +
         earlierDeferredDemand >=
       limit
     ) {
@@ -797,6 +835,9 @@ export const consumeDeferredPiRun$ = command(
     signal.throwIfAborted();
     if (!fence) {
       await set(settleDeferredPiTerminal$, runId, signal);
+      signal.throwIfAborted();
+      await publishTerminalDeferredDemandRemoval(db, runId);
+      signal.throwIfAborted();
       return false;
     }
     await publishRunQueueChangedForOrgSafely(fence.orgId);
@@ -816,6 +857,9 @@ export const consumeDeferredPiRun$ = command(
     signal.throwIfAborted();
     if (!input) {
       await set(settleDeferredPiTerminal$, runId, signal);
+      signal.throwIfAborted();
+      await publishRunQueueChangedForOrgSafely(fence.orgId);
+      signal.throwIfAborted();
       return false;
     }
     const prepared = await set(materializeDeferredPiRun$, input, signal);
@@ -1293,7 +1337,7 @@ export async function failWaitingPiCandidate(
   db: Db,
   runId: string,
 ): Promise<void> {
-  await withDeferredAdmission(
+  const failed = await withDeferredAdmission(
     db,
     runId,
     async (tx, run) => {
@@ -1303,7 +1347,7 @@ export async function failWaitingPiCandidate(
         run.launchSnapshot,
       );
       if (lifecycle?.inference.phase !== "sandbox_waiting") {
-        return;
+        return false;
       }
       const at = nowDate();
       await failDeferredPiRun(tx, {
@@ -1313,10 +1357,14 @@ export async function failWaitingPiCandidate(
         status: "failed",
         error: "Invalid durable Pi Sandbox demand",
       });
+      return true;
     },
     undefined,
     true,
   );
+  if (failed) {
+    await publishDeferredDemandProjectionChanged(db, runId);
+  }
 }
 
 /** Periodic recovery is the outbox reader. Notifications are optional hints. */
@@ -1377,6 +1425,9 @@ export const recoverDeferredPiRuns$ = command(
         signal,
       );
       if (result.ok) {
+        if (result.value) {
+          await publishDeferredDemandProjectionChanged(db, runId);
+        }
         await set(settleDeferredPiTerminal$, runId, signal);
       }
       if (!result.ok) {

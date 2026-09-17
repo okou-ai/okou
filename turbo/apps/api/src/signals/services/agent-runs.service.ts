@@ -174,6 +174,11 @@ async function concurrencyUsage(
     .leftJoin(activeMembers, sql`true`)
     .orderBy(desc(activeMembers.active), asc(activeMembers.userId));
 
+  const summary = rows[0];
+  if (!summary) {
+    throw new Error("Concurrency usage aggregate returned no row");
+  }
+
   return {
     memberUsage: rows.flatMap((row) => {
       return row.userId === null
@@ -186,7 +191,7 @@ async function concurrencyUsage(
             },
           ];
     }),
-    waiting: Number(rows[0]?.waiting ?? 0),
+    waiting: Number(summary.waiting),
   };
 }
 

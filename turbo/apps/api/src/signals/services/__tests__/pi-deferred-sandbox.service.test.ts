@@ -36,6 +36,7 @@ import {
   consumeDeferredPiRun$,
 } from "../pi-deferred-sandbox.service";
 import { promoteNextQueuedRun$ } from "../run-queue.service";
+import { drainOrgQueueToCapacity$ } from "../agent-run-lifecycle.service";
 import { setTimeout as delay } from "node:timers/promises";
 import { OFFICIAL_RUNNER_TOKEN_PREFIX } from "@okouai/api-contracts/contracts/runner-primitives";
 import { runsCancelContract } from "@okouai/api-contracts/contracts/run-routes";
@@ -428,6 +429,30 @@ async function createLegacyAdmissionFixture(
   return { actor: { ...actor, orgId: actor.orgId }, agent, api };
 }
 
+async function grantPaidConcurrency(orgId: string, slots = 1): Promise<void> {
+  const stripeSubscriptionId = `sub_${randomUUID()}`;
+  await db()
+    .insert(orgConcurrencySubscriptions)
+    .values({
+      stripeSubscriptionId,
+      orgId,
+      stripePriceId: `price_${randomUUID()}`,
+      slots,
+      subscriptionStatus: "active",
+      currentPeriodEnd: new Date("2099-01-01T00:00:00Z"),
+    });
+  onTestFinished(async () => {
+    await db()
+      .delete(orgConcurrencySubscriptions)
+      .where(
+        eq(
+          orgConcurrencySubscriptions.stripeSubscriptionId,
+          stripeSubscriptionId,
+        ),
+      );
+  });
+}
+
 describe("durable deferred Pi consumer through actual PostgreSQL and Runner routes", () => {
   it("restores a large H1 after its publisher exits and more than 55 seconds of waiting", async () => {
     const f = await fixture({ large: true });
@@ -708,6 +733,9 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
       await previous;
     });
     await entered.promise;
+    await flushWaitUntilForTest();
+    context.mocks.ably.channelGet.mockClear();
+    context.mocks.ably.publish.mockClear();
     await accept(claim(f.runId, true, randomUUID()), [404]);
     // Expiry is an infrastructure fixture; the original worker is still alive
     // outside the transaction, blocked at the real storage signing boundary.
@@ -716,6 +744,14 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
       .set({ deadlineAt: new Date(0) })
       .where(eq(agentRunSandboxLease.runId, f.runId));
     await createStore().set(recoverDeferredPiRuns$, [f.runId], context.signal);
+    await flushWaitUntilForTest();
+    expect(context.mocks.ably.channelGet).toHaveBeenCalledWith(
+      `org:${f.orgId}`,
+    );
+    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+      "runQueueChanged",
+      null,
+    );
     await expect(
       createStore().set(consumeDeferredPiRun$, f.runId, context.signal),
     ).resolves.toBeTruthy();
@@ -821,45 +857,36 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
     await accept(claim(second.runId, true, randomUUID()), [200]);
   }, 60_000);
 
-  it("uses paid spare capacity for equal-time deferred demand without stealing the earlier slot", async () => {
+  it("reserves paid capacity for multiple equal-time deferred demands without overselling", async () => {
     const { actor, api } = await createLegacyAdmissionFixture(
-      "Paid deferred spare-capacity admission",
+      "Paid deferred numerical reservation",
+      2,
     );
-    const stripeSubscriptionId = `sub_${randomUUID()}`;
-    await db()
-      .insert(orgConcurrencySubscriptions)
-      .values({
-        stripeSubscriptionId,
-        orgId: actor.orgId,
-        stripePriceId: `price_${randomUUID()}`,
-        slots: 1,
-        subscriptionStatus: "active",
-        currentPeriodEnd: new Date("2099-01-01T00:00:00Z"),
-      });
-    onTestFinished(async () => {
-      await db()
-        .delete(orgConcurrencySubscriptions)
-        .where(
-          eq(
-            orgConcurrencySubscriptions.stripeSubscriptionId,
-            stripeSubscriptionId,
-          ),
-        );
-    });
+    await grantPaidConcurrency(actor.orgId);
 
     const sameEnqueuedAt = Date.now();
     const demands = await withMockNowForTest(sameEnqueuedAt, async () => {
-      const left = await fixture({
+      const first = await fixture({
         orgId: actor.orgId,
         userId: actor.userId,
         publishInProcess: true,
       });
-      const right = await fixture({
+      const second = await fixture({
         orgId: actor.orgId,
         userId: actor.userId,
         publishInProcess: true,
       });
-      return [left, right] as const;
+      const third = await fixture({
+        orgId: actor.orgId,
+        userId: actor.userId,
+        publishInProcess: true,
+      });
+      const fourth = await fixture({
+        orgId: actor.orgId,
+        userId: actor.userId,
+        publishInProcess: true,
+      });
+      return [first, second, third, fourth] as const;
     });
     const intentOrder = await db()
       .select({
@@ -876,45 +903,154 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
         ),
       )
       .orderBy(agentRunSandboxIntent.enqueuedAt, agentRunSandboxIntent.runId);
-    expect(intentOrder).toHaveLength(2);
+    expect(intentOrder).toHaveLength(4);
     expect(
       intentOrder.map((intent) => {
         return intent.enqueuedAt.getTime();
       }),
-    ).toStrictEqual([sameEnqueuedAt, sameEnqueuedAt]);
-    const [earlier, later] = intentOrder;
-    if (!earlier || !later) {
+    ).toStrictEqual([
+      sameEnqueuedAt,
+      sameEnqueuedAt,
+      sameEnqueuedAt,
+      sameEnqueuedAt,
+    ]);
+    const [first, second, third, fourth] = intentOrder;
+    if (!first || !second || !third || !fourth) {
       throw new Error("Missing equal-time deferred demand order");
     }
 
     const waiting = await api.readRunQueue(actor);
     expect(waiting.body.concurrency).toMatchObject({
-      limit: 2,
+      limit: 3,
       active: 0,
-      waiting: 2,
+      waiting: 4,
       available: 0,
     });
     await expect(
-      createStore().set(consumeDeferredPiRun$, later.runId, context.signal),
+      createStore().set(consumeDeferredPiRun$, fourth.runId, context.signal),
+    ).resolves.toBeFalsy();
+    await expect(
+      createStore().set(consumeDeferredPiRun$, third.runId, context.signal),
     ).resolves.toBeTruthy();
-    const reservedEarlierSlot = await api.readRunQueue(actor);
-    expect(reservedEarlierSlot.body.concurrency).toMatchObject({
-      limit: 2,
+    await expect(
+      createStore().set(consumeDeferredPiRun$, third.runId, context.signal),
+    ).resolves.toBeFalsy();
+    const reservedEarlierSlots = await api.readRunQueue(actor);
+    expect(reservedEarlierSlots.body.concurrency).toMatchObject({
+      limit: 3,
       active: 1,
+      waiting: 3,
+      available: 0,
+    });
+    await expect(
+      createStore().set(consumeDeferredPiRun$, second.runId, context.signal),
+    ).resolves.toBeTruthy();
+    await expect(
+      createStore().set(consumeDeferredPiRun$, first.runId, context.signal),
+    ).resolves.toBeTruthy();
+    await expect(
+      createStore().set(consumeDeferredPiRun$, fourth.runId, context.signal),
+    ).resolves.toBeFalsy();
+
+    const saturated = await api.readRunQueue(actor);
+    expect(saturated.body.concurrency).toMatchObject({
+      limit: 3,
+      active: 3,
       waiting: 1,
       available: 0,
     });
-    await expect(
-      createStore().set(consumeDeferredPiRun$, earlier.runId, context.signal),
-    ).resolves.toBeTruthy();
-    const saturated = await api.readRunQueue(actor);
-    expect(saturated.body.concurrency).toMatchObject({
-      limit: 2,
-      active: 2,
-      waiting: 0,
-      available: 0,
-    });
-  }, 90_000);
+    const expectedLeases = [first.runId, second.runId, third.runId].sort();
+    const leases = await db()
+      .select({ runId: agentRunSandboxLease.runId })
+      .from(agentRunSandboxLease)
+      .innerJoin(agentRuns, eq(agentRuns.id, agentRunSandboxLease.runId))
+      .where(eq(agentRuns.orgId, actor.orgId))
+      .orderBy(agentRunSandboxLease.runId);
+    expect(
+      leases.map((lease) => {
+        return lease.runId;
+      }),
+    ).toStrictEqual(expectedLeases);
+    const jobs = await db()
+      .select({ runId: runnerJobQueue.runId })
+      .from(runnerJobQueue)
+      .innerJoin(agentRuns, eq(agentRuns.id, runnerJobQueue.runId))
+      .where(eq(agentRuns.orgId, actor.orgId))
+      .orderBy(runnerJobQueue.runId);
+    expect(
+      jobs.map((job) => {
+        return job.runId;
+      }),
+    ).toStrictEqual(expectedLeases);
+  }, 120_000);
+
+  it.each(["cancelled", "expired"] as const)(
+    "invalidates the queue projection when waiting demand is %s",
+    async (transition) => {
+      const { actor, api } = await createLegacyAdmissionFixture(
+        `Waiting projection ${transition}`,
+        2,
+      );
+      const deferred = await fixture({
+        orgId: actor.orgId,
+        userId: actor.userId,
+        publishInProcess: true,
+      });
+      const before = await api.readRunQueue(actor);
+      expect(before.body.concurrency).toMatchObject({
+        active: 0,
+        waiting: 1,
+        available: 1,
+      });
+      await flushWaitUntilForTest();
+      context.mocks.ably.channelGet.mockClear();
+      context.mocks.ably.publish.mockClear();
+
+      if (transition === "cancelled") {
+        const cancel = setupApp({ context, routes: runsCancelRoutes })(
+          runsCancelContract,
+        );
+        await accept(
+          cancel.cancel({
+            params: { id: deferred.runId },
+            headers: { authorization: "Bearer clerk-session" },
+          }),
+          [200],
+        );
+      } else {
+        const expiresAt = new Date(Date.now() + 1000);
+        await db()
+          .update(agentRunSandboxIntent)
+          .set({ expiresAt })
+          .where(eq(agentRunSandboxIntent.runId, deferred.runId));
+        await expect(
+          withMockNowForTest(expiresAt.getTime() + 1, async () => {
+            return await createStore().set(
+              consumeDeferredPiRun$,
+              deferred.runId,
+              context.signal,
+            );
+          }),
+        ).resolves.toBeFalsy();
+      }
+      await flushWaitUntilForTest();
+
+      const after = await api.readRunQueue(actor);
+      expect(after.body.concurrency).toMatchObject({
+        active: 0,
+        waiting: 0,
+        available: 2,
+      });
+      expect(context.mocks.ably.channelGet).toHaveBeenCalledWith(
+        `org:${actor.orgId}`,
+      );
+      expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+        "runQueueChanged",
+        null,
+      );
+    },
+    60_000,
+  );
 
   it("fences a delayed claim before acknowledging not-started and forbids later dispatch", async () => {
     const f = await fixture();
@@ -952,6 +1088,9 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
       if (stage === "after-publication") {
         await createStore().set(consumeDeferredPiRun$, f.runId, context.signal);
       }
+      await flushWaitUntilForTest();
+      context.mocks.ably.channelGet.mockClear();
+      context.mocks.ably.publish.mockClear();
       const job = await projectErasureDecision(db(), {
         subjectId: f.userId,
         subjectKind: "user",
@@ -974,6 +1113,14 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
         await expect(
           createStore().set(consumeDeferredPiRun$, f.runId, context.signal),
         ).resolves.toBeFalsy();
+        await flushWaitUntilForTest();
+        expect(context.mocks.ably.channelGet).toHaveBeenCalledWith(
+          `org:${f.orgId}`,
+        );
+        expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+          "runQueueChanged",
+          null,
+        );
       }
       await accept(claim(f.runId, true, randomUUID()), [404]);
       const state = await readRequiredPiFixture(f);
@@ -1775,6 +1922,168 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
         [201],
       );
       expect(overflow.body).toMatchObject({ status: "queued" });
+    },
+    120_000,
+  );
+
+  it.each(["consumer-first", "drain-first"] as const)(
+    "preserves equal-time mixed ordering at the paid last slot with %s lock order",
+    async (order) => {
+      const { actor, agent, api } = await createLegacyAdmissionFixture(
+        `Mixed equal-time ${order}`,
+      );
+      const active = await api.createRun(actor, {
+        agentId: agent.agentId,
+        prompt: `active before mixed race ${order}`,
+        modelProvider: "anthropic-api-key",
+      });
+      expect(active.status).toBe("pending");
+      const queued = await api.createRun(actor, {
+        agentId: agent.agentId,
+        prompt: `queued before mixed race ${order}`,
+        modelProvider: "anthropic-api-key",
+      });
+      expect(queued.status).toBe("queued");
+      const [queuedRow] = await db()
+        .select({ createdAt: agentRunQueue.createdAt })
+        .from(agentRunQueue)
+        .where(eq(agentRunQueue.runId, queued.runId));
+      if (!queuedRow) {
+        throw new Error("Missing equal-time queued admission row");
+      }
+      const deferred = await fixture({
+        orgId: actor.orgId,
+        userId: actor.userId,
+        publish: false,
+        publishInProcess: true,
+      });
+      await grantPaidConcurrency(actor.orgId);
+      await expect(
+        withMockNowForTest(queuedRow.createdAt.getTime(), async () => {
+          return await publishPiSandboxDemand(
+            db(),
+            { runId: deferred.runId, ownerEpoch: 1, generation: 1 },
+            {
+              mode: "pending-tools",
+              h1Hash: deferred.h1Hash,
+              manifestGeneration: 3,
+              pendingToolIds: ["tool-1"],
+              lastEventSequence: 4,
+            },
+          );
+        }),
+      ).resolves.toBeTruthy();
+      const [deferredIntent] = await db()
+        .select({ enqueuedAt: agentRunSandboxIntent.enqueuedAt })
+        .from(agentRunSandboxIntent)
+        .where(eq(agentRunSandboxIntent.runId, deferred.runId));
+      if (!deferredIntent) {
+        throw new Error("Missing equal-time deferred admission row");
+      }
+      expect(deferredIntent.enqueuedAt).toStrictEqual(queuedRow.createdAt);
+
+      const before = await api.readRunQueue(actor);
+      expect(before.body.concurrency).toMatchObject({
+        limit: 2,
+        active: 1,
+        waiting: 1,
+        available: 0,
+      });
+      const held = await holdDeferredRow(context.signal, (tx) => {
+        return tx.execute(
+          sql`SELECT pg_advisory_xact_lock(hashtext(${actor.orgId}))`,
+        );
+      });
+      const startConsumer = () => {
+        return createStore().set(
+          consumeDeferredPiRun$,
+          deferred.runId,
+          context.signal,
+        );
+      };
+      const startDrain = () => {
+        return createStore().set(
+          drainOrgQueueToCapacity$,
+          { orgId: actor.orgId },
+          context.signal,
+        );
+      };
+      const raced =
+        order === "consumer-first"
+          ? await (async () => {
+              const consumer = startConsumer();
+              const consumerPid = await held.waitForBlocked();
+              const drain = startDrain();
+              await waitForDeferredBlocker(consumerPid);
+              await held.release();
+              return { consumer: await consumer, drain: await drain };
+            })()
+          : await (async () => {
+              const drain = startDrain();
+              const drainPid = await held.waitForBlocked();
+              const consumer = startConsumer();
+              await waitForDeferredBlocker(drainPid);
+              await held.release();
+              return { consumer: await consumer, drain: await drain };
+            })();
+      expect(raced.drain + Number(raced.consumer)).toBe(1);
+
+      const deferredEarlier = deferred.runId.localeCompare(queued.runId) < 0;
+      const [queuedAfterRace] = await db()
+        .select({ status: agentRuns.status })
+        .from(agentRuns)
+        .where(eq(agentRuns.id, queued.runId));
+      if (!queuedAfterRace) {
+        throw new Error("Missing equal-time queued Run after race");
+      }
+      const leaseAfterRace = await db()
+        .select({ state: agentRunSandboxLease.state })
+        .from(agentRunSandboxLease)
+        .where(eq(agentRunSandboxLease.runId, deferred.runId));
+      expect(queuedAfterRace.status).toBe(
+        deferredEarlier ? "queued" : "pending",
+      );
+      expect(leaseAfterRace).toStrictEqual(
+        deferredEarlier ? [{ state: "ready" }] : [],
+      );
+      const lastSlot = await api.readRunQueue(actor);
+      expect(lastSlot.body.concurrency).toMatchObject({
+        limit: 2,
+        active: 2,
+        waiting: deferredEarlier ? 0 : 1,
+        available: 0,
+      });
+
+      await db()
+        .update(orgPlanEntitlements)
+        .set({ baseConcurrencyLimit: 2 })
+        .where(eq(orgPlanEntitlements.orgId, actor.orgId));
+      await expect(
+        createStore().set(
+          drainOrgQueueToCapacity$,
+          { orgId: actor.orgId },
+          context.signal,
+        ),
+      ).resolves.toBe(1);
+      const saturated = await api.readRunQueue(actor);
+      expect(saturated.body.concurrency).toMatchObject({
+        limit: 3,
+        active: 3,
+        waiting: 0,
+        available: 0,
+      });
+      await expect(
+        db()
+          .select({ runId: agentRunQueue.runId })
+          .from(agentRunQueue)
+          .where(eq(agentRunQueue.runId, queued.runId)),
+      ).resolves.toStrictEqual([]);
+      await expect(
+        db()
+          .select({ state: agentRunSandboxLease.state })
+          .from(agentRunSandboxLease)
+          .where(eq(agentRunSandboxLease.runId, deferred.runId)),
+      ).resolves.toStrictEqual([{ state: "ready" }]);
     },
     120_000,
   );

@@ -103,5 +103,8 @@ export async function countEarlierDeferredDemand(
             ),
       ),
     );
-  return earlier?.count ?? 0;
+  if (!earlier) {
+    throw new Error("Earlier deferred demand count query returned no row");
+  }
+  return earlier.count;
 }
