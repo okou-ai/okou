@@ -11,6 +11,9 @@ on:
 permissions:
   contents: read
 
+env:
+  npm_config_audit: "false"
+
 concurrency:
   group: ios-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
