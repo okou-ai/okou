@@ -37,15 +37,15 @@ import {
  */
 
 /** The GitHub connector's runtime token bindings, in preference order. */
-export const MORNING_BRIEF_GITHUB_TOKEN_ENVIRONMENT_NAMES = [
+const MORNING_BRIEF_GITHUB_TOKEN_ENVIRONMENT_NAMES = [
   "GITHUB_TOKEN",
   "GH_TOKEN",
 ] as const;
 
 /** Notifications cover the 24 hours ending at the anchor. */
-export const MORNING_BRIEF_GITHUB_WINDOW_MS = 24 * 60 * 60 * 1000;
+const MORNING_BRIEF_GITHUB_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-export const MORNING_BRIEF_GITHUB_BUDGET = {
+const MORNING_BRIEF_GITHUB_BUDGET = {
   /** `/user`, 2 notification pages, 2 + 2 search pages, 5 × 3 pull reads. */
   maxRequests: 24,
   maxResponseBytes: 256 * 1024,
@@ -383,37 +383,51 @@ function recordFailure(
   coverage: BranchCoverage,
   result: Exclude<MorningBriefReadResult<unknown>, { readonly kind: "ok" }>,
 ): { readonly retryAfterSeconds?: number; readonly revoked: boolean } {
-  switch (result.kind) {
-    case "denied":
-    case "forbidden":
-      coverage.deny();
-      return { revoked: false };
-    case "not-found":
-      coverage.limit("denied-endpoint");
-      return { revoked: false };
-    case "rate-limited":
-      coverage.fail("rate-limited");
-      return {
-        ...(result.retryAfterSeconds === undefined
-          ? {}
-          : { retryAfterSeconds: result.retryAfterSeconds }),
-        revoked: false,
-      };
-    case "oversized":
-      coverage.fail("oversized-response");
-      return { revoked: false };
-    case "malformed":
-      coverage.fail("malformed-response");
-      return { revoked: false };
-    case "budget-exhausted":
-      coverage.limit("requests");
-      return { revoked: false };
-    case "failed":
-      coverage.fail("malformed-response");
-      return { revoked: false };
-    case "revoked":
-      coverage.fail("deadline");
-      return { revoked: true };
+  if (result.kind === "denied" || result.kind === "forbidden") {
+    coverage.deny();
+    return { revoked: false };
+  }
+  if (result.kind === "not-found") {
+    coverage.limit("denied-endpoint");
+    return { revoked: false };
+  }
+  if (result.kind === "rate-limited") {
+    coverage.fail("rate-limited");
+    return {
+      ...(result.retryAfterSeconds === undefined
+        ? {}
+        : { retryAfterSeconds: result.retryAfterSeconds }),
+      revoked: false,
+    };
+  }
+  if (result.kind === "budget-exhausted") {
+    coverage.limit("requests");
+    return { revoked: false };
+  }
+  if (result.kind === "revoked") {
+    coverage.fail("deadline");
+    return { revoked: true };
+  }
+  coverage.fail(
+    result.kind === "oversized" ? "oversized-response" : "malformed-response",
+  );
+  return { revoked: false };
+}
+
+/** The running check tally for one pull request head. */
+interface CheckTally {
+  failing: number;
+  pending: number;
+  succeeded: number;
+  readonly failingNames: string[];
+  incomplete: boolean;
+}
+
+/** Count one failing context, keeping only a bounded number of its names. */
+function recordFailingName(tally: CheckTally, name: string): void {
+  tally.failing += 1;
+  if (tally.failingNames.length < MORNING_BRIEF_GITHUB_BUDGET.maxFailingNames) {
+    tally.failingNames.push(boundedText(name, 80));
   }
 }
 
@@ -423,7 +437,7 @@ async function mapBounded<I, O>(
   limit: number,
   run: (input: I, index: number) => Promise<O>,
 ): Promise<O[]> {
-  const results = new Array<O>(inputs.length);
+  const results: O[] = [];
   let next = 0;
   const workers = Array.from(
     { length: Math.min(limit, inputs.length) },
@@ -443,7 +457,7 @@ async function mapBounded<I, O>(
   return results;
 }
 
-export interface MorningBriefGithubCollectionArgs {
+interface MorningBriefGithubCollectionArgs {
   readonly scope: MorningBriefCollectionScope;
   readonly anchor: Date;
   readonly collectedAt: Date;
@@ -786,6 +800,56 @@ class GithubPrioritiesCollector {
     return selected;
   }
 
+  /** Fold one bounded check-runs page into the running tally. */
+  private tallyCheckRuns(
+    tally: CheckTally,
+    page: z.infer<typeof checkRunsSchema>,
+  ): void {
+    this.checks.page();
+    for (const run of page.check_runs) {
+      if (run.status !== "completed") {
+        tally.pending += 1;
+        continue;
+      }
+      if (
+        run.conclusion === "success" ||
+        run.conclusion === "neutral" ||
+        run.conclusion === "skipped"
+      ) {
+        tally.succeeded += 1;
+        continue;
+      }
+      recordFailingName(tally, run.name);
+    }
+    if (page.total_count > page.check_runs.length) {
+      tally.incomplete = true;
+      this.checks.limit("check-runs");
+    }
+  }
+
+  /** Fold one bounded combined-status page into the running tally. */
+  private tallyCommitStatus(
+    tally: CheckTally,
+    page: z.infer<typeof commitStatusSchema>,
+  ): void {
+    this.checks.page();
+    for (const context of page.statuses) {
+      if (context.state === "pending") {
+        tally.pending += 1;
+        continue;
+      }
+      if (context.state === "success") {
+        tally.succeeded += 1;
+        continue;
+      }
+      recordFailingName(tally, context.context);
+    }
+    if (page.total_count > page.statuses.length) {
+      tally.incomplete = true;
+      this.checks.limit("commit-status");
+    }
+  }
+
   /** Detail, check runs and combined status for one pull request head. */
   private async collectChecks(draft: DraftItem): Promise<void> {
     if (this.outOfTime()) {
@@ -809,12 +873,13 @@ class GithubPrioritiesCollector {
       draft.draft = detail.data.draft;
     }
     const headSha = detail.data.head.sha;
-
-    let failing = 0;
-    let pending = 0;
-    let succeeded = 0;
-    const failingNames: string[] = [];
-    let incomplete = false;
+    const tally: CheckTally = {
+      failing: 0,
+      pending: 0,
+      succeeded: 0,
+      failingNames: [],
+      incomplete: false,
+    };
 
     const runs = await this.reader.getJson({
       pathname: `${repoPath}/commits/${headSha}/check-runs`,
@@ -826,31 +891,9 @@ class GithubPrioritiesCollector {
       signal: this.signal,
     });
     if (runs.kind === "ok") {
-      this.checks.page();
-      for (const run of runs.data.check_runs) {
-        if (run.status !== "completed") {
-          pending += 1;
-          continue;
-        }
-        if (
-          run.conclusion === "success" ||
-          run.conclusion === "neutral" ||
-          run.conclusion === "skipped"
-        ) {
-          succeeded += 1;
-          continue;
-        }
-        failing += 1;
-        if (failingNames.length < MORNING_BRIEF_GITHUB_BUDGET.maxFailingNames) {
-          failingNames.push(boundedText(run.name, 80));
-        }
-      }
-      if (runs.data.total_count > runs.data.check_runs.length) {
-        incomplete = true;
-        this.checks.limit("check-runs");
-      }
+      this.tallyCheckRuns(tally, runs.data);
     } else {
-      incomplete = true;
+      tally.incomplete = true;
       this.checks.limit("check-runs");
       if (this.note(recordFailure(this.checks, runs))) {
         return;
@@ -864,31 +907,14 @@ class GithubPrioritiesCollector {
       signal: this.signal,
     });
     if (status.kind === "ok") {
-      this.checks.page();
-      for (const context of status.data.statuses) {
-        if (context.state === "pending") {
-          pending += 1;
-          continue;
-        }
-        if (context.state === "success") {
-          succeeded += 1;
-          continue;
-        }
-        failing += 1;
-        if (failingNames.length < MORNING_BRIEF_GITHUB_BUDGET.maxFailingNames) {
-          failingNames.push(boundedText(context.context, 80));
-        }
-      }
-      if (status.data.total_count > status.data.statuses.length) {
-        incomplete = true;
-        this.checks.limit("commit-status");
-      }
+      this.tallyCommitStatus(tally, status.data);
     } else {
-      incomplete = true;
+      tally.incomplete = true;
       this.checks.limit("commit-status");
       this.note(recordFailure(this.checks, status));
     }
 
+    const { failing, pending, succeeded, failingNames, incomplete } = tally;
     // An unread check surface is `unknown`, never `success`. Only a complete
     // read with nothing failing or pending may report green, and this is still
     // observed check state rather than branch-protection satisfaction.
@@ -944,7 +970,7 @@ class GithubPrioritiesCollector {
     return itemCount === 0 ? "empty" : "complete";
   }
 
-  private items(): readonly MorningBriefGithubItem[] {
+  private items(): MorningBriefGithubItem[] {
     const ordered = [...this.drafts.values()]
       .filter((draft) => {
         return draft.reasons.length > 0;
@@ -1074,7 +1100,7 @@ class GithubPrioritiesCollector {
  * semantics. The returned bundle only becomes the caller's result if the
  * reader's release gate still agrees the owner's authority is unchanged.
  */
-export async function collectMorningBriefGithubPriorities(
+async function collectMorningBriefGithubPriorities(
   reader: MorningBriefConnectorReader,
   args: MorningBriefGithubCollectionArgs,
   signal: AbortSignal,
@@ -1088,7 +1114,7 @@ const MAX_ANCHOR_SKEW_MS = 60_000;
 /** The oldest anchor this preview accepts. */
 const MAX_ANCHOR_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
-export type MorningBriefGithubExecution =
+type MorningBriefGithubExecution =
   | { readonly kind: "invalid-anchor"; readonly message: string }
   | {
       readonly kind: "not-executed";

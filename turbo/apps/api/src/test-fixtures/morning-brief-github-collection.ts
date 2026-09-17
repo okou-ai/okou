@@ -1,14 +1,9 @@
 import { randomUUID } from "node:crypto";
 
 import { agents } from "@okouai/db/schema/agent";
-import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
-import {
-  workflowAutomations,
-  workflowUserAutomationThreads,
-  workflows,
-} from "@okouai/db/schema/workflow";
+import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
 import { and, eq } from "drizzle-orm";
 import { onTestFinished } from "vitest";
 
@@ -33,7 +28,7 @@ interface MorningBriefOwner {
   readonly userId: string;
 }
 
-export interface InstalledMorningBrief {
+interface InstalledMorningBrief {
   readonly owner: MorningBriefOwner;
   readonly agentId: string;
   readonly workflowId: string;
@@ -157,49 +152,4 @@ export async function pauseMorningBriefAutomation(
     .update(workflowAutomations)
     .set({ enabled: false, nextRunAt: null })
     .where(eq(workflowAutomations.id, automationId));
-}
-
-/** Delete the Agent an installation pinned, as Agent deletion would. */
-export async function deleteMorningBriefAgent(agentId: string): Promise<void> {
-  await db().delete(agents).where(eq(agents.id, agentId));
-}
-
-/**
- * Bind the installation to a thread that explicitly selects one account.
- *
- * This is the state the old path already honors: the destination thread names
- * the connector account, and the member's default account is only consulted
- * when no selection exists.
- */
-export async function selectMorningBriefConnectorAccount(options: {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly workflowId: string;
-  readonly chatThreadId: string;
-  readonly connectorSlug: string;
-  readonly connectorId: string;
-}): Promise<void> {
-  await db()
-    .insert(workflowUserAutomationThreads)
-    .values({
-      orgId: options.orgId,
-      userId: options.userId,
-      workflowId: options.workflowId,
-      chatThreadId: options.chatThreadId,
-    })
-    .onConflictDoNothing();
-  await db()
-    .insert(chatThreadConnectorSelections)
-    .values({
-      chatThreadId: options.chatThreadId,
-      connectorSlug: options.connectorSlug,
-      connectorId: options.connectorId,
-    })
-    .onConflictDoUpdate({
-      target: [
-        chatThreadConnectorSelections.chatThreadId,
-        chatThreadConnectorSelections.connectorSlug,
-      ],
-      set: { connectorId: options.connectorId },
-    });
 }

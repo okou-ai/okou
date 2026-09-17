@@ -85,7 +85,7 @@ export type MorningBriefScopeDenial =
   | "missing-agent"
   | "membership-revoked";
 
-export type MorningBriefScopeResult =
+type MorningBriefScopeResult =
   | { readonly kind: "admitted"; readonly scope: MorningBriefCollectionScope }
   | { readonly kind: "denied"; readonly reason: MorningBriefScopeDenial };
 
@@ -98,7 +98,7 @@ export type MorningBriefAccessDenial =
   | "account-needs-reconnect"
   | "endpoint-not-authorized";
 
-export interface MorningBriefReaderBudget {
+interface MorningBriefReaderBudget {
   /** Attempted requests, including denials and failures. */
   readonly maxRequests: number;
   /** Cap per response body, enforced while streaming. */
@@ -163,7 +163,7 @@ export interface MorningBriefConnectorReader {
  * produced it is still the authority that was admitted. Anything other than
  * `collected` means the caller must discard what it captured.
  */
-export type MorningBriefAccessResult =
+type MorningBriefAccessResult =
   | { readonly kind: "collected" }
   | { readonly kind: "denied"; readonly reason: MorningBriefAccessDenial }
   | { readonly kind: "revoked" };
@@ -438,11 +438,8 @@ async function resolveConnectorAccess(
   };
 }
 
-/** The decision firewall for one connector, from accepted catalog metadata. */
-async function loadDecisionFirewall(
-  snapshot: ConnectorRuntimeSnapshot,
-  connectorSlug: ConnectorSlug,
-): Promise<{
+/** The accepted catalog's routing metadata, shaped for the shared matcher. */
+interface DecisionFirewall {
   readonly name: string;
   readonly apis: readonly {
     readonly base: string;
@@ -452,7 +449,13 @@ async function loadDecisionFirewall(
       readonly rules: readonly string[];
     }[];
   }[];
-} | null> {
+}
+
+/** The decision firewall for one connector, from accepted catalog metadata. */
+async function loadDecisionFirewall(
+  snapshot: ConnectorRuntimeSnapshot,
+  connectorSlug: ConnectorSlug,
+): Promise<DecisionFirewall | null> {
   const view = await loadConnectorDiagnosticCatalogView(
     snapshot.serverFirewalls,
     connectorSlug,
@@ -499,9 +502,15 @@ async function loadNetworkPolicies(
   snapshot: ConnectorRuntimeSnapshot,
   firewallName: string,
 ): Promise<Record<string, unknown>> {
+  // The grant scope is Agent-scoped on purpose: policy belongs to the exact
+  // Agent the canonical installation pinned, not to the member at large.
   const refreshes = await resolveActiveNetworkPolicyRefreshes(
     db,
-    { orgId: scope.orgId, userId: scope.userId },
+    {
+      orgId: scope.orgId,
+      userId: scope.userId,
+      agentId: scope.agentId,
+    },
     [connectorSlug],
     snapshot,
   );
@@ -611,6 +620,239 @@ async function readCappedText(
 }
 
 /**
+ * Classify a provider response that must not have its body read.
+ *
+ * Returns `null` when the response is a success whose bounded body may be
+ * streamed. Every other status becomes its own honest outcome: a policy
+ * denial, a provider refusal, a missing item, a rate limit, or a failure.
+ */
+async function classifyProviderResponse(
+  response: Response,
+): Promise<Exclude<
+  MorningBriefReadResult<never>,
+  { readonly kind: "ok" }
+> | null> {
+  const seconds = retryAfterSeconds(response);
+  if (response.status === 429) {
+    await response.body?.cancel();
+    return {
+      kind: "rate-limited",
+      ...(seconds === undefined ? {} : { retryAfterSeconds: seconds }),
+    };
+  }
+  if (response.status === 403) {
+    // Secondary rate limits also arrive as 403 with `Retry-After`.
+    await response.body?.cancel();
+    return seconds === undefined
+      ? { kind: "forbidden" }
+      : { kind: "rate-limited", retryAfterSeconds: seconds };
+  }
+  if (response.status === 404 || response.status === 410) {
+    await response.body?.cancel();
+    return { kind: "not-found" };
+  }
+  if (response.status === 401) {
+    await response.body?.cancel();
+    return { kind: "forbidden" };
+  }
+  if (!response.ok) {
+    await response.body?.cancel();
+    return { kind: "failed" };
+  }
+  return null;
+}
+
+/** Stream, bound and validate a success body. */
+async function parseBoundedJson<T>(
+  response: Response,
+  schema: z.ZodType<T>,
+  maxBytes: number,
+): Promise<MorningBriefReadResult<T>> {
+  const capped = await readCappedText(response, maxBytes);
+  if (capped === null) {
+    return { kind: "oversized" };
+  }
+  let parsedJson: unknown;
+  try {
+    parsedJson = JSON.parse(capped.text);
+  } catch {
+    return { kind: "malformed" };
+  }
+  const parsed = schema.safeParse(parsedJson);
+  if (!parsed.success) {
+    return { kind: "malformed" };
+  }
+  const link = response.headers.get("link");
+  const seconds = retryAfterSeconds(response);
+  return {
+    kind: "ok",
+    data: parsed.data,
+    bytes: capped.bytes,
+    headers: {
+      ...(link === null ? {} : { link }),
+      ...(seconds === undefined ? {} : { retryAfterSeconds: seconds }),
+    },
+  };
+}
+
+/** Deps one authorized reader closure needs; all resolved before any request. */
+interface ConnectorReaderRuntime {
+  readonly db: Db;
+  readonly scope: MorningBriefCollectionScope;
+  readonly connectorSlug: ConnectorSlug;
+  readonly snapshot: ConnectorRuntimeSnapshot;
+  readonly firewall: DecisionFirewall;
+  readonly base: string;
+  readonly accessToken: string;
+  readonly budget: MorningBriefReaderBudget;
+  readonly signal: AbortSignal;
+  readonly stillAuthorized: () => Promise<boolean>;
+}
+
+/** Mutable per-source counters and the terminal revocation flag. */
+interface ConnectorReaderState {
+  attempted: number;
+  streamedBytes: number;
+  revoked: boolean;
+}
+
+function connectorReaderUrl(
+  runtime: ConnectorReaderRuntime,
+  pathname: string,
+  query: Readonly<Record<string, string>> | undefined,
+): URL {
+  // Paths and parameters are built by the provider module from validated
+  // segments; nothing provider-supplied reaches this URL.
+  const url = new URL(`${runtime.base}${pathname}`);
+  for (const [key, value] of Object.entries(query ?? {})) {
+    url.searchParams.set(key, value);
+  }
+  return url;
+}
+
+/**
+ * Re-authorize this exact URL against live policy, then allow or refuse it.
+ *
+ * `no_match`, `ambiguous`, `block` and every missing-metadata case stay
+ * refusals. Only an unambiguous allow reaches the provider, and a context that
+ * moved since admission terminates the whole source instead.
+ */
+async function authorizeConnectorRequest(
+  runtime: ConnectorReaderRuntime,
+  state: ConnectorReaderState,
+  url: URL,
+): Promise<"allow" | "denied" | "revoked"> {
+  const policies = await loadNetworkPolicies(
+    runtime.db,
+    runtime.scope,
+    runtime.connectorSlug,
+    runtime.snapshot,
+    runtime.firewall.name,
+  );
+  if (!(await runtime.stillAuthorized())) {
+    state.revoked = true;
+    return "revoked";
+  }
+  const decision = matchFirewallRequestDecision(
+    [runtime.firewall],
+    "GET",
+    url.toString(),
+    policies,
+    { status: "present", value: runtime.firewall.name },
+  );
+  return decision.kind === "allow" ? "allow" : "denied";
+}
+
+function budgetExhausted(
+  runtime: ConnectorReaderRuntime,
+  state: ConnectorReaderState,
+): boolean {
+  return (
+    state.attempted >= runtime.budget.maxRequests ||
+    state.streamedBytes >= runtime.budget.maxTotalResponseBytes ||
+    nowDate().getTime() >= runtime.budget.deadlineAt
+  );
+}
+
+/**
+ * One authorized fixed-host GET reader over an already-resolved authority.
+ *
+ * It is not an arbitrary authenticated fetch proxy: the host comes from the
+ * accepted catalog, the method is always GET, credential-bearing redirects are
+ * refused, and each request is authorized again immediately before it is sent.
+ */
+function createConnectorReader(
+  runtime: ConnectorReaderRuntime,
+  state: ConnectorReaderState,
+): MorningBriefConnectorReader {
+  return {
+    attempted: () => {
+      return state.attempted;
+    },
+    streamedBytes: () => {
+      return state.streamedBytes;
+    },
+    getJson: async <T>(request: {
+      readonly pathname: string;
+      readonly query?: Readonly<Record<string, string>>;
+      readonly schema: z.ZodType<T>;
+      readonly signal: AbortSignal;
+    }): Promise<MorningBriefReadResult<T>> => {
+      if (state.revoked || request.signal.aborted || runtime.signal.aborted) {
+        return { kind: "revoked" };
+      }
+      if (budgetExhausted(runtime, state)) {
+        return { kind: "budget-exhausted" };
+      }
+
+      const url = connectorReaderUrl(runtime, request.pathname, request.query);
+      const authorized = await authorizeConnectorRequest(runtime, state, url);
+      if (authorized !== "allow") {
+        return { kind: authorized === "revoked" ? "revoked" : "denied" };
+      }
+
+      state.attempted += 1;
+      let response: Response;
+      try {
+        response = await fetch(url, {
+          method: "GET",
+          redirect: "error",
+          signal: request.signal,
+          headers: {
+            Authorization: `Bearer ${runtime.accessToken}`,
+            Accept: "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": "okou-morning-brief",
+          },
+        });
+      } catch {
+        // Provider errors are never stored or logged verbatim.
+        return request.signal.aborted || runtime.signal.aborted
+          ? { kind: "revoked" }
+          : { kind: "failed" };
+      }
+
+      const refusal = await classifyProviderResponse(response);
+      if (refusal) {
+        return refusal;
+      }
+      const result = await parseBoundedJson(
+        response,
+        request.schema,
+        Math.min(
+          runtime.budget.maxResponseBytes,
+          runtime.budget.maxTotalResponseBytes - state.streamedBytes,
+        ),
+      );
+      if (result.kind === "ok") {
+        state.streamedBytes += result.bytes;
+      }
+      return result;
+    },
+  };
+}
+
+/**
  * Run one collector under a live-authorized, fixed-host GET reader.
  *
  * Authorization happens before the credential is decrypted, again before every
@@ -669,9 +911,11 @@ export const withMorningBriefConnectorReader$ = command(
       return token;
     }
 
-    let attempted = 0;
-    let streamedBytes = 0;
-    let revoked = false;
+    const state: ConnectorReaderState = {
+      attempted: 0,
+      streamedBytes: 0,
+      revoked: false,
+    };
 
     const stillAuthorized = async (): Promise<boolean> => {
       const rescoped = await set(
@@ -692,152 +936,24 @@ export const withMorningBriefConnectorReader$ = command(
       return current.kind === "ok" && sameAuthority(current.authority, pinned);
     };
 
-    const reader: MorningBriefConnectorReader = {
-      attempted: () => {
-        return attempted;
+    const reader = createConnectorReader(
+      {
+        db,
+        scope,
+        connectorSlug,
+        snapshot,
+        firewall,
+        base,
+        accessToken: token.accessToken,
+        budget,
+        signal,
+        stillAuthorized,
       },
-      streamedBytes: () => {
-        return streamedBytes;
-      },
-      getJson: async <T>(request: {
-        readonly pathname: string;
-        readonly query?: Readonly<Record<string, string>>;
-        readonly schema: z.ZodType<T>;
-        readonly signal: AbortSignal;
-      }): Promise<MorningBriefReadResult<T>> => {
-        if (revoked) {
-          return { kind: "revoked" };
-        }
-        if (
-          attempted >= budget.maxRequests ||
-          streamedBytes >= budget.maxTotalResponseBytes ||
-          nowDate().getTime() >= budget.deadlineAt
-        ) {
-          return { kind: "budget-exhausted" };
-        }
-        if (request.signal.aborted || signal.aborted) {
-          return { kind: "revoked" };
-        }
-
-        // Paths and parameters are built by the provider module from validated
-        // segments; nothing provider-supplied reaches this URL.
-        const url = new URL(`${base}${request.pathname}`);
-        for (const [key, value] of Object.entries(request.query ?? {})) {
-          url.searchParams.set(key, value);
-        }
-
-        const policies = await loadNetworkPolicies(
-          db,
-          scope,
-          connectorSlug,
-          snapshot,
-          firewall.name,
-        );
-        if (!(await stillAuthorized())) {
-          revoked = true;
-          return { kind: "revoked" };
-        }
-        const decision = matchFirewallRequestDecision(
-          [firewall],
-          "GET",
-          url.toString(),
-          policies,
-          { status: "present", value: firewall.name },
-        );
-        if (decision.kind !== "allow") {
-          // `no_match`, `ambiguous`, `block` and every missing-metadata case
-          // stay refusals. Only an unambiguous allow reaches the provider.
-          return { kind: "denied" };
-        }
-
-        attempted += 1;
-        let response: Response;
-        try {
-          response = await fetch(url, {
-            method: "GET",
-            redirect: "error",
-            signal: request.signal,
-            headers: {
-              Authorization: `Bearer ${token.accessToken}`,
-              Accept: "application/vnd.github+json",
-              "X-GitHub-Api-Version": "2022-11-28",
-              "User-Agent": "okou-morning-brief",
-            },
-          });
-        } catch {
-          // Provider errors are never stored or logged verbatim.
-          return request.signal.aborted || signal.aborted
-            ? { kind: "revoked" }
-            : { kind: "failed" };
-        }
-
-        if (response.status === 429) {
-          const seconds = retryAfterSeconds(response);
-          await response.body?.cancel();
-          return {
-            kind: "rate-limited",
-            ...(seconds === undefined ? {} : { retryAfterSeconds: seconds }),
-          };
-        }
-        if (response.status === 403) {
-          // Secondary rate limits also arrive as 403 with `Retry-After`.
-          const seconds = retryAfterSeconds(response);
-          await response.body?.cancel();
-          return seconds === undefined
-            ? { kind: "forbidden" }
-            : { kind: "rate-limited", retryAfterSeconds: seconds };
-        }
-        if (response.status === 404 || response.status === 410) {
-          await response.body?.cancel();
-          return { kind: "not-found" };
-        }
-        if (response.status === 401) {
-          await response.body?.cancel();
-          return { kind: "forbidden" };
-        }
-        if (!response.ok) {
-          await response.body?.cancel();
-          return { kind: "failed" };
-        }
-
-        const capped = await readCappedText(
-          response,
-          Math.min(
-            budget.maxResponseBytes,
-            budget.maxTotalResponseBytes - streamedBytes,
-          ),
-        );
-        if (capped === null) {
-          return { kind: "oversized" };
-        }
-        streamedBytes += capped.bytes;
-
-        let parsedJson: unknown;
-        try {
-          parsedJson = JSON.parse(capped.text);
-        } catch {
-          return { kind: "malformed" };
-        }
-        const parsed = request.schema.safeParse(parsedJson);
-        if (!parsed.success) {
-          return { kind: "malformed" };
-        }
-        const link = response.headers.get("link");
-        const seconds = retryAfterSeconds(response);
-        return {
-          kind: "ok",
-          data: parsed.data,
-          bytes: capped.bytes,
-          headers: {
-            ...(link === null ? {} : { link }),
-            ...(seconds === undefined ? {} : { retryAfterSeconds: seconds }),
-          },
-        };
-      },
-    };
+      state,
+    );
 
     await collect(reader);
-    if (revoked || signal.aborted) {
+    if (state.revoked || signal.aborted) {
       return { kind: "revoked" };
     }
     // Final release gate: a payload collected under an authority that has

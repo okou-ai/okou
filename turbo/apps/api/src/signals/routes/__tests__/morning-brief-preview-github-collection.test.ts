@@ -7,7 +7,7 @@ import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
-import { apiTestMocks } from "../../../__tests__/mocks";
+import { getApiTestMocks } from "../../../__tests__/mocks";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
@@ -17,7 +17,7 @@ import {
   seedInstalledMorningBrief,
 } from "../../../test-fixtures/morning-brief-github-collection";
 import { signSandboxJwtForTests } from "../../auth/tokens";
-import { ROUTES } from "../../route";
+import { morningBriefPreviewGithubCollectionRoutes } from "../morning-brief-preview-github-collection";
 import { createDeferredPromise } from "../../utils";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
@@ -43,16 +43,18 @@ interface Fixture {
 }
 
 /**
- * The preview is reached through the production route table.
+ * The exact slice the production route table registers.
  *
- * Composing `ROUTES` rather than this slice's own array is the point of the
- * test: a preview mounted only inside its own suite would pass every behaviour
- * assertion below while the deployed application had no such endpoint.
+ * `route-registration.test.ts` owns the assertion that this slice is in
+ * `ROUTES` — the typecheck boundary allows only that file and the production
+ * bootstrap to import the aggregation module — so between the two a preview
+ * that exists only inside its own suite cannot pass.
  */
 function collectionClient() {
-  return setupApp({ context, routes: ROUTES })(
-    morningBriefGithubCollectionContract,
-  );
+  return setupApp({
+    context,
+    routes: morningBriefPreviewGithubCollectionRoutes,
+  })(morningBriefGithubCollectionContract);
 }
 
 function agentToken(
@@ -80,7 +82,7 @@ function mockMembership(
   userId: string,
   membershipId: string | null,
 ): void {
-  apiTestMocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+  getApiTestMocks().clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
     {
       data:
         membershipId === null
@@ -330,9 +332,9 @@ describe("Morning Brief GitHub collection preview", () => {
 
     // Only the notification at the window start is inside `[start, anchor)`.
     expect(response.body).toMatchObject({ result: "collected" });
-    expect(traffic.requests.every((entry) => entry.method === "GET")).toBe(
-      true,
-    );
+    expect(
+      traffic.requests.every((entry) => entry.method === "GET"),
+    ).toBeTruthy();
   });
 
   it("records an unsupported notification subject as a coverage gap", async () => {
@@ -382,7 +384,7 @@ describe("Morning Brief GitHub collection preview", () => {
 
     const response = await collect(f);
 
-    expect(evilCalled).toBe(false);
+    expect(evilCalled).toBeFalsy();
     expect(response.body).toMatchObject({ result: "collected" });
   });
 
@@ -470,8 +472,8 @@ describe("Morning Brief GitHub collection preview", () => {
 
   it("releases nothing when the membership is revoked while a read is held", async () => {
     const f = await fixture();
-    const arrived = createDeferredPromise<void>();
-    const held = createDeferredPromise<void>();
+    const arrived = createDeferredPromise<void>(context.signal);
+    const held = createDeferredPromise<void>(context.signal);
     const traffic: string[] = [];
     server.use(
       http.get(GITHUB_USER, () => {
@@ -499,7 +501,7 @@ describe("Morning Brief GitHub collection preview", () => {
     held.resolve();
     const response = await pending;
 
-    expect(traffic).toEqual(["user", "notifications"]);
+    expect(traffic).toStrictEqual(["user", "notifications"]);
     expect(response.body).toMatchObject({
       result: "not-executed",
       reason: "context-revoked",
