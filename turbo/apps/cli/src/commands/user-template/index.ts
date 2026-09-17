@@ -5,7 +5,10 @@ import {
 import { Command, Option } from "commander";
 
 import { ApiRequestError } from "../../lib/api/core/client-factory";
-import { publishUserTemplate } from "../../lib/api/domains/user-templates";
+import {
+  publishUserTemplate,
+  type PublishUserTemplateArgs,
+} from "../../lib/api/domains/user-templates";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 
 interface PublishOptions {
@@ -15,10 +18,6 @@ interface PublishOptions {
   readonly pages?: string;
   readonly package: string;
 }
-
-type PublishArguments =
-  | { readonly kind: "presentation"; readonly pagesDir: string }
-  | { readonly kind: "document"; readonly pagesDir: undefined };
 
 function requirePages(options: PublishOptions): string {
   if (options.pages === undefined) {
@@ -41,13 +40,22 @@ function requirePages(options: PublishOptions): string {
  * someone says what it takes — instead of silently inheriting a demand for
  * pages it has no use for.
  */
-function publishArguments(options: PublishOptions): PublishArguments {
+function publishArguments(options: PublishOptions): PublishUserTemplateArgs {
+  const common = {
+    title: options.title,
+    sourcePath: options.source,
+    packageDir: options.package,
+  };
   switch (options.kind) {
     case "presentation": {
-      return { kind: "presentation", pagesDir: requirePages(options) };
+      return {
+        ...common,
+        kind: "presentation",
+        pagesDir: requirePages(options),
+      };
     }
     case "document": {
-      return { kind: "document", pagesDir: undefined };
+      return { ...common, kind: "document" };
     }
   }
 }
@@ -84,12 +92,7 @@ A published template appears under Custom in the template picker, private to you
   )
   .action(
     withErrorHandler(async (options: PublishOptions) => {
-      const template = await publishUserTemplate({
-        title: options.title,
-        ...publishArguments(options),
-        sourcePath: options.source,
-        packageDir: options.package,
-      });
+      const template = await publishUserTemplate(publishArguments(options));
       console.log(
         template.pageCount === null
           ? `Published ${template.title} (${template.id})`
