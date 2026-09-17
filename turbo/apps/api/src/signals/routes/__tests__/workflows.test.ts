@@ -36,6 +36,10 @@ import { onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import {
+  beginWorkflowStableContextPublicationFixture,
+  countAgentStableContextPublicationsFixture,
+} from "../../../test-fixtures/pi-stable-context";
 import { createDeferredPromise } from "../../utils";
 import { mockNow, now } from "../../../lib/time";
 import { mockOptionalEnv } from "../../../lib/env";
@@ -1092,6 +1096,91 @@ describe("workflows", () => {
     expect(response.body.error.message).toContain(
       `/${workflowName}" already exists on this agent`,
     );
+  });
+
+  it("rejects publication while the current private-scope volume update is unfinished", async () => {
+    const actor = user();
+    const agent = await createAgent(actor, {
+      displayName: "Pending Publication Agent",
+      visibility: "public",
+    });
+    const s3 = installVolumeS3Fixture();
+    const workflow = await createWorkflow(actor, {
+      agentId: agent.agentId,
+      name: `pending-publication-${randomUUID().slice(0, 8)}`,
+      instruction: "# original private workflow",
+    });
+    const signal = AbortSignal.timeout(10_000);
+    const uploadEntered = createDeferredPromise<void>(signal);
+    const uploadReleased = createDeferredPromise<void>(signal);
+    s3.beforeNextArchiveWrite(async () => {
+      uploadEntered.resolve();
+      await uploadReleased.promise;
+    });
+
+    const update = updateWorkflow(actor, workflow.body.id, {
+      instruction: "# metadata committed before this volume",
+    });
+    await uploadEntered.promise;
+    const blocked = await accept(
+      visibilityClient().publish({
+        headers: authHeaders(actor),
+        params: { workflowId: workflow.body.id },
+      }),
+      [409],
+    );
+    expect(blocked.body.error.message).toBe(
+      "Workflow changed during publish; retry the request",
+    );
+
+    uploadReleased.resolve();
+    await expect(update).resolves.toMatchObject({ status: 200 });
+    await expect(
+      accept(
+        visibilityClient().publish({
+          headers: authHeaders(actor),
+          params: { workflowId: workflow.body.id },
+        }),
+        [200],
+      ),
+    ).resolves.toMatchObject({ body: { visibility: "public" } });
+  });
+
+  it("retires an abandoned opposite-scope publication during a valid visibility transition", async () => {
+    const actor = user();
+    if (!actor.orgId) {
+      throw new Error("Expected an organization-scoped actor");
+    }
+    const agent = await createAgent(actor, {
+      displayName: "Opposite Publication Agent",
+      visibility: "public",
+    });
+    const workflow = await createWorkflow(actor, {
+      agentId: agent.agentId,
+      name: `opposite-publication-${randomUUID().slice(0, 8)}`,
+      instruction: "# private workflow with stale public fence",
+    });
+    await beginWorkflowStableContextPublicationFixture({
+      orgId: actor.orgId,
+      agentId: agent.agentId,
+      workflowId: workflow.body.id,
+    });
+    await expect(
+      countAgentStableContextPublicationsFixture(agent.agentId),
+    ).resolves.toBe(1);
+
+    await expect(
+      accept(
+        visibilityClient().publish({
+          headers: authHeaders(actor),
+          params: { workflowId: workflow.body.id },
+        }),
+        [200],
+      ),
+    ).resolves.toMatchObject({ body: { visibility: "public" } });
+    await expect(
+      countAgentStableContextPublicationsFixture(agent.agentId),
+    ).resolves.toBe(0);
   });
 
   it("rejects copying a workflow when the caller already has that private slug on the target agent", async () => {

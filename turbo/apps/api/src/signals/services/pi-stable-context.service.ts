@@ -16,7 +16,6 @@ import type {
   PiStableContextStorageMount,
 } from "@okouai/db/jsonb-contracts/pi-stable-context";
 import type { PiResourceSnapshotV1 } from "@okouai/db/jsonb-contracts/pi-resource-snapshot";
-import { assertErasureSubjectWritable } from "@okouai/db/operations/account-erasure";
 import { agents } from "@okouai/db/schema/agent";
 import {
   piStableContextArtifactResources,
@@ -53,8 +52,8 @@ import {
   piStableContextVariantDigest,
 } from "./pi-stable-context-digest.service";
 import { lockCanonicalAgentMutation } from "./agent-mutation-lock.service";
-import { COMPUTE_CLOSURE_ERROR } from "./agent-run-terminal-transition.service";
 import { PI_STABLE_CONTEXT_AGENT_SUBJECT } from "./pi-stable-context-generation.service";
+import { admitPiStableContextSubjects } from "./pi-stable-context-erasure.service";
 import { recapturePiStableContextInput } from "./pi-stable-context-recapture.service";
 
 export { piStableContextArtifactDigest, piStableContextVariantDigest };
@@ -193,26 +192,18 @@ async function lockStableContextOwnerAuthority(
       subjectId: owner.resourceOwner.orgId,
     },
   ];
-  const admission = await settle(
-    assertErasureSubjectWritable(tx, [
-      ...new Map(
-        subjects.map((subject) => {
-          return [
-            `${subject.subjectKind}:${subject.subjectId}`,
-            subject,
-          ] as const;
-        }),
-      ).values(),
-    ]),
-  );
-  if (!admission.ok) {
-    if (
-      admission.error instanceof Error &&
-      admission.error.message === COMPUTE_CLOSURE_ERROR
-    ) {
-      return false;
-    }
-    throw admission.error;
+  const admitted = await admitPiStableContextSubjects(tx, [
+    ...new Map(
+      subjects.map((subject) => {
+        return [
+          `${subject.subjectKind}:${subject.subjectId}`,
+          subject,
+        ] as const;
+      }),
+    ).values(),
+  ]);
+  if (!admitted) {
+    return false;
   }
   const [executingMember] = await tx
     .select({ userId: orgMembersCache.userId })

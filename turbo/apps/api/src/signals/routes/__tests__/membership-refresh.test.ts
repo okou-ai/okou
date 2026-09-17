@@ -1,17 +1,22 @@
 import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { http, HttpResponse } from "msw";
+import { Webhook } from "svix";
 import { z } from "zod";
 import { orgContract } from "@okouai/api-contracts/contracts/org-routes";
+import { webhookClerkContract } from "@okouai/api-contracts/contracts/webhooks";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createAppWithRoutes } from "../../../app-factory-core";
-import { mockNow, now } from "../../../lib/time";
+import { mockOptionalEnv } from "../../../lib/env";
+import { mockNow, now, nowDate } from "../../../lib/time";
 import { server } from "../../../mocks/server";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
 import { computerUseRoutes } from "../computer-use";
 import { orgReadRoutes } from "../org-read";
+import { webhooksClerkRoutes } from "../webhooks-clerk";
 import {
   createAuthOrgAgentsBddApi,
   type ApiTestUser,
@@ -148,6 +153,63 @@ describe("membership refresh through public PAT and Agent requests", () => {
     expect(reads).toBe(1);
     await accept(statusRequest(pat), [404]);
     expect(reads).toBe(1);
+  });
+
+  it("rejects a delayed Clerk membership refill after the real deletion route closes authority", async () => {
+    const { actor, agent } = await credentials();
+    const started = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    server.use(
+      http.get(membershipUrl, async () => {
+        started.resolve();
+        await release.promise;
+        return HttpResponse.json(membership(actor));
+      }),
+    );
+
+    const pending = statusRequest(agent);
+    await started.promise;
+
+    const sdk = await vi.importActual<typeof import("@clerk/backend/webhooks")>(
+      "@clerk/backend/webhooks",
+    );
+    const secret = `whsec_${Buffer.from("membership-erasure-fence").toString("base64")}`;
+    mockOptionalEnv("CLERK_WEBHOOK_SIGNING_SECRET", secret);
+    context.mocks.clerk.verifyWebhook.mockImplementation(
+      async (request: unknown) => {
+        if (!(request instanceof Request)) {
+          throw new Error("expected raw Request");
+        }
+        return await sdk.verifyWebhook(request, { signingSecret: secret });
+      },
+    );
+    const body = JSON.stringify({
+      type: "user.deleted",
+      data: { id: actor.userId, deleted: true },
+    });
+    const id = randomUUID();
+    const timestamp = nowDate();
+    const signature = new Webhook(secret).sign(id, timestamp, body);
+    await accept(
+      setupApp({ context, routes: webhooksClerkRoutes })(
+        webhookClerkContract,
+      ).post({
+        body,
+        extraHeaders: {
+          "svix-id": id,
+          "svix-timestamp": String(Math.floor(timestamp.getTime() / 1000)),
+          "svix-signature": signature,
+        },
+      }),
+      [200],
+    );
+    await flushWaitUntilForTest();
+
+    release.resolve();
+    await accept(pending, [403]);
+    await expect(
+      api.requestReadMeWithBearer(agent, actor, [403]),
+    ).resolves.toBeDefined();
   });
 
   it("preserves the positive expiry across hits, demotion and revocation", async () => {

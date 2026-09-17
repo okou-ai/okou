@@ -29,6 +29,23 @@ const tracer = trace.getTracer("pi-resource-index");
 const WORK_BATCH_SIZE = 32;
 const WORK_LEASE_MS = 5 * 60 * 1000;
 
+function indexQueueValues(
+  versionIds: readonly string[],
+  archiveSizes: ReadonlyMap<string, number>,
+) {
+  return versionIds.map((storageVersionId) => {
+    const sourceArchiveSize = archiveSizes.get(storageVersionId);
+    if (sourceArchiveSize === undefined) {
+      throw new Error("Cannot index an unregistered Storage version");
+    }
+    return {
+      storageVersionId,
+      extractorVersion: PI_RESOURCE_EXTRACTOR_VERSION,
+      sourceArchiveSize,
+    };
+  });
+}
+
 export async function enqueuePiResourceVersionIndexes(
   db: Pick<Db, "insert" | "select" | "update">,
   versionIds: readonly string[],
@@ -51,46 +68,59 @@ export async function enqueuePiResourceVersionIndexes(
       return [version.id, version.archiveSize] as const;
     }),
   );
-  const changed = await db
+  const values = indexQueueValues(unique, sizes);
+  const inserted = await db
     .insert(piResourceVersionIndexes)
-    .values(
-      unique.map((storageVersionId) => {
-        const archiveSize = sizes.get(storageVersionId);
-        if (archiveSize === undefined) {
-          throw new Error("Cannot index an unregistered Storage version");
-        }
-        return {
-          storageVersionId,
-          extractorVersion: PI_RESOURCE_EXTRACTOR_VERSION,
-          sourceArchiveSize: archiveSize,
-        };
-      }),
-    )
-    .onConflictDoUpdate({
-      target: [
-        piResourceVersionIndexes.storageVersionId,
-        piResourceVersionIndexes.extractorVersion,
-      ],
-      // Storage repair can replace an archive encoding under the same logical
-      // version. Invalidate the old projection/lease before acknowledging repair.
-      set: {
-        status: "pending",
-        projection: null,
-        projectionHash: null,
-        sourceArchiveSize: sql`excluded.source_archive_size`,
-        leaseId: null,
-        leaseExpiresAt: null,
-        availableAt: nowDate(),
-        updatedAt: nowDate(),
-      },
-      setWhere: sql`${piResourceVersionIndexes.sourceArchiveSize} IS DISTINCT FROM excluded.source_archive_size`,
-    })
+    .values(values)
+    .onConflictDoNothing()
     .returning({
       storageVersionId: piResourceVersionIndexes.storageVersionId,
     });
-  const changedVersionIds = changed.map((row) => {
-    return row.storageVersionId;
-  });
+  const insertedVersionIds = new Set(
+    inserted.map((row) => {
+      return row.storageVersionId;
+    }),
+  );
+  const changedVersionIds: string[] = [];
+  // A first insert establishes indexing work but is not an encoding repair.
+  // Only a pre-existing row whose immutable archive encoding changed may clear
+  // stable-context demand. Insert-first also serializes concurrent enqueues
+  // without relying on PostgreSQL's internal tuple metadata.
+  for (const value of values) {
+    if (insertedVersionIds.has(value.storageVersionId)) {
+      continue;
+    }
+    const enqueuedAt = nowDate();
+    const [changed] = await db
+      .update(piResourceVersionIndexes)
+      .set({
+        status: "pending",
+        projection: null,
+        projectionHash: null,
+        sourceArchiveSize: value.sourceArchiveSize,
+        leaseId: null,
+        leaseExpiresAt: null,
+        availableAt: enqueuedAt,
+        attemptCount: 0,
+        updatedAt: enqueuedAt,
+      })
+      .where(
+        and(
+          eq(piResourceVersionIndexes.storageVersionId, value.storageVersionId),
+          eq(
+            piResourceVersionIndexes.extractorVersion,
+            PI_RESOURCE_EXTRACTOR_VERSION,
+          ),
+          sql`${piResourceVersionIndexes.sourceArchiveSize} IS DISTINCT FROM ${value.sourceArchiveSize}`,
+        ),
+      )
+      .returning({
+        storageVersionId: piResourceVersionIndexes.storageVersionId,
+      });
+    if (changed) {
+      changedVersionIds.push(changed.storageVersionId);
+    }
+  }
   if (changedVersionIds.length > 0) {
     await db
       .update(piStableContextHeads)

@@ -9,6 +9,7 @@ import { agents } from "@okouai/db/schema/agent";
 import {
   piStableContextArtifactResources,
   piStableContextArtifacts,
+  piStableContextErasureFences,
   piStableContextGenerations,
   piStableContextHeads,
   piStableContextPublications,
@@ -39,6 +40,7 @@ import {
 } from "../pi-stable-context-generation.service";
 import { deleteClerkAgentLifecycleData } from "../agent-lifecycle.service";
 import { enqueuePiResourceVersionIndexes } from "../pi-resource-version-index.service";
+import { piStableContextErasureSubjectDigest } from "../pi-stable-context-erasure.service";
 import { lockCanonicalAgentMutation } from "../agent-mutation-lock.service";
 import {
   executePiStableContextWork,
@@ -63,6 +65,7 @@ describe("Pi stable context generation fences", () => {
   const agentIds: string[] = [];
   const storageIds: string[] = [];
   const userIds: string[] = [];
+  const orgIds: string[] = [];
 
   afterEach(async () => {
     clearWorkflowDeleteHooksForTest();
@@ -102,6 +105,27 @@ describe("Pi stable context generation fences", () => {
         .delete(orgMembersCache)
         .where(inArray(orgMembersCache.userId, userIds));
     }
+    const erasureDigests = [
+      ...userIds.map((subjectId) => {
+        return piStableContextErasureSubjectDigest({
+          subjectKind: "user",
+          subjectId,
+        });
+      }),
+      ...orgIds.map((subjectId) => {
+        return piStableContextErasureSubjectDigest({
+          subjectKind: "organization",
+          subjectId,
+        });
+      }),
+    ];
+    if (erasureDigests.length > 0) {
+      await db
+        .delete(piStableContextErasureFences)
+        .where(
+          inArray(piStableContextErasureFences.subjectDigest, erasureDigests),
+        );
+    }
     await pool.end();
   });
 
@@ -112,6 +136,7 @@ describe("Pi stable context generation fences", () => {
     const agentOwnerId = options?.ownedByOtherUser ? otherUserId : userId;
     const agentId = randomUUID();
     agentIds.push(agentId);
+    orgIds.push(orgId);
     userIds.push(userId, otherUserId);
     await db.insert(orgMembersCache).values([
       { orgId, userId, role: "member" },
@@ -1449,6 +1474,14 @@ describe("Pi stable context generation fences", () => {
     await db
       .delete(orgMembersCache)
       .where(eq(orgMembersCache.userId, fixture.userId));
+    // Model a stale Clerk read that refills the disposable cache after the
+    // lifecycle deletion. The durable erasure fence, not cache absence, must
+    // reject generation initialization.
+    await db.insert(orgMembersCache).values({
+      orgId: fixture.orgId,
+      userId: fixture.userId,
+      role: "member",
+    });
     initializationReleased.resolve();
 
     await expect(preparation).resolves.toMatchObject({ kind: "missing" });

@@ -2,7 +2,10 @@ import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { getCustomSkillStorageName } from "@okouai/core/storage-names";
+import {
+  getCustomConnectorSkillStorageName,
+  getCustomSkillStorageName,
+} from "@okouai/core/storage-names";
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
 import {
   CHAT_RUN_CONTENT_POLICY_REJECTED_MESSAGE,
@@ -46,6 +49,8 @@ import {
   nativeCodexSseResponse,
 } from "./helpers/pi-responses";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
+import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
+import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import {
   removePiInferenceFixture,
@@ -57,10 +62,7 @@ import {
   invalidateApiTestConnectorCatalogCompatibility,
   withApiTestConnectorCatalogSource,
 } from "../../../test-fixtures/connector-catalog";
-import {
-  beginWorkflowStableContextPublicationFixture,
-  withStableAgentPromptBuildCountFixture,
-} from "../../../test-fixtures/pi-stable-context";
+import { withStableAgentPromptBuildCountFixture } from "../../../test-fixtures/pi-stable-context";
 
 const context = testContext();
 const billing = createBillingMediaApi(context);
@@ -460,12 +462,6 @@ describe("durable Pi API producer", () => {
     expect(resourceArchiveReadsAtProvider[copyProviderIndex]).toBe(0);
     expect(providerBodies.at(-1)).toContain(copiedWorkflowName);
 
-    await beginWorkflowStableContextPublicationFixture({
-      orgId,
-      userId: actor.userId,
-      agentId,
-      workflowId: copiedWorkflowId,
-    });
     await workflows.publishWorkflow(actor, copiedWorkflowId);
     const publishWork = await accept(
       setupApp({ context, routes: testPiResourceIndexWorkRoutes })(
@@ -494,11 +490,6 @@ describe("durable Pi API producer", () => {
     expect(resourceArchiveReadsAtProvider[publishProviderIndex]).toBe(0);
     expect(providerBodies.at(-1)).toContain(copiedWorkflowName);
 
-    await beginWorkflowStableContextPublicationFixture({
-      orgId,
-      agentId,
-      workflowId: copiedWorkflowId,
-    });
     await workflows.demoteWorkflow(actor, copiedWorkflowId);
     const demoteWork = await accept(
       setupApp({ context, routes: testPiResourceIndexWorkRoutes })(
@@ -791,6 +782,133 @@ describe("durable Pi API producer", () => {
     );
     expect(providerBodies.at(-1)).toContain("# Restricted Explicit Content");
   }, 45_000);
+
+  it("keeps canonical and recaptured mount order aligned for two reverse-granted custom skills", async () => {
+    configureNativeCliArtifact();
+    bdd.acceptAgentStorageWrites();
+    mockEnv(
+      "R2_USER_STORAGES_BUCKET_NAME",
+      `stable-custom-order-${randomUUID()}`,
+    );
+    const connectors = createConnectorBddApi(context);
+    const storages = createStoragesBddApi(context);
+    const { actor, agentId } = await entitledChatActor();
+    const orgId = await enableDurablePi(actor);
+    await configureBuiltInPiModel(actor, SELECTED_MODEL);
+    const usagePricingResolution =
+      await createPiApiFirstTurnUsagePricingResolution(SELECTED_MODEL);
+    const cleanupCatalog = captureApiTestConnectorCatalogCleanup();
+    onTestFinished(cleanupCatalog);
+    await installApiTestConnectorCatalog({
+      catalogVersion: `stable-custom-order-${randomUUID()}`,
+    });
+    mockPiResourceArchiveDownloads();
+    mockPiCheckpointObjectStore();
+    let providerCalls = 0;
+    server.use(
+      http.post(PROVIDER_URL, () => {
+        providerCalls += 1;
+        return new HttpResponse(
+          piResponsesTextSse("ordered custom context", providerCalls),
+          { headers: { "content-type": "text/event-stream" } },
+        );
+      }),
+    );
+
+    const suffix = randomUUID().slice(0, 8);
+    const first = await connectors.createCustomConnector(actor, {
+      kind: "http",
+      displayName: "Stable Custom Order First",
+      prefixTemplates: [`https://first-${suffix}.example.test/api/`],
+      fields: [],
+      headerInjections: [],
+      queryInjections: [],
+      authMode: "none",
+      skillMarkdown: "Use the first deterministic custom skill.",
+    });
+    const second = await connectors.createCustomConnector(actor, {
+      kind: "http",
+      displayName: "Stable Custom Order Second",
+      prefixTemplates: [`https://second-${suffix}.example.test/api/`],
+      fields: [],
+      headerInjections: [],
+      queryInjections: [],
+      authMode: "none",
+      skillMarkdown: "Use the second deterministic custom skill.",
+    });
+    const ordered = [first, second].sort((left, right) => {
+      return left.id.localeCompare(right.id);
+    });
+    await connectors.updateAgentCustomConnectors(
+      actor,
+      agentId,
+      [...ordered].reverse().map((connector) => {
+        return connector.id;
+      }),
+    );
+    const skillVersions = await Promise.all(
+      ordered.map(async (connector) => {
+        return await storages.downloadStorage(actor, {
+          name: getCustomConnectorSkillStorageName(connector.id),
+          owner: "organization",
+        });
+      }),
+    );
+
+    const seeded = await sendChatRun(
+      actor,
+      {
+        agentId,
+        prompt: "seed reverse-granted custom skills",
+        model: SELECTED_MODEL,
+      },
+      usagePricingResolution,
+    );
+    await waitForRunStatus(actor, seeded.runId, "completed", 10_000);
+    await bdd.updateAgentInstructions(
+      actor,
+      agentId,
+      `Recapture ordered custom skills ${randomUUID()}`,
+    );
+    const work = await accept(
+      setupApp({ context, routes: testPiResourceIndexWorkRoutes })(
+        testPiResourceIndexWorkContract,
+      ).run({
+        body: {
+          versionIds: skillVersions.map((skill) => {
+            return skill.versionId;
+          }),
+          stableContextOwner: { orgId, userId: actor.userId, agentId },
+        },
+      }),
+      [200],
+    );
+    expect(work.body.stableContext.ready).toBeGreaterThanOrEqual(1);
+
+    const { buildCount, result: ready } =
+      await withStableAgentPromptBuildCountFixture(async () => {
+        return await sendChatRun(
+          actor,
+          {
+            agentId,
+            prompt: "consume ordered custom skills",
+            model: SELECTED_MODEL,
+          },
+          usagePricingResolution,
+        );
+      });
+    expect(buildCount).toBe(0);
+    await waitForRunStatus(actor, ready.runId, "completed", 10_000);
+    expect(providerCalls).toBe(2);
+    onTestFinished(async () => {
+      await flushWaitUntilForTest();
+      await removePiInferenceFixtures({
+        runIds: [seeded.runId, ready.runId],
+        agentId,
+        orgId,
+      });
+    });
+  }, 30_000);
 
   it.each(
     (

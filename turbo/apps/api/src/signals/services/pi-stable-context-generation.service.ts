@@ -111,12 +111,21 @@ function generationScopeCondition(scope: PiStableContextScope) {
   );
 }
 
+function publicationKeyCondition(
+  scope: PiStableContextScope,
+  publicationKey: string,
+) {
+  return and(
+    eq(piStableContextPublications.orgId, scope.orgId),
+    eq(piStableContextPublications.agentId, scope.agentId),
+    eq(piStableContextPublications.subject, subjectForScope(scope)),
+    eq(piStableContextPublications.publicationKey, publicationKey),
+  );
+}
+
 function publicationScopeCondition(fence: PiStableContextPublicationFence) {
   return and(
-    eq(piStableContextPublications.orgId, fence.scope.orgId),
-    eq(piStableContextPublications.agentId, fence.scope.agentId),
-    eq(piStableContextPublications.subject, subjectForScope(fence.scope)),
-    eq(piStableContextPublications.publicationKey, fence.publicationKey),
+    publicationKeyCondition(fence.scope, fence.publicationKey),
     eq(piStableContextPublications.generation, fence.generation),
     eq(piStableContextPublications.token, fence.token),
   );
@@ -711,6 +720,34 @@ export async function completePiStableContextPublication(
   }
   await updatePublicationReadiness(db, fence.scope);
   return true;
+}
+
+/**
+ * Lock and detect any unfinished publication for one source key. Callers that
+ * mutate source ownership use this after locking the source row, so a metadata
+ * commit cannot be retired before its matching Storage commit.
+ */
+export async function lockPiStableContextPublicationKey(
+  db: Db,
+  scope: PiStableContextScope,
+  publicationKey: string,
+): Promise<boolean> {
+  const [generation] = await db
+    .select({ generation: piStableContextGenerations.generation })
+    .from(piStableContextGenerations)
+    .where(generationScopeCondition(scope))
+    .for("update")
+    .limit(1);
+  if (!generation) {
+    return false;
+  }
+  const [current] = await db
+    .select({ token: piStableContextPublications.token })
+    .from(piStableContextPublications)
+    .where(publicationKeyCondition(scope, publicationKey))
+    .for("update")
+    .limit(1);
+  return current !== undefined;
 }
 
 /** Serialize resource HEAD publication and reject only a superseded same-key writer. */

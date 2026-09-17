@@ -16,6 +16,14 @@ CREATE TABLE "pi_stable_context_artifacts" (
 	"created_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "pi_stable_context_erasure_fences" (
+	"subject_kind" varchar(16) NOT NULL,
+	"subject_digest" varchar(64) NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "pi_stable_context_erasure_fences_pk" PRIMARY KEY("subject_kind","subject_digest"),
+	CONSTRAINT "pi_stable_context_erasure_fences_kind_check" CHECK ("pi_stable_context_erasure_fences"."subject_kind" IN ('organization', 'user'))
+);
+--> statement-breakpoint
 CREATE TABLE "pi_stable_context_generations" (
 	"org_id" text NOT NULL,
 	"agent_id" uuid NOT NULL,

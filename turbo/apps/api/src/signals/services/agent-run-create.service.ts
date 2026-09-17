@@ -287,6 +287,7 @@ import {
   renderTemplateForRuntime,
   type StoredValueRow,
 } from "./custom-connector.service";
+import { orderByCustomConnectorId } from "./custom-connector-order";
 import {
   loadCustomConnectorPermissionBundleDependencySlugs,
   loadCustomConnectorPermissionBundle,
@@ -4999,6 +5000,14 @@ async function buildCustomConnectorRuntimeRow(args: {
   };
 }
 
+function orderedCustomConnectorRuntimeRows(
+  rows: BuildCustomConnectorRuntimeContextArgs["rows"],
+): BuildCustomConnectorRuntimeContextArgs["rows"] {
+  return orderByCustomConnectorId(rows, (row) => {
+    return row.connector.id;
+  });
+}
+
 export async function buildCustomConnectorRuntimeContext(
   args: BuildCustomConnectorRuntimeContextArgs,
 ): Promise<CustomConnectorRuntimeContext> {
@@ -5019,7 +5028,7 @@ export async function buildCustomConnectorRuntimeContext(
       return [grant.customConnectorId, grant.permissionNames] as const;
     }),
   );
-  for (const row of args.rows) {
+  for (const row of orderedCustomConnectorRuntimeRows(args.rows)) {
     const built = await buildCustomConnectorRuntimeRow({
       row,
       context: args,
@@ -5067,11 +5076,12 @@ export async function buildCustomConnectorRuntimeContext(
 async function buildNewRunCustomConnectorRuntimeContext(
   args: BuildCustomConnectorRuntimeContextArgs,
 ): Promise<CustomConnectorRuntimeContext> {
+  const orderedRows = orderedCustomConnectorRuntimeRows(args.rows);
   // Active targets call the shared builder directly so credential loss does
   // not remove their pinned firewall. Only new runs apply this admission gate.
   const context = await buildCustomConnectorRuntimeContext({
     ...args,
-    rows: args.rows.filter((row) => {
+    rows: orderedRows.filter((row) => {
       return (
         row.credentialAccess.kind === "current" &&
         row.credentialAccess.runtimeAvailable &&
@@ -5083,7 +5093,7 @@ async function buildNewRunCustomConnectorRuntimeContext(
   });
   return {
     ...context,
-    skills: args.rows.flatMap((row) => {
+    skills: orderedRows.flatMap((row) => {
       const skill = customConnectorRuntimeSkill(row);
       return skill ? [skill] : [];
     }),

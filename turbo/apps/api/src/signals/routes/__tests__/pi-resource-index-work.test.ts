@@ -22,6 +22,10 @@ import {
   prepareUnpublishedPiVolumeFixture,
   publishEmptyPiVolumeFixture,
 } from "../../../test-fixtures/pi-resource-index";
+import {
+  readPiStableContextStorageDemandFixture,
+  seedPiStableContextStorageDemandFixture,
+} from "../../../test-fixtures/pi-stable-context";
 import { createDeferredPromise } from "../../utils";
 import { testPiResourceIndexWorkRoutes } from "../test-pi-resource-index-work";
 import { workflowsRoutes } from "../workflows";
@@ -101,6 +105,71 @@ async function run(versionId: string) {
 }
 
 describe("Pi resource indexing of generic Storage commits", () => {
+  it("preserves write-time stable demand when a new Storage version gets its first index row", async () => {
+    const actor = bdd.user();
+    if (!actor.orgId) {
+      throw new Error("Expected an organization-scoped actor");
+    }
+    bdd.acceptAgentStorageWrites();
+    const agent = await bdd.createAgent(actor, {
+      displayName: "First Index Demand Agent",
+    });
+    const storageName = `first-index-demand-${randomUUID()}`;
+    const firstFiles = [storageTextFile("first.txt", "first version")];
+    const secondFiles = [storageTextFile("first.txt", "second version")];
+    context.mocks.s3.getSignedUrl.mockResolvedValue(
+      "https://r2.example.com/first-index-demand",
+    );
+    context.mocks.s3.send.mockResolvedValue({ ContentLength: 128 });
+
+    const first = await storages.prepareStorage(actor, {
+      storageName,
+      storageOwner: "user",
+      files: firstFiles,
+    });
+    await storages.commitStorage(actor, {
+      storageName,
+      storageOwner: "user",
+      versionId: first.versionId,
+      files: firstFiles,
+    });
+    const headId = await seedPiStableContextStorageDemandFixture({
+      orgId: actor.orgId,
+      userId: actor.userId,
+      agentId: agent.agentId,
+      storageName,
+      versionId: first.versionId,
+      archiveSize: 128,
+    });
+
+    const second = await storages.prepareStorage(actor, {
+      storageName,
+      storageOwner: "user",
+      files: secondFiles,
+    });
+    expect(second.versionId).not.toBe(first.versionId);
+    await storages.commitStorage(actor, {
+      storageName,
+      storageOwner: "user",
+      versionId: second.versionId,
+      files: secondFiles,
+    });
+
+    const demand = await readPiStableContextStorageDemandFixture(headId);
+    expect(demand).toMatchObject({
+      status: "pending",
+      inputDigest: expect.any(String),
+      artifactDigest: null,
+      leaseId: null,
+    });
+    expect(demand?.input?.storageMounts).toStrictEqual([
+      expect.objectContaining({
+        versionId: second.versionId,
+        archiveSize: 128,
+      }),
+    ]);
+  });
+
   it("keeps an archive-less empty writeback empty after its index is ready", async () => {
     const actor = bdd.user();
     if (!actor.orgId) {

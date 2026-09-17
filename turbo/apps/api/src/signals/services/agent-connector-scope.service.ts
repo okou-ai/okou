@@ -10,6 +10,7 @@ import { and, eq, isNotNull } from "drizzle-orm";
 
 import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import type { ReadonlyDb } from "../external/db";
+import { orderByCustomConnectorId } from "./custom-connector-order";
 
 export interface CustomConnectorDefinitionVersion {
   readonly customConnectorId: string;
@@ -109,9 +110,10 @@ export function agentConnectorScopeFromRows(args: {
       return parsed.success ? [parsed.data] : [];
     })
     .sort();
-  const customConnectorRows = [...args.customConnectorRows].sort(
-    (left, right) => {
-      return left.customConnectorId.localeCompare(right.customConnectorId);
+  const customConnectorRows = orderByCustomConnectorId(
+    args.customConnectorRows,
+    (row) => {
+      return row.customConnectorId;
     },
   );
   const allowedCustomConnectorIds = customConnectorRows.map((row) => {

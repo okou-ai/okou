@@ -22,6 +22,35 @@ import {
 import { agents } from "./agent";
 import { storages, storageVersions } from "./storage";
 
+export type PiStableContextErasureSubjectKind = "organization" | "user";
+
+/**
+ * Durable legacy-Clerk erasure closure. Only a one-way digest is retained so
+ * late identity-cache refreshes cannot restore stable-context authority.
+ */
+export const piStableContextErasureFences = pgTable(
+  "pi_stable_context_erasure_fences",
+  {
+    subjectKind: varchar("subject_kind", { length: 16 })
+      .$type<PiStableContextErasureSubjectKind>()
+      .notNull(),
+    subjectDigest: varchar("subject_digest", { length: 64 }).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => {
+    return [
+      primaryKey({
+        name: "pi_stable_context_erasure_fences_pk",
+        columns: [table.subjectKind, table.subjectDigest],
+      }),
+      check(
+        "pi_stable_context_erasure_fences_kind_check",
+        sql`${table.subjectKind} IN ('organization', 'user')`,
+      ),
+    ];
+  },
+);
+
 export type PiStableContextPublicationState = "pending" | "ready";
 
 /**

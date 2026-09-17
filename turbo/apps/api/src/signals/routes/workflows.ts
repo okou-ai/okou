@@ -117,6 +117,7 @@ import {
 } from "../services/storage-volume-publication.service";
 import {
   invalidatePiStableContext,
+  lockPiStableContextPublicationKey,
   piStableContextWorkflowInvalidationOptions,
   piStableContextWorkflowPublicationKey,
   retirePiStableContextPublication,
@@ -1963,25 +1964,21 @@ async function applyVisibilityUpdate(
   },
 ): Promise<boolean> {
   return await db.transaction(async (tx) => {
-    const [updated] = await tx
-      .update(workflows)
-      .set({
-        visibility: args.visibility,
-        updatedBy: args.updatedByUserId,
-        updatedAt: nowDate(),
-      })
-      .where(
-        and(
-          eq(workflows.id, args.workflow.id),
-          eq(workflows.orgId, args.workflow.orgId),
-          eq(workflows.agentId, args.workflow.agentId),
-          eq(workflows.ownerUserId, args.workflow.ownerUserId),
-          eq(workflows.visibility, args.workflow.visibility),
-          isNull(workflows.officialDefinitionName),
-        ),
-      )
-      .returning({ id: workflows.id });
-    if (!updated) {
+    const workflowCondition = and(
+      eq(workflows.id, args.workflow.id),
+      eq(workflows.orgId, args.workflow.orgId),
+      eq(workflows.agentId, args.workflow.agentId),
+      eq(workflows.ownerUserId, args.workflow.ownerUserId),
+      eq(workflows.visibility, args.workflow.visibility),
+      isNull(workflows.officialDefinitionName),
+    );
+    const [locked] = await tx
+      .select({ id: workflows.id })
+      .from(workflows)
+      .where(workflowCondition)
+      .for("update")
+      .limit(1);
+    if (!locked) {
       return false;
     }
 
@@ -1996,6 +1993,26 @@ async function applyVisibilityUpdate(
     const publicationKey = piStableContextWorkflowPublicationKey(
       args.workflow.id,
     );
+    const currentScope =
+      args.workflow.visibility === "public" ? scopes[0] : scopes[1];
+    if (
+      await lockPiStableContextPublicationKey(tx, currentScope, publicationKey)
+    ) {
+      return false;
+    }
+
+    const [updated] = await tx
+      .update(workflows)
+      .set({
+        visibility: args.visibility,
+        updatedBy: args.updatedByUserId,
+        updatedAt: nowDate(),
+      })
+      .where(workflowCondition)
+      .returning({ id: workflows.id });
+    if (!updated) {
+      return false;
+    }
     for (const scope of scopes) {
       await retirePiStableContextPublication(tx, scope, publicationKey);
     }

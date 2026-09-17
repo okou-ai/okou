@@ -25,6 +25,7 @@ import {
   deleteOrgUsageData,
   deleteUserUsageData,
 } from "./usage-event-cleanup.service";
+import { closePiStableContextErasureSubject } from "./pi-stable-context-erasure.service";
 import { lockXResourceAdmission } from "./x-resource-usage-lifecycle";
 
 export const AGENT_LIFECYCLE_LOCK_TIMEOUT = "100ms";
@@ -146,6 +147,10 @@ export async function deleteClerkAgentLifecycleData(
       await lockXResourceAdmission(tx, "exclusive");
       await deleteScopedUsageData(tx, scope);
     }
+    await closePiStableContextErasureSubject(tx, {
+      subjectKind: scope.kind,
+      subjectId: scope.kind === "organization" ? scope.orgId : scope.userId,
+    });
     await tx.execute(
       sql`SELECT set_config('lock_timeout', ${AGENT_LIFECYCLE_LOCK_TIMEOUT}, true)`,
     );

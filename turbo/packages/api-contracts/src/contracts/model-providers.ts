@@ -197,19 +197,19 @@ const SUPPORTED_RUN_MODEL_SET: ReadonlySet<string> = new Set(
   SUPPORTED_RUN_MODELS,
 );
 
-type ActiveRunModel = Exclude<SupportedRunModel, "claude-fable-5">;
+type ActiveRunModel = Exclude<SupportedRunModel, "claude-fable-5" | "gpt-5.5">;
 
 // Historical IDs remain in the wire schemas and billing catalog. Availability
 // is a separate product decision, including for provider-prefixed aliases.
 export const RETIRED_RUN_MODEL_MESSAGE =
-  "Claude Fable 5 has been retired. Select Claude Fable 5.1.";
+  "This model has been retired. Select another available model.";
 
 export function getRunModelAccess(
   model: string | null | undefined,
   restrictedBuiltInModels = false,
 ): "allowed" | "pro_required" | "retired" {
   const canonical = normalizeBuiltInModelId(model?.trim().toLowerCase() ?? "");
-  if (canonical === "claude-fable-5") {
+  if (canonical === "claude-fable-5" || canonical === "gpt-5.5") {
     return "retired";
   }
   return restrictedBuiltInModels && isLimitedFree1RestrictedRunModel(model)
@@ -422,15 +422,6 @@ export const BUILT_IN_MODEL_TO_PROVIDER = {
       },
     ],
   },
-  "gpt-5.5": {
-    candidates: [
-      { concreteType: "openai-api-key" },
-      {
-        concreteType: "openrouter-codex",
-        apiModel: "openai/gpt-5.5",
-      },
-    ],
-  },
 } as const satisfies Record<ActiveRunModel, ModelConfig>;
 
 export interface BuiltInModelRouteTarget {
@@ -480,6 +471,7 @@ export function getBuiltInModelRouteVendors(): readonly string[] {
 }
 
 export const BUILT_IN_MODEL_ALIAS_TO_MODEL = {
+  "openai/gpt-5.5": "gpt-5.5",
   "anthropic/claude-fable-5.1": "claude-fable-5-1",
   "anthropic/claude-fable-5": "claude-fable-5",
   "anthropic/claude-opus-5": "claude-opus-5",
@@ -751,7 +743,6 @@ export const MODEL_PROVIDER_TYPES = {
       "openai/gpt-5.6-sol",
       "openai/gpt-5.6-terra",
       "openai/gpt-5.6-luna",
-      "openai/gpt-5.5",
       "deepseek/deepseek-v4.1-flash",
       "deepseek/deepseek-v4-flash",
       "deepseek/deepseek-v4-pro",
@@ -778,7 +769,6 @@ export const MODEL_PROVIDER_TYPES = {
       "openai/gpt-5.6-sol",
       "openai/gpt-5.6-terra",
       "openai/gpt-5.6-luna",
-      "openai/gpt-5.5",
     ] as string[],
     defaultModel: "openai/gpt-5.6-luna",
   },
@@ -797,7 +787,6 @@ export const MODEL_PROVIDER_TYPES = {
       "gpt-5.6-sol",
       "gpt-5.6-terra",
       "gpt-5.6-luna",
-      "gpt-5.5",
     ] as string[],
     defaultModel: "gpt-5.6-sol",
   },
@@ -872,7 +861,6 @@ export const MODEL_PROVIDER_TYPES = {
       "gpt-5.6-sol",
       "gpt-5.6-terra",
       "gpt-5.6-luna",
-      "gpt-5.5",
     ] as string[],
     defaultModel: "gpt-5.6-sol",
   },
@@ -1072,13 +1060,6 @@ const MODEL_FIRST_PROVIDER_COMPATIBILITY = {
     "openrouter-codex",
     "vercel-ai-gateway-codex",
   ],
-  "gpt-5.5": [
-    "built-in",
-    "openai-api-key",
-    "codex-oauth-token",
-    "openrouter-codex",
-    "vercel-ai-gateway-codex",
-  ],
   "deepseek-v4.1-flash": ["built-in", "openrouter-codex"],
   "deepseek-v4-flash": ["built-in", "deepseek", "openrouter-codex"],
   "deepseek-v4-pro": ["built-in", "deepseek", "openrouter-codex"],
@@ -1109,13 +1090,11 @@ const PROVIDER_RUNTIME_MODEL_ALIASES: Partial<
     "gpt-5.6-sol": "openai/gpt-5.6-sol",
     "gpt-5.6-terra": "openai/gpt-5.6-terra",
     "gpt-5.6-luna": "openai/gpt-5.6-luna",
-    "gpt-5.5": "openai/gpt-5.5",
   },
   "vercel-ai-gateway-codex": {
     "gpt-5.6-sol": "openai/gpt-5.6-sol",
     "gpt-5.6-terra": "openai/gpt-5.6-terra",
     "gpt-5.6-luna": "openai/gpt-5.6-luna",
-    "gpt-5.5": "openai/gpt-5.5",
   },
 };
 
