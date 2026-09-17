@@ -4931,7 +4931,10 @@ function InsufficientCreditsCard() {
   const canManageBilling = roleResolved ? isAdminLoadable.data : false;
   const hasAvailableCredits = canBuyCredits && credits !== null && credits > 0;
   const shouldStartProCheckout = !canBuyCredits;
-  const canShowBillingAction = billingResolved && canManageBilling;
+  // Credits on hand leave the reserved action slot empty, the way this notice
+  // has always read once a purchase lands.
+  const canShowBillingAction =
+    billingResolved && canManageBilling && !hasAvailableCredits;
   const checkoutRedirecting = checkoutLoadable.state === "loading";
   const creditCheckoutPreparing =
     creditCheckoutLoadable.state === "loading" ||
@@ -4993,8 +4996,7 @@ function InsufficientCreditsCard() {
         <p className={cn("mt-1", CHAT_NOTICE_DESCRIPTION_CLASS)}>{helper}</p>
       </div>
       <div className={CHAT_NOTICE_ACTION_SLOT_CLASS}>
-        {hasAvailableCredits ||
-        !canShowBillingAction ? null : shouldStartProCheckout ? (
+        {!canShowBillingAction ? null : shouldStartProCheckout ? (
           <Button
             type="button"
             onClick={handleUpgradeClick}
@@ -5155,6 +5157,25 @@ function AssistantRecoveryActions({
   );
 }
 
+/**
+ * The contents of one error card, chosen by the caller and handed to the single
+ * `AssistantErrorCard` element it keeps mounted. `docs/chat-cards.md` requires
+ * the sized element itself to survive every asynchronous state change: the
+ * failure-recovery classification lands after the transcript has already
+ * scrolled, and replacing the card component at that moment removes its box
+ * from layout for one pass, which makes WebKit clamp the transcript's scroll
+ * offset by the card's own height. Equal heights do not prevent that; only the
+ * retained element does.
+ */
+interface AssistantErrorCardContent {
+  readonly icon: LucideIcon;
+  readonly title: string;
+  readonly description: string;
+  readonly details?: ReactNode;
+  readonly actions?: ReactNode;
+  readonly testId?: string;
+}
+
 function AssistantErrorCard({
   icon: Icon,
   title,
@@ -5162,14 +5183,7 @@ function AssistantErrorCard({
   details,
   actions,
   testId,
-}: {
-  icon: LucideIcon;
-  title: string;
-  description: string;
-  details?: ReactNode;
-  actions?: ReactNode;
-  testId?: string;
-}) {
+}: AssistantErrorCardContent) {
   return (
     <div
       role="status"
@@ -5199,25 +5213,6 @@ function AssistantErrorCard({
       )}
     </div>
   );
-}
-
-/**
- * The contents of one error card, chosen by the caller and handed to the single
- * `AssistantErrorCard` element it keeps mounted. `docs/chat-cards.md` requires
- * the sized element itself to survive every asynchronous state change: the
- * failure-recovery classification lands after the transcript has already
- * scrolled, and replacing the card component at that moment removes its box
- * from layout for one pass, which makes WebKit clamp the transcript's scroll
- * offset by the card's own height. Equal heights do not prevent that; only the
- * retained element does.
- */
-interface AssistantErrorCardContent {
-  readonly icon: LucideIcon;
-  readonly title: string;
-  readonly description: string;
-  readonly details?: ReactNode;
-  readonly actions?: ReactNode;
-  readonly testId?: string;
 }
 
 function assistantErrorRecoveryContent(
