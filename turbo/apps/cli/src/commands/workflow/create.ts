@@ -40,6 +40,7 @@ Notes:
   - A workflow belongs to exactly one agent; provide --agent or set OKOU_AGENT_ID
   - SKILL.md is synthesized from (name, description, instruction); do not include it
   - --dir uploads supplementary files only; any SKILL.md is rejected
+  - This command persists the workflow through the API. Local /home/user/.codex/skills or /home/user/.claude/skills folders are runtime-only and will not sync back
   - New workflows are private by default
   - Copy a workflow onto another agent: okou workflow copy <workflow-id> --to-agent <agent-id>`,
   )

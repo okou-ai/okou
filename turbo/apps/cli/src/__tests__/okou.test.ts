@@ -79,8 +79,10 @@ describe("Okou CLI program", () => {
       "web",
       "video",
       "host",
+      "artifact",
       "presentation",
       "presentation-template",
+      "user-template",
       "maps",
       "weather",
       "scrape",
@@ -103,7 +105,6 @@ describe("Okou CLI program", () => {
       "auth",
       "compose",
       "volume",
-      "artifact",
       "run",
       "preference",
       "secret",
@@ -128,8 +129,8 @@ describe("Okou CLI program", () => {
     expect(canonicalCommandNames).not.toContain("__intro-video-voice");
   });
 
-  it("should have exactly 41 canonical commands", () => {
-    expect(canonicalCommandNames).toHaveLength(41);
+  it("should have exactly 43 canonical commands", () => {
+    expect(canonicalCommandNames).toHaveLength(43);
   });
 });
 
@@ -137,6 +138,35 @@ describe("Okou CLI lazy command loading", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
   });
+
+  it.each([
+    [],
+    ["file:write"],
+    ["file:read"],
+    ["artifact:read"],
+    ["artifact:write"],
+  ])(
+    "shows artifacts with a visibility or download capability: %j",
+    (...capabilities: string[]) => {
+      vi.stubEnv("OKOU_TOKEN", buildOkouToken(capabilities));
+      const cli = new Command("okou");
+      registerCommands(cli);
+      expect(cli.helpInformation().includes("artifact")).toBe(
+        capabilities.some((capability) => {
+          return (
+            capability.startsWith("artifact:") || capability === "file:read"
+          );
+        }),
+      );
+      expect(buildHelpText().includes("okou artifact --help")).toBe(
+        capabilities.some((capability) => {
+          return (
+            capability.startsWith("artifact:") || capability === "file:read"
+          );
+        }),
+      );
+    },
+  );
 
   it.each([[], ["ssh:read"], ["ssh:write"]])(
     "shows SSH only with an eligible Run capability: %j",
@@ -170,6 +200,12 @@ describe("Okou CLI lazy command loading", () => {
 
   it.each([
     {
+      label: "artifact sharing help invocation",
+      argv: ["node", "okou", "artifact", "--help"],
+      expectedName: "artifact",
+      expectedHelpCode: "commander.helpDisplayed",
+    },
+    {
       label: "Lark help invocation",
       argv: ["node", "okou", "lark", "--help"],
       expectedName: "lark",
@@ -193,7 +229,11 @@ describe("Okou CLI lazy command loading", () => {
       vi.stubEnv(
         "OKOU_TOKEN",
         buildOkouToken([
-          expectedName === "lark" ? "lark:write" : "image-recognition:write",
+          expectedName === "lark"
+            ? "lark:write"
+            : expectedName === "artifact"
+              ? "artifact:read"
+              : "image-recognition:write",
         ]),
       );
       let helpOutput = "";

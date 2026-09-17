@@ -58,9 +58,27 @@ fn resource_field_is_bounded_and_independent_of_terminal_metadata() {
         encode_guest_storage_manifest_result_frame_into(&mut frame, 7, result, &oversized).is_err()
     );
     assert_eq!(frame, b"unchanged");
-    let mut invalid = vec![0x10, 0x01];
+    // Bypass the resource encoder's size guard while keeping the terminal result valid.
+    let mut invalid = u16::try_from(oversized.len())
+        .unwrap()
+        .to_be_bytes()
+        .to_vec();
     invalid.extend_from_slice(&oversized);
-    assert!(decode_guest_storage_manifest_result(&invalid).is_err());
+    invalid.extend_from_slice(
+        &encode_exec_result(
+            result.termination,
+            result.duration_ms,
+            result.stdout,
+            result.stderr,
+            result.diagnostic,
+        )
+        .unwrap(),
+    );
+    assert!(matches!(
+        decode_guest_storage_manifest_result(&invalid),
+        Err(ProtocolError::PayloadTooLarge("storage resources", size))
+            if size == oversized.len()
+    ));
     for invalid in [&[][..], &[0], &[0, 1], &[0, 0], &[0, 1, 0xff]] {
         assert!(decode_guest_storage_manifest_result(invalid).is_err());
     }

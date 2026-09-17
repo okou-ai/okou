@@ -13,7 +13,12 @@ import {
   prepareHostedSiteDeployment$,
 } from "../services/host.service";
 import { rejectSuspendedOrg$ } from "../services/org-suspension.service";
-import { badRequestMessage, conflict, notFound } from "../../lib/error";
+import {
+  artifactVisibilityUnavailable,
+  badRequestMessage,
+  conflict,
+  notFound,
+} from "../../lib/error";
 import type { RouteEntry } from "../route-entry";
 import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 
@@ -27,46 +32,59 @@ function internalError(message: string) {
 }
 
 const prepareBody$ = bodyResultOf(hostContract.prepare);
-const prepareInner$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const auth = get(organizationAuthContext$);
-  const publicBrand = PUBLIC_BRAND;
+const prepareInner$ = command(
+  async (
+    { get, set },
+    requirePrivateArtifact: boolean,
+    signal: AbortSignal,
+  ) => {
+    const auth = get(organizationAuthContext$);
+    const publicBrand = PUBLIC_BRAND;
 
-  const bodyResult = await get(prepareBody$);
-  signal.throwIfAborted();
-  if (!bodyResult.ok) {
-    return bodyResult.response;
-  }
+    const bodyResult = await get(prepareBody$);
+    signal.throwIfAborted();
+    if (!bodyResult.ok) {
+      return bodyResult.response;
+    }
 
-  const suspended = await set(rejectSuspendedOrg$, auth.orgId, signal);
-  if (suspended) {
-    return suspended;
-  }
+    const suspended = await set(rejectSuspendedOrg$, auth.orgId, signal);
+    if (suspended) {
+      return suspended;
+    }
 
-  const result = await set(
-    prepareHostedSiteDeployment$,
-    {
-      orgId: auth.orgId,
-      userId: auth.userId,
-      runId: "runId" in auth ? auth.runId : undefined,
-      publicBrand,
-      body: bodyResult.data,
-    },
-    signal,
-  );
-  signal.throwIfAborted();
+    const result = await set(
+      prepareHostedSiteDeployment$,
+      {
+        orgId: auth.orgId,
+        userId: auth.userId,
+        runId: "runId" in auth ? auth.runId : undefined,
+        publicBrand,
+        body: {
+          ...bodyResult.data,
+          requirePrivateArtifact:
+            requirePrivateArtifact || bodyResult.data.requirePrivateArtifact,
+        },
+      },
+      signal,
+    );
+    signal.throwIfAborted();
 
-  if (result.status === "bad_request") {
-    return badRequestMessage(result.message);
-  }
-  if (result.status === "conflict") {
-    return conflict(result.message);
-  }
-  if (result.status === "config_error") {
-    return internalError(result.message);
-  }
+    if (result.status === "forbidden") {
+      return artifactVisibilityUnavailable();
+    }
+    if (result.status === "bad_request") {
+      return badRequestMessage(result.message);
+    }
+    if (result.status === "conflict") {
+      return conflict(result.message);
+    }
+    if (result.status === "config_error") {
+      return internalError(result.message);
+    }
 
-  return { status: 200 as const, body: result.body };
-});
+    return { status: 200 as const, body: result.body };
+  },
+);
 
 const completeParams$ = pathParamsOf(hostContract.complete);
 const filesParams$ = pathParamsOf(hostContract.files);
@@ -164,6 +182,19 @@ const deploymentsInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 export const hostRoutes: readonly RouteEntry[] = [
   ...hostPrivatePreviewRoutes,
   {
+    route: hostContract.preparePrivate,
+    handler: authRoute(
+      {
+        requiredCapability: "host:write",
+        requireOrganization: true,
+        missingOrganizationStatus: 401,
+      },
+      command(({ set }, signal: AbortSignal) => {
+        return set(prepareInner$, true, signal);
+      }),
+    ),
+  },
+  {
     route: hostContract.prepare,
     handler: authRoute(
       {
@@ -171,7 +202,9 @@ export const hostRoutes: readonly RouteEntry[] = [
         requireOrganization: true,
         missingOrganizationStatus: 401,
       },
-      prepareInner$,
+      command(({ set }, signal: AbortSignal) => {
+        return set(prepareInner$, false, signal);
+      }),
     ),
   },
   {

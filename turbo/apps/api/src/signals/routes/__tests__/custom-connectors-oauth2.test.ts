@@ -1,3 +1,7 @@
+import {
+  readGetStartedStatus,
+  setGetStartedEnabled,
+} from "./helpers/get-started";
 import { randomBytes, randomUUID } from "node:crypto";
 
 import type { CreateCustomConnectorBody } from "@okouai/api-contracts/contracts/custom-connectors";
@@ -201,6 +205,7 @@ describe("Custom connector OAuth callbacks", () => {
     });
     const actor = createBddApi(context).user({ orgRole: "org:admin" });
     await connectors.updateFeatureSwitches(actor, {});
+    await setGetStartedEnabled(context, actor);
     const connector = await createCustomOAuthConnector(actor, provider);
     const legacyRedirectUri = "https://app.okou.ai/connectors/custom/callback";
     const state = `okou.${randomBytes(32).toString("hex")}`;
@@ -267,5 +272,10 @@ describe("Custom connector OAuth callbacks", () => {
     expect(provider.tokenBodies[1]?.get("redirect_uri")).toBe(okouRedirectUri);
 
     await connectors.deleteCustomConnector(actor, connector.id);
+    expect(
+      (await readGetStartedStatus(context, actor)).quests.find((q) => {
+        return q.key === "connector";
+      }),
+    ).toMatchObject({ claimedCount: 1, earnedCredits: 100, canEarnMore: true });
   });
 });

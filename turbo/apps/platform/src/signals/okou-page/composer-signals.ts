@@ -59,6 +59,7 @@ import {
 } from "./chat-composer.ts";
 import { videoRunOptionsForSend } from "./video-run-options.ts";
 import { buildComposerAdditionalInfo } from "./composer-additional-info.ts";
+import type { ComposerTaskSelection } from "./composer-task-handoff.ts";
 import {
   createImageAnnotationSignals,
   type ImageAnnotationSignals,
@@ -99,6 +100,7 @@ type ComposerSuggestionSignals = Pick<
   | "previewSuggestionIndex$"
   | "previewSuggestion$"
   | "closeSuggestionMenu$"
+  | "clearSlashRange$"
   | "insertAgent$"
   | "insertChatThread$"
 >;
@@ -124,6 +126,11 @@ export interface ComposerSubmission {
    * composers carry their settings in the message's additional_info part.
    */
   readonly videoRunOptions: ChatRunVideoOptionsRequest | undefined;
+  /**
+   * What the composer is set to make. A send inside a thread keeps it, so a
+   * send that creates one hands it to the thread it opens.
+   */
+  readonly taskSelection: ComposerTaskSelection;
 }
 
 export type ComposerSubmissionAction = "send" | "queue";
@@ -296,6 +303,7 @@ interface CreateComposerSignalsOptions {
   readonly voiceDraftTarget: string;
   readonly connector?: ComposerConnectorSignals;
   readonly singleLineOnMobile: boolean;
+  readonly forwardComposer?: boolean;
   readonly modelSelection$: ComposerModelSignals["modelSelection$"];
   readonly selectedModelOauthAvailable$: ComposerModelSignals["selectedModelOauthAvailable$"];
   readonly setModelSelection$: ComposerModelSignals["setModelSelection$"];
@@ -314,6 +322,12 @@ interface CreateComposerSignalsOptions {
   readonly cancellationRecoveryPending$: ComposerQueueSignals["cancellationRecoveryPending$"];
   readonly removeQueuedMessage$: ComposerQueueSignals["removeQueuedMessage$"];
   readonly removeAutomationEvent$: ComposerQueueSignals["removeAutomationEvent$"];
+}
+
+function forwardFeedbackPlaceholder(): string {
+  return i18n.t(($) => {
+    return $.chat.forward.composerPlaceholder;
+  });
 }
 
 function createComposerFileInputSignals() {
@@ -372,6 +386,7 @@ function composerSuggestionSignals(
     previewSuggestionIndex$: composer.previewSuggestionIndex$,
     previewSuggestion$: composer.previewSuggestion$,
     closeSuggestionMenu$: composer.closeSuggestionMenu$,
+    clearSlashRange$: composer.clearSlashRange$,
     insertAgent$: composer.insertAgent$,
     insertChatThread$: composer.insertChatThread$,
   };
@@ -410,6 +425,7 @@ function createComputerUseUiSignals(): Pick<
 function createComposerWorkflowPromptSignals(
   options: CreateComposerSignalsOptions,
   workflowComposer: WorkflowComposerSignals,
+  taskChips: ComposerTaskChipsSignals,
 ): Pick<
   ComposerWorkflowSignals,
   | "createWorkflowPrompt$"
@@ -428,6 +444,11 @@ function createComposerWorkflowPromptSignals(
         set(draft.clear$);
       }
       set(draft.setInput$, CREATE_WORKFLOW_WITH_CHAT_PROMPT);
+      // The prompt and the Workflow chip start the same job, so the row leaves
+      // the composer where that chip would: the task selected and its ideas
+      // open. Where the chips are switched off there is nothing to select, and
+      // `openTask$` is a no-op.
+      set(taskChips.openTask$, "workflow");
       await set(options.draft.save$, signal);
       if (options.threadId !== undefined) {
         set(workflowComposer.focus$);
@@ -547,6 +568,9 @@ export function createComposerSignals(
     agentId$,
     {
       autoFocus: true,
+      ...(options.forwardComposer
+        ? { feedbackPlaceholder: forwardFeedbackPlaceholder }
+        : {}),
     },
     feedback,
   );
@@ -577,6 +601,7 @@ export function createComposerSignals(
   const workflowPrompt = createComposerWorkflowPromptSignals(
     options,
     workflowComposer,
+    taskChips,
   );
   const imageAnnotation = createImageAnnotationSignals();
   /**
@@ -924,6 +949,11 @@ function createSubmitCurrentInput({
           generationTemplate: get(draft.generationTemplate$),
           editorDocument,
           videoRunOptions: additionalInfo ? undefined : videoRunOptions,
+          taskSelection: {
+            task: get(taskChips.task$) ?? mode,
+            presentationSlideCount: get(create.presentationSlideCount$),
+            visualization: get(taskChips.visualization.preferences$),
+          },
         },
         signal,
       );

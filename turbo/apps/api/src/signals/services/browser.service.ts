@@ -67,7 +67,7 @@ import {
 } from "./browser-use.service";
 import { allocateUploadedArtifact$ } from "./uploaded-artifact.service";
 import {
-  artifactFileReference,
+  resolveArtifactFileReference,
   completePrivateArtifact$,
   privateArtifactRecord,
 } from "./private-artifact-storage.service";
@@ -405,7 +405,10 @@ const loadBrowserScreenshotUrl$ = command(
     if (!screenshot) {
       return null;
     }
-    const reference = artifactFileReference(screenshot.url);
+    const reference = await get(
+      resolveArtifactFileReference(screenshot.url, signal),
+    );
+    signal.throwIfAborted();
     if (!reference) {
       return screenshot.url;
     }

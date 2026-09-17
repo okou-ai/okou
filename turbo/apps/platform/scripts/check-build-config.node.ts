@@ -18,6 +18,7 @@ import {
   singleWorkerJavaScriptBundlePlugin,
 } from "./single-bundle.ts";
 import { clerkUiAssetPlugin } from "./clerk-ui.ts";
+import { dependencyVendorChunks } from "./vendor-chunks.ts";
 import {
   domGlobalUsageCounts,
   workerDomGlobalsMessage,
@@ -32,28 +33,38 @@ await test("production build isolates the configured lazy dependency", async () 
   const loaded = await productionConfigPromise;
 
   assert.ok(loaded);
-  const output = loaded.config.build?.rolldownOptions?.output;
+  const rolldownOptions = loaded.config.build?.rolldownOptions;
+  assert.ok(rolldownOptions);
+  const output = rolldownOptions.output;
   assert.ok(output && !Array.isArray(output));
   const codeSplitting = output.codeSplitting;
   assert.equal(typeof codeSplitting, "object");
   assert.ok(codeSplitting && typeof codeSplitting === "object");
-  assert.equal(codeSplitting.groups?.length, 2);
-  const lazyGroup = codeSplitting.groups?.[0];
-  const vendorGroup = codeSplitting.groups?.[1];
+  const groups = codeSplitting.groups;
+  assert.ok(groups);
+  assert.equal(groups.length, 6);
+  assert.equal(codeSplitting.includeDependenciesRecursively, false);
+  assert.equal(output.strictExecutionOrder, true);
+  assert.equal(rolldownOptions.preserveEntrySignatures, false);
+  const lazyGroup = groups[0];
+  const vendorGroup = groups[2];
+  const mermaidGroup = groups[5];
   assert.equal(lazyGroup?.name, APPLICATION_LAZY_CHUNK.name);
   assert.ok(lazyGroup?.test instanceof RegExp);
   assert.equal(
     lazyGroup.test.source,
     APPLICATION_LAZY_CHUNK.modulePattern.source,
   );
-  assert.equal(vendorGroup?.name, "vendor");
+  assert.equal(vendorGroup?.name, "vendor-2");
+  assert.equal(mermaidGroup?.name, "vendor-5");
   assert.equal(typeof vendorGroup?.test, "function");
   if (typeof vendorGroup?.test !== "function") {
     assert.fail("Expected a vendor module filter");
   }
   assert.equal(vendorGroup.test("/repo/node_modules/react/index.js"), true);
   assert.equal(
-    vendorGroup.test("/repo/packages/mermaid-lite/dist/mermaid.esm.min.mjs"),
+    typeof mermaidGroup.test === "function" &&
+      mermaidGroup.test("/repo/packages/mermaid-lite/dist/mermaid.esm.min.mjs"),
     true,
   );
   assert.equal(
@@ -196,7 +207,7 @@ await test("requires the fixed app, lazy, vendor, runtime, and worker layout", (
   assert.deepEqual(
     applicationBundleViolations(validApplicationOutputs().slice(0, 4)),
     [
-      `Expected exactly one app entry, one lazy chunk, one vendor chunk, one Rolldown runtime chunk, and one shared database worker asset, but generated: ${APP_FILE} (chunk), ${LAZY_FILE} (chunk), ${VENDOR_FILE} (chunk), ${RUNTIME_FILE} (chunk)`,
+      `Expected exactly one app entry, one lazy chunk, 1 vendor chunk(s), one Rolldown runtime chunk, and one shared database worker asset, but generated: ${APP_FILE} (chunk), ${LAZY_FILE} (chunk), ${VENDOR_FILE} (chunk), ${RUNTIME_FILE} (chunk)`,
     ],
   );
   assert.deepEqual(
@@ -205,7 +216,7 @@ await test("requires the fixed app, lazy, vendor, runtime, and worker layout", (
       { code: "lazy", fileName: "assets/lazy-Extra001.js", type: "chunk" },
     ]),
     [
-      `Expected exactly one app entry, one lazy chunk, one vendor chunk, one Rolldown runtime chunk, and one shared database worker asset, but generated: ${APP_FILE} (chunk), ${LAZY_FILE} (chunk), ${VENDOR_FILE} (chunk), ${RUNTIME_FILE} (chunk), assets/shared-database-worker-Worker01.js (asset), assets/lazy-Extra001.js (chunk)`,
+      `Expected exactly one app entry, one lazy chunk, 1 vendor chunk(s), one Rolldown runtime chunk, and one shared database worker asset, but generated: ${APP_FILE} (chunk), ${LAZY_FILE} (chunk), ${VENDOR_FILE} (chunk), ${RUNTIME_FILE} (chunk), assets/shared-database-worker-Worker01.js (asset), assets/lazy-Extra001.js (chunk)`,
     ],
   );
 });
@@ -681,6 +692,109 @@ await test("emits the fixed page topology and one external worker", async () => 
       }),
       "expected locale JSON to remain a separate asset",
     );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+await test("dependency chunks keep lower layers cached and reject graph drift", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "okou-vendor-graph-"));
+  const assignments = Object.fromEntries(
+    [1, 2, 3, 4, 5].map((group) => {
+      return [`fixture-${group}`, group];
+    }),
+  );
+  async function writePackage(group: number, code: string) {
+    const directory = path.join(root, "node_modules", `fixture-${group}`);
+    await mkdir(directory, { recursive: true });
+    await writeFile(
+      path.join(directory, "package.json"),
+      JSON.stringify({ name: `fixture-${group}`, exports: "./index.mjs" }),
+    );
+    await writeFile(path.join(directory, "index.mjs"), code);
+  }
+  async function buildFixture() {
+    const vendor = dependencyVendorChunks(assignments);
+    const result = await build({
+      configFile: false,
+      logLevel: "silent",
+      root,
+      plugins: [vendor.plugin],
+      build: {
+        write: false,
+        rolldownOptions: {
+          preserveEntrySignatures: false,
+          output: {
+            strictExecutionOrder: true,
+            codeSplitting: {
+              includeDependenciesRecursively: false,
+              groups: vendor.groups,
+            },
+          },
+        },
+      },
+    });
+    if (Array.isArray(result) || !("output" in result)) {
+      assert.fail("Expected one completed build");
+    }
+    return new Map(
+      result.output
+        .filter((output) => {
+          return output.type === "chunk";
+        })
+        .map((chunk) => {
+          return [chunk.name, chunk.fileName];
+        }),
+    );
+  }
+  try {
+    await writeFile(
+      path.join(root, "index.html"),
+      '<script type="module" src="/main.js"></script>',
+    );
+    const entry = [1, 2, 3, 4, 5]
+      .map((group) => {
+        return `import { value as v${group} } from "fixture-${group}"; console.log(v${group}());`;
+      })
+      .join("\n");
+    await writeFile(path.join(root, "main.js"), entry);
+    await writePackage(1, "export const value = () => Date.now();");
+    await writePackage(
+      2,
+      'import { value as dep } from "fixture-1"; export const value = () => dep() + 2;',
+    );
+    await writePackage(
+      3,
+      'import { value as dep } from "fixture-2"; export const value = () => dep() + 3;',
+    );
+    await writePackage(
+      4,
+      'import { value as dep } from "fixture-1"; export const value = () => dep() + 4;',
+    );
+    await writePackage(5, "export const value = () => Math.random();");
+    const before = await buildFixture();
+    await writePackage(
+      3,
+      'import { value as dep } from "fixture-2"; export const value = () => dep() + 30;',
+    );
+    const after = await buildFixture();
+    for (const group of [1, 2, 4, 5]) {
+      assert.equal(after.get(`vendor-${group}`), before.get(`vendor-${group}`));
+    }
+    assert.notEqual(after.get("vendor-3"), before.get("vendor-3"));
+
+    await writePackage(
+      1,
+      'import { value as dep } from "fixture-3"; export const value = () => dep() + 1;',
+    );
+    await assert.rejects(buildFixture, /Vendor dependency reverses layers/u);
+    await writePackage(1, "export const value = () => Date.now();");
+    await writePackage(6, "export const value = () => Math.random();");
+    await writeFile(
+      path.join(root, "main.js"),
+      `${entry}\nimport { value } from "fixture-6"; console.log(value());`,
+    );
+    await assert.rejects(buildFixture, /Unassigned vendor package: fixture-6/u);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

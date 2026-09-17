@@ -10,7 +10,7 @@ import { theme$ } from "./theme.ts";
 
 /** Open Clerk's hosted account switcher without leaving the active app page. */
 export const openClerkAddAccount$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
+  async ({ get, set }, redirectUrl: string, signal: AbortSignal) => {
     const clerk = await get(clerk$);
     signal.throwIfAborted();
     await set(ensureClerkUiLoaded$, signal);
@@ -20,8 +20,8 @@ export const openClerkAddAccount$ = command(
         resolveAuthBrandContext().homeUrl,
         get(theme$),
       ),
-      fallbackRedirectUrl: "/",
-      forceRedirectUrl: "/",
+      fallbackRedirectUrl: redirectUrl,
+      forceRedirectUrl: redirectUrl,
     });
     signal.throwIfAborted();
   },

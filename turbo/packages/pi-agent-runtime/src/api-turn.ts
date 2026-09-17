@@ -3,13 +3,18 @@ import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { projectPiMemoryCitationSegments } from "@okouai/api-contracts/contracts/pi-memory-citations";
 
 import { piAgentStreamForConfig } from "./model";
+import { PiUsageObserver } from "./usage-observation";
+import {
+  piModelFailureReason,
+  piModelTransportFailure,
+} from "./model-request-diagnostics";
 import {
   measurePiPreparation,
   measurePiPreparationSync,
 } from "./preparation-timing";
 import { assertPiApiFirstTurnCompactionSafe } from "./compaction-preflight";
 import { MemoryPiSession, runPiFirstModelTurn } from "./session-memory";
-import { createPiAgentSessionForRuntime } from "./session-runtime";
+import { createPiApiFirstAgentSessionForRuntime } from "./session-runtime";
 import type {
   PiApiAssistantContent,
   PiApiAssistantMessage,
@@ -88,11 +93,10 @@ export function projectPiApiAssistantMessage(
 ): PiApiAssistantMessage {
   const projection = projectAssistantContent(message, eventIdPrefix);
   const failureReason =
-    message.stopReason === "error" &&
-    message.api === "openai-codex-responses" &&
-    message.provider === "openai-codex"
-      ? classifyPiApiProviderFailure(message.errorMessage)
-      : undefined;
+    piModelFailureReason(message) ??
+    (message.stopReason === "error"
+      ? classifyPiApiProviderFailure(message.errorMessage, responseStatus)
+      : undefined);
   const projected = {
     content: projection.content,
     ...(projection.memoryCitation
@@ -119,6 +123,7 @@ export function projectPiApiAssistantMessage(
       failureDiagnostic: projectPiApiModelFailure(
         message.errorMessage,
         responseStatus,
+        piModelTransportFailure(message),
       ),
     };
   }
@@ -149,13 +154,13 @@ export async function preparePiApiTurn(
     signal,
   );
 
-  let shell: Awaited<ReturnType<typeof createPiAgentSessionForRuntime>>;
+  let shell: Awaited<ReturnType<typeof createPiApiFirstAgentSessionForRuntime>>;
   try {
     shell = await measurePiPreparation(
       args.onPreparationTiming,
       "runtime_initialize",
       () => {
-        return createPiAgentSessionForRuntime(
+        return createPiApiFirstAgentSessionForRuntime(
           {
             cwd: args.cwd,
             agentDir: args.agentDir,
@@ -215,6 +220,7 @@ export async function preparePiApiTurn(
       try {
         executionSignal?.throwIfAborted();
         let observedServiceTier: PiObservedServiceTier;
+        const usageObserver = new PiUsageObserver();
         const turn = await runPiFirstModelTurn({
           model: shell.model,
           session: memorySession,
@@ -224,6 +230,7 @@ export async function preparePiApiTurn(
           prompt: args.prompt,
           thinkingLevel: args.model.thinkingLevel,
           streamOptions: {
+            usageObserver,
             apiKey: args.model.apiKey,
             signal: executionSignal,
             ...(args.model.provider === "openrouter"
@@ -254,6 +261,10 @@ export async function preparePiApiTurn(
           ),
           handoffRequired: turn.handoffRequired,
           observedServiceTier,
+          usageObservation: usageObserver.snapshot(
+            turn.assistantMessage.stopReason === "error" ||
+              turn.assistantMessage.stopReason === "aborted",
+          ),
           sessionJsonl: memorySession.toJsonl(),
         };
       } finally {

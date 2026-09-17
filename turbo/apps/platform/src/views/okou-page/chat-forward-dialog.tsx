@@ -272,7 +272,7 @@ export function ChatForwardDialog({
     >
       <DialogContent
         smMaxWidth="xl"
-        contentClassName="okou-app grid-cols-[minmax(0,1fr)] gap-0 overflow-hidden p-0"
+        contentClassName="grid-cols-[minmax(0,1fr)] gap-0 overflow-hidden p-0"
       >
         <DialogHeader className="min-w-0 px-5 pb-3 pt-5">
           <div className="flex min-w-0 items-center gap-2 pr-8">

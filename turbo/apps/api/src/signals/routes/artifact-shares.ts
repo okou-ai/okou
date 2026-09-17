@@ -13,6 +13,15 @@ import {
 } from "../services/artifact-shares.service";
 import type { RouteEntry } from "../route-entry";
 
+const availability$ = command(async ({ get }, signal: AbortSignal) => {
+  const auth = get(organizationAuthContext$);
+  const enabled = await get(
+    privateArtifactCreationEnabled(auth.orgId, auth.userId),
+  );
+  signal.throwIfAborted();
+  return { status: 200 as const, body: { enabled } };
+});
+
 const status$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   const parsed = await get(bodyResultOf(artifactSharesContract.status));
@@ -81,15 +90,35 @@ function noStore(handler: Command<unknown, [AbortSignal]>) {
     return await set(handler, signal);
   });
 }
-// Browser/session or user PAT only. A run token cannot implicitly publish.
+// Run tokens need explicit artifact capabilities; upload/hosting capabilities
+// alone cannot publish. Services retain owner and original-org authorization.
 export const artifactShareRoutes: readonly RouteEntry[] = [
   {
+    route: artifactSharesContract.availability,
+    handler: noStore(
+      authRoute(
+        { requireOrganization: true, requiredCapability: "artifact:read" },
+        availability$,
+      ),
+    ),
+  },
+  {
     route: artifactSharesContract.status,
-    handler: noStore(authRoute({ requireOrganization: true }, status$)),
+    handler: noStore(
+      authRoute(
+        { requireOrganization: true, requiredCapability: "artifact:read" },
+        status$,
+      ),
+    ),
   },
   {
     route: artifactSharesContract.update,
-    handler: noStore(authRoute({ requireOrganization: true }, update$)),
+    handler: noStore(
+      authRoute(
+        { requireOrganization: true, requiredCapability: "artifact:write" },
+        update$,
+      ),
+    ),
   },
   {
     route: artifactSharesContract.resolve,

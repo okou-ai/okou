@@ -1,6 +1,12 @@
 import { randomBytes } from "node:crypto";
 
 import {
+  assertClerkCleanupCanRequest,
+  fetchClerkRequest,
+  waitForClerkRequest,
+  withClerkCleanupBudget,
+} from "./clerk-cleanup-budget";
+import {
   forgetClerkResource,
   readClerkResourceRecords,
   recordClerkResource,
@@ -44,6 +50,7 @@ export const CLERK_TEST_ROLES = [
   "runner-real-codex",
   "runner-real-claude",
   "runner-mock-claude",
+  "runner-real-codex-built-in",
 ] as const;
 
 export type ClerkTestRole = (typeof CLERK_TEST_ROLES)[number];
@@ -59,6 +66,7 @@ export interface RunnerTestAccounts {
   readonly codex: string;
   readonly claude: string;
   readonly mockClaude: string;
+  readonly codexBuiltIn: string;
 }
 
 export interface ClerkCleanupOptions {
@@ -221,6 +229,7 @@ export function runnerTestAccounts(): RunnerTestAccounts {
     codex: generateTestEmail("runner-real-codex"),
     claude: generateTestEmail("runner-real-claude"),
     mockClaude: generateTestEmail("runner-mock-claude"),
+    codexBuiltIn: generateTestEmail("runner-real-codex-built-in"),
   };
 }
 
@@ -309,6 +318,44 @@ export async function createOrganization(
   createdByUserId: string,
   role: ClerkTestRole,
 ): Promise<string> {
+  return await createOrganizationWithCreatorRole(name, createdByUserId, role);
+}
+
+/** Read settings once for one short preparation; do not cache across batches. */
+export async function prepareOrganizationProvisioner(): Promise<
+  typeof createOrganization
+> {
+  const operation = "read Clerk organization settings";
+  const response = await requestClerkWithRetry(
+    operation,
+    "/instance/organization_settings",
+    { method: "GET", headers: getClerkHeaders() },
+  );
+  const settings = await readClerkJson(response, operation);
+  if (
+    !isRecord(settings) ||
+    settings.enabled !== true ||
+    !hasStringProperty(settings, "creator_role") ||
+    !settings.creator_role.trim()
+  ) {
+    throw new Error(`${operation} returned unsupported organization settings`);
+  }
+
+  return async (name, createdByUserId, role) =>
+    await createOrganizationWithCreatorRole(
+      name,
+      createdByUserId,
+      role,
+      settings.creator_role,
+    );
+}
+
+async function createOrganizationWithCreatorRole(
+  name: string,
+  createdByUserId: string,
+  role: ClerkTestRole,
+  creatorRole?: string,
+): Promise<string> {
   const owner = currentClerkTestOwner(role);
   // Keep the user if cancellation loses an organization's creation response.
   // The existing strict-marker sweep can reconcile that ambiguous outcome.
@@ -340,6 +387,10 @@ export async function createOrganization(
   await recordClerkResource({ kind: "organization", id: data.id, owner });
   await forgetClerkResource("pending-organization", createdByUserId);
 
+  if (creatorRole === "org:admin") {
+    return data.id;
+  }
+
   try {
     await updateOrganizationMembershipRole(
       data.id,
@@ -347,7 +398,14 @@ export async function createOrganization(
       "org:admin",
     );
   } catch (cause) {
-    await deleteOrganizationById(data.id);
+    try {
+      await withClerkCleanupBudget(() => deleteOrganizationById(data.id));
+    } catch (cleanupCause) {
+      console.error(
+        "Clerk organization rollback failed; retaining its owner",
+        cleanupCause,
+      );
+    }
     throw cause;
   }
   return data.id;
@@ -423,6 +481,13 @@ export async function cleanupClerkTestJobRef(
 export async function cleanupRecordedClerkTestResources(
   roles: readonly ClerkTestRole[],
   scope: "generation" | "run" = "generation",
+): Promise<void> {
+  await withClerkCleanupBudget(() => cleanupRecordedResources(roles, scope));
+}
+
+async function cleanupRecordedResources(
+  roles: readonly ClerkTestRole[],
+  scope: "generation" | "run",
 ): Promise<void> {
   assertCleanupRoles(roles);
   const records = (await readClerkResourceRecords()).map(parseResourceRecord);
@@ -566,6 +631,15 @@ export async function cleanupStaleClerkTestResources(
 }
 
 async function cleanupClerkTestResources(
+  selection: ClerkCleanupSelection,
+  options: ClerkCleanupOptions,
+): Promise<ClerkCleanupResult> {
+  return await withClerkCleanupBudget(() =>
+    reconcileClerkTestResources(selection, options),
+  );
+}
+
+async function reconcileClerkTestResources(
   selection: ClerkCleanupSelection,
   options: ClerkCleanupOptions,
 ): Promise<ClerkCleanupResult> {
@@ -873,16 +947,17 @@ export async function deleteOrganizationById(
 export async function deleteClerkTestOwnerResources(
   email: string,
   organizationId: string | undefined,
-  role: ClerkTestRole,
 ): Promise<void> {
   if (!organizationId) {
     // Organization creation may have committed even when its response was lost.
-    // Reconcile the owner scope so the user is never deleted ahead of that org.
-    await cleanupCurrentClerkTestGeneration([role]);
+    // Keep its owner for recorded finalization and the existing strict-marker
+    // stale sweep; a failed setup must not start another instance-wide scan.
     return;
   }
-  await deleteOrganizationById(organizationId);
-  await deleteUserByEmail(email);
+  await withClerkCleanupBudget(async () => {
+    await deleteOrganizationById(organizationId);
+    await deleteUserByEmail(email);
+  });
 }
 
 export async function deleteUserByEmail(email: string): Promise<void> {
@@ -958,10 +1033,12 @@ async function requestClerkWithRetry(
 ): Promise<Response> {
   const url = `${getClerkApiBase()}${path}`;
   for (let attempt = 0; attempt <= CLERK_RETRY_DELAYS_MS.length; attempt += 1) {
+    assertClerkCleanupCanRequest();
     let response: Response;
     try {
-      response = await fetch(url, init);
+      response = await fetchClerkRequest(url, init);
     } catch (cause) {
+      assertClerkCleanupCanRequest();
       const fallbackDelayMs = CLERK_RETRY_DELAYS_MS[attempt];
       if (fallbackDelayMs === undefined) {
         throw new Error(
@@ -1097,7 +1174,7 @@ function clerkRetryDelayMs(
 }
 
 async function wait(delayMs: number): Promise<void> {
-  await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+  await waitForClerkRequest(delayMs);
 }
 
 async function readClerkJson(

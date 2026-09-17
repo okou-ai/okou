@@ -20,6 +20,9 @@ interface FeishuMessageContent {
 }
 
 const textSchema = z.object({ text: z.string() });
+const systemSchema = z
+  .object({ template: z.string() })
+  .catchall(z.array(z.string()));
 const resourceSchema = z.object({
   file_key: z.string().optional(),
   image_key: z.string().optional(),
@@ -190,6 +193,20 @@ function resourceContent(
   return "";
 }
 
+function systemContent(content: unknown): string | null {
+  const parsed = systemSchema.safeParse(content);
+  if (!parsed.success) {
+    return null;
+  }
+  return parsed.data.template.replace(
+    /\{([^{}]+)\}/gu,
+    (placeholder: string, key: string) => {
+      const values = parsed.data[key];
+      return Array.isArray(values) ? values.join(", ") : placeholder;
+    },
+  );
+}
+
 function richContent(
   reader: FeishuContentReader,
   messageType: string,
@@ -228,6 +245,10 @@ export function parseFeishuMessageContent(args: {
     case "text": {
       const parsed = textSchema.safeParse(content);
       text = parsed.success ? parsed.data.text : null;
+      break;
+    }
+    case "system": {
+      text = systemContent(content);
       break;
     }
     case "image":

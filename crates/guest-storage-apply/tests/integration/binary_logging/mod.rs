@@ -8,6 +8,7 @@ use std::process::{Command, Output};
 use tempfile::TempDir;
 
 mod attribution;
+mod connection_observation;
 mod empty_artifact;
 mod http_failure;
 mod manifest_input;

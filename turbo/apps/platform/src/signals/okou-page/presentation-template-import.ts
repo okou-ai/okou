@@ -1,17 +1,70 @@
+import {
+  USER_TEMPLATE_KINDS,
+  type UserTemplateKind,
+} from "@okouai/api-contracts/contracts/user-templates";
 import { command } from "ccstate";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { toast } from "@okouai/ui/components/ui/sonner";
 
+import { i18n } from "../../i18n/index.ts";
+import { featureSwitch$ } from "../external/feature-switch.ts";
 import type { ComposerSignals } from "./composer-signals.ts";
 
 /**
- * Decks a user can hand over. They all end up as ordered page images the same
- * way, so nothing downstream distinguishes them.
+ * What a user uploads to make each kind of template.
+ *
+ * Keyed by kind rather than listed flat, so the table cannot describe a kind
+ * the catalog does not have and a kind added to `USER_TEMPLATE_KINDS` fails to
+ * compile until someone says what file produces one. Without that, a new kind
+ * would be publishable by the CLI and unreachable from the product.
  *
  * `.ppt` is here because a deck old enough to still be saved in the legacy
  * binary format is exactly the deck whose visual language is worth reusing,
  * and a picker that greys it out reads as "not supported" rather than "export
- * it first".
+ * it first". `.pdf` sits under presentation because that is the only kind it
+ * has ever compiled to here; the mapping is this product's choice, not a fact
+ * about the format.
  */
-export const PRESENTATION_TEMPLATE_IMPORT_ACCEPT = ".pptx,.ppt,.pdf";
+const TEMPLATE_IMPORT_EXTENSIONS: Readonly<
+  Record<UserTemplateKind, readonly string[]>
+> = {
+  presentation: [".pptx", ".ppt", ".pdf"],
+  document: [".docx", ".doc"],
+};
+
+function acceptList(kinds: readonly UserTemplateKind[]): string {
+  return kinds
+    .flatMap((kind) => {
+      return TEMPLATE_IMPORT_EXTENSIONS[kind];
+    })
+    .join(",");
+}
+
+/**
+ * The Presentation tab's tile, which publishes to the presentation catalog.
+ * It offers decks only, and must keep offering exactly those.
+ */
+export const PRESENTATION_TEMPLATE_IMPORT_ACCEPT = acceptList(["presentation"]);
+
+/**
+ * The Custom pane's tile, which publishes to the user template catalog.
+ *
+ * One entry for every kind rather than one entry per kind: the user picks a
+ * file and the file decides what it becomes, so nothing asks them to classify
+ * their own document before the analysis has read it.
+ */
+export const CUSTOM_TEMPLATE_IMPORT_ACCEPT = acceptList(USER_TEMPLATE_KINDS);
+
+function importedTemplateKind(file: File): UserTemplateKind | null {
+  const name = file.name.toLowerCase();
+  return (
+    USER_TEMPLATE_KINDS.find((kind) => {
+      return TEMPLATE_IMPORT_EXTENSIONS[kind].some((extension) => {
+        return name.endsWith(extension);
+      });
+    }) ?? null
+  );
+}
 
 /**
  * The message the deck is sent with.
@@ -29,13 +82,59 @@ function presentationTemplateImportPrompt(): string {
 }
 
 /**
- * Attach the deck to the composer and send it.
+ * The same request, aimed at the custom template catalog.
+ *
+ * One sentence for every kind, because the guide already sorts them: the
+ * `reverse-template` skill decides whether the file is a deck, a Word document
+ * or a PDF document and follows the branch that matches. Repeating that
+ * decision here would give the run two answers that can disagree, and the one
+ * in the guide is the one that read the pages.
+ *
+ * Naming the catalog is what this message does have to carry. The guide's
+ * presentation branch ends at `okou presentation-template publish`, which
+ * writes to the presentation table; a template published there never reaches
+ * the Custom pane, which reads the user template catalog. Its document branch
+ * already publishes here and adds `--kind document` itself, so saying the
+ * command once covers both without this message claiming a kind.
+ */
+function customTemplateImportPrompt(): string {
+  return "Analyse this file with the `reverse-template` skill and save it as a reusable template. Publish the result with `okou user-template publish` so it appears under Custom — not with `okou presentation-template publish`, which the guide's presentation branch names for the other catalog.";
+}
+
+/**
+ * Which message this file is sent with, or null if it cannot become one.
+ *
+ * The switch-off answer does not read the file at all. That path is the one
+ * every existing import already takes, and it has always sent the same
+ * sentence for whatever the input accepted, so inspecting the file here could
+ * only start refusing something it accepts today.
+ */
+function templateImportPrompt(args: {
+  readonly file: File;
+  readonly customTemplates: boolean;
+}): string | null {
+  if (!args.customTemplates) {
+    return presentationTemplateImportPrompt();
+  }
+  // The kind still decides whether the file can become a template at all, even
+  // though the message no longer names it: a source matching no kind is one
+  // this catalog cannot compile, and refusing it here costs the member nothing.
+  return importedTemplateKind(args.file) === null
+    ? null
+    : customTemplateImportPrompt();
+}
+
+/**
+ * Attach the file to the composer and send it.
  *
  * This deliberately reuses the ordinary composer path rather than adding an
- * upload protocol of its own: the deck becomes a chat attachment, the message
- * is sent, and the existing new-thread flow creates the thread and navigates
- * into it. The user then watches the analysis happen and can interrupt or
- * follow up, which a background job could not offer.
+ * upload protocol of its own: the file becomes a chat attachment and the
+ * message is sent, so the analysis is a thread the member can open, interrupt
+ * and follow up on, which a background job could not offer.
+ *
+ * Both entries open the thread the send creates. The analysis is the thing
+ * the member just asked for, and watching it is where its progress is
+ * reported, so neither catalog leaves them behind.
  */
 export const importPresentationTemplateDeck$ = command(
   async (
@@ -44,11 +143,34 @@ export const importPresentationTemplateDeck$ = command(
     signal: AbortSignal,
   ): Promise<boolean> => {
     const { signals, file } = args;
+    // Which catalog the file lands in follows the switch that decides which
+    // catalog the user can see. Sending every import to the custom catalog
+    // while the switch is off would publish templates into a pane that member
+    // cannot open, and take them out of the Presentation grid where they
+    // currently appear.
+    const customTemplates =
+      get(featureSwitch$)[FeatureSwitchKey.CustomTemplates] === true;
+    // Decided before the upload so a file that cannot become a template is
+    // refused while the user still has the picker open, rather than after the
+    // bytes have been spent and a run has started.
+    const prompt = templateImportPrompt({ file, customTemplates });
+    if (prompt === null) {
+      toast.error(
+        i18n.t(
+          ($) => {
+            return $.artifacts.templates.importUnsupported;
+          },
+          { formats: CUSTOM_TEMPLATE_IMPORT_ACCEPT.split(",").join(", ") },
+        ),
+      );
+      return false;
+    }
+
     const before = new Set(get(signals.draft.attachments$));
     await set(signals.draft.uploadAttachment$, file, signal);
     signal.throwIfAborted();
     // A failed upload resolves normally: the composer drops the attachment and
-    // toasts. Sending now would ask for an analysis of a deck that never
+    // toasts. Sending now would ask for an analysis of a file that never
     // arrived, so stop at the error the user was already shown.
     const attached = get(signals.draft.attachments$).some((attachment) => {
       return !before.has(attachment);
@@ -56,7 +178,7 @@ export const importPresentationTemplateDeck$ = command(
     if (!attached) {
       return false;
     }
-    set(signals.draft.setDraftInput$, presentationTemplateImportPrompt());
+    set(signals.draft.setDraftInput$, prompt);
 
     const action = await get(signals.submission.primaryAction$);
     signal.throwIfAborted();

@@ -6,7 +6,10 @@ import {
   type SessionOutputDelta,
   type UserPreferenceChangedPayload,
 } from "@okouai/api-contracts/contracts/realtime";
-import type { RunnerPreference } from "@okouai/api-contracts/contracts/runners";
+import type {
+  RunnerPreference,
+  RunnerCancellationMode,
+} from "@okouai/api-contracts/contracts/runners";
 import type { BuiltInGenerationRealtimeSubscription } from "@okouai/api-contracts/contracts/built-in-generation";
 
 import { env } from "../../lib/env";
@@ -196,6 +199,14 @@ export function publishModelPoliciesChangedForOrgSafely(
   return Promise.resolve();
 }
 
+/** Invalidate the aggregate Run capacity view after a committed state change. */
+export function publishRunQueueChangedForOrgSafely(
+  orgId: string,
+): Promise<void> {
+  waitUntil(bestEffort(publishOrgSignal(orgId, "runQueueChanged")));
+  return Promise.resolve();
+}
+
 /**
  * Fire the per-user-org "thread list shape changed" signal. The SharedWorker
  * consumes this topic to invalidate its local thread-event view; the App then
@@ -225,6 +236,20 @@ type ChatThreadReadCursorUpdatedPayload =
   | {
       readonly agentId: string;
       readonly threadIds: readonly string[];
+    }
+  | {
+      /**
+       * More cursors moved under this Agent than one payload carries, so the
+       * exact list is deliberately empty and `scope` states what changed. The
+       * SharedWorker reloads authoritative chat indicators on every event of
+       * this topic before it forwards the payload, and the only payload a tab
+       * interprets is the single-thread `lastReadAt: null` optimistic-mark
+       * clear, so this stays a complete invalidation rather than a silently
+       * truncated list.
+       */
+      readonly agentId: string;
+      readonly threadIds: readonly [];
+      readonly scope: "agent";
     };
 
 /**
@@ -389,8 +414,6 @@ export async function publishOrgSignal(
   await channel.publish(topic, payload);
   L.debug(`Published "${topic}" to org:${orgId}`);
 }
-
-export type RunnerCancellationMode = "cooperative" | "hard";
 
 /**
  * Notify a runner-group channel that a run should halt. The runner subscribes

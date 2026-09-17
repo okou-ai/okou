@@ -4,7 +4,7 @@ import { listConnectorCatalogStatus } from "../../lib/api/domains/connectors";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { findConnectorBySelector } from "./connector-selector";
 import { resolveAgentContext, resolveConnectorAgentId } from "./agent-context";
-import { getPlatformOrigin } from "../doctor/platform-url";
+import { getPlatformOrigin } from "../../lib/platform-url";
 import {
   availableConnectorSlugs,
   findConnectorStatusItem,
@@ -300,9 +300,16 @@ Scope:
   and shows the current member's connection plus optional --agent authorization.
   Qualify a selector with builtin: or custom: within the supported connector types.
   For org custom definition/member status, use connector custom status <selector>.
+  To choose another account, run connector account list <selector> --json and
+  use only an exact returned connectionId. Never invent or reuse an ID from a
+  different connector. A switch applies to future runs in this chat; it cannot
+  replace the account already admitted to this Run.
+  When status prints an action URL, return it verbatim. Add a callback only when
+  this turn needs exactly one access action; otherwise return ordinary links.
 
 Examples:
   okou connector status github --json
+  okou connector account list github --json
   okou connector custom list
   okou connector custom status <connector-id>`,
   )

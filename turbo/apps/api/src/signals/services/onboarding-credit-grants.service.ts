@@ -21,7 +21,7 @@ export function onboardingCreditsExpiresAt(grantedAt: Date): Date {
   return new Date(grantedAt.getTime() + ONBOARDING_CREDIT_TTL_MS);
 }
 
-async function grantOrgCredits(
+export async function grantOrgCredits(
   tx: DbTransaction,
   orgId: string,
   amount: number,

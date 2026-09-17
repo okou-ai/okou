@@ -30,6 +30,7 @@ import {
 } from "./helpers/api-bdd";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
+import { ClerkTransportTestError } from "./helpers/clerk-transport-error";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
 import { seedBuiltInDefaultModelKey } from "./helpers/runtime-state";
@@ -413,25 +414,29 @@ describe("okou scrape route", () => {
     expect(context.mocks.signalTimers.delay).not.toHaveBeenCalled();
   });
 
-  it("does not retry direct Clerk session failures", async () => {
-    context.mocks.clerk.authenticateRequest.mockRejectedValue(
-      new ClerkApiResponseTestError(521),
-    );
+  it.each([
+    ["5xx", new ClerkApiResponseTestError(521)],
+    ["transport", new ClerkTransportTestError()],
+  ])(
+    "does not retry direct Clerk session %s failures",
+    async (_name, failure) => {
+      context.mocks.clerk.authenticateRequest.mockRejectedValue(failure);
 
-    const response = await rawScrapeRequest(
-      null,
-      {
-        url: "https://example.com/page",
-        format: "markdown",
-        mode: "standard",
-      },
-      { authHeaders: { authorization: "Bearer clerk-session" } },
-    );
+      const response = await rawScrapeRequest(
+        null,
+        {
+          url: "https://example.com/page",
+          format: "markdown",
+          mode: "standard",
+        },
+        { authHeaders: { authorization: "Bearer clerk-session" } },
+      );
 
-    expect(response.status).toBe(500);
-    expect(context.mocks.signalTimers.delay).not.toHaveBeenCalled();
-    expect(context.mocks.sentry.captureException).toHaveBeenCalledOnce();
-  });
+      expect(response.status).toBe(500);
+      expect(context.mocks.signalTimers.delay).not.toHaveBeenCalled();
+      expect(context.mocks.sentry.captureException).toHaveBeenCalledOnce();
+    },
+  );
 
   it("rejects scrape requests when the provider is not configured", async () => {
     const actor = createBddApi(context).user();

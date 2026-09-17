@@ -25,7 +25,6 @@ describe("FeatureSwitchKey", () => {
     expect(FeatureSwitchKey.RealAgentInPreview).toBe("_realAgentInPreview");
     expect(FeatureSwitchKey.LangfuseTrace).toBe("_langfuseTrace");
     expect(FeatureSwitchKey.TestOauthConnector).toBe("_testOauthConnector");
-    expect(FeatureSwitchKey.SshAccess).toBe("sshAccess");
     expect(FeatureSwitchKey.PiLoop).toBe("piLoop");
     expect(FeatureSwitchKey.PiMemory).toBe("piMemory");
   });
@@ -138,12 +137,6 @@ describe("isFeatureEnabled", () => {
 
   it("should return false for disabled switch without context", () => {
     expect(isFeatureEnabled(FeatureSwitchKey.AhrefsConnector, {})).toBe(false);
-    expect(isFeatureEnabled(FeatureSwitchKey.SshAccess, {})).toBe(false);
-    expect(getFeatureSwitchMetadata()[FeatureSwitchKey.SshAccess]).toEqual({
-      maintainer: "liangyou@okou.ai",
-      description: "Enable standalone Runner-mediated SSH configuration",
-      rolloutStage: "beta",
-    });
   });
 
   it("should return false for disabled switch with non-matching userId", () => {
@@ -257,6 +250,34 @@ describe("isFeatureEnabled", () => {
     });
   });
 
+  it("should keep the simple Morning Brief implementation switch off for everyone", () => {
+    expect(FeatureSwitchKey.SimpleMorningBrief).toBe("simpleMorningBrief");
+    for (const context of [
+      {},
+      { orgId: "org_nonexistent" },
+      { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
+    ]) {
+      expect(
+        isFeatureEnabled(FeatureSwitchKey.SimpleMorningBrief, context),
+      ).toBe(false);
+      // Selecting the replacement implementation never changes whether the
+      // user has Morning Brief.
+      expect(isFeatureEnabled(FeatureSwitchKey.MorningBrief, context)).toBe(
+        true,
+      );
+    }
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.SimpleMorningBrief, {
+        orgId: "org_nonexistent",
+        overrides: { [FeatureSwitchKey.SimpleMorningBrief]: true },
+      }),
+    ).toBe(true);
+    expect(
+      getFeatureSwitchMetadata()[FeatureSwitchKey.SimpleMorningBrief]
+        ?.rolloutStage,
+    ).toBe("alpha");
+  });
+
   it("should return true when orgId matches even if userId does not", () => {
     expect(
       isFeatureEnabled(FeatureSwitchKey.Lab, {
@@ -307,12 +328,10 @@ describe("getAllFeatureStates", () => {
     expect(staffOrgStates[FeatureSwitchKey.PersonalModelProviderAccounts]).toBe(
       true,
     );
-    expect(staffOrgStates[FeatureSwitchKey.ChatTranslation]).toBe(false);
     expect(staffOrgStates[FeatureSwitchKey.IntroVideo]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.GradientColorThemes]).toBe(false);
     expect(staffOrgStates[FeatureSwitchKey.OfficialWorkflows]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.MorningBrief]).toBe(true);
-    expect(staffOrgStates[FeatureSwitchKey.SshAccess]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.ChatThreadHeaderActions]).toBe(true);
 
     const otherOrgStates = getAllFeatureStates({
@@ -328,7 +347,6 @@ describe("getAllFeatureStates", () => {
     expect(otherOrgStates[FeatureSwitchKey.PersonalModelProviderAccounts]).toBe(
       false,
     );
-    expect(otherOrgStates[FeatureSwitchKey.ChatTranslation]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.IntroVideo]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.GradientColorThemes]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.OfficialWorkflows]).toBe(false);
@@ -356,18 +374,37 @@ describe("getAllFeatureStates", () => {
     expect(colleagueStates[FeatureSwitchKey.PiLoop]).toBe(true);
   });
 
-  it("should enable effort for Bingjie by email outside the staff org", () => {
+  it("should enable custom templates for Bingjie by email outside the staff org", () => {
     const bingjieStates = getAllFeatureStates({
       email: "BINGJIE@OKOU.AI",
       orgId: "org_nonexistent",
     });
-    expect(bingjieStates[FeatureSwitchKey.Effort]).toBe(true);
+    expect(bingjieStates[FeatureSwitchKey.CustomTemplates]).toBe(true);
 
     const otherStates = getAllFeatureStates({
       email: "ethan@okou.ai",
       orgId: "org_nonexistent",
     });
-    expect(otherStates[FeatureSwitchKey.Effort]).toBe(false);
+    expect(otherStates[FeatureSwitchKey.CustomTemplates]).toBe(false);
+  });
+
+  it("releases the composer run controls to every org and keeps the off lever", () => {
+    const states = getAllFeatureStates({ orgId: "org_nonexistent" });
+    expect(states[FeatureSwitchKey.Effort]).toBe(true);
+    expect(states[FeatureSwitchKey.CodexFastMode]).toBe(true);
+    expect(states[FeatureSwitchKey.ModelPickerFlyout]).toBe(true);
+
+    const reverted = getAllFeatureStates({
+      orgId: "org_nonexistent",
+      overrides: {
+        [FeatureSwitchKey.Effort]: false,
+        [FeatureSwitchKey.CodexFastMode]: false,
+        [FeatureSwitchKey.ModelPickerFlyout]: false,
+      },
+    });
+    expect(reverted[FeatureSwitchKey.Effort]).toBe(false);
+    expect(reverted[FeatureSwitchKey.CodexFastMode]).toBe(false);
+    expect(reverted[FeatureSwitchKey.ModelPickerFlyout]).toBe(false);
   });
 
   it("should apply overrides to enable disabled features", () => {

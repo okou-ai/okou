@@ -1,5 +1,7 @@
+import type { GetStartedQuestKey } from "@okouai/api-contracts/contracts/get-started";
 import type { ReactNode } from "react";
-import { useGet, useLastLoadable, useSet } from "ccstate-react";
+import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
+import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import {
   CalendarCheck,
@@ -11,6 +13,7 @@ import {
 } from "lucide-react";
 import {
   Button,
+  buttonVariants,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -29,6 +32,7 @@ import { detachedNavigateTo$ } from "../../signals/route.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { openSettingsDialogAt$ } from "../../signals/okou-page/settings/settings-dialog.ts";
 import {
+  checkInGetStarted$,
   getStartedQuests$,
   getStartedSummary$,
   setShareDialogOpen$,
@@ -36,24 +40,15 @@ import {
   shareDialogOpen$,
   sharePostDraft$,
   submitSharePost$,
+  shareSubmission$,
+  setGetStartedMenuOpen$,
   type GetStartedQuest,
-  type GetStartedQuestKey,
   type GetStartedSummary,
 } from "../../signals/okou-page/get-started.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { formatLocalizedNumber } from "../../i18n/format.ts";
 import { DropdownMenuModalItem } from "../components/dropdown-menu-modal-item.tsx";
 import { SlackMark } from "./components/slack-mark.tsx";
-
-/** What each quest pays. Rewards are per person, not per org. */
-const QUEST_REWARDS = {
-  connector: 100,
-  slack: 2000,
-  workflow: 1000,
-  invite: 100,
-  share: 2000,
-  checkin: 100,
-} as const satisfies Record<GetStartedQuestKey, number>;
 
 // The ring is drawn at 16px so it agrees with the `[&_svg]:size-4` that Button
 // enforces on its descendants, and its geometry is fixed at that size.
@@ -115,6 +110,8 @@ interface QuestCopy {
   readonly description: string;
   /** The trailing unit on a reward that is paid more than once, if any. */
   readonly unit: string | null;
+  /** The verb on the row's affordance, or null when the quest opens nothing. */
+  readonly action: string | null;
 }
 
 function useQuestCopy(): Record<GetStartedQuestKey, QuestCopy> {
@@ -131,6 +128,9 @@ function useQuestCopy(): Record<GetStartedQuestKey, QuestCopy> {
       unit: t(($) => {
         return $.chat.agentPage.getStarted.connector.unit;
       }),
+      action: t(($) => {
+        return $.chat.agentPage.getStarted.connector.action;
+      }),
     },
     slack: {
       name: t(
@@ -143,6 +143,9 @@ function useQuestCopy(): Record<GetStartedQuestKey, QuestCopy> {
         return $.chat.agentPage.getStarted.slack.description;
       }),
       unit: null,
+      action: t(($) => {
+        return $.chat.agentPage.getStarted.slack.action;
+      }),
     },
     workflow: {
       name: t(($) => {
@@ -152,6 +155,9 @@ function useQuestCopy(): Record<GetStartedQuestKey, QuestCopy> {
         return $.chat.agentPage.getStarted.workflow.description;
       }),
       unit: null,
+      action: t(($) => {
+        return $.chat.agentPage.getStarted.workflow.action;
+      }),
     },
     invite: {
       name: t(($) => {
@@ -162,6 +168,9 @@ function useQuestCopy(): Record<GetStartedQuestKey, QuestCopy> {
       }),
       unit: t(($) => {
         return $.chat.agentPage.getStarted.invite.unit;
+      }),
+      action: t(($) => {
+        return $.chat.agentPage.getStarted.invite.action;
       }),
     },
     share: {
@@ -175,6 +184,9 @@ function useQuestCopy(): Record<GetStartedQuestKey, QuestCopy> {
         return $.chat.agentPage.getStarted.share.description;
       }),
       unit: null,
+      action: t(($) => {
+        return $.chat.agentPage.getStarted.share.action;
+      }),
     },
     checkin: {
       name: t(($) => {
@@ -186,25 +198,37 @@ function useQuestCopy(): Record<GetStartedQuestKey, QuestCopy> {
       unit: t(($) => {
         return $.chat.agentPage.getStarted.checkin.unit;
       }),
+      action: t(($) => {
+        return $.chat.agentPage.getStarted.checkin.action;
+      }),
     },
   };
 }
 
+/**
+ * What the quest pays, shown at the head of the row's second line.
+ *
+ * It led the trailing edge until the rows gained an affordance, and only one
+ * of the two can sit there: a row that states its price where its button
+ * belongs reads as a label rather than something to press. The amount keeps
+ * the brand foreground so it still carries the row, and the unit stays muted
+ * so the eye lands on the number.
+ */
 function QuestReward({
-  questKey,
+  amount,
   unit,
 }: {
-  questKey: GetStartedQuestKey;
+  amount: number;
   unit: string | null;
 }) {
   const { t } = useTranslation();
   return (
-    <span className="shrink-0 text-xs font-semibold tabular-nums text-brand-text">
+    <span className="font-semibold tabular-nums text-brand-text">
       {t(
         ($) => {
           return $.chat.agentPage.getStarted.reward;
         },
-        { amount: formatLocalizedNumber(QUEST_REWARDS[questKey]) },
+        { amount: formatLocalizedNumber(amount) },
       )}
       {unit !== null && (
         <span className="font-normal text-muted-foreground"> {unit}</span>
@@ -213,23 +237,63 @@ function QuestReward({
   );
 }
 
-const QUEST_ROW_CLASS = "gap-3 px-3 py-2.5";
+/**
+ * The row's press affordance.
+ *
+ * The row itself is the menu item, so this is a span: a control nested inside
+ * an option is invalid for the menu's roles, and the row already owns the
+ * click, the hover state and the keyboard focus. It borrows `buttonVariants`
+ * rather than restating a button's geometry, so the two cannot drift, and it
+ * is hidden from assistive technology because the row's own name already says
+ * what activating it does.
+ */
+function QuestAction({ label }: { label: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={buttonVariants({
+        variant: "neutral",
+        size: "xs",
+        className: "pointer-events-none shrink-0",
+      })}
+    >
+      {label}
+    </span>
+  );
+}
+
+// A quest row renders as a menu item, or as a plain div once nothing is left to
+// open, so the row class has to carry the two rules `DropdownMenuItem` applies
+// on its own: the menu's text size and the 16px icon. Without them a finished
+// quest fell back to the document's 16px text and lucide's 24px default, which
+// set the done rows a size above the rows beside them and pushed their titles
+// 8px further right than the rest of the column.
+const QUEST_ROW_CLASS =
+  "gap-3 px-3 py-2.5 text-sm [&_svg]:size-4 [&_svg]:shrink-0";
 
 function QuestRowBody({
   quest,
   copy,
+  actionable,
 }: {
   quest: GetStartedQuest;
   copy: QuestCopy;
+  /** Whether the row opens something, so it earns a press affordance. */
+  actionable: boolean;
 }) {
   const { t } = useTranslation();
-  const done = quest.status === "done";
+  const done = quest.status === "done" && !quest.canEarnMore;
+  const earning = quest.canEarnMore && quest.status !== "inReview";
   const description =
     quest.status === "inReview"
       ? t(($) => {
           return $.chat.agentPage.getStarted.inReviewDescription;
         })
-      : copy.description;
+      : quest.status === "rejected"
+        ? t(($) => {
+            return $.chat.agentPage.getStarted.rejectedDescription;
+          })
+        : copy.description;
   return (
     <>
       {QUEST_ICONS[quest.key]}
@@ -239,10 +303,49 @@ function QuestRowBody({
         >
           {copy.name}
         </span>
-        <span className="block truncate text-xs text-muted-foreground">
+        <span className="block text-xs text-muted-foreground">
+          {earning && (
+            <>
+              <QuestReward amount={quest.rewardAmount} unit={copy.unit} />
+              {" · "}
+            </>
+          )}
           {description}
         </span>
+        {quest.key === "invite" && quest.limit !== null && (
+          <span className="block text-xs text-muted-foreground">
+            {formatLocalizedNumber(quest.claimedCount)}/
+            {formatLocalizedNumber(quest.limit)}
+            {quest.pendingCount > 0 && (
+              <>
+                {" "}
+                ·{" "}
+                {t(
+                  ($) => {
+                    return $.chat.agentPage.getStarted.pendingInvitations;
+                  },
+                  {
+                    amount: formatLocalizedNumber(quest.pendingCount),
+                  },
+                )}
+              </>
+            )}
+          </span>
+        )}
+        {quest.key === "connector" && quest.claimedCount > 0 && (
+          <span className="block text-xs text-muted-foreground">
+            {t(
+              ($) => {
+                return $.chat.agentPage.getStarted.rewardedConnections;
+              },
+              {
+                amount: formatLocalizedNumber(quest.claimedCount),
+              },
+            )}
+          </span>
+        )}
       </span>
+      {/* One trailing slot, one meaning: finished, waiting, or pressable. */}
       {done && <Check className="shrink-0 text-[#2EB67D]" />}
       {quest.status === "inReview" && (
         <span className="shrink-0 rounded-full bg-gray-50 px-2 py-0.5 text-xs text-muted-foreground">
@@ -251,8 +354,8 @@ function QuestRowBody({
           })}
         </span>
       )}
-      {quest.status === "todo" && (
-        <QuestReward questKey={quest.key} unit={copy.unit} />
+      {actionable && copy.action !== null && (
+        <QuestAction label={copy.action} />
       )}
     </>
   );
@@ -262,18 +365,29 @@ function QuestRow({
   quest,
   copy,
   onSelect,
+  pending = false,
 }: {
   quest: GetStartedQuest;
   copy: QuestCopy;
   onSelect: (() => void) | null;
+  pending?: boolean;
 }) {
-  const body = <QuestRowBody quest={quest} copy={copy} />;
+  const body = (
+    <QuestRowBody quest={quest} copy={copy} actionable={onSelect !== null} />
+  );
   const testId = `get-started-quest-${quest.key}`;
 
   // A quest with nothing left to open is a status line, not a control, so it
   // renders without a hover state rather than as a menu item that does nothing.
   if (onSelect === null) {
-    return <div className={`flex items-center ${QUEST_ROW_CLASS}`}>{body}</div>;
+    return (
+      <div
+        className={`flex items-center ${QUEST_ROW_CLASS}`}
+        data-testid={testId}
+      >
+        {body}
+      </div>
+    );
   }
 
   // Keep the share dialog on the shared modal-item composition path.
@@ -293,6 +407,9 @@ function QuestRow({
     <DropdownMenuItem
       className={QUEST_ROW_CLASS}
       onClick={onSelect}
+      closeOnClick={quest.key !== "checkin"}
+      disabled={pending}
+      aria-busy={pending}
       data-testid={testId}
     >
       {body}
@@ -308,6 +425,9 @@ function ShareOnXDialog() {
   const setOpen = useSet(setShareDialogOpen$);
   const setDraft = useSet(setSharePostDraft$);
   const submitShare = useSet(submitSharePost$);
+  const pageSignal = useGet(pageSignal$);
+  const submission = useLoadable(shareSubmission$);
+  const submitting = submission.state === "loading";
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -364,9 +484,9 @@ function ShareOnXDialog() {
           </Button>
           <Button
             type="button"
-            disabled={postUrl.trim() === ""}
+            disabled={postUrl.trim() === "" || submitting}
             onClick={() => {
-              submitShare();
+              detach(submitShare(pageSignal), Reason.DomCallback);
             }}
           >
             {t(($) => {
@@ -379,7 +499,9 @@ function ShareOnXDialog() {
   );
 }
 
-function useQuestActions(): Record<GetStartedQuestKey, (() => void) | null> {
+function useQuestActions(
+  checkIn: (signal: AbortSignal) => Promise<void>,
+): Record<GetStartedQuestKey, () => void> {
   const pageSignal = useGet(pageSignal$);
   const openSettings = useSet(openSettingsDialogAt$);
   const navigate = useSet(detachedNavigateTo$);
@@ -400,8 +522,9 @@ function useQuestActions(): Record<GetStartedQuestKey, (() => void) | null> {
     share: () => {
       setShareDialogOpen(true);
     },
-    // Opening the app is the check-in, so there is nothing to navigate to.
-    checkin: null,
+    checkin: () => {
+      detach(checkIn(pageSignal), Reason.DomCallback);
+    },
   };
 }
 
@@ -414,22 +537,26 @@ function GetStartedPanel({
 }) {
   const { t } = useTranslation();
   const copy = useQuestCopy();
-  const actions = useQuestActions();
+  const [checkinLoadable, checkIn] = useLoadableSet(checkInGetStarted$);
+  const actions = useQuestActions(checkIn);
   const percent = (summary.completed / summary.total) * 100;
-  // Checking in is the one quest that never finishes, so it sits below a
-  // divider instead of competing with the steps that can be completed.
-  const oneTimeQuests = quests.filter((quest) => {
+  // Keep the daily reward separate from the other quests.
+  const setupQuests = quests.filter((quest) => {
     return quest.key !== "checkin";
   });
-  const recurringQuests = quests.filter((quest) => {
+  const dailyQuests = quests.filter((quest) => {
     return quest.key === "checkin";
   });
   const selectHandler = (quest: GetStartedQuest): (() => void) | null => {
-    return quest.status === "todo" ? actions[quest.key] : null;
+    return quest.canEarnMore && quest.status !== "inReview"
+      ? actions[quest.key]
+      : null;
   };
 
+  // 400px, not 356: the rows gave their trailing edge to an affordance, so the
+  // text column buys that width back rather than wrapping to pay for it.
   return (
-    <DropdownMenuContent align="end" className="w-[356px]">
+    <DropdownMenuContent align="end" className="w-[400px]">
       <div className="flex items-start gap-2.5 px-3 pb-2 pt-2.5">
         <div className="min-w-0 flex-1">
           <p className="text-[13px] font-semibold">
@@ -444,7 +571,11 @@ function GetStartedPanel({
           </p>
         </div>
         <span className="flex h-[22px] shrink-0 items-center gap-1.5 rounded-full bg-brand-subtle px-2 text-xs font-semibold tabular-nums text-brand-text">
-          <Coins />
+          {/* A pill enforces no icon size the way Button and DropdownMenuItem
+              do, so the mark is sized against this one: 12px is what Badge
+              gives an icon in a pill, and lucide's 24px default overflowed the
+              22px box. */}
+          <Coins className="size-3 shrink-0" />
           {formatLocalizedNumber(summary.earnedCredits)}
         </span>
       </div>
@@ -466,7 +597,7 @@ function GetStartedPanel({
         </span>
       </div>
       <DropdownMenuSeparator />
-      {oneTimeQuests.map((quest) => {
+      {setupQuests.map((quest) => {
         return (
           <QuestRow
             key={quest.key}
@@ -476,14 +607,15 @@ function GetStartedPanel({
           />
         );
       })}
-      {recurringQuests.length > 0 && <DropdownMenuSeparator />}
-      {recurringQuests.map((quest) => {
+      {dailyQuests.length > 0 && <DropdownMenuSeparator />}
+      {dailyQuests.map((quest) => {
         return (
           <QuestRow
             key={quest.key}
             quest={quest}
             copy={copy[quest.key]}
             onSelect={selectHandler(quest)}
+            pending={checkinLoadable.state === "loading"}
           />
         );
       })}
@@ -508,6 +640,7 @@ export function GetStartedEntry() {
   const { t } = useTranslation();
   const questsLoadable = useLastLoadable(getStartedQuests$);
   const summaryLoadable = useLastLoadable(getStartedSummary$);
+  const setMenuOpen = useSet(setGetStartedMenuOpen$);
 
   if (
     questsLoadable.state !== "hasData" ||
@@ -516,10 +649,13 @@ export function GetStartedEntry() {
     return null;
   }
   const summary = summaryLoadable.data;
+  if (summary.total === 0) {
+    return null;
+  }
 
   return (
     <>
-      <DropdownMenu>
+      <DropdownMenu onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger asChild>
           <Button
             type="button"

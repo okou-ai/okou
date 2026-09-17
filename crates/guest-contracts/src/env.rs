@@ -318,6 +318,19 @@ pub const PI_LAUNCH_PAYLOAD_PRIVATE_DIR_NAME: &str = "pi-launch-payload";
 /// Private runtime filename used by [`PI_LAUNCH_PAYLOAD_FILE_ENV`].
 pub const PI_LAUNCH_PAYLOAD_FILENAME: &str = "payload.json";
 
+/// Path to the private authenticated deferred Pi handoff JSON file.
+///
+/// The guest-agent writes this file with its private Sandbox control token and
+/// passes only the path to the Pi CLI child. The control token itself remains
+/// guest-owned and is never added to the child environment.
+pub const PI_DEFERRED_HANDOFF_FILE_ENV: &str = "OKOU_PI_DEFERRED_HANDOFF_FILE";
+
+/// Private runtime subdirectory used by [`PI_DEFERRED_HANDOFF_FILE_ENV`].
+pub const PI_DEFERRED_HANDOFF_PRIVATE_DIR_NAME: &str = "pi-deferred-handoff";
+
+/// Private runtime filename used by [`PI_DEFERRED_HANDOFF_FILE_ENV`].
+pub const PI_DEFERRED_HANDOFF_FILENAME: &str = "payload.json";
+
 /// Runner-owned bootstrap key carrying non-secret Pi model metadata into the
 /// Pi CLI child environment.
 pub const PI_MODEL_CONFIG_ENV: &str = "OKOU_PI_MODEL_CONFIG";
@@ -534,6 +547,7 @@ const EXPLICIT_RUNNER_OWNED_ENV_KEYS: &[&str] = &[
     PI_SESSION_ID_ENV,
     PI_LAUNCH_CONFIG_ENV,
     PI_LAUNCH_PAYLOAD_FILE_ENV,
+    PI_DEFERRED_HANDOFF_FILE_ENV,
     PI_MODEL_CONFIG_ENV,
     CONNECTOR_ACCOUNT_CONTEXT_FILE_ENV,
     CLI_AGENT_TYPE_ENV,
@@ -703,6 +717,12 @@ mod tests {
         assert_eq!(PI_LAUNCH_PAYLOAD_FILE_ENV, "OKOU_PI_LAUNCH_PAYLOAD_FILE");
         assert_eq!(PI_LAUNCH_PAYLOAD_PRIVATE_DIR_NAME, "pi-launch-payload");
         assert_eq!(PI_LAUNCH_PAYLOAD_FILENAME, "payload.json");
+        assert_eq!(
+            PI_DEFERRED_HANDOFF_FILE_ENV,
+            "OKOU_PI_DEFERRED_HANDOFF_FILE"
+        );
+        assert_eq!(PI_DEFERRED_HANDOFF_PRIVATE_DIR_NAME, "pi-deferred-handoff");
+        assert_eq!(PI_DEFERRED_HANDOFF_FILENAME, "payload.json");
         assert_eq!(PI_MODEL_CONFIG_ENV, "OKOU_PI_MODEL_CONFIG");
         assert_eq!(CLI_AGENT_TYPE_ENV, "CLI_AGENT_TYPE");
         assert_eq!(
@@ -928,6 +948,7 @@ mod tests {
             PI_SESSION_ID_ENV,
             PI_LAUNCH_CONFIG_ENV,
             PI_LAUNCH_PAYLOAD_FILE_ENV,
+            PI_DEFERRED_HANDOFF_FILE_ENV,
             PI_MODEL_CONFIG_ENV,
             CONNECTOR_ACCOUNT_CONTEXT_FILE_ENV,
             CANONICAL_USER_ENV_FILE_ENV,

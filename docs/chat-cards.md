@@ -29,11 +29,25 @@ presentation.
 
 ## Fixed Height and Stable Layout
 
-Every card in the chat transcript must keep a fixed outer height at a given
-available width. This includes action, failure recovery, billing, unavailable,
-and resource-preview cards. Different card types may use different dimensions,
-and responsive breakpoints may select a different fixed height. Asynchronous
-data and status changes must not select the card's height.
+Every card in the chat transcript must keep one outer height for the lifetime of
+that card occurrence, at a given available width. This includes action, failure
+recovery, billing, unavailable, and resource-preview cards. Different card types
+may use different dimensions, and responsive breakpoints may select a different
+height. Asynchronous data and status changes must not select the card's height.
+
+The height itself may come from the card's own synchronous row structure rather
+than from a hardcoded pixel value. A notice card that renders only a headline is
+one row tall, and the same card with a supporting line is taller, because that
+choice is made from props already present at mount and never changes afterwards.
+Reserve geometry wherever the asynchronous read does reach. The notice cards in
+`chat-thread-page.tsx` keep a two-line box for the supporting line, since
+billing status and failure-recovery classification swap that text inside an
+already mounted frame, and the billing states keep their action slot at the
+shared action height whether or not an action is resolved yet. Below the card's
+640px breakpoint the body is a column, so a late action row would add its own
+height plus the container gap. Do not pay for either reservation on rows the
+asynchronous read cannot introduce, such as the supporting line of a notice that
+never carries one.
 
 ### Keep the frame mounted
 
@@ -222,6 +236,22 @@ Current link-backed card patterns include:
   allowed Okou origin.
 
 Recognized billing-plan links render as rich upgrade cards.
+
+On eligible assistant-message lines, each action link is recognized independently
+even when another action or an ordinary link shares the line. Explanatory prose,
+formatting, and ordinary links stay in place; action-link labels stay in the
+sentence and the cards follow it in source order. A standalone action still
+renders only its card. Raw action destinations are removed from retained prose,
+including invalid actions that render as unavailable. Code spans, fenced and
+indented code, image destinations, and Markdown table rows remain content.
+Every action retains its own origin and chat-context validation.
+Bare action URLs stop before adjacent prose punctuation, and retained labels
+stay literal text or keep their original inline formatting. For indented or
+quoted content, Markdown block tokens distinguish code from nested list prose;
+indentation by itself does not disable an action.
+Blocks containing a multiline code span are recognized together, so URLs inside
+the span remain code while real actions beside it follow the intact block.
+Existing character references in retained link labels keep their displayed text.
 
 Artifact recognition does not choose its presentation. After Markdown parsing,
 each supported artifact `<a>` or `<img>` node registers its URL in the owning

@@ -287,7 +287,7 @@ test("sends private attachments and shares independent private snapshots after r
     throw new Error("Expected shared private attachment");
   }
   expect(attachments?.[1]?.url).toBe(url);
-  expect(url).toMatch(/^https:\/\/a\.okou\.io\/[a-f0-9]{24}\.pdf$/u);
+  expect(url).toMatch(/^https:\/\/a\.okou\.io\/[a-z0-9]{10}\.pdf$/u);
   await expect((await fetch(url)).text()).resolves.toBe("private bytes");
   const copies = context.mocks.s3.send.mock.calls
     .map(([command]) => {

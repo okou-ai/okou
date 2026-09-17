@@ -14,9 +14,17 @@ import { server } from "../../../mocks/server";
 import {
   advanceRunActivityClockFixture,
   holdRunActivityFixture,
+  holdRunActivityParentFixture,
+  expireRunActivityRetentionFixture,
+  cancelRunActivityWaiterFixture,
+  readRunActivityBookkeepingFixture,
 } from "../../../test-fixtures/run-activity";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise, settleIncludingAbort } from "../../utils";
+import {
+  createDeferredPromise,
+  joinAll,
+  settleIncludingAbort,
+} from "../../utils";
 import { chatThreadActivitySummaryRoutes } from "../chat-threads-activity-summary";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -52,15 +60,21 @@ const evidenceSchema = z.object({
 type Evidence = z.infer<typeof evidenceSchema>;
 type TestRun = { runId: string; threadId: string };
 
-function request(actor: ApiTestUser, run: TestRun) {
+function request(
+  actor: ApiTestUser,
+  run: TestRun,
+  options: { signal?: AbortSignal; rethrowErrors?: boolean } = {},
+) {
   createRouteMocks(context).clerk.session(
     actor.userId,
     actor.orgId,
     actor.orgRole,
   );
-  return setupApp({ context, routes: chatThreadActivitySummaryRoutes })(
-    chatThreadActivitySummaryContract,
-  ).summarize({
+  return setupApp({
+    context,
+    routes: chatThreadActivitySummaryRoutes,
+    ...options,
+  })(chatThreadActivitySummaryContract).summarize({
     headers: { authorization: "Bearer clerk-session" },
     params: { id: run.threadId },
     body: { runId: run.runId },
@@ -483,15 +497,14 @@ describe("thread activity summary", () => {
     const first = settleIncludingAbort(summarize(f.actor, f.run));
     await entered.promise;
     const concurrent = await Promise.all([
-      accept(request(f.actor, f.run), [200, 500]),
-      accept(request(f.actor, f.run), [200, 500]),
+      summarize(f.actor, f.run),
+      summarize(f.actor, f.run),
     ]);
     expect(
       concurrent.every((value) => {
-        // Concurrent followers may exhaust the production lock budget, which
-        // now answers 500 like any other storage failure. Neither outcome may
-        // publish a phrase or claim the run again.
-        return value.status === 500 || value.body.messages.length === 0;
+        // A follower either reads the live claim or exhausts the bounded lock
+        // budget. Both return an empty batch without dispatching another call.
+        return value.messages.length === 0;
       }),
     ).toBeTruthy();
     await deliver(f, [tool(0, "new activity while the provider is working")]);
@@ -507,6 +520,296 @@ describe("thread activity summary", () => {
     );
     expect(inputs).toHaveLength(1);
   });
+
+  it("preserves parent admission and coalesces refreshed claims after contention", async () => {
+    const f = await fixture();
+    await deliver(f, [tool(0)]);
+    const inputs = provider();
+    // Erasure admission now locks the parent before touching the snapshot.
+    // Its first visible context still needs refreshing once admission succeeds.
+    const before = await readRunActivityBookkeepingFixture(f.run.runId);
+    const held = await holdRunActivityParentFixture(
+      f.run.runId,
+      context.signal,
+    );
+    const blocked = await joinAll([
+      summarize(f.actor, f.run),
+      summarize(f.actor, f.run),
+    ]);
+    expect(blocked).toStrictEqual([
+      { runId: f.run.runId, status: "unavailable", messages: [] },
+      { runId: f.run.runId, status: "unavailable", messages: [] },
+    ]);
+    expect(inputs).toHaveLength(0);
+    await expect(
+      readRunActivityBookkeepingFixture(f.run.runId),
+    ).resolves.toStrictEqual(before);
+    await held.release();
+    const responses = await joinAll([
+      summarize(f.actor, f.run),
+      summarize(f.actor, f.run),
+    ]);
+    expect(
+      responses.every((result) => {
+        return result.status === "available";
+      }),
+    ).toBeTruthy();
+    expect(
+      responses.some((result) => {
+        return result.messages.length > 0;
+      }),
+    ).toBeTruthy();
+    expect(inputs).toHaveLength(1);
+    await expect(summarize(f.actor, f.run)).resolves.toMatchObject({
+      messages: [{ text: "Preparing the launch checklist" }],
+    });
+    expect(inputs).toHaveLength(1);
+  });
+
+  it("rolls back a new snapshot blocked by its parent without calling the model", async () => {
+    const f = await fixture();
+    const inputs = provider();
+    const held = await holdRunActivityParentFixture(
+      f.run.runId,
+      context.signal,
+    );
+    await expect(summarize(f.actor, f.run)).resolves.toStrictEqual({
+      runId: f.run.runId,
+      status: "unavailable",
+      messages: [],
+    });
+    expect(inputs).toHaveLength(0);
+    // No public endpoint exposes the failed transaction's lease bookkeeping.
+    await expect(
+      readRunActivityBookkeepingFixture(f.run.runId),
+    ).resolves.toBeUndefined();
+    await held.release();
+    await expect(summarize(f.actor, f.run)).resolves.toMatchObject({
+      status: "available",
+      messages: [{ text: "Preparing the launch checklist" }],
+    });
+    expect(inputs).toHaveLength(1);
+  });
+
+  it("uses refreshed expiry to reset and claim expired evidence", async () => {
+    const f = await fixture();
+    await deliver(f, [tool(0, "expired tool evidence")]);
+    const inputs = provider((_input, index) => {
+      return `Reviewing launch task ${index}`;
+    });
+    await summarize(f.actor, f.run);
+    await advanceRunActivityClockFixture(f.run.runId, 24 * 60 * 60 * 1000 + 1);
+    const expired = await readRunActivityBookkeepingFixture(f.run.runId);
+    // The feature can be disabled while visible messages continue to arrive.
+    // This leaves the expired snapshot for the summary claim itself to reset.
+    await enable(f.actor, false);
+    await deliver(f, [
+      {
+        type: "assistant",
+        sequenceNumber: 1,
+        message: {
+          content: [{ type: "text", text: "Reviewing the new launch request" }],
+        },
+      },
+    ]);
+    await enable(f.actor);
+    const refreshed = await summarize(f.actor, f.run);
+    expect(refreshed).toMatchObject({
+      status: "available",
+      messages: [{ text: "Reviewing launch task 2" }],
+    });
+    expect(inputs[1]!.activity).toStrictEqual([]);
+    expect(inputs[1]!.messages).toContainEqual({
+      role: "assistant",
+      content: "Reviewing the new launch request",
+    });
+    const stored = await readRunActivityBookkeepingFixture(f.run.runId);
+    expect(stored!.expiresAt.getTime()).toBeGreaterThan(
+      expired!.expiresAt.getTime(),
+    );
+    expect(stored!.messageCursor).toBeGreaterThan(expired!.messageCursor);
+    expect(stored!.summaryRevision).not.toBe(expired!.summaryRevision);
+    expect(stored!.claimId).toBeNull();
+    await expect(summarize(f.actor, f.run)).resolves.toStrictEqual(refreshed);
+    expect(inputs).toHaveLength(2);
+  });
+
+  it("leaves no new claim when unchanged retention cannot cover the attempt interval", async () => {
+    const f = await fixture();
+    const inputs = provider(() => {
+      return "";
+    });
+    await summarize(f.actor, f.run);
+    // Only infrastructure can advance retention independently of API demand.
+    // Ten seconds remain, while the failure cooldown has already elapsed.
+    await advanceRunActivityClockFixture(
+      f.run.runId,
+      24 * 60 * 60 * 1000 - 10_000,
+    );
+    const before = await readRunActivityBookkeepingFixture(f.run.runId);
+    await expect(summarize(f.actor, f.run)).resolves.toStrictEqual({
+      runId: f.run.runId,
+      status: "unavailable",
+      messages: [],
+    });
+    await expect(
+      readRunActivityBookkeepingFixture(f.run.runId),
+    ).resolves.toStrictEqual(before);
+    expect(inputs).toHaveLength(1);
+  });
+
+  it.each(["cooldown", "live claim", "expired cooldown"] as const)(
+    "persists refresh-only context without replacing a %s",
+    async (state) => {
+      const f = await fixture();
+      const entered = createDeferredPromise<void>(context.signal);
+      const release = createDeferredPromise<string>(context.signal);
+      const inputs = provider(async () => {
+        entered.resolve(undefined);
+        return state === "live claim" ? await release.promise : "";
+      });
+      const first = settleIncludingAbort(summarize(f.actor, f.run));
+      onTestFinished(async () => {
+        if (!release.settled()) {
+          release.resolve("Preparing the launch checklist");
+        }
+        await first;
+      });
+      await entered.promise;
+      if (state === "cooldown") {
+        await first;
+      }
+      if (state === "expired cooldown") {
+        await first;
+        await expireRunActivityRetentionFixture(f.run.runId);
+      }
+      const before = await readRunActivityBookkeepingFixture(f.run.runId);
+      await enable(f.actor, false);
+      await deliver(f, [
+        {
+          type: "assistant",
+          sequenceNumber: 0,
+          message: {
+            content: [
+              { type: "text", text: "Inspecting the new launch requirements" },
+            ],
+          },
+        },
+      ]);
+      await enable(f.actor);
+      await expect(summarize(f.actor, f.run)).resolves.toMatchObject({
+        status: "available",
+        messages: [],
+      });
+      const after = await readRunActivityBookkeepingFixture(f.run.runId);
+      expect(after!.messageCursor).toBeGreaterThan(before!.messageCursor);
+      expect(after!.expiresAt.getTime()).toBeGreaterThan(
+        before!.expiresAt.getTime(),
+      );
+      expect(after).toMatchObject({
+        nextAttemptAt: before!.nextAttemptAt,
+        claimId: before!.claimId,
+        claimRevision: before!.claimRevision,
+        claimExpiresAt: before!.claimExpiresAt,
+        summaryRevision: before!.summaryRevision,
+      });
+      expect(inputs).toHaveLength(1);
+      release.resolve("Preparing the launch checklist");
+      await first;
+    },
+  );
+
+  it("propagates request abort while its new snapshot is blocked", async () => {
+    const f = await fixture();
+    const inputs = provider();
+    const held = await holdRunActivityParentFixture(
+      f.run.runId,
+      context.signal,
+    );
+    const shutdown = new AbortController();
+    onTestFinished(() => {
+      return shutdown.abort();
+    });
+    const pending = settleIncludingAbort(
+      request(f.actor, f.run, {
+        signal: shutdown.signal,
+        rethrowErrors: true,
+      }),
+    );
+    await held.waitForBlocked();
+    const reason = new DOMException("API instance stopping", "AbortError");
+    shutdown.abort(reason);
+    const result = await pending;
+    expect(result).toStrictEqual({ ok: false, error: reason });
+    expect(inputs).toHaveLength(0);
+    await expect(
+      readRunActivityBookkeepingFixture(f.run.runId),
+    ).resolves.toBeUndefined();
+    await held.release();
+  });
+
+  it("propagates a non-lock database cancellation after rolling back the claim", async () => {
+    const f = await fixture();
+    const inputs = provider();
+    const held = await holdRunActivityParentFixture(
+      f.run.runId,
+      context.signal,
+    );
+    const pending = settleIncludingAbort(
+      request(f.actor, f.run, { rethrowErrors: true }),
+    );
+    const waiter = await held.waitForBlocked();
+    await cancelRunActivityWaiterFixture(waiter);
+    const result = await pending;
+    expect(result).toMatchObject({
+      ok: false,
+      error: { cause: { code: "57014" } },
+    });
+    expect(inputs).toHaveLength(0);
+    await expect(
+      readRunActivityBookkeepingFixture(f.run.runId),
+    ).resolves.toBeUndefined();
+    await held.release();
+    await expect(summarize(f.actor, f.run)).resolves.toMatchObject({
+      status: "available",
+    });
+    expect(inputs).toHaveLength(1);
+  });
+
+  it.each(["user", "organization"] as const)(
+    "does not recreate activity after account %s deletion during generation",
+    async (kind) => {
+      const f = await fixture();
+      const entered = createDeferredPromise<void>(context.signal);
+      const release = createDeferredPromise<string>(context.signal);
+      const inputs = provider(async () => {
+        entered.resolve(undefined);
+        return await release.promise;
+      });
+      const pending = request(f.actor, f.run);
+      await entered.promise;
+      webhooks.configureClerkWebhookSecret();
+      webhooks.verifyNextClerkWebhook({
+        type: kind === "user" ? "user.deleted" : "organization.deleted",
+        data: { id: kind === "user" ? f.actor.userId : f.actor.orgId },
+      });
+      await webhooks.requestClerkWebhook("{}", {}, [200]);
+      await flushWaitUntilForTest();
+      release.resolve("This phrase belongs to a deleted account");
+      // Fresh admission rejects the deleted identity before completion or the
+      // final snapshot INSERT; no stale provider output reaches the caller.
+      expect((await accept(pending, [200])).body).toStrictEqual({
+        runId: f.run.runId,
+        status: "ineligible",
+        messages: [],
+      });
+      await accept(request(f.actor, f.run), [404]);
+      await expect(
+        readRunActivityBookkeepingFixture(f.run.runId),
+      ).resolves.toBeUndefined();
+      expect(inputs).toHaveLength(1);
+    },
+  );
 
   it("fences an expired owner's completion after a replacement claim succeeds", async () => {
     const f = await fixture();
@@ -597,10 +900,10 @@ describe("thread activity summary", () => {
         await chat.deleteThread(f.actor, f.run.threadId);
       }
       release.resolve("This phrase must not revive the run");
-      // The completion UPDATE fences the write, so the in-flight attempt reads
-      // the row as stored: its own claim is still leased and no phrase landed.
+      // Every post-provider transaction rechecks current-run eligibility;
+      // even the final INSERT/read must not return a terminal run's cache.
       await expect(pending).resolves.toMatchObject({
-        status: "available",
+        status: "ineligible",
         messages: [],
       });
       if (action !== "delete") {
@@ -1079,7 +1382,7 @@ describe("thread activity summary", () => {
     expect(inputs).toHaveLength(2);
   });
 
-  it("fails a contended snapshot read, keeps normal publication, and excludes expired evidence", async () => {
+  it("degrades a contended snapshot read, keeps normal publication, and excludes expired evidence", async () => {
     const f = await fixture();
     const inputs = provider();
     await summarize(f.actor, f.run);
@@ -1103,9 +1406,11 @@ describe("thread activity summary", () => {
         },
       },
     ]);
-    // A storage failure is this service's own defect, so it reaches the caller
-    // as a plain 500 instead of being relabelled as a degraded summary.
-    await accept(request(f.actor, f.run), [500]);
+    await expect(summarize(f.actor, f.run)).resolves.toStrictEqual({
+      runId: f.run.runId,
+      status: "unavailable",
+      messages: [],
+    });
     held.release();
     await held.done;
     const page = await chat.listThreadEvents(f.actor, f.run.threadId);

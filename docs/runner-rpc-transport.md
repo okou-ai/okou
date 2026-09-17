@@ -2,11 +2,13 @@
 
 The transport delivered by #32012 is infrastructure under #31932. Its first
 consumer is the [Runner SSH dispatcher](runner-ssh-execution.md), installed by
-#32387 for official API-backed Runs. The generic transport itself has no API
+#32387 for official API-backed Runs. The shared Runner-side owner now lives in
+`crates/runner/src/guest_rpc`; SSH owns only its business handlers and run-local
+authority/session state. The generic transport itself has no API
 calls or business validators. Local/mock sandbox providers expose no capability.
-The [SSH CLI and owner/Agent UI](ssh-access.md) are delivered. SSH availability
-uses the existing staff-default `sshAccess` switch and current API authority;
-the transport itself does not grant SSH access.
+The [SSH CLI and owner/Agent UI](ssh-access.md) are delivered. SSH is generally
+available but still requires current API authority; the transport itself does
+not grant SSH access.
 
 ## Guest boundary
 
@@ -116,6 +118,23 @@ hint, never authority. It contains no method-specific data. Helper and official
 Runner ship together; no fallback or protocol negotiation is added.
 
 ## Host ownership and lifecycle
+
+The executor installs one assignment-bound guest RPC dispatcher before starting
+Agent work and shuts it down before sandbox cleanup, for both fresh and reused
+sandboxes. Startup retains the existing official API-backed eligibility; this
+ownership extraction does not enable local/PAT execution or a new public method.
+The runtime can operate without an SSH consumer: generic framing and bounded
+admission still apply, unknown methods fail before business work, and unavailable
+SSH handlers return `unavailable` with `not_dispatched`.
+
+The shared owner admits at most eight requests per Run and moves each stream and
+capacity permit into its consumer. Request reading has the existing 60-second
+setup budget; validated SSH file methods retain their longer method-owned budget.
+SSH authorization, session pruning, retained host-work capacity, and diagnostic
+reporting remain with SSH. Run cancellation/Drop synchronously closes its SSH
+registration; normal shutdown joins dispatched requests before session cleanup.
+This is preparation for non-SSH consumers, not implementation of #34170's token
+measurement or CLI command. No helper framing, version or retry contract changes.
 
 `Sandbox::guest_rpc(expected_run_id)` returns an assignment-bound
 `GuestRpcAcceptor`. `AcceptedGuestRpc` supplies a host-derived sandbox ID,
@@ -245,9 +264,9 @@ PTY and retained process state belong to the SSH consumer, not this protocol.
 The Runner-owned session task never retains the initiating guest stream or its
 park reservation. A bounded waiting read owns its own stream/reservation until
 that request finishes; it is not attached to the retained session task. No helper
-negotiation, method fallback or automatic replay is added. The staff-gated SSH
-reader changes its required business parameters directly without a legacy read
-payload path; the opaque version-1 framing and helper invocation are unchanged. See
+negotiation, method fallback or automatic replay is added. The SSH reader changed
+its required business parameters before GA without a legacy read payload path;
+the opaque version-1 framing and helper invocation are unchanged. See
 [managed SSH session ownership](runner-ssh-execution.md#managed-sessions-within-one-run).
 
 #32013 owns explicit `ssh.exec` dispatch, strict business schemas, dynamic JIT
@@ -273,7 +292,7 @@ ship together. The old SSH-specific helper was unmerged/unexposed when renamed,
 so there is no compatibility alias. API and control-channel contracts are
 unchanged.
 
-The staff-default SSH rollout changes no transport or CLI contract. Runner/rootfs,
+SSH general availability changes no transport or CLI contract. Runner/rootfs,
 API, UI and selected commit-addressed CLI artifacts retain their independent
 deployment boundaries. Add no negotiation header, fallback routing, plugin
 registry, batching or pooling. See [deployment compatibility](deployment-compatibility.md).

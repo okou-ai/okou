@@ -15,11 +15,12 @@ import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import type { z } from "zod";
 
-import { notFound } from "../../lib/error";
+import { badRequestMessage, conflict, notFound } from "../../lib/error";
+import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
-import { authorization$ } from "../context/hono";
+import { authorization$, request$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
 import { waitUntil } from "../context/wait-until";
 import { db$, writeDb$ } from "../external/db";
@@ -34,6 +35,15 @@ import {
   unauthorizedRunMismatch,
 } from "./agent-webhook-auth";
 import { usageUnderbillingFields } from "../usage-underbilling";
+import { readUsageEventBody } from "./webhooks-usage-body";
+import {
+  ingestXResourceUsage,
+  XResourceUsageError,
+} from "../services/x-resource-usage.service";
+import {
+  lockXResourceAdmission,
+  setXResourceTransactionTimeouts,
+} from "../services/x-resource-usage-lifecycle";
 
 const SANDBOX_TELEMETRY_SYSTEM_DATASET = "sandbox-telemetry-system";
 const SANDBOX_TELEMETRY_METRICS_DATASET = "sandbox-telemetry-metrics";
@@ -75,6 +85,17 @@ interface SandboxOperationDimensionInput {
   readonly session_history_source_representation?: string;
   readonly session_history_restore_representation?: string;
   readonly session_history_restore_reason?: string;
+  readonly session_history_transfer_source?: string;
+  readonly session_history_wire_codec?: string;
+  readonly session_history_codec_reason?: string;
+  readonly session_history_transfer_bytes?: number;
+  readonly session_history_wire_bytes?: number;
+  readonly session_history_write_requests?: number;
+  readonly session_history_selection_ms?: number;
+  readonly session_history_file_gate_wait_ms?: number;
+  readonly session_history_requests_ms?: number;
+  readonly session_history_encoder_pipeline_ms?: number;
+  readonly session_history_publication_ms?: number;
 }
 
 interface SandboxRunnerDimensionInput {
@@ -157,6 +178,7 @@ function sandboxOperationDimensions(
       : {}),
     ...runnerResourceBudgetDimensions(op),
     ...workspaceHistoryRestoreDimensions(op),
+    ...historyTransferDimensions(op),
     ...(op.encoding ? { encoding: op.encoding } : {}),
     ...(op.session_history_raw_size_bucket
       ? {
@@ -209,6 +231,31 @@ function sandboxOperationDimensions(
       ? { session_history_download_source: op.session_history_download_source }
       : {}),
   };
+}
+
+function historyTransferDimensions(
+  op: SandboxOperationDimensionInput,
+): Record<string, string | number> {
+  const dimensions: Record<string, string | number> = {};
+  for (const key of [
+    "session_history_transfer_source",
+    "session_history_wire_codec",
+    "session_history_codec_reason",
+    "session_history_transfer_bytes",
+    "session_history_wire_bytes",
+    "session_history_write_requests",
+    "session_history_selection_ms",
+    "session_history_file_gate_wait_ms",
+    "session_history_requests_ms",
+    "session_history_encoder_pipeline_ms",
+    "session_history_publication_ms",
+  ] as const) {
+    const value = op[key];
+    if (value !== undefined) {
+      dimensions[key] = value;
+    }
+  }
+  return dimensions;
 }
 
 function workspaceHistoryRestoreDimensions(
@@ -285,9 +332,8 @@ const heartbeat$ = command(async ({ get, set }, signal: AbortSignal) => {
   };
 });
 
-const usageEventBody$ = bodyResultOf(webhookUsageEventContract.send);
 const usageEvent$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const bodyResult = await get(usageEventBody$);
+  const bodyResult = await readUsageEventBody(get(request$).raw, signal);
   signal.throwIfAborted();
   if (!bodyResult.ok) {
     return bodyResult.response;
@@ -297,6 +343,38 @@ const usageEvent$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = getSandboxAuthForRun(body.runId, get(authorization$));
   if (!auth) {
     return unauthorizedRunMismatch;
+  }
+
+  if (
+    body.events.some((event) => {
+      return "protocol" in event;
+    })
+  ) {
+    const startDate = env("X_RESOURCE_BILLING_START_DATE");
+    if (!startDate) {
+      return badRequestMessage("X resource observations are not enabled");
+    }
+    const result = await settle(
+      ingestXResourceUsage(set(writeDb$), body, auth, startDate, signal),
+    );
+    signal.throwIfAborted();
+    if (!result.ok) {
+      if (result.error instanceof XResourceUsageError) {
+        switch (result.error.status) {
+          case 400: {
+            return badRequestMessage(result.error.message);
+          }
+          case 404: {
+            return notFound(result.error.message);
+          }
+          case 409: {
+            return conflict(result.error.message);
+          }
+        }
+      }
+      throw result.error;
+    }
+    return { status: 200 as const, body: { success: true } };
   }
 
   const db = set(writeDb$);
@@ -336,14 +414,33 @@ const usageEvent$ = command(async ({ get, set }, signal: AbortSignal) => {
         quantity: event.quantity,
         idempotencyKey: event.idempotencyKey,
       };
+    })
+    .sort((left, right) => {
+      // Match resource/mixed batches when a retry is regrouped by a producer.
+      return left.idempotencyKey
+        .toLowerCase()
+        .localeCompare(right.idempotencyKey.toLowerCase());
     });
   const insertResult = await settle(
     (async () => {
       if (usageEventValues.length > 0) {
-        await db
-          .insert(usageEvent)
-          .values(usageEventValues)
-          .onConflictDoNothing({ target: [usageEvent.idempotencyKey] });
+        if (env("X_RESOURCE_BILLING_START_DATE") !== undefined) {
+          await db.transaction(async (tx) => {
+            await setXResourceTransactionTimeouts(tx);
+            // Legacy retries share the account-cleanup fence with v1 batches.
+            await lockXResourceAdmission(tx, "shared");
+            await tx
+              .insert(usageEvent)
+              .values(usageEventValues)
+              .onConflictDoNothing({ target: [usageEvent.idempotencyKey] });
+            signal.throwIfAborted();
+          });
+        } else {
+          await db
+            .insert(usageEvent)
+            .values(usageEventValues)
+            .onConflictDoNothing({ target: [usageEvent.idempotencyKey] });
+        }
       }
     })(),
   );

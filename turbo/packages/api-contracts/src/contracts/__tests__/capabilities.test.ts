@@ -2,8 +2,8 @@ import { describe, it, expect } from "vitest";
 import { CAPABILITIES, CAPABILITY_META } from "../capabilities";
 
 describe("CAPABILITIES", () => {
-  it("should have exactly 43 capabilities", () => {
-    expect(CAPABILITIES).toHaveLength(43);
+  it("should have exactly 46 capabilities", () => {
+    expect(CAPABILITIES).toHaveLength(46);
   });
 
   it("should follow {resource}:{action} naming pattern", () => {
@@ -12,9 +12,9 @@ describe("CAPABILITIES", () => {
     }
   });
 
-  it("should not include artifact capabilities", () => {
-    expect(CAPABILITIES).not.toContain("artifact:read");
-    expect(CAPABILITIES).not.toContain("artifact:write");
+  it("should include artifact sharing capabilities", () => {
+    expect(CAPABILITIES).toContain("artifact:read");
+    expect(CAPABILITIES).toContain("artifact:write");
   });
 
   it("should include Slack read and write capabilities", () => {

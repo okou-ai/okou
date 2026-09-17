@@ -505,7 +505,10 @@ function parseResponseBody(response: Response): Promise<unknown> | undefined {
   return response.blob();
 }
 
-export async function trpcRestFetchApi(args: ApiFetcherArgs): Promise<{
+export async function trpcRestFetchApi(
+  args: ApiFetcherArgs,
+  options: { readonly parseResponseBody?: boolean } = {},
+): Promise<{
   readonly status: number;
   readonly body: unknown;
   readonly headers: Headers;
@@ -519,7 +522,10 @@ export async function trpcRestFetchApi(args: ApiFetcherArgs): Promise<{
 
   return {
     status: response.status,
-    body: await parseResponseBody(response),
+    body:
+      options.parseResponseBody === false
+        ? undefined
+        : await parseResponseBody(response),
     headers: response.headers,
   };
 }

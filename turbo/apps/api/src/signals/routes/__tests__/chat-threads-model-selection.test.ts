@@ -118,6 +118,9 @@ function metadataClient() {
 describe("POST /api/chat-threads/:id/model-selection", () => {
   it("rejects effort while disabled and unsupported levels while enabled", async () => {
     const fixture = await seedChatThread("Effort validation");
+    await updateFeatureSwitchesForUser(context, fixture, {
+      [FeatureSwitchKey.Effort]: false,
+    });
     const disabled = await chat.requestUpdateThreadModelSelection(
       fixture.actor,
       fixture.threadId,

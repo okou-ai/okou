@@ -31,7 +31,7 @@ case "${1:-}" in
         [ "${MOCK_BLANK_TARGET_FLOOR_VALID:-1}" = "1" ]
       fi
     elif [ "${3:-}" = "6d391117e4fead19e2105136fb2792a6e77801d8" ]; then
-      # The retained Runner predates S1 even when the API target contains it.
+      # Goal guards apply only to the API; Runner floors are checked separately.
       if [ "${4:-}" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]; then
         exit 1
       fi
@@ -52,6 +52,12 @@ case "${1:-}" in
       [ "${MOCK_MORNING_BRIEF_ELIGIBILITY_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "8a5e1299b4d26bd114ccec017b84b7a83fb4a164" ]; then
       [ "${MOCK_PERSONAL_SUBSCRIPTION_PRIORITY_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "0367d976a87fe1251fcb9b6cfe545a8b24e4f2b6" ]; then
+      if [ "${4:-}" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]; then
+        [ "${MOCK_BALANCE_RUNNER_FLOOR_VALID:-1}" = "1" ]
+      else
+        [ "${MOCK_BALANCE_TARGET_FLOOR_VALID:-1}" = "1" ]
+      fi
     else
       [ "${MOCK_ANCESTRY_VALID:-1}" = "1" ]
     fi
@@ -147,7 +153,7 @@ assert_failure() {
   grep -q "$expected_message" "${tmp_dir}/failure.err" || fail "missing failure message: ${expected_message}"
 }
 
-# A combined-S4-compatible API target must still resolve its valid pre-S1 Runner.
+# A compatible API target must resolve its independently compatible Runner tag.
 : >"${tmp_dir}/boundaries.log"
 output_file="${tmp_dir}/success.output"
 run_resolver "$output_file" >"${tmp_dir}/success.log"
@@ -158,6 +164,22 @@ grep -qx "runner_version=1.2.3" "$output_file" || fail "missing Runner version o
 grep -qx "runner_tag=runner-rs-v1.2.3" "$output_file" || fail "missing retained Runner tag output"
 runner_matrix=$(sed -n 's/^runner_matrix=//p' "$output_file")
 jq -e 'length == 2 and .[0].id == "arm64" and .[1].id == "x86_64"' >/dev/null <<<"$runner_matrix" || fail "unexpected Runner matrix"
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "predates owner-aware provider balance failures" \
+  run_resolver "${tmp_dir}/balance-target.output" MOCK_BALANCE_TARGET_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/balance-target.output" ] || fail "incompatible API target must not publish outputs"
+if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+  fail "incompatible API target must fail before artifact or host access"
+fi
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "predates structured provider balance failures" \
+  run_resolver "${tmp_dir}/balance-runner.output" MOCK_BALANCE_RUNNER_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/balance-runner.output" ] || fail "incompatible retained Runner must not publish outputs"
+if grep -Eq '^ssh |api.github.com/repos/.*/releases/tags/' "${tmp_dir}/boundaries.log"; then
+  fail "incompatible retained Runner must fail before Runner artifact or host access"
+fi
 
 : >"${tmp_dir}/boundaries.log"
 assert_failure "found 0" run_resolver "${tmp_dir}/zero.output" MOCK_VERCEL_MATCH_COUNT=0

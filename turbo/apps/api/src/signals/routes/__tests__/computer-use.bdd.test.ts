@@ -1931,6 +1931,8 @@ describe("AUTH-05 computer-use auth boundary Clerk classification", () => {
       orgId: null,
     });
 
+    // Revalidate after the fixed negative window before classifying deletion.
+    mockNow(now() + 5000);
     // The same PAT on the same route fails closed once the identity is gone.
     failMembershipRead(new ClerkApiResponseTestError(404));
     const deleted = await authOrg.requestReadMeWithBearer(token, actor, [401]);

@@ -561,6 +561,28 @@
       "removal": "Remove when generated presentation HTML exposes a stable attribute-only styling contract."
     }
   ],
+  "classDependencies": [
+    {
+      "file": "packages/ui/src/components/ui/sonner.tsx",
+      "token": "toaster",
+      "count": 1,
+      "kind": "third-party-dom-adapter",
+      "owner": "frontend-platform",
+      "rationale": "Sonner styles its toasts from an unlayered stylesheet it injects at module load, so the component anchors its own `group-[.toaster]:` variants on a class it hands to Sonner's `className` prop. Restyling the toast without that anchor is a visual decision tracked separately.",
+      "upstream": "sonner toast DOM",
+      "removal": "Remove when the toast adopts Sonner's `theme` prop or its own layered surface, and the `group-[.toaster]:` variants no longer need an anchor class."
+    },
+    {
+      "file": "apps/platform/src/views/components/markdown-frame.tsx",
+      "token": "wmde-markdown",
+      "count": 1,
+      "kind": "third-party-dom-adapter",
+      "owner": "frontend-platform",
+      "rationale": "The vendored `@uiw/react-markdown-preview` stylesheet and the App's allowlisted adapter rules both key on this class, so the frame must carry it for the Markdown body to receive either.",
+      "upstream": "@uiw/react-markdown-preview generated DOM",
+      "removal": "Remove when the Markdown renderer is replaced or its stylesheet is no longer imported."
+    }
+  ],
   "vendorFiles": [
     {
       "file": "apps/platform/src/views/css/vendor/uiw-react-markdown-preview-5.2.0.css",

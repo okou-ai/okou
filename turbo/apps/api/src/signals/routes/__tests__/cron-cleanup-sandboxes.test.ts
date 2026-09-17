@@ -11,6 +11,7 @@ import {
   agentRunConnectorDiagnosticRegistrationPayloadSchema,
   type AgentRunConnectorDiagnosticRegistrationPayload,
   runnersConnectorRuntimeSyncContract,
+  runnersCancellationContract,
 } from "@okouai/api-contracts/contracts/runners";
 import {
   testCronCleanupSandboxesStateContract,
@@ -49,6 +50,7 @@ import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandbo
 import { createFixtureTracker } from "./helpers/route-test";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { runnersRoutes } from "../runners";
+import { runnerCancellationRoutes } from "../runner-cancellation";
 
 const context = testContext();
 const webhooks = createWebhookCallbackApi(context);
@@ -76,6 +78,26 @@ interface RunFixture {
   readonly composeId: string;
   readonly orgId: string;
   readonly userId: string;
+}
+
+async function readCancellation(fixture: RunFixture) {
+  const response = await accept(
+    setupApp({ context, routes: runnerCancellationRoutes })(
+      runnersCancellationContract,
+    ).get({
+      params: { runId: fixture.runId },
+      headers: {
+        authorization: `Bearer ${generateSandboxToken(fixture.userId, fixture.runId, fixture.orgId)}`,
+      },
+      query: {
+        runnerGroup: "vm0/test",
+        runnerId: randomUUID(),
+        heartbeatGeneration: 1,
+      },
+    }),
+    [200],
+  );
+  return response.body;
 }
 
 interface ExportJobFixture {
@@ -661,42 +683,52 @@ describe("sandbox cleanup", () => {
     ).resolves.toStrictEqual({ version: 1, targets: [] });
   });
 
-  it("bounds connector diagnostic registration compensation and converges", async () => {
-    const fixtures: RunFixture[] = [];
-    for (
-      let index = 0;
-      index < CONNECTOR_DIAGNOSTIC_REGISTRATION_SWEEP_LIMIT + 1;
-      index++
-    ) {
-      const fixture = await trackRun(
-        insertRunFixture({ status: "completed", createdAt: minutesAgo(1) }),
-      );
-      await insertConnectorDiagnosticRegistration(fixture, {
-        createdAt: new Date(Date.UTC(1990, 0, 1, 0, 0, index)),
-      });
-      fixtures.push(fixture);
+  describe("with a complete diagnostic cleanup cohort", () => {
+    async function prepareScenario() {
+      const fixtures: RunFixture[] = [];
+      for (
+        let index = 0;
+        index < CONNECTOR_DIAGNOSTIC_REGISTRATION_SWEEP_LIMIT + 1;
+        index++
+      ) {
+        const fixture = await trackRun(
+          insertRunFixture({ status: "completed", createdAt: minutesAgo(1) }),
+        );
+        await insertConnectorDiagnosticRegistration(fixture, {
+          createdAt: new Date(Date.UTC(1990, 0, 1, 0, 0, index)),
+        });
+        fixtures.push(fixture);
+      }
+      return { fixtures };
     }
+    let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
+    beforeEach(async () => {
+      preparedScenario = await prepareScenario();
+    });
+    it("bounds connector diagnostic registration compensation and converges", async () => {
+      const { fixtures } = preparedScenario;
 
-    await cleanupRegisteredFixtures();
+      await cleanupRegisteredFixtures();
 
-    const first = fixtures[0];
-    const last = fixtures.at(-1);
-    if (!first || !last) {
-      throw new Error("Expected bounded registration cleanup fixtures");
-    }
+      const first = fixtures[0];
+      const last = fixtures.at(-1);
+      if (!first || !last) {
+        throw new Error("Expected bounded registration cleanup fixtures");
+      }
 
-    await expect(
-      findConnectorDiagnosticRegistration(first.runId),
-    ).resolves.toBeNull();
-    await expect(
-      findConnectorDiagnosticRegistration(last.runId),
-    ).resolves.toStrictEqual({ version: 1, targets: [] });
+      await expect(
+        findConnectorDiagnosticRegistration(first.runId),
+      ).resolves.toBeNull();
+      await expect(
+        findConnectorDiagnosticRegistration(last.runId),
+      ).resolves.toStrictEqual({ version: 1, targets: [] });
 
-    await cleanupRegisteredFixtures();
+      await cleanupRegisteredFixtures();
 
-    await expect(
-      findConnectorDiagnosticRegistration(last.runId),
-    ).resolves.toBeNull();
+      await expect(
+        findConnectorDiagnosticRegistration(last.runId),
+      ).resolves.toBeNull();
+    });
   });
 
   it("leaves the audited pre-forward threadless cohort discoverable", async () => {
@@ -844,6 +876,7 @@ describe("sandbox cleanup", () => {
         createdAt: new Date(THREADLESS_TEST_NOW_MS - 60_000),
         lastHeartbeatAt: new Date(THREADLESS_TEST_NOW_MS - 60_000),
         threadless: true,
+        runnerGroup: "vm0/test",
       }),
     );
 
@@ -852,6 +885,10 @@ describe("sandbox cleanup", () => {
     expect(cancelledResponse.body.threadlessRuns.cancelled).toBe(1);
     await expect(findRun(fixture.runId)).resolves.toMatchObject({
       status: "cancelled",
+    });
+    await expect(readCancellation(fixture)).resolves.toMatchObject({
+      state: "present",
+      mode: "hard",
     });
 
     mockNow(THREADLESS_TEST_NOW_MS + CANCELLATION_RECOVERY_STALE_AFTER_MS);
@@ -984,55 +1021,60 @@ describe("sandbox cleanup", () => {
     });
   });
 
-  it("processes only the oldest bounded batch of threadless runs", async () => {
-    mockNow(THREADLESS_TEST_NOW_MS);
-    const userId = `user-${randomUUID()}`;
-    const orgId = `org-${randomUUID()}`;
-    const fixtures = await Promise.all(
-      Array.from({ length: THREADLESS_SWEEP_LIMIT + 1 }, async (_, index) => {
-        return await trackRun(
-          insertRunFixture({
-            status: "completed",
-            createdAt: new Date(THREADLESS_FORWARD_CUTOFF_MS + index + 1),
-            completedAt: new Date(
-              THREADLESS_TEST_NOW_MS - CANCELLATION_RECOVERY_STALE_AFTER_MS,
-            ),
-            threadless: true,
-            userId,
-            orgId,
-          }),
-        );
-      }),
-    );
-
-    const firstResponse = await cleanupRegisteredFixtures();
-
-    expect(firstResponse.body.threadlessRuns).toStrictEqual({
-      discovered: THREADLESS_SWEEP_LIMIT,
-      cancelled: 0,
-      waiting: 0,
-      deleted: THREADLESS_SWEEP_LIMIT,
-      failed: 0,
-      errors: [],
-    });
-    const remaining = await findRemainingRunIds(fixtures);
-    expect(remaining).toStrictEqual(
-      fixtures.slice(THREADLESS_SWEEP_LIMIT).map((fixture) => {
-        return fixture.runId;
-      }),
-    );
-    // What the bound left behind stays untouched and eligible for a next pass.
-    await expect(
-      Promise.all(
-        remaining.map((runId) => {
-          return findRun(runId);
+  describe("an over-capacity batch of threadless runs", () => {
+    let fixtures: Awaited<ReturnType<typeof trackRun>>[];
+    beforeEach(async () => {
+      mockNow(THREADLESS_TEST_NOW_MS);
+      const userId = `user-${randomUUID()}`;
+      const orgId = `org-${randomUUID()}`;
+      fixtures = await Promise.all(
+        Array.from({ length: THREADLESS_SWEEP_LIMIT + 1 }, async (_, index) => {
+          return await trackRun(
+            insertRunFixture({
+              status: "completed",
+              createdAt: new Date(THREADLESS_FORWARD_CUTOFF_MS + index + 1),
+              completedAt: new Date(
+                THREADLESS_TEST_NOW_MS - CANCELLATION_RECOVERY_STALE_AFTER_MS,
+              ),
+              threadless: true,
+              userId,
+              orgId,
+            }),
+          );
         }),
-      ),
-    ).resolves.toStrictEqual(
-      remaining.map(() => {
-        return { status: "completed", error: null };
-      }),
-    );
+      );
+    });
+
+    it("processes only the oldest bounded batch of threadless runs", async () => {
+      const firstResponse = await cleanupRegisteredFixtures();
+
+      expect(firstResponse.body.threadlessRuns).toStrictEqual({
+        discovered: THREADLESS_SWEEP_LIMIT,
+        cancelled: 0,
+        waiting: 0,
+        deleted: THREADLESS_SWEEP_LIMIT,
+        failed: 0,
+        errors: [],
+      });
+      const remaining = await findRemainingRunIds(fixtures);
+      expect(remaining).toStrictEqual(
+        fixtures.slice(THREADLESS_SWEEP_LIMIT).map((fixture) => {
+          return fixture.runId;
+        }),
+      );
+      // What the bound left behind stays untouched and eligible for a next pass.
+      await expect(
+        Promise.all(
+          remaining.map((runId) => {
+            return findRun(runId);
+          }),
+        ),
+      ).resolves.toStrictEqual(
+        remaining.map(() => {
+          return { status: "completed", error: null };
+        }),
+      );
+    });
   });
 
   it("acknowledges an event projection that loses the root-delete race", async () => {
@@ -1363,6 +1405,10 @@ describe("sandbox cleanup", () => {
     await expect(findRun(fixture.runId)).resolves.toMatchObject({
       status: "timeout",
       error: "Run timed out (no heartbeat)",
+    });
+    await expect(readCancellation(fixture)).resolves.toMatchObject({
+      state: "present",
+      mode: "hard",
     });
     expect(
       context.mocks.ably.publish.mock.calls.filter(([channel]) => {

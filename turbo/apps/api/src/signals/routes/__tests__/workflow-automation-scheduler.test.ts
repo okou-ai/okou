@@ -1,3 +1,11 @@
+import {
+  readGetStartedStatus,
+  setGetStartedEnabled,
+} from "./helpers/get-started";
+import {
+  scopedReviewContract,
+  scopedReviewRoutes,
+} from "../test-get-started-rewards";
 import { createHash, randomUUID } from "node:crypto";
 
 import { testWorkflowAutomationExecutionContract } from "@okouai/api-contracts/contracts/test-workflow-automation-execution";
@@ -1259,4 +1267,41 @@ describe("okou workflow automation scheduler", () => {
       },
     ]);
   });
+});
+
+test("rewards the creator after a scheduled workflow successfully completes", async () => {
+  const scenario = await setup();
+  await setGetStartedEnabled(context, scenario.actor);
+  const automation = await createDueLoopAutomation(scenario, 900);
+  const threadId = await executeDueWorkflowAutomations(automation.automationId);
+  const run = await onlyWorkflowRunMessage(threadId);
+  await webhooksApi.requestAgentComplete(
+    {
+      runId: run.runId,
+      exitCode: 0,
+      checkpoint: {
+        cliAgentType: "claude-code",
+        cliAgentSessionId: run.runId,
+        cliAgentSessionHistoryHash: createHash("sha256")
+          .update(`scheduled reward ${run.runId}`)
+          .digest("hex"),
+      },
+    },
+    {
+      authorization: `Bearer ${runsApi.sandboxTokenForRun(scenario.actor, run.runId)}`,
+    },
+    [200],
+  );
+  await accept(
+    setupApp({ context, routes: scopedReviewRoutes })(
+      scopedReviewContract,
+    ).process({ body: { orgId: scenario.orgId } }),
+    [200],
+  );
+  expect(
+    (await readGetStartedStatus(context, scenario)).quests.find((q) => {
+      return q.key === "workflow";
+    }),
+  ).toMatchObject({ claimedCount: 1, earnedCredits: 1000 });
+  await disableAutomation(automation.automationId);
 });

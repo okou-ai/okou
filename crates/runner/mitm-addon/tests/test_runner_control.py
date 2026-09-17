@@ -46,6 +46,7 @@ def test_status_is_correlated_and_observational(tmp_path, control):
     [
         ({"generation": "previous-generation"}, "stale_generation"),
         ({"method": "not.available"}, "unknown_method"),
+        ({"method": "usage.snapshot", "params": {"runId": "run-1"}}, "not_ready"),
         ({"params": {"path": "/untrusted"}}, "invalid_request"),
         ({"extra": True}, "invalid_request"),
         ({"params": []}, "invalid_request"),

@@ -3,7 +3,7 @@ import { userConnectorsContract } from "@okouai/api-contracts/contracts/user-con
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test } from "vitest";
+import { expect, test, describe, beforeEach, it } from "vitest";
 
 import {
   fill,
@@ -198,22 +198,48 @@ async function prepareScrollableDesktopConnectorMenu() {
   };
 }
 
-test("Keep the desktop connector menu above while filtering", async () => {
-  const {
-    user,
-    searchInput,
-    layout,
-    popover,
-    trigger,
-    connectorList,
-    expandedListHeight,
-  } = await prepareScrollableDesktopConnectorMenu();
-  await filterConnectorMenu(user, searchInput, layout.notifyResize);
-  await waitFor(() => {
-    expect(popoverSide(popover, trigger)).toBe("top");
-    expect(connectorList.clientHeight).toBe(expandedListHeight);
-    expect(connectorList.scrollHeight).toBe(connectorList.clientHeight);
-    expect(screen.getByText("Add connectors")).toBeInTheDocument();
+describe("with an open desktop connector menu", () => {
+  async function prepareScenario() {
+    const {
+      user,
+      searchInput,
+      layout,
+      popover,
+      trigger,
+      connectorList,
+      expandedListHeight,
+    } = await prepareScrollableDesktopConnectorMenu();
+    return {
+      user,
+      searchInput,
+      layout,
+      popover,
+      trigger,
+      connectorList,
+      expandedListHeight,
+    };
+  }
+  let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
+  beforeEach(async () => {
+    preparedScenario = await prepareScenario();
+  });
+  it("keep the desktop connector menu above while filtering", async () => {
+    const {
+      user,
+      searchInput,
+      layout,
+      popover,
+      trigger,
+      connectorList,
+      expandedListHeight,
+    } = preparedScenario;
+    await filterConnectorMenu(user, searchInput, layout.notifyResize);
+    await waitFor(() => {
+      expect(popoverSide(popover, trigger)).toBe("top");
+      expect(connectorList.clientHeight).toBe(expandedListHeight);
+      expect(connectorList.scrollHeight).toBe(connectorList.clientHeight);
+      expect(screen.getByText("Add connectors")).toBeInTheDocument();
+    });
   });
 });
 
@@ -328,9 +354,12 @@ test("Show the filtered connector count in the add dialog", async () => {
   await openConnectors(user);
   const catalog = await openAddConnectors(user);
   const search = within(catalog).getByPlaceholderText("Find connectors...");
+  await expect(
+    findFastControl("link", "Manage SSH hosts", catalog),
+  ).resolves.toBeVisible();
   expect(
     within(catalog).getByRole("heading", {
-      name: "Available connectors to connect (3)",
+      name: "Available connectors to connect (4)",
     }),
   ).toBeVisible();
 
@@ -356,7 +385,7 @@ test("Show the filtered connector count in the add dialog", async () => {
   await waitFor(() => {
     expect(
       within(catalog).getByRole("heading", {
-        name: "Available connectors to connect (3)",
+        name: "Available connectors to connect (4)",
       }),
     ).toBeVisible();
   });
@@ -409,70 +438,79 @@ test("Configure connector permissions from the composer", async () => {
   });
 });
 
-test("Connect a custom connector for only the active agent", async () => {
-  const user = userEvent.setup({ delay: null });
-  const fixture = installComposerConnectorFixture({
-    customConnectors: [
-      httpConnector({
-        id: ACME_CONNECTOR_ID,
-        slug: "acme-search",
-        displayName: "Acme Search",
-        connected: false,
-      }),
-    ],
+describe("connecting a custom connector for the active agent", () => {
+  let user: ReturnType<typeof userEvent.setup>;
+  let fixture: ReturnType<typeof installComposerConnectorFixture>;
+  beforeEach(async () => {
+    user = userEvent.setup({ delay: null });
+    fixture = installComposerConnectorFixture({
+      customConnectors: [
+        httpConnector({
+          id: ACME_CONNECTOR_ID,
+          slug: "acme-search",
+          displayName: "Acme Search",
+          connected: false,
+        }),
+      ],
+    });
+
+    await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
+
+    await loadComposer();
+    await openConnectors(user);
   });
 
-  await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
+  it("connects a custom connector for only the active agent", async () => {
+    let catalog = await openAddConnectors(user);
+    expect(
+      within(catalog).getByText("https://api.example.test/"),
+    ).toBeVisible();
+    await user.click(
+      await findFastControl("button", "Connect Acme Search", catalog),
+    );
+    let secret = await screen.findByLabelText("Secret");
+    expect(secret).toHaveValue("");
+    await user.type(secret, "discarded-secret");
+    await user.click(await findFastControl("button", "Cancel"));
 
-  await loadComposer();
-  await openConnectors(user);
-  let catalog = await openAddConnectors(user);
-  expect(within(catalog).getByText("https://api.example.test/")).toBeVisible();
-  await user.click(
-    await findFastControl("button", "Connect Acme Search", catalog),
-  );
-  let secret = await screen.findByLabelText("Secret");
-  expect(secret).toHaveValue("");
-  await user.type(secret, "discarded-secret");
-  await user.click(await findFastControl("button", "Cancel"));
+    await ensureConnectorsOpen(user);
+    catalog = await openAddConnectors(user);
+    await user.click(
+      await findFastControl("button", "Connect Acme Search", catalog),
+    );
+    secret = await screen.findByLabelText("Secret");
+    expect(secret).toHaveValue("");
+    await user.type(secret, "scout-secret");
+    await user.click(await findFastControl("button", "Save"));
 
-  await ensureConnectorsOpen(user);
-  catalog = await openAddConnectors(user);
-  await user.click(
-    await findFastControl("button", "Connect Acme Search", catalog),
-  );
-  secret = await screen.findByLabelText("Secret");
-  expect(secret).toHaveValue("");
-  await user.type(secret, "scout-secret");
-  await user.click(await findFastControl("button", "Save"));
-
-  await waitFor(() => {
-    expect(fixture.customValueRequests).toStrictEqual([
-      {
-        connectorId: ACME_CONNECTOR_ID,
-        values: [{ key: "secret", kind: "secret", value: "scout-secret" }],
-      },
-    ]);
-    expect(fixture.customAuthorizationUpdates).toStrictEqual([
-      {
-        agentId: SCOUT_AGENT_ID,
-        grants: [
-          {
-            customConnectorId: ACME_CONNECTOR_ID,
-            permissionNames: [],
-          },
-        ],
-        operation: "add",
-      },
-    ]);
+    await waitFor(() => {
+      expect(fixture.customValueRequests).toStrictEqual([
+        {
+          connectorId: ACME_CONNECTOR_ID,
+          values: [{ key: "secret", kind: "secret", value: "scout-secret" }],
+        },
+      ]);
+      expect(fixture.customAuthorizationUpdates).toStrictEqual([
+        {
+          agentId: SCOUT_AGENT_ID,
+          grants: [
+            {
+              customConnectorId: ACME_CONNECTOR_ID,
+              permissionNames: [],
+            },
+          ],
+          operation: "add",
+        },
+      ]);
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+    await ensureConnectorsOpen(user);
+    await expect(
+      screen.findByLabelText("Remove Acme Search"),
+    ).resolves.toBeVisible();
   });
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).toBeNull();
-  });
-  await ensureConnectorsOpen(user);
-  await expect(
-    screen.findByLabelText("Remove Acme Search"),
-  ).resolves.toBeVisible();
 });
 
 test("Show only the connector actions that are useful in chat", async () => {
@@ -616,7 +654,7 @@ test("Use the shortest valid connector setup from chat", async () => {
 });
 
 test.each([null, "Close", "Escape", "backdrop"] as const)(
-  "Keep chat OAuth in one dialog through completion (dismissal: %s)",
+  "Keep chat OAuth in one dialog, with explicit cancellation and outside-press protection (%s)",
   async (dismissal) => {
     const user = userEvent.setup({ delay: null });
     const fixture = installComposerConnectorFixture({
@@ -683,12 +721,13 @@ test.each([null, "Close", "Escape", "backdrop"] as const)(
         await user.click(viewport);
       }
     }
+    const cancelled = dismissal === "Close" || dismissal === "Escape";
     await waitFor(() => {
       expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(
-        dismissal ? 0 : 1,
+        cancelled ? 0 : 1,
       );
     });
-    expect(authWindow.closed).toBeFalsy();
+    expect(authWindow.closed).toBe(cancelled);
 
     const account = connectorAccount({
       id: "f0000000-0000-4000-a000-000000000064",
@@ -701,14 +740,17 @@ test.each([null, "Close", "Escape", "backdrop"] as const)(
       { ...account, slug: GOOGLE_ANALYTICS_SLUG },
     ]);
     fixture.completeOAuth(account.id);
+    expect(
+      screen.queryByText("Google Analytics connected and authorized for Scout"),
+    ).toBeNull();
+    if (cancelled) {
+      authorization.resolve();
+      return;
+    }
     authWindow.close();
     await authorizationStarted.promise;
-    expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(
-      dismissal ? 0 : 1,
-    );
-    expect(screen.queryAllByText("Connecting...")).toHaveLength(
-      dismissal ? 0 : 1,
-    );
+    expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(1);
+    expect(screen.queryAllByText("Connecting...")).toHaveLength(1);
     authorization.resolve();
     await expect(
       screen.findByText("Google Analytics connected and authorized for Scout"),
@@ -720,7 +762,7 @@ test.each([null, "Close", "Escape", "backdrop"] as const)(
   },
 );
 
-test("Keep a reopened connector directory usable while chat OAuth is pending", async () => {
+test("Retry chat OAuth immediately after closing and reopening the directory", async () => {
   const user = userEvent.setup({ delay: null });
   installComposerConnectorFixture({
     catalog: [
@@ -751,7 +793,7 @@ test("Keep a reopened connector directory usable while chat OAuth is pending", a
   await waitFor(() => {
     expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(0);
   });
-  expect(authWindow.closed).toBeFalsy();
+  expect(authWindow.closed).toBeTruthy();
 
   await openConnectors(user);
   const reopened = await openAddConnectors(user);
@@ -763,14 +805,21 @@ test("Keep a reopened connector directory usable while chat OAuth is pending", a
     "Connect Google Analytics",
     reopened,
   );
-  expect(connect).toHaveAttribute("aria-disabled", "true");
-  await user.click(connect);
+  expect(connect).not.toHaveAttribute("aria-disabled", "true");
   expect(browserOpen.calls).toHaveLength(1);
+  const nextWindow = createAuthWindow();
+  context.mocks.browser.open(nextWindow);
+  await user.click(connect);
+  await waitFor(() => {
+    expect(nextWindow.location.href).toBe(
+      "https://accounts.example.test/google-analytics",
+    );
+  });
   expect(within(reopened).getByRole("status")).toHaveTextContent(
     "Connecting...",
   );
 
-  authWindow.close();
+  nextWindow.close();
   await waitFor(() => {
     expect(connect).not.toHaveAttribute("aria-disabled", "true");
   });

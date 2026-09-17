@@ -1,7 +1,6 @@
 //! Run-scoped observation of the addon's accepted JSONL prefix before upload.
 
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -9,20 +8,14 @@ use tracing::warn;
 
 use crate::ids::RunId;
 
-use super::control;
+use super::control::{self, ControlHandle, ControlTarget};
 
 const FLUSH_TIMEOUT: Duration = Duration::from_secs(5);
-
-#[derive(Clone)]
-pub(super) struct ControlTarget {
-    pub directory: PathBuf,
-    pub generation: String,
-}
 
 /// Tracks launch availability; each job freezes its target before execution.
 #[derive(Clone, Default)]
 pub struct MitmJsonlFlushHandle {
-    target: Arc<Mutex<Option<ControlTarget>>>,
+    control: ControlHandle,
 }
 
 pub struct MitmRunLogFlush {
@@ -56,19 +49,17 @@ enum FlushState {
 }
 
 impl MitmJsonlFlushHandle {
+    pub(super) fn new(control: ControlHandle) -> Self {
+        Self { control }
+    }
+
+    #[cfg(test)]
     pub(super) fn set_target(&self, target: Option<ControlTarget>) {
-        let mut current = match self.target.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        };
-        *current = target;
+        self.control.set_target(target);
     }
 
     pub fn for_run(&self, run_id: RunId, path: PathBuf) -> MitmRunLogFlush {
-        let target = match self.target.lock() {
-            Ok(guard) => guard.clone(),
-            Err(poisoned) => poisoned.into_inner().clone(),
-        };
+        let target = self.control.target();
         MitmRunLogFlush {
             target,
             run_id,

@@ -1,6 +1,5 @@
 import { Buffer } from "node:buffer";
 import { createHash, createHmac, randomUUID } from "node:crypto";
-import { FeatureSwitchKey } from "@okouai/core";
 
 import {
   OFFICIAL_TELEGRAM_BOT_ID,
@@ -41,7 +40,6 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { testTelegramStateRoutes } from "../test-telegram-state";
 import { integrationsTelegramRoutes } from "../integrations-telegram";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const TEST_APP_ROUTES = Object.freeze([...integrationsTelegramRoutes]);
 
@@ -251,11 +249,6 @@ async function seedTelegramPostFixture(
   if (!fixture) {
     throw new Error("seedTelegramPostFixture: response missing fixture");
   }
-  await updateFeatureSwitchesForUser(
-    context,
-    { userId: String(fixture.user_id), orgId: String(fixture.org_id) },
-    { [FeatureSwitchKey.TelegramDmSessions]: true },
-  );
   return {
     orgId: String(fixture.org_id),
     userId: String(fixture.user_id),
@@ -581,6 +574,37 @@ async function latestRunForFixture(
   fixture: TelegramPostFixture,
 ): Promise<TelegramRunSnapshot | null> {
   return (await telegramPostRunState(fixture)).run;
+}
+
+async function readTelegramSourcePart(
+  fixture: TelegramPostFixture,
+  prompt: string,
+) {
+  const actor = actorForFixture(fixture);
+  const lifecycle = await chatApi.requestThreadEvents(actor, {}, [200]);
+  if (lifecycle.status !== 200) {
+    throw new Error("Expected Telegram thread lifecycle events");
+  }
+  const thread = lifecycle.body.events.find((event) => {
+    return event.kind === "created" && event.agentId === fixture.composeId;
+  });
+  if (!thread) {
+    throw new Error("Expected a Telegram chat thread");
+  }
+  const { events } = await chatApi.listThreadEvents(actor, thread.chatThreadId);
+  const input = events.find((event) => {
+    return (
+      event.eventType === "input.prompt" &&
+      event.userMessage.parts.some((part) => {
+        return part.type === "text" && part.text === prompt;
+      })
+    );
+  });
+  return input?.eventType === "input.prompt"
+    ? input.userMessage.parts.find((part) => {
+        return part.type === "source";
+      })
+    : undefined;
 }
 
 async function latestAgentRunForFixture(
@@ -1291,6 +1315,13 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     const run = await latestRunForFixture(fixture);
     expect(run).toMatchObject({ status: "pending", error: null });
     expect(run?.prompt).toBe("hello from telegram");
+    await expect(
+      readTelegramSourcePart(fixture, "hello from telegram"),
+    ).resolves.toStrictEqual({
+      type: "source",
+      kind: "telegram",
+      href: `https://t.me/bot_${fixture.telegramBotId}`,
+    });
     expect(run?.appendSystemPrompt).toContain("Telegram username: @alice");
     expect(run?.appendSystemPrompt).toContain("Bot ID:");
     expectExactSystemPromptFragment(
@@ -1649,7 +1680,11 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
           version: 1,
           parts: [
             { type: "text", text: firstPrompt },
-            { type: "source", kind: "telegram" },
+            {
+              type: "source",
+              kind: "telegram",
+              href: `https://t.me/bot_${fixture.telegramBotId}`,
+            },
           ],
         },
       }),
@@ -1720,198 +1755,203 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     );
   });
 
-  it.each([
-    { ownerKind: "custom", enabled: true, scenario: "models" },
-    { ownerKind: "official", enabled: true, scenario: "models" },
-    { ownerKind: "custom", enabled: true, scenario: "replies" },
-    { ownerKind: "official", enabled: true, scenario: "replies" },
-    { ownerKind: "custom", enabled: false, scenario: "models" },
-    { ownerKind: "official", enabled: false, scenario: "models" },
-  ] as const)(
-    "routes $ownerKind Telegram DM $scenario with scoped sessions enabled=$enabled",
-    async ({ ownerKind, enabled, scenario }) => {
-      const runnerGroup = configureCanonicalTelegramRunner();
-      configureOfficialBotEnv();
-      const actor = authOrgApi.user();
-      if (!actor.orgId) {
-        throw new Error("Expected an organization for Telegram onboarding");
-      }
-      await runsApi.grantProEntitlement(actor);
-      const onboarded = await authOrgApi.bootstrapLimitedFreeOnboarding(actor, {
-        displayName: "Telegram DM agent",
-      });
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...actor, orgId: actor.orgId },
-        { [FeatureSwitchKey.TelegramDmSessions]: enabled },
-      );
-      const provider = await runsApi.createOrgModelProvider(actor, {
-        type: "anthropic-api-key",
-        secret: "telegram-dm-model-routing-key",
-      });
-      await runsApi.updateOrgModelPolicies(actor, [
-        {
-          model: "claude-sonnet-5",
-          isDefault: true,
-          defaultProviderType: "anthropic-api-key",
-          credentialScope: "org",
-          modelProviderId: provider.providerId,
+  async function prepareTelegramDm(ownerKind: "custom" | "official") {
+    const runnerGroup = configureCanonicalTelegramRunner();
+    configureOfficialBotEnv();
+    const actor = authOrgApi.user();
+    if (!actor.orgId) {
+      throw new Error("Expected an organization for Telegram onboarding");
+    }
+    await runsApi.grantProEntitlement(actor);
+    const onboarded = await authOrgApi.bootstrapLimitedFreeOnboarding(actor, {
+      displayName: "Telegram DM agent",
+    });
+    const provider = await runsApi.createOrgModelProvider(actor, {
+      type: "anthropic-api-key",
+      secret: "telegram-dm-model-routing-key",
+    });
+    await runsApi.updateOrgModelPolicies(actor, [
+      {
+        model: "claude-sonnet-5",
+        isDefault: true,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: provider.providerId,
+      },
+      {
+        model: "claude-opus-4-8",
+        isDefault: false,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: provider.providerId,
+      },
+    ]);
+    const telegram = telegramApiMocks(
+      ownerKind === "custom" ? TEST_BOT_TOKEN : OFFICIAL_BOT_TOKEN,
+    );
+    const botId = ownerKind === "custom" ? newTelegramBotId() : "official";
+    let secret = OFFICIAL_WEBHOOK_SECRET;
+    const headers = authOrgApi.authenticate(actor);
+    if (ownerKind === "custom") {
+      mockTelegramGetMe({ botId });
+      context.mocks.telegram.setWebhook.mockImplementation(
+        (_token, _url, secretToken) => {
+          if (typeof secretToken !== "string") {
+            throw new Error("Expected a Telegram webhook secret");
+          }
+          secret = secretToken;
+          return Promise.resolve();
         },
-        {
-          model: "claude-opus-4-8",
-          isDefault: false,
-          defaultProviderType: "anthropic-api-key",
-          credentialScope: "org",
-          modelProviderId: provider.providerId,
-        },
-      ]);
-      const telegram = telegramApiMocks(
-        ownerKind === "custom" ? TEST_BOT_TOKEN : OFFICIAL_BOT_TOKEN,
       );
-      const botId = ownerKind === "custom" ? newTelegramBotId() : "official";
-      let secret = OFFICIAL_WEBHOOK_SECRET;
-      const headers = authOrgApi.authenticate(actor);
-      if (ownerKind === "custom") {
-        mockTelegramGetMe({ botId });
-        context.mocks.telegram.setWebhook.mockImplementation(
-          (_token, _url, secretToken) => {
-            if (typeof secretToken !== "string") {
-              throw new Error("Expected a Telegram webhook secret");
-            }
-            secret = secretToken;
-            return Promise.resolve();
-          },
-        );
-        await accept(
-          telegramClient().register({
-            headers,
-            body: {
-              botToken: TEST_BOT_TOKEN,
-              defaultAgentId: onboarded.body.agentId,
-            },
-          }),
-          [201],
-        );
-      }
-      const fromId = Number(newTelegramBotId());
-      const telegramAuth = {
-        id: fromId,
-        auth_date: Math.floor(nowDate().getTime() / 1000),
-        first_name: "Alice",
-      };
-      const authData = Object.entries(telegramAuth)
-        .sort(([left], [right]) => {
-          return left.localeCompare(right);
-        })
-        .map(([key, value]) => {
-          return `${key}=${value}`;
-        })
-        .join("\n");
-      const secretKey = createHash("sha256")
-        .update(ownerKind === "custom" ? TEST_BOT_TOKEN : OFFICIAL_BOT_TOKEN)
-        .digest();
       await accept(
-        telegramClient().link({
+        telegramClient().register({
           headers,
           body: {
-            telegramBotId: botId,
-            telegramAuth: {
-              ...telegramAuth,
-              hash: createHmac("sha256", secretKey)
-                .update(authData)
-                .digest("hex"),
-            },
+            botToken: TEST_BOT_TOKEN,
+            defaultAgentId: onboarded.body.agentId,
           },
         }),
-        [200],
+        [201],
       );
-      const chatId = 78_501;
-
-      async function sendDm(text: string, messageId: number, replyTo?: number) {
-        const response = await postWebhook({
+    }
+    const fromId = Number(newTelegramBotId());
+    const telegramAuth = {
+      id: fromId,
+      auth_date: Math.floor(nowDate().getTime() / 1000),
+      first_name: "Alice",
+    };
+    const authData = Object.entries(telegramAuth)
+      .sort(([left], [right]) => {
+        return left.localeCompare(right);
+      })
+      .map(([key, value]) => {
+        return `${key}=${value}`;
+      })
+      .join("\n");
+    const secretKey = createHash("sha256")
+      .update(ownerKind === "custom" ? TEST_BOT_TOKEN : OFFICIAL_BOT_TOKEN)
+      .digest();
+    await accept(
+      telegramClient().link({
+        headers,
+        body: {
           telegramBotId: botId,
-          secret,
-          body: {
-            update_id: messageId,
-            message: {
-              message_id: messageId,
-              chat: { id: chatId, type: "private" },
-              from: { id: fromId, first_name: "Alice" },
-              text,
-              ...(replyTo === undefined
-                ? {}
-                : {
-                    reply_to_message: {
-                      message_id: replyTo,
-                      text: "Earlier DM message",
-                    },
-                  }),
-            },
+          telegramAuth: {
+            ...telegramAuth,
+            hash: createHmac("sha256", secretKey)
+              .update(authData)
+              .digest("hex"),
           },
-        });
-        expect(response.status).toBe(200);
-        await flushWaitUntilForTest();
-      }
+        },
+      }),
+      [200],
+    );
+    const chatId = 78_501;
 
-      async function completeDm(
-        text: string,
-        messageId: number,
-        replyTo?: number,
-        assistantText?: string,
-      ) {
-        await sendDm(text, messageId, replyTo);
-        const run = (
-          await runsApi.listAgentRuns(actor, { limit: 20 })
-        ).runs.find((item) => {
-          return item.prompt?.includes(text);
-        });
-        if (!run) {
-          throw new Error("Expected a Telegram DM run");
-        }
-        const claim = await claimTelegramRun(run.id, runnerGroup);
-        const replyCount = telegram.sentMessageIds.length;
-        if (assistantText !== undefined) {
-          await webhooksApi.requestAgentEvents(
-            {
-              runId: run.id,
-              events: [
-                {
-                  type: "assistant",
-                  sequenceNumber: 0,
-                  message: {
-                    id: `msg_telegram_dm_${run.id}`,
-                    content: [{ type: "text", text: assistantText }],
+    async function sendDm(text: string, messageId: number, replyTo?: number) {
+      const response = await postWebhook({
+        telegramBotId: botId,
+        secret,
+        body: {
+          update_id: messageId,
+          message: {
+            message_id: messageId,
+            chat: { id: chatId, type: "private" },
+            from: { id: fromId, first_name: "Alice" },
+            text,
+            ...(replyTo === undefined
+              ? {}
+              : {
+                  reply_to_message: {
+                    message_id: replyTo,
+                    text: "Earlier DM message",
                   },
-                },
-              ],
-            },
-            { authorization: `Bearer ${claim.sandboxToken}` },
-            [200],
-          );
-        }
-        const sessionId = await completeCanonicalChatRun({
-          runId: run.id,
-          sandboxToken: claim.sandboxToken,
-        });
-        expect(telegram.sentMessages.at(-1)?.reply_parameters).toStrictEqual({
-          message_id: messageId,
-        });
-        const botReplyId = telegram.sentMessageIds.at(-1);
-        if (botReplyId === undefined) {
-          throw new Error("Expected a Telegram DM reply");
-        }
-        return {
-          claim,
-          sessionId,
-          botReplyId,
-          replyCount: telegram.sentMessageIds.length - replyCount,
-        };
-      }
+                }),
+          },
+        },
+      });
+      expect(response.status).toBe(200);
+      await flushWaitUntilForTest();
+    }
 
-      const main = await completeDm("start the main DM", 3501);
-      expect(main.claim.resumeSession).toBeNull();
-      if (scenario === "replies") {
-        const branch = await completeDm(
+    async function completeDm(
+      text: string,
+      messageId: number,
+      replyTo?: number,
+      assistantText?: string,
+    ) {
+      await sendDm(text, messageId, replyTo);
+      const run = (await runsApi.listAgentRuns(actor, { limit: 20 })).runs.find(
+        (item) => {
+          return item.prompt?.includes(text);
+        },
+      );
+      if (!run) {
+        throw new Error("Expected a Telegram DM run");
+      }
+      const claim = await claimTelegramRun(run.id, runnerGroup);
+      const replyCount = telegram.sentMessageIds.length;
+      if (assistantText !== undefined) {
+        await webhooksApi.requestAgentEvents(
+          {
+            runId: run.id,
+            events: [
+              {
+                type: "assistant",
+                sequenceNumber: 0,
+                message: {
+                  id: `msg_telegram_dm_${run.id}`,
+                  content: [{ type: "text", text: assistantText }],
+                },
+              },
+            ],
+          },
+          { authorization: `Bearer ${claim.sandboxToken}` },
+          [200],
+        );
+      }
+      const sessionId = await completeCanonicalChatRun({
+        runId: run.id,
+        sandboxToken: claim.sandboxToken,
+      });
+      expect(telegram.sentMessages.at(-1)?.reply_parameters).toStrictEqual({
+        message_id: messageId,
+      });
+      const botReplyId = telegram.sentMessageIds.at(-1);
+      if (botReplyId === undefined) {
+        throw new Error("Expected a Telegram DM reply");
+      }
+      return {
+        claim,
+        sessionId,
+        botReplyId,
+        replyCount: telegram.sentMessageIds.length - replyCount,
+      };
+    }
+    const main = await completeDm("start the main DM", 3501);
+    return { sendDm, completeDm, main };
+  }
+
+  describe.each([
+    { ownerKind: "custom", scenario: "models" },
+    { ownerKind: "official", scenario: "models" },
+    { ownerKind: "custom", scenario: "reply-anchors" },
+    { ownerKind: "official", scenario: "reply-anchors" },
+    { ownerKind: "custom", scenario: "pinned-replies" },
+    { ownerKind: "official", scenario: "pinned-replies" },
+  ] as const)("$ownerKind Telegram DM $scenario", ({ ownerKind, scenario }) => {
+    let dm: Awaited<ReturnType<typeof prepareTelegramDm>>;
+    let replyChain:
+      | {
+          branch: Awaited<ReturnType<typeof dm.completeDm>>;
+          followUp: Awaited<ReturnType<typeof dm.completeDm>>;
+        }
+      | undefined;
+
+    async function prepareReplyChain() {
+      replyChain = undefined;
+      if (scenario !== "models") {
+        const branch = await dm.completeDm(
           "start a reply chain",
           3503,
           3501,
@@ -1919,7 +1959,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         );
         expect(branch.claim.resumeSession).toBeNull();
         expect(branch.replyCount).toBeGreaterThan(1);
-        const branchFollowUp = await completeDm(
+        const branchFollowUp = await dm.completeDm(
           "continue the reply chain",
           3504,
           branch.botReplyId,
@@ -1927,14 +1967,34 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         expect(branchFollowUp.claim.resumeSession?.sessionId).toBe(
           branch.sessionId,
         );
-        const earlierReply = await completeDm(
-          "reply to the earlier user message",
-          3505,
-          3503,
-        );
-        expect(earlierReply.claim.resumeSession?.sessionId).toBe(
-          branchFollowUp.sessionId,
-        );
+        replyChain = { branch, followUp: branchFollowUp };
+      }
+    }
+
+    beforeEach(async () => {
+      dm = await prepareTelegramDm(ownerKind);
+      await prepareReplyChain();
+    });
+
+    it(`routes ${ownerKind} Telegram DM ${scenario}`, async () => {
+      const { sendDm, completeDm, main } = dm;
+      expect(main.claim.resumeSession).toBeNull();
+      if (scenario !== "models") {
+        if (!replyChain) {
+          throw new Error("Expected a completed Telegram reply chain");
+        }
+        const { branch, followUp: branchFollowUp } = replyChain;
+        if (scenario === "reply-anchors") {
+          const earlierReply = await completeDm(
+            "reply to the earlier user message",
+            3505,
+            3503,
+          );
+          expect(earlierReply.claim.resumeSession?.sessionId).toBe(
+            branchFollowUp.sessionId,
+          );
+          return;
+        }
         await sendDm("/model claude-opus-4-8", 3506);
         const pinnedReply = await completeDm(
           "keep the reply chain model",
@@ -1943,23 +2003,13 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         );
         expect(pinnedReply.claim.modelUsageProvider).toBe("claude-sonnet-5");
         expect(pinnedReply.claim.resumeSession?.sessionId).toBe(
-          earlierReply.sessionId,
+          branchFollowUp.sessionId,
         );
         return;
       }
 
       const followUp = await completeDm("continue the main DM", 3502);
       expect(followUp.claim.resumeSession?.sessionId).toBe(main.sessionId);
-
-      if (!enabled) {
-        const reply = await completeDm("continue the unsplit DM", 3503, 3501);
-        expect(reply.claim.resumeSession?.sessionId).toBe(followUp.sessionId);
-        await sendDm("/model claude-opus-4-8", 3504);
-        const switched = await completeDm("change the unsplit DM model", 3505);
-        expect(switched.claim.modelUsageProvider).toBe("claude-opus-4-8");
-        expect(switched.claim.resumeSession?.sessionId).toBe(reply.sessionId);
-        return;
-      }
 
       await sendDm("/model claude-opus-4-8", 3506);
       const alternate = await completeDm("use the alternate DM model", 3507);
@@ -1969,8 +2019,8 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       const returned = await completeDm("return to the main model", 3510);
       expect(returned.claim.resumeSession?.sessionId).toBe(followUp.sessionId);
       expect(returned.claim.modelUsageProvider).toBe("claude-sonnet-5");
-    },
-  );
+    });
+  });
 
   it("preserves group reply chains, forum delivery, fresh mentions, and callback idempotency", async () => {
     const runnerGroup = configureCanonicalTelegramRunner();
@@ -2399,6 +2449,13 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
 
     const run = await latestRunForFixture(fixture);
     expect(run?.prompt).toBe(`@${botUsername}`);
+    await expect(
+      readTelegramSourcePart(fixture, `@${botUsername}`),
+    ).resolves.toStrictEqual({
+      type: "source",
+      kind: "telegram",
+      href: "https://t.me/c/99002/101",
+    });
     expect(run?.appendSystemPrompt).toContain("Chat type: supergroup");
     expect(run?.appendSystemPrompt).toContain(
       "https://example.com/broken-article",
@@ -2475,6 +2532,13 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
 
     const run = await latestRunForFixture(fixture);
     expect(run?.prompt).toBe("run through official bot");
+    await expect(
+      readTelegramSourcePart(fixture, "run through official bot"),
+    ).resolves.toStrictEqual({
+      type: "source",
+      kind: "telegram",
+      href: `https://t.me/${OFFICIAL_BOT_USERNAME}`,
+    });
     expect(run?.appendSystemPrompt).toContain(
       "Bot username: @official_okou_bot",
     );

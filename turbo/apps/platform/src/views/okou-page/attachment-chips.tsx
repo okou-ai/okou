@@ -32,10 +32,12 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { rootSignal$ } from "../../signals/root-signal.ts";
 import {
   connectorConnectionProgressActive$,
-  dismissConnectorConnectionProgress$,
+  cancelConnectorConnection$,
+  connectorConnectionAttempt$,
   registerConnectorConnectionDialog$,
 } from "../../signals/connector-connection-progress.ts";
 import { ConnectorConnectionStatus } from "../components/connector-connection-dialog-body.tsx";
+import { ConnectorConnectionCancelButton } from "../components/connector-connection-progress.tsx";
 import {
   currentLeftThread$,
   currentRightThread$,
@@ -1176,9 +1178,10 @@ function ArtifactPreviewDialogThreadResolver({
 function useCloseArtifactPreview() {
   const rootSignal = useGet(rootSignal$);
   const closeArtifactCatalogPreview = useSet(closeArtifactCatalogPreview$);
-  const dismissProgress = useSet(dismissConnectorConnectionProgress$);
+  const cancelConnection = useSet(cancelConnectorConnection$);
+  const connectionAttempt = useGet(connectorConnectionAttempt$);
   return () => {
-    dismissProgress();
+    cancelConnection(connectionAttempt);
     closeArtifactCatalogPreview(rootSignal);
   };
 }
@@ -1252,6 +1255,7 @@ function ArtifactPreviewDialogActions({
       )}
       {showShare && (
         <ArtifactShareButton
+          surface="dialog"
           shareUrl={shareUrl}
           ariaLabel={t(($) => {
             return $.artifacts.actions.share;
@@ -1311,7 +1315,15 @@ function ArtifactPreviewDialogContent({
     <Dialog
       open={visible}
       onOpenChangeComplete={completeDialogExit}
-      onOpenChange={(nextOpen) => {
+      onOpenChange={(nextOpen, details) => {
+        if (
+          !nextOpen &&
+          connectionProgressActive &&
+          details.reason === "outside-press"
+        ) {
+          details.cancel();
+          return;
+        }
         if (!nextOpen && visible) {
           closeWithAnimation();
         }
@@ -1371,8 +1383,9 @@ function ArtifactPreviewDialogContent({
           </div>
           <DialogBody className="overflow-hidden bg-background">
             {connectionProgressActive ? (
-              <div className="flex h-full items-center justify-center p-6">
+              <div className="flex h-full flex-col items-center justify-center gap-4 p-6">
                 <ConnectorConnectionStatus />
+                <ConnectorConnectionCancelButton />
               </div>
             ) : (
               <ArtifactPreviewBody
@@ -1740,7 +1753,7 @@ function ComposerImagePreviewButton({
         <span
           data-testid="composer-attachment-mark-count"
           style={{ background: DEFAULT_ANNOTATION_INK }}
-          className="absolute -bottom-0.5 -left-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full border-[1.5px] border-background px-1 text-[9px] font-bold leading-none text-white"
+          className="absolute -bottom-0.5 -left-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full border-(length:--border-width-emphasis) border-background px-1 text-[9px] font-bold leading-none text-white"
         >
           {markCount}
         </span>

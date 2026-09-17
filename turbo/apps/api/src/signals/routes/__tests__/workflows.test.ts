@@ -1,4 +1,14 @@
-import { randomUUID } from "node:crypto";
+import {
+  readGetStartedStatus,
+  setGetStartedEnabled,
+} from "./helpers/get-started";
+import {
+  scopedReviewContract,
+  scopedReviewRoutes,
+} from "../test-get-started-rewards";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { flushWaitUntilForTest } from "../../context/wait-until";
+import { createHash, randomUUID } from "node:crypto";
 import { gunzipSync } from "node:zlib";
 
 import { HeadObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
@@ -2798,7 +2808,7 @@ describe("workflow owner profile cancellation and capacity", () => {
       const { owner, workflow, agent } = await ownerProfileFixture();
       // Construct the large fixture through production APIs before exercising
       // cache behavior. The measured TTL starts after fixture creation.
-      // Independent agents avoid serializing all writes on one agent row lock.
+      // Keep the capacity cohort spread across independent public agents.
       const agents = [
         agent,
         ...(await Promise.all(
@@ -2826,7 +2836,7 @@ describe("workflow owner profile cancellation and capacity", () => {
         },
       );
       const client = collectionClient();
-      const others = await Promise.all(
+      const creating = Promise.allSettled(
         Array.from({ length: 512 }, async (_, index) => {
           const targetAgent = agents[index % agents.length];
           if (!targetAgent) {
@@ -2834,9 +2844,7 @@ describe("workflow owner profile cancellation and capacity", () => {
           }
           const another = user({ orgId: owner.orgId });
           const authorization = `Bearer ${another.userId}`;
-          // Bind auth to the request, rather than changing one shared session
-          // while other fixture requests are still in flight. Await the entire
-          // fixture together; production row locks and the DB pool bound writes.
+          // Bind auth to the request while other creations are in flight.
           actors.set(authorization, another);
           const created = await accept(
             client.create({
@@ -2857,6 +2865,17 @@ describe("workflow owner profile cancellation and capacity", () => {
           return { owner: another, workflowId: created.body.id };
         }),
       );
+      onTestFinished(async () => {
+        // A hook timeout aborts the owned requests; drain them before the
+        // database pool closes, including requests still cleaning up volumes.
+        await creating;
+      });
+      const others = (await creating).map((result) => {
+        if (result.status === "rejected") {
+          throw result.reason;
+        }
+        return result.value;
+      });
       profiles = [{ owner, workflowId: workflow.id }, ...others];
       mockNow(now() + 16 * 60 * 1000);
     });
@@ -2889,5 +2908,102 @@ describe("workflow owner profile cancellation and capacity", () => {
         (await accept(read(first.workflowId), [200])).body.displayName,
       ).toBe("Workflow Author");
     });
+  });
+});
+
+test("awards the workflow creator only after a queued user workflow really succeeds", async () => {
+  const actor = user({ orgRole: "org:admin" });
+  await enableWorkflowRuns(actor);
+  await setGetStartedEnabled(context, actor);
+  const agent = await createAgent(actor, {
+    displayName: "Reward Workflow Agent",
+    visibility: "private",
+  });
+  const workflow = await createWorkflow(actor, {
+    agentId: agent.agentId,
+    name: `reward-${randomUUID().slice(0, 8)}`,
+    instruction: "Produce a short summary",
+  });
+  if (!actor.orgId) {
+    throw new Error("Expected workflow org");
+  }
+  const review = () => {
+    return accept(
+      setupApp({ context, routes: scopedReviewRoutes })(
+        scopedReviewContract,
+      ).process({ body: { orgId: actor.orgId ?? "" } }),
+      [200],
+    );
+  };
+  const rewards = async () => {
+    return (await readGetStartedStatus(context, actor)).quests.find((q) => {
+      return q.key === "workflow";
+    });
+  };
+  await expect(rewards()).resolves.toMatchObject({ claimedCount: 0 });
+  const first = await accept(
+    detailClient().run({
+      headers: authHeaders(actor),
+      params: { workflowId: workflow.body.id },
+    }),
+    [200],
+  );
+  if (!first.body.runId) {
+    throw new Error("Expected first Run");
+  }
+  const queued = await accept(
+    detailClient().run({
+      headers: authHeaders(actor),
+      params: { workflowId: workflow.body.id },
+    }),
+    [200],
+  );
+  expect(queued.body.runId).toBeNull();
+  const webhooks = createWebhookCallbackApi(context);
+  await webhooks.requestAgentComplete(
+    { runId: first.body.runId, exitCode: 1, error: "Synthetic failure" },
+    {
+      authorization: `Bearer ${api.sandboxTokenForRun(actor, first.body.runId)}`,
+    },
+    [200],
+  );
+  await flushWaitUntilForTest();
+  const events = await chat.listThreadEvents(actor, first.body.chatThreadId);
+  const next = events.events.find((event) => {
+    return event.runId && event.runId !== first.body.runId;
+  });
+  if (!next?.runId) {
+    throw new Error("Expected the queued workflow to start after failure");
+  }
+  await review();
+  await expect(rewards()).resolves.toMatchObject({ claimedCount: 0 });
+  await webhooks.requestAgentComplete(
+    {
+      runId: next.runId,
+      exitCode: 0,
+      checkpoint: {
+        cliAgentType: "claude-code",
+        cliAgentSessionId: next.runId,
+        cliAgentSessionHistoryHash: createHash("sha256")
+          .update(`workflow reward ${next.runId}`)
+          .digest("hex"),
+      },
+    },
+    { authorization: `Bearer ${api.sandboxTokenForRun(actor, next.runId)}` },
+    [200],
+  );
+  // The next worker attempt is due later; use the test-owned clock, not a sleep.
+  mockNow(now() + 60_001);
+  await review();
+  await expect(rewards()).resolves.toMatchObject({
+    claimedCount: 1,
+    earnedCredits: 1000,
+    canEarnMore: false,
+  });
+  await miscApi.deleteWorkflow(actor, workflow.body.id, [204]);
+  await review();
+  await expect(rewards()).resolves.toMatchObject({
+    claimedCount: 1,
+    earnedCredits: 1000,
   });
 });

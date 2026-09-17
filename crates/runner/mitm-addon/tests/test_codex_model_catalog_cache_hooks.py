@@ -17,7 +17,6 @@ import flow_metadata_keys as metadata_keys
 import mitm_addon
 import request_classification
 import upstream_destination_binding
-import usage
 from tests.codex_model_catalog_cache_helpers import (
     CATALOG_BODY,
     catalog_flow,
@@ -801,8 +800,7 @@ async def test_cancelled_requestheaders_catalog_follower_releases_usage_tracking
     mitm_ctx,
     fake_firewall_headers,
 ):
-    pending_path = tmp_path / "usage-pending"
-    usage.set_pending_path(str(pending_path), usage_state_id="test-usage-state-id")
+    control_root = tmp_path / "delivery-control"
     resolved_headers = {
         "Authorization": "Bearer resolved-token",
         "ChatGPT-Account-ID": "resolved-account",
@@ -850,13 +848,11 @@ async def test_cancelled_requestheaders_catalog_follower_releases_usage_tracking
             _ = await asyncio.gather(follower_task, return_exceptions=True)
         catalog_cache.handle_error(owner)
 
-    usage.write_pending_snapshot(flush_request_id="after-cancel")
     assert_pending(
-        pending_path,
+        control_root,
         flows=0,
         buffered=0,
         reports=0,
-        flush_request_id="after-cancel",
     )
     assert "_usage_flow_tracked" not in follower.metadata
     assert request_classification.REQUEST_CLASSIFICATION_METADATA_KEY not in follower.metadata

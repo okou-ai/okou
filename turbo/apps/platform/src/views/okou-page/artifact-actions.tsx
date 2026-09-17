@@ -157,12 +157,14 @@ export function ArtifactActionTooltip({
 
 export function ArtifactShareButton({
   shareUrl,
+  surface,
   ariaLabel,
   className,
   iconSize = 16,
   url,
 }: {
   shareUrl: string | null | undefined;
+  surface: "dialog" | "sidebar";
   ariaLabel?: string;
   className?: string;
   iconSize?: number;
@@ -176,13 +178,13 @@ export function ArtifactShareButton({
       return $.artifacts.actions.share;
     });
   if (
-    shareUrl === null &&
     features?.[FeatureSwitchKey.PrivateArtifacts] &&
     isShareableArtifactReference(url)
   ) {
     return (
       <ArtifactShareMenu
         url={url}
+        surface={surface}
         ariaLabel={label}
         className={className}
         iconSize={iconSize}
@@ -357,7 +359,7 @@ function useGoogleDriveMenuAction(
     if (!syncTarget) {
       return;
     }
-    const run = async () => {
+    const run = async (signal: AbortSignal) => {
       const success = await syncArtifactFileToGoogleDrive(
         {
           createClient,
@@ -366,14 +368,15 @@ function useGoogleDriveMenuAction(
           fileId: syncTarget.fileId,
           filename: syncTarget.filename,
         },
-        pageSignal,
+        signal,
       );
+      signal.throwIfAborted();
       if (success) {
         syncTarget.onSyncSuccess();
       }
     };
     if (availability.googleDriveReady) {
-      detach(run(), Reason.DomCallback, "artifact google drive sync");
+      detach(run(pageSignal), Reason.DomCallback, "artifact google drive sync");
       return;
     }
     const action = resolveGoogleDrivePendingAction({
@@ -402,7 +405,7 @@ function useGoogleDriveMenuAction(
             { agentId, createClient },
             pageSignal,
           );
-          await run();
+          await run(pageSignal);
         })(),
         Reason.DomCallback,
         "artifact google drive authorize sync",
@@ -420,7 +423,9 @@ function useGoogleDriveMenuAction(
         {
           connectorSlug: GOOGLE_DRIVE_CONNECTOR_SLUG,
           method: availability.googleDriveAuthMethod,
-          onSuccess: run,
+          onSuccess: (_connectionId, signal) => {
+            return run(signal);
+          },
           options: {
             account: action.account,
             agentId,

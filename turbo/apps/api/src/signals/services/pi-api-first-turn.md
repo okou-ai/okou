@@ -45,8 +45,12 @@ their existing owners; decisions are immutable snapshots, not a second lifecycle
    attempt abort. A raw model/usage error cannot acquire deadline recovery merely
    because cleanup aborted the attempt. #32751's specified preparation failures,
    pre-commit API deadline and eligible model failures retain same-route recovery.
-   Reconnect/failureReason, 401/403, corrupt credentials/history and incomplete
-   output retain their existing terminal handling.
+   Classified rate limits, overload, server failures, stream timeouts and lost
+   connections remain eligible model failures under the same recovery guards.
+   Reconnect, provider balance, subscription usage limits, other non-transient
+   reasons, 401/403 and corrupt credentials/history are terminal. Final incomplete
+   output is terminal with `output_token_limit`; pending tool continuation still
+   transfers ownership.
 5. Commit start prevents H0 replay even if publication's response was lost. The
    large-history manifest marks this fact immediately before publication too.
 6. Every selected handoff still validates status, identity, deadline and durable
@@ -61,6 +65,80 @@ Late provider results belong to the original API attempt. Owned `waitUntil`
 observers may record actual usage with the original response/category
 idempotency, but never output, checkpoint or another terminal event. The captured
 `PiExecutionRoute`, exact account and one edge materializer remain authoritative.
+
+The runtime also returns independent, content-free
+[provider usage evidence](../../../../../packages/pi-agent-runtime/src/usage-observation.md).
+It distinguishes explicit zero, missing categories and partial/failed results
+without changing these billing counters. Persisting and serving that evidence
+through the API is tracked separately by #34787; reconstructed historical
+results without evidence remain unavailable.
+
+## Shared failure completion
+
+API-first and Sandbox Pi, Codex and Claude Code use the same normalized provider
+failure reasons and `completeAgentRun$` terminal handling. Native adapters own
+provider evidence classification; the API does not infer a different reason
+from its wrapper message or an earlier attempt's HTTP status.
+
+Only canonical completion applies the credential-owner failure policy, after
+the lifecycle transition wins. Recognized personal-provider limits and account
+rejections retain failed state and the public reason without operator warnings.
+Safety refusals retain their existing guidance and provider-independent policy
+for personal and built-in credentials. An HTTP 200 response can still contain
+a failed model result, including overload or explicit safety refusal; native
+adapters preserve that semantic failure without replaying its content.
+Built-in capacity, unknown failures, missing checkpoints and preparation,
+commit or handoff faults retain the common actionable-failure policy. A failed
+handoff reports its own final failure rather than the preceding model rejection.
+
+API-first has no separate terminal warning or completion-log suppression based
+on recovery eligibility. Successful recovery, attempt timeout, cancellation and
+discarded late-result observations remain; a planned recovery alone does not
+prove that a Sandbox attempt occurred. The durable no-replay fence still applies.
+
+## Durable producer mode
+
+`PiApiFirstTurnActivation` explicitly distinguishes `legacy-sandbox-race` from
+`durable-inference`; job absence is never an ownership signal. The durable mode
+is written only for eligible chat starts behind the org-scoped, default-off
+`piDeferredSandbox` switch. It carries the Run/user/org, original API clock,
+model-visible H0/resources, selected route and immutable object hashes, not a
+complete Runner context.
+
+The creation path derives deterministic hashes for configuration, context and one
+encrypted activation credential object (with an optional deferred body-secret
+payload), then overlaps their publication and subscription admission with
+speculative SDK preparation. One canonical admission transaction writes the Run,
+session/input claim, v4 inference row and retention edges. Failed or stale
+admission disposes speculative preparation. The committed winner schedules
+request-independent `waitUntil` dispatch before response-side telemetry;
+disabling the start switch later does not disable readers, cancellation or
+maintenance recovery.
+
+For durable mode, lifecycle state is additional authority:
+
+- `ready/not-started` must atomically become `provider/may-have-started` for the
+  same epoch and attempt ID before the runtime transport marker resolves.
+- H1 plus its producer receipt is retained at `publishing/settled` before usage;
+  response-derived idempotency then permits recovery to repair a missing ledger
+  write before setting `usageSettled` and resuming local effects.
+- Direct completion uses the normal event/checkpoint/completion owners and never
+  creates Sandbox demand. Pending tools, accepted active input and explicit
+  untouched-H0 fallback use `publishPiSandboxDemand`; a false result is not an
+  executable handoff.
+- Recovery advances the common epoch. It may restart only `ready/not-started`
+  from the narrow retained credential snapshot (never a reconstructed Runner
+  payload), may resume only usage/local work from `publishing/settled`, and
+  terminalizes `provider/may-have-started` without resetting or replaying H0.
+  Canonical terminal fencing advances the epoch once more.
+
+Independent provider/organization advisory locks enforce the positive
+`PI_INFERENCE_PROVIDER_MAX_IN_FLIGHT` and `PI_INFERENCE_ORG_MAX_IN_FLIGHT`
+limits. Rejection is typed `429 PI_INFERENCE_BUSY`; it neither consumes nor waits
+for a Sandbox slot. Active inference phases retain the reservation; terminal
+uncertainty retains it for the bounded 55-second grace even if local usage
+settles, because transport abort is not remote-stop evidence. This is technical
+protection, not customer concurrency.
 
 ## Fixed cross-language examples
 
@@ -90,7 +168,7 @@ work. `preparePiApiTurn` receives no provider ownership or publication callback;
 `executePreparedPiApiTurn` consumes its session once. The combined runtime entry
 remains available.
 
-The atomic run/session/full Runner job/input-claim transaction is unchanged.
+The legacy atomic run/session/full Runner job/input-claim transaction is unchanged.
 Only its pending winner transfers the in-memory preparation handle to activation.
 Runner notification and the create response do not join preparation. Queued,
 claim-lost, stale and failed admissions abort their private preparation and give
@@ -123,7 +201,8 @@ actual provider HTTP span; overlapping intervals must not be summed as serial
 latency. Discarded preparation is work, not a canonical run publication. These
 observations establish scheduling behavior, not a measured production speedup.
 
-No database migration or changed persisted job, manifest, Runner or CLI reader is
-needed. Old queued contexts use the same complete payload and the existing
-promotion deadline refresh. API/runtime internals ship together; old and new
-API/Runner combinations continue to exchange the same contracts.
+No database migration is needed for the producer because the v4 lifecycle and
+immutable-object schema already exist. Legacy queued contexts keep the same
+complete payload and deadline refresh. Durable demand requires the accepted v4
+consumer, capable Runner and commit-addressed CLI reader; switched-off starts
+remain legacy while already-written v4 recovery stays enabled.

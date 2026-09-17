@@ -5,6 +5,10 @@ import {
   type SpritePlan,
 } from "../shared/sprite-authoring";
 import { dispatchGenerate } from "./lib/dispatch";
+import {
+  createArtifactVisibilityOption,
+  type ArtifactVisibility,
+} from "../shared/artifact-visibility";
 
 const SPRITE_USAGE_COMMAND = "okou generate sprite";
 const DEFAULT_MODEL = "gpt-image-2";
@@ -96,6 +100,7 @@ interface SpriteOptions {
   readonly reference?: string;
   readonly model: string;
   readonly name?: string;
+  readonly visibility?: ArtifactVisibility;
 }
 
 function validateEnum(
@@ -170,6 +175,7 @@ export const spriteCommand = new Command()
     DEFAULT_MODEL,
   )
   .option("--name <slug>", "Output bundle name/slug")
+  .addOption(createArtifactVisibilityOption())
   .addHelpText(
     "after",
     `
@@ -235,7 +241,11 @@ Notes:
         name: slugify(options.name ?? prompt),
       };
 
-      const packet = createSpriteAuthoringPacket({ prompt, plan });
+      const packet = createSpriteAuthoringPacket({
+        prompt,
+        plan,
+        visibility: options.visibility,
+      });
       console.log(packet.instructions);
     }),
   );

@@ -54,6 +54,10 @@ export function ConnectorIcon({
             src={icon.url}
             alt=""
             decoding="async"
+            // A browsed category is a grid of a whole catalog section, so most
+            // of its marks are far below the fold. Without this the largest
+            // category opens by requesting every icon it holds at once.
+            loading="lazy"
             className={cn(
               "block h-full w-full max-h-full max-w-full object-contain",
               icon.invertInDarkMode && "dark:invert",

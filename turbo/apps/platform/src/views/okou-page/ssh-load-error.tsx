@@ -1,11 +1,14 @@
-import { useSet } from "ccstate-react";
+import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@okouai/ui";
-import { invalidateSsh$ } from "../../signals/ssh.ts";
+import { retrySsh$ } from "../../signals/ssh.ts";
+import { pageSignal$ } from "../../signals/page-signal.ts";
+import { detach, Reason } from "../../signals/utils.ts";
 
 export function SshLoadError() {
   const { t } = useTranslation();
-  const retry = useSet(invalidateSsh$);
+  const retry = useSet(retrySsh$);
+  const signal = useGet(pageSignal$);
   return (
     <div
       role="alert"
@@ -18,9 +21,10 @@ export function SshLoadError() {
       </p>
       <Button
         variant="outline"
+        type="button"
         size="sm"
         onClick={() => {
-          return retry();
+          return detach(retry(signal), Reason.DomCallback);
         }}
       >
         {t(($) => {

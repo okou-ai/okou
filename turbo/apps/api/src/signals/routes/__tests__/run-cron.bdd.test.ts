@@ -491,6 +491,8 @@ describe("SCHED-02 and OPS-01: email outbox drain cron", () => {
         subject,
         html: expect.stringContaining("Your data export is ready"),
       }),
+      // The retry replays the request the first attempt committed.
+      { idempotencyKey: `okou-email-outbox/v1/${item.id}` },
     );
     expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
     expect(resendSendCallsTo(to)).toBe(1);

@@ -19,7 +19,7 @@ import {
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
-import { expect, test } from "vitest";
+import { expect, test, describe, beforeEach, it } from "vitest";
 
 import {
   click,
@@ -329,7 +329,7 @@ function installAuthorizationPopup(): AuthorizationPopupMock {
   };
 }
 
-function useWideScreen(): void {
+function mockWideScreen(): void {
   context.mocks.browser.matchMedia((query) => {
     return (
       query === SIDEBAR_DESKTOP_MEDIA_QUERY || query === "(min-width: 1280px)"
@@ -387,36 +387,46 @@ async function expectSyncedPreview(): Promise<void> {
   });
 }
 
-test("Authorize the agent and sync an artifact to connected Google Drive", async () => {
-  useWideScreen();
-  const drive = installDriveMocks(context, "connected");
+describe("with a Drive artifact menu", () => {
+  async function prepareScenario() {
+    mockWideScreen();
+    const drive = installDriveMocks(context, "connected");
 
-  await setupPage({
-    context,
-    path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
-    host: "app.okou.ai",
+    await setupPage({
+      context,
+      path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
+      host: "app.okou.ai",
+    });
+
+    await openDriveArtifactMenu();
+    return { drive };
+  }
+  let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
+  beforeEach(async () => {
+    preparedScenario = await prepareScenario();
   });
+  it("authorize the agent and sync an artifact to connected Google Drive", async () => {
+    const { drive } = preparedScenario;
+    click(roleItemNamed("menuitem", "Connect Google Drive"));
 
-  await openDriveArtifactMenu();
-  click(roleItemNamed("menuitem", "Connect Google Drive"));
-
-  await waitFor(() => {
-    expect(drive.authorizationUpdates).toStrictEqual([
-      {
-        enabledConnectorSlugs: ["google-drive"],
-        operation: "add",
-      },
-    ]);
-    expect(drive.syncRequests).toStrictEqual([
-      { runId: NAVIGATION_ARTIFACT_RUN_ID, fileId: DRIVE_FILE_ID },
-    ]);
-    expect(drive.oauthRequests).toHaveLength(0);
+    await waitFor(() => {
+      expect(drive.authorizationUpdates).toStrictEqual([
+        {
+          enabledConnectorSlugs: ["google-drive"],
+          operation: "add",
+        },
+      ]);
+      expect(drive.syncRequests).toStrictEqual([
+        { runId: NAVIGATION_ARTIFACT_RUN_ID, fileId: DRIVE_FILE_ID },
+      ]);
+      expect(drive.oauthRequests).toHaveLength(0);
+    });
+    await expectSyncedPreview();
   });
-  await expectSyncedPreview();
 });
 
 test("Connect Google Drive and sync an artifact", async () => {
-  useWideScreen();
+  mockWideScreen();
   const authorizationPopup = installAuthorizationPopup();
   const drive = installDriveMocks(context, "not-connected");
 
@@ -457,7 +467,7 @@ test("Connect Google Drive and sync an artifact", async () => {
 });
 
 test("Reconnect the Google Drive account selected for the artifact", async () => {
-  useWideScreen();
+  mockWideScreen();
   const authorizationPopup = installAuthorizationPopup();
   const drive = installDriveMocks(context, "reconnect-required");
 
@@ -501,7 +511,7 @@ test("Reconnect the Google Drive account selected for the artifact", async () =>
 });
 
 test("Sync with the artifact's ready Drive account when the default needs attention", async () => {
-  useWideScreen();
+  mockWideScreen();
   const drive = installDriveMocks(context, "reconnect-required", {
     selectedAccountReady: true,
     agentAuthorized: true,
@@ -526,8 +536,8 @@ test("Sync with the artifact's ready Drive account when the default needs attent
   await expectSyncedPreview();
 });
 
-test("Keep a reopened artifact usable after dismissing Drive OAuth progress", async () => {
-  useWideScreen();
+test("Keep a reopened artifact usable after cancelling the remaining Drive setup", async () => {
+  mockWideScreen();
   const popup = installAuthorizationPopup();
   const syncing = context.mocks.deferred<void>();
   const sync = context.mocks.deferred<void>();
@@ -573,20 +583,17 @@ test("Keep a reopened artifact usable after dismissing Drive OAuth progress", as
   });
   expect(within(reopened).queryByRole("status")).toBeNull();
   expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
-  expect(popup.window.closed).toBeFalsy();
+  expect(popup.window.closed).toBeTruthy();
   click(buttonNamed("Download options", reopened));
   await waitFor(() => {
-    expect(roleItemNamed("menuitem", "Connect Google Drive")).toHaveAttribute(
-      "aria-disabled",
-      "true",
-    );
+    expect(
+      roleItemNamed("menuitem", "Connect Google Drive"),
+    ).not.toHaveAttribute("aria-disabled", "true");
   });
   await userEvent.setup().keyboard("{Escape}");
 
   sync.resolve();
-  await expect(
-    screen.findByText("Synced to Google Drive"),
-  ).resolves.toBeVisible();
+  expect(screen.queryByText("Synced to Google Drive")).toBeNull();
   expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
   expect(buttonNamed("Download options", reopened)).toBeEnabled();
 });
@@ -600,7 +607,7 @@ test.each([
 ] as const)(
   "Reuse the artifact preview for Drive OAuth ($state, dismissal: $dismiss)",
   async ({ state, dismiss }) => {
-    useWideScreen();
+    mockWideScreen();
     // Native outside-press needs complete pointer sequences to detect drags.
     const user = userEvent.setup();
     const popup = installAuthorizationPopup();
@@ -652,23 +659,27 @@ test.each([
         await user.click(viewport);
       }
     }
+    const cancelled = dismiss === "Close" || dismiss === "Escape";
     await waitFor(() => {
       expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(
-        dismiss ? 0 : 1,
+        cancelled ? 0 : 1,
       );
     });
-    expect(popup.window.closed).toBeFalsy();
+    expect(popup.window.closed).toBe(cancelled);
 
     drive.completeAuthorization();
+    expect(screen.queryByText("Synced to Google Drive")).toBeNull();
+    if (cancelled) {
+      sync.resolve();
+      return;
+    }
     await syncing.promise;
-    expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(
-      dismiss ? 0 : 1,
-    );
+    expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(1);
     expect(
       screen.queryAllByText(
         /Please wait while we finish setting up your connection/,
       ),
-    ).toHaveLength(dismiss ? 0 : 1);
+    ).toHaveLength(1);
     sync.resolve();
     await expect(
       screen.findByText("Synced to Google Drive"),
@@ -678,11 +689,9 @@ test.each([
         queryAllByRoleFast("button").filter((button) => {
           return button.getAttribute("aria-label") === "Download options";
         }),
-      ).toHaveLength(dismiss ? 0 : 1);
+      ).toHaveLength(1);
     });
-    expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(
-      dismiss ? 0 : 1,
-    );
+    expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(1);
     expect(
       screen.queryByText(
         /Please wait while we finish setting up your connection/,

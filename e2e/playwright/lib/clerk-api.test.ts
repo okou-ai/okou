@@ -19,6 +19,7 @@ import {
   generateTestEmail,
   parseClerkTestEmail,
   parseClerkTestOrganizationMetadata,
+  prepareOrganizationProvisioner,
   runnerTestAccounts,
 } from "./clerk-api";
 
@@ -57,6 +58,8 @@ test("creates and parses generation-scoped test identities", () => {
         claude: "pr-123+clerk_test+31500000000-2+runner-real-claude@vm0-e2e.ai",
         mockClaude:
           "pr-123+clerk_test+31500000000-2+runner-mock-claude@vm0-e2e.ai",
+        codexBuiltIn:
+          "pr-123+clerk_test+31500000000-2+runner-real-codex-built-in@vm0-e2e.ai",
       });
     },
   );
@@ -217,6 +220,74 @@ test("creates organizations with exact ownership metadata and retries a 5xx memb
   );
 });
 
+test("a new preparation observes changed Clerk creator-role settings", async () => {
+  let creatorRole = "org:admin";
+  const memberships = new Map<string, string>();
+  await withClerkServer(
+    (request, response) => {
+      if (
+        request.method === "GET" &&
+        request.url === "/v1/instance/organization_settings"
+      ) {
+        sendJson(response, 200, { enabled: true, creator_role: creatorRole });
+        return;
+      }
+      if (request.method === "POST" && request.url === "/v1/organizations") {
+        const id = `org_${memberships.size + 1}`;
+        memberships.set(id, creatorRole);
+        sendJson(response, 200, { id });
+        return;
+      }
+      if (
+        request.method === "PATCH" &&
+        request.url === "/v1/organizations/org_2/memberships/user_test"
+      ) {
+        assert.deepEqual(request.body, { role: "org:admin" });
+        memberships.set("org_2", "org:admin");
+        sendJson(response, 200, { role: "org:admin" });
+        return;
+      }
+      if (
+        request.method === "GET" &&
+        request.url === "/v1/organizations/org_2/memberships"
+      ) {
+        sendJson(response, 200, {
+          data: [
+            {
+              role: memberships.get("org_2"),
+              public_user_data: { user_id: "user_test" },
+            },
+          ],
+          total_count: 1,
+        });
+        return;
+      }
+      sendJson(response, 404, { errors: [] });
+    },
+    async (requests) => {
+      const first = await prepareOrganizationProvisioner();
+      assert.equal(await first("First", "user_test", "playwright"), "org_1");
+      creatorRole = "org:owner";
+      const second = await prepareOrganizationProvisioner();
+      assert.equal(await second("Second", "user_test", "playwright"), "org_2");
+      assert.equal(
+        countRequests(requests, "GET", "/v1/instance/organization_settings"),
+        2,
+      );
+      const response = await fetch(
+        `${process.env.CLERK_API_TEST_BASE_URL}/organizations/org_2/memberships`,
+      );
+      assert.equal(response.status, 200);
+      assert.deepEqual(await response.json(), {
+        data: [
+          { role: "org:admin", public_user_data: { user_id: "user_test" } },
+        ],
+        total_count: 1,
+      });
+    },
+  );
+});
+
 test("does not retry rate-limited Clerk lookups", async () => {
   await withClerkServer(
     (_request, response) => {
@@ -285,13 +356,13 @@ test("removes a newly created organization when membership setup fails", async (
   );
 });
 
-test("reconciles owner resources when setup loses the organization ID", async () => {
+test("retains an unknown organization and its owner until stale reconciliation", async () => {
   const email = "test-job+clerk_test+4000-2+playwright-deadbeef@vm0-e2e.ai";
   await withClerkServer(
     (request, response) => {
       const url = new URL(request.url, "http://clerk.test");
       if (request.method === "GET" && url.pathname === "/v1/users") {
-        sendJson(response, 200, [clerkUser("user_partial", email)]);
+        sendJson(response, 200, [clerkUser("user_partial", email, 1)]);
         return;
       }
       if (request.method === "GET" && url.pathname === "/v1/organizations") {
@@ -300,6 +371,7 @@ test("reconciles owner resources when setup loses the organization ID", async ()
             clerkOrganization(
               "org_partial",
               clerkOwner("test-job", "4000-2", "playwright"),
+              1,
             ),
           ],
           total_count: 1,
@@ -314,7 +386,9 @@ test("reconciles owner resources when setup loses the organization ID", async ()
       sendJson(response, 404, { errors: [] });
     },
     async (requests) => {
-      await deleteClerkTestOwnerResources(email, undefined, "playwright");
+      await deleteClerkTestOwnerResources(email, undefined);
+      assert.equal(requests.length, 0);
+      await cleanupStaleClerkTestResources(["playwright"], new Date(2));
 
       assert.deepEqual(
         requests

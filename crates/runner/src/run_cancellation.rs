@@ -7,6 +7,9 @@
 //! registry entry: it must stay owned until the run has been cleaned up, and
 //! callers must explicitly call [`RunCancellationRegistration::unregister`].
 //! Dropping the registration does not remove the entry.
+//! Unregister retires the exact handle, cancels its reconciliation work and
+//! waits for that work outside the registry lock. Retirement is independent
+//! of stop intent so cooperative recovery can still observe a hard escalation.
 //!
 //! ## Cancellation protocol
 //!
@@ -53,10 +56,12 @@
 //! [issue #30953](https://github.com/vm0-ai/vm0/issues/30953).
 
 use std::collections::HashMap;
+use std::future::Future;
 use std::sync::Arc;
 
 use tokio::sync::{Mutex, OwnedMutexGuard};
 use tokio_util::sync::CancellationToken;
+use tokio_util::task::TaskTracker;
 
 use crate::ids::RunId;
 
@@ -112,6 +117,13 @@ pub(crate) struct RunCancellationHandle {
     inner: Arc<RunCancellationInner>,
 }
 
+/// Monotonic stop intent: hard supersedes cooperative recovery.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) enum RunCancellationMode {
+    Cooperative,
+    Hard,
+}
+
 #[derive(Clone, Debug)]
 /// Cancellation tokens consumed by execution and recovery paths.
 ///
@@ -131,6 +143,8 @@ struct RunCancellationInner {
     cooperative_user_token: CancellationToken,
     hard_token: CancellationToken,
     transfer_gate: Arc<Mutex<()>>,
+    retired: CancellationToken,
+    reconciliation: std::sync::Mutex<Option<TaskTracker>>,
 }
 
 impl RunCancellationRegistry {
@@ -265,15 +279,24 @@ impl RunCancellationRegistration {
     /// run ID. Returns `false` for a stale registration or an entry already
     /// removed by an earlier call. A stale registration cannot remove a
     /// replacement registration for the same run ID.
+    /// Retirement cancels attached reconciliation work and gate waits; joining
+    /// that work does not retain the registry lock or acquire the transfer gate.
     pub(crate) async fn unregister(&self) -> bool {
-        let mut state = self.registry.inner.lock().await;
-        let is_current = state
-            .registrations
-            .get(&self.run_id)
-            .is_some_and(|handle| handle.same_registration(&self.handle));
-        if is_current {
-            state.registrations.remove(&self.run_id);
-        }
+        let is_current = {
+            let mut state = self.registry.inner.lock().await;
+            let is_current = state
+                .registrations
+                .get(&self.run_id)
+                .is_some_and(|handle| handle.same_registration(&self.handle));
+            // Serialize retirement with observer attachment before publishing a
+            // vacant Run ID. Never join work while holding the registry lock.
+            self.handle.retire();
+            if is_current {
+                state.registrations.remove(&self.run_id);
+            }
+            is_current
+        };
+        self.handle.wait_for_reconciliation().await;
         is_current
     }
 }
@@ -287,6 +310,8 @@ impl RunCancellationHandle {
                 cooperative_user_token: CancellationToken::new(),
                 hard_token: CancellationToken::new(),
                 transfer_gate: Arc::new(Mutex::new(())),
+                retired: CancellationToken::new(),
+                reconciliation: std::sync::Mutex::new(None),
             }),
         }
     }
@@ -321,11 +346,8 @@ impl RunCancellationHandle {
     /// the transfer gate. Returns `true` only for the first request of this
     /// cancellation class; a hard request is tracked independently.
     pub(crate) async fn request_cooperative_user_cancellation(&self) -> bool {
-        let _transfer_guard = self.inner.transfer_gate.lock().await;
-        let was_requested = self.inner.cooperative_user_token.is_cancelled();
-        self.inner.cooperative_user_token.cancel();
-        self.inner.token.cancel();
-        !was_requested
+        let _transfer_guard = self.transfer_guard().await;
+        self.apply_cancellation(RunCancellationMode::Cooperative)
     }
 
     /// Request hard cancellation.
@@ -334,11 +356,90 @@ impl RunCancellationHandle {
     /// gate. Returns `true` only for the first request of the hard cancellation
     /// class; a cooperative-user request is tracked independently.
     pub(crate) async fn request_hard_cancellation(&self) -> bool {
-        let _transfer_guard = self.inner.transfer_gate.lock().await;
-        let was_requested = self.inner.hard_token.is_cancelled();
-        self.inner.hard_token.cancel();
+        let _transfer_guard = self.transfer_guard().await;
+        self.apply_cancellation(RunCancellationMode::Hard)
+    }
+
+    /// Deliver an asynchronous API observation only while its captured
+    /// registration remains live. Keep existing Ably and LocalProvider entry
+    /// points unchanged; all paths share the same monotonic signal updates.
+    pub(crate) async fn request_reconciled_cancellation(&self, mode: RunCancellationMode) -> bool {
+        let Some(_transfer_guard) = self.live_transfer_guard().await else {
+            return false;
+        };
+        self.apply_cancellation(mode)
+    }
+
+    fn apply_cancellation(&self, mode: RunCancellationMode) -> bool {
+        let signal = match mode {
+            RunCancellationMode::Cooperative => &self.inner.cooperative_user_token,
+            RunCancellationMode::Hard => &self.inner.hard_token,
+        };
+        let was_requested = signal.is_cancelled();
+        signal.cancel();
         self.inner.token.cancel();
         !was_requested
+    }
+
+    /// Lifetime is independent of stop intent: cooperative recovery can still
+    /// receive a later hard escalation until explicit registration teardown.
+    pub(crate) fn retirement(&self) -> CancellationToken {
+        self.inner.retired.clone()
+    }
+
+    /// Attach at most one observer to this exact, still-live registration.
+    /// The provider tracker and registration tracker both own its completion.
+    pub(crate) fn start_reconciliation(
+        &self,
+        provider_tasks: &TaskTracker,
+        observer: impl Future<Output = ()> + Send + 'static,
+    ) -> bool {
+        let mut slot = self
+            .inner
+            .reconciliation
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        if self.inner.retired.is_cancelled() || slot.is_some() {
+            return false;
+        }
+        let tasks = TaskTracker::new();
+        tasks.spawn(provider_tasks.track_future(observer));
+        tasks.close();
+        *slot = Some(tasks);
+        true
+    }
+
+    fn retire(&self) {
+        let _slot = self
+            .inner
+            .reconciliation
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        self.inner.retired.cancel();
+    }
+
+    async fn wait_for_reconciliation(&self) {
+        let tasks = self
+            .inner
+            .reconciliation
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone();
+        if let Some(tasks) = tasks {
+            tasks.wait().await;
+        }
+    }
+
+    async fn live_transfer_guard(&self) -> Option<OwnedMutexGuard<()>> {
+        let guard = tokio::select! {
+            biased;
+            () = self.inner.retired.cancelled() => return None,
+            guard = self.transfer_guard() => guard,
+        };
+        // Retirement can win while the gate becomes ready. No asynchronous
+        // work or recursive gate acquisition occurs between this check and
+        // the monotonic signal update in reconciled delivery.
+        (!self.inner.retired.is_cancelled()).then_some(guard)
     }
 
     /// Wait for and hold the transfer gate across an ownership transition.

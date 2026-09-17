@@ -1,3 +1,4 @@
+import { recordGetStartedWorkflow } from "./get-started-workflow.service";
 import {
   modelSettingsSchema,
   type ModelSettings,
@@ -96,6 +97,10 @@ import {
 } from "./chat-thread-model.service";
 import { loadNewChatThreadMediaModels } from "./chat-thread-media-model.service";
 import { loadNewChatThreadModelSettings } from "./chat-thread-model-settings.service";
+import {
+  ORDINARY_CHAT_THREAD_PROVENANCE,
+  recordOfficialWorkflowThreadProvenance,
+} from "./morning-brief-thread-provenance.service";
 import { touchChatThreadLastMessageAt } from "./chat-event-shared.service";
 import {
   revokeChatEvent,
@@ -170,6 +175,12 @@ import {
   userPresentationTemplateVolumes,
   type PresentationTemplateVolume,
 } from "./presentation-template-data.service";
+import {
+  authorizedUserTemplates,
+  selectedUserTemplateIds,
+  userTemplateVolumes,
+  type MountedUserTemplate,
+} from "./user-template-data.service";
 import { resolveThreadGenerationTemplatePrompt } from "../../lib/thread-generation-template";
 import {
   logTemplateUsage,
@@ -274,6 +285,7 @@ interface NormalSendArgs {
   readonly timing?: ApiDispatchTimingCollector;
   readonly agentRunPreCreateSource?: AgentRunPreCreateSource;
   readonly requiredOfficialWorkflowIds?: readonly string[];
+  readonly getStartedWorkflowId?: string;
 }
 
 interface PreparedNormalSend {
@@ -1133,10 +1145,27 @@ async function resolveNormalSendFeatureSwitches(
  * The two things this message's own selections contribute to its run: the
  * template guidance block and the video options the composer sent with it.
  */
+/**
+ * The packages this run carries, from both catalogs.
+ *
+ * Both can be selected in one message while the tables are separate, and the
+ * run mounts whichever it was actually given. The two directories differ, so
+ * neither can overwrite the other.
+ */
+function templateVolumesFor(
+  authorized: AuthorizedGenerationTemplates,
+): readonly PresentationTemplateVolume[] {
+  return [
+    ...userPresentationTemplateVolumes(authorized.userPresentationTemplateIds),
+    ...userTemplateVolumes(authorized.userTemplates),
+  ];
+}
+
 function resolveSelectedTemplateContext(
   runtimeBody: RuntimeNormalSendBody,
   featureSwitches: NormalSendFeatureSwitches,
   mountedUserPresentationTemplateIds: readonly string[],
+  mountedUserTemplates: readonly MountedUserTemplate[],
 ): {
   readonly generationTemplatePrompt: string;
   readonly generationTemplateIdentities: readonly GenerationTemplateIdentity[];
@@ -1147,6 +1176,7 @@ function resolveSelectedTemplateContext(
     explicit: runtimeBody.primaryTemplate,
     explicitTemplates: runtimeBody.templates,
     mountedUserPresentationTemplateIds,
+    mountedUserTemplates,
   });
   return {
     generationTemplatePrompt: resolved.prompt,
@@ -1163,6 +1193,7 @@ function resolveSelectedTemplateContext(
  */
 interface AuthorizedGenerationTemplates {
   readonly userPresentationTemplateIds: readonly string[];
+  readonly userTemplates: readonly MountedUserTemplate[];
 }
 
 async function validateGenerationTemplatePrompt(
@@ -1172,15 +1203,32 @@ async function validateGenerationTemplatePrompt(
   featureSwitches: NormalSendFeatureSwitches,
 ): Promise<NormalSendFailure | AuthorizedGenerationTemplates> {
   if (generationTemplates.length === 0) {
-    return { userPresentationTemplateIds: [] };
+    return { userPresentationTemplateIds: [], userTemplates: [] };
   }
   // Syntax first: every selection this message names is a candidate mount, so
   // the builder can reject a malformed private id before consulting the database.
   const selectedIds = selectedUserPresentationTemplateIds(generationTemplates);
+  const selectedCustomIds = selectedUserTemplateIds(generationTemplates);
+  // The kind decides the framing sentence, so validation needs the rows even
+  // though authorization is checked again below. Reading them once and passing
+  // the result to both keeps the two from disagreeing.
+  const authorizedCustom = await authorizedUserTemplates(db, {
+    orgId: args.orgId,
+    userId: args.userId,
+    templateIds: selectedCustomIds,
+    enabled: isFeatureEnabled(
+      FeatureSwitchKey.CustomTemplates,
+      featureSwitches.featureSwitchContext,
+    ),
+  });
+  if (authorizedCustom.length !== selectedCustomIds.length) {
+    return badRequestMessage("Custom template not found");
+  }
   for (const template of generationTemplates) {
     const validation = buildGenerationTemplatePrompt(template, {
       introVideoEnabled: featureSwitches.introVideoEnabled,
       mountedUserPresentationTemplateIds: selectedIds,
+      mountedUserTemplates: authorizedCustom,
     });
     if (validation.status === "invalid") {
       return badRequestMessage(validation.message);
@@ -1194,7 +1242,10 @@ async function validateGenerationTemplatePrompt(
   if (authorizedIds.length !== selectedIds.length) {
     return badRequestMessage("Presentation template not found");
   }
-  return { userPresentationTemplateIds: authorizedIds };
+  return {
+    userPresentationTemplateIds: authorizedIds,
+    userTemplates: authorizedCustom,
+  };
 }
 
 async function updateUserModelPreference(
@@ -1544,6 +1595,10 @@ async function createChatThread(
           userId: args.userId,
           agentId: args.agentId,
           title: null,
+          // Only this successful INSERT may classify the thread. A conflicting
+          // client id resolves to the existing row below and keeps whatever
+          // classification that row already carries.
+          provenance: ORDINARY_CHAT_THREAD_PROVENANCE,
           modelProviderId: pinColumns.modelProviderId,
           modelProviderType: pinColumns.modelProviderType,
           modelProviderCredentialScope: pinColumns.modelProviderCredentialScope,
@@ -1598,6 +1653,7 @@ async function createChatThread(
         userId: args.userId,
         agentId: args.agentId,
         title: null,
+        provenance: ORDINARY_CHAT_THREAD_PROVENANCE,
         modelProviderId: pinColumns.modelProviderId,
         modelProviderType: pinColumns.modelProviderType,
         modelProviderCredentialScope: pinColumns.modelProviderCredentialScope,
@@ -1869,6 +1925,7 @@ interface AppendUnassociatedUserMessageParams {
   readonly agentRunSource: ChatAgentRunSourceAnnotation | null;
   readonly publicBrand: PublicBrand;
   readonly requiredOfficialWorkflowIds?: readonly string[];
+  readonly getStartedWorkflowId?: string;
 }
 
 async function resolveExistingUnassociatedClientEventId(
@@ -1920,6 +1977,45 @@ async function resolveExistingUnassociatedClientEventId(
   return resolution.kind === "available" ? { kind: "conflict" } : resolution;
 }
 
+/** Reject a server-owned Official Workflow claim that cannot be authoritative. */
+function assertOfficialSourceClaim(
+  params: AppendUnassociatedUserMessageParams,
+): void {
+  if (params.requiredOfficialWorkflowIds?.length === 0) {
+    throw new Error("Official Workflow source claim cannot be empty");
+  }
+  if (
+    params.requiredOfficialWorkflowIds !== undefined &&
+    params.triggerSource === "agent" &&
+    params.agentRunSource === null
+  ) {
+    throw new Error("Official agent queue source is missing its source Run");
+  }
+}
+
+/**
+ * Record what a server-owned Official Workflow claim means for this thread.
+ *
+ * The claim is the authority for what the input is, so classifying it here
+ * commits the thread's Morning Brief exclusion in the same transaction as the
+ * input that carries the brief. A duplicate client event id inserts nothing and
+ * therefore classifies nothing.
+ */
+async function recordOfficialSourceThreadProvenance(
+  tx: ChatThreadEventTransaction,
+  params: AppendUnassociatedUserMessageParams,
+): Promise<void> {
+  if (params.requiredOfficialWorkflowIds === undefined) {
+    return;
+  }
+  await recordOfficialWorkflowThreadProvenance(tx, {
+    chatThreadId: params.threadId,
+    userId: params.userId,
+    orgId: params.orgId,
+    workflowIds: params.requiredOfficialWorkflowIds,
+  });
+}
+
 async function appendUnassociatedUserMessageTransaction(
   tx: ChatThreadEventTransaction,
   params: AppendUnassociatedUserMessageParams,
@@ -1945,17 +2041,7 @@ async function appendUnassociatedUserMessageTransaction(
   );
 
   const explicitId = params.clientEventId ?? undefined;
-  const fileMetadata = params.attachFileMetadata;
-  if (params.requiredOfficialWorkflowIds?.length === 0) {
-    throw new Error("Official Workflow source claim cannot be empty");
-  }
-  if (
-    params.requiredOfficialWorkflowIds !== undefined &&
-    params.triggerSource === "agent" &&
-    params.agentRunSource === null
-  ) {
-    throw new Error("Official agent queue source is missing its source Run");
-  }
+  assertOfficialSourceClaim(params);
   const event: NewChatEvent = {
     ...(explicitId ? { id: explicitId } : {}),
     chatThreadId: params.threadId,
@@ -2002,6 +2088,16 @@ async function appendUnassociatedUserMessageTransaction(
     },
   );
   if (inserted) {
+    await recordOfficialSourceThreadProvenance(tx, params);
+    if (params.getStartedWorkflowId) {
+      await recordGetStartedWorkflow(tx, {
+        orgId: params.orgId,
+        userId: params.userId,
+        workflowId: params.getStartedWorkflowId,
+        sourceEventId: inserted.id,
+      });
+    }
+
     await measureApiDispatchTiming(
       params.timing,
       "api_dispatch_pre_create_agent_web_chat_queue_first_enqueue_register_input_assets",
@@ -2011,7 +2107,7 @@ async function appendUnassociatedUserMessageTransaction(
           chatThreadId: params.threadId,
           userId: params.userId,
           orgId: params.orgId,
-          files: fileMetadata ?? [],
+          files: params.attachFileMetadata ?? [],
         });
       },
     );
@@ -2983,6 +3079,7 @@ const prepareNormalSend$ = command(
       runtimeBody,
       featureSwitches,
       authorizedTemplates.userPresentationTemplateIds,
+      authorizedTemplates.userTemplates,
     );
     const persistedExplicitSelection = await persistTimedExplicitSelections(
       args,
@@ -3009,9 +3106,7 @@ const prepareNormalSend$ = command(
       generationTemplatePrompt: templateContext.generationTemplatePrompt,
       generationTemplateIdentities:
         templateContext.generationTemplateIdentities,
-      presentationTemplateVolumes: userPresentationTemplateVolumes(
-        authorizedTemplates.userPresentationTemplateIds,
-      ),
+      presentationTemplateVolumes: templateVolumesFor(authorizedTemplates),
       videoRunOptions: templateContext.videoRunOptions,
       computerUseHostGrant: computerAccess.computerUseHostGrant,
       persistedExplicitSelection,
@@ -3036,6 +3131,7 @@ async function queueUnassociatedNormalEvent(params: {
   readonly orgId: string;
   readonly publicBrand: PublicBrand;
   readonly requiredOfficialWorkflowIds?: readonly string[];
+  readonly getStartedWorkflowId?: string;
 }): Promise<{
   readonly response:
     | CreatedChatEventResponse
@@ -3059,6 +3155,7 @@ async function queueUnassociatedNormalEvent(params: {
     triggerSource: params.prepared.triggerSource,
     agentRunSource: params.prepared.agentRunSource,
     publicBrand: params.publicBrand,
+    getStartedWorkflowId: params.getStartedWorkflowId,
     ...(params.requiredOfficialWorkflowIds === undefined
       ? {}
       : {
@@ -3992,6 +4089,7 @@ const sendQueueFirstNormalEvent$ = command(
           ),
           orgId: args.orgId,
           publicBrand: args.publicBrand,
+          getStartedWorkflowId: args.getStartedWorkflowId,
           ...(args.requiredOfficialWorkflowIds === undefined
             ? {}
             : {

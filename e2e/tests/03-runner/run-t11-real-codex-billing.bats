@@ -7,7 +7,7 @@ load '../../helpers/runner-chat'
 load '../../helpers/runner-api'
 
 setup() {
-    local credentials="/tmp/e2e-api-credentials-runner-real-codex.json"
+    local credentials="/tmp/e2e-api-credentials-runner-real-codex-built-in.json"
     export E2E_API_TOKEN E2E_API_URL
     E2E_API_TOKEN="$(jq -er '.token | select(type == "string" and length > 0)' "$credentials")"
     E2E_API_URL="$(jq -er '.apiUrl | select(type == "string" and length > 0)' "$credentials")"
@@ -31,15 +31,14 @@ teardown() {
     echo "$output"
     assert_success
 
-    # The same dedicated Codex organization uses gpt-5.6-luna for BYOK steer
-    # coverage. Its independent gpt-6-astra policy remains built-in, so the
-    # two real-agent shards can run concurrently without changing org state.
+    # The dedicated built-in Codex account keeps Luna independent of the
+    # BYOK steering account without changing either runtime or model policy.
     run runner_api_curl "/api/model-policies"
     echo "$output"
     assert_success
     run jq -e '
         any(.policies[]?;
-            .model == "gpt-6-astra" and
+            .model == "gpt-5.6-luna" and
             .defaultProviderType == "built-in" and
             .credentialScope == "org" and
             .modelProviderId == null
@@ -49,7 +48,7 @@ teardown() {
     assert_success
 
     local prompt="Briefly confirm that the real Codex runner is responding."
-    run runner_chat_send "$AGENT_ID" "$prompt" "" "gpt-6-astra"
+    run runner_chat_send "$AGENT_ID" "$prompt" "" "gpt-5.6-luna"
     echo "$output"
     assert_success
     RUN_ID=$(jq -er '.runId | select(type == "string" and length > 0)' <<<"$output")
@@ -104,11 +103,11 @@ teardown() {
     run runner_e2e_wait_for_usage_event \
         "$THREAD_ID" \
         "$RUN_ID" \
-        "gpt-6-astra"
+        "gpt-5.6-luna"
     echo "$output"
     assert_success
 
-    run runner_e2e_wait_for_usage_record "$THREAD_ID" "gpt-6-astra"
+    run runner_e2e_wait_for_usage_record "$THREAD_ID" "gpt-5.6-luna"
     echo "$output"
     assert_success
     local usage_record="$output"
@@ -120,7 +119,7 @@ teardown() {
             any(.breakdown[]?;
                 .kind == "model" and
                 any(.providers[]?;
-                    .provider == "gpt-6-astra" and .credits > 0
+                    .provider == "gpt-5.6-luna" and .credits > 0
                 )
             )
         )

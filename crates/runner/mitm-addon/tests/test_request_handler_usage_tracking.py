@@ -117,12 +117,11 @@ async def _drain_request_task(
 
 
 @pytest.fixture
-def usage_pending_path(tmp_path: Path) -> Iterator[Path]:
-    pending_path = tmp_path / "usage-pending"
+def usage_control_root(tmp_path: Path) -> Iterator[Path]:
+    control_root = tmp_path / "delivery-control"
     usage.counters.reset_for_tests()
-    usage.set_pending_path(str(pending_path), usage_state_id="test-usage-state-id")
     try:
-        yield pending_path
+        yield control_root
     finally:
         usage.counters.reset_for_tests()
 
@@ -255,56 +254,48 @@ def _auth_url_rewrite_token_meta() -> dict[str, object]:
 
 
 def test_repeated_eligibility_checks_keep_one_usage_flow_in_flight(
-    usage_pending_path,
+    usage_control_root,
     real_flow,
 ):
     """One flow owns one drain unit across changed eligibility signals."""
     flow = _model_provider_tracking_flow(real_flow)
 
     terminal_usage.track_flow_if_needed(flow, True)
-    usage.write_pending_snapshot(flush_request_id="after-first-admission")
     assert_pending(
-        usage_pending_path,
+        usage_control_root,
         flows=1,
         buffered=0,
         reports=0,
-        flush_request_id="after-first-admission",
     )
 
     terminal_usage.track_flow_if_needed(flow, False)
-    usage.write_pending_snapshot(flush_request_id="after-repeated-admission")
     assert_pending(
-        usage_pending_path,
+        usage_control_root,
         flows=1,
         buffered=0,
         reports=0,
-        flush_request_id="after-repeated-admission",
     )
 
     terminal_usage.release_tracked_flow(flow)
-    usage.write_pending_snapshot(flush_request_id="after-release")
     assert_pending(
-        usage_pending_path,
+        usage_control_root,
         flows=0,
         buffered=0,
         reports=0,
-        flush_request_id="after-release",
     )
 
     terminal_usage.release_tracked_flow(flow)
-    usage.write_pending_snapshot(flush_request_id="after-repeated-release")
     assert_pending(
-        usage_pending_path,
+        usage_control_root,
         flows=0,
         buffered=0,
         reports=0,
-        flush_request_id="after-repeated-release",
     )
 
 
 async def test_billable_flow_is_tracked_before_responseheaders(
     tmp_path,
-    usage_pending_path,
+    usage_control_root,
     real_flow,
     mitm_ctx,
     fake_firewall_headers,
@@ -319,19 +310,17 @@ async def test_billable_flow_is_tracked_before_responseheaders(
     ):
         await mitm_addon.request(flow)
 
-    usage.write_pending_snapshot(flush_request_id="request-1")
     assert_pending(
-        usage_pending_path,
+        usage_control_root,
         flows=1,
         buffered=0,
         reports=0,
-        flush_request_id="request-1",
     )
 
 
 async def test_billable_flow_error_releases_tracking_after_request(
     tmp_path,
-    usage_pending_path,
+    usage_control_root,
     real_flow,
     mitm_ctx,
     fake_firewall_headers,
@@ -346,32 +335,28 @@ async def test_billable_flow_error_releases_tracking_after_request(
     ):
         await mitm_addon.request(flow)
 
-        usage.write_pending_snapshot(flush_request_id="request-1")
         assert_pending(
-            usage_pending_path,
+            usage_control_root,
             flows=1,
             buffered=0,
             reports=0,
-            flush_request_id="request-1",
         )
 
         flow.error = Error("connection reset")
         mitm_addon.error(flow)
 
     assert metadata_keys.HTTP_REQUEST_START_MONOTONIC not in flow.metadata
-    usage.write_pending_snapshot(flush_request_id="request-1")
     assert_pending(
-        usage_pending_path,
+        usage_control_root,
         flows=0,
         buffered=0,
         reports=0,
-        flush_request_id="request-1",
     )
 
 
 async def test_header_phase_streamed_billable_flow_error_releases_tracking(
     tmp_path,
-    usage_pending_path,
+    usage_control_root,
     real_flow,
     mitm_ctx,
     fake_firewall_headers,
@@ -389,25 +374,21 @@ async def test_header_phase_streamed_billable_flow_error_releases_tracking(
         requestheaders_result = mitm_addon.requestheaders(flow)
         await await_requestheaders_result(requestheaders_result)
 
-        usage.write_pending_snapshot(flush_request_id="request-headers")
         assert_pending(
-            usage_pending_path,
+            usage_control_root,
             flows=1,
             buffered=0,
             reports=0,
-            flush_request_id="request-headers",
         )
 
         flow.error = Error("connection reset")
         mitm_addon.error(flow)
 
-    usage.write_pending_snapshot(flush_request_id="after-error")
     assert_pending(
-        usage_pending_path,
+        usage_control_root,
         flows=0,
         buffered=0,
         reports=0,
-        flush_request_id="after-error",
     )
     assert metadata_keys.REQUEST_STREAM_BUFFER not in flow.metadata
     assert metadata_keys.REQUEST_STREAM_BUFFER_STATE not in flow.metadata
@@ -415,7 +396,7 @@ async def test_header_phase_streamed_billable_flow_error_releases_tracking(
 
 async def test_duplicate_terminal_hooks_do_not_double_decrement_usage_flow(
     tmp_path,
-    usage_pending_path,
+    usage_control_root,
     real_flow,
     mitm_ctx,
     fake_firewall_headers,
@@ -432,53 +413,45 @@ async def test_duplicate_terminal_hooks_do_not_double_decrement_usage_flow(
         await mitm_addon.request(first_flow)
         await mitm_addon.request(second_flow)
 
-        usage.write_pending_snapshot(flush_request_id="before-terminal-hooks")
         assert_pending(
-            usage_pending_path,
+            usage_control_root,
             flows=2,
             buffered=0,
             reports=0,
-            flush_request_id="before-terminal-hooks",
         )
 
         first_flow.response = mitm_addon.http.Response.make(200)
         mitm_addon.response(first_flow)
-        usage.write_pending_snapshot(flush_request_id="after-response")
         assert_pending(
-            usage_pending_path,
+            usage_control_root,
             flows=1,
             buffered=0,
             reports=0,
-            flush_request_id="after-response",
         )
 
         first_flow.error = Error("connection reset")
         mitm_addon.error(first_flow)
-        usage.write_pending_snapshot(flush_request_id="after-duplicate-error")
         assert_pending(
-            usage_pending_path,
+            usage_control_root,
             flows=1,
             buffered=0,
             reports=0,
-            flush_request_id="after-duplicate-error",
         )
 
         second_flow.response = mitm_addon.http.Response.make(200)
         mitm_addon.response(second_flow)
 
-    usage.write_pending_snapshot(flush_request_id="after-all-terminal-hooks")
     assert_pending(
-        usage_pending_path,
+        usage_control_root,
         flows=0,
         buffered=0,
         reports=0,
-        flush_request_id="after-all-terminal-hooks",
     )
 
 
 async def test_untracked_terminal_hook_does_not_decrement_other_usage_flow(
     tmp_path,
-    usage_pending_path,
+    usage_control_root,
     real_flow,
     mitm_ctx,
     fake_firewall_headers,
@@ -497,13 +470,11 @@ async def test_untracked_terminal_hook_does_not_decrement_other_usage_flow(
         fake_firewall_headers(),
     ):
         await mitm_addon.request(tracked_flow)
-        usage.write_pending_snapshot(flush_request_id="before-untracked-error")
         assert_pending(
-            usage_pending_path,
+            usage_control_root,
             flows=1,
             buffered=0,
             reports=0,
-            flush_request_id="before-untracked-error",
         )
 
     with (
@@ -512,42 +483,36 @@ async def test_untracked_terminal_hook_does_not_decrement_other_usage_flow(
     ):
         await mitm_addon.request(untracked_flow)
         assert untracked_flow.metadata[metadata_keys.FIREWALL_BILLABLE] is False
-        usage.write_pending_snapshot(flush_request_id="after-untracked-request")
         assert_pending(
-            usage_pending_path,
+            usage_control_root,
             flows=1,
             buffered=0,
             reports=0,
-            flush_request_id="after-untracked-request",
         )
 
         untracked_flow.error = Error("connection reset")
         mitm_addon.error(untracked_flow)
-        usage.write_pending_snapshot(flush_request_id="after-untracked-error")
         assert_pending(
-            usage_pending_path,
+            usage_control_root,
             flows=1,
             buffered=0,
             reports=0,
-            flush_request_id="after-untracked-error",
         )
 
     with mitm_ctx(registry_path=str(billable_reg_path), api_url="https://api.okou.ai"):
         tracked_flow.response = mitm_addon.http.Response.make(200)
         mitm_addon.response(tracked_flow)
 
-    usage.write_pending_snapshot(flush_request_id="after-tracked-response")
     assert_pending(
-        usage_pending_path,
+        usage_control_root,
         flows=0,
         buffered=0,
         reports=0,
-        flush_request_id="after-tracked-response",
     )
 
 
 async def test_local_firewall_error_leaves_usage_flows_drained(
-    tmp_path, usage_pending_path, real_flow, mitm_ctx
+    tmp_path, usage_control_root, real_flow, mitm_ctx
 ):
     """Local auth failures do not enqueue usage and must not leak drain counters."""
     reg_path = _write_billable_x_tracking_registry(
@@ -562,31 +527,27 @@ async def test_local_firewall_error_leaves_usage_flows_drained(
     assert flow.response is not None
     assert flow.response.status_code == 502
     assert flow.metadata[metadata_keys.FIREWALL_ERROR] == "auth_unavailable"
-    usage.write_pending_snapshot(flush_request_id="request-1")
     assert_pending(
-        usage_pending_path,
+        usage_control_root,
         flows=0,
         buffered=0,
         reports=0,
-        flush_request_id="request-1",
     )
 
 
 async def test_unexpected_request_exception_releases_tracking(
-    tmp_path, usage_pending_path, real_flow, mitm_ctx
+    tmp_path, usage_control_root, real_flow, mitm_ctx
 ):
     """Unexpected request-hook failures must not leak start-time or usage counters."""
     reg_path = _write_billable_x_tracking_registry(tmp_path)
     flow = _x_tracking_flow(real_flow)
 
     async def return_unexpected_auth_headers_after_tracking(*_args, **_kwargs):
-        usage.write_pending_snapshot(flush_request_id="during-auth-failure")
         assert_pending(
-            usage_pending_path,
+            usage_control_root,
             flows=1,
             buffered=0,
             reports=0,
-            flush_request_id="during-auth-failure",
         )
         return {
             "headers": _UnexpectedAuthHeaders({"Authorization": "Bearer resolved-token"}),
@@ -611,31 +572,27 @@ async def test_unexpected_request_exception_releases_tracking(
         "message": "Request processing failed",
     }
     assert metadata_keys.HTTP_REQUEST_START_MONOTONIC not in flow.metadata
-    usage.write_pending_snapshot(flush_request_id="request-1")
     assert_pending(
-        usage_pending_path,
+        usage_control_root,
         flows=0,
         buffered=0,
         reports=0,
-        flush_request_id="request-1",
     )
 
 
 async def test_request_cancellation_releases_tracking_during_auth_resolution(
-    tmp_path, usage_pending_path, real_flow, mitm_ctx
+    tmp_path, usage_control_root, real_flow, mitm_ctx
 ):
     """Cancelled auth resolution must not leak request-time usage tracking."""
     reg_path = _write_billable_x_tracking_registry(tmp_path)
     flow = _x_tracking_flow(real_flow)
 
     async def cancel_auth_after_tracking(*_args, **_kwargs):
-        usage.write_pending_snapshot(flush_request_id="during-auth-cancel")
         assert_pending(
-            usage_pending_path,
+            usage_control_root,
             flows=1,
             buffered=0,
             reports=0,
-            flush_request_id="during-auth-cancel",
         )
         raise asyncio.CancelledError
 
@@ -649,19 +606,17 @@ async def test_request_cancellation_releases_tracking_during_auth_resolution(
     assert flow.response is None
     assert metadata_keys.HTTP_REQUEST_START_MONOTONIC not in flow.metadata
     assert "_usage_flow_tracked" not in flow.metadata
-    usage.write_pending_snapshot(flush_request_id="request-1")
     assert_pending(
-        usage_pending_path,
+        usage_control_root,
         flows=0,
         buffered=0,
         reports=0,
-        flush_request_id="request-1",
     )
 
 
 async def test_non_billable_model_provider_is_not_tracked_before_responseheaders(
     tmp_path,
-    usage_pending_path,
+    usage_control_root,
     real_flow,
     mitm_ctx,
     fake_firewall_headers,
@@ -684,18 +639,16 @@ async def test_non_billable_model_provider_is_not_tracked_before_responseheaders
     assert flow.metadata[metadata_keys.FIREWALL_NAME] == _MODEL_PROVIDER_FIREWALL_NAME
     assert flow.metadata[metadata_keys.CLI_AGENT_TYPE] == "claude-code"
     assert flow.metadata[metadata_keys.FIREWALL_BILLABLE] is False
-    usage.write_pending_snapshot(flush_request_id="request-1")
     assert_pending(
-        usage_pending_path,
+        usage_control_root,
         flows=0,
         buffered=0,
         reports=0,
-        flush_request_id="request-1",
     )
 
 
 async def test_billable_model_provider_records_model_usage_provider(
-    tmp_path, usage_pending_path, real_flow, mitm_ctx, fake_firewall_headers
+    tmp_path, usage_control_root, real_flow, mitm_ctx, fake_firewall_headers
 ):
     """Registry modelUsageProvider is available to model usage reporting."""
     reg_path = _write_model_provider_tracking_registry(
@@ -720,19 +673,17 @@ async def test_billable_model_provider_records_model_usage_provider(
     assert flow.metadata[metadata_keys.CLI_AGENT_TYPE] == "codex"
     assert flow.metadata[metadata_keys.FIREWALL_BILLABLE] is True
     assert flow.metadata[metadata_keys.MODEL_USAGE_PROVIDER] == "claude-opus-4-6"
-    usage.write_pending_snapshot(flush_request_id="request-1")
     assert_pending(
-        usage_pending_path,
+        usage_control_root,
         flows=1,
         buffered=0,
         reports=0,
-        flush_request_id="request-1",
     )
 
 
 async def test_billable_model_provider_rejects_uninspectable_response_and_drains_tracking(
     tmp_path,
-    usage_pending_path,
+    usage_control_root,
     real_flow,
     mitm_ctx,
     fake_firewall_headers,
@@ -757,13 +708,11 @@ async def test_billable_model_provider_rejects_uninspectable_response_and_drains
             flow.metadata[metadata_keys.RESPONSE_ENCODING_NEGOTIATION]
             == "preserved_client_constraints"
         )
-        usage.write_pending_snapshot(flush_request_id="before-response")
         assert_pending(
-            usage_pending_path,
+            usage_control_root,
             flows=1,
             buffered=0,
             reports=0,
-            flush_request_id="before-response",
         )
 
         flow.response = http.Response.make(
@@ -796,18 +745,16 @@ async def test_billable_model_provider_rejects_uninspectable_response_and_drains
         assert usage.flush_usage_events(trigger="test") == 0
 
     assert usage_webhook_server.request_count == 0
-    usage.write_pending_snapshot(flush_request_id="after-response")
     assert_pending(
-        usage_pending_path,
+        usage_control_root,
         flows=0,
         buffered=0,
         reports=0,
-        flush_request_id="after-response",
     )
 
 
 async def test_billable_auth_url_rewrite_flow_drains_after_response(
-    tmp_path, usage_pending_path, real_flow, mitm_ctx
+    tmp_path, usage_control_root, real_flow, mitm_ctx
 ):
     """Inline auth.base responses still pair request-time tracking with response()."""
     reg_path = _write_billable_auth_url_rewrite_registry(tmp_path)
@@ -840,13 +787,11 @@ async def test_billable_auth_url_rewrite_flow_drains_after_response(
 
             assert upstream.resolve_calls == ["real.example.com"]
             assert upstream.connect_calls == [("93.184.216.34", 443)]
-            usage.write_pending_snapshot(flush_request_id="request-1")
             assert_pending(
-                usage_pending_path,
+                usage_control_root,
                 flows=1,
                 buffered=0,
                 reports=0,
-                flush_request_id="request-1",
             )
 
             release_forward.set()
@@ -859,29 +804,25 @@ async def test_billable_auth_url_rewrite_flow_drains_after_response(
         assert flow.response.status_code == 200
         assert flow.response.content == b'{"delivered":true}'
         assert flow.metadata[metadata_keys.AUTH_URL_REWRITE] is True
-        usage.write_pending_snapshot(flush_request_id="request-1")
         assert_pending(
-            usage_pending_path,
+            usage_control_root,
             flows=1,
             buffered=0,
             reports=0,
-            flush_request_id="request-1",
         )
 
         mitm_addon.response(flow)
 
-    usage.write_pending_snapshot(flush_request_id="request-1")
     assert_pending(
-        usage_pending_path,
+        usage_control_root,
         flows=0,
         buffered=0,
         reports=0,
-        flush_request_id="request-1",
     )
 
 
 async def test_billable_auth_url_rewrite_forward_failure_releases_tracking(
-    tmp_path, usage_pending_path, real_flow, mitm_ctx
+    tmp_path, usage_control_root, real_flow, mitm_ctx
 ):
     """Failed inline auth.base forwarding is a local response and drains immediately."""
     reg_path = _write_billable_auth_url_rewrite_registry(tmp_path)
@@ -907,18 +848,16 @@ async def test_billable_auth_url_rewrite_forward_failure_releases_tracking(
     assert flow.response.status_code == 502
     assert flow.metadata[metadata_keys.FIREWALL_ERROR] == "url_rewrite_forward_failed"
     assert metadata_keys.AUTH_URL_REWRITE not in flow.metadata
-    usage.write_pending_snapshot(flush_request_id="request-1")
     assert_pending(
-        usage_pending_path,
+        usage_control_root,
         flows=0,
         buffered=0,
         reports=0,
-        flush_request_id="request-1",
     )
 
 
 async def test_billable_auth_url_rewrite_forward_cancellation_releases_tracking(
-    tmp_path, usage_pending_path, real_flow, mitm_ctx
+    tmp_path, usage_control_root, real_flow, mitm_ctx
 ):
     """Cancelled inline auth.base forwarding drains request-time tracking."""
     reg_path = _write_billable_auth_url_rewrite_registry(tmp_path)
@@ -949,13 +888,11 @@ async def test_billable_auth_url_rewrite_forward_cancellation_releases_tracking(
         try:
             await _wait_for_forward_start(forward_started, request_task)
 
-            usage.write_pending_snapshot(flush_request_id="during-forward-cancel")
             assert_pending(
-                usage_pending_path,
+                usage_control_root,
                 flows=1,
                 buffered=0,
                 reports=0,
-                flush_request_id="during-forward-cancel",
             )
 
             request_task.cancel()
@@ -975,11 +912,9 @@ async def test_billable_auth_url_rewrite_forward_cancellation_releases_tracking(
     assert metadata_keys.AUTH_URL_REWRITE not in flow.metadata
     assert metadata_keys.HTTP_REQUEST_START_MONOTONIC not in flow.metadata
     assert "_usage_flow_tracked" not in flow.metadata
-    usage.write_pending_snapshot(flush_request_id="request-1")
     assert_pending(
-        usage_pending_path,
+        usage_control_root,
         flows=0,
         buffered=0,
         reports=0,
-        flush_request_id="request-1",
     )

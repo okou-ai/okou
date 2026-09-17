@@ -41,6 +41,9 @@ import {
   postUsageAllowanceInvoicePaid,
 } from "./helpers/stripe-billing-webhook";
 import { createRouteMocks } from "./helpers/route-test";
+import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
+import { mockClerkMembership } from "./helpers/api-bdd-clerk";
+import { ClerkTransportTestError } from "./helpers/clerk-transport-error";
 import { usageRecordRoutes } from "../usage-record";
 
 const context = testContext();
@@ -57,6 +60,7 @@ interface AuthHeaders {
 }
 
 interface RawRequestOptions {
+  readonly authHeaders?: AuthHeaders;
   readonly instanceSignal?: AbortSignal;
   readonly requestSignal?: AbortSignal;
   readonly usagePricingResolution?: UsagePricingFixture["resolution"];
@@ -103,7 +107,7 @@ async function rawWebSearchRequest(
   const request = new Request("http://api.test/api/web-search", {
     method: "POST",
     headers: {
-      ...authenticate(actor),
+      ...(options.authHeaders ?? authenticate(actor)),
       "content-type": "application/json",
     },
     body: JSON.stringify(body),
@@ -207,6 +211,194 @@ function providerResponse() {
 }
 
 describe("okou web-search route", () => {
+  it.each([
+    ["transport", [new ClerkTransportTestError()]],
+    [
+      "transport then 5xx",
+      [new ClerkTransportTestError(), new ClerkTransportTestError(521)],
+    ],
+    [
+      "5xx then transport",
+      [new ClerkTransportTestError(521), new ClerkTransportTestError()],
+    ],
+  ])(
+    "recovers a %s Clerk read before searching and charging once",
+    async (_name, failures) => {
+      const actor = createBddApi(context).user();
+      const { token } =
+        await createAuthOrgAgentsBddApi(context).createCliToken(actor);
+      configureProvider();
+      const pricing = await setupConfiguredWebSearchPricing();
+      await fundActor(actor);
+      const beforeCredits = await credits(actor);
+      mockClerkMembership(context, actor, "org:admin");
+      const membershipRead =
+        context.mocks.clerk.users.getOrganizationMembershipList;
+      for (const failure of failures) {
+        membershipRead.mockRejectedValueOnce(failure);
+      }
+      context.mocks.signalTimers.delay.mockResolvedValue(undefined);
+      let providerRequests = 0;
+      server.use(
+        http.post(PERPLEXITY_SEARCH_URL, () => {
+          providerRequests += 1;
+          return HttpResponse.json(providerResponse());
+        }),
+      );
+
+      const response = await rawWebSearchRequest(null, defaultRequest(), {
+        authHeaders: { authorization: `Bearer ${token}` },
+        usagePricingResolution: pricing.resolution,
+      });
+
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({
+        creditsCharged: 5,
+      });
+      expect(providerRequests).toBe(1);
+      expect(beforeCredits - (await credits(actor))).toBe(5);
+      expect(membershipRead).toHaveBeenCalledTimes(failures.length + 1);
+      expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ["transport", new ClerkTransportTestError()],
+    ["5xx then transport", new ClerkTransportTestError(521)],
+  ])(
+    "returns 503 after a bounded %s Clerk failure without searching or charging",
+    async (_name, firstFailure) => {
+      const actor = createBddApi(context).user();
+      const { token } =
+        await createAuthOrgAgentsBddApi(context).createCliToken(actor);
+      configureProvider();
+      const pricing = await setupConfiguredWebSearchPricing();
+      await fundActor(actor);
+      const beforeCredits = await credits(actor);
+      const membershipRead =
+        context.mocks.clerk.users.getOrganizationMembershipList;
+      membershipRead
+        .mockRejectedValueOnce(firstFailure)
+        .mockRejectedValue(new ClerkTransportTestError());
+      context.mocks.signalTimers.delay.mockResolvedValue(undefined);
+      let providerRequests = 0;
+      server.use(
+        http.post(PERPLEXITY_SEARCH_URL, () => {
+          providerRequests += 1;
+          return HttpResponse.json(providerResponse());
+        }),
+      );
+
+      const response = await rawWebSearchRequest(null, defaultRequest(), {
+        authHeaders: { authorization: `Bearer ${token}` },
+        usagePricingResolution: pricing.resolution,
+      });
+
+      expect(response.status).toBe(503);
+      expect(response.headers.get("Cache-Control")).toBe("no-store");
+      await expect(response.json()).resolves.toStrictEqual({
+        error: {
+          message: "Authentication provider is temporarily unavailable",
+          code: "PROVIDER_UNAVAILABLE",
+        },
+      });
+      expect(membershipRead).toHaveBeenCalledTimes(3);
+      expect(providerRequests).toBe(0);
+      await expect(credits(actor)).resolves.toBe(beforeCredits);
+      expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
+
+      // Unavailability does not revoke the same PAT or mark its identity missing.
+      mockClerkMembership(context, actor, "org:admin");
+      const recovered = await rawWebSearchRequest(null, defaultRequest(), {
+        authHeaders: { authorization: `Bearer ${token}` },
+        usagePricingResolution: pricing.resolution,
+      });
+      expect(recovered.status).toBe(200);
+    },
+  );
+
+  it.each([
+    [
+      "SDK parsing failure",
+      new ClerkTransportTestError(undefined, [
+        { code: "unexpected_error", message: "Unexpected token in JSON" },
+      ]),
+    ],
+    [
+      "unknown SDK code",
+      new ClerkTransportTestError(undefined, [
+        { code: "unknown_error", message: "fetch failed" },
+      ]),
+    ],
+    [
+      "multiple SDK errors",
+      new ClerkTransportTestError(undefined, [
+        { code: "unexpected_error", message: "fetch failed" },
+        { code: "unknown_error", message: "other failure" },
+      ]),
+    ],
+    ["malformed SDK errors", new ClerkTransportTestError(undefined, null)],
+    ["null status", new ClerkTransportTestError(null)],
+    ["malformed status", new ClerkTransportTestError("503")],
+    ["non-Clerk failure", new Error("fetch failed")],
+    ["forbidden response", new ClerkTransportTestError(403)],
+    ["rate limit", new ClerkTransportTestError(429)],
+  ])(
+    "does not turn %s into a retryable transport error",
+    async (_name, failure) => {
+      const actor = createBddApi(context).user();
+      const { token } =
+        await createAuthOrgAgentsBddApi(context).createCliToken(actor);
+      const membershipRead =
+        context.mocks.clerk.users.getOrganizationMembershipList;
+      membershipRead.mockRejectedValue(failure);
+      context.mocks.signalTimers.delay.mockResolvedValue(undefined);
+
+      const response = await rawWebSearchRequest(null, defaultRequest(), {
+        authHeaders: { authorization: `Bearer ${token}` },
+      });
+
+      expect(response.status).toBe(500);
+      await expect(response.json()).resolves.toStrictEqual({
+        error: "Internal server error",
+      });
+      expect(membershipRead).toHaveBeenCalledOnce();
+      expect(context.mocks.sentry.captureException).toHaveBeenCalledWith(
+        failure,
+      );
+    },
+  );
+
+  it("stops transport recovery when the API instance is cancelled", async () => {
+    const actor = createBddApi(context).user();
+    const { token } =
+      await createAuthOrgAgentsBddApi(context).createCliToken(actor);
+    const controller = new AbortController();
+    const retryStarted = createDeferredPromise<void>(context.signal);
+    const membershipRead =
+      context.mocks.clerk.users.getOrganizationMembershipList;
+    membershipRead.mockRejectedValue(new ClerkTransportTestError());
+    context.mocks.signalTimers.delay.mockImplementation((_ms, options) => {
+      const signal = options?.signal;
+      if (!signal) {
+        throw new Error("Expected the Clerk retry signal");
+      }
+      retryStarted.resolve();
+      return createDeferredPromise<void>(signal).promise;
+    });
+
+    const pending = rawWebSearchRequest(null, defaultRequest(), {
+      authHeaders: { authorization: `Bearer ${token}` },
+      instanceSignal: controller.signal,
+    });
+    await retryStarted.promise;
+    controller.abort(new DOMException("Search cancelled", "AbortError"));
+    const response = await pending;
+
+    expect(response.status).toBe(500);
+    expect(membershipRead).toHaveBeenCalledOnce();
+  });
+
   it("rejects agent tokens without web-search:read capability", async () => {
     const actor = createBddApi(context).user();
     if (!actor.orgId) {

@@ -11,6 +11,7 @@ import type {
 } from "./composer-create.ts";
 import { createComposerVisualizationSignals } from "./composer-visualization.ts";
 import { onRef } from "../utils.ts";
+import { observeRail, type RailTravel } from "./rail-travel.ts";
 
 export type ComposerTask =
   | ComposerCreateMode
@@ -30,22 +31,11 @@ export type ComposerTemplateTask = Exclude<
   "presentation"
 >;
 
-/** What a row reports after laying out: whether either pager has anywhere to go. */
-interface RailTravel {
-  readonly canScrollBack: boolean;
-  readonly canScrollForward: boolean;
-}
-
-/** How far the rail can still travel in each direction, right now. */
-export function measureRail(element: HTMLElement): RailTravel {
-  // A scroll position is fractional under zoom, so a whole pixel of slack
-  // keeps a rail that is visually at its end from claiming otherwise.
-  const remaining =
-    element.scrollWidth - element.clientWidth - element.scrollLeft;
-  return {
-    canScrollBack: element.scrollLeft > 1,
-    canScrollForward: remaining > 1,
-  };
+/** A general task owns the chip row itself; the rest resolve to a create mode. */
+function isComposerGeneralTask(
+  task: ComposerTask | null,
+): task is "workflow" | "website" | "visualization" {
+  return task === "workflow" || task === "website" || task === "visualization";
 }
 
 export function createComposerTaskChipsSignals(
@@ -60,7 +50,7 @@ export function createComposerTaskChipsSignals(
   >(null);
   const visualization = createComposerVisualizationSignals();
   const task$ = computed((get): ComposerTask | null => {
-    if (!get(enabled$) || get(create.choosing$)) {
+    if (!get(enabled$)) {
       return null;
     }
     return get(create.mode$) ?? get(internalGeneralTask$);
@@ -72,28 +62,40 @@ export function createComposerTaskChipsSignals(
     workflowVisible$,
     workflowActions,
   );
+  const applyTask$ = command(({ set }, task: ComposerTask | null) => {
+    set(workflows.close$);
+    if (task === null || isComposerGeneralTask(task)) {
+      set(internalGeneralTask$, task);
+      set(create.setMode$, null);
+      return;
+    }
+    set(internalGeneralTask$, null);
+    set(create.selectCommand$, task);
+  });
+  /** The chip row toggles: choosing the task already showing clears it. */
   const selectTask$ = command(({ get, set }, task: ComposerTask | null) => {
     if (!get(enabled$)) {
       return;
     }
-    set(workflows.close$);
-    const next = get(task$) === task ? null : task;
-    set(
-      internalGeneralTask$,
-      next === "workflow" || next === "website" || next === "visualization"
-        ? next
-        : null,
-    );
-    if (
-      next === null ||
-      next === "workflow" ||
-      next === "website" ||
-      next === "visualization"
-    ) {
-      set(create.setMode$, null);
-    } else {
-      set(create.selectCommand$, next);
+    set(applyTask$, get(task$) === task ? null : task);
+  });
+  /**
+   * Opens a task without the chip's toggle. A caller outside the row states
+   * what the member has just started rather than pressing the chip, so
+   * repeating it has to leave the surface the last one opened standing.
+   *
+   * A create mode is its own surface and carries the slash panel's own switch,
+   * so it opens whether or not the chips are on. A general task has only the
+   * chip row to live in, so there it waits for that switch.
+   */
+  const openTask$ = command(({ get, set }, task: ComposerTask) => {
+    if (get(task$) === task) {
+      return;
     }
+    if (isComposerGeneralTask(task) && !get(enabled$)) {
+      return;
+    }
+    set(applyTask$, task);
   });
   const internalIdeaPages$ = state({
     image: 0,
@@ -115,11 +117,9 @@ export function createComposerTaskChipsSignals(
     },
   );
   /**
-   * How far a rail can still travel, per rail. A rail packs its items
-   * continuously and pages by one visible width, so how many fit on a page is
-   * a layout outcome rather than a constant; only the row itself can report
-   * it. A rail that has never reported is assumed to fit, which hides both
-   * pagers until the first measurement proves otherwise.
+   * How far a rail can still travel, per rail. A rail that has never reported
+   * is assumed to fit, which hides both pagers until a measurement proves
+   * otherwise.
    */
   const internalRailTravel$ = state<Readonly<Record<string, RailTravel>>>({});
   const railTravel$ = computed((get) => {
@@ -137,38 +137,15 @@ export function createComposerTaskChipsSignals(
       set(internalRailTravel$, { ...get(internalRailTravel$), [rail]: travel });
     },
   );
-  /**
-   * Owns one row's DOM lifecycle. The row reports its own travel because only
-   * layout knows it: the rail's width and its items' widths both move the end,
-   * and neither is settled until the browser has laid them out. The size
-   * observer covers a resized column and an item that changes width; the child
-   * observer covers a catalog that finishes loading after the row mounted, such
-   * as a presentation shelf's uploaded decks.
-   */
+  /** Owns one row's DOM lifecycle; the observers report what layout knows. */
   const bindRail$ = onRef(
     command(({ set }, element: HTMLElement, signal: AbortSignal) => {
       const rail = element.dataset.rail;
       if (!rail) {
         return;
       }
-      const report = () => {
-        set(setRailTravel$, rail, measureRail(element));
-      };
-      const size = new ResizeObserver(report);
-      const observeAll = () => {
-        size.disconnect();
-        size.observe(element);
-        for (const child of element.children) {
-          size.observe(child);
-        }
-        report();
-      };
-      observeAll();
-      const children = new MutationObserver(observeAll);
-      children.observe(element, { childList: true });
-      signal.addEventListener("abort", () => {
-        size.disconnect();
-        children.disconnect();
+      observeRail(element, signal, (travel) => {
+        set(setRailTravel$, rail, travel);
       });
     }),
   );
@@ -176,6 +153,7 @@ export function createComposerTaskChipsSignals(
     enabled$,
     task$,
     selectTask$,
+    openTask$,
     ideaPages$,
     nextIdeas$,
     railTravel$,

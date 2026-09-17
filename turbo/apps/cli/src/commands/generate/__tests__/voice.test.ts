@@ -13,6 +13,10 @@ import chalk from "chalk";
 import { server } from "../../../mocks/server";
 import { generateCommand } from "../index";
 import { voiceCommand } from "../voice";
+import {
+  GENERATION_ARTIFACT_ID,
+  serveGenerationVisibility,
+} from "./artifact-visibility-fixtures";
 
 const SPEECH_URL = "http://localhost:3000/api/voice-io/speech";
 const VOICE_RESULT = {
@@ -40,11 +44,49 @@ describe("okou generate voice command", () => {
     chalk.level = 0;
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
+    voiceCommand.setOptionValue("visibility", undefined);
   });
 
   afterEach(() => {
     mockConsoleLog.mockClear();
     mockConsoleError.mockClear();
+  });
+
+  it("shares generated audio with its organization and returns the selected URL", async () => {
+    vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
+    const artifact = serveGenerationVisibility("voice.wav", "org");
+    server.use(
+      http.post(`${SPEECH_URL}/private`, async ({ request }) => {
+        expect(await request.json()).toMatchObject({
+          text: "Hello from Okou",
+          requirePrivateArtifact: true,
+        });
+        return HttpResponse.json({
+          ...VOICE_RESULT,
+          id: GENERATION_ARTIFACT_ID,
+          url: artifact.reference,
+        });
+      }),
+    );
+
+    await generateCommand.parseAsync([
+      "node",
+      "cli",
+      "voice",
+      "--text",
+      "Hello from Okou",
+      "--visibility",
+      "org",
+      "--json",
+    ]);
+    expect(
+      JSON.parse(mockConsoleLog.mock.calls.flat().join("\n")),
+    ).toMatchObject({
+      url: artifact.url,
+      ownerUrl: artifact.ownerUrl,
+      visibility: "org",
+      previewMarkdownBlock: `![${VOICE_RESULT.filename}](<${artifact.url}>)`,
+    });
   });
 
   it("should use Okou branding in voice help", () => {
@@ -102,32 +144,40 @@ describe("okou generate voice command", () => {
     expect(stdout).toContain("Credits charged: 1");
   });
 
-  it("should print the complete voice result as one JSON object", async () => {
-    server.use(
-      http.post(SPEECH_URL, () => {
-        return HttpResponse.json(VOICE_RESULT);
-      }),
-    );
+  it.each([VOICE_RESULT.url, "/artifacts/abcxyz1234.wav"])(
+    "prints the complete voice result for %s as one JSON object",
+    async (url) => {
+      vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
+      const expectedUrl = url.startsWith("/artifacts/")
+        ? `https://app.okou.ai${url}`
+        : url;
+      server.use(
+        http.post(SPEECH_URL, () => {
+          return HttpResponse.json({ ...VOICE_RESULT, url });
+        }),
+      );
 
-    await generateCommand.parseAsync([
-      "node",
-      "cli",
-      "voice",
-      "--text",
-      "Hello from Okou",
-      "--json",
-    ]);
+      await generateCommand.parseAsync([
+        "node",
+        "cli",
+        "voice",
+        "--text",
+        "Hello from Okou",
+        "--json",
+      ]);
 
-    expect(mockConsoleLog.mock.calls).toHaveLength(1);
-    expect(JSON.parse(String(mockConsoleLog.mock.calls[0]?.[0]))).toEqual({
-      ...VOICE_RESULT,
-      inlineMarkdownLink: `[${VOICE_RESULT.filename}](<${VOICE_RESULT.url}>)`,
-      previewMarkdownBlock: `![${VOICE_RESULT.filename}](<${VOICE_RESULT.url}>)`,
-      artifactPresentationContext: expect.stringContaining(
-        "outside code fences",
-      ),
-    });
-  });
+      expect(mockConsoleLog.mock.calls).toHaveLength(1);
+      expect(JSON.parse(String(mockConsoleLog.mock.calls[0]?.[0]))).toEqual({
+        ...VOICE_RESULT,
+        url: expectedUrl,
+        inlineMarkdownLink: `[${VOICE_RESULT.filename}](<${expectedUrl}>)`,
+        previewMarkdownBlock: `![${VOICE_RESULT.filename}](<${expectedUrl}>)`,
+        artifactPresentationContext: expect.stringContaining(
+          "outside code fences",
+        ),
+      });
+    },
+  );
 
   it.each([
     ["provider listing", ["voice", "--json"]],

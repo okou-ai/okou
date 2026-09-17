@@ -1,4 +1,5 @@
 import type { PiAgentModelConfig } from "./types";
+import type { KnownRunFailureReason } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import type { PiApiModelFailureDiagnostic } from "./api-failure";
 import type { PiApiFirstTurnOwnership } from "./provider-ownership";
 import type { PiPreparationObserver } from "./preparation-timing";
@@ -124,7 +125,7 @@ interface PiApiAssistantMessageFields {
   readonly model: string;
   readonly responseId?: string;
   /** Content-free product classification; native provider diagnostics stay private. */
-  readonly failureReason?: "reconnect_required" | "usage_limit";
+  readonly failureReason?: KnownRunFailureReason;
   readonly timestamp: number;
   readonly usage: {
     readonly input: number;
@@ -200,13 +201,27 @@ export interface PiApiFirstTurnResult {
   readonly assistantMessage: PiApiAssistantMessage;
   readonly handoffRequired: boolean;
   readonly observedServiceTier: PiObservedServiceTier;
+  /** Missing on reconstructed historical results; never infer it from SDK zeros. */
+  readonly usageObservation?: PiApiUsageObservation;
   readonly sessionJsonl: string;
+}
+
+/** Disjoint provider quantities; null means the provider did not establish a value. */
+export interface PiApiUsageObservation {
+  readonly tokens: {
+    readonly input: number | null;
+    readonly cacheRead: number | null;
+    readonly cacheCreation: number | null;
+    readonly output: number | null;
+  };
+  readonly coverage: "complete" | "partial" | "unavailable";
 }
 
 export interface PiSessionInspection {
   readonly sessionId: string;
   readonly messageCount: number;
   readonly hasPendingToolCalls: boolean;
+  readonly pendingToolIds: readonly string[];
   readonly isSettledCheckpoint: boolean;
 }
 

@@ -139,6 +139,7 @@ impl EventPayloadEnvelope {
         &self,
         sequence: u32,
         event: &mut Value,
+        masker: &SecretMasker,
     ) -> Result<Option<Bytes>, AgentError> {
         if !self.pi_memory_citation_transport {
             return Ok(None);
@@ -151,9 +152,26 @@ impl EventPayloadEnvelope {
             .get_mut("message")
             .and_then(Value::as_object_mut)
             .and_then(|message| message.remove("memoryCitation"));
-        let Some(citation) = message_citation.or(event_citation) else {
+        let Some(mut citation) = message_citation.or(event_citation) else {
             return Ok(None);
         };
+        // Citation fields are a system-owned schema, unlike arbitrary event keys.
+        // A redacted UUID is neither valid transport nor usable provenance.
+        if let Some(rollout_ids) = citation.get_mut("rolloutIds").and_then(Value::as_array_mut) {
+            rollout_ids.retain(|id| id.as_str().is_some_and(|id| masker.mask_string(id) == id));
+        }
+        masker.mask_string_values(&mut citation);
+        if citation
+            .get("entries")
+            .and_then(Value::as_array)
+            .is_some_and(Vec::is_empty)
+            && citation
+                .get("rolloutIds")
+                .and_then(Value::as_array)
+                .is_some_and(Vec::is_empty)
+        {
+            return Ok(None);
+        }
         Ok(Some(Bytes::from(serde_json::to_vec(&json!({
             "sequenceNumber": sequence,
             "citation": citation,
@@ -342,7 +360,20 @@ fn codex_error_failure_reason(error: Option<&Value>) -> Option<FailureReason> {
         return Some(FailureReason::ReconnectRequired);
     }
     if let Some(failure_reason) = codex_error_info_failure_reason(error) {
+        // A generic SDK server variant must not erase explicit provider queue
+        // expiry. Specific credential/quota/context/policy evidence still wins.
+        if matches!(
+            failure_reason,
+            FailureReason::ProviderServerError | FailureReason::ProviderOverloaded
+        ) && crate::provider_failure::provider_error_reason(error)
+            == Some(FailureReason::ProviderQueueTimeout)
+        {
+            return Some(FailureReason::ProviderQueueTimeout);
+        }
         return Some(failure_reason);
+    }
+    if let Some(reason) = crate::provider_failure::provider_error_reason(error) {
+        return Some(reason);
     }
     if codex_error_message(Some(error))
         .as_deref()
@@ -376,6 +407,13 @@ fn codex_error_info_failure_reason(error: &Value) -> Option<FailureReason> {
         "contextWindowExceeded" => Some(FailureReason::ContextWindowExceeded),
         "rateLimitExceeded" => Some(FailureReason::ProviderRateLimited),
         "serverOverloaded" => Some(FailureReason::ProviderOverloaded),
+        "internalServerError" => Some(FailureReason::ProviderServerError),
+        "unauthorized" => Some(FailureReason::InvalidCredentials),
+        "responseTooManyFailedAttempts" => error
+            .pointer("/codex_error_info/responseTooManyFailedAttempts/httpStatusCode")
+            .and_then(Value::as_u64)
+            .and_then(|status| u16::try_from(status).ok())
+            .and_then(crate::provider_failure::http_failure_reason),
         "responseStreamConnectionFailed" | "responseStreamDisconnected" => {
             Some(FailureReason::ResponseConnectionLost)
         }
@@ -655,7 +693,7 @@ mod tests {
         )
         .expect("Pi event envelope must be constructible");
         let citation = envelope
-            .take_private_citation(7, &mut assistant)
+            .take_private_citation(7, &mut assistant, &SecretMasker::from_raw(""))
             .expect("structured citation must be serializable")
             .expect("fixture must carry one structured citation");
         let events = [assistant, result].map(|event| {
@@ -853,6 +891,61 @@ mod tests {
                 failure_reason: None,
             })
         );
+    }
+
+    #[test]
+    fn codex_terminal_events_preserve_provider_codes_before_text_projection() {
+        for (code, reason) in [
+            (
+                "context_length_exceeded",
+                FailureReason::ContextWindowExceeded,
+            ),
+            ("rate_limit_exceeded", FailureReason::ProviderRateLimited),
+            ("server_error", FailureReason::ProviderServerError),
+            (
+                "insufficient_quota",
+                FailureReason::ProviderInsufficientCredits,
+            ),
+            ("model_not_found", FailureReason::UnsupportedModel),
+        ] {
+            let error = serde_json::json!({"code": code, "message": "provider request failed"});
+            for event in [
+                serde_json::json!({"type": "error", "message": "provider request failed", "error": error}),
+                serde_json::json!({"type": "turn.completed", "turn": {"status": "failed", "error": error}}),
+            ] {
+                let diagnostic =
+                    masked_codex_failure_diagnostic(&event, &SecretMasker::from_raw("")).unwrap();
+                assert_eq!(diagnostic.failure_reason, Some(reason));
+                assert_eq!(diagnostic.message, "provider request failed");
+            }
+            let success = serde_json::json!({"type": "turn.completed", "turn": {"status": "completed", "error": error}});
+            assert!(
+                masked_codex_failure_diagnostic(&success, &SecretMasker::from_raw("")).is_none()
+            );
+        }
+    }
+
+    #[test]
+    fn codex_retry_exhaustion_uses_only_its_structured_http_status() {
+        for (status, reason) in [
+            (429, Some(FailureReason::ProviderRateLimited)),
+            (503, Some(FailureReason::ProviderServerError)),
+            (529, Some(FailureReason::ProviderOverloaded)),
+            (401, None),
+            (999, None),
+        ] {
+            let event = serde_json::json!({"type": "turn.completed", "turn": {
+                "status": "failed", "error": {"message": "request failed", "codex_error_info": {
+                    "responseTooManyFailedAttempts": {"httpStatusCode": status}
+                }}
+            }});
+            assert_eq!(
+                masked_codex_failure_diagnostic(&event, &SecretMasker::from_raw(""))
+                    .unwrap()
+                    .failure_reason,
+                reason
+            );
+        }
     }
 
     #[test]

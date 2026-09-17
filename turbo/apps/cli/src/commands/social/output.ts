@@ -107,9 +107,10 @@ Export:
   CSV requires --output and --select on posts/search/comments. Columns follow --select order.
   CSV uses UTF-8 and CRLF, quotes strings, and encodes nested values as compact JSON.
   Missing CSV fields are empty cells; null is literal null. Spreadsheet-active strings gain a leading apostrophe.
-  File exports print a metadata-only JSON receipt; retain it alongside CSV for errors, limits, and credits.
-  --stream cannot be combined with --output, --select, --format, or --overwrite.
-  Local files need okou web upload-file for delivery in web chat.`,
+  File exports print a metadata-only JSON receipt; retain it for status, source limits, warnings, errors, language when available, and consumed credits, especially on partial results.
+  --stream cannot be combined with --output, --select, --format, or --overwrite. Existing files require explicit --overwrite.
+  If export formatting or writing fails after retrieval, the full result is recovered on stdout. Save it without repeating the billed Social request.
+  Output paths are local to this runtime. Use okou web upload-file to deliver the file in web chat.`,
     );
   if (mode === "transcript") {
     command.addHelpText(

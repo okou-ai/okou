@@ -7,20 +7,16 @@ import {
   socialKitResponseSchema,
 } from "@okouai/api-contracts/contracts/social";
 import { command } from "ccstate";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import { setResHeader$ } from "../context/hono";
-import { db$ } from "../external/db";
 import { waitUntil } from "../context/wait-until";
 import { notFound } from "../../lib/error";
 import type { RouteEntry } from "../route-entry";
 import { socialKitRequest$ } from "../services/social.service";
 import { socialStatus$ } from "../services/social-status.service";
-import { loadUserFeatureSwitchContext } from "../services/feature-switches.service";
 import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 import {
   createSocialKitDownload$,
@@ -39,21 +35,6 @@ const socialStatusQuery$ = queryOf(socialContract.status);
 const socialStatusInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     set(setResHeader$, "Cache-Control", "private, no-store");
-    const auth = get(organizationAuthContext$);
-    const featureContext = await loadUserFeatureSwitchContext(
-      get(db$),
-      auth.orgId,
-      auth.userId,
-    );
-    signal.throwIfAborted();
-    if (!isFeatureEnabled(FeatureSwitchKey.SocialStatus, featureContext)) {
-      return {
-        status: 403 as const,
-        body: {
-          error: { code: "FORBIDDEN", message: "Social status is not enabled" },
-        },
-      };
-    }
     const { platform } = get(socialStatusQuery$);
     return {
       status: 200 as const,

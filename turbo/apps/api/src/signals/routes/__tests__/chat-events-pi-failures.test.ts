@@ -66,6 +66,99 @@ const {
 } = createChatEventsFixture(context);
 
 describe("CHAT-02: model-first provider policies", () => {
+  it("keeps explicit subscription allowance terminal instead of retrying its HTTP 429", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    await configureSubscriptionPiModel(actor);
+    mockPiResourceArchiveDownloads();
+    const objects = mockPiCheckpointObjectStore();
+    let calls = 0;
+    server.use(
+      http.post("https://chatgpt.com/backend-api/codex/responses", () => {
+        calls += 1;
+        return HttpResponse.json(
+          {
+            error: {
+              code: "usage_limit_reached",
+              message: "Subscription allowance exhausted",
+            },
+          },
+          { status: 429 },
+        );
+      }),
+    );
+    const run = await sendChatRun(actor, {
+      agentId,
+      model: "gpt-5.6-terra",
+      prompt: "respect the subscription allowance",
+      runOptions: { codexServiceTier: "fast" },
+    });
+    await waitForRunStatus(actor, run.runId, "failed");
+    await flushWaitUntilForTest();
+    const events = (await chat.listThreadEvents(actor, run.threadId)).events;
+    expect(
+      events.filter((event) => {
+        return (
+          event.runId === run.runId &&
+          isChatRunTerminalEventType(event.eventType)
+        );
+      }),
+    ).toMatchObject([
+      { eventType: "run.failed", failureReason: "usage_limit" },
+    ]);
+    expectNoPiApiFirstTurnArtifacts(run.runId, objects);
+    await api.heartbeatRunner(runnerGroup);
+    await api.requestClaimRunnerJob(true, run.runId, [404]);
+    expect(calls).toBe(1);
+  });
+
+  it.each([200, 503])(
+    "keeps explicit queue expiry terminal after HTTP %s without a Sandbox retry",
+    async (status) => {
+      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      mockPiResourceArchiveDownloads();
+      const message =
+        "We were unable to start processing your request within the 900-second timeout limit. Please try again later.";
+      let modelCalls = 0;
+      server.use(
+        http.post("https://api.openai.com/v1/responses", () => {
+          modelCalls++;
+          const error = { code: "server_error", message };
+          return status === 200
+            ? nativeCodexSseResponse(
+                `data: ${JSON.stringify({ type: "response.failed", response: { status: "failed", error } })}\n\n`,
+              )
+            : HttpResponse.json({ error }, { status });
+        }),
+      );
+      const checkpointObjects = mockPiCheckpointObjectStore();
+      const { anchor, anchorClaim, run, usagePricingResolution } =
+        await queueCapabilityProvenPiRun({
+          actor,
+          agentId,
+          runnerGroup,
+          prompt: "stop after the provider expires its queue",
+        });
+      await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders, {
+        usagePricingResolution,
+      });
+      await waitForRunStatus(actor, run.runId, "failed");
+      await flushWaitUntilForTest();
+      expect(modelCalls).toBe(1);
+      expectNoPiApiFirstTurnArtifacts(run.runId, checkpointObjects);
+      expect(
+        (await chat.listThreadEvents(actor, run.threadId)).events,
+      ).toContainEqual(
+        expect.objectContaining({
+          runId: run.runId,
+          eventType: "run.failed",
+          failureReason: "provider_queue_timeout",
+        }),
+      );
+      await api.requestClaimRunnerJob(true, run.runId, [404]);
+    },
+    90_000,
+  );
+
   it("lets canonical cancellation win before provider ownership without API artifacts", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     await publishPendingPiInstructions(actor, agentId);
@@ -546,6 +639,17 @@ describe("CHAT-02: model-first provider policies", () => {
       });
       expect(requests).toHaveLength(1);
       expect(
+        (await chat.listThreadEvents(actor, run.threadId)).events.filter(
+          (event) => {
+            return (
+              event.runId === run.runId && event.eventType === "run.failed"
+            );
+          },
+        ),
+      ).toStrictEqual([
+        expect.objectContaining({ failureReason: "output_token_limit" }),
+      ]);
+      expect(
         consumedAgentEvents.filter((event) => {
           return event.runId === run.runId;
         }),
@@ -952,6 +1056,7 @@ describe("CHAT-02: model-first provider policies", () => {
   }, 90_000);
 
   it.each([
+    { name: "HTTP 429", status: 429, category: "http_error" },
     { name: "HTTP 522", status: 522, category: "http_error" },
     { name: "HTTP 525", status: 525, category: "http_error" },
     { name: "unknown model failure", status: 200, category: "unknown" },
@@ -1292,7 +1397,7 @@ describe("CHAT-02: model-first provider policies", () => {
               )
             : HttpResponse.json(
                 { error: "private model sentinel" },
-                { status: 522 },
+                { status: 429 },
               );
         }),
       );
@@ -1393,6 +1498,15 @@ describe("CHAT-02: model-first provider policies", () => {
           );
         }),
       ).toMatchObject([{ eventType: "run.failed" }]);
+      expect(
+        events
+          .filter((event) => {
+            return event.eventType === "run.failed";
+          })
+          .find((event) => {
+            return event.runId === run.runId;
+          })?.failureReason,
+      ).toBeUndefined();
       expect(
         checkpointObjects.has(
           `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${run.runId}/manifest.json`,

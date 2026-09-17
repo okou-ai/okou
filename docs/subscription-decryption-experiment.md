@@ -1,5 +1,9 @@
 # Subscription decryption experiment (#34376)
 
+For the subsequent canonical/mirror comparison experiment, see
+[paired subscription equivalence](subscription-equivalence-experiment.md).
+The results below describe the earlier materialization-only change.
+
 ## Decision and boundary
 
 Retain two-wide joined batches in `credentialValues`. This reduces serial

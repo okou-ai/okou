@@ -107,6 +107,7 @@ export default [
       "ccstate/no-abort-swallower": "error",
       "ccstate/no-react-class-component": "error",
       "ccstate/prefer-ui-components": "error",
+      "ccstate/menu-row-height": "error",
       "ccstate/require-accept": "error",
       "ccstate/require-client-signal": "error",
       "ccstate/command-async-signal": "error",

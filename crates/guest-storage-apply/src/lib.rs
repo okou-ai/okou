@@ -24,6 +24,11 @@
 //! reports required target preparation and downloads rather than
 //! transaction-wide success for every filesystem change.
 //!
+//! Cached ordinary storages and artifacts preserve their entire mount roots.
+//! Cached instructions preserve only the managed instruction filenames needed
+//! for normalization, allowing changed or removed skills beneath the same
+//! framework home to be cleaned independently.
+//!
 //! ## Archive metadata limits
 //!
 //! Each tar member has a 1 MiB budget for encoded metadata, including headers,
@@ -38,6 +43,7 @@
 
 mod archive;
 mod cleanup;
+mod connection_observation;
 mod download;
 mod error;
 mod files;
@@ -108,7 +114,10 @@ pub fn run_storage_files_bytes(input: &[u8]) -> bool {
         let manifest = manifest::parse(json)
             .map_err(|_| std::io::Error::other("invalid storage manifest JSON"))?;
         let files = guest_contracts::storage_files::decode(payload)?;
-        files::validate_bindings(&manifest, &files)?;
+        guest_contracts::storage_files::validate_bindings(
+            &manifest,
+            files.iter().map(|group| group.mount_path.as_str()),
+        )?;
         Ok::<_, std::io::Error>((manifest, files))
     })();
     match parsed {

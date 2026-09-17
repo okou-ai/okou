@@ -9,7 +9,7 @@ import {
 } from "../lib/api/domains/billing";
 import { withErrorHandler } from "../lib/command/with-error-handler";
 import { decodeSandboxTokenPayload } from "../lib/api/sandbox-token";
-import { getPlatformOrigin } from "./doctor/platform-url";
+import { getPlatformOrigin } from "../lib/platform-url";
 import {
   currentPlanAllowsVideo,
   currentPlanCanBuyCredits,

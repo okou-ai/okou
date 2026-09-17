@@ -439,6 +439,18 @@
     }
   },
   "artifacts": {
+    "access": {
+      "backToBrand": "Kembali ke {{brandName}}",
+      "description": "Artefak ini mungkin bersifat pribadi atau sudah tidak tersedia.",
+      "help": "Minta orang yang membagikan tautan ini untuk memeriksa akses.",
+      "signedInAs": "Masuk sebagai {{email}}",
+      "signIn": "Masuk",
+      "signInFailed": "Tidak dapat membuka halaman masuk. Silakan coba lagi.",
+      "switchAccount": "Ganti akun",
+      "switchAccountFailed": "Tidak dapat membuka pemilih akun. Silakan coba lagi.",
+      "title": "Anda tidak dapat melihat artefak ini",
+      "tryAgain": "Coba lagi"
+    },
     "actions": {
       "backToAll": "Kembali ke semua artefak",
       "backToArtifacts": "Kembali ke artefak",
@@ -579,9 +591,20 @@
       "videoLabel": "Pratinjau video untuk {{filename}}"
     },
     "sharing": {
-      "shareOrganization": "Bagikan ke organisasi",
-      "sharePublic": "Bagikan ke publik",
-      "unavailable": "Artefak ini tidak tersedia atau Anda tidak memiliki akses."
+      "accessLabel": "Siapa yang dapat mengakses",
+      "copyLink": "Salin tautan",
+      "loadFailed": "Gagal memuat izin",
+      "loadingPermissions": "Memuat izin",
+      "onlyMe": "Hanya saya",
+      "onlyMeDescription": "Hanya Anda yang dapat melihat artefak ini",
+      "organization": "Organisasi",
+      "organizationDescription": "Siapa pun di {{organization}} yang memiliki tautan",
+      "permissionsUpdated": "Akses diperbarui",
+      "publicAccess": "Akses publik",
+      "publicDescription": "Siapa pun yang memiliki tautan dapat melihat",
+      "retry": "Coba lagi",
+      "savedAutomatically": "Perubahan disimpan otomatis",
+      "saving": "Menyimpan…"
     },
     "sidebar": {
       "openSharedConversation": "Buka percakapan yang dibagikan",
@@ -620,6 +643,9 @@
       "importDeckHint": "(.pptx, .ppt, .pdf)",
       "importedSlides_one": "{{count}} slide",
       "importedSlides_other": "{{count}} slide",
+      "importFile": "Impor file Anda sendiri",
+      "importFileHint": "({{formats}})",
+      "importUnsupported": "Pilih file {{formats}} untuk membuat templat.",
       "introVideo": "Video intro",
       "introVideoUnavailable": "Template video ini tidak lagi tersedia. Hapus untuk mengirim pesan Anda.",
       "multiAccent": "Multi-aksen",
@@ -686,11 +712,6 @@
       "websitePreview": "pratinjau template website {{title}}",
       "workflow": "Alur kerja",
       "workflowCatalog": {
-        "alert-metric-moves-slack": {
-          "description": "Pantau metrik utama Anda dan beri peringatan ke Slack saat salah satunya berubah tajam.",
-          "shortDescription": "Beri tahu Slack saat metrik kunci bergerak tajam.",
-          "title": "Beri peringatan saat metrik berubah"
-        },
         "auto-inbox-label": {
           "description": "Buat alur kerja yang berjalan saat label Gmail dipasang dan menangani email berlabel itu.",
           "shortDescription": "Jalankan alur kerja saat Anda memasang label Gmail.",
@@ -700,21 +721,6 @@
           "description": "Tinjau PR berlabel siap-merge, tunggu CI, lalu merge dan kirim ke Slack.",
           "shortDescription": "Merge PR yang siap begitu CI lolos.",
           "title": "Auto-merge PR GitHub"
-        },
-        "blog-posts-to-x": {
-          "description": "Ubah tiap artikel blog baru menjadi versi sosial di antrean Buffer.",
-          "shortDescription": "Ubah tiap artikel blog baru jadi post sosial.",
-          "title": "Ubah posting blog menjadi posting sosial"
-        },
-        "build-weekly-deck-gamma": {
-          "description": "Ubah metrik minggu ini menjadi deck siap presentasi di Gamma.",
-          "shortDescription": "Ubah metrik minggu ini jadi deck Gamma.",
-          "title": "Buat deck mingguan di Gamma"
-        },
-        "business-review-gamma": {
-          "description": "Ubah metrik bulan ini menjadi deck tinjauan bisnis di Gamma.",
-          "shortDescription": "Ubah metrik bulan ini jadi deck review.",
-          "title": "Buat tinjauan bisnis di Gamma"
         },
         "catch-calendar-conflicts": {
           "description": "Pindai kalender Anda untuk jadwal ganda dan beri tahu lebih awal.",
@@ -736,30 +742,15 @@
           "shortDescription": "Posting titik drop-off terbesar di funnel signup.",
           "title": "Periksa alur pendaftaran PostHog"
         },
-        "clickup-slack-standup": {
-          "description": "Ambil tugas ClickUp tiap pagi dan posting ringkasan standup tim ke Slack.",
-          "shortDescription": "Posting standup pagi dari tugas ClickUp.",
-          "title": "Standup ClickUp di Slack"
-        },
         "compare-google-ads-last-month": {
           "description": "Bandingkan belanja iklan dan ROAS dengan bulan lalu, lalu tandai anomalinya di Slack.",
           "shortDescription": "Bandingkan belanja iklan dan ROAS dengan bulan lalu.",
           "title": "Bandingkan Google Ads vs bulan lalu"
         },
-        "competitive-intel-monitor": {
-          "description": "Pantau perubahan harga dan fitur di situs kompetitor, simpan temuannya di Notion, dan beri tahu Slack.",
-          "shortDescription": "Catat perubahan harga kompetitor di Notion.",
-          "title": "Pemantau kompetitor"
-        },
-        "daily-company-brief-slack": {
-          "description": "Tarik produk, pertumbuhan, dan pendapatan ke ringkasan harian di Slack.",
-          "shortDescription": "Satukan produk, pertumbuhan, dan pendapatan jadi ringkasan.",
-          "title": "Kirim ringkasan harian perusahaan ke Slack"
-        },
-        "daily-industry-news-slack": {
-          "description": "Kumpulkan berita industri relevan hari ini menjadi ringkasan Slack.",
-          "shortDescription": "Rangkum berita industri hari itu untuk Slack.",
-          "title": "Kirim berita industri harian ke Slack"
+        "creator-shortlist-to-sheets": {
+          "description": "Nilai kreator yang Anda pertimbangkan dari jangkauan dan engagement, diurutkan dalam satu sheet.",
+          "shortDescription": "Urutkan kreator berdasarkan jangkauan dan engagement.",
+          "title": "Susun daftar pendek kreator di Google Sheets"
         },
         "daily-standup-report": {
           "description": "Kumpulkan sinyal produk dan engineering tiap pagi, buat laporan singkat, lalu posting ke Slack.",
@@ -776,11 +767,6 @@
           "shortDescription": "Rangkum update terbaru jadi satu newsletter.",
           "title": "Buat draf newsletter di Mailchimp"
         },
-        "draft-replies-notion-faq": {
-          "description": "Buat draf balasan tiket berdasarkan FAQ Notion Anda.",
-          "shortDescription": "Susun balasan tiket dari FAQ Notion Anda.",
-          "title": "Buat draf balasan dari FAQ Notion Anda"
-        },
         "feedback-router": {
           "description": "Pantau satu kanal Slack dan salurkan feedback produk ke Notion lengkap dengan label dan penanggung jawab.",
           "shortDescription": "Salurkan feedback produk dari Slack ke Notion.",
@@ -795,11 +781,6 @@
           "description": "Urutkan error baru di Sentry berdasarkan dampak ke pengguna dan ubah yang terburuk menjadi issue GitHub.",
           "shortDescription": "Catat error Sentry terparah sebagai isu GitHub.",
           "title": "Ubah crash Sentry menjadi issue GitHub"
-        },
-        "flag-figma-designs-no-task": {
-          "description": "Tandai desain Figma yang belum memiliki tugas Linear terhubung.",
-          "shortDescription": "Tandai desain Figma yang belum punya tugas Linear.",
-          "title": "Tandai desain Figma tanpa tugas"
         },
         "flagged-gmail-todoist-tasks": {
           "description": "Ubah email yang Anda tandai menjadi tugas Todoist secara otomatis.",
@@ -816,11 +797,6 @@
           "shortDescription": "Kumpulkan pull request yang di-merge jadi laporan.",
           "title": "Ringkasan PR GitHub"
         },
-        "gmail-followups-auto": {
-          "description": "Temukan kontak yang belum membalas dan susun tindak lanjut berikutnya.",
-          "shortDescription": "Susun follow-up untuk kontak yang belum membalas.",
-          "title": "Kirim follow-up Gmail otomatis"
-        },
         "gmail-reconnect-reminders": {
           "description": "Tampilkan kontak penting yang sudah lama belum Anda email.",
           "shortDescription": "Tampilkan kontak yang lama tak Anda hubungi.",
@@ -831,25 +807,10 @@
           "shortDescription": "Angkat email yang butuh perhatian Anda.",
           "title": "Sorot email penting di Gmail"
         },
-        "investor-update-google-docs": {
-          "description": "Kumpulkan metrik dan sorotan menjadi update investor di Docs.",
-          "shortDescription": "Rangkai metrik jadi update untuk investor.",
-          "title": "Susun update investor di Google Docs"
-        },
-        "log-gong-calls-hubspot": {
-          "description": "Ambil catatan dan langkah berikutnya dari panggilan Gong ke deal HubSpot.",
-          "shortDescription": "Tarik catatan panggilan Gong ke deal HubSpot.",
-          "title": "Catat panggilan Gong ke HubSpot"
-        },
-        "meeting-notes-asana-tasks": {
-          "description": "Ubah catatan rapat menjadi tugas Asana yang ditugaskan dan diberi tenggat.",
-          "shortDescription": "Ubah catatan rapat jadi tugas di Asana.",
-          "title": "Ubah catatan rapat menjadi tugas Asana"
-        },
-        "meeting-recaps-slack": {
-          "description": "Bagikan rangkuman berisi keputusan dan item aksi setelah setiap rapat.",
-          "shortDescription": "Bagikan keputusan dan tindak lanjut usai rapat.",
-          "title": "Dapatkan rangkuman rapat di Slack"
+        "keyword-ranks-to-sheets": {
+          "description": "Periksa peringkat halaman Anda untuk kata kunci yang penting dan catat perubahannya.",
+          "shortDescription": "Catat perubahan peringkat setiap minggu.",
+          "title": "Lacak peringkat kata kunci di Google Sheets"
         },
         "morning-brief": {
           "description": "Ubah update Gmail, Calendar, dan Notion jadi rencana harian singkat di Slack.",
@@ -861,20 +822,10 @@
           "shortDescription": "Tambahkan pengirim email tak dikenal ke HubSpot.",
           "title": "Tambahkan kontak Gmail baru ke HubSpot"
         },
-        "onboard-new-hires-asana": {
-          "description": "Buat checklist tugas onboarding untuk setiap karyawan baru di Asana.",
-          "shortDescription": "Buat checklist onboarding untuk tiap karyawan baru.",
-          "title": "Onboard karyawan baru di Asana"
-        },
         "personal-weekly-digest": {
           "description": "Rangkum aktivitas GitHub, Gmail, dan Calendar jadi satu update mingguan di Slack.",
           "shortDescription": "Rangkum pekan Anda dari GitHub dan Gmail.",
           "title": "Ringkasan mingguan pribadi"
-        },
-        "post-daily-metrics-slack": {
-          "description": "Posting jumlah pengunjung, signup, dan aktivasi harian ke Slack.",
-          "shortDescription": "Posting pengunjung dan signup harian ke Slack.",
-          "title": "Posting metrik harian ke Slack"
         },
         "post-release-notes-slack": {
           "description": "Susun changelog dari pekerjaan yang baru dirilis dan posting ke Slack.",
@@ -886,35 +837,10 @@
           "shortDescription": "Kirim ringkasan persiapan sebelum rapat eksternal.",
           "title": "Siapkan meeting Google Calendar"
         },
-        "publish-scheduled-posts-buffer": {
-          "description": "Terbitkan konten terjadwal hari itu dan antrekan post sosialnya.",
-          "shortDescription": "Terbitkan post sosial yang dijadwalkan hari ini.",
-          "title": "Publikasikan posting terjadwal ke Buffer"
-        },
         "research-calendar-meetings": {
           "description": "Teliti orang yang akan Anda temui sebelum setiap event kalender.",
           "shortDescription": "Teliti orang yang akan Anda temui sebelum acara.",
           "title": "Teliti meeting kalender Anda"
-        },
-        "research-new-signups-apollo": {
-          "description": "Teliti setiap pendaftaran baru dan kirim snapshot singkat.",
-          "shortDescription": "Teliti tiap signup baru dan posting ringkasannya.",
-          "title": "Teliti pendaftaran baru"
-        },
-        "revenuecat-subscription-digest": {
-          "description": "Lacak langganan di Sheets dan beri tahu Slack saat pola churn atau pembatalan berubah.",
-          "shortDescription": "Lacak langganan dan beri tahu Slack soal churn.",
-          "title": "Ringkasan langganan RevenueCat"
-        },
-        "run-daily-query-sheets": {
-          "description": "Jalankan SQL tersimpan Anda sesuai jadwal dan tambahkan hasilnya ke Sheet.",
-          "shortDescription": "Jalankan SQL tersimpan dan tambahkan hasilnya ke Sheet.",
-          "title": "Jalankan query harian ke Google Sheets"
-        },
-        "salesforce-pipeline-digest": {
-          "description": "Rangkum tiap minggu perubahan opportunity Salesforce dan risiko tanggal closing ke Slack.",
-          "shortDescription": "Rangkum risiko pipeline Salesforce tiap minggu.",
-          "title": "Ringkasan pipeline Salesforce"
         },
         "send-bugs-github-slack": {
           "description": "Arsipkan laporan bertanda bug sebagai issue GitHub dan beri tahu tim di Slack.",
@@ -926,25 +852,20 @@
           "shortDescription": "Kirim ringkasan harian isu Sentry yang kritis.",
           "title": "Ringkasan isu Sentry"
         },
+        "social-posts-to-sheets": {
+          "description": "Kumpulkan posting publik dan engagement dari akun yang Anda pantau dalam satu sheet.",
+          "shortDescription": "Kumpulkan posting publik dalam satu sheet.",
+          "title": "Kumpulkan posting media sosial ke Google Sheets"
+        },
         "sort-gmail-draft-replies": {
           "description": "Sortir inbox Anda dan buat draf balasan untuk email yang membutuhkannya.",
           "shortDescription": "Sortir inbox dan susun balasan yang perlu.",
           "title": "Sortir Gmail dan buat draf balasan"
         },
-        "spot-churn-risk-stripe-zendesk": {
-          "description": "Tandai akun yang berisiko churn dan buat draf email pemulihan.",
-          "shortDescription": "Tandai risiko churn dan susun email pemulihan.",
-          "title": "Deteksi risiko churn di Stripe dan Zendesk"
-        },
         "summarize-gmail-newsletters": {
           "description": "Ringkas newsletter di inbox Anda menjadi satu ringkasan singkat.",
           "shortDescription": "Padatkan newsletter Anda jadi satu ringkasan.",
           "title": "Ringkas newsletter Gmail"
-        },
-        "summarize-zendesk-tickets-daily": {
-          "description": "Ringkas tiket Zendesk 24 jam terakhir dan posting ke Slack.",
-          "shortDescription": "Posting ringkasan harian tiket Zendesk.",
-          "title": "Ringkas tiket Zendesk setiap hari"
         },
         "support-ticket-router": {
           "description": "Klasifikasikan email support, buat catatannya di Notion, dan beri tahu Slack untuk tiket kritis.",
@@ -966,30 +887,20 @@
           "shortDescription": "Tampilkan perubahan penggunaan terbesar minggu ini.",
           "title": "Lacak penggunaan fitur dengan PostHog"
         },
-        "track-keyword-ranks-ahrefs": {
-          "description": "Lacak peringkat kata kunci di Ahrefs dan catat perubahan terbesarnya di Notion.",
-          "shortDescription": "Laporkan pergerakan peringkat kata kunci minggu ini.",
-          "title": "Lacak peringkat kata kunci dengan Ahrefs"
-        },
-        "track-signup-sources-sheets": {
-          "description": "Atribusikan setiap pendaftaran baru ke sumbernya di Sheet pelacakan.",
-          "shortDescription": "Catat asal tiap signup di sebuah Sheet.",
-          "title": "Lacak sumber pendaftaran di Google Sheets"
-        },
         "vercel-deploy-digest": {
           "description": "Pantau deploy Vercel, hubungkan dengan commit GitHub, dan beri tahu Slack saat gagal.",
           "shortDescription": "Beri tahu Slack saat deploy Vercel gagal.",
           "title": "Ringkasan deploy Vercel"
         },
+        "web-data-to-sheets": {
+          "description": "Ambil kolom yang sama dari daftar halaman secara berkala dan simpan riwayatnya dalam satu sheet.",
+          "shortDescription": "Ambil kolom dari daftar halaman ke satu sheet.",
+          "title": "Kumpulkan data halaman web ke spreadsheet"
+        },
         "x-brand-monitor": {
           "description": "Lacak sebutan brand di X, simpan post yang relevan di Notion, dan beri tahu Slack untuk sebutan penting.",
           "shortDescription": "Beri tahu Slack saat brand banyak disebut di X.",
           "title": "Pemantau brand di X"
-        },
-        "zendesk-knowledge-base": {
-          "description": "Temukan pertanyaan berulang di Zendesk, buat draf entri FAQ, dan simpan ke Notion.",
-          "shortDescription": "Ubah pertanyaan berulang jadi entri FAQ.",
-          "title": "Basis pengetahuan Zendesk"
         }
       },
       "workflowCategories": {
@@ -1008,8 +919,7 @@
     "toasts": {
       "copyLinkFailed": "Gagal menyalin tautan",
       "downloadFailed": "Gagal mengunduh",
-      "linkCopied": "Tautan disalin",
-      "sharing": "Membagikan…"
+      "linkCopied": "Tautan disalin"
     },
     "viewer": {
       "continuePrompt": "Bantu saya mengerjakan artefak ini: {{url}}",
@@ -1515,11 +1425,13 @@
     "agentPage": {
       "getStarted": {
         "checkin": {
-          "description": "Sekali sehari, setiap hari",
+          "action": "Check in",
+          "description": "Check in sekali sehari. Direset pukul 00:00 UTC.",
           "name": "Check in setiap hari",
           "unit": "per hari"
         },
         "connector": {
+          "action": "Hubungkan",
           "description": "Gmail, Notion, dan 100+ lainnya",
           "name": "Hubungkan konektor",
           "unit": "per konektor"
@@ -1527,19 +1439,24 @@
         "inReview": "Sedang ditinjau",
         "inReviewDescription": "Terkirim, menunggu ditinjau",
         "invite": {
+          "action": "Undang",
           "description": "Setiap orang yang kamu tambahkan dihitung",
           "name": "Undang tim kamu",
           "unit": "per anggota"
         },
-        "personalBalanceNote": "Kredit masuk ke saldo pribadi kamu.",
+        "pendingInvitations": "Undangan tertunda: {{amount}}",
+        "personalBalanceNote": "Hadiah kedaluwarsa 7 hari setelah diberikan. Hadiah Slack masuk ke organisasi; hadiah lainnya ke saldo pribadi Anda.",
         "progressLabel": "Progres memulai",
+        "rejectedDescription": "Postingan ini tidak memenuhi syarat. Kirim postingan publik lain yang menyebut Okou.",
         "reward": "+{{amount}}",
+        "rewardedConnections": "Konektor yang diberi hadiah: {{amount}}",
         "share": {
+          "action": "Bagikan",
           "description": "Posting, lalu tempel tautannya",
           "name": "Bagikan {{assistantName}} di X"
         },
         "shareDialog": {
-          "description": "Posting sesuatu yang kamu buat, lalu tempel tautannya. Kamu dapat satu kali kirim.",
+          "description": "Kirim postingan publik untuk ditinjau. Satu hadiah yang disetujui per orang.",
           "helper": "Postingan harus publik dan menyebut {{assistantName}}.",
           "inputLabel": "Tautan postingan",
           "placeholder": "https://x.com/...",
@@ -1547,14 +1464,16 @@
           "title": "Bagikan {{assistantName}} di X"
         },
         "slack": {
+          "action": "Tambahkan",
           "description": "Tempat tim kamu sudah bekerja",
           "name": "Tambahkan {{assistantName}} ke Slack"
         },
         "stepCount": "{{completed}}/{{total}}",
-        "subtitle": "Selesaikan satu langkah, kreditnya jadi milikmu.",
+        "subtitle": "Coba tugas dan dapatkan kredit.",
         "title": "Mulai",
         "workflow": {
-          "description": "Ubah tugas berulang jadi otomatisasi",
+          "action": "Buat",
+          "description": "Ubah tugas berulang jadi skill yang bisa dipakai ulang",
           "name": "Buat workflow"
         }
       },
@@ -1766,9 +1685,7 @@
       "create": {
         "addStyle": "Tambahkan gaya",
         "addTemplate": "Tambahkan templat",
-        "chooseScene": "Pilih yang ingin dibuat",
         "chooseType": "Pilih jenis",
-        "description": "Presentasi, video, dan gambar",
         "exit": "Keluar dari mode pembuatan",
         "image": "Buat gambar",
         "imageDescription": "Ubah ide menjadi visual",
@@ -1776,12 +1693,10 @@
         "presentation": "Buat presentasi",
         "presentationDescription": "Slide untuk cerita Anda",
         "presentationPlaceholder": "Apa topik presentasi Anda?",
-        "question": "Apa yang ingin Anda wujudkan?",
         "settingsAdjusted": "Beberapa pengaturan video disesuaikan untuk model ini",
         "slideCount": "Jumlah slide",
         "slideCountAuto": "Otomatis",
         "slideCountRange": "{{range}} slide",
-        "title": "Buat",
         "video": "Buat video",
         "videoDescription": "Hidupkan ide Anda dengan gerakan",
         "videoPlaceholder": "Jelaskan video yang ingin Anda buat…"
@@ -1873,11 +1788,13 @@
         "matchCount_other": "{{count}} hasil",
         "moreAccounts_other": "+{{count}}",
         "needsAttention": "Perlu perhatian",
+        "nextCategories": "Kategori berikutnya",
         "noResultsBody": "Coba nama produk, atau buat sendiri dari API atau server MCP.",
         "noResultsTitle": "Tidak ada konektor yang cocok dengan “{{query}}”",
         "openDetailAria": "Buka detail {{connector}}",
         "otherCategory": "Lainnya",
         "permissionCount_other": "{{count}} izin",
+        "previousCategories": "Kategori sebelumnya",
         "showAll_other": "Lihat semua {{count}}",
         "tabCustom": "Kustom",
         "tabDiscover": "Temukan"
@@ -1903,6 +1820,8 @@
       "providerIncompatibleAction": "Mulai sesi baru",
       "providerIncompatiblePrefix": "Sesi ini dimulai dengan provider model yang berbeda dan tidak bisa dilanjutkan dengan yang saat ini.",
       "recovery": {
+        "autonomyLimitDescription": "Batas proses otomatis berturut-turut telah tercapai. Konfirmasi untuk melanjutkan.",
+        "autonomyLimitTitle": "Batas proses otomatis tercapai",
         "capacityDescription": "Coba lagi sebentar lagi, atau ganti model.",
         "capacityTitle": "Model ini sedang sibuk",
         "claudeCode": "Claude Code",
@@ -1926,23 +1845,26 @@
       "runCancelled": "Tertunda di tengah pikiran — lanjutkan kapan saja."
     },
     "feedback": {
-      "emailDraftDescription": "draf email (ID draf mail: {{id}})",
-      "partHeading": "Masukan untuk bagian balasan Anda ini:",
-      "partsHeading_one": "Masukan untuk {{count}} bagian balasan Anda:",
-      "partsHeading_other": "Masukan untuk {{count}} bagian balasan Anda:",
-      "placeholder": "Apa yang harus diubah dari ini?",
+      "emailDraftDescription": "draf email",
+      "forwardPartHeading": "Diteruskan dari \"{{title}}\"",
+      "forwardPartsHeading_one": "{{count}} bagian diteruskan dari \"{{title}}\"",
+      "forwardPartsHeading_other": "{{count}} bagian diteruskan dari \"{{title}}\"",
+      "partHeading": "Dikutip dari balasan Anda",
+      "partsHeading_one": "{{count}} bagian dikutip dari balasan Anda",
+      "partsHeading_other": "{{count}} bagian dikutip dari balasan Anda",
+      "placeholder": "Ajukan pertanyaan atau komentari kutipan ini",
       "quote": "Kutip",
       "remove": "Hapus masukan",
-      "sentEmailDescription": "email yang telah dikirim (ID mail: {{id}}{{sentIdSuffix}})",
-      "sentIdSuffix": ", ID terkirim: {{sentId}}",
-      "sourcePartHeading": "Masukan untuk bagian {{description}} ini:",
-      "sourcePartsHeading_one": "Masukan untuk {{count}} bagian {{description}}:",
-      "sourcePartsHeading_other": "Masukan untuk {{count}} bagian {{description}}:"
+      "sentEmailDescription": "email yang telah dikirim",
+      "sourcePartHeading": "Dikutip dari {{description}}",
+      "sourcePartsHeading_one": "{{count}} bagian dikutip dari {{description}}",
+      "sourcePartsHeading_other": "{{count}} bagian dikutip dari {{description}}"
     },
     "forward": {
       "action": "Teruskan",
       "agents": "Agen",
       "back": "Kembali",
+      "composerPlaceholder": "Tambahkan pesan",
       "content": "Konten",
       "description": "Kirim konten yang dipilih ke agen atau chat untuk melanjutkan pengerjaannya.",
       "noResults": "Agen atau chat tidak ditemukan",
@@ -1970,13 +1892,14 @@
       "picker": {
         "autoVoiceDescription": "Temukan suara yang cocok dengan konten Anda.",
         "avatarVoice": "Suara avatar",
-        "changeAvatar": "Ubah avatar",
+        "back": "Kembali",
         "chooseStyle": "Pilih gaya",
-        "chooseStyleAndVoice": "Pilih gaya dan suara.",
+        "closeOptions": "Tutup opsi",
+        "moreOptions": "Opsi lainnya",
         "noMatches": "Tidak ada hasil.",
-        "ready": "Siap digunakan. Tambahkan konten Anda di obrolan.",
+        "searchStyles": "Cari gaya",
+        "selectionSummary": "Suara: {{voice}} · Avatar: {{avatar}}",
         "settings": "Pengaturan video intro",
-        "style": "Gaya",
         "useSelection": "Gunakan pilihan"
       },
       "style": {
@@ -2040,15 +1963,17 @@
     },
     "newChat": "Chat baru",
     "origins": {
-      "agentphone": "AgentPhone",
+      "agentphone": "iMessage",
       "feishu": "Feishu",
       "github": "GitHub",
       "lark": "Lark",
       "openChat": "Buka chat",
+      "openChatIn": "Buka chat di {{integration}}",
       "openFeishuChat": "Buka chat asli di Feishu",
       "openGithubMessage": "Buka masalah atau pull request asli di GitHub",
       "openLarkChat": "Buka chat asli di Lark",
       "openMessage": "Buka pesan",
+      "openMessages": "Buka Pesan",
       "openSlackMessage": "Buka pesan asli di Slack",
       "openTeamsMessage": "Buka pesan asli di Microsoft Teams",
       "openTelegramMessage": "Buka pesan asli di Telegram",
@@ -2944,27 +2869,6 @@
       "copied": "Disalin",
       "deleted": "Chat dihapus"
     },
-    "translation": {
-      "action": "Terjemahkan",
-      "close": "Tutup terjemahan",
-      "copy": "Salin terjemahan",
-      "languages": {
-        "de": "Deutsch",
-        "en": "English",
-        "es": "Español",
-        "fr": "Français",
-        "hi": "हिन्दी",
-        "id": "Bahasa Indonesia",
-        "it": "Italiano",
-        "ja": "日本語",
-        "ko": "한국어",
-        "ptBR": "Português",
-        "zhCN": "简体中文",
-        "zhTW": "繁體中文"
-      },
-      "result": "Terjemahan",
-      "targetLanguage": "Bahasa terjemahan"
-    },
     "voice": {
       "checkingLimit": "Memeriksa batas input suara",
       "cleanupFailed": "Teks ditambahkan, tetapi rekaman yang tersimpan tidak dapat dihapus.",
@@ -3654,7 +3558,7 @@
       },
       "feishu": {
         "addBot": "Tambahkan bot",
-        "addDialogDescription": "Buat aplikasi kustom enterprise, aktifkan bot-nya, dan selesaikan langkah-langkah ini di konsol developer Feishu.",
+        "addDialogDescription": "Buat aplikasi enterprise dengan tipe Agent, lalu selesaikan langkah-langkah ini di konsol pengembang Feishu.",
         "addDialogTitle": "Tambahkan bot Feishu",
         "agentDescription": "Pilih agen yang harus menangani pesan yang dikirim ke bot ini.",
         "backToIntegrations": "Kembali ke integrasi",
@@ -3667,14 +3571,14 @@
         "copied": "{{label}} disalin",
         "copy": "Salin",
         "create": {
-          "descriptionAfter": ", buat aplikasi kustom enterprise dengan nama dan ikon yang Anda pilih, lalu tambahkan kemampuan Bot.",
+          "descriptionAfter": ", buat aplikasi enterprise dan pilih tipe Agent. Pilih nama dan ikon yang Anda inginkan; template Agent menyertakan kemampuan Bot.",
           "descriptionBefore": "Di ",
           "downloadIcon": "Unduh ikon {{brandName}} opsional",
           "iconAlt": "Ikon aplikasi {{brandName}} opsional",
           "iconHint": ", atau gunakan ikon apa pun yang Anda suka.",
           "iconTitle": "Ikon aplikasi {{brandName}} opsional",
           "imageAlt": "Formulir pembuatan aplikasi Feishu dengan nama aplikasi, ikon, dan tombol Create disorot",
-          "title": "Buat aplikasi kustom enterprise"
+          "title": "Buat aplikasi bertipe Agent"
         },
         "credentials": {
           "appId": "ID Aplikasi",
@@ -3704,6 +3608,9 @@
         "faq": {
           "approvalAnswer": "Jika ketersediaan diatur ke All members, administrator Feishu harus menyetujui rilisnya. Feishu mengirim permintaan persetujuan ke administrator melalui pesan langsung, dan aplikasi tetap pending sampai administrator menyelesaikan peninjauan.",
           "approvalQuestion": "Mengapa publikasi aplikasi menunggu persetujuan?",
+          "botFeatureAnswer": "Buka Features → Add Features di konsol pengembang Feishu. Di bagian By Feature, tambahkan kemampuan Bot, lalu lanjutkan panduan ini dan publikasikan aplikasi. Aplikasi bertipe Agent menyertakan kemampuan Bot secara default.",
+          "botFeatureImageAlt": "Konsol pengembang Lark yang menampilkan kemampuan Bot di Add Features",
+          "botFeatureQuestion": "Bagaimana jika saya memilih Custom App, bukan Agent?",
           "challengeAnswer": "Ini biasanya berarti Encrypt Key atau Verification Token yang disimpan selama langkah Tokens salah. Kembali ke langkah Tokens, masukkan lagi kedua nilai dari Event Configuration → Encryption Strategy, simpan, lalu coba lagi Request URL.",
           "challengeQuestion": "Mengapa Feishu menampilkan \"Challenge code didn't get a response\"?",
           "title": "FAQ penyiapan"
@@ -3714,14 +3621,14 @@
         "moreOptions": "Opsi lainnya untuk {{bot}}",
         "pageDescription": "Kelola perutean bot untuk ruang kerja ini",
         "permissions": {
-          "description": "Di konsol developer Feishu, buka Permissions & Scopes, pilih Batch Import/Export > Import, lalu tempel JSON di bawah. Tindakan ini mengimpor semua scope konektor terkelola di bawah User identity. Ini adalah izin minimum yang diperlukan agar integrasi berfungsi.",
-          "hint": "Pertahankan semua izin User identity yang diimpor, lalu buat dan publikasikan versi aplikasi baru agar layar persetujuan OAuth dapat memberikannya. Menghapus izin apa pun akan membuat integrasi tidak berfungsi, dan persetujuan administrator Feishu mungkin diperlukan.",
-          "label": "JSON scope token pengguna",
+          "description": "Di konsol pengembang Feishu, buka Permissions & Scopes, pilih Batch Import/Export > Import, lalu tempel JSON di bawah. JSON ini mencakup izin identitas aplikasi untuk bot dan izin identitas pengguna untuk akun Anda yang terhubung.",
+          "hint": "Pertahankan semua izin yang diimpor untuk kedua identitas, lalu buat dan publikasikan versi aplikasi baru. Persetujuan administrator Feishu mungkin diperlukan.",
+          "label": "JSON scope aplikasi dan pengguna",
           "menuAlt": "Halaman Permissions & Scopes Feishu dengan menu Batch import/export scopes disorot",
           "menuLabel": "Buka Batch import/export scopes",
           "reviewAlt": "Dialog Batch import/export scopes Feishu dengan JSON yang diimpor dan tombol tinjau disorot",
           "reviewLabel": "Tempel JSON dan tinjau scope baru",
-          "title": "Impor scope token pengguna"
+          "title": "Impor scope aplikasi dan pengguna"
         },
         "publish": {
           "allMembersAlt": "Pengaturan ketersediaan Feishu dengan All members dipilih",
@@ -3783,7 +3690,7 @@
       },
       "lark": {
         "addBot": "Tambahkan bot",
-        "addDialogDescription": "Buat aplikasi kustom enterprise, aktifkan bot-nya, dan selesaikan langkah-langkah ini di konsol developer Lark.",
+        "addDialogDescription": "Buat aplikasi enterprise dengan tipe Agent, lalu selesaikan langkah-langkah ini di konsol pengembang Lark.",
         "addDialogTitle": "Tambahkan bot Lark",
         "agentDescription": "Pilih agen yang harus menangani pesan yang dikirim ke bot ini.",
         "backToIntegrations": "Kembali ke integrasi",
@@ -3796,14 +3703,14 @@
         "copied": "{{label}} disalin",
         "copy": "Salin",
         "create": {
-          "descriptionAfter": ", buat aplikasi kustom enterprise dengan nama dan ikon yang Anda pilih, lalu tambahkan kemampuan Bot.",
+          "descriptionAfter": ", buat aplikasi enterprise dan pilih tipe Agent. Pilih nama dan ikon yang Anda inginkan; template Agent menyertakan kemampuan Bot.",
           "descriptionBefore": "Di ",
           "downloadIcon": "Unduh ikon {{brandName}} opsional",
           "iconAlt": "Ikon aplikasi {{brandName}} opsional",
           "iconHint": ", atau gunakan ikon apa pun yang Anda suka.",
           "iconTitle": "Ikon aplikasi {{brandName}} opsional",
           "imageAlt": "Formulir pembuatan aplikasi Feishu dengan nama aplikasi, ikon, dan tombol Create disorot",
-          "title": "Buat aplikasi kustom enterprise"
+          "title": "Buat aplikasi bertipe Agent"
         },
         "credentials": {
           "appId": "ID Aplikasi",
@@ -3833,6 +3740,9 @@
         "faq": {
           "approvalAnswer": "Jika ketersediaan diatur ke All members, administrator Lark harus menyetujui rilisnya. Lark mengirim permintaan persetujuan ke administrator melalui pesan langsung, dan aplikasi tetap pending sampai administrator menyelesaikan peninjauan.",
           "approvalQuestion": "Mengapa publikasi aplikasi menunggu persetujuan?",
+          "botFeatureAnswer": "Buka Features → Add Features di konsol pengembang Lark. Di bagian By Feature, tambahkan kemampuan Bot, lalu lanjutkan panduan ini dan publikasikan aplikasi. Aplikasi bertipe Agent menyertakan kemampuan Bot secara default.",
+          "botFeatureImageAlt": "Konsol pengembang Lark yang menampilkan kemampuan Bot di Add Features",
+          "botFeatureQuestion": "Bagaimana jika saya memilih Custom App, bukan Agent?",
           "challengeAnswer": "Ini biasanya berarti Encrypt Key atau Verification Token yang disimpan selama langkah Tokens salah. Kembali ke langkah Tokens, masukkan lagi kedua nilai dari Event Configuration → Encryption Strategy, simpan, lalu coba lagi Request URL.",
           "challengeQuestion": "Mengapa Lark menampilkan \"Challenge code didn't get a response\"?",
           "title": "FAQ penyiapan"
@@ -3844,14 +3754,14 @@
         "moreOptions": "Opsi lainnya untuk {{bot}}",
         "pageDescription": "Kelola perutean bot untuk ruang kerja ini",
         "permissions": {
-          "description": "Di konsol developer Lark, buka Permissions & Scopes, pilih Batch Import/Export > Import, lalu tempel JSON di bawah. Tindakan ini mengimpor semua scope konektor terkelola di bawah User identity. Ini adalah izin minimum yang diperlukan agar integrasi berfungsi.",
-          "hint": "Pertahankan semua izin User identity yang diimpor, lalu buat dan publikasikan versi aplikasi baru agar layar persetujuan OAuth dapat memberikannya. Menghapus izin apa pun akan membuat integrasi tidak berfungsi, dan persetujuan administrator Lark mungkin diperlukan.",
-          "label": "JSON scope token pengguna",
+          "description": "Di konsol pengembang Lark, buka Permissions & Scopes, pilih Batch Import/Export > Import, lalu tempel JSON di bawah. JSON ini mencakup izin identitas aplikasi untuk bot dan izin identitas pengguna untuk akun Anda yang terhubung.",
+          "hint": "Pertahankan semua izin yang diimpor untuk kedua identitas, lalu buat dan publikasikan versi aplikasi baru. Persetujuan administrator Lark mungkin diperlukan.",
+          "label": "JSON scope aplikasi dan pengguna",
           "menuAlt": "Halaman Permissions & Scopes Feishu dengan menu Batch import/export scopes disorot",
           "menuLabel": "Buka Batch import/export scopes",
           "reviewAlt": "Dialog Batch import/export scopes Feishu dengan JSON yang diimpor dan tombol tinjau disorot",
           "reviewLabel": "Tempel JSON dan tinjau scope baru",
-          "title": "Impor scope token pengguna"
+          "title": "Impor scope aplikasi dan pengguna"
         },
         "publish": {
           "allMembersAlt": "Pengaturan ketersediaan Feishu dengan All members dipilih",
@@ -4295,6 +4205,8 @@
         "tiny-wanderer": "Pengembara Kecil"
       },
       "presentation": {
+        "bloom-pitch": "Presentasi Kelopak",
+        "blueprint-academy": "Kampus Gambar Teknik",
         "botane-organic-deck": "Kebun Mauve",
         "business-data-presentation": "Dasbor Berry",
         "crayon-learning-deck": "Coretan Krayon",
@@ -4303,9 +4215,19 @@
         "editorial-magazine-deck": "Majalah Kertas",
         "landing-consulting-deck": "Browser Neon",
         "lumina-creative-studio": "Stiker Kuas",
+        "meridian": "Blok Kobalt",
         "mosaic-geometric-pitch": "Ubin Bauhaus",
+        "neo-brutalism": "Toko Bayangan",
+        "nocturne": "Panggung Tengah Malam",
+        "pixel-glitch": "Piksel Arkade",
         "playful-launch-presentation": "Ruang Bermain Semburat Matahari",
-        "playful-pop-deck": "Permen Neon"
+        "playful-pop-deck": "Permen Neon",
+        "prospectus": "Presentasi Beranda",
+        "schoolhouse": "Poster Kraft",
+        "sticker-scrapbook": "Buku Stiker",
+        "strata": "Tangga Merah",
+        "taped-consulting": "Dinding Polaroid",
+        "vantage": "Ruang Rapat Bernomor"
       },
       "video": {
         "chinese-ink-art": "Lukisan Tinta Tiongkok",
@@ -5402,7 +5324,8 @@
     "status": {
       "availableNow": "Tersedia sekarang",
       "inUse_one": "{{active}} dari {{limit}} slot digunakan",
-      "inUse_other": "{{active}} dari {{limit}} slot digunakan"
+      "inUse_other": "{{active}} dari {{limit}} slot digunakan",
+      "waitingForSandbox": "Menunggu Sandbox"
     },
     "tiers": {
       "custom": "Kustom",
@@ -5870,8 +5793,8 @@
             "cottonSky": "Cotton sky",
             "daydream": "Daydream",
             "deepLagoon": "Deep lagoon",
-            "goldenHour": "Golden hour",
-            "limelight": "Limelight"
+            "default": "Default",
+            "goldenHour": "Golden hour"
           },
           "title": "Tema warna"
         },
@@ -6256,17 +6179,16 @@
     "choosePrivateKeyFile": "Pilih file kunci privat",
     "cloudflare": {
       "add": "Tambah konfigurasi Access",
-      "back": "Kembali ke host",
       "changed": "Konfigurasi Access ini berubah saat Anda mengedit. Tinjau pengaturan terbaru sebelum menyimpan.",
       "clientId": "ID klien Service Token",
       "clientSecret": "Rahasia klien Service Token",
       "configuration": "Konfigurasi Access",
-      "createNew": "Buat konfigurasi Access",
+      "createNew": "Buat konfigurasi baru",
       "delete": "Hapus konfigurasi",
       "deleteHelp": "Hapus konfigurasi Access yang tidak digunakan ini? Service Token yang tersimpan tidak dapat dipulihkan.",
       "direct": "Langsung",
+      "edit": "Edit konfigurasi Access",
       "empty": "Belum ada konfigurasi Access. Tambahkan Service Token untuk menghubungkan host SSH yang dilindungi Cloudflare Access.",
-      "gatewayHelp": "Terhubung melalui WebSocket terenkripsi di port 443. Atur alamat dan port SSH privat di Cloudflare.",
       "inUse": "Konfigurasi Access ini digunakan oleh host. Tinjau host terkait dan ubah konfigurasinya atau hapus terlebih dahulu.",
       "inUseHelp": "Pilih konfigurasi Access lain untuk host ini, alihkan secara eksplisit ke Langsung, atau hapus host sebelum menghapus konfigurasi ini.",
       "keepChanges": "Terapkan perubahan saya ke versi ini",
@@ -6278,14 +6200,13 @@
       "name": "Nama konfigurasi",
       "protectedHost": "Cloudflare Access · {{name}}",
       "publishedHost": "Nama host yang dipublikasikan",
-      "rename": "Ganti nama konfigurasi",
       "replace": "Ganti Service Token",
       "reviewHelp": "Draf Anda tetap disimpan. Konfirmasikan pengaturan terakhir sebelum menerapkan perubahan.",
       "select": "Pilih konfigurasi",
-      "summary_other": "{{count}} konfigurasi Access",
+      "summary_other": "{{count}} konfigurasi Access telah diatur",
       "title": "Cloudflare Access",
       "tokenHelp": "Gunakan Service Token yang diizinkan kebijakan Service Auth aplikasi SSH Anda. Ini terpisah dari login SSH.",
-      "unavailable": "Cloudflare Access tidak tersedia untuk akun ini. Host yang dilindungi tidak dapat terhubung; host langsung tidak terpengaruh.",
+      "unavailable": "Cloudflare Access tidak tersedia untuk akun ini.",
       "usedBy_other": "Digunakan oleh {{count}} host:"
     },
     "connectionStatus": {
@@ -6320,6 +6241,7 @@
       "name": "Nama kredensial",
       "password": "Kata sandi",
       "replaceAuthentication": "Ganti autentikasi",
+      "select": "Pilih kredensial",
       "sharedHelp_other": "Perubahan login berlaku untuk seluruh {{count}} host:",
       "summary_other": "{{count}} kredensial dikonfigurasi",
       "unused": "Tidak digunakan oleh host mana pun"
@@ -6335,8 +6257,8 @@
     "empty": "Belum ada host SSH yang dikonfigurasi. Tambahkan host agar tersedia bagi Agent dengan akses SSH.",
     "errors": {
       "agentUnavailable": "Agen ini tidak lagi tersedia. Pilih Agen lain.",
-      "configurationChanged": "Host ini berubah saat Anda mengeditnya. Daftar telah diperbarui. Buka kembali host dan tinjau pengaturan saat ini sebelum menyimpan.",
-      "credentialChanged": "Kredensial ini telah berubah. Buka kembali dan periksa pengaturan serta host yang terpengaruh sebelum menyimpan.",
+      "configurationChanged": "Host ini berubah saat Anda mengeditnya. Draf Anda tetap tersimpan. Tinjau pengaturan terbarunya sebelum menerapkan perubahan Anda.",
+      "credentialChanged": "Kredensial ini berubah saat Anda mengeditnya. Draf Anda tetap tersimpan. Tinjau pengaturan terbaru dan host yang terpengaruh sebelum menyimpan.",
       "credentialInUse": "Kredensial ini sedang digunakan. Pilih kredensial lain untuk host terkait atau hapus host tersebut terlebih dahulu.",
       "credentialUnavailable": "Kredensial SSH ini tidak lagi tersedia. Pilih yang lain atau buat kredensial baru.",
       "failed": "Tidak dapat menyimpan perubahan SSH. Coba lagi.",
@@ -6359,17 +6281,62 @@
     "manage": "Kelola host SSH",
     "notLearned": "Kunci host belum tersimpan",
     "passphrase": "Frasa sandi (opsional)",
+    "placeholders": {
+      "accessName": "mis. Akses produksi",
+      "clientId": "Tempel Client ID Service Token",
+      "clientSecret": "Tempel Client Secret Service Token",
+      "credentialName": "mis. Login deployment",
+      "displayName": "mis. Server produksi",
+      "host": "mis. ssh.example.com",
+      "passphrase": "Kosongkan jika kunci tidak dienkripsi",
+      "password": "Masukkan kata sandi pengguna SSH",
+      "privateKey": "Tempel seluruh kunci privat",
+      "username": "mis. ubuntu"
+    },
     "port": "Port",
     "privateKey": "Kunci privat",
     "reset": "Reset kunci host",
     "resetHelp": "Reset hanya setelah memverifikasi identitas server baru secara independen. Koneksi berikutnya akan memercayai dan menyimpan kunci host baru.",
     "retry": "Coba lagi",
     "save": "Simpan",
+    "saveRecovery": {
+      "resourceIdConflict": "ID sumber daya ini tidak dapat digunakan. Tutup dan buka kembali formulir untuk mencoba lagi.",
+      "uncertain": "Kami tidak dapat memastikan apakah perubahanmu tersimpan. Coba simpan ulang isian yang sama, atau tutup dan periksa daftar sebelum menambahkannya lagi."
+    },
     "summary_one": "{{count}} host dikonfigurasi",
     "summary_other": "{{count}} host dikonfigurasi",
     "title": "Host SSH",
     "unavailable": "Akses SSH tidak tersedia untuk akun ini.",
     "username": "Nama pengguna SSH"
+  },
+  "templates": {
+    "actions": {
+      "delete": "Hapus",
+      "menu": "Tindakan untuk {{title}}",
+      "preview": "Pratinjau {{title}}",
+      "rename": "Ganti nama templat"
+    },
+    "custom": "Kustom",
+    "detail": {
+      "back": "Templat kustom",
+      "page": "Halaman {{number}}",
+      "source_other": "{{count}} halaman · dari {{filename}}",
+      "sourceFile": "Dari {{filename}}"
+    },
+    "empty": {
+      "description": "Okou mengubah desain file Anda menjadi templat yang bisa Anda pakai lagi."
+    },
+    "loadFailed": "Tidak dapat memuat templat.",
+    "pageCount_other": "{{count}} halaman",
+    "retry": "Coba lagi",
+    "sharedBy": "Dibagikan oleh {{owner}}",
+    "visibility": {
+      "change": "Ubah",
+      "organization": "Organisasi",
+      "organizationState": "Siapa pun di organisasi ini dapat menggunakannya",
+      "private": "Pribadi",
+      "privateState": "Hanya Anda yang dapat melihat dan menggunakannya"
+    }
   },
   "usage": {
     "displayNames": {

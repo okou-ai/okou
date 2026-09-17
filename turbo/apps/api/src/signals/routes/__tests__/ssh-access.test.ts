@@ -13,7 +13,6 @@ import {
   testSshConnectionStateContract,
   type TestSshConnectionStateActionBody,
 } from "@okouai/api-contracts/contracts/test-ssh-connection-state";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { runnerSshContract } from "@okouai/api-contracts/contracts/runner-ssh";
 import { describe, expect, it } from "vitest";
 
@@ -28,7 +27,6 @@ import { sshConnectionsRoutes } from "../ssh-connections";
 import { runnerSshRoutes } from "../runner-ssh";
 import { testSshConnectionStateRoutes } from "../test-ssh-connection-state";
 import { createRouteMocks } from "./helpers/route-test";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -68,9 +66,6 @@ async function fixture(overrides: Partial<RuntimeBody> = {}) {
     orgId: `org_ssh_consumers_${randomUUID()}`,
     ...overrides,
   };
-  await updateFeatureSwitchesForUser(context, owner, {
-    [FeatureSwitchKey.SshAccess]: true,
-  });
   authenticate(owner);
   // Infrastructure-only fixture supplies a claimed running sandbox. Grants and
   // connections below go through the production owner endpoints.
@@ -137,6 +132,7 @@ describe("owner SSH grants and live Run inventory", () => {
       config().create({
         headers,
         body: {
+          id: randomUUID(),
           displayName: "Deployment",
           host,
           credential: inlineSshKey("deploy", "test-private-key"),
@@ -235,6 +231,7 @@ describe("owner SSH grants and live Run inventory", () => {
       config().create({
         headers,
         body: {
+          id: randomUUID(),
           displayName: "Maintenance",
           host: "SSH.example.com.",
           credential: inlineSshKey("ubuntu", "maintenance-private-key"),
@@ -373,6 +370,7 @@ describe("owner SSH grants and live Run inventory", () => {
       config().create({
         headers,
         body: {
+          id: randomUUID(),
           displayName: "Deployment",
           host: "ssh.example.com",
           credential: inlineSshKey("deploy", "test-private-key"),
@@ -435,6 +433,7 @@ describe("owner SSH grants and live Run inventory", () => {
         config().create({
           headers,
           body: {
+            id: randomUUID(),
             displayName: "Deployment",
             host: "ssh.example.com",
             credential: inlineSshKey(
@@ -467,7 +466,10 @@ describe("owner SSH grants and live Run inventory", () => {
         config().update({
           headers,
           params: { connectionId: connection.body.id },
-          body: { expectedGeneration: 1, displayName: "Renamed" },
+          body: {
+            expectedGeneration: 1,
+            displayName: "Renamed",
+          },
         }),
         [200],
       );
@@ -577,24 +579,12 @@ describe("owner SSH grants and live Run inventory", () => {
     await accept(inventory().list({ headers: f.token() }), [200]);
   });
 
-  it("requires the feature flag even with an existing grant in an ordinary organization", async () => {
+  it("allows an ordinary owner's grant and inventory and enforces revocation", async () => {
     const f = await fixture();
     await accept(
       grant().update({ headers, params: f.params, body: { enabled: true } }),
       [200],
     );
-    await updateFeatureSwitchesForUser(context, f, {
-      [FeatureSwitchKey.SshAccess]: false,
-    });
-    await accept(grant().get({ headers, params: f.params }), [404]);
-    await accept(
-      grant().update({ headers, params: f.params, body: { enabled: false } }),
-      [404],
-    );
-    await accept(inventory().list({ headers: f.token() }), [404]);
-    await updateFeatureSwitchesForUser(context, f, {
-      [FeatureSwitchKey.SshAccess]: true,
-    });
     expect(
       (await accept(grant().get({ headers, params: f.params }), [200])).body,
     ).toStrictEqual({ enabled: true });

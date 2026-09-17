@@ -11,5 +11,5 @@
     "target": "ES2022",
     "types": ["node"]
   },
-  "include": ["playwright/**/*.ts"]
+  "include": ["playwright/**/*.ts", "scripts/**/*.ts"]
 }

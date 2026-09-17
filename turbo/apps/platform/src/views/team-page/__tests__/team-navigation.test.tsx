@@ -4,7 +4,7 @@ import {
   chatThreadEventsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { avatarComposerUrl } from "@okouai/core/agent-avatar";
-import { expect, test } from "vitest";
+import { expect, test, describe, beforeEach, it } from "vitest";
 
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -38,113 +38,125 @@ function labelledButton(name: string): HTMLElement {
   return button;
 }
 
-test("The agent chat shortcut opens the first available thread", async () => {
-  context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
-    return respond(200, {
-      chatThreads: [
-        {
-          id: FIRST_THREAD_ID,
-          agentId: RESEARCH_AGENT_ID,
-          title: "First shortcut thread",
-          sortAt: "2026-08-18T12:00:00.000Z",
-          createdAt: "2026-08-18T10:00:00.000Z",
-          updatedAt: "2026-08-18T12:00:00.000Z",
-          pinnedAt: null,
-          renamedAt: null,
-          selectedModel: null,
-          serviceTier: null,
-          computerUseHostId: null,
-          cloudBrowserEnabled: false,
-          selectedVideoModel: null,
-          selectedImageModel: null,
-        },
-        {
-          id: SECOND_THREAD_ID,
-          agentId: RESEARCH_AGENT_ID,
-          title: "Second shortcut thread",
-          sortAt: "2026-08-18T11:00:00.000Z",
-          createdAt: "2026-08-18T09:00:00.000Z",
-          updatedAt: "2026-08-18T11:00:00.000Z",
-          pinnedAt: null,
-          renamedAt: null,
-          selectedModel: null,
-          serviceTier: null,
-          computerUseHostId: null,
-          cloudBrowserEnabled: false,
-          selectedVideoModel: null,
-          selectedImageModel: null,
-        },
-      ],
-      latestEventId: null,
-      latestSeqId: null,
-    });
-  });
-  context.mocks.api(chatThreadsContract.events, ({ respond }) => {
-    return respond(200, { events: [], hasMore: false });
-  });
-  context.mocks.api(chatThreadEventsContract.rows, ({ params, respond }) => {
-    if (params.threadId !== FIRST_THREAD_ID) {
+describe("with a team conversation page", () => {
+  async function prepareScenario() {
+    context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
       return respond(200, {
-        rows: [],
-        cursor: { lastEventId: null, lastSeqId: 0 },
-        hasMore: false,
+        chatThreads: [
+          {
+            id: FIRST_THREAD_ID,
+            agentId: RESEARCH_AGENT_ID,
+            title: "First shortcut thread",
+            sortAt: "2026-08-18T12:00:00.000Z",
+            createdAt: "2026-08-18T10:00:00.000Z",
+            updatedAt: "2026-08-18T12:00:00.000Z",
+            pinnedAt: null,
+            renamedAt: null,
+            selectedModel: null,
+            serviceTier: null,
+            computerUseHostId: null,
+            cloudBrowserEnabled: false,
+            selectedVideoModel: null,
+            selectedImageModel: null,
+          },
+          {
+            id: SECOND_THREAD_ID,
+            agentId: RESEARCH_AGENT_ID,
+            title: "Second shortcut thread",
+            sortAt: "2026-08-18T11:00:00.000Z",
+            createdAt: "2026-08-18T09:00:00.000Z",
+            updatedAt: "2026-08-18T11:00:00.000Z",
+            pinnedAt: null,
+            renamedAt: null,
+            selectedModel: null,
+            serviceTier: null,
+            computerUseHostId: null,
+            cloudBrowserEnabled: false,
+            selectedVideoModel: null,
+            selectedImageModel: null,
+          },
+        ],
+        latestEventId: null,
+        latestSeqId: null,
       });
-    }
-    return respond(200, {
-      rows: [
-        {
-          id: FIRST_EVENT_ID,
-          chatThreadId: FIRST_THREAD_ID,
-          runId: null,
-          revokesEventId: null,
-          contextType: null,
-          contextId: null,
-          runEventSequenceNumber: null,
-          runEventId: null,
-          seqId: 1,
-          createdAt: "2026-08-18T12:00:00.000Z",
-          eventType: "input.prompt",
-          payload: {
-            userMessage: {
-              version: 1,
-              parts: [{ type: "text", text: "First shortcut thread message." }],
+    });
+    context.mocks.api(chatThreadsContract.events, ({ respond }) => {
+      return respond(200, { events: [], hasMore: false });
+    });
+    context.mocks.api(chatThreadEventsContract.rows, ({ params, respond }) => {
+      if (params.threadId !== FIRST_THREAD_ID) {
+        return respond(200, {
+          rows: [],
+          cursor: { lastEventId: null, lastSeqId: 0 },
+          hasMore: false,
+        });
+      }
+      return respond(200, {
+        rows: [
+          {
+            id: FIRST_EVENT_ID,
+            chatThreadId: FIRST_THREAD_ID,
+            runId: null,
+            revokesEventId: null,
+            contextType: null,
+            contextId: null,
+            runEventSequenceNumber: null,
+            runEventId: null,
+            seqId: 1,
+            createdAt: "2026-08-18T12:00:00.000Z",
+            eventType: "input.prompt",
+            payload: {
+              userMessage: {
+                version: 1,
+                parts: [
+                  { type: "text", text: "First shortcut thread message." },
+                ],
+              },
             },
           },
-        },
-      ],
-      cursor: { lastEventId: FIRST_EVENT_ID, lastSeqId: 1 },
-      hasMore: false,
+        ],
+        cursor: { lastEventId: FIRST_EVENT_ID, lastSeqId: 1 },
+        hasMore: false,
+      });
     });
-  });
-  context.mocks.data.userPreferences({ locale: "en-US" });
-  await setupTeamPage({
-    context,
-    path: `/agents/${RESEARCH_AGENT_ID}/chat`,
-  });
+    context.mocks.data.userPreferences({ locale: "en-US" });
+    await setupTeamPage({
+      context,
+      path: `/agents/${RESEARCH_AGENT_ID}/chat`,
+    });
 
-  const composerGuidance = await screen.findByText(
-    "Ask me to automate workflows, manage tasks...",
-  );
-  expect(composerGuidance).toBeVisible();
-  const firstThreads = await screen.findAllByText("First shortcut thread");
-  expect(
-    firstThreads.some((thread) => {
-      return thread.checkVisibility();
-    }),
-  ).toBeTruthy();
-  fireEvent.keyDown(document, {
-    key: "ArrowDown",
-    code: "ArrowDown",
-    ctrlKey: true,
-    shiftKey: true,
+    const composerGuidance = await screen.findByText(
+      "Ask me to automate workflows, manage tasks...",
+    );
+    return { composerGuidance };
+  }
+  let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
+  beforeEach(async () => {
+    preparedScenario = await prepareScenario();
   });
+  it("the agent chat shortcut opens the first available thread", async () => {
+    const { composerGuidance } = preparedScenario;
+    expect(composerGuidance).toBeVisible();
+    const firstThreads = await screen.findAllByText("First shortcut thread");
+    expect(
+      firstThreads.some((thread) => {
+        return thread.checkVisibility();
+      }),
+    ).toBeTruthy();
+    fireEvent.keyDown(document, {
+      key: "ArrowDown",
+      code: "ArrowDown",
+      ctrlKey: true,
+      shiftKey: true,
+    });
 
-  const thread = await screen.findByRole("region", { name: "Chat thread" });
-  const message = await within(thread).findByText(
-    "First shortcut thread message.",
-  );
-  expect(message).toBeVisible();
-  expect(window.location.pathname).toBe(`/chats/${FIRST_THREAD_ID}`);
+    const thread = await screen.findByRole("region", { name: "Chat thread" });
+    const message = await within(thread).findByText(
+      "First shortcut thread message.",
+    );
+    expect(message).toBeVisible();
+    expect(window.location.pathname).toBe(`/chats/${FIRST_THREAD_ID}`);
+  });
 });
 
 test("Agent details that fail to load offer a direct retry", async () => {

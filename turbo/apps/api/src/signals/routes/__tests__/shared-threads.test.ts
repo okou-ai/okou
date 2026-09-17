@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { UserMessageInputDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
 import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
@@ -251,10 +252,10 @@ describe("optional shared-thread titles", () => {
     async ({ response, title }) => {
       const fixture = await prepareShare();
       mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter");
-      const prompts: string[] = [];
+      const requests: unknown[] = [];
       server.use(
         http.post(endpoint, async ({ request }) => {
-          prompts.push(await request.text());
+          requests.push(await request.json());
           return response();
         }),
       );
@@ -265,10 +266,16 @@ describe("optional shared-thread titles", () => {
       expect(Object.keys(created.body)).toStrictEqual(["id"]);
       await flushWaitUntilForTest();
       await expectSharedSnapshot(fixture, created.body.id, title);
-      expect(prompts).toHaveLength(1);
-      expect(prompts[0]).toContain(selectedContent);
-      expect(prompts[0]).not.toContain(privateTitle);
-      expect(prompts[0]).not.toContain(privateContent);
+      expect(requests).toHaveLength(1);
+      expect(requests[0]).toMatchObject({
+        model: "google/gemini-3.1-flash-lite",
+        max_tokens: 2048,
+        reasoning: { effort: "minimal" },
+      });
+      const prompt = JSON.stringify(requests[0]);
+      expect(prompt).toContain(selectedContent);
+      expect(prompt).not.toContain(privateTitle);
+      expect(prompt).not.toContain(privateContent);
       expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
     },
   );
@@ -288,7 +295,114 @@ describe("optional shared-thread titles", () => {
     expect(requests).toStrictEqual([]);
   });
 
-  it.each(["ingest", "flush"] as const)(
+  it("removes forwarded chat provenance from the public snapshot", async () => {
+    const actor = bdd.user();
+    bdd.acceptAgentStorageWrites();
+    runs.acceptStorageDownloads();
+    runs.acceptTelemetryIngest();
+    runs.configureRunnerGroup();
+    await runs.grantProEntitlement(actor);
+    await runs.ensureOrgModelProvider(actor);
+    const agent = await bdd.createAgent(actor, {
+      displayName: "Forwarded share test",
+    });
+    const source = await accept(
+      chat.requestSendEvent(
+        actor,
+        {
+          agentId: agent.agentId,
+          prompt: "Source message",
+        },
+        [201],
+      ),
+      [201],
+    );
+    if (!source.body.runId) {
+      throw new Error("Expected a source run");
+    }
+    const sourceTitle = "Private source thread title";
+    await chat.renameThread(actor, source.body.threadId, sourceTitle);
+    const targetThread = await chat.createThread(actor, {
+      agentId: agent.agentId,
+    });
+    const quote = "The deployment window is fifteen minutes.";
+    const mailId = randomUUID();
+    const sentId = `gmail-${randomUUID()}`;
+    const userMessage: UserMessageInputDocument = {
+      version: 1,
+      parts: [
+        {
+          type: "feedback",
+          quote,
+          note: [],
+          source: { type: "mail", id: mailId, status: "sent", sentId },
+        },
+      ],
+    };
+    const forwarded = await accept(
+      chat.requestSendEvent(
+        actor,
+        {
+          agentId: agent.agentId,
+          threadId: targetThread.id,
+          prompt: "legacy fallback",
+          userMessage,
+          sourceRunId: source.body.runId,
+        },
+        [201],
+      ),
+      [201],
+    );
+    if (!forwarded.body.runId) {
+      throw new Error("Expected a forwarded run");
+    }
+    await flushWaitUntilForTest();
+    const { events } = await chat.listThreadEvents(actor, targetThread.id);
+    const eventId = events.find((event) => {
+      return (
+        event.eventType === "input.prompt" &&
+        event.runId === forwarded.body.runId
+      );
+    })?.id;
+    if (!eventId) {
+      throw new Error("Expected the forwarded input event");
+    }
+
+    const created = await accept(
+      client().create({
+        params: { threadId: targetThread.id },
+        headers: authenticate(actor),
+        body: { eventIds: [eventId] },
+      }),
+      [201],
+    );
+    await flushWaitUntilForTest();
+    const shared = await accept(
+      client().get({ params: { id: created.body.id } }),
+      [200],
+    );
+    expect(shared.body.messages).toStrictEqual([
+      {
+        messageIndex: 0,
+        role: "user",
+        content: `The user quoted this part of your reply:\n\n> ${quote}`,
+        runIndex: 0,
+      },
+    ]);
+    const publicData = JSON.stringify(shared.body);
+    for (const privateValue of [
+      sourceTitle,
+      source.body.runId,
+      source.body.threadId,
+      agent.agentId,
+      mailId,
+      sentId,
+    ]) {
+      expect(publicData).not.toContain(privateValue);
+    }
+  });
+
+  it.each(["ingest", "flush", "phase-abort"] as const)(
     "preserves a valid share when telemetry %s fails",
     async (mode) => {
       const fixture = await prepareShare();
@@ -298,7 +412,15 @@ describe("optional shared-thread titles", () => {
           return new HttpResponse(null, { status: 429 });
         }),
       );
-      mockAxiomSdkTelemetryFailure({ mode });
+      if (mode === "phase-abort") {
+        mockAxiomSdkTelemetryFailure({
+          mode: "ingest",
+          eventTypes: ["shared_thread_phase"],
+          error: new DOMException("Telemetry cancelled", "AbortError"),
+        });
+      } else {
+        mockAxiomSdkTelemetryFailure({ mode });
+      }
       const created = await accept(
         client().create(requestBody(fixture)),
         [201],

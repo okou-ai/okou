@@ -318,6 +318,17 @@ describe("AUTH-03 user model preference", () => {
     const admin = api.user();
     await onboardAdmin(admin, { slug: slug("bdd-uc-effort") });
 
+    if (!admin.orgId) {
+      throw new Error("Expected an organization-backed test actor");
+    }
+    const actor = {
+      userId: admin.userId,
+      orgId: admin.orgId,
+      orgRole: admin.orgRole,
+    };
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.Effort]: false,
+    });
     const disabled = await cfg.requestUpdateModelPreference(
       admin,
       {
@@ -332,20 +343,9 @@ describe("AUTH-03 user model preference", () => {
       "Reasoning effort selection is not enabled",
     );
 
-    if (!admin.orgId) {
-      throw new Error("Expected an organization-backed test actor");
-    }
-    await updateFeatureSwitchesForUser(
-      context,
-      {
-        userId: admin.userId,
-        orgId: admin.orgId,
-        orgRole: admin.orgRole,
-      },
-      {
-        [FeatureSwitchKey.Effort]: true,
-      },
-    );
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.Effort]: true,
+    });
     const astra = await cfg.updateModelPreference(admin, {
       selectedModel: "gpt-6-astra",
       serviceTier: null,
@@ -577,6 +577,7 @@ describe("AUTH-02 auth probe CLI PAT bearers", () => {
     });
 
     cfg.mockMembership(admin, "org:admin");
+    mockNow(base + 125_000);
     const refreshed = await cfg.probeAuth(bearer, {}, [200]);
     expect(refreshed.body).toStrictEqual(first.body);
   });
@@ -813,14 +814,21 @@ describe("AUTH-01 sandbox and agent bearers", () => {
       email: admin.email,
       orgId: admin.orgId,
     });
+    expect(context.mocks.clerk.users.getUser).toHaveBeenCalledExactlyOnceWith(
+      admin.userId,
+    );
+    expect(context.mocks.clerk.users.getUserList).not.toHaveBeenCalled();
 
     const rotatedEmail = `rotated-${shortId()}@example.test`;
     cfg.mockClerkUsers([{ ...admin, email: rotatedEmail }]);
     const cached = await cfg.readMe(admin);
     expect(cached.email).toBe(admin.email);
+    expect(context.mocks.clerk.users.getUser).toHaveBeenCalledOnce();
 
     mockNow(base + 16 * 60 * 1000);
     const refreshed = await cfg.readMe(admin);
     expect(refreshed.email).toBe(rotatedEmail);
+    expect(context.mocks.clerk.users.getUser).toHaveBeenCalledTimes(2);
+    expect(context.mocks.clerk.users.getUserList).not.toHaveBeenCalled();
   });
 });

@@ -61,6 +61,8 @@ pub struct MitmproxyProcessInfo {
     pub pid: u32,
     pub ppid: Option<u32>,
     pub port: u16,
+    /// Unknown when stat could not verify the cmdline observation's generation.
+    pub generation: Option<ProcfsProcessGeneration>,
 }
 
 /// Info extracted from a dnsmasq process cmdline.

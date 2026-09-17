@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.24.0](https://github.com/vm0-ai/okou/compare/guest-storage-apply-v0.23.95...guest-storage-apply-v0.24.0) (2026-09-17)
+
+
+### Features
+
+* **guest-storage-apply:** observe remote connection setup ([#34952](https://github.com/vm0-ai/okou/issues/34952)) ([631a100](https://github.com/vm0-ai/okou/commit/631a10026d86ad240c854b904c697463f1bb7df1))
+
+## [0.23.95](https://github.com/vm0-ai/okou/compare/guest-storage-apply-v0.23.94...guest-storage-apply-v0.23.95) (2026-09-17)
+
+## [0.23.94](https://github.com/vm0-ai/okou/compare/guest-storage-apply-v0.23.93...guest-storage-apply-v0.23.94) (2026-09-17)
+
+
+### Performance Improvements
+
+* **runner:** retain decoded cache hits in large storage plans ([#34747](https://github.com/vm0-ai/okou/issues/34747)) ([d170bf9](https://github.com/vm0-ai/okou/commit/d170bf9b7b92f028bf6803e4912d2176798dab42))
+
+## [0.23.93](https://github.com/vm0-ai/okou/compare/guest-storage-apply-v0.23.92...guest-storage-apply-v0.23.93) (2026-09-16)
+
+## [0.23.92](https://github.com/vm0-ai/okou/compare/guest-storage-apply-v0.23.91...guest-storage-apply-v0.23.92) (2026-09-16)
+
+## [0.23.91](https://github.com/vm0-ai/okou/compare/guest-storage-apply-v0.23.90...guest-storage-apply-v0.23.91) (2026-09-16)
+
+## [0.23.90](https://github.com/vm0-ai/okou/compare/guest-storage-apply-v0.23.89...guest-storage-apply-v0.23.90) (2026-09-16)
+
+
+### Bug Fixes
+
+* **runner:** clean skills beneath cached instruction homes ([#34429](https://github.com/vm0-ai/okou/issues/34429)) ([24f4fea](https://github.com/vm0-ai/okou/commit/24f4fea3f60e92686b1771ba9a77ae0100d8d7af))
+
 ## [0.23.89](https://github.com/vm0-ai/vm0/compare/guest-storage-apply-v0.23.88...guest-storage-apply-v0.23.89) (2026-09-15)
 
 

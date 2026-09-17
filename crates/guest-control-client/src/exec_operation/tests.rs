@@ -201,6 +201,7 @@ fn oom_evidence_diagnostic(proof: bool) -> String {
         guest_boot_id: Some("22222222-2222-4222-8222-222222222222".to_string()),
         started_boottime_us: 500_000,
         sampled_at: "2026-09-09T07:19:59.000Z".to_string(),
+        runtime_progress_at: None,
         kernel_cursor: proof.then_some(42),
         kernel_status: if proof {
             EvidenceStatus::Available
@@ -266,9 +267,27 @@ fn capture_terminal_log_events_with_context(
     stream_overflowed: bool,
     host_cancel_requested: bool,
 ) -> Vec<CapturedEvent> {
+    capture_terminal_log_events_with_label(
+        "terminal-log",
+        lifecycle,
+        slow,
+        result,
+        stream_overflowed,
+        host_cancel_requested,
+    )
+}
+
+fn capture_terminal_log_events_with_label(
+    label: &str,
+    lifecycle: ExecTerminalLogLifecycle,
+    slow: bool,
+    result: &guest_control_proto::DecodedExecResult<'_>,
+    stream_overflowed: bool,
+    host_cancel_requested: bool,
+) -> Vec<CapturedEvent> {
     let mut diagnostic = ExecOperationDiagnostic::new(
         7,
-        "terminal-log",
+        label,
         guest_control_proto::ExecProcessRole::Workload,
         false,
         false,
@@ -349,6 +368,181 @@ fn exec_operation_diagnostic_logs_terminal_result_at_classified_level() {
         capture_terminal_log_levels(ExecTerminalLogLifecycle::Supervised, true, &nonzero_exit),
         vec![Level::INFO]
     );
+}
+
+#[tokio::test]
+async fn slow_storage_download_preserves_latency_without_warning() {
+    let (events, result) = capture_dispatch_terminal_log_events_with_lifecycle(
+        ExecOperationLifecycle::OneShot,
+        "storage-download",
+    );
+    assert_eq!(result.termination, ExecTermination::Exited { exit_code: 0 });
+    assert_eq!(events.len(), 1);
+    let event = &events[0];
+    assert_eq!(event.level, Level::INFO);
+    for (field, value) in [
+        ("message", "exec operation terminal result"),
+        ("label", "storage-download"),
+        ("lifecycle", "one_shot"),
+        ("slow", "true"),
+        ("terminal_reason", "slow"),
+        ("storage_download_latency", "true"),
+        ("termination", "Exited { exit_code: 0 }"),
+    ] {
+        assert_terminal_log_field(event, field, value);
+    }
+    assert!(terminal_log_field_u128(event, "elapsed_ms") >= 5000);
+    assert!(event.fields.contains_key("guest_duration_ms"));
+
+    assert!(
+        capture_terminal_log_events_with_label(
+            "storage-download",
+            ExecTerminalLogLifecycle::OneShot,
+            false,
+            &clean_terminal_result(),
+            false,
+            false,
+        )
+        .is_empty()
+    );
+    let supervised = capture_terminal_log_events_with_label(
+        "storage-download",
+        ExecTerminalLogLifecycle::Supervised,
+        true,
+        &clean_terminal_result(),
+        false,
+        false,
+    );
+    assert_eq!(supervised[0].level, Level::INFO);
+    assert!(
+        !supervised[0]
+            .fields
+            .contains_key("storage_download_latency")
+    );
+}
+
+#[test]
+fn slow_storage_download_keeps_anomalies_and_other_helpers_warning() {
+    let clean = clean_terminal_result();
+    let proof = oom_evidence_diagnostic(true);
+    let malformed = format!("{}bad", guest_contracts::oom_evidence::EVIDENCE_PREFIX);
+    let truncated = ExecCapturedOutput::Captured {
+        bytes: b"output",
+        truncated: true,
+    };
+    for (label, result, overflow, cancel) in [
+        ("storage-download-extra", clean, false, false),
+        ("workspace-unmount", clean, false, false),
+        ("storage-download", clean, true, false),
+        ("storage-download", clean, false, true),
+        (
+            "storage-download",
+            guest_control_proto::DecodedExecResult {
+                stdout: truncated,
+                ..clean
+            },
+            false,
+            false,
+        ),
+        (
+            "storage-download",
+            guest_control_proto::DecodedExecResult {
+                stderr: truncated,
+                ..clean
+            },
+            false,
+            false,
+        ),
+        (
+            "storage-download",
+            guest_control_proto::DecodedExecResult {
+                diagnostic: "cleanup failed",
+                ..clean
+            },
+            false,
+            false,
+        ),
+        (
+            "storage-download",
+            guest_control_proto::DecodedExecResult {
+                diagnostic: &proof,
+                ..clean
+            },
+            false,
+            false,
+        ),
+        (
+            "storage-download",
+            guest_control_proto::DecodedExecResult {
+                diagnostic: &malformed,
+                ..clean
+            },
+            false,
+            false,
+        ),
+        (
+            "storage-download",
+            guest_control_proto::DecodedExecResult {
+                termination: ExecTermination::Exited { exit_code: 1 },
+                ..clean
+            },
+            false,
+            false,
+        ),
+        (
+            "storage-download",
+            guest_control_proto::DecodedExecResult {
+                termination: ExecTermination::TimedOut,
+                ..clean
+            },
+            false,
+            false,
+        ),
+        (
+            "storage-download",
+            guest_control_proto::DecodedExecResult {
+                termination: ExecTermination::Cancelled,
+                ..clean
+            },
+            false,
+            false,
+        ),
+        (
+            "storage-download",
+            guest_control_proto::DecodedExecResult {
+                termination: ExecTermination::StartFailed,
+                ..clean
+            },
+            false,
+            false,
+        ),
+        (
+            "storage-download",
+            guest_control_proto::DecodedExecResult {
+                termination: ExecTermination::WaitFailed,
+                ..clean
+            },
+            false,
+            false,
+        ),
+    ] {
+        let events = capture_terminal_log_events_with_label(
+            label,
+            ExecTerminalLogLifecycle::OneShot,
+            true,
+            &result,
+            overflow,
+            cancel,
+        );
+        assert_eq!(events.len(), 1);
+        assert_eq!(
+            events[0].level,
+            Level::WARN,
+            "fields={:?}",
+            events[0].fields
+        );
+        assert!(!events[0].fields.contains_key("storage_download_latency"));
+    }
 }
 
 #[test]
@@ -597,6 +791,7 @@ fn shared_with_logged_operation(
     let fd = write_stream.as_raw_fd();
     let (_read_half, write_half) = write_stream.into_split();
     let shared = Arc::new(Shared {
+        file_stream: crate::file_stream::State::default(),
         writer: tokio::sync::Mutex::new(write_half),
         frame_builder: tokio::sync::Mutex::new(()),
         file_write_gate: tokio::sync::Mutex::new(()),
@@ -868,8 +1063,9 @@ fn clean_terminal_log_context(
     lifecycle: ExecTerminalLogLifecycle,
     slow: bool,
     termination: ExecTermination,
-) -> ExecTerminalLogContext {
+) -> ExecTerminalLogContext<'static> {
     ExecTerminalLogContext {
+        label: "terminal-log",
         lifecycle,
         timeout_is_expected: false,
         slow,
@@ -879,6 +1075,7 @@ fn clean_terminal_log_context(
         stream_overflowed: false,
         actionable_diagnostic: false,
         evidence_has_proof: false,
+        contained_tool_oom: false,
         evidence_malformed: false,
         host_cancel_requested: false,
     }
@@ -1534,5 +1731,123 @@ fn exec_operation_close_snapshot_limits_logged_operations() {
     for operation in snapshot.operations {
         assert!(operations.contains_seq(operation.seq));
         assert!(operation.label_log.starts_with("operation-"));
+    }
+}
+
+#[test]
+fn contained_tool_oom_log_retains_evidence_and_independent_failures() {
+    use guest_contracts::oom_evidence::{EVIDENCE_PREFIX, OomEvidence};
+    let evidence: OomEvidence = serde_json::from_str(include_str!(
+        "../../../guest-contracts/tests/fixtures/contained-tool-oom.json"
+    ))
+    .unwrap();
+    let diagnostic =
+        ExecOperationDiagnostic::new(7, "guest-agent", ExecProcessRole::Agent, true, false);
+    let metadata = format!(
+        "{EVIDENCE_PREFIX}{}",
+        serde_json::to_string(&evidence).unwrap()
+    );
+    for (termination, overflow, residual, expected) in [
+        (
+            ExecTermination::Exited { exit_code: 0 },
+            false,
+            "",
+            Level::INFO,
+        ),
+        (
+            ExecTermination::Exited { exit_code: 1 },
+            false,
+            "",
+            Level::WARN,
+        ),
+        (
+            ExecTermination::Exited { exit_code: 124 },
+            false,
+            "",
+            Level::WARN,
+        ),
+        (
+            ExecTermination::Exited { exit_code: 0 },
+            true,
+            "",
+            Level::WARN,
+        ),
+        (
+            ExecTermination::Exited { exit_code: 0 },
+            false,
+            "disk failure\n",
+            Level::WARN,
+        ),
+        (ExecTermination::TimedOut, false, "", Level::WARN),
+        (ExecTermination::Cancelled, false, "", Level::WARN),
+        (ExecTermination::StartFailed, false, "", Level::WARN),
+        (ExecTermination::WaitFailed, false, "", Level::WARN),
+    ] {
+        let transported = format!("{residual}{metadata}");
+        let result = guest_control_proto::DecodedExecResult {
+            termination,
+            diagnostic: &transported,
+            ..clean_terminal_result()
+        };
+        let captured = CapturedEvents::default();
+        let subscriber = tracing_subscriber::registry().with(captured.clone());
+        tracing::subscriber::with_default(subscriber, || {
+            diagnostic.log_terminal(
+                ExecTerminalLogLifecycle::Supervised,
+                &result,
+                overflow,
+                true,
+            );
+        });
+        let events = captured.entries();
+        assert_eq!(events.len(), 1);
+        assert_eq!(
+            events[0].level, expected,
+            "termination={termination:?}, overflow={overflow}, residual={residual}"
+        );
+        assert_terminal_log_field(&events[0], "oom_classification", "contained_tool_oom");
+        assert_terminal_log_field(&events[0], "oom_incidents", "1");
+        assert_terminal_log_field(&events[0], "oom_kernel_events", "1");
+        assert!(events[0].fields["operation_id"].contains(&evidence.operation_id));
+        assert_eq!(
+            result.diagnostic, transported,
+            "logging must not consume retained evidence"
+        );
+    }
+    for (seq, role, evidence) in [
+        (8, ExecProcessRole::Agent, evidence.clone()),
+        (7, ExecProcessRole::Workload, evidence.clone()),
+        (
+            7,
+            ExecProcessRole::Agent,
+            OomEvidence {
+                runtime_progress_at: None,
+                ..evidence
+            },
+        ),
+    ] {
+        let diagnostic = ExecOperationDiagnostic::new(seq, "guest-agent", role, true, false);
+        let transported = format!(
+            "{EVIDENCE_PREFIX}{}",
+            serde_json::to_string(&evidence).unwrap()
+        );
+        let captured = CapturedEvents::default();
+        let subscriber = tracing_subscriber::registry().with(captured.clone());
+        tracing::subscriber::with_default(subscriber, || {
+            diagnostic.log_terminal(
+                ExecTerminalLogLifecycle::Supervised,
+                &guest_control_proto::DecodedExecResult {
+                    diagnostic: &transported,
+                    ..clean_terminal_result()
+                },
+                false,
+                false,
+            );
+        });
+        assert_eq!(
+            captured.entries()[0].level,
+            Level::WARN,
+            "stale route, wrong role, or exit zero without progress"
+        );
     }
 }

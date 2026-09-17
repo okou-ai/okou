@@ -1,3 +1,10 @@
+import {
+  GET_STARTED_REWARDS,
+  GET_STARTED_REWARDS_CHANGED_EVENT,
+  getStartedContract,
+  type GetStartedStatus,
+} from "@okouai/api-contracts/contracts/get-started";
+import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
@@ -13,6 +20,7 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { pathname } from "../../../signals/location.ts";
+import { createDeferredPromise } from "../../../signals/utils.ts";
 import {
   testContext,
   type TestContext,
@@ -58,7 +66,8 @@ function slackInstalled(): SlackOrgStatus {
 function configureQuestPage(
   context: TestContext,
   role: "admin" | "member",
-): void {
+  { claimedToday = true }: { claimedToday?: boolean } = {},
+): GetStartedStatus {
   context.mocks.data.org({
     id: "org_default",
     name: "Quest Workspace",
@@ -81,6 +90,90 @@ function configureQuestPage(
   context.mocks.api(integrationsSlackContract.getStatus, ({ respond }) => {
     return respond(200, slackInstalled());
   });
+  const keys =
+    role === "admin"
+      ? ([
+          "connector",
+          "slack",
+          "workflow",
+          "invite",
+          "share",
+          "checkin",
+        ] as const)
+      : (["connector", "workflow", "share", "checkin"] as const);
+  const data: GetStartedStatus = {
+    serverNow: "2026-09-15T12:00:00.000Z",
+    nextResetAt: "2026-09-16T00:00:00.000Z",
+    claimedToday,
+    quests: keys.map((key) => {
+      const reward = GET_STARTED_REWARDS[key];
+      const claimedCount =
+        key === "connector"
+          ? 3
+          : key === "slack" || (key === "checkin" && claimedToday)
+            ? 1
+            : 0;
+      return {
+        key,
+        claimedCount,
+        rewardAmount: reward.amount,
+        rewardTarget: reward.target,
+        limit: reward.limit,
+        earnedCredits: claimedCount * reward.amount,
+        pendingCount: 0,
+        canEarnMore: key !== "slack" && (key !== "checkin" || !claimedToday),
+      };
+    }),
+    shareClaim: null,
+    recentGrants: [],
+  };
+  context.mocks.api(getStartedContract.status, ({ respond }) => {
+    return respond(200, data);
+  });
+  context.mocks.api(getStartedContract.submitShare, ({ body, respond }) => {
+    expect(body.url).toBe("https://x.com/molly/status/1873");
+    const claim = {
+      id: "11111111-1111-4111-a111-111111111111",
+      questKey: "share" as const,
+      status: "pending" as const,
+      rewardAmount: 2000,
+      rewardTarget: "user" as const,
+      reason: null,
+      submittedAt: data.serverNow,
+      grantedAt: null,
+      expiresAt: null,
+    };
+    data.shareClaim = claim;
+    return respond(202, claim);
+  });
+  context.mocks.api(getStartedContract.checkin, ({ respond }) => {
+    const checkin = data.quests.find((q) => {
+      return q.key === "checkin";
+    });
+    if (!checkin) {
+      throw new Error("Missing check-in fixture");
+    }
+    if (!data.claimedToday) {
+      checkin.claimedCount++;
+      checkin.earnedCredits += 100;
+    }
+    checkin.canEarnMore = false;
+    data.claimedToday = true;
+    return respond(200, {
+      id: "22222222-2222-4222-a222-222222222222",
+      questKey: "checkin",
+      status: "granted",
+      rewardAmount: 100,
+      rewardTarget: "user",
+      reason: null,
+      submittedAt: data.serverNow,
+      grantedAt: data.serverNow,
+      expiresAt: new Date(
+        Date.parse(data.serverNow) + 168 * 60 * 60 * 1000,
+      ).toISOString(),
+    });
+  });
+  return data;
 }
 
 function questChatPath(): string {
@@ -106,29 +199,42 @@ test("An admin sees every step and what each one pays", async () => {
   const entry = await waitFor(() => {
     return screen.getByTestId("get-started-entry");
   });
-  expect(normalizedText(entry)).toBe("Get started2/6");
+  expect(normalizedText(entry)).toBe("Get started3/6");
 
   const panel = await openQuestPanel();
   expect(
-    within(panel).getByText("Credits go to your personal balance."),
+    within(panel).getByText(
+      "Rewards expire 7 days after they are granted. Slack rewards go to the organization; other rewards go to your personal balance.",
+    ),
   ).toBeInTheDocument();
-  const workflow = within(screen.getByTestId("get-started-quest-workflow"));
+  const workflowRow = screen.getByTestId("get-started-quest-workflow");
+  const workflow = within(workflowRow);
   expect(workflow.getByText("Build a workflow")).toBeInTheDocument();
-  expect(
-    workflow.getByText("Turn a repeat task into an automation"),
-  ).toBeInTheDocument();
+  // The reward leads the description line, so the two read as one sentence.
+  expect(normalizedText(workflowRow)).toContain(
+    "+1,000 · Turn a repeat task into a reusable skill",
+  );
   expect(workflow.getByText("+1,000")).toBeInTheDocument();
+  // An unfinished quest names what pressing the row does.
+  expect(workflow.getByText("Build")).toBeInTheDocument();
 
   // A reward that keeps paying names its unit next to the amount.
   const invite = within(screen.getByTestId("get-started-quest-invite"));
   expect(invite.getByText("Invite your team")).toBeInTheDocument();
   expect(invite.getByText("per member")).toBeInTheDocument();
 
-  // Connecting and installing Slack are already done, so they carry no reward.
-  expect(within(panel).getByText("2,300")).toBeInTheDocument();
-  expect(
-    screen.queryByTestId("get-started-quest-connector"),
-  ).not.toBeInTheDocument();
+  // A finished quest keeps the completion check and offers nothing to press.
+  const slackRow = screen.getByTestId("get-started-quest-slack");
+  expect(within(slackRow).queryByText("Add")).not.toBeInTheDocument();
+
+  // Done but still earning: the connector keeps both its reward and its
+  // affordance instead of collapsing to the completion check.
+  const connectorRow = screen.getByTestId("get-started-quest-connector");
+  expect(normalizedText(connectorRow)).toContain("+100 per connector");
+  expect(within(connectorRow).getByText("Connect")).toBeInTheDocument();
+
+  // Personal earnings exclude Slack; another OAuth connector can still earn a reward.
+  expect(within(panel).getByText("400")).toBeInTheDocument();
 });
 
 test("A member is only offered the steps they can finish themselves", async () => {
@@ -142,7 +248,7 @@ test("A member is only offered the steps they can finish themselves", async () =
   const entry = await waitFor(() => {
     return screen.getByTestId("get-started-entry");
   });
-  expect(normalizedText(entry)).toBe("Get started1/4");
+  expect(normalizedText(entry)).toBe("Get started2/4");
 
   const panel = await openQuestPanel();
   expect(screen.getByTestId("get-started-quest-workflow")).toBeInTheDocument();
@@ -152,7 +258,7 @@ test("A member is only offered the steps they can finish themselves", async () =
     within(panel).queryByText("Add Okou to Slack"),
   ).not.toBeInTheDocument();
   // The earned total counts only the quests this role was offered.
-  expect(within(panel).getByText("300")).toBeInTheDocument();
+  expect(within(panel).getByText("400")).toBeInTheDocument();
 });
 
 test("Building a workflow opens the workflows page", async () => {
@@ -171,8 +277,8 @@ test("Building a workflow opens the workflows page", async () => {
   });
 });
 
-test("Sharing on X spends the one submission", async () => {
-  configureQuestPage(context, "admin");
+test("Sharing on X restores pending state and an Ably review notification updates the open panel", async () => {
+  const data = configureQuestPage(context, "admin");
   await setupPage({
     context,
     path: questChatPath(),
@@ -208,6 +314,111 @@ test("Sharing on X spends the one submission", async () => {
       return normalizedText(candidate).includes("Share Okou on X");
     }),
   ).toBeUndefined();
+
+  if (!data.shareClaim) {
+    throw new Error("Missing submitted X claim");
+  }
+  const share = data.quests.find((quest) => {
+    return quest.key === "share";
+  });
+  if (!share) {
+    throw new Error("Missing X quest");
+  }
+  data.shareClaim.status = "granted";
+  data.shareClaim.grantedAt = data.serverNow;
+  data.shareClaim.expiresAt = "2026-09-22T12:00:00.000Z";
+  Object.assign(share, {
+    claimedCount: 1,
+    earnedCredits: 2000,
+    canEarnMore: false,
+  });
+  context.mocks.ably.trigger(GET_STARTED_REWARDS_CHANGED_EVENT);
+  await expect(within(panel).findByText("2,400")).resolves.toBeInTheDocument();
+  expect(within(panel).queryByText("In review")).not.toBeInTheDocument();
+});
+
+test("Reward notifications refresh quests without disconnecting shared chat history", async () => {
+  const data = configureQuestPage(context, "member", { claimedToday: false });
+  context.mocks.browser.matchMedia((query) => {
+    return query === "(min-width: 640px)";
+  });
+  context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
+    return respond(200, {
+      chatThreads: [
+        {
+          id: "b0000000-0000-4000-a000-000000000001",
+          agentId: QUEST_AGENT_ID,
+          title: "Existing reward conversation",
+          sortAt: data.serverNow,
+          createdAt: data.serverNow,
+          updatedAt: data.serverNow,
+          pinnedAt: null,
+          renamedAt: null,
+          selectedModel: null,
+          serviceTier: null,
+          computerUseHostId: null,
+          selectedVideoModel: null,
+        },
+      ],
+      latestEventId: null,
+      latestSeqId: null,
+    });
+  });
+  context.mocks.api(chatThreadsContract.events, ({ respond }) => {
+    return respond(200, { events: [], hasMore: false });
+  });
+  data.shareClaim = {
+    id: "33333333-3333-4333-a333-333333333333",
+    questKey: "share",
+    status: "pending",
+    rewardAmount: 2000,
+    rewardTarget: "user",
+    reason: null,
+    submittedAt: data.serverNow,
+    grantedAt: null,
+    expiresAt: null,
+  };
+  await setupPage({
+    context,
+    path: questChatPath(),
+    sharedWorkerTestTransport: "message-port",
+    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
+  });
+  await expect(
+    screen.findByText("Existing reward conversation"),
+  ).resolves.toBeInTheDocument();
+  const panel = await openQuestPanel();
+  expect(within(panel).getByText("In review")).toBeInTheDocument();
+  await waitFor(() => {
+    expect(
+      context.mocks.ably.hasSubscriptionOnChannel(
+        "user:test-user-123",
+        GET_STARTED_REWARDS_CHANGED_EVENT,
+      ),
+    ).toBeTruthy();
+  });
+  data.shareClaim.status = "rejected";
+  data.shareClaim.reason = "post_must_mention_okou";
+  context.mocks.ably.triggerOnChannel(
+    "user:test-user-123",
+    GET_STARTED_REWARDS_CHANGED_EVENT,
+    null,
+  );
+  // The reward shares the description line, so the rejection reason is read
+  // off the row rather than as a standalone text node.
+  await waitFor(() => {
+    expect(
+      normalizedText(screen.getByTestId("get-started-quest-share")),
+    ).toContain(
+      "This post is not eligible. Submit another public post mentioning Okou.",
+    );
+  });
+  expect(within(panel).getByText("300")).toBeInTheDocument();
+  expect(
+    within(screen.getByTestId("get-started-quest-checkin")).getByText(
+      "Check in",
+    ),
+  ).toBeInTheDocument();
 });
 
 test("The entry stays hidden while the switch is off", async () => {
@@ -230,7 +441,7 @@ test("The invite quest opens usable People settings from the keyboard", async ()
   });
 
   await openQuestPanel();
-  await user.keyboard("{Home}{ArrowDown}");
+  await user.keyboard("{Home}{ArrowDown}{ArrowDown}");
   expect(screen.getByTestId("get-started-quest-invite")).toHaveFocus();
   await user.keyboard("{Enter}");
 
@@ -245,7 +456,7 @@ test("The invite quest opens usable People settings from the keyboard", async ()
   expect(screen.queryByRole("menu")).not.toBeInTheDocument();
 });
 
-test("Cancelling a share draft clears the link without consuming the submission", async () => {
+test("Cancelling a share draft clears the link without consuming a reward", async () => {
   configureQuestPage(context, "admin");
   await setupPage({
     context,
@@ -275,4 +486,158 @@ test("Cancelling a share draft clears the link without consuming the submission"
     within(reopened).getByRole("textbox", { name: "Post link" }),
   ).toHaveValue("");
   expect(buttonNamed("Submit", reopened)).toBeDisabled();
+});
+
+test("Invitation progress separates successful rewards from pending members and remains actionable below 15", async () => {
+  const data = configureQuestPage(context, "admin");
+  const invite = data.quests.find((q) => {
+    return q.key === "invite";
+  });
+  if (!invite) {
+    throw new Error("Missing invite fixture");
+  }
+  Object.assign(invite, {
+    claimedCount: 8,
+    earnedCredits: 800,
+    pendingCount: 3,
+  });
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
+  });
+  const panel = await openQuestPanel();
+  expect(within(panel).getByText("8/15", { exact: false })).toBeInTheDocument();
+  expect(
+    within(panel).getByText("Pending invitations: 3", { exact: false }),
+  ).toBeInTheDocument();
+  expect(screen.getByTestId("get-started-quest-invite")).toBeInTheDocument();
+  expect(within(panel).getByText("1,200")).toBeInTheDocument();
+});
+
+test("A rejected X claim can be replaced and survives opening the task panel", async () => {
+  const data = configureQuestPage(context, "member");
+  data.shareClaim = {
+    id: "33333333-3333-4333-a333-333333333333",
+    questKey: "share",
+    status: "rejected",
+    rewardAmount: 2000,
+    rewardTarget: "user",
+    reason: "post_must_mention_okou",
+    submittedAt: data.serverNow,
+    grantedAt: null,
+    expiresAt: null,
+  };
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
+  });
+  await openQuestPanel();
+  expect(
+    normalizedText(screen.getByTestId("get-started-quest-share")),
+  ).toContain(
+    "This post is not eligible. Submit another public post mentioning Okou.",
+  );
+  click(screen.getByTestId("get-started-quest-share"));
+  await expect(
+    screen.findByRole("dialog", { name: "Share Okou on X" }),
+  ).resolves.toBeInTheDocument();
+});
+
+test("Daily rewards are claimed by selecting check in and menu reopening refreshes the UTC day", async () => {
+  const data = configureQuestPage(context, "member", { claimedToday: false });
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
+  });
+  const panel = await openQuestPanel();
+  await expect(within(panel).findByText("300")).resolves.toBeInTheDocument();
+  const checkinRow = screen.getByTestId("get-started-quest-checkin");
+  expect(within(checkinRow).getByText("Check in")).toBeInTheDocument();
+  expect(normalizedText(checkinRow)).toContain(
+    "Check in once a day. Resets at 00:00 UTC.",
+  );
+
+  click(checkinRow);
+  await expect(within(panel).findByText("400")).resolves.toBeInTheDocument();
+  expect(screen.getByTestId("get-started-quest-checkin")).not.toHaveAttribute(
+    "role",
+    "menuitem",
+  );
+  expect(within(panel).queryByText("Check in")).not.toBeInTheDocument();
+
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+  const sameDayPanel = await openQuestPanel();
+  expect(within(sameDayPanel).getByText("400")).toBeInTheDocument();
+  expect(within(sameDayPanel).queryByText("Check in")).not.toBeInTheDocument();
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+
+  data.serverNow = "2026-09-16T00:00:00.000Z";
+  data.nextResetAt = "2026-09-17T00:00:00.000Z";
+  data.claimedToday = false;
+  const checkin = data.quests.find((quest) => {
+    return quest.key === "checkin";
+  });
+  if (!checkin) {
+    throw new Error("Missing check-in fixture");
+  }
+  checkin.canEarnMore = true;
+  const nextDayPanel = await openQuestPanel();
+  await expect(
+    within(nextDayPanel).findByText("Check in"),
+  ).resolves.toBeInTheDocument();
+  expect(within(nextDayPanel).getByText("400")).toBeInTheDocument();
+
+  const nextDayCheckin = screen.getByTestId("get-started-quest-checkin");
+  nextDayCheckin.focus();
+  await userEvent.keyboard("{Enter}");
+  await expect(
+    within(nextDayPanel).findByText("500"),
+  ).resolves.toBeInTheDocument();
+  expect(within(nextDayPanel).queryByText("Check in")).not.toBeInTheDocument();
+});
+
+test("A pending check-in disables the action and a failed request leaves it available", async () => {
+  configureQuestPage(context, "member", { claimedToday: false });
+  const responseReady = createDeferredPromise<void>(context.signal);
+  context.mocks.api(getStartedContract.checkin, async ({ respond }) => {
+    await responseReady.promise;
+    return respond(403, {
+      error: {
+        code: "FORBIDDEN",
+        message: "Check-in is temporarily unavailable",
+      },
+    });
+  });
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
+  });
+  const panel = await openQuestPanel();
+  await expect(within(panel).findByText("300")).resolves.toBeInTheDocument();
+  const checkinRow = screen.getByTestId("get-started-quest-checkin");
+
+  click(checkinRow);
+  await waitFor(() => {
+    expect(checkinRow).toHaveAttribute("aria-disabled", "true");
+    expect(checkinRow).toHaveAttribute("aria-busy", "true");
+  });
+  responseReady.resolve();
+  await expect(
+    screen.findByText("Check-in is temporarily unavailable"),
+  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(checkinRow).not.toHaveAttribute("aria-disabled", "true");
+  });
+  expect(within(checkinRow).getByText("Check in")).toBeInTheDocument();
+  expect(within(panel).getByText("300")).toBeInTheDocument();
 });

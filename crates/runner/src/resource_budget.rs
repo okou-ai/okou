@@ -141,8 +141,10 @@ impl ResourceBudget {
     ///
     /// CPU admission reserves fixed host headroom before applying
     /// `concurrency_factor`; memory applies the factor directly.
-    /// The balloon controller reclaims unused guest memory at runtime,
-    /// so memory overcommit is safe for typical workloads.
+    /// Free-page reporting releases genuinely free pages; parked Guests also
+    /// request balloon reclamation. Active Guests can use their full profile
+    /// capacity, so neither mechanism guarantees resident-memory headroom
+    /// when profiles are overcommitted.
     pub fn new(
         host_cpus: u32,
         host_memory_mb: u32,

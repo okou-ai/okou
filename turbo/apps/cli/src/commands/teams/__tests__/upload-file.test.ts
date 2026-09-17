@@ -57,7 +57,29 @@ describe("okou teams upload-file command", () => {
     expect(helpOutput).toContain("Uploads through Okou storage first");
   });
 
-  it("uploads a file to R2 and completes Teams delivery", async () => {
+  it.each([
+    {
+      url: "/artifacts/abcxyz1234.pdf",
+      expectedUrl: "https://app.okou.ai/artifacts/abcxyz1234.pdf",
+      appUrl: "https://app.okou.ai",
+      activityId: undefined,
+    },
+    {
+      url: "/artifacts/00000000000040008000000000000001.pdf#page=2",
+      expectedUrl:
+        "https://pr-123-app.omby.ai/artifacts/00000000000040008000000000000001.pdf#page=2",
+      appUrl: "https://pr-123-app.omby.ai",
+      activityId: "teams-activity-1",
+    },
+    {
+      url: "https://files.example/report.pdf?download=1#page=2",
+      expectedUrl: "https://files.example/report.pdf?download=1#page=2",
+      appUrl: "https://app.okou.ai",
+      activityId: "teams-activity-1",
+    },
+  ])("prints upload URL $url", async (testCase) => {
+    const { url, expectedUrl, appUrl, activityId } = testCase;
+    vi.stubEnv("OKOU_APP_URL", appUrl);
     let putReceivedContentType: string | null = null;
     let completeBody: Record<string, unknown> | undefined;
 
@@ -73,8 +95,7 @@ describe("okou teams upload-file command", () => {
         return HttpResponse.json({
           uploadId: "00000000-0000-4000-8000-000000000001",
           uploadUrl: R2_UPLOAD_URL,
-          fileUrl:
-            "https://app.example/f/user/00000000-0000-4000-8000-000000000001/report.pdf",
+          fileUrl: url,
           filename: "report.pdf",
           contentType: "application/pdf",
           size: 17,
@@ -95,12 +116,12 @@ describe("okou teams upload-file command", () => {
       http.post(UPLOAD_COMPLETE_URL, async ({ request }) => {
         completeBody = (await request.json()) as Record<string, unknown>;
         return HttpResponse.json({
-          activityId: "teams-activity-1",
+          activityId,
           conversationId: "19:thread@thread.tacv2",
           filename: "report.pdf",
           mimetype: "application/pdf",
           size: 17,
-          url: "https://app.example/f/user/00000000-0000-4000-8000-000000000001/report.pdf",
+          url,
         });
       }),
     );
@@ -130,12 +151,13 @@ describe("okou teams upload-file command", () => {
     const stdout = mockConsoleLog.mock.calls.flat().join("\n");
     const parsed = JSON.parse(stdout) as Record<string, unknown>;
     expect(parsed).toMatchObject({
-      activityId: "teams-activity-1",
       conversationId: "19:thread@thread.tacv2",
       filename: "report.pdf",
       mimetype: "application/pdf",
       size: 17,
+      url: expectedUrl,
     });
+    expect(parsed.activityId).toBe(activityId);
   });
 
   it("errors when the file does not exist", async () => {

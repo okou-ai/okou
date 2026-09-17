@@ -3,19 +3,16 @@
 import json
 import uuid
 from concurrent.futures import Future
-from pathlib import Path
 
 import flow_metadata_keys as metadata_keys
 import platform_api
 import runner_flush_lifecycle
-import usage
+from tests.pending_helpers import delivery_exchange
 
 SENSITIVE_WEBHOOK_URL = (
     "https://user:pass@api.okou.ai/api/webhooks/agent/usage-event?token=secret#frag"
 )
 SANITIZED_WEBHOOK_URL = "https://api.okou.ai/api/webhooks/agent/usage-event"
-_RUNNER_USAGE_STATE_ID = "runner-state"
-_RUNNER_USAGE_FLUSH_REQUEST_ID = "request-1"
 
 
 class QueuedUsageExecutor:
@@ -42,24 +39,9 @@ class QueuedUsageExecutor:
             self.run_next()
 
 
-def install_runner_usage_flush_request(tmp_path: Path) -> Path:
-    pending_path = tmp_path / "usage-pending"
-    usage.set_pending_path(str(pending_path), usage_state_id=_RUNNER_USAGE_STATE_ID)
-    (tmp_path / "usage-flush-request").write_text(
-        json.dumps(
-            {
-                "usageStateId": _RUNNER_USAGE_STATE_ID,
-                "flushRequestId": _RUNNER_USAGE_FLUSH_REQUEST_ID,
-                "requestedAtMs": 1_770_000_000_000,
-            }
-        ),
-        encoding="utf-8",
-    )
-    return pending_path
-
-
 def request_runner_usage_flush() -> None:
-    runner_flush_lifecycle.handle_runner_usage_flush_signal(0, None)
+    reply = delivery_exchange("delivery.flush")
+    assert reply["type"] == "result"
     runner_flush_lifecycle.wait_for_runner_usage_flush_worker_to_stop_for_tests()
 
 

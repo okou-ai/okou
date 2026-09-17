@@ -1,11 +1,9 @@
 import { command } from "ccstate";
-import { toast } from "@okouai/ui/components/ui/sonner";
-import { i18n } from "../i18n/index.ts";
 import { createAttachmentPreviewSignals } from "./attachment-resource-url.ts";
+import { clerk$ } from "./auth.ts";
 import { classifyChatAttachment } from "./chat-page/parse-body-blocks.ts";
 import { createMarkdownPreviewTree } from "./markdown-preview-tree.ts";
 import type { AttachmentLightboxState } from "./okou-page/attachment-chips.ts";
-import { writeToClipboard } from "./okou-page/clipboard.ts";
 import {
   createTextPreviewComputed,
   isTextPreviewKind,
@@ -15,15 +13,26 @@ import { createZoomableImageCanvasSignals } from "./zoomable-image-canvas.ts";
 export interface SharedArtifactPreview {
   readonly filename: string;
   readonly preview: AttachmentLightboxState;
+  readonly publicUrl: string | null;
 }
 
-export function createSharedArtifactPreview(
-  artifact: {
-    readonly filename: string;
-    readonly contentType: string;
-    readonly url: string;
-    readonly expiresAt: string;
+export interface SharedArtifactContent {
+  readonly filename: string;
+  readonly contentType: string;
+  readonly url: string;
+  readonly expiresAt?: string;
+}
+
+export const signInToSharedArtifact$ = command(
+  async ({ get }, returnUrl: string, signal: AbortSignal) => {
+    const clerk = await get(clerk$);
+    signal.throwIfAborted();
+    window.location.assign(clerk.buildSignInUrl({ redirectUrl: returnUrl }));
   },
+);
+
+export function createSharedArtifactPreview(
+  artifact: SharedArtifactContent,
   referenceUrl: string,
 ): SharedArtifactPreview {
   const kind = classifyChatAttachment(artifact);
@@ -32,14 +41,18 @@ export function createSharedArtifactPreview(
   const base = {
     filename: artifact.filename,
     url: referenceUrl,
-    ...createAttachmentPreviewSignals(referenceUrl, {
-      contentType: artifact.contentType,
-      resolvedToken: {
-        token: contentUrl.href,
-        expiresAt: artifact.expiresAt,
-        publicUrl: null,
-      },
-    }),
+    ...(artifact.expiresAt === undefined
+      ? createAttachmentPreviewSignals(contentUrl.href, {
+          contentType: artifact.contentType,
+        })
+      : createAttachmentPreviewSignals(referenceUrl, {
+          contentType: artifact.contentType,
+          resolvedToken: {
+            token: contentUrl.href,
+            expiresAt: artifact.expiresAt,
+            publicUrl: null,
+          },
+        })),
   };
   let preview: AttachmentLightboxState;
   if (isTextPreviewKind(kind)) {
@@ -59,30 +72,9 @@ export function createSharedArtifactPreview(
   return {
     filename: artifact.filename,
     preview,
+    publicUrl: artifact.expiresAt === undefined ? contentUrl.href : null,
   };
 }
-
-export const copySharedArtifactLink$ = command(
-  async (_context, signal: AbortSignal) => {
-    // Read the app address at click time; temporary preview URLs never leave
-    // the viewer through the share action.
-    const copied = await writeToClipboard(window.location.href);
-    signal.throwIfAborted();
-    if (copied) {
-      toast.success(
-        i18n.t(($) => {
-          return $.artifacts.toasts.linkCopied;
-        }),
-      );
-      return;
-    }
-    toast.error(
-      i18n.t(($) => {
-        return $.artifacts.toasts.copyLinkFailed;
-      }),
-    );
-  },
-);
 
 export function createSharedArtifactViewerSignals() {
   return {

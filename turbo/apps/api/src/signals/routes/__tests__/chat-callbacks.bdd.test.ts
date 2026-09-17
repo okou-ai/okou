@@ -14,12 +14,17 @@ import {
   type GenerationTemplateRequest,
   type UserMessageInputDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { CHAT_RUN_EXECUTION_TIMEOUT_MESSAGE } from "@okouai/api-contracts/contracts/errors";
+import {
+  CHAT_RUN_CONTENT_POLICY_REJECTED_MESSAGE,
+  CHAT_RUN_EXECUTION_TIMEOUT_MESSAGE,
+  CHAT_RUN_USAGE_LIMIT_MESSAGE,
+} from "@okouai/api-contracts/contracts/errors";
 import type { SupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import { CANCELLATION_RECOVERY_STALE_AFTER_MS } from "@okouai/api-contracts/contracts/runners";
 import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 import {
+  FeatureSwitchKey,
   ILLUSTRATION_TEMPLATE_ITEMS,
   PRESENTATION_TEMPLATE_PICKER_ITEMS,
 } from "@okouai/core";
@@ -699,14 +704,20 @@ describe("CHAT-02: completed chat callback", () => {
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const titlePrompts: string[] = [];
+    const sentinelPrompt = "unrelated sentinel run";
+    // Keep the sentinel's eager title pending after its run is cancelled.
+    const sentinelTitle = deferredGate();
     const followupSystemPrompts: string[] = [];
     const followupPrompts: string[] = [];
     const longFollowupPrompt =
       "Can you draft a new 90-minute workshop outline that focuses on the event-driven workflow of an AI Lead Operations Team and includes hands-on exercises?";
     mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
-    chatCallbacks.mockOpenRouterCompletions((body) => {
+    chatCallbacks.mockOpenRouterCompletions(async (body) => {
       const systemContent = body.messages[0]?.content ?? "";
       if (systemContent.includes("Generate a short, descriptive title")) {
+        if (body.messages[1]?.content.includes(sentinelPrompt)) {
+          await sentinelTitle.wait();
+        }
         titlePrompts.push(body.messages[1]?.content ?? "");
         return "Debugging Node Apps";
       }
@@ -730,13 +741,21 @@ describe("CHAT-02: completed chat callback", () => {
     });
 
     const prompt = "How do I debug my Node app?";
+    function titlePromptsForThisThread(): string[] {
+      return titlePrompts.filter((titlePrompt) => {
+        return titlePrompt.includes(prompt);
+      });
+    }
     const first = await startChatRun(actor, {
       agentId,
       prompt,
       selectedModel: "claude-sonnet-5",
     });
 
-    const template = PRESENTATION_TEMPLATE_PICKER_ITEMS[0];
+    // Pinned by slug because the assertions below quote this runbook by name.
+    const template = PRESENTATION_TEMPLATE_PICKER_ITEMS.find((item) => {
+      return item.slug === "playful-launch-presentation";
+    });
     if (!template) {
       throw new Error("Expected a registered presentation runbook item");
     }
@@ -774,12 +793,16 @@ describe("CHAT-02: completed chat callback", () => {
     // run-end bump on X is observable through thread-list reordering.
     const sentinel = await startChatRun(actor, {
       agentId,
-      prompt: "unrelated sentinel run",
+      prompt: sentinelPrompt,
     });
     await api.requestCancelRun(actor, sentinel.runId, [200]);
     await waitForRunStatus(actor, sentinel.runId, "cancelled");
     await waitForThreadTitle(actor, first.threadId, "Debugging Node Apps");
-    const titlePromptCountBeforeComplete = titlePrompts.length;
+    sentinelTitle.release();
+    // Cancellation does not drain the sentinel's background title work.
+    await waitForThreadTitle(actor, sentinel.threadId, "Debugging Node Apps");
+    // Only this thread's title requests belong to the completion assertion.
+    const titlePromptCountBeforeComplete = titlePromptsForThisThread().length;
 
     await chatCallbacks.registerPushSubscription(actor);
     chatCallbacks.enableVapid();
@@ -843,8 +866,11 @@ describe("CHAT-02: completed chat callback", () => {
       "Supported generation types are:",
     );
 
+    await flushWaitUntilForTest();
     await waitForThreadTitle(actor, first.threadId, "Debugging Node Apps");
-    expect(titlePrompts).toHaveLength(titlePromptCountBeforeComplete);
+    expect(titlePromptsForThisThread()).toHaveLength(
+      titlePromptCountBeforeComplete,
+    );
     const initialTitlePrompt = titlePrompts.find((titlePrompt) => {
       return titlePrompt.includes(`Most recent user message:\n${prompt}`);
     });
@@ -1243,6 +1269,17 @@ describe("CHAT-02: completed chat callback", () => {
 
   it("silently degrades all four callback features while delivering the generic notification", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
+    if (!actor.orgId) {
+      throw new Error("Expected an organization");
+    }
+    // Opening copy is the producer accounts keep when thread activity
+    // summaries are off, so pin the switch instead of following its generally
+    // available default: this case is about the other generations degrading.
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId: actor.orgId },
+      { [FeatureSwitchKey.ThreadActivitySummary]: false },
+    );
     mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
     chatCallbacks.mockOpenRouterCompletions((body) => {
       const system = body.messages[0]?.content ?? "";
@@ -1611,11 +1648,17 @@ describe("CHAT-02: completed chat callback", () => {
       }),
     ).toBeTruthy();
 
+    expect(requestsBySite.get("title")).toStrictEqual({
+      model: "google/gemini-3.1-flash-lite",
+      max_tokens: 2048,
+      reasoning: { effort: "minimal" },
+    });
+
     // Reasoning tokens are drawn from the same budget as the answer, so a
     // budget sized for a non-reasoning model starves the answer entirely. This
     // model cannot disable thinking and "low" is already its floor, so the
     // shared ceiling is the only lever that keeps the answer from being lost.
-    for (const site of ["title", "followups", "notification", "runSummary"]) {
+    for (const site of ["followups", "notification", "runSummary"]) {
       expect(requestsBySite.get(site)).toStrictEqual({
         model: "google/gemini-3.8-flash",
         max_tokens: 2048,
@@ -3901,15 +3944,6 @@ describe("CHAT-02: failed chat callbacks", () => {
       publicReason: "provider_insufficient_credits",
     },
     {
-      name: "legacy BYOK balance",
-      builtIn: false,
-      reason: undefined,
-      error: "Credit balance is too low",
-      expected:
-        "Your connected model provider account has insufficient balance.",
-      publicReason: undefined,
-    },
-    {
       name: "vm0 credits during BYOK",
       builtIn: false,
       reason: "insufficient_credits",
@@ -3923,15 +3957,6 @@ describe("CHAT-02: failed chat callbacks", () => {
       builtIn: true,
       reason: "provider_insufficient_credits",
       error: "Credit balance is too low",
-      expected: "The current model is unavailable.",
-      publicReason: undefined,
-    },
-    {
-      name: "legacy built-in affordability",
-      builtIn: true,
-      reason: "insufficient_credits",
-      error:
-        "API Error: 402 This request requires more credits. You can only afford 100 tokens.",
       expected: "The current model is unavailable.",
       publicReason: undefined,
     },
@@ -4133,6 +4158,29 @@ describe("CHAT-02: failed chat callbacks", () => {
           sequenceNumber: 9,
           eventData: { is_error: false, result: raw },
         },
+        {
+          type: "result",
+          sequenceNumber: 10,
+          is_error: true,
+          result: "You have hit your ChatGPT usage limit.",
+          failureReason: "provider_insufficient_credits",
+        },
+        {
+          type: "result",
+          sequenceNumber: 11,
+          eventData: {
+            is_error: true,
+            result: "You have hit your ChatGPT usage limit.",
+            failureReason: "provider_insufficient_credits",
+          },
+        },
+        {
+          type: "result",
+          sequenceNumber: 12,
+          is_error: true,
+          result: "Insufficient vm0 credits",
+          failureReason: "insufficient_credits",
+        },
       ];
       await webhooks.requestAgentEvents(
         { runId: run.runId, events },
@@ -4287,6 +4335,21 @@ describe("CHAT-02: failed chat callbacks", () => {
           : events[7],
         { ...events[8], eventData: { is_error: true, result: visible } },
         events[9],
+        builtIn
+          ? {
+              type: "result",
+              sequenceNumber: 10,
+              is_error: true,
+              result: visible,
+            }
+          : events[10],
+        builtIn
+          ? {
+              ...events[11],
+              eventData: { is_error: true, result: visible },
+            }
+          : events[11],
+        events[12],
       ]);
       const exported = await reads.requestAgentRunNetworkLogs(
         actor,
@@ -4474,6 +4537,7 @@ describe("CHAT-02: failed chat callbacks", () => {
         prompt: "round eight",
         error:
           "Claude Sonnet 5 is overloaded. Please wait a few minutes and try again, or switch to another model.",
+        expectedError: CHAT_RUN_USAGE_LIMIT_MESSAGE,
         failureReason: "usage_limit",
         selectedModel: "claude-sonnet-5",
       },
@@ -4496,6 +4560,13 @@ describe("CHAT-02: failed chat callbacks", () => {
         error: "Contradictory runner failure",
         expectedError: CHAT_RUN_EXECUTION_TIMEOUT_MESSAGE,
         failureReason: "execution_timeout",
+      },
+      {
+        prompt: "safety refusal",
+        error:
+          "Codex error: Invalid prompt: your prompt was flagged as potentially violating our usage policy. Please try again with a different prompt: https://example.invalid/policy",
+        expectedError: CHAT_RUN_CONTENT_POLICY_REJECTED_MESSAGE,
+        failureReason: "safety_policy_refusal",
       },
     ];
 
@@ -4968,7 +5039,7 @@ describe("CHAT-02: auto-send after failures", () => {
     };
     const templatePrompt = `[Template #1: ${style.title} (illustration)]`;
     const feedbackPrompt =
-      "Feedback on this part of your reply:\n\n" +
+      "The user quoted this part of your reply:\n\n" +
       "> The failed response omitted the owner\n\nName the responsible owner";
 
     const failedForNormal = await startChatRun(actor, {
@@ -5051,7 +5122,248 @@ describe("CHAT-02: auto-send after failures", () => {
     await waitForRunStatus(actor, promoted.runId, "cancelled");
   }, 90_000);
 
-  it("uses the latest unrevoked successful event as the incomplete-round boundary", async () => {
+  it.each([
+    { entrypoint: "direct", lateFollowup: "before failure" },
+    { entrypoint: "queued", lateFollowup: "before failure" },
+    { entrypoint: "direct", lateFollowup: "after failure" },
+    { entrypoint: "queued", lateFollowup: "after failure" },
+  ] as const)(
+    "preserves the complete failed round for $entrypoint sends when an older successful follow-up arrives $lateFollowup",
+    async ({ entrypoint, lateFollowup }) => {
+      const { actor, agentId, runnerGroup, storage } =
+        await entitledChatActor();
+      chatCallbacks.failIfChatCallbackRouteIsFetched();
+
+      const anchor = await startChatRun(actor, {
+        agentId,
+        prompt: "successful history before the delayed follow-up",
+      });
+      const anchorHeaders = await claimChatRun(runnerGroup, anchor.runId);
+      const followupGate = deferredGate();
+      const followupStarted = createDeferredPromise<void>(context.signal);
+      mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
+      chatCallbacks.mockOpenRouterCompletions(async (body) => {
+        const systemContent = body.messages[0]?.content ?? "";
+        if (systemContent.includes("recommended follow-up messages")) {
+          followupStarted.resolve(undefined);
+          await followupGate.wait();
+          return JSON.stringify([
+            { prompt: "Inspect the delayed follow-up", kind: "talk" },
+          ]);
+        }
+        return "Delayed Follow-up";
+      });
+      chatCallbacks.mockChatOutputEvents([
+        assistantEvent(0, "successful answer before the failed request"),
+      ]);
+      await completeChatRunOk(anchor.runId, anchorHeaders, {
+        lastEventSequence: 0,
+      });
+      await followupStarted.promise;
+
+      const upload = await chat.prepareUpload(actor, {
+        filename: "failed-request.txt",
+        contentType: "text/plain",
+        size: 18,
+      });
+      storage.addObject({
+        bucket: USER_ARTIFACTS_BUCKET,
+        key: `artifacts/${actor.userId}/${upload.id}/failed-request.txt`,
+        size: 18,
+      });
+      const file = await chat.completeUpload(actor, { id: upload.id });
+      const failedPrompt = "preserve this request and its attachment";
+      const failed = await startChatRun(actor, {
+        agentId,
+        threadId: anchor.threadId,
+        prompt: failedPrompt,
+        userMessage: {
+          version: 1,
+          parts: [
+            {
+              type: "file",
+              fileId: file.id,
+              filenameSnapshot: file.filename,
+              contentType: file.contentType,
+            },
+            { type: "text", text: failedPrompt },
+          ],
+        },
+      });
+      const failedHeaders = await claimChatRun(runnerGroup, failed.runId);
+      if (lateFollowup === "before failure") {
+        followupGate.release();
+        await waitForThreadMessages(actor, anchor.threadId, (messages) => {
+          return recommendedFollowupEvents(messages, anchor.runId).length === 1;
+        });
+      }
+      await failChatRun(failed.runId, failedHeaders, "delayed history failure");
+      await waitForThreadMessages(actor, anchor.threadId, (messages) => {
+        return lifecycleMarkers(messages, failed.runId, "failed").length === 1;
+      });
+      followupGate.release();
+      const history = await waitForThreadMessages(
+        actor,
+        anchor.threadId,
+        (messages) => {
+          return recommendedFollowupEvents(messages, anchor.runId).length === 1;
+        },
+      );
+      const input = userMessages(history.events).find((message) => {
+        return (
+          message.eventType === "input.prompt" && message.runId === failed.runId
+        );
+      });
+      const failure = lifecycleMarkers(
+        history.events,
+        failed.runId,
+        "failed",
+      )[0];
+      const followup = recommendedFollowupEvents(
+        history.events,
+        anchor.runId,
+      )[0];
+      if (!input || !failure || !followup) {
+        throw new Error("Expected the input, failure, and delayed follow-up");
+      }
+      expect(input.seqId).toBeLessThan(followup.seqId);
+      if (lateFollowup === "before failure") {
+        expect(followup.seqId).toBeLessThan(failure.seqId);
+      } else {
+        expect(failure.seqId).toBeLessThan(followup.seqId);
+      }
+
+      const probePrompt = "inspect complete incomplete-round context";
+      let probeRunId: string;
+      if (entrypoint === "queued") {
+        const blocker = await startChatRun(actor, {
+          agentId,
+          threadId: anchor.threadId,
+          prompt: "hold the queued context probe",
+        });
+        const blockerHeaders = await claimChatRun(runnerGroup, blocker.runId);
+        const queuedEventId = await queueChatEvent(actor, {
+          agentId,
+          threadId: anchor.threadId,
+          prompt: probePrompt,
+        });
+        await failChatRun(
+          blocker.runId,
+          blockerHeaders,
+          "release queued probe",
+        );
+        probeRunId = await waitForQueuedEventReplacement(
+          actor,
+          anchor.threadId,
+          queuedEventId,
+        );
+      } else {
+        const probe = await startChatRun(actor, {
+          agentId,
+          threadId: anchor.threadId,
+          prompt: probePrompt,
+        });
+        probeRunId = probe.runId;
+      }
+      const probeContext = await waitForRunContext(actor, probeRunId);
+      const appended = probeContext.body.appendSystemPrompt ?? "";
+      expect(appended).toContain("# Incomplete Rounds Context");
+      expect(appended.match(/^- RUN_STATUS: failed$/gm) ?? []).toHaveLength(
+        entrypoint === "queued" ? 2 : 1,
+      );
+      expect(appended).toContain(failedPrompt);
+      expect(appended).toContain(
+        `[Web file] ${file.filename} (${file.contentType})\n   [ID] ${file.id}`,
+      );
+      expect(appended).not.toContain(probePrompt);
+      expect(appended).not.toContain(
+        "successful history before the delayed follow-up",
+      );
+      expect(probeContext.body.sessionId).toBe(
+        cliAgentSessionIdForChatRun(anchor.runId),
+      );
+      await api.requestCancelRun(actor, probeRunId, [200]);
+      await waitForRunStatus(actor, probeRunId, "cancelled");
+    },
+    90_000,
+  );
+
+  it("does not revive a failed round when its output arrives after a later successful run", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    chatCallbacks.failIfChatCallbackRouteIsFetched();
+    const failedPrompt = "old failure superseded by a successful run";
+    const failed = await startChatRun(actor, { agentId, prompt: failedPrompt });
+    const failedHeaders = await claimChatRun(runnerGroup, failed.runId);
+    await failChatRun(failed.runId, failedHeaders, "old failure");
+    await waitForThreadMessages(actor, failed.threadId, (messages) => {
+      return lifecycleMarkers(messages, failed.runId, "failed").length === 1;
+    });
+
+    const successful = await startChatRun(actor, {
+      agentId,
+      threadId: failed.threadId,
+      prompt: "establish later successful history",
+    });
+    const successfulHeaders = await claimChatRun(runnerGroup, successful.runId);
+    chatCallbacks.mockChatOutputEvents([]);
+    await completeChatRunOk(successful.runId, successfulHeaders);
+    await waitForThreadMessages(actor, failed.threadId, (messages) => {
+      return (
+        lifecycleMarkers(messages, successful.runId, "completed").length === 1
+      );
+    });
+
+    const lateOutput = "late output from the superseded failure";
+    await webhooks.requestAgentEvents(
+      {
+        runId: failed.runId,
+        events: [
+          {
+            type: "assistant",
+            sequenceNumber: 0,
+            message: {
+              id: randomUUID(),
+              content: [{ type: "text", text: lateOutput }],
+            },
+          },
+        ],
+      },
+      failedHeaders,
+      [200],
+    );
+    const history = await chat.listThreadEvents(actor, failed.threadId);
+    const completed = lifecycleMarkers(
+      history.events,
+      successful.runId,
+      "completed",
+    )[0];
+    const output = eventBackedContents(history.events, failed.runId).find(
+      (event) => {
+        return event.content === lateOutput;
+      },
+    );
+    if (!completed || !output) {
+      throw new Error(
+        "Expected the later completion and the old run's late output",
+      );
+    }
+    expect(output.seqId).toBeGreaterThan(completed.seqId);
+
+    const probe = await startChatRun(actor, {
+      agentId,
+      threadId: failed.threadId,
+      prompt: "continue after the latest success",
+    });
+    const probeContext = await waitForRunContext(actor, probe.runId);
+    const appended = probeContext.body.appendSystemPrompt ?? "";
+    expect(appended).not.toContain("# Incomplete Rounds Context");
+    expect(appended).not.toContain(failedPrompt);
+    expect(appended).not.toContain(lateOutput);
+    await api.requestCancelRun(actor, probe.runId, [200]);
+    await waitForRunStatus(actor, probe.runId, "cancelled");
+  }, 90_000);
+
+  it("preserves the successful round boundary when its late follow-up is revoked", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
@@ -5174,11 +5486,9 @@ describe("CHAT-02: auto-send after failures", () => {
     const firstHeaders = await claimChatRun(runnerGroup, first.runId);
     chatCallbacks.mockChatOutputEvents([]);
     await completeChatRunOk(first.runId, firstHeaders);
-    // This journey verifies failed-run auto-send context, not overlap with the
-    // successful anchor's detached terminal materialization. Drain the tracked
-    // waitUntil work so later lifecycle/follow-up rows cannot move its boundary
-    // after the failed run starts; callback ordering has dedicated gate coverage.
-    await flushWaitUntilForTest();
+    await waitForThreadMessages(actor, first.threadId, (messages) => {
+      return lifecycleMarkers(messages, first.runId, "completed").length === 1;
+    });
 
     const completedFirst = await api.readRun(actor, first.runId);
     expect(completedFirst.result?.agentSessionId).toMatch(/[0-9a-f-]{36}/);
@@ -5366,7 +5676,7 @@ describe("CHAT-02: auto-send after failures", () => {
     await waitForRunStatus(actor, claimed.runId, "cancelled");
   }, 90_000);
 
-  it("keeps only the newest 20 incomplete rounds for normal and queued callback sends", async () => {
+  it("keeps only the newest 20 incomplete rounds despite late older output for normal and queued callback sends", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
@@ -5383,16 +5693,69 @@ describe("CHAT-02: auto-send after failures", () => {
     const historyPrompts = Array.from({ length: 21 }, (_, index) => {
       return `incomplete frontier history ${String(index).padStart(2, "0")}`;
     });
-    for (const prompt of historyPrompts) {
+    let oldest:
+      | {
+          readonly runId: string;
+          readonly sandboxHeaders: { readonly authorization: string };
+        }
+      | undefined;
+    for (const [index, prompt] of historyPrompts.entries()) {
       const round = await startChatRun(actor, {
         agentId,
         threadId: anchor.threadId,
         prompt,
       });
-      await api.requestCancelRun(actor, round.runId, [200]);
-      await waitForRunStatus(actor, round.runId, "cancelled");
+      if (index === 0) {
+        const sandboxHeaders = await claimChatRun(runnerGroup, round.runId);
+        oldest = { runId: round.runId, sandboxHeaders };
+        await failChatRun(
+          round.runId,
+          sandboxHeaders,
+          "oldest frontier failure",
+        );
+        await waitForThreadMessages(actor, anchor.threadId, (messages) => {
+          return lifecycleMarkers(messages, round.runId, "failed").length === 1;
+        });
+      } else {
+        await api.requestCancelRun(actor, round.runId, [200]);
+        await waitForRunStatus(actor, round.runId, "cancelled");
+      }
     }
     await flushWaitUntilForTest();
+    if (!oldest) {
+      throw new Error("Expected the oldest failed frontier run");
+    }
+    const lateOutput = "late output must not make the oldest round recent";
+    await webhooks.requestAgentEvents(
+      {
+        runId: oldest.runId,
+        events: [
+          {
+            type: "assistant",
+            sequenceNumber: 0,
+            message: {
+              id: randomUUID(),
+              content: [{ type: "text", text: lateOutput }],
+            },
+          },
+        ],
+      },
+      oldest.sandboxHeaders,
+      [200],
+    );
+    const history = await chat.listThreadEvents(actor, anchor.threadId);
+    const newestInput = userMessages(history.events).find((event) => {
+      return chatEventDisplayText(event) === historyPrompts.at(-1);
+    });
+    const output = eventBackedContents(history.events, oldest.runId).find(
+      (event) => {
+        return event.content === lateOutput;
+      },
+    );
+    if (!newestInput || !output) {
+      throw new Error("Expected the newest input and oldest run's late output");
+    }
+    expect(output.seqId).toBeGreaterThan(newestInput.seqId);
 
     const normalPrompt = "normal frontier probe";
     const normal = await startChatRun(actor, {
@@ -5405,6 +5768,7 @@ describe("CHAT-02: auto-send after failures", () => {
     expect(normalAppended).toContain("# Incomplete Rounds Context");
     expect(normalAppended.match(/^- RUN_STATUS:/gm) ?? []).toHaveLength(20);
     expect(normalAppended).not.toContain(historyPrompts[0]);
+    expect(normalAppended).not.toContain(lateOutput);
     expect(normalAppended).not.toContain("successful frontier anchor");
     for (const prompt of historyPrompts.slice(1)) {
       expect(normalAppended).toContain(prompt);
@@ -5461,6 +5825,7 @@ describe("CHAT-02: auto-send after failures", () => {
     ).toHaveLength(1);
     expect(callbackAppended).not.toContain(historyPrompts[0]);
     expect(callbackAppended).not.toContain(historyPrompts[1]);
+    expect(callbackAppended).not.toContain(lateOutput);
     expect(callbackAppended).toContain(normalPrompt);
     for (const prompt of historyPrompts.slice(2)) {
       expect(callbackAppended).toContain(prompt);

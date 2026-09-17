@@ -352,7 +352,7 @@ function DowngradeConfirmDialogContent({
               }}
               className={`flex items-center justify-between rounded-lg border p-3 text-left transition-colors ${
                 selectedTarget === "pro"
-                  ? "border-primary ring-2 ring-primary/20"
+                  ? "border-primary"
                   : "border-border hover:border-muted-foreground/30"
               }`}
             >
@@ -373,7 +373,7 @@ function DowngradeConfirmDialogContent({
               className={`flex items-center justify-between rounded-lg border p-3 text-left transition-colors ${
                 selectedTarget === "limited-free-1" ||
                 selectedTarget === "pro-suspend"
-                  ? "border-primary ring-2 ring-primary/20"
+                  ? "border-primary"
                   : "border-border hover:border-muted-foreground/30"
               }`}
             >
@@ -1947,7 +1947,7 @@ function StandaloneBillingPricingDialog({
         aria-describedby={undefined}
         maxWidth={860}
         height={688}
-        contentClassName="okou-app flex flex-col gap-0 overflow-hidden p-0"
+        contentClassName="flex flex-col gap-0 overflow-hidden p-0"
       >
         <DialogTitle className="sr-only">
           {i18n.t(($) => {

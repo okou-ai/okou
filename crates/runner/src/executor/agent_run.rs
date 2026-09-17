@@ -3,6 +3,7 @@ use std::pin::Pin;
 use std::time::{Duration, Instant};
 
 use guest_contracts::diagnostics::{CliTerminationReason, FailureDiagnostic};
+use guest_contracts::env::CliFramework;
 use guest_contracts::session_history_identity::{
     SESSION_HISTORY_IDENTITY_VERIFY_EXIT_EXPECTED_MISMATCH,
     SESSION_HISTORY_IDENTITY_VERIFY_EXIT_FRAMEWORK_MISMATCH,
@@ -72,7 +73,8 @@ use crate::restored_session_identity::{
 };
 use crate::storage_plan::{StoragePlan, build_storage_plan};
 use crate::telemetry::{
-    JobTelemetry, SessionHistoryTelemetryMetadata, session_history_prefix_extension_action_type,
+    HistoryTransferSource, JobTelemetry, SessionHistoryTelemetryMetadata,
+    session_history_prefix_extension_action_type,
 };
 use crate::types::{ExecutionContext, WorkspaceReuseResult};
 
@@ -1647,7 +1649,7 @@ async fn prepare_guest_storage(
                 let files = prepared.plan.take_decoded();
                 let guest_manifest = prepared.plan.into_guest_manifest();
                 let download_started = Instant::now();
-                let download_result = super::storage::download_storages_with_files(sandbox, context, &guest_manifest, &files).await;
+                let download_result = super::storage::download_storages_with_files(sandbox, context, guest_manifest, &files).await;
                 telemetry.record(
                     "runner_storage_manifest_guest_storage_apply",
                     download_started.elapsed(),
@@ -1681,7 +1683,7 @@ async fn prepare_guest_storage(
                 let files = plan.take_decoded();
                 let guest_manifest = plan.into_guest_manifest();
                 let download_started = Instant::now();
-                let download_result = super::storage::download_storages_with_files(sandbox, context, &guest_manifest, &files).await;
+                let download_result = super::storage::download_storages_with_files(sandbox, context, guest_manifest, &files).await;
                 telemetry.record(
                     "runner_storage_manifest_guest_storage_apply",
                     download_started.elapsed(),
@@ -2011,6 +2013,13 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                 let restore_result =
                     restore_session(sandbox, context, &session, start.reuse_result).await;
                 let guest_restore_elapsed = guest_restore_started.elapsed();
+                telemetry.record_history_transfer(
+                    guest_restore_elapsed,
+                    HistoryTransferSource::WorkspaceCache,
+                    CliFramework::from(effective_cli_framework(&context.cli_agent_type))
+                        .as_cli_agent_type(),
+                    restore_result.as_ref().ok().map(|diagnostics| diagnostics.transfer.clone()),
+                );
                 telemetry.record_workspace_session_history_restore(
                     guest_restore_elapsed,
                     restore_result.is_ok(),
@@ -2187,6 +2196,11 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                 return Err(error);
             }
         };
+        let transfer_source = if downloaded_resume_session.is_some() {
+            HistoryTransferSource::Downloaded
+        } else {
+            HistoryTransferSource::Inline
+        };
         let resume_session = match downloaded_resume_session {
             Some(session) => Some(session),
             None => materialize_inline_resume_session(context, config, &cancel).await?,
@@ -2194,10 +2208,18 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
         if let Some(session) = resume_session {
             let t = Instant::now();
             let result = restore_session(sandbox, context, &session, start.reuse_result).await;
+            let elapsed = t.elapsed();
+            telemetry.record_history_transfer(
+                elapsed,
+                transfer_source,
+                CliFramework::from(effective_cli_framework(&context.cli_agent_type))
+                    .as_cli_agent_type(),
+                result.as_ref().ok().map(|diagnostics| diagnostics.transfer.clone()),
+            );
             let err = result.as_ref().err().map(|e| e.to_string());
             telemetry.record(
                 "session_restore",
-                t.elapsed(),
+                elapsed,
                 result.is_ok(),
                 err.as_deref(),
             );
@@ -2638,6 +2660,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
         {
             info!(run_id = %context.run_id, operation_id = %evidence.operation_id,
                 evidence_kind = ResourceFailureKind::GuestMemoryOomKilled.as_str(),
+                oom_classification = if evidence.proves_contained_tool_oom() { "contained_tool_oom" } else { "unproven_containment" },
                 "preserved operation-scoped guest kernel oom evidence");
         }
         agent_domain_oom_kill = guest_kernel_oom_killed_agent_domain(&evidence);
@@ -2952,6 +2975,7 @@ mod tests {
             guest_boot_id: None,
             started_boottime_us: TEST_OPERATION_STARTED_US,
             sampled_at: "2026-09-09T10:34:57.253Z".to_string(),
+            runtime_progress_at: None,
             kernel_cursor: None,
             kernel_status,
             groups: test_memory_groups(),

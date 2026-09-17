@@ -1,4 +1,5 @@
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
+import type { RunnerCancellationMode } from "@okouai/api-contracts/contracts/runners";
 import {
   uuid,
   varchar,
@@ -38,6 +39,10 @@ export function agentRunColumns(sessionId: () => AnyPgColumn) {
         { onDelete: "cascade" },
       ),
     status: varchar("status", { length: 20 }).notNull(),
+    // Explicit stop intent. NULL preserves ordinary completion and older writers.
+    runnerCancellationMode: text(
+      "runner_cancellation_mode",
+    ).$type<RunnerCancellationMode>(),
     prompt: text("prompt").notNull(),
     appendSystemPrompt: text("append_system_prompt"),
     vars: jsonb("vars").$type<AgentRunVars>(),

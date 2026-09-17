@@ -120,6 +120,8 @@ test("Refresh member source after personal, organization, billing and reconnect 
   installRunChat({ selectedModel: MODEL });
   context.mocks.api(modelPoliciesMainContract.list, ({ respond }) => {
     return respond(200, {
+      revision: "revision-1",
+      writePreconditionRequired: false,
       policies: [modelPolicy(personal, restricted)],
       workspaceDefaultModel: MODEL,
       workspaceDefaultPolicyId: POLICY_ID,
@@ -192,6 +194,8 @@ test("Keep choices, draft, effort and Fast through a held and failed projection 
         });
       }
       return respond(200, {
+        revision: "revision-1",
+        writePreconditionRequired: false,
         policies: [modelPolicy(true)],
         workspaceDefaultModel: MODEL,
         workspaceDefaultPolicyId: POLICY_ID,
@@ -261,6 +265,8 @@ test("A local active-account change refreshes the member projection", async () =
   const secondId = "e7000000-0000-4000-a000-000000000004";
   context.mocks.api(modelPoliciesMainContract.list, ({ respond }) => {
     return respond(200, {
+      revision: "revision-1",
+      writePreconditionRequired: false,
       policies: [modelPolicy(personal)],
       workspaceDefaultModel: MODEL,
       workspaceDefaultPolicyId: POLICY_ID,

@@ -5,6 +5,7 @@ import {
   type IntroVideoRenderResponse,
 } from "@okouai/api-contracts/contracts/intro-video-render";
 import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
+import { resolveOwnedArtifactReference } from "./artifact-references";
 import { isUtf8 } from "node:buffer";
 import { createWriteStream, readFileSync, statSync } from "node:fs";
 import { basename, extname } from "node:path";
@@ -54,6 +55,12 @@ import {
 import { ApiRequestError, getBaseUrl } from "../core/client-factory";
 import { getActiveToken } from "../config";
 import { headersWithCliClientHeaders } from "../client-headers";
+import {
+  absoluteArtifactUrl,
+  assertPrivateArtifactUrl,
+  withAbsoluteArtifactUrl,
+} from "../../artifact-url";
+import { getPlatformOrigin } from "../../platform-url";
 
 const BUILT_IN_GENERATION_POLL_INTERVAL_MS = 2_000;
 const BUILT_IN_GENERATION_WAIT_TIMEOUT_MS_BY_TYPE = {
@@ -194,8 +201,15 @@ interface DownloadWebFileResult {
 export async function webFileReferenceId(
   value: string,
 ): Promise<string | null> {
-  const reference = parseArtifactReference(value);
-  if (reference) return reference.id;
+  const reference = parseArtifactReference(value, await getPlatformOrigin());
+  if (reference)
+    return (
+      reference.id ??
+      (await resolveOwnedArtifactReference(
+        `${reference.hash}${reference.extension}`,
+        "file",
+      ))
+    );
   if (!URL.canParse(value)) return null;
   const url = new URL(value);
   const baseUrl = new URL(await getBaseUrl());
@@ -251,7 +265,7 @@ export async function downloadWebFile(
   outPath: string,
 ): Promise<DownloadWebFileResult> {
   const response = await fetchWebFile(
-    parseArtifactReference(fileId)?.id ?? fileId,
+    (await webFileReferenceId(fileId)) ?? fileId,
   );
 
   if (!response.ok) {
@@ -304,6 +318,7 @@ interface UploadWebFileResult {
 }
 
 interface GenerateWebVoiceOptions {
+  requirePrivateArtifact?: boolean;
   text: string;
   voice?: string;
   instructions?: string;
@@ -322,6 +337,7 @@ interface GenerateWebVoiceResult {
 }
 
 interface GenerateWebImageOptions {
+  requirePrivateArtifact?: boolean;
   prompt: string;
   model?: string;
   size?: string;
@@ -374,6 +390,7 @@ interface GenerateWebImageResult {
 }
 
 interface GenerateWebVideoOptions {
+  requirePrivateArtifact?: boolean;
   prompt: string;
   model?: string;
   aspectRatio?: string;
@@ -438,6 +455,7 @@ function generateWebVideoPayload(
   options: GenerateWebVideoOptions,
 ): Record<string, unknown> {
   return compactPayload([
+    ["requirePrivateArtifact", options.requirePrivateArtifact],
     ["prompt", options.prompt],
     ["model", options.model],
     ["aspectRatio", options.aspectRatio],
@@ -780,7 +798,9 @@ async function waitForBuiltInGenerationResult<T>(args: {
   );
 }
 
-async function readBuiltInGenerationResponse<T>(args: {
+async function readBuiltInGenerationResponse<
+  T extends { readonly url: string },
+>(args: {
   readonly response: Response;
   readonly baseUrl: string;
   readonly token: string;
@@ -788,12 +808,13 @@ async function readBuiltInGenerationResponse<T>(args: {
 }): Promise<T> {
   const body: unknown = await args.response.json();
   if (isBuiltInGenerationAcceptedResponse(body)) {
-    return waitForBuiltInGenerationResult<T>({
+    const result = await waitForBuiltInGenerationResult<T>({
       accepted: body,
       baseUrl: args.baseUrl,
       token: args.token,
       fallback: args.fallback,
     });
+    return withAbsoluteArtifactUrl(result);
   }
   if (args.response.status === 202) {
     throw new ApiRequestError(
@@ -802,7 +823,7 @@ async function readBuiltInGenerationResponse<T>(args: {
       502,
     );
   }
-  return body as T;
+  return withAbsoluteArtifactUrl(body as T);
 }
 
 /**
@@ -821,7 +842,11 @@ async function readBuiltInGenerationResponse<T>(args: {
  */
 export async function uploadWebFile(
   localPath: string,
-  options?: { contentType?: string; purpose?: "artifact" },
+  options?: {
+    contentType?: string;
+    purpose?: "artifact";
+    requirePrivateArtifact?: boolean;
+  },
 ): Promise<UploadWebFileResult> {
   const stats = statSync(localPath);
   if (!stats.isFile()) {
@@ -851,7 +876,12 @@ export async function uploadWebFile(
     "Content-Type": "application/json",
   };
 
-  const prepareUrl = new URL("/api/uploads/prepare", baseUrl);
+  const prepareUrl = new URL(
+    options?.requirePrivateArtifact
+      ? "/api/uploads/prepare/private"
+      : "/api/uploads/prepare",
+    baseUrl,
+  );
   const prepareRes = await fetch(prepareUrl, {
     method: "POST",
     headers: headersWithCliClientHeaders(prepareHeaders),
@@ -860,6 +890,7 @@ export async function uploadWebFile(
       contentType,
       size: stats.size,
       purpose: options?.purpose,
+      requirePrivateArtifact: options?.requirePrivateArtifact,
     }),
   });
 
@@ -872,6 +903,9 @@ export async function uploadWebFile(
   }
 
   const prepared = (await prepareRes.json()) as PrepareUploadResponse;
+  if (options?.requirePrivateArtifact) {
+    await assertPrivateArtifactUrl(prepared.url);
+  }
 
   const bytes = readFileSync(localPath);
   if (validateUtf8 && !isUtf8(bytes)) {
@@ -923,7 +957,7 @@ export async function uploadWebFile(
     filename: completed.filename,
     contentType: completed.contentType,
     size: completed.size,
-    url: completed.url,
+    url: await absoluteArtifactUrl(completed.url),
   };
 }
 
@@ -946,15 +980,24 @@ export async function generateWebVoice(
     "Content-Type": "application/json",
   };
 
-  const response = await fetch(new URL("/api/voice-io/speech", baseUrl), {
-    method: "POST",
-    headers: headersWithCliClientHeaders(headers),
-    body: JSON.stringify({
-      text: options.text,
-      ...(options.voice ? { voice: options.voice } : {}),
-      ...(options.instructions ? { instructions: options.instructions } : {}),
-    }),
-  });
+  const response = await fetch(
+    new URL(
+      options.requirePrivateArtifact
+        ? "/api/voice-io/speech/private"
+        : "/api/voice-io/speech",
+      baseUrl,
+    ),
+    {
+      method: "POST",
+      headers: headersWithCliClientHeaders(headers),
+      body: JSON.stringify({
+        text: options.text,
+        requirePrivateArtifact: options.requirePrivateArtifact,
+        ...(options.voice ? { voice: options.voice } : {}),
+        ...(options.instructions ? { instructions: options.instructions } : {}),
+      }),
+    },
+  );
 
   if (!response.ok) {
     const { message, code } = await parseErrorBody(
@@ -964,7 +1007,9 @@ export async function generateWebVoice(
     throw new ApiRequestError(message, code, response.status);
   }
 
-  return (await response.json()) as GenerateWebVoiceResult;
+  return withAbsoluteArtifactUrl(
+    (await response.json()) as GenerateWebVoiceResult,
+  );
 }
 
 /**
@@ -986,39 +1031,48 @@ export async function generateWebImage(
     "Content-Type": "application/json",
   };
 
-  const response = await fetch(new URL("/api/image-io/generate", baseUrl), {
-    method: "POST",
-    headers: headersWithCliClientHeaders(headers),
-    body: JSON.stringify({
-      prompt: options.prompt,
-      ...(options.model ? { model: options.model } : {}),
-      ...(options.size ? { size: options.size } : {}),
-      ...(options.quality ? { quality: options.quality } : {}),
-      ...(options.background ? { background: options.background } : {}),
-      ...(options.outputFormat ? { outputFormat: options.outputFormat } : {}),
-      ...(options.outputCompression !== undefined
-        ? { outputCompression: options.outputCompression }
-        : {}),
-      ...(options.moderation ? { moderation: options.moderation } : {}),
-      ...(options.seed !== undefined ? { seed: options.seed } : {}),
-      ...(options.safetyTolerance
-        ? { safetyTolerance: options.safetyTolerance }
-        : {}),
-      ...(options.enhancePrompt !== undefined
-        ? { enhancePrompt: options.enhancePrompt }
-        : {}),
-      ...(options.imageUrls && options.imageUrls.length > 0
-        ? { imageUrls: options.imageUrls }
-        : {}),
-      ...(options.maskImageUrl ? { maskImageUrl: options.maskImageUrl } : {}),
-      ...(options.inputFidelity
-        ? { inputFidelity: options.inputFidelity }
-        : {}),
-      ...(options.imagePromptStrength !== undefined
-        ? { imagePromptStrength: options.imagePromptStrength }
-        : {}),
-    }),
-  });
+  const response = await fetch(
+    new URL(
+      options.requirePrivateArtifact
+        ? "/api/image-io/generate/private"
+        : "/api/image-io/generate",
+      baseUrl,
+    ),
+    {
+      method: "POST",
+      headers: headersWithCliClientHeaders(headers),
+      body: JSON.stringify({
+        prompt: options.prompt,
+        requirePrivateArtifact: options.requirePrivateArtifact,
+        ...(options.model ? { model: options.model } : {}),
+        ...(options.size ? { size: options.size } : {}),
+        ...(options.quality ? { quality: options.quality } : {}),
+        ...(options.background ? { background: options.background } : {}),
+        ...(options.outputFormat ? { outputFormat: options.outputFormat } : {}),
+        ...(options.outputCompression !== undefined
+          ? { outputCompression: options.outputCompression }
+          : {}),
+        ...(options.moderation ? { moderation: options.moderation } : {}),
+        ...(options.seed !== undefined ? { seed: options.seed } : {}),
+        ...(options.safetyTolerance
+          ? { safetyTolerance: options.safetyTolerance }
+          : {}),
+        ...(options.enhancePrompt !== undefined
+          ? { enhancePrompt: options.enhancePrompt }
+          : {}),
+        ...(options.imageUrls && options.imageUrls.length > 0
+          ? { imageUrls: options.imageUrls }
+          : {}),
+        ...(options.maskImageUrl ? { maskImageUrl: options.maskImageUrl } : {}),
+        ...(options.inputFidelity
+          ? { inputFidelity: options.inputFidelity }
+          : {}),
+        ...(options.imagePromptStrength !== undefined
+          ? { imagePromptStrength: options.imagePromptStrength }
+          : {}),
+      }),
+    },
+  );
 
   if (!response.ok) {
     const { message, code } = await parseErrorBody(
@@ -1055,11 +1109,19 @@ export async function generateWebVideo(
     "Content-Type": "application/json",
   };
 
-  const response = await fetch(new URL("/api/video-io/generate", baseUrl), {
-    method: "POST",
-    headers: headersWithCliClientHeaders(headers),
-    body: JSON.stringify(generateWebVideoPayload(options)),
-  });
+  const response = await fetch(
+    new URL(
+      options.requirePrivateArtifact
+        ? "/api/video-io/generate/private"
+        : "/api/video-io/generate",
+      baseUrl,
+    ),
+    {
+      method: "POST",
+      headers: headersWithCliClientHeaders(headers),
+      body: JSON.stringify(generateWebVideoPayload(options)),
+    },
+  );
 
   if (!response.ok) {
     const { message, code } = await parseErrorBody(
@@ -1088,14 +1150,22 @@ export async function generateWebAvatarVideo(
   if (!token) {
     throw new ApiRequestError("Not authenticated", "UNAUTHORIZED", 401);
   }
-  const response = await fetch(new URL("/api/avatar-video/generate", baseUrl), {
-    method: "POST",
-    headers: headersWithCliClientHeaders({
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    }),
-    body: JSON.stringify(options),
-  });
+  const response = await fetch(
+    new URL(
+      options.requirePrivateArtifact
+        ? "/api/avatar-video/generate/private"
+        : "/api/avatar-video/generate",
+      baseUrl,
+    ),
+    {
+      method: "POST",
+      headers: headersWithCliClientHeaders({
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      }),
+      body: JSON.stringify(options),
+    },
+  );
   if (!response.ok) {
     const { message, code } = await parseErrorBody(
       response,
@@ -1177,7 +1247,9 @@ export async function generateWebIntroVideoAgent(
     );
     throw new ApiRequestError(message, code, response.status);
   }
-  return introVideoAgentResponseSchema.parse(await response.json());
+  return withAbsoluteArtifactUrl(
+    introVideoAgentResponseSchema.parse(await response.json()),
+  );
 }
 
 /** Reconcile one existing job; this endpoint never creates another video. */
@@ -1185,13 +1257,15 @@ export async function getWebIntroVideoAgent(
   generationId: string,
 ): Promise<IntroVideoAgentResponse> {
   const baseUrl = await getBaseUrl();
-  return introVideoAgentResponseSchema.parse(
-    await getIntroVideoCatalog(
-      new URL(
-        `/api/intro-video/agent/${encodeURIComponent(generationId)}`,
-        baseUrl,
+  return withAbsoluteArtifactUrl(
+    introVideoAgentResponseSchema.parse(
+      await getIntroVideoCatalog(
+        new URL(
+          `/api/intro-video/agent/${encodeURIComponent(generationId)}`,
+          baseUrl,
+        ),
+        "Failed to get Intro Video Agent job",
       ),
-      "Failed to get Intro Video Agent job",
     ),
   );
 }
@@ -1446,17 +1520,29 @@ export async function createWebIntroVideoRender(
     );
     throw new ApiRequestError(message, code, response.status);
   }
-  return introVideoRenderResponseSchema.parse(await response.json());
+  const result = introVideoRenderResponseSchema.parse(await response.json());
+  return {
+    ...result,
+    result: result.result
+      ? await withAbsoluteArtifactUrl(result.result)
+      : result.result,
+  };
 }
 
 export async function getWebIntroVideoRender(
   id: string,
 ): Promise<IntroVideoRenderResponse> {
   const baseUrl = await getBaseUrl();
-  return introVideoRenderResponseSchema.parse(
+  const result = introVideoRenderResponseSchema.parse(
     await getIntroVideoCatalog(
       new URL(`/api/intro-video/renders/${encodeURIComponent(id)}`, baseUrl),
       "Failed to retrieve cloud render",
     ),
   );
+  return {
+    ...result,
+    result: result.result
+      ? await withAbsoluteArtifactUrl(result.result)
+      : result.result,
+  };
 }

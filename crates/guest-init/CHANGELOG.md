@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.16.272](https://github.com/vm0-ai/okou/compare/guest-init-v0.16.271...guest-init-v0.16.272) (2026-09-17)
+
+## [0.16.271](https://github.com/vm0-ai/okou/compare/guest-init-v0.16.270...guest-init-v0.16.271) (2026-09-17)
+
+## [0.16.270](https://github.com/vm0-ai/okou/compare/guest-init-v0.16.269...guest-init-v0.16.270) (2026-09-17)
+
+## [0.16.269](https://github.com/vm0-ai/okou/compare/guest-init-v0.16.268...guest-init-v0.16.269) (2026-09-17)
+
+## [0.16.268](https://github.com/vm0-ai/okou/compare/guest-init-v0.16.267...guest-init-v0.16.268) (2026-09-17)
+
+## [0.16.267](https://github.com/vm0-ai/okou/compare/guest-init-v0.16.266...guest-init-v0.16.267) (2026-09-16)
+
+## [0.16.266](https://github.com/vm0-ai/okou/compare/guest-init-v0.16.265...guest-init-v0.16.266) (2026-09-16)
+
+## [0.16.265](https://github.com/vm0-ai/okou/compare/guest-init-v0.16.264...guest-init-v0.16.265) (2026-09-16)
+
+## [0.16.264](https://github.com/vm0-ai/okou/compare/guest-init-v0.16.263...guest-init-v0.16.264) (2026-09-16)
+
+## [0.16.263](https://github.com/vm0-ai/okou/compare/guest-init-v0.16.262...guest-init-v0.16.263) (2026-09-16)
+
 ## [0.16.262](https://github.com/vm0-ai/vm0/compare/guest-init-v0.16.261...guest-init-v0.16.262) (2026-09-15)
 
 ## [0.16.261](https://github.com/vm0-ai/vm0/compare/guest-init-v0.16.260...guest-init-v0.16.261) (2026-09-15)

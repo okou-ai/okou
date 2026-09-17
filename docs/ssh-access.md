@@ -1,14 +1,9 @@
 # SSH access for owners and Agents
 
-SSH is a standalone capability behind the `SshAccess` (`sshAccess`) feature
-switch, enabled by default for staff organizations and disabled by default for
-other organizations. Explicit user overrides still take precedence, including
-disabling SSH for a staff user or enabling it for a non-staff user. The switch
-appears in Lab's Beta group and is the only feature-eligibility gate; there is no
-additional staff-membership check. Owner, Agent grant and Run authorization
-checks remain mandatory. The Connectors entry and Agent control are hidden
-while the switch is off. SSH uses neither connector accounts nor connector
-permissions.
+SSH is generally available as a standalone capability, including Direct and
+Cloudflare Access transports. There is no rollout switch or staff-membership
+gate. Owner, Agent grant and Run authorization checks remain mandatory.
+SSH uses neither connector accounts nor connector permissions.
 
 ## Owner setup
 
@@ -49,8 +44,11 @@ locally. File selection does not upload anything or parse the key format; Save
 submits the credential. Keys, passphrases and passwords preserve whitespace.
 Secrets are write-only and stay outside the sandbox. Use a least-privilege
 remote SSH user. Submitted input stays only in the open form while saving;
-controls are disabled until the request completes. A retryable failure preserves
-the input so the user can correct it or click Save again. Successful saves close
+controls are disabled until the request completes. A known input rejection preserves
+the input so the user can correct it or click Save again. An uncertain host save
+or credential/Access creation keeps the fields frozen and offers **Retry**.
+Retry explicitly resends the same input with the same resource ID for creation,
+or the original expected generation for a host edit. Successful saves close
 the form and clear its secrets, as do cancellation, navigation and owner changes.
 Changing authentication methods clears the previous method's inputs. Secrets
 are never stored in reactive state or browser caches. A background notification
@@ -77,9 +75,43 @@ unchanged. Host/port changes clear only that host's learned identity. Stale host
 generations or credential revisions are not automatically retried. Review the
 latest host metadata in the dialog, or reopen a credential, before saving again.
 
+### Save retries
+
+Host creation and standalone credential/Access creation require a client-generated
+UUID `id`, stored as the existing resource's primary key. The first successful
+create returns `201`. A same-ID request reaching the write transaction returns
+`204` with no body when the resource already belongs to the same organization and
+user. It does not overwrite metadata or secrets, create more inline resources, or
+repeat grants and notifications. First commit wins even if the payload differs.
+An ID belonging to another owner returns an opaque `SSH_RESOURCE_ID_CONFLICT`;
+it never acknowledges or exposes that resource.
+
+Creation takes the existing SSH owner lock and a transaction-scoped resource-ID
+lock before any inserts. The latter also serializes different owners claiming
+the same ID. Host and inline credential/Access creation remain atomic. No new
+table, column, migration, receipt history, or confirmation endpoint is needed.
+Input validation and credential preparation still happen before the transaction
+and can reject a retry before the existing resource is acknowledged.
+
+After a network or server failure, the open form retains and freezes its input.
+Only explicit **Retry** resends it. A later rejected retry does not prove that the
+original request cannot still commit, so it does not unlock the draft. A host-edit
+generation conflict instead uses the existing explicit latest-version review;
+the client never automatically advances the generation or reapplies the edit.
+Choosing to save after that review is a new edit, not confirmation of the old one.
+
+Deduplication lasts only while the resource exists. Deleting it and then retrying
+an old create can recreate it; there are no tombstones or permanent operation
+history. Closing or navigating away clears the local draft and retry ID and
+aborts UI work, but does not claim to cancel a server commit. After abandoning an
+uncertain form, inspect the refreshed list before intentionally starting a new
+save. No background mutation retry or secret persistence is introduced. Normal
+edits to existing credentials/Access configurations, deletion and host-key reset
+keep their existing concurrency contracts.
+
 ### Owner storage and pre-GA cutover
 
-`/api/ssh/credentials` provides session-authenticated, feature-gated metadata
+`/api/ssh/credentials` provides session-authenticated metadata
 listing and credential creation/update/deletion. Host writes select
 `credential: { id }` or atomically create `credential: { create: ... }`.
 Responses never return plaintext or ciphertext. A composite database foreign key
@@ -128,7 +160,7 @@ computer/browser slots; SSH no longer displaces built-in Connector icons.
 It always uses that composer's Agent, including split-pane chats. No hosts hides
 the SSH row; **Add connectors** offers the same zero-host setup entry.
 Both the legacy dialog and the Discover directory include this entry when
-SSH is enabled and no hosts are configured. In Discover, it appears after
+no hosts are configured. In Discover, it appears after
 built-in shelves and under **Remote access**, participates in search, and stays
 out of the Custom tab. Its link also supports normal keyboard activation.
 Opening the popover refreshes SSH reads without dropping the last confirmed
@@ -139,7 +171,8 @@ its own Agent's grant.
 Owner API business errors use stable `SSH_*` codes. Platform translates them,
 including recovery guidance for invalid input, stale generations and unavailable
 hosts/Agents. A failed read shows a localized load error with **Retry**, distinct
-from feature unavailability. There is no persistent Refresh button and background
+from unavailability returned by an older API during deployment. There is no
+persistent Refresh button and background
 failures do not show raw server-message toasts.
 
 Successful host and grant changes publish best-effort `ssh:changed` on the owner's
@@ -155,11 +188,10 @@ the accepted Run-lifetime cache window.
 
 The backend foundation (#34077, parent #31996) adds reusable, user-owned Service
 Token configurations as SSH connection settings, independently of SSH login
-credentials. It remains default-off
-behind `cloudflareAccess` and requires `sshAccess`. #34080 adds the native Runner
-carrier; #34081 adds management inside the SSH page and owns integrated real-Run
-acceptance.
-Neither merged code nor local tests establish real-provider acceptance or enable rollout.
+credentials. Both transports are generally available with no rollout switch.
+#34080 adds the native Runner carrier and #34081 adds management inside the SSH
+page. #34370 records the completed integrated acceptance and owner-approved
+evidence boundaries.
 
 The carrier uses a customer-managed published SSH hostname on WSS/443 and a
 Service Token allowed by the application's **Service Auth** policy. The token's
@@ -185,8 +217,8 @@ updates/deletion require the expected edit revision, and referenced deletion is
 rejected. Names may change without invalidating Runs. Token replacement advances
 a separate authority generation and all referencing SSH host generations.
 Configurations have no separate enabled state; the saved host binding selects
-Access, the existing SSH Agent grant authorizes use, and the feature switch
-controls rollout. Switching to Direct is not a way to disable a protected host.
+Access, and the existing SSH Agent grant authorizes use. Switching to Direct is
+not a way to disable a protected host.
 
 An SSH host explicitly selects a same-owner configuration, published DNS hostname
 and port 443. The origin SSH port belongs to Cloudflare, not this binding. Sharing
@@ -198,32 +230,44 @@ remains unchanged, and later Agents can use bound configurations once authorized
 for SSH. SSH username/key/password and server host-key trust remain independent
 of the Service Token.
 
-When Access is available, `/connectors/ssh` adds a **Cloudflare Access** view beside
+When SSH is available, `/connectors/ssh` includes a **Cloudflare Access** view beside
 **Hosts** and **Credentials**. It lists the configuration count and affected hosts,
-and supports adding, renaming, replacing a Service Token and deleting unused
+and supports adding, editing and deleting unused
 configurations. Referenced configurations cannot be deleted until their hosts are
 rebound or deleted. Client ID and Client Secret are never read back, including
-when replacing a token.
+when replacing a token. Both resource editors show public metadata and an
+explicit replacement checkbox: **Replace authentication** for an SSH credential,
+**Replace Service Token** for Access. Unchecked replacement fields are absent,
+not masked readback. Only changed metadata and explicitly requested replacements
+are submitted; effective shared changes apply to the displayed referencing hosts.
 
 Host forms explicitly select **Direct** or **Cloudflare Access**. Direct uses a
 public hostname/IP and a configurable SSH port. Access uses the published hostname
-and fixed gateway port 443, plus an existing Access configuration. The SSH login
-credential is selected independently. **Create Access configuration** opens a
-focused step in the same dialog; returning preserves the host draft and SSH
-secret inputs. Success selects the new configuration. That saved configuration
-remains available if the subsequent host save fails or is cancelled; retrying the
-host save reuses it rather than creating another configuration.
+and fixed gateway port 443. Host, Access configuration and SSH credential are
+separate sections of one form. Both resource selectors offer existing resources
+or an inline **Create new** form. An empty list initially expands creation, one
+resource is visibly selected, and multiple resources require a choice. These
+defaults apply once, after successful loading; notifications never reset a choice,
+and loading errors are not empty lists. Edits retain their saved bindings. A
+deleted selection requires explicit reselection or creation.
+
+One host Save creates any inline resources and binds them in the same owner-locked
+database transaction. Validation, reference or version failure creates neither
+resource nor host. Cancelling before Save creates nothing. Independent **Add**
+actions in the resource views intentionally save reusable resources without a
+host. Selecting an existing resource never edits it; rebinding or deleting a host
+does not delete the previously referenced resource. Saving does not test connectivity.
 
 Pending and failed saves retain input in the mounted form. Cancellation,
-navigation, owner changes and loss of feature access clear secret inputs and
-cancel pending UI work. Stale Access revisions preserve the draft and display
+navigation and owner changes clear secret inputs and
+cancel pending UI work. Switching away from new-resource or secret-replacement
+fields clears their secrets; Direct excludes Access fields. Stale Credential and
+Access revisions preserve the draft and display
 latest metadata and affected hosts; the user must explicitly review it before
 saving against the new revision. A further concurrent change still fails the
-revision check. Load failures offer **Retry** and remain distinct from feature
+revision check. Load failures offer **Retry** and remain distinct from older-API
 unavailability and translated business errors. A protected host remains visibly
 protected when Access is unavailable; it is never silently converted to Direct.
-Protected host edits, key resets and deletion are unavailable until Access
-eligibility is restored; unrelated Direct hosts remain manageable.
 
 Configuration mutations reuse the owner's `ssh:changed` notification to refresh
 metadata without clearing open drafts. There is no independent connector card,
@@ -234,9 +278,16 @@ SSH management uses one canonical contract. Protected metadata includes
 `transport: {type: "cloudflare_access", configId}`. Direct hosts omit the binding.
 An omitted transport on edit preserves the current binding. The Platform submits
 the selected transport explicitly, including when retrying after reviewing a
-concurrent change. Switching to Direct requires Access eligibility and the current
-host generation. Unrelated Direct hosts
-remain manageable when Access is off.
+concurrent change. Switching to Direct requires owner authorization and the current
+host generation.
+
+Host writes additionally accept
+`transport: {type: "cloudflare_access", create: {name, credentials: {clientId, clientSecret}}}`.
+This secret-bearing write selection is separate from the resolved metadata response;
+Runner authority and stored bindings are unchanged. Failed responses do not prove
+rollback after an ambiguous network loss. Do not automatically replay saves;
+[#34503](https://github.com/vm0-ai/okou/issues/34503) tracks explicit save-result
+confirmation and duplicate prevention separately.
 
 See [private authority](runner-ssh-authority.md#cloudflare-access-authority-preparation)
 and the [activation gate](deployment-compatibility.md#cloudflare-access-for-ssh).
@@ -374,7 +425,7 @@ two hours and always end with their Run; they cannot resume in another Run.
 
 Input/signal submission and closing SSH do not prove the remote process stopped
 or its effects completed. Never automatically replay uncertain starts or input.
-This staff-gated session-read contract replaces the earlier defaults and payload
+This session-read contract replaced the earlier defaults and payload before GA
 without an old-reader compatibility path or automatic conversion into independent
 exec calls. Ably notification disconnects, reconnects and prolonged unavailability
 do not stop healthy SSH work or prevent new Sessions/file transfers. First use and

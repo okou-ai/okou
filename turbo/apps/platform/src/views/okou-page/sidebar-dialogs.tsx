@@ -810,15 +810,15 @@ function SpotlightFilterButton({
   readonly onSelect: () => void;
 }) {
   return (
-    // No className: `outline` / `quiet` at size `xs` already draw exactly this
-    // filter. The previous `rounded-full px-3 text-xs font-normal` override put
-    // the control off the shared radius, padding, and type scale for no gain.
+    // Reserve the outline border in both states so selecting a filter does not
+    // shift its label or the neighboring buttons.
     <Button
       type="button"
       role="tab"
       aria-selected={active}
       variant={active ? "outline" : "quiet"}
       size="xs"
+      className="border aria-[selected=false]:border-transparent"
       onClick={onSelect}
     >
       {label}
@@ -1337,7 +1337,7 @@ export function ThreeColumnSearchDialog({
       })}
       smMaxWidth={820}
       showCloseButton={false}
-      contentClassName="okou-app gap-0"
+      contentClassName="gap-0"
       commandClassName="gap-0"
       commandProps={{
         shouldFilter: false,
@@ -1472,7 +1472,7 @@ export function PinAgentDialog({
         return $.actions.close;
       })}
       smMaxWidth="xl"
-      contentClassName="okou-app gap-0"
+      contentClassName="gap-0"
       commandClassName="gap-0"
       commandProps={{
         shouldFilter: false,

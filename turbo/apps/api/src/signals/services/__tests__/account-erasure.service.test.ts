@@ -1212,6 +1212,22 @@ describe("dormant account erasure persistence", () => {
     ).resolves.toHaveLength(1);
   });
 
+  it("matches complete subject pairs and denies a non-first closed subject", async () => {
+    const user = decision();
+    const organization = decision({ subjectKind: "organization" });
+    // A same-spelled identity in the other domain must not deny this set.
+    await project(decision({ subjectId: organization.subjectId }));
+    await db.transaction(async (tx) => {
+      await assertErasureSubjectWritable(tx, [user, organization, user]);
+    });
+    await project(organization);
+    await expect(
+      db.transaction(async (tx) => {
+        await assertErasureSubjectWritable(tx, [user, organization, user]);
+      }),
+    ).rejects.toThrow("account_erasure:subject_closed");
+  });
+
   it.each(["user", "organization"] as const)(
     "admits concurrent %s writers and waits for both before closure",
     async (subjectKind) => {
@@ -1327,8 +1343,9 @@ describe("dormant account erasure persistence", () => {
     },
   );
 
-  it("rejects a writer that raced a first closure already holding the subject lock", async () => {
+  it("rejects a writer after waiting for a non-first subject's first closure", async () => {
     const input = decision();
+    const open = decision({ subjectKind: "organization" });
     const entered = deferred<void>();
     const release = deferred<void>();
     const closing = db.transaction(async (tx) => {
@@ -1340,7 +1357,9 @@ describe("dormant account erasure persistence", () => {
     await entered.promise;
     const writing = Promise.allSettled([
       db.transaction(async (tx) => {
-        return await assertErasureSubjectWritable(tx, [input]);
+        // Organization locks sort before user locks. The final closure read
+        // must see the new user decision committed while that second lock waits.
+        return await assertErasureSubjectWritable(tx, [open, input]);
       }),
     ]);
     const completed = Promise.allSettled([closing, writing]);

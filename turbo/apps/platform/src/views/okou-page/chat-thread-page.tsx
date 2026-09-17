@@ -321,6 +321,7 @@ import {
   CHAT_THREAD_ASSISTANT_RESPONSE_COLUMN_CLASS,
   CHAT_THREAD_CONTENT_MAIN_CLASS,
   CHAT_THREAD_MESSAGE_LIST_CLASS,
+  CHAT_THREAD_MESSAGE_ROW_GAP_CLASS,
   CHAT_THREAD_MESSAGE_STACK_PULL_CLASS,
   CHAT_THREAD_RESPONSE_FLUSH_CLASS,
   CHAT_THREAD_RESPONSE_LINE_CLASS,
@@ -328,6 +329,7 @@ import {
   CHAT_THREAD_RESPONSE_SUPPORTING_TEXT_CLASS,
   CHAT_THREAD_RESPONSE_COMPACT_STACK_CLASS,
   CHAT_THREAD_RESPONSE_STACK_CLASS,
+  CHAT_THREAD_SCROLL_EDGE_FADE_CLASS,
   CHAT_THREAD_WORK_HISTORY_MARKDOWN_CLASS,
   CHAT_THREAD_WORK_HISTORY_TEXT_CLASS,
   CHAT_THREAD_USER_MESSAGE_ACTIONS_CLASS,
@@ -534,7 +536,8 @@ function ChatThreadHeaderIconButton({
             iconSize="md"
             className={cn(
               "shrink-0 duration-150",
-              open && "bg-primary/10 text-brand-text hover:text-brand-text",
+              open &&
+                "bg-primary/10 text-selected-foreground hover:text-selected-foreground",
             )}
             aria-label={label}
             aria-pressed={open}
@@ -3630,7 +3633,11 @@ function RunWorkSectionRow({
           })}
           onClick={onToggle}
           data-chat-run-work-range
-          className={cn(className, "h-auto p-0 pr-1")}
+          // The hover surface needs an inset on the side its glyph starts on,
+          // otherwise the hourglass sits flush against the left edge while the
+          // chevron keeps `pr-1`. The negative margin spends that inset on the
+          // overhang, so the glyph still starts on the response column.
+          className={cn(className, "h-auto p-0 pl-1.5 pr-1 -ml-1.5")}
         >
           {content}
         </Button>
@@ -3664,10 +3671,14 @@ function ChatThreadSkeletonOverlay({ thread }: { thread: ChatPanelSignals }) {
     return null;
   }
 
+  // The overlay covers the pane while the transcript loads, so it takes the
+  // canvas fill rather than the page's: over a gradient palette a `--background`
+  // cover is a flat block that snaps to the canvas the moment the first events
+  // arrive.
   return (
     <div
       data-chat-skeleton
-      className="absolute inset-0 z-10 overflow-hidden pointer-events-none bg-background"
+      className="absolute inset-0 z-10 overflow-hidden pointer-events-none bg-workspace-canvas"
     >
       <main className={CHAT_THREAD_CONTENT_MAIN_CLASS}>
         <div
@@ -3708,6 +3719,7 @@ function ChatThreadEventsPane({ thread }: { thread: ChatPanelSignals }) {
         onScroll={handleScroll}
         className={cn(
           "absolute inset-0 focus:outline-none [overflow-anchor:none]",
+          CHAT_THREAD_SCROLL_EDGE_FADE_CLASS,
           standalonePwa && "overscroll-contain",
         )}
       >
@@ -3790,7 +3802,7 @@ function ChatThreadBottomBar({ thread }: { thread: ChatPanelSignals }) {
     ? `${window.location.origin}/share/threads/${sharedThreadId}`
     : null;
   return withChatScrollLayout(
-    <footer className="relative shrink-0 border-t border-border/60 bg-background px-4 py-3 sm:px-6">
+    <footer className="relative shrink-0 border-t border-border/60 px-4 py-3 sm:px-6">
       <div className="mx-auto flex w-full max-w-[900px] flex-col gap-2">
         {shareUrl ? (
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -4159,16 +4171,19 @@ function ChatThreadComposer({ thread }: { thread: ChatPanelSignals }) {
   const composerLayoutRef = useSet(thread.composerLayoutOnRef$);
   const standalonePwa = isStandalonePwa();
 
+  // The pane's canvas runs behind the composer the way it runs behind the
+  // header. A fill of its own can only match a flat canvas, and a gradient
+  // palette's is not one, so the footer stays transparent and the transcript's
+  // own edge fade handles the boundary above it.
   return (
     <footer
       data-chat-composer
       ref={composerLayoutRef}
-      className="relative shrink-0 bg-[hsl(var(--background))]"
+      className="relative shrink-0"
       style={{
         paddingBottom: "max(0.5rem, var(--okou-composer-safe-bottom))",
       }}
     >
-      <div className="pointer-events-none absolute inset-x-0 -top-5 h-[21px] bg-gradient-to-t from-[hsl(var(--background))] to-transparent" />
       {/* `overflow-y-auto` clips at this element's padding box. The composer's
           focus veil is offset down and blurred well past the gap the footer
           leaves, so it is still painting at that boundary and gets sliced off in
@@ -4264,10 +4279,9 @@ function ShimmerText({
         // only thing that moves is the gradient's paint origin; nothing here
         // moves a box that holds glyphs. `contain: paint` keeps the per-frame
         // repaint inside the label. The `-webkit-` clip stays beside
-        // `bg-clip-text` because Tailwind emits only the unprefixed property
-        // while the retired rule declared both; keeping it changes nothing on
-        // the build's target browsers, which is why it is here rather than
-        // dropped as part of a styling change.
+        // `bg-clip-text` because Tailwind emits only the unprefixed property.
+        // Chromium treats the two as aliases, so dropping the prefixed one is
+        // a browser-support decision rather than a styling change.
         "h-auto min-w-0 flex-1 animate-shimmer truncate bg-shimmer-text bg-clip-text [background-size:200%_100%] [-webkit-background-clip:text] [-webkit-text-fill-color:transparent] [contain:paint]",
         CHAT_THREAD_RESPONSE_SUPPORTING_TEXT_CLASS,
         className,
@@ -4720,20 +4734,45 @@ function customCreditsFromForm(form: HTMLFormElement | null): number | null {
   return credits;
 }
 
+/**
+ * A notice card's height comes from its own rows, so a card that carries only a
+ * headline is one row tall. The supporting line keeps a reserved two-line box
+ * instead: billing status and failure-recovery classification both resolve
+ * asynchronously and swap this text inside an already mounted frame, and
+ * `docs/chat-cards.md` requires that swap to leave the frame's geometry
+ * untouched. Clamping alone would let a one-line message resize the transcript
+ * once the asynchronous read lands.
+ */
+const CHAT_NOTICE_DESCRIPTION_CLASS =
+  "line-clamp-2 h-10 text-sm leading-5 text-muted-foreground";
+
+/**
+ * The billing notice's action is the other row an asynchronous read introduces:
+ * it appears only once `billingStatusAsync$` and `isOrgAdmin$` resolve, and the
+ * credits-available state replaces the whole body without one. Below the card's
+ * 640px breakpoint the body is a column, so mounting that row late would add its
+ * own height plus the container gap and resize the transcript. Every billing
+ * state therefore keeps this slot, filled or empty, at the shared action height.
+ */
+const CHAT_NOTICE_ACTION_SLOT_CLASS = "flex h-8 shrink-0 items-center";
+
 function CreditsAvailableMessage() {
   const { t } = useTranslation();
   return (
-    <div className="flex h-full flex-col justify-center p-3">
-      <p className="truncate text-[0.9375rem] font-medium text-emerald-700 dark:text-emerald-300">
-        {t(($) => {
-          return $.chat.billing.creditsAvailable;
-        })}
-      </p>
-      <p className="mt-1 text-sm text-muted-foreground">
-        {t(($) => {
-          return $.chat.billing.creditsAdded;
-        })}
-      </p>
+    <div className="flex flex-col justify-between gap-3 p-3 @[640px]:flex-row @[640px]:items-center">
+      <div className="min-w-0">
+        <p className="truncate text-[0.9375rem] font-medium text-emerald-700 dark:text-emerald-300">
+          {t(($) => {
+            return $.chat.billing.creditsAvailable;
+          })}
+        </p>
+        <p className={cn("mt-1", CHAT_NOTICE_DESCRIPTION_CLASS)}>
+          {t(($) => {
+            return $.chat.billing.creditsAdded;
+          })}
+        </p>
+      </div>
+      <div className={CHAT_NOTICE_ACTION_SLOT_CLASS} />
     </div>
   );
 }
@@ -4944,46 +4983,46 @@ function InsufficientCreditsCard() {
   };
 
   return (
-    <div className="flex h-full flex-col justify-between gap-3 p-3 @[640px]:flex-row @[640px]:items-center">
+    <div className="flex flex-col justify-between gap-3 p-3 @[640px]:flex-row @[640px]:items-center">
       <div className="min-w-0">
         <p className="truncate text-[0.9375rem] font-medium text-foreground">
           {headline}
         </p>
-        <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
-          {helper}
-        </p>
+        <p className={cn("mt-1", CHAT_NOTICE_DESCRIPTION_CLASS)}>{helper}</p>
       </div>
-      {!canShowBillingAction ? null : shouldStartProCheckout ? (
-        <Button
-          type="button"
-          onClick={handleUpgradeClick}
-          disabled={checkoutRedirecting}
-          variant="default"
-          size="sm"
-          className="shrink-0 disabled:opacity-60"
-        >
-          {checkoutRedirecting
-            ? t(($) => {
-                return $.chat.billing.redirecting;
-              })
-            : t(($) => {
-                return $.chat.billing.upgradeToPro;
-              })}
-        </Button>
-      ) : (
-        <ChatCardDetails
-          title={headline}
-          triggerLabel={t(($) => {
-            return $.runErrors.actions.addCredits;
-          })}
-        >
-          <p>{helper}</p>
-          <PaidCreditCheckoutActions
-            preparing={creditCheckoutPreparing}
-            handleCreditClick={handleCreditClick}
-          />
-        </ChatCardDetails>
-      )}
+      <div className={CHAT_NOTICE_ACTION_SLOT_CLASS}>
+        {!canShowBillingAction ? null : shouldStartProCheckout ? (
+          <Button
+            type="button"
+            onClick={handleUpgradeClick}
+            disabled={checkoutRedirecting}
+            variant="default"
+            size="sm"
+            className="shrink-0 disabled:opacity-60"
+          >
+            {checkoutRedirecting
+              ? t(($) => {
+                  return $.chat.billing.redirecting;
+                })
+              : t(($) => {
+                  return $.chat.billing.upgradeToPro;
+                })}
+          </Button>
+        ) : (
+          <ChatCardDetails
+            title={headline}
+            triggerLabel={t(($) => {
+              return $.runErrors.actions.addCredits;
+            })}
+          >
+            <p>{helper}</p>
+            <PaidCreditCheckoutActions
+              preparing={creditCheckoutPreparing}
+              handleCreditClick={handleCreditClick}
+            />
+          </ChatCardDetails>
+        )}
+      </div>
     </div>
   );
 }
@@ -5038,7 +5077,7 @@ function AssistantRecoveryActions({
   const resetting = resetLoadable.state === "loading";
   const hasResetAction = recovery.actions.resetAndTryAgain !== null;
   const hasRetryAction = recovery.actions.tryAgain !== null;
-  const hasModelSelectionAction = recovery.kind !== "execution-timeout";
+  const hasModelSelectionAction = recovery.framework !== null;
   // `excludedModel` drops the failed model from the menu, so showing it as the
   // trigger label would offer a choice the user cannot make. Fall back to the
   // "Switch model" placeholder until they pick something else.
@@ -5100,8 +5139,7 @@ function AssistantRecoveryActions({
           }}
         >
           <AssistantRecoveryActionSpinner loading={retrying} />
-          {/* A timed-out run is resumed, not retried, and its copy says so. */}
-          {recovery.kind === "execution-timeout"
+          {recovery.framework === null
             ? t(($) => {
                 return $.chat.errors.recovery.continue;
               })
@@ -5133,7 +5171,7 @@ function AssistantErrorCard({
     <div
       role="status"
       data-testid={testId}
-      className="flex h-full w-full flex-col justify-between gap-3 p-3 text-foreground @[640px]:flex-row @[640px]:items-center"
+      className="flex w-full flex-col justify-between gap-3 p-3 text-foreground @[640px]:flex-row @[640px]:items-center"
     >
       <div className="flex min-w-0 items-start gap-2.5 @[640px]:flex-1">
         <Icon size={16} className="mt-1 shrink-0 text-brand-text" />
@@ -5141,9 +5179,11 @@ function AssistantErrorCard({
           <div className="truncate text-[0.9375rem] font-medium leading-6">
             {title}
           </div>
-          <div className="mt-0.5 line-clamp-2 text-sm leading-5 text-muted-foreground">
-            {description}
-          </div>
+          {description !== "" && (
+            <div className={cn("mt-0.5", CHAT_NOTICE_DESCRIPTION_CLASS)}>
+              {description}
+            </div>
+          )}
         </div>
       </div>
       {(description !== "" ||
@@ -5178,6 +5218,11 @@ function AssistantErrorRecoveryCard({
         return $.chat.errors.recovery.timeoutTitle;
       });
     }
+    if (recovery.kind === "autonomy-budget-exhausted") {
+      return t(($) => {
+        return $.chat.errors.recovery.autonomyLimitTitle;
+      });
+    }
     if (recovery.kind === "model-unavailable") {
       return t(($) => {
         return $.chat.errors.recovery.unavailableTitle;
@@ -5210,17 +5255,21 @@ function AssistantErrorRecoveryCard({
         ? t(($) => {
             return $.chat.errors.recovery.timeoutDescription;
           })
-        : recovery.kind === "usage-limit"
+        : recovery.kind === "autonomy-budget-exhausted"
           ? t(($) => {
-              return $.chat.errors.recovery.usageDescription;
+              return $.chat.errors.recovery.autonomyLimitDescription;
             })
-          : recovery.kind === "model-unavailable"
+          : recovery.kind === "usage-limit"
             ? t(($) => {
-                return $.chat.errors.recovery.unavailableDescription;
+                return $.chat.errors.recovery.usageDescription;
               })
-            : t(($) => {
-                return $.chat.errors.recovery.capacityDescription;
-              });
+            : recovery.kind === "model-unavailable"
+              ? t(($) => {
+                  return $.chat.errors.recovery.unavailableDescription;
+                })
+              : t(($) => {
+                  return $.chat.errors.recovery.capacityDescription;
+                });
   const personalSource = recovery.source?.credentialScope === "member";
   const sourceDescription = personalSource
     ? recovery.source?.account.status === "unavailable"
@@ -5244,9 +5293,12 @@ function AssistantErrorRecoveryCard({
   return (
     <AssistantErrorCard
       icon={
-        recovery.kind === "usage-limit" || recovery.kind === "execution-timeout"
-          ? Clock
-          : Coffee
+        recovery.kind === "autonomy-budget-exhausted"
+          ? Hand
+          : recovery.kind === "usage-limit" ||
+              recovery.kind === "execution-timeout"
+            ? Clock
+            : Coffee
       }
       title={title}
       description={`${description}${resetText ? ` ${resetText}` : ""}`}
@@ -5437,10 +5489,7 @@ function AssistantErrorContent({
   thread: ChatPanelSignals;
 }) {
   return (
-    <ChatCard
-      data-testid="assistant-error-card-shell"
-      className="h-[136px] w-full @[640px]:h-[88px]"
-    >
+    <ChatCard data-testid="assistant-error-card-shell" className="w-full">
       <AssistantErrorState error={error} eventId={eventId} thread={thread} />
     </ChatCard>
   );
@@ -5646,7 +5695,12 @@ function SelectablePagedGroupRow({
           : undefined
       }
       className={cn(
-        "relative -my-1 rounded-lg py-1 transition-colors",
+        // Every row in the transcript is otherwise a direct child of the
+        // message list's flex column. This wrapper interrupts that column, so
+        // it carries the same rhythm itself; without it a group holding a burst
+        // of user messages renders them with no gap at all.
+        "relative -my-1 flex flex-col rounded-lg py-1 transition-colors",
+        CHAT_THREAD_MESSAGE_ROW_GAP_CLASS,
         phase === "selecting" && "cursor-pointer hover:bg-state-hover",
       )}
       onClick={(event) => {
@@ -5960,35 +6014,41 @@ function UserMessageAttachments({
   );
 }
 
+// The row below a user message is part of that message's frame, not a thing the
+// copy button brings with it. It stays even when there is no button to show —
+// a message nobody can copy, or a mode that offers no per-message action — so
+// the burst spacing that is measured against it does not collapse.
 function UserMessageActions({
-  canCopy,
+  showCopy,
   copied,
   onCopy,
 }: {
-  canCopy: boolean;
+  showCopy: boolean;
   copied: boolean;
   onCopy: () => void;
 }) {
   const { t } = useTranslation();
-  if (!canCopy) {
-    return null;
-  }
   return (
-    <div className={CHAT_THREAD_USER_MESSAGE_ACTIONS_CLASS}>
-      <Button
-        type="button"
-        variant="quiet"
-        size="icon-xs"
-        iconSize="sm"
-        showTooltip
-        onClick={onCopy}
-        className="text-muted-foreground/60"
-        aria-label={t(($) => {
-          return $.chat.actions.copyMessage;
-        })}
-      >
-        {copied ? <Check /> : <Copy />}
-      </Button>
+    <div
+      data-chat-user-message-actions
+      className={CHAT_THREAD_USER_MESSAGE_ACTIONS_CLASS}
+    >
+      {showCopy ? (
+        <Button
+          type="button"
+          variant="quiet"
+          size="icon-xs"
+          iconSize="sm"
+          showTooltip
+          onClick={onCopy}
+          className="text-muted-foreground/60"
+          aria-label={t(($) => {
+            return $.chat.actions.copyMessage;
+          })}
+        >
+          {copied ? <Check /> : <Copy />}
+        </Button>
+      ) : null}
     </div>
   );
 }
@@ -6030,6 +6090,14 @@ function generationTemplateTypeLabel(
         return $.chat.templates.categories.website;
       });
     }
+    case "custom": {
+      // The catalog's own name, the same word the picker tab uses. What a
+      // custom template produces lives on its row, which this label cannot
+      // read, so naming the catalog is the honest answer here.
+      return i18n.t(($) => {
+        return $.templates.custom;
+      });
+    }
     case "presentation": {
       return i18n.t(($) => {
         return $.chat.templates.categories.presentation;
@@ -6057,6 +6125,35 @@ function MessageAnnotation({
     "rounded-md px-1.5 text-xs font-medium text-muted-foreground";
   if (renderPart.type === "automation") {
     const { part } = renderPart;
+    const content = (
+      <>
+        <Route size={15} className="shrink-0" />
+        <span className="min-w-0 truncate">{part.workflowName}</span>
+      </>
+    );
+    if (part.workflowId !== undefined) {
+      const workflowTitle =
+        part.workflowName.trim() ||
+        t(($) => {
+          return $.chat.templates.categories.workflow;
+        });
+      return (
+        <Link
+          pathname={ROUTES.workflowDetailAutomations}
+          options={{ pathParams: { workflowId: part.workflowId } }}
+          aria-label={t(
+            ($) => {
+              return $.chat.workflows.open;
+            },
+            { title: workflowTitle },
+          )}
+          className={`${className} transition-colors hover:bg-state-hover hover:text-foreground`}
+          title={part.workflowName}
+        >
+          {content}
+        </Link>
+      );
+    }
     return (
       <div
         aria-label={t(
@@ -6070,8 +6167,7 @@ function MessageAnnotation({
         className={className}
         title={part.workflowName}
       >
-        <Route size={15} className="shrink-0" />
-        <span className="min-w-0 truncate">{part.workflowName}</span>
+        {content}
       </div>
     );
   }
@@ -6095,6 +6191,34 @@ function MessageAnnotation({
   return (
     <SourceMessageAnnotation renderPart={renderPart} className={className} />
   );
+}
+
+function sourceMessageLinkText(
+  t: TFunction<"common">,
+  part: Extract<
+    UserMessageAnnotationRenderPart,
+    { type: "source"; kind: "external" }
+  >["part"],
+) {
+  const opensChat =
+    part.kind === "feishu" ||
+    (part.kind === "telegram" &&
+      /^https:\/\/t\.me\/[a-z\d_]+$/iu.test(part.href ?? "")) ||
+    (part.kind === "teams" &&
+      part.href?.startsWith("https://teams.microsoft.com/l/chat/") === true);
+  const openLabel =
+    part.kind === "agentphone"
+      ? t(($) => {
+          return $.chat.origins.openMessages;
+        })
+      : opensChat
+        ? t(($) => {
+            return $.chat.origins.openChat;
+          })
+        : t(($) => {
+            return $.chat.origins.openMessage;
+          });
+  return { opensChat, openLabel };
 }
 
 function SourceMessageAnnotation({
@@ -6142,36 +6266,36 @@ function SourceMessageAnnotation({
               : t(($) => {
                   return $.chat.origins.agentphone;
                 });
-  const openLabel =
-    part.kind === "feishu"
-      ? t(($) => {
-          return $.chat.origins.openChat;
-        })
-      : t(($) => {
-          return $.chat.origins.openMessage;
-        });
+  const { opensChat, openLabel } = sourceMessageLinkText(t, part);
   const ariaLabel =
-    part.kind === "slack"
-      ? t(($) => {
-          return $.chat.origins.openSlackMessage;
-        })
-      : part.kind === "feishu"
+    opensChat && part.kind !== "feishu"
+      ? t(
+          ($) => {
+            return $.chat.origins.openChatIn;
+          },
+          { integration: sourceLabel },
+        )
+      : part.kind === "slack"
         ? t(($) => {
-            return $.chat.origins[isLark ? "openLarkChat" : "openFeishuChat"];
+            return $.chat.origins.openSlackMessage;
           })
-        : part.kind === "teams"
+        : part.kind === "feishu"
           ? t(($) => {
-              return $.chat.origins.openTeamsMessage;
+              return $.chat.origins[isLark ? "openLarkChat" : "openFeishuChat"];
             })
-          : part.kind === "telegram"
+          : part.kind === "teams"
             ? t(($) => {
-                return $.chat.origins.openTelegramMessage;
+                return $.chat.origins.openTeamsMessage;
               })
-            : part.kind === "github"
+            : part.kind === "telegram"
               ? t(($) => {
-                  return $.chat.origins.openGithubMessage;
+                  return $.chat.origins.openTelegramMessage;
                 })
-              : sourceLabel;
+              : part.kind === "github"
+                ? t(($) => {
+                    return $.chat.origins.openGithubMessage;
+                  })
+                : openLabel;
   const content = (
     <>
       {part.kind === "slack" ? (
@@ -6486,7 +6610,23 @@ function equalFeedbackSources(
 
 function userMessageFeedbackHeading(
   parts: readonly UserMessageFeedbackRenderPart[],
+  agentRunSourceTitle: string | undefined,
 ): string {
+  if (agentRunSourceTitle) {
+    return parts.length === 1
+      ? i18n.t(
+          ($) => {
+            return $.chat.feedback.forwardPartHeading;
+          },
+          { title: agentRunSourceTitle },
+        )
+      : i18n.t(
+          ($) => {
+            return $.chat.feedback.forwardPartsHeading;
+          },
+          { count: parts.length, title: agentRunSourceTitle },
+        );
+  }
   const source = parts[0]?.part.source;
   if (!source) {
     return parts.length === 1
@@ -6504,32 +6644,12 @@ function userMessageFeedbackHeading(
   }
   const description =
     source.status === "draft"
-      ? i18n.t(
-          ($) => {
-            return $.chat.feedback.emailDraftDescription;
-          },
-          {
-            id: source.id,
-          },
-        )
-      : i18n.t(
-          ($) => {
-            return $.chat.feedback.sentEmailDescription;
-          },
-          {
-            id: source.id,
-            sentIdSuffix: source.sentId
-              ? i18n.t(
-                  ($) => {
-                    return $.chat.feedback.sentIdSuffix;
-                  },
-                  {
-                    sentId: source.sentId,
-                  },
-                )
-              : "",
-          },
-        );
+      ? i18n.t(($) => {
+          return $.chat.feedback.emailDraftDescription;
+        })
+      : i18n.t(($) => {
+          return $.chat.feedback.sentEmailDescription;
+        });
   return parts.length === 1
     ? i18n.t(
         ($) => {
@@ -6550,14 +6670,16 @@ function userMessageFeedbackHeading(
 
 function UserMessageFeedbackGroup({
   parts,
+  agentRunSourceTitle,
 }: {
   parts: readonly UserMessageFeedbackRenderPart[];
+  agentRunSourceTitle: string | undefined;
 }) {
   const partOccurrences = new Map<string, number>();
   let firstPart = true;
   return (
     <div data-structured-feedback-group="" className="space-y-3">
-      <div>{userMessageFeedbackHeading(parts)}</div>
+      <div>{userMessageFeedbackHeading(parts, agentRunSourceTitle)}</div>
       {parts.map((renderPart) => {
         const identity = JSON.stringify(renderPart.part);
         const occurrence = (partOccurrences.get(identity) ?? 0) + 1;
@@ -6645,6 +6767,9 @@ function UserMessageView({
   elevatedFileIds: ReadonlySet<string>;
 }) {
   const partOccurrences = new Map<string, number>();
+  const agentRunSourceTitle = document.parts.find((renderPart) => {
+    return renderPart.type === "source" && renderPart.kind === "agent";
+  })?.part.titleSnapshot;
   const bodyParts = document.parts.filter(
     (renderPart): renderPart is UserMessageContentRenderPart => {
       return (
@@ -6681,6 +6806,7 @@ function UserMessageView({
         <UserMessageFeedbackGroup
           key={`feedback:${String(index)}`}
           parts={feedbackParts}
+          agentRunSourceTitle={agentRunSourceTitle}
         />,
       );
       index = nextIndex;
@@ -6765,7 +6891,6 @@ function WorkflowUserMessage({
 }: {
   event: EnrichedChatEvent & ChatInputEvent;
 }) {
-  const { t } = useTranslation();
   const renderPart = userMessageAnnotationRenderPart(
     event.userMessageRenderDocument,
   );
@@ -6773,11 +6898,6 @@ function WorkflowUserMessage({
     return null;
   }
   const { part } = renderPart;
-  const workflowTitle =
-    part.workflowName.trim() ||
-    t(($) => {
-      return $.chat.templates.categories.workflow;
-    });
   const workflowBody =
     messageDocumentToDisplayText(event.userMessage)?.trim() ||
     part.automationBrief?.trim();
@@ -6788,8 +6908,6 @@ function WorkflowUserMessage({
       <div className="px-4 py-3">{workflowBody}</div>
     </div>
   ) : null;
-  const workflowId = part.workflowId;
-  const linked = workflowId !== undefined;
 
   return (
     <div
@@ -6802,29 +6920,7 @@ function WorkflowUserMessage({
         <div className="hidden @[900px]:block @[900px]:w-9 @[900px]:h-9 @[900px]:shrink-0" />
         <div className="flex w-full flex-col items-end">
           <MessageAnnotation renderPart={renderPart} />
-          {linked && body ? (
-            <Link
-              pathname={ROUTES.workflowDetailAutomations}
-              options={{
-                pathParams: {
-                  workflowId,
-                },
-              }}
-              className="contents"
-              aria-label={t(
-                ($) => {
-                  return $.chat.workflows.open;
-                },
-                {
-                  title: workflowTitle,
-                },
-              )}
-            >
-              {body}
-            </Link>
-          ) : (
-            body
-          )}
+          {body}
         </div>
       </div>
     </div>
@@ -6986,18 +7082,22 @@ function PagedUserMessage({
             <MessageAnnotation renderPart={annotationPart} />
           ) : null}
           {renderDocument ? (
-            <UserMessageContent
-              document={renderDocument}
-              attachments={allAttachments}
-              onImageClick={openLightbox}
-            />
-          ) : null}
-          {sharingPhase === "idle" ? (
-            <UserMessageActions
-              canCopy={canCopy}
-              copied={copied}
-              onCopy={handleCopy}
-            />
+            <>
+              <UserMessageContent
+                document={renderDocument}
+                attachments={allAttachments}
+                onImageClick={openLightbox}
+              />
+              {/* The row belongs to the bubble, not to the button inside it.
+                  Sharing hides the button and a message nobody can copy has
+                  none, and in both cases the next message in the burst is
+                  still pulled up by the height this row holds. */}
+              <UserMessageActions
+                showCopy={canCopy && sharingPhase === "idle"}
+                copied={copied}
+                onCopy={handleCopy}
+              />
+            </>
           ) : null}
         </div>
       </div>

@@ -20,6 +20,8 @@ import type { Tx } from "../../lib/db-types";
 import type { Db } from "../external/db";
 import { activePendingRunPredicate } from "./agent-run-activity.service";
 import { nowDate } from "../../lib/time";
+import { env } from "../../lib/env";
+import { lockXResourceAdmission } from "./x-resource-usage-lifecycle";
 
 /** No producer consumes this switch until both #34243 and #34244 are ready. */
 export function isPiInferenceRun(
@@ -447,6 +449,30 @@ export function piInferenceOwnerPredicate(args: {
   );
 }
 
+/** API-owned failure may fence an admitted, ready, uncertain-provider, or
+ * publishing attempt. It never grants provider or Sandbox publication. */
+export function assertPiInferenceApiFailure(
+  lifecycle: Awaited<ReturnType<typeof readPiInferenceLifecycle>>,
+  ownerEpoch: number | undefined,
+): void {
+  if (!lifecycle) {
+    return;
+  }
+  if (lifecycle.intent !== null || lifecycle.inference.phase === "terminal") {
+    throw new Error("Pi API failure requires the current inference owner");
+  }
+  if (
+    ownerEpoch !== lifecycle.inference.ownerEpoch ||
+    !["admitted", "ready", "provider", "publishing"].includes(
+      lifecycle.inference.phase,
+    )
+  ) {
+    throw new Error(
+      "Pi API failure requires the current unexpired execution owner",
+    );
+  }
+}
+
 /** Internal publication requires a fenced owner, even without a Runner job. */
 export function assertPiInferencePublication(
   lifecycle: Awaited<ReturnType<typeof readPiInferenceLifecycle>>,
@@ -501,6 +527,11 @@ export async function assertPiInferenceScopeErasureReady(
   scope: InferenceErasureScope,
 ) {
   await db.transaction(async (tx) => {
+    if (env("X_RESOURCE_BILLING_START_DATE") !== undefined) {
+      // A terminal Run can still have an admitted usage upload. Drain it
+      // before starting the existing short erasure-preflight lock timeout.
+      await lockXResourceAdmission(tx, "exclusive");
+    }
     // Bound this preflight independently of any later external cleanup.
     await tx.execute(sql`SET LOCAL lock_timeout = '100ms'`);
     const rows = await tx

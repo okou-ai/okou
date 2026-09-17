@@ -48,9 +48,9 @@ function ScaleDots({
                 ? // The top step wipes the plain track away, taking the heavier
                   // marks with it, so the layer that survives carries the weight
                   // itself against the texture underneath.
-                  "bg-gray-400/60 group-data-[at-max=true]/effort:bg-[color:var(--okou-effort-dot-on-texture)]"
+                  "bg-gray-500/55 group-data-[at-max=true]/effort:bg-[color:var(--okou-effort-dot-on-texture)]"
                 : step <= passed
-                  ? "bg-gray-500/55"
+                  ? "bg-gray-600/50"
                   : "bg-transparent",
             )}
             style={{

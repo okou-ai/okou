@@ -71,6 +71,11 @@ release and production acceptance.
 The nullable `agent_runs.model_provider_account_identity` column records a
 SHA-256 digest of the proven upstream account identity during the existing
 final admission transaction, after its normal account/bundle validation. It
+is included in the existing atomic run INSERT for both pending and queued
+admission, using only the account validated under the final admission locks.
+Queue-payload retries revalidate before insertion; the digest is not retained
+in preparation state or durable queue payloads. There is no separate identity
+UPDATE while those locks are held. The annotation
 contains no token, ciphertext, or per-run credential copy. Codex uses its
 upstream account ID; Claude uses its upstream UUID, or the established
 email/workspace identity for older connections. This annotation does not alter
@@ -223,6 +228,22 @@ trigger acquires a provider lock. Ordinary profile requests happen after the
 snapshot transaction commits. The second transaction compares the complete
 provider, active selection, account identities, secret IDs and ciphertext
 bundle; a winning write, activation or deletion discards the delayed result.
+Exact environment preparation reuses the existing coordinator's completed
+account, selected model and encrypted account-secret rows. It retains the initial
+scoped account lookup and filters the completed inventory by the fixed
+ID/org/user/type and connected state, including connected inactive accounts.
+The coherent fragment uses six SQL statements instead of nine, excluding
+transaction control. Metadata-only Codex reconciliation supplies its updated
+account through `UPDATE RETURNING`. After a legacy import, this data reader
+refreshes the inventory inside the same transaction; it never returns the
+pre-import account or secrets. Compared with the account-only post-import read,
+that exceptional refresh adds four statements while replacing the three later
+environment reads for a surviving identity. Capture/readiness coordination
+callers retain their account-only result and existing SQL count.
+Environment builders preserve auth-method/required-secret checks and lazy
+firewall materialization; these encrypted observations are not persisted,
+logged, or retained for runtime auth or admission.
+
 Final admission is database-only; stored-secret decryption belongs to
 preparation. After environment/launch preparation,
 `preparePersonalSubscriptionAdmission` captures
@@ -262,8 +283,16 @@ failure. This adds no plaintext cache, early lock release, retry or transport
 cancellation. A slow sibling can extend error-return/lock-held time. Independent
 providers multiply this per-bundle fan-out; it is not a fleet-wide limit. See the
 [controlled experiment and limitations](subscription-decryption-experiment.md).
-Normal ciphertext equality and the exceptional serial equivalence proof remain
-unchanged, as do lazy environment preparation and database-only final admission.
+
+Bundle equivalence skips identical ciphertext. For each unequal ciphertext
+field, canonical and mirror decrypts run as a joined pair with canonical-first
+error selection. Fields remain sequential and stop after mismatch or failure.
+A canonical failure can leave an extra mirror request to join and retain the
+existing provider owner while that slow sibling finishes. The comparison also runs
+outside locks during admission preparation; concurrent proofs multiply its
+per-pair bound. See the [paired proof experiment](subscription-equivalence-experiment.md).
+Lazy environment preparation and database-only final admission retain their
+existing boundaries.
 
 | Consumer                                                 | Coordination and observable boundary                                                                                                                                                                                                                                |
 | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

@@ -1,4 +1,5 @@
 import type { SimpleStreamOptions } from "@earendil-works/pi-ai";
+import { classifyProviderFailure } from "@okouai/api-contracts/contracts/provider-failure";
 
 /**
  * Restate an opaque provider error body as the adapter's own JSON envelope.
@@ -172,6 +173,7 @@ function jsonEnvelopeHeaders(headers: Headers): Headers {
 /** Wrap a fetch so opaque provider error bodies keep their observed status. */
 export function preserveProviderErrorStatus(
   fetchImpl: NonNullable<SimpleStreamOptions["fetch"]>,
+  observeError?: (status: number, body: string) => void,
 ): NonNullable<SimpleStreamOptions["fetch"]> {
   return async (input, init) => {
     const response = await fetchImpl(input, init);
@@ -191,6 +193,7 @@ export function preserveProviderErrorStatus(
       });
     }
     const text = new TextDecoder().decode(body.bytes);
+    observeError?.(response.status, text);
     if (isJsonBody(text)) {
       return new Response(body.bytes, {
         status: response.status,
@@ -200,7 +203,13 @@ export function preserveProviderErrorStatus(
     }
     const envelope = {
       error: {
-        message: providerHttpErrorMessage(response.status, text),
+        // Preserve exact queue expiry so native retry owners see the same
+        // terminal condition as our bounded diagnostic observer.
+        message:
+          classifyProviderFailure(text, response.status) ===
+          "provider_queue_timeout"
+            ? text.trim()
+            : providerHttpErrorMessage(response.status, text),
         type: "http_error",
       },
     };

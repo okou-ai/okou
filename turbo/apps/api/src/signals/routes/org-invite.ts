@@ -1,3 +1,8 @@
+import {
+  prepareGetStartedInvitation,
+  linkGetStartedInvitation,
+  revokeGetStartedInvitation,
+} from "../services/get-started-invitation.service";
 import { command } from "ccstate";
 import type { UsagePackUsd } from "@okouai/api-contracts/contracts/billing";
 import { orgInviteContract } from "@okouai/api-contracts/contracts/org-member-routes";
@@ -195,7 +200,7 @@ function invitationPurchaseError(args: {
 
 const inviteBody$ = bodyResultOf(orgInviteContract.invite);
 
-const inviteInner$ = command(async ({ get }, signal: AbortSignal) => {
+const inviteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   if (auth.orgRole !== "admin") {
     return adminRequired;
@@ -216,13 +221,29 @@ const inviteInner$ = command(async ({ get }, signal: AbortSignal) => {
 
   // Clerk side effect: sends the invitation email server-side.
   const client = get(clerk$);
-  await client.organizations.createOrganizationInvitation({
+  const rewardClaim = await prepareGetStartedInvitation(set(writeDb$), {
+    orgId: auth.orgId,
+    userId: auth.userId,
+  });
+  signal.throwIfAborted();
+  const invitation = await client.organizations.createOrganizationInvitation({
     organizationId: auth.orgId,
     emailAddress: body.data.email,
     inviterUserId: auth.userId,
     role: body.data.role === "admin" ? "org:admin" : "org:member",
     redirectUrl: env("APP_URL"),
+    ...(rewardClaim
+      ? { privateMetadata: { getStartedClaimId: rewardClaim.id } }
+      : {}),
   });
+  signal.throwIfAborted();
+  if (rewardClaim) {
+    await linkGetStartedInvitation(
+      set(writeDb$),
+      rewardClaim.id,
+      invitation.id,
+    );
+  }
   signal.throwIfAborted();
 
   return {
@@ -263,6 +284,11 @@ const revokeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       return conflict("The invitation has already been accepted");
     }
     if (result.status === "revoked") {
+      await revokeGetStartedInvitation(set(writeDb$), {
+        orgId: auth.orgId,
+        invitationId: body.data.invitationId,
+      });
+      signal.throwIfAborted();
       return {
         status: 200 as const,
         body: { message: "Invitation revoked and refund initiated" },
@@ -273,6 +299,11 @@ const revokeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   // Legacy invitations remain a direct Clerk operation.
   await client.organizations.revokeOrganizationInvitation({
     organizationId: auth.orgId,
+    invitationId: body.data.invitationId,
+  });
+  signal.throwIfAborted();
+  await revokeGetStartedInvitation(set(writeDb$), {
+    orgId: auth.orgId,
     invitationId: body.data.invitationId,
   });
   signal.throwIfAborted();

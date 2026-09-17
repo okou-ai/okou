@@ -33,6 +33,7 @@ import {
   AGENT_ID,
   context,
   findComposerEditor,
+  composerModelTriggerIn,
   mockAgent,
   mockBillingCapabilities,
   mockComposerThreadSnapshot,
@@ -101,9 +102,26 @@ async function findComposerFor(threadId: string): Promise<HTMLElement> {
   });
 }
 
+/**
+ * These cases read the catalog from the legacy select's category control, which
+ * the switch's off lever still serves. The menu and flyout cases below call
+ * `setupPage` directly.
+ */
+async function setupLegacyPickerPage(
+  options: Parameters<typeof setupPage>[0],
+): Promise<void> {
+  await setupPage({
+    ...options,
+    featureSwitches: {
+      [FeatureSwitchKey.ModelPickerFlyout]: false,
+      ...options.featureSwitches,
+    },
+  });
+}
+
 function pickerTrigger(container: ParentNode = document): HTMLElement {
-  const trigger = container.querySelector('[role="combobox"]');
-  if (!(trigger instanceof HTMLElement)) {
+  const trigger = composerModelTriggerIn(container);
+  if (!trigger) {
     throw new Error("Composer model picker not found");
   }
   return trigger;
@@ -229,7 +247,7 @@ test("Show the curated image model catalog", async () => {
     selectedImageModel: null,
   });
 
-  await setupPage({
+  await setupLegacyPickerPage({
     context,
     path: `/chats/${THREAD_ID}`,
   });
@@ -278,7 +296,7 @@ test.each([
     },
   );
 
-  await setupPage({ context, path: `/chats/${THREAD_ID}` });
+  await setupLegacyPickerPage({ context, path: `/chats/${THREAD_ID}` });
 
   await chooseMediaModel("Image", label);
   await openCategory("Image");
@@ -293,7 +311,7 @@ test("Keep image model choices clear on mobile", async () => {
   installModelEnvironment();
   mockThread({ selectedModel: DEFAULT_RUN_MODEL, selectedImageModel: null });
 
-  await setupPage({ context, path: `/chats/${THREAD_ID}` });
+  await setupLegacyPickerPage({ context, path: `/chats/${THREAD_ID}` });
 
   const models = await openPicker();
   expect(queryAllByRoleFast("radio", models)).toHaveLength(3);
@@ -334,7 +352,7 @@ test("Keep image model pins independent in split chats", async () => {
     },
   );
 
-  await setupPage({
+  await setupLegacyPickerPage({
     context,
     path: `/chats/${THREAD_ID}?sidebar=${SPLIT_THREAD_ID}`,
   });
@@ -365,7 +383,7 @@ test("Do not select an available image model for an unavailable pin", async () =
     selectedImageModel: "fal-ai/flux-pro/v1.1",
   });
 
-  await setupPage({ context, path: `/chats/${THREAD_ID}` });
+  await setupLegacyPickerPage({ context, path: `/chats/${THREAD_ID}` });
 
   await openCategory("Image");
   for (const model of PUBLIC_IMAGE_MODELS) {
@@ -390,7 +408,7 @@ test("Follow the live image model default in an untouched new chat", async () =>
     },
   });
 
-  await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
+  await setupLegacyPickerPage({ context, path: `/agents/${AGENT_ID}/chat` });
 
   await openCategory("Image");
   expectSelected("Nano Banana 2");
@@ -432,7 +450,7 @@ test("Follow the live video model default in an untouched new chat", async () =>
     },
   });
 
-  await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
+  await setupLegacyPickerPage({ context, path: `/agents/${AGENT_ID}/chat` });
 
   await openCategory("Video");
   expectSelected("MiniMax H3");
@@ -517,7 +535,7 @@ async function openDesktopNewChatModelPicker() {
   installModelEnvironment();
   mockChatLifecycle(context, { threadId: "desktop-new-model-modes" });
 
-  await setupPage({
+  await setupLegacyPickerPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
@@ -544,7 +562,7 @@ test("Switch Chat, Image, and Video from one model picker in a mobile new chat",
   installModelEnvironment();
   mockChatLifecycle(context, { threadId: "mobile-new-model-modes" });
 
-  await setupPage({
+  await setupLegacyPickerPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
@@ -589,7 +607,7 @@ test("Switch Chat, Image, and Video from one model picker in a desktop existing 
     selectedVideoModel: DEFAULT_VIDEO_MODEL,
   });
 
-  await setupPage({ context, path: `/chats/${THREAD_ID}` });
+  await setupLegacyPickerPage({ context, path: `/chats/${THREAD_ID}` });
 
   await exerciseExistingChatThreeModePicker();
   expect(category("Chat")).toHaveAttribute("aria-checked", "true");
@@ -604,7 +622,7 @@ test("Switch Chat, Image, and Video from one model picker in a mobile existing c
     selectedVideoModel: DEFAULT_VIDEO_MODEL,
   });
 
-  await setupPage({ context, path: `/chats/${THREAD_ID}` });
+  await setupLegacyPickerPage({ context, path: `/chats/${THREAD_ID}` });
 
   await exerciseExistingChatThreeModePicker();
   expect(category("Chat")).toHaveAttribute("aria-checked", "true");
@@ -636,7 +654,7 @@ async function openTemporaryImageModelChat() {
     },
   });
 
-  await setupPage({
+  await setupLegacyPickerPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
@@ -733,7 +751,7 @@ test("Temporarily choose a video model for a new chat", async () => {
   });
   mockChatLifecycle(context, { threadId: "temporary-video-choice" });
 
-  await setupPage({
+  await setupLegacyPickerPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
@@ -800,7 +818,7 @@ test("Persist a new-chat video choice when temporary choices are unavailable", a
     },
   });
 
-  await setupPage({
+  await setupLegacyPickerPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
@@ -841,7 +859,7 @@ test("Choose a video model for the current thread", async () => {
     },
   );
 
-  await setupPage({ context, path: `/chats/${THREAD_ID}` });
+  await setupLegacyPickerPage({ context, path: `/chats/${THREAD_ID}` });
 
   await openCategory("Video");
   expectSelected("Seedance 2.0");

@@ -50,6 +50,19 @@ create_gate_check() {
   echo "✅ Created $gate check run on $PR_HEAD with conclusion $conclusion"
 }
 
+# iOS has no release-please package. Only an unrelated release may report this
+# gate without running the iOS workflow; changes to the client still require CI.
+if grep -qE '^ios/|^\.github/workflows/ios\.yml$|^\.github/scripts/changed-base-ref\.sh$' <<<"$CHANGED_FILES"; then
+  create_gate_check \
+    ci-gate-ios \
+    failure \
+    "iOS changes require validation" \
+    "This release PR changes iOS inputs. Run the iOS workflow on this commit before merging."
+  echo "::error::Release PR changes iOS inputs and cannot skip iOS validation"
+  exit 1
+fi
+create_gate_check ci-gate-ios success "No iOS changes" "This release PR does not change iOS inputs."
+
 RELEASE_WORKTREE_ROOT=$(mktemp -d)
 RELEASE_WORKTREE="${RELEASE_WORKTREE_ROOT}/head"
 RELEASE_WORKTREE_ADDED=false

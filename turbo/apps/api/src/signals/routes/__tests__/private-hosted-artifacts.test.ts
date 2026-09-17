@@ -1,16 +1,20 @@
 import { mockNow } from "../../../lib/time";
-import { artifactReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
 import { randomUUID } from "node:crypto";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { testContext } from "../../../__tests__/test-context";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { hostContract } from "@okouai/api-contracts/contracts/host";
+import { hostRoutes } from "../host";
 import { mockEnv } from "../../../lib/env";
 import { createBddApi } from "./helpers/api-bdd";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createHostMapsBddApi } from "./helpers/api-bdd-host-maps";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
+const mocks = createRouteMocks(context);
 const bdd = createBddApi(context);
 const api = createHostMapsBddApi(context);
 const billing = createBillingMediaApi(context);
@@ -42,8 +46,17 @@ async function fixture(enabled = true) {
 
 test("keeps runless deployments private across switch rollback and only issues owner previews", async () => {
   const { actor, capture, body } = await fixture();
-  const draft = await api.prepareHostedSite(actor, body);
-  const canonical = artifactReferencePath(draft.deploymentId, "index.html");
+  mocks.clerk.session(actor.userId, actor.orgId);
+  const prepared = await accept(
+    setupApp({ context, routes: hostRoutes })(hostContract).preparePrivate({
+      headers: { authorization: "Bearer clerk-session" },
+      body: { ...body, requirePrivateArtifact: true },
+    }),
+    [200],
+  );
+  const draft = prepared.body;
+  const canonical = draft.url;
+  expect(canonical).toMatch(/^\/artifacts\/[a-z0-9]{10}\.html$/u);
   expect(draft).toMatchObject({ url: canonical, artifactUrl: canonical });
   expect(draft.aliasUrl).toBeUndefined();
   await billing.updateFeatureSwitches(actor, {
@@ -57,11 +70,19 @@ test("keeps runless deployments private across switch rollback and only issues o
   });
   expect(completed.aliasUrl).toBeUndefined();
   expect(
-    capture.puts.map(({ key }) => {
-      return key;
-    }),
+    capture.puts
+      .filter(({ key }) => {
+        return key.startsWith("private-sites/");
+      })
+      .map(({ key }) => {
+        return key;
+      }),
   ).toStrictEqual([`private-sites/okou/${draft.deploymentId}/manifest.json`]);
-  const manifest = JSON.parse(capture.puts[0]!.body) as Record<string, unknown>;
+  const manifest = JSON.parse(
+    capture.puts.find(({ key }) => {
+      return key.endsWith("/manifest.json");
+    })!.body,
+  ) as Record<string, unknown>;
   expect(manifest.access).toBe("owner-private-v1");
   const files = await api.readHostedSiteFiles(
     actor,
@@ -215,8 +236,10 @@ test("creates hostless references without requiring an API hostname", async () =
   const { actor, body, capture } = await fixture();
   mockEnv("OKOU_API_BACKEND_URL", undefined);
   const draft = await api.prepareHostedSite(actor, body);
-  expect(draft.url).toBe(
-    artifactReferencePath(draft.deploymentId, "index.html"),
-  );
-  expect(capture.puts).toStrictEqual([]);
+  expect(draft.url).toMatch(/^\/artifacts\/[a-z0-9]{10}\.html$/u);
+  expect(
+    capture.puts.some(({ key }) => {
+      return key.startsWith("sites/");
+    }),
+  ).toBeFalsy();
 });

@@ -22,20 +22,21 @@ function useUpdateColorTheme(): (colorTheme: ColorTheme) => void {
   };
 }
 
-export function ColorThemeSettings() {
+interface ColorThemeOption {
+  readonly value: ColorTheme;
+  readonly label: string;
+}
+
+function useColorThemeOptions(): readonly ColorThemeOption[] {
   const { t } = useTranslation();
-  const featureSwitches = useGet(featureSwitch$);
-  const colorTheme = useGet(colorTheme$);
-  const updateColorTheme = useUpdateColorTheme();
 
-  if (!featureSwitches[FeatureSwitchKey.GradientColorThemes]) {
-    return null;
-  }
-
-  const options: readonly {
-    readonly value: ColorTheme;
-    readonly label: string;
-  }[] = [
+  return [
+    {
+      value: "default",
+      label: t(($) => {
+        return $.settings.preferences.appearance.colorTheme.options.default;
+      }),
+    },
     {
       value: "golden-hour",
       label: t(($) => {
@@ -78,13 +79,19 @@ export function ColorThemeSettings() {
         return $.settings.preferences.appearance.colorTheme.options.deepLagoon;
       }),
     },
-    {
-      value: "limelight",
-      label: t(($) => {
-        return $.settings.preferences.appearance.colorTheme.options.limelight;
-      }),
-    },
   ];
+}
+
+export function ColorThemeSettings() {
+  const { t } = useTranslation();
+  const featureSwitches = useGet(featureSwitch$);
+  const colorTheme = useGet(colorTheme$);
+  const updateColorTheme = useUpdateColorTheme();
+  const options = useColorThemeOptions();
+
+  if (!featureSwitches[FeatureSwitchKey.GradientColorThemes]) {
+    return null;
+  }
 
   return (
     <div className="flex flex-col gap-4 rounded-xl bg-card p-4 border border-surface-border">

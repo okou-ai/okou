@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.21.23](https://github.com/vm0-ai/okou/compare/guest-control-server-v0.21.22...guest-control-server-v0.21.23) (2026-09-17)
+
+## [0.21.22](https://github.com/vm0-ai/okou/compare/guest-control-server-v0.21.21...guest-control-server-v0.21.22) (2026-09-17)
+
+## [0.21.21](https://github.com/vm0-ai/okou/compare/guest-control-server-v0.21.20...guest-control-server-v0.21.21) (2026-09-17)
+
+## [0.21.20](https://github.com/vm0-ai/okou/compare/guest-control-server-v0.21.19...guest-control-server-v0.21.20) (2026-09-17)
+
+
+### Bug Fixes
+
+* **runner:** downgrade successful slow storage downloads ([#34799](https://github.com/vm0-ai/okou/issues/34799)) ([79e19b6](https://github.com/vm0-ai/okou/commit/79e19b689fbba9e18f8074bb4dd194dc4a99e832))
+
+## [0.21.19](https://github.com/vm0-ai/okou/compare/guest-control-server-v0.21.18...guest-control-server-v0.21.19) (2026-09-17)
+
+## [0.21.18](https://github.com/vm0-ai/okou/compare/guest-control-server-v0.21.17...guest-control-server-v0.21.18) (2026-09-16)
+
+
+### Performance Improvements
+
+* **runner:** stream compressed session history with caller-owned policy ([#34603](https://github.com/vm0-ai/okou/issues/34603)) ([1376434](https://github.com/vm0-ai/okou/commit/1376434b697f5e39be6d569c6b20a4e33ed12342))
+
+## [0.21.17](https://github.com/vm0-ai/okou/compare/guest-control-server-v0.21.16...guest-control-server-v0.21.17) (2026-09-16)
+
+## [0.21.16](https://github.com/vm0-ai/okou/compare/guest-control-server-v0.21.15...guest-control-server-v0.21.16) (2026-09-16)
+
+## [0.21.15](https://github.com/vm0-ai/okou/compare/guest-control-server-v0.21.14...guest-control-server-v0.21.15) (2026-09-16)
+
+
+### Bug Fixes
+
+* **runner:** classify contained tool oom as informational ([#34520](https://github.com/vm0-ai/okou/issues/34520)) ([02e789d](https://github.com/vm0-ai/okou/commit/02e789d0129298079e23570bc319c5c0557a2d77))
+
+## [0.21.14](https://github.com/vm0-ai/okou/compare/guest-control-server-v0.21.13...guest-control-server-v0.21.14) (2026-09-16)
+
 ## [0.21.13](https://github.com/vm0-ai/vm0/compare/guest-control-server-v0.21.12...guest-control-server-v0.21.13) (2026-09-15)
 
 ## [0.21.12](https://github.com/vm0-ai/vm0/compare/guest-control-server-v0.21.11...guest-control-server-v0.21.12) (2026-09-15)

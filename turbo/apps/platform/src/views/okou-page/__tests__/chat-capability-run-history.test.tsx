@@ -1,5 +1,6 @@
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import {
   click,
@@ -179,9 +180,12 @@ test("Project workflow history expansion through the existing run group", async 
     },
   ] satisfies MockChatEventInput[];
   installRunChat({ chatEvents: events, activeRunIds: [WORKFLOW_RUN_IDS[2]] });
+  // Current progress is drawn from the run's own thinking event only while
+  // thread activity summaries are off, which is the case this test covers.
   await setupPage({
     context,
     path: RUN_PATH,
+    featureSwitches: { [FeatureSwitchKey.ThreadActivitySummary]: false },
   });
   await readyChat();
   expect(screen.queryByText("Earlier workflow evidence 1")).toBeNull();
@@ -256,9 +260,12 @@ test("Project workflow current run output through the existing run group", async
     },
   ] satisfies MockChatEventInput[];
   installRunChat({ chatEvents: events, activeRunIds: [WORKFLOW_RUN_IDS[2]] });
+  // Current progress is drawn from the run's own thinking event only while
+  // thread activity summaries are off, which is the case this test covers.
   await setupPage({
     context,
     path: RUN_PATH,
+    featureSwitches: { [FeatureSwitchKey.ThreadActivitySummary]: false },
   });
   await readyChat();
   expect(screen.queryByText("Earlier workflow evidence 1")).toBeNull();

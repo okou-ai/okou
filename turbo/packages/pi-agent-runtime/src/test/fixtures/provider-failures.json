@@ -1,0 +1,338 @@
+[
+  {
+    "message": "{\"error\":{\"code\":\"ThrottlingException\",\"message\":\"Provider rejected request\"}}",
+    "reason": "provider_rate_limited"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"throttlingException\",\"message\":\"Provider rejected request\"}}",
+    "reason": "provider_rate_limited"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"ServiceUnavailableException\",\"message\":\"Provider rejected request\"}}",
+    "reason": "provider_server_error"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"serviceUnavailableException\",\"message\":\"Provider rejected request\"}}",
+    "reason": "provider_server_error"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"InternalServerException\",\"message\":\"Provider rejected request\"}}",
+    "reason": "provider_server_error"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"internalServerException\",\"message\":\"Provider rejected request\"}}",
+    "reason": "provider_server_error"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"InternalServerException\",\"message\":\"We were unable to start processing your request within the 900-second timeout limit. Please try again later.\"}}",
+    "reason": "provider_queue_timeout"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"ValidationException\",\"message\":\"Provider rejected request\"}}",
+    "reason": null
+  },
+  {
+    "message": "The tool printed ThrottlingException and InternalServerException",
+    "reason": null
+  },
+  {
+    "message": "unknown: Our servers are currently overloaded. Please try again later.",
+    "reason": "provider_overloaded"
+  },
+  {
+    "message": "unknown: Invalid prompt: your prompt was flagged as potentially violating our usage policy. Please try again with a different prompt: https://example.invalid/policy",
+    "reason": "safety_policy_refusal"
+  },
+  {
+    "message": "Error Code invalid_request_error: Invalid prompt: your prompt was flagged as potentially violating our usage policy. Please try again with a different prompt: https://example.invalid/policy",
+    "reason": "safety_policy_refusal"
+  },
+  {
+    "message": "unknown: Invalid prompt: messages must contain a user message",
+    "reason": null
+  },
+  {
+    "message": "Error Code invalid_request_error: Invalid tool schema",
+    "reason": null
+  },
+  {
+    "message": "Codex error: Invalid prompt: your prompt was flagged as potentially violating our usage policy. Please try again with a different prompt: https://example.invalid/policy",
+    "reason": "safety_policy_refusal"
+  },
+  {
+    "message": "Invalid prompt: your prompt was flagged as potentially violating our usage policy. Please try again with a different prompt: <redacted:url>",
+    "reason": "safety_policy_refusal"
+  },
+  {
+    "message": "{\"error\":{\"type\":\"invalid_request_error\",\"message\":\"Invalid prompt: your prompt was flagged as potentially violating our usage policy. Please try again with a different prompt: https://example.invalid/policy\"}}",
+    "reason": "safety_policy_refusal"
+  },
+  {
+    "message": "Codex error: Invalid prompt: messages must contain a user message",
+    "reason": null
+  },
+  {
+    "message": "Codex error: Invalid prompt: your prompt mentions our usage policy. Please try again with a different prompt: https://example.invalid/policy",
+    "reason": null
+  },
+  {
+    "message": "The tool printed: Invalid prompt: your prompt was flagged as potentially violating our usage policy. Please try again with a different prompt: https://example.invalid/policy",
+    "reason": null
+  },
+  {
+    "message": "{\"debug\":{\"error\":{\"message\":\"Invalid prompt: your prompt was flagged as potentially violating our usage policy. Please try again with a different prompt: https://example.invalid/policy\"}}}",
+    "reason": null
+  },
+  {
+    "message": "We were unable to start processing your request within the 900-second timeout limit. Please try again later.",
+    "reason": "provider_queue_timeout"
+  },
+  {
+    "message": " \nWE WERE UNABLE TO START PROCESSING YOUR REQUEST WITHIN THE 900-SECOND TIMEOUT LIMIT. PLEASE TRY AGAIN LATER. \n",
+    "reason": "provider_queue_timeout"
+  },
+  {
+    "message": "server_error: We were unable to start processing your request within the 900-second timeout limit. Please try again later.",
+    "reason": "provider_queue_timeout"
+  },
+  {
+    "message": "unknown: We were unable to start processing your request within the 900-second timeout limit. Please try again later.",
+    "reason": "provider_queue_timeout"
+  },
+  {
+    "message": "Error Code timeout: We were unable to start processing your request within the 900-second timeout limit. Please try again later.",
+    "reason": "provider_queue_timeout"
+  },
+  {
+    "message": "Codex error: We were unable to start processing your request within the 900-second timeout limit. Please try again later.",
+    "reason": "provider_queue_timeout"
+  },
+  {
+    "message": "OpenAI API error (503): {\"message\":\"We were unable to start processing your request within the 900-second timeout limit. Please try again later.\",\"code\":\"server_error\"}",
+    "reason": "provider_queue_timeout"
+  },
+  {
+    "message": "OpenAI API error (503): {\"message\":\"We were unable to start processing your request within the 900-second timeout limit. Please try again later.\",\"code\":\"overloaded_error\"}",
+    "reason": "provider_queue_timeout"
+  },
+  {
+    "message": "{\"error\":{\"message\":\"We were unable to start processing your request within the 900-second timeout limit. Please try again later.\",\"code\":\"invalid_api_key\"}}",
+    "reason": "invalid_api_key"
+  },
+  {
+    "message": "{\"error\":{\"message\":\"We were unable to start processing your request within the 900-second timeout limit. Please try again later.\",\"code\":\"queue_expired\"}}",
+    "reason": "provider_queue_timeout"
+  },
+  {
+    "message": "{\"error\":{\"message\":\"We were unable to start processing your request within the 900-second timeout limit. Please try again later.\",\"code\":\"context_length_exceeded\"}}",
+    "reason": "context_window_exceeded"
+  },
+  {
+    "message": "{\"error\":{\"message\":\"We were unable to start processing your request within the 900-second timeout limit. Please try again later.\",\"code\":\"usage_limit_reached\"}}",
+    "reason": "usage_limit"
+  },
+  {
+    "message": "{\"error\":{\"message\":\"We were unable to start processing your request within the 900-second timeout limit. Please try again later.\",\"code\":\"rate_limit_exceeded\"}}",
+    "reason": "provider_rate_limited"
+  },
+  {
+    "message": "API Error: 402 {\"error\":{\"message\":\"We were unable to start processing your request within the 900-second timeout limit. Please try again later.\",\"code\":\"insufficient_quota\"}}",
+    "reason": "provider_insufficient_credits"
+  },
+  {
+    "message": "The tool printed: We were unable to start processing your request within the 900-second timeout limit. Please try again later.",
+    "reason": null
+  },
+  {
+    "message": "{\"debug\":{\"error\":{\"message\":\"We were unable to start processing your request within the 900-second timeout limit. Please try again later.\"}}}",
+    "reason": null
+  },
+  {
+    "message": "We were unable to start processing your request within the 901-second timeout limit. Please try again later.",
+    "reason": null
+  },
+  {
+    "message": "Request timeout",
+    "reason": null
+  },
+  {
+    "message": "API Error: 429 {\"error\":{\"code\":\"insufficient_quota\"}}",
+    "reason": "provider_insufficient_credits"
+  },
+  {
+    "message": "API Error: 402 {\"error\":{\"code\":\"billing_hard_limit_reached\"}}",
+    "reason": "provider_insufficient_credits"
+  },
+  {
+    "message": "API Error: 402 {\"error\":{\"code\":\"insufficient_credits\"}}",
+    "reason": "provider_insufficient_credits"
+  },
+  {
+    "message": "API Error: 400 {\"error\":{\"type\":\"invalid_request_error\",\"message\":\"Your credit balance is too low to access the Anthropic API. Please purchase credits.\"}}",
+    "reason": "provider_insufficient_credits"
+  },
+  {
+    "message": "API Error: 402 {\"error\":{\"code\":402,\"message\":\"Payment required\"}}",
+    "reason": "provider_insufficient_credits"
+  },
+  {
+    "message": "The tool printed: API Error: 429 {\"error\":{\"code\":\"insufficient_quota\"}}",
+    "reason": null
+  },
+  {
+    "message": "{\"message\":\"Our servers are currently overloaded. Please try again later.\"}",
+    "reason": "provider_overloaded"
+  },
+  {
+    "message": "API Error: 429 {\"error\":{\"message\":\"You have hit your ChatGPT usage limit.\"}}",
+    "reason": "usage_limit"
+  },
+  {
+    "message": "Codex error: Selected model is at capacity. Please try a different model.",
+    "reason": "provider_overloaded"
+  },
+  {
+    "message": "Codex error: terminated",
+    "reason": "response_connection_lost"
+  },
+  {
+    "message": "{\"error\":\"insufficient_credits\"}",
+    "reason": "insufficient_credits"
+  },
+  {
+    "message": "{\"error\":{\"message\":\"Our servers are currently overloaded. Please try again later.\"}}",
+    "reason": "provider_overloaded"
+  },
+  {
+    "message": "Codex error: Our servers are currently overloaded. Please try again later.",
+    "reason": "provider_overloaded"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"invalid_api_key\",\"message\":\"private provider content\"}}",
+    "reason": "invalid_api_key"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"authentication_error\",\"message\":\"private provider content\"}}",
+    "reason": "invalid_credentials"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"context_length_exceeded\",\"message\":\"private provider content\"}}",
+    "reason": "context_window_exceeded"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"context_window_exceeded\",\"message\":\"private provider content\"}}",
+    "reason": "context_window_exceeded"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"prompt_too_long\",\"message\":\"private provider content\"}}",
+    "reason": "context_window_exceeded"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"rate_limit_exceeded\",\"message\":\"private provider content\"}}",
+    "reason": "provider_rate_limited"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"rate_limit_error\",\"message\":\"private provider content\"}}",
+    "reason": "provider_rate_limited"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"overloaded_error\",\"message\":\"private provider content\"}}",
+    "reason": "provider_overloaded"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"server_overloaded\",\"message\":\"private provider content\"}}",
+    "reason": "provider_overloaded"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"server_error\",\"message\":\"private provider content\"}}",
+    "reason": "provider_server_error"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"internal_server_error\",\"message\":\"private provider content\"}}",
+    "reason": "provider_server_error"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"insufficient_quota\",\"message\":\"private provider content\"}}",
+    "reason": null
+  },
+  {
+    "message": "{\"error\":{\"code\":\"usage_limit_reached\",\"message\":\"private provider content\"}}",
+    "reason": "usage_limit"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"usage_not_included\",\"message\":\"private provider content\"}}",
+    "reason": "usage_limit"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"billing_hard_limit_reached\",\"message\":\"private provider content\"}}",
+    "reason": null
+  },
+  {
+    "message": "{\"error\":{\"code\":\"insufficient_credits\",\"message\":\"private provider content\"}}",
+    "reason": null
+  },
+  {
+    "message": "{\"error\":{\"code\":\"content_policy_violation\",\"message\":\"private provider content\"}}",
+    "reason": "safety_policy_refusal"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"content_filter\",\"message\":\"private provider content\"}}",
+    "reason": null
+  },
+  {
+    "message": "{\"error\":{\"code\":\"model_not_found\",\"message\":\"private provider content\"}}",
+    "reason": "unsupported_model"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"unsupported_model\",\"message\":\"private provider content\"}}",
+    "reason": "unsupported_model"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"rate_limit_exceeded\",\"message\":\"You have hit your ChatGPT usage limit.\"}}",
+    "reason": "provider_rate_limited"
+  },
+  {
+    "message": "{\"error\":{\"type\":\"invalid_request_error\",\"message\":\"prompt is too long: 240000 tokens > 200000 maximum\"}}",
+    "reason": "context_window_exceeded"
+  },
+  {
+    "message": "{\"error\":\"TOKEN_REFRESH_FAILED\",\"failureReason\":\"reconnect_required\",\"connectors\":[\"codex-oauth-token\"]}",
+    "reason": "reconnect_required"
+  },
+  {
+    "message": "terminated",
+    "reason": "response_connection_lost"
+  },
+  {
+    "message": "Codex SSE response body timed out after 30000ms",
+    "reason": "provider_stream_timeout"
+  },
+  {
+    "message": "{\"error\":{\"type\":\"invalid_request_error\",\"message\":\"Invalid tool schema\"}}",
+    "reason": null
+  },
+  {
+    "message": "{\"debug\":{\"error\":{\"code\":\"rate_limit_exceeded\"}}}",
+    "reason": null
+  },
+  {
+    "message": "The tool printed {\"error\":{\"code\":\"overloaded_error\"}}",
+    "reason": null
+  },
+  {
+    "message": "Terminated while reading a tool file",
+    "reason": null
+  },
+  {
+    "message": "Our servers are currently overloaded. Please try again later. is an example.",
+    "reason": null
+  },
+  {
+    "message": "{\"error\":\"TOKEN_REFRESH_FAILED\",\"failureReason\":\"reconnect_required\",\"connectors\":[\"unrelated\"]}",
+    "reason": null
+  },
+  {
+    "message": "API Error: 400 {\"error\":{\"type\":\"invalid_request_error\",\"message\":\"Invalid tool schema\"}}",
+    "reason": null
+  }
+]

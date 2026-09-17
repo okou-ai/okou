@@ -13,6 +13,7 @@ import { Buffer } from "node:buffer";
 
 import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it } from "vitest";
+
 import {
   chatThreadConnectorSelectionContract,
   chatThreadsContract,
@@ -218,8 +219,11 @@ const EXPECTED_FEISHU_OAUTH_SCOPES = [
   "board:whiteboard:node:read",
   "board:whiteboard:node:create",
   "calendar:calendar",
+  "calendar:calendar:read",
   "task:task:write",
   "task:tasklist:write",
+  "task:comment:write",
+  "task:section:write",
 ] as const;
 
 interface CapturedFeishuMessage {
@@ -721,6 +725,10 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
   let addedReactions: string[];
   let removedReactions: string[];
   let historyMessages: readonly Readonly<Record<string, unknown>>[];
+  let threadHistoryMessages: Map<
+    string,
+    readonly Readonly<Record<string, unknown>>[]
+  >;
   let failedSendTargets: string[];
   let failedSendContentFragments: string[];
   let oauthTokenExpiresInSeconds: number;
@@ -782,6 +790,7 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
     addedReactions = [];
     removedReactions = [];
     historyMessages = [];
+    threadHistoryMessages = new Map();
     failedSendTargets = [];
     failedSendContentFragments = [];
     oauthTokenExpiresInSeconds = 7200;
@@ -926,12 +935,25 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
           });
         },
       ),
-      http.get(`${provider.apiOrigin}/open-apis/im/v1/messages`, () => {
-        return HttpResponse.json({
-          code: 0,
-          data: { items: historyMessages, has_more: false },
-        });
-      }),
+      http.get(
+        `${provider.apiOrigin}/open-apis/im/v1/messages`,
+        ({ request }) => {
+          const query = new URL(request.url).searchParams;
+          const containerType = query.get("container_id_type");
+          if (containerType !== "chat" && containerType !== "thread") {
+            throw new Error("Expected a chat or thread history container");
+          }
+          const messages =
+            containerType === "thread"
+              ? (threadHistoryMessages.get(query.get("container_id") ?? "") ??
+                [])
+              : historyMessages;
+          return HttpResponse.json({
+            code: 0,
+            data: { items: messages, has_more: false },
+          });
+        },
+      ),
       http.post(
         `${provider.apiOrigin}/open-apis/im/v1/messages/:messageId/reactions`,
         ({ params }) => {
@@ -4855,6 +4877,86 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
     await removeFeishuInstallation(fixture);
   });
 
+  it("renders system message history and retains unreadable message placeholders", async () => {
+    const fixture = await setupFeishuRunFixture();
+    const { actor, runnerGroup, appId, callbackUrl } = fixture;
+    await connectFixtureUser(fixture);
+    const messages = [
+      {
+        content: JSON.stringify({
+          template: "{from_user} invited {to_chatters} to this chat.",
+          from_user: ["Ada"],
+          to_chatters: ["Sam", "John", "Mary"],
+        }),
+        expected: "Ada invited Sam, John, Mary to this chat.",
+      },
+      {
+        content: JSON.stringify({
+          template: "{from_user} invited {to_chatters}. Thanks, {from_user}.",
+          from_user: ["{to_chatters} $&"],
+          to_chatters: ["Sam"],
+        }),
+        expected: "{to_chatters} $& invited Sam. Thanks, {to_chatters} $&.",
+      },
+      {
+        content: JSON.stringify({
+          template: "{from_user}邀请{to_chatters}加入了群聊。",
+          from_user: ["小明"],
+          to_chatters: ["小红", "小李"],
+        }),
+        expected: "小明邀请小红, 小李加入了群聊。",
+      },
+      {
+        content: JSON.stringify({
+          template: "{from_user} updated {missing_field}.",
+          from_user: ["Ada"],
+        }),
+        expected: "Ada updated {missing_field}.",
+      },
+      {
+        content: JSON.stringify({ template: "Group settings changed." }),
+        expected: "Group settings changed.",
+      },
+      { content: "not JSON", expected: "[system message]" },
+      {
+        content: JSON.stringify({ template: "{from_user}", from_user: [123] }),
+        expected: "[system message]",
+      },
+      {
+        content: JSON.stringify({ template: "{from_user}", from_user: [] }),
+        expected: "[system message]",
+      },
+    ];
+    historyMessages = messages.map((message, index) => {
+      return {
+        message_id: `om_system_history_${index}`,
+        msg_type: "system",
+        create_time: String(index + 1),
+        body: { content: message.content },
+      };
+    });
+
+    const prompt = "Explain the recent chat membership changes";
+    await postEvent(callbackUrl, directMessage(appId, prompt), {
+      encrypted: true,
+    });
+    await flushWaitUntilForTest();
+    const run = await findRun(actor, prompt);
+    await runsApi.heartbeatRunner(runnerGroup);
+    const claim = await runsApi.claimRunnerJob(run.id);
+    const history = requireValue(
+      claim.appendSystemPrompt,
+      "Expected conversation history",
+    );
+    for (const message of messages) {
+      expect(history).toContain(message.expected);
+    }
+    expect(history.match(/\[system message\]/gu)).toHaveLength(3);
+    await runsApi.requestCancelRun(actor, run.id, [200]);
+    await flushWaitUntilForTest();
+    await removeFeishuInstallation(fixture);
+  });
+
   it("claims a Feishu message when conversation history loading fails", async () => {
     const fixture = await setupFeishuRunFixture();
     const { actor, runnerGroup, appId, callbackUrl } = fixture;
@@ -5453,78 +5555,89 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
     );
   });
 
-  it("forks Feishu DM threads without replacing the main session", async () => {
-    const fixture = await setupFeishuRunFixture();
-    const { actor, runnerGroup, appId, callbackUrl } = fixture;
-    await connectFixtureUser(fixture);
-    const mainMessageId = `om_${randomUUID()}`;
-    await postEvent(
-      callbackUrl,
-      directMessage(appId, "start the main Feishu DM", "ou_feishu_user", {
-        messageId: mainMessageId,
-      }),
-      { encrypted: true },
-    );
-    await flushWaitUntilForTest();
-    const initialRun = await findRun(actor, "start the main Feishu DM");
-    await runsApi.heartbeatRunner(runnerGroup);
-    const initialClaim = await runsApi.claimRunnerJob(initialRun.id);
-    expect(initialClaim.resumeSession).toBeNull();
-    const mainSessionId = randomUUID();
-    await completeRunSession({
-      runId: initialRun.id,
-      sandboxToken: initialClaim.sandboxToken,
-      sessionId: mainSessionId,
-      history: `bdd main feishu history ${initialRun.id}`,
+  describe("with a connected integration actor", () => {
+    async function prepareScenario() {
+      const fixture = await setupFeishuRunFixture();
+      const { actor, runnerGroup, appId, callbackUrl } = fixture;
+      await connectFixtureUser(fixture);
+      return { callbackUrl, appId, actor, runnerGroup, fixture };
+    }
+    let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
+    beforeEach(async () => {
+      preparedScenario = await prepareScenario();
     });
+    it("forks Feishu DM threads without replacing the main session", async () => {
+      const { callbackUrl, appId, actor, runnerGroup, fixture } =
+        preparedScenario;
+      const mainMessageId = `om_${randomUUID()}`;
+      await postEvent(
+        callbackUrl,
+        directMessage(appId, "start the main Feishu DM", "ou_feishu_user", {
+          messageId: mainMessageId,
+        }),
+        { encrypted: true },
+      );
+      await flushWaitUntilForTest();
+      const initialRun = await findRun(actor, "start the main Feishu DM");
+      await runsApi.heartbeatRunner(runnerGroup);
+      const initialClaim = await runsApi.claimRunnerJob(initialRun.id);
+      expect(initialClaim.resumeSession).toBeNull();
+      const mainSessionId = randomUUID();
+      await completeRunSession({
+        runId: initialRun.id,
+        sandboxToken: initialClaim.sandboxToken,
+        sessionId: mainSessionId,
+        history: `bdd main feishu history ${initialRun.id}`,
+      });
 
-    const feishuThreadId = `omt_${randomUUID()}`;
-    const threadMessageId = `om_${randomUUID()}`;
-    await postEvent(
-      callbackUrl,
-      directMessage(appId, "open a new Feishu thread", "ou_feishu_user", {
-        messageId: threadMessageId,
-        rootId: mainMessageId,
-        threadId: feishuThreadId,
-      }),
-      { encrypted: true },
-    );
-    await flushWaitUntilForTest();
-    const threadRun = await findRun(actor, "open a new Feishu thread");
-    await runsApi.heartbeatRunner(runnerGroup);
-    const threadClaim = await runsApi.claimRunnerJob(threadRun.id);
-    expect(threadClaim.resumeSession).toBeNull();
-    const threadSessionId = randomUUID();
-    await completeRunSession({
-      runId: threadRun.id,
-      sandboxToken: threadClaim.sandboxToken,
-      sessionId: threadSessionId,
-      history: `bdd feishu thread history ${threadRun.id}`,
+      const feishuThreadId = `omt_${randomUUID()}`;
+      const threadMessageId = `om_${randomUUID()}`;
+      await postEvent(
+        callbackUrl,
+        directMessage(appId, "open a new Feishu thread", "ou_feishu_user", {
+          messageId: threadMessageId,
+          rootId: mainMessageId,
+          threadId: feishuThreadId,
+        }),
+        { encrypted: true },
+      );
+      await flushWaitUntilForTest();
+      const threadRun = await findRun(actor, "open a new Feishu thread");
+      await runsApi.heartbeatRunner(runnerGroup);
+      const threadClaim = await runsApi.claimRunnerJob(threadRun.id);
+      expect(threadClaim.resumeSession).toBeNull();
+      const threadSessionId = randomUUID();
+      await completeRunSession({
+        runId: threadRun.id,
+        sandboxToken: threadClaim.sandboxToken,
+        sessionId: threadSessionId,
+        history: `bdd feishu thread history ${threadRun.id}`,
+      });
+
+      await postEvent(
+        callbackUrl,
+        directMessage(appId, "return to the main Feishu DM"),
+        { encrypted: true },
+      );
+      await flushWaitUntilForTest();
+      const mainDmRun = await findRun(actor, "return to the main Feishu DM");
+      await runsApi.heartbeatRunner(runnerGroup);
+      const mainDmClaim = await runsApi.claimRunnerJob(mainDmRun.id);
+      expect(mainDmClaim.resumeSession?.sessionId).toBe(mainSessionId);
+      await runsApi.requestCancelRun(actor, mainDmRun.id, [200]);
+      await flushWaitUntilForTest();
+
+      const client = setupApp({ context, routes: feishuConnectRoutes })(
+        connectContract,
+      );
+      await accept(
+        client.removeInstallation({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { installationId: fixture.installationId },
+        }),
+        [200],
+      );
     });
-
-    await postEvent(
-      callbackUrl,
-      directMessage(appId, "return to the main Feishu DM"),
-      { encrypted: true },
-    );
-    await flushWaitUntilForTest();
-    const mainDmRun = await findRun(actor, "return to the main Feishu DM");
-    await runsApi.heartbeatRunner(runnerGroup);
-    const mainDmClaim = await runsApi.claimRunnerJob(mainDmRun.id);
-    expect(mainDmClaim.resumeSession?.sessionId).toBe(mainSessionId);
-    await runsApi.requestCancelRun(actor, mainDmRun.id, [200]);
-    await flushWaitUntilForTest();
-
-    const client = setupApp({ context, routes: feishuConnectRoutes })(
-      connectContract,
-    );
-    await accept(
-      client.removeInstallation({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { installationId: fixture.installationId },
-      }),
-      [200],
-    );
   });
 
   it("resumes Feishu DM thread sessions and keeps control replies in-thread", async () => {
@@ -6146,7 +6259,7 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
     );
   });
 
-  it("ignores unmentioned and app-authored group messages", async () => {
+  it("ignores unmentioned group messages, app messages and system notifications", async () => {
     const fixture = await setupFeishuRunFixture();
     const { actor, appId, callbackUrl } = fixture;
     await connectFixtureUser(fixture);
@@ -6171,6 +6284,26 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
       }),
       { encrypted: true },
     );
+    await postEvent(
+      callbackUrl,
+      v2Event(appId, "im.message.receive_v1", {
+        sender: {
+          sender_id: { open_id: "ou_feishu_user" },
+          sender_type: "user",
+        },
+        message: {
+          message_id: `om_${randomUUID()}`,
+          chat_id: "oc_feishu_dm",
+          chat_type: "p2p",
+          message_type: "system",
+          content: JSON.stringify({
+            template: "ignore the system notification from {from_user}",
+            from_user: ["Ada"],
+          }),
+        },
+      }),
+      { encrypted: true },
+    );
     await flushWaitUntilForTest();
     const afterUnmentioned = await runsApi.listAgentRuns(actor, { limit: 20 });
     expect(
@@ -6187,11 +6320,20 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
     const { actor, runnerGroup, appId, callbackUrl } = fixture;
     await connectFixtureUser(fixture);
     const groupMessageId = `om_${randomUUID()}`;
+    const groupRootId = `om_${randomUUID()}`;
+    const groupThreadId = `omt_${randomUUID()}`;
+    const rootMessage = {
+      message_id: groupRootId,
+      thread_id: groupThreadId,
+      msg_type: "text",
+      create_time: "1",
+      body: { content: JSON.stringify({ text: "Thread root question" }) },
+    };
     historyMessages = [
       {
         message_id: "om_group_recent",
         msg_type: "text",
-        create_time: "1",
+        create_time: "2",
         sender: {
           id: "ou_recent_user",
           sender_name: "Recent User",
@@ -6201,11 +6343,32 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
           content: JSON.stringify({ text: "Recent group context" }),
         },
       },
+      rootMessage,
+    ];
+    threadHistoryMessages.set(groupThreadId, [
+      {
+        message_id: groupMessageId,
+        msg_type: "text",
+        create_time: "5",
+        body: { content: JSON.stringify({ text: "Current message copy" }) },
+      },
+      {
+        message_id: "om_group_file",
+        msg_type: "file",
+        create_time: "4",
+        body: {
+          content: JSON.stringify({
+            file_key: "file_topic_context",
+            file_name: "topic-context.pdf",
+          }),
+        },
+      },
       {
         message_id: "om_group_thread",
-        root_id: groupMessageId,
+        root_id: groupRootId,
+        thread_id: groupThreadId,
         msg_type: "text",
-        create_time: "2",
+        create_time: "3",
         sender: {
           id: "ou_thread_user",
           sender_name: "Thread User",
@@ -6217,9 +6380,19 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
           }),
         },
       },
-    ];
+      {
+        message_id: "om_deleted_reply",
+        msg_type: "text",
+        create_time: "2",
+        deleted: true,
+        body: { content: JSON.stringify({ text: "Deleted thread reply" }) },
+      },
+      rootMessage,
+    ]);
     const mentioned = groupMessage(appId, "", {
       messageId: groupMessageId,
+      rootId: groupRootId,
+      threadId: groupThreadId,
     });
     await postEvent(callbackUrl, mentioned, { encrypted: true });
     await postEvent(callbackUrl, mentioned, { encrypted: true });
@@ -6235,6 +6408,10 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
     );
     await runsApi.heartbeatRunner(runnerGroup);
     const groupClaim = await runsApi.claimRunnerJob(groupRun.id);
+    const history = requireValue(
+      groupClaim.appendSystemPrompt,
+      "Expected group and thread history",
+    );
     expect(groupClaim.prompt).toBe("@Nova");
     expect(groupClaim.appendSystemPrompt).toContain("Scope: Group mention");
     expect(groupClaim.appendSystemPrompt).toContain(
@@ -6261,8 +6438,36 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
       "https://example.com/broken-article",
     );
     expect(groupClaim.appendSystemPrompt).toContain(
-      `Thread ID: ${groupMessageId}`,
+      `Thread ID: ${groupThreadId}`,
     );
+    expect(history.match(/Thread root question/gu)).toHaveLength(1);
+    expect(history).not.toContain("Current message copy");
+    expect(history).not.toContain("Deleted thread reply");
+    const threadContext = requireValue(
+      history.split(`# ${provider.name} Thread Context`)[1],
+      "Expected topic replies in thread context",
+    );
+    expect(threadContext).toContain("Thread root question");
+    expect(threadContext).toContain("https://example.com/broken-article");
+    expect(threadContext).toContain("topic-context.pdf");
+    expect(threadContext.indexOf("Thread root question")).toBeLessThan(
+      threadContext.indexOf("https://example.com/broken-article"),
+    );
+    expect(
+      threadContext.indexOf("https://example.com/broken-article"),
+    ).toBeLessThan(threadContext.indexOf("topic-context.pdf"));
+    await expectFeishuResourceDownloads({
+      actor,
+      runId: groupRun.id,
+      prompt: history,
+      resources: [
+        {
+          messageId: "om_group_file",
+          fileKey: "file_topic_context",
+          type: "file",
+        },
+      ],
+    });
     const groupCliSessionId = `bdd-feishu-group-cli-${groupRun.id}`;
     await completeRunSession({
       runId: groupRun.id,
@@ -6281,6 +6486,89 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
 
     await removeFeishuInstallation(fixture);
   });
+
+  it.each(["chat", "thread"] as const)(
+    "keeps available conversation context when %s history fails",
+    async (failedContainer) => {
+      const fixture = await setupFeishuRunFixture();
+      const { actor, runnerGroup, appId, callbackUrl } = fixture;
+      await connectFixtureUser(fixture);
+      const groupRootId = `om_${randomUUID()}`;
+      const groupThreadId = `omt_${randomUUID()}`;
+      server.use(
+        http.get(
+          `${provider.apiOrigin}/open-apis/im/v1/messages`,
+          ({ request }) => {
+            const query = new URL(request.url).searchParams;
+            const containerType = query.get("container_id_type");
+            if (containerType === failedContainer) {
+              return HttpResponse.json(
+                { code: 99_999, msg: "history unavailable" },
+                { status: 500 },
+              );
+            }
+            const containerId = query.get("container_id");
+            if (
+              (containerType === "chat" && containerId !== "oc_feishu_group") ||
+              (containerType === "thread" && containerId !== groupThreadId)
+            ) {
+              return HttpResponse.json({
+                code: 23_000,
+                msg: "invalid container",
+              });
+            }
+            return HttpResponse.json({
+              code: 0,
+              data: {
+                items: [
+                  {
+                    message_id:
+                      containerType === "chat" ? "om_recent_chat" : groupRootId,
+                    msg_type: "text",
+                    create_time: "1",
+                    body: {
+                      content: JSON.stringify({
+                        text:
+                          containerType === "chat"
+                            ? "Recent chat survived"
+                            : "Thread history survived",
+                      }),
+                    },
+                  },
+                ],
+                has_more: false,
+              },
+            });
+          },
+        ),
+      );
+      await postEvent(
+        callbackUrl,
+        groupMessage(appId, "continue this topic", {
+          rootId: groupRootId,
+          threadId: groupThreadId,
+        }),
+        { encrypted: true },
+      );
+      await flushWaitUntilForTest();
+      const run = await findRun(actor, "@Nova continue this topic");
+      await runsApi.heartbeatRunner(runnerGroup);
+      const claim = await runsApi.claimRunnerJob(run.id);
+      expect(claim.appendSystemPrompt).toContain(
+        failedContainer === "chat"
+          ? "Thread history survived"
+          : "Recent chat survived",
+      );
+      expect(claim.appendSystemPrompt).not.toContain(
+        failedContainer === "chat"
+          ? "Recent chat survived"
+          : "Thread history survived",
+      );
+      await runsApi.requestCancelRun(actor, run.id, [200]);
+      await flushWaitUntilForTest();
+      await removeFeishuInstallation(fixture);
+    },
+  );
 
   it("attributes mentioned group replies to the triggering user", async () => {
     const fixture = await setupFeishuRunFixture();

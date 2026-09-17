@@ -70,6 +70,21 @@ export type CronCleanupSandboxesResponse = z.infer<
   typeof cleanupResponseSchema
 >;
 
+export const cronCleanupXResourceReadsContract = c.router({
+  cleanup: {
+    method: "GET",
+    path: "/api/cron/cleanup-x-resource-reads",
+    headers: authHeadersSchema,
+    responses: {
+      200: z.object({ deleted: z.number().int().nonnegative() }),
+      401: apiErrorSchema,
+    },
+    summary: "Delete X resource reads older than yesterday in UTC",
+  },
+});
+export type CronCleanupXResourceReadsContract =
+  typeof cronCleanupXResourceReadsContract;
+
 const cronProcessUsageEventsResponseSchema = z.object({
   success: z.literal(true),
   processed: z.number(),
@@ -94,7 +109,12 @@ export const cronProjectChatEventSearchResponseSchema = z.object({
   indexedEvents: z.number(),
   deletedDocs: z.number(),
   orphanedThreads: z.number(),
+  /** Candidates denied by an account-erasure subject closure this tick. */
+  closedThreads: z.number().int().nonnegative(),
+  /** Candidates left for the next tick after a bounded lock or ownership race. */
+  deferredThreads: z.number().int().nonnegative(),
   convergence: z.object({
+    /** Threads with events whose canonical subjects are all still open. */
     eligibleThreads: z.number(),
     durableCaughtUpThreads: z.number(),
   }),

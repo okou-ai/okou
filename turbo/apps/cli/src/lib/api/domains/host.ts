@@ -8,6 +8,28 @@ import type {
 import { ApiRequestError, getBaseUrl } from "../core/client-factory";
 import { getActiveToken } from "../config";
 import { headersWithCliClientHeaders } from "../client-headers";
+import {
+  absoluteArtifactUrl,
+  withAbsoluteArtifactUrl,
+} from "../../artifact-url";
+
+async function withAbsoluteHostedUrls<
+  T extends {
+    readonly url: string;
+    readonly artifactUrl?: string;
+    readonly aliasUrl?: string;
+  },
+>(result: T): Promise<T> {
+  return {
+    ...(await withAbsoluteArtifactUrl(result)),
+    ...(result.artifactUrl === undefined
+      ? {}
+      : { artifactUrl: await absoluteArtifactUrl(result.artifactUrl) }),
+    ...(result.aliasUrl === undefined
+      ? {}
+      : { aliasUrl: await absoluteArtifactUrl(result.aliasUrl) }),
+  };
+}
 
 function authHeaders(
   token: string,
@@ -57,7 +79,12 @@ export async function prepareHostedSite(
 ): Promise<HostedSitePrepareResponse> {
   const { baseUrl, token } = await getAuthContext();
   const response = await fetch(
-    new URL("/api/host/deployments/prepare", baseUrl),
+    new URL(
+      body.requirePrivateArtifact
+        ? "/api/host/deployments/prepare/private"
+        : "/api/host/deployments/prepare",
+      baseUrl,
+    ),
     {
       method: "POST",
       headers: headersWithCliClientHeaders(authHeaders(token, { json: true })),
@@ -71,7 +98,9 @@ export async function prepareHostedSite(
     );
     throw new ApiRequestError(message, code, response.status);
   }
-  return (await response.json()) as HostedSitePrepareResponse;
+  return withAbsoluteHostedUrls(
+    (await response.json()) as HostedSitePrepareResponse,
+  );
 }
 
 export async function completeHostedSite(
@@ -96,7 +125,9 @@ export async function completeHostedSite(
     );
     throw new ApiRequestError(message, code, response.status);
   }
-  return (await response.json()) as HostedSiteCompleteResponse;
+  return withAbsoluteHostedUrls(
+    (await response.json()) as HostedSiteCompleteResponse,
+  );
 }
 
 export async function getHostedSiteFiles(
@@ -122,7 +153,9 @@ export async function getHostedSiteFiles(
     );
     throw new ApiRequestError(message, code, response.status);
   }
-  return (await response.json()) as HostedSiteFilesResponse;
+  return withAbsoluteHostedUrls(
+    (await response.json()) as HostedSiteFilesResponse,
+  );
 }
 
 export async function getHostedSiteDeployments(
@@ -143,5 +176,19 @@ export async function getHostedSiteDeployments(
     );
     throw new ApiRequestError(message, code, response.status);
   }
-  return (await response.json()) as HostedSiteDeploymentsResponse;
+  const result = (await response.json()) as HostedSiteDeploymentsResponse;
+  return {
+    ...result,
+    deployments: await Promise.all(
+      result.deployments.map(async (deployment) => {
+        return {
+          ...deployment,
+          artifactUrl:
+            deployment.artifactUrl === null
+              ? null
+              : await absoluteArtifactUrl(deployment.artifactUrl),
+        };
+      }),
+    ),
+  };
 }

@@ -239,6 +239,12 @@ export const CHAT_RUN_TRANSIENT_ERROR_MESSAGE =
 export const CHAT_RUN_EXECUTION_TIMEOUT_MESSAGE =
   "This run reached its execution time limit.";
 
+export const CHAT_RUN_USAGE_LIMIT_MESSAGE =
+  "Your model provider's usage allowance has been reached. Check your provider's usage limits or choose a different model or account.";
+
+export const CHAT_RUN_UNSUPPORTED_MODEL_MESSAGE =
+  "The selected model is not available with the configured provider account. Choose a supported model or update the provider configuration.";
+
 /**
  * A provider content-safety rejection is deterministic for the same input, so
  * this copy must not invite a retry. It names the actions the user can take
@@ -701,7 +707,8 @@ type StructuredRunErrorBehavior =
   | "insufficient-credits"
   | "provider-balance"
   | "overloaded"
-  | "passthrough"
+  | "usage-limit"
+  | "unsupported-model"
   | "reconnect"
   | "terms";
 
@@ -722,12 +729,13 @@ const STRUCTURED_RUN_ERROR_BEHAVIOR: Record<
   provider_rate_limited: "generic",
   provider_overloaded: "overloaded",
   provider_stream_timeout: "generic",
+  provider_queue_timeout: "generic",
   provider_server_error: "generic",
   response_connection_lost: "generic",
   safety_policy_refusal: "content-policy",
   reconnect_required: "reconnect",
-  unsupported_model: "passthrough",
-  usage_limit: "passthrough",
+  unsupported_model: "unsupported-model",
+  usage_limit: "usage-limit",
 };
 
 function formatReconnectRunError(
@@ -773,7 +781,6 @@ function formatStructuredRunError(params: {
     case "provider-balance": {
       return formatRunBalanceError({
         failureReason: params.failureReason,
-        message: params.errorMessage,
         modelProvider: params.modelProviderType,
       })!;
     }
@@ -805,8 +812,15 @@ function formatStructuredRunError(params: {
       }
       return CHAT_RUN_TRANSIENT_ERROR_MESSAGE;
     }
-    case "passthrough": {
-      return params.errorMessage;
+    case "usage-limit": {
+      return isActionableRunError(params.errorMessage)
+        ? params.errorMessage
+        : CHAT_RUN_USAGE_LIMIT_MESSAGE;
+    }
+    case "unsupported-model": {
+      return isActionableRunError(params.errorMessage)
+        ? params.errorMessage
+        : CHAT_RUN_UNSUPPORTED_MODEL_MESSAGE;
     }
     case "generic": {
       return CHAT_RUN_TRANSIENT_ERROR_MESSAGE;
@@ -841,18 +855,6 @@ export function formatRunErrorForExternalSurface(params: {
 }): string {
   const errorMessage = params.message.trim() || "Run failed";
   const modelProviderType = params.modelProviderType;
-  if ([undefined, "insufficient_credits"].includes(params.failureReason)) {
-    const balanceMessage = formatRunBalanceError({
-      failureReason: params.failureReason,
-      message: errorMessage,
-      modelProvider: modelProviderType,
-      framework: params.framework,
-    });
-    if (balanceMessage !== undefined) {
-      return balanceMessage;
-    }
-  }
-
   if (params.failureReason !== undefined) {
     return formatStructuredRunError({
       failureReason: params.failureReason,

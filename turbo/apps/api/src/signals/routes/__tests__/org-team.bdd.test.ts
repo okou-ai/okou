@@ -15,6 +15,7 @@ import {
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { expectApiError } from "./helpers/api-bdd";
+import { ClerkTransportTestError } from "./helpers/clerk-transport-error";
 
 /*
 ORG-01/02/03, TEAM, and AGENT-02 integration chains:
@@ -429,14 +430,17 @@ describe("ORG-01: org update and delete error matrix", () => {
     });
   });
 
-  it("does not retry Clerk mutation failures", async () => {
+  it.each([
+    ["5xx", new ClerkApiResponseTestError(1, 521)],
+    ["transport", new ClerkTransportTestError()],
+  ])("does not retry Clerk %s mutation failures", async (_name, failure) => {
     const admin = api.user();
     const baseSlug = slug("bdd-r5-org-mutation");
     api.acceptAgentStorageWrites();
     await onboardAdmin(admin, { slug: baseSlug, name: "BDD R5 Org" });
     context.mocks.clerk.organizations.updateOrganization.mockClear();
     context.mocks.clerk.organizations.updateOrganization.mockRejectedValue(
-      new ClerkApiResponseTestError(1, 521),
+      failure,
     );
 
     const response = await api.requestUpdateOrg(

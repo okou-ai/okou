@@ -3,6 +3,12 @@ import chalk from "chalk";
 import { generateWebVoice } from "../../lib/api/domains/web";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { createArtifactPresentation } from "./artifact-return";
+import {
+  applyArtifactVisibility,
+  createArtifactVisibilityOption,
+  prepareArtifactVisibility,
+  type ArtifactVisibility,
+} from "./artifact-visibility";
 import { dispatchGenerate } from "../generate/lib/dispatch";
 import type { GenerationType } from "../generate/lib/lister";
 
@@ -14,6 +20,7 @@ interface VoiceOptions {
   instructions?: string;
   all?: boolean;
   json?: boolean;
+  visibility?: ArtifactVisibility;
 }
 
 interface VoiceGenerateCommandConfig {
@@ -40,6 +47,7 @@ export function createVoiceGenerateCommand(
       "When listing providers (no --prompt given), include unavailable or not-yet-authorized connectors",
     )
     .option("--json", "Print the complete generation result as JSON")
+    .addOption(createArtifactVisibilityOption())
     .option("--voice <voice>", "OpenAI voice to use", "marin")
     .option("--instructions <text>", "Voice style instructions")
     .addHelpText(
@@ -68,16 +76,29 @@ Notes:
           provider: options.provider,
           prompt: options.prompt ?? options.text,
           all: options.all,
-          requireExecutionFor: options.json ? "--json" : undefined,
+          requireExecutionFor: options.visibility
+            ? "--visibility"
+            : options.json
+              ? "--json"
+              : undefined,
         });
         if (dispatch.outcome === "handled") return;
         const text = dispatch.prompt;
 
-        const result = await generateWebVoice({
+        const requirePrivateArtifact = await prepareArtifactVisibility(
+          options.visibility,
+        );
+        const generated = await generateWebVoice({
           text,
           voice: options.voice,
           instructions: options.instructions,
+          requirePrivateArtifact,
         });
+        const result = await applyArtifactVisibility(
+          generated,
+          { kind: "file", id: generated.id },
+          options.visibility,
+        );
 
         const presentation = createArtifactPresentation(
           result.filename,

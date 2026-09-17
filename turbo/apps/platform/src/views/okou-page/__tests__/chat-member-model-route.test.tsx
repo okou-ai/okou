@@ -93,6 +93,9 @@ test.each(
       featureSwitches: {
         [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
         [FeatureSwitchKey.Effort]: layout === "compact",
+        // Fast rides on Effort, and a second row per model would make the
+        // model options ambiguous here.
+        [FeatureSwitchKey.CodexFastMode]: layout === "compact",
         [FeatureSwitchKey.ModelPickerFlyout]: layout !== "select",
       },
     });
@@ -296,6 +299,8 @@ test("Refreshes the account target on explicit reconnect after a remote account 
   context.mocks.api(modelPoliciesMainContract.list, ({ respond }) => {
     const currentPolicy = policy(switched ? "reconnect_required" : "available");
     return respond(200, {
+      revision: "revision-1",
+      writePreconditionRequired: false,
       policies: [
         {
           ...currentPolicy,

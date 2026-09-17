@@ -176,6 +176,12 @@ function composerPlaceholder(): string {
   });
 }
 
+function feedbackPlaceholder(): string {
+  return i18n.t(($) => {
+    return $.chat.feedback.placeholder;
+  });
+}
+
 interface WorkflowHighlightStorage {
   workflowNames: readonly string[];
 }
@@ -210,6 +216,8 @@ export interface WorkflowComposerSignals {
   readonly previewSuggestionIndex$: Computed<number | null>;
   readonly previewSuggestion$: Command<void, [number | null]>;
   readonly closeSuggestionMenu$: Command<void, []>;
+  /** Drops the typed `/token` for a row that does not insert one itself. */
+  readonly clearSlashRange$: Command<void, []>;
   readonly insertWorkflow$: Command<void, [ComposerSlashWorkflow]>;
   readonly insertAgent$: Command<void, [ComposerAgentSuggestion]>;
   readonly insertChatThread$: Command<void, [ComposerChatThreadSuggestion]>;
@@ -245,6 +253,7 @@ export type OpenComposerTemplatePickerIntent =
   | { readonly kind: "edit-legacy"; readonly category: string };
 
 export type ComposerTemplateAttachmentType =
+  | "custom"
   | "presentation"
   | "illustration"
   | "video"
@@ -600,7 +609,7 @@ function createFeedbackQuoteChip(): FeedbackQuoteChip {
  */
 function createFeedbackItemNodeView(
   node: ProseMirrorNode,
-  localizedUi: Set<() => void>,
+  runtime: WorkflowComposerRuntime,
 ): NodeView {
   const dom = document.createElement("div");
   dom.dataset.feedbackItem = "";
@@ -610,12 +619,7 @@ function createFeedbackItemNodeView(
 
   let currentNode = node;
   function localize(): void {
-    dom.setAttribute(
-      "aria-label",
-      i18n.t(($) => {
-        return $.chat.feedback.placeholder;
-      }),
-    );
+    dom.setAttribute("aria-label", runtime.feedbackPlaceholder());
   }
   function render(nextNode: ProseMirrorNode): void {
     const { showDivider, fill } = feedbackItemNodeAttributes(nextNode);
@@ -632,7 +636,7 @@ function createFeedbackItemNodeView(
       dom.className = className;
     }
   }
-  localizedUi.add(localize);
+  runtime.localizedUi.add(localize);
   localize();
   render(currentNode);
 
@@ -648,7 +652,7 @@ function createFeedbackItemNodeView(
       return true;
     },
     destroy() {
-      localizedUi.delete(localize);
+      runtime.localizedUi.delete(localize);
     },
   };
 }
@@ -721,9 +725,7 @@ function buildFeedbackChromeDecorations(
           childPosition + 1 + child.child(0).nodeSize,
           {
             class: FEEDBACK_PLACEHOLDER_PARAGRAPH_CLASS,
-            "data-placeholder": i18n.t(($) => {
-              return $.chat.feedback.placeholder;
-            }),
+            "data-placeholder": runtime.feedbackPlaceholder(),
           },
         ),
       );
@@ -795,6 +797,7 @@ function templateAttachmentNodeAttributes(
   const previewImageUrl: unknown = node.attrs.previewImageUrl;
   if (
     (type !== "presentation" &&
+      type !== "custom" &&
       type !== "illustration" &&
       type !== "video" &&
       type !== "avatar" &&
@@ -927,6 +930,14 @@ function templateAttachmentTypeLabel(
   if (type === "website") {
     return i18n.t(($) => {
       return $.chat.templates.categories.website;
+    });
+  }
+  if (type === "custom") {
+    // One chip type for the whole catalog, the same word the picker tab uses.
+    // What a custom template produces lives on its row, and the chip is built
+    // from the selection alone.
+    return i18n.t(($) => {
+      return $.templates.custom;
     });
   }
   return i18n.t(($) => {
@@ -1576,6 +1587,7 @@ interface WorkflowComposerRuntime {
   replaceFeedbackItems(items: readonly FeedbackItem[]): void;
   removeFeedback(id: number): void;
   localizedUi: Set<() => void>;
+  feedbackPlaceholder: () => string;
   /** Read on every chip render so Lab updates apply without remounting. */
   templateChipCover: () => boolean;
 }
@@ -1716,7 +1728,7 @@ function createFeedbackItemNode(
     },
     addNodeView() {
       return ({ node }) => {
-        return createFeedbackItemNodeView(node, runtime.localizedUi);
+        return createFeedbackItemNodeView(node, runtime);
       };
     },
     addProseMirrorPlugins() {
@@ -2018,6 +2030,7 @@ interface MountEditorOptions {
 
 interface WorkflowComposerOptions {
   readonly autoFocus?: boolean;
+  readonly feedbackPlaceholder?: () => string;
 }
 
 function focusMountedEditorAtEnd(editor: Editor): void {
@@ -2222,6 +2235,31 @@ function createInsertWorkflowCommand(
   });
 }
 
+/**
+ * Removes the `/token` that opened the suggestion menu.
+ *
+ * The insert commands above consume it by writing over it, so only the rows
+ * that put something other than text in its place — a template chip, a create
+ * mode — need this. Without it the token stays behind as prose, and the
+ * message asks for a workflow nobody named.
+ */
+function createClearSlashRangeCommand(
+  editor: Editor,
+  activeSlashRange$: Computed<SlashWorkflowRange | null>,
+) {
+  return command(({ get }) => {
+    const slashRange = get(activeSlashRange$);
+    if (!slashRange) {
+      return;
+    }
+    const head = editor.state.selection.head;
+    editor.commands.deleteRange({
+      from: head - (slashRange.end - slashRange.start),
+      to: head,
+    });
+  });
+}
+
 function createInsertAgentCommand(
   editor: Editor,
   activeRange$: Computed<ChatThreadSuggestionRange | null>,
@@ -2300,6 +2338,7 @@ function createSuggestionInsertionCommands(
   activeMentionRange$: Computed<ChatThreadSuggestionRange | null>,
 ) {
   return {
+    clearSlashRange$: createClearSlashRangeCommand(editor, activeSlashRange$),
     insertWorkflow$: createInsertWorkflowCommand(editor, activeSlashRange$),
     insertAgent$: createInsertAgentCommand(editor, activeMentionRange$),
     insertChatThread$: createInsertChatThreadCommand(
@@ -2668,7 +2707,9 @@ function createInsertUserMessageCommand(editor: Editor) {
   });
 }
 
-function createWorkflowComposerRuntime(): WorkflowComposerRuntime {
+function createWorkflowComposerRuntime(
+  resolveFeedbackPlaceholder: () => string,
+): WorkflowComposerRuntime {
   return {
     update(_editor: Editor): void {},
     selectionUpdate(_editor: Editor): void {},
@@ -2679,6 +2720,7 @@ function createWorkflowComposerRuntime(): WorkflowComposerRuntime {
     replaceFeedbackItems(_items: readonly FeedbackItem[]): void {},
     removeFeedback(_id: number): void {},
     localizedUi: new Set(),
+    feedbackPlaceholder: resolveFeedbackPlaceholder,
     templateChipCover: () => {
       return false;
     },
@@ -2796,7 +2838,9 @@ export function createWorkflowComposerSignals<
   // A pointer preview is independent of keyboard selection. Null means the
   // preview follows the keyboard again, including when the menu reopens.
   const previewSuggestionIndexState$ = state<number | null>(null);
-  const runtime = createWorkflowComposerRuntime();
+  const runtime = createWorkflowComposerRuntime(
+    options.feedbackPlaceholder ?? feedbackPlaceholder,
+  );
   const agentMentionAvatarRuntime = createAgentMentionAvatarRuntime();
   const templatePreview = createTemplatePreviewRuntime();
   const compositionGate = createCompositionGate();

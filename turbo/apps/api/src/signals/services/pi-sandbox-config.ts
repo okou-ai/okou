@@ -89,7 +89,7 @@ const GPT_API_KEY_PI_ROUTES = {
 
 type GptApiKeyPiProviderType = keyof typeof GPT_API_KEY_PI_ROUTES;
 
-export function isGptApiKeyPiProviderType(
+function isGptApiKeyPiProviderType(
   value: string | null | undefined,
 ): value is GptApiKeyPiProviderType {
   return (

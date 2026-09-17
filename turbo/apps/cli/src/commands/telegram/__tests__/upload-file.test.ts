@@ -62,7 +62,17 @@ describe("okou telegram upload-file command", () => {
     );
   });
 
-  it("uploads a file to R2 and completes Telegram sendDocument", async () => {
+  it.each([
+    {
+      url: "/artifacts/abcxyz1234.pdf",
+      expectedUrl: "https://app.okou.ai/artifacts/abcxyz1234.pdf",
+    },
+    {
+      url: "https://files.example/report.pdf?download=1",
+      expectedUrl: "https://files.example/report.pdf?download=1",
+    },
+  ])("prints upload URL $url", async ({ url, expectedUrl }) => {
+    vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
     let putReceivedContentType: string | null = null;
     let completeBody: Record<string, unknown> | undefined;
 
@@ -78,8 +88,7 @@ describe("okou telegram upload-file command", () => {
         return HttpResponse.json({
           uploadId: "00000000-0000-4000-8000-000000000001",
           uploadUrl: R2_UPLOAD_URL,
-          fileUrl:
-            "https://app.example/f/user/00000000-0000-4000-8000-000000000001/report.pdf",
+          fileUrl: url,
           filename: "report.pdf",
           contentType: "application/pdf",
           size: 20,
@@ -106,7 +115,7 @@ describe("okou telegram upload-file command", () => {
           filename: "report.pdf",
           mimetype: "application/pdf",
           size: 20,
-          url: "https://app.example/f/user/00000000-0000-4000-8000-000000000001/report.pdf",
+          url,
         });
       }),
     );
@@ -145,6 +154,7 @@ describe("okou telegram upload-file command", () => {
       filename: "report.pdf",
       mimetype: "application/pdf",
       size: 20,
+      url: expectedUrl,
     });
   });
 

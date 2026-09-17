@@ -31,6 +31,10 @@ _IDNA_DOT_TRANSLATION = str.maketrans(
 )
 _PUNYCODE_PREFIX = "xn--"
 _PUNYCODE_INPUT_MAX_CODEPOINTS = _DNS_LABEL_MAX_LENGTH - len(_PUNYCODE_PREFIX)
+_MAX_CANONICAL_DECOMPOSITION_LENGTH = 4
+_NORMALIZATION_INPUT_MAX_CODEPOINTS = (
+    _PUNYCODE_INPUT_MAX_CODEPOINTS * _MAX_CANONICAL_DECOMPOSITION_LENGTH
+)
 _UNICODE_CONTROL_CATEGORY_PREFIX = "C"
 _UNICODE_MARK_CATEGORY_PREFIX = "M"
 _BIDI_ARABIC_NUMBER = "AN"
@@ -222,6 +226,14 @@ def _has_unsafe_uts46_mapping_chars(value: str) -> bool:
 
 
 def _normalize_label_text(label: str) -> str:
+    # Remapping, NFKD and per-character casing never erase code points. NFC
+    # composes at most four into one (verified against the runtime Unicode
+    # database in tests). Longer input cannot fit the final punycode budget.
+    # Bound it before NFKD/NFC's potentially quadratic canonical reordering,
+    # while allowing decomposed labels that compose below the output limit.
+    if len(label) > _NORMALIZATION_INPUT_MAX_CODEPOINTS:
+        raise UnicodeError("IDNA label too long")
+
     remapped = label.translate(_GREEK_MATHEMATICAL_FINAL_SIGMA_TRANSLATION).translate(
         _GREEK_PRECOMPOSED_IOTA_SUBSCRIPT_TRANSLATION
     )

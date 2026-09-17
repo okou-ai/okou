@@ -23,6 +23,7 @@ import {
   AGENT_ID,
   composerInlineTemplates,
   context,
+  queryComposerModelTrigger,
   mockAgent,
   mockBillingCapabilities,
   mockOrgModelRoutes,
@@ -63,12 +64,37 @@ function installVideoEnvironment(): void {
   });
 }
 
+/**
+ * These cases reach the video catalog through the legacy select's category
+ * control, which the switch's off lever still serves. The cases that never open
+ * the picker call `setupPage` directly.
+ */
+async function setupLegacyPickerPage(
+  options: Parameters<typeof setupPage>[0],
+): Promise<void> {
+  await setupPage({
+    ...options,
+    featureSwitches: {
+      [FeatureSwitchKey.ModelPickerFlyout]: false,
+      ...options.featureSwitches,
+    },
+  });
+}
+
 function pickerTrigger(label: string): HTMLElement {
-  const trigger = screen.queryByRole("combobox", { name: label });
-  if (!(trigger instanceof HTMLElement)) {
+  const trigger = queryComposerModelTrigger(label);
+  if (!trigger) {
     throw new Error(`${label} composer model picker not found`);
   }
   return trigger;
+}
+
+/** A slash panel row opens the template picker, and it covers the composer. */
+async function closeTemplatePicker(): Promise<void> {
+  click(fastControl("button", "Close", await screen.findByRole("dialog")));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
 }
 
 function fastControl(
@@ -206,13 +232,15 @@ function installVideoSubmissionCapture(): SubmittedMessage[] {
 }
 
 test.each([false, true])(
-  "Keep video settings collapsed until requested with Create enabled: %s",
+  "Keep video settings collapsed until requested with the slash panel on: %s",
   async (enabled) => {
     installVideoSubmissionCapture();
     await setupPage({
       context,
       path: `/agents/${AGENT_ID}/chat`,
-      featureSwitches: { [FeatureSwitchKey.ComposerCreateCommands]: enabled },
+      featureSwitches: {
+        [FeatureSwitchKey.ComposerSlashTemplatePanel]: enabled,
+      },
     });
     await selectVideoTemplate();
     expect(
@@ -226,15 +254,44 @@ test.each([false, true])(
   },
 );
 
+test("Keep the video spec with the run controls below the message", async () => {
+  installVideoSubmissionCapture();
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: { [FeatureSwitchKey.ComposerSlashTemplatePanel]: true },
+  });
+  await selectVideoTemplate();
+  /*
+    The spec is a setting for the run, not content for this message, so it
+    belongs in the action row beside the model that decides which values exist
+    — not in the lane above the input, which clears on send.
+
+    This pins the band the control sits in, not its markup: every other case in
+    this file resolves it by accessible name, so when it was moved into that
+    lane the whole suite stayed green.
+  */
+  const editor = await screen.findByRole("textbox", { name: "Message" });
+  const spec = fastControl("button", "Video options 16:9 · 8s · 720p");
+  expect(editor.compareDocumentPosition(spec)).toBe(
+    Node.DOCUMENT_POSITION_FOLLOWING,
+  );
+  expect(spec.compareDocumentPosition(sendButton())).toBe(
+    Node.DOCUMENT_POSITION_FOLLOWING,
+  );
+});
+
 test.each([false, true])(
-  "Submit default video options with Create enabled: %s",
+  "Submit default video options with the slash panel on: %s",
   async (enabled) => {
     const submissions = installVideoSubmissionCapture();
-    await setupPage({
+    await setupLegacyPickerPage({
       locale: "en-US",
       context,
       path: `/agents/${AGENT_ID}/chat`,
-      featureSwitches: { [FeatureSwitchKey.ComposerCreateCommands]: enabled },
+      featureSwitches: {
+        [FeatureSwitchKey.ComposerSlashTemplatePanel]: enabled,
+      },
     });
 
     const prompt = "Generate the first cinematic clip.";
@@ -291,14 +348,16 @@ test.each([false, true])(
 );
 
 test.each([false, true])(
-  "Submit a selected video ratio with Create enabled: %s",
+  "Submit a selected video ratio with the slash panel on: %s",
   async (enabled) => {
     const submissions = installVideoSubmissionCapture();
-    await setupPage({
+    await setupLegacyPickerPage({
       locale: "en-US",
       context,
       path: `/agents/${AGENT_ID}/chat`,
-      featureSwitches: { [FeatureSwitchKey.ComposerCreateCommands]: enabled },
+      featureSwitches: {
+        [FeatureSwitchKey.ComposerSlashTemplatePanel]: enabled,
+      },
     });
 
     const prompt = "Generate the portrait cinematic clip.";
@@ -366,7 +425,7 @@ test.each(["task", "command"] as const)(
       context,
       path: `/agents/${AGENT_ID}/chat`,
       featureSwitches: {
-        [FeatureSwitchKey.ComposerCreateCommands]: entry === "command",
+        [FeatureSwitchKey.ComposerSlashTemplatePanel]: entry === "command",
         [FeatureSwitchKey.ComposerTaskChips]: entry === "task",
       },
     });
@@ -381,8 +440,13 @@ test.each(["task", "command"] as const)(
         ),
       );
     } else {
-      await fill(editor, "/create video");
-      await userEvent.setup({ delay: null }).keyboard("{Enter}");
+      await fill(editor, "/");
+      // Presentation leads the panel's Make rows, so Video is the third.
+      await userEvent
+        .setup({ delay: null })
+        .keyboard("{ArrowDown}{ArrowDown}{Enter}");
+      // The row opens the template picker as well, and it covers the composer.
+      await closeTemplatePicker();
       await enterText(prompt);
     }
     click(await screen.findByRole("combobox", { name: "Video models" }));
@@ -417,7 +481,7 @@ test.each(["task", "command"] as const)(
 
 test("Selecting a video model alone keeps Creative Video settings hidden and unsent", async () => {
   const submissions = installVideoSubmissionCapture();
-  await setupPage({
+  await setupLegacyPickerPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
   });
@@ -469,13 +533,20 @@ test("Changing a Creative Video style retains settings without reopening the pan
   }
   click(edit);
   const dialog = await screen.findByRole("dialog");
+  // A Creative Video draft opens the picker on its own tab without hiding the
+  // rest of the catalog.
   expect(
     queryAllByRoleFast("tab", dialog).map((tab) => {
       return tab.textContent?.trim();
     }),
-  ).toStrictEqual(["Video"]);
-  await userEvent.setup({ delay: null }).click(tabByText("Video"));
-  await userEvent.setup({ delay: null }).keyboard("{End}{ArrowDown}");
+  ).toStrictEqual([
+    "Presentation",
+    "Website",
+    "Illustration",
+    "Video",
+    "Avatar",
+    "Workflow",
+  ]);
   expect(tabByText("Video")).toHaveAttribute("aria-selected", "true");
   const template = VIDEO_TEMPLATE_ITEMS[1]!;
   click(
@@ -529,7 +600,6 @@ async function restoreTemplateDraft(
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
       [FeatureSwitchKey.IntroVideo]: true,
-      [FeatureSwitchKey.ComposerCreateCommands]: true,
       [FeatureSwitchKey.ComposerTaskChips]: true,
     },
   });

@@ -10,6 +10,23 @@ default with a later `SET LOCAL` statement in that migration. Non-transactional
 migrations do not receive these defaults and must manage their own timeout
 requirements.
 
+## PostgreSQL validation versions
+
+Development and CI use PostgreSQL 17. The migration wrapper can also be run
+against a disposable PostgreSQL 18 database with pgvector installed. Set
+`DATABASE_URL` to that cluster, then run from `turbo`:
+
+```bash
+pnpm -F @okouai/db test:migration-consistency
+```
+
+PostgreSQL 18 reports `ON DELETE RESTRICT` violations as SQLSTATE `23001`
+(`restrict_violation`), where PostgreSQL 17 reports `23503`
+(`foreign_key_violation`). The SSH credential and Cloudflare Access migration
+tests accept only these two codes for deleting referenced resources and require
+the exact owner foreign-key constraint. Child ownership violations still require
+`23503`; other constraint checks retain their exact SQLSTATE expectations.
+
 ## Transition validators
 
 A transition validator protects an expand → contract rollout while old and new

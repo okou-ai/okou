@@ -189,8 +189,10 @@ interface UnhandledRequestErrorRootFields {
 interface ProviderUnavailableRootFields {
   readonly type: "provider_unavailable";
   readonly provider: "clerk";
-  readonly provider_status: number;
-  readonly failure_class: "transient_read_exhausted";
+  readonly provider_status: number | null;
+  readonly failure_class:
+    | "transient_read_exhausted"
+    | "transport_read_exhausted";
   readonly method: string;
   readonly route: string;
 }
@@ -314,13 +316,22 @@ function providerUnavailableRootFields(
   if (
     type !== "provider_unavailable" ||
     provider !== "clerk" ||
-    typeof providerStatus !== "number" ||
-    !Number.isInteger(providerStatus) ||
-    providerStatus < 500 ||
-    providerStatus > 599 ||
-    failureClass !== "transient_read_exhausted" ||
     typeof method !== "string" ||
     typeof route !== "string"
+  ) {
+    return null;
+  }
+
+  if (
+    !(
+      (providerStatus === null &&
+        failureClass === "transport_read_exhausted") ||
+      (typeof providerStatus === "number" &&
+        Number.isInteger(providerStatus) &&
+        providerStatus >= 500 &&
+        providerStatus <= 599 &&
+        failureClass === "transient_read_exhausted")
+    )
   ) {
     return null;
   }

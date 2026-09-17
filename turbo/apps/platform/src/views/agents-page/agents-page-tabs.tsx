@@ -33,7 +33,7 @@ import {
   sortedAgents$,
 } from "../../signals/agent.ts";
 import {
-  orgMembers$,
+  orgMemberProfiles$,
   type OrgMember,
 } from "../../signals/external/org-members.ts";
 import { unreadAgentIds$ } from "../../signals/chat-page/chat-thread-indicators-from-worker.ts";
@@ -176,7 +176,7 @@ function AgentTabsView({
 }) {
   const { t } = useTranslation("agents");
   const agentsLoadable = useLoadable(sortedAgents$);
-  const membersLoadable = useLoadable(orgMembers$);
+  const membersLoadable = useLoadable(orgMemberProfiles$);
   const unreadAgentIds = useLastResolved(unreadAgentIds$);
   const loading = agentsLoadable.state === "loading";
   const agents =
@@ -747,12 +747,10 @@ function AgentCard({ agent, creator, hasUnread, showCreator }: AgentProps) {
                     style={{
                       backgroundColor: "hsl(var(--popover))",
                       color: "hsl(var(--popover-foreground))",
-                      // The light value of --okou-card-shadow, inlined back
-                      // when that token was scoped to .okou-app and this
-                      // tooltip portal rendered outside it. The token now sits
-                      // at :root and would resolve here; adopting it is a
-                      // visual change, because it carries a gradient-palette
-                      // override this literal does not.
+                      // The light value of --okou-card-shadow, spelled out.
+                      // The token is declared at :root and would resolve here;
+                      // adopting it is a visual change, because it carries a
+                      // gradient-palette override this literal does not.
                       boxShadow:
                         "0 2px 12px hsl(30 6% 45% / 0.05), 0 0 0 0.5px hsl(30 6% 45% / 0.025)",
                       whiteSpace: "normal",

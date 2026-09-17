@@ -439,6 +439,18 @@
     }
   },
   "artifacts": {
+    "access": {
+      "backToBrand": "Back to {{brandName}}",
+      "description": "It may be private or no longer available.",
+      "help": "Ask the person who shared this link to check access.",
+      "signedInAs": "Signed in as {{email}}",
+      "signIn": "Sign in",
+      "signInFailed": "Could not open sign-in. Please try again.",
+      "switchAccount": "Switch account",
+      "switchAccountFailed": "Could not open the account switcher. Please try again.",
+      "title": "You can’t view this artifact",
+      "tryAgain": "Try again"
+    },
     "actions": {
       "backToAll": "Back to all artifacts",
       "backToArtifacts": "Back to artifacts",
@@ -580,9 +592,20 @@
       "videoLabel": "Video preview for {{filename}}"
     },
     "sharing": {
-      "shareOrganization": "Share to organization",
-      "sharePublic": "Share to Public",
-      "unavailable": "This artifact is unavailable or you do not have access."
+      "accessLabel": "Who can access",
+      "copyLink": "Copy link",
+      "loadFailed": "Unable to load permissions",
+      "loadingPermissions": "Loading permissions",
+      "onlyMe": "Only me",
+      "onlyMeDescription": "Only you can view this artifact",
+      "organization": "Organization",
+      "organizationDescription": "Anyone in {{organization}} with the link",
+      "permissionsUpdated": "Access updated",
+      "publicAccess": "Public access",
+      "publicDescription": "Anyone with the link can view",
+      "retry": "Retry",
+      "savedAutomatically": "Changes saved automatically",
+      "saving": "Saving…"
     },
     "sidebar": {
       "openSharedConversation": "Open shared conversation",
@@ -621,6 +644,9 @@
       "importDeckHint": "(.pptx, .ppt, .pdf)",
       "importedSlides_one": "{{count}} slide",
       "importedSlides_other": "{{count}} slides",
+      "importFile": "Import your own file",
+      "importFileHint": "({{formats}})",
+      "importUnsupported": "Choose a {{formats}} file to make a template.",
       "introVideo": "Intro video",
       "introVideoUnavailable": "This video template is no longer available. Remove it to send your message.",
       "multiAccent": "Multi-accent",
@@ -687,11 +713,6 @@
       "websitePreview": "{{title}} website template preview",
       "workflow": "Workflow",
       "workflowCatalog": {
-        "alert-metric-moves-slack": {
-          "description": "Watch your key metrics and alert Slack when one moves sharply.",
-          "shortDescription": "Alert Slack when a key metric moves sharply.",
-          "title": "Alert when a metric moves"
-        },
         "auto-inbox-label": {
           "description": "Create a workflow that runs when a Gmail label is applied and handles the labeled inbox item.",
           "shortDescription": "Run a workflow when you apply a Gmail label.",
@@ -701,21 +722,6 @@
           "description": "Review PRs labeled ready-to-merge, wait for CI, then merge and post to Slack.",
           "shortDescription": "Merge ready-to-merge PRs once CI passes.",
           "title": "Auto-merge GitHub PRs"
-        },
-        "blog-posts-to-x": {
-          "description": "Turn each new blog post into social variants queued via Buffer.",
-          "shortDescription": "Turn each new blog post into social posts.",
-          "title": "Turn blog posts into social posts"
-        },
-        "build-weekly-deck-gamma": {
-          "description": "Turn the week's metrics into a ready-to-present deck in Gamma.",
-          "shortDescription": "Turn the week's metrics into a Gamma deck.",
-          "title": "Build the weekly deck in Gamma"
-        },
-        "business-review-gamma": {
-          "description": "Turn the month's metrics into a business review deck in Gamma.",
-          "shortDescription": "Turn the month's metrics into a review deck.",
-          "title": "Build the business review in Gamma"
         },
         "catch-calendar-conflicts": {
           "description": "Scan your calendar for double-bookings and alert you early.",
@@ -737,30 +743,15 @@
           "shortDescription": "Post the signup funnel's biggest drop-off.",
           "title": "Check the PostHog signup funnel"
         },
-        "clickup-slack-standup": {
-          "description": "Pull ClickUp tasks each morning and post a team standup summary to Slack.",
-          "shortDescription": "Post a morning standup from ClickUp tasks.",
-          "title": "ClickUp Slack standup"
-        },
         "compare-google-ads-last-month": {
           "description": "Compare ad spend and ROAS to last month and flag anomalies in Slack.",
           "shortDescription": "Compare ad spend and ROAS to last month.",
           "title": "Compare Google Ads vs last month"
         },
-        "competitive-intel-monitor": {
-          "description": "Monitor competitor sites for pricing and feature changes, save findings to Notion, and alert Slack.",
-          "shortDescription": "Log competitor pricing changes in Notion.",
-          "title": "Competitive intel monitor"
-        },
-        "daily-company-brief-slack": {
-          "description": "Pull product, growth, and revenue into a daily brief on Slack.",
-          "shortDescription": "Pull product, growth, and revenue into a brief.",
-          "title": "Post a daily company brief to Slack"
-        },
-        "daily-industry-news-slack": {
-          "description": "Round up the day's relevant industry news into a Slack brief.",
-          "shortDescription": "Round up the day's industry news for Slack.",
-          "title": "Post daily industry news to Slack"
+        "creator-shortlist-to-sheets": {
+          "description": "Score the creators you are considering on reach and engagement, ranked in one sheet.",
+          "shortDescription": "Rank creators by reach and engagement in a sheet.",
+          "title": "Build a creator shortlist in Google Sheets"
         },
         "daily-standup-report": {
           "description": "Pull product and engineering signals each morning, create a short report, and post it to Slack.",
@@ -777,11 +768,6 @@
           "shortDescription": "Assemble recent updates into a newsletter.",
           "title": "Draft the newsletter in Mailchimp"
         },
-        "draft-replies-notion-faq": {
-          "description": "Draft ticket replies grounded in your Notion FAQ.",
-          "shortDescription": "Draft ticket replies from your Notion FAQ.",
-          "title": "Draft replies from your Notion FAQ"
-        },
         "feedback-router": {
           "description": "Watch a Slack channel and route product feedback into Notion with labels and owners.",
           "shortDescription": "Route product feedback from Slack into Notion.",
@@ -796,11 +782,6 @@
           "description": "Rank new Sentry errors by user impact and file the worst as GitHub issues.",
           "shortDescription": "File the worst Sentry errors as GitHub issues.",
           "title": "File Sentry crashes as GitHub issues"
-        },
-        "flag-figma-designs-no-task": {
-          "description": "Flag Figma designs that have no linked Linear task yet.",
-          "shortDescription": "Flag Figma designs with no Linear task.",
-          "title": "Flag Figma designs without a task"
         },
         "flagged-gmail-todoist-tasks": {
           "description": "Turn the emails you flag into Todoist tasks automatically.",
@@ -817,11 +798,6 @@
           "shortDescription": "Collect merged pull requests into a report.",
           "title": "GitHub PR summarizer"
         },
-        "gmail-followups-auto": {
-          "description": "Find contacts who didn't reply and draft the next follow-up.",
-          "shortDescription": "Draft follow-ups for contacts who didn't reply.",
-          "title": "Send Gmail follow-ups automatically"
-        },
         "gmail-reconnect-reminders": {
           "description": "Surface important contacts you haven't emailed in a while.",
           "shortDescription": "Surface contacts you haven't emailed lately.",
@@ -832,25 +808,10 @@
           "shortDescription": "Surface the emails that need your attention.",
           "title": "Highlight key emails in Gmail"
         },
-        "investor-update-google-docs": {
-          "description": "Assemble metrics and highlights into an investor update in Docs.",
-          "shortDescription": "Assemble metrics into an investor update.",
-          "title": "Draft the investor update in Google Docs"
-        },
-        "log-gong-calls-hubspot": {
-          "description": "Pull notes and next steps from a Gong call into the HubSpot deal.",
-          "shortDescription": "Pull Gong call notes into the HubSpot deal.",
-          "title": "Log Gong calls to HubSpot"
-        },
-        "meeting-notes-asana-tasks": {
-          "description": "Turn meeting notes into assigned, due-dated tasks in Asana.",
-          "shortDescription": "Turn meeting notes into tasks in Asana.",
-          "title": "Turn meeting notes into Asana tasks"
-        },
-        "meeting-recaps-slack": {
-          "description": "Share a recap with decisions and action items after each meeting.",
-          "shortDescription": "Share decisions and action items after meetings.",
-          "title": "Get meeting recaps in Slack"
+        "keyword-ranks-to-sheets": {
+          "description": "Check where your pages rank for the keywords you care about and log the movers.",
+          "shortDescription": "Log weekly keyword rank movement to a sheet.",
+          "title": "Track keyword rankings in Google Sheets"
         },
         "morning-brief": {
           "description": "Turn Gmail, Calendar, and Notion updates into a short daily plan in Slack.",
@@ -862,20 +823,10 @@
           "shortDescription": "Add unknown email senders to HubSpot.",
           "title": "Add new Gmail contacts to HubSpot"
         },
-        "onboard-new-hires-asana": {
-          "description": "Create the onboarding task checklist for each new hire in Asana.",
-          "shortDescription": "Create an onboarding checklist per new hire.",
-          "title": "Onboard new hires in Asana"
-        },
         "personal-weekly-digest": {
           "description": "Summarize GitHub, Gmail, and Calendar activity into one weekly Slack update.",
           "shortDescription": "Summarize your week across GitHub and Gmail.",
           "title": "Personal weekly digest"
-        },
-        "post-daily-metrics-slack": {
-          "description": "Post daily visitors, signups, and activation numbers to Slack.",
-          "shortDescription": "Post daily visitors and signups to Slack.",
-          "title": "Post daily metrics to Slack"
         },
         "post-release-notes-slack": {
           "description": "Draft a changelog from recently shipped work and post it to Slack.",
@@ -887,35 +838,10 @@
           "shortDescription": "Send a prep brief before external meetings.",
           "title": "Prep for Google Calendar meetings"
         },
-        "publish-scheduled-posts-buffer": {
-          "description": "Publish the day's scheduled content and queue the social posts.",
-          "shortDescription": "Publish the day's scheduled social posts.",
-          "title": "Publish scheduled posts to Buffer"
-        },
         "research-calendar-meetings": {
           "description": "Research the people you're meeting before each calendar event.",
           "shortDescription": "Research the people you meet before each event.",
           "title": "Research your calendar meetings"
-        },
-        "research-new-signups-apollo": {
-          "description": "Research each new signup and post a quick snapshot.",
-          "shortDescription": "Research each new signup and post a snapshot.",
-          "title": "Research new signups"
-        },
-        "revenuecat-subscription-digest": {
-          "description": "Track subscriptions in Sheets and alert Slack when churn or cancellation patterns change.",
-          "shortDescription": "Track subscriptions and alert Slack on churn.",
-          "title": "RevenueCat subscription digest"
-        },
-        "run-daily-query-sheets": {
-          "description": "Run your saved SQL on a schedule and append the results to a Sheet.",
-          "shortDescription": "Run saved SQL and append results to a Sheet.",
-          "title": "Run a daily query into Google Sheets"
-        },
-        "salesforce-pipeline-digest": {
-          "description": "Summarize Salesforce opportunity changes and close-date risks in Slack each week.",
-          "shortDescription": "Summarize Salesforce pipeline risks weekly.",
-          "title": "Salesforce pipeline digest"
         },
         "send-bugs-github-slack": {
           "description": "File bug-tagged reports as GitHub issues and alert the team on Slack.",
@@ -927,25 +853,20 @@
           "shortDescription": "Send a daily digest of critical Sentry issues.",
           "title": "Sentry issue digest"
         },
+        "social-posts-to-sheets": {
+          "description": "Gather public posts and engagement from the accounts you track into one sheet.",
+          "shortDescription": "Gather public social posts into one sheet.",
+          "title": "Collect social posts into Google Sheets"
+        },
         "sort-gmail-draft-replies": {
           "description": "Sort your inbox and draft replies to the emails that need them.",
           "shortDescription": "Sort your inbox and draft the replies needed.",
           "title": "Sort Gmail and draft replies"
         },
-        "spot-churn-risk-stripe-zendesk": {
-          "description": "Flag accounts at risk of churn and draft a recovery email.",
-          "shortDescription": "Flag churn risk and draft a recovery email.",
-          "title": "Spot churn risk in Stripe and Zendesk"
-        },
         "summarize-gmail-newsletters": {
           "description": "Digest the newsletters in your inbox into one short summary.",
           "shortDescription": "Digest your newsletters into one summary.",
           "title": "Summarize Gmail newsletters"
-        },
-        "summarize-zendesk-tickets-daily": {
-          "description": "Summarize the last day of Zendesk tickets and post it to Slack.",
-          "shortDescription": "Post a daily summary of Zendesk tickets.",
-          "title": "Summarize Zendesk tickets daily"
         },
         "support-ticket-router": {
           "description": "Classify support emails, create Notion records, and alert Slack for critical tickets.",
@@ -967,30 +888,20 @@
           "shortDescription": "Surface the week's biggest usage shifts.",
           "title": "Track feature usage with PostHog"
         },
-        "track-keyword-ranks-ahrefs": {
-          "description": "Track keyword rankings in Ahrefs and report the movers in Notion.",
-          "shortDescription": "Report the week's keyword rank movers.",
-          "title": "Track keyword ranks with Ahrefs"
-        },
-        "track-signup-sources-sheets": {
-          "description": "Attribute each new signup to its source in a tracking Sheet.",
-          "shortDescription": "Attribute each signup to its source in a Sheet.",
-          "title": "Track signup sources in Google Sheets"
-        },
         "vercel-deploy-digest": {
           "description": "Monitor Vercel deployments, link them to GitHub commits, and alert Slack on failures.",
           "shortDescription": "Alert Slack when a Vercel deploy fails.",
           "title": "Vercel deploy digest"
         },
+        "web-data-to-sheets": {
+          "description": "Pull the same fields from a list of pages on a schedule and keep the history in one sheet.",
+          "shortDescription": "Pull fields from a page list into one sheet.",
+          "title": "Collect web page data into a spreadsheet"
+        },
         "x-brand-monitor": {
           "description": "Track brand mentions on X, save relevant posts in Notion, and alert Slack on high-signal mentions.",
           "shortDescription": "Alert Slack on strong brand mentions on X.",
           "title": "X brand monitor"
-        },
-        "zendesk-knowledge-base": {
-          "description": "Find recurring Zendesk questions, draft FAQ entries, and save them to Notion.",
-          "shortDescription": "Turn recurring questions into FAQ entries.",
-          "title": "Zendesk knowledge base"
         }
       },
       "workflowCategories": {
@@ -1009,8 +920,7 @@
     "toasts": {
       "copyLinkFailed": "Failed to copy link",
       "downloadFailed": "Download failed",
-      "linkCopied": "Link copied",
-      "sharing": "Sharing…"
+      "linkCopied": "Link copied"
     },
     "viewer": {
       "continuePrompt": "Help me work with this artifact: {{url}}",
@@ -1516,11 +1426,13 @@
     "agentPage": {
       "getStarted": {
         "checkin": {
-          "description": "Once a day, every day",
+          "action": "Check in",
+          "description": "Check in once a day. Resets at 00:00 UTC.",
           "name": "Check in daily",
           "unit": "a day"
         },
         "connector": {
+          "action": "Connect",
           "description": "Gmail, Notion, and 100+ more",
           "name": "Connect a connector",
           "unit": "per connector"
@@ -1528,19 +1440,24 @@
         "inReview": "In review",
         "inReviewDescription": "Submitted, waiting on review",
         "invite": {
+          "action": "Invite",
           "description": "Everyone you add counts",
           "name": "Invite your team",
           "unit": "per member"
         },
-        "personalBalanceNote": "Credits go to your personal balance.",
+        "pendingInvitations": "Pending invitations: {{amount}}",
+        "personalBalanceNote": "Rewards expire 7 days after they are granted. Slack rewards go to the organization; other rewards go to your personal balance.",
         "progressLabel": "Get started progress",
+        "rejectedDescription": "This post is not eligible. Submit another public post mentioning Okou.",
         "reward": "+{{amount}}",
+        "rewardedConnections": "Rewarded connectors: {{amount}}",
         "share": {
+          "action": "Share",
           "description": "Post it, then paste the link",
           "name": "Share {{assistantName}} on X"
         },
         "shareDialog": {
-          "description": "Post about something you built, then paste the link. You get one submission.",
+          "description": "Submit a public post for review. One successful reward per person.",
           "helper": "The post has to be public and mention {{assistantName}}.",
           "inputLabel": "Post link",
           "placeholder": "https://x.com/...",
@@ -1548,14 +1465,16 @@
           "title": "Share {{assistantName}} on X"
         },
         "slack": {
+          "action": "Add",
           "description": "Where your team already works",
           "name": "Add {{assistantName}} to Slack"
         },
         "stepCount": "{{completed}}/{{total}}",
-        "subtitle": "Finish a step, keep the credits.",
+        "subtitle": "Try a task, earn credits.",
         "title": "Get started",
         "workflow": {
-          "description": "Turn a repeat task into an automation",
+          "action": "Build",
+          "description": "Turn a repeat task into a reusable skill",
           "name": "Build a workflow"
         }
       },
@@ -1769,9 +1688,7 @@
       "create": {
         "addStyle": "Add style",
         "addTemplate": "Add template",
-        "chooseScene": "Choose what to create",
         "chooseType": "Choose a type",
-        "description": "Presentations, videos, and images",
         "exit": "Exit create mode",
         "image": "Create image",
         "imageDescription": "Turn an idea into a visual",
@@ -1779,12 +1696,10 @@
         "presentation": "Create presentation",
         "presentationDescription": "Slides for your story",
         "presentationPlaceholder": "What is your presentation about?",
-        "question": "What would you like to make happen?",
         "settingsAdjusted": "Some video settings were adjusted for this model",
         "slideCount": "Slide count",
         "slideCountAuto": "Auto",
         "slideCountRange": "{{range}} slides",
-        "title": "Create",
         "video": "Create video",
         "videoDescription": "Bring your ideas to motion",
         "videoPlaceholder": "Describe the video you want to create…"
@@ -1879,12 +1794,14 @@
         "moreAccounts_one": "+{{count}}",
         "moreAccounts_other": "+{{count}}",
         "needsAttention": "Needs attention",
+        "nextCategories": "Next categories",
         "noResultsBody": "Try a product name, or build your own from an API or MCP server.",
         "noResultsTitle": "No connector matches “{{query}}”",
         "openDetailAria": "Open {{connector}} details",
         "otherCategory": "Other",
         "permissionCount_one": "{{count}} permission",
         "permissionCount_other": "{{count}} permissions",
+        "previousCategories": "Previous categories",
         "showAll_one": "Show all {{count}}",
         "showAll_other": "Show all {{count}}",
         "tabCustom": "Custom",
@@ -1911,6 +1828,8 @@
       "providerIncompatibleAction": "Start a new session",
       "providerIncompatiblePrefix": "This session was started with a different model provider and can't be continued with the current one.",
       "recovery": {
+        "autonomyLimitDescription": "The limit for consecutive automatic runs has been reached. Confirm to continue.",
+        "autonomyLimitTitle": "Automatic run limit reached",
         "capacityDescription": "Try again shortly, or switch models.",
         "capacityTitle": "This model is busy right now",
         "claudeCode": "Claude Code",
@@ -1934,23 +1853,26 @@
       "runCancelled": "Paused mid-thought — pick it back up whenever."
     },
     "feedback": {
-      "emailDraftDescription": "an email draft (mail draft ID: {{id}})",
-      "partHeading": "Feedback on this part of your reply:",
-      "partsHeading_one": "Feedback on {{count}} part of your reply:",
-      "partsHeading_other": "Feedback on {{count}} parts of your reply:",
-      "placeholder": "What should change about this?",
+      "emailDraftDescription": "an email draft",
+      "forwardPartHeading": "Forwarded from \"{{title}}\"",
+      "forwardPartsHeading_one": "Forwarded {{count}} part from \"{{title}}\"",
+      "forwardPartsHeading_other": "Forwarded {{count}} parts from \"{{title}}\"",
+      "partHeading": "Quoted from your reply",
+      "partsHeading_one": "Quoted {{count}} part of your reply",
+      "partsHeading_other": "Quoted {{count}} parts of your reply",
+      "placeholder": "Ask or comment on this quote",
       "quote": "Quote",
       "remove": "Remove feedback",
-      "sentEmailDescription": "a sent email (mail ID: {{id}}{{sentIdSuffix}})",
-      "sentIdSuffix": ", sent ID: {{sentId}}",
-      "sourcePartHeading": "Feedback on this part of {{description}}:",
-      "sourcePartsHeading_one": "Feedback on {{count}} part of {{description}}:",
-      "sourcePartsHeading_other": "Feedback on {{count}} parts of {{description}}:"
+      "sentEmailDescription": "a sent email",
+      "sourcePartHeading": "Quoted from {{description}}",
+      "sourcePartsHeading_one": "Quoted {{count}} part from {{description}}",
+      "sourcePartsHeading_other": "Quoted {{count}} parts from {{description}}"
     },
     "forward": {
       "action": "Forward",
       "agents": "Agents",
       "back": "Back",
+      "composerPlaceholder": "Add a message",
       "content": "Content",
       "description": "Send selected content to an agent or chat to continue working on it.",
       "noResults": "No agents or chats found",
@@ -1978,13 +1900,14 @@
       "picker": {
         "autoVoiceDescription": "Find a voice that fits your content.",
         "avatarVoice": "Avatar’s voice",
-        "changeAvatar": "Change avatar",
+        "back": "Back",
         "chooseStyle": "Choose a style",
-        "chooseStyleAndVoice": "Choose a style and a voice.",
+        "closeOptions": "Close options",
+        "moreOptions": "More options",
         "noMatches": "No matches found.",
-        "ready": "Ready to use. Add your content in the chat.",
+        "searchStyles": "Search styles",
+        "selectionSummary": "Voice: {{voice}} · Avatar: {{avatar}}",
         "settings": "Intro video settings",
-        "style": "Style",
         "useSelection": "Use selection"
       },
       "style": {
@@ -2048,15 +1971,17 @@
     },
     "newChat": "New chat",
     "origins": {
-      "agentphone": "AgentPhone",
+      "agentphone": "iMessage",
       "feishu": "Feishu",
       "github": "GitHub",
       "lark": "Lark",
       "openChat": "Open chat",
+      "openChatIn": "Open chat in {{integration}}",
       "openFeishuChat": "Open original chat in Feishu",
       "openGithubMessage": "Open original issue or pull request in GitHub",
       "openLarkChat": "Open original chat in Lark",
       "openMessage": "Open message",
+      "openMessages": "Open Messages",
       "openSlackMessage": "Open original message in Slack",
       "openTeamsMessage": "Open original message in Microsoft Teams",
       "openTelegramMessage": "Open original message in Telegram",
@@ -2619,7 +2544,7 @@
               "three": "A short explanation of what changed",
               "two": "Source links for every finding"
             },
-            "scope": "Firecrawl for page checks and Notion for findings; Slack alerts are optional.",
+            "scope": "Built-in web research for page checks and Notion for findings; Slack alerts are optional.",
             "steps": {
               "one": "Check the competitor pages you choose on a schedule",
               "three": "Save findings with sources to Notion; optionally alert Slack",
@@ -2689,13 +2614,13 @@
             "description": "Visitors, signups, and activation in one readable daily snapshot.",
             "name": "Daily metrics brief",
             "next": "Choose the site, available metrics, comparison period, and Slack destination.",
-            "prompt": "Help me get a daily Slack snapshot of visitors, signups, and activation, using Plausible and any relevant PostHog or Clerk data I have. Clearly label the reporting period. Help me choose the available metrics, delivery time, and Slack destination.",
+            "prompt": "Help me get a daily Slack snapshot of visitors, signups, and activation, using the PostHog data I have. Clearly label the reporting period. Help me choose the available metrics, delivery time, and Slack destination.",
             "results": {
               "one": "Daily visitors",
               "three": "A clear reporting period",
               "two": "Signup and activation numbers when available"
             },
-            "scope": "Plausible and Slack; PostHog or Clerk can add signup and activation data.",
+            "scope": "PostHog and Slack.",
             "steps": {
               "one": "Read the agreed website and signup metrics",
               "three": "Share the snapshot in the Slack destination you choose",
@@ -2727,13 +2652,13 @@
             "description": "A clear recap with decisions, action items, and owners.",
             "name": "Meeting recap",
             "next": "Choose how often to check for new notes and where the recap should go.",
-            "prompt": "Help me turn new Fireflies meeting notes into a concise recap with decisions, action items, owners, and due dates. Mark details that were not stated. Help me choose how often to check for new notes and where to deliver the recap.",
+            "prompt": "Help me turn new Google Meet transcripts into a concise recap with decisions, action items, owners, and due dates. Mark details that were not stated. Help me choose how often to check for new notes and where to deliver the recap.",
             "results": {
               "one": "Decisions from the conversation",
               "three": "Missing details flagged clearly",
               "two": "Action items and stated owners"
             },
-            "scope": "Checks Fireflies for new transcripts on a schedule. Gmail or Slack delivery is optional.",
+            "scope": "Checks Google Meet for new transcripts on a schedule. Gmail or Slack delivery is optional.",
             "steps": {
               "one": "Read a new meeting transcript",
               "three": "Deliver a concise recap to the destination you choose",
@@ -2952,27 +2877,6 @@
     "toasts": {
       "copied": "Copied",
       "deleted": "Chat deleted"
-    },
-    "translation": {
-      "action": "Translate",
-      "close": "Close translation",
-      "copy": "Copy translation",
-      "languages": {
-        "de": "Deutsch",
-        "en": "English",
-        "es": "Español",
-        "fr": "Français",
-        "hi": "हिन्दी",
-        "id": "Bahasa Indonesia",
-        "it": "Italiano",
-        "ja": "日本語",
-        "ko": "한국어",
-        "ptBR": "Português",
-        "zhCN": "简体中文",
-        "zhTW": "繁體中文"
-      },
-      "result": "Translation",
-      "targetLanguage": "Translation language"
     },
     "voice": {
       "checkingLimit": "Checking voice input limit",
@@ -3659,7 +3563,7 @@
       },
       "feishu": {
         "addBot": "Add bot",
-        "addDialogDescription": "Create an enterprise custom app, enable its bot, and complete these steps in the Feishu developer console.",
+        "addDialogDescription": "Create an enterprise app with the Agent type, then complete these steps in the Feishu developer console.",
         "addDialogTitle": "Add a Feishu bot",
         "agentDescription": "Choose the agent that should handle messages sent to this bot.",
         "backToIntegrations": "Back to integrations",
@@ -3672,14 +3576,14 @@
         "copied": "{{label}} copied",
         "copy": "Copy",
         "create": {
-          "descriptionAfter": ", create an enterprise custom app using the name and icon you want, then add the Bot capability.",
+          "descriptionAfter": ", create an enterprise app and select the Agent type. Choose the name and icon you want; the Agent template includes the Bot capability.",
           "descriptionBefore": "In the ",
           "downloadIcon": "Download the optional {{brandName}} icon",
           "iconAlt": "Optional {{brandName}} app icon",
           "iconHint": ", or use any icon you prefer.",
           "iconTitle": "Optional {{brandName}} app icon",
           "imageAlt": "Feishu app creation form with the app name, icon, and Create button highlighted",
-          "title": "Create an enterprise custom app"
+          "title": "Create an Agent app"
         },
         "credentials": {
           "appId": "App ID",
@@ -3709,6 +3613,9 @@
         "faq": {
           "approvalAnswer": "If availability is set to All members, a Feishu administrator must approve the release. Feishu sends the approval request to an administrator in a direct message, and the app remains pending until an administrator completes the review.",
           "approvalQuestion": "Why is publishing the app waiting for approval?",
+          "botFeatureAnswer": "Open Features → Add Features in the Feishu developer console. Under By Feature, add the Bot capability, then continue this guide and publish the app. Agent apps include the Bot capability by default.",
+          "botFeatureImageAlt": "Lark developer console showing the Bot capability under Add Features",
+          "botFeatureQuestion": "What if I chose Custom App instead of Agent?",
           "challengeAnswer": "This usually means the Encrypt Key or Verification Token saved during the Tokens step is incorrect. Return to the Tokens step, enter both values from Event Configuration → Encryption Strategy again, save them, and retry the Request URL.",
           "challengeQuestion": "Why does Feishu show \"Challenge code didn't get a response\"?",
           "title": "Setup FAQ"
@@ -3719,14 +3626,14 @@
         "moreOptions": "More options for {{bot}}",
         "pageDescription": "Manage bot routing for this workspace",
         "permissions": {
-          "description": "In the Feishu developer console, open Permissions & Scopes, choose Batch Import/Export > Import, and paste the JSON below. It imports every managed connector scope under User identity. These are the minimum permissions required for the integration to work.",
-          "hint": "Keep every imported User identity permission, then create and publish a new app version so the OAuth consent screen can grant them. Removing any permission prevents the integration from working, and Feishu administrator approval may be required.",
-          "label": "User token scope JSON",
+          "description": "In the Feishu developer console, open Permissions & Scopes, choose Batch Import/Export > Import, and paste the JSON below. It includes App identity permissions for the bot and User identity permissions for your connected account.",
+          "hint": "Keep all imported permissions under both identities, then create and publish a new app version. Feishu administrator approval may be required.",
+          "label": "App and user scope JSON",
           "menuAlt": "Feishu Permissions & Scopes page with the Batch import/export scopes menu highlighted",
           "menuLabel": "Open Batch import/export scopes",
           "reviewAlt": "Feishu Batch import/export scopes dialog with the imported JSON and review button highlighted",
           "reviewLabel": "Paste the JSON and review new scopes",
-          "title": "Import user token scopes"
+          "title": "Import app and user scopes"
         },
         "publish": {
           "allMembersAlt": "Feishu availability settings with All members selected",
@@ -3788,7 +3695,7 @@
       },
       "lark": {
         "addBot": "Add bot",
-        "addDialogDescription": "Create an enterprise custom app, enable its bot, and complete these steps in the Lark developer console.",
+        "addDialogDescription": "Create an enterprise app with the Agent type, then complete these steps in the Lark developer console.",
         "addDialogTitle": "Add a Lark bot",
         "agentDescription": "Choose the agent that should handle messages sent to this bot.",
         "backToIntegrations": "Back to integrations",
@@ -3801,14 +3708,14 @@
         "copied": "{{label}} copied",
         "copy": "Copy",
         "create": {
-          "descriptionAfter": ", create an enterprise custom app using the name and icon you want, then add the Bot capability.",
+          "descriptionAfter": ", create an enterprise app and select the Agent type. Choose the name and icon you want; the Agent template includes the Bot capability.",
           "descriptionBefore": "In the ",
           "downloadIcon": "Download the optional {{brandName}} icon",
           "iconAlt": "Optional {{brandName}} app icon",
           "iconHint": ", or use any icon you prefer.",
           "iconTitle": "Optional {{brandName}} app icon",
           "imageAlt": "Feishu app creation form with the app name, icon, and Create button highlighted",
-          "title": "Create an enterprise custom app"
+          "title": "Create an Agent app"
         },
         "credentials": {
           "appId": "App ID",
@@ -3838,6 +3745,9 @@
         "faq": {
           "approvalAnswer": "If availability is set to All members, a Lark administrator must approve the release. Lark sends the approval request to an administrator in a direct message, and the app remains pending until an administrator completes the review.",
           "approvalQuestion": "Why is publishing the app waiting for approval?",
+          "botFeatureAnswer": "Open Features → Add Features in the Lark developer console. Under By Feature, add the Bot capability, then continue this guide and publish the app. Agent apps include the Bot capability by default.",
+          "botFeatureImageAlt": "Lark developer console showing the Bot capability under Add Features",
+          "botFeatureQuestion": "What if I chose Custom App instead of Agent?",
           "challengeAnswer": "This usually means the Encrypt Key or Verification Token saved during the Tokens step is incorrect. Return to the Tokens step, enter both values from Event Configuration → Encryption Strategy again, save them, and retry the Request URL.",
           "challengeQuestion": "Why does Lark show \"Challenge code didn't get a response\"?",
           "title": "Setup FAQ"
@@ -3849,14 +3759,14 @@
         "moreOptions": "More options for {{bot}}",
         "pageDescription": "Manage bot routing for this workspace",
         "permissions": {
-          "description": "In the Lark developer console, open Permissions & Scopes, choose Batch Import/Export > Import, and paste the JSON below. It imports every managed connector scope under User identity. These are the minimum permissions required for the integration to work.",
-          "hint": "Keep every imported User identity permission, then create and publish a new app version so the OAuth consent screen can grant them. Removing any permission prevents the integration from working, and Lark administrator approval may be required.",
-          "label": "User token scope JSON",
+          "description": "In the Lark developer console, open Permissions & Scopes, choose Batch Import/Export > Import, and paste the JSON below. It includes App identity permissions for the bot and User identity permissions for your connected account.",
+          "hint": "Keep all imported permissions under both identities, then create and publish a new app version. Lark administrator approval may be required.",
+          "label": "App and user scope JSON",
           "menuAlt": "Feishu Permissions & Scopes page with the Batch import/export scopes menu highlighted",
           "menuLabel": "Open Batch import/export scopes",
           "reviewAlt": "Feishu Batch import/export scopes dialog with the imported JSON and review button highlighted",
           "reviewLabel": "Paste the JSON and review new scopes",
-          "title": "Import user token scopes"
+          "title": "Import app and user scopes"
         },
         "publish": {
           "allMembersAlt": "Feishu availability settings with All members selected",
@@ -4300,6 +4210,8 @@
         "tiny-wanderer": "Tiny Wanderer"
       },
       "presentation": {
+        "bloom-pitch": "Petal pitch",
+        "blueprint-academy": "Drafting campus",
         "botane-organic-deck": "Mauve garden",
         "business-data-presentation": "Berry dashboard",
         "crayon-learning-deck": "Crayon doodle",
@@ -4308,9 +4220,19 @@
         "editorial-magazine-deck": "Paper magazine",
         "landing-consulting-deck": "Neon browser",
         "lumina-creative-studio": "Brush stickers",
+        "meridian": "Cobalt blocks",
         "mosaic-geometric-pitch": "Bauhaus tiles",
+        "neo-brutalism": "Shadow shop",
+        "nocturne": "Midnight stage",
+        "pixel-glitch": "Arcade pixels",
         "playful-launch-presentation": "Sunburst playroom",
-        "playful-pop-deck": "Neon candy"
+        "playful-pop-deck": "Neon candy",
+        "prospectus": "Homepage pitch",
+        "schoolhouse": "Kraft poster",
+        "sticker-scrapbook": "Sticker notebook",
+        "strata": "Red staircase",
+        "taped-consulting": "Polaroid wall",
+        "vantage": "Numbered boardroom"
       },
       "video": {
         "chinese-ink-art": "Chinese Ink Painting",
@@ -5407,7 +5329,8 @@
     "status": {
       "availableNow": "Available now",
       "inUse_one": "{{active}} of {{limit}} slot in use",
-      "inUse_other": "{{active}} of {{limit}} slots in use"
+      "inUse_other": "{{active}} of {{limit}} slots in use",
+      "waitingForSandbox": "Waiting for Sandbox"
     },
     "tiers": {
       "custom": "Custom",
@@ -5876,8 +5799,8 @@
             "cottonSky": "Cotton sky",
             "daydream": "Daydream",
             "deepLagoon": "Deep lagoon",
-            "goldenHour": "Golden hour",
-            "limelight": "Limelight"
+            "default": "Default",
+            "goldenHour": "Golden hour"
           },
           "title": "Color theme"
         },
@@ -6262,17 +6185,16 @@
     "choosePrivateKeyFile": "Choose private key file",
     "cloudflare": {
       "add": "Add Access configuration",
-      "back": "Back to host",
       "changed": "This Access configuration changed while you were editing. Review its latest settings before saving your changes.",
       "clientId": "Service Token Client ID",
       "clientSecret": "Service Token Client Secret",
       "configuration": "Access configuration",
-      "createNew": "Create Access configuration",
+      "createNew": "Create new configuration",
       "delete": "Delete configuration",
       "deleteHelp": "Delete this unused Access configuration? Its stored Service Token cannot be recovered.",
       "direct": "Direct",
+      "edit": "Edit Access configuration",
       "empty": "No Access configurations yet. Add a Service Token to connect to SSH hosts protected by Cloudflare Access.",
-      "gatewayHelp": "Connects over encrypted WebSocket on port 443. Configure the private SSH address and port in Cloudflare.",
       "inUse": "This Access configuration is used by a host. Review the affected hosts and rebind or delete them first.",
       "inUseHelp": "Select another Access configuration for these hosts, switch them explicitly to Direct, or delete them before deleting this configuration.",
       "keepChanges": "Keep my changes with this version",
@@ -6284,15 +6206,14 @@
       "name": "Configuration name",
       "protectedHost": "Cloudflare Access · {{name}}",
       "publishedHost": "Published hostname",
-      "rename": "Rename configuration",
       "replace": "Replace Service Token",
       "reviewHelp": "Your draft is preserved. Confirm the latest saved settings before applying your changes.",
       "select": "Select a configuration",
-      "summary_one": "{{count}} Access configuration",
-      "summary_other": "{{count}} Access configurations",
+      "summary_one": "{{count}} Access configuration configured",
+      "summary_other": "{{count}} Access configurations configured",
       "title": "Cloudflare Access",
       "tokenHelp": "Use a Service Token allowed by your SSH application's Service Auth policy. This is separate from your SSH login.",
-      "unavailable": "Cloudflare Access is not available for this account. Protected hosts cannot connect; Direct hosts are unaffected.",
+      "unavailable": "Cloudflare Access is not available for this account.",
       "usedBy_one": "Used by {{count}} host:",
       "usedBy_other": "Used by {{count}} hosts:"
     },
@@ -6329,6 +6250,7 @@
       "name": "Credential name",
       "password": "Password",
       "replaceAuthentication": "Replace authentication",
+      "select": "Select a credential",
       "sharedHelp_one": "Login changes apply to {{count}} host:",
       "sharedHelp_other": "Login changes apply to all {{count}} hosts:",
       "summary_one": "{{count}} credential configured",
@@ -6346,8 +6268,8 @@
     "empty": "No SSH hosts configured. Add a host to make it available to Agents with SSH access.",
     "errors": {
       "agentUnavailable": "This Agent is no longer available. Choose another Agent.",
-      "configurationChanged": "This host changed while you were editing it. The list has been updated. Reopen the host and review its current settings before saving.",
-      "credentialChanged": "This credential changed while you were editing it. Reopen it and review the current settings and affected hosts before saving.",
+      "configurationChanged": "This host changed while you were editing. Your draft is preserved. Review its latest settings before applying your changes.",
+      "credentialChanged": "This credential changed while you were editing. Your draft is preserved. Review its latest settings and affected hosts before saving your changes.",
       "credentialInUse": "This credential is used by a host. Select another credential for its hosts or delete those hosts first.",
       "credentialUnavailable": "This SSH credential is no longer available. Select an existing credential or create a new one.",
       "failed": "Could not save the SSH change. Try again.",
@@ -6370,17 +6292,64 @@
     "manage": "Manage SSH hosts",
     "notLearned": "Host key not learned yet",
     "passphrase": "Passphrase (optional)",
+    "placeholders": {
+      "accessName": "e.g. Production access",
+      "clientId": "Paste the Service Token Client ID",
+      "clientSecret": "Paste the Service Token Client Secret",
+      "credentialName": "e.g. Deployment login",
+      "displayName": "e.g. Production server",
+      "host": "e.g. ssh.example.com",
+      "passphrase": "Leave blank if not encrypted",
+      "password": "Enter the SSH user's password",
+      "privateKey": "Paste the complete private key",
+      "username": "e.g. ubuntu"
+    },
     "port": "Port",
     "privateKey": "Private key",
     "reset": "Reset host key",
     "resetHelp": "Only reset after independently verifying the new server identity. The next connection will trust and learn a new host key.",
     "retry": "Retry",
     "save": "Save",
+    "saveRecovery": {
+      "resourceIdConflict": "This resource ID cannot be used. Close and reopen the form to try again.",
+      "uncertain": "We couldn't confirm whether your changes were saved. Retry the same save, or close and check the list before adding again."
+    },
     "summary_one": "{{count}} host configured",
     "summary_other": "{{count}} hosts configured",
     "title": "SSH hosts",
     "unavailable": "SSH access is not available for this account.",
     "username": "SSH username"
+  },
+  "templates": {
+    "actions": {
+      "delete": "Delete",
+      "menu": "Actions for {{title}}",
+      "preview": "Preview {{title}}",
+      "rename": "Rename template"
+    },
+    "custom": "Custom",
+    "detail": {
+      "back": "Custom templates",
+      "page": "Page {{number}}",
+      "source_one": "{{count}} page · from {{filename}}",
+      "source_other": "{{count}} pages · from {{filename}}",
+      "sourceFile": "From {{filename}}"
+    },
+    "empty": {
+      "description": "Okou turns your file's design into a template you can reuse."
+    },
+    "loadFailed": "Couldn't load templates.",
+    "pageCount_one": "{{count}} page",
+    "pageCount_other": "{{count}} pages",
+    "retry": "Retry",
+    "sharedBy": "Shared by {{owner}}",
+    "visibility": {
+      "change": "Change",
+      "organization": "Organization",
+      "organizationState": "Anyone in this organization can use it",
+      "private": "Private",
+      "privateState": "Only you can see and use it"
+    }
   },
   "usage": {
     "displayNames": {

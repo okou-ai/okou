@@ -13,7 +13,11 @@ import flow_metadata_keys as metadata_keys
 import mitm_addon
 from body_capture import add_capture_fields
 from body_limits import BODY_CAPTURE_LIMIT, STREAM_BUFFER_LIMIT
-from tests.body_decode_helpers import pseudo_random_ascii, track_brotli_decompressor
+from tests.body_decode_helpers import (
+    pseudo_random_ascii,
+    track_brotli_decompressor,
+    track_zstd_reader,
+)
 from tests.flow_helpers import response_stream
 from tests.stream_buffer_helpers import set_response_stream_buffer
 
@@ -165,6 +169,33 @@ class TestDecompression:
         entry = {}
         add_capture_fields(flow, entry)
         assert entry["response_body"] == '{"result": "hello world"}'
+
+    def test_zstd_stream_capture_bounds_decoded_output(self, real_flow, monkeypatch):
+        original = b"x" * (BODY_CAPTURE_LIMIT * 4)
+        compressed = zstandard.ZstdCompressor().compress(original)
+        assert len(compressed) < STREAM_BUFFER_LIMIT
+        flow = real_flow(
+            method="POST",
+            host="api.example.com",
+            response_content_type="text/plain",
+            response_encoding="zstd",
+        )
+        flow.metadata[metadata_keys.CAPTURE_BODY] = True
+        mitm_addon.responseheaders(flow)
+        assert response_stream(flow)(compressed) == compressed
+
+        # Capture reads one extra decoded byte to detect truncation, even when
+        # the entire compressed frame fits in the stream buffer.
+        max_output = BODY_CAPTURE_LIMIT + 1
+        stats = track_zstd_reader(monkeypatch, max_output)
+        entry = {}
+        add_capture_fields(flow, entry)
+
+        assert entry["response_body"] == original[:BODY_CAPTURE_LIMIT].decode("ascii")
+        assert entry["response_body_encoding"] == "utf-8"
+        assert entry["response_body_truncated"] is True
+        assert 0 < stats["max_read"] <= max_output
+        assert stats["output_bytes"] == max_output
 
     def test_invalid_gzip_text_fallback_captures_original_utf8_body(self, real_flow):
         """Invalid gzip falls back to original bytes, then normal text capture rules apply."""

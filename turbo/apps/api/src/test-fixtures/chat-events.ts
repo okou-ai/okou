@@ -511,6 +511,9 @@ function annotationProjectionSourcePart(
       tenantId: input.context.teamsContext.tenantId,
       channelId: input.context.teamsContext.channelId,
       activityId: input.context.teamsContext.activityId,
+      conversationId: input.context.teamsContext.conversationId,
+      conversationType: input.context.teamsContext.conversationType,
+      botId: null,
     });
   }
   if ("telegramContext" in input.context) {
@@ -519,6 +522,7 @@ function annotationProjectionSourcePart(
       chatId: input.context.telegramContext.chatId,
       messageId: input.context.telegramContext.messageId,
       isDm: input.context.telegramContext.chatType === "private",
+      botUsername: null,
     });
   }
   return createChatEventSourcePart({
@@ -606,6 +610,9 @@ export async function seedChatEventAnnotationProjectionFixture(
           tenantId: "tenant-2",
           channelId: "19:reject@thread.tacv2",
           activityId: "activity-rejected",
+          conversationId: null,
+          conversationType: "channel",
+          botId: null,
         }),
       }),
       runId: null,
@@ -641,6 +648,9 @@ export async function seedChatEventAnnotationProjectionFixture(
           tenantId: "tenant-2",
           channelId: "19:reject@thread.tacv2",
           activityId: "activity-rejected",
+          conversationId: null,
+          conversationType: "channel",
+          botId: null,
         }),
       }),
       runId: null,
@@ -1531,6 +1541,34 @@ async function firstDirectBlockedStatementKind(
 }
 
 /**
+ * Waiters blocked by this holder whose own statement is a `FOR KEY SHARE` lock
+ * on the held thread. A plain waiter count also includes ordinary writers with
+ * no lock timeout of their own, which can still be queued behind the holder
+ * when a fenced writer has already given up, so a test that needs to observe
+ * exactly that writer block and then stop waiting counts only these.
+ */
+async function blockedKeyShareWaiterCount(holderPid: number): Promise<number> {
+  const rows = await executeRawRows(
+    db(),
+    sql`
+      SELECT activity.query AS "query"
+      FROM pg_stat_activity AS activity
+      WHERE ${holderPid} = ANY(pg_blocking_pids(activity.pid))
+    `,
+    blockedQueryRowSchema,
+  );
+  return rows.filter((row) => {
+    const query = normalizeBlockedQuery(row.query);
+    return (
+      query !== undefined &&
+      query.startsWith("select") &&
+      query.includes('from "chat_threads"') &&
+      query.includes("for key share")
+    );
+  }).length;
+}
+
+/**
  * Holds one thread row so route tests can observe the first product statement
  * that requires a write-oriented lock. Product APIs cannot pause at this
  * boundary, and the fixture does not change the held row.
@@ -1542,6 +1580,7 @@ export async function holdChatThreadRowLockFixture(args: {
   readonly release: () => void;
   readonly done: Promise<void>;
   readonly blockedWaiterCount: () => Promise<number>;
+  readonly blockedKeyShareWaiterCount: () => Promise<number>;
   readonly firstBlockedStatementKind: () => Promise<ChatThreadBlockedStatementKind | null>;
 }> {
   const started = createDeferredPromise<number>(args.signal);
@@ -1581,6 +1620,9 @@ export async function holdChatThreadRowLockFixture(args: {
     done,
     blockedWaiterCount: async () => {
       return await transitiveBlockedWaiterCount(holderPid);
+    },
+    blockedKeyShareWaiterCount: async () => {
+      return await blockedKeyShareWaiterCount(holderPid);
     },
     firstBlockedStatementKind: async () => {
       return await firstDirectBlockedStatementKind(holderPid);
@@ -2008,6 +2050,75 @@ export async function replaceThreadSessionBindingFixture(args: {
   if (updated.length !== 1) {
     throw new Error("Expected one chat thread session binding to be replaced");
   }
+}
+
+/**
+ * Product APIs cannot transfer session ownership. Stage that infrastructure-only
+ * race without changing the committed preparation snapshot, then let admission
+ * observe it after waiting for the real session row lock.
+ */
+export async function holdThreadSessionOwnerChangeFixture(args: {
+  readonly threadId: string;
+  readonly ownerChange:
+    | { readonly userId: string }
+    | { readonly orgId: string }
+    | { readonly agentId: string };
+  readonly clearConversation: boolean;
+  readonly signal: AbortSignal;
+}): Promise<{
+  readonly release: () => void;
+  readonly done: Promise<void>;
+  readonly blockedWaiterCount: () => Promise<number>;
+}> {
+  const started = createDeferredPromise<number>(args.signal);
+  const released = createDeferredPromise<void>(args.signal);
+  const done = onRejection(
+    db().transaction(async (tx) => {
+      const [thread] = await tx
+        .select({ agentSessionId: chatThreads.agentSessionId })
+        .from(chatThreads)
+        .where(eq(chatThreads.id, args.threadId));
+      if (!thread?.agentSessionId) {
+        throw new Error("Expected a bound chat thread session");
+      }
+      const [session] = await tx
+        .update(agentSessions)
+        .set({
+          ...args.ownerChange,
+          ...(args.clearConversation ? { conversationId: null } : {}),
+        })
+        .where(eq(agentSessions.id, thread.agentSessionId))
+        .returning({ id: agentSessions.id });
+      if (!session) {
+        throw new Error("Expected a bound agent session");
+      }
+      const [row] = await executeRawRows(
+        tx,
+        sql`SELECT pg_backend_pid() AS "pid"`,
+        databasePidRowSchema,
+      );
+      if (!row) {
+        throw new Error("Expected the session owner change holder pid");
+      }
+      started.resolve(row.pid);
+      await released.promise;
+    }),
+    (error) => {
+      started.reject(error);
+    },
+  );
+  const holderPid = await started.promise;
+  return {
+    release: () => {
+      if (!released.settled()) {
+        released.resolve(undefined);
+      }
+    },
+    done,
+    blockedWaiterCount: async () => {
+      return await directBlockedWaiterCount(holderPid);
+    },
+  };
 }
 
 /** Replaces a completed run's native session blob with exact test-owned bytes. */

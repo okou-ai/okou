@@ -40,6 +40,16 @@ export interface RuntimeApiRouteBinding {
 
 export const runtimeApiRouteBindings = [
   {
+    id: "runners.jobs.handoff",
+    owner: "runner",
+    route: runnersJobClaimContract.handoff,
+  },
+  {
+    id: "runners.jobs.release",
+    owner: "runner",
+    route: runnersJobClaimContract.release,
+  },
+  {
     id: "runners.poll",
     owner: "runner",
     route: runnersPollContract.poll,

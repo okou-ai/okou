@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.21.15](https://github.com/vm0-ai/okou/compare/guest-control-proto-v0.21.14...guest-control-proto-v0.21.15) (2026-09-17)
+
+
+### Documentation
+
+* **rust:** document fixed-helper exec role values ([#34856](https://github.com/vm0-ai/okou/issues/34856)) ([993c5d5](https://github.com/vm0-ai/okou/commit/993c5d52db76c034d6346beab408b93fcec86029))
+
+## [0.21.14](https://github.com/vm0-ai/okou/compare/guest-control-proto-v0.21.13...guest-control-proto-v0.21.14) (2026-09-17)
+
+
+### Documentation
+
+* **rust:** correct guest-control streaming opcodes ([#34858](https://github.com/vm0-ai/okou/issues/34858)) ([d394e7f](https://github.com/vm0-ai/okou/commit/d394e7f60e0bd59124db91855a29bb754960252f))
+
+## [0.21.13](https://github.com/vm0-ai/okou/compare/guest-control-proto-v0.21.12...guest-control-proto-v0.21.13) (2026-09-17)
+
+## [0.21.12](https://github.com/vm0-ai/okou/compare/guest-control-proto-v0.21.11...guest-control-proto-v0.21.12) (2026-09-17)
+
+## [0.21.11](https://github.com/vm0-ai/okou/compare/guest-control-proto-v0.21.10...guest-control-proto-v0.21.11) (2026-09-16)
+
+
+### Performance Improvements
+
+* **runner:** stream compressed session history with caller-owned policy ([#34603](https://github.com/vm0-ai/okou/issues/34603)) ([1376434](https://github.com/vm0-ai/okou/commit/1376434b697f5e39be6d569c6b20a4e33ed12342))
+
+## [0.21.10](https://github.com/vm0-ai/okou/compare/guest-control-proto-v0.21.9...guest-control-proto-v0.21.10) (2026-09-16)
+
+## [0.21.9](https://github.com/vm0-ai/okou/compare/guest-control-proto-v0.21.8...guest-control-proto-v0.21.9) (2026-09-16)
+
+## [0.21.8](https://github.com/vm0-ai/okou/compare/guest-control-proto-v0.21.7...guest-control-proto-v0.21.8) (2026-09-16)
+
+## [0.21.7](https://github.com/vm0-ai/okou/compare/guest-control-proto-v0.21.6...guest-control-proto-v0.21.7) (2026-09-16)
+
 ## [0.21.6](https://github.com/vm0-ai/vm0/compare/guest-control-proto-v0.21.5...guest-control-proto-v0.21.6) (2026-09-15)
 
 ## [0.21.5](https://github.com/vm0-ai/vm0/compare/guest-control-proto-v0.21.4...guest-control-proto-v0.21.5) (2026-09-15)

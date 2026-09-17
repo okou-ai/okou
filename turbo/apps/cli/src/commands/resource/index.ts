@@ -6,6 +6,7 @@ import path from "node:path";
 import { Command } from "commander";
 import chalk from "chalk";
 import * as tar from "tar";
+import { presentationTemplateSkillInstruction } from "@okouai/core/presentation-template-skill";
 import {
   findColorSystem,
   findDesignSystem,
@@ -109,6 +110,12 @@ export const resourceCommand = new Command()
         "--dir <path>",
         "Directory to extract into",
         "./generated/resources",
+      )
+      .addHelpText(
+        "after",
+        `
+Presentation template guide:
+  ${presentationTemplateSkillInstruction()}`,
       )
       .action(
         withErrorHandler(async (id: string, options: PullOptions) => {

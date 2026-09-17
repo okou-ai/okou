@@ -626,6 +626,7 @@ def test_clamps_cached_tokens_to_total_input_tokens():
     event = inspect_openai_responses_event_json(body)
 
     assert extract_openai_responses_usage_from_event(event) == {
+        "input_partition_incomplete": True,
         "tokens.input": 0,
         "tokens.output": 5,
         "tokens.cache_read": 10,

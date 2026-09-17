@@ -1,8 +1,10 @@
 import type { SharedThreadResponse } from "@okouai/api-contracts/contracts/shared-threads";
+import type { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import {
   queryAllByRoleFast,
   setupPage,
+  type SetupPageAuth,
 } from "../../../__tests__/page-helper.ts";
 import type { TestContext } from "../../../signals/__tests__/test-helpers.ts";
 
@@ -22,13 +24,21 @@ export function sharedThread(
 
 export function setupSharedThreadPage(
   context: TestContext,
-  options: { readonly host?: string } = {},
+  options: {
+    readonly host?: string;
+    /** Omitted for the signed-out visitor every share link expects. */
+    readonly auth?: SetupPageAuth;
+    readonly featureSwitches?: Partial<Record<FeatureSwitchKey, boolean>>;
+  } = {},
 ): Promise<void> {
   return setupPage({
     context,
     path: `/share/threads/${SHARED_THREAD_ID}`,
     host: options.host,
-    auth: null,
+    auth: options.auth ?? null,
+    ...(options.featureSwitches
+      ? { featureSwitches: options.featureSwitches }
+      : {}),
   });
 }
 
