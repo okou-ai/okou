@@ -2213,6 +2213,13 @@ its own consented cookies. Both requests include credentials, run under the App
 root with a ten-second deadline and never delay navigation for their response.
 There is no periodic check or browser retry.
 
+App-side Marketing diagnostics are retired without changing either request
+contract. Marketing owns these logs and correlates authenticated requests by
+`userId` and `orgId`. The optional `X-Marketing-Request-Id` response header has
+no business consumer: older App builds already accept an absent header, and
+new builds do not read it. Its removal can deploy independently of this App
+cleanup and requires no additional client-version floor.
+
 The new receiver records Google Ads funnel shadows only. Marketing deduplicates
 onboarding by user/org and checkout by user/org/event UUID. These counts differ
 intentionally from the legacy gtag browser-session/account deduplication: another
