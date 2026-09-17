@@ -517,6 +517,8 @@ export const cronDrainEmailOutboxContract = c.router({
  * bodies, prompts, results, recipients or credentials.
  */
 const cronExecuteMorningBriefsResponseSchema = z.object({
+  /** Installed briefs given a durable native row for the first time. */
+  materialized: z.number().int().nonnegative(),
   /** Members whose native obligation was due and examined this tick. */
   examined: z.number().int().nonnegative(),
   /** Slots this tick claimed. */

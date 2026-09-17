@@ -6,6 +6,8 @@ import {
   type MorningBriefExecutionTarget,
   type MorningBriefNativeOutcome,
 } from "@okouai/db/schema/morning-brief-native-schedule";
+import { MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY } from "@okouai/api-contracts/contracts/morning-brief-preference";
+import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { and, eq, isNotNull, lte, sql } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
@@ -595,6 +597,7 @@ async function commitTransfer(
   settled: PhaseCommit,
   current: MorningBriefNativeScheduleRow,
   args: {
+    readonly tx: MorningBriefNativeWriter;
     readonly drain:
       | { readonly kind: "proven" }
       | { readonly kind: "unresolved"; readonly reason: string };
@@ -616,6 +619,15 @@ async function commitTransfer(
     timezone: current.timezone,
     from: args.at,
   });
+  if (current.legacyAutomationId !== null) {
+    // Exactly one owner holds the successor after this commits: legacy gets the
+    // instant back only when legacy is the destination.
+    await restoreLegacyMorningBriefAdmission(
+      args.tx,
+      current.legacyAutomationId,
+      to === "legacy" ? nextRunAt : null,
+    );
+  }
   const [row] = await settled(to, {
     ownerEpoch: current.ownerEpoch + 1,
     nextRunAt,
@@ -665,8 +677,14 @@ export async function advanceMorningBriefExecutionPhase(
   };
 
   if (phase === "legacy" && target === "native") {
-    // Close new legacy admission first; the old scheduled-anchor obligation is
-    // preserved until the drain transfers it.
+    // Close new legacy admission first, in the same transaction as the phase.
+    // The legacy poller admits on `enabled AND next_run_at <= now`, so clearing
+    // that instant is what actually stops a new claim; the user's own enabled
+    // choice is untouched and the rollback path restores the obligation from
+    // the current logical preference.
+    if (current.legacyAutomationId !== null) {
+      await closeLegacyMorningBriefAdmission(tx, current.legacyAutomationId);
+    }
     const [row] = await settled("draining", {
       drainingEpoch: current.ownerEpoch,
       drainDeadlineAt: new Date(at.getTime() + NATIVE_DRAIN_REPORT_AFTER_MS),
@@ -678,7 +696,7 @@ export async function advanceMorningBriefExecutionPhase(
   }
 
   if (phase === "draining" && target === "native") {
-    return await commitTransfer(settled, current, args, "native");
+    return await commitTransfer(settled, current, { ...args, tx }, "native");
   }
 
   if (phase === "native" && target === "legacy") {
@@ -696,7 +714,20 @@ export async function advanceMorningBriefExecutionPhase(
   }
 
   if (phase === "rollback-draining" && target === "legacy") {
-    return await commitTransfer(settled, current, args, "legacy");
+    return await commitTransfer(settled, current, { ...args, tx }, "legacy");
+  }
+
+  if (phase === "draining" && target === "legacy") {
+    // Reversal before the cutover committed. Nothing native was ever admitted
+    // under this phase, so the member simply returns to legacy with its current
+    // obligation restored; no epoch is manufactured.
+    return await commitTransfer(settled, current, { ...args, tx }, "legacy");
+  }
+
+  if (phase === "rollback-draining" && target === "native") {
+    // Reversal during a rollback. The native side still owns its admitted work,
+    // so it may go straight back to `native` once that work is settled.
+    return await commitTransfer(settled, current, { ...args, tx }, "native");
   }
 
   // A flip back to the phase's own steady target only records the intent.
@@ -1148,6 +1179,83 @@ export async function loadResumableOccurrences(
 }
 
 /**
+ * Members whose installed Morning Brief has no durable native row yet.
+ *
+ * Bounded application materialization: it reads the member's own selected
+ * installation and *its* automation, never the disposable projection, the
+ * enrollment state or a title match. It is the cron's bootstrap input, so a GET
+ * never creates or repairs anything.
+ */
+export async function loadBootstrapCandidates(
+  db: MorningBriefNativeReader,
+  args: { readonly limit: number },
+): Promise<readonly MorningBriefMemberIdentity[]> {
+  const rows = await db
+    .select({
+      orgId: workflowAutomations.orgId,
+      userId: workflowAutomations.ownerUserId,
+    })
+    .from(workflowAutomations)
+    .leftJoin(
+      morningBriefNativeSchedules,
+      and(
+        eq(morningBriefNativeSchedules.orgId, workflowAutomations.orgId),
+        eq(morningBriefNativeSchedules.userId, workflowAutomations.ownerUserId),
+      ),
+    )
+    .where(
+      and(
+        eq(
+          workflowAutomations.officialBlueprintKey,
+          MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
+        ),
+        eq(workflowAutomations.kind, "schedule"),
+        sql`${morningBriefNativeSchedules.orgId} IS NULL`,
+      ),
+    )
+    .limit(args.limit);
+  return rows.map((row) => {
+    return { orgId: row.orgId, userId: row.userId };
+  });
+}
+
+/**
+ * Close new legacy claim admission for one member, atomically with the phase.
+ *
+ * The legacy poller's due predicate is `enabled AND kind='schedule' AND
+ * next_run_at <= now`, so clearing that automation's `next_run_at` is what
+ * actually stops a new legacy claim from entering. The user's own `enabled`
+ * choice is deliberately untouched: it is still what Settings shows, and the
+ * rollback path restores the obligation from the current logical preference.
+ */
+export async function closeLegacyMorningBriefAdmission(
+  tx: MorningBriefNativeWriter,
+  automationId: string,
+): Promise<void> {
+  await tx
+    .update(workflowAutomations)
+    .set({ nextRunAt: null })
+    .where(eq(workflowAutomations.id, automationId));
+}
+
+/**
+ * Hand a future obligation back to the legacy scheduler on rollback.
+ *
+ * It writes the same instant the native row records, so exactly one owner holds
+ * the member's next occurrence after the transaction commits.
+ */
+export async function restoreLegacyMorningBriefAdmission(
+  tx: MorningBriefNativeWriter,
+  automationId: string,
+  nextRunAt: Date | null,
+): Promise<void> {
+  await tx
+    .update(workflowAutomations)
+    .set({ nextRunAt })
+    .where(eq(workflowAutomations.id, automationId));
+}
+
+/**
  * The members whose native obligation is due, oldest first.
  *
  * Bounded by the caller's batch size. It reads only rows the native owner is
@@ -1224,15 +1332,11 @@ export async function loadTransitionCandidates(
   return await db
     .select()
     .from(morningBriefNativeSchedules)
-    .where(
-      // A steady-state row whose stored target already matches its phase is
-      // skipped: only a mismatch, or an in-progress drain, is actionable.
-      sql`(
-        ${morningBriefNativeSchedules.phase} IN ('draining', 'rollback-draining')
-        OR (${morningBriefNativeSchedules.phase} = 'legacy' AND ${morningBriefNativeSchedules.target} = 'native')
-        OR (${morningBriefNativeSchedules.phase} = 'native' AND ${morningBriefNativeSchedules.target} = 'legacy')
-      )`,
-    )
+    // Every row is a candidate, because only the *current* switch decides the
+    // target and a steady `legacy`/`legacy` row is exactly where a first
+    // cutover has to start. The bounded limit and the ordering keep one tick's
+    // work finite; a row already at its target costs one no-op comparison.
+    .where(sql`true`)
     .orderBy(morningBriefNativeSchedules.updatedAt)
     .limit(args.limit);
 }

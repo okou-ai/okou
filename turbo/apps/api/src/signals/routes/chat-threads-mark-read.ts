@@ -60,7 +60,10 @@ const markReadInner$ = command(async ({ get, set }, signal: AbortSignal) => {
         .from(chatThreads)
         .where(eq(chatThreads.id, params.id))
         .limit(1);
-      const latestReadWatermark = latestReadWatermarkEventSubquery(tx, params.id);
+      const latestReadWatermark = latestReadWatermarkEventSubquery(
+        tx,
+        params.id,
+      );
       const [updated] = await tx
         .update(chatThreads)
         .set({ lastReadAt: latestReadWatermark.createdAt })

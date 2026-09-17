@@ -1,6 +1,6 @@
 {
-  "id": "2549a437-fcc5-4f70-87fc-14fce8985316",
-  "prevId": "668b5a9e-b966-4e68-8acb-25dc4db9c76f",
+  "id": "c06a099c-7e1c-4d6c-8f02-b98c309e47b2",
+  "prevId": "d6a79a78-2323-4712-b8e9-61c27e5de56b",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -18822,6 +18822,18 @@
           "primaryKey": false,
           "notNull": true
         },
+        "workflow_id": {
+          "name": "workflow_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "automation_id": {
+          "name": "automation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
         "agent_id": {
           "name": "agent_id",
           "type": "uuid",
@@ -19405,13 +19417,37 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
+        "chk_morning_brief_generation_purpose": {
+          "name": "chk_morning_brief_generation_purpose",
+          "value": "\"morning_brief_generations\".\"execution_purpose\" IN ('preview', 'production')"
+        },
+        "chk_morning_brief_generation_state": {
+          "name": "chk_morning_brief_generation_state",
+          "value": "\"morning_brief_generations\".\"state\" IN ('reserved', 'succeeded', 'output_rejected', 'provider_failed', 'not_invoked', 'result_discarded', 'invocation_outcome_unknown', 'skipped_empty', 'skipped_incomplete')"
+        },
+        "chk_morning_brief_generation_language_source": {
+          "name": "chk_morning_brief_generation_language_source",
+          "value": "\"morning_brief_generations\".\"language_source\" IN ('member-locale', 'default')"
+        },
+        "chk_morning_brief_generation_coverage": {
+          "name": "chk_morning_brief_generation_coverage",
+          "value": "\"morning_brief_generations\".\"source_coverage\" IN ('complete', 'partial', 'empty')"
+        },
+        "chk_morning_brief_generation_failure_reason": {
+          "name": "chk_morning_brief_generation_failure_reason",
+          "value": "\"morning_brief_generations\".\"failure_reason\" IS NULL\n          OR \"morning_brief_generations\".\"failure_reason\" IN ('not_configured', 'provider_error', 'response_unreadable', 'transport_failed', 'output_truncated', 'unexpected_tool_calls', 'invalid_json', 'invalid_shape', 'unknown_source_reference', 'empty_deliver', 'result_too_large', 'reservation_expired', 'owner_revoked', 'binding_changed', 'persistence_failed')"
+        },
+        "chk_morning_brief_generation_skip_reason": {
+          "name": "chk_morning_brief_generation_skip_reason",
+          "value": "(\"morning_brief_generations\".\"decision\" = 'skip') = (\"morning_brief_generations\".\"skip_reason\" IS NOT NULL)"
+        },
         "chk_morning_brief_generation_finished": {
           "name": "chk_morning_brief_generation_finished",
           "value": "(\"morning_brief_generations\".\"state\" = 'reserved') = (\"morning_brief_generations\".\"finished_at\" IS NULL)"
         },
         "chk_morning_brief_generation_decision": {
           "name": "chk_morning_brief_generation_decision",
-          "value": "(\"morning_brief_generations\".\"state\" = 'succeeded') = (\"morning_brief_generations\".\"decision\" IS NOT NULL)\n          AND (\"morning_brief_generations\".\"decision\" = 'deliver') =\n            (\"morning_brief_generations\".\"result_markdown\" IS NOT NULL AND \"morning_brief_generations\".\"result_title\" IS NOT NULL)"
+          "value": "(\"morning_brief_generations\".\"state\" = 'succeeded') = (\"morning_brief_generations\".\"decision\" IS NOT NULL)\n          AND (\"morning_brief_generations\".\"decision\" = 'deliver') =\n            (\"morning_brief_generations\".\"result_markdown\" IS NOT NULL\n             AND \"morning_brief_generations\".\"result_title\" IS NOT NULL\n             AND \"morning_brief_generations\".\"result_bytes\" IS NOT NULL)\n          AND (\"morning_brief_generations\".\"result_bytes\" IS NULL OR \"morning_brief_generations\".\"result_bytes\" > 0)"
         },
         "chk_morning_brief_generation_included_items": {
           "name": "chk_morning_brief_generation_included_items",
@@ -19566,6 +19602,22 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
+        "chk_morning_brief_platform_receipt_outcome": {
+          "name": "chk_morning_brief_platform_receipt_outcome",
+          "value": "\"morning_brief_platform_generation_receipts\".\"outcome\" IN ('response_received', 'provider_error', 'response_unreadable', 'invocation_unknown')"
+        },
+        "chk_morning_brief_platform_receipt_cost_state": {
+          "name": "chk_morning_brief_platform_receipt_cost_state",
+          "value": "\"morning_brief_platform_generation_receipts\".\"cost_state\" IN ('reported', 'unavailable', 'invocation_unknown')"
+        },
+        "chk_morning_brief_platform_receipt_cost_source": {
+          "name": "chk_morning_brief_platform_receipt_cost_source",
+          "value": "\"morning_brief_platform_generation_receipts\".\"cost_source\" IS NULL\n          OR \"morning_brief_platform_generation_receipts\".\"cost_source\" IN ('chat_completion_usage_cost', 'generation_total_cost')"
+        },
+        "chk_morning_brief_platform_receipt_tokens": {
+          "name": "chk_morning_brief_platform_receipt_tokens",
+          "value": "(\"morning_brief_platform_generation_receipts\".\"prompt_tokens\" IS NULL OR \"morning_brief_platform_generation_receipts\".\"prompt_tokens\" >= 0)\n          AND (\"morning_brief_platform_generation_receipts\".\"completion_tokens\" IS NULL OR \"morning_brief_platform_generation_receipts\".\"completion_tokens\" >= 0)\n          AND (\"morning_brief_platform_generation_receipts\".\"reasoning_tokens\" IS NULL OR \"morning_brief_platform_generation_receipts\".\"reasoning_tokens\" >= 0)\n          AND (\"morning_brief_platform_generation_receipts\".\"cached_tokens\" IS NULL OR \"morning_brief_platform_generation_receipts\".\"cached_tokens\" >= 0)\n          AND (\"morning_brief_platform_generation_receipts\".\"total_tokens\" IS NULL OR \"morning_brief_platform_generation_receipts\".\"total_tokens\" >= 0)"
+        },
         "chk_morning_brief_platform_receipt_cost": {
           "name": "chk_morning_brief_platform_receipt_cost",
           "value": "(\"morning_brief_platform_generation_receipts\".\"cost_state\" = 'reported') =\n            (\"morning_brief_platform_generation_receipts\".\"cost_value\" IS NOT NULL\n             AND \"morning_brief_platform_generation_receipts\".\"cost_unit\" IS NOT NULL\n             AND \"morning_brief_platform_generation_receipts\".\"cost_source\" IS NOT NULL)\n          AND (\"morning_brief_platform_generation_receipts\".\"cost_value\" IS NULL OR \"morning_brief_platform_generation_receipts\".\"cost_value\" >= 0)"

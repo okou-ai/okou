@@ -1,5 +1,6 @@
 import { morningBriefDeliveries } from "@okouai/db/schema/morning-brief-delivery";
 import { morningBriefScheduleClaims } from "@okouai/db/schema/morning-brief-schedule-claim";
+import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
 import { and, eq, sql } from "drizzle-orm";
 
@@ -96,7 +97,20 @@ export async function proveLegacyMorningBriefDrain(
     );
 
   if (counts === undefined || counts.total === 0) {
-    return { kind: "unresolved", reason: "legacy-history-unjournalled" };
+    // No journalled claim exists. That is unknown history rather than a proven
+    // drain *unless* the automation has never launched a Run at all: an
+    // automation with no `last_run_id` has produced no legacy Run, no result
+    // callback and no result email, so there is nothing reachable to drain.
+    // Anything else keeps the bounded unresolved reason rather than inventing
+    // an anchor from `firedAt`, a Run's context or a title.
+    const [legacy] = await db
+      .select({ lastRunId: workflowAutomations.lastRunId })
+      .from(workflowAutomations)
+      .where(eq(workflowAutomations.id, schedule.legacyAutomationId))
+      .limit(1);
+    return legacy !== undefined && legacy.lastRunId === null
+      ? { kind: "proven" }
+      : { kind: "unresolved", reason: "legacy-history-unjournalled" };
   }
   if (counts.unsettled > 0) {
     return { kind: "unresolved", reason: "legacy-claim-unsettled" };
@@ -259,6 +273,12 @@ export const executeNativeMorningBriefSlot$ = command(
         userId: args.owner.userId,
         resultAttemptId: settlement.generationAttemptId,
         purpose: "production",
+        // The validated occurrence authority, carried into the Chat and email
+        // boundary rather than checked only at settlement.
+        nativeAuthority: {
+          ownerEpoch: args.occurrence.ownerEpoch,
+          membershipId: args.occurrence.membershipId,
+        },
       },
       signal,
     );
@@ -320,6 +340,10 @@ export const recoverNativeMorningBriefDelivery$ = command(
         userId: args.owner.userId,
         resultAttemptId: args.occurrence.generationAttemptId,
         purpose: "production",
+        nativeAuthority: {
+          ownerEpoch: args.occurrence.ownerEpoch,
+          membershipId: args.occurrence.membershipId,
+        },
       },
       signal,
     );

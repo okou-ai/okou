@@ -14,10 +14,12 @@ import {
   claimMorningBriefNativeOccurrence,
   clearMorningBriefDeliveryObligation,
   deferMorningBriefNativeOccurrence,
+  loadBootstrapCandidates,
   loadDueNativeOwners,
   loadPendingDeliveryOccurrences,
   loadResumableOccurrences,
   loadTransitionCandidates,
+  materializeMorningBriefNativeSchedule,
   resumeMorningBriefNativeOccurrence,
   settleMorningBriefNativeOccurrence,
   type MorningBriefNativeClaim,
@@ -76,6 +78,7 @@ const DRAIN_REPORT_BATCH = 25;
 const TICK_BUDGET_MS = 45_000;
 
 interface TickCounters {
+  materialized: number;
   examined: number;
   claimed: number;
   settled: number;
@@ -87,6 +90,7 @@ interface TickCounters {
 
 function emptyCounters(): TickCounters {
   return {
+    materialized: 0,
     examined: 0,
     claimed: 0,
     settled: 0,
@@ -487,6 +491,28 @@ export const executeNativeMorningBriefTick$ = command(
     const exhausted = (): CronExecuteMorningBriefsResponse => {
       return { ...counters, budgetExhausted: true };
     };
+
+    // 0. Bootstrap. Bounded, idempotent materialization of the members whose
+    //    installed brief has no durable native row yet. It only ever writes a
+    //    `legacy`-phase row, so it is never a cutover on its own.
+    for (const owner of await loadBootstrapCandidates(db, {
+      limit: DUE_OWNER_BATCH,
+    })) {
+      if (overBudget()) {
+        return exhausted();
+      }
+      const membershipId = await set(currentMembershipId$, owner, deadline);
+      if (membershipId === null) {
+        continue;
+      }
+      await db.transaction(async (tx) => {
+        await materializeMorningBriefNativeSchedule(tx, owner, {
+          membershipId,
+          at: nowDate(),
+        });
+      });
+      counters.materialized += 1;
+    }
 
     if (
       await runDeliveryRecoveryPass({

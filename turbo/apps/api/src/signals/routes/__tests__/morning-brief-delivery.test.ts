@@ -298,7 +298,7 @@ async function readThreadEvents(threadId: string) {
       id: chatEvents.id,
       eventType: chatEvents.eventType,
       runId: chatEvents.runId,
-      content: chatEvents.content,
+      payload: chatEvents.payload,
       createdAt: chatEvents.createdAt,
     })
     .from(chatEvents)
@@ -384,7 +384,11 @@ describe("Morning Brief native delivery", () => {
       props: { resultMarkdown: string };
     };
     expect(template.template).toBe("morning-brief-result");
-    expect(template.props.resultMarkdown).toBe(delivered[0]?.content);
+    expect(template.props.resultMarkdown).toBe(
+      delivered[0]?.payload && "content" in delivered[0].payload
+        ? delivered[0].payload.content
+        : undefined,
+    );
 
     await store.set(
       drainEmailOutboxItems$,
@@ -469,7 +473,7 @@ describe("Morning Brief native delivery", () => {
     const attemptId = await generateAcceptedResult(owner);
 
     const response = await accept(deliver(stranger, attemptId), [404]);
-    expect(response.body.error.code).toBe("NOT_FOUND");
+    expect(response.body).toMatchObject({ error: { code: "NOT_FOUND" } });
     expect(await readDeliveries(owner)).toHaveLength(0);
     expect(await readDeliveries(stranger)).toHaveLength(0);
   });

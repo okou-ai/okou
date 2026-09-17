@@ -15,6 +15,7 @@ import {
   MORNING_BRIEF_GENERATION_PROMPT_VERSION,
   MORNING_BRIEF_GENERATION_RESULT_SCHEMA_VERSION,
   MORNING_BRIEF_GENERATION_SOURCE_COVERAGES,
+  morningBriefGenerations,
 } from "@okouai/db/schema/morning-brief-generation";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { command } from "ccstate";
@@ -804,11 +805,12 @@ const resolveExistingGeneration$ = command(
       readonly db: Db;
       readonly key: MorningBriefGenerationKey;
       readonly occurrence: MorningBriefCollectionOccurrenceView;
+      readonly purpose: MorningBriefExecutionPurpose;
     },
     signal: AbortSignal,
   ): Promise<MorningBriefGenerationExecution> => {
     const { db, key, occurrence } = args;
-    const row = await readMorningBriefGeneration(db, key, GENERATION_PURPOSE);
+    const row = await readMorningBriefGeneration(db, key, args.purpose);
     signal.throwIfAborted();
     if (!row) {
       return { kind: "collection-completed-without-generation", occurrence };
@@ -1156,7 +1158,7 @@ export const executeMorningBriefGeneration$ = command(
           onCollected: async (tx, context) => {
             bundleCoverage = context.bundle.coverage;
             occurrenceRow = context.occurrence;
-            admitted = await admitGeneration(tx, context);
+            admitted = await admitGeneration(tx, context, args.purpose);
             if (admitted.kind === "reserved") {
               sources = admitted.plan.sources;
             }
@@ -1194,7 +1196,7 @@ export const executeMorningBriefGeneration$ = command(
     if (execution.kind === "already-completed") {
       return await set(
         resolveExistingGeneration$,
-        { db, key, occurrence: execution.occurrence },
+        { db, key, occurrence: execution.occurrence, purpose: args.purpose },
         signal,
       );
     }
