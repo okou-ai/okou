@@ -11,6 +11,21 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.911.1](https://github.com/vm0-ai/okou/compare/app-v0.911.0...app-v0.911.1) (2026-09-17)
+
+
+### Performance Improvements
+
+* **platform:** skip the shelf layout a filtered catalog discards ([#35003](https://github.com/vm0-ai/okou/issues/35003)) ([bcc021f](https://github.com/vm0-ai/okou/commit/bcc021f782af496a10365e8b15fb01d959e7e07d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.459.0
+    * @okouai/core bumped to 8.676.1
+
 ## [0.911.0](https://github.com/vm0-ai/okou/compare/app-v0.910.0...app-v0.911.0) (2026-09-17)
 
 
