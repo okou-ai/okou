@@ -244,6 +244,65 @@ SDK registration's existing local refresh behavior.
 | Other foreground Sandbox without snapshot           | Omit explicit credentials, preserving the SDK's existing default store.                                                               | File-backed production history, normal discovery, and captured run effort precedence.                                                                                                             |
 | Restricted Phase 2                                  | Explicit in-memory credentials; the exact input signal goes to ModelRuntime and `services.modelRuntimeSignal`.                        | In-memory session at fixed private cwd, restricted tools, no discovered extensions/skills/prompts/themes/context files, disabled retry/compaction, fixed reasoning, exact system-prompt equality. |
 
+### API-first minimal services
+
+The API foreground path selects
+`createPiApiFirstAgentSessionForRuntime` explicitly. A resource snapshot is not
+the selector: Sandbox/RPC can also receive V1/V2 snapshots and continues through
+`createPiAgentSessionForRuntime`, preserving generic extensions, observability,
+package handling, and execution services. Both entries reuse the same model,
+Okou Harness, memory, skill, tool, history, effort, and session-construction
+preparation.
+
+| Construction operation                                 | Generic foreground/Sandbox entry                                                                                                  | Explicit API-first entry                                                                                                                                             |
+| ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Registered `ModelRuntime` and provider stream adapters | Retained, including registration's required local refresh                                                                         | Retained identically                                                                                                                                                 |
+| Settings                                               | Existing file-backed behavior, or trusted in-memory settings for a snapshot                                                       | One trusted in-memory manager owned by the preparation                                                                                                               |
+| Resources                                              | `DefaultResourceLoader`, package resolution, full reload, extension-source work, then the services-level `ModelRuntime.refresh()` | One typed snapshot `ResourceLoader` and one empty extension runtime owned by the preparation; package resolution, generic reload, and the second refresh are omitted |
+| Prompt and tools                                       | Official `createAgentSessionFromServices` construction                                                                            | The same official construction; no private SDK import or copied prompt template                                                                                      |
+| Cleanup                                                | `AgentSession.dispose()` owns session/provider cleanup                                                                            | Identical; the shell remains alive through transport and is disposed by the existing prepared-turn lifecycle                                                         |
+
+The snapshot adapter's `reload()` is intentionally a no-op and rejects attempts
+to extend the admitted resource set. Tests compare the old and new complete
+provider request (including prompt, ordered tool schemas, history, model,
+deployment, effort, and tier) at intercepted local HTTP. Preparation itself
+does not prompt the model or execute a tool. The existing one-response owner
+still performs final source/credential validation and durable
+`may-have-started` admission before allowing transport.
+
+### Finite local construction measurement
+
+On 2026-09-17, the fixed V2 fixture in
+[`measure-api-first-services.mjs`](../turbo/packages/pi-agent-runtime/scripts/measure-api-first-services.mjs)
+used `@earendil-works/pi-coding-agent` 0.85.1, one `AGENTS.md`, one automatic
+skill, frozen no-content memory, and 11 fresh sessions per entry (the first
+invocation plus 10 warm repetitions). The commands ran each entry in a separate
+local process. All 22 constructions succeeded; they made zero provider requests
+and executed zero tools.
+
+| Local construction                            |                  Generic entry |            API-first entry |
+| --------------------------------------------- | -----------------------------: | -------------------------: |
+| First invocation wall time                    |                   9,900.006 ms |                 319.496 ms |
+| Warm wall time, min / median / max            | 5.464 / 10.770 / 16,045.422 ms | 5.398 / 8.728 / 868.606 ms |
+| Warm `resources_prompt` median                |                       0.284 ms |                   0.353 ms |
+| Warm `model_runtime` median                   |                       2.109 ms |                   2.950 ms |
+| Warm `resource_loader` adapter/options median |                       0.036 ms |                   0.058 ms |
+| Warm `session_services`, min / median / max   |  3.835 / 7.981 / 14,371.067 ms | 0.101 / 0.196 / 277.268 ms |
+| Warm `session_create` median                  |                       0.666 ms |                   1.728 ms |
+| Warm `session_finalize` median                |                       0.018 ms |                   0.025 ms |
+| Warm runs at or below the 40-ms allocation    |                         7 / 10 |                     9 / 10 |
+| Errors                                        |                              0 |                          0 |
+
+The host was under severe page-reclaim and CPU contention, visible in the large
+first/max outliers, so these are finite operation-level observations rather than
+a stable benchmark. The API-first warm median is within the 40-ms construction
+allocation, but the fixture did not meet it on every repetition and the cold
+sample did not meet it. Removed discovery, package resolution, and redundant
+refresh are reported as omitted operations, not fabricated zero-duration spans.
+This fixture starts after module loading and ends at session construction; it
+does not measure original API start, overlap with durable admission, or actual
+provider HTTP. It therefore makes no production or end-to-end sub-300-ms claim.
+
 Model lookup and error classification stay with each caller. Phase 2 applies
 [#33567](https://github.com/vm0-ai/vm0/issues/33567)'s existing maintenance-only
 catalog correction **once**, then passes the same corrected model to registration

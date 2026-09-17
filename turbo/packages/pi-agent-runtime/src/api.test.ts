@@ -32,7 +32,12 @@ import {
 import { projectPiApiAssistantMessage } from "./api-turn";
 import { resolvePiAgentModel } from "./model";
 import { MemoryPiSession } from "./session-memory";
-import type { PiApiAssistantMessage, PiApiFirstTurnArgs } from "./api-types";
+import type {
+  PiApiAssistantMessage,
+  PiApiFirstTurnArgs,
+  PiApiTurnPreparationArgs,
+  PreparedPiApiTurn,
+} from "./api-types";
 
 function promiseWithResolvers<T>() {
   return (
@@ -422,6 +427,207 @@ describe("Pi API facade", () => {
       }
     },
   );
+
+  it("isolates parallel preparations when one is paused and cancelled", async () => {
+    const requests: Array<{
+      readonly accountId: string | string[] | undefined;
+      readonly authorization: string | undefined;
+      readonly body: Record<string, unknown>;
+    }> = [];
+    const server = createServer((request, response) => {
+      void (async () => {
+        const chunks: Buffer[] = [];
+        for await (const chunk of request) {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        }
+        const bytes = Buffer.concat(chunks);
+        requests.push({
+          accountId: request.headers["chatgpt-account-id"],
+          authorization: request.headers.authorization,
+          body: JSON.parse(
+            (request.headers["content-encoding"] === "zstd"
+              ? zstdDecompressSync(bytes)
+              : bytes
+            ).toString("utf8"),
+          ) as Record<string, unknown>,
+        });
+        responsesTextSse(response, "second preparation answer");
+      })().catch((error: unknown) => {
+        response.destroy(
+          error instanceof Error ? error : new Error(String(error)),
+        );
+      });
+    });
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", () => {
+        server.off("error", reject);
+        resolve();
+      });
+    });
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      throw new Error("Expected parallel preparation transport");
+    }
+    const disposed = vi.spyOn(AgentSession.prototype, "dispose");
+    const paused = promiseWithResolvers<void>();
+    const release = promiseWithResolvers<void>();
+    const firstExecution = new AbortController();
+
+    const createArgs = async (
+      name: "first" | "second",
+      sessionId: string,
+    ): Promise<PiApiTurnPreparationArgs> => {
+      const history = MemoryPiSession.create({
+        cwd: "/home/user/workspace",
+        id: sessionId,
+      });
+      history.appendMessage({
+        role: "user",
+        content: `${name} history question`,
+        timestamp: 1,
+      });
+      history.appendMessage({
+        ...fauxAssistantMessage(`${name} history answer`, { timestamp: 2 }),
+        usage: {
+          input: 10,
+          output: 2,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 12,
+          cost: {
+            input: 0,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            total: 0,
+          },
+        },
+      });
+      return {
+        cwd: "/home/user/workspace",
+        agentDir: "/home/user/.pi/agent",
+        sessionId,
+        sessionJsonl: history.toJsonl(),
+        prompt: `${name} current prompt`,
+        appendSystemPrompt: `${name} caller instruction`,
+        model: await materializePiAgentModelConfig({
+          config: piModelConfigSchema.parse({
+            schemaVersion: 3,
+            dialect: "openai-codex-responses",
+            transport: "sse",
+            provider: "openai-codex",
+            baseUrl: `http://127.0.0.1:${address.port}/backend-api`,
+            model: "gpt-5.6-terra",
+            thinkingLevel: "low",
+            serviceTier: "fast",
+            credentialBindings: [
+              {
+                kind: "access-token",
+                environment: "CHATGPT_ACCESS_TOKEN",
+                secretName: "CHATGPT_ACCESS_TOKEN",
+              },
+              {
+                kind: "account-id",
+                environment: "CHATGPT_ACCOUNT_ID",
+                secretName: "CHATGPT_ACCOUNT_ID",
+              },
+            ],
+          }),
+          target: "direct",
+          resolveCredential(binding) {
+            return binding.kind === "account-id"
+              ? `${name}-account`
+              : `${name}-token`;
+          },
+        }),
+        resourceSnapshot: {
+          schemaVersion: 1 as const,
+          agentsFiles: [
+            {
+              path: `/captured/${name}/AGENTS.md`,
+              content: `${name} captured resource`,
+            },
+          ],
+          skills: [],
+        },
+      };
+    };
+
+    let first: PreparedPiApiTurn | undefined;
+    let second: PreparedPiApiTurn | undefined;
+    try {
+      first = await preparePiApiTurn(
+        await createArgs("first", "00000000-0000-4000-8000-000000000124"),
+      );
+      second = await preparePiApiTurn(
+        await createArgs("second", "00000000-0000-4000-8000-000000000125"),
+      );
+      expect(requests).toHaveLength(0);
+
+      const firstTurn = executePreparedPiApiTurn(
+        first,
+        {
+          ownership: createPiApiFirstTurnOwnership(),
+          async providerRequestBoundary(mark) {
+            paused.resolve();
+            await release.promise;
+            firstExecution.signal.throwIfAborted();
+            mark();
+          },
+        },
+        firstExecution.signal,
+      );
+      await paused.promise;
+      const secondResult = await executePreparedPiApiTurn(second, {
+        ownership: createPiApiFirstTurnOwnership(),
+        async providerRequestBoundary(mark) {
+          mark();
+        },
+      });
+      expect(secondResult.assistantMessage.content).toStrictEqual([
+        { type: "text", text: "second preparation answer" },
+      ]);
+      expect(requests).toHaveLength(1);
+      expect(requests[0]).toMatchObject({
+        accountId: "second-account",
+        authorization: "Bearer second-token",
+        body: {
+          model: "gpt-5.6-terra",
+          reasoning: { effort: "low" },
+          service_tier: "priority",
+        },
+      });
+      const secondBody = JSON.stringify(requests[0]?.body);
+      expect(secondBody).toContain("second history question");
+      expect(secondBody).toContain("second current prompt");
+      expect(secondBody).toContain("second caller instruction");
+      expect(secondBody).toContain("second captured resource");
+      expect(secondBody).not.toContain("first history question");
+      expect(secondBody).not.toContain("first captured resource");
+
+      const cancellation = new DOMException(
+        "cancel isolated first preparation",
+        "AbortError",
+      );
+      firstExecution.abort(cancellation);
+      release.resolve();
+      await expect(firstTurn).rejects.toBe(cancellation);
+      expect(requests).toHaveLength(1);
+      expect(disposed).toHaveBeenCalledTimes(2);
+    } finally {
+      firstExecution.abort();
+      release.resolve();
+      first?.dispose();
+      second?.dispose();
+      disposed.mockRestore();
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => {
+          return error ? reject(error) : resolve();
+        });
+      });
+    }
+  });
 
   it("sends stable memory schemas and hands a call off without API execution", async () => {
     const requestBodies: Array<Record<string, unknown>> = [];
