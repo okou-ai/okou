@@ -16,7 +16,7 @@ const publishCommand = new Command()
     "Publish an analysed file as a reusable custom template. Uploads the source file, the ordered page images, and the guidance package, then commits them together.",
   )
   .requiredOption("--title <title>", "Template name shown to the user")
-  .requiredOption("--source <path>", "The original .ppt or .pptx")
+  .requiredOption("--source <path>", "The original .ppt, .pptx, or .pdf")
   .requiredOption(
     "--pages <dir>",
     "Directory of rendered page PNGs, in filename order",

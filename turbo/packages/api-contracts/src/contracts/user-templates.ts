@@ -32,10 +32,16 @@ export const MAX_USER_TEMPLATE_PACKAGE_BYTES = 100 * 1024 * 1024;
 export const MAX_USER_TEMPLATE_PACKAGE_FILES = 200;
 export const MAX_USER_TEMPLATE_PACKAGE_FILE_BYTES = 25 * 1024 * 1024;
 
-/** v1 compiles decks. Documents follow the Office output toolchain. */
+/**
+ * What a reverse run may compile from. These match the file picker the import
+ * flow already offers, so a file a user is allowed to choose cannot be rejected
+ * after the analysis has already run. Documents follow the Office output
+ * toolchain.
+ */
 export const USER_TEMPLATE_SOURCE_CONTENT_TYPES = [
   "application/vnd.ms-powerpoint",
   "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "application/pdf",
 ] as const;
 export const USER_TEMPLATE_PAGE_CONTENT_TYPE = "image/png";
 export const USER_TEMPLATE_PACKAGE_CONTENT_TYPE = "application/gzip";
