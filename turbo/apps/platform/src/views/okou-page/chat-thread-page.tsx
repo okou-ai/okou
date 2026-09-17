@@ -6081,6 +6081,14 @@ function generationTemplateTypeLabel(
         return $.chat.templates.categories.website;
       });
     }
+    case "custom": {
+      // The catalog's own name, the same word the picker tab uses. What a
+      // custom template produces lives on its row, which this label cannot
+      // read, so naming the catalog is the honest answer here.
+      return i18n.t(($) => {
+        return $.templates.custom;
+      });
+    }
     case "presentation": {
       return i18n.t(($) => {
         return $.chat.templates.categories.presentation;
