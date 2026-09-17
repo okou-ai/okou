@@ -44,6 +44,7 @@ import {
   mockStripeClient,
 } from "../../../external/stripe-client";
 import { testUsageSettlementRoutes } from "../../test-usage-settlement";
+import type { UsagePricingResolution } from "../../../context/usage-pricing-resolution";
 import type { ApiTestUser } from "./api-bdd";
 import { createRouteMocks } from "./route-test";
 import { acquisitionAttributionRoutes } from "../../acquisition-attribution";
@@ -539,13 +540,17 @@ export function createBillingMediaApi(context: TestContext) {
       );
     },
 
-    async processOrgUsageEvents(actor: ApiTestUser) {
+    async processOrgUsageEvents(
+      actor: ApiTestUser,
+      usagePricingResolution?: UsagePricingResolution,
+    ) {
       if (!actor.orgId) {
         throw new Error("Cannot process usage without an organization");
       }
       const client = setupApp({
         context,
         routes: testUsageSettlementRoutes,
+        usagePricingResolution,
       })(testUsageSettlementContract);
       return await accept(
         client.process({ body: { org_id: actor.orgId } }),

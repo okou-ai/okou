@@ -17,6 +17,7 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { env, mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import type { UsagePricingResolution } from "../../context/usage-pricing-resolution";
 import { createDeferredPromise, settle } from "../../utils";
 import { runnersRoutes } from "../runners";
 import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
@@ -82,10 +83,12 @@ async function requestStateAction(body: Record<string, unknown>) {
 async function cleanupRuns(
   runIds: readonly string[],
   orgIds: readonly string[],
+  usagePricingResolution: UsagePricingResolution,
 ) {
   const app = createAppWithRoutes({
     signal: context.signal,
     routes: testCronCleanupSandboxesStateRoutes,
+    usagePricingResolution,
   });
   const response = await app.request(
     "/api/test/cron-cleanup-sandboxes-state/cleanup",
@@ -114,8 +117,12 @@ async function cleanupRuns(
   };
 }
 
-async function cleanupRun(runId: string, orgId: string) {
-  return await cleanupRuns([runId], [orgId]);
+async function cleanupRun(
+  runId: string,
+  orgId: string,
+  usagePricingResolution: UsagePricingResolution,
+) {
+  return await cleanupRuns([runId], [orgId], usagePricingResolution);
 }
 
 async function enableDurablePi(
@@ -364,7 +371,7 @@ describe("durable Pi API producer", () => {
         );
       }),
     ).toBeTruthy();
-    await billing.processOrgUsageEvents(actor);
+    await billing.processOrgUsageEvents(actor, usagePricingResolution);
     const usage = await billing.readUsageRecord(actor);
     expect(usage.body.totalCredits).toBeGreaterThan(0);
     expect(usage.body.pagination.total).toBeGreaterThan(0);
@@ -417,7 +424,9 @@ describe("durable Pi API producer", () => {
     );
     await flushWaitUntilForTest();
     expect(calls).toBe(0);
-    await expect(cleanupRun(run.runId, orgId)).resolves.toMatchObject({
+    await expect(
+      cleanupRun(run.runId, orgId, usagePricingResolution),
+    ).resolves.toMatchObject({
       body: { errors: 0 },
     });
     const { claim, runnerId } = await claimDeferredPiRun(
@@ -570,7 +579,7 @@ describe("durable Pi API producer", () => {
       releaseProvider.resolve(undefined);
       await expect
         .poll(async () => {
-          await billing.processOrgUsageEvents(actor);
+          await billing.processOrgUsageEvents(actor, usagePricingResolution);
           return (await billing.readUsageRecord(actor)).body.pagination.total;
         })
         .toBeGreaterThan(0);
@@ -598,7 +607,7 @@ describe("durable Pi API producer", () => {
     await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
       status: "cancelled",
     });
-    await billing.processOrgUsageEvents(actor);
+    await billing.processOrgUsageEvents(actor, usagePricingResolution);
     const usage = await billing.readUsageRecord(actor);
     expect(usage.body.pagination.total).toBeGreaterThan(0);
   }, 90_000);
@@ -768,7 +777,9 @@ describe("durable Pi API producer", () => {
     await flushWaitUntilForTest();
     const recoveryRunId = await seedProducerRecoveryRun(source.runId, "ready");
 
-    await expect(cleanupRun(recoveryRunId, orgId)).resolves.toMatchObject({
+    await expect(
+      cleanupRun(recoveryRunId, orgId, usagePricingResolution),
+    ).resolves.toMatchObject({
       body: { errors: 0 },
     });
     await waitForRunStatus(actor, recoveryRunId, "completed", 10_000);
@@ -820,7 +831,9 @@ describe("durable Pi API producer", () => {
         }),
       );
     }
-    await expect(cleanupRuns(recoveryRunIds, [orgId])).resolves.toMatchObject({
+    await expect(
+      cleanupRuns(recoveryRunIds, [orgId], usagePricingResolution),
+    ).resolves.toMatchObject({
       body: { errors: 0 },
     });
     expect(calls).toBe(21);
@@ -832,7 +845,9 @@ describe("durable Pi API producer", () => {
       status: "pending",
     });
 
-    await expect(cleanupRun(overflowRunId, orgId)).resolves.toMatchObject({
+    await expect(
+      cleanupRun(overflowRunId, orgId, usagePricingResolution),
+    ).resolves.toMatchObject({
       body: { errors: 0 },
     });
     await waitForRunStatus(actor, overflowRunId, "completed", 10_000);
@@ -899,7 +914,9 @@ describe("durable Pi API producer", () => {
       }),
     );
 
-    await expect(cleanupRuns(recoveryRunIds, [orgId])).resolves.toMatchObject({
+    await expect(
+      cleanupRuns(recoveryRunIds, [orgId], usagePricingResolution),
+    ).resolves.toMatchObject({
       body: { errors: 0 },
     });
     expect(recoveredCalls).toBe(2);
@@ -1013,7 +1030,9 @@ describe("durable Pi API producer", () => {
     const recoveryRunId = await seedProducerRecoveryRun(source.runId, "ready");
     await deleteCapturedPiModelKey(recoveryRunId);
 
-    await expect(cleanupRun(recoveryRunId, orgId)).resolves.toMatchObject({
+    await expect(
+      cleanupRun(recoveryRunId, orgId, usagePricingResolution),
+    ).resolves.toMatchObject({
       body: { errors: 0 },
     });
     await waitForRunStatus(actor, recoveryRunId, "failed", 10_000);
@@ -1061,7 +1080,9 @@ describe("durable Pi API producer", () => {
       "publishing",
     );
 
-    await expect(cleanupRun(recoveryRunId, orgId)).resolves.toMatchObject({
+    await expect(
+      cleanupRun(recoveryRunId, orgId, usagePricingResolution),
+    ).resolves.toMatchObject({
       body: { errors: 0 },
     });
     await waitForRunStatus(actor, recoveryRunId, "completed", 10_000);
@@ -1079,7 +1100,7 @@ describe("durable Pi API producer", () => {
         );
       }),
     ).toBeTruthy();
-    await billing.processOrgUsageEvents(actor);
+    await billing.processOrgUsageEvents(actor, usagePricingResolution);
     const recoveredUsage = await billing.readUsageRecord(actor);
     expect(recoveredUsage.body.totalCredits).toBeGreaterThan(0);
     expect(recoveredUsage.body.pagination.total).toBeGreaterThan(0);
@@ -1116,7 +1137,7 @@ describe("durable Pi API producer", () => {
     );
     await waitForRunStatus(actor, source.runId, "completed", 10_000);
     await flushWaitUntilForTest();
-    await billing.processOrgUsageEvents(actor);
+    await billing.processOrgUsageEvents(actor, usagePricingResolution);
     const before = await billing.readUsageRecord(actor);
     const recoveryRunId = await seedProducerRecoveryRun(
       source.runId,
@@ -1132,7 +1153,9 @@ describe("durable Pi API producer", () => {
     await waitForRunStatus(actor, recoveryRunId, "cancelled", 10_000);
     await expirePiInference(recoveryRunId);
 
-    await expect(cleanupRun(recoveryRunId, orgId)).resolves.toMatchObject({
+    await expect(
+      cleanupRun(recoveryRunId, orgId, usagePricingResolution),
+    ).resolves.toMatchObject({
       body: { errors: 0 },
     });
     await flushWaitUntilForTest();
@@ -1151,7 +1174,7 @@ describe("durable Pi API producer", () => {
         );
       }),
     ).toStrictEqual([]);
-    await billing.processOrgUsageEvents(actor);
+    await billing.processOrgUsageEvents(actor, usagePricingResolution);
     const after = await billing.readUsageRecord(actor);
     expect(after.body.totalCredits).toBeGreaterThan(before.body.totalCredits);
   }, 90_000);
@@ -1186,7 +1209,7 @@ describe("durable Pi API producer", () => {
     );
     await waitForRunStatus(actor, source.runId, "completed", 10_000);
     await flushWaitUntilForTest();
-    await billing.processOrgUsageEvents(actor);
+    await billing.processOrgUsageEvents(actor, usagePricingResolution);
     const before = await billing.readUsageRecord(actor);
     const recoveryRunId = await seedProducerRecoveryRun(
       source.runId,
@@ -1202,7 +1225,9 @@ describe("durable Pi API producer", () => {
     await waitForRunStatus(actor, recoveryRunId, "cancelled", 10_000);
     await expirePiInference(recoveryRunId);
 
-    await expect(cleanupRun(recoveryRunId, orgId)).resolves.toMatchObject({
+    await expect(
+      cleanupRun(recoveryRunId, orgId, usagePricingResolution),
+    ).resolves.toMatchObject({
       body: { errors: 0 },
     });
     await flushWaitUntilForTest();
@@ -1211,7 +1236,7 @@ describe("durable Pi API producer", () => {
     await expect(api.readRun(actor, recoveryRunId)).resolves.toMatchObject({
       status: "cancelled",
     });
-    await billing.processOrgUsageEvents(actor);
+    await billing.processOrgUsageEvents(actor, usagePricingResolution);
     const after = await billing.readUsageRecord(actor);
     expect(after.body.totalCredits).toBe(before.body.totalCredits);
   }, 90_000);
@@ -1273,7 +1298,9 @@ describe("durable Pi API producer", () => {
     await flushWaitUntilForTest();
 
     expect(calls).toBe(1);
-    await expect(cleanupRun(run.runId, orgId)).resolves.toMatchObject({
+    await expect(
+      cleanupRun(run.runId, orgId, usagePricingResolution),
+    ).resolves.toMatchObject({
       body: { errors: 0 },
     });
     const { claim, runnerId } = await claimDeferredPiRun(
@@ -1335,7 +1362,9 @@ describe("durable Pi API producer", () => {
     await providerEntered.promise;
     await expirePiInference(run.runId);
 
-    await expect(cleanupRun(run.runId, orgId)).resolves.toMatchObject({
+    await expect(
+      cleanupRun(run.runId, orgId, usagePricingResolution),
+    ).resolves.toMatchObject({
       body: { errors: 0 },
     });
     await waitForRunStatus(actor, run.runId, "failed", 10_000);
@@ -1354,7 +1383,7 @@ describe("durable Pi API producer", () => {
         );
       }),
     ).toBeFalsy();
-    await billing.processOrgUsageEvents(actor);
+    await billing.processOrgUsageEvents(actor, usagePricingResolution);
     const lateUsage = await billing.readUsageRecord(actor);
     expect(lateUsage.body.pagination.total).toBeGreaterThan(0);
   }, 90_000);
@@ -1402,7 +1431,9 @@ describe("durable Pi API producer", () => {
     await flushWaitUntilForTest();
     expect(calls).toBe(1);
 
-    await expect(cleanupRun(run.runId, orgId)).resolves.toMatchObject({
+    await expect(
+      cleanupRun(run.runId, orgId, usagePricingResolution),
+    ).resolves.toMatchObject({
       body: { errors: 0 },
     });
     const { claim, runnerId } = await claimDeferredPiRun(
