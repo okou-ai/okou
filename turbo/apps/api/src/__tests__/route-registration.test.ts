@@ -5,6 +5,9 @@ import { ROUTES } from "../signals/route";
 import { assertUniqueRouteRegistrations } from "../signals/route-entry";
 import { morningBriefCollectionPreviewRoutes } from "../signals/routes/morning-brief-collection-preview";
 import { morningBriefGenerationPreviewRoutes } from "../signals/routes/morning-brief-generation-preview";
+import { morningBriefChatCollectionPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-chat-collection-preview";
+
+import { morningBriefChatCollectionPreviewRoutes } from "../signals/routes/morning-brief-chat-collection-preview";
 
 describe("API route registrations", () => {
   // Hono keeps both registrations for a duplicated path and answers with the
@@ -28,6 +31,17 @@ describe("API route registrations", () => {
     const [entry, ...extra] = morningBriefCollectionPreviewRoutes;
     expect(extra).toHaveLength(0);
     expect(entry?.route).toBe(morningBriefCollectionPreviewContract.collect);
+  // The unread Chat collection preview only means anything if an operator can
+  // deployment, and its own suite composes an app from a route slice rather
+  // than from this production-global table. Asserting the exact entry object
+  // keeps that suite's results statements about the deployed endpoint rather
+  // than about a look-alike slice: the handler it exercises is the handler
+  // `ROUTES` holds.
+  it("registers the Morning Brief Chat collection preview an operator invokes", () => {
+    const [entry, ...extra] = morningBriefChatCollectionPreviewRoutes;
+    expect(entry?.route).toBe(
+      morningBriefChatCollectionPreviewContract.collect,
+    );
     expect(ROUTES).toContain(entry);
     expect(
       ROUTES.filter((registered) => {
@@ -54,6 +68,7 @@ describe("API route registrations", () => {
         return (
           registered.route.path ===
           morningBriefGenerationPreviewContract.preview.path
+          morningBriefChatCollectionPreviewContract.collect.path
         );
       }),
     ).toStrictEqual([entry]);

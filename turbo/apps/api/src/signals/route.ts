@@ -149,6 +149,7 @@ import { officialWorkflowRoutes } from "./routes/official-workflows";
 import { emailSubscriptionRoutes } from "./routes/email-subscription";
 import { morningBriefCollectionPreviewRoutes } from "./routes/morning-brief-collection-preview";
 import { morningBriefGenerationPreviewRoutes } from "./routes/morning-brief-generation-preview";
+import { morningBriefChatCollectionPreviewRoutes } from "./routes/morning-brief-chat-collection-preview";
 import { morningBriefPreferenceRoutes } from "./routes/morning-brief-preference";
 import { workflowAutomationsRoutes } from "./routes/workflow-automations";
 import { integrationsGithubRoutes } from "./routes/integrations-github";
@@ -372,6 +373,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...morningBriefPreferenceRoutes,
   ...morningBriefCollectionPreviewRoutes,
   ...morningBriefGenerationPreviewRoutes,
+  ...morningBriefChatCollectionPreviewRoutes,
   ...emailSubscriptionRoutes,
   ...workflowsRoutes,
   ...officialWorkflowRoutes,
