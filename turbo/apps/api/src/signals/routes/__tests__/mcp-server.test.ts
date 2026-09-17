@@ -283,17 +283,19 @@ describe("external MCP entry", () => {
           return await app.request(new Request(input, init));
         },
       });
-      const sdk = new Client({
-        name: "okou-interoperability-test",
-        version: "1",
-      });
+      const sdk = new Client(
+        { name: "okou-interoperability-test", version: "1" },
+        {
+          versionNegotiation: {
+            mode: modern ? { pin: modernVersion } : "legacy",
+          },
+        },
+      );
       onTestFinished(() => {
         return sdk.close();
       });
-      await sdk.connect(
-        transport,
-        modern ? undefined : { prior: { kind: "legacy" } },
-      );
+      await sdk.connect(transport);
+      expect(sdk.getDiscoverResult() !== undefined).toBe(modern);
       const tools = await sdk.listTools();
       expect(
         tools.tools.map((tool) => {
