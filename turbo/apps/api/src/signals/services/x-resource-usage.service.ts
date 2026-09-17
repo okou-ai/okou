@@ -261,6 +261,8 @@ export async function ingestXResourceUsage(
         }
         throw admission.error;
       }
+      await lockXResourceAdmission(tx, "shared");
+      // Admission precedes Run ownership, matching account cleanup's order.
       // SHARE prevents deletion/owner updates while source rows are created.
       const [run] = await tx
         .select({
@@ -281,7 +283,6 @@ export async function ingestXResourceUsage(
       if (!run) {
         throw new XResourceUsageError(404, "Run not found");
       }
-      await lockXResourceAdmission(tx, "shared");
       await checkObservationTimes(
         tx,
         events,

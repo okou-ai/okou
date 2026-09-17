@@ -40,6 +40,10 @@ import {
   ingestXResourceUsage,
   XResourceUsageError,
 } from "../services/x-resource-usage.service";
+import {
+  lockXResourceAdmission,
+  setXResourceTransactionTimeouts,
+} from "../services/x-resource-usage-lifecycle";
 
 const SANDBOX_TELEMETRY_SYSTEM_DATASET = "sandbox-telemetry-system";
 const SANDBOX_TELEMETRY_METRICS_DATASET = "sandbox-telemetry-metrics";
@@ -420,10 +424,23 @@ const usageEvent$ = command(async ({ get, set }, signal: AbortSignal) => {
   const insertResult = await settle(
     (async () => {
       if (usageEventValues.length > 0) {
-        await db
-          .insert(usageEvent)
-          .values(usageEventValues)
-          .onConflictDoNothing({ target: [usageEvent.idempotencyKey] });
+        if (env("X_RESOURCE_BILLING_START_DATE") !== undefined) {
+          await db.transaction(async (tx) => {
+            await setXResourceTransactionTimeouts(tx);
+            // Legacy retries share the account-cleanup fence with v1 batches.
+            await lockXResourceAdmission(tx, "shared");
+            await tx
+              .insert(usageEvent)
+              .values(usageEventValues)
+              .onConflictDoNothing({ target: [usageEvent.idempotencyKey] });
+            signal.throwIfAborted();
+          });
+        } else {
+          await db
+            .insert(usageEvent)
+            .values(usageEventValues)
+            .onConflictDoNothing({ target: [usageEvent.idempotencyKey] });
+        }
       }
     })(),
   );

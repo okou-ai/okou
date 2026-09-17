@@ -4,6 +4,7 @@ import { agentSessions } from "@okouai/db/schema/agent-session";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 
+import { env } from "../../lib/env";
 import { removeAgentInstructionsStorageInTransaction } from "./agent-instructions-storage-transaction.service";
 import { lockCanonicalAgentMutation } from "./agent-mutation-lock.service";
 import {
@@ -12,21 +13,48 @@ import {
   logCommittedConversationDeletion,
   releaseDeletedConversationReferences,
 } from "./conversation-history-deletion.service";
-import { lockUsageEventCompaction } from "./usage-event-compaction-lock.service";
+import {
+  deleteOrgUsageData,
+  deleteUserUsageData,
+} from "./usage-event-cleanup.service";
+import { lockXResourceAdmission } from "./x-resource-usage-lifecycle";
 
 export const AGENT_LIFECYCLE_LOCK_TIMEOUT = "100ms";
 
+type ClerkDeletionScope =
+  | { readonly kind: "organization"; readonly orgId: string }
+  | { readonly kind: "user"; readonly userId: string };
+
+async function deleteScopedUsageData(
+  db: NodePgDatabase,
+  scope: ClerkDeletionScope,
+): Promise<void> {
+  if (scope.kind === "organization") {
+    await deleteOrgUsageData(db, scope.orgId);
+  } else {
+    await deleteUserUsageData(db, scope.userId);
+  }
+}
+
 export async function deleteClerkAgentLifecycleData(
   db: NodePgDatabase,
-  scope:
-    | { readonly kind: "organization"; readonly orgId: string }
-    | { readonly kind: "user"; readonly userId: string },
+  scope: ClerkDeletionScope,
 ): Promise<void> {
+  const resourceBillingEnabled =
+    env("X_RESOURCE_BILLING_START_DATE") !== undefined;
+  if (!resourceBillingEnabled) {
+    // Keep the existing separately committed cleanup during the API rollout.
+    // Activation requires every settler to share compaction admission.
+    await deleteScopedUsageData(db, scope);
+  }
   const receipt = await db.transaction(async (tx) => {
-    // Compaction locks ledger rows before checking their Run foreign keys.
-    // Serialize before taking Run locks so ON DELETE SET NULL cannot invert
-    // that order. Keep the existing compaction wait outside the 100 ms limit.
-    await lockUsageEventCompaction(tx);
+    if (resourceBillingEnabled) {
+      // Admission -> compaction -> ledger/entitlements -> parents/Run.
+      // The helper uses a savepoint on this same connection; both deletion
+      // stages commit atomically and retain their locks through that commit.
+      await lockXResourceAdmission(tx, "exclusive");
+      await deleteScopedUsageData(tx, scope);
+    }
     await tx.execute(
       sql`SELECT set_config('lock_timeout', ${AGENT_LIFECYCLE_LOCK_TIMEOUT}, true)`,
     );
@@ -96,18 +124,12 @@ export async function deleteClerkAgentLifecycleData(
         .from(agentRuns)
         .where(inArray(agentRuns.sessionId, ownedSessions)),
     );
-    // Resource usage holds a Run SHARE lock for at most its 15-second
-    // transaction lifetime. Drain that admitted writer before deleting the Run.
-    await tx.execute(sql`SELECT set_config('lock_timeout', '20s', true)`);
     const runs = await tx
       .select({ id: agentRuns.id })
       .from(agentRuns)
       .where(inArray(agentRuns.id, targetRuns))
       .orderBy(asc(agentRuns.id))
       .for("update");
-    await tx.execute(
-      sql`SELECT set_config('lock_timeout', ${AGENT_LIFECYCLE_LOCK_TIMEOUT}, true)`,
-    );
     const runIds = runs.map((run) => {
       return run.id;
     });

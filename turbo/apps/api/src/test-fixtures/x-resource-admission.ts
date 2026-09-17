@@ -154,10 +154,10 @@ export async function holdXResourceClaimForTest(
       return result.count;
     },
     blockedRunDeletionCount: async () => {
-      // A terminal Run's cleanup skips cancellation updates. Its lifecycle
-      // FOR UPDATE then waits behind the admitted upload's SHARE lock. Observe
-      // that real downstream wait beyond the former 100ms timeout, rather than
-      // sleeping or releasing the resource gate before the old bug can occur.
+      // A terminal Run's cleanup skips cancellation updates. Observe Clerk's
+      // downstream admission or Run wait behind this upload beyond the former
+      // 100ms timeout, rather than sleeping or releasing the resource gate
+      // before the old lifecycle/preflight bug can occur.
       const rows = await executeRawRows(
         db(),
         sql`SELECT ${count()}::int AS count

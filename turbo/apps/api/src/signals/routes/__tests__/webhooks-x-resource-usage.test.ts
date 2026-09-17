@@ -17,6 +17,7 @@ import {
   type UsagePricingFixture,
 } from "../../../test-fixtures/system-config-seeds";
 import { holdUsageEventCompactionLockFixture } from "../../../test-fixtures/usage-event-compaction";
+import { holdUsageSettlementCreditWriteForTest } from "../../../test-fixtures/usage-settlement-lock";
 import {
   holdXResourceClaimForTest,
   withXResourceClock,
@@ -391,6 +392,79 @@ describe("X daily resource usage webhook", () => {
 
     await expect(chargedUnits(first, configuredPricing)).resolves.toBe(2);
     await expect(chargedUnits(second, configuredPricing)).resolves.toBe(0);
+  });
+
+  it("waits for ongoing credit settlement before deleting a user's ledger and runs", async () => {
+    const configuredPricing = await pricing();
+    const deleted = await createRun();
+    await runs.requestCancelRun(
+      deleted.actor,
+      deleted.runId,
+      [200],
+      configuredPricing.resolution,
+    );
+    await flushWaitUntilForTest();
+    await accept(submit(deleted, [observation([resourceId()])]), [200]);
+    const orgId = deleted.actor.orgId;
+    if (!orgId) {
+      throw new Error("Settlement fixture requires an organization");
+    }
+
+    const callbacks = createWebhookCallbackApi(context);
+    callbacks.configureClerkWebhookSecret();
+    context.mocks.s3.send.mockResolvedValue({});
+    // Keep another member so this user deletion does not also delete the org.
+    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+      { data: [{ publicUserData: { userId: `survivor-${randomUUID()}` } }] },
+    );
+    context.mocks.stripe.subscriptions.list.mockResolvedValue({
+      data: [],
+      has_more: false,
+    });
+
+    // Infrastructure exception: pause the real credit deduction after it has
+    // updated this source row, without creating synthetic processed usage.
+    const gate = await holdUsageSettlementCreditWriteForTest(
+      orgId,
+      context.signal,
+    );
+    const completion = Promise.allSettled([gate.done]);
+    const settlement = Promise.allSettled([
+      billing.processOrgUsageEvents(
+        deleted.actor,
+        configuredPricing.resolution,
+      ),
+    ]);
+    onTestFinished(async () => {
+      gate.release();
+      await completion;
+      await settlement;
+      await flushWaitUntilForTest();
+    });
+    await expect.poll(gate.settlementWaiterCount).toBe(1);
+
+    callbacks.verifyNextClerkWebhook({
+      type: "user.deleted",
+      data: { id: deleted.actor.userId },
+    });
+    await callbacks.requestClerkWebhook("{}", {}, [200]);
+    await expect.poll(gate.cleanupWaiterCount).toBe(1);
+    gate.release();
+    const [released] = await completion;
+    if (released.status === "rejected") {
+      throw released.reason;
+    }
+    const [settled] = await settlement;
+    if (settled.status === "rejected") {
+      throw settled.reason;
+    }
+    await flushWaitUntilForTest();
+
+    await runs.requestReadRun(deleted.actor, deleted.runId, [404]);
+    await accept(submit(deleted, [observation([resourceId()])]), [404]);
+    expect(
+      (await billing.readUsageRecord(deleted.actor)).body.totalCredits,
+    ).toBe(0);
   });
 
   it.each(["user", "organization"] as const)(

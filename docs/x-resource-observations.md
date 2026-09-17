@@ -17,8 +17,9 @@ within the same account does not reset resource identity.
 The existing usage webhook validates the strict `x-resource-v1` schema and
 authenticates the sandbox run. `X_RESOURCE_BILLING_START_DATE` is an optional
 server setting containing the fleet-wide UTC activation date (`YYYY-MM-DD`).
-Leave it unset until #34615 verifies the single account, compatible producers
-and rollback targets, and the legacy upload drain. Unset, every resource or
+Leave it unset until #34615 verifies the single account, compatible producers,
+serving and rollback APIs with settlement admission, and the legacy upload drain.
+Unset, every resource or
 mixed batch receives `400 X resource observations are not enabled` before any
 financial write. No per-user or per-organization override is supported.
 
@@ -26,7 +27,8 @@ When configured, observations must be on or after the activation date and
 inside the two-date admission window below. The complete batch commits
 atomically and returns the existing `{ success: true }` acknowledgement.
 Mixed batches retain legacy quantities and the existing BYOK model filter;
-legacy-only batches retain their existing writer. No producer capability is
+legacy-only batches retain their quantities and source behavior, sharing the
+same bounded write admission after activation. No producer capability is
 advertised by this change. A rejected resource batch must never be downgraded
 to legacy count billing.
 
@@ -91,8 +93,8 @@ new claims or obligations. Foreign or conflicting source identities return
 Do not return foreign source records or winning attribution. Reusing a UUID
 with changed content is not checked against a stored digest.
 
-Lock order is sorted account-erasure subjects, the live run, shared X date
-admission, the entire normalized/sorted source UUID set, then the entire sorted
+Lock order is sorted account-erasure subjects, shared X admission, the live run,
+the entire normalized/sorted source UUID set, then the entire sorted
 date/type/ID set. Reserve source rows at quantity zero before inserting any
 resource; uncommitted placeholders are invisible to settlement. Insert resources
 with `ON CONFLICT DO NOTHING RETURNING`, derive N from the inserted identities,
@@ -100,7 +102,9 @@ and update the new sources to their final N+R quantities in that transaction.
 Repeated resources within a batch go to the first source in UUID order. Any
 failure rolls back both sources and claims. The first successfully committed
 observation owns the obligation, including allowance/pack-funded reads.
-Existing credit settlement remains unchanged.
+Credit settlement keeps its billing behavior and takes shared compaction
+admission before its organization credit lock. Different organizations can
+still settle concurrently; exclusive maintenance waits for admitted settlements.
 
 The consumer takes no compaction or organization credit lock. Compaction only
 handles processed rows older than four days, so an immutable source within the
@@ -136,26 +140,28 @@ lookup, so old tokens cannot recreate erased billing records. Ordinary thread
 deletion retains run/billing history under the existing lifecycle; cancelling
 that run does not reset the shared resource set.
 
-Clerk user/organization deletion removes the live runs before deleting their
-ledger rows. Run deletion waits for admitted writers' shared row locks, so
-their committed usage is included in the subsequent ledger cleanup. Uploads
-arriving after the run deletion cannot reinsert those personal records. This
-ordering also protects deployments where the separate erasure-decision bridge
-has not been enabled.
+With the activation setting configured, Clerk user/organization cleanup takes
+exclusive X admission, then exclusive compaction admission, before deleting
+the scoped ledger and organization allowance entitlements. It then deletes the
+live runs in the same transaction. The existing usage helper uses a savepoint
+on that connection, so no second pooled connection is needed. All locks survive
+until the common commit. Admitted uploads and settlements finish first; later
+uploads cannot reinsert personal usage between ledger cleanup and Run deletion.
+This also protects deployments without the separate erasure-decision bridge.
 
-Before taking Agent, Session or Run locks, Clerk lifecycle cleanup acquires the
-existing usage-compaction advisory lock and holds it through run deletion.
-Compaction locks ledger rows before checking Run foreign keys; excluding it
-prevents the reverse lock order caused by deleting a Run while its ledger rows
-remain. Waiting for this advisory lock retains the existing compaction-wait
-policy, outside the lifecycle's 100-millisecond lock timeout.
+The Pi erasure preflight likewise drains usage admission before locking Runs,
+including already terminal Pi Runs. Admission and ledger cleanup occur before
+the lifecycle's existing 100-millisecond lock timeout; parent, Run and later
+deletion locks retain that policy. Shared resource records remain untouched.
+While the setting is unset, Clerk retains separately committed ledger cleanup
+before Run deletion, and the Pi preflight retains its existing behavior.
 
-Clerk lifecycle cleanup allows 20 seconds to acquire its Run `FOR UPDATE`
-locks, exceeding the admitted writer's 15-second transaction limit, including
-uploads for already terminal runs. After acquiring those locks it restores
-the existing 100-millisecond lock timeout; Agent, Session and subsequent
-deletion locks retain that original policy. The longer Run wait prevents a
-valid upload from causing the acknowledged background cleanup to time out.
+These maintenance admissions are global: account cleanup briefly pauses all
+webhook usage writes and settlement, and a slow settlement delays compaction or
+account cleanup. No network cleanup runs while those admission locks are held.
+Do not configure the setting while any serving or rollback API can settle
+without shared compaction admission; otherwise old settlement transactions
+could invert the combined cleanup's ledger/allowance/Run lock order.
 
 ## Runner, annotation and activation
 
