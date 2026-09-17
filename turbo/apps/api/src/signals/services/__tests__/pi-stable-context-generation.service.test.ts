@@ -792,8 +792,7 @@ describe("Pi stable context generation fences", () => {
       db
         .select({
           storageId: piStableContextArtifactResources.storageId,
-          storageVersionId:
-            piStableContextArtifactResources.storageVersionId,
+          storageVersionId: piStableContextArtifactResources.storageVersionId,
         })
         .from(piStableContextArtifactResources)
         .where(

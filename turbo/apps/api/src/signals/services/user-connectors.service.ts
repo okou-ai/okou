@@ -66,9 +66,11 @@ interface UserConnectorMutationHooks {
   readonly beforeAdmission?: () => Promise<void>;
 }
 
-const userConnectorMutationHooks = testOverride<UserConnectorMutationHooks>(() => {
-  return {};
-});
+const userConnectorMutationHooks = testOverride<UserConnectorMutationHooks>(
+  () => {
+    return {};
+  },
+);
 
 export function setUserConnectorMutationHooksForTest(
   hooks: UserConnectorMutationHooks,
