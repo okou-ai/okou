@@ -7,7 +7,7 @@ import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { and, eq, gt, type SQL } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
-import type { Db } from "../external/db";
+import type { Db, ReadonlyDb } from "../external/db";
 
 /**
  * Occurrence, attempt and lease ownership for the Morning Brief collector.
@@ -128,7 +128,7 @@ function occurrenceKey(
  * or has already committed and leaves nothing to write. This never creates the
  * parent.
  */
-async function lockCollectionOwner(
+export async function lockCollectionOwner(
   tx: Tx,
   owner: MorningBriefCollectionOwner,
 ): Promise<boolean> {
@@ -150,8 +150,16 @@ async function lockCollectionOwner(
   return member !== undefined;
 }
 
-/** Every frozen field a retry must still match to reuse an occurrence. */
-function sameBinding(
+/**
+ * Every frozen field a retry must still match to reuse an occurrence.
+ *
+ * It is exported because a later stage that holds this occurrence has to prove
+ * the same thing before it acts on the owner's behalf or releases what it
+ * produced: the binding an occurrence was admitted under is the only authority
+ * its results ever had. A different current binding is a different authority,
+ * never a licence to reuse the old one's work.
+ */
+export function morningBriefCollectionBindingMatches(
   row: MorningBriefCollectionOccurrenceRow,
   admission: MorningBriefCollectionAdmission,
 ): boolean {
@@ -220,7 +228,7 @@ function reclaimDecision(
   if (retryAt !== null && retryAt.getTime() > at.getTime()) {
     return { kind: "rejected", reason: "retry-pending" };
   }
-  if (!sameBinding(row, admission)) {
+  if (!morningBriefCollectionBindingMatches(row, admission)) {
     return { kind: "rejected", reason: "binding-changed" };
   }
   return null;
@@ -390,6 +398,28 @@ export async function revokeMorningBriefCollectionOwnership(
   await executor
     .delete(morningBriefCollectionOccurrences)
     .where(revocationWhere(scope));
+}
+
+/**
+ * Read one occurrence's frozen scope and binding.
+ *
+ * The row is the only durable record of the authority a collection was
+ * admitted under, so anything that later revalidates that authority compares
+ * against this rather than against a caller-supplied copy.
+ */
+export async function readMorningBriefCollectionOccurrence(
+  db: Pick<ReadonlyDb, "select">,
+  key: Pick<
+    MorningBriefCollectionAdmission,
+    "owner" | "scheduledFor" | "collectionKind"
+  >,
+): Promise<MorningBriefCollectionOccurrenceRow | undefined> {
+  const [row] = await db
+    .select()
+    .from(morningBriefCollectionOccurrences)
+    .where(occurrenceKey(key))
+    .limit(1);
+  return row;
 }
 
 /** The next lease deadline for an attempt claimed at `at`. */

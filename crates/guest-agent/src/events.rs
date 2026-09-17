@@ -139,6 +139,7 @@ impl EventPayloadEnvelope {
         &self,
         sequence: u32,
         event: &mut Value,
+        masker: &SecretMasker,
     ) -> Result<Option<Bytes>, AgentError> {
         if !self.pi_memory_citation_transport {
             return Ok(None);
@@ -151,9 +152,26 @@ impl EventPayloadEnvelope {
             .get_mut("message")
             .and_then(Value::as_object_mut)
             .and_then(|message| message.remove("memoryCitation"));
-        let Some(citation) = message_citation.or(event_citation) else {
+        let Some(mut citation) = message_citation.or(event_citation) else {
             return Ok(None);
         };
+        // Citation fields are a system-owned schema, unlike arbitrary event keys.
+        // A redacted UUID is neither valid transport nor usable provenance.
+        if let Some(rollout_ids) = citation.get_mut("rolloutIds").and_then(Value::as_array_mut) {
+            rollout_ids.retain(|id| id.as_str().is_some_and(|id| masker.mask_string(id) == id));
+        }
+        masker.mask_string_values(&mut citation);
+        if citation
+            .get("entries")
+            .and_then(Value::as_array)
+            .is_some_and(Vec::is_empty)
+            && citation
+                .get("rolloutIds")
+                .and_then(Value::as_array)
+                .is_some_and(Vec::is_empty)
+        {
+            return Ok(None);
+        }
         Ok(Some(Bytes::from(serde_json::to_vec(&json!({
             "sequenceNumber": sequence,
             "citation": citation,
@@ -665,7 +683,7 @@ mod tests {
         )
         .expect("Pi event envelope must be constructible");
         let citation = envelope
-            .take_private_citation(7, &mut assistant)
+            .take_private_citation(7, &mut assistant, &SecretMasker::from_raw(""))
             .expect("structured citation must be serializable")
             .expect("fixture must carry one structured citation");
         let events = [assistant, result].map(|event| {
