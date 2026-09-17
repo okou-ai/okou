@@ -41,6 +41,7 @@ import { OFFICIAL_RUNNER_TOKEN_PREFIX } from "@okouai/api-contracts/contracts/ru
 import { runsCancelContract } from "@okouai/api-contracts/contracts/run-routes";
 import { runsCancelRoutes } from "../../routes/runs-cancel";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
+import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-subscription";
 import {
   transferPiFixtureAgentOwner,
   seedPiInferenceFixture,
@@ -52,7 +53,7 @@ import { promisify } from "node:util";
 import { createHash, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { createStore } from "ccstate";
-import { eq, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { createPiSessionJsonl } from "@okouai/pi-agent-runtime/api";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
@@ -819,6 +820,101 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
     ).resolves.toBeTruthy();
     await accept(claim(second.runId, true, randomUUID()), [200]);
   }, 60_000);
+
+  it("uses paid spare capacity for equal-time deferred demand without stealing the earlier slot", async () => {
+    const { actor, api } = await createLegacyAdmissionFixture(
+      "Paid deferred spare-capacity admission",
+    );
+    const stripeSubscriptionId = `sub_${randomUUID()}`;
+    await db()
+      .insert(orgConcurrencySubscriptions)
+      .values({
+        stripeSubscriptionId,
+        orgId: actor.orgId,
+        stripePriceId: `price_${randomUUID()}`,
+        slots: 1,
+        subscriptionStatus: "active",
+        currentPeriodEnd: new Date("2099-01-01T00:00:00Z"),
+      });
+    onTestFinished(async () => {
+      await db()
+        .delete(orgConcurrencySubscriptions)
+        .where(
+          eq(
+            orgConcurrencySubscriptions.stripeSubscriptionId,
+            stripeSubscriptionId,
+          ),
+        );
+    });
+
+    const sameEnqueuedAt = Date.now();
+    const demands = await withMockNowForTest(sameEnqueuedAt, async () => {
+      const left = await fixture({
+        orgId: actor.orgId,
+        userId: actor.userId,
+        publishInProcess: true,
+      });
+      const right = await fixture({
+        orgId: actor.orgId,
+        userId: actor.userId,
+        publishInProcess: true,
+      });
+      return [left, right] as const;
+    });
+    const intentOrder = await db()
+      .select({
+        runId: agentRunSandboxIntent.runId,
+        enqueuedAt: agentRunSandboxIntent.enqueuedAt,
+      })
+      .from(agentRunSandboxIntent)
+      .where(
+        inArray(
+          agentRunSandboxIntent.runId,
+          demands.map((demand) => {
+            return demand.runId;
+          }),
+        ),
+      )
+      .orderBy(agentRunSandboxIntent.enqueuedAt, agentRunSandboxIntent.runId);
+    expect(intentOrder).toHaveLength(2);
+    expect(
+      intentOrder.map((intent) => {
+        return intent.enqueuedAt.getTime();
+      }),
+    ).toStrictEqual([sameEnqueuedAt, sameEnqueuedAt]);
+    const [earlier, later] = intentOrder;
+    if (!earlier || !later) {
+      throw new Error("Missing equal-time deferred demand order");
+    }
+
+    const waiting = await api.readRunQueue(actor);
+    expect(waiting.body.concurrency).toMatchObject({
+      limit: 2,
+      active: 0,
+      waiting: 2,
+      available: 0,
+    });
+    await expect(
+      createStore().set(consumeDeferredPiRun$, later.runId, context.signal),
+    ).resolves.toBeTruthy();
+    const reservedEarlierSlot = await api.readRunQueue(actor);
+    expect(reservedEarlierSlot.body.concurrency).toMatchObject({
+      limit: 2,
+      active: 1,
+      waiting: 1,
+      available: 0,
+    });
+    await expect(
+      createStore().set(consumeDeferredPiRun$, earlier.runId, context.signal),
+    ).resolves.toBeTruthy();
+    const saturated = await api.readRunQueue(actor);
+    expect(saturated.body.concurrency).toMatchObject({
+      limit: 2,
+      active: 2,
+      waiting: 0,
+      available: 0,
+    });
+  }, 90_000);
 
   it("fences a delayed claim before acknowledging not-started and forbids later dispatch", async () => {
     const f = await fixture();

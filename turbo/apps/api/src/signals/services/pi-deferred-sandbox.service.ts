@@ -13,6 +13,7 @@ import { createHash } from "node:crypto";
 import { command } from "ccstate";
 import {
   and,
+  count,
   eq,
   exists,
   inArray,
@@ -455,8 +456,8 @@ async function reserveDeferredPiRun(db: Db, runId: string) {
       });
       return undefined;
     }
-    const [legacy] = await tx
-      .select({ id: agentRunQueue.runId })
+    const [legacyEarlier] = await tx
+      .select({ count: count() })
       .from(agentRunQueue)
       .innerJoin(agentRuns, eq(agentRuns.id, agentRunQueue.runId))
       .where(
@@ -472,30 +473,27 @@ async function reserveDeferredPiRun(db: Db, runId: string) {
             ),
           ),
         ),
-      )
-      .limit(1);
-    if (
-      legacy ||
-      (await countEarlierDeferredDemand(
-        tx,
-        run.orgId,
-        lifecycle.intent.enqueuedAt,
-        runId,
-      )) > 0
-    ) {
-      return undefined;
-    }
+      );
+    const earlierDeferredDemand = await countEarlierDeferredDemand(
+      tx,
+      run.orgId,
+      lifecycle.intent.enqueuedAt,
+      runId,
+    );
     const capacity = await loadOrgConcurrencyState(tx, {
       orgId: run.orgId,
       at,
       activePendingAfter: new Date(at.getTime() - 15 * 60 * 1000),
     });
+    const limit = totalConcurrencyLimit({
+      baseLimit: cappedBaseConcurrencyLimit(capacity.baseConcurrencyLimit),
+      paidSlots: capacity.paidSlots,
+    });
     if (
-      capacity.activeRunCount >=
-      totalConcurrencyLimit({
-        baseLimit: cappedBaseConcurrencyLimit(capacity.baseConcurrencyLimit),
-        paidSlots: capacity.paidSlots,
-      })
+      capacity.activeRunCount +
+        Number(legacyEarlier?.count ?? 0) +
+        earlierDeferredDemand >=
+      limit
     ) {
       return undefined;
     }
