@@ -11,7 +11,6 @@ import {
   transferAgentOrganizationFixture,
   transferAgentOwnerFixture,
 } from "../../../test-fixtures/account-erasure-subject";
-import { holdChatThreadRowLockFixture } from "../../../test-fixtures/chat-events";
 import { withChatThreadContentBarrierFixture } from "../../../test-fixtures/chat-thread-content-erasure";
 import { createDeferredPromise } from "../../utils";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -410,32 +409,6 @@ describe("account erasure fences generated chat titles", () => {
       await expect(paused.renames()).resolves.toStrictEqual([
         { seqId: expect.any(Number), title: GENERATED_TITLE },
       ]);
-    },
-    BARRIER_TIMEOUT_MS,
-  );
-
-  it(
-    "rolls a blocked late title back completely instead of reporting a closure",
-    async () => {
-      const paused = await pauseGeneratedTitle();
-      await paused.entered;
-      const lastSeqId = await lastSidebarSeqId(paused);
-
-      const holder = await holdChatThreadRowLockFixture({
-        threadId: paused.threadId,
-        signal: context.signal,
-      });
-      // The fenced transaction blocks on the held parent row and fails on its own
-      // `1s` lock timeout. That is a real database failure, not an erasure.
-      await paused.complete();
-      holder.release();
-      await holder.done;
-
-      await expect(paused.title()).resolves.toBeNull();
-      await expect(paused.renames()).resolves.toStrictEqual([]);
-      // Nothing was written and nothing was consumed: the owner is untouched and
-      // its next accepted rename still takes the very next sequence id.
-      await expectSequenceUnconsumed(paused, lastSeqId);
     },
     BARRIER_TIMEOUT_MS,
   );

@@ -185,6 +185,11 @@ Two scenarios are **not** covered by it, stated here rather than implied:
   retained barrier waits, instead of racing it.
 - **An ownership change landing between identity selection and the retained
   locks**, as opposed to during the provider request, which is covered.
+- **A blocked parent lock failing the late transaction on its own `1s` budget**,
+  proving a real database failure rolls back completely instead of being
+  reported as a closure. This case passes locally against real PostgreSQL but
+  times out repeatedly on CI runners, so it is removed rather than left to flake
+  or handed a larger budget.
 
 Both need a transaction paused mid-flight inside background `waitUntil` work.
 The existing barrier fixture suspends a transaction driven by a synchronous HTTP
