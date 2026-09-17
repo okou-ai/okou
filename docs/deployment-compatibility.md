@@ -1759,6 +1759,30 @@ The App uses the exact attempt receipt, not account timestamps, account counts, 
 
 The receipt-capable writer from [#32880](https://github.com/vm0-ai/vm0/pull/32880) shipped in release `3d58eaa4609967a4f655f7cd61d0d7cd454ba2a1`: API `1.575.2` completed [production promotion](https://github.com/vm0-ai/vm0/actions/runs/34335229479/job/102417239410) on 2026-09-09 at 09:48:46 UTC, followed by App `0.873.0` at 09:50:38 UTC. Cleanup [#32870](https://github.com/vm0-ai/vm0/issues/32870) retires the optional response field and absent-ID branch after that release. The maintainer explicitly excludes old API rollback compatibility; no rollback restriction is added or changed. Pre-receipt APIs are outside this cleanup's supported boundary. Existing App requests remain accepted, and already-loaded pre-receipt App bundles are not retired by this change; no App version floor increase is included.
 
+### User cancellation in the App
+
+Cancelling a connector connection aborts the current App attempt: owned requests
+and polling stop, its popup closes when the browser still permits access, busy controls are
+released, and unfinished local continuations (including account naming and Chat
+callbacks) must not start or update a newer attempt. Explicit dialog close and
+Escape have the same meaning; outside presses do not cancel pending work. Once
+the App has confirmed success, the action is labelled Close rather than Cancel.
+Provider isolation policies can sever the popup handle, so closing that external
+window is best-effort and is not required to release the App's attempt.
+
+This is **local cancellation**, not a provider revocation or an API transaction
+rollback. The API may already have claimed OAuth state and may finish persisting
+credentials, grants, and the completion receipt after the App stops waiting.
+Keep those accounts and reconcile them through normal refresh/notifications;
+never delete accounts or revoke credentials as compensation. A late receipt
+cannot resume a cancelled App attempt, but it does not prevent an already-started
+API reconnect callback from writing the same account after a newer callback.
+
+No API, persisted-state, or Runner contract changes are needed. Already-loaded
+old Apps retain their previous, non-cancellable behavior until refreshed. A
+stronger cancellation or reconnect-write-order guarantee would require a
+separately designed server protocol.
+
 ## Pi memory summary storage and injection budget
 
 A valid `memory_summary.md` may exceed 2500 exact o200k tokens on disk. The

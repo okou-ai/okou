@@ -1,10 +1,40 @@
 import { command, computed, state, type Command } from "ccstate";
-import { onRef, withCleanup } from "./utils.ts";
+import { onRef, resetSignal, waitForOperation, withCleanup } from "./utils.ts";
 
 const pendingConnections$ = state<ReadonlySet<symbol>>(new Set());
 const progressDismissed$ = state(false);
 const progressDialogRequested$ = state(false);
 const connectionDialogs$ = state(0);
+const internalConnectionCompleted$ = state(false);
+const resetConnectionSignal$ = resetSignal();
+const activeConnection$ = state<{
+  readonly id: symbol;
+  readonly signal: AbortSignal;
+} | null>(null);
+
+export const connectorConnectionAttempt$ = computed((get) => {
+  return get(activeConnection$)?.id ?? null;
+});
+
+export const connectorConnectionCompleted$ = computed((get) => {
+  return get(connectorConnectionPending$) && get(internalConnectionCompleted$);
+});
+
+export const markConnectorConnectionCompleted$ = command(
+  ({ set }, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    set(internalConnectionCompleted$, true);
+  },
+);
+
+/** Cancel only the attempt that the displayed control belongs to. */
+export const cancelConnectorConnection$ = command(
+  ({ get, set }, attemptId: symbol | null) => {
+    if (attemptId !== null && get(activeConnection$)?.id === attemptId) {
+      set(resetConnectionSignal$);
+    }
+  },
+);
 
 export const connectorConnectionPending$ = computed((get) => {
   return get(pendingConnections$).size > 0;
@@ -51,8 +81,10 @@ export function withConnectorConnectionProgress<T, Args extends unknown[]>(
   source$: Command<Promise<T>, [...Args, AbortSignal]>,
   {
     showDialog = false,
+    cancellable = true,
   }: {
     readonly showDialog?: boolean;
+    readonly cancellable?: boolean;
   } = {},
 ): Command<Promise<T>, [...Args, AbortSignal]> {
   const tracked$ = command(
@@ -63,11 +95,32 @@ export function withConnectorConnectionProgress<T, Args extends unknown[]>(
     ): Promise<T> => {
       signal.throwIfAborted();
       if (!get(connectorConnectionPending$)) {
+        set(internalConnectionCompleted$, false);
+        if (cancellable) {
+          set(activeConnection$, {
+            id: Symbol(),
+            signal: set(resetConnectionSignal$, signal),
+          });
+        }
         set(progressDismissed$, false);
         // Most entry points already show connecting feedback. Only callers
         // without visible feedback opt in to the shared dialog.
         set(progressDialogRequested$, showDialog);
       }
+      const connection = get(activeConnection$);
+      if (showDialog) {
+        set(progressDialogRequested$, true);
+      }
+      if (cancellable && !connection) {
+        throw new Error("Pending connector connection has no owner");
+      }
+      // Preserve any narrower owner (for example device-code polling) while
+      // allowing the user to cancel the complete, nested connection attempt.
+      const attemptSignal = connection
+        ? AbortSignal.any([signal, connection.signal])
+        : signal;
+      const attemptArgs: [...Args, AbortSignal] = [...args];
+      attemptArgs[attemptArgs.length - 1] = attemptSignal;
       const invocation = Symbol();
       set(pendingConnections$, (pending) => {
         return new Set([...pending, invocation]);
@@ -81,16 +134,27 @@ export function withConnectorConnectionProgress<T, Args extends unknown[]>(
           remaining.delete(invocation);
           return remaining;
         });
+        if (
+          connection !== null &&
+          get(pendingConnections$).size === 0 &&
+          get(activeConnection$) === connection
+        ) {
+          set(activeConnection$, null);
+          set(resetConnectionSignal$);
+        }
       };
-      signal.addEventListener("abort", release, { once: true });
+      attemptSignal.addEventListener("abort", release, { once: true });
 
       return await withCleanup(
         (async () => {
           // Invoke synchronously so window.open retains the click's user activation.
-          return await set(source$, ...args);
+          return await waitForOperation(
+            set(source$, ...attemptArgs),
+            attemptSignal,
+          );
         })(),
         () => {
-          signal.removeEventListener("abort", release);
+          attemptSignal.removeEventListener("abort", release);
           release();
         },
       );

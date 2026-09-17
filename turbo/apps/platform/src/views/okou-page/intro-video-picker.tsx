@@ -95,13 +95,13 @@ function PickerOption({
       aria-pressed={selected}
       onClick={onSelect}
       className={cn(
-        "h-auto w-full justify-start gap-3 whitespace-normal rounded-xl border-border bg-card p-3 text-left hover:bg-gray-50",
+        "h-auto w-full justify-start gap-3 whitespace-normal rounded-xl border-border bg-card p-3 text-left hover:bg-state-hover",
         selected && "border-primary",
       )}
     >
       <PickerOptionBody
         leading={
-          <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-gray-50 text-muted-foreground">
+          <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-state-hover text-muted-foreground">
             {icon}
           </span>
         }
@@ -149,7 +149,7 @@ function AvatarVoicePickerOption({
       }}
       className={cn(
         VOICE_PREVIEW_CARD_CLASS,
-        "flex w-full cursor-pointer items-center gap-3 rounded-xl border border-border bg-card p-3 text-left transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "flex w-full cursor-pointer items-center gap-3 rounded-xl border border-border bg-card p-3 text-left transition-colors hover:bg-state-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         selected && "border-primary",
       )}
     >
@@ -232,7 +232,10 @@ function ConfigurationTabs({ signals }: PickerProps) {
       }),
       value: avatarSelectionLabel(t, avatar),
       Icon: UserRound,
-      selected: true,
+      // The avatar step is optional: "No avatar" is the default, not a choice
+      // the user made, so it must not claim a tick while the footer still asks
+      // for one.
+      selected: avatar !== null,
     },
     {
       id: "voice",
@@ -296,9 +299,9 @@ function ConfigurationTabs({ signals }: PickerProps) {
               }
             }}
             className={cn(
-              "relative h-10 min-w-0 justify-start gap-2 rounded-md px-2 py-1 text-left hover:bg-gray-50",
+              "relative h-10 min-w-0 justify-start gap-2 rounded-md px-2 py-1 text-left hover:bg-state-hover",
               tab === id &&
-                "bg-gray-50 text-foreground after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:bg-foreground",
+                "bg-state-selected text-foreground after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:bg-foreground",
             )}
           >
             <Icon className="hidden shrink-0 text-muted-foreground sm:block" />
@@ -354,9 +357,9 @@ function StyleTags({
               setGroup(group === id ? "all" : id);
             }}
             className={cn(
-              "rounded-md border border-border bg-background hover:bg-gray-50",
+              "rounded-md border border-border bg-background hover:bg-state-hover",
               group === id &&
-                "border-primary bg-gray-50 text-foreground ring-1 ring-primary",
+                "border-primary bg-state-selected text-foreground ring-1 ring-primary",
             )}
           >
             {label}
@@ -480,7 +483,7 @@ function AvatarPicker({ signals }: PickerProps) {
           }}
           className={cn(
             "gap-2 border-border px-2.5 text-xs",
-            selection.kind === "none" && "border-primary bg-gray-50",
+            selection.kind === "none" && "border-primary bg-state-selected",
           )}
         >
           <UserRoundX size={14} />
@@ -569,7 +572,7 @@ function VoicePicker({ signals }: PickerProps) {
       </div>
       <div className="flex min-h-0 flex-1 gap-5 px-4 pb-5 sm:px-6">
         <aside className="hidden w-44 shrink-0 self-start overflow-hidden rounded-xl border border-border md:block">
-          <div className="grid aspect-square place-items-center bg-gray-50">
+          <div className="grid aspect-square place-items-center bg-state-hover">
             {avatar.kind === "catalog" && avatar.avatar.previewImageUrl ? (
               <img
                 src={avatar.avatar.previewImageUrl}
