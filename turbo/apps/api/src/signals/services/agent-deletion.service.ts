@@ -182,12 +182,9 @@ async function deleteAgentInTransaction(tx: Tx, args: DeleteAgentArgs) {
 
   const removed = await deleteRunConversations(tx, lifecycle.runIds);
 
-  // Stable-context generations intentionally have no Agent FK, while heads
-  // retain artifacts through explicit references. Direct Agent deletion owns
-  // the complete edge and settles heads before generations.
+  // Direct Agent deletion settles stable heads before their non-FK generations.
   await deleteAgentStableContextLifecycleData(tx, args.agentId);
-  // A native Morning Brief delivery cascades away with this Agent, taking the
-  // only association to its still-unsent mail with it. Remove both first.
+  // Revoke unsent native Morning Brief mail before the Agent cascade.
   await revokeMorningBriefDeliveryOwnership(tx, {
     kind: "agent",
     agentId: args.agentId,
