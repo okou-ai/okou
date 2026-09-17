@@ -578,6 +578,14 @@ Business code must import the shared dialog rather than Base UI's dialog
 primitives; ESLint enforces this boundary. Preserve Base UI's focus, nested
 portal, outside-press, and animation-completion ownership when changing it.
 
+The windowed popup's radius is `rounded-2xl`, and a layer inset from one of its
+edges derives its own from that figure: inner radius = 16px minus the inset it
+keeps. The intro video picker's options layer sits 8px inside the dialog and
+therefore takes `rounded-lg`. Two equal radii separated by a gap are not
+concentric: the inner arc turns too late, and the corner reads as a mistake
+rather than as a nested surface. A layer that meets the edge with no inset
+keeps the dialog's own radius.
+
 ### Chat transcript cards
 
 `ChatCard` in `turbo/apps/platform/src/views/okou-page/components/chat-card.tsx`
