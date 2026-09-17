@@ -247,16 +247,33 @@ test("A search that matches nothing reuses the picker's no-match panel", async (
   ).resolves.toBeInTheDocument();
 });
 
-test("An empty catalog explains what will appear instead of showing no matches", async () => {
+test("An empty catalog leads with the upload entry instead of showing no matches", async () => {
   mockCustomTemplates([]);
 
   const { dialog } = await openCustomPanel();
   click(tabByText("Custom"));
 
   await expect(
-    within(dialog).findByText("No templates yet"),
+    within(dialog).findByText(
+      "Okou turns your file's design into a template you can reuse.",
+    ),
   ).resolves.toBeInTheDocument();
+  expect(
+    within(dialog).getByLabelText("Import your own file"),
+  ).toBeInTheDocument();
   expect(within(dialog).queryByText("No matches")).not.toBeInTheDocument();
+});
+
+test("An empty catalog offers no search box, because there is nothing to narrow", async () => {
+  mockCustomTemplates([]);
+
+  const { dialog } = await openCustomPanel();
+  click(tabByText("Custom"));
+  await within(dialog).findByLabelText("Import your own file");
+
+  expect(
+    within(dialog).queryByPlaceholderText("Search templates"),
+  ).not.toBeInTheDocument();
 });
 
 test("Opening a custom template shows its pages and management controls", async () => {

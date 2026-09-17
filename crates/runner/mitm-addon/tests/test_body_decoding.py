@@ -26,6 +26,7 @@ from body_limits import (
 from tests.body_decode_helpers import (
     pseudo_random_ascii,
     track_brotli_decompressor,
+    track_zstd_reader,
 )
 from usage.json_selective import JsonSelectiveExtractor
 
@@ -674,17 +675,20 @@ class TestDecompressBody:
 
         assert result == compressed
 
-    def test_zstd_respects_max_output(self, headers):
+    @pytest.mark.parametrize("max_output", [1, 64 * 1024])
+    def test_zstd_respects_max_output(self, headers, monkeypatch, max_output):
         # Bug #10128: before the fix the zstd branch used
         # ``decompressobj.decompress(data)`` which fully materialised
         # the plaintext before slicing — defeating the bomb cap.
         plaintext = b"A" * (10 * 1024 * 1024)  # 10 MB, high ratio → small payload
         compressed = zstandard.ZstdCompressor().compress(plaintext)
         assert len(compressed) < len(plaintext) // 100  # sanity: real high ratio
+        stats = track_zstd_reader(monkeypatch, max_output)
         hdrs = headers(("Content-Encoding", "zstd"))
-        result = decompress_body(compressed, hdrs, max_output=64 * 1024)
-        assert len(result) <= 64 * 1024
-        assert result == plaintext[: len(result)]
+        result = decompress_body(compressed, hdrs, max_output=max_output)
+        assert result == plaintext[:max_output]
+        assert 0 < stats["max_read"] <= max_output
+        assert stats["output_bytes"] == max_output
 
     def test_zstd_short_payload_returns_full_body(self, headers):
         # When decompressed size is under the cap, return all of it.

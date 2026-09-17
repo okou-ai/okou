@@ -21,7 +21,7 @@ import { settle } from "../utils";
  * non-null Agent reference that does not resolve is a missing canonical parent,
  * never permission to admit the thread user alone.
  */
-interface ChatThreadContentIdentity {
+export interface ChatThreadContentIdentity {
   readonly chatThreadId: string;
   readonly userId: string;
   readonly agentId: string | null;
@@ -30,7 +30,7 @@ interface ChatThreadContentIdentity {
 }
 
 /** The canonical parents moved between the unlocked resolution and the locks. */
-class ChatThreadContentOwnershipChangedError extends Error {
+export class ChatThreadContentOwnershipChangedError extends Error {
   constructor() {
     super("Chat thread content ownership changed while acquiring locks");
     this.name = "ChatThreadContentOwnershipChangedError";
@@ -205,6 +205,82 @@ async function lockChatThreadContentIdentity(
     throw new ChatThreadContentOwnershipChangedError();
   }
   return current;
+}
+
+/**
+ * Admission for a read-only **initiation gate**: deadlines -> content-free
+ * identity -> the caller's own ownership check -> shared B1 admission -> the
+ * caller's bounded read, committed without taking any business lock.
+ *
+ * An optional background workflow uses this to refuse to start producing
+ * content for a subject already known closed. It deliberately takes neither
+ * `agents` nor `chat_threads` KEY SHARE: those conflict with the `FOR UPDATE`
+ * that the chat queue takes on the same thread, so a gate that acquired them
+ * would contend with the very request that scheduled the work and delay it
+ * behind that request's own bounded lock wait.
+ *
+ * The consequence is explicit: this gate carries **no authority**. Taking no
+ * lock means a canonical parent can move immediately after it commits, so a
+ * caller must revalidate the identity it captured here under
+ * {@link withChatThreadContentWrite} before writing anything. Closure observed
+ * here is a reason to stop early, never a licence to write later.
+ *
+ * Within the gate the identity is still revalidated. Admission and the caller's
+ * read are both awaits, and under `READ COMMITTED` without a lock a transfer can
+ * commit during either one, so the same content-free identity is read again
+ * after the read and compared field by field. Without that, the gate could admit
+ * one account's subjects and then hand the caller content belonging to another:
+ * the writer's own pin check rejects the later write, but it cannot recall
+ * content the caller has already sent somewhere else. A moved identity raises
+ * {@link ChatThreadContentOwnershipChangedError} rather than returning a value.
+ *
+ * This narrows the window to the gate's own transaction; it does not close it.
+ * Ownership can still move between this `COMMIT` and whatever the caller does
+ * next, which is why the writer revalidates under retained locks, and it is not
+ * a fence around anything the caller sends outside the database.
+ */
+export async function withChatThreadContentAdmission<T>(
+  db: Db,
+  args: {
+    readonly chatThreadId: string;
+    readonly authorize: (identity: ChatThreadContentIdentity) => boolean;
+  },
+  read: (tx: Tx, identity: ChatThreadContentIdentity) => Promise<T>,
+  signal: AbortSignal,
+): Promise<ChatThreadContentWriteOutcome<T>> {
+  signal.throwIfAborted();
+  const outcome = await db.transaction(
+    async (tx): Promise<ChatThreadContentWriteOutcome<T>> => {
+      await setChatThreadContentDeadlines(tx);
+      const selected = await loadChatThreadContentIdentity(
+        tx,
+        args.chatThreadId,
+      );
+      if (!selected || !args.authorize(selected)) {
+        return { outcome: "missing" };
+      }
+      if (!(await admitChatThreadContentSubjects(tx, selected))) {
+        return { outcome: "closed" };
+      }
+      signal.throwIfAborted();
+      const value = await read(tx, selected);
+      const current = await loadChatThreadContentIdentity(
+        tx,
+        args.chatThreadId,
+      );
+      if (!current) {
+        return { outcome: "missing" };
+      }
+      if (!sameChatThreadContentIdentity(current, selected)) {
+        throw new ChatThreadContentOwnershipChangedError();
+      }
+      signal.throwIfAborted();
+      return { outcome: "written", value };
+    },
+    { isolationLevel: "read committed" },
+  );
+  signal.throwIfAborted();
+  return outcome;
 }
 
 /**

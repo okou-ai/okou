@@ -6297,8 +6297,7 @@
       "sourceFile": "{{filename}}에서"
     },
     "empty": {
-      "description": "업로드한 파일로 만든 템플릿이 여기에 표시됩니다.",
-      "title": "아직 템플릿이 없습니다"
+      "description": "Okou가 파일의 디자인을 재사용할 수 있는 템플릿으로 만들어 줍니다."
     },
     "loadFailed": "템플릿을 불러오지 못했습니다.",
     "pageCount_other": "{{count}}페이지",
