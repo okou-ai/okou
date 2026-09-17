@@ -586,6 +586,17 @@ export const cronConnectorCatalogContract = c.router({
     },
     summary: "Sync the validated connector catalog snapshot",
   },
+  warmV4: {
+    method: "GET",
+    path: "/api/cron/warm-connector-catalog-v4",
+    headers: authHeadersSchema,
+    responses: {
+      200: connectorCatalogSyncResponseSchema,
+      401: apiErrorSchema,
+      409: apiErrorSchema,
+    },
+    summary: "Validate and warm connector catalog v4 without changing serving",
+  },
 });
 
 export const cronOfficialWorkflowCatalogContract = c.router({

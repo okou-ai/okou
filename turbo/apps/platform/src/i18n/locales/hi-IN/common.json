@@ -3559,6 +3559,7 @@
           "sourceUnavailable": "स्रोत अनुपलब्ध",
           "stale": "बासी",
           "unchanged": "स्थिर",
+          "unsupportedProtocol": "असमर्थित प्रोटोकॉल",
           "unsupportedSchema": "असमर्थित स्कीमा"
         }
       },

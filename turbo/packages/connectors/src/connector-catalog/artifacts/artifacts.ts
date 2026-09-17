@@ -14,6 +14,7 @@ import {
 import {
   catalogSourceSchema,
   connectorAccessSourceSchema,
+  legacyConnectorAccessSourceSchema,
   connectorAuthClientSourceSchema,
   connectorAuthMethodIdSchema,
   connectorRevokeSourceSchema,
@@ -21,11 +22,23 @@ import {
   connectorValueRefSchema,
   internalOptionNameSchema,
   publicFieldIdSchema,
+  noneGrantSourceSchema,
+  automaticGrantSourceSchema,
+  connectorMcpSchema,
+  connectorReplacementSchema,
+  validateConnectorProtocolSemantics,
 } from "./source";
 import { isConnectorCatalogIconKey } from "./icon";
 
 export const SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION = 3;
+export type ConnectorCatalogGeneration = 3 | 4;
 export const CONNECTOR_CATALOG_ACTIVE_KEY = `connectors/v${SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION}/active.json`;
+
+export function connectorCatalogActiveKey(
+  schemaVersion: ConnectorCatalogGeneration,
+): string {
+  return `connectors/v${schemaVersion}/active.json`;
+}
 
 const CONNECTOR_SKILL_MAX_FILES = 64;
 const CONNECTOR_SKILL_MAX_TOTAL_BYTES = 1024 * 1024;
@@ -92,7 +105,7 @@ const connectorCatalogDeviceStartOptionSchema = z
   })
   .strict();
 
-const connectorCatalogGrantSchema = z.discriminatedUnion("kind", [
+const legacyConnectorCatalogGrantSchema = z.discriminatedUnion("kind", [
   z
     .object({
       kind: z.literal("manual"),
@@ -129,6 +142,12 @@ const connectorCatalogGrantSchema = z.discriminatedUnion("kind", [
       startOptions: z.array(connectorCatalogDeviceStartOptionSchema),
     })
     .strict(),
+]);
+
+const connectorCatalogGrantSchema = z.discriminatedUnion("kind", [
+  noneGrantSourceSchema,
+  automaticGrantSourceSchema,
+  ...legacyConnectorCatalogGrantSchema.options,
 ]);
 
 export const connectorCatalogAuthMethodSchema = z
@@ -197,6 +216,8 @@ export const connectorCatalogArtifactConnectorSchema = z
     category: z.string().min(1),
     generation: z.array(z.string().min(1)),
     tags: z.array(z.string().min(1)),
+    mcp: connectorMcpSchema.optional(),
+    replaces: connectorReplacementSchema.optional(),
     authMethods: z.array(connectorCatalogAuthMethodSchema).min(1),
     icon: connectorCatalogIconSchema,
     skill: connectorCatalogSkillSchema,
@@ -204,6 +225,24 @@ export const connectorCatalogArtifactConnectorSchema = z
   })
   .strict()
   .superRefine((connector, context) => {
+    try {
+      validateConnectorProtocolSemantics({
+        connectorSlug: connector.slug,
+        ...connector,
+      });
+    } catch {
+      context.addIssue({
+        code: "custom",
+        message: "Invalid MCP authentication or replacement contract",
+      });
+    }
+    if (connector.mcp !== undefined && connector.skill.kind !== "none") {
+      context.addIssue({
+        code: "custom",
+        message: "MCP connectors must declare skill: none",
+        path: ["skill"],
+      });
+    }
     const methodIds = connector.authMethods.map((method) => {
       return method.id;
     });
@@ -233,11 +272,24 @@ export const connectorCatalogArtifactConnectorSchema = z
     }
   });
 
+const legacyConnectorCatalogAuthMethodSchema =
+  connectorCatalogAuthMethodSchema.extend({
+    grant: legacyConnectorCatalogGrantSchema,
+    access: legacyConnectorAccessSourceSchema,
+  });
+
+const legacyConnectorCatalogArtifactConnectorSchema =
+  connectorCatalogArtifactConnectorSchema.safeExtend({
+    mcp: z.never().optional(),
+    replaces: z.never().optional(),
+    authMethods: z.array(legacyConnectorCatalogAuthMethodSchema).min(1),
+  });
+
 export const connectorCatalogArtifactSchema = z
   .object({
     ...artifactHeaderShape(),
     categoryMetadata: catalogSourceSchema.shape.categoryMetadata,
-    connectors: z.array(connectorCatalogArtifactConnectorSchema).min(1),
+    connectors: z.array(legacyConnectorCatalogArtifactConnectorSchema).min(1),
   })
   .strict()
   .superRefine((artifact, context) => {
@@ -256,9 +308,49 @@ export const connectorCatalogArtifactSchema = z
     }
   });
 
-export type ConnectorCatalogArtifact = z.infer<
-  typeof connectorCatalogArtifactSchema
->;
+export const connectorCatalogV4ArtifactSchema = z
+  .object({
+    ...connectorCatalogArtifactSchema.shape,
+    artifactSchemaVersion: z.literal(4),
+    connectors: z.array(connectorCatalogArtifactConnectorSchema).min(1),
+  })
+  .strict()
+  .superRefine((artifact, context) => {
+    const slugs = new Set(
+      artifact.connectors.map((connector) => {
+        return connector.slug;
+      }),
+    );
+    if (slugs.size !== artifact.connectors.length) {
+      context.addIssue({
+        code: "custom",
+        message: "Connector catalog slugs must be unique",
+        path: ["connectors"],
+      });
+    }
+    const owners = new Set<string>();
+    for (const connector of artifact.connectors) {
+      const predecessor = connector.replaces?.connectorSlug;
+      if (predecessor === undefined) {
+        continue;
+      }
+      if (owners.has(predecessor) || slugs.has(predecessor)) {
+        context.addIssue({
+          code: "custom",
+          message: "Replacement must have one owner and omit its predecessor",
+          path: ["connectors"],
+        });
+      }
+      owners.add(predecessor);
+    }
+  });
+
+export type ConnectorCatalogArtifact = Omit<
+  z.infer<typeof connectorCatalogV4ArtifactSchema>,
+  "artifactSchemaVersion"
+> & {
+  artifactSchemaVersion: ConnectorCatalogGeneration;
+};
 export type ConnectorCatalogArtifactConnector = z.infer<
   typeof connectorCatalogArtifactConnectorSchema
 >;

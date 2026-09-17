@@ -83,6 +83,7 @@ const SCHEMA = {
   R2_ACCOUNT_ID: z.string().min(1),
   R2_SECRET_ACCESS_KEY: z.string().min(1),
   R2_USER_STORAGES_BUCKET_NAME: z.string().min(1),
+  CONNECTOR_CATALOG_SERVING_GENERATION: z.enum(["3", "4"]).default("3"),
   R2_PRIVATE_ARTIFACTS_BUCKET_NAME: z.string().min(1).optional(),
   R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID: z.string().min(1).optional(),
   R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY: z.string().min(1).optional(),

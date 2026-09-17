@@ -27,11 +27,11 @@ import { logger } from "../../lib/log";
 import { singleton, testOverride } from "../../lib/singleton";
 import type { ReadonlyDb } from "../external/db";
 import { onRejection, settle } from "../utils";
-import {
-  SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-  type ConnectorCatalogArtifact,
-  type ConnectorCatalogArtifactConnector,
-  type ConnectorCatalogAuthMethod,
+import type {
+  ConnectorCatalogGeneration,
+  ConnectorCatalogArtifact,
+  ConnectorCatalogArtifactConnector,
+  ConnectorCatalogAuthMethod,
 } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
 import {
   connectorCatalogArtifactFailureCode,
@@ -71,7 +71,7 @@ const CONNECTOR_CATALOG_ICON_BASE_URL = "https://static.vm0.io/";
 
 export interface ExternalCatalogIdentity {
   readonly sourceId: string;
-  readonly schemaVersion: number;
+  readonly schemaVersion: ConnectorCatalogGeneration;
   readonly catalogVersion: string;
   readonly catalogDigest: string;
   readonly capabilityDigest: string;
@@ -250,6 +250,8 @@ function requestedScopes(
       return method.grant.scopes;
     }
     case "manual":
+    case "none":
+    case "automatic":
     case "openid-auth": {
       return [];
     }
@@ -317,6 +319,7 @@ function externalCatalogJoin(capabilityDigest: string) {
 async function readCurrentIdentity(args: {
   readonly db: ReadonlyDb;
   readonly sourceId: string;
+  readonly generation: ConnectorCatalogGeneration;
   readonly capabilityDigest: string;
   readonly timing?: ConnectorCatalogLoadTiming;
 }): Promise<ExternalCatalogIdentity | undefined> {
@@ -334,10 +337,7 @@ async function readCurrentIdentity(args: {
         .where(
           and(
             eq(connectorCatalogActiveSnapshot.sourceId, args.sourceId),
-            eq(
-              connectorCatalogActiveSnapshot.schemaVersion,
-              SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-            ),
+            eq(connectorCatalogActiveSnapshot.schemaVersion, args.generation),
           ),
         )
         .limit(1);
@@ -346,7 +346,7 @@ async function readCurrentIdentity(args: {
   return row
     ? {
         sourceId: args.sourceId,
-        schemaVersion: row.schemaVersion,
+        schemaVersion: args.generation,
         catalogVersion: row.catalogVersion,
         catalogDigest: row.catalogDigest,
         capabilityDigest: args.capabilityDigest,
@@ -416,6 +416,7 @@ async function readCurrentCatalog(args: {
   }
 
   const decodeArgs = {
+    schemaVersion: args.identity.schemaVersion,
     catalogGzip: row.catalogGzip,
     catalogRawSize: row.catalogRawSize,
     catalogVersion: args.identity.catalogVersion,
@@ -542,11 +543,12 @@ async function loadAcceptedConnectorCatalogSnapshotAttempt(
   db: ReadonlyDb,
   timing: ConnectorCatalogLoadTiming | undefined,
 ): Promise<AcceptedConnectorCatalogSnapshot | undefined> {
-  const sourceId = connectorCatalogSource().sourceId;
+  const source = connectorCatalogSource();
   const capability = connectorCatalogExecutableCapabilityState();
   const currentIdentity = await readCurrentIdentity({
     db,
-    sourceId,
+    sourceId: source.sourceId,
+    generation: source.generation,
     capabilityDigest: capability.digest,
     ...(timing === undefined ? {} : { timing }),
   });
@@ -795,6 +797,12 @@ function connectorCatalogItem(
     ...(rank === Number.MAX_SAFE_INTEGER ? {} : { popularityRank: rank }),
     generation: [...effective.connector.generation],
     tags: [...effective.connector.tags],
+    ...(effective.connector.mcp === undefined
+      ? {}
+      : { mcp: { ...effective.connector.mcp } }),
+    ...(effective.connector.replaces === undefined
+      ? {}
+      : { replaces: { ...effective.connector.replaces } }),
     authMethods: effective.authMethods.map(authMethodSummaryForCatalog),
     permissionSummary: permissionSummaryForCatalog(effective.connector),
   };

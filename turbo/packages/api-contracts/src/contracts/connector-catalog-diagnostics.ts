@@ -41,6 +41,7 @@ export const connectorCredentialStorageReadinessSchema = z.object({
 });
 
 export const connectorCatalogDiagnosticsSchema = z.object({
+  schemaVersion: z.union([z.literal(3), z.literal(4)]).optional(),
   state: z.enum(["never-synced", "current", "stale"]),
   active: z
     .object({

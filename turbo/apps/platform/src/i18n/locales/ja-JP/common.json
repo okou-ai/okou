@@ -3546,6 +3546,7 @@
           "sourceUnavailable": "ソースが利用できません",
           "stale": "古い",
           "unchanged": "変わらない",
+          "unsupportedProtocol": "サポートされていないプロトコル",
           "unsupportedSchema": "サポートされていないスキーマ"
         }
       },

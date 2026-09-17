@@ -3614,6 +3614,7 @@
           "sourceUnavailable": "Source indisponible",
           "stale": "Périmé",
           "unchanged": "Inchangé",
+          "unsupportedProtocol": "Protocole non pris en charge",
           "unsupportedSchema": "Schéma non pris en charge"
         }
       },

@@ -24,6 +24,7 @@ import { optionalEnv } from "../lib/env";
 import { nowDate } from "../lib/time";
 import { reconcileConnectorCatalogCompatibility$ } from "../signals/services/connector-catalog-compatibility.service";
 import { syncConnectorCatalog$ } from "../signals/services/connector-catalog-sync.service";
+import { connectorCatalogServingGeneration } from "../signals/services/connector-catalog-source";
 import { onRejection } from "../signals/utils";
 import rawDevSeedSkillVolumes from "./dev-seed-skill-volumes.json";
 
@@ -867,8 +868,18 @@ async function devSeed() {
   writeLine("Syncing connector catalog");
   const store = createStore();
   const signal = new AbortController().signal;
-  const connectorCatalog = await store.set(syncConnectorCatalog$, signal);
-  await store.set(reconcileConnectorCatalogCompatibility$, signal);
+  const catalogGeneration = connectorCatalogServingGeneration();
+  const connectorCatalog = await store.set(
+    syncConnectorCatalog$,
+    catalogGeneration,
+    true,
+    signal,
+  );
+  await store.set(
+    reconcileConnectorCatalogCompatibility$,
+    catalogGeneration,
+    signal,
+  );
   if (!connectorCatalog.active) {
     throw new Error(
       "Connector catalog seed did not produce an active snapshot",

@@ -1844,6 +1844,21 @@ below the producer change only stops new larger sources; it does not rewrite
 what was already published. The stored source itself is never truncated or
 rewritten by any reader, producer or rollback.
 
+## Connector catalog v4 reader preparation
+
+The API supports strict v3 and v4 catalog readers while
+`CONNECTOR_CATALOG_SERVING_GENERATION` defaults to `3`. The authenticated v4
+warm-up endpoint accepts and projects v4 into independently keyed rows without
+changing serving selection. Earlier APIs continue using their v3 rows; no
+database migration, source-salt change or historical-byte rewrite is needed.
+Selected-v4 failures retain only accepted v4 and never downgrade to v3.
+
+[The v4 rollout guide](connector-catalog-v4.md) defines activation, capability,
+rollback and bridge-removal gates. Reader recognition does not enable MCP or
+Automatic OAuth. The temporary dual reader remains until v3-only serving and
+supported rollback APIs have drained and the integration gates are met;
+[#34913](https://github.com/vm0-ai/okou/issues/34913) owns removal.
+
 ## PostHog CIMD OAuth
 
 PostHog OAuth uses a public client identified by

@@ -3559,6 +3559,7 @@
           "sourceUnavailable": "Quelle nicht verfügbar",
           "stale": "Veraltet",
           "unchanged": "Unverändert",
+          "unsupportedProtocol": "Nicht unterstütztes Protokoll",
           "unsupportedSchema": "Nicht unterstütztes Schema"
         }
       },

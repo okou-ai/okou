@@ -17,7 +17,10 @@ type DeviceStartOption = Extract<
   ConnectorCatalogAuthMethod["grant"],
   { readonly kind: "device-auth" }
 >["startOptions"][number];
-type EnvironmentBindings = ConnectorCatalogAuthMethod["access"]["envBindings"];
+type EnvironmentBindings = Extract<
+  ConnectorCatalogAuthMethod["access"],
+  { readonly kind: "static" }
+>["envBindings"];
 type GeneratedFirewall = Extract<
   ConnectorCatalogArtifactConnector["firewall"],
   { readonly kind: "generated" }

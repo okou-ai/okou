@@ -3546,6 +3546,7 @@
           "sourceUnavailable": "소스 사용 불가",
           "stale": "오래됨",
           "unchanged": "변경 없음",
+          "unsupportedProtocol": "지원되지 않는 프로토콜",
           "unsupportedSchema": "지원되지 않는 스키마"
         }
       },

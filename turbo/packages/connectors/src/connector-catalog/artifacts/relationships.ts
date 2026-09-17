@@ -109,7 +109,9 @@ function sourceGrant(method: ConnectorCatalogAuthMethod): ConnectorGrantSource {
     }
     case "auth-code":
     case "external-code":
-    case "openid-auth": {
+    case "openid-auth":
+    case "none":
+    case "automatic": {
       return method.grant;
     }
   }
@@ -151,6 +153,10 @@ function validateConnectorSemantics(artifact: ConnectorCatalogArtifact): void {
       category: connector.category,
       generation: connector.generation,
       tags: connector.tags,
+      ...(connector.mcp === undefined ? {} : { mcp: connector.mcp }),
+      ...(connector.replaces === undefined
+        ? {}
+        : { replaces: connector.replaces }),
       authMethods: connector.authMethods.map((method) => {
         return {
           id: method.id,
@@ -232,10 +238,14 @@ function validateFirewallBindings(args: {
 }): void {
   const knownEnvironmentNames = new Set<string>();
   for (const method of args.connector.authMethods) {
-    for (const name of Object.keys(method.access.envBindings)) {
+    for (const name of Object.keys(
+      "envBindings" in method.access ? method.access.envBindings : {},
+    )) {
       knownEnvironmentNames.add(name);
     }
-    for (const name of method.access.platformSecrets ?? []) {
+    for (const name of "platformSecrets" in method.access
+      ? (method.access.platformSecrets ?? [])
+      : []) {
       knownEnvironmentNames.add(name);
     }
   }
@@ -345,8 +355,62 @@ export function deriveConnectorCatalogFirewallRouting(
   };
 }
 
+function validateGenericMcpFirewall(
+  firewall: Extract<
+    ConnectorCatalogArtifactConnector["firewall"],
+    { kind: "generated" }
+  >,
+  api: FirewallConfig["apis"][number],
+): void {
+  if (
+    Object.keys(api.auth).length !== 0 ||
+    (api.permissions?.length ?? 0) !== 0 ||
+    Object.keys(firewall.config.placeholders ?? {}).length !== 0 ||
+    firewall.categories !== null ||
+    firewall.defaultAllowed !== null ||
+    firewall.defaultUnknownPolicy !== "allow"
+  ) {
+    throw new ConnectorCatalogRelationshipError(
+      "mcp-firewall-contract",
+      "MCP generic auth requires runtime-owned credentials and service-level transport access",
+    );
+  }
+}
+
+function validateMcpFirewall(
+  connector: ConnectorCatalogArtifactConnector,
+): void {
+  if (connector.mcp === undefined) {
+    return;
+  }
+  const api =
+    connector.firewall.kind === "generated"
+      ? connector.firewall.config.apis[0]
+      : undefined;
+  if (
+    connector.firewall.kind !== "generated" ||
+    connector.firewall.config.apis.length !== 1 ||
+    api === undefined ||
+    api.base !== connector.mcp.endpoint ||
+    api.hostPolicy !== undefined
+  ) {
+    throw new ConnectorCatalogRelationshipError(
+      "mcp-firewall-contract",
+      "MCP firewall must target exactly its fixed endpoint",
+    );
+  }
+  if (
+    connector.authMethods.some((method) => {
+      return method.grant.kind === "none" || method.grant.kind === "automatic";
+    })
+  ) {
+    validateGenericMcpFirewall(connector.firewall, api);
+  }
+}
+
 function validateFirewallSemantics(artifact: ConnectorCatalogArtifact): void {
   for (const connector of artifact.connectors) {
+    validateMcpFirewall(connector);
     if (connector.firewall.kind === "none") {
       continue;
     }
