@@ -43,6 +43,7 @@ function uploadId(index: number): string {
 function installUploadRoutes(): {
   filenameOf: (id: string) => string | undefined;
   contentTypeOf: (id: string) => string | undefined;
+  uploadCount: () => number;
 } {
   const filenames = new Map<string, string>();
   const contentTypes = new Map<string, string>();
@@ -92,6 +93,9 @@ function installUploadRoutes(): {
     },
     contentTypeOf: (id: string) => {
       return contentTypes.get(id);
+    },
+    uploadCount: () => {
+      return issued;
     },
   };
 }
@@ -194,7 +198,7 @@ describe("okou user-template publish", () => {
   });
 
   it("refuses a pages directory with no images", async () => {
-    installUploadRoutes();
+    const uploads = installUploadRoutes();
     writeFileSync(join(pagesDir, "notes.txt"), "no pages here");
 
     await expect(
@@ -212,6 +216,13 @@ describe("okou user-template publish", () => {
         packageDir,
       ]),
     ).rejects.toThrow("process.exit called");
-    expect(mockConsoleError).toHaveBeenCalled();
+    // Both halves matter. Asserting only that console.error was called would
+    // pass just as well if the directory had been accepted, every file
+    // uploaded, and the unmocked publish route had then failed: that path also
+    // prints an error and exits. The message pins which refusal happened, and
+    // the upload count pins that it happened before any work.
+    const errors = mockConsoleError.mock.calls.flat().join("\n");
+    expect(errors).toContain(`No .png page images in ${pagesDir}`);
+    expect(uploads.uploadCount()).toBe(0);
   });
 });
