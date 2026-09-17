@@ -31,6 +31,13 @@ export type ComposerTemplateTask = Exclude<
   "presentation"
 >;
 
+/** A general task owns the chip row itself; the rest resolve to a create mode. */
+function isComposerGeneralTask(
+  task: ComposerTask | null,
+): task is "workflow" | "website" | "visualization" {
+  return task === "workflow" || task === "website" || task === "visualization";
+}
+
 export function createComposerTaskChipsSignals(
   create: ComposerCreateSignals,
   workflowActions: WorkflowRecommendationActions,
@@ -55,39 +62,40 @@ export function createComposerTaskChipsSignals(
     workflowVisible$,
     workflowActions,
   );
+  const applyTask$ = command(({ set }, task: ComposerTask | null) => {
+    set(workflows.close$);
+    if (task === null || isComposerGeneralTask(task)) {
+      set(internalGeneralTask$, task);
+      set(create.setMode$, null);
+      return;
+    }
+    set(internalGeneralTask$, null);
+    set(create.selectCommand$, task);
+  });
+  /** The chip row toggles: choosing the task already showing clears it. */
   const selectTask$ = command(({ get, set }, task: ComposerTask | null) => {
     if (!get(enabled$)) {
       return;
     }
-    set(workflows.close$);
-    const next = get(task$) === task ? null : task;
-    set(
-      internalGeneralTask$,
-      next === "workflow" || next === "website" || next === "visualization"
-        ? next
-        : null,
-    );
-    if (
-      next === null ||
-      next === "workflow" ||
-      next === "website" ||
-      next === "visualization"
-    ) {
-      set(create.setMode$, null);
-    } else {
-      set(create.selectCommand$, next);
-    }
+    set(applyTask$, get(task$) === task ? null : task);
   });
   /**
    * Opens a task without the chip's toggle. A caller outside the row states
    * what the member has just started rather than pressing the chip, so
    * repeating it has to leave the surface the last one opened standing.
+   *
+   * A create mode is its own surface and carries the slash panel's own switch,
+   * so it opens whether or not the chips are on. A general task has only the
+   * chip row to live in, so there it waits for that switch.
    */
   const openTask$ = command(({ get, set }, task: ComposerTask) => {
     if (get(task$) === task) {
       return;
     }
-    set(selectTask$, task);
+    if (isComposerGeneralTask(task) && !get(enabled$)) {
+      return;
+    }
+    set(applyTask$, task);
   });
   const internalIdeaPages$ = state({
     image: 0,

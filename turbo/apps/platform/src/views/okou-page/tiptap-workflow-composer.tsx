@@ -42,10 +42,7 @@ import {
 } from "./composer-template-catalog.ts";
 import type { ComposerPasteEvent } from "./composer-input-types.ts";
 
-import {
-  composerCreatePlaceholder,
-  type ComposerCreateMode,
-} from "../../signals/okou-page/composer-create.ts";
+import { composerCreatePlaceholder } from "../../signals/okou-page/composer-create.ts";
 
 function isMacKeyboard(): boolean {
   return /Mac|iPhone|iPad|iPod/.test(navigator.userAgent);
@@ -333,26 +330,18 @@ interface ComposerSuggestionMenuState {
 }
 
 /**
- * The three categories that are also composer create modes enter that mode, so
- * choosing "Presentation" from the panel does exactly what choosing it from the
- * task chips does. Website and Workflow have no create mode, so they open the
- * template picker on their own tab instead.
+ * Every row names one composer task, so choosing "Presentation" here leaves the
+ * composer exactly where the Presentation chip would. Which of those tasks can
+ * actually be entered is the chips' own call, and a row that cannot enter one
+ * still opens the picker.
  */
-const SLASH_TEMPLATE_CATEGORY_CREATE_MODE = {
+const SLASH_TEMPLATE_CATEGORY_TASK = {
   slides: "presentation",
   illustration: "image",
   video: "video",
-} as const satisfies Partial<Record<SlashTemplateCategory, ComposerCreateMode>>;
-
-function createModeForCategory(
-  category: SlashTemplateCategory,
-): ComposerCreateMode | undefined {
-  return category in SLASH_TEMPLATE_CATEGORY_CREATE_MODE
-    ? SLASH_TEMPLATE_CATEGORY_CREATE_MODE[
-        category as keyof typeof SLASH_TEMPLATE_CATEGORY_CREATE_MODE
-      ]
-    : undefined;
-}
+  website: "website",
+  workflow: "workflow",
+} as const satisfies Record<SlashTemplateCategory, ComposerTask>;
 
 /**
  * The panel's own switch is the only gate: the caller withholds the query while
@@ -386,8 +375,8 @@ function useSlashTemplatePanelActions(
   const enabled =
     useGet(featureSwitch$)[FeatureSwitchKey.ComposerSlashTemplatePanel] ===
     true;
-  const selectCreate = useSet(composer.create.selectCommand$);
   const clearSlashRange = useSet(composer.suggestion.clearSlashRange$);
+  const openTask = useSet(composer.taskChips.openTask$);
   const insertTemplate = useSet(composer.template.insertTemplate$);
   const openTemplatePicker = useSet(composer.template.openTemplatePicker$);
   const runDeckImport = useSet(importPresentationTemplateDeck$);
@@ -398,12 +387,15 @@ function useSlashTemplatePanelActions(
   return {
     enabled,
     categories,
+    /**
+     * Consume the token and retire the menu first, then land on the task, and
+     * only then open the dialog: the task activation focuses the editor, so
+     * opening the picker ahead of it would hand that focus straight back out.
+     */
     selectCategory(category: SlashTemplateCategory): void {
-      const mode = createModeForCategory(category);
-      if (mode) {
-        selectCreate(mode);
-        return;
-      }
+      clearSlashRange();
+      close();
+      openTask(SLASH_TEMPLATE_CATEGORY_TASK[category]);
       openTemplatePicker({ kind: "insert", category });
     },
     /**
@@ -429,6 +421,8 @@ function useSlashTemplatePanelActions(
       );
     },
     browseAll(): void {
+      clearSlashRange();
+      close();
       openTemplatePicker({ kind: "insert", category: "slides" });
     },
   };
