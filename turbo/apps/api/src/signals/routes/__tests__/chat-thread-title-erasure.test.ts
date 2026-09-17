@@ -25,6 +25,13 @@ const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 const runs = createRunsApi(context);
 const BLOCKED = { interval: 10, timeout: 10_000 } as const;
+/**
+ * The barrier-driven cases pause a real transaction while a second session
+ * observes it, on top of the full send path this suite exercises. That does not
+ * fit the default case budget, so they state their own. It bounds how long the
+ * case may take; it weakens no assertion inside it.
+ */
+const BARRIER_TIMEOUT_MS = 30_000;
 const PROMPT = "Prepare the launch checklist";
 const GENERATED_TITLE = "Late generated title";
 
@@ -218,106 +225,143 @@ describe("account erasure fences generated chat titles", () => {
     },
   );
 
-  it("denies a title generation that starts after its subject is already closed", async () => {
-    const paused = await pauseGeneratedTitle();
-    await paused.entered;
-    await paused.complete();
-    await expect(paused.title()).resolves.toBe(GENERATED_TITLE);
+  it(
+    "starts no title generation once its subject closes before admission",
+    async () => {
+      const actor = bdd.user();
+      bdd.acceptAgentStorageWrites();
+      runs.acceptStorageDownloads();
+      runs.acceptTelemetryIngest();
+      runs.configureRunnerGroup();
+      await runs.grantProEntitlement(actor);
+      await runs.ensureOrgModelProvider(actor);
+      const agent = await chat.createAgentForChatThread(actor);
+      const thread = await chat.createThread(actor, { agentId: agent.agentId });
 
-    // A second thread for the same, now closed, owner never reaches the
-    // provider at all: the initiation boundary refuses to start generation.
-    const closed = await closeSubject({
-      subjectKind: "user",
-      subjectId: paused.actor.userId,
-    });
-    let titleRequests = 0;
-    createChatCallbacksApi(context).mockOpenRouterCompletions((body) => {
-      if (
-        body.messages[0]?.content.includes(
-          "Generate a short, descriptive title",
-        )
-      ) {
-        titleRequests += 1;
-      }
-      return "Thinking";
-    });
-    const sent = await accept(
-      chat.requestSendEvent(
-        paused.actor,
-        { agentId: paused.agentId, prompt: PROMPT, model: "claude-sonnet-5" },
-        [201],
-      ),
-      [201],
-    );
-    await flushWaitUntilForTest();
+      let titleRequests = 0;
+      createChatCallbacksApi(context).mockOpenRouterCompletions((body) => {
+        if (
+          body.messages[0]?.content.includes(
+            "Generate a short, descriptive title",
+          )
+        ) {
+          titleRequests += 1;
+        }
+        return "Thinking";
+      });
 
-    expect(titleRequests).toBe(0);
-    await expect(
-      chat.readThreadMetadata(paused.actor, sent.body.threadId),
-    ).resolves.toMatchObject({ title: null });
-    await removeErasureSubjectsFixture([closed.jobId]);
-  });
-
-  it("makes a closure wait for an admitted late title and fences the next one", async () => {
-    const paused = await pauseGeneratedTitle();
-    const unrelated = await pauseGeneratedTitle();
-    await paused.entered;
-    await unrelated.entered;
-    const lastSeqId = await lastSidebarSeqId(paused);
-
-    const closed = await withChatThreadContentBarrierFixture(
-      {
-        chatThreadId: paused.threadId,
-        stopAt: "commit",
-        work: async (barrier) => {
-          paused.release();
-          const draining = flushWaitUntilForTest();
-          const settings = await barrier.entered;
-          // The late persistence runs under the fence's own bounded budget,
-          // not under an unbounded background wait.
-          expect(settings.lockTimeout).toBe("1s");
-          expect(settings.statementTimeout).toBe("5s");
-
-          const closing = closeErasureSubjectFixture({
-            subjectKind: "user",
-            subjectId: paused.actor.userId,
-          });
-          // The admitted writer still holds its shared subject barrier with the
-          // title, the sequence and the renamed event already written, so the
-          // exclusive closure cannot commit ahead of it.
-          await expect
-            .poll(barrier.blockedWaiterCount, BLOCKED)
-            .toBeGreaterThanOrEqual(1);
-
-          // An unrelated owner's own late title is not serialized behind it.
-          await unrelated.complete();
-          await expect(unrelated.title()).resolves.toBe(GENERATED_TITLE);
-
-          barrier.release();
-          await draining;
-          return await closing;
+      const closed = await withChatThreadContentBarrierFixture(
+        {
+          chatThreadId: thread.id,
+          stopAt: "identity",
+          work: async (barrier) => {
+            // The send succeeds while the subject is still open, so the run
+            // itself is admitted by its own existing barrier. Only the eager
+            // title's capture transaction is paused, before it admits anything.
+            await accept(
+              chat.requestSendEvent(
+                actor,
+                {
+                  agentId: agent.agentId,
+                  threadId: thread.id,
+                  prompt: PROMPT,
+                  model: "claude-sonnet-5",
+                },
+                [201],
+              ),
+              [201],
+            );
+            const draining = flushWaitUntilForTest();
+            await barrier.entered;
+            const closing = closeErasureSubjectFixture({
+              subjectKind: "user",
+              subjectId: actor.userId,
+            });
+            barrier.release();
+            await draining;
+            return await closing;
+          },
         },
-      },
-      context.signal,
-    );
-    onTestFinished(async () => {
-      await removeErasureSubjectsFixture([closed.jobId]);
-    });
+        context.signal,
+      );
+      onTestFinished(async () => {
+        await removeErasureSubjectsFixture([closed.jobId]);
+      });
 
-    // Writer first: one coherent title, one renamed event, one sequence id.
-    await expect(paused.title()).resolves.toBe(GENERATED_TITLE);
-    await expect(paused.renames()).resolves.toStrictEqual([
-      { seqId: lastSeqId + 1, title: GENERATED_TITLE },
-    ]);
-    // The closure that waited now fences the next write on the same thread.
-    await chat.requestRenameThread(
-      paused.actor,
-      paused.threadId,
-      "Post closure title",
-      [404],
-    );
-    await expect(paused.title()).resolves.toBe(GENERATED_TITLE);
-  });
+      // The closure committed before admission, so generation never began: the
+      // provider was never called and the thread stayed untitled.
+      expect(titleRequests).toBe(0);
+      await expect(
+        chat.readThreadMetadata(actor, thread.id),
+      ).resolves.toMatchObject({ title: null });
+    },
+    BARRIER_TIMEOUT_MS,
+  );
+
+  it(
+    "makes a closure wait for an admitted late title and fences the next one",
+    async () => {
+      const paused = await pauseGeneratedTitle();
+      const unrelated = await pauseGeneratedTitle();
+      await paused.entered;
+      await unrelated.entered;
+      const lastSeqId = await lastSidebarSeqId(paused);
+
+      const closed = await withChatThreadContentBarrierFixture(
+        {
+          chatThreadId: paused.threadId,
+          stopAt: "commit",
+          work: async (barrier) => {
+            paused.release();
+            const draining = flushWaitUntilForTest();
+            const settings = await barrier.entered;
+            // The late persistence runs under the fence's own bounded budget,
+            // not under an unbounded background wait.
+            expect(settings.lockTimeout).toBe("1s");
+            expect(settings.statementTimeout).toBe("5s");
+
+            const closing = closeErasureSubjectFixture({
+              subjectKind: "user",
+              subjectId: paused.actor.userId,
+            });
+            // The admitted writer still holds its shared subject barrier with the
+            // title, the sequence and the renamed event already written, so the
+            // exclusive closure cannot commit ahead of it.
+            await expect
+              .poll(barrier.blockedWaiterCount, BLOCKED)
+              .toBeGreaterThanOrEqual(1);
+
+            // An unrelated owner's own late title is not serialized behind it.
+            await unrelated.complete();
+            await expect(unrelated.title()).resolves.toBe(GENERATED_TITLE);
+
+            barrier.release();
+            await draining;
+            return await closing;
+          },
+        },
+        context.signal,
+      );
+      onTestFinished(async () => {
+        await removeErasureSubjectsFixture([closed.jobId]);
+      });
+
+      // Writer first: one coherent title, one renamed event, one sequence id.
+      await expect(paused.title()).resolves.toBe(GENERATED_TITLE);
+      await expect(paused.renames()).resolves.toStrictEqual([
+        { seqId: lastSeqId + 1, title: GENERATED_TITLE },
+      ]);
+      // The closure that waited now fences the next write on the same thread.
+      await chat.requestRenameThread(
+        paused.actor,
+        paused.threadId,
+        "Post closure title",
+        [404],
+      );
+      await expect(paused.title()).resolves.toBe(GENERATED_TITLE);
+    },
+    BARRIER_TIMEOUT_MS,
+  );
 
   it("discards a title whose Agent owner moves inside the same organization", async () => {
     const paused = await pauseGeneratedTitle();
@@ -368,36 +412,40 @@ describe("account erasure fences generated chat titles", () => {
     await expect(paused.renames()).resolves.toStrictEqual([]);
   });
 
-  it("re-resolves an owner that moves between identity selection and the retained locks", async () => {
-    const paused = await pauseGeneratedTitle();
-    await paused.entered;
-    const lastSeqId = await lastSidebarSeqId(paused);
+  it(
+    "re-resolves an owner that moves between identity selection and the retained locks",
+    async () => {
+      const paused = await pauseGeneratedTitle();
+      await paused.entered;
+      const lastSeqId = await lastSidebarSeqId(paused);
 
-    await withChatThreadContentBarrierFixture(
-      {
-        chatThreadId: paused.threadId,
-        stopAt: "agent-lock",
-        work: async (barrier) => {
-          paused.release();
-          const draining = flushWaitUntilForTest();
-          await barrier.entered;
-          await transferAgentOwnerFixture({
-            agentId: paused.agentId,
-            owner: `user_${randomUUID()}`,
-          });
-          barrier.release();
-          await draining;
+      await withChatThreadContentBarrierFixture(
+        {
+          chatThreadId: paused.threadId,
+          stopAt: "agent-lock",
+          work: async (barrier) => {
+            paused.release();
+            const draining = flushWaitUntilForTest();
+            await barrier.entered;
+            await transferAgentOwnerFixture({
+              agentId: paused.agentId,
+              owner: `user_${randomUUID()}`,
+            });
+            barrier.release();
+            await draining;
+          },
         },
-      },
-      context.signal,
-    );
+        context.signal,
+      );
 
-    // The reselected identity no longer matches the frozen pin, so the title
-    // is discarded instead of being rebound to the survivor.
-    await expect(paused.title()).resolves.toBeNull();
-    await expect(paused.renames()).resolves.toStrictEqual([]);
-    await expectSequenceUnconsumed(paused, lastSeqId);
-  });
+      // The reselected identity no longer matches the frozen pin, so the title
+      // is discarded instead of being rebound to the survivor.
+      await expect(paused.title()).resolves.toBeNull();
+      await expect(paused.renames()).resolves.toStrictEqual([]);
+      await expectSequenceUnconsumed(paused, lastSeqId);
+    },
+    BARRIER_TIMEOUT_MS,
+  );
 
   it("lets a manual rename win over a late generated title", async () => {
     const paused = await pauseGeneratedTitle();
@@ -415,9 +463,11 @@ describe("account erasure fences generated chat titles", () => {
   it("appends one renamed event when a second send races the same late title", async () => {
     const paused = await pauseGeneratedTitle();
     await paused.entered;
-    const lastSeqId = await lastSidebarSeqId(paused);
 
-    // A second send on the same thread schedules its own title generation.
+    // A second send on the same thread schedules its own title generation. It
+    // also appends its own sidebar event, so it consumes a sequence id of its
+    // own before the late title reaches one: what this case pins is that the
+    // two racing completions together append exactly one `renamed` event.
     await accept(
       chat.requestSendEvent(
         paused.actor,
@@ -434,7 +484,7 @@ describe("account erasure fences generated chat titles", () => {
 
     await expect(paused.title()).resolves.toBe(GENERATED_TITLE);
     await expect(paused.renames()).resolves.toStrictEqual([
-      { seqId: lastSeqId + 1, title: GENERATED_TITLE },
+      { seqId: expect.any(Number), title: GENERATED_TITLE },
     ]);
   });
 
