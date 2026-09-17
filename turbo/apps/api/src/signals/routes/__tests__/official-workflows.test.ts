@@ -12116,7 +12116,19 @@ describe("Official Workflow Run admission", () => {
     let installation = await install();
     onTestFinished(async () => {
       installCatalogStorageFixture();
-      await bdd.deleteAgent(actor, agentId);
+      // Parallel X-resource tests intentionally queue an exclusive global
+      // compaction waiter. Agent DELETE exposes that transient contention as
+      // retryable 409, so this unrelated cleanup must not assert first-attempt
+      // availability; deletion contract tests use requestDeleteAgent directly.
+      await expect
+        .poll(
+          async () => {
+            return (await bdd.requestDeleteAgent(actor, agentId, [204, 409]))
+              .status;
+          },
+          { interval: 25, timeout: 2000 },
+        )
+        .toBe(204);
       await cleanupCatalog();
     });
     const initialRunFamily = await readAgentRunFamilyCountsFixture(
