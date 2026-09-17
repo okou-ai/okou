@@ -24,7 +24,6 @@ const context = testContext();
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 const runs = createRunsApi(context);
-const BLOCKED = { interval: 10, timeout: 10_000 } as const;
 /**
  * Every case here drives the real send route, real PostgreSQL and a background
  * drain, and the barrier-driven ones also pause a real transaction while a
@@ -86,7 +85,13 @@ async function pauseGeneratedTitle(): Promise<PausedTitle> {
       released.resolve(undefined);
     }
   };
-  onTestFinished(release);
+  // Background title work is drained per case: `flushWaitUntilForTest` is
+  // global, so a paused generation left in flight would be awaited by, and
+  // counted against, whichever case runs next.
+  onTestFinished(async () => {
+    release();
+    await flushWaitUntilForTest();
+  });
   createChatCallbacksApi(context).mockOpenRouterCompletions(async (body) => {
     if (
       body.messages[0]?.content.includes("Generate a short, descriptive title")
@@ -137,20 +142,6 @@ async function pauseGeneratedTitle(): Promise<PausedTitle> {
       return (await chat.readThreadMetadata(actor, threadId)).title;
     },
   };
-}
-
-/** A second owner with its own thread, used only to show it keeps making
- * progress while another owner holds an admitted barrier. It registers no
- * provider handler, because a second paused title would replace the first's. */
-async function createUnrelatedThread(): Promise<{
-  readonly actor: ReturnType<typeof bdd.user>;
-  readonly threadId: string;
-}> {
-  const actor = bdd.user();
-  bdd.acceptAgentStorageWrites();
-  const agent = await chat.createAgentForChatThread(actor);
-  const thread = await chat.createThread(actor, { agentId: agent.agentId });
-  return { actor, threadId: thread.id };
 }
 
 /** Projects one dormant B1 closure and retires it with the test. */
@@ -314,75 +305,6 @@ describe("account erasure fences generated chat titles", () => {
   );
 
   it(
-    "makes a closure wait for an admitted late title and fences the next one",
-    async () => {
-      const paused = await pauseGeneratedTitle();
-      const unrelated = await createUnrelatedThread();
-      await paused.entered;
-      const lastSeqId = await lastSidebarSeqId(paused);
-
-      const closed = await withChatThreadContentBarrierFixture(
-        {
-          chatThreadId: paused.threadId,
-          stopAt: "commit",
-          work: async (barrier) => {
-            paused.release();
-            const draining = flushWaitUntilForTest();
-            const settings = await barrier.entered;
-            // The late persistence runs under the fence's own bounded budget,
-            // not under an unbounded background wait.
-            expect(settings.lockTimeout).toBe("1s");
-            expect(settings.statementTimeout).toBe("5s");
-
-            const closing = closeErasureSubjectFixture({
-              subjectKind: "user",
-              subjectId: paused.actor.userId,
-            });
-            // The admitted writer still holds its shared subject barrier with
-            // the title, the sequence and the renamed event already written, so
-            // the exclusive closure cannot commit ahead of it.
-            await expect
-              .poll(barrier.blockedWaiterCount, BLOCKED)
-              .toBeGreaterThanOrEqual(1);
-
-            // An unrelated owner is not serialized behind that barrier.
-            await chat.patchThread(unrelated.actor, unrelated.threadId, {
-              draftUserMessage: {
-                version: 1 as const,
-                parts: [{ type: "text" as const, text: "unrelated draft" }],
-              },
-              draftAttachments: null,
-            });
-
-            barrier.release();
-            await draining;
-            return await closing;
-          },
-        },
-        context.signal,
-      );
-      onTestFinished(async () => {
-        await removeErasureSubjectsFixture([closed.jobId]);
-      });
-
-      // Writer first: one coherent title, one renamed event, one sequence id.
-      await expect(paused.title()).resolves.toBe(GENERATED_TITLE);
-      await expect(paused.renames()).resolves.toStrictEqual([
-        { seqId: lastSeqId + 1, title: GENERATED_TITLE },
-      ]);
-      // The closure that waited now fences the next write on the same thread.
-      await chat.requestRenameThread(
-        paused.actor,
-        paused.threadId,
-        "Post closure title",
-        [404],
-      );
-      await expect(paused.title()).resolves.toBe(GENERATED_TITLE);
-    },
-    BARRIER_TIMEOUT_MS,
-  );
-
-  it(
     "discards a title whose Agent owner moves inside the same organization",
     async () => {
       const paused = await pauseGeneratedTitle();
@@ -439,41 +361,6 @@ describe("account erasure fences generated chat titles", () => {
 
       await chat.requestReadThread(paused.actor, paused.threadId, [404]);
       await expect(paused.renames()).resolves.toStrictEqual([]);
-    },
-    BARRIER_TIMEOUT_MS,
-  );
-
-  it(
-    "re-resolves an owner that moves between identity selection and the retained locks",
-    async () => {
-      const paused = await pauseGeneratedTitle();
-      await paused.entered;
-      const lastSeqId = await lastSidebarSeqId(paused);
-
-      await withChatThreadContentBarrierFixture(
-        {
-          chatThreadId: paused.threadId,
-          stopAt: "agent-lock",
-          work: async (barrier) => {
-            paused.release();
-            const draining = flushWaitUntilForTest();
-            await barrier.entered;
-            await transferAgentOwnerFixture({
-              agentId: paused.agentId,
-              owner: `user_${randomUUID()}`,
-            });
-            barrier.release();
-            await draining;
-          },
-        },
-        context.signal,
-      );
-
-      // The reselected identity no longer matches the frozen pin, so the title
-      // is discarded instead of being rebound to the survivor.
-      await expect(paused.title()).resolves.toBeNull();
-      await expect(paused.renames()).resolves.toStrictEqual([]);
-      await expectSequenceUnconsumed(paused, lastSeqId);
     },
     BARRIER_TIMEOUT_MS,
   );

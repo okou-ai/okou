@@ -170,6 +170,34 @@ and G2 obligations. The prompt truncation, the at most ten visible prior rounds
 and the existing auxiliary telemetry are unchanged: no prompt, title or owner
 copy was added, and no new retention exception was created.
 
+## Verification gap
+
+The automated suite drives the production send route against real PostgreSQL
+with the provider response deferred, and covers closure of each of the three
+subjects, the initiation gate, same-organization Agent owner transfer,
+organization transfer, thread deletion, manual-rename precedence, two racing
+completions and a blocked parent lock.
+
+Two scenarios are **not** covered by it, stated here rather than implied:
+
+- **Writer-first commit order.** That an admitted completion commits one
+  coherent title, event and sequence while a closure projected behind its
+  retained barrier waits, instead of racing it.
+- **An ownership change landing between identity selection and the retained
+  locks**, as opposed to during the provider request, which is covered.
+
+Both need a transaction paused mid-flight inside background `waitUntil` work.
+The existing barrier fixture suspends a transaction driven by a synchronous HTTP
+request; combining it with the global background drain did not produce a
+deterministic case here, and a flaky case protects nothing. The barrier is used
+where it is deterministic — the initiation gate commits its closure inside the
+paused capture transaction. Neither gap was papered over with a retry, a relaxed
+assertion or an extended budget.
+
+The underlying ordering is not unverified in the repository: both properties
+belong to `withChatThreadContentWrite`, which this slice reuses unchanged, and
+the accepted R3 suite exercises them there against the same helper.
+
 ## Residual work
 
 This is a producer fence only. It erases no existing title, sidebar event or
