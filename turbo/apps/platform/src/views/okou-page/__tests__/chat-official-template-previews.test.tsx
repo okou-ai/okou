@@ -19,12 +19,11 @@ const DECK =
 const VIDEO =
   "https://static.vm0.io/vm0/artifact-templates/video/df99de74-8eea-420c-86d1-c104ba5ba6b6/video-df99de74.mp4";
 
-const WELCOME_ASSET_BASE =
-  "https://static.vm0.io/vm0/welcome-thread/2026-09-14-4128f97d2754";
 const WELCOME_STEP_BASE =
   "https://static.vm0.io/vm0/welcome-thread/2026-09-17-3f913309fe14";
-const QUICK_START_BASE = `${WELCOME_STEP_BASE}/quick-start`;
-const QUICK_START = `${QUICK_START_BASE}/okou-quick-start.html`;
+const WELCOME_SCENE_BASE =
+  "https://static.vm0.io/vm0/welcome-thread/2026-09-17-1e76170cef99";
+const QUICK_START = "https://okou-quick-start-deck.okou.app";
 
 function link(name: string) {
   const element = queryAllByRoleFast("link").find((candidate) => {
@@ -106,7 +105,8 @@ test("Welcome diagrams and the quick start open without uploaded artifacts", asy
     );
   });
   const diagrams = [
-    ["Slack conversations", `${WELCOME_ASSET_BASE}/slack-conversations.png`],
+    ["Slack scene", `${WELCOME_SCENE_BASE}/slack-scene.png`],
+    ["Model tiers", `${WELCOME_SCENE_BASE}/model-tiers.png`],
     ["Workflow templates", `${WELCOME_STEP_BASE}/workflow-template-picker.png`],
     ["New agent", `${WELCOME_STEP_BASE}/new-agent.png`],
   ] as const;
@@ -115,7 +115,7 @@ test("Welcome diagrams and the quick start open without uploaded artifacts", asy
     ...diagrams.map(([name, url]) => {
       return `[${name}](${url})`;
     }),
-    `[![Quick start cover](${QUICK_START_BASE}/cover.png)](${QUICK_START})`,
+    `[![Campaign visual](${WELCOME_SCENE_BASE}/campaign-visual.jpg)](${QUICK_START})`,
     `[View the quick start](${QUICK_START})`,
   ].join("\n\n");
   const row = chat.outputMessage(content, { seqId: 1 });
@@ -136,7 +136,7 @@ test("Welcome diagrams and the quick start open without uploaded artifacts", asy
   });
   await setupPage({ context, path: chat.path });
   await screen.findByText("View the quick start");
-  click(await screen.findByRole("img", { name: "Quick start cover" }));
+  click(await screen.findByRole("img", { name: "Campaign visual" }));
   expect(
     (await screen.findByTestId("artifact-dialog-site-frame")).querySelector(
       "iframe",
@@ -166,7 +166,7 @@ test("Unlisted external HTML and altered catalog URLs keep ordinary link behavio
     `${DECK}?redirect=https://example.com`,
     DECK.replace("https://", "http://"),
     DECK.replace("https://", "https://user@"),
-    `${QUICK_START_BASE}/unlisted.html`,
+    `${QUICK_START}/unlisted.html`,
     `${QUICK_START}?redirect=https://example.com`,
     QUICK_START.replace("static.vm0.io", "static.vm0.io.evil.example"),
   ];

@@ -15,10 +15,14 @@ const officialPreviewUrls = Object.freeze([
   ...VIDEO_TEMPLATE_ITEMS.map((item) => {
     return item.previewVideo;
   }),
-  WELCOME_THREAD_ASSETS.slackConversationsDiagramUrl,
+  WELCOME_THREAD_ASSETS.campaignVisualUrl,
+  WELCOME_THREAD_ASSETS.slackSceneUrl,
+  WELCOME_THREAD_ASSETS.telegramSceneUrl,
+  WELCOME_THREAD_ASSETS.modelTiersUrl,
   WELCOME_THREAD_ASSETS.workflowTemplatePickerUrl,
   WELCOME_THREAD_ASSETS.newAgentDialogUrl,
-  WELCOME_THREAD_ASSETS.quickStartCoverUrl,
+  WELCOME_THREAD_ASSETS.presentationArtifactUrl,
+  WELCOME_THREAD_ASSETS.websiteArtifactUrl,
   WELCOME_THREAD_ASSETS.quickStartUrl,
 ]);
 

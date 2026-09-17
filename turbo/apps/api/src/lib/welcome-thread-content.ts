@@ -40,39 +40,23 @@ const WELCOME_THREAD_TEMPLATE = Object.freeze({
   } satisfies Record<UserLocale, WelcomeContent>,
 });
 
-// These immutable official examples are shared by every recipient. Their
-// ordinary chat previews are implemented separately in #33205's S2.
-const IMAGE_URL =
-  "https://static.vm0.io/vm0/artifact-templates/illustration/assets/bb2f13d1-f849-4a5c-a493-524bc0eda5c2/ref-bookshop-interior.jpg";
-const PRESENTATION_URL =
-  "https://static.vm0.io/vm0/artifact-templates/presentation/daf7c2d1-5195-4c09-ad4b-8d85778fc104/playful-launch-presentation.html";
-const WEBSITE_URL =
-  "https://static.vm0.io/vm0/artifact-templates/website/website-studio-v2-20260727-ccff774/coastal-hotel-example.html";
-
 export function welcomeThreadContent(args: {
   readonly locale: UserLocale;
   readonly appUrl: string;
 }): WelcomeContent {
   const template = WELCOME_THREAD_TEMPLATE.locales[args.locale];
   const origin = new URL(args.appUrl).origin;
+  const wwwUrl = derivePlatformServiceOrigin(origin, "www");
   const values: Readonly<Record<string, string>> = {
+    // The official examples and scene shots are shared by every recipient.
     ...WELCOME_THREAD_ASSETS,
     assistantName: PUBLIC_BRAND_PRESENTATION.assistantName,
-    imageUrl: IMAGE_URL,
-    presentationPreviewUrl: PRESENTATION_URL,
-    presentationUrl: PRESENTATION_URL,
-    slideCount: "15",
-    websiteUrl: WEBSITE_URL,
-    quickStartSlideCount: "14",
-    // Prompt deep links prefill the composer on arrival, so every example in
-    // the welcome message can be run without retyping it.
     origin,
-    agentsUrl: `${origin}/agents`,
     worksUrl: `${origin}/works`,
     inviteUrl: `${origin}/?settings=people`,
-    webServicesUrl: `${derivePlatformServiceOrigin(origin, "www")}/en/web-services`,
-    workflowExamplesUrl: `${derivePlatformServiceOrigin(origin, "www")}/en/workflow-automation-examples`,
-    docsUrl: `${derivePlatformServiceOrigin(origin, "www")}/docs`,
+    wwwUrl,
+    webServicesUrl: `${wwwUrl}/en/web-services`,
+    workflowExamplesUrl: `${wwwUrl}/en/workflow-automation-examples`,
   };
   const interpolate = (text: string) => {
     return text.replace(/\{\{(\w+)\}\}/gu, (_, key: string) => {
