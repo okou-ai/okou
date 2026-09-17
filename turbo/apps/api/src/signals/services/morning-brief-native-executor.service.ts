@@ -1,11 +1,11 @@
 import type { CronExecuteMorningBriefsResponse } from "@okouai/api-contracts/contracts/cron";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { command, type Setter } from "ccstate";
+import { command } from "ccstate";
 
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
+import { writeDb$, type ReadonlyDb } from "../external/db";
 import type { MorningBriefMemberIdentity } from "./morning-brief-enrollment-data.service";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import { currentMembershipId$ } from "./morning-brief-collection-executor.service";
@@ -29,12 +29,6 @@ import type {
   MorningBriefExecutionPhase,
   MorningBriefExecutionTarget,
 } from "@okouai/db/schema/morning-brief-native-schedule";
-
-/** The write-capable database handle one tick holds. */
-type TickDb = Db;
-
-/** The ccstate setter the tick hands to its per-slot helpers. */
-type TickSetter = Setter;
 
 const log = logger("MorningBriefNativeCron");
 
@@ -281,265 +275,287 @@ export type DrainVerdict =
  * Returns true when the budget ran out mid-pass. The slots involved are already
  * settled, so this never competes with, or wedges, the future scheduler.
  */
-async function runDeliveryRecoveryPass(args: {
-  readonly db: TickDb;
-  readonly deps: NativeTickDependencies;
-  readonly counters: TickCounters;
-  readonly signal: AbortSignal;
-  readonly overBudget: () => boolean;
-}): Promise<boolean> {
-  const { db, deps, counters, signal } = args;
-  for (const occurrence of await loadPendingDeliveryOccurrences(db, {
-    limit: DELIVERY_RECOVERY_BATCH,
-  })) {
-    if (args.overBudget()) {
-      return true;
-    }
-    const owner = { orgId: occurrence.orgId, userId: occurrence.userId };
-    const resolution = await deps.delivery.resolve(owner, occurrence, signal);
-    if (resolution === "pending") {
-      continue;
-    }
-    const closed = await db.transaction(async (tx) => {
-      return await closeRecoveredMorningBriefDelivery(tx, owner, {
-        scheduledFor: occurrence.scheduledFor,
-        expectedEpoch: occurrence.ownerEpoch,
-        leaseToken: occurrence.leaseToken,
-        // A slot that bound its attempt but crashed before its own settlement
-        // still owes that settlement; one already settled only owes the clear.
-        settleAs:
-          occurrence.settledAt !== null
-            ? null
-            : resolution === "delivered"
-              ? "delivered"
-              : "generation-unknown",
-        at: nowDate(),
+const runDeliveryRecoveryPass$ = command(
+  async (
+    { set },
+    args: {
+      readonly deps: NativeTickDependencies;
+      readonly counters: TickCounters;
+      readonly overBudget: () => boolean;
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const db = set(writeDb$);
+    const { deps, counters } = args;
+    for (const occurrence of await loadPendingDeliveryOccurrences(db, {
+      limit: DELIVERY_RECOVERY_BATCH,
+    })) {
+      if (args.overBudget()) {
+        return true;
+      }
+      const owner = { orgId: occurrence.orgId, userId: occurrence.userId };
+      const resolution = await deps.delivery.resolve(owner, occurrence, signal);
+      if (resolution === "pending") {
+        continue;
+      }
+      const closed = await db.transaction(async (tx) => {
+        return await closeRecoveredMorningBriefDelivery(tx, owner, {
+          scheduledFor: occurrence.scheduledFor,
+          expectedEpoch: occurrence.ownerEpoch,
+          leaseToken: occurrence.leaseToken,
+          // A slot that bound its attempt but crashed before its own settlement
+          // still owes that settlement; one already settled only owes the clear.
+          settleAs:
+            occurrence.settledAt !== null
+              ? null
+              : resolution === "delivered"
+                ? "delivered"
+                : "generation-unknown",
+          at: nowDate(),
+        });
       });
-    });
-    if (closed !== "closed") {
-      // Reclaimed or revoked between the receipt read and this mutation. The
-      // new owner keeps its own obligation; nothing is cleared behind it.
-      continue;
+      signal.throwIfAborted();
+      if (closed !== "closed") {
+        // Reclaimed or revoked between the receipt read and this mutation. The
+        // new owner keeps its own obligation; nothing is cleared behind it.
+        continue;
+      }
+      counters.deliveriesRecovered += 1;
+      if (resolution === "terminal-failure") {
+        log.warn("Morning Brief delivery exhausted its retention", {
+          orgId: occurrence.orgId,
+          scheduledFor: occurrence.scheduledFor.toISOString(),
+        });
+      }
     }
-    counters.deliveriesRecovered += 1;
-    if (resolution === "terminal-failure") {
-      log.warn("Morning Brief delivery exhausted its retention", {
-        orgId: occurrence.orgId,
-        scheduledFor: occurrence.scheduledFor.toISOString(),
-      });
-    }
-  }
-  return false;
-}
-
+    return false;
+  },
+);
 /**
  * Advance cutover and rollback for every member whose ownership may need to
  * move. The target is the switch's CURRENT intent, re-read per member, not the
  * intent persisted by an older flip.
  */
-async function runTransitionPass(args: {
-  readonly db: TickDb;
-  readonly deps: NativeTickDependencies;
-  readonly counters: TickCounters;
-  readonly signal: AbortSignal;
-  readonly overBudget: () => boolean;
-  readonly set: TickSetter;
-}): Promise<boolean> {
-  for (const row of await loadTransitionCandidates(args.db, {
-    now: nowDate(),
-    limit: DRAIN_REPORT_BATCH,
-  })) {
-    if (args.overBudget()) {
-      return true;
+const runTransitionPass$ = command(
+  async (
+    { set },
+    args: {
+      readonly deps: NativeTickDependencies;
+      readonly counters: TickCounters;
+      readonly overBudget: () => boolean;
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const db = set(writeDb$);
+    for (const row of await loadTransitionCandidates(db, {
+      now: nowDate(),
+      limit: DRAIN_REPORT_BATCH,
+    })) {
+      if (args.overBudget()) {
+        return true;
+      }
+      const owner = { orgId: row.orgId, userId: row.userId };
+      const target: MorningBriefExecutionTarget = (await nativeAdmissionAllowed(
+        db,
+        owner,
+      ))
+        ? "native"
+        : "legacy";
+      await set(
+        advanceOneTransition$,
+        {
+          deps: args.deps,
+          owner,
+          target,
+          phase: row.phase,
+          counters: args.counters,
+        },
+        signal,
+      );
+      signal.throwIfAborted();
     }
-    const owner = { orgId: row.orgId, userId: row.userId };
-    const target: MorningBriefExecutionTarget = (await nativeAdmissionAllowed(
-      args.db,
-      owner,
-    ))
-      ? "native"
-      : "legacy";
-    await advanceOneTransition(args.set, args.deps, {
-      owner,
-      target,
-      phase: row.phase,
-      counters: args.counters,
-      signal: args.signal,
-    });
-  }
-  return false;
-}
-
+    return false;
+  },
+);
 /**
  * Resume slots a previous tick left unsettled.
  *
  * The claim already took the schedule obligation away, so nothing else would
  * rediscover these. Returns true when the tick budget ran out mid-pass.
  */
-async function runResumePass(args: {
-  readonly db: TickDb;
-  readonly deps: NativeTickDependencies;
-  readonly counters: TickCounters;
-  readonly signal: AbortSignal;
-  readonly overBudget: () => boolean;
-  readonly set: TickSetter;
-}): Promise<boolean> {
-  const { db, deps, counters, set } = args;
-  const deadline = args.signal;
-  const overBudget = args.overBudget;
-  // 2. Resume slots a previous tick left unsettled. The claim already took
-  //    the schedule obligation, so nothing else would rediscover them.
-  for (const stale of await loadResumableOccurrences(db, {
-    now: nowDate(),
-    limit: DUE_OWNER_BATCH,
-  })) {
-    if (overBudget()) {
-      return true;
-    }
-    const owner = { orgId: stale.orgId, userId: stale.userId };
-    if (!(await nativeAdmissionAllowed(db, owner))) {
-      continue;
-    }
-    const membershipId = await set(currentMembershipId$, owner, deadline);
-    if (membershipId === null) {
-      continue;
-    }
-    const leaseToken = crypto.randomUUID();
-    const resumed = await db.transaction(async (tx) => {
-      return await resumeMorningBriefNativeOccurrence(tx, owner, {
-        scheduledFor: stale.scheduledFor,
-        now: nowDate(),
-        leaseToken,
-        membershipId,
+const runResumePass$ = command(
+  async (
+    { set },
+    args: {
+      readonly deps: NativeTickDependencies;
+      readonly counters: TickCounters;
+      readonly overBudget: () => boolean;
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const db = set(writeDb$);
+    const { deps, counters } = args;
+    const overBudget = args.overBudget;
+    // 2. Resume slots a previous tick left unsettled. The claim already took
+    //    the schedule obligation, so nothing else would rediscover them.
+    for (const stale of await loadResumableOccurrences(db, {
+      now: nowDate(),
+      limit: DUE_OWNER_BATCH,
+    })) {
+      if (overBudget()) {
+        return true;
+      }
+      const owner = { orgId: stale.orgId, userId: stale.userId };
+      if (!(await nativeAdmissionAllowed(db, owner))) {
+        continue;
+      }
+      const membershipId = await set(currentMembershipId$, owner, signal);
+      signal.throwIfAborted();
+      if (membershipId === null) {
+        continue;
+      }
+      const leaseToken = crypto.randomUUID();
+      const resumed = await db.transaction(async (tx) => {
+        return await resumeMorningBriefNativeOccurrence(tx, owner, {
+          scheduledFor: stale.scheduledFor,
+          now: nowDate(),
+          leaseToken,
+          membershipId,
+        });
       });
-    });
-    if (resumed.kind !== "claimed") {
-      continue;
+      signal.throwIfAborted();
+      if (resumed.kind !== "claimed") {
+        continue;
+      }
+      counters.claimed += 1;
+      await set(runOneSlot$, { deps, claim: resumed, counters }, signal);
+      signal.throwIfAborted();
     }
-    counters.claimed += 1;
-    await runOneSlot({
-      db,
-      deps,
-      claim: resumed,
-      counters,
-      signal: deadline,
-    });
-  }
 
-  return false;
-}
-
+    return false;
+  },
+);
 /** One slot's work: claim/resume, execute outside a transaction, settle once. */
-async function runOneSlot(args: {
-  readonly db: TickDb;
-  readonly deps: NativeTickDependencies;
-  readonly claim: Extract<MorningBriefNativeClaim, { kind: "claimed" }>;
-  readonly counters: TickCounters;
-  readonly signal: AbortSignal;
-}): Promise<void> {
-  const { db, deps, claim, counters, signal } = args;
-  const owner = {
-    orgId: claim.occurrence.orgId,
-    userId: claim.occurrence.userId,
-  };
-  const leaseToken = claim.occurrence.leaseToken;
-  const expectedEpoch = claim.occurrence.ownerEpoch;
-  if (leaseToken === null) {
-    return;
-  }
+const runOneSlot$ = command(
+  async (
+    { set },
+    args: {
+      readonly deps: NativeTickDependencies;
+      readonly claim: Extract<MorningBriefNativeClaim, { kind: "claimed" }>;
+      readonly counters: TickCounters;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    const { deps, claim, counters } = args;
+    const owner = {
+      orgId: claim.occurrence.orgId,
+      userId: claim.occurrence.userId,
+    };
+    const leaseToken = claim.occurrence.leaseToken;
+    const expectedEpoch = claim.occurrence.ownerEpoch;
+    if (leaseToken === null) {
+      return;
+    }
 
-  // The provider work runs outside every transaction, under the tick's own
-  // deadline so a slow source cannot outlive the request that admitted it.
-  const execution = await deps.executor.execute(
-    owner,
-    claim.occurrence,
-    signal,
-  );
+    // The provider work runs outside every transaction, under the tick's own
+    // deadline so a slow source cannot outlive the request that admitted it.
+    const execution = await deps.executor.execute(
+      owner,
+      claim.occurrence,
+      signal,
+    );
 
-  if (execution.kind === "defer") {
-    const deferral = await db.transaction(async (tx) => {
-      return await deferMorningBriefNativeOccurrence(tx, owner, {
+    if (execution.kind === "defer") {
+      const deferral = await db.transaction(async (tx) => {
+        return await deferMorningBriefNativeOccurrence(tx, owner, {
+          scheduledFor: claim.occurrence.scheduledFor,
+          reason: execution.reason,
+          expectedEpoch,
+          leaseToken,
+          at: nowDate(),
+        });
+      });
+      signal.throwIfAborted();
+      if (deferral.kind === "deferred") {
+        counters.deferred += 1;
+        return;
+      }
+      if (deferral.kind === "stale-claimant") {
+        // Reclaimed or revoked while this worker was away. Its observation is
+        // still evidence, but it has no authority to schedule.
+        return;
+      }
+      // Exhausted: settle as not configured and schedule the next occurrence
+      // rather than disabling the member's Morning Brief.
+    }
+
+    const { outcome, deliveryPending } = outcomeFor(execution);
+    const settlement = await db.transaction(async (tx) => {
+      return await settleMorningBriefNativeOccurrence(tx, owner, {
         scheduledFor: claim.occurrence.scheduledFor,
-        reason: execution.reason,
+        outcome,
+        deliveryPending,
+        generationAttemptId:
+          "generationAttemptId" in execution
+            ? execution.generationAttemptId
+            : undefined,
         expectedEpoch,
         leaseToken,
         at: nowDate(),
       });
     });
-    if (deferral.kind === "deferred") {
-      counters.deferred += 1;
-      return;
+    signal.throwIfAborted();
+    if (settlement.kind === "settled") {
+      counters.settled += 1;
     }
-    if (deferral.kind === "stale-claimant") {
-      // Reclaimed or revoked while this worker was away. Its observation is
-      // still evidence, but it has no authority to schedule.
-      return;
-    }
-    // Exhausted: settle as not configured and schedule the next occurrence
-    // rather than disabling the member's Morning Brief.
-  }
-
-  const { outcome, deliveryPending } = outcomeFor(execution);
-  const settlement = await db.transaction(async (tx) => {
-    return await settleMorningBriefNativeOccurrence(tx, owner, {
-      scheduledFor: claim.occurrence.scheduledFor,
-      outcome,
-      deliveryPending,
-      generationAttemptId:
-        "generationAttemptId" in execution
-          ? execution.generationAttemptId
-          : undefined,
-      expectedEpoch,
-      leaseToken,
+  },
+);
+/** Advance one member's transition toward the switch's current intent. */
+const advanceOneTransition$ = command(
+  async (
+    { set },
+    args: {
+      readonly deps: NativeTickDependencies;
+      readonly owner: MorningBriefMemberIdentity;
+      readonly target: MorningBriefExecutionTarget;
+      /** The phase actually recorded on the row this tick read. */
+      readonly phase: MorningBriefExecutionPhase;
+      readonly counters: TickCounters;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const deps = args.deps;
+    // The drain evidence must match the **actual phase edge**, not the target.
+    // A rollback that reverses back to native still has native work to reconcile,
+    // and a cutover that reverses back to legacy has only legacy work: choosing
+    // by target alone hands one edge the other side's proof.
+    const drain =
+      args.phase === "native" || args.phase === "rollback-draining"
+        ? await deps.nativeDrain(args.owner, signal)
+        : await deps.legacyDrain(args.owner, signal);
+    signal.throwIfAborted();
+    const outcome = await set(advanceMemberTransition$, {
+      owner: args.owner,
+      target: args.target,
+      drain,
       at: nowDate(),
     });
-  });
-  if (settlement.kind === "settled") {
-    counters.settled += 1;
-  }
-}
-
-/** Advance one member's transition toward the switch's current intent. */
-async function advanceOneTransition(
-  set: TickSetter,
-  deps: NativeTickDependencies,
-  args: {
-    readonly owner: MorningBriefMemberIdentity;
-    readonly target: MorningBriefExecutionTarget;
-    /** The phase actually recorded on the row this tick read. */
-    readonly phase: MorningBriefExecutionPhase;
-    readonly counters: TickCounters;
-    readonly signal: AbortSignal;
+    signal.throwIfAborted();
+    if (outcome === "transitioned") {
+      args.counters.transitions += 1;
+      return;
+    }
+    if (outcome === "held") {
+      args.counters.drainsHeld += 1;
+      log.warn("Morning Brief drain still unresolved", {
+        orgId: args.owner.orgId,
+        target: args.target,
+        reason: drain.kind === "unresolved" ? drain.reason : "unknown",
+      });
+    }
   },
-): Promise<void> {
-  // The drain evidence must match the **actual phase edge**, not the target.
-  // A rollback that reverses back to native still has native work to reconcile,
-  // and a cutover that reverses back to legacy has only legacy work: choosing
-  // by target alone hands one edge the other side's proof.
-  const drain =
-    args.phase === "native" || args.phase === "rollback-draining"
-      ? await deps.nativeDrain(args.owner, args.signal)
-      : await deps.legacyDrain(args.owner, args.signal);
-  const outcome = await set(advanceMemberTransition$, {
-    owner: args.owner,
-    target: args.target,
-    drain,
-    at: nowDate(),
-  });
-  if (outcome === "transitioned") {
-    args.counters.transitions += 1;
-    return;
-  }
-  if (outcome === "held") {
-    args.counters.drainsHeld += 1;
-    log.warn("Morning Brief drain still unresolved", {
-      orgId: args.owner.orgId,
-      target: args.target,
-      reason: drain.kind === "unresolved" ? drain.reason : "unknown",
-    });
-  }
-}
-
+);
 /**
  * Run one bounded native Morning Brief tick.
  *
@@ -584,6 +600,7 @@ export const executeNativeMorningBriefTick$ = command(
         return exhausted();
       }
       const membershipId = await set(currentMembershipId$, owner, deadline);
+      signal.throwIfAborted();
       if (membershipId === null) {
         continue;
       }
@@ -593,31 +610,21 @@ export const executeNativeMorningBriefTick$ = command(
           at: nowDate(),
         });
       });
+      signal.throwIfAborted();
       counters.materialized += 1;
     }
 
     if (
-      await runDeliveryRecoveryPass({
-        db,
-        deps,
-        counters,
-        signal: deadline,
-        overBudget,
-      })
+      await set(
+        runDeliveryRecoveryPass$,
+        { deps, counters, overBudget },
+        deadline,
+      )
     ) {
       return exhausted();
     }
 
-    if (
-      await runResumePass({
-        db,
-        deps,
-        counters,
-        signal: deadline,
-        overBudget,
-        set,
-      })
-    ) {
+    if (await set(runResumePass$, { deps, counters, overBudget }, deadline)) {
       return exhausted();
     }
 
@@ -635,18 +642,18 @@ export const executeNativeMorningBriefTick$ = command(
       // The switch gates new admission only. It never rewrites a durable
       // obligation, and a fresh default-off owner makes zero provider calls.
       if (!(await nativeAdmissionAllowed(db, owner))) {
-        await advanceOneTransition(set, deps, {
-          owner,
-          target: "legacy",
-          phase: schedule.phase,
-          counters,
-          signal: deadline,
-        });
+        await set(
+          advanceOneTransition$,
+          { deps, owner, target: "legacy", phase: schedule.phase, counters },
+          deadline,
+        );
+        signal.throwIfAborted();
         continue;
       }
 
       // Fresh membership generation, read at the admission boundary.
       const membershipId = await set(currentMembershipId$, owner, deadline);
+      signal.throwIfAborted();
       if (membershipId === null) {
         continue;
       }
@@ -659,28 +666,17 @@ export const executeNativeMorningBriefTick$ = command(
           membershipId,
         });
       });
+      signal.throwIfAborted();
       if (claim.kind !== "claimed") {
         continue;
       }
       counters.claimed += 1;
-      await runOneSlot({
-        db,
-        deps,
-        claim,
-        counters,
-        signal: deadline,
-      });
+      await set(runOneSlot$, { deps, claim, counters }, deadline);
+      signal.throwIfAborted();
     }
 
     if (
-      await runTransitionPass({
-        db,
-        deps,
-        counters,
-        signal: deadline,
-        overBudget,
-        set,
-      })
+      await set(runTransitionPass$, { deps, counters, overBudget }, deadline)
     ) {
       return exhausted();
     }

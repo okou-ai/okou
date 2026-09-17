@@ -36,7 +36,10 @@ import {
 } from "./morning-brief-collection-occurrence.service";
 import { loadCurrentMembershipId } from "./morning-brief-membership.service";
 import { loadMorningBriefMigrationState } from "./morning-brief-migration-state.service";
-import { resolveMorningBriefChoiceAuthority } from "./morning-brief-native-schedule.service";
+import {
+  resolveMorningBriefChoiceAuthority,
+  type MorningBriefNativeScheduleRow,
+} from "./morning-brief-native-schedule.service";
 import {
   collectMorningBriefSlackBundle,
   MORNING_BRIEF_SLACK_COLLECTION_DEADLINE_MS,
@@ -261,6 +264,40 @@ type LocalMorningBriefInstallation =
  * Nothing here reads the disposable installed-preference projection — the
  * canonical installation and its schedule decide whether a brief is enabled.
  */
+/**
+ * The durable native choice for this member, when one owns the brief.
+ *
+ * Split out of {@link resolveLocalMorningBriefInstallation} so the legacy path
+ * there keeps its own shape. A `null` row means the member is not native and
+ * the legacy installation still decides.
+ */
+async function resolveNativeMorningBriefChoice(
+  db: Pick<ReadonlyDb, "select">,
+  owner: MorningBriefCollectionOwner,
+): Promise<
+  | { readonly kind: "row"; readonly row: MorningBriefNativeScheduleRow | null }
+  | {
+      readonly kind: "not-executed";
+      readonly reason: MorningBriefCollectionSkipReason;
+    }
+> {
+  const authority = await resolveMorningBriefChoiceAuthority(db, owner);
+  if (authority.kind !== "native") {
+    return { kind: "row", row: null };
+  }
+  const row = authority.row;
+  if (!row.enabled) {
+    return { kind: "not-executed", reason: "brief-paused" };
+  }
+  if (row.legacyWorkflowId === null || row.legacyAutomationId === null) {
+    // Every migrated member carries its lineage. A native row without it has no
+    // provenance to record on the occurrence, so admission refuses explicitly
+    // rather than inventing one.
+    return { kind: "not-executed", reason: "brief-inconsistent" };
+  }
+  return { kind: "row", row };
+}
+
 async function resolveLocalMorningBriefInstallation(
   db: Pick<ReadonlyDb, "select">,
   owner: MorningBriefCollectionOwner,
@@ -281,20 +318,11 @@ async function resolveLocalMorningBriefInstallation(
   // is consulted, which is what lets the legacy scheduler be disabled without
   // disabling the brief. Every other phase keeps reading the canonical legacy
   // installation exactly as before.
-  const authority = await resolveMorningBriefChoiceAuthority(db, owner);
-  const native = authority.kind === "native" ? authority.row : null;
-  if (native !== null && !native.enabled) {
-    return { kind: "not-executed", reason: "brief-paused" };
+  const nativeChoice = await resolveNativeMorningBriefChoice(db, owner);
+  if (nativeChoice.kind === "not-executed") {
+    return nativeChoice;
   }
-  if (
-    native !== null &&
-    (native.legacyWorkflowId === null || native.legacyAutomationId === null)
-  ) {
-    // Every migrated member carries its lineage. A native row without it has no
-    // provenance to record on the occurrence, so admission refuses explicitly
-    // rather than inventing one.
-    return { kind: "not-executed", reason: "brief-inconsistent" };
-  }
+  const native = nativeChoice.row;
 
   const state = await loadMorningBriefMigrationState(db, owner);
   if (native === null) {

@@ -2,31 +2,31 @@ import { randomUUID } from "node:crypto";
 
 import { cronExecuteMorningBriefsContract } from "@okouai/api-contracts/contracts/cron";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { chatEvents } from "@okouai/db/schema/chat-event";
-import { emailOutbox } from "@okouai/db/schema/email-outbox";
-import { morningBriefDeliveries } from "@okouai/db/schema/morning-brief-delivery";
-import { morningBriefGenerations } from "@okouai/db/schema/morning-brief-generation";
-import {
-  morningBriefNativeOccurrences,
-  morningBriefNativeSchedules,
-} from "@okouai/db/schema/morning-brief-native-schedule";
-import { userCache } from "@okouai/db/schema/user-cache";
-import { agentRuns } from "@okouai/db/schema/agent-run";
-import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { createStore } from "ccstate";
-import { and, eq } from "drizzle-orm";
 import { http, HttpResponse } from "msw";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { db } from "../../../lib/db";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { clearMockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { seedInstalledMorningBrief } from "../../../test-fixtures/morning-brief-collection";
 import { expireMorningBriefGenerationRetention } from "../../../test-fixtures/morning-brief-generation";
-import { loadResumableOccurrences } from "../../services/morning-brief-native-schedule.service";
+import {
+  countEmailOutboxRows,
+  countOrgAgentRuns,
+  interruptNativeSettlement,
+  makeNativeOccurrenceDue,
+  readLegacyAutomation,
+  readNativeDeliveries,
+  readNativeGenerations,
+  readNativeOccurrences,
+  readNativeSchedule,
+  readThreadEventTypes,
+  resumableOccurrenceAnchors,
+  seedRecipientAddress,
+} from "../../../test-fixtures/morning-brief-native-schedule";
 import { cronExecuteMorningBriefsRoutes } from "../cron-execute-morning-briefs";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import {
@@ -114,15 +114,10 @@ async function fixture(
   mockOptionalEnv("RESEND_FROM_DOMAIN", "mail.okou.test");
   mockOptionalEnv("EMAIL_OUTBOX_DRAIN_DELAY_MS", "0");
   if (options.email !== null) {
-    await db()
-      .insert(userCache)
-      .values({
-        userId,
-        email: options.email ?? `${userId}@example.test`,
-        name: "Test Member",
-        cachedAt: new Date(now()),
-      })
-      .onConflictDoNothing();
+    await seedRecipientAddress(
+      userId,
+      options.email ?? `${userId}@example.test`,
+    );
   }
   return {
     orgId,
@@ -217,89 +212,15 @@ function scriptProviders(): { readonly calls: ProviderCalls } {
   return { calls };
 }
 
-async function readSchedule(f: Fixture) {
-  const [row] = await db()
-    .select()
-    .from(morningBriefNativeSchedules)
-    .where(
-      and(
-        eq(morningBriefNativeSchedules.orgId, f.orgId),
-        eq(morningBriefNativeSchedules.userId, f.userId),
-      ),
-    )
-    .limit(1);
-  return row;
-}
-
-async function readOccurrences(f: Fixture) {
-  return await db()
-    .select()
-    .from(morningBriefNativeOccurrences)
-    .where(
-      and(
-        eq(morningBriefNativeOccurrences.orgId, f.orgId),
-        eq(morningBriefNativeOccurrences.userId, f.userId),
-      ),
-    );
-}
-
-async function readGenerations(f: Fixture) {
-  return await db()
-    .select()
-    .from(morningBriefGenerations)
-    .where(
-      and(
-        eq(morningBriefGenerations.orgId, f.orgId),
-        eq(morningBriefGenerations.userId, f.userId),
-      ),
-    );
-}
-
-async function readDeliveries(f: Fixture) {
-  return await db()
-    .select()
-    .from(morningBriefDeliveries)
-    .where(
-      and(
-        eq(morningBriefDeliveries.orgId, f.orgId),
-        eq(morningBriefDeliveries.userId, f.userId),
-      ),
-    );
-}
-
-async function readAutomation(f: Fixture) {
-  const [row] = await db()
-    .select()
-    .from(workflowAutomations)
-    .where(eq(workflowAutomations.id, f.automationId))
-    .limit(1);
-  return row;
-}
-
 /** Drive the real cutover to completion through ordinary ticks. */
 async function tickUntilNative(f: Fixture): Promise<void> {
   for (let attempt = 0; attempt < 5; attempt += 1) {
     await accept(tick(), [200]);
-    if ((await readSchedule(f))?.phase === "native") {
+    if ((await readNativeSchedule(f))?.phase === "native") {
       return;
     }
   }
   throw new Error("The native cutover did not converge within five ticks");
-}
-
-/** Make the member's native obligation due right now. */
-async function makeNativeDue(f: Fixture): Promise<Date> {
-  const due = new Date(now() - 60 * 1000);
-  await db()
-    .update(morningBriefNativeSchedules)
-    .set({ nextRunAt: due, scheduleOwner: "native" })
-    .where(
-      and(
-        eq(morningBriefNativeSchedules.orgId, f.orgId),
-        eq(morningBriefNativeSchedules.userId, f.userId),
-      ),
-    );
-  return due;
 }
 
 describe("native Morning Brief cron", () => {
@@ -310,7 +231,7 @@ describe("native Morning Brief cron", () => {
     await accept(tick("wrong-secret"), [401]);
 
     expect(calls.generation).toHaveLength(0);
-    await expect(readSchedule(f)).resolves.toBeUndefined();
+    await expect(readNativeSchedule(f)).resolves.toBeUndefined();
   });
 
   it("materializes an installed brief as a legacy-phase row and cuts over", async () => {
@@ -323,7 +244,7 @@ describe("native Morning Brief cron", () => {
     const first = await accept(tick(), [200]);
     expect(first.body.materialized).toBe(1);
 
-    const bootstrapped = await readSchedule(f);
+    const bootstrapped = await readNativeSchedule(f);
     // Bootstrap itself only writes a `legacy` row; the same tick's separate
     // transition pass may already have closed legacy admission. Neither step
     // admits native work, which is the invariant that matters here.
@@ -331,30 +252,30 @@ describe("native Morning Brief cron", () => {
     expect(bootstrapped?.enabled).toBeTruthy();
     expect(bootstrapped?.timezone).toBe("Asia/Shanghai");
     expect(bootstrapped?.legacyAutomationId).toBe(f.automationId);
-    await expect(readOccurrences(f)).resolves.toHaveLength(0);
+    await expect(readNativeOccurrences(f)).resolves.toHaveLength(0);
 
     // Later ticks converge on the switch's current intent. The legacy poller's
     // own admission instant is cleared in the same transaction that enters
     // `draining`, and no native occurrence exists until the transfer commits.
     for (let attempt = 0; attempt < 4; attempt += 1) {
-      const schedule = await readSchedule(f);
+      const schedule = await readNativeSchedule(f);
       if (schedule?.phase === "native") {
         break;
       }
-      await expect(readOccurrences(f)).resolves.toHaveLength(0);
+      await expect(readNativeOccurrences(f)).resolves.toHaveLength(0);
       await accept(tick(), [200]);
     }
 
-    const cutover = await readSchedule(f);
+    const cutover = await readNativeSchedule(f);
     expect(cutover?.phase).toBe("native");
     expect(cutover?.scheduleOwner).toBe("native");
     expect(cutover?.nextRunAt).not.toBeNull();
     // The transfer bumped the epoch exactly once; nothing manufactured extras.
     expect(cutover?.ownerEpoch).toBe(2);
     // Legacy can no longer admit a claim for this member.
-    expect((await readAutomation(f))?.nextRunAt).toBeNull();
+    expect((await readLegacyAutomation(f.automationId))?.nextRunAt).toBeNull();
     // The user's own choice is untouched by the cutover.
-    expect((await readAutomation(f))?.enabled).toBeTruthy();
+    expect((await readLegacyAutomation(f.automationId))?.enabled).toBeTruthy();
     expect(cutover?.enabled).toBeTruthy();
   });
 
@@ -367,8 +288,8 @@ describe("native Morning Brief cron", () => {
 
     // The legacy scheduler is now closed for this member. Everything below has
     // to work anyway, which is the whole point of the native authority.
-    expect((await readAutomation(f))?.nextRunAt).toBeNull();
-    const due = await makeNativeDue(f);
+    expect((await readLegacyAutomation(f.automationId))?.nextRunAt).toBeNull();
+    const due = await makeNativeOccurrenceDue(f);
 
     const executed = await accept(tick(), [200]);
     expect(executed.body.claimed).toBe(1);
@@ -376,48 +297,39 @@ describe("native Morning Brief cron", () => {
 
     // Exactly one platform request, for the production purpose.
     expect(calls.generation).toHaveLength(1);
-    const generations = await readGenerations(f);
+    const generations = await readNativeGenerations(f);
     expect(generations).toHaveLength(1);
     expect(generations[0]?.executionPurpose).toBe("production");
     expect(generations[0]?.state).toBe("succeeded");
     expect(generations[0]?.model).toBe("google/gemini-3.8-flash");
 
     // One canonical Chat delivery, recorded under the production purpose.
-    const deliveries = await readDeliveries(f);
+    const deliveries = await readNativeDeliveries(f);
     expect(deliveries).toHaveLength(1);
     expect(deliveries[0]?.executionPurpose).toBe("production");
     const threadId = deliveries[0]?.chatThreadId;
     expect(threadId).toBeDefined();
-    const events = await db()
-      .select({ eventType: chatEvents.eventType })
-      .from(chatEvents)
-      .where(eq(chatEvents.chatThreadId, threadId ?? ""));
-    expect(events).toHaveLength(1);
-    expect(events[0]?.eventType).toBe("output.message");
+    await expect(readThreadEventTypes(threadId ?? "")).resolves.toStrictEqual([
+      "output.message",
+    ]);
 
     // One shared-outbox email intent for the same accepted body.
-    const intents = await db()
-      .select({ id: emailOutbox.id })
-      .from(emailOutbox)
-      .where(eq(emailOutbox.id, deliveries[0]?.emailOutboxId ?? randomUUID()));
-    expect(intents).toHaveLength(1);
+    await expect(
+      countEmailOutboxRows(deliveries[0]?.emailOutboxId ?? randomUUID()),
+    ).resolves.toBe(1);
 
     // The slot settled exactly once, keeping its frozen anchor, and the next
     // occurrence is strictly in the future.
-    const occurrences = await readOccurrences(f);
+    const occurrences = await readNativeOccurrences(f);
     expect(occurrences).toHaveLength(1);
     expect(occurrences[0]?.outcome).toBe("delivered");
     expect(occurrences[0]?.scheduledFor.getTime()).toBe(due.getTime());
     expect(occurrences[0]?.settledAt).not.toBeNull();
-    const after = await readSchedule(f);
+    const after = await readNativeSchedule(f);
     expect(after?.nextRunAt?.getTime()).toBeGreaterThan(now());
 
     // Zero Run and zero user-credit footprint.
-    const runs = await db()
-      .select({ id: agentRuns.id })
-      .from(agentRuns)
-      .where(eq(agentRuns.orgId, f.orgId));
-    expect(runs).toHaveLength(0);
+    await expect(countOrgAgentRuns(f.orgId)).resolves.toBe(0);
   });
 
   // The crash this covers is the one the durable receipt exists for: Chat and
@@ -430,51 +342,25 @@ describe("native Morning Brief cron", () => {
     const { calls } = scriptProviders();
 
     await tickUntilNative(f);
-    const due = await makeNativeDue(f);
+    const due = await makeNativeOccurrenceDue(f);
     await accept(tick(), [200]);
     expect(calls.generation).toHaveLength(1);
-    const beforeCrash = await readOccurrences(f);
+    const beforeCrash = await readNativeOccurrences(f);
     expect(beforeCrash[0]?.generationAttemptId).not.toBeNull();
 
     // Unwind only the settlement. Everything the delivery committed stays, and
     // the claimant's lease is still held, which is exactly what a process that
     // died between the Chat COMMIT and its own settlement leaves behind.
-    const crashedLease = randomUUID();
-    // The schedule obligation is still held by the occurrence, exactly as the
-    // claim left it before the settlement that never ran.
-    await db()
-      .update(morningBriefNativeSchedules)
-      .set({ nextRunAt: null, scheduleOwner: null })
-      .where(
-        and(
-          eq(morningBriefNativeSchedules.orgId, f.orgId),
-          eq(morningBriefNativeSchedules.userId, f.userId),
-        ),
-      );
-    // And the accepted result is past its retention, so recovery cannot lean on
-    // it: only the durable receipt can prove the brief was delivered.
+    // And the accepted result is past its retention, so recovery cannot lean
+    // on it: only the durable receipt can prove the brief was delivered.
     await expireMorningBriefGenerationRetention(
       { orgId: f.orgId, userId: f.userId },
       new Date(now() - 1000),
     );
-    await db()
-      .update(morningBriefNativeOccurrences)
-      .set({
-        settledAt: null,
-        settledNextRunAt: null,
-        outcome: null,
-        state: "claimed",
-        deliveryPending: true,
-        leaseToken: crashedLease,
-        leaseExpiresAt: new Date(now() - 60 * 1000),
-      })
-      .where(
-        and(
-          eq(morningBriefNativeOccurrences.orgId, f.orgId),
-          eq(morningBriefNativeOccurrences.userId, f.userId),
-          eq(morningBriefNativeOccurrences.scheduledFor, due),
-        ),
-      );
+    await interruptNativeSettlement(f, {
+      scheduledFor: due,
+      leaseToken: randomUUID(),
+    });
 
     const recovery = await accept(tick(), [200]);
     expect(recovery.body.deliveriesRecovered).toBe(1);
@@ -482,20 +368,18 @@ describe("native Morning Brief cron", () => {
     // Recovered from the durable receipt: no second model request, no second
     // Chat event, no second delivery, and the slot settles exactly once.
     expect(calls.generation).toHaveLength(1);
-    const deliveries = await readDeliveries(f);
+    const deliveries = await readNativeDeliveries(f);
     expect(deliveries).toHaveLength(1);
-    const events = await db()
-      .select({ id: chatEvents.id })
-      .from(chatEvents)
-      .where(eq(chatEvents.chatThreadId, deliveries[0]?.chatThreadId ?? ""));
-    expect(events).toHaveLength(1);
-    const settled = await readOccurrences(f);
+    await expect(
+      readThreadEventTypes(deliveries[0]?.chatThreadId ?? ""),
+    ).resolves.toHaveLength(1);
+    const settled = await readNativeOccurrences(f);
     expect(settled).toHaveLength(1);
     expect(settled[0]?.outcome).toBe("delivered");
     expect(settled[0]?.settledAt).not.toBeNull();
     expect(settled[0]?.deliveryPending).toBeFalsy();
     // The member owes a future occurrence again, from the settlement clock.
-    const after = await readSchedule(f);
+    const after = await readNativeSchedule(f);
     expect(after?.nextRunAt?.getTime()).toBeGreaterThan(now());
   });
 
@@ -511,7 +395,7 @@ describe("native Morning Brief cron", () => {
     const { calls } = scriptProviders();
 
     await tickUntilNative(f);
-    const due = await makeNativeDue(f);
+    const due = await makeNativeOccurrenceDue(f);
     await accept(tick(), [200]);
     expect(calls.generation).toHaveLength(1);
 
@@ -522,38 +406,22 @@ describe("native Morning Brief cron", () => {
       { orgId: f.orgId, userId: f.userId },
       new Date(now() - 1000),
     );
-    await db()
-      .update(morningBriefNativeOccurrences)
-      .set({
-        settledAt: null,
-        settledNextRunAt: null,
-        outcome: null,
-        state: "claimed",
-        deliveryPending: true,
-        leaseToken: randomUUID(),
-        leaseExpiresAt: new Date(now() - 60 * 1000),
-      })
-      .where(
-        and(
-          eq(morningBriefNativeOccurrences.orgId, f.orgId),
-          eq(morningBriefNativeOccurrences.userId, f.userId),
-          eq(morningBriefNativeOccurrences.scheduledFor, due),
-        ),
-      );
+    await interruptNativeSettlement(f, {
+      scheduledFor: due,
+      leaseToken: randomUUID(),
+    });
 
     // The occurrence is not reachable by resume at all, whether or not the
     // receipt pass handled it this tick.
-    await expect(
-      loadResumableOccurrences(db(), { now: new Date(now()), limit: 50 }),
-    ).resolves.toStrictEqual([]);
+    await expect(resumableOccurrenceAnchors()).resolves.toStrictEqual([]);
 
     await accept(tick(), [200]);
 
     // Whatever the recovery pass decided, no second generation was started and
     // the committed receipt was never re-read as an empty day.
     expect(calls.generation).toHaveLength(1);
-    await expect(readDeliveries(f)).resolves.toHaveLength(1);
-    const rows = await readOccurrences(f);
+    await expect(readNativeDeliveries(f)).resolves.toHaveLength(1);
+    const rows = await readNativeOccurrences(f);
     expect(rows).toHaveLength(1);
     expect(rows[0]?.outcome).not.toBe("empty-skip");
   });
@@ -564,7 +432,7 @@ describe("native Morning Brief cron", () => {
     const { calls } = scriptProviders();
 
     await tickUntilNative(f);
-    await makeNativeDue(f);
+    await makeNativeOccurrenceDue(f);
     await accept(tick(), [200]);
     expect(calls.generation).toHaveLength(1);
 
@@ -572,8 +440,8 @@ describe("native Morning Brief cron", () => {
     const repeat = await accept(tick(), [200]);
     expect(repeat.body.claimed).toBe(0);
     expect(calls.generation).toHaveLength(1);
-    await expect(readGenerations(f)).resolves.toHaveLength(1);
-    await expect(readDeliveries(f)).resolves.toHaveLength(1);
+    await expect(readNativeGenerations(f)).resolves.toHaveLength(1);
+    await expect(readNativeDeliveries(f)).resolves.toHaveLength(1);
   });
 
   it("admits no native occurrence while the implementation switch is off", async () => {
@@ -584,11 +452,13 @@ describe("native Morning Brief cron", () => {
     await accept(tick(), [200]);
     await accept(tick(), [200]);
 
-    const schedule = await readSchedule(f);
+    const schedule = await readNativeSchedule(f);
     expect(schedule?.phase).toBe("legacy");
-    await expect(readOccurrences(f)).resolves.toHaveLength(0);
+    await expect(readNativeOccurrences(f)).resolves.toHaveLength(0);
     expect(calls.generation).toHaveLength(0);
     // The member's own legacy admission was never closed.
-    expect((await readAutomation(f))?.nextRunAt).not.toBeNull();
+    expect(
+      (await readLegacyAutomation(f.automationId))?.nextRunAt,
+    ).not.toBeNull();
   });
 });
