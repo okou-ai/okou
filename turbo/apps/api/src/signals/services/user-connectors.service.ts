@@ -108,6 +108,7 @@ interface UpdateUserCustomConnectorsArgs {
 
 interface UpdateUserCustomConnectorsOptions {
   readonly deferRuntimeWakeupUntilOuterCommit?: boolean;
+  readonly erasureAdmissionAlreadyHeld?: boolean;
 }
 
 type AddUserCustomConnectorResult =
@@ -772,7 +773,10 @@ export async function updateUserCustomConnectors(
 
   await userConnectorMutationHooks.get().beforeAdmission?.();
   const committed = await db.transaction(async (tx) => {
-    if (!(await admitUserConnectorMutation(tx, args))) {
+    if (
+      options.erasureAdmissionAlreadyHeld !== true &&
+      !(await admitUserConnectorMutation(tx, args))
+    ) {
       return {
         result: { status: "agentNotFound" } as const,
         changedConnectorIds: [],

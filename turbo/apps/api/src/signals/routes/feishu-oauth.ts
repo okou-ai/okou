@@ -15,6 +15,7 @@ import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installatio
 
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
+import { testOverride } from "../../lib/singleton";
 import { queryOf } from "../context/request";
 import { waitUntil } from "../context/wait-until";
 import { writeDb$, type Db } from "../external/db";
@@ -58,6 +59,7 @@ import {
   verifyFeishuOAuthState,
 } from "../services/feishu-oauth-state";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
+import { admitPiStableContextSubjects } from "../services/pi-stable-context-erasure.service";
 import {
   addUserCustomConnector,
   lockUserCustomConnectorGrantScope,
@@ -76,6 +78,26 @@ import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 
 const L = logger("FeishuOAuth");
 const REDIRECT_STATUS = 307;
+
+interface FeishuOAuthPersistenceHooks {
+  readonly beforeErasureAdmission?: () => Promise<void>;
+}
+
+const feishuOAuthPersistenceHooks = testOverride<FeishuOAuthPersistenceHooks>(
+  () => {
+    return {};
+  },
+);
+
+export function setFeishuOAuthPersistenceHooksForTest(
+  hooks: FeishuOAuthPersistenceHooks,
+): void {
+  feishuOAuthPersistenceHooks.set(hooks);
+}
+
+export function clearFeishuOAuthPersistenceHooksForTest(): void {
+  feishuOAuthPersistenceHooks.clear();
+}
 
 interface FeishuOAuthCallbackQuery {
   readonly code?: string;
@@ -439,6 +461,17 @@ async function persistFeishuOAuthConnection(
     }
 > {
   return await args.db.transaction(async (tx) => {
+    await feishuOAuthPersistenceHooks.get().beforeErasureAdmission?.();
+    if (
+      !(await admitPiStableContextSubjects(tx, [
+        { subjectKind: "organization", subjectId: args.state.orgId },
+        { subjectKind: "user", subjectId: args.state.userId },
+      ]))
+    ) {
+      throw new Error(
+        "Failed to authorize Feishu custom connector: agentNotFound",
+      );
+    }
     const agentLocked = await lockUserCustomConnectorGrantScope(tx, {
       orgId: args.state.orgId,
       userId: args.state.userId,
@@ -522,7 +555,10 @@ async function persistFeishuOAuthConnection(
         agentId: args.installation.defaultAgentId,
         customConnectorId: args.connector.id,
       },
-      { deferRuntimeWakeupUntilOuterCommit: true },
+      {
+        deferRuntimeWakeupUntilOuterCommit: true,
+        erasureAdmissionAlreadyHeld: true,
+      },
     );
     if (grant.status !== "added") {
       throw new Error(

@@ -27,6 +27,7 @@ import type {
 } from "@okouai/api-contracts/contracts/user-permission-grants";
 import type { Tx } from "../../lib/db-types";
 import { notFound } from "../../lib/error";
+import { testOverride } from "../../lib/singleton";
 import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { publishConnectorPermissionUpdatedSafely } from "../external/realtime";
 import { nowDate } from "../../lib/time";
@@ -52,7 +53,27 @@ import {
 } from "./connector-catalog-validator-authority";
 import { commitConnectorRuntimeMutation } from "./connector-runtime-wakeup.service";
 import { piStableContextVariantDigest } from "./pi-stable-context-digest.service";
+import { admitPiStableContextSubjects } from "./pi-stable-context-erasure.service";
 import { invalidatePiStableContext } from "./pi-stable-context-generation.service";
+
+interface UserPermissionGrantMutationHooks {
+  readonly beforeAdmission?: () => Promise<void>;
+}
+
+const userPermissionGrantMutationHooks =
+  testOverride<UserPermissionGrantMutationHooks>(() => {
+    return {};
+  });
+
+export function setUserPermissionGrantMutationHooksForTest(
+  hooks: UserPermissionGrantMutationHooks,
+): void {
+  userPermissionGrantMutationHooks.set(hooks);
+}
+
+export function clearUserPermissionGrantMutationHooksForTest(): void {
+  userPermissionGrantMutationHooks.clear();
+}
 
 const userPermissionGrantSelection = Object.freeze({
   id: userPermissionGrants.id,
@@ -802,7 +823,16 @@ async function applyVisibleAgentGrantRows(
   agentId: string,
   serverFirewalls: ConnectorServerFirewallCatalog,
 ): Promise<readonly UserPermissionGrantRow[] | NotFoundResponse> {
+  await userPermissionGrantMutationHooks.get().beforeAdmission?.();
   return await db.transaction(async (tx) => {
+    if (
+      !(await admitPiStableContextSubjects(tx, [
+        { subjectKind: "organization", subjectId: args.orgId },
+        { subjectKind: "user", subjectId: args.userId },
+      ]))
+    ) {
+      return notFound(`Agent not found: ${agentId}`);
+    }
     const visibleAgent = await lockVisibleAgentForUpdate(tx, {
       orgId: args.orgId,
       userId: args.userId,

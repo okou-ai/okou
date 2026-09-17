@@ -73,6 +73,22 @@ export async function countAgentStableContextPublicationsFixture(
   return rows.length;
 }
 
+export async function countAgentStableContextGenerationsFixture(
+  agentId: string,
+): Promise<number> {
+  const rows = await store
+    .set(writeDb$)
+    .select({ subject: piStableContextGenerations.subject })
+    .from(piStableContextGenerations)
+    .where(
+      and(
+        eq(piStableContextGenerations.agentId, agentId),
+        eq(piStableContextGenerations.subject, "@agent"),
+      ),
+    );
+  return rows.length;
+}
+
 export async function countUserStableContextGenerationsFixture(args: {
   readonly agentId: string;
   readonly userId: string;
@@ -92,8 +108,12 @@ export async function countUserStableContextGenerationsFixture(args: {
 
 const backendPidSchema = z.object({ pid: z.int() });
 
-export async function holdAgentStableContextGenerationFixture(
-  args: { readonly orgId: string; readonly agentId: string },
+async function holdStableContextGenerationFixture(
+  args: {
+    readonly orgId: string;
+    readonly agentId: string;
+    readonly subject: string;
+  },
   signal: AbortSignal,
 ) {
   const started = createDeferredPromise<number>(signal);
@@ -107,13 +127,13 @@ export async function holdAgentStableContextGenerationFixture(
         and(
           eq(piStableContextGenerations.orgId, args.orgId),
           eq(piStableContextGenerations.agentId, args.agentId),
-          eq(piStableContextGenerations.subject, "@agent"),
+          eq(piStableContextGenerations.subject, args.subject),
         ),
       )
       .for("update")
       .limit(1);
     if (!generation) {
-      throw new Error("Expected Agent stable-context generation fixture");
+      throw new Error("Expected stable-context generation fixture");
     }
     const [backend] = await executeRawRows(
       tx,
@@ -144,7 +164,41 @@ export async function holdAgentStableContextGenerationFixture(
         return row.pid;
       });
     },
+    async blockedByPid(pid: number): Promise<readonly number[]> {
+      const rows = await executeRawRows(
+        db,
+        sql`SELECT pid FROM pg_stat_activity WHERE ${pid} = ANY(pg_blocking_pids(pid))`,
+        backendPidSchema,
+      );
+      return rows.map((row) => {
+        return row.pid;
+      });
+    },
   };
+}
+
+export async function holdAgentStableContextGenerationFixture(
+  args: { readonly orgId: string; readonly agentId: string },
+  signal: AbortSignal,
+) {
+  return await holdStableContextGenerationFixture(
+    { ...args, subject: "@agent" },
+    signal,
+  );
+}
+
+export async function holdUserStableContextGenerationFixture(
+  args: {
+    readonly orgId: string;
+    readonly agentId: string;
+    readonly userId: string;
+  },
+  signal: AbortSignal,
+) {
+  return await holdStableContextGenerationFixture(
+    { orgId: args.orgId, agentId: args.agentId, subject: args.userId },
+    signal,
+  );
 }
 
 export async function assertUserStableContextGenerationUnlockedFixture(args: {

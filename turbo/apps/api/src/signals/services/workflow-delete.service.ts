@@ -16,6 +16,7 @@ import { OFFICIAL_WORKFLOW_CATALOG_ACTIVATION_LOCK } from "./official-workflow-c
 import { purgeDeletedStoragePrefix$ } from "./storage-prefix-purge.service";
 import {
   invalidatePiStableContext,
+  lockPiStableContextGenerationScopes,
   piStableContextWorkflowInvalidationOptions,
   piStableContextWorkflowPublicationKey,
   retirePiStableContextPublication,
@@ -77,6 +78,7 @@ async function retireDeletedWorkflowStableContext(
       userId: args.workflow.ownerUserId,
     },
   ] as const;
+  await lockPiStableContextGenerationScopes(tx, scopes);
   const publicationKey = piStableContextWorkflowPublicationKey(
     args.workflow.id,
   );
