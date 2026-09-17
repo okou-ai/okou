@@ -383,18 +383,36 @@ describe("getAllFeatureStates", () => {
     expect(colleagueStates[FeatureSwitchKey.PiLoop]).toBe(true);
   });
 
-  it("should enable effort for Bingjie by email outside the staff org", () => {
+  it("should enable custom templates for Bingjie by email outside the staff org", () => {
     const bingjieStates = getAllFeatureStates({
       email: "BINGJIE@OKOU.AI",
       orgId: "org_nonexistent",
     });
-    expect(bingjieStates[FeatureSwitchKey.Effort]).toBe(true);
+    expect(bingjieStates[FeatureSwitchKey.CustomTemplates]).toBe(true);
 
     const otherStates = getAllFeatureStates({
       email: "ethan@okou.ai",
       orgId: "org_nonexistent",
     });
-    expect(otherStates[FeatureSwitchKey.Effort]).toBe(false);
+    expect(otherStates[FeatureSwitchKey.CustomTemplates]).toBe(false);
+  });
+
+  it("releases the composer run controls to every org and keeps the off lever", () => {
+    const states = getAllFeatureStates({ orgId: "org_nonexistent" });
+    expect(states[FeatureSwitchKey.Effort]).toBe(true);
+    expect(states[FeatureSwitchKey.CodexFastMode]).toBe(true);
+    // The picker's own rollout is still staff-only.
+    expect(states[FeatureSwitchKey.ModelPickerFlyout]).toBe(false);
+
+    const reverted = getAllFeatureStates({
+      orgId: "org_nonexistent",
+      overrides: {
+        [FeatureSwitchKey.Effort]: false,
+        [FeatureSwitchKey.CodexFastMode]: false,
+      },
+    });
+    expect(reverted[FeatureSwitchKey.Effort]).toBe(false);
+    expect(reverted[FeatureSwitchKey.CodexFastMode]).toBe(false);
   });
 
   it("should apply overrides to enable disabled features", () => {

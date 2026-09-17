@@ -486,11 +486,14 @@ export function mockUrlObjectMethods(
   return { createObjectURL, revokeObjectURL };
 }
 
+// The model menu opens from a button; only the legacy select is a combobox.
 async function findComposerModel(label: string): Promise<HTMLElement> {
   return await waitFor(() => {
-    const combobox = screen.getByRole("combobox", { name: label });
-    expect(combobox).toBeInTheDocument();
-    return combobox;
+    const trigger =
+      screen.queryByRole("combobox", { name: label }) ??
+      screen.getByRole("button", { name: label });
+    expect(trigger).toBeInTheDocument();
+    return trigger;
   });
 }
 

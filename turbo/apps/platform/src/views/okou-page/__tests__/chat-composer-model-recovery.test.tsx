@@ -17,6 +17,7 @@ import type {
   SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -538,7 +539,15 @@ test("Refresh model availability without losing useful options", async () => {
     );
   });
 
-  await setupPage({ context, path: RUN_PATH });
+  // One row per model: a Fast row would make the option names ambiguous.
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    featureSwitches: {
+      [FeatureSwitchKey.Effort]: false,
+      [FeatureSwitchKey.CodexFastMode]: false,
+    },
+  });
 
   await readyChat();
   const picker = await screen.findByRole("combobox", {

@@ -395,6 +395,8 @@ test("Make a temporary Codex speed the default", async () => {
     featureSwitches: {
       [FeatureSwitchKey.CodexFastMode]: true,
       [FeatureSwitchKey.ChatPreference]: true,
+      // Speed is the subject here; effort would add its own preference patch.
+      [FeatureSwitchKey.Effort]: false,
     },
   });
 
@@ -484,6 +486,8 @@ test("Temporarily choose a model for a new chat", async () => {
     path: NEW_CHAT_PATH,
     featureSwitches: {
       [FeatureSwitchKey.ChatPreference]: true,
+      // Scoping the choice is the subject; effort would add its own patch.
+      [FeatureSwitchKey.Effort]: false,
     },
   });
 
@@ -600,7 +604,15 @@ test("Explain model availability by plan and provider", async () => {
     return respond(200, limitedFreeBillingStatus());
   });
 
-  await setupPage({ context, path: NEW_CHAT_PATH });
+  // One row per model: a Fast row would make the option names ambiguous.
+  await setupPage({
+    context,
+    path: NEW_CHAT_PATH,
+    featureSwitches: {
+      [FeatureSwitchKey.Effort]: false,
+      [FeatureSwitchKey.CodexFastMode]: false,
+    },
+  });
 
   await readyComposer();
   await user.click(await modelPicker("DeepSeek V4 Flash"));
@@ -670,7 +682,16 @@ test("Let an existing thread send while model availability is reconciling", asyn
     });
   });
 
-  await setupPage({ context, path: RUN_PATH });
+  // Sending during reconciliation is the subject; the run controls would
+  // otherwise wait on the same policy list.
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    featureSwitches: {
+      [FeatureSwitchKey.Effort]: false,
+      [FeatureSwitchKey.CodexFastMode]: false,
+    },
+  });
 
   await readyChat();
   const composer = await screen.findByRole("textbox", { name: "Message" });
