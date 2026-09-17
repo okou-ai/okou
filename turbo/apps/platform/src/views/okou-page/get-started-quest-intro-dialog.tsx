@@ -23,6 +23,8 @@ import {
   showQuestIntroPrompt$,
 } from "../../signals/okou-page/get-started.ts";
 import { formatLocalizedNumber } from "../../i18n/format.ts";
+import { SlackMark } from "./components/slack-mark.tsx";
+import { platformStaticAssetUrl } from "../../lib/static-assets.ts";
 import {
   BAND_ALPHA,
   FILL_ALPHA,
@@ -135,6 +137,26 @@ function Lines({
   );
 }
 
+/**
+ * Okou's own face, the same asset onboarding draws. Wherever the assistant
+ * appears in a figure it appears as itself, not as a label or a brand mark.
+ */
+const OKOU_AVATAR_IMG = platformStaticAssetUrl(
+  "views/onboarding/assets/okou-avatar-2df72642115f.webp",
+);
+
+function OkouAvatar({ size }: { size: number }) {
+  return (
+    <img
+      src={OKOU_AVATAR_IMG}
+      alt=""
+      aria-hidden
+      className="block object-contain"
+      style={{ width: size, height: size }}
+    />
+  );
+}
+
 /** A bust: the account glyph, reused wherever a person is meant. */
 function Person({ accent, size }: { accent: string; size: number }) {
   return (
@@ -174,17 +196,12 @@ function Person({ accent, size }: { accent: string; size: number }) {
  * and calendar on the other, joined by a link that the copy underneath says can
  * be broken again.
  */
-function ConnectorFigure({ assistantName }: { assistantName: string }) {
+function ConnectorFigure() {
   const accent = ILLUSTRATION_ACCENTS.website;
   return (
     <TileRow>
       <Tile accent={accent}>
-        <span
-          className={`grid h-[34px] w-[44px] place-items-center px-1 text-[10px] font-semibold ${NODE_CLASS}`}
-          style={{ borderColor: `${accent}${LINE_ALPHA}`, color: accent }}
-        >
-          <span className="truncate">{assistantName}</span>
-        </span>
+        <OkouAvatar size={44} />
       </Tile>
       <Link accent={accent} />
       <Tile accent={accent}>
@@ -226,40 +243,129 @@ function ConnectorFigure({ assistantName }: { assistantName: string }) {
   );
 }
 
-/** Personal account on the left, the channel everyone can call it from on the right. */
-function SlackFigure() {
-  const accent = ILLUSTRATION_ACCENTS.avatar;
+/**
+ * What the quest actually produces: a channel with the assistant in it.
+ *
+ * The other figures can stay abstract because they are about the user's own
+ * material, but this one names a place the reader already knows, so it is drawn
+ * as a small Slack window — rail, channel name, a mention and the reply — with
+ * the real mark on the message that answers.
+ */
+function SlackFigure({ assistantName }: { assistantName: string }) {
+  // Slack's own aubergine, because this drawing has to be recognised as Slack
+  // before it is read. It is laid down at the same five strengths as every
+  // other tile so the figure still belongs to the family.
+  const accent = "#4A154B";
+  // The handle the reader would actually type, built from the assistant's name
+  // rather than hard-coded, so a rebrand carries through the drawing too.
+  const mention = `@${assistantName.toLowerCase()}`;
   return (
     <TileRow>
-      <Tile accent={accent}>
-        <Person accent={accent} size={34} />
-      </Tile>
-      <Link accent={accent} />
-      <Tile accent={accent}>
+      <span
+        className={`flex h-[112px] w-[292px] overflow-hidden ${NODE_CLASS}`}
+        style={{ borderColor: `${accent}${LINE_ALPHA}` }}
+      >
+        {/* The rail: the workspace, with the channel it was invited to marked. */}
         <span
-          className={`flex h-[44px] w-[52px] flex-col gap-[4px] p-[5px] ${NODE_CLASS}`}
-          style={{ borderColor: `${accent}${LINE_ALPHA}` }}
+          className="flex w-[58px] shrink-0 flex-col gap-[6px] p-[7px]"
+          style={{ backgroundColor: `${accent}${BAND_ALPHA}` }}
         >
           <span
-            className="h-[3px] w-[18px] rounded-full"
-            style={{ backgroundColor: `${accent}${BAND_ALPHA}` }}
+            className="h-[6px] w-[26px] rounded-full"
+            style={{ backgroundColor: `${accent}${FILL_ALPHA}` }}
           />
-          <span className="flex items-center gap-[3px]">
-            <Person accent={accent} size={13} />
-            <Person accent={accent} size={13} />
+          {[
+            { id: "rail-1", active: false },
+            { id: "rail-2", active: true },
+            { id: "rail-3", active: false },
+          ].map(({ id, active }) => {
+            return (
+              <span
+                key={id}
+                className="flex items-center gap-[4px] rounded-[3px] px-[3px] py-[2px]"
+                style={{
+                  backgroundColor: active
+                    ? `${accent}${SOFT_ALPHA}`
+                    : undefined,
+                }}
+              >
+                <span
+                  className="text-[7px] font-bold leading-none"
+                  style={{ color: active ? "#fff" : `${accent}${FILL_ALPHA}` }}
+                >
+                  #
+                </span>
+                <span
+                  className="h-[3px] rounded-full"
+                  style={{
+                    width: active ? 28 : 22,
+                    backgroundColor: active
+                      ? "#ffffffcc"
+                      : `${accent}${SOFT_ALPHA}`,
+                  }}
+                />
+              </span>
+            );
+          })}
+        </span>
+        {/* The channel: someone asks, the assistant answers. */}
+        <span className="flex min-w-0 flex-1 flex-col gap-[6px] p-[8px]">
+          <span className="flex items-center gap-[4px]">
+            <SlackMark size={10} />
             <span
-              className="grid size-[15px] place-items-center rounded-full text-[8px] font-bold"
-              style={{
-                backgroundColor: `${accent}${FILL_ALPHA}`,
-                color: "#fff",
-              }}
+              className="text-[9px] font-bold leading-none"
+              style={{ color: accent }}
             >
-              @
+              #
+            </span>
+            <span
+              className="h-[4px] w-[34px] rounded-full"
+              style={{ backgroundColor: `${accent}${FILL_ALPHA}` }}
+            />
+          </span>
+          <span className="flex items-start gap-[5px]">
+            <Person accent={accent} size={16} />
+            <span className="flex flex-col gap-[3px] pt-[2px]">
+              <span className="flex items-center gap-[3px]">
+                <span
+                  className="rounded-[2px] px-[3px] py-[1px] text-[7px] font-semibold leading-none"
+                  style={{
+                    backgroundColor: `${accent}${BAND_ALPHA}`,
+                    color: accent,
+                  }}
+                >
+                  {mention}
+                </span>
+                <span
+                  className="h-[3px] w-[52px] rounded-full"
+                  style={{ backgroundColor: `${accent}${SOFT_ALPHA}` }}
+                />
+              </span>
             </span>
           </span>
-          <Lines accent={accent} width={38} count={2} />
+          <span className="flex items-start gap-[5px]">
+            <OkouAvatar size={18} />
+            <span className="flex flex-col gap-[3px] pt-[3px]">
+              <span
+                className="h-[3px] w-[130px] rounded-full"
+                style={{ backgroundColor: `${accent}${SOFT_ALPHA}` }}
+              />
+              <span
+                className="h-[3px] w-[104px] rounded-full"
+                style={{ backgroundColor: `${accent}${SOFT_ALPHA}` }}
+              />
+              {/* The result itself, delivered in the channel. */}
+              <span
+                className={`mt-[2px] h-[20px] w-[142px] ${NODE_CLASS}`}
+                style={{
+                  borderColor: `${accent}${LINE_ALPHA}`,
+                  backgroundColor: `${accent}${BAND_ALPHA}`,
+                }}
+              />
+            </span>
+          </span>
         </span>
-      </Tile>
+      </span>
     </TileRow>
   );
 }
@@ -501,7 +607,7 @@ function ConnectorIntro({ onConfirm, onClose }: IntroProps) {
       description={t(($) => {
         return $.chat.agentPage.getStarted.intro.connector.description;
       })}
-      figure={<ConnectorFigure assistantName={assistantName} />}
+      figure={<ConnectorFigure />}
       secondaryLabel={useLaterLabel()}
       onSecondary={onClose}
       confirmLabel={t(($) => {
@@ -543,7 +649,7 @@ function SlackIntro({ onConfirm, onClose }: IntroProps) {
         },
         { assistantName },
       )}
-      figure={<SlackFigure />}
+      figure={<SlackFigure assistantName={assistantName} />}
       secondaryLabel={useLaterLabel()}
       onSecondary={onClose}
       confirmLabel={t(($) => {
