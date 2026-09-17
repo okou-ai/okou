@@ -207,6 +207,37 @@ test("Hovering a workflow closes the preview pane", async () => {
   });
 });
 
+test("Hovering the Workflow type closes the preview pane", async () => {
+  const user = userEvent.setup();
+  await openSlashMenu();
+  expect(detailPane()).not.toBeNull();
+  await user.hover(slashButton("Workflow"));
+  await waitFor(() => {
+    expect(detailPane()).toBeNull();
+  });
+});
+
+test("The closed preview pane stays closed when the panel leaves a still pointer", async () => {
+  await openSlashMenu();
+  const workflow = slashButton("Workflow");
+  // The popover is content-width, so closing the pane narrows it. When the
+  // popover has been collision-shifted against a boundary, that narrowing
+  // re-pins it and the left column slides away from a pointer that never
+  // moved, which the browser reports as a leave at the move's own
+  // coordinates. Replayed here because jsdom has no layout to shift.
+  const still = { clientX: 300, clientY: 470 };
+  fireEvent.mouseOver(workflow, still);
+  fireEvent.mouseMove(workflow, still);
+  await waitFor(() => {
+    expect(detailPane()).toBeNull();
+  });
+
+  fireEvent.mouseOut(workflow, { ...still, relatedTarget: document.body });
+
+  expect(detailPane()).toBeNull();
+  expect(slashButton("Presentation")).not.toHaveAttribute("data-active");
+});
+
 test.each(WORKFLOW_NAVIGATION_CASES)(
   "Enter keeps the keyboard selection while another workflow is hovered for query '$query'",
   async ({ query, downCount }) => {
