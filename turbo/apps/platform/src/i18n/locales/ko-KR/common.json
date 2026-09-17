@@ -645,7 +645,6 @@
       "importedSlides_other": "{{count}}장",
       "importFile": "내 파일 가져오기",
       "importFileHint": "({{formats}})",
-      "importStarted": "{{filename}}을(를) 분석하고 있습니다. 준비되면 Custom에 표시됩니다.",
       "importUnsupported": "템플릿을 만들려면 {{formats}} 파일을 선택하세요.",
       "introVideo": "인트로 영상",
       "introVideoUnavailable": "이 동영상 템플릿은 더 이상 사용할 수 없습니다. 메시지를 보내려면 삭제하세요.",
@@ -1968,10 +1967,12 @@
       "github": "GitHub",
       "lark": "Lark",
       "openChat": "오픈 채팅",
+      "openChatIn": "{{integration}}에서 채팅 열기",
       "openFeishuChat": "Feishu에서 원본 채팅 열기",
       "openGithubMessage": "GitHub에서 원본 이슈 또는 풀 리퀘스트 열기",
       "openLarkChat": "Lark에서 원본 채팅 열기",
       "openMessage": "메시지 열기",
+      "openMessages": "메시지 열기",
       "openSlackMessage": "Slack에서 원본 메시지 열기",
       "openTeamsMessage": "Microsoft Teams에서 원본 메시지 열기",
       "openTelegramMessage": "Telegram에서 원본 메시지 열기",
@@ -4203,6 +4204,8 @@
         "tiny-wanderer": "작은 방랑자"
       },
       "presentation": {
+        "bloom-pitch": "꽃잎 피치",
+        "blueprint-academy": "제도 캠퍼스",
         "botane-organic-deck": "모브 가든",
         "business-data-presentation": "베리 대시보드",
         "crayon-learning-deck": "크레용 낙서",
@@ -4211,9 +4214,19 @@
         "editorial-magazine-deck": "종이 잡지",
         "landing-consulting-deck": "네온 브라우저",
         "lumina-creative-studio": "브러시 스티커",
+        "meridian": "코발트 블록",
         "mosaic-geometric-pitch": "바우하우스 타일",
+        "neo-brutalism": "섀도 숍",
+        "nocturne": "미드나이트 스테이지",
+        "pixel-glitch": "아케이드 픽셀",
         "playful-launch-presentation": "선버스트 놀이방",
-        "playful-pop-deck": "네온 캔디"
+        "playful-pop-deck": "네온 캔디",
+        "prospectus": "홈페이지 피치",
+        "schoolhouse": "크라프트 포스터",
+        "sticker-scrapbook": "스티커 노트",
+        "strata": "붉은 계단",
+        "taped-consulting": "폴라로이드 벽",
+        "vantage": "넘버링 회의실"
       },
       "video": {
         "chinese-ink-art": "중국 먹 그림",
@@ -5310,7 +5323,8 @@
     "status": {
       "availableNow": "현재 사용 가능",
       "inUse_one": "{{active}}개 사용 중, 총 {{limit}}개 슬롯",
-      "inUse_other": "{{active}}개 사용 중, 총 {{limit}}개 슬롯"
+      "inUse_other": "{{active}}개 사용 중, 총 {{limit}}개 슬롯",
+      "waitingForSandbox": "Sandbox 대기 중"
     },
     "tiers": {
       "custom": "맞춤형",

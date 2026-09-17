@@ -505,13 +505,20 @@ test("Changing a Creative Video style retains settings without reopening the pan
   }
   click(edit);
   const dialog = await screen.findByRole("dialog");
+  // A Creative Video draft opens the picker on its own tab without hiding the
+  // rest of the catalog.
   expect(
     queryAllByRoleFast("tab", dialog).map((tab) => {
       return tab.textContent?.trim();
     }),
-  ).toStrictEqual(["Video"]);
-  await userEvent.setup({ delay: null }).click(tabByText("Video"));
-  await userEvent.setup({ delay: null }).keyboard("{End}{ArrowDown}");
+  ).toStrictEqual([
+    "Presentation",
+    "Website",
+    "Illustration",
+    "Video",
+    "Avatar",
+    "Workflow",
+  ]);
   expect(tabByText("Video")).toHaveAttribute("aria-selected", "true");
   const template = VIDEO_TEMPLATE_ITEMS[1]!;
   click(

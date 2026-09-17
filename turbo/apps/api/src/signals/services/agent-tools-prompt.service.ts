@@ -107,7 +107,6 @@ function buildIntegrationToolsPrompt(
 export function buildAgentToolsPrompt(args: {
   readonly privateArtifactsEnabled: boolean;
   readonly feishuPlatform: FeishuPlatform | undefined;
-  readonly sshEnabled: boolean;
   readonly triggerSource: TriggerSource;
   readonly cloudBrowserEnabled: boolean | undefined;
   readonly bankingEnabled: boolean;
@@ -126,11 +125,7 @@ export function buildAgentToolsPrompt(args: {
           "- Private artifact downloads: to download files referenced by `/artifacts/xxx`, use `okou artifact download -h`.",
         ]
       : []),
-    ...(args.sshEnabled
-      ? [
-          "- SSH: use `okou ssh host list --json` to find hosts, `okou ssh exec` to run commands, `okou ssh session` for persistent sessions, and `okou ssh upload` / `okou ssh download` for files. Read `okou ssh --help` and the relevant subcommand's `--help` before use.",
-        ]
-      : []),
+    "- SSH: use `okou ssh host list --json` to find hosts, `okou ssh exec` to run commands, `okou ssh session` for persistent sessions, and `okou ssh upload` / `okou ssh download` for files. Read `okou ssh --help` and the relevant subcommand's `--help` before use.",
     "- When an Okou CLI command prints a user-facing action URL, return that exact URL verbatim. Never rewrite, shorten, reconstruct, or omit any query parameters.",
     "- Capability questions: when the user asks what Okou can do, whether Okou can do a category of work, or compares Okou to another assistant, run `okou intro` first. Use its output to synthesize a concise answer in the user's language. Do not paste the intro verbatim.",
     "- Locate local agent-session files, search web chat messages, or inspect external services via connectors: `okou search --help`.",

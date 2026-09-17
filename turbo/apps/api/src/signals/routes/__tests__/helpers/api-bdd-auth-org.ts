@@ -870,26 +870,30 @@ export function createAuthOrgAgentsBddApi(context: TestContext) {
       );
     },
 
-    async listMembers(actor: ApiTestUser): Promise<OrgMembersResponse> {
+    async listMembers(
+      actor: ApiTestUser,
+      query: { readonly view?: "members" } = {},
+    ): Promise<OrgMembersResponse> {
       const client = setupAppWithRoutes({ context, routes: authOrgRoutes })(
         orgMembersContract,
       );
       const response = await accept(
-        client.members({ headers: authenticate(actor) }),
+        client.members({ headers: authenticate(actor), query }),
         [200],
       );
       return response.body;
     },
 
     async requestListMembers<S extends 200 | 400 | 401 | 403 | 404 | 500 | 503>(
-      actor: ApiTestUser,
+      actor: ApiTestUser | null,
       statuses: readonly S[],
+      query: { readonly view?: "members" } = {},
     ) {
       const client = setupAppWithRoutes({ context, routes: authOrgRoutes })(
         orgMembersContract,
       );
       return await accept(
-        client.members({ headers: authenticate(actor) }),
+        client.members({ headers: authenticate(actor), query }),
         statuses,
       );
     },

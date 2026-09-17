@@ -15,7 +15,6 @@ import {
   sshConnectionsContract,
   type SshConnectionResponse,
 } from "@okouai/api-contracts/contracts/ssh-connections";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, test, vi } from "vitest";
@@ -1074,7 +1073,6 @@ test("A localized load error is retryable and distinct from feature unavailabili
     path: "/connectors/ssh",
     auth,
     locale: "fr-FR",
-    featureSwitches: { [FeatureSwitchKey.SshAccess]: true },
   });
   await screen.findByText(
     "Impossible de charger les paramètres SSH. Réessayez.",
@@ -1138,12 +1136,11 @@ test("Invalid host errors preserve credentials so the host can be corrected and 
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 });
-async function page(path = "/connectors/ssh", enabled = true) {
+async function page(path = "/connectors/ssh") {
   await setupPage({
     context,
     path,
     auth,
-    featureSwitches: { [FeatureSwitchKey.SshAccess]: enabled },
   });
 }
 
@@ -1692,20 +1689,13 @@ test("Reset requires confirmation, generation conflict refreshes without retry, 
   );
 });
 
-test("Disabled SSH shows unavailability without management controls", async () => {
-  await page("/connectors/ssh", false);
-  await screen.findByText("SSH access is not available for this account.");
-  expect(queryAction("button", "Add host")).not.toBeInTheDocument();
-});
-
-test("An ordinary owner can manage SSH when the feature flag is enabled", async () => {
+test("An ordinary owner can manage SSH without feature overrides", async () => {
   context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
     return respond(200, { connections: [base] });
   });
   await setupPage({
     context,
     path: "/connectors/ssh",
-    featureSwitches: { [FeatureSwitchKey.SshAccess]: true },
   });
   await screen.findByText("deploy@ssh.example.com:22");
   expect(getAction("button", "Add host")).toBeEnabled();

@@ -25,7 +25,6 @@ describe("FeatureSwitchKey", () => {
     expect(FeatureSwitchKey.RealAgentInPreview).toBe("_realAgentInPreview");
     expect(FeatureSwitchKey.LangfuseTrace).toBe("_langfuseTrace");
     expect(FeatureSwitchKey.TestOauthConnector).toBe("_testOauthConnector");
-    expect(FeatureSwitchKey.SshAccess).toBe("sshAccess");
     expect(FeatureSwitchKey.PiLoop).toBe("piLoop");
     expect(FeatureSwitchKey.PiMemory).toBe("piMemory");
   });
@@ -138,13 +137,6 @@ describe("isFeatureEnabled", () => {
 
   it("should return false for disabled switch without context", () => {
     expect(isFeatureEnabled(FeatureSwitchKey.AhrefsConnector, {})).toBe(false);
-    expect(isFeatureEnabled(FeatureSwitchKey.SshAccess, {})).toBe(false);
-    expect(getFeatureSwitchMetadata()[FeatureSwitchKey.SshAccess]).toEqual({
-      maintainer: "liangyou@okou.ai",
-      description:
-        "Enable Runner-mediated SSH with Direct and Cloudflare Access transports",
-      rolloutStage: "beta",
-    });
   });
 
   it("should return false for disabled switch with non-matching userId", () => {
@@ -340,7 +332,6 @@ describe("getAllFeatureStates", () => {
     expect(staffOrgStates[FeatureSwitchKey.GradientColorThemes]).toBe(false);
     expect(staffOrgStates[FeatureSwitchKey.OfficialWorkflows]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.MorningBrief]).toBe(true);
-    expect(staffOrgStates[FeatureSwitchKey.SshAccess]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.ChatThreadHeaderActions]).toBe(true);
 
     const otherOrgStates = getAllFeatureStates({

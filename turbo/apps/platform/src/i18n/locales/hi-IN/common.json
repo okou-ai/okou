@@ -646,7 +646,6 @@
       "importedSlides_other": "{{count}} स्लाइड",
       "importFile": "अपनी फ़ाइल इंपोर्ट करें",
       "importFileHint": "({{formats}})",
-      "importStarted": "{{filename}} का विश्लेषण हो रहा है। तैयार होने पर यह Custom में दिखाई देगा।",
       "importUnsupported": "टेम्पलेट बनाने के लिए {{formats}} फ़ाइल चुनें।",
       "introVideo": "इंट्रो वीडियो",
       "introVideoUnavailable": "यह वीडियो टेम्पलेट अब उपलब्ध नहीं है। अपना संदेश भेजने के लिए इसे हटाएँ।",
@@ -1976,10 +1975,12 @@
       "github": "GitHub",
       "lark": "Lark",
       "openChat": "चैट खोलें",
+      "openChatIn": "{{integration}} में चैट खोलें",
       "openFeishuChat": "Feishu में मूल चैट खोलें",
       "openGithubMessage": "GitHub में मूल इश्यू या पुल अनुरोध खोलें",
       "openLarkChat": "Lark में मूल चैट खोलें",
       "openMessage": "संदेश खोलें",
+      "openMessages": "Messages खोलें",
       "openSlackMessage": "मूल संदेश को Slack में खोलें",
       "openTeamsMessage": "Microsoft Teams में मूल संदेश खोलें",
       "openTelegramMessage": "Telegram में मूल संदेश खोलें",
@@ -4216,6 +4217,8 @@
         "tiny-wanderer": "छोटा पथिक"
       },
       "presentation": {
+        "bloom-pitch": "पंखुड़ी पिच",
+        "blueprint-academy": "ड्राफ्टिंग कैंपस",
         "botane-organic-deck": "मौवे उद्यान",
         "business-data-presentation": "बेरी डैशबोर्ड",
         "crayon-learning-deck": "क्रेयॉन डूडल",
@@ -4224,9 +4227,19 @@
         "editorial-magazine-deck": "कागज पत्रिका",
         "landing-consulting-deck": "नियॉन ब्राउज़र",
         "lumina-creative-studio": "ब्रश स्टिकर",
+        "meridian": "कोबाल्ट ब्लॉक्स",
         "mosaic-geometric-pitch": "बॉहॉस टाइल्स",
+        "neo-brutalism": "शैडो शॉप",
+        "nocturne": "मिडनाइट स्टेज",
+        "pixel-glitch": "आर्केड पिक्सल",
         "playful-launch-presentation": "सनबर्स्ट प्लेरूम",
-        "playful-pop-deck": "नियॉन कैंडी"
+        "playful-pop-deck": "नियॉन कैंडी",
+        "prospectus": "होमपेज पिच",
+        "schoolhouse": "क्राफ्ट पोस्टर",
+        "sticker-scrapbook": "स्टिकर नोटबुक",
+        "strata": "लाल सीढ़ी",
+        "taped-consulting": "पोलेरॉइड दीवार",
+        "vantage": "नंबर वाला बोर्डरूम"
       },
       "video": {
         "chinese-ink-art": "चीनी स्याही चित्रकारी",
@@ -5323,7 +5336,8 @@
     "status": {
       "availableNow": "अभी उपलब्ध",
       "inUse_one": "{{limit}} स्लॉट का {{active}} उपयोग में है",
-      "inUse_other": "{{limit}} स्लॉट में से {{active}} उपयोग में है"
+      "inUse_other": "{{limit}} स्लॉट में से {{active}} उपयोग में है",
+      "waitingForSandbox": "Sandbox की प्रतीक्षा"
     },
     "tiers": {
       "custom": "कस्टम",

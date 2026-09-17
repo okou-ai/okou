@@ -407,7 +407,6 @@ function buildAppendSystemPrompt(args: {
 
 function buildStableAgentPrompt(args: {
   readonly privateArtifactsEnabled: boolean;
-  readonly sshEnabled: boolean;
   readonly agent: AgentRunRecord;
   readonly feishuPlatform: FeishuPlatform | undefined;
   readonly triggerSource: TriggerSource;
@@ -423,7 +422,6 @@ function buildStableAgentPrompt(args: {
     tools: buildAgentToolsPrompt({
       privateArtifactsEnabled: args.privateArtifactsEnabled,
       feishuPlatform: args.feishuPlatform,
-      sshEnabled: args.sshEnabled,
       triggerSource: args.triggerSource,
       cloudBrowserEnabled: args.cloudBrowserEnabled,
       bankingEnabled: args.bankingEnabled,
@@ -794,10 +792,6 @@ function buildStableRunPromptContext(args: BuildCreateAgentRunArgsInput): {
   const promptInputs = {
     privateArtifactsEnabled: isFeatureEnabled(
       FeatureSwitchKey.PrivateArtifacts,
-      args.featureSwitchContext,
-    ),
-    sshEnabled: isFeatureEnabled(
-      FeatureSwitchKey.SshAccess,
       args.featureSwitchContext,
     ),
     bankingEnabled: isFeatureEnabled(

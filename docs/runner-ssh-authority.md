@@ -20,8 +20,8 @@ the Run user's SSH grant, exact user-owned connection and its credential.
 Run, session, grant and host user/workspace identities must agree. The Agent
 must belong to that workspace and be public or owned by the Run user; its
 creator need not own the host. Shared Agents never use their creator's hosts
-on another user's Run. The current `SshAccess` (`sshAccess`) feature switch must be enabled;
-there is no additional staff-org gate.
+on another user's Run. SSH is generally available, without a rollout switch or
+staff-org gate.
 SSH access depends on the user's current configuration and the Agent's current
 grant, not how the Run started. All chat channels, workflow schedule/event
 automations, delegated Agents, webhooks, SDK/non-chat and test Runs use the same
@@ -29,9 +29,8 @@ authority path. A chat thread or trigger metadata is not required; workflow
 associations and retained historical Goal provenance add no eligibility gate.
 The Goal lifecycle is retired; that provenance cannot create or resume work.
 The session identifies the Agent without using chat-thread state as an authorization gate.
-The switch defaults to enabled for staff organizations and disabled elsewhere;
-explicit user overrides remain effective. This rollout default does not replace
-authorization or expose credentials to local/PAT Runners.
+General availability does not replace authorization or expose credentials to
+local/PAT Runners.
 
 `POST /api/runners/runs/:runId/ssh/resolve` takes:
 
@@ -59,7 +58,7 @@ KMS or stored local invariants remain server errors, not unavailable references.
 
 Configuration, encrypted credentials and relational authority are captured in
 one joined read, including the host's required, same-owner reusable credential,
-followed by the feature check. The selected credential supplies the username and
+without a separate rollout check. The selected credential supplies the username and
 either the existing `resolved` private-key response or `resolved_password`
 password response; only the selected method's secrets are decrypted.
 That authorized snapshot is an
@@ -127,7 +126,7 @@ see the execution document's explicitly deferred russh host-proof algorithm
 consistency limitation.
 
 Pin first authorizes without locking. It then locks the owned connection row
-used by owner edit/reset, rechecks current authority and rollout state after
+used by owner edit/reset, rechecks current authority after
 any wait, and holds shared authority/credential row locks through the write.
 No KMS or other external call occurs in that transaction. Unauthorized calls
 do not acquire another owner's connection lock.
@@ -159,7 +158,7 @@ Null means host-key verification and SSH authentication succeeded, not command
 success. No command, output, peer diagnostic, credential or arbitrary error text
 is accepted. The strict guest/CLI outcome and inventory DTOs are unchanged.
 
-The API applies the current Run, owner, Agent visibility/grant, feature and
+The API applies the current Run, owner, Agent visibility/grant and
 winning-claim checks before locking the owned connection. It rechecks authority
 under the same lock used by edits and pinning, then records only the exact current
 generation. TOFU reporters use the post-pin generation. A single child row in
@@ -191,16 +190,16 @@ are unchanged.
 ### Cloudflare Access authority preparation
 
 #34077 prepares the backend of #31996; #34080 and #34081 provide the native
-carrier and management UI. Direct and Cloudflare Access share the staff-only
-`sshAccess` switch, with no separate Access rollout switch.
+carrier and management UI. Direct and Cloudflare Access are generally available,
+with no rollout switch.
 Each protected host binds one same-owner `(orgId, userId)`
 Access configuration. The saved DNS hostname is the exact approved token recipient;
 its port is 443, while the origin SSH port is configured in Cloudflare. No guest
 URL, wildcard, alternate recipient list or Direct fallback exists.
 
 SSH has one canonical contract, without a version/profile selector or duplicate
-legacy DTO. Protected authority requires the existing SSH checks, including
-`sshAccess`, plus a bound same-owner configuration. The existing SSH grant is
+legacy DTO. Protected authority requires the existing SSH authorization checks, plus a
+bound same-owner configuration. The existing SSH grant is
 the only Agent permission for either transport; configuration creation or edits
 never grant SSH. Direct handoffs retain their actual key/password variants.
 
@@ -251,6 +250,6 @@ The observation table and endpoints are additive. Old Runners and clients do not
 use them and retain existing behavior. A new Runner treats an old API's missing
 observation endpoint as a dropped diagnostic; a new App shows diagnostic status
 unavailable without disabling configuration management. Migration precedes API
-promotion. The staff-default switch configuration does not establish which
-artifacts are currently deployed. See [deployment compatibility](deployment-compatibility.md)
+promotion. General availability in source does not establish which artifacts
+are currently deployed. See [deployment compatibility](deployment-compatibility.md)
 and [guest RPC transport](runner-rpc-transport.md) for the cross-version boundaries.

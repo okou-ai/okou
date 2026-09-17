@@ -37,6 +37,8 @@ export const morningBriefTruncationSchema = z.enum([
   "deadline",
   "response-bytes",
   "total-response-bytes",
+  /** A retained header value hit its own per-field ceiling. */
+  "header-characters",
   "excerpt-characters",
   "text-characters",
   "mime-nodes",
@@ -75,8 +77,19 @@ export const morningBriefGmailItemSchema = z.object({
   internalDate: z.string().datetime(),
   unread: z.boolean(),
   excerpt: z.string(),
-  /** `none` and `html-only` are declared coverage gaps, not empty content. */
-  excerptSource: z.enum(["text-plain", "html-normalized", "none", "html-only"]),
+  /**
+   * `none`, `html-only` and `mime-truncated` are declared coverage gaps, not
+   * empty content. `html-only` means the message really carried no usable
+   * inline text; `mime-truncated` means a MIME cap stopped the walk before the
+   * whole structure was seen, so nothing here proves what the message contains.
+   */
+  excerptSource: z.enum([
+    "text-plain",
+    "html-normalized",
+    "none",
+    "html-only",
+    "mime-truncated",
+  ]),
   sourceUrl: z.string(),
 });
 

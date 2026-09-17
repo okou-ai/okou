@@ -55,11 +55,35 @@ export const USER_TEMPLATE_SOURCE_CONTENT_TYPES = [
 export const USER_TEMPLATE_PAGE_CONTENT_TYPE = "image/png";
 export const USER_TEMPLATE_PACKAGE_CONTENT_TYPE = "application/gzip";
 
-/** Guidance a later generation run reads. Assets are optional; these are not. */
-export const REQUIRED_USER_TEMPLATE_PACKAGE_FILES = [
-  "SKILL.md",
-  "design-system.md",
-] as const;
+/**
+ * What a later generation run must find in the package, per kind.
+ *
+ * `SKILL.md` is common because it is what the run loads. A deck additionally
+ * requires `design-system.md`, the written account of its visual language,
+ * because its skill is guidance that has nothing to point at without it.
+ *
+ * A document requires nothing else. Its skill names the artifact it consumes
+ * and the command that consumes it, so the package is free to carry whatever
+ * that account calls for — `reference.docx` today, something else tomorrow —
+ * without this list having to be told. Naming a file here would let a reverse
+ * skill that changed its own output be rejected by an endpoint that had not
+ * changed with it.
+ *
+ * Keyed by kind rather than one flat list, so a kind added to
+ * `USER_TEMPLATE_KINDS` fails to compile until someone says what its package
+ * has to contain. A single shared list is how the document kind shipped
+ * demanding a `design-system.md` that its reverse skill never writes, which
+ * rejected every document package at publish.
+ *
+ * The source file is not here either. The reverse skills copy it under its
+ * original name, so there is no fixed path to require.
+ */
+export const REQUIRED_USER_TEMPLATE_PACKAGE_FILES: Readonly<
+  Record<UserTemplateKind, readonly string[]>
+> = {
+  presentation: ["SKILL.md", "design-system.md"],
+  document: ["SKILL.md"],
+};
 
 const userTemplateSummarySchema = z.object({
   id: z.uuid(),

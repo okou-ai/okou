@@ -419,6 +419,17 @@ export function SlashTemplatePanel({
       className="flex h-[380px] overflow-hidden"
       data-slot="slash-panel"
       onMouseLeave={() => {
+        // A closed pane means the row under the pointer just narrowed the
+        // panel by the cover pane's width. The popover is content-width, so
+        // when the viewport edge has collision-shifted it, that narrowing
+        // re-pins it and the left column slides out from under a pointer that
+        // never moved — which the browser reports here as a leave. Restoring
+        // the keyboard preview would reopen the covers the pointer just
+        // closed and widen the panel back over it, so the row would stay
+        // hovered while another type kept the pane.
+        if (detailCategory === null) {
+          return;
+        }
         onPreview(null);
       }}
     >

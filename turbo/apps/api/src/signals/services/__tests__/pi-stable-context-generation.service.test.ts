@@ -145,6 +145,25 @@ describe("Pi stable context generation fences", () => {
     return { orgId, userId, otherUserId, agentId, headId: head.id };
   }
 
+  async function executeFixtureWork(
+    agentId: string,
+    signal: AbortSignal,
+    beforePublish?: () => Promise<void>,
+  ) {
+    const heads = await db
+      .select({ id: piStableContextHeads.id })
+      .from(piStableContextHeads)
+      .where(eq(piStableContextHeads.agentId, agentId));
+    return await executePiStableContextWork(db, signal, {
+      ...(beforePublish ? { beforePublish } : {}),
+      scope: {
+        headIds: heads.map((head) => {
+          return head.id;
+        }),
+      },
+    });
+  }
+
   it("rolls invalidation back and fences stale multi-stage completion", async () => {
     const fixture = await seed();
     await expect(
@@ -424,7 +443,7 @@ describe("Pi stable context generation fences", () => {
       },
     );
     await expect(
-      executePiStableContextWork(db, AbortSignal.timeout(5000)),
+      executeFixtureWork(fixture.agentId, AbortSignal.timeout(5000)),
     ).resolves.toMatchObject({ claimed: 1, ready: 1 });
     await expect(
       createStore().get(
@@ -636,7 +655,7 @@ describe("Pi stable context generation fences", () => {
       })
       .where(eq(piStableContextHeads.id, head.id));
     await expect(
-      executePiStableContextWork(db, AbortSignal.timeout(5000)),
+      executeFixtureWork(fixture.agentId, AbortSignal.timeout(5000)),
     ).resolves.toMatchObject({ claimed: 1, ready: 1 });
 
     await invalidatePiStableContext(db, {
@@ -653,7 +672,7 @@ describe("Pi stable context generation fences", () => {
       })
       .where(eq(piStableContextHeads.id, head.id));
     await expect(
-      executePiStableContextWork(db, AbortSignal.timeout(5000)),
+      executeFixtureWork(fixture.agentId, AbortSignal.timeout(5000)),
     ).resolves.toMatchObject({ claimed: 0, ready: 0 });
     await expect(
       db
@@ -822,12 +841,14 @@ describe("Pi stable context generation fences", () => {
     const barrierSignal = AbortSignal.timeout(5000);
     const buildEntered = createDeferredPromise<void>(barrierSignal);
     const buildReleased = createDeferredPromise<void>(barrierSignal);
-    const work = executePiStableContextWork(db, AbortSignal.timeout(5000), {
-      beforePublish: async () => {
+    const work = executeFixtureWork(
+      fixture.agentId,
+      AbortSignal.timeout(5000),
+      async () => {
         buildEntered.resolve();
         await buildReleased.promise;
       },
-    });
+    );
     await buildEntered.promise;
     await deleteClerkAgentLifecycleData(db, {
       kind: "user",

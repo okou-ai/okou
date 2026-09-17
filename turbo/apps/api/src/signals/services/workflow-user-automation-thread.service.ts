@@ -2,6 +2,7 @@ import {
   userLocaleSchema,
   type UserLocale,
 } from "@okouai/api-contracts/contracts/user-preferences";
+import { agents } from "@okouai/db/schema/agent";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
 import {
@@ -260,6 +261,27 @@ export async function ensureWorkflowUserAutomationThread(
     readonly currentTime: Date;
   },
 ): Promise<string> {
+  // Acquire the parent FK locks before the binding and shared event sequence.
+  // An existing binding with a deleted thread otherwise postpones the workflow
+  // FK lock until an automation is inserted, reversing copy's lock order.
+  // Agent first also preserves the order used by agent deletion cascades.
+  await db
+    .select({ id: agents.id })
+    .from(agents)
+    .where(and(eq(agents.orgId, args.orgId), eq(agents.id, args.agentId)))
+    .for("key share");
+  await db
+    .select({ id: workflows.id })
+    .from(workflows)
+    .where(
+      and(
+        eq(workflows.orgId, args.orgId),
+        eq(workflows.id, args.workflowId),
+        eq(workflows.agentId, args.agentId),
+      ),
+    )
+    .for("key share");
+
   const [existing] = await db
     .select({ chatThreadId: workflowUserAutomationThreads.chatThreadId })
     .from(workflowUserAutomationThreads)

@@ -231,18 +231,32 @@ function scriptSlack(script: {
   return traffic;
 }
 
+interface ChannelSpec {
+  readonly id: string;
+  readonly name: string;
+  readonly is_private?: boolean;
+}
+
+/** One page of the user/bot intersection, with an optional continuation. */
+function channelPageBody(
+  channels: readonly ChannelSpec[],
+  nextCursor = "",
+): unknown {
+  return {
+    ok: true,
+    channels: channels.map((channel) => {
+      return { is_private: false, ...channel };
+    }),
+    response_metadata: { next_cursor: nextCursor },
+  };
+}
+
 function channelPage(
-  channels: readonly { id: string; name: string; is_private?: boolean }[],
+  channels: readonly ChannelSpec[],
   nextCursor = "",
 ): SlackReply {
   return () => {
-    return {
-      ok: true,
-      channels: channels.map((channel) => {
-        return { is_private: false, ...channel };
-      }),
-      response_metadata: { next_cursor: nextCursor },
-    };
+    return channelPageBody(channels, nextCursor);
   };
 }
 
@@ -274,6 +288,40 @@ function historyPage(
       }),
     };
   };
+}
+
+/**
+ * Script one attempt whose reads succeed and whose final release proof then
+ * meets a different live intersection.
+ *
+ * The switch is driven by the reads themselves: once every scripted channel has
+ * answered its history request, the only enumeration the algorithm has left is
+ * the release proof. That reproduces a member losing access, or an intersection
+ * becoming unlistable, while a response is already held — without counting
+ * calls from outside or naming an internal step.
+ */
+function scriptHeldRelease(script: {
+  readonly channels: readonly ChannelSpec[];
+  readonly history?: SlackReply;
+  readonly release: (page: number) => unknown;
+}): SlackTraffic {
+  let reads = 0;
+  let releasePages = 0;
+  const discovery = channelPage(script.channels);
+  const history = script.history ?? noMessages();
+  return scriptSlack({
+    channels: (query) => {
+      if (reads < script.channels.length) {
+        return discovery(query);
+      }
+      releasePages += 1;
+      return script.release(releasePages);
+    },
+    history: (query) => {
+      reads += 1;
+      return history(query);
+    },
+  });
 }
 
 /** `count` distinct in-window timestamps, one second apart. */
@@ -523,8 +571,9 @@ describe("Morning Brief Slack collection preview", () => {
         return channel.id;
       }),
     ).toStrictEqual(["C1", "C2"]);
-    // Two discovery pages, then one lookup proving C1 and two proving C2.
-    expect(queriesFor(traffic, SLACK_USER_CONVERSATIONS_URL)).toHaveLength(5);
+    // Two discovery pages, one lookup proving C1 and two proving C2, then the
+    // two-page final proof that authorizes releasing both of them.
+    expect(queriesFor(traffic, SLACK_USER_CONVERSATIONS_URL)).toHaveLength(7);
   });
 
   it("caps enumeration at the documented channel budget", async () => {
@@ -1268,6 +1317,394 @@ describe("Morning Brief Slack live shared scope", () => {
   });
 });
 
+describe("Morning Brief Slack final release proof", () => {
+  /** Nothing a bundle names may reach the caller without a fresh live proof. */
+  function expectNothingReleased(bundle: {
+    readonly entries: readonly unknown[];
+    readonly channels: readonly unknown[];
+    readonly counts: { readonly channels: number; readonly messages: number };
+  }): void {
+    expect(bundle.entries).toStrictEqual([]);
+    expect(bundle.channels).toStrictEqual([]);
+    expect(bundle.counts.channels).toBe(0);
+    expect(bundle.counts.messages).toBe(0);
+  }
+
+  it("withholds content a repeated final cursor cannot confirm", async () => {
+    const f = await fixture();
+    let releasePages = 0;
+    const traffic = scriptHeldRelease({
+      channels: [{ id: "C1", name: "general" }],
+      history: historyPage([{ ts: FIRST_IN_WINDOW, text: "unconfirmed" }]),
+      release: (page) => {
+        releasePages = page;
+        // The pass keeps answering with somebody else's conversation behind the
+        // same cursor, so it never names C1 and never advances.
+        return {
+          ok: true,
+          channels: [{ id: "C900", name: "elsewhere", is_private: false }],
+          response_metadata: { next_cursor: "same" },
+        };
+      },
+    });
+
+    const response = await accept(collect(f), [200]);
+    if (response.body.result !== "collected") {
+      throw new Error(
+        `Expected a collected bundle, got ${response.body.result}`,
+      );
+    }
+    const { bundle } = response.body;
+    expect(JSON.stringify(bundle)).not.toContain("unconfirmed");
+    expect(JSON.stringify(bundle)).not.toContain("general");
+    expectNothingReleased(bundle);
+    expect(bundle.counts.textBytes).toBe(0);
+    expect(bundle.limits).toContain("scope-unproven");
+    expect(bundle.coverage).toBe("partial");
+    expect(response.body.occurrence.outcome).toBe("partial");
+    // The repeated cursor ends the one bounded pass; nothing tries again to
+    // manufacture a confirmation, and no protected page follows it.
+    expect(releasePages).toBe(2);
+    expect(bundle.counts.requests).toBeLessThanOrEqual(40);
+    expect(queriesFor(traffic, SLACK_HISTORY_URL)).toHaveLength(1);
+    expect(traffic.requests.at(-1)?.url).toBe(SLACK_USER_CONVERSATIONS_URL);
+  });
+
+  it("withholds content three incomplete final pages cannot confirm", async () => {
+    const f = await fixture();
+    let releasePages = 0;
+    const traffic = scriptHeldRelease({
+      channels: [{ id: "C1", name: "general" }],
+      history: historyPage([{ ts: FIRST_IN_WINDOW, text: "unconfirmed" }]),
+      release: (page) => {
+        releasePages = page;
+        // Each page advances honestly and still never reaches C1.
+        return channelPageBody(
+          [{ id: `C90${page}`, name: `other-${page}` }],
+          `cursor-${page}`,
+        );
+      },
+    });
+
+    const response = await accept(collect(f), [200]);
+    if (response.body.result !== "collected") {
+      throw new Error(
+        `Expected a collected bundle, got ${response.body.result}`,
+      );
+    }
+    const { bundle } = response.body;
+    expect(JSON.stringify(bundle)).not.toContain("unconfirmed");
+    expectNothingReleased(bundle);
+    expect(bundle.limits).toContain("scope-unproven");
+    expect(bundle.coverage).toBe("partial");
+    expect(response.body.occurrence.outcome).toBe("partial");
+    // The proof obeys the same three-page enumeration budget as discovery.
+    expect(releasePages).toBe(3);
+    expect(bundle.counts.requests).toBeLessThanOrEqual(40);
+    expect(queriesFor(traffic, SLACK_HISTORY_URL)).toHaveLength(1);
+    expect(traffic.requests.at(-1)?.url).toBe(SLACK_USER_CONVERSATIONS_URL);
+  });
+
+  it("withholds content the wall clock leaves unprovable", async () => {
+    const f = await fixture();
+    mockNow(ANCHOR_MS);
+    let releasePages = 0;
+    const traffic = scriptHeldRelease({
+      channels: [{ id: "C1", name: "general" }],
+      history: () => {
+        // The attempt's 30 second wall clock passes while this page is read.
+        mockNow(ANCHOR_MS + 31_000);
+        return {
+          ok: true,
+          messages: [
+            {
+              type: "message",
+              ts: FIRST_IN_WINDOW,
+              user: "U1",
+              text: "unconfirmed",
+            },
+          ],
+        };
+      },
+      release: (page) => {
+        releasePages = page;
+        return channelPageBody([{ id: "C1", name: "general" }]);
+      },
+    });
+
+    const response = await accept(collect(f), [200]);
+    if (response.body.result !== "collected") {
+      throw new Error(
+        `Expected a collected bundle, got ${response.body.result}`,
+      );
+    }
+    const { bundle } = response.body;
+    expect(JSON.stringify(bundle)).not.toContain("unconfirmed");
+    expectNothingReleased(bundle);
+    expect(bundle.limits).toContain("deadline");
+    expect(bundle.limits).toContain("scope-unproven");
+    expect(bundle.coverage).toBe("partial");
+    expect(response.body.occurrence.outcome).toBe("partial");
+    // An expired attempt may not buy the proof its wall clock no longer covers,
+    // and it does not start one anyway.
+    expect(releasePages).toBe(0);
+    expect(queriesFor(traffic, SLACK_HISTORY_URL)).toHaveLength(1);
+  });
+
+  it("withholds content when the final proof lands after the deadline", async () => {
+    const f = await fixture();
+    mockNow(ANCHOR_MS);
+    let releasePages = 0;
+    const traffic = scriptHeldRelease({
+      channels: [{ id: "C1", name: "general" }],
+      history: historyPage([{ ts: FIRST_IN_WINDOW, text: "unconfirmed" }]),
+      release: (page) => {
+        releasePages = page;
+        // The request started in time; its answer arrives after the attempt's
+        // own wall clock, so it is no longer a current proof.
+        mockNow(ANCHOR_MS + 31_000);
+        return channelPageBody([{ id: "C1", name: "general" }]);
+      },
+    });
+
+    const response = await accept(collect(f), [200]);
+    if (response.body.result !== "collected") {
+      throw new Error(
+        `Expected a collected bundle, got ${response.body.result}`,
+      );
+    }
+    const { bundle } = response.body;
+    expect(JSON.stringify(bundle)).not.toContain("unconfirmed");
+    expectNothingReleased(bundle);
+    expect(bundle.limits).toContain("deadline");
+    expect(bundle.limits).toContain("scope-unproven");
+    expect(bundle.coverage).toBe("partial");
+    expect(response.body.occurrence.outcome).toBe("partial");
+    // One held answer, and no second attempt to turn it into a success.
+    expect(releasePages).toBe(1);
+    expect(traffic.requests.at(-1)?.url).toBe(SLACK_USER_CONVERSATIONS_URL);
+  });
+
+  it.each([
+    [
+      "the message cap",
+      "messages" as const,
+      windowTimestamps(501).map((ts) => {
+        return { ts, text: "m" };
+      }),
+    ],
+    [
+      "the total text cap",
+      "text-bytes" as const,
+      windowTimestamps(33).map((ts) => {
+        return { ts, text: "x".repeat(4 * 1024) };
+      }),
+    ],
+  ])(
+    "does not let %s waive the final proof",
+    async (_name, limit, messages) => {
+      const f = await fixture();
+      let releasePages = 0;
+      const traffic = scriptHeldRelease({
+        channels: [{ id: "C1", name: "general" }],
+        history: historyPage(messages),
+        release: (page) => {
+          releasePages = page;
+          // The member's whole intersection is listed without C1, which proves
+          // the removal the held content was collected under.
+          return channelPageBody([]);
+        },
+      });
+
+      const response = await accept(collect(f), [200]);
+      if (response.body.result !== "collected") {
+        throw new Error(
+          `Expected a collected bundle, got ${response.body.result}`,
+        );
+      }
+      const { bundle } = response.body;
+      expectNothingReleased(bundle);
+      expect(bundle.counts.textBytes).toBe(0);
+      expect(bundle.limits).toContain(limit);
+      expect(bundle.limits).toContain("scope-lost");
+      expect(bundle.coverage).toBe("partial");
+      expect(response.body.occurrence.outcome).toBe("partial");
+      // A content cap stops reading without spending the request allowance the
+      // proof still needs, so exactly one bounded proof ran.
+      expect(releasePages).toBe(1);
+      expect(bundle.counts.requests).toBeLessThanOrEqual(40);
+      expect(queriesFor(traffic, SLACK_HISTORY_URL)).toHaveLength(1);
+    },
+  );
+
+  it("proves an empty private channel before naming it", async () => {
+    const f = await fixture();
+    let releasePages = 0;
+    const traffic = scriptHeldRelease({
+      channels: [{ id: "C200", name: "secrets", is_private: true }],
+      release: (page) => {
+        releasePages = page;
+        return channelPageBody([]);
+      },
+    });
+
+    const response = await accept(collect(f), [200]);
+    if (response.body.result !== "collected") {
+      throw new Error(
+        `Expected a collected bundle, got ${response.body.result}`,
+      );
+    }
+    const { bundle } = response.body;
+    // A quiet conversation carries no message, but its name, id and link are
+    // still the member's scope, so they need the same live proof.
+    expect(JSON.stringify(bundle)).not.toContain("secrets");
+    expect(JSON.stringify(bundle)).not.toContain("C200");
+    expectNothingReleased(bundle);
+    expect(bundle.limits).toContain("scope-lost");
+    expect(bundle.coverage).toBe("partial");
+    expect(response.body.occurrence.outcome).toBe("partial");
+    expect(releasePages).toBe(1);
+    expect(queriesFor(traffic, SLACK_HISTORY_URL)).toHaveLength(1);
+  });
+
+  it("releases only the channels a partial final enumeration confirmed", async () => {
+    const f = await fixture();
+    let releasePages = 0;
+    scriptHeldRelease({
+      channels: [
+        { id: "C1", name: "general" },
+        { id: "C200", name: "secrets", is_private: true },
+      ],
+      history: (query) => {
+        const channel = query.get("channel") ?? "";
+        return historyPage([
+          { ts: FIRST_IN_WINDOW, text: `message in ${channel}` },
+        ])(query);
+      },
+      release: (page) => {
+        releasePages = page;
+        // The first page confirms C1 and promises more; the continuation then
+        // repeats itself, so C200 is never resolved either way.
+        return {
+          ok: true,
+          channels:
+            page === 1
+              ? [{ id: "C1", name: "general", is_private: false }]
+              : [],
+          response_metadata: { next_cursor: "same" },
+        };
+      },
+    });
+
+    const response = await accept(collect(f), [200]);
+    if (response.body.result !== "collected") {
+      throw new Error(
+        `Expected a collected bundle, got ${response.body.result}`,
+      );
+    }
+    const { bundle } = response.body;
+    expect(JSON.stringify(bundle)).not.toContain("secrets");
+    expect(JSON.stringify(bundle)).not.toContain("C200");
+    expect(
+      bundle.channels.map((channel) => {
+        return channel.id;
+      }),
+    ).toStrictEqual(["C1"]);
+    // The confirmed sibling keeps exactly the content its own proof covered.
+    expect(
+      bundle.entries.map((entry) => {
+        return entry.text;
+      }),
+    ).toStrictEqual(["message in C1"]);
+    expect(bundle.counts).toMatchObject({ channels: 1, messages: 1 });
+    expect(bundle.limits).toContain("scope-unproven");
+    expect(bundle.limits).not.toContain("scope-lost");
+    expect(bundle.coverage).toBe("partial");
+    expect(response.body.occurrence.outcome).toBe("partial");
+    expect(releasePages).toBe(2);
+  });
+
+  it("releases no bundle when the caller cancels during the final proof", async () => {
+    const f = await fixture();
+    const cancellation = new Error(`cancelled ${randomUUID()}`);
+    const controller = new AbortController();
+    const traffic = scriptHeldRelease({
+      channels: [{ id: "C1", name: "general" }],
+      history: historyPage([{ ts: FIRST_IN_WINDOW, text: "unconfirmed" }]),
+      release: () => {
+        controller.abort(cancellation);
+        return channelPageBody([{ id: "C1", name: "general" }]);
+      },
+    });
+
+    await expect(
+      setupApp({
+        context,
+        routes: morningBriefCollectionPreviewRoutes,
+        signal: controller.signal,
+        rethrowErrors: true,
+      })(morningBriefCollectionPreviewContract).collect({
+        headers: f.headers,
+        body: { scheduledFor: ANCHOR },
+      }),
+    ).rejects.toThrow(cancellation.message);
+    // The cancellation reaches the caller instead of a bundle, and no protected
+    // page is read after the proof it interrupted.
+    expect(queriesFor(traffic, SLACK_HISTORY_URL)).toHaveLength(1);
+    expect(traffic.requests.at(-1)?.url).toBe(SLACK_USER_CONVERSATIONS_URL);
+  });
+
+  it("keeps a complete positive proof releasing its content unchanged", async () => {
+    const f = await fixture();
+    let releasePages = 0;
+    const traffic = scriptHeldRelease({
+      channels: [
+        { id: "C1", name: "general" },
+        { id: "C200", name: "secrets", is_private: true },
+      ],
+      history: (query) => {
+        const channel = query.get("channel") ?? "";
+        return historyPage([
+          { ts: FIRST_IN_WINDOW, text: `message in ${channel}` },
+        ])(query);
+      },
+      release: (page) => {
+        releasePages = page;
+        return channelPageBody([
+          { id: "C1", name: "general" },
+          { id: "C200", name: "secrets", is_private: true },
+        ]);
+      },
+    });
+
+    const response = await accept(collect(f), [200]);
+    if (response.body.result !== "collected") {
+      throw new Error(
+        `Expected a collected bundle, got ${response.body.result}`,
+      );
+    }
+    const { bundle } = response.body;
+    expect(
+      bundle.channels.map((channel) => {
+        return channel.id;
+      }),
+    ).toStrictEqual(["C1", "C200"]);
+    expect(
+      bundle.entries.map((entry) => {
+        return entry.text;
+      }),
+    ).toStrictEqual(["message in C1", "message in C200"]);
+    expect(bundle.limits).toStrictEqual([]);
+    expect(bundle.coverage).toBe("complete");
+    expect(response.body.occurrence.outcome).toBe("complete");
+    // One page naming every pending conversation is the ordinary cost.
+    expect(releasePages).toBe(1);
+    for (const request of traffic.requests) {
+      expect(request.token).toBe(`Bearer ${f.botToken}`);
+    }
+  });
+});
+
 describe("Morning Brief Slack bounded coverage", () => {
   it("reports the thread cap when one complete page holds more replied roots", async () => {
     const f = await fixture();
@@ -1465,25 +1902,40 @@ describe("Morning Brief Slack finite budgets", () => {
     expect(response.body.occurrence.outcome).toBe("partial");
   });
 
-  it("never exceeds the total provider request budget, authorization included", async () => {
+  it("spends the read budget without spending the final proof's reserve", async () => {
     const f = await fixture();
+    const channels = Array.from({ length: 20 }, (_value, index) => {
+      return { id: `C${index}`, name: `channel-${index}` };
+    });
     const traffic = scriptSlack({
-      channels: channelPage(
-        Array.from({ length: 20 }, (_value, index) => {
-          return { id: `C${index}`, name: `channel-${index}` };
-        }),
-      ),
-      history: noMessages(),
+      channels: channelPage(channels),
+      history: historyPage([{ ts: FIRST_IN_WINDOW, text: "collected" }]),
     });
 
     const response = await accept(collect(f), [200]);
     if (response.body.result !== "collected") {
       throw new Error("Expected a collected bundle");
     }
-    expect(response.body.bundle.counts.requests).toBe(40);
-    expect(traffic.requests).toHaveLength(40);
-    expect(response.body.bundle.limits).toContain("requests");
+    const { bundle } = response.body;
+    // Discovery and nine pairs short of the ceiling: the reads stop at 37 so
+    // the reserved enumeration can still prove what they collected, and the
+    // documented 40-request ceiling is never crossed.
+    expect(bundle.counts.requests).toBe(38);
+    expect(traffic.requests).toHaveLength(38);
+    expect(bundle.limits).toContain("requests");
     expect(response.body.occurrence.outcome).toBe("partial");
+    // The single reserved page named every discovered conversation, so the
+    // eighteen channels this attempt managed to read are released with their
+    // content and the two it never reached are still named as truncated.
+    expect(bundle.counts.channels).toBe(18);
+    expect(bundle.counts.messages).toBe(18);
+    expect(bundle.channels).toHaveLength(20);
+    expect(
+      bundle.channels.filter((channel) => {
+        return channel.truncated;
+      }),
+    ).toHaveLength(2);
+    expect(traffic.requests.at(-1)?.url).toBe(SLACK_USER_CONVERSATIONS_URL);
   });
 
   it("caps normalized messages and names the bound", async () => {
@@ -1565,7 +2017,10 @@ describe("Morning Brief Slack finite budgets", () => {
     ).toBeFalsy();
     expect(bundle.limits).toContain("deadline");
     expect(bundle.entries).toStrictEqual([]);
-    expect(bundle.channels[0]?.truncated).toBeTruthy();
+    // An expired attempt can neither read the conversation nor prove that the
+    // member still shares it, so discovery's own list is not released either.
+    expect(bundle.channels).toStrictEqual([]);
+    expect(bundle.limits).toContain("scope-unproven");
     expect(response.body.occurrence.outcome).toBe("partial");
   });
 

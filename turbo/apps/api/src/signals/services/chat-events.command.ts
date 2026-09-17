@@ -171,6 +171,12 @@ import {
   userPresentationTemplateVolumes,
   type PresentationTemplateVolume,
 } from "./presentation-template-data.service";
+import {
+  authorizedUserTemplates,
+  selectedUserTemplateIds,
+  userTemplateVolumes,
+  type MountedUserTemplate,
+} from "./user-template-data.service";
 import { resolveThreadGenerationTemplatePrompt } from "../../lib/thread-generation-template";
 import {
   logTemplateUsage,
@@ -1135,10 +1141,27 @@ async function resolveNormalSendFeatureSwitches(
  * The two things this message's own selections contribute to its run: the
  * template guidance block and the video options the composer sent with it.
  */
+/**
+ * The packages this run carries, from both catalogs.
+ *
+ * Both can be selected in one message while the tables are separate, and the
+ * run mounts whichever it was actually given. The two directories differ, so
+ * neither can overwrite the other.
+ */
+function templateVolumesFor(
+  authorized: AuthorizedGenerationTemplates,
+): readonly PresentationTemplateVolume[] {
+  return [
+    ...userPresentationTemplateVolumes(authorized.userPresentationTemplateIds),
+    ...userTemplateVolumes(authorized.userTemplates),
+  ];
+}
+
 function resolveSelectedTemplateContext(
   runtimeBody: RuntimeNormalSendBody,
   featureSwitches: NormalSendFeatureSwitches,
   mountedUserPresentationTemplateIds: readonly string[],
+  mountedUserTemplates: readonly MountedUserTemplate[],
 ): {
   readonly generationTemplatePrompt: string;
   readonly generationTemplateIdentities: readonly GenerationTemplateIdentity[];
@@ -1149,6 +1172,7 @@ function resolveSelectedTemplateContext(
     explicit: runtimeBody.primaryTemplate,
     explicitTemplates: runtimeBody.templates,
     mountedUserPresentationTemplateIds,
+    mountedUserTemplates,
   });
   return {
     generationTemplatePrompt: resolved.prompt,
@@ -1165,6 +1189,7 @@ function resolveSelectedTemplateContext(
  */
 interface AuthorizedGenerationTemplates {
   readonly userPresentationTemplateIds: readonly string[];
+  readonly userTemplates: readonly MountedUserTemplate[];
 }
 
 async function validateGenerationTemplatePrompt(
@@ -1174,15 +1199,32 @@ async function validateGenerationTemplatePrompt(
   featureSwitches: NormalSendFeatureSwitches,
 ): Promise<NormalSendFailure | AuthorizedGenerationTemplates> {
   if (generationTemplates.length === 0) {
-    return { userPresentationTemplateIds: [] };
+    return { userPresentationTemplateIds: [], userTemplates: [] };
   }
   // Syntax first: every selection this message names is a candidate mount, so
   // the builder can reject a malformed private id before consulting the database.
   const selectedIds = selectedUserPresentationTemplateIds(generationTemplates);
+  const selectedCustomIds = selectedUserTemplateIds(generationTemplates);
+  // The kind decides the framing sentence, so validation needs the rows even
+  // though authorization is checked again below. Reading them once and passing
+  // the result to both keeps the two from disagreeing.
+  const authorizedCustom = await authorizedUserTemplates(db, {
+    orgId: args.orgId,
+    userId: args.userId,
+    templateIds: selectedCustomIds,
+    enabled: isFeatureEnabled(
+      FeatureSwitchKey.CustomTemplates,
+      featureSwitches.featureSwitchContext,
+    ),
+  });
+  if (authorizedCustom.length !== selectedCustomIds.length) {
+    return badRequestMessage("Custom template not found");
+  }
   for (const template of generationTemplates) {
     const validation = buildGenerationTemplatePrompt(template, {
       introVideoEnabled: featureSwitches.introVideoEnabled,
       mountedUserPresentationTemplateIds: selectedIds,
+      mountedUserTemplates: authorizedCustom,
     });
     if (validation.status === "invalid") {
       return badRequestMessage(validation.message);
@@ -1196,7 +1238,10 @@ async function validateGenerationTemplatePrompt(
   if (authorizedIds.length !== selectedIds.length) {
     return badRequestMessage("Presentation template not found");
   }
-  return { userPresentationTemplateIds: authorizedIds };
+  return {
+    userPresentationTemplateIds: authorizedIds,
+    userTemplates: authorizedCustom,
+  };
 }
 
 async function updateUserModelPreference(
@@ -2994,6 +3039,7 @@ const prepareNormalSend$ = command(
       runtimeBody,
       featureSwitches,
       authorizedTemplates.userPresentationTemplateIds,
+      authorizedTemplates.userTemplates,
     );
     const persistedExplicitSelection = await persistTimedExplicitSelections(
       args,
@@ -3020,9 +3066,7 @@ const prepareNormalSend$ = command(
       generationTemplatePrompt: templateContext.generationTemplatePrompt,
       generationTemplateIdentities:
         templateContext.generationTemplateIdentities,
-      presentationTemplateVolumes: userPresentationTemplateVolumes(
-        authorizedTemplates.userPresentationTemplateIds,
-      ),
+      presentationTemplateVolumes: templateVolumesFor(authorizedTemplates),
       videoRunOptions: templateContext.videoRunOptions,
       computerUseHostGrant: computerAccess.computerUseHostGrant,
       persistedExplicitSelection,

@@ -89,6 +89,8 @@ surface; the index does not replace their detailed rules.
   commits.
 - [Chat cards](./chat-cards.md): recognizing links in chat messages, creating
   thread-scoped card signals, and rendering rich interactive cards.
+- [Incomplete chat context](./chat-incomplete-context.md): stable retained-round
+  ordering, delayed events, visibility, and the newest-20 boundary.
 - [Durable Pi Sandbox consumer](./pi-deferred-sandbox-consumer.md): captured objects, demand admission, continuation readers and release proof.
 - [Pi native provider preparation](./pi-native-provider-preparation.md): additive
   native readers, transport/auth ownership, accounting and activation gates.
@@ -110,6 +112,8 @@ surface; the index does not replace their detailed rules.
   local source and restored payload sizes, representation and timing semantics.
 - [Host archive phase diagnostics](./host-archive-phase-diagnostics.md): bounded
   early download, apply-gate and publication timing with cancellation semantics.
+- [Guest archive connection observation](./guest-archive-connection-observation.md):
+  resolver and combined setup timing, observed transport reuse and attribution limits.
 - [Guest file compression](./guest-file-compression.md): caller-owned history
   selection, bounded streaming, failure semantics and bundled compatibility.
 - [Runner multi-architecture rollout](./runner-multi-architecture.md): build,

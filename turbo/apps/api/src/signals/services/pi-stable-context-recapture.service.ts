@@ -91,7 +91,6 @@ function featurePromptInputs(
       FeatureSwitchKey.PrivateArtifacts,
       featureContext,
     ),
-    sshEnabled: isFeatureEnabled(FeatureSwitchKey.SshAccess, featureContext),
     bankingEnabled: isFeatureEnabled(FeatureSwitchKey.Banking, featureContext),
     larkEnabled: isFeatureEnabled(
       FeatureSwitchKey.LarkIntegration,
