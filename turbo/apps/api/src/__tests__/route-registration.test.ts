@@ -1,3 +1,5 @@
+import { morningBriefCalendarCollectionPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-calendar-collection-preview";
+
 import { ROUTES } from "../signals/route";
 import { assertUniqueRouteRegistrations } from "../signals/route-entry";
 
@@ -11,5 +13,20 @@ describe("API route registrations", () => {
     expect(() => {
       assertUniqueRouteRegistrations(ROUTES);
     }).not.toThrow();
+  });
+
+  // The Morning Brief calendar preview is only a real consumer of the shared
+  // connector reader while the deployed application actually serves it. A route
+  // reachable solely from a test harness would pass its own suite and still be
+  // absent in production, so the production table is asserted here, in one of
+  // the few modules the import boundary lets read the aggregate.
+  it("serves the Morning Brief calendar collection preview from the production table", () => {
+    const { method, path } =
+      morningBriefCalendarCollectionPreviewContract.collect;
+    expect(
+      ROUTES.some((entry) => {
+        return entry.route.method === method && entry.route.path === path;
+      }),
+    ).toBeTruthy();
   });
 });

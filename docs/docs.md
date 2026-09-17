@@ -56,6 +56,9 @@ surface; the index does not replace their detailed rules.
   publication-order evidence.
 - [Dependency override audit](./dependency-overrides.md): retained dependency
   constraints, their origins, and evidence for removing obsolete overrides.
+- [Morning Brief calendar collection](./morning-brief-calendar-collection.md):
+  the owner-timezone three-day window, readable-calendar selection, all-day and
+  recurrence semantics, calendar caps, and its use of the shared reader.
 - [Morning Brief migration state](./morning-brief-migration-state.md): the
   canonical reader for a member's existing brief, its ownership and thread
   invariants, and the boundary the `simple-morning-brief` cutover must respect.
