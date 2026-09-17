@@ -157,6 +157,12 @@ interface ComputerUseHostSelectionOptions {
   readonly signal?: AbortSignal;
 }
 
+/** `signal` replaces the app-level request signal, which is how a caller
+ * cancels the bulk Agent read-cursor write in flight. */
+interface MarkAgentReadOptions {
+  readonly signal?: AbortSignal;
+}
+
 function computerUseHostSelectionBody(
   computerUseHostId: string | null,
   options: ComputerUseHostSelectionOptions | undefined,
@@ -399,8 +405,8 @@ export function createChatFilesBddApi(context: TestContext) {
     return chatFilesApp(context)(chatThreadMarkUnreadContract);
   }
 
-  function threadMarkAgentReadClient() {
-    return chatFilesApp(context)(chatThreadMarkAgentReadContract);
+  function threadMarkAgentReadClient(signal?: AbortSignal) {
+    return chatFilesApp(context, signal)(chatThreadMarkAgentReadContract);
   }
 
   function threadPinClient() {
@@ -707,9 +713,10 @@ export function createChatFilesBddApi(context: TestContext) {
       actor: ApiTestUser | null,
       agentId: string,
       statuses: readonly (204 | 400 | 401 | 403)[],
+      options?: MarkAgentReadOptions,
     ) {
       return await accept(
-        threadMarkAgentReadClient().markAgentRead({
+        threadMarkAgentReadClient(options?.signal).markAgentRead({
           headers: authenticate(context, actor),
           body: { agentId },
         }),

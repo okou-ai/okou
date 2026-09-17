@@ -81,9 +81,21 @@ the search projector or the run-output writer.
 `agents` carries the `(id, org_id, owner)` unique key, so KEY SHARE conflicts
 with an owner or organization transfer and with Agent deletion, which cascades
 the matched threads. It does not conflict with the `FOR NO KEY UPDATE` the bulk
-`UPDATE` itself takes on `chat_threads`, so unrelated thread traffic is never
-serialized behind it. This route locks **no individual thread**: it never
-enumerates thread subjects and never loops a single-thread helper transaction.
+`UPDATE` itself takes on `chat_threads`, so holding the Agent identity key adds
+no serialization of its own to thread traffic.
+
+The route takes **no separate per-thread admission lock**: it never enumerates
+thread subjects and never loops a single-thread helper transaction. That is a
+statement about admission, not about row locks. The bulk `UPDATE` does lock
+every row it matches, for the rest of the transaction, so a concurrent writer of
+one of those same rows waits on it and the bulk statement waits on a row another
+writer already holds — `1s` later that wait becomes this route's failure, and
+the covering test is
+`leaves every cursor unchanged when the bulk write cannot take a matched row's lock`.
+Evidence that one specific unrelated owner was not serialized is evidence about
+threads under a different Agent, not a claim that all thread traffic is
+unserialized.
+
 An Agent that moves under the lock rolls the attempt back and reselects, at most
 three attempts, so a newly discovered subject is never appended after the
 business locks and cursors are never written under a stale owner.
@@ -92,14 +104,17 @@ Publication runs only after a successful `COMMIT`, and only when rows changed.
 
 ## Failure contract
 
-| Outcome                                   | Disposition                                                                  |
-| ----------------------------------------- | ---------------------------------------------------------------------------- |
-| Agent missing, or in another organization | The existing `204`, decided **before** admission, no notification            |
-| B1 subject closure on an admitted Agent   | The contract's declared `403`, generic, with no mutation and no notification |
-| Admitted Agent with no unread threads     | `403` when closed, the existing `204` when open                              |
-| Identity moved under the lock             | Roll back and reselect, at most three attempts                               |
-| Attempts exhausted                        | `ChatThreadAgentOwnershipChangedError` propagates                            |
-| Lock wait, statement timeout, abort       | Original database error or cancellation, propagated unchanged                |
+| Outcome                                    | Disposition                                                                  |
+| ------------------------------------------ | ---------------------------------------------------------------------------- |
+| Agent missing, or in another organization  | The existing `204`, decided **before** admission, no notification            |
+| B1 subject closure on an admitted Agent    | The contract's declared `403`, generic, with no mutation and no notification |
+| Admitted Agent with no unread threads      | `403` when closed, the existing `204` when open                              |
+| Agent deleted between selection and lock   | The same `204` after revalidation, no resurrected cursor, no notification    |
+| Agent's organization moved under the locks | Reselect, then the same `204`: the caller's scope no longer authorizes it    |
+| Agent's owner moved under the locks        | Reselect and admit the newly resolved owner, so a closed one denies with 403 |
+| Attempts exhausted                         | `ChatThreadAgentOwnershipChangedError` propagates                            |
+| Lock wait or statement timeout             | Original database error, propagated unchanged                                |
+| Cancelled after the write, before `COMMIT` | Rollback of every executed row write, the original cancellation propagated   |
 
 The `403` body is `Chat read state is unavailable`: it names no subject, no
 owner and no reason. Because the Agent is admitted **before** the unread match
@@ -114,7 +129,34 @@ as a fabricated success.
 A writer that is already admitted finishes: a closure arriving afterwards waits
 on the retained shared subject barrier and commits only after that transaction,
 and the next bulk request is then rejected. A closure that commits first admits
-no mutation and no invalidation.
+no mutation and no invalidation. While that admitted writer is paused with every
+matched cursor written and its `COMMIT` not yet sent, nothing outside it reads
+the new cursors, its unread listing is unchanged, and no invalidation has been
+published for that Agent — an unrelated owner publishing their own progress in
+the same window is a different Agent on a different user-org channel.
+
+## Cancellation between the write and the commit
+
+The helper checks the request's `AbortSignal` immediately after the bulk
+statement returns and before the transaction callback resolves, so a request
+cancelled in that gap rolls back work PostgreSQL really performed:
+
+- The signal aborts while the transaction holds every matched row's write and
+  has issued no `COMMIT`; the check then throws and the transaction rolls back.
+- The request fails. It is **not** the existing `204` and **not** the closure
+  `403`, so a cancelled caller can never read a cancelled write as a success or
+  as an account decision.
+- Every cursor equals its pre-request value, every thread is unread again, and
+  nothing is published — including for an overflow-sized write past the
+  notification budget, which would otherwise publish the agent-scoped payload.
+- A later valid request from the same caller still commits the whole set.
+
+An abort that arrives after `COMMIT` has been sent is a different outcome and is
+not evidence of rollback; the covering test deliberately synchronizes before
+that boundary rather than after it. A blocked row lock also proves the atomic
+failure outcome — the statement fails, no cursor moves — but unordered SQL fixes
+no visit order, so it is not evidence that some other row had already been
+written. The cancellation case is what supplies that.
 
 ## Bounded ids over a complete atomic write
 
@@ -151,7 +193,8 @@ so the `5s` statement timeout is a real bound: exceeding it rolls the whole
 operation back rather than committing a prefix. Nothing here promises success at
 arbitrary size, and no hidden retry runs until it succeeds. The `AbortSignal` is
 checked between statements, as before; it does not cancel an in-flight
-statement.
+statement, and the check that follows this one rolls the completed statement
+back rather than committing it.
 
 ## Bounded notification and consumer compatibility
 
