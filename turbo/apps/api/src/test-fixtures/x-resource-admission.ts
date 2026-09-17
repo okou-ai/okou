@@ -153,5 +153,34 @@ export async function holdXResourceClaimForTest(
       }
       return result.count;
     },
+    blockedRunDeletionCount: async () => {
+      // A terminal Run's cleanup skips cancellation updates. Its lifecycle
+      // FOR UPDATE then waits behind the admitted upload's SHARE lock. Observe
+      // that real downstream wait beyond the former 100ms timeout, rather than
+      // sleeping or releasing the resource gate before the old bug can occur.
+      const rows = await executeRawRows(
+        db(),
+        sql`SELECT ${count()}::int AS count
+          FROM pg_stat_activity AS cleanup
+          WHERE cleanup.wait_event_type = 'Lock'
+            AND EXISTS (
+              SELECT 1 FROM pg_locks AS waiting_lock
+              WHERE waiting_lock.pid = cleanup.pid AND NOT waiting_lock.granted
+                AND clock_timestamp() - waiting_lock.waitstart > interval '100 milliseconds'
+            )
+            AND EXISTS (
+              SELECT 1 FROM pg_stat_activity AS upload
+              WHERE ${holderPid} = ANY(pg_blocking_pids(upload.pid))
+                AND upload.pid = ANY(pg_blocking_pids(cleanup.pid))
+            )`,
+        waiterCountRowSchema,
+      );
+      signal.throwIfAborted();
+      const result = rows[0];
+      if (!result) {
+        throw new Error("Missing X resource Run deletion waiter count");
+      }
+      return result.count;
+    },
   };
 }

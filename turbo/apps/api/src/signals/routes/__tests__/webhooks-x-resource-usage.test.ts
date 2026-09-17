@@ -9,9 +9,9 @@ import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { now, nowDate } from "../../../lib/time";
 import {
-  closeChatSearchErasureSubjectFixture,
-  removeChatSearchErasureSubjectsFixture,
-} from "../../../test-fixtures/chat-search-erasure";
+  closeErasureSubjectFixture,
+  removeErasureSubjectsFixture,
+} from "../../../test-fixtures/account-erasure-subject";
 import {
   createUsagePricingFixture,
   type UsagePricingFixture,
@@ -478,7 +478,15 @@ describe("X daily resource usage webhook", () => {
     const configuredPricing = await pricing();
     const fixture = await createRun();
     const event = observation([resourceId()]);
-    await runs.requestCancelRun(fixture.actor, fixture.runId, [200]);
+    await runs.requestCancelRun(
+      fixture.actor,
+      fixture.runId,
+      [200],
+      configuredPricing.resolution,
+    );
+    // Cancellation owns asynchronous settlement. Complete it with this test's
+    // pricing before submitting the intentionally late observation.
+    await flushWaitUntilForTest();
     const tooLate = new Date(now() + 6 * 60_000);
     // Infrastructure exception: advance this request's database clock so only
     // the completed-run bound, rather than the future-clock bound, rejects it.
@@ -609,7 +617,13 @@ describe("X daily resource usage webhook", () => {
     const freshId = resourceId();
     await accept(submit(deleted, [observation([sharedId])]), [200]);
     await expect(chargedUnits(deleted, configuredPricing)).resolves.toBe(1);
-    await runs.requestCancelRun(deleted.actor, deleted.runId, [200]);
+    await runs.requestCancelRun(
+      deleted.actor,
+      deleted.runId,
+      [200],
+      configuredPricing.resolution,
+    );
+    await flushWaitUntilForTest();
     await bdd.requestDeleteAgent(deleted.actor, deleted.agentId, [204]);
     await runs.requestReadRun(deleted.actor, deleted.runId, [404]);
 
@@ -650,7 +664,13 @@ describe("X daily resource usage webhook", () => {
     const id = resourceId();
     await accept(submit(threaded, [observation([id])]), [200]);
     await expect(chargedUnits(threaded, configuredPricing)).resolves.toBe(1);
-    await runs.requestCancelRun(threaded.actor, threaded.runId, [200]);
+    await runs.requestCancelRun(
+      threaded.actor,
+      threaded.runId,
+      [200],
+      configuredPricing.resolution,
+    );
+    await flushWaitUntilForTest();
     await chat.deleteThread(threaded.actor, thread.id);
     await chat.requestReadThread(threaded.actor, thread.id, [404]);
     // Thread removal preserves terminal runs and the billing ledger.
@@ -659,6 +679,88 @@ describe("X daily resource usage webhook", () => {
     await accept(submit(survivor, [observation([id])]), [200]);
     await expect(chargedUnits(survivor, configuredPricing)).resolves.toBe(0);
   });
+
+  it.each(["user", "organization"] as const)(
+    "drains an admitted terminal-run upload before %s deletion removes its ledger",
+    async (subjectKind) => {
+      const configuredPricing = await pricing();
+      const deleted = await createRun();
+      const survivor = await createRun();
+      const sharedId = resourceId();
+      const freshId = resourceId();
+      const event = observation([sharedId]);
+      await runs.requestCancelRun(
+        deleted.actor,
+        deleted.runId,
+        [200],
+        configuredPricing.resolution,
+      );
+      await flushWaitUntilForTest();
+
+      const callbacks = createWebhookCallbackApi(context);
+      callbacks.configureClerkWebhookSecret();
+      context.mocks.s3.send.mockResolvedValue({});
+      context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+        { data: [] },
+      );
+      context.mocks.stripe.subscriptions.list.mockResolvedValue({
+        data: [],
+        has_more: false,
+      });
+      context.mocks.stripe.subscriptions.retrieve.mockRejectedValue({
+        code: "resource_missing",
+      });
+      const subjectId =
+        subjectKind === "user" ? deleted.actor.userId : deleted.actor.orgId;
+      if (!subjectId) {
+        throw new Error("Deletion fixture requires an organization");
+      }
+
+      // Infrastructure exception: pause only this owned resource INSERT, so
+      // the real HTTP upload holds its Run SHARE lock during Clerk deletion.
+      const gate = await holdXResourceClaimForTest(
+        {
+          utcDay: event.observedAt.slice(0, 10),
+          resourceType: "post",
+          resourceId: sharedId,
+        },
+        context.signal,
+      );
+      const completion = Promise.allSettled([gate.done]);
+      const upload = Promise.allSettled([
+        accept(submit(deleted, [event]), [200]),
+      ]);
+      onTestFinished(async () => {
+        gate.release();
+        await completion;
+        await upload;
+        await flushWaitUntilForTest();
+      });
+      await expect.poll(gate.blockedWaiterCount).toBe(1);
+
+      callbacks.verifyNextClerkWebhook({
+        type: subjectKind === "user" ? "user.deleted" : "organization.deleted",
+        data: { id: subjectId },
+      });
+      await callbacks.requestClerkWebhook("{}", {}, [200]);
+      await expect.poll(gate.blockedRunDeletionCount).toBe(1);
+      gate.release();
+      const [released] = await completion;
+      if (released.status === "rejected") {
+        throw released.reason;
+      }
+      const [uploaded] = await upload;
+      if (uploaded.status === "rejected") {
+        throw uploaded.reason;
+      }
+      await flushWaitUntilForTest();
+
+      await runs.requestReadRun(deleted.actor, deleted.runId, [404]);
+      await accept(submit(deleted, [observation([freshId])]), [404]);
+      await accept(submit(survivor, [observation([sharedId, freshId])]), [200]);
+      await expect(chargedUnits(survivor, configuredPricing)).resolves.toBe(1);
+    },
+  );
 
   it.each(["user", "organization"] as const)(
     "fences old uploads before %s deletion removes billing and retains shared resources",
@@ -744,12 +846,12 @@ describe("X daily resource usage webhook", () => {
       // Infrastructure exception: erasure decision ingress is dormant and has
       // no production API. Close only this test-owned subject, leaving the run
       // present so the stale-token assertion specifically exercises admission.
-      const closure = await closeChatSearchErasureSubjectFixture({
+      const closure = await closeErasureSubjectFixture({
         subjectKind,
         subjectId,
       });
       onTestFinished(async () => {
-        await removeChatSearchErasureSubjectsFixture([closure.jobId]);
+        await removeErasureSubjectsFixture([closure.jobId]);
       });
       await accept(submit(closed, [observation([freshId])]), [404]);
       await accept(submit(survivor, [observation([sharedId, freshId])]), [200]);

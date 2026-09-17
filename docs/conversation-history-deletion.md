@@ -88,9 +88,12 @@ Candidate cleanup takes storage ownership before releasing candidate references.
 Agent deletion retains canonical mutation advisory -> agent -> sessions -> runs,
 with existing NOWAIT and 100 ms behavior. Clerk revalidates agents after canonical
 mutation ownership, then locks sessions and the deduplicated run set in ID order,
-retaining its 100 ms lock timeout. Threadless cleanup retains its run and Phase 2
-maintenance barriers. The new helper never acquires the checkpoint advisory lock
-after acquiring the run.
+retaining its 100 ms lock timeout for canonical and session ownership. Only its
+run-lock acquisition allows 20 seconds to drain admitted X resource usage
+transactions, whose lifetime is limited to 15 seconds; it restores 100 ms
+immediately after acquiring the run locks. Subsequent blob locks still use
+NOWAIT. Threadless cleanup retains its run and Phase 2 maintenance barriers. The
+new helper never acquires the checkpoint advisory lock after acquiring the run.
 
 All parent cascades and storage mutations finish before blob release. Hashes are
 sorted globally and locked in that order. Blob locks use `FOR UPDATE NOWAIT`:

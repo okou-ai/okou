@@ -143,6 +143,13 @@ arriving after the run deletion cannot reinsert those personal records. This
 ordering also protects deployments where the separate erasure-decision bridge
 has not been enabled.
 
+Clerk lifecycle cleanup allows 20 seconds to acquire its Run `FOR UPDATE`
+locks, exceeding the admitted writer's 15-second transaction limit, including
+uploads for already terminal runs. After acquiring those locks it restores
+the existing 100-millisecond lock timeout; Agent, Session and subsequent
+deletion locks retain that original policy. The longer Run wait prevents a
+valid upload from causing the acknowledged background cleanup to time out.
+
 ## Runner, annotation and activation
 
 [#34612](https://github.com/vm0-ai/okou/issues/34612) preserves exact IDs,

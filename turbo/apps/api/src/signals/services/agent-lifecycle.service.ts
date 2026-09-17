@@ -91,12 +91,18 @@ export async function deleteClerkAgentLifecycleData(
         .from(agentRuns)
         .where(inArray(agentRuns.sessionId, ownedSessions)),
     );
+    // Resource usage holds a Run SHARE lock for at most its 15-second
+    // transaction lifetime. Drain that admitted writer before deleting the Run.
+    await tx.execute(sql`SELECT set_config('lock_timeout', '20s', true)`);
     const runs = await tx
       .select({ id: agentRuns.id })
       .from(agentRuns)
       .where(inArray(agentRuns.id, targetRuns))
       .orderBy(asc(agentRuns.id))
       .for("update");
+    await tx.execute(
+      sql`SELECT set_config('lock_timeout', ${AGENT_LIFECYCLE_LOCK_TIMEOUT}, true)`,
+    );
     const runIds = runs.map((run) => {
       return run.id;
     });
