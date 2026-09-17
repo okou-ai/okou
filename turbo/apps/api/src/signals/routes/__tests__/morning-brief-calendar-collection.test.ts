@@ -60,6 +60,9 @@ const ANCHOR_ISO = "2026-03-10T02:30:00.000Z";
 const WINDOW_START = "2026-03-09T16:00:00.000Z";
 const WINDOW_END = "2026-03-12T16:00:00.000Z";
 const HOUR_MS = 60 * 60 * 1000;
+// Both bounded provider-read worker lanes must be held before a revocation
+// test changes authority; otherwise one lane can legitimately race the change.
+const HELD_EVENT_READ_COUNT = 2;
 
 const OWNER_CALENDAR = "owner@example.test";
 const TEAM_CALENDAR = "team@example.test";
@@ -147,12 +150,11 @@ function stubCalendar(args: {
   readonly eventStatus?: ReadonlyMap<string, number>;
   readonly listStatus?: number;
   readonly pages?: ReadonlyMap<string, string>;
-  readonly holdFirstEvents?: Promise<void>;
+  readonly holdEvents?: Promise<void>;
   /** Sent with a failing event response, as a real rate limit would be. */
   readonly retryAfterSeconds?: number;
 }): CalendarStub {
   const calls: CalendarCall[] = [];
-  let held = false;
 
   server.use(
     http.get(CALENDAR_LIST_URL, ({ request }) => {
@@ -170,9 +172,8 @@ function stubCalendar(args: {
       const url = new URL(request.url);
       calls.push({ pathname: url.pathname, search: url.search });
       const calendarId = decodeURIComponent(String(params["calendarId"]));
-      if (args.holdFirstEvents && !held) {
-        held = true;
-        await args.holdFirstEvents;
+      if (args.holdEvents) {
+        await args.holdEvents;
       }
       const status = args.eventStatus?.get(calendarId);
       if (status !== undefined) {
@@ -671,21 +672,23 @@ describe("Morning Brief calendar collection preview", () => {
           ],
         ],
       ]),
-      holdFirstEvents: release.promise,
+      holdEvents: release.promise,
     });
 
     const collection = collectOk(fixture);
-    // Arrival, not a sleep: the stub has entered the held events request.
+    // Arrival, not a sleep: every bounded worker lane has entered a held
+    // events request, so no pre-revocation read remains between authorization
+    // and the provider stub.
     await expect
       .poll(() => {
         return eventCalls(stub).length;
       })
-      .toBeGreaterThan(0);
-    const heldCalls = eventCalls(stub).length;
+      .toBe(HELD_EVENT_READ_COUNT);
     await revokeAgentConnectorGrantFixture(
       { orgId: fixture.actor.orgId, userId: fixture.actor.userId },
       { agentId: fixture.agentId, connectorSlug: "google-calendar" },
     );
+    const callsAtRevocation = eventCalls(stub).length;
     release.resolve();
 
     const response = await collection;
@@ -696,8 +699,9 @@ describe("Morning Brief calendar collection preview", () => {
       failure: "source-revoked",
       items: [],
     });
-    // Nothing new was issued after the revocation landed.
-    expect(eventCalls(stub).length).toBeLessThanOrEqual(heldCalls + 1);
+    // Nothing new was issued after the revocation landed. Requests that raced
+    // with the revocation itself may already be visible in the stub.
+    expect(eventCalls(stub)).toHaveLength(callsAtRevocation);
   });
 
   it("refuses a member whose Clerk membership is gone", async () => {
@@ -747,7 +751,7 @@ describe("Morning Brief calendar collection preview", () => {
           ],
         ],
       ]),
-      holdFirstEvents: release.promise,
+      holdEvents: release.promise,
     });
 
     const collection = collectOk(fixture);
@@ -755,11 +759,11 @@ describe("Morning Brief calendar collection preview", () => {
       .poll(() => {
         return eventCalls(stub).length;
       })
-      .toBeGreaterThan(0);
-    const heldCalls = eventCalls(stub).length;
+      .toBe(HELD_EVENT_READ_COUNT);
     // A removal and rejoin issues a new immutable membership id. The new
     // membership does not speak for what the previous one started.
     await seedMembership(fixture.actor, `orgmem_${randomUUID()}`);
+    const callsAtReplacement = eventCalls(stub).length;
     release.resolve();
 
     const response = await collection;
@@ -768,7 +772,7 @@ describe("Morning Brief calendar collection preview", () => {
       failure: "source-revoked",
       items: [],
     });
-    expect(eventCalls(stub).length).toBeLessThanOrEqual(heldCalls + 1);
+    expect(eventCalls(stub)).toHaveLength(callsAtReplacement);
   });
 
   it("never falls back to primary when the calendar list is denied", async () => {
