@@ -164,6 +164,12 @@ export function holdMorningBriefChatMembershipLookupFixture(
   signal: AbortSignal,
 ): {
   readonly waitForArrival: () => Promise<void>;
+  /**
+   * How many of this owner's lookups completed before the suspended one, so a
+   * test can prove it stalled the boundary it names instead of an earlier one
+   * that happens to produce the same outcome.
+   */
+  readonly lookupsBefore: () => number;
   readonly release: () => void;
 } {
   const lookup =
@@ -175,6 +181,7 @@ export function holdMorningBriefChatMembershipLookupFixture(
   const arrived = createDeferredPromise<void>(signal);
   const released = createDeferredPromise<void>(signal);
   let seen = 0;
+  let suspendedAfter = 0;
   let suspended = false;
   const release = () => {
     if (!released.settled()) {
@@ -191,6 +198,7 @@ export function holdMorningBriefChatMembershipLookupFixture(
       return membership;
     }
     suspended = true;
+    suspendedAfter = seen - 1;
     arrived.resolve();
     await released.promise;
     return membership;
@@ -198,6 +206,9 @@ export function holdMorningBriefChatMembershipLookupFixture(
   return {
     waitForArrival: () => {
       return arrived.promise;
+    },
+    lookupsBefore: () => {
+      return suspendedAfter;
     },
     release,
   };

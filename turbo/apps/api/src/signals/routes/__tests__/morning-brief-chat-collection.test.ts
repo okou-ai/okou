@@ -735,6 +735,11 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
         prompt: "prompt the expired attempt never reached",
         reply: "reply the expired attempt never reached",
       });
+      // Without this the absence assertion below would hold for a thread that
+      // was never collectable in the first place.
+      await expect(collect(member)).resolves.toMatchObject({
+        result: "collected",
+      });
       const held = holdMorningBriefChatMembershipLookupFixture(
         { owner: member, skip: 0 },
         context.signal,
@@ -743,6 +748,7 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
 
       const pending = collectRequest(member);
       await held.waitForArrival();
+      expect(held.lookupsBefore()).toBe(0);
       mockNow(startedAt + MORNING_BRIEF_CHAT_COLLECTION_BUDGET.deadlineMs);
       held.release();
       const response = await pending;
@@ -788,6 +794,9 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
         prompt: "prompt collected but never fenced",
         reply: "reply collected but never fenced",
       });
+      await expect(collect(member)).resolves.toMatchObject({
+        result: "collected",
+      });
       // Admission resolves the generation twice; the third lookup is the fence
       // that decides whether this envelope may be released.
       const held = holdMorningBriefChatMembershipLookupFixture(
@@ -798,6 +807,9 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
 
       const pending = collectRequest(member);
       await held.waitForArrival();
+      // Stalling admission instead would produce the same 503, so the case
+      // states which boundary it actually suspended.
+      expect(held.lookupsBefore()).toBe(2);
       mockNow(startedAt + MORNING_BRIEF_CHAT_COLLECTION_BUDGET.deadlineMs);
       held.release();
       const response = await pending;
