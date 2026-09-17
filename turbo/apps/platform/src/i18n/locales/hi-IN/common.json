@@ -5477,7 +5477,7 @@
         "usage": {
           "balanceDescription": "आपकी टीम के पास खर्च करने के लिए कितना बचा है।",
           "balanceTitle": "क्रेडिट शेष",
-          "usageDescription": "चैट, ऑटोमेशन और चैनलों पर आपका क्रेडिट उपयोग।",
+          "usageDescription": "आपका क्रेडिट उपयोग, थ्रेड के अनुसार समूहीकृत।",
           "usageTitle": "क्रेडिट उपयोग"
         }
       },
@@ -6391,36 +6391,26 @@
     "records": {
       "empty": {
         "billingPeriodTitle": "इस बिलिंग अवधि में कोई उपयोग नहीं",
-        "description": "चैट, ऑटोमेशन और चैनल पर खर्च किए गए क्रेडिट यहाँ दिखते हैं.",
+        "description": "थ्रेड में खर्च किए गए क्रेडिट यहाँ दिखते हैं.",
         "noBillingPeriodDescription": "बिलिंग अवधि शुरू होने पर टीम का उपयोग यहाँ दिखेगा.",
         "noBillingPeriodTitle": "कोई सक्रिय बिलिंग अवधि नहीं",
         "rangeTitle": "इस समय सीमा में कोई उपयोग नहीं",
-        "teamDescription": "आपकी टीम द्वारा चैट, ऑटोमेशन और चैनल पर खर्च किए गए क्रेडिट यहाँ दिखते हैं."
+        "teamDescription": "आपकी टीम द्वारा थ्रेड में खर्च किए गए क्रेडिट यहाँ दिखते हैं."
       },
       "loadError": "आपका उपयोग लोड नहीं किया जा सका.",
       "loadMore": "और लोड करें",
       "myUsage": "मेरा उपयोग",
       "teamLoadError": "टीम उपयोग लोड नहीं किया जा सका.",
       "teamUsage": "टीम का उपयोग",
+      "thread": "थ्रेड",
+      "unavailableThread": "अनुपलब्ध थ्रेड",
       "untitled": "(शीर्षक रहित)"
     },
-    "sources": {
-      "agent": "एजेंट",
-      "automation": "ऑटोमेशन",
-      "chat": "चैट",
-      "email": "ईमेल",
-      "github": "GitHub",
-      "other": "अन्य",
-      "phone": "फ़ोन",
-      "slack": "Slack",
-      "teams": "Microsoft Teams",
-      "telegram": "Telegram"
-    },
     "units": {
-      "chat_one": "{{value}} चैट",
-      "chat_other": "{{value}} चैट",
       "credit_one": "{{value}} क्रेडिट",
-      "credit_other": "{{value}} क्रेडिट"
+      "credit_other": "{{value}} क्रेडिट",
+      "thread_one": "{{value}} थ्रेड",
+      "thread_other": "{{value}} थ्रेड"
     }
   },
   "workflows": {

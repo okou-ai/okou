@@ -5464,7 +5464,7 @@
         "usage": {
           "balanceDescription": "Sisa yang bisa dibelanjakan tim Anda.",
           "balanceTitle": "Saldo kredit",
-          "usageDescription": "Penggunaan kredit Anda di seluruh chat, otomatisasi, dan channel.",
+          "usageDescription": "Penggunaan kredit Anda, dikelompokkan berdasarkan utas.",
           "usageTitle": "Penggunaan kredit"
         }
       },
@@ -6370,36 +6370,26 @@
     "records": {
       "empty": {
         "billingPeriodTitle": "Tidak ada penggunaan pada periode penagihan ini",
-        "description": "Kredit yang Anda pakai di chat, automasi, dan kanal muncul di sini.",
+        "description": "Kredit yang Anda pakai di utas muncul di sini.",
         "noBillingPeriodDescription": "Penggunaan tim muncul setelah periode penagihan dimulai.",
         "noBillingPeriodTitle": "Tidak ada periode penagihan aktif",
         "rangeTitle": "Tidak ada penggunaan pada rentang waktu ini",
-        "teamDescription": "Kredit yang dipakai tim Anda di chat, automasi, dan kanal muncul di sini."
+        "teamDescription": "Kredit yang dipakai tim Anda di utas muncul di sini."
       },
       "loadError": "Tidak dapat memuat penggunaan Anda.",
       "loadMore": "Muat lebih banyak",
       "myUsage": "Penggunaan saya",
       "teamLoadError": "Tidak dapat memuat penggunaan tim.",
       "teamUsage": "Penggunaan tim",
+      "thread": "Utas",
+      "unavailableThread": "Utas tidak tersedia",
       "untitled": "(tanpa judul)"
     },
-    "sources": {
-      "agent": "Agen",
-      "automation": "Otomatisasi",
-      "chat": "Chat",
-      "email": "Email",
-      "github": "GitHub",
-      "other": "Lainnya",
-      "phone": "Telepon",
-      "slack": "Slack",
-      "teams": "Microsoft Teams",
-      "telegram": "Telegram"
-    },
     "units": {
-      "chat_one": "{{value}} chat",
-      "chat_other": "{{value}} chat",
       "credit_one": "{{value}} kredit",
-      "credit_other": "{{value}} kredit"
+      "credit_other": "{{value}} kredit",
+      "thread_one": "{{value}} utas",
+      "thread_other": "{{value}} utas"
     }
   },
   "workflows": {

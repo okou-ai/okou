@@ -5464,7 +5464,7 @@
         "usage": {
           "balanceDescription": "チームが使える残高です。",
           "balanceTitle": "クレジット残高",
-          "usageDescription": "チャット、オートメーション、チャネル全体でのクレジットの使用状況。",
+          "usageDescription": "スレッドごとにまとめたクレジット使用量。",
           "usageTitle": "クレジット使用量"
         }
       },
@@ -6370,36 +6370,26 @@
     "records": {
       "empty": {
         "billingPeriodTitle": "この請求期間の利用はありません",
-        "description": "チャット、オートメーション、チャネルで使ったクレジットがここに表示されます。",
+        "description": "スレッドで使ったクレジットがここに表示されます。",
         "noBillingPeriodDescription": "請求期間が始まるとチームの利用状況が表示されます。",
         "noBillingPeriodTitle": "有効な請求期間はありません",
         "rangeTitle": "この期間の利用はありません",
-        "teamDescription": "チームがチャット、オートメーション、チャネルで使ったクレジットがここに表示されます。"
+        "teamDescription": "チームがスレッドで使ったクレジットがここに表示されます。"
       },
       "loadError": "使用量を読み込めませんでした。",
       "loadMore": "さらに読み込む",
       "myUsage": "自分の使用量",
       "teamLoadError": "チームの使用量を読み込めませんでした。",
       "teamUsage": "チームの使用量",
+      "thread": "スレッド",
+      "unavailableThread": "利用できないスレッド",
       "untitled": "(無題)"
     },
-    "sources": {
-      "agent": "エージェント",
-      "automation": "オートメーション",
-      "chat": "チャット",
-      "email": "メール",
-      "github": "GitHub",
-      "other": "その他",
-      "phone": "電話",
-      "slack": "Slack",
-      "teams": "Microsoft Teams",
-      "telegram": "Telegram"
-    },
     "units": {
-      "chat_one": "{{value}}件の会話",
-      "chat_other": "{{value}}件の会話",
       "credit_one": "{{value}}クレジット",
-      "credit_other": "{{value}}クレジット"
+      "credit_other": "{{value}}クレジット",
+      "thread_one": "{{value}}件のスレッド",
+      "thread_other": "{{value}}件のスレッド"
     }
   },
   "workflows": {

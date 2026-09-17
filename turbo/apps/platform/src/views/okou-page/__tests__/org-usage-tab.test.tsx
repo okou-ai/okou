@@ -5,6 +5,7 @@ import {
 } from "@okouai/api-contracts/contracts/billing";
 import { orgMembersContract } from "@okouai/api-contracts/contracts/org-member-routes";
 import { usageMembersContract } from "@okouai/api-contracts/contracts/usage";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, test } from "vitest";
@@ -162,6 +163,30 @@ function mockUsageStory(): void {
           cacheReadInputTokens: 0,
           cacheCreationInputTokens: 0,
           creditsCharged: 7500,
+          breakdown: [
+            {
+              kind: "model",
+              credits: 6000,
+              providers: [
+                {
+                  provider: "gpt-5.6-sol",
+                  credits: 6000,
+                  usageKinds: [{ kind: "model", credits: 6000 }],
+                },
+              ],
+            },
+            {
+              kind: "connector",
+              credits: 1500,
+              providers: [
+                {
+                  provider: "x",
+                  credits: 1500,
+                  usageKinds: [{ kind: "connector", credits: 1500 }],
+                },
+              ],
+            },
+          ],
         },
         {
           userId: "user-bob",
@@ -171,6 +196,19 @@ function mockUsageStory(): void {
           cacheReadInputTokens: 0,
           cacheCreationInputTokens: 0,
           creditsCharged: 2100,
+          breakdown: [
+            {
+              kind: "model",
+              credits: 2100,
+              providers: [
+                {
+                  provider: "gpt-5.6-luna",
+                  credits: 2100,
+                  usageKinds: [{ kind: "model", credits: 2100 }],
+                },
+              ],
+            },
+          ],
         },
       ],
     });
@@ -192,6 +230,9 @@ async function openCreditUsage(): Promise<void> {
   await setupPage({
     context,
     path: "/?settings=usage-records",
+    featureSwitches: {
+      [FeatureSwitchKey.TeamUsageBreakdown]: true,
+    },
   });
   await waitFor(() => {
     expect(screen.getByRole("dialog")).toBeInTheDocument();
@@ -316,6 +357,7 @@ test("Explain the composition of a workspace credit balance", async () => {
 });
 
 test("Review credit usage by workspace member", async () => {
+  const user = userEvent.setup();
   mockUsageStory();
   await openCreditUsage();
 
@@ -332,4 +374,19 @@ test("Review credit usage by workspace member", async () => {
   });
   expect(screen.getByText("7,500")).toBeInTheDocument();
   expect(screen.getByText("2,100")).toBeInTheDocument();
+  expect(
+    screen.getByTestId("member-usage-kind-test-user-123-model"),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByTestId("member-usage-kind-test-user-123-connector"),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByTestId("member-usage-kind-user-bob-model"),
+  ).toBeInTheDocument();
+
+  await user.hover(screen.getByTestId("member-usage-kind-test-user-123-model"));
+  await expect(
+    screen.findByText("Models - 6,000"),
+  ).resolves.toBeInTheDocument();
+  expect(screen.getByText("GPT 5.6 Sol")).toBeInTheDocument();
 });

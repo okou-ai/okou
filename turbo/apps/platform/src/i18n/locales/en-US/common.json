@@ -5469,7 +5469,7 @@
         "usage": {
           "balanceDescription": "What your team has left to spend.",
           "balanceTitle": "Credit balance",
-          "usageDescription": "Your credit usage across chats, automations, and channels.",
+          "usageDescription": "Your credit usage, grouped by thread.",
           "usageTitle": "Credit usage"
         }
       },
@@ -6383,36 +6383,26 @@
     "records": {
       "empty": {
         "billingPeriodTitle": "No usage in this billing period",
-        "description": "Credits you spend on chats, automations, and channels show up here.",
+        "description": "Credits you spend in threads show up here.",
         "noBillingPeriodDescription": "Team usage appears once a billing period starts.",
         "noBillingPeriodTitle": "No active billing period",
         "rangeTitle": "No usage in this time range",
-        "teamDescription": "Credits your team spends on chats, automations, and channels show up here."
+        "teamDescription": "Credits your team spends in threads show up here."
       },
       "loadError": "Could not load your usage.",
       "loadMore": "Load more",
       "myUsage": "My usage",
       "teamLoadError": "Could not load team usage.",
       "teamUsage": "Team usage",
+      "thread": "Thread",
+      "unavailableThread": "Unavailable thread",
       "untitled": "(untitled)"
     },
-    "sources": {
-      "agent": "Agent",
-      "automation": "Automation",
-      "chat": "Chat",
-      "email": "Email",
-      "github": "GitHub",
-      "other": "Other",
-      "phone": "Phone",
-      "slack": "Slack",
-      "teams": "Microsoft Teams",
-      "telegram": "Telegram"
-    },
     "units": {
-      "chat_one": "{{value}} chat",
-      "chat_other": "{{value}} chats",
       "credit_one": "{{value}} credit",
-      "credit_other": "{{value}} credits"
+      "credit_other": "{{value}} credits",
+      "thread_one": "{{value}} thread",
+      "thread_other": "{{value}} threads"
     }
   },
   "workflows": {

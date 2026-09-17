@@ -5536,7 +5536,7 @@
         "usage": {
           "balanceDescription": "Ce qu'il reste à dépenser à votre équipe.",
           "balanceTitle": "Solde de crédits",
-          "usageDescription": "Votre utilisation des crédits dans les conversations, automatisations et canaux.",
+          "usageDescription": "Votre utilisation des crédits, regroupée par fil de discussion.",
           "usageTitle": "Utilisation des crédits"
         }
       },
@@ -6461,38 +6461,28 @@
     "records": {
       "empty": {
         "billingPeriodTitle": "Aucune utilisation pendant cette période de facturation",
-        "description": "Les crédits dépensés dans les chats, automatisations et canaux s'affichent ici.",
+        "description": "Les crédits dépensés dans les fils de discussion s'affichent ici.",
         "noBillingPeriodDescription": "L'utilisation de l'équipe s'affiche dès qu'une période de facturation commence.",
         "noBillingPeriodTitle": "Aucune période de facturation active",
         "rangeTitle": "Aucune utilisation pour cette plage horaire",
-        "teamDescription": "Les crédits dépensés par votre équipe dans les chats, automatisations et canaux s'affichent ici."
+        "teamDescription": "Les crédits dépensés par votre équipe dans les fils de discussion s'affichent ici."
       },
       "loadError": "Impossible de charger votre utilisation.",
       "loadMore": "Charger plus",
       "myUsage": "Mon utilisation",
       "teamLoadError": "Impossible de charger l'utilisation de l'équipe.",
       "teamUsage": "Utilisation de l'équipe",
+      "thread": "Fil de discussion",
+      "unavailableThread": "Fil de discussion indisponible",
       "untitled": "(sans titre)"
     },
-    "sources": {
-      "agent": "Agent",
-      "automation": "Automatisation",
-      "chat": "Chat",
-      "email": "Email",
-      "github": "GitHub",
-      "other": "Autre",
-      "phone": "Téléphone",
-      "slack": "Slack",
-      "teams": "Microsoft Teams",
-      "telegram": "Telegram"
-    },
     "units": {
-      "chat_one": "{{value}} chat",
-      "chat_many": "{{value}} chats",
-      "chat_other": "{{value}} chats",
       "credit_one": "{{value}} crédit",
       "credit_many": "{{value}} crédits",
-      "credit_other": "{{value}} crédits"
+      "credit_other": "{{value}} crédits",
+      "thread_one": "{{value}} fil",
+      "thread_many": "{{value}} fils",
+      "thread_other": "{{value}} fils"
     }
   },
   "workflows": {

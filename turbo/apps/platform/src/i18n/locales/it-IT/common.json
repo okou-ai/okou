@@ -5536,7 +5536,7 @@
         "usage": {
           "balanceDescription": "Quanto resta da spendere al tuo team.",
           "balanceTitle": "Saldo del credito",
-          "usageDescription": "Il tuo utilizzo del credito attraverso chat, automazioni e canali.",
+          "usageDescription": "Il tuo utilizzo dei crediti, raggruppato per conversazione.",
           "usageTitle": "Utilizzo del credito"
         }
       },
@@ -6461,38 +6461,28 @@
     "records": {
       "empty": {
         "billingPeriodTitle": "Nessun utilizzo in questo periodo di fatturazione",
-        "description": "I crediti che spendi in chat, automazioni e canali compaiono qui.",
+        "description": "I crediti che spendi nelle conversazioni compaiono qui.",
         "noBillingPeriodDescription": "L'utilizzo del team compare all'inizio di un periodo di fatturazione.",
         "noBillingPeriodTitle": "Nessun periodo di fatturazione attivo",
         "rangeTitle": "Nessun utilizzo in questo intervallo di tempo",
-        "teamDescription": "I crediti che il tuo team spende in chat, automazioni e canali compaiono qui."
+        "teamDescription": "I crediti che il tuo team spende nelle conversazioni compaiono qui."
       },
       "loadError": "Impossibile caricare il tuo utilizzo.",
       "loadMore": "Carica di più",
       "myUsage": "Il mio utilizzo",
       "teamLoadError": "Impossibile caricare l'utilizzo del team.",
       "teamUsage": "Utilizzo del team",
+      "thread": "Conversazione",
+      "unavailableThread": "Conversazione non disponibile",
       "untitled": "(senza titolo)"
     },
-    "sources": {
-      "agent": "Agente",
-      "automation": "Automazione",
-      "chat": "Chat",
-      "email": "E-mail",
-      "github": "GitHub",
-      "other": "Altro",
-      "phone": "Telefono",
-      "slack": "Slack",
-      "teams": "Microsoft Teams",
-      "telegram": "Telegram"
-    },
     "units": {
-      "chat_one": "{{value}} chat",
-      "chat_many": "{{value}} chat",
-      "chat_other": "{{value}} chat",
       "credit_one": "{{value}} credito",
       "credit_many": "{{value}} crediti",
-      "credit_other": "{{value}} crediti"
+      "credit_other": "{{value}} crediti",
+      "thread_one": "{{value}} conversazione",
+      "thread_many": "{{value}} conversazioni",
+      "thread_other": "{{value}} conversazioni"
     }
   },
   "workflows": {

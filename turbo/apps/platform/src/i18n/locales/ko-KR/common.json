@@ -5464,7 +5464,7 @@
         "usage": {
           "balanceDescription": "팀이 사용할 수 있는 잔액입니다.",
           "balanceTitle": "크레딧 잔액",
-          "usageDescription": "채팅, 자동화, 채널에서의 크레딧 사용량입니다.",
+          "usageDescription": "스레드별로 그룹화된 크레딧 사용량입니다.",
           "usageTitle": "크레딧 사용량"
         }
       },
@@ -6370,36 +6370,26 @@
     "records": {
       "empty": {
         "billingPeriodTitle": "이 청구 기간에 사용 내역이 없습니다",
-        "description": "채팅, 자동화, 채널에서 사용한 크레딧이 여기에 표시됩니다.",
+        "description": "스레드에서 사용한 크레딧이 여기에 표시됩니다.",
         "noBillingPeriodDescription": "청구 기간이 시작되면 팀 사용량이 표시됩니다.",
         "noBillingPeriodTitle": "활성 청구 기간이 없습니다",
         "rangeTitle": "이 기간에 사용 내역이 없습니다",
-        "teamDescription": "팀이 채팅, 자동화, 채널에서 사용한 크레딧이 여기에 표시됩니다."
+        "teamDescription": "팀이 스레드에서 사용한 크레딧이 여기에 표시됩니다."
       },
       "loadError": "사용량을 불러올 수 없습니다.",
       "loadMore": "더 불러오기",
       "myUsage": "내 사용량",
       "teamLoadError": "팀 사용량을 불러올 수 없습니다.",
       "teamUsage": "팀 사용량",
+      "thread": "스레드",
+      "unavailableThread": "사용할 수 없는 스레드",
       "untitled": "(제목 없음)"
     },
-    "sources": {
-      "agent": "에이전트",
-      "automation": "자동화",
-      "chat": "채팅",
-      "email": "이메일",
-      "github": "GitHub",
-      "other": "기타",
-      "phone": "전화",
-      "slack": "Slack",
-      "teams": "Microsoft Teams",
-      "telegram": "Telegram"
-    },
     "units": {
-      "chat_one": "{{value}}개 채팅",
-      "chat_other": "{{value}}개 채팅",
       "credit_one": "{{value}} 크레딧",
-      "credit_other": "{{value}} 크레딧"
+      "credit_other": "{{value}} 크레딧",
+      "thread_one": "{{value}}개 스레드",
+      "thread_other": "{{value}}개 스레드"
     }
   },
   "workflows": {

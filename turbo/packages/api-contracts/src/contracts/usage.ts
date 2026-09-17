@@ -1,7 +1,10 @@
 import { z } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
-import { usageRecordRangeSchema } from "./usage-record";
+import {
+  usageRecordKindBreakdownSchema,
+  usageRecordRangeSchema,
+} from "./usage-record";
 
 const c = initContract();
 
@@ -13,6 +16,8 @@ const memberUsageSchema = z.object({
   cacheReadInputTokens: z.number(),
   cacheCreationInputTokens: z.number(),
   creditsCharged: z.number(),
+  // Optional during the API/App rollout so a new App can read an older API.
+  breakdown: z.array(usageRecordKindBreakdownSchema).default([]),
 });
 
 const usageMembersResponseSchema = z.object({

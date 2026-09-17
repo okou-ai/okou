@@ -5536,7 +5536,7 @@
         "usage": {
           "balanceDescription": "Lo que le queda a tu equipo para gastar.",
           "balanceTitle": "Saldo de créditos",
-          "usageDescription": "Tu consumo de créditos en conversaciones, automatizaciones y canales.",
+          "usageDescription": "Tu consumo de créditos, agrupado por hilo.",
           "usageTitle": "Consumo de créditos"
         }
       },
@@ -6461,38 +6461,28 @@
     "records": {
       "empty": {
         "billingPeriodTitle": "No hubo consumo en este periodo de facturación",
-        "description": "Los créditos que gastas en chats, automatizaciones y canales aparecen aquí.",
+        "description": "Los créditos que gastas en hilos aparecen aquí.",
         "noBillingPeriodDescription": "El consumo del equipo aparece cuando empieza un periodo de facturación.",
         "noBillingPeriodTitle": "No hay periodo de facturación activo",
         "rangeTitle": "No hubo consumo en este intervalo",
-        "teamDescription": "Los créditos que gasta tu equipo en chats, automatizaciones y canales aparecen aquí."
+        "teamDescription": "Los créditos que gasta tu equipo en hilos aparecen aquí."
       },
       "loadError": "No se pudo cargar tu consumo.",
       "loadMore": "Cargar más",
       "myUsage": "Mi uso",
       "teamLoadError": "No se pudo cargar el uso del equipo.",
       "teamUsage": "Uso del equipo",
+      "thread": "Hilo",
+      "unavailableThread": "Hilo no disponible",
       "untitled": "(sin título)"
     },
-    "sources": {
-      "agent": "Agente",
-      "automation": "Automatización",
-      "chat": "Chat",
-      "email": "Correo electrónico",
-      "github": "GitHub",
-      "other": "Otro",
-      "phone": "Teléfono",
-      "slack": "Slack",
-      "teams": "Microsoft Teams",
-      "telegram": "Telegram"
-    },
     "units": {
-      "chat_one": "{{value}} conversación",
-      "chat_many": "{{value}} conversaciones",
-      "chat_other": "{{value}} conversaciones",
       "credit_one": "{{value}} crédito",
       "credit_many": "{{value}} créditos",
-      "credit_other": "{{value}} créditos"
+      "credit_other": "{{value}} créditos",
+      "thread_one": "{{value}} hilo",
+      "thread_many": "{{value}} hilos",
+      "thread_other": "{{value}} hilos"
     }
   },
   "workflows": {

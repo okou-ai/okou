@@ -1,9 +1,10 @@
-import { useLoadable } from "ccstate-react";
+import { useGet, useLoadable } from "ccstate-react";
 import { Button } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import type { OrgMember } from "@okouai/api-contracts/contracts/org-members";
 import type { BillingStatusResponse } from "@okouai/api-contracts/contracts/billing";
 import type { MemberUsage } from "@okouai/api-contracts/contracts/usage";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   Tooltip,
   TooltipContent,
@@ -16,6 +17,8 @@ import { currentLocale, i18n } from "../../../../i18n/index.ts";
 import { formatLocalizedNumber } from "../../../../i18n/format.ts";
 import { now } from "../../../../lib/time.ts";
 import { UserAvatar } from "../../../components/avatar.tsx";
+import { featureSwitch$ } from "../../../../signals/external/feature-switch.ts";
+import { UsageBreakdownBar } from "../usage-breakdown-bar.tsx";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -689,61 +692,86 @@ export function MemberUsageTable({
   memberMap: Map<string, OrgMember>;
 }) {
   const { t } = useTranslation();
-  return (
-    <div className="overflow-hidden rounded-xl bg-card border border-surface-border">
-      {/* Header */}
-      <div className="grid grid-cols-[1fr_7rem] gap-x-4 items-center px-5 py-2.5 text-[13px] font-medium text-foreground">
-        <span>
-          {t(($) => {
-            return $.billing.usage.member;
-          })}
-        </span>
-        <span>
-          {t(($) => {
-            return $.billing.usage.used;
-          })}
-        </span>
-      </div>
-      {members.map((member) => {
-        const orgMember = memberMap.get(member.userId);
-        const name = orgMember ? displayName(orgMember) : "";
-        const label = name || member.email;
-        const initial = label.charAt(0).toUpperCase();
+  const featureSwitches = useGet(featureSwitch$);
+  const showBreakdown =
+    featureSwitches[FeatureSwitchKey.TeamUsageBreakdown] ?? false;
+  const maxCredits = Math.max(
+    1,
+    ...members.map((member) => {
+      return member.creditsCharged;
+    }),
+  );
 
-        return (
-          <div key={member.userId}>
-            <div className="h-0 border-t border-t-gray-400 mx-5" />
-            <div className="grid grid-cols-[1fr_7rem] gap-x-4 items-center px-5 py-3">
-              <div className="flex items-center gap-3 min-w-0">
+  return (
+    <TooltipProvider delayDuration={100}>
+      <div className="overflow-hidden rounded-xl bg-card border border-surface-border">
+        {/* Header */}
+        <div className="grid grid-cols-[1fr_7rem] gap-x-4 items-center px-5 py-2.5 text-[13px] font-medium text-foreground">
+          <span>
+            {t(($) => {
+              return $.billing.usage.member;
+            })}
+          </span>
+          <span className="text-right">
+            {t(($) => {
+              return $.billing.usage.used;
+            })}
+          </span>
+        </div>
+        {members.map((member) => {
+          const orgMember = memberMap.get(member.userId);
+          const name = orgMember ? displayName(orgMember) : "";
+          const label = name || member.email;
+          const initial = label.charAt(0).toUpperCase();
+
+          return (
+            <div
+              key={member.userId}
+              data-testid={`member-usage-${member.userId}`}
+            >
+              <div className="h-0 border-t border-t-gray-400 mx-5" />
+              <div className="flex items-center gap-3 px-5 py-3">
                 <UserAvatar
                   imageUrl={orgMember?.imageUrl ?? ""}
                   initial={initial}
                   name={label}
                 />
-                <div className="min-w-0">
-                  {name ? (
-                    <>
-                      <p className="truncate text-sm font-medium text-foreground">
-                        {name}
-                      </p>
-                      <p className="truncate text-[13px] text-muted-foreground">
-                        {member.email}
-                      </p>
-                    </>
-                  ) : (
-                    <p className="truncate text-sm font-medium text-foreground">
-                      {member.email}
-                    </p>
-                  )}
+                <div className="min-w-0 flex-1">
+                  <div className="grid grid-cols-[minmax(0,1fr)_7rem] items-center gap-x-4">
+                    <div className="min-w-0">
+                      {name ? (
+                        <>
+                          <p className="truncate text-sm font-medium text-foreground">
+                            {name}
+                          </p>
+                          <p className="truncate text-[13px] text-muted-foreground">
+                            {member.email}
+                          </p>
+                        </>
+                      ) : (
+                        <p className="truncate text-sm font-medium text-foreground">
+                          {member.email}
+                        </p>
+                      )}
+                    </div>
+                    <span className="whitespace-nowrap text-right text-[13px] tabular-nums text-foreground">
+                      {formatLocalizedNumber(member.creditsCharged)}
+                    </span>
+                  </div>
+                  {showBreakdown ? (
+                    <UsageBreakdownBar
+                      credits={member.creditsCharged}
+                      breakdown={member.breakdown}
+                      max={maxCredits}
+                      testIdPrefix={`member-usage-kind-${member.userId}`}
+                    />
+                  ) : null}
                 </div>
               </div>
-              <span className="text-[13px] tabular-nums text-foreground whitespace-nowrap">
-                {formatLocalizedNumber(member.creditsCharged)}
-              </span>
             </div>
-          </div>
-        );
-      })}
-    </div>
+          );
+        })}
+      </div>
+    </TooltipProvider>
   );
 }

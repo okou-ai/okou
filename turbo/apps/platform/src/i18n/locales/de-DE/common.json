@@ -5477,7 +5477,7 @@
         "usage": {
           "balanceDescription": "Was deinem Team noch zum Ausgeben bleibt.",
           "balanceTitle": "Credit-Guthaben",
-          "usageDescription": "Ihre Credit-Nutzung über Chats, Automatisierungen und Kanäle hinweg.",
+          "usageDescription": "Ihre Credit-Nutzung, nach Thread gruppiert.",
           "usageTitle": "Credit-Nutzung"
         }
       },
@@ -6391,36 +6391,26 @@
     "records": {
       "empty": {
         "billingPeriodTitle": "Keine Nutzung in diesem Abrechnungszeitraum",
-        "description": "Credits, die du für Chats, Automationen und Kanäle ausgibst, erscheinen hier.",
+        "description": "Credits, die du in Threads ausgibst, erscheinen hier.",
         "noBillingPeriodDescription": "Die Team-Nutzung erscheint, sobald ein Abrechnungszeitraum beginnt.",
         "noBillingPeriodTitle": "Kein aktiver Abrechnungszeitraum",
         "rangeTitle": "Keine Nutzung in diesem Zeitraum",
-        "teamDescription": "Credits, die dein Team für Chats, Automationen und Kanäle ausgibt, erscheinen hier."
+        "teamDescription": "Credits, die dein Team in Threads ausgibt, erscheinen hier."
       },
       "loadError": "Ihre Nutzung konnte nicht geladen werden.",
       "loadMore": "Mehr laden",
       "myUsage": "Meine Nutzung",
       "teamLoadError": "Die Teamnutzung konnte nicht geladen werden.",
       "teamUsage": "Teamnutzung",
+      "thread": "Thread",
+      "unavailableThread": "Nicht verfügbarer Thread",
       "untitled": "(ohne Titel)"
     },
-    "sources": {
-      "agent": "Agent",
-      "automation": "Automatisierung",
-      "chat": "Chat",
-      "email": "E-Mail",
-      "github": "GitHub",
-      "other": "Andere",
-      "phone": "Telefon",
-      "slack": "Slack",
-      "teams": "Microsoft Teams",
-      "telegram": "Telegram"
-    },
     "units": {
-      "chat_one": "{{value}} Chat",
-      "chat_other": "{{value}} Chats",
       "credit_one": "{{value}} Credit",
-      "credit_other": "{{value}} Credits"
+      "credit_other": "{{value}} Credits",
+      "thread_one": "{{value}} Thread",
+      "thread_other": "{{value}} Threads"
     }
   },
   "workflows": {
