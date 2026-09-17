@@ -5,6 +5,7 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { request$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
+import { clerk$ } from "../external/clerk";
 import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import { admitMorningBriefCollection } from "../services/morning-brief-connector-reader.service";
@@ -53,11 +54,16 @@ const collectGmailInner$ = command(
     const db = set(writeDb$);
     // The anchor is the only caller input. Owner, Agent, installation, account
     // and every provider path are derived from canonical state.
-    const admission = await admitMorningBriefCollection(db, {
-      orgId: auth.orgId,
-      userId: auth.userId,
-      anchor: new Date(body.data.anchor),
-    });
+    const admission = await admitMorningBriefCollection(
+      {
+        db,
+        clerk: get(clerk$),
+        orgId: auth.orgId,
+        userId: auth.userId,
+        anchor: new Date(body.data.anchor),
+      },
+      signal,
+    );
     signal.throwIfAborted();
     if (admission.kind === "denied") {
       return forbidden(
@@ -65,7 +71,7 @@ const collectGmailInner$ = command(
       );
     }
     const collection = await collectMorningBriefGmail(
-      { db, scope: admission.scope },
+      { db, clerk: get(clerk$), scope: admission.scope },
       signal,
     );
     signal.throwIfAborted();

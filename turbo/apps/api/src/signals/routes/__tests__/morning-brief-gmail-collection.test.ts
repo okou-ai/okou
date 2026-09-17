@@ -6,23 +6,28 @@ import {
   type MorningBriefGmailCollection,
 } from "@okouai/api-contracts/contracts/morning-brief-gmail-collection-preview";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { createStore } from "ccstate";
 import { HttpResponse, http } from "msw";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
+import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
 import {
   bindMorningBriefThreadFixture,
-  breakThreadGmailSelectionFixture,
+  clearConnectorTokenExpiryFixture,
+  expirePermissionGrantFixture,
   installMorningBriefFixture,
+  requireConnectorReconnectFixture,
   revokeAgentConnectorGrantFixture,
   selectThreadGmailAccountFixture,
   setMorningBriefEnabledFixture,
 } from "../../../test-fixtures/morning-brief-gmail-collection";
 import { createDeferredPromise } from "../../utils";
+import { morningBriefGmailCollectionPreviewRoutes } from "../morning-brief-gmail-collection-preview";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import {
   createConnectorBddApi,
@@ -31,8 +36,11 @@ import {
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import {
+  deleteOrgMembership$,
+  seedOrgMembership$,
+} from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
-import { morningBriefGmailCollectionPreviewRoutes } from "../morning-brief-gmail-collection-preview";
 
 /**
  * Gmail collection through the shared Morning Brief OAuth reader.
@@ -40,8 +48,13 @@ import { morningBriefGmailCollectionPreviewRoutes } from "../morning-brief-gmail
  * The route's presence in the production table is asserted where the import
  * boundary allows the aggregate to be read, in `route-registration.test.ts`.
  * This suite drives that same exported slice through the normal app so the
- * deployed production gate, authentication and ownership checks are the ones
- * under test.
+ * deployed production gate, authentication, membership and ownership checks are
+ * the ones under test.
+ *
+ * The accepted-catalog fixture splits Gmail into `messages.read` for the list
+ * and `messages.detail` for message bodies, with only `messages.read` allowed by
+ * default. That is what makes a real permission refusal, an expired grant and a
+ * surviving authorized sibling observable from a route test.
  */
 
 const GMAIL_LIST_URL =
@@ -52,8 +65,11 @@ const GMAIL_MESSAGE_URL =
 const ANCHOR_ISO = "2026-09-17T07:00:00.000Z";
 const ANCHOR_MS = Date.parse(ANCHOR_ISO);
 const WINDOW_START_MS = ANCHOR_MS - 24 * 60 * 60 * 1000;
+/** The collector's own concurrency, which bounds how many details can be held. */
+const READER_CONCURRENCY = 3;
 
 const context = testContext();
+const store = createStore();
 const mocks = createRouteMocks(context);
 const bdd = createBddApi(context);
 const connectorsApi = createConnectorBddApi(context);
@@ -89,6 +105,8 @@ interface StubMessage {
   readonly subject?: string;
   readonly text?: string;
   readonly html?: string;
+  /** Pad the response past the reader's 256 KiB per-response ceiling. */
+  readonly oversized?: boolean;
 }
 
 function messagePayload(message: StubMessage) {
@@ -98,15 +116,15 @@ function messagePayload(message: StubMessage) {
     { name: "To", value: "owner@example.test" },
     { name: "Date", value: new Date(message.internalDate).toUTCString() },
   ];
+  const text =
+    message.oversized === true
+      ? "x".repeat(400 * 1024)
+      : (message.text ?? `Body ${message.id}`);
   const body =
     message.html === undefined
       ? {
           mimeType: "text/plain",
-          body: {
-            data: Buffer.from(message.text ?? `Body ${message.id}`).toString(
-              "base64url",
-            ),
-          },
+          body: { data: Buffer.from(text).toString("base64url") },
         }
       : {
           mimeType: "text/html",
@@ -122,8 +140,10 @@ function messagePayload(message: StubMessage) {
 }
 
 /**
- * A Gmail stub that records every call, so a denial can be asserted as *zero
- * provider reads* rather than as an absent response body.
+ * A Gmail stub that records every call, so a refusal can be asserted as *zero
+ * provider reads* rather than as an absent response body. `holdDetails` gates
+ * every message body, which is how a mid-flight authority change is observed at
+ * a known arrival point instead of after a sleep.
  */
 function stubGmail(args: {
   readonly recent?: readonly StubMessage[];
@@ -132,7 +152,7 @@ function stubGmail(args: {
     string,
     { readonly ids: readonly string[]; readonly nextPageToken?: string }
   >;
-  readonly holdFirstDetail?: Promise<void>;
+  readonly holdDetails?: Promise<void>;
   readonly detailStatus?: ReadonlyMap<string, number>;
 }): GmailStub {
   const calls: GmailCall[] = [];
@@ -140,7 +160,6 @@ function stubGmail(args: {
   for (const message of [...(args.recent ?? []), ...(args.unread ?? [])]) {
     byId.set(message.id, message);
   }
-  let held = false;
 
   server.use(
     http.get(GMAIL_LIST_URL, ({ request }) => {
@@ -178,9 +197,8 @@ function stubGmail(args: {
       const url = new URL(request.url);
       calls.push({ pathname: url.pathname, search: url.search });
       const messageId = String(params["messageId"]);
-      if (args.holdFirstDetail && !held) {
-        held = true;
-        await args.holdFirstDetail;
+      if (args.holdDetails) {
+        await args.holdDetails;
       }
       const status = args.detailStatus?.get(messageId);
       if (status !== undefined) {
@@ -197,6 +215,12 @@ function stubGmail(args: {
   return { calls };
 }
 
+function listCalls(stub: GmailStub): readonly GmailCall[] {
+  return stub.calls.filter((call) => {
+    return call.pathname.endsWith("/messages");
+  });
+}
+
 function detailCalls(stub: GmailStub): readonly GmailCall[] {
   return stub.calls.filter((call) => {
     return /\/messages\/[^/]+$/.test(call.pathname);
@@ -207,6 +231,19 @@ interface Fixture {
   readonly actor: ApiTestUser & { readonly orgId: string };
   readonly agentId: string;
   readonly workflowId: string;
+  readonly connectorId: string;
+  readonly membershipId: string;
+}
+
+async function seedMembership(
+  owner: { readonly orgId: string; readonly userId: string },
+  membershipId: string,
+): Promise<void> {
+  await store.set(
+    seedOrgMembership$,
+    { orgId: owner.orgId, userId: owner.userId, role: "admin", membershipId },
+    context.signal,
+  );
 }
 
 async function setupOwner(): Promise<Fixture> {
@@ -221,11 +258,19 @@ async function setupOwner(): Promise<Fixture> {
     throw new Error("Expected a default Agent");
   }
   const agentId = onboarding.defaultAgentId;
-  await connectGmail(actor, agentId, {
+  const connectorId = await connectGmail(actor, agentId, {
     email: "owner@example.test",
     subject: `gmail-${randomUUID()}`,
   });
   await runsApi.enableAgentConnectors(actor, agentId, ["gmail"]);
+  // Message bodies are not allowed by default, so a working collection needs a
+  // real grant. That is also what makes denying or expiring it observable.
+  await runsApi.applyUserPermissionGrant(actor, {
+    agentId,
+    connectorSlug: "gmail",
+    permission: "messages.detail",
+    action: "allow",
+  });
   const installation = await installMorningBriefFixture(
     { orgId: actor.orgId, userId: actor.userId },
     { agentId },
@@ -235,10 +280,13 @@ async function setupOwner(): Promise<Fixture> {
     { orgId: actor.orgId, userId: actor.userId },
     { [FeatureSwitchKey.SimpleMorningBrief]: true },
   );
+  const membershipId = `orgmem_${randomUUID()}`;
   return {
     actor: { ...actor, orgId: actor.orgId },
     agentId,
     workflowId: installation.workflowId,
+    connectorId,
+    membershipId,
   };
 }
 
@@ -284,13 +332,21 @@ async function connectGmail(
   return account.id;
 }
 
+/**
+ * Issue the preview request.
+ *
+ * The membership is reseeded here because the shared BDD helpers reinstall
+ * their own Clerk membership mocks while setting an org up; the request must
+ * run against the generation this fixture pins.
+ */
 async function collect(
-  actor: ApiTestUser,
+  fixture: Pick<Fixture, "actor" | "membershipId">,
   statuses: readonly (200 | 401 | 403 | 404)[],
 ) {
+  await seedMembership(fixture.actor, fixture.membershipId);
   return await accept(
     previewClient().collect({
-      headers: authHeaders(actor),
+      headers: authHeaders(fixture.actor),
       body: { anchor: ANCHOR_ISO },
     }),
     statuses,
@@ -299,39 +355,50 @@ async function collect(
 
 /** Narrows the contract's response union to a collected Gmail envelope. */
 async function collectOk(
-  actor: ApiTestUser,
+  fixture: Pick<Fixture, "actor" | "membershipId">,
 ): Promise<{ readonly body: MorningBriefGmailCollection }> {
-  const response = await collect(actor, [200]);
+  const response = await collect(fixture, [200]);
   if (response.status !== 200) {
     throw new Error(`Expected a Gmail collection, received ${response.status}`);
   }
   return { body: response.body };
 }
 
+/** Wait for a known number of provider arrivals, never for a duration. */
+async function waitForDetailArrivals(
+  stub: GmailStub,
+  count: number,
+): Promise<void> {
+  await expect
+    .poll(
+      () => {
+        return detailCalls(stub).length;
+      },
+      { timeout: 10_000 },
+    )
+    .toBe(count);
+}
+
 beforeEach(async () => {
   await installApiTestConnectorCatalog();
+});
+
+afterEach(() => {
+  clearMockNow();
 });
 
 describe("Morning Brief Gmail collection preview", () => {
   it("collects both the recent window and the older unread backlog", async () => {
     const fixture = await setupOwner();
-    const stub = stubGmail({
+    stubGmail({
       recent: [
         { id: "recent-inside", internalDate: WINDOW_START_MS },
         { id: "recent-before", internalDate: WINDOW_START_MS - 1 },
         { id: "recent-at-anchor", internalDate: ANCHOR_MS },
-        {
-          id: "both-branches",
-          internalDate: ANCHOR_MS - 1,
-          unread: true,
-        },
+        { id: "both-branches", internalDate: ANCHOR_MS - 1, unread: true },
       ],
       unread: [
-        {
-          id: "both-branches",
-          internalDate: ANCHOR_MS - 1,
-          unread: true,
-        },
+        { id: "both-branches", internalDate: ANCHOR_MS - 1, unread: true },
         {
           id: "unread-backlog",
           internalDate: WINDOW_START_MS - 30 * 24 * 60 * 60 * 1000,
@@ -340,7 +407,7 @@ describe("Morning Brief Gmail collection preview", () => {
       ],
     });
 
-    const response = await collectOk(fixture.actor);
+    const response = await collectOk(fixture);
     const ids = response.body.items.map((item) => {
       return item.messageId;
     });
@@ -354,13 +421,6 @@ describe("Morning Brief Gmail collection preview", () => {
       return item.messageId === "both-branches";
     });
     expect(shared?.branches).toStrictEqual(["recent", "unread"]);
-    expect(detailCalls(stub)).toHaveLength(
-      new Set(
-        detailCalls(stub).map((call) => {
-          return call.pathname;
-        }),
-      ).size,
-    );
     expect(response.body).toMatchObject({
       source: "gmail",
       status: "ok",
@@ -384,7 +444,7 @@ describe("Morning Brief Gmail collection preview", () => {
     const stub = stubGmail({ recent: [], unread: [] });
     mockEnv("ENV", "production");
 
-    const authenticated = await collect(fixture.actor, [404]);
+    const authenticated = await collect(fixture, [404]);
     expect(authenticated.status).toBe(404);
 
     context.mocks.clerk.authenticateRequest.mockResolvedValue({
@@ -405,7 +465,7 @@ describe("Morning Brief Gmail collection preview", () => {
       { orgId: fixture.actor.orgId, userId: fixture.actor.userId },
       { [FeatureSwitchKey.SimpleMorningBrief]: false },
     );
-    const switchOff = await collect(fixture.actor, [404]);
+    const switchOff = await collect(fixture, [404]);
     expect(switchOff.status).toBe(404);
     expect(stub.calls).toStrictEqual([]);
   });
@@ -431,7 +491,7 @@ describe("Morning Brief Gmail collection preview", () => {
       { orgId: fixture.actor.orgId, userId: fixture.actor.userId },
       { [FeatureSwitchKey.SimpleMorningBrief]: false },
     );
-    const switchedOff = await collect(fixture.actor, [403]);
+    const switchedOff = await collect(fixture, [403]);
     expect(switchedOff.status).toBe(403);
 
     await updateFeatureSwitchesForUser(
@@ -440,7 +500,7 @@ describe("Morning Brief Gmail collection preview", () => {
       { [FeatureSwitchKey.SimpleMorningBrief]: true },
     );
     await setMorningBriefEnabledFixture(fixture.workflowId, false);
-    const disabled = await collect(fixture.actor, [403]);
+    const disabled = await collect(fixture, [403]);
     expect(disabled.status).toBe(403);
 
     expect(stub.calls).toStrictEqual([]);
@@ -457,7 +517,10 @@ describe("Morning Brief Gmail collection preview", () => {
       { orgId: actor.orgId, userId: actor.userId },
       { [FeatureSwitchKey.SimpleMorningBrief]: true },
     );
-    const response = await collect(actor, [403]);
+    const response = await collect(
+      { actor: { ...actor, orgId: actor.orgId }, membershipId: "orgmem_none" },
+      [403],
+    );
     expect(response.status).toBe(403);
     expect(stub.calls).toStrictEqual([]);
   });
@@ -486,7 +549,7 @@ describe("Morning Brief Gmail collection preview", () => {
       unread: [],
     });
 
-    const response = await collectOk(fixture.actor);
+    const response = await collectOk(fixture);
     const item = response.body.items[0];
     expect(item?.messageId).toBe("selected-message");
     // The deep link names the selected mailbox, never the default one.
@@ -494,42 +557,67 @@ describe("Morning Brief Gmail collection preview", () => {
     expect(item?.sourceUrl).not.toContain("owner%40example.test");
   });
 
-  it("fails closed when the explicit account selection no longer resolves", async () => {
+  it("fails closed when the explicitly selected account needs reconnect", async () => {
     const fixture = await setupOwner();
+    const selectedConnectorId = await connectGmail(
+      fixture.actor,
+      fixture.agentId,
+      {
+        email: "selected@example.test",
+        subject: `gmail-selected-${randomUUID()}`,
+        displayName: "Selected",
+      },
+    );
     const chatThreadId = await bindMorningBriefThreadFixture(
       { orgId: fixture.actor.orgId, userId: fixture.actor.userId },
       { workflowId: fixture.workflowId, agentId: fixture.agentId },
     );
-    const strandedConnectorId = await connectGmail(
-      fixture.actor,
-      fixture.agentId,
-      {
-        email: "stranded@example.test",
-        subject: `gmail-stranded-${randomUUID()}`,
-        displayName: "Stranded",
-      },
-    );
-    await breakThreadGmailSelectionFixture({
+    await selectThreadGmailAccountFixture({
       chatThreadId,
-      connectorId: strandedConnectorId,
+      connectorId: selectedConnectorId,
     });
-    await connectorsApi.deleteBuiltinConnectorAccount(
-      fixture.actor,
-      "gmail",
-      strandedConnectorId,
-    );
+    await requireConnectorReconnectFixture(selectedConnectorId);
     const stub = stubGmail({
       recent: [{ id: "default-only", internalDate: ANCHOR_MS - 1 }],
     });
 
-    const response = await collectOk(fixture.actor);
-    // The default account must not rescue a failed explicit choice.
+    const response = await collectOk(fixture);
+    // The default account must not rescue an unusable explicit choice.
     expect(response.body).toMatchObject({
       status: "unavailable",
-      failure: "not-connected",
+      failure: "reconnect-required",
       items: [],
     });
     expect(stub.calls).toStrictEqual([]);
+  });
+
+  it("never substitutes another account when the pinned one is deleted mid-flight", async () => {
+    const fixture = await setupOwner();
+    const release = createDeferredPromise<void>(context.signal);
+    const stub = stubGmail({
+      recent: [
+        { id: "held-1", internalDate: ANCHOR_MS - 1000 },
+        { id: "held-2", internalDate: ANCHOR_MS - 2000 },
+        { id: "held-3", internalDate: ANCHOR_MS - 3000 },
+      ],
+      unread: [],
+      holdDetails: release.promise,
+    });
+
+    const collection = collectOk(fixture);
+    await waitForDetailArrivals(stub, READER_CONCURRENCY);
+    // Deleting the account the source is pinned to, while its bodies are in
+    // flight, withdraws the access this invocation was admitted under.
+    await connectorsApi.deleteBuiltinConnectorAccount(
+      fixture.actor,
+      "gmail",
+      fixture.connectorId,
+    );
+    release.resolve();
+
+    const response = await collection;
+    expect(response.body).toMatchObject({ status: "unavailable", items: [] });
+    expect(response.body.failure).toBe("source-revoked");
   });
 
   it("refuses to read when the Agent no longer holds the connector grant", async () => {
@@ -542,7 +630,9 @@ describe("Morning Brief Gmail collection preview", () => {
       recent: [{ id: "unreadable", internalDate: ANCHOR_MS - 1 }],
     });
 
-    const response = await collectOk(fixture.actor);
+    const response = await collectOk(fixture);
+    // Refused at admission, before anything was collected, so the reason names
+    // the missing authority rather than a mid-flight revocation.
     expect(response.body).toMatchObject({
       status: "unavailable",
       failure: "not-authorized",
@@ -551,32 +641,167 @@ describe("Morning Brief Gmail collection preview", () => {
     expect(stub.calls).toStrictEqual([]);
   });
 
-  it("stops a held request's source when the grant is revoked while it waits", async () => {
+  it("admits no further request and releases nothing when the grant is revoked mid-flight", async () => {
     const fixture = await setupOwner();
-    const release = createDeferredPromise<void>(new AbortController().signal);
+    const release = createDeferredPromise<void>(context.signal);
     const stub = stubGmail({
       recent: [
         { id: "held-1", internalDate: ANCHOR_MS - 1000 },
         { id: "held-2", internalDate: ANCHOR_MS - 2000 },
         { id: "held-3", internalDate: ANCHOR_MS - 3000 },
         { id: "held-4", internalDate: ANCHOR_MS - 4000 },
+        { id: "held-5", internalDate: ANCHOR_MS - 5000 },
       ],
       unread: [],
-      holdFirstDetail: release.promise,
+      holdDetails: release.promise,
     });
 
-    const collection = collectOk(fixture.actor);
-    // Arrival, not a sleep: the stub has entered the held detail request.
-    await expect
-      .poll(() => {
-        return detailCalls(stub).length;
-      })
-      .toBeGreaterThan(0);
-    const heldCalls = detailCalls(stub).length;
+    const collection = collectOk(fixture);
+    // Exactly the reader's concurrency is admitted before the change.
+    await waitForDetailArrivals(stub, READER_CONCURRENCY);
     await revokeAgentConnectorGrantFixture(
       { orgId: fixture.actor.orgId, userId: fixture.actor.userId },
       { agentId: fixture.agentId, connectorSlug: "gmail" },
     );
+    release.resolve();
+
+    const response = await collection;
+    // A change under a source that already holds data discards it.
+    expect(response.body).toMatchObject({
+      status: "unavailable",
+      failure: "source-revoked",
+      items: [],
+    });
+    // Two candidates were never requested: no request was newly authorized
+    // after the revocation, rather than "roughly the ones already in flight".
+    expect(detailCalls(stub)).toHaveLength(READER_CONCURRENCY);
+  });
+
+  it("stops reading message bodies when their permission is denied, keeping the authorized list", async () => {
+    const fixture = await setupOwner();
+    await runsApi.applyUserPermissionGrant(fixture.actor, {
+      agentId: fixture.agentId,
+      connectorSlug: "gmail",
+      permission: "messages.detail",
+      action: "deny",
+    });
+    const stub = stubGmail({
+      recent: [{ id: "denied-body", internalDate: ANCHOR_MS - 1000 }],
+      unread: [],
+    });
+
+    const response = await collectOk(fixture);
+    // The list permission is untouched, so its requests still happen.
+    expect(listCalls(stub).length).toBeGreaterThan(0);
+    // The denied endpoint is never requested, and the credential is not lost.
+    expect(detailCalls(stub)).toStrictEqual([]);
+    expect(response.body).toMatchObject({
+      status: "unavailable",
+      failure: null,
+      items: [],
+    });
+    expect(response.body.coverage.recent).toBe("denied");
+  });
+
+  it("treats an expired allow as no permission at all", async () => {
+    const fixture = await setupOwner();
+    await expirePermissionGrantFixture(
+      { orgId: fixture.actor.orgId, userId: fixture.actor.userId },
+      {
+        agentId: fixture.agentId,
+        connectorSlug: "gmail",
+        permission: "messages.detail",
+      },
+    );
+    const stub = stubGmail({
+      recent: [{ id: "expired-body", internalDate: ANCHOR_MS - 1000 }],
+      unread: [],
+    });
+
+    const response = await collectOk(fixture);
+    expect(detailCalls(stub)).toStrictEqual([]);
+    expect(response.body.coverage.recent).toBe("denied");
+    expect(response.body.items).toStrictEqual([]);
+  });
+
+  it("withholds the payload when a permission used earlier is denied while the last request is held", async () => {
+    const fixture = await setupOwner();
+    const release = createDeferredPromise<void>(context.signal);
+    const stub = stubGmail({
+      recent: [
+        { id: "held-1", internalDate: ANCHOR_MS - 1000 },
+        { id: "held-2", internalDate: ANCHOR_MS - 2000 },
+        { id: "held-3", internalDate: ANCHOR_MS - 3000 },
+      ],
+      unread: [],
+      holdDetails: release.promise,
+    });
+
+    const collection = collectOk(fixture);
+    await waitForDetailArrivals(stub, READER_CONCURRENCY);
+    // The list results are already collected under `messages.read`. Denying it
+    // now leaves the connector grant and `messages.detail` untouched, so the
+    // final request is still allowed — only the earlier permission is gone.
+    await runsApi.applyUserPermissionGrant(fixture.actor, {
+      agentId: fixture.agentId,
+      connectorSlug: "gmail",
+      permission: "messages.read",
+      action: "deny",
+    });
+    release.resolve();
+
+    const response = await collection;
+    // Checking only the last authorized endpoint would have released the list
+    // content this member may no longer read.
+    expect(response.body).toMatchObject({
+      status: "unavailable",
+      failure: "source-revoked",
+      items: [],
+    });
+  });
+
+  it("refuses a member whose Clerk membership is gone even while the cache row remains", async () => {
+    const fixture = await setupOwner();
+    const stub = stubGmail({
+      recent: [{ id: "unreadable", internalDate: ANCHOR_MS - 1 }],
+    });
+    // Every preceding request populated `org_members_cache` for this pair. Only
+    // the live membership read can tell that the member has been removed.
+    await store.set(
+      deleteOrgMembership$,
+      { orgId: fixture.actor.orgId, userId: fixture.actor.userId },
+      context.signal,
+    );
+
+    const response = await accept(
+      previewClient().collect({
+        headers: authHeaders(fixture.actor),
+        body: { anchor: ANCHOR_ISO },
+      }),
+      [403],
+    );
+    expect(response.status).toBe(403);
+    expect(stub.calls).toStrictEqual([]);
+  });
+
+  it("releases nothing when the member rejoins under a new membership while a request is held", async () => {
+    const fixture = await setupOwner();
+    const release = createDeferredPromise<void>(context.signal);
+    const stub = stubGmail({
+      recent: [
+        { id: "held-1", internalDate: ANCHOR_MS - 1000 },
+        { id: "held-2", internalDate: ANCHOR_MS - 2000 },
+        { id: "held-3", internalDate: ANCHOR_MS - 3000 },
+      ],
+      unread: [],
+      holdDetails: release.promise,
+    });
+
+    const collection = collectOk(fixture);
+    await waitForDetailArrivals(stub, READER_CONCURRENCY);
+    // A remove and rejoin issues a new immutable membership id. The new
+    // membership does not speak for what the previous one started.
+    await seedMembership(fixture.actor, `orgmem_${randomUUID()}`);
     release.resolve();
 
     const response = await collection;
@@ -585,14 +810,80 @@ describe("Morning Brief Gmail collection preview", () => {
       failure: "source-revoked",
       items: [],
     });
-    // No request was issued after the revocation, and no payload was released.
-    expect(detailCalls(stub).length).toBeLessThanOrEqual(heldCalls + 1);
+  });
+
+  it("reads with a credential that never expires instead of forcing a refresh", async () => {
+    const fixture = await setupOwner();
+    // GitHub OAuth tokens, personal access tokens and manual methods all store
+    // a null expiry. Refreshing one fails before any provider request.
+    await clearConnectorTokenExpiryFixture(fixture.connectorId);
+    stubGmail({
+      recent: [{ id: "non-expiring", internalDate: ANCHOR_MS - 1000 }],
+      unread: [],
+    });
+
+    const response = await collectOk(fixture);
+    expect(response.body.status).toBe("ok");
+    expect(
+      response.body.items.map((item) => {
+        return item.messageId;
+      }),
+    ).toStrictEqual(["non-expiring"]);
+  });
+
+  it("charges an abandoned oversized body and reports the truncation", async () => {
+    const fixture = await setupOwner();
+    const stub = stubGmail({
+      recent: [
+        { id: "huge-1", internalDate: ANCHOR_MS - 1000, oversized: true },
+        { id: "huge-2", internalDate: ANCHOR_MS - 2000, oversized: true },
+        { id: "huge-3", internalDate: ANCHOR_MS - 3000, oversized: true },
+      ],
+      unread: [],
+    });
+
+    const response = await collectOk(fixture);
+    expect(detailCalls(stub)).toHaveLength(3);
+    // Three concurrent readers each stopped at the per-response ceiling; none
+    // of their partial bodies became content.
+    expect(response.body.coverage.truncations).toContain("response-bytes");
+    expect(response.body.items).toStrictEqual([]);
+    expect(response.body.status).toBe("unavailable");
+  });
+
+  it("admits no request after the source deadline has passed", async () => {
+    const fixture = await setupOwner();
+    const release = createDeferredPromise<void>(context.signal);
+    const startedAt = now();
+    mockNow(startedAt);
+    const stub = stubGmail({
+      recent: [
+        { id: "held-1", internalDate: ANCHOR_MS - 1000 },
+        { id: "held-2", internalDate: ANCHOR_MS - 2000 },
+        { id: "held-3", internalDate: ANCHOR_MS - 3000 },
+        { id: "held-4", internalDate: ANCHOR_MS - 4000 },
+        { id: "held-5", internalDate: ANCHOR_MS - 5000 },
+      ],
+      unread: [],
+      holdDetails: release.promise,
+    });
+
+    const collection = collectOk(fixture);
+    await waitForDetailArrivals(stub, READER_CONCURRENCY);
+    // The source budget is 20 s. Authorization for the next requests would
+    // otherwise complete and start them after their own deadline.
+    mockNow(startedAt + 21_000);
+    release.resolve();
+
+    const response = await collection;
+    expect(detailCalls(stub)).toHaveLength(READER_CONCURRENCY);
+    expect(response.body.coverage.truncations).toContain("deadline");
   });
 
   it("separates an empty day from a rate-limited read", async () => {
     const fixture = await setupOwner();
     stubGmail({ recent: [], unread: [] });
-    const empty = await collectOk(fixture.actor);
+    const empty = await collectOk(fixture);
     expect(empty.body).toMatchObject({
       status: "empty",
       failure: null,
@@ -608,7 +899,7 @@ describe("Morning Brief Gmail collection preview", () => {
         );
       }),
     );
-    const limited = await collectOk(fixture.actor);
+    const limited = await collectOk(fixture);
     expect(limited.body).toMatchObject({
       status: "unavailable",
       failure: "rate-limited",
@@ -639,7 +930,7 @@ describe("Morning Brief Gmail collection preview", () => {
       }),
     );
 
-    const response = await collectOk(fixture.actor);
+    const response = await collectOk(fixture);
     expect(
       response.body.items.map((item) => {
         return item.messageId;
@@ -652,7 +943,7 @@ describe("Morning Brief Gmail collection preview", () => {
     ).toBeGreaterThan(0);
   });
 
-  it("keeps a deleted message from failing the branch and reports an unreadable one", async () => {
+  it("keeps a deleted message from failing the branch", async () => {
     const fixture = await setupOwner();
     stubGmail({
       recent: [
@@ -663,7 +954,7 @@ describe("Morning Brief Gmail collection preview", () => {
       detailStatus: new Map([["deleted", 404]]),
     });
 
-    const response = await collectOk(fixture.actor);
+    const response = await collectOk(fixture);
     expect(
       response.body.items.map((item) => {
         return item.messageId;
@@ -672,6 +963,28 @@ describe("Morning Brief Gmail collection preview", () => {
     // A deleted message is a gap in that message, not a failed branch.
     expect(response.body.coverage.recent).toBe("complete");
     expect(response.body.status).toBe("ok");
+  });
+
+  it("keeps an authorized sibling when the provider forbids one message", async () => {
+    const fixture = await setupOwner();
+    stubGmail({
+      recent: [
+        { id: "readable", internalDate: ANCHOR_MS - 1000 },
+        { id: "forbidden", internalDate: ANCHOR_MS - 2000 },
+      ],
+      unread: [],
+      detailStatus: new Map([["forbidden", 403]]),
+    });
+
+    const response = await collectOk(fixture);
+    // A provider 403 is one resource refusing a read, not a lost credential.
+    expect(
+      response.body.items.map((item) => {
+        return item.messageId;
+      }),
+    ).toStrictEqual(["readable"]);
+    expect(response.body.status).toBe("partial");
+    expect(response.body.failure).toBeNull();
   });
 
   it("declares limited coverage for an HTML-only message instead of inventing text", async () => {
@@ -687,7 +1000,7 @@ describe("Morning Brief Gmail collection preview", () => {
       unread: [],
     });
 
-    const response = await collectOk(fixture.actor);
+    const response = await collectOk(fixture);
     const item = response.body.items[0];
     expect(item?.excerptSource).toBe("html-normalized");
     expect(item?.excerpt).toContain("Board sync moved to Friday.");
@@ -701,11 +1014,8 @@ describe("Morning Brief Gmail collection preview", () => {
       }),
     );
 
-    const response = await collectOk(fixture.actor);
-    expect(response.body).toMatchObject({
-      status: "unavailable",
-      items: [],
-    });
+    const response = await collectOk(fixture);
+    expect(response.body).toMatchObject({ status: "unavailable", items: [] });
     expect(response.body.coverage.recent).toBe("failed");
     expect(response.body.failure).toBe("provider-failed");
   });

@@ -16,25 +16,28 @@ exposes one entry point:
 
 ```ts
 withMorningBriefConnectorReader<T>(
-  { scope, connectorSlug, apiBase, environmentName, budget, db },
+  { scope, connectorSlug, apiBase, environmentName, budget, db, clerk },
   collect: (reader: MorningBriefConnectorReader) => Promise<T>,
   signal: AbortSignal,
 ): Promise<MorningBriefAccessResult<T>>;
 ```
 
 The signal is a separate final parameter, as the repository's lint boundary
-requires.
+requires. `clerk` is the mirrored `ClerkClient`, because membership is read from
+the membership authority rather than from a cache row.
 
 A collector supplies a `pathname`, an optional query and a Zod schema. It never
 sees a credential, never chooses a host and never decides whether it may read.
 The reader performs GET only, against the source's fixed provider base; it is
 not an authenticated fetch proxy.
 
-`admitMorningBriefCollection(db, { orgId, userId, anchor })` derives the
-`MorningBriefCollectionScope` — owner, installation, Agent, bound thread,
-anchor and timezone — from `simpleMorningBrief`, the canonical
-[migration state](./morning-brief-migration-state.md) and membership/erasure
-admission. Nothing in a request body contributes to it.
+`admitMorningBriefCollection({ db, clerk, orgId, userId, anchor }, signal)`
+derives the `MorningBriefCollectionScope` — owner, installation, Agent, bound
+thread, anchor, timezone and the immutable membership id — from
+`simpleMorningBrief`, the canonical
+[migration state](./morning-brief-migration-state.md), the member's current
+Clerk membership and erasure admission. Nothing in a request body contributes to
+it.
 
 ### What "authorized" means here
 
@@ -42,7 +45,9 @@ Every gate must produce an unambiguous allow. Missing metadata, no route match,
 an ambiguous route, `deny`, `ask` and an expired grant are all refusals, and
 holding a credential is never permission. Each authorization pass re-derives:
 
-1. membership and transaction-level erasure admission,
+1. the member's current Clerk membership generation, compared against the
+   immutable id this collection was admitted under, plus transaction-level
+   erasure admission,
 2. a canonical Morning Brief that is still `installed`, still enabled, and still
    the same installation on the same Agent,
 3. the Agent's current visibility to this member,
@@ -52,11 +57,23 @@ holding a credential is never permission. Each authorization pass re-derives:
 7. the effective URL-level decision from live permission grants, through
    `matchFirewallRequestDecision`.
 
-That pass runs **before any credential is decrypted or refreshed**, **before
+Items 1-6 are identity; item 7 always names a real URL. There is deliberately
+no authorization outcome for "no endpoint": the identity pass runs first and the
+credential is decrypted **lazily, behind the first endpoint a live policy
+allowed**, so a credential is never touched on the strength of connector
+presence alone.
+
+The pass runs **before the credential is decrypted or refreshed**, **before
 every request**, and **again after `collect` returns** as a release fence. The
-release fence re-evaluates the last URL the source was authorized for, so a
-permission revoked while the final request was still in flight withholds the
-payload rather than releasing it.
+release fence re-evaluates identity plus **every distinct permission whose
+result the source still holds**, not only the last request's. A source that read
+a list under one permission and bodies under another withholds everything if the
+list permission is denied while the final body request is in flight.
+
+The policy map is keyed by the connector's runtime target key, because that is
+the firewall name `matchFirewallRequestDecision` looks a policy up by. Keying it
+by the bare slug silently misses every active `deny` and `ask` and evaluates as
+if the member held no grants at all.
 
 ### Account selection fails closed
 
@@ -68,22 +85,57 @@ account materializer's invalid-selection fallback.
 
 ### Two failure altitudes
 
-- **Endpoint-specific denial** is a bounded coverage gap. A policy refusal and a
-  provider `403` both leave siblings this source is still entitled to
-  collectable, and the envelope reports the reduced coverage.
+- **Endpoint-local denial** is a bounded coverage gap, reported as
+  `{ kind: "denied", scope, meta }`. `scope: "policy"` is this member's own
+  effective permission refusing the endpoint; `scope: "provider"` is a `403`.
+  One resource can refuse a read while its siblings stay authorized, and a
+  provider secondary rate limit arrives as `403` with `Retry-After`, so neither
+  proves the credential is gone and neither terminates the source.
 - **Owner, membership, Agent, installation or selected-account invalidation** is
   terminal. The reader latches, issues no further request, and discards the
-  collected payload rather than releasing it. A provider 401/403 latches the same
-  way as `reconnect-required`; a provider `401` does the same, because it
-  withdraws the credential itself rather than one endpoint.
+  collected payload rather than releasing it. A provider `401` latches the same
+  way as `reconnect-required`, because it withdraws the credential itself.
+
+A refusal at admission names what was missing — `not-authorized`,
+`not-connected`, `reconnect-required`. The same change observed once collection
+is under way is always `source-revoked`, because it invalidates data the source
+already holds.
+
+### Response metadata
+
+`ok`, `denied` and `rate-limited` carry `MorningBriefResponseMetadata`: bounded
+`X-RateLimit-Remaining`, an ISO `X-RateLimit-Reset`, a clamped `Retry-After`,
+and whether an RFC 8288 `Link` header advertises a next page together with its
+validated page number. The `Link` URL itself is dropped: adapters learn that a
+page exists and keep constructing their own fixed paths, so nothing here can
+become a followable provider URL.
+
+### Credentials that do not expire
+
+A null stored expiry means the credential does not expire, not that it expired
+now. GitHub OAuth tokens, personal access tokens and every manual method store
+`NULL`; forcing a refresh on them drives an unsupported refresh that fails
+before a single provider request. Gmail's expiring credential still refreshes
+inside its buffer, and a method that genuinely cannot refresh still fails closed
+at the next authorization.
+
+### One absolute deadline
+
+`budget.deadlineMs` is established once, before admission, and covers admission,
+the membership and credential reads, every provider request and body, and the
+release fence. It is both an `AbortSignal` composed into the provider request and
+a clock the reader re-reads **after authorization returns and before the request
+is admitted**, so authorization that takes real time cannot start a request past
+its own deadline. Caller cancellation keeps its own propagation; deadline
+exhaustion surfaces as `budget-exhausted / deadline` per request and
+`deadline-exceeded` for the source, never as a healthy empty read.
 
 ### Limits this reader does not exceed
 
 Provider work already in flight cannot be retracted. The guarantee is admission
 fencing plus final-payload fencing, not instantaneous revocation. Erasure
-admission runs in its own short transaction; no transaction is held open across
-a network call. `org_members_cache` remains a read-through cache, so admission
-bounds this reader, not the world.
+admission runs in its own short transaction with finite `lock_timeout` and
+`statement_timeout` and no network call inside it.
 
 ## Gmail collection
 
@@ -129,13 +181,14 @@ retrieved and no remote URL is fetched.
 Byte ceilings are enforced while streaming, never after an unbounded
 `response.text()`. A request slot and its byte allowance are **reserved before
 the first await**, so concurrent readers cannot each observe the same remaining
-budget; an unattempted request returns its slot, and an oversized body that was
-abandoned still consumes its allowance. The deadline is a real cancellation
-input composed into the provider request, so a body already in flight is bounded
-by it rather than only the decision to start one. Redirects are disabled, so a credential cannot follow a
-provider redirect off-host. `Retry-After` is surfaced as bounded metadata
-(≤ 60 s); the reader never sleeps or retries on it. The earliest cap wins and
-every truncation is named in `coverage.truncations`.
+budget. An unattempted request returns its slot. The byte accounting is
+deliberately stated as an upper bound rather than an exact count: the bounded
+reader stops at the allowance and reports no consumed count for an oversized
+body, so an abandoned body keeps its whole reservation charged and only a
+completed body releases the difference. Redirects are disabled, so a credential
+cannot follow a provider redirect off-host. `Retry-After` is surfaced as bounded
+metadata (≤ 60 s); the reader never sleeps or retries on it. The earliest cap
+wins and every truncation is named in `coverage.truncations`.
 
 ### The envelope
 
@@ -174,16 +227,26 @@ the reader a real consumed boundary, not to ship a feature:
 - The result is ephemeral. It claims no occurrence, no schedule and no delivery,
   and it creates no Run, Chat message, email, LLM call or credit operation.
 
-## Known limits still open
+## Coverage limits, stated exactly
 
-`memberIsAdmitted` currently proves membership by the presence of the
-`org_members_cache` row it locks for erasure admission. That cache is a
-60-second read-through cache, not a tombstone or a membership generation, so it
-bounds this reader rather than proving live membership across a delete and
-rejoin. Erasure admission itself is real and is taken before any other row.
-Replacing the cache with durable membership authority is the same hard gate
-[the migration contract](./morning-brief-migration-state.md) records before
-native state becomes execution authority, and it is not claimed here.
+- **`ask` and no-match are not constructible from Gmail's surface.** The
+  accepted-catalog fixture allows `messages.read` by default and defaults
+  unknown permissions to `deny`, and the collector only builds two allowlisted
+  paths. `deny`, an ungranted default-deny permission and an expired allow are
+  all exercised end to end; every non-`allow` decision leaves the reader through
+  one `decision.kind === "allow"` check, and the remaining shapes are exercised
+  by the GitHub adapter's own surface.
+- **A dangling account selection cannot be built.** The real account-deletion
+  endpoint deletes the thread selection before removing the account, and the
+  schema restricts deleting a referenced connector, so a later invocation
+  legitimately sees no explicit selection and follows the existing no-selection
+  policy. What is proven instead is that an explicit selection that is still
+  present but unusable fails closed, and that deleting the pinned account while
+  its requests are in flight never substitutes another account.
+- **The in-flight body deadline is proven as admission, not as a timed abort.**
+  The clock re-read before provider admission is covered deterministically; the
+  `AbortSignal.timeout` that bounds a body already streaming is not exercised by
+  a test that would have to wait out the real 20-second budget.
 
 ## Rollout, scale and compatibility
 

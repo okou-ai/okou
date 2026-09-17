@@ -10,6 +10,7 @@ import { convert } from "html-to-text";
 import { z } from "zod";
 
 import { nowDate } from "../../lib/time";
+import type { ClerkClient } from "../external/clerk";
 import type { Db } from "../external/db";
 import {
   withMorningBriefConnectorReader,
@@ -110,6 +111,11 @@ interface CollectionState {
   detailRequests: number;
   retryAfterMs: number | null;
   failed: boolean;
+  /**
+   * Message bodies are shared by both branches, so a refusal or cap there
+   * degrades the coverage of every branch that selected the message.
+   */
+  detailOutcome: MorningBriefBranchOutcome | null;
 }
 
 function headerValue(message: GmailMessage, name: string): string | null {
@@ -277,6 +283,24 @@ function messageSourceUrl(
       ? "https://mail.google.com/mail/u/0/"
       : `https://mail.google.com/mail/u/?authuser=${encodeURIComponent(accountEmail)}`;
   return `${mailbox}#all/${encodeURIComponent(messageId)}`;
+}
+
+const OUTCOME_SEVERITY: Readonly<Record<MorningBriefBranchOutcome, number>> = {
+  complete: 0,
+  truncated: 1,
+  denied: 2,
+  failed: 3,
+};
+
+/** Coverage only ever degrades; the worst observed outcome is the honest one. */
+function worstOutcome(
+  left: MorningBriefBranchOutcome | null,
+  right: MorningBriefBranchOutcome,
+): MorningBriefBranchOutcome {
+  if (left === null) {
+    return right;
+  }
+  return OUTCOME_SEVERITY[left] >= OUTCOME_SEVERITY[right] ? left : right;
 }
 
 function recordOutcome(
@@ -450,6 +474,9 @@ async function fetchMessageDetails(
         continue;
       }
       const failure = recordOutcome(state, result);
+      if (failure !== null) {
+        state.detailOutcome = worstOutcome(state.detailOutcome, failure);
+      }
       if (result.kind === "budget-exhausted" || result.kind === "revoked") {
         stop = true;
         return;
@@ -547,9 +574,40 @@ function normalizeItems(args: {
   });
 }
 
+/** The envelope for a source that produced nothing usable at all. */
+function unavailableCollection(args: {
+  readonly scope: MorningBriefCollectionScope;
+  readonly window: { readonly from: Date; readonly to: Date };
+  readonly collectedAt: Date;
+  readonly failure: MorningBriefGmailCollection["failure"];
+}): MorningBriefGmailCollection {
+  return {
+    source: "gmail",
+    status: "unavailable",
+    anchor: args.scope.anchor.toISOString(),
+    collectedAt: args.collectedAt.toISOString(),
+    timezone: args.scope.timezone,
+    recentWindow: {
+      from: args.window.from.toISOString(),
+      to: args.window.to.toISOString(),
+    },
+    unreadObservedAt: args.collectedAt.toISOString(),
+    items: [],
+    coverage: {
+      recent: "failed",
+      unread: "failed",
+      truncations: [],
+      requests: 0,
+      retryAfterMs: null,
+    },
+    failure: args.failure,
+  };
+}
+
 export async function collectMorningBriefGmail(
   args: {
     readonly db: Db;
+    readonly clerk: ClerkClient;
     readonly scope: MorningBriefCollectionScope;
   },
   signal: AbortSignal,
@@ -567,6 +625,7 @@ export async function collectMorningBriefGmail(
     detailRequests: 0,
     retryAfterMs: null,
     failed: false,
+    detailOutcome: null,
   };
 
   const access = await withMorningBriefConnectorReader(
@@ -582,6 +641,7 @@ export async function collectMorningBriefGmail(
         deadlineMs: GMAIL_COLLECTION_CAPS.deadlineMs,
       },
       db: args.db,
+      clerk: args.clerk,
     },
     async (reader) => {
       const recent = await collectBranchCandidates(
@@ -603,27 +663,12 @@ export async function collectMorningBriefGmail(
   );
 
   if (access.kind === "unavailable") {
-    return {
-      source: "gmail",
-      status: "unavailable",
-      anchor: scope.anchor.toISOString(),
-      collectedAt: collectedAt.toISOString(),
-      timezone: scope.timezone,
-      recentWindow: {
-        from: window.from.toISOString(),
-        to: window.to.toISOString(),
-      },
-      unreadObservedAt: collectedAt.toISOString(),
-      items: [],
-      coverage: {
-        recent: "failed",
-        unread: "failed",
-        truncations: [],
-        requests: 0,
-        retryAfterMs: null,
-      },
+    return unavailableCollection({
+      scope,
+      window,
+      collectedAt,
       failure: access.reason,
-    };
+    });
   }
 
   const { recent, unread, messages, accountEmail } = access.value;
@@ -651,8 +696,8 @@ export async function collectMorningBriefGmail(
   });
 
   const coverage = {
-    recent: recent.outcome,
-    unread: unread.outcome,
+    recent: worstOutcome(recent.outcome, state.detailOutcome ?? "complete"),
+    unread: worstOutcome(unread.outcome, state.detailOutcome ?? "complete"),
     truncations: [...state.truncations].sort(),
     requests: access.requests,
     retryAfterMs: state.retryAfterMs,

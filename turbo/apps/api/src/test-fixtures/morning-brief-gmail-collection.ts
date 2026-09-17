@@ -4,7 +4,9 @@ import {
 } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { connectors } from "@okouai/db/schema/connector";
 import { userConnectors } from "@okouai/db/schema/user-connector";
+import { userPermissionGrants } from "@okouai/db/schema/user-permission-grant";
 import {
   workflowAutomations,
   workflowUserAutomationThreads,
@@ -13,6 +15,7 @@ import {
 import { and, eq } from "drizzle-orm";
 
 import { db } from "../lib/db";
+import { now } from "../lib/time";
 
 /**
  * Persistence-only setup for Morning Brief Gmail collection tests.
@@ -131,27 +134,6 @@ export async function selectThreadGmailAccountFixture(args: {
     .onConflictDoNothing();
 }
 
-/**
- * Point the canonical thread at an account that no longer resolves.
- *
- * The selection row keeps a syntactically valid connector ID whose account is
- * gone, which is the exact shape that must fail closed instead of silently
- * reading the owner's default mailbox.
- */
-export async function breakThreadGmailSelectionFixture(args: {
-  readonly chatThreadId: string;
-  readonly connectorId: string;
-}): Promise<void> {
-  await db()
-    .delete(chatThreadConnectorSelections)
-    .where(eq(chatThreadConnectorSelections.chatThreadId, args.chatThreadId));
-  await db().insert(chatThreadConnectorSelections).values({
-    chatThreadId: args.chatThreadId,
-    connectorId: args.connectorId,
-    connectorSlug: "gmail",
-  });
-}
-
 export async function revokeAgentConnectorGrantFixture(
   owner: MorningBriefOwner,
   args: { readonly agentId: string; readonly connectorSlug: string },
@@ -166,4 +148,68 @@ export async function revokeAgentConnectorGrantFixture(
         eq(userConnectors.connectorSlug, args.connectorSlug),
       ),
     );
+}
+
+/**
+ * Age an already-granted permission past its expiry.
+ *
+ * The grant API only accepts forward-looking durations, so an expired allow —
+ * which must collapse to the connector's default policy rather than keep
+ * allowing — can only be expressed by moving the stored expiry into the past.
+ * The row shape is the real one the permission writer produces.
+ */
+export async function expirePermissionGrantFixture(
+  owner: MorningBriefOwner,
+  args: {
+    readonly agentId: string;
+    readonly connectorSlug: string;
+    readonly permission: string;
+  },
+): Promise<void> {
+  const expiredAt = new Date(now() - 60_000);
+  await db()
+    .update(userPermissionGrants)
+    .set({ expiresAt: expiredAt })
+    .where(
+      and(
+        eq(userPermissionGrants.orgId, owner.orgId),
+        eq(userPermissionGrants.userId, owner.userId),
+        eq(userPermissionGrants.agentId, args.agentId),
+        eq(userPermissionGrants.connectorSlug, args.connectorSlug),
+        eq(userPermissionGrants.permission, args.permission),
+      ),
+    );
+}
+
+/**
+ * Mark the pinned account as needing reconnect.
+ *
+ * This is the shape an explicit selection takes when it is still present but no
+ * longer usable. Deleting the account instead is a different user action: the
+ * real deletion endpoint removes the thread selection first, so a later
+ * invocation legitimately sees no explicit selection at all.
+ */
+export async function requireConnectorReconnectFixture(
+  connectorId: string,
+): Promise<void> {
+  await db()
+    .update(connectors)
+    .set({ needsReconnect: true })
+    .where(eq(connectors.id, connectorId));
+}
+
+/**
+ * Clear a stored token expiry, the shape of a credential that does not expire.
+ *
+ * GitHub OAuth tokens, personal access tokens and every manual method store
+ * `NULL` here. A reader that treats that as "expiring now" drives them into an
+ * unsupported refresh and fails before issuing a single provider request.
+ */
+export async function clearConnectorTokenExpiryFixture(
+  connectorId: string,
+): Promise<void> {
+  await db()
+    .update(connectors)
+    .set({ tokenExpiresAt: null })
+    .where(eq(connectors.id, connectorId));
 }

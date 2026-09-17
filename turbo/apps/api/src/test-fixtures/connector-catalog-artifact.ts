@@ -1062,12 +1062,12 @@ const connectors = [
     firewall: generatedFirewall(
       [
         bearerApi("https://gmail.googleapis.com/gmail", "GMAIL_TOKEN", [
+          { name: "messages.read", rules: ["GET /v1/users/{userId}/messages"] },
+          // A distinct permission for message bodies, so a fixture can deny or
+          // expire the detail read while the list read stays authorized.
           {
-            name: "messages.read",
-            rules: [
-              "GET /v1/users/{userId}/messages",
-              "GET /v1/users/{userId}/messages/{messageId}",
-            ],
+            name: "messages.detail",
+            rules: ["GET /v1/users/{userId}/messages/{messageId}"],
           },
           {
             name: "messages.write",

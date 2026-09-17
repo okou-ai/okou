@@ -20,6 +20,7 @@ export const morningBriefSourceFailureSchema = z.enum([
   "reconnect-required",
   "source-revoked",
   "rate-limited",
+  "deadline-exceeded",
   "provider-failed",
 ]);
 
