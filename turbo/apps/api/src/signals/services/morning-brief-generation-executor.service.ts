@@ -854,9 +854,9 @@ type GenerationRelease =
  * the database. A deletion, a Settings disable, a rebinding or the retention
  * deadline can all land during those waits, so the row is read again here
  * rather than served from the copy the request started with, and the clock is
- * sampled only once the owner lock is really held. Equality with the retention
- * deadline is already expired: a result becomes unreadable at its deadline,
- * whether or not the maintenance purge has physically removed it yet.
+ * sampled only after every wait this fence itself performs. Equality with the
+ * retention deadline is already expired: a result becomes unreadable at its
+ * deadline, whether or not the maintenance purge has physically removed it yet.
  *
  * Nothing here writes. A result that may not be released is simply not
  * released; no replacement owner row is created and no stored row is rewritten.
@@ -872,7 +872,6 @@ async function releaseStoredGeneration(
   if (!(await lockCollectionOwner(tx, args.key.owner))) {
     return { kind: "owner-revoked" };
   }
-  const at = nowDate();
   const row = await readMorningBriefGeneration(
     tx,
     args.key,
@@ -881,7 +880,9 @@ async function releaseStoredGeneration(
   if (!row || row.attemptId !== args.attemptId) {
     return { kind: "gone" };
   }
-  if (row.expiresAt.getTime() <= at.getTime()) {
+  // Sampled after the lock and after the row itself was read, so the deadline
+  // comparison describes the instant this release is really decided.
+  if (row.expiresAt.getTime() <= nowDate().getTime()) {
     return { kind: "gone" };
   }
   const authority = await morningBriefLocalAuthorityStillCurrent(
