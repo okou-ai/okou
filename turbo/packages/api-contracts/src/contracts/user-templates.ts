@@ -16,7 +16,13 @@ const userTemplateVisibilitySchema = z.enum(["private", "organization"]);
  * than derived so a client places the template without parsing a filename, and
  * so a source that could compile either way says which it became.
  */
-const userTemplateKindSchema = z.enum(["presentation", "document"]);
+/**
+ * One list, so a new kind reaches the wire schema and every caller that offers
+ * a choice from the same edit.
+ */
+export const USER_TEMPLATE_KINDS = ["presentation", "document"] as const;
+
+const userTemplateKindSchema = z.enum(USER_TEMPLATE_KINDS);
 
 const userTemplatePreviewAssetIdSchema = z.string().min(1).max(128);
 const userTemplatePreviewAssetSchema = z.object({

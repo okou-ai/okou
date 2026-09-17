@@ -1849,6 +1849,7 @@ export {
 } from "./presentation-templates";
 export {
   MAX_USER_TEMPLATE_PAGES,
+  USER_TEMPLATE_KINDS,
   USER_TEMPLATE_PACKAGE_CONTENT_TYPE,
   USER_TEMPLATE_PAGE_CONTENT_TYPE,
   userTemplatesContract,

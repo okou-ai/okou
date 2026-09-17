@@ -63,11 +63,36 @@ export function parseUserTemplatePreviewAssetId(
 /**
  * The rendered pages this row owns, in page order. Element 0 is the cover.
  *
- * Reading them through the manifest rather than a column is what lets a second
- * template kind arrive without a migration.
+ * Every kind answers for itself rather than one being what the others fall
+ * through to, so a kind added to the manifest union fails this switch until
+ * someone says whether it has pages.
  */
 export function userTemplatePageKeys(row: UserTemplateRow): readonly string[] {
-  return row.manifest.kind === "presentation" ? row.manifest.pageKeys : [];
+  switch (row.manifest.kind) {
+    case "presentation": {
+      return row.manifest.pageKeys;
+    }
+    case "document": {
+      return [];
+    }
+  }
+}
+
+/**
+ * How many pages to report, or null for a kind that has none.
+ *
+ * Null rather than zero: a document template is its styles, so counting its
+ * pages would report an emptiness it does not have.
+ */
+function userTemplatePageCount(row: UserTemplateRow): number | null {
+  switch (row.manifest.kind) {
+    case "presentation": {
+      return row.manifest.pageKeys.length;
+    }
+    case "document": {
+      return null;
+    }
+  }
 }
 
 function userTemplateKind(row: UserTemplateRow): UserTemplateKind {
@@ -85,10 +110,7 @@ export function userTemplateSummary(
     sourceFilename: row.sourceFilename,
     kind: userTemplateKind(row),
     coverUrl,
-    pageCount:
-      row.manifest.kind === "presentation"
-        ? row.manifest.pageKeys.length
-        : null,
+    pageCount: userTemplatePageCount(row),
     visibility: row.visibility,
     ownerUserId: row.ownerUserId,
     canManage: row.ownerUserId === userId,

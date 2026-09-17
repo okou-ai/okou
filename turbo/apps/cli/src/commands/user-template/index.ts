@@ -1,3 +1,7 @@
+import {
+  USER_TEMPLATE_KINDS,
+  type UserTemplateKind,
+} from "@okouai/api-contracts/contracts/user-templates";
 import { Command, Option } from "commander";
 
 import { ApiRequestError } from "../../lib/api/core/client-factory";
@@ -6,26 +10,17 @@ import { withErrorHandler } from "../../lib/command/with-error-handler";
 
 interface PublishOptions {
   readonly title: string;
-  readonly kind: string;
+  readonly kind: UserTemplateKind;
   readonly source: string;
   readonly pages?: string;
   readonly package: string;
 }
 
-/**
- * Page images are a presentation's requirement, not a template's: a deck is
- * recognised by its first slide, a document by its styles. Asking for pages
- * that will not be used, or silently ignoring the ones a caller passed, are
- * both worse than saying which kind needs them.
- */
-function publishArguments(
-  options: PublishOptions,
-):
+type PublishArguments =
   | { readonly kind: "presentation"; readonly pagesDir: string }
-  | { readonly kind: "document"; readonly pagesDir: undefined } {
-  if (options.kind === "document") {
-    return { kind: "document", pagesDir: undefined };
-  }
+  | { readonly kind: "document"; readonly pagesDir: undefined };
+
+function requirePages(options: PublishOptions): string {
   if (options.pages === undefined) {
     throw new ApiRequestError(
       "--pages is required for a presentation template",
@@ -33,7 +28,28 @@ function publishArguments(
       400,
     );
   }
-  return { kind: "presentation", pagesDir: options.pages };
+  return options.pages;
+}
+
+/**
+ * What each kind needs from the command line.
+ *
+ * Page images are a presentation's requirement, not a template's: a deck is
+ * recognised by its first slide, a document by its styles. Every kind names
+ * its own needs here rather than one of them being what the others fall
+ * through to, so a kind added to `USER_TEMPLATE_KINDS` fails this switch until
+ * someone says what it takes — instead of silently inheriting a demand for
+ * pages it has no use for.
+ */
+function publishArguments(options: PublishOptions): PublishArguments {
+  switch (options.kind) {
+    case "presentation": {
+      return { kind: "presentation", pagesDir: requirePages(options) };
+    }
+    case "document": {
+      return { kind: "document", pagesDir: undefined };
+    }
+  }
 }
 
 const publishCommand = new Command()
@@ -44,8 +60,8 @@ const publishCommand = new Command()
   .requiredOption("--title <title>", "Template name shown to the user")
   .addOption(
     new Option("--kind <kind>", "What the template produces")
-      .choices(["presentation", "document"])
-      .default("presentation"),
+      .choices([...USER_TEMPLATE_KINDS])
+      .default("presentation" satisfies UserTemplateKind),
   )
   .requiredOption(
     "--source <path>",

@@ -159,7 +159,7 @@ describe("okou user-template publish", () => {
           sourceFilename: "brand-system.pptx",
           kind: "presentation",
           coverUrl: null,
-          pageCount: published.pageFileIds.length,
+          pageCount: published.pageFileIds?.length ?? null,
           visibility: "private",
           ownerUserId: "user_1",
           canManage: true,
@@ -185,7 +185,7 @@ describe("okou user-template publish", () => {
 
     expect(published?.kind).toBe("presentation");
     expect(
-      published?.pageFileIds.map((id) => {
+      published?.pageFileIds?.map((id) => {
         return uploads.filenameOf(id);
       }),
     ).toStrictEqual(["page-001.png", "page-002.png", "page-003.png"]);

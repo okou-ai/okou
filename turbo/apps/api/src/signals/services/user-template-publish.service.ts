@@ -12,6 +12,7 @@ import {
   type PublishUserTemplateBody,
 } from "@okouai/api-contracts/contracts/user-templates";
 import { getUserTemplateStorageName } from "@okouai/core/storage-names";
+import type { UserTemplateManifest } from "@okouai/db/jsonb-contracts/user-template";
 import { userTemplates } from "@okouai/db/schema/user-template";
 
 import { badRequestMessage } from "../../lib/error";
@@ -65,6 +66,60 @@ function checkPages(pages: readonly ResolvedUpload[]): string | null {
   return null;
 }
 
+/**
+ * The three places a kind decides something, each naming every kind rather
+ * than letting one be what the others fall through to. A kind added to
+ * `USER_TEMPLATE_KINDS` fails these switches until someone says what it
+ * carries, checks and stores.
+ */
+function publishedPageFileIds(
+  body: PublishUserTemplateBody,
+): readonly string[] {
+  switch (body.kind) {
+    case "presentation": {
+      return body.pageFileIds;
+    }
+    case "document": {
+      return [];
+    }
+  }
+}
+
+function checkPagesFor(
+  kind: PublishUserTemplateBody["kind"],
+  pages: readonly ResolvedUpload[],
+): string | null {
+  switch (kind) {
+    case "presentation": {
+      return checkPages(pages);
+    }
+    case "document": {
+      // The document arm carries no page ids, so the contract already refused
+      // any that were sent and there is nothing left to check.
+      return null;
+    }
+  }
+}
+
+function publishedManifest(
+  kind: PublishUserTemplateBody["kind"],
+  pages: readonly ResolvedUpload[],
+): UserTemplateManifest {
+  switch (kind) {
+    case "presentation": {
+      return {
+        kind: "presentation",
+        pageKeys: pages.map((page) => {
+          return page.storageKey;
+        }),
+      };
+    }
+    case "document": {
+      return { kind: "document" };
+    }
+  }
+}
+
 type PublishResult =
   | { readonly kind: "published"; readonly templateId: string }
   | {
@@ -95,8 +150,7 @@ export const publishUserTemplate$ = command(
   ): Promise<PublishResult> => {
     const db = set(writeDb$);
     const { body } = args;
-    const pageFileIds =
-      body.kind === "presentation" ? body.pageFileIds : ([] as const);
+    const pageFileIds = publishedPageFileIds(body);
     const ids = [body.sourceFileId, ...pageFileIds, body.packageFileId];
     const uploads = await set(
       resolveTemplateUploads$,
@@ -122,9 +176,7 @@ export const publishUserTemplate$ = command(
     if (sourceError) {
       return rejected(sourceError);
     }
-    // Only a presentation has pages to check; the document arm carries none,
-    // so the contract has already refused any that were sent.
-    const pageError = body.kind === "presentation" ? checkPages(pages) : null;
+    const pageError = checkPagesFor(body.kind, pages);
     if (pageError) {
       return rejected(pageError);
     }
@@ -148,15 +200,7 @@ export const publishUserTemplate$ = command(
         title: body.title,
         sourceStorageKey: source.storageKey,
         sourceFilename: source.filename,
-        manifest:
-          body.kind === "presentation"
-            ? {
-                kind: "presentation",
-                pageKeys: pages.map((page) => {
-                  return page.storageKey;
-                }),
-              }
-            : { kind: "document" },
+        manifest: publishedManifest(body.kind, pages),
         createdBy: args.ownerUserId,
         updatedBy: args.ownerUserId,
         createdAt: currentTime,
