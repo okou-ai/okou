@@ -8,11 +8,13 @@ const c = initContract();
 /**
  * The explicitly invoked Slack collection preview for `simple-morning-brief`.
  *
- * It is a development / protected-preview entrypoint: the environment gate
- * denies production, and the caller is an ordinary authenticated member acting
- * only on their own organization and user. No owner, workspace, channel or
- * credential can be supplied. The single input is a scheduled anchor, which is
- * validated and frozen into the occurrence's collection window.
+ * It ships in the ordinary API route table and is reachable on a development
+ * server and on a protected preview deployment; production answers 404 through
+ * the environment gate even when the implementation switch is on. The caller is
+ * an ordinary authenticated member acting only on their own organization and
+ * user. No owner, workspace, channel or credential can be supplied. The single
+ * input is a scheduled anchor, which is validated and frozen into the
+ * occurrence's collection window.
  */
 
 /** Why an invocation never reached a claim, and so never called Slack. */
@@ -149,10 +151,10 @@ const collectResponseSchema = z.discriminatedUnion("result", [
   }),
 ]);
 
-export const testMorningBriefSlackCollectionContract = c.router({
+export const morningBriefCollectionPreviewContract = c.router({
   collect: {
     method: "POST",
-    path: "/api/test/morning-brief/slack-collection",
+    path: "/api/morning-brief/collection-preview/slack",
     headers: authHeadersSchema,
     body: z.object({
       /** The scheduled anchor; the window is `[anchor - 24 hours, anchor)`. */

@@ -18,13 +18,13 @@ import type { Db } from "../external/db";
  */
 
 /** How long a claimed attempt owns the occurrence before it can be reclaimed. */
-export const MORNING_BRIEF_COLLECTION_LEASE_MS = 60_000;
+const MORNING_BRIEF_COLLECTION_LEASE_MS = 60_000;
 
 /** Total attempts one occurrence may ever consume. */
-export const MORNING_BRIEF_COLLECTION_MAX_ATTEMPTS = 3;
+const MORNING_BRIEF_COLLECTION_MAX_ATTEMPTS = 3;
 
 /** How long an occurrence stays claimable after it was first admitted. */
-export const MORNING_BRIEF_COLLECTION_MAX_LIFETIME_MS = 24 * 60 * 60 * 1000;
+const MORNING_BRIEF_COLLECTION_MAX_LIFETIME_MS = 24 * 60 * 60 * 1000;
 
 export interface MorningBriefCollectionOwner {
   readonly orgId: string;
@@ -56,7 +56,7 @@ export interface MorningBriefCollectionClaim {
 export type MorningBriefCollectionOccurrenceRow =
   typeof morningBriefCollectionOccurrences.$inferSelect;
 
-export type MorningBriefCollectionClaimResult =
+type MorningBriefCollectionClaimResult =
   | { readonly kind: "claimed"; readonly claim: MorningBriefCollectionClaim }
   | {
       readonly kind: "already-completed";
@@ -73,7 +73,7 @@ export type MorningBriefCollectionClaimResult =
         | "owner-revoked";
     };
 
-export type MorningBriefCollectionFinalizeResult =
+type MorningBriefCollectionFinalizeResult =
   | {
       readonly kind: "finalized";
       readonly occurrence: MorningBriefCollectionOccurrenceRow;
@@ -350,7 +350,7 @@ export async function finalizeMorningBriefCollection(
     : { kind: "claim-lost" };
 }
 
-export type MorningBriefCollectionRevocationScope =
+type MorningBriefCollectionRevocationScope =
   | {
       readonly kind: "membership";
       readonly orgId: string;

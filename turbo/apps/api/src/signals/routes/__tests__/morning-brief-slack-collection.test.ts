@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
-import { testMorningBriefSlackCollectionContract } from "@okouai/api-contracts/contracts/test-morning-brief-slack-collection";
+import { morningBriefCollectionPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-collection-preview";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createStore } from "ccstate";
 import { http, HttpResponse } from "msw";
@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
+import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import {
@@ -23,7 +23,7 @@ import { waitForDeferredBlocker } from "../../../test-fixtures/pi-deferred-lock"
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
-import { testMorningBriefSlackCollectionRoutes } from "../test-morning-brief-slack-collection";
+import { morningBriefCollectionPreviewRoutes } from "../morning-brief-collection-preview";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import {
@@ -74,11 +74,19 @@ interface Fixture {
   readonly headers: { readonly authorization: string };
 }
 
+/**
+ * The slice under test is the exact entry the production route table holds.
+ *
+ * `route-registration.test.ts` asserts that identity against `ROUTES`, which is
+ * what makes these behavioral results statements about the deployed endpoint.
+ * Composing a test app from the production-global table is rejected by
+ * `api/no-global-sweep-test-routes`, so registration and behavior are proven
+ * separately against the same handler object.
+ */
 function collectionClient() {
-  return setupApp({
-    context,
-    routes: testMorningBriefSlackCollectionRoutes,
-  })(testMorningBriefSlackCollectionContract);
+  return setupApp({ context, routes: morningBriefCollectionPreviewRoutes })(
+    morningBriefCollectionPreviewContract,
+  );
 }
 
 /**
@@ -172,6 +180,18 @@ function collect(f: Pick<Fixture, "headers">, scheduledFor = ANCHOR) {
   return collectionClient().collect({
     headers: f.headers,
     body: { scheduledFor },
+  });
+}
+
+/** The same call with the deployment headers a preview operator would send. */
+function collectWithHeaders(
+  f: Pick<Fixture, "headers">,
+  extraHeaders: Record<string, string>,
+) {
+  return collectionClient().collect({
+    headers: f.headers,
+    extraHeaders,
+    body: { scheduledFor: ANCHOR },
   });
 }
 
@@ -719,7 +739,54 @@ describe("Morning Brief Slack collection admission", () => {
     const f = await fixture();
     mockEnv("ENV", "production");
     const traffic = scriptSlack({});
-    await accept(collect(f), [404]);
+    const denied = await accept(collect(f), [404]);
+    expect(denied.body).toBe("Not found");
+    expect(traffic.requests).toStrictEqual([]);
+    await expect(
+      readMorningBriefCollectionOccurrences(f),
+    ).resolves.toStrictEqual([]);
+  });
+
+  it("answers a protected preview deployment only with the bypass secret", async () => {
+    const f = await fixture();
+    scriptSlack({
+      channels: channelPage([{ id: "C1", name: "general" }]),
+      history: noMessages(),
+    });
+    mockEnv("ENV", "preview");
+    mockOptionalEnv("VERCEL_AUTOMATION_BYPASS_SECRET", "preview-secret");
+
+    const missingHeader = await accept(collect(f), [404]);
+    expect(missingHeader.body).toBe("Not found");
+    const wrongHeader = await accept(
+      collectWithHeaders(f, { "x-vercel-protection-bypass": "wrong-secret" }),
+      [404],
+    );
+    expect(wrongHeader.body).toBe("Not found");
+    await expect(
+      readMorningBriefCollectionOccurrences(f),
+    ).resolves.toStrictEqual([]);
+
+    const bypassed = await accept(
+      collectWithHeaders(f, { "x-vercel-protection-bypass": "preview-secret" }),
+      [200],
+    );
+    expect(bypassed.body.result).toBe("collected");
+    await expect(
+      readMorningBriefCollectionOccurrences(f),
+    ).resolves.toHaveLength(1);
+  });
+
+  it("rejects an unauthenticated caller before any collection", async () => {
+    const f = await fixture();
+    const traffic = scriptSlack({});
+    await accept(
+      collectionClient().collect({
+        headers: { authorization: "" },
+        body: { scheduledFor: ANCHOR },
+      }),
+      [401],
+    );
     expect(traffic.requests).toStrictEqual([]);
     await expect(
       readMorningBriefCollectionOccurrences(f),

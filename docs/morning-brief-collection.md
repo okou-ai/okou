@@ -11,9 +11,9 @@ authority, and nothing here schedules, delivers or generates anything.
 
 ## What this slice is
 
-- One development / protected-preview API entrypoint that really runs
-  **admit → claim → Slack reads → normalize → guarded finalize** inside the
-  caller's request, and returns an in-memory source envelope.
+- One registered development / protected-preview API entrypoint that really
+  runs **admit → claim → Slack reads → normalize → guarded finalize** inside
+  the caller's request, and returns an in-memory source envelope.
 - The occurrence, attempt and lease state that entrypoint consumes.
 - The local ownership boundary shared by claiming, finalizing and the existing
   membership, user and organization cleanup paths.
@@ -28,11 +28,14 @@ authorized invocation. Schedule ownership stays with the legacy automation.
 
 ## The entrypoint
 
-`POST /api/test/morning-brief/slack-collection` is registered only by its test
-route slice, so it is absent from the deployed route table, and it additionally
-calls `isTestEndpointAllowed` before authentication — production answers `404`
-even when `simpleMorningBrief` is enabled for the caller. The preview secret is
-environment protection, never owner authentication.
+`POST /api/morning-brief/collection-preview/slack` is registered in the ordinary
+API route table, so an operator can really invoke it on a development server or
+a protected preview deployment. `isPreviewEndpointAllowed` runs before
+authentication, so production answers `404` without doing any auth work, and it
+stays `404` even when `simpleMorningBrief` is enabled for the caller. On a
+preview deployment the request additionally needs the deployment's
+protection-bypass secret. That secret is environment protection, never owner
+authentication.
 
 Beyond that gate it is an ordinary authenticated route. The owner is the
 authenticated organization and user; the native `slack:read` capability is

@@ -77,5 +77,6 @@ pre-commit:
         - "turbo/apps/*/public/assets/cta-ellipse.png"
         - "turbo/apps/*/public/assets/code_illustration.svg"
       fail_text: |
-        File size check failed. Some staged files exceed the 1MB limit.
+        File size check failed. Some staged files exceed their size limit
+        (1MB for ordinary files, 4MB for generated Drizzle schema snapshots).
         Run 'git diff --cached --name-only' to see staged files.

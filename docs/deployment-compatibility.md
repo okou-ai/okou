@@ -2001,7 +2001,7 @@ invariants.
 
 ## Morning Brief bounded Slack collection (#34727)
 
-Migration 1150 adds the empty `morning_brief_collection_occurrences` table, its
+Migration 1151 adds the empty `morning_brief_collection_occurrences` table, its
 two indexes, its check constraints, and its foreign keys to
 `org_members_metadata(org_id, user_id)` and `agents(id)`. It is purely additive
 and needs no backfill, `LOCK TABLE` or historical scan, so apply it before
@@ -2014,14 +2014,15 @@ switch is only half the story:
 - **Old code after migration** never names the new table. Its only readers and
   writers ship with this change.
 - **New code before migration** reaches the table from two places. The collector
-  itself sits behind both the unregistered preview route and the default-off
-  `FeatureSwitchKey.SimpleMorningBrief`, so it cannot run at all. The cleanup
-  revocation added to membership, user and organization deletion is
+  itself is registered in the deployed route table but is gated by the
+  development / protected-preview environment check and by the default-off
+  `FeatureSwitchKey.SimpleMorningBrief`, so it cannot run in production at all.
+  The cleanup revocation added to membership, user and organization deletion is
   **unconditional** — it is a `DELETE` that runs whenever those webhooks fire,
   with no feature check in front of it. A default-off switch does not protect
   it. The repository's migration-before-promotion ordering is therefore the
   actual requirement here, not a convenience: promoting the API artifact before
-  migration 1150 has shipped would make Clerk membership, user and organization
+  migration 1151 has shipped would make Clerk membership, user and organization
   cleanup fail with `42P01`.
 - A rollback leaves the table in place holding only operational metadata. An
   older API neither reads nor deletes it; its rows stay fenced by the two

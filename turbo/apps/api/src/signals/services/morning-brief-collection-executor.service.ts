@@ -4,7 +4,7 @@ import type {
   MorningBriefCollectionOccurrenceView,
   MorningBriefCollectionSkipReason,
   MorningBriefSlackBundle,
-} from "@okouai/api-contracts/contracts/test-morning-brief-slack-collection";
+} from "@okouai/api-contracts/contracts/morning-brief-collection-preview";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isValidTimeZone } from "@okouai/core/timezone";
@@ -73,7 +73,7 @@ export type MorningBriefCollectionConflict =
   | "owner-revoked"
   | "claim-lost";
 
-export type MorningBriefCollectionExecution =
+type MorningBriefCollectionExecution =
   | {
       readonly kind: "not-executed";
       readonly reason: MorningBriefCollectionSkipReason;

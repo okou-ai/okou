@@ -30,7 +30,7 @@ interface MorningBriefCollectionOwner {
   readonly userId: string;
 }
 
-export interface InstalledMorningBrief {
+interface InstalledMorningBrief {
   readonly owner: MorningBriefCollectionOwner;
   readonly agentId: string;
   readonly workflowId: string;

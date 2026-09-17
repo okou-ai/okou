@@ -2,7 +2,7 @@ import type {
   MorningBriefCollectionLimit,
   MorningBriefSlackBundle,
   MorningBriefSlackEntry,
-} from "@okouai/api-contracts/contracts/test-morning-brief-slack-collection";
+} from "@okouai/api-contracts/contracts/morning-brief-collection-preview";
 
 import {
   isSlackApiClientError,
@@ -51,7 +51,7 @@ export const MORNING_BRIEF_SLACK_COLLECTION_DEADLINE_MS = 30_000;
 const CHANNEL_PAGE_LIMIT = 200;
 const HISTORY_PAGE_LIMIT = 200;
 
-export interface MorningBriefSlackCollectionScope {
+interface MorningBriefSlackCollectionScope {
   readonly botToken: string;
   readonly slackUserId: string;
   readonly workspaceId: string;

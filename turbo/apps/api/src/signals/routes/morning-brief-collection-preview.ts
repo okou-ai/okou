@@ -1,5 +1,5 @@
 import { createErrorResponse } from "@okouai/api-contracts/contracts/errors";
-import { testMorningBriefSlackCollectionContract } from "@okouai/api-contracts/contracts/test-morning-brief-slack-collection";
+import { morningBriefCollectionPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-collection-preview";
 import { command } from "ccstate";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
@@ -12,17 +12,18 @@ import {
   type MorningBriefCollectionConflict,
 } from "../services/morning-brief-collection-executor.service";
 import {
-  isTestEndpointAllowed,
-  testEndpointNotFoundResponse,
-} from "./test-endpoint-helpers";
+  isPreviewEndpointAllowed,
+  previewEndpointNotFoundResponse,
+} from "./preview-endpoint-access";
 
 /**
  * The development / protected-preview entrypoint for Slack collection.
  *
- * Two independent things keep it away from production: it is not part of the
- * deployed route table, and `isTestEndpointAllowed` denies production even when
- * `simpleMorningBrief` is on for the caller. The environment gate is checked
- * before authentication, so production answers 404 without doing any auth work.
+ * It is registered in the ordinary API route table, so an operator can actually
+ * invoke it on a development server or a protected preview deployment. The
+ * environment gate runs before authentication, so production answers 404
+ * without doing any auth work, and it stays 404 even when `simpleMorningBrief`
+ * is on for the caller.
  *
  * Everything else about this route is ordinary: the owner comes from the
  * authenticated organization and user, the native Slack read capability is
@@ -76,7 +77,7 @@ function conflictResponse(reason: MorningBriefCollectionConflict): {
   return responses[reason];
 }
 
-const body$ = bodyResultOf(testMorningBriefSlackCollectionContract.collect);
+const body$ = bodyResultOf(morningBriefCollectionPreviewContract.collect);
 
 const collect$ = command(async ({ get, set }, signal: AbortSignal) => {
   const body = await get(body$);
@@ -157,13 +158,12 @@ const authorizedCollect$ = authRoute(
 );
 
 const run$ = command(async ({ get, set }, signal: AbortSignal) => {
-  if (!isTestEndpointAllowed(get(request$))) {
-    return testEndpointNotFoundResponse();
+  if (!isPreviewEndpointAllowed(get(request$))) {
+    return previewEndpointNotFoundResponse();
   }
   return await set(authorizedCollect$, signal);
 });
 
-// Mounted only by the collection test slice; no production route table entry.
-export const testMorningBriefSlackCollectionRoutes: readonly RouteEntry[] = [
-  { route: testMorningBriefSlackCollectionContract.collect, handler: run$ },
+export const morningBriefCollectionPreviewRoutes: readonly RouteEntry[] = [
+  { route: morningBriefCollectionPreviewContract.collect, handler: run$ },
 ];
