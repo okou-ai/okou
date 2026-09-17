@@ -1060,11 +1060,14 @@ describe("Morning Brief platform-funded generation authority", () => {
   it("refuses content whose reservation expired while persistence waited", async () => {
     const f = await fixture();
     slackWithMessages();
+    // The branch that lets the reservation lapse runs while the request is
+    // still open, so it is kept and joined rather than left floating.
+    let lapsed: Promise<void> | undefined;
     const traffic = scriptProvider(async () => {
       // Hold the row every guarded write locks first, then let real time pass
       // beyond the reservation only after persistence is already blocked on it.
       const held = await holdMorningBriefOwnerRow(f, context.signal);
-      void (async () => {
+      lapsed = (async () => {
         await held.waitForArrival();
         mockNow(now() + 2 * 60 * 1000);
         await held.release();
@@ -1073,6 +1076,7 @@ describe("Morning Brief platform-funded generation authority", () => {
     });
 
     const response = await accept(generate(f), [200]);
+    await lapsed;
     const body = expectGenerated(response.body);
     // The answer arrived before the deadline and was still refused, because the
     // admission clock is sampled where the write is actually admitted.
