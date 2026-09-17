@@ -88,8 +88,7 @@ const workflowBdd = createWorkflowsBddApi(context);
  * reports an unreadable Agent instead of running. Keeping the written bytes is
  * what makes the published instructions readable by the same production path.
  */
-function stubObjectStorage(): void {
-  const objects = new Map<string, Buffer>();
+function stubObjectStorage(objects: Map<string, Buffer>): void {
   const objectKey = (command: {
     readonly input?: { readonly Bucket?: string; readonly Key?: string };
   }): string => {
@@ -205,6 +204,12 @@ function stubProviders(args: {
   readonly onSlackEnumerated?: () => void;
 }): ProviderCalls {
   const calls: ProviderCalls = { gmail: [], slack: [] };
+  // Slack enumerates once to discover the intersection and again to prove it
+  // before release, so the arrival barrier fires on the first one only.
+  let onEnumerated = args.onSlackEnumerated;
+  const fireOnce = (): void => {
+    onEnumerated = undefined;
+  };
   server.use(
     http.get(GMAIL_LIST_URL, ({ request }) => {
       const url = new URL(request.url);
@@ -221,9 +226,10 @@ function stubProviders(args: {
         gmailMessagePayload(String(params["messageId"])),
       );
     }),
-    http.post(SLACK_CONVERSATIONS_URL, async () => {
+    http.get(SLACK_CONVERSATIONS_URL, async () => {
       calls.slack.push("users.conversations");
-      args.onSlackEnumerated?.();
+      onEnumerated?.();
+      fireOnce();
       if (args.slackHold) {
         await args.slackHold;
       }
@@ -232,7 +238,7 @@ function stubProviders(args: {
         channels: [{ id: "C1", name: "general", is_private: false }],
       });
     }),
-    http.post(SLACK_HISTORY_URL, () => {
+    http.get(SLACK_HISTORY_URL, () => {
       calls.slack.push("conversations.history");
       return HttpResponse.json({
         ok: true,
@@ -246,7 +252,7 @@ function stubProviders(args: {
         ],
       });
     }),
-    http.post(SLACK_REPLIES_URL, () => {
+    http.get(SLACK_REPLIES_URL, () => {
       calls.slack.push("conversations.replies");
       return HttpResponse.json({ ok: true, messages: [] });
     }),
@@ -290,7 +296,10 @@ async function connectGmail(
   return account.id;
 }
 
-async function setupOwner(): Promise<Fixture> {
+async function setupOwner(
+  /** Everything this suite's production writes published, kept across setup. */
+  objectStorage: Map<string, Buffer>,
+): Promise<Fixture> {
   const { actor } = await workflowBdd.setupWorkflowOrg({
     timezone: "Asia/Shanghai",
   });
@@ -302,6 +311,10 @@ async function setupOwner(): Promise<Fixture> {
   // onboarding default Agent promises an instructions archive this suite has no
   // reason to populate, and an unreadable promise is an incomplete composition
   // rather than an absent one.
+  // `setupWorkflowOrg` installs the shared object-storage double that answers
+  // every command with a fixed size and no body. Restore the round-tripping one
+  // before publishing anything this suite has to read back.
+  stubObjectStorage(objectStorage);
   const agent = await bdd.createAgent(actor, {
     displayName: `brief-${randomUUID().slice(0, 8)}`,
   });
@@ -348,6 +361,9 @@ async function setupOwner(): Promise<Fixture> {
     { orgId: actor.orgId, userId: actor.userId },
     { [FeatureSwitchKey.SimpleMorningBrief]: true },
   );
+  // Connector and permission setup reinstall their own doubles, so the store
+  // the composition reads through is restored last.
+  stubObjectStorage(objectStorage);
   return {
     actor: { ...actor, orgId: actor.orgId },
     agentId,
@@ -380,9 +396,12 @@ async function compose(fixture: Fixture) {
 }
 
 describe("Morning Brief exact source selection and retained authority", () => {
+  let objectStorage = new Map<string, Buffer>();
+
   beforeEach(async () => {
     mockNow(ANCHOR_MS + 30_000);
-    stubObjectStorage();
+    objectStorage = new Map();
+    stubObjectStorage(objectStorage);
     await installApiTestConnectorCatalog();
   });
 
@@ -393,7 +412,7 @@ describe("Morning Brief exact source selection and retained authority", () => {
   it(
     "removes material whose grant was withdrawn while a later source was held, and keeps its siblings",
     async () => {
-      const fixture = await setupOwner();
+      const fixture = await setupOwner(objectStorage);
       const held = createDeferredPromise<void>(context.signal);
       const enumerated = createDeferredPromise<void>(context.signal);
       const calls = stubProviders({
@@ -457,7 +476,7 @@ describe("Morning Brief exact source selection and retained authority", () => {
   it(
     "proves the exact selected account and refuses to swap it mid-attempt",
     async () => {
-      const fixture = await setupOwner();
+      const fixture = await setupOwner(objectStorage);
       stubProviders({});
 
       const baseline = await compose(fixture);
@@ -483,7 +502,7 @@ describe("Morning Brief exact source selection and retained authority", () => {
   it(
     "does not adopt an account selected after the attempt was admitted",
     async () => {
-      const fixture = await setupOwner();
+      const fixture = await setupOwner(objectStorage);
       const second = await connectGmail(fixture.actor, fixture.agentId, {
         email: "other@example.test",
         subject: `gmail-${randomUUID()}`,
