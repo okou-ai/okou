@@ -64,6 +64,22 @@ function installVideoEnvironment(): void {
   });
 }
 
+/**
+ * The video catalog these cases open lives behind the legacy select's category
+ * control, which the switch's off lever still serves.
+ */
+async function setupLegacyPickerPage(
+  options: Parameters<typeof setupPage>[0],
+): Promise<void> {
+  await setupPage({
+    ...options,
+    featureSwitches: {
+      [FeatureSwitchKey.ModelPickerFlyout]: false,
+      ...options.featureSwitches,
+    },
+  });
+}
+
 function pickerTrigger(label: string): HTMLElement {
   const trigger = queryComposerModelTrigger(label);
   if (!trigger) {
@@ -210,7 +226,7 @@ test.each([false, true])(
   "Keep video settings collapsed until requested with the slash panel on: %s",
   async (enabled) => {
     installVideoSubmissionCapture();
-    await setupPage({
+    await setupLegacyPickerPage({
       context,
       path: `/agents/${AGENT_ID}/chat`,
       featureSwitches: {
@@ -231,7 +247,7 @@ test.each([false, true])(
 
 test("Keep the video spec with the run controls below the message", async () => {
   installVideoSubmissionCapture();
-  await setupPage({
+  await setupLegacyPickerPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: { [FeatureSwitchKey.ComposerSlashTemplatePanel]: true },
@@ -260,7 +276,7 @@ test.each([false, true])(
   "Submit default video options with the slash panel on: %s",
   async (enabled) => {
     const submissions = installVideoSubmissionCapture();
-    await setupPage({
+    await setupLegacyPickerPage({
       locale: "en-US",
       context,
       path: `/agents/${AGENT_ID}/chat`,
@@ -326,7 +342,7 @@ test.each([false, true])(
   "Submit a selected video ratio with the slash panel on: %s",
   async (enabled) => {
     const submissions = installVideoSubmissionCapture();
-    await setupPage({
+    await setupLegacyPickerPage({
       locale: "en-US",
       context,
       path: `/agents/${AGENT_ID}/chat`,
@@ -395,7 +411,7 @@ test.each(["task", "command"] as const)(
   "Submit the current model's defaults without a template through the video %s",
   async (entry) => {
     const submissions = installVideoSubmissionCapture();
-    await setupPage({
+    await setupLegacyPickerPage({
       locale: "en-US",
       context,
       path: `/agents/${AGENT_ID}/chat`,
@@ -454,7 +470,7 @@ test.each(["task", "command"] as const)(
 
 test("Selecting a video model alone keeps Creative Video settings hidden and unsent", async () => {
   const submissions = installVideoSubmissionCapture();
-  await setupPage({
+  await setupLegacyPickerPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
   });
@@ -479,7 +495,7 @@ test("Selecting a video model alone keeps Creative Video settings hidden and uns
 
 test("Changing a Creative Video style retains settings without reopening the panel", async () => {
   installVideoSubmissionCapture();
-  await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
+  await setupLegacyPickerPage({ context, path: `/agents/${AGENT_ID}/chat` });
   const editor = await enterText("Keep this scene description");
   await selectVideoTemplate();
   await selectPaneOption("16:9 · 8s · 720p", "9:16");
@@ -561,7 +577,7 @@ async function restoreTemplateDraft(
       draftAttachments: null,
     });
   });
-  await setupPage({
+  await setupLegacyPickerPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
