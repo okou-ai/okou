@@ -989,6 +989,57 @@ async function publishStorageHeadIfChanged(args: {
   });
 }
 
+async function commitExistingActiveStorageVersion(
+  args: {
+    readonly tx: Tx;
+    readonly storage: StorageRow;
+    readonly version: StorageVersionRow;
+    readonly input: CommitStorageForStorageInput;
+    readonly verification: VerifiedStorageCommit;
+  },
+  signal: AbortSignal,
+): Promise<CommitStorageResponse> {
+  if (args.version.archiveSize !== args.verification.archiveSize) {
+    await args.tx
+      .update(storageVersions)
+      .set({ archiveSize: args.verification.archiveSize })
+      .where(
+        and(
+          eq(storageVersions.id, args.version.id),
+          eq(storageVersions.storageId, args.storage.id),
+        ),
+      );
+  }
+  await publishStorageHeadIfChanged({
+    tx: args.tx,
+    storage: args.storage,
+    input: args.input,
+    size: Number(args.version.size),
+    archiveSize: args.verification.archiveSize,
+    fileCount: args.version.fileCount,
+  });
+  await recordStorageLineage({
+    tx: args.tx,
+    storageId: args.storage.id,
+    input: args.input,
+  });
+  await enqueueMemorySummaryProjection(
+    {
+      db: args.tx,
+      storage: args.storage,
+      storageVersionId: args.input.versionId,
+    },
+    signal,
+  );
+  return storageCommitSuccess({
+    storage: args.storage,
+    versionId: args.input.versionId,
+    size: Number(args.version.size),
+    fileCount: args.version.fileCount,
+    deduplicated: true,
+  });
+}
+
 async function commitActiveStorageVersion(
   args: {
     readonly tx: Tx;
@@ -1017,45 +1068,10 @@ async function commitActiveStorageVersion(
     throw new Error("Storage disappeared before HEAD publication");
   }
   if (args.version) {
-    if (args.version.archiveSize !== args.verification.archiveSize) {
-      await args.tx
-        .update(storageVersions)
-        .set({ archiveSize: args.verification.archiveSize })
-        .where(
-          and(
-            eq(storageVersions.id, args.version.id),
-            eq(storageVersions.storageId, storage.id),
-          ),
-        );
-    }
-    await publishStorageHeadIfChanged({
-      tx: args.tx,
-      storage,
-      input: args.input,
-      size: Number(args.version.size),
-      archiveSize: args.verification.archiveSize,
-      fileCount: args.version.fileCount,
-    });
-    await recordStorageLineage({
-      tx: args.tx,
-      storageId: storage.id,
-      input: args.input,
-    });
-    await enqueueMemorySummaryProjection(
-      {
-        db: args.tx,
-        storage,
-        storageVersionId: args.input.versionId,
-      },
+    return await commitExistingActiveStorageVersion(
+      { ...args, storage, version: args.version },
       signal,
     );
-    return storageCommitSuccess({
-      storage,
-      versionId: args.input.versionId,
-      size: Number(args.version.size),
-      fileCount: args.version.fileCount,
-      deduplicated: true,
-    });
   }
   const size = totalSize(args.input.files);
   const fileCount = args.input.files.length;
