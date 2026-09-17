@@ -27,6 +27,9 @@ async fn execute_blank(
     let mut context = codex_oauth_context();
     context.reuse_key = Some("thread:blank-prefetch-recovery".into());
     let sandbox_id = sandbox.id().parse().unwrap();
+    #[cfg(feature = "workspace-handoff-study")]
+    let workspace_image = None;
+    #[cfg(not(feature = "workspace-handoff-study"))]
     let workspace_image = match &config.workspace_cache {
         Some(cache) => Some(
             cache
@@ -260,7 +263,12 @@ async fn blank_prefetch_replacement_releases_old_workspace_lease() {
     )));
     let overrides = Arc::new(MockSandboxOverrides::new());
     overrides.push_start_process_error(post_write_timeout());
-    let (outcome, _) = execute_blank(config, overrides, CancellationToken::new()).await;
+    let (outcome, _) = tokio::time::timeout(
+        WAIT,
+        execute_blank(config, overrides, CancellationToken::new()),
+    )
+    .await
+    .expect("replacement must not wait on its own pre-spawn admission permit");
     assert_eq!(outcome.exit_code(), 0);
     assert_eq!(
         outcome.workspace_image.unwrap().result(),

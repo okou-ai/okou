@@ -65,6 +65,8 @@ mod registry_observation;
 mod reuse;
 mod ssh;
 mod workspace_cache;
+#[cfg(feature = "workspace-handoff-study")]
+mod workspace_handoff_study;
 
 fn storage_archive(content: &[u8]) -> Vec<u8> {
     let encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::none());

@@ -4,9 +4,9 @@
 //! idle sandbox was reused and which session-history identity, if any, was
 //! parked with it. For a valid hash-backed resume, reuse can either select a
 //! verified skip or start remote materialization early. A confirmed blank also
-//! starts remote work early without acquiring exact-reuse semantics. A fresh
-//! sandbox instead defers remote work so workspace preparation can first probe
-//! a matching cached sidecar.
+//! starts remote work early without acquiring exact-reuse semantics. Fresh
+//! sandboxes and study Blanks with workspace caching defer remote work so
+//! workspace preparation can first probe a matching cached sidecar.
 //!
 //! Fresh-workspace preparation resolves
 //! [`SessionHistoryRestorePlan::DeferredHashBacked`] into
@@ -185,6 +185,8 @@ pub(crate) struct SessionHistoryRestorePlanInput<'a> {
     pub(crate) reuse_result: SandboxReuseResult,
     /// Actual resource kind after selection and successful unpark, not a reservation.
     pub(crate) idle_kind: Option<IdleSandboxKind>,
+    #[cfg(feature = "workspace-handoff-study")]
+    pub(crate) workspace_cache_available: bool,
     pub(crate) restored_identity: Option<&'a RestoredSessionIdentity>,
     pub(crate) pre_spawn_timing: &'a mut RunnerPreSpawnTiming,
     pub(crate) probe: Option<&'a SessionHistoryProbe>,
@@ -195,8 +197,9 @@ pub(crate) struct SessionHistoryRestorePlanInput<'a> {
 /// Absent or non-hash-backed resume state uses the ordinary `Default` path. A
 /// reused sandbox can select `SkipVerified` or start a `Prestarted`
 /// materializer. A confirmed blank also prestarts without changing its non-exact
-/// reuse attribution. Fresh preparation produces `DeferredHashBacked` so a
-/// matching local workspace sidecar gets the first opportunity.
+/// reuse attribution, except when the handoff study first checks out a workspace
+/// that may contain a matching history sidecar. Fresh preparation produces
+/// `DeferredHashBacked` so a matching local workspace sidecar gets the first opportunity.
 pub(crate) fn build_session_history_restore_plan(
     input: SessionHistoryRestorePlanInput<'_>,
 ) -> SessionHistoryRestorePlan {
@@ -207,6 +210,8 @@ pub(crate) fn build_session_history_restore_plan(
         cancel,
         reuse_result,
         idle_kind,
+        #[cfg(feature = "workspace-handoff-study")]
+        workspace_cache_available,
         restored_identity,
         pre_spawn_timing,
         probe,
@@ -261,7 +266,10 @@ pub(crate) fn build_session_history_restore_plan(
         | SandboxReuseResult::UnparkFailed => Some(SessionHistoryRestoreFallback::NonReuse),
     };
 
-    if reuse_result != SandboxReuseResult::Reused && idle_kind != Some(IdleSandboxKind::Blank) {
+    let blank_prestarts = idle_kind == Some(IdleSandboxKind::Blank);
+    #[cfg(feature = "workspace-handoff-study")]
+    let blank_prestarts = blank_prestarts && !workspace_cache_available;
+    if reuse_result != SandboxReuseResult::Reused && !blank_prestarts {
         return SessionHistoryRestorePlan::DeferredHashBacked { fallback };
     }
 
@@ -389,6 +397,8 @@ mod tests {
             reuse_result,
             idle_kind: (reuse_result == SandboxReuseResult::Reused)
                 .then_some(IdleSandboxKind::Exact),
+            #[cfg(feature = "workspace-handoff-study")]
+            workspace_cache_available: false,
             restored_identity,
             pre_spawn_timing: &mut pre_spawn_timing,
             probe: None,
@@ -644,6 +654,29 @@ mod tests {
             }
             _ => panic!("non-reuse hash-backed history should defer materialization"),
         }
+    }
+
+    #[tokio::test]
+    async fn confirmed_blank_without_workspace_cache_still_prestarts_history() {
+        let context = context_with_history_ref(&"a".repeat(64));
+        let http = test_http_client();
+        let cpu = SessionHistoryCpuPool::with_capacity(1);
+        let mut timing = RunnerPreSpawnTiming::start_after_claim();
+        let plan = build_session_history_restore_plan(SessionHistoryRestorePlanInput {
+            http: &http,
+            cpu: &cpu,
+            context: &context,
+            cancel: CancellationToken::new(),
+            reuse_result: SandboxReuseResult::PoolMiss,
+            idle_kind: Some(IdleSandboxKind::Blank),
+            #[cfg(feature = "workspace-handoff-study")]
+            workspace_cache_available: false,
+            restored_identity: None,
+            pre_spawn_timing: &mut timing,
+            probe: None,
+        });
+        assert!(matches!(plan, SessionHistoryRestorePlan::Prestarted { .. }));
+        plan.cancel_and_drain().await;
     }
 
     #[tokio::test]

@@ -882,6 +882,8 @@ pub(super) async fn build_spawn_job_request(
                 .reuse_entry
                 .as_ref()
                 .map(ReusableIdleSandbox::kind),
+            #[cfg(feature = "workspace-handoff-study")]
+            workspace_cache_available: ctx.exec_config.workspace_cache.is_some(),
             restored_identity: setup
                 .resource
                 .reuse_entry
@@ -1551,7 +1553,8 @@ async fn acquire_local_admission_resource(
             profile_name,
             device_rate_limits,
             history_generation_run_id: None,
-            allow_compatible_blank: !candidate.deferred_sandbox() && !workspace_cache_possible,
+            allow_compatible_blank: !candidate.deferred_sandbox()
+                && (!workspace_cache_possible || cfg!(feature = "workspace-handoff-study")),
             vcpu: job_vcpu,
             memory_mb: job_memory,
             context: "candidate_admission_oldest",
@@ -2251,7 +2254,7 @@ pub(super) async fn activate_reserved_idle(
     } else {
         false
     };
-    if claimed_workspace_cache_reuse_key {
+    if claimed_workspace_cache_reuse_key && !cfg!(feature = "workspace-handoff-study") {
         return cleanup_reserved_for_fresh_fallback(
             reservation.into_destroy_job(),
             fallback_reuse_result,
@@ -2663,7 +2666,7 @@ async fn try_reuse_from_pool(
         .record_phase_elapsed(RunnerPreSpawnPhase::WorkspaceCacheStateLookup, started_at);
     let taken = match exact {
         Some(exact) => Some(exact),
-        None if !claimed_workspace_cache_reuse_key => {
+        None if !claimed_workspace_cache_reuse_key || cfg!(feature = "workspace-handoff-study") => {
             let mut pool = ctx.idle_pool.lock().await;
             reuse_key
                 .and_then(|reuse_key| pool.take_reserved(reuse_key))

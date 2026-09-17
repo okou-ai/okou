@@ -867,6 +867,24 @@ pub trait Sandbox: Send + Sync + Any {
         })
     }
 
+    /// Replace a running, never-assigned Blank's workspace for an isolated study.
+    ///
+    /// The caller must exclusively own the sandbox and seed lease. Only an
+    /// owned `Move` seed is supported. On any error or cancellation, the caller
+    /// must destroy the sandbox; it must never return it to reusable inventory.
+    /// Success preserves the canonical active-image path and device limits.
+    #[cfg(feature = "workspace-handoff-study")]
+    async fn replace_workspace_drive(
+        &mut self,
+        _seed: crate::WorkspaceDriveSeedImage,
+    ) -> Result<()> {
+        Err(SandboxError::Operation {
+            operation: crate::SandboxOperation::ReplaceWorkspaceDrive,
+            reason: crate::SandboxOperationReason::Other,
+            message: "workspace handoff study is unsupported by this provider".into(),
+        })
+    }
+
     /// Verify live final session-history identity through the provider's fixed
     /// Guest Agent helper operation.
     ///

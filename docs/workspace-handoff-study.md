@@ -4,11 +4,228 @@ Tracking: [#34729](https://github.com/vm0-ai/okou/issues/34729), under
 [#24203](https://github.com/vm0-ai/okou/issues/24203).
 
 This opt-in KVM study evaluates a cached workspace disk on an already-started,
-never-assigned Blank. The production admission path remains unchanged. A backend
-activation measurement does not establish an improvement in `api_to_spawn` or
-the opportunity cost of taking a Blank from other admitted work.
+never-assigned Blank. It includes a standalone backend experiment and a Runner
+integration behind the default-disabled `workspace-handoff-study` Cargo feature.
+Normal Runner builds retain production admission behavior. The historical backend
+measurements below are component evidence; the integrated experiment measures
+the existing `api_to_spawn` boundary through a real preview API and Runner.
 
-## Lifecycle being evaluated
+The corrected integrated candidate does **not demonstrate a reliable
+`api_to_spawn` improvement**: its 10-pair cohort splits 5 wins/5 losses, with only
+1.5 ms paired median improvement and a worse p90. Keep this as a default-disabled
+experiment; the backend component improvement does not justify production activation.
+
+## Integrated Runner lifecycle
+
+Only the isolated candidate Runner is built with `workspace-handoff-study`.
+It retains Exact reuse precedence and allows a compatible never-assigned Blank
+to serve a Workspace cache candidate. Profile, disk-size, device-limit and
+existing admission checks remain in force. After validating the execution
+context, the candidate acquires the normal fresh pre-spawn admission permit and
+checks out the real workspace cache lease for the selected Blank's sandbox ID.
+The permit remains owned through the existing Agent-ready release boundary.
+
+A cache hit supplies an exclusively owned `Move` seed. The backend checks the
+running, unparked Blank configuration and requires distinct canonical regular
+files of the configured size, on the same filesystem, with an unshared source
+inode. It then performs ordinary guest unmount, `blockdev --flushbufs`, synchronous
+atomic rename onto the Blank's canonical active-image path, Firecracker PATCH of
+only `path_on_host`, and the fixed native workspace mount operation. The old
+snapshot bind mount retains the old empty inode; the patched path opens the new
+one. Disk limiters are not replaced or reset.
+
+The original cache lease continues to own that canonical active path. The
+candidate carries the cached storage fingerprints into normal storage
+preparation, resolves the existing history restore plan, and clears the Blank's
+prepared-guest marker so the attached image receives required state preparation.
+For a hash-backed resume, a study Blank with workspace caching defers history
+materialization until checkout, giving the cached history sidecar the same first
+opportunity as the fresh path. A cache miss uses the existing remote restore;
+Exact reuse and Blanks without workspace caching retain their original strategy.
+Normal proxy/readiness, private-file, storage and Agent preparation still precede
+shell spawn. Successful writes use the existing terminal cache-promotion path.
+A cache miss continues with the Blank's empty disk and normal preparation.
+
+Any handoff error or observed cancellation is terminal for that candidate: drain
+owned history work, destroy the VM, invalidate the checked-out cache entry, and
+release its lease. A partial handoff cannot return to idle inventory or enter
+image promotion. Cancellation does not drop an in-flight handoff operation;
+the owner waits for its bounded guest/API stages and checks cancellation before
+Agent preparation. A consumed cache hit cannot enter the ordinary Blank
+prefetch-replacement retry. A cache-miss replacement releases its admission
+permit before fresh preparation reacquires it. Host loss and hard process
+termination remain separate recovery boundaries.
+
+No telemetry endpoint is redefined. `api_to_spawn` still subtracts the genuine
+API `api_start_time` from the recorded Agent `shell_started_at`; the handoff and
+all required preparation are inside that interval. Agent readiness, verifier
+completion and post-spawn I/O remain separate observations.
+
+### Integrated reproduction and fixture boundary
+
+Use an isolated preview API/Runner group and an exclusively owned local-11
+runtime directory. Both arms must use the same API revision, copied rootfs,
+kernel, Firecracker version, Guest executables and configuration. Build the
+baseline without the feature and the candidate with it; preserve each binary
+and its hash before another build can overwrite it.
+
+```sh
+umask 077
+cargo build --manifest-path crates/Cargo.toml --locked --profile ci -j 1 \
+  -p guest-agent -p guest-storage-apply -p guest-init -p guest-state-restore \
+  -p guest-write-file -p guest-workspace-mount -p guest-tool-exec \
+  -p runner-rpc-client -p claude-mock -p codex-mock
+cargo build --manifest-path crates/Cargo.toml --locked --profile ci -j 1 \
+  --target-dir /absolute/build-baseline -p runner
+cargo build --manifest-path crates/Cargo.toml --locked --profile ci -j 1 \
+  --target-dir /absolute/build-candidate -p runner --features workspace-handoff-study
+cargo build --manifest-path crates/Cargo.toml --locked --profile ci -j 1 \
+  --target-dir /absolute/build-candidate -p sandbox-firecracker \
+  --example workspace_handoff_snapshot
+```
+
+Copy a verified generic rootfs into a new owned image directory and install
+**all ten** optimized Guest executables at the destinations in
+[`guest-binaries.json`](../crates/runner/guest-binaries.json). Verify every embedded
+binary by hash against its build output, resolving the copied image's `/sbin`
+symlink where necessary. The three-binary preparation script in the historical
+backend reproduction is insufficient for real Runner execution.
+
+The snapshot helper takes a JSON file containing `id` (a 64-character hex
+identity), absolute `binary_path`, `kernel_path`, `rootfs_path`, and `output_dir`.
+Derive and record the identity from the fixed artifacts/profile, and create the
+snapshot directly at its final owned Runner image path; the helper refuses an
+existing output path and verifies the snapshot completion contract.
+
+```sh
+sudo /absolute/build-candidate/ci/examples/workspace_handoff_snapshot \
+  /absolute/owned-study/snapshot-config.json
+```
+
+Fix both arms at 2 vCPUs, 4096 MiB RAM and a 10240-MiB workspace. The sandbox's
+total block budget is 100 MiB/s and 10,000 IOPS, split equally across rootfs and
+workspace drives; network RX and TX each receive 50 MiB/s. Do not interpret the
+total as a separate 100-MiB/s allowance for each disk. Preserve the same pool and
+admission budgets and read back effective VMM limits. The isolated configuration
+uses `max_concurrent: 5`, `max_idle: 1` and `concurrency_factor: 1` to permit one
+Blank; the experiment controller submits serially, with at most one executing
+run plus one Blank. The configured capacity is not permission to load the host
+with five simultaneous experimental runs.
+
+Use a dedicated Clerk test user/org, normal device-flow PAT and Stripe TEST
+entitlement on the preview. Configure the member mock-Claude provider and
+`claude-sonnet-4-6` as in the Runner E2E bootstrap, with
+`_realAgentInPreview=false` and mock Claude enabled in the study Runner. Submit
+through the real API, verify the assigned Runner group and Workspace path, and
+join telemetry by the API-issued run ID. Mock Claude supplies deterministic
+shell work without external model calls; this measures real API/Runner/Guest
+startup, not model-provider latency or production prompt behavior. Keep tokens
+and fixture identities out of published evidence.
+
+Seed and verify matched synthetic content through normal runs, preserve cache
+checkout/write-back ownership, alternate baseline/candidate arms, and retain
+failed or incomplete attempts separately. Measure the intended cache-hit path;
+Exact reuse or a cache miss cannot substitute for a Workspace handoff sample.
+Shared local-11 services, host cache state, long Blank residency and pool
+opportunity cost constrain interpretation. Audit only the study's processes,
+paths, mounts and fixture resources; preserve unrelated services. Numerical
+integrated results require matched run records and are not inferred from the
+historical CSV.
+
+## Integrated API evidence
+
+The integrated measurements use real `/api/chat/events` requests on the isolated
+PR preview, genuine API-issued run IDs and the existing host startup operations
+in Axiom's `vm0-sandbox-op-log-dev` dataset. Neither client elapsed time nor guest
+verifier completion substitutes for `api_to_spawn`. Both arms retain
+`runner_startup_path=workspace` and `sandbox_reuse_result=poolMiss`: a Blank has
+not previously served the requested session and is not Exact reuse.
+
+Each arm restarts the owned Runner, waits for one ready Blank and no Exact
+inventory, submits one request, checks the intended cache-hit path and content,
+then stops and verifies cache promotion before the next request. A synthetic
+fixture has 131 hashed file entries, a 32-MiB file, hardlink and relative symlink,
+directory, modes, ownership and mtime. Every successful sample checks the prior
+counter and writes the next counter, so later runs verify actual write-back.
+Pool prewarming is outside the API request; replenishment and ordinary
+preparation during the request remain inside the measured path.
+
+### Initial integrated candidate: retained regression
+
+Candidate v1 was measured in two separate 10-pair cohorts on September 17, 2026.
+The first cohort alternates baseline/candidate and candidate/baseline; the
+replication reverses the first pair. The replication was scheduled before its
+results were inspected. Both cohorts completed all 20 requests and all content,
+path and promotion checks. Build and test activity had ended before sampling.
+
+The first cohort has complete telemetry for all 10 pairs. `api_to_spawn` became
+slower in **10/10 pairs**, with a paired median regression of **116.5 ms (19.82%)**.
+Nearest-rank p50 increased from 654 to 747 ms and p90 from 717 to 902 ms. The
+candidate handoff itself had a median of 36.5 ms. The separate Agent-ready paired
+median improved by 44.5 ms, while its mean and p90 worsened; this does not change
+the primary startup verdict.
+
+An exact-run diagnostic query retained 5,760 operation records for that cohort.
+It found a real integration asymmetry: baseline used cached session-history
+sidecars in 10/10 runs, but v1 prestarted remote history downloads in 10/10. The
+remote download median was 197 ms and the restore wait median was 119 ms. The
+same-run create versus unpark-plus-handoff component still improved by a paired
+median 72.5 ms. Agent shell-start acknowledgement was also later in v1; these
+observations do not isolate backing-drive replacement as the cause of the full
+startup regression.
+
+The submitted implementation corrects the history asymmetry by deferring the
+eligible Blank's history decision until real workspace checkout. Its matching
+sidecar can then use the existing local materializer. The v1 cohorts are retained
+as earlier-version evidence and must not be pooled with the corrected binary.
+
+The final replication read recovered all initially delayed telemetry: all 10
+pairs are complete. V1 regressed by a paired median 65 ms (10.41%), with 3 wins
+and 7 losses. No missing run was discarded or replaced by local timing.
+
+### Corrected integrated candidate
+
+Candidate v2 fixes that history decision and was measured as a separate 10-pair
+cohort, with five baseline-first and five candidate-first pairs. The baseline
+binary and fixture stayed unchanged. All 20 requests completed their content,
+path and promotion checks; all 70 selected telemetry records are present, with
+no failed, missing or duplicate startup measurements. The corrected executable
+SHA-256 is `b075170fcb9b70277e41063f2b531a8eea340f0b848fdf1ded9218f9e9f937ec`.
+
+| Cohort         | Complete pairs | Baseline/candidate spawn median (ms) | Baseline/candidate spawn p50 (ms) | Baseline/candidate spawn p90 (ms) | Paired median gain (ms / %) | Candidate wins/losses |
+| -------------- | -------------: | -----------------------------------: | --------------------------------: | --------------------------------: | --------------------------: | --------------------: |
+| v1 formal      |             10 |                          660.5 / 765 |                         654 / 747 |                         717 / 902 |            -116.5 / -19.82% |                0 / 10 |
+| v1 replication |             10 |                            639 / 709 |                         632 / 704 |                        1070 / 769 |               -65 / -10.41% |                 3 / 7 |
+| v2 corrected   |             10 |                            662 / 656 |                         658 / 650 |                        783 / 1191 |               +1.5 / +0.15% |                 5 / 5 |
+
+Positive paired gain means baseline minus candidate, so positive is faster.
+Medians are arithmetic medians; p50/p90 use nearest rank. Each percentage is
+computed within its pair before taking the median. Cohorts remain separate.
+V2's mean `api_to_spawn` is 706.2 ms baseline versus 773.3 ms candidate, a
+67.1-ms regression. Its nearly tied paired median and worse tail do not establish
+a primary startup benefit on this shared host.
+
+Agent readiness is secondary: v2's paired median gain is 68.5 ms (7.84%), with
+6 wins/4 losses; readiness p90 is 995 versus 1302 ms. Handoff duration has a
+36-ms arithmetic median and 46-ms p90. Neither replaces the shell-spawn verdict.
+The [API results CSV](./workspace-handoff-api-results.csv) retains all 64 requests:
+the failed seed, three successful preflight requests, both original 20-request
+cohorts, and the corrected 20-request cohort. Version/cohort and eligibility
+columns prevent pooling earlier candidates or preflight work into the result.
+
+The final owned-resource audit reports `clean=true`, with all four pre-existing
+Runner services unchanged. The retained integrated evidence bundle has SHA-256
+`6613bb9025e4b86abf2052379d28c1c290d13b67bf3ed2ac141a4c203a154536`.
+
+The first real seed attempt failed after its shell ran because the test harness
+sent Codex framing markers to mock Claude, which executes the whole prompt as
+Bash. Its cache promotion was also rejected by the unchanged 50-GiB minimum
+free-space policy. The failed request and its separate thread were retained;
+the corrected seed used a new request/thread after terminal-state confirmation.
+Only a verified, unused duplicate image owned by this study was removed to
+restore disk headroom. Earlier launcher failures occurred before any API POST.
+
+## Historical standalone backend lifecycle
 
 The fresh arm creates a snapshot-restored VM with an exclusively owned synthetic
 workspace seed. The Blank arm creates and mounts an empty disk, parks the VM,
@@ -20,8 +237,9 @@ restore clock, CRNG and UTC timezone before executing the same guest verifier.
 
 The original snapshot bind mount still refers to the old empty inode. The
 experimental PATCH names a different, sandbox-owned file visible in the VMM's
-private mount namespace. This is deliberately confined to the harness; it does
-not update Runner's cache-promotion ownership or active-image path contract.
+private mount namespace. That standalone implementation is confined to the
+harness; unlike the integrated candidate above, it does not update Runner's
+cache-promotion ownership or active-image path contract.
 Every VM is stopped and destroyed after its one trial. No trial enters an idle
 pool or promotes its image into a cache.
 
@@ -30,7 +248,7 @@ lazy unmount and forced unmount are not used. The dirty-old-image control checks
 that completed old writes and old sentinels do not appear in the replacement.
 That control does not prove safety for arbitrary concurrent guest I/O.
 
-## Reproduction
+## Historical backend reproduction
 
 Use a separately authorized Linux KVM host with root, the backend's documented
 network/NBD prerequisites, Python 3.11+, e2fsprogs and coreutils. Reserve capacity
@@ -90,7 +308,7 @@ gone, remove that owned empty directory and its empty parent with `rmdir`.
 Do not recursively remove unexpected contents. The copied snapshot and image
 artifacts can remain in the study directory for evidence and reproduction.
 
-## Measurement interpretation
+## Historical backend measurement interpretation
 
 - `ready_ms`: fresh create through required mount/state restore, or Blank unpark
   through unmount/replacement/remount/state restore. Fixture-copy work occurs
@@ -132,7 +350,7 @@ must not be included in startup latency or used to conclude that startup is
 slower. Keep cohorts separate, use nearest-rank percentiles, preserve outliers,
 and do not add independently ranked stage percentiles.
 
-## Evidence
+## Historical backend evidence
 
 ### Decision: proceed to api_to_spawn validation
 
@@ -148,9 +366,10 @@ Both single-VM cohorts took longer through the completed verifier workload,
 and all four cohorts had a worse observed p90 for that separate endpoint.
 Those observations remain in the report but do not reject the startup candidate.
 The previous "performance screen failed" conclusion confused these endpoints
-and is withdrawn. Production admission remains unchanged because integrated
-startup evidence and lifecycle correctness are still incomplete; #34729 remains
-open. This is an evidence gap, not a measured `api_to_spawn` regression.
+and is withdrawn. Production admission remains unchanged because the integrated
+candidate is default-disabled and production acceptance remains incomplete;
+#34729 remains open. These backend results are not a measured `api_to_spawn`
+regression.
 
 ### Fixed artifacts and conditions
 
@@ -287,7 +506,8 @@ expected manifest, verifying the embedded Guest binaries by hash.
 
 ### Remaining acceptance boundaries
 
-The study does not exercise Runner cache checkout/promotion, tenant transitions,
+The historical standalone study did not exercise Runner cache checkout/promotion,
+tenant transitions,
 the actual production rootfs and payload, production DNS/proxy readiness,
 Exact/Blank admission precedence, prolonged Blank residency, pool opportunity
 cost, shutdown/drain races, abrupt host failure or an ambiguous in-flight PATCH
@@ -296,7 +516,7 @@ integrated cancellation proof. The dirty-image control is not arbitrary
 in-flight-I/O proof. The configured guest identity/profile was fixed throughout;
 cross-tenant safety remains unproven.
 
-The next startup experiment must run matched baseline and candidate requests
+The integrated startup experiment runs matched baseline and candidate requests
 through an isolated API/Runner path on an authorized host such as local-11.
 Capture the genuine API start and Agent shell-spawn boundary for each run; do
 not substitute a synthetic API timestamp or generic verifier process completion.
@@ -308,9 +528,10 @@ remount, required state/identity/device validation, DNS/proxy readiness and
 required private-file writes before shell spawn. Preserve Exact precedence and
 capacity/admission budgets; do not move required work past the timing boundary.
 
-The current production executor has no cached-drive handoff branch, so this
-measurement requires an isolated experimental Runner integration and cannot be
-reconstructed from the existing CSV. Keep content equality and ownership,
+The default-disabled integration above supplies that Runner path; the historical
+CSV cannot reconstruct its measurements. Its ownership, cancellation and cache
+promotion coverage does not establish arbitrary cross-tenant or host-failure
+safety. Keep content equality and ownership,
 cancellation/drain and cleanup checks as correctness gates. Report post-spawn
 I/O, Agent readiness and Blank pool opportunity cost separately, without
 renaming any of them `api_to_spawn` or using verifier completion as its proxy.

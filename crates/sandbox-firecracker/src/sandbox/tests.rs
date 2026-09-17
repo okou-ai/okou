@@ -2958,6 +2958,243 @@ async fn mount_workspace_drive_maps_empty_request_and_terminal_metadata() {
     assert_eq!(result.diagnostic, "containment cleanup failed");
 }
 
+#[cfg(feature = "workspace-handoff-study")]
+mod workspace_handoff {
+    use super::*;
+    use std::os::unix::fs::MetadataExt;
+
+    fn fixture() -> (tempfile::TempDir, FirecrackerSandbox, std::path::PathBuf) {
+        let root = tempfile::tempdir().unwrap();
+        let mut sandbox = test_sandbox_with_state(SandboxState::Running);
+        sandbox.sandbox_paths = SandboxPaths::new(root.path().to_path_buf());
+        sandbox.sock_paths = SockPaths::new(root.path().to_path_buf());
+        sandbox.config.workspace_drive = Some(sandbox::WorkspaceDriveConfig {
+            size_mb: 1,
+            seed_image: None,
+        });
+        let source = root.path().join("seed.ext4");
+        for (path, marker) in [
+            (source.clone(), b"new"),
+            (sandbox.sandbox_paths.workspace_image(), b"old"),
+        ] {
+            std::fs::write(&path, marker).unwrap();
+            std::fs::OpenOptions::new()
+                .write(true)
+                .open(path)
+                .unwrap()
+                .set_len(1024 * 1024)
+                .unwrap();
+        }
+        (root, sandbox, source)
+    }
+
+    async fn exec_reply(guest: &mut UnixStream, seq: u32, exit_code: i32) {
+        let payload = guest_control_proto::encode_exec_result(
+            guest_control_proto::ExecTermination::Exited { exit_code },
+            1,
+            guest_control_proto::ExecCapturedOutput::Captured {
+                bytes: b"",
+                truncated: false,
+            },
+            guest_control_proto::ExecCapturedOutput::Captured {
+                bytes: b"",
+                truncated: false,
+            },
+            "",
+        )
+        .unwrap();
+        guest
+            .write_all(
+                &guest_control_proto::encode(guest_control_proto::MSG_EXEC_RESULT, seq, &payload)
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+    }
+
+    async fn exercise(unmount_exit: i32, patch_status: u16, mount_exit: i32) {
+        let (_root, mut sandbox, source) = fixture();
+        let target = sandbox.sandbox_paths.workspace_image();
+        let source_inode = std::fs::metadata(&source).unwrap().ino();
+        let old_inode = std::fs::metadata(&target).unwrap().ino();
+        let mut api = MockLifecycleApi::new([patch_status].into(), None);
+        std::os::unix::fs::symlink(api.socket_path(), sandbox.sock_paths.api_sock()).unwrap();
+        let mut guest = attach_mock_shutdown_guest(&sandbox).await;
+        let operation =
+            sandbox.replace_workspace_drive(sandbox::WorkspaceDriveSeedImage::Move(source.clone()));
+        let respond = async {
+            let request = read_vsock_message(&mut guest).await;
+            assert_eq!(request.msg_type, guest_control_proto::MSG_EXEC_START);
+            let decoded = guest_control_proto::decode_exec_start(&request.payload).unwrap();
+            assert_eq!(decoded.role, guest_control_proto::ExecProcessRole::Workload);
+            assert_eq!(
+                decoded.lifecycle,
+                guest_control_proto::ExecLifecyclePolicy::OneShot
+            );
+            assert_eq!(
+                decoded.control,
+                guest_control_proto::ExecControlPolicy::Disabled
+            );
+            assert_eq!(
+                decoded.timeout,
+                guest_control_proto::ExecTimeoutPolicy::Duration { timeout_ms: 30_000 }
+            );
+            assert_eq!(
+                decoded.stdout,
+                guest_control_proto::ExecOutputPolicy::Capture {
+                    limit_bytes: 64 * 1024,
+                }
+            );
+            assert_eq!(decoded.stderr, decoded.stdout);
+            assert!(decoded.sudo);
+            assert!(decoded.command.contains("umount /home/user/workspace"));
+            assert!(decoded.command.contains("blockdev --flushbufs /dev/vdb"));
+            assert!(!decoded.command.contains("umount -"));
+            assert_eq!(std::fs::metadata(&target).unwrap().ino(), old_inode);
+            assert!(source.exists());
+            // Sandbox::exec uses the one-shot capture contract: only the
+            // terminal result is returned, without a supervised start ack.
+            exec_reply(&mut guest, request.seq, unmount_exit).await;
+            if unmount_exit == 0 && patch_status == 204 {
+                let mount = read_vsock_message(&mut guest).await;
+                assert_eq!(
+                    mount.msg_type,
+                    guest_control_proto::MSG_WORKSPACE_DRIVE_MOUNT
+                );
+                guest_control_proto::decode_workspace_drive_mount_request(&mount.payload).unwrap();
+                assert!(!source.exists());
+                assert_eq!(std::fs::metadata(&target).unwrap().ino(), source_inode);
+                let payload = guest_control_proto::encode_workspace_drive_mount_result(
+                    guest_control_proto::ExecTermination::Exited {
+                        exit_code: mount_exit,
+                    },
+                    1,
+                    guest_control_proto::ExecCapturedOutput::Captured {
+                        bytes: b"",
+                        truncated: false,
+                    },
+                    guest_control_proto::ExecCapturedOutput::Captured {
+                        bytes: b"",
+                        truncated: false,
+                    },
+                    "",
+                )
+                .unwrap();
+                guest
+                    .write_all(
+                        &guest_control_proto::encode(
+                            guest_control_proto::MSG_WORKSPACE_DRIVE_MOUNT_RESULT,
+                            mount.seq,
+                            &payload,
+                        )
+                        .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+            }
+            guest
+        };
+        let (result, guest) = tokio::time::timeout(Duration::from_secs(5), async {
+            tokio::join!(operation, respond)
+        })
+        .await
+        .expect("workspace handoff must finish at the supplied terminal boundary");
+        assert_eq!(
+            result.is_ok(),
+            unmount_exit == 0 && patch_status == 204 && mount_exit == 0,
+            "handoff result: {result:?}"
+        );
+        let requests = api.drain_requests();
+        if unmount_exit != 0 {
+            let error = result.unwrap_err();
+            assert!(error.to_string().contains("unmount failed"), "{error}");
+            assert!(requests.is_empty());
+            assert!(source.exists());
+            assert_eq!(std::fs::metadata(&target).unwrap().ino(), old_inode);
+        } else {
+            assert!(!source.exists());
+            assert_eq!(std::fs::metadata(&target).unwrap().ino(), source_inode);
+            assert_eq!(&std::fs::read(&target).unwrap()[..3], b"new");
+            assert_eq!(requests.len(), 1);
+            assert_eq!(requests[0].method, "PATCH");
+            assert_eq!(requests[0].path, "/drives/workspace");
+            assert_eq!(
+                mock_request_body_json(&requests[0]),
+                serde_json::json!({"drive_id":"workspace","path_on_host":target})
+            );
+            if patch_status != 204 {
+                assert!(
+                    result
+                        .unwrap_err()
+                        .to_string()
+                        .contains("replace workspace backing drive")
+                );
+            } else if mount_exit != 0 {
+                assert!(result.unwrap_err().to_string().contains("remount failed"));
+            }
+        }
+        // No extra generic mount, retry, or post-failure operation is emitted.
+        assert_eq!(
+            guest.try_read(&mut [0_u8; 1]).unwrap_err().kind(),
+            io::ErrorKind::WouldBlock
+        );
+    }
+
+    #[tokio::test]
+    async fn replacement_preserves_active_path_and_only_patches_backing_image() {
+        exercise(0, 204, 0).await;
+    }
+
+    #[tokio::test]
+    async fn busy_unmount_preserves_both_images_without_sending_patch() {
+        exercise(32, 204, 0).await;
+    }
+
+    #[tokio::test]
+    async fn rejected_patch_is_terminal_after_exclusive_image_transfer() {
+        exercise(0, 400, 0).await;
+    }
+
+    #[tokio::test]
+    async fn native_remount_failure_is_terminal_without_retry() {
+        exercise(0, 204, 32).await;
+    }
+
+    #[tokio::test]
+    async fn invalid_source_is_rejected_before_guest_or_image_mutation() {
+        for scenario in ["copy", "size", "symlink", "shared-inode", "state"] {
+            let (_root, mut sandbox, source) = fixture();
+            let target = sandbox.sandbox_paths.workspace_image();
+            let old_inode = std::fs::metadata(&target).unwrap().ino();
+            let mut input = source.clone();
+            match scenario {
+                "size" => std::fs::write(&source, b"too small").unwrap(),
+                "symlink" => {
+                    input = source.with_extension("link");
+                    std::os::unix::fs::symlink(&source, &input).unwrap();
+                }
+                "shared-inode" => {
+                    std::fs::hard_link(&source, source.with_extension("link")).unwrap()
+                }
+                "state" => sandbox.publish_state(SandboxState::Created),
+                _ => {}
+            }
+            let seed = if scenario == "copy" {
+                sandbox::WorkspaceDriveSeedImage::Copy(input)
+            } else {
+                sandbox::WorkspaceDriveSeedImage::Move(input)
+            };
+            let error = sandbox.replace_workspace_drive(seed).await.unwrap_err();
+            assert!(
+                !error.to_string().contains("guest connection"),
+                "{scenario}: {error}"
+            );
+            assert!(source.exists());
+            assert_eq!(std::fs::metadata(&target).unwrap().ino(), old_inode);
+        }
+    }
+}
+
 #[tokio::test]
 async fn verify_session_history_identity_maps_fixed_request_and_terminal_metadata() {
     let sandbox = test_sandbox_with_state(SandboxState::Running);

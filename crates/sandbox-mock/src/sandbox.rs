@@ -880,6 +880,36 @@ impl Sandbox for MockSandbox {
         Ok(apply_exec_output_limits(result, EXEC_OUTPUT_LIMIT_1_MIB))
     }
 
+    #[cfg(feature = "workspace-handoff-study")]
+    async fn replace_workspace_drive(&mut self, seed: WorkspaceDriveSeedImage) -> Result<()> {
+        let error = |message: String| SandboxError::Operation {
+            operation: SandboxOperation::MountWorkspaceDrive,
+            reason: SandboxOperationReason::Other,
+            message,
+        };
+        let overrides = self
+            .overrides
+            .as_ref()
+            .ok_or_else(|| error("workspace handoff mock is not configured".into()))?;
+        overrides
+            .workspace_handoff_calls
+            .lock_ignoring_poison()
+            .push(seed.clone());
+        wait_lifecycle_gate(&overrides.workspace_handoff_gate).await;
+        let target = overrides
+            .workspace_handoff_target
+            .lock_ignoring_poison()
+            .clone()
+            .ok_or_else(|| error("workspace handoff mock is not configured".into()))?;
+        let WorkspaceDriveSeedImage::Move(source) = seed else {
+            return Err(error("workspace handoff mock requires Move".into()));
+        };
+        if let Some(parent) = target.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| error(e.to_string()))?;
+        }
+        std::fs::rename(source, target).map_err(|e| error(e.to_string()))
+    }
+
     async fn mount_workspace_drive(&self) -> Result<ExecResult> {
         *self.workspace_drive_mount_calls.lock_ignoring_poison() += 1;
         if let Some(overrides) = &self.overrides {

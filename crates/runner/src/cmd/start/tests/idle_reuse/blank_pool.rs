@@ -692,10 +692,12 @@ async fn incompatible_profile_fresh_creates_without_consuming_blank_inventory() 
 }
 
 #[tokio::test(start_paused = true)]
-async fn workspace_cache_hit_takes_priority_over_compatible_blank_inventory() {
+async fn workspace_cache_with_blank_inventory_uses_configured_admission_policy() {
     let mut profiles = test_profiles();
     profiles.get_mut("vm0/default").unwrap().workspace_disk_mb = 16;
-    let (mut config, env) = mock_run_config(profiles, 16, 32_768, 8);
+    let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+    let (mut config, env) =
+        mock_run_config_with_overrides(profiles, 16, 32_768, 8, Arc::clone(&overrides));
     let idle_pool = Arc::clone(&config.shared.idle_pool);
     let runner_paths = RunnerPaths::new(config.paths.base_dir.clone());
     let workspace_cache = WorkspaceImageCache::shared(
@@ -720,6 +722,9 @@ async fn workspace_cache_hit_takes_priority_over_compatible_blank_inventory() {
     wait_idle_pool_len(&idle_pool, 1, Duration::from_secs(5)).await;
     let blank_sandbox_id = idle_pool.lock().await.status_snapshot().blank_sandboxes[0].sandbox_id;
 
+    #[cfg(feature = "workspace-handoff-study")]
+    overrides.set_workspace_handoff_target(runner_paths.active_workspace_image(&blank_sandbox_id));
+
     let run_id = RunId::new_v4();
     let mut context = context_with_session(run_id, "workspace-priority-session");
     context.reuse_key = Some(reuse_key.into());
@@ -736,14 +741,22 @@ async fn workspace_cache_hit_takes_priority_over_compatible_blank_inventory() {
         completion.workspace_reuse_result,
         Some(WorkspaceReuseResult::Reused)
     );
-    assert_ne!(completion.sandbox_id, Some(blank_sandbox_id));
-    assert_eq!(idle_pool.lock().await.blank_len(), 1);
+    #[cfg(not(feature = "workspace-handoff-study"))]
+    {
+        assert_ne!(completion.sandbox_id, Some(blank_sandbox_id));
+        assert_eq!(idle_pool.lock().await.blank_len(), 1);
+    }
+    #[cfg(feature = "workspace-handoff-study")]
+    {
+        assert_eq!(completion.sandbox_id, Some(blank_sandbox_id));
+        assert_eq!(overrides.workspace_handoff_calls().len(), 1);
+    }
 
     shutdown(&env, run_handle).await;
 }
 
 #[tokio::test]
-async fn claimed_workspace_cache_metadata_takes_priority_over_reserved_blank() {
+async fn claimed_workspace_cache_with_reserved_blank_uses_configured_admission_policy() {
     use httpmock::prelude::*;
 
     let server = MockServer::start_async().await;
@@ -756,7 +769,9 @@ async fn claimed_workspace_cache_metadata_takes_priority_over_reserved_blank() {
         .await;
     let mut profiles = test_profiles();
     profiles.get_mut("vm0/default").unwrap().workspace_disk_mb = 16;
-    let (mut config, env) = mock_run_config(profiles, 16, 32_768, 8);
+    let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+    let (mut config, env) =
+        mock_run_config_with_overrides(profiles, 16, 32_768, 8, Arc::clone(&overrides));
     let idle_pool = Arc::clone(&config.shared.idle_pool);
     let runner_paths = RunnerPaths::new(config.paths.base_dir.clone());
     let workspace_cache = WorkspaceImageCache::shared(
@@ -781,6 +796,9 @@ async fn claimed_workspace_cache_metadata_takes_priority_over_reserved_blank() {
     wait_idle_pool_len(&idle_pool, 1, Duration::from_secs(5)).await;
     let blank_sandbox_id = idle_pool.lock().await.status_snapshot().blank_sandboxes[0].sandbox_id;
 
+    #[cfg(feature = "workspace-handoff-study")]
+    overrides.set_workspace_handoff_target(runner_paths.active_workspace_image(&blank_sandbox_id));
+
     let run_id = RunId::new_v4();
     let mut context = history_context(run_id, server.url("/history"), history);
     context.reuse_key = Some(reuse_key.into());
@@ -801,7 +819,13 @@ async fn claimed_workspace_cache_metadata_takes_priority_over_reserved_blank() {
         completion.workspace_reuse_result,
         Some(WorkspaceReuseResult::Reused)
     );
+    #[cfg(not(feature = "workspace-handoff-study"))]
     assert_ne!(completion.sandbox_id, Some(blank_sandbox_id));
+    #[cfg(feature = "workspace-handoff-study")]
+    {
+        assert_eq!(completion.sandbox_id, Some(blank_sandbox_id));
+        assert_eq!(overrides.workspace_handoff_calls().len(), 1);
+    }
 
     shutdown(&env, run_handle).await;
     history_mock.assert_calls_async(1).await;

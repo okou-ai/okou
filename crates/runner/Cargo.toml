@@ -3,6 +3,14 @@ name = "runner"
 version = "0.197.1"
 edition.workspace = true
 
+[features]
+# Opt-in isolated study only; ordinary Runner builds retain current admission.
+workspace-handoff-study = [
+    "sandbox/workspace-handoff-study",
+    "sandbox-firecracker/workspace-handoff-study",
+    "sandbox-mock/workspace-handoff-study",
+]
+
 [dependencies]
 ably-subscriber = { workspace = true }
 api-contracts.workspace = true

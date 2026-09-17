@@ -1378,6 +1378,11 @@ impl PreparedGuestRuntime {
 }
 
 impl RunControls {
+    #[cfg(feature = "workspace-handoff-study")]
+    pub(super) fn require_guest_state_preparation(&mut self) {
+        self.guest_state_prepared = false;
+    }
+
     pub(super) async fn prepare_codex_model_catalog_prefetch(
         &mut self,
         sandbox: &dyn Sandbox,

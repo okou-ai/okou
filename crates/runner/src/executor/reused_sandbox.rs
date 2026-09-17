@@ -38,6 +38,76 @@ pub(super) async fn execute_reused_sandbox(
     telemetry: &mut JobTelemetry,
     mut inputs: PreparedRunInputs,
 ) -> ExecuteOutcome {
+    #[cfg(feature = "workspace-handoff-study")]
+    let mut run = run;
+    #[cfg(feature = "workspace-handoff-study")]
+    let study_checkout = run.kind == IdleSandboxKind::Blank
+        && run.workspace_image.is_none()
+        && config.workspace_cache.is_some();
+    #[cfg(feature = "workspace-handoff-study")]
+    if study_checkout
+        && let Err(error) = super::workspace_handoff_study::prepare(
+            &mut run,
+            context,
+            config,
+            telemetry,
+            &mut inputs,
+        )
+        .await
+    {
+        inputs
+            .controls
+            .session_history_restore_plan
+            .cancel_and_drain()
+            .await;
+        let cancelled = inputs.controls.cancel.is_cancelled();
+        // This study stage precedes proxy registration. Destroy its owned VM
+        // before releasing the exclusive cached-image lease, and never enter
+        // normal finalization's image-promotion path after a partial handoff.
+        let destroyed = destroy_sandbox_panic_safe(run.factory, run.sandbox).await;
+        if let Some(lease) = run.workspace_image {
+            if let Err(invalidate_error) = lease
+                .invalidate(context.run_id, "workspace_handoff_study_failed")
+                .await
+            {
+                warn!(run_id = %context.run_id, error = %invalidate_error,
+                    "failed to invalidate terminal study workspace");
+            }
+            drop(lease);
+        }
+        telemetry.record(
+            "runner_workspace_handoff_failure_destroy",
+            Duration::ZERO,
+            destroyed.is_completed(),
+            (!destroyed.is_completed()).then_some("cleanup_uncertain"),
+        );
+        let mut outcome = ExecuteOutcome::preparation_failure(error);
+        if cancelled {
+            outcome.mark_cancelled();
+        }
+        return outcome;
+    }
+    #[cfg(feature = "workspace-handoff-study")]
+    let handoff_storage = run
+        .workspace_image
+        .as_ref()
+        .and_then(WorkspaceImageLease::previous_storage)
+        .cloned();
+    #[cfg(feature = "workspace-handoff-study")]
+    let start = if study_checkout {
+        RunStart {
+            workspace_reuse_result: super::sandbox_run::final_workspace_reuse_result(
+                run.workspace_image
+                    .as_ref()
+                    .map(WorkspaceImageLease::result),
+                false,
+            ),
+            prev_storage: handoff_storage.as_ref(),
+            ..start
+        }
+    } else {
+        start
+    };
     info!(run_id = %context.run_id, sandbox_id = %run.sandbox.id(), "reusing kept-alive sandbox");
     let prepare_started = Instant::now();
     let prepared_storage = prepare_storage(
@@ -101,7 +171,17 @@ pub(super) async fn execute_reused_sandbox(
         network_log_session,
         prepared_guest_runtime: None,
     };
-    if let Some(PreparedGuestRuntime::SandboxUnusable(error)) = prepared_guest_runtime {
+    // A consumed cached drive must never enter the ordinary Blank replacement
+    // fallback. The common execution owner closes its prepared work and destroys
+    // the candidate on prefetch failure instead.
+    let allow_blank_replacement = !cfg!(feature = "workspace-handoff-study")
+        || !run
+            .workspace_image
+            .as_ref()
+            .is_some_and(WorkspaceImageLease::is_cache_hit);
+    if allow_blank_replacement
+        && let Some(PreparedGuestRuntime::SandboxUnusable(error)) = prepared_guest_runtime
+    {
         // Drop the retired blank's lease without publishing or freezing its image.
         drop(run.workspace_image);
         return replace_unusable_blank(
@@ -214,6 +294,11 @@ async fn replace_unusable_blank(
     telemetry.record(BLANK_PREFETCH_REPLACEMENT, Duration::ZERO, true, None);
     info!(run_id = %context.run_id, %sandbox_id,
         "retrying retired blank with Codex prefetch disabled");
+    // A study cache miss can carry the same admission permit as a fresh run.
+    // The retired VM is gone; release it before fresh preparation reacquires,
+    // otherwise a full-size request would wait on its own permit forever.
+    #[cfg(feature = "workspace-handoff-study")]
+    drop(inputs.controls.pre_spawn_admission_lease.take());
     let cancel = inputs.controls.cancel.clone();
     let result = execute_new_sandbox_with_prepared_notifier(
         factory,

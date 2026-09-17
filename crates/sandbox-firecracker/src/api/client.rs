@@ -334,6 +334,24 @@ impl ApiClient {
         .await
     }
 
+    /// Replace only the workspace backing path, retaining the current limiters.
+    #[cfg(feature = "workspace-handoff-study")]
+    pub(crate) async fn replace_workspace_drive_path(
+        &self,
+        path_on_host: &Path,
+    ) -> Result<(), ApiError> {
+        self.send_json(
+            Method::PATCH,
+            "/drives/workspace",
+            &serde_json::json!({
+                "drive_id": "workspace",
+                "path_on_host": path_on_host,
+            }),
+            REQUEST_TIMEOUT,
+        )
+        .await
+    }
+
     /// Configure a network interface via PUT /network-interfaces/{iface_id}.
     pub async fn configure_network_interface(
         &self,

@@ -2751,6 +2751,92 @@ impl Sandbox for FirecrackerSandbox {
         .await
     }
 
+    #[cfg(feature = "workspace-handoff-study")]
+    async fn replace_workspace_drive(
+        &mut self,
+        seed: sandbox::WorkspaceDriveSeedImage,
+    ) -> sandbox::Result<()> {
+        use std::os::unix::fs::MetadataExt;
+
+        let operation = SandboxOperation::ReplaceWorkspaceDrive;
+        let error = |message: String| SandboxError::Operation {
+            operation,
+            reason: SandboxOperationReason::Other,
+            message,
+        };
+        if self.current_state() != SandboxState::Running || self.is_parked {
+            return Err(self.not_running_error(operation));
+        }
+        let sandbox::WorkspaceDriveSeedImage::Move(source) = seed else {
+            return Err(error(
+                "workspace handoff requires an exclusive Move seed".into(),
+            ));
+        };
+        let drive = self
+            .config
+            .workspace_drive
+            .as_ref()
+            .ok_or_else(|| error("workspace handoff requires an existing drive".into()))?;
+        if drive.seed_image.is_some() {
+            return Err(error("workspace handoff requires a Blank workspace".into()));
+        }
+        let target = self.sandbox_paths.workspace_image();
+        let expected_size = u64::from(drive.size_mb) * 1024 * 1024;
+        let source_meta = tokio::fs::symlink_metadata(&source)
+            .await
+            .map_err(|e| error(format!("inspect workspace handoff source: {e}")))?;
+        let target_meta = tokio::fs::symlink_metadata(&target)
+            .await
+            .map_err(|e| error(format!("inspect active workspace image: {e}")))?;
+        if !source_meta.is_file()
+            || !target_meta.is_file()
+            || source_meta.len() != expected_size
+            || target_meta.len() != expected_size
+            || source_meta.dev() != target_meta.dev()
+            || source_meta.ino() == target_meta.ino()
+            || source_meta.nlink() != 1
+        {
+            return Err(error(
+                "handoff requires distinct regular images of the configured size on one filesystem and an unshared source inode".into(),
+            ));
+        }
+        for path in [&source, &target] {
+            if tokio::fs::canonicalize(path)
+                .await
+                .map_err(|e| error(format!("resolve workspace handoff path: {e}")))?
+                != *path
+            {
+                return Err(error("workspace handoff paths must be canonical".into()));
+            }
+        }
+        let client = ApiClient::new(&self.sock_paths.api_sock())
+            .map_err(|e| error(format!("workspace handoff API client: {e}")))?;
+        let unmount = self
+            .exec(&ExecRequest {
+                cmd: "set -eu; cd /; umount /home/user/workspace; blockdev --flushbufs /dev/vdb; ! mountpoint -q /home/user/workspace",
+                timeout: Duration::from_secs(30),
+                env: &[],
+                sudo: true,
+                expected_exit_codes: &[],
+                stdin_bytes: None,
+                output_limits: sandbox::EXEC_OUTPUT_LIMIT_64_KIB,
+            })
+            .await?;
+        ensure_workspace_handoff_exec_success("unmount", unmount)?;
+        // The snapshot bind mount retains the old inode. PATCH opens this
+        // canonical active-image path after the atomic transfer, so existing
+        // Runner promotion and terminal cleanup own the new image as usual.
+        // Same-filesystem rename is synchronous so cancellation cannot leave a
+        // detached filesystem mutation racing the caller's terminal destroy.
+        std::fs::rename(&source, &target)
+            .map_err(|e| error(format!("transfer workspace handoff image: {e}")))?;
+        client
+            .replace_workspace_drive_path(&target)
+            .await
+            .map_err(|e| error(format!("replace workspace backing drive: {e}")))?;
+        ensure_workspace_handoff_exec_success("remount", self.mount_workspace_drive().await?)
+    }
+
     async fn verify_session_history_identity(
         &self,
         request: &SessionHistoryIdentityVerifyRequest<'_>,
@@ -3057,6 +3143,26 @@ fn storage_manifest_exec_result(result: GuestStorageManifestResult) -> ExecResul
         stdout_truncated: result.stdout_truncated,
         stderr_truncated: result.stderr_truncated,
     }
+}
+
+#[cfg(feature = "workspace-handoff-study")]
+fn ensure_workspace_handoff_exec_success(stage: &str, result: ExecResult) -> sandbox::Result<()> {
+    if result.termination != (sandbox::ExecTermination::Exited { exit_code: 0 })
+        || result.stdout_truncated
+        || result.stderr_truncated
+    {
+        return Err(SandboxError::Operation {
+            operation: SandboxOperation::ReplaceWorkspaceDrive,
+            reason: SandboxOperationReason::Guest,
+            message: format!(
+                "workspace handoff {stage} failed: {:?}: {}: {}",
+                result.termination,
+                String::from_utf8_lossy(&result.stderr),
+                result.diagnostic,
+            ),
+        });
+    }
+    Ok(())
 }
 
 fn workspace_drive_mount_exec_result(result: WorkspaceDriveMountResult) -> ExecResult {

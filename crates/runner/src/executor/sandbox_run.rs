@@ -997,7 +997,7 @@ pub(super) async fn prepare_workspace_image(
     Some(lease)
 }
 
-async fn resolve_fresh_session_history_restore_plan(
+pub(super) async fn resolve_fresh_session_history_restore_plan(
     plan: SessionHistoryRestorePlan,
     workspace_image: Option<&WorkspaceImageLease>,
     context: &ExecutionContext,
@@ -1159,7 +1159,7 @@ fn workspace_image_prepare_error(result: WorkspaceCacheCheckoutResult) -> Option
     }
 }
 
-fn final_workspace_reuse_result(
+pub(super) fn final_workspace_reuse_result(
     checkout_result: Option<WorkspaceCacheCheckoutResult>,
     used_workspace_fallback: bool,
 ) -> WorkspaceReuseResult {

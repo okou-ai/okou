@@ -142,6 +142,9 @@ pub enum SandboxOperation {
     CleanupCodexSession,
     /// [`Sandbox::mount_workspace_drive`](crate::Sandbox::mount_workspace_drive).
     MountWorkspaceDrive,
+    /// Experimental replacement of an exclusively owned workspace drive.
+    #[cfg(feature = "workspace-handoff-study")]
+    ReplaceWorkspaceDrive,
     /// [`GuestProcessControlHandle::control`](crate::GuestProcessControlHandle::control).
     ProcessControl,
     /// [`Sandbox::wait_process`](crate::Sandbox::wait_process).
@@ -160,6 +163,8 @@ impl fmt::Display for SandboxOperation {
             Self::VerifySessionHistoryIdentity => f.write_str("verify session history identity"),
             Self::CleanupCodexSession => f.write_str("clean up Codex session"),
             Self::MountWorkspaceDrive => f.write_str("mount workspace drive"),
+            #[cfg(feature = "workspace-handoff-study")]
+            Self::ReplaceWorkspaceDrive => f.write_str("replace workspace drive"),
             Self::ProcessControl => f.write_str("process control"),
             Self::WaitProcess => f.write_str("wait process"),
         }

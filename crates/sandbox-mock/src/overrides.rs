@@ -296,6 +296,12 @@ pub(crate) struct FactoryOverrideState {
 /// override set. Sandbox-local observations remain available through
 /// [`MockSandbox`](crate::MockSandbox) accessors.
 pub struct MockSandboxOverrides {
+    #[cfg(feature = "workspace-handoff-study")]
+    pub(crate) workspace_handoff_target: Mutex<Option<std::path::PathBuf>>,
+    #[cfg(feature = "workspace-handoff-study")]
+    pub(crate) workspace_handoff_calls: Mutex<Vec<WorkspaceDriveSeedImage>>,
+    #[cfg(feature = "workspace-handoff-study")]
+    pub(crate) workspace_handoff_gate: Mutex<Option<MockLifecycleGate>>,
     pub(crate) exec: ExecOverrideState,
     pub(crate) file: FileOverrideState,
     pub(crate) lifecycle: LifecycleOverrideState,
@@ -312,12 +318,36 @@ impl MockSandboxOverrides {
     /// [`MockSandboxFactory::with_overrides`](crate::MockSandboxFactory::with_overrides).
     pub fn new() -> Self {
         Self {
+            #[cfg(feature = "workspace-handoff-study")]
+            workspace_handoff_target: Mutex::new(None),
+            #[cfg(feature = "workspace-handoff-study")]
+            workspace_handoff_calls: Mutex::new(Vec::new()),
+            #[cfg(feature = "workspace-handoff-study")]
+            workspace_handoff_gate: Mutex::new(None),
             exec: ExecOverrideState::default(),
             file: FileOverrideState::default(),
             lifecycle: LifecycleOverrideState::default(),
             process: ProcessOverrideState::default(),
             factory: FactoryOverrideState::default(),
         }
+    }
+
+    /// Explicitly enable the isolated study's disk move for this mock instance.
+    #[cfg(feature = "workspace-handoff-study")]
+    pub fn set_workspace_handoff_target(&self, path: std::path::PathBuf) {
+        *self.workspace_handoff_target.lock_ignoring_poison() = Some(path);
+    }
+
+    /// Observe requested study handoffs, including failed requests.
+    #[cfg(feature = "workspace-handoff-study")]
+    pub fn workspace_handoff_calls(&self) -> Vec<WorkspaceDriveSeedImage> {
+        self.workspace_handoff_calls.lock_ignoring_poison().clone()
+    }
+
+    /// Block the study operation before applying its configured disk move.
+    #[cfg(feature = "workspace-handoff-study")]
+    pub fn set_workspace_handoff_gate(&self, gate: MockLifecycleGate) {
+        *self.workspace_handoff_gate.lock_ignoring_poison() = Some(gate);
     }
 
     /// Create overrides that make `wait_process` return a custom exit code.

@@ -44,6 +44,8 @@ mod session_restore;
 mod storage;
 mod storage_baseline_observation;
 mod telemetry;
+#[cfg(feature = "workspace-handoff-study")]
+mod workspace_handoff_study;
 mod workspace_session_history_materializer;
 
 pub(crate) use crate::restored_session_identity::RestoredSessionIdentity;
@@ -832,6 +834,10 @@ pub(crate) async fn execute_job_reuse_with_hooks(
 
     let workspace_image = match (config.workspace_cache.as_ref(), workspace_image) {
         (_, Some(workspace_image)) => Some(workspace_image),
+        // The study checks out the cached image under fresh pre-spawn admission
+        // after validation, retaining the selected Blank's canonical identity.
+        #[cfg(feature = "workspace-handoff-study")]
+        (Some(_), None) if kind == IdleSandboxKind::Blank => None,
         (Some(cache), None) => Some(
             cache
                 .lease_active(WorkspaceImageActiveLeaseRequest {

@@ -3,6 +3,9 @@ name = "sandbox-firecracker"
 version = "0.43.1"
 edition.workspace = true
 
+[features]
+workspace-handoff-study = ["sandbox/workspace-handoff-study"]
+
 [dependencies]
 async-trait.workspace = true
 futures-util = { workspace = true, features = ["async-await", "async-await-macro", "std"] }

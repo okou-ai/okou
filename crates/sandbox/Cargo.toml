@@ -3,6 +3,9 @@ name = "sandbox"
 version = "0.23.1"
 edition.workspace = true
 
+[features]
+workspace-handoff-study = []
+
 [dependencies]
 async-trait.workspace = true
 serde = { workspace = true, features = ["derive", "std"] }
