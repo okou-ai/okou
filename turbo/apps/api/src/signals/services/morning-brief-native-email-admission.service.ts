@@ -25,7 +25,7 @@ import { lockMorningBriefNativeSchedule } from "./morning-brief-native-schedule.
  */
 export const MORNING_BRIEF_RESULT_EMAIL_TEMPLATE = "morning-brief-result";
 
-export type NativeMorningBriefEmailAdmission =
+type NativeMorningBriefEmailAdmission =
   | { readonly kind: "admitted" }
   | { readonly kind: "rejected"; readonly reason: string }
   /** No usable live-owner evidence this pass. Nothing is sent or failed. */

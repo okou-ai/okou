@@ -39,7 +39,7 @@ const log = logger("MorningBriefNativePipeline");
  * engine and never invokes a preview HTTP route.
  */
 
-export type MorningBriefDrainVerdict =
+type MorningBriefDrainVerdict =
   | { readonly kind: "proven" }
   | { readonly kind: "unresolved"; readonly reason: string };
 
@@ -66,7 +66,7 @@ export type MorningBriefDrainVerdict =
  * It deliberately does not accept `automation.enabled = false`, an empty
  * outbox, a completed agent status or one expired TTL as proof.
  */
-export async function proveLegacyMorningBriefDrain(
+async function proveLegacyMorningBriefDrain(
   db: ReadonlyDb,
   owner: MorningBriefMemberIdentity,
   schedule: MorningBriefNativeScheduleRow | undefined,
@@ -135,7 +135,7 @@ export async function proveLegacyMorningBriefDrain(
  * an accepted result whose delivery obligation is still pending. Either keeps
  * the rollback draining rather than opening legacy alongside it.
  */
-export async function proveNativeMorningBriefDrain(
+async function proveNativeMorningBriefDrain(
   db: ReadonlyDb,
   owner: MorningBriefMemberIdentity,
 ): Promise<MorningBriefDrainVerdict> {
@@ -167,7 +167,7 @@ export async function proveNativeMorningBriefDrain(
  * back as a healthy skip, and an invocation whose outcome stayed unknown is
  * never reported as zero spend or retried with a second POST.
  */
-export function nativeSettlementOfGeneration(
+function nativeSettlementOfGeneration(
   execution: MorningBriefGenerationExecution,
 ): NativeSlotExecution {
   switch (execution.kind) {

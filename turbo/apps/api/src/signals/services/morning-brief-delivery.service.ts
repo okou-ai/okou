@@ -85,7 +85,7 @@ export type MorningBriefDeliveryRejection =
   /** The member's installation has no Agent to own a destination thread. */
   | "destination-unavailable";
 
-export interface MorningBriefDeliveryOutcome {
+interface MorningBriefDeliveryOutcome {
   readonly kind: "delivered" | "already-delivered";
   readonly chatThreadId: string;
   readonly chatEventId: string;
@@ -93,7 +93,7 @@ export interface MorningBriefDeliveryOutcome {
   readonly deliveredAt: string;
 }
 
-export type MorningBriefDeliveryResult =
+type MorningBriefDeliveryResult =
   | MorningBriefDeliveryOutcome
   | {
       readonly kind: "rejected";
@@ -124,7 +124,7 @@ function rejectionOf(reason: string): MorningBriefDeliveryRejection {
 }
 
 /** Which purpose's result a delivery may consume. */
-export type MorningBriefDeliveryPurpose =
+type MorningBriefDeliveryPurpose =
   (typeof morningBriefDeliveries.$inferSelect)["executionPurpose"];
 
 /**
@@ -136,12 +136,12 @@ export type MorningBriefDeliveryPurpose =
  * re-enable, an Agent or thread replacement, or a transfer all bump the epoch,
  * and an occurrence admitted before that must not deliver.
  */
-export interface MorningBriefNativeDeliveryAuthority {
+interface MorningBriefNativeDeliveryAuthority {
   readonly ownerEpoch: number;
   readonly membershipId: string;
 }
 
-export interface MorningBriefDeliveryRequest {
+interface MorningBriefDeliveryRequest {
   readonly orgId: string;
   readonly userId: string;
   /** The opaque attempt the generation returned. Never an owner. */
@@ -1029,7 +1029,7 @@ export const deliverMorningBriefResult$ = command(
 );
 
 /** The owner scope a cleanup transaction revokes delivery ownership for. */
-export type MorningBriefDeliveryRevocationScope =
+type MorningBriefDeliveryRevocationScope =
   | {
       readonly kind: "membership";
       readonly orgId: string;

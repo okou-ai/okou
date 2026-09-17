@@ -121,7 +121,7 @@ const GENERATION_PROVIDER = "openrouter";
  * reservation, single-POST, cost and validation engine and can never read each
  * other's results, because every read filters on the purpose it asked for.
  */
-export type MorningBriefExecutionPurpose =
+type MorningBriefExecutionPurpose =
   (typeof morningBriefGenerations.$inferSelect)["executionPurpose"];
 
 export type MorningBriefGenerationConflict =

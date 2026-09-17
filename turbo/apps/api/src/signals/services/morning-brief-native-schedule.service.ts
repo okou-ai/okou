@@ -45,13 +45,13 @@ export type MorningBriefNativeOccurrenceRow =
   typeof morningBriefNativeOccurrences.$inferSelect;
 
 /** Any reader, including a transaction, that can read the native state. */
-export type MorningBriefNativeReader = Pick<ReadonlyDb, "select">;
+type MorningBriefNativeReader = Pick<ReadonlyDb, "select">;
 
 /** The smallest writer this module needs. A transaction always satisfies it. */
-export type MorningBriefNativeWriter = Tx;
+type MorningBriefNativeWriter = Tx;
 
 /** How long one tick may hold a claimed slot before another may reclaim it. */
-export const NATIVE_OCCURRENCE_LEASE_MS = 5 * 60 * 1000;
+const NATIVE_OCCURRENCE_LEASE_MS = 5 * 60 * 1000;
 
 /**
  * The finite pre-reservation configuration deferral.
@@ -62,25 +62,25 @@ export const NATIVE_OCCURRENCE_LEASE_MS = 5 * 60 * 1000;
  * `not-configured` and schedules the next future occurrence, so a broken
  * configuration can never hot-loop and never silently disables the member.
  */
-export const NATIVE_CONFIGURATION_DEFER_LIMIT = 3;
-export const NATIVE_CONFIGURATION_DEFER_MS = 15 * 60 * 1000;
+const NATIVE_CONFIGURATION_DEFER_LIMIT = 3;
+const NATIVE_CONFIGURATION_DEFER_MS = 15 * 60 * 1000;
 
 /**
  * How long a drain may stay unresolved before it is reported rather than held
  * silently. The phase does not advance on expiry: an expired deadline is an
  * operational signal, never proof that the old writers drained.
  */
-export const NATIVE_DRAIN_REPORT_AFTER_MS = 60 * 60 * 1000;
+const NATIVE_DRAIN_REPORT_AFTER_MS = 60 * 60 * 1000;
 
 /** The materialization refused, with the reason a caller can act on. */
-export type MorningBriefMaterializationRefusal =
+type MorningBriefMaterializationRefusal =
   | "not-installed"
   | "installation-pending"
   | "installation-inconsistent"
   | "missing-timezone"
   | "missing-membership";
 
-export type MorningBriefMaterializationResult =
+type MorningBriefMaterializationResult =
   | {
       readonly kind: "materialized";
       readonly row: MorningBriefNativeScheduleRow;
@@ -140,7 +140,7 @@ export async function lockMorningBriefNativeSchedule(
  * a timezone or cron edit that arrived during an in-flight execution takes
  * effect on that execution's one settlement rather than by cancelling it.
  */
-export function computeNativeNextRunAt(args: {
+function computeNativeNextRunAt(args: {
   readonly enabled: boolean;
   readonly cronExpression: string | null;
   readonly timezone: string;
@@ -267,7 +267,7 @@ export async function materializeMorningBriefNativeSchedule(
  * installation or catalog reconciliation. Every other phase keeps the existing
  * legacy behaviour untouched.
  */
-export type MorningBriefChoiceAuthority =
+type MorningBriefChoiceAuthority =
   | { readonly kind: "native"; readonly row: MorningBriefNativeScheduleRow }
   | { readonly kind: "legacy" };
 
@@ -282,7 +282,7 @@ export async function resolveMorningBriefChoiceAuthority(
 }
 
 /** What a logical-choice writer intends to change. */
-export interface MorningBriefLogicalChoicePatch {
+interface MorningBriefLogicalChoicePatch {
   readonly enabled?: boolean;
   readonly cronExpression?: string | null;
   readonly timezone?: string;
@@ -300,7 +300,7 @@ export interface MorningBriefLogicalChoicePatch {
   readonly expectedEpoch?: number;
 }
 
-export type MorningBriefChoiceApplication =
+type MorningBriefChoiceApplication =
   | { readonly kind: "applied"; readonly row: MorningBriefNativeScheduleRow }
   | { readonly kind: "stale"; readonly row: MorningBriefNativeScheduleRow }
   | { readonly kind: "absent" };
@@ -487,7 +487,7 @@ function scheduleOwnerForPhase(
 }
 
 /** The unsettled occurrence a member currently owes, if any. */
-export async function loadUnsettledOccurrence(
+async function loadUnsettledOccurrence(
   db: MorningBriefNativeReader,
   owner: MorningBriefMemberIdentity,
 ): Promise<MorningBriefNativeOccurrenceRow | undefined> {
@@ -553,7 +553,7 @@ export async function revokeMorningBriefNativeAuthority(
   return row;
 }
 
-export type MorningBriefTransitionResult =
+type MorningBriefTransitionResult =
   | { readonly kind: "unchanged"; readonly row: MorningBriefNativeScheduleRow }
   | {
       readonly kind: "transitioned";
@@ -1235,7 +1235,7 @@ export async function loadBootstrapCandidates(
  * choice is deliberately untouched: it is still what Settings shows, and the
  * rollback path restores the obligation from the current logical preference.
  */
-export async function closeLegacyMorningBriefAdmission(
+async function closeLegacyMorningBriefAdmission(
   tx: MorningBriefNativeWriter,
   automationId: string,
 ): Promise<void> {
@@ -1251,7 +1251,7 @@ export async function closeLegacyMorningBriefAdmission(
  * It writes the same instant the native row records, so exactly one owner holds
  * the member's next occurrence after the transaction commits.
  */
-export async function restoreLegacyMorningBriefAdmission(
+async function restoreLegacyMorningBriefAdmission(
   tx: MorningBriefNativeWriter,
   automationId: string,
   nextRunAt: Date | null,
@@ -1346,26 +1346,4 @@ export async function loadTransitionCandidates(
     .where(sql`true`)
     .orderBy(morningBriefNativeSchedules.updatedAt)
     .limit(args.limit);
-}
-
-/** Rows whose drain deadline lapsed, for bounded operational reporting only. */
-export async function loadUnresolvedDrains(
-  db: MorningBriefNativeReader,
-  args: { readonly now: Date; readonly limit: number },
-): Promise<readonly MorningBriefNativeScheduleRow[]> {
-  return await db
-    .select()
-    .from(morningBriefNativeSchedules)
-    .where(
-      and(
-        isNotNull(morningBriefNativeSchedules.drainDeadlineAt),
-        lte(morningBriefNativeSchedules.drainDeadlineAt, args.now),
-      ),
-    )
-    .limit(args.limit);
-}
-
-/** The current wall clock, isolated so settlement tests can pin it. */
-export function nativeScheduleNow(): Date {
-  return nowDate();
 }
