@@ -1,6 +1,6 @@
 # 017: Pi stable-context report and repair
 
-Migration 1157 creates empty additive stable-context tables. It intentionally
+Migration 1158 creates empty additive stable-context tables. It intentionally
 does not enumerate user x Agent x session combinations or materialize a
 production-wide cache. Normal authoritative source writes invalidate existing
 heads, and an exact request miss records bounded demand from captured immutable
@@ -15,7 +15,7 @@ five attempts. It does not create owner/variant combinations, synthesize
 credentials, read archives, compose prompts, change feature switches, deploy,
 or activate Pi.
 
-Run from `turbo/packages/db` only after migration 1157 is present:
+Run from `turbo/packages/db` only after migration 1158 is present:
 
 ```bash
 # Bounded dry-run/report (default).

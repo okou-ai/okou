@@ -27,6 +27,7 @@ import {
 } from "./usage-event-cleanup.service";
 import { closePiStableContextErasureSubject } from "./pi-stable-context-erasure.service";
 import { lockXResourceAdmission } from "./x-resource-usage-lifecycle";
+import { revokeMorningBriefDeliveryOwnership } from "./morning-brief-delivery.service";
 
 export const AGENT_LIFECYCLE_LOCK_TIMEOUT = "100ms";
 
@@ -241,6 +242,14 @@ export async function deleteClerkAgentLifecycleData(
       }
     }
     if (agentIds.length > 0) {
+      for (const agentId of agentIds) {
+        // The cascade would drop the association to this Agent's unsent native
+        // Morning Brief mail, so the intent goes first.
+        await revokeMorningBriefDeliveryOwnership(tx, {
+          kind: "agent",
+          agentId,
+        });
+      }
       await tx
         .delete(agents)
         .where(

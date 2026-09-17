@@ -520,6 +520,51 @@ async function urlPermission(args: {
 }
 
 /**
+ * Is this frozen scope still the authority it was admitted as?
+ *
+ * Four facts, none of which a cached request identity answers: the subjects are
+ * still open, the member still holds the *same* immutable Clerk membership
+ * generation, the canonical brief is still the same installed and enabled
+ * installation on the same Agent, and that Agent is still visible to them. A
+ * removal and rejoin issues a new membership id, and an unrelated enabled
+ * installation is not a substitute for the one this scope names.
+ *
+ * Connector-free on purpose: the unread Chat collection has no credential and
+ * no endpoint, but it decides exactly the same question, so both it and this
+ * module's own endpoint authority resolve it here rather than growing a second
+ * authorization engine.
+ */
+export async function morningBriefScopeIsCurrent(
+  args: {
+    readonly db: Db;
+    readonly clerk: ClerkClient;
+    readonly scope: MorningBriefCollectionScope;
+  },
+  signal: AbortSignal,
+): Promise<boolean> {
+  const { db, scope } = args;
+  if (!(await subjectIsWritable(db, scope))) {
+    return false;
+  }
+  signal.throwIfAborted();
+
+  // The member's current Clerk membership generation, not a cache row's
+  // presence. A removal, and a removal followed by a rejoin under a new id,
+  // both fail here.
+  const membershipId = await loadCurrentMembershipId(args.clerk, scope, signal);
+  signal.throwIfAborted();
+  if (membershipId === null || membershipId !== scope.membershipId) {
+    return false;
+  }
+
+  if (!(await ownershipIsUnchanged(db, scope))) {
+    return false;
+  }
+  signal.throwIfAborted();
+  return await agentIsVisible(db, scope);
+}
+
+/**
  * Every identity gate this source depends on, re-derived live.
  *
  * This never decides an endpoint: it answers "is this still the same member,
@@ -533,29 +578,12 @@ async function authorizeIdentity(
   signal: AbortSignal,
 ): Promise<IdentityOutcome> {
   const { db, scope, connectorSlug } = request;
-  if (!(await subjectIsWritable(db, scope))) {
-    return { kind: "revoked", reason: phaseReason(phase, "not-authorized") };
-  }
-  signal.throwIfAborted();
-
-  // The member's current Clerk membership generation, not a cache row's
-  // presence. A removal, and a removal followed by a rejoin under a new id,
-  // both fail here.
-  const membershipId = await loadCurrentMembershipId(
-    request.clerk,
-    scope,
-    signal,
-  );
-  signal.throwIfAborted();
-  if (membershipId === null || membershipId !== scope.membershipId) {
-    return { kind: "revoked", reason: phaseReason(phase, "not-authorized") };
-  }
-
-  if (!(await ownershipIsUnchanged(db, scope))) {
-    return { kind: "revoked", reason: phaseReason(phase, "not-authorized") };
-  }
-  signal.throwIfAborted();
-  if (!(await agentIsVisible(db, scope))) {
+  if (
+    !(await morningBriefScopeIsCurrent(
+      { db, clerk: request.clerk, scope },
+      signal,
+    ))
+  ) {
     return { kind: "revoked", reason: phaseReason(phase, "not-authorized") };
   }
   signal.throwIfAborted();

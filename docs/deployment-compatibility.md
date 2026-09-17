@@ -19,7 +19,7 @@ surfaces are on different versions.
 
 ## Pi stable-context schema rollout and rollback
 
-Migration 1157 adds `pi_stable_context_erasure_fences`,
+Migration 1158 adds `pi_stable_context_erasure_fences`,
 `pi_stable_context_generations`,
 `pi_stable_context_publications`, `pi_stable_context_heads`,
 `pi_stable_context_artifacts`, and `pi_stable_context_artifact_resources`. It creates empty tables only: it does
@@ -37,7 +37,7 @@ the same check. A refresh admitted before closure either finishes first and is
 subsequently cleaned up, or waits and observes the fence. The table is
 feature-local deletion finality: it does not register the dormant account-
 erasure bridge, retain the raw Clerk identifier, or authorize deletion of any
-other product data. Keep stable-context activation on hold until migration 1157
+other product data. Keep stable-context activation on hold until migration 1158
 and this API writer are present on every serving API instance.
 
 Mixed-version API operation is safe by construction. A new reader with no
