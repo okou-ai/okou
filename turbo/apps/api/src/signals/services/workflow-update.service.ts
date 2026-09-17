@@ -15,6 +15,7 @@ import {
 import type { WorkflowRow } from "./workflow-data.service";
 import {
   beginPiStableContextPublication,
+  piStableContextWorkflowInvalidationOptions,
   piStableContextWorkflowPublicationKey,
 } from "./pi-stable-context-generation.service";
 
@@ -82,6 +83,14 @@ export const updateWorkflow$ = command(
                 : {}),
             },
             piStableContextWorkflowPublicationKey(workflow.id),
+            piStableContextWorkflowInvalidationOptions({
+              kind: "upsert",
+              workflow: {
+                workflowId: workflow.id,
+                name: nextName,
+                officialDefinitionName: workflow.officialDefinitionName,
+              },
+            }),
           )
         : undefined;
     });

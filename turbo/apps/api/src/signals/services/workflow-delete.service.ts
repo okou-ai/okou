@@ -7,12 +7,18 @@ import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
 import { and, eq, sql } from "drizzle-orm";
 
+import type { Tx } from "../../lib/db-types";
 import { env } from "../../lib/env";
 import { writeDb$ } from "../external/db";
 import { reconcileAutomationEventWatches } from "./automation-event-watch-lifecycle.service";
 import { OFFICIAL_WORKFLOW_CATALOG_ACTIVATION_LOCK } from "./official-workflow-constants";
 import { purgeDeletedStoragePrefix$ } from "./storage-prefix-purge.service";
-import { invalidatePiStableContext } from "./pi-stable-context-generation.service";
+import {
+  invalidatePiStableContext,
+  piStableContextWorkflowInvalidationOptions,
+  piStableContextWorkflowPublicationKey,
+  retirePiStableContextPublication,
+} from "./pi-stable-context-generation.service";
 
 interface DeleteWorkflowInput {
   readonly orgId: string;
@@ -25,6 +31,46 @@ interface DeleteWorkflowInput {
 interface DeleteOrphanedWorkflowVolumeInput {
   readonly orgId: string;
   readonly workflowId: string;
+}
+
+async function retireDeletedWorkflowStableContext(
+  tx: Tx,
+  args: {
+    readonly orgId: string;
+    readonly workflow: {
+      readonly id: string;
+      readonly agentId: string;
+      readonly name: string;
+      readonly ownerUserId: string;
+      readonly visibility: "public" | "private";
+      readonly officialDefinitionName: string | null;
+    };
+  },
+): Promise<void> {
+  const scope = {
+    orgId: args.orgId,
+    agentId: args.workflow.agentId,
+    ...(args.workflow.visibility === "private"
+      ? { userId: args.workflow.ownerUserId }
+      : {}),
+  };
+  await retirePiStableContextPublication(
+    tx,
+    scope,
+    piStableContextWorkflowPublicationKey(args.workflow.id),
+  );
+  await invalidatePiStableContext(
+    tx,
+    scope,
+    piStableContextWorkflowInvalidationOptions({
+      kind: "delete",
+      workflow: {
+        workflowId: args.workflow.id,
+        name: args.workflow.name,
+        officialDefinitionName: args.workflow.officialDefinitionName,
+      },
+    }),
+  );
 }
 
 /**
@@ -119,6 +165,7 @@ export const deleteWorkflow$ = command(
         .select({
           id: workflows.id,
           agentId: workflows.agentId,
+          name: workflows.name,
           ownerUserId: workflows.ownerUserId,
           visibility: workflows.visibility,
           officialDefinitionName: workflows.officialDefinitionName,
@@ -165,12 +212,9 @@ export const deleteWorkflow$ = command(
         .where(eq(workflowAutomations.workflowId, workflow.id));
 
       await tx.delete(workflows).where(eq(workflows.id, workflow.id));
-      await invalidatePiStableContext(tx, {
+      await retireDeletedWorkflowStableContext(tx, {
         orgId: args.orgId,
-        agentId: workflow.agentId,
-        ...(workflow.visibility === "private"
-          ? { userId: workflow.ownerUserId }
-          : {}),
+        workflow,
       });
 
       const storageName = getCustomSkillStorageName(workflow.id);

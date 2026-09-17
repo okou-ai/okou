@@ -18,6 +18,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { env, mockEnv } from "../../../lib/env";
+import { mockNow } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import type { UsagePricingResolution } from "../../context/usage-pricing-resolution";
@@ -40,14 +41,17 @@ import {
   nativeCodexSseResponse,
 } from "./helpers/pi-responses";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
+import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { removePiInferenceFixture } from "../../../test-fixtures/pi-inference-lifecycle";
 
 const context = testContext();
 const billing = createBillingMediaApi(context);
+const workflows = createWorkflowsBddApi(context);
 const {
   api,
   bdd,
   chat,
+  misc,
   webhooks,
   entitledChatActor,
   configureBuiltInPiModel,
@@ -310,7 +314,9 @@ async function releaseDeferredPiRun(
 }
 
 describe("durable Pi API producer", () => {
-  it("uses write-published stable context on the first Run after an instruction update", async () => {
+  it("uses complete published context after permission expiry and revocation", async () => {
+    const capturedAt = Date.parse("2026-09-17T00:00:00.000Z");
+    mockNow(capturedAt);
     configureNativeCliArtifact();
     const { actor, agentId } = await entitledChatActor();
     const orgId = await enableDurablePi(actor);
@@ -319,6 +325,10 @@ describe("durable Pi API producer", () => {
       await createPiApiFirstTurnUsagePricingResolution(SELECTED_MODEL);
     mockPiResourceArchiveDownloads();
     mockPiCheckpointObjectStore();
+    const workflowId = await workflows.createWorkflow(actor, {
+      agentId,
+      name: `stable-membership-${randomUUID()}`,
+    });
     const providerBodies: string[] = [];
     let providerCalls = 0;
     server.use(
@@ -343,15 +353,63 @@ describe("durable Pi API producer", () => {
     );
     await waitForRunStatus(actor, first.runId, "completed", 10_000);
 
-    const instructions = `Worker-published instructions ${randomUUID()}`;
-    await bdd.updateAgentInstructions(actor, agentId, instructions);
-    const work = await accept(
+    await misc.deleteWorkflow(actor, workflowId, [204]);
+    await api.applyUserPermissionGrant(actor, {
+      agentId,
+      connectorSlug: "slack",
+      permission: "conversations:read",
+      action: "allow",
+      expiresIn: "1h",
+    });
+    const expiringInstructions = `Expiring projection ${randomUUID()}`;
+    await bdd.updateAgentInstructions(actor, agentId, expiringInstructions);
+    const firstWork = await accept(
       setupApp({ context, routes: testPiResourceIndexWorkRoutes })(
         testPiResourceIndexWorkContract,
-      ).run({ body: { versionIds: ["0".repeat(64)] } }),
+      ).run({
+        body: {
+          versionIds: ["0".repeat(64)],
+          stableContextOwner: { orgId, userId: actor.userId, agentId },
+        },
+      }),
       [200],
     );
-    expect(work.body.stableContext.ready).toBeGreaterThanOrEqual(1);
+    expect(firstWork.body.stableContext.ready).toBeGreaterThanOrEqual(1);
+
+    mockNow(capturedAt + 60 * 60 * 1000 + 1);
+    const expired = await sendChatRun(
+      actor,
+      {
+        agentId,
+        prompt: "reject the expired warm permission",
+        model: SELECTED_MODEL,
+      },
+      usagePricingResolution,
+    );
+    await waitForRunStatus(actor, expired.runId, "completed", 10_000);
+
+    await api.replaceUserPermissionGrants(actor, {
+      agentId,
+      connectorSlug: "slack",
+      grants: [],
+    });
+    const instructions = `Worker-published instructions ${randomUUID()}`;
+    const displayName = `Published identity ${randomUUID()}`;
+    await bdd.updateAgentInstructions(actor, agentId, instructions);
+    await bdd.updateAgentMetadata(actor, agentId, { displayName });
+    const secondWork = await accept(
+      setupApp({ context, routes: testPiResourceIndexWorkRoutes })(
+        testPiResourceIndexWorkContract,
+      ).run({
+        body: {
+          versionIds: ["0".repeat(64)],
+          stableContextOwner: { orgId, userId: actor.userId, agentId },
+          removeStableContextResourceIndexes: true,
+        },
+      }),
+      [200],
+    );
+    expect(secondWork.body.stableContext.ready).toBeGreaterThanOrEqual(1);
 
     let archiveReadsAfterWorker = 0;
     server.use(
@@ -363,7 +421,7 @@ describe("durable Pi API producer", () => {
         );
       }),
     );
-    const second = await sendChatRun(
+    const ready = await sendChatRun(
       actor,
       {
         agentId,
@@ -374,22 +432,16 @@ describe("durable Pi API producer", () => {
     );
     onTestFinished(async () => {
       await flushWaitUntilForTest();
-      await removePiInferenceFixture({
-        runId: first.runId,
-        agentId,
-        orgId,
-      });
-      await removePiInferenceFixture({
-        runId: second.runId,
-        agentId,
-        orgId,
-      });
+      for (const runId of [first.runId, expired.runId, ready.runId]) {
+        await removePiInferenceFixture({ runId, agentId, orgId });
+      }
     });
-    await waitForRunStatus(actor, second.runId, "completed", 10_000);
+    await waitForRunStatus(actor, ready.runId, "completed", 10_000);
     expect(archiveReadsAfterWorker).toBe(0);
-    expect(providerCalls).toBe(2);
+    expect(providerCalls).toBe(3);
     expect(providerBodies.at(-1)).toContain(instructions);
-  }, 30_000);
+    expect(providerBodies.at(-1)).toContain(displayName);
+  }, 45_000);
 
   it.each(
     (

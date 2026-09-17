@@ -128,6 +128,7 @@ export const writeAgentInstructionsStorageInTransaction$ = command(
           fileCount: volume.version.fileCount,
         },
       );
+      signal.throwIfAborted();
       if (
         !(await completePiStableContextPublication(
           args.tx,

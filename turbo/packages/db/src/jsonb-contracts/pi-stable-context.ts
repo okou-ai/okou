@@ -47,6 +47,22 @@ export interface PiStableContextPromptProjection {
   readonly tools: string;
 }
 
+export interface PiStableContextSemanticInput {
+  readonly connectorScope: {
+    readonly allowedConnectorSlugs: readonly string[];
+    readonly allowedCustomConnectorIds: readonly string[];
+    readonly customConnectorGrants: readonly {
+      readonly customConnectorId: string;
+      readonly permissionNames: readonly string[];
+    }[];
+    readonly workflows: readonly {
+      readonly name: string;
+      readonly workflowId: string;
+      readonly officialDefinitionName: string | null;
+    }[];
+  };
+}
+
 /**
  * Immutable captured input for one generation. A worker may only compose from
  * these exact values and the immutable resource-version indexes they name.
@@ -56,6 +72,8 @@ export interface PiStableContextBuildInput {
   readonly owner: PiStableContextOwner;
   readonly source: PiStableContextSourceVector;
   readonly prompt: PiStableContextPromptProjection;
+  /** Raw, nonsecret semantic membership supports exact writer-side recapture. */
+  readonly semantic?: PiStableContextSemanticInput;
   readonly storageMounts: readonly PiStableContextStorageMount[];
   readonly persistedStorageMounts: readonly PersistedStorageMount[];
 }

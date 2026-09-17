@@ -77,6 +77,7 @@ import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import type {
   PiStableContextOwner,
   PiStableContextPromptProjection,
+  PiStableContextSemanticInput,
   PiStableContextSourceVector,
 } from "@okouai/db/jsonb-contracts/pi-stable-context";
 import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
@@ -1119,6 +1120,9 @@ export interface CreateAgentRunArgs {
     readonly owner: PiStableContextOwner;
     readonly variantDigest: string;
     readonly prompt: PiStableContextPromptProjection;
+    /** Dynamic profile/channel text and explicit caller appendage, bound later. */
+    readonly dynamicAppendSystemPrompt: string;
+    readonly semantic: PiStableContextSemanticInput;
     readonly source: Omit<
       PiStableContextSourceVector,
       "agentGeneration" | "userGeneration" | "extractorVersion"
@@ -11174,6 +11178,7 @@ interface DurablePiH0Capture {
 }
 
 interface CapturedDurablePiInference {
+  readonly appendSystemPrompt: string | null;
   readonly callbackRows: readonly AgentRunCallbackInsert[];
   readonly configuration: PiDeferredConfiguration;
   readonly context: z.infer<typeof piDeferredContextSchema>;
@@ -11559,11 +11564,13 @@ async function captureDurablePiResource(
   resource: Promise<{
     readonly digest: string;
     readonly snapshot: PiResourceSnapshot;
+    readonly prompt?: PiStableContextPromptProjection;
   }>,
   signal: AbortSignal,
 ): Promise<{
   readonly digest: string;
   readonly snapshot: PiResourceSnapshot;
+  readonly prompt?: PiStableContextPromptProjection;
 } | null> {
   const prepared = await settle(resource, signal);
   signal.throwIfAborted();
@@ -11578,6 +11585,22 @@ async function captureDurablePiResource(
     return null;
   }
   throw prepared.error;
+}
+
+function bindStableAppendSystemPrompt(
+  prompt: PiStableContextPromptProjection,
+  dynamicAppendSystemPrompt: string,
+): string {
+  return [
+    prompt.agentIdentity,
+    prompt.executionLimit,
+    prompt.tools,
+    dynamicAppendSystemPrompt,
+  ]
+    .filter((part) => {
+      return Boolean(part);
+    })
+    .join("\n\n");
 }
 
 function prepareDurablePiResource(
@@ -11606,6 +11629,7 @@ function prepareDurablePiResource(
           owner: stableContext.owner,
           variantDigest: stableContext.variantDigest,
           prompt: stableContext.prompt,
+          semantic: stableContext.semantic,
           source: stableContext.source,
           mounts: args.storagePlan.metadata.storageMounts,
           persistedStorageMounts: args.persistedStorageMounts,
@@ -11627,6 +11651,30 @@ function prepareDurablePiResource(
       );
 }
 
+async function captureDurablePiMemoryRecall(
+  input: AtomicLaunchRunInput,
+  storagePlanPromise: Promise<ResolvedAgentRunStorage>,
+  signal: AbortSignal,
+): Promise<PiMemoryRecallSelection | undefined> {
+  const storagePlan = await storagePlanPromise;
+  signal.throwIfAborted();
+  return await resolvePiMemoryRecall(
+    {
+      db: input.db,
+      orgId: input.args.orgId,
+      userId: input.args.userId,
+      piMemoryEnabled: isFeatureEnabled(
+        FeatureSwitchKey.PiMemory,
+        input.context.featureSwitchContext,
+      ),
+      storageMounts: storagePlan.metadata.storageMounts,
+      persistedStorageMounts: storagePlan.metadata.persistedStorageMounts,
+      previousRunStorageMounts: input.context.resolved.previousRunStorageMounts,
+    },
+    signal,
+  );
+}
+
 function captureDurablePiInference(
   input: AtomicLaunchRunInput,
   signal: AbortSignal,
@@ -11637,9 +11685,8 @@ function captureDurablePiInference(
       return null;
     }
     assertCurrentPiCliArtifact();
-    const identity = prepareLaunchRunIdentity({
-      resolved: input.context.resolved,
-    });
+    const resolved = input.context.resolved;
+    const identity = prepareLaunchRunIdentity({ resolved });
     const callbackRowsPromise = prepareRunCallbackRows({
       runId: identity.runId,
       callbacks: input.args.callbacks,
@@ -11676,26 +11723,11 @@ function captureDurablePiInference(
         signal,
       ),
     );
-    const memoryRecallPromise = (async () => {
-      const storagePlan = await storagePlanPromise;
-      signal.throwIfAborted();
-      return await resolvePiMemoryRecall(
-        {
-          db: input.db,
-          orgId: input.args.orgId,
-          userId: input.args.userId,
-          piMemoryEnabled: isFeatureEnabled(
-            FeatureSwitchKey.PiMemory,
-            input.context.featureSwitchContext,
-          ),
-          storageMounts: storagePlan.metadata.storageMounts,
-          persistedStorageMounts: storagePlan.metadata.persistedStorageMounts,
-          previousRunStorageMounts:
-            input.context.resolved.previousRunStorageMounts,
-        },
-        signal,
-      );
-    })();
+    const memoryRecallPromise = captureDurablePiMemoryRecall(
+      input,
+      storagePlanPromise,
+      signal,
+    );
     const [callbackRows, storagePlan, h0, memoryRecall, configuration] =
       await Promise.all([
         callbackRowsPromise,
@@ -11746,9 +11778,25 @@ function captureDurablePiInference(
       ...(memoryRecall ? { memoryRecall } : {}),
       h0SessionHistory: h0.h0SessionHistory,
     });
+    const stableContext = input.args.piStableContext;
+    const appendSystemPrompt =
+      resource.prompt && stableContext
+        ? bindStableAppendSystemPrompt(
+            resource.prompt,
+            stableContext.dynamicAppendSystemPrompt,
+          )
+        : (input.context.body.appendSystemPrompt ?? null);
+    const boundConfiguration = piDeferredConfigurationSchema.parse({
+      ...configuration,
+      body:
+        appendSystemPrompt === null
+          ? configuration.body
+          : { ...configuration.body, appendSystemPrompt },
+    });
     return {
+      appendSystemPrompt,
       callbackRows,
-      configuration,
+      configuration: boundConfiguration,
       context,
       h0,
       identity,
@@ -11903,7 +11951,7 @@ function durablePiInferenceActivation(
     userId: input.args.userId,
     orgId: input.args.orgId,
     prompt: input.context.body.prompt,
-    appendSystemPrompt: input.context.body.appendSystemPrompt ?? null,
+    appendSystemPrompt: captured.appendSystemPrompt,
     inference: {
       ownerEpoch: 1,
       providerAttemptId: randomUUID(),

@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 
+import { PI_SKILLS_ROOT } from "@okouai/api-contracts/contracts/runners";
+import { getCustomSkillStorageName } from "@okouai/core/storage-names";
 import type { PiStableContextBuildInput } from "@okouai/db/jsonb-contracts/pi-stable-context";
 import {
   piStableContextArtifactResources,
@@ -7,11 +9,14 @@ import {
   piStableContextHeads,
   piStableContextPublications,
 } from "@okouai/db/schema/pi-stable-context";
-import { and, asc, eq, exists, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, asc, eq, exists, inArray, isNotNull, or, sql } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
-import { piStableContextInputDigest } from "./pi-stable-context-digest.service";
+import {
+  piStableContextInputDigest,
+  piStableContextVariantDigest,
+} from "./pi-stable-context-digest.service";
 
 export const PI_STABLE_CONTEXT_AGENT_SUBJECT = "@agent";
 export const PI_STABLE_CONTEXT_AGENT_INSTRUCTIONS_PUBLICATION_KEY =
@@ -21,6 +26,62 @@ export function piStableContextWorkflowPublicationKey(
   workflowId: string,
 ): string {
   return `workflow:${workflowId}`;
+}
+
+export function piStableContextWorkflowInvalidationOptions(args: {
+  readonly kind: "upsert" | "delete";
+  readonly workflow: {
+    readonly workflowId: string;
+    readonly name: string;
+    readonly officialDefinitionName: string | null;
+  };
+}): PiStableContextInvalidationOptions {
+  return {
+    transformInput(input) {
+      if (!input.semantic) {
+        return null;
+      }
+      const previous = input.semantic.connectorScope.workflows;
+      const matchingIndex = previous.findIndex((workflow) => {
+        return workflow.workflowId === args.workflow.workflowId;
+      });
+      const workflows = previous.filter((workflow) => {
+        return workflow.workflowId !== args.workflow.workflowId;
+      });
+      if (args.kind === "upsert") {
+        workflows.splice(
+          matchingIndex === -1 ? workflows.length : matchingIndex,
+          0,
+          args.workflow,
+        );
+      }
+      const connectorScope = {
+        ...input.semantic.connectorScope,
+        workflows,
+      };
+      const storageName = getCustomSkillStorageName(args.workflow.workflowId);
+      const mountPath = `${PI_SKILLS_ROOT}/${args.workflow.name}`;
+      const keepMount = (mount: { readonly name: string }) => {
+        return args.kind === "upsert" || mount.name !== storageName;
+      };
+      return {
+        ...input,
+        semantic: { connectorScope },
+        source: {
+          ...input.source,
+          connectorScopeDigest: piStableContextVariantDigest(connectorScope),
+        },
+        storageMounts: input.storageMounts.filter(keepMount).map((mount) => {
+          return mount.name === storageName ? { ...mount, mountPath } : mount;
+        }),
+        persistedStorageMounts: input.persistedStorageMounts
+          .filter(keepMount)
+          .map((mount) => {
+            return mount.name === storageName ? { ...mount, mountPath } : mount;
+          }),
+      };
+    },
+  };
 }
 
 export interface PiStableContextScope {
@@ -70,17 +131,28 @@ function headScopeCondition(scope: PiStableContextScope) {
     : base;
 }
 
+export interface PiStableContextInvalidationOptions {
+  readonly transformInput?: (
+    input: PiStableContextBuildInput,
+  ) =>
+    | PiStableContextBuildInput
+    | null
+    | Promise<PiStableContextBuildInput | null>;
+}
+
 async function invalidateKnownHeads(
   db: Db,
   scope: PiStableContextScope,
+  options?: PiStableContextInvalidationOptions,
 ): Promise<void> {
-  await invalidateHeadSet(db, headScopeCondition(scope));
+  await invalidateHeadSet(db, headScopeCondition(scope), options);
 }
 
 async function advanceGeneration(
   db: Db,
   scope: PiStableContextScope,
   state: { readonly kind: "ready" } | { readonly kind: "pending" },
+  options?: PiStableContextInvalidationOptions,
 ): Promise<number> {
   const updatedAt = nowDate();
   const subject = subjectForScope(scope);
@@ -114,7 +186,7 @@ async function advanceGeneration(
   if (!row) {
     throw new Error("Stable-context generation advance returned no row");
   }
-  await invalidateKnownHeads(db, scope);
+  await invalidateKnownHeads(db, scope, options);
   return row.generation;
 }
 
@@ -122,13 +194,15 @@ async function advanceGeneration(
 export async function invalidatePiStableContext(
   db: Db,
   scope: PiStableContextScope,
+  options?: PiStableContextInvalidationOptions,
 ): Promise<number> {
-  return await advanceGeneration(db, scope, { kind: "ready" });
+  return await advanceGeneration(db, scope, { kind: "ready" }, options);
 }
 
 async function invalidateHeadSet(
   db: Db,
   condition: ReturnType<typeof eq> | ReturnType<typeof and>,
+  options?: PiStableContextInvalidationOptions,
 ): Promise<void> {
   const captured = await db
     .select({
@@ -198,10 +272,16 @@ async function invalidateHeadSet(
     if (agentGeneration === undefined || userGeneration === undefined) {
       continue;
     }
+    const transformed = options?.transformInput
+      ? await options.transformInput(head.input)
+      : head.input;
+    if (!transformed) {
+      continue;
+    }
     const input: PiStableContextBuildInput = {
-      ...head.input,
+      ...transformed,
       source: {
-        ...head.input.source,
+        ...transformed.source,
         agentGeneration,
         userGeneration,
       },
@@ -290,10 +370,16 @@ export async function beginPiStableContextPublication(
   db: Db,
   scope: PiStableContextScope,
   publicationKey: string,
+  options?: PiStableContextInvalidationOptions,
 ): Promise<PiStableContextPublicationFence> {
   const token = randomUUID();
   return await db.transaction(async (tx) => {
-    const generation = await advanceGeneration(tx, scope, { kind: "pending" });
+    const generation = await advanceGeneration(
+      tx,
+      scope,
+      { kind: "pending" },
+      options,
+    );
     const updatedAt = nowDate();
     await tx
       .insert(piStableContextPublications)
@@ -320,7 +406,28 @@ export async function beginPiStableContextPublication(
   });
 }
 
-/** Commit bounded demand for ready contexts that depended on an advanced Storage HEAD. */
+function rebindStorageMount(
+  mount: PiStableContextBuildInput["storageMounts"][number],
+  resource: {
+    readonly storageId: string;
+    readonly versionId: string;
+    readonly archiveSize: number;
+    readonly fileCount: number;
+  },
+): PiStableContextBuildInput["storageMounts"][number] {
+  if (mount.storageId !== resource.storageId) {
+    return mount;
+  }
+  const { empty: _empty, ...canonical } = mount;
+  return {
+    ...canonical,
+    versionId: resource.versionId,
+    archiveSize: resource.archiveSize,
+    ...(resource.fileCount === 0 ? { empty: true as const } : {}),
+  };
+}
+
+/** Commit bounded demand for contexts that depend on an advanced Storage HEAD. */
 export async function enqueuePiStableContextStorageDemands(
   db: Db,
   resource: {
@@ -330,19 +437,27 @@ export async function enqueuePiStableContextStorageDemands(
     readonly fileCount: number;
   },
 ): Promise<void> {
-  const dependent = exists(
-    db
-      .select({ ordinal: piStableContextArtifactResources.ordinal })
-      .from(piStableContextArtifactResources)
-      .where(
-        and(
-          eq(
-            piStableContextArtifactResources.artifactDigest,
-            piStableContextHeads.artifactDigest,
+  const dependent = or(
+    exists(
+      db
+        .select({ ordinal: piStableContextArtifactResources.ordinal })
+        .from(piStableContextArtifactResources)
+        .where(
+          and(
+            eq(
+              piStableContextArtifactResources.artifactDigest,
+              piStableContextHeads.artifactDigest,
+            ),
+            eq(piStableContextArtifactResources.storageId, resource.storageId),
           ),
-          eq(piStableContextArtifactResources.storageId, resource.storageId),
         ),
-      ),
+    ),
+    // Pending/running heads deliberately have no artifact binding. Their
+    // immutable input remains the durable dependency index between successive
+    // Storage commits, so A→B and independent multi-Storage writes coalesce.
+    sql`${piStableContextHeads.input} @> ${JSON.stringify({
+      storageMounts: [{ storageId: resource.storageId }],
+    })}::jsonb`,
   );
   const heads = await db
     .select({
@@ -389,12 +504,7 @@ export async function enqueuePiStableContextStorageDemands(
         return mount;
       }
       changed = true;
-      return {
-        ...mount,
-        versionId: resource.versionId,
-        archiveSize: resource.archiveSize,
-        empty: resource.fileCount === 0,
-      };
+      return rebindStorageMount(mount, resource);
     });
     if (!changed) {
       continue;
@@ -476,12 +586,7 @@ export async function refreshPiStableContextStorageDemands(
         return mount;
       }
       changed = true;
-      return {
-        ...mount,
-        versionId: resource.versionId,
-        archiveSize: resource.archiveSize,
-        empty: resource.fileCount === 0,
-      };
+      return rebindStorageMount(mount, resource);
     });
     if (!changed) {
       continue;
@@ -522,6 +627,60 @@ export async function refreshPiStableContextStorageDemands(
   }
 }
 
+async function updatePublicationReadiness(
+  db: Db,
+  scope: PiStableContextScope,
+): Promise<void> {
+  const [remaining] = await db
+    .select({ token: piStableContextPublications.token })
+    .from(piStableContextPublications)
+    .where(
+      and(
+        eq(piStableContextPublications.orgId, scope.orgId),
+        eq(piStableContextPublications.agentId, scope.agentId),
+        eq(piStableContextPublications.subject, subjectForScope(scope)),
+      ),
+    )
+    .limit(1);
+  await db
+    .update(piStableContextGenerations)
+    .set({
+      publicationState: remaining ? "pending" : "ready",
+      updatedAt: nowDate(),
+    })
+    .where(generationScopeCondition(scope));
+}
+
+/** Retire a deleted source's abandoned publication without exposing mixed state. */
+export async function retirePiStableContextPublication(
+  db: Db,
+  scope: PiStableContextScope,
+  publicationKey: string,
+): Promise<boolean> {
+  const [generation] = await db
+    .select({ generation: piStableContextGenerations.generation })
+    .from(piStableContextGenerations)
+    .where(generationScopeCondition(scope))
+    .for("update")
+    .limit(1);
+  if (!generation) {
+    return false;
+  }
+  const [retired] = await db
+    .delete(piStableContextPublications)
+    .where(
+      and(
+        eq(piStableContextPublications.orgId, scope.orgId),
+        eq(piStableContextPublications.agentId, scope.agentId),
+        eq(piStableContextPublications.subject, subjectForScope(scope)),
+        eq(piStableContextPublications.publicationKey, publicationKey),
+      ),
+    )
+    .returning({ token: piStableContextPublications.token });
+  await updatePublicationReadiness(db, scope);
+  return retired !== undefined;
+}
+
 /**
  * Complete one exact source publication. Current readiness is restored only
  * after every independent publication key in the scope has completed.
@@ -546,24 +705,7 @@ export async function completePiStableContextPublication(
   if (!completed) {
     return false;
   }
-  const [remaining] = await db
-    .select({ token: piStableContextPublications.token })
-    .from(piStableContextPublications)
-    .where(
-      and(
-        eq(piStableContextPublications.orgId, fence.scope.orgId),
-        eq(piStableContextPublications.agentId, fence.scope.agentId),
-        eq(piStableContextPublications.subject, subjectForScope(fence.scope)),
-      ),
-    )
-    .limit(1);
-  await db
-    .update(piStableContextGenerations)
-    .set({
-      publicationState: remaining ? "pending" : "ready",
-      updatedAt: nowDate(),
-    })
-    .where(generationScopeCondition(fence.scope));
+  await updatePublicationReadiness(db, fence.scope);
   return true;
 }
 

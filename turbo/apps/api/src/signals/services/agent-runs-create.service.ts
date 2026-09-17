@@ -300,7 +300,12 @@ function forbidden(message: string) {
   };
 }
 
-function buildAgentIdentityPrompt(agent: AgentRunRecord): string | null {
+export function buildAgentIdentityPrompt(
+  agent: Pick<
+    AgentRunRecord,
+    "id" | "defaultAgentId" | "displayName" | "description" | "sound"
+  >,
+): string | null {
   const parts: string[] = [];
 
   const displayName = agentDisplayName({
@@ -1043,6 +1048,22 @@ function buildStableRunPromptContext(args: BuildCreateAgentRunArgsInput): {
         connectorSource: "stored_agent",
       }),
       prompt: stablePrompt,
+      dynamicAppendSystemPrompt: [
+        buildCurrentUserPrompt(userInfo),
+        args.command.appendSystemPrompt,
+      ]
+        .filter((part): part is string => {
+          return Boolean(part);
+        })
+        .join("\n\n"),
+      semantic: {
+        connectorScope: {
+          allowedConnectorSlugs: args.allowedConnectorSlugs,
+          allowedCustomConnectorIds: args.allowedCustomConnectorIds,
+          customConnectorGrants: args.customConnectorGrants,
+          workflows: args.workflows,
+        },
+      },
       source: {
         catalogIdentity:
           args.connectorCatalogSelection.kind === "scoped"

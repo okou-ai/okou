@@ -11,22 +11,27 @@ import type {
   PiStableContextOwner,
   PiStableContextProjection,
   PiStableContextPromptProjection,
+  PiStableContextSemanticInput,
   PiStableContextSourceVector,
   PiStableContextStorageMount,
 } from "@okouai/db/jsonb-contracts/pi-stable-context";
 import type { PiResourceSnapshotV1 } from "@okouai/db/jsonb-contracts/pi-resource-snapshot";
+import { assertErasureSubjectWritable } from "@okouai/db/operations/account-erasure";
+import { agents } from "@okouai/db/schema/agent";
 import {
   piStableContextArtifactResources,
   piStableContextArtifacts,
   piStableContextGenerations,
   piStableContextHeads,
 } from "@okouai/db/schema/pi-stable-context";
+import { storages, storageVersions } from "@okouai/db/schema/storage";
 import type { PersistedStorageMount } from "@okouai/db/types";
 import { computed, type Computed } from "ccstate";
 import { and, asc, eq, inArray, lt, lte, or } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 
 import { PI_RESOURCE_EXTRACTOR_VERSION } from "../../lib/pi-resource-index";
+import type { Tx } from "../../lib/db-types";
 import { now, nowDate } from "../../lib/time";
 import { settle } from "../utils";
 import type { Db } from "../external/db";
@@ -46,6 +51,8 @@ import {
   piStableContextInputDigest,
   piStableContextVariantDigest,
 } from "./pi-stable-context-digest.service";
+import { lockCanonicalAgentMutation } from "./agent-mutation-lock.service";
+import { COMPUTE_CLOSURE_ERROR } from "./agent-run-terminal-transition.service";
 import { PI_STABLE_CONTEXT_AGENT_SUBJECT } from "./pi-stable-context-generation.service";
 
 export { piStableContextArtifactDigest, piStableContextVariantDigest };
@@ -64,6 +71,7 @@ interface PreparePiStableContextArgs {
   readonly owner: PiStableContextOwner;
   readonly variantDigest: string;
   readonly prompt: PiStableContextPromptProjection;
+  readonly semantic?: PiStableContextSemanticInput;
   readonly source: StableSourceWithoutGenerations;
   readonly mounts: readonly StoredStorageMountEntry[];
   readonly persistedStorageMounts: readonly PersistedStorageMount[];
@@ -86,6 +94,7 @@ type PiStableContextReadKind =
 interface PreparedPiStableContext {
   readonly digest: string;
   readonly snapshot: PiResourceSnapshot;
+  readonly prompt: PiStableContextPromptProjection;
   readonly kind: PiStableContextReadKind;
 }
 
@@ -114,6 +123,10 @@ interface StableContextWorkResult {
   unindexable: number;
   failed: number;
   stale: number;
+}
+
+interface PiStableContextWorkScope {
+  readonly headIds: readonly string[];
 }
 
 function stableStorageMount(
@@ -161,6 +174,59 @@ function storageMountForComposer(
   };
 }
 
+async function lockStableContextOwnerAuthority(
+  tx: Tx,
+  owner: PiStableContextOwner,
+): Promise<boolean> {
+  const subjects = [
+    { subjectKind: "user" as const, subjectId: owner.userId },
+    { subjectKind: "organization" as const, subjectId: owner.orgId },
+    {
+      subjectKind: "user" as const,
+      subjectId: owner.resourceOwner.userId,
+    },
+    {
+      subjectKind: "organization" as const,
+      subjectId: owner.resourceOwner.orgId,
+    },
+  ];
+  const admission = await settle(
+    assertErasureSubjectWritable(tx, [
+      ...new Map(
+        subjects.map((subject) => {
+          return [
+            `${subject.subjectKind}:${subject.subjectId}`,
+            subject,
+          ] as const;
+        }),
+      ).values(),
+    ]),
+  );
+  if (!admission.ok) {
+    if (
+      admission.error instanceof Error &&
+      admission.error.message === COMPUTE_CLOSURE_ERROR
+    ) {
+      return false;
+    }
+    throw admission.error;
+  }
+  await lockCanonicalAgentMutation(tx, owner.agentId);
+  const [agent] = await tx
+    .select({ id: agents.id })
+    .from(agents)
+    .where(
+      and(
+        eq(agents.id, owner.agentId),
+        eq(agents.orgId, owner.resourceOwner.orgId),
+        eq(agents.owner, owner.resourceOwner.userId),
+      ),
+    )
+    .for("key share")
+    .limit(1);
+  return agent !== undefined;
+}
+
 function buildInput(
   args: PreparePiStableContextArgs,
   generations: SourceGenerations,
@@ -185,6 +251,7 @@ function buildInput(
       extractorVersion: PI_RESOURCE_EXTRACTOR_VERSION,
     },
     prompt: args.prompt,
+    ...(args.semantic ? { semantic: args.semantic } : {}),
     storageMounts: stableMounts.map(stableStorageMount),
     persistedStorageMounts: args.persistedStorageMounts
       .filter((mount) => {
@@ -376,13 +443,56 @@ async function readReadyProjection(args: PreparePiStableContextArgs): Promise<{
   return { projection, generations };
 }
 
+async function lockMatchingReadyGenerations(
+  tx: Tx,
+  owner: PiStableContextOwner,
+  generations: SourceGenerations,
+): Promise<boolean> {
+  const subjects = [PI_STABLE_CONTEXT_AGENT_SUBJECT, owner.userId];
+  const currentGenerations = await tx
+    .select({
+      subject: piStableContextGenerations.subject,
+      generation: piStableContextGenerations.generation,
+      publicationState: piStableContextGenerations.publicationState,
+    })
+    .from(piStableContextGenerations)
+    .where(
+      and(
+        eq(piStableContextGenerations.orgId, owner.orgId),
+        eq(piStableContextGenerations.agentId, owner.agentId),
+        inArray(piStableContextGenerations.subject, subjects),
+      ),
+    )
+    .orderBy(asc(piStableContextGenerations.subject))
+    .for("update");
+  const currentBySubject = new Map(
+    currentGenerations.map((row) => {
+      return [row.subject, row] as const;
+    }),
+  );
+  const currentAgent = currentBySubject.get(PI_STABLE_CONTEXT_AGENT_SUBJECT);
+  const currentUser = currentBySubject.get(owner.userId);
+  return (
+    currentAgent?.publicationState === "ready" &&
+    currentUser?.publicationState === "ready" &&
+    currentAgent.generation === generations.agentGeneration &&
+    currentUser.generation === generations.userGeneration
+  );
+}
+
 async function registerDemand(
   args: PreparePiStableContextArgs,
   generations: SourceGenerations,
-): Promise<StableContextDemand> {
+): Promise<StableContextDemand | null> {
   const input = buildInput(args, generations);
   const inputDigest = piStableContextInputDigest(input);
   return await args.db.transaction(async (tx) => {
+    if (!(await lockStableContextOwnerAuthority(tx, args.owner))) {
+      return null;
+    }
+    if (!(await lockMatchingReadyGenerations(tx, args.owner, generations))) {
+      return null;
+    }
     const initialValues = {
       orgId: args.owner.orgId,
       userId: args.owner.userId,
@@ -514,9 +624,43 @@ async function publishProjection(
         ]),
   );
   return await db.transaction(async (tx) => {
-    // Serialize against user erasure before inserting the owner-bound artifact.
-    // If erasure committed first the head is absent; if publication wins,
-    // erasure waits on this row and removes the artifact before committing.
+    // Admission is first, then canonical Agent and resource parents, then the
+    // head. This matches source mutation/erasure order and prevents both
+    // post-erasure resurrection and Agent/head or Storage/head lock cycles.
+    if (!(await lockStableContextOwnerAuthority(tx, demand.input.owner))) {
+      return false;
+    }
+    const resources = projectionResources(projection);
+    const storageIds = [
+      ...new Set(
+        resources.map((resource) => {
+          return resource.storageId;
+        }),
+      ),
+    ].sort();
+    const versionIds = [
+      ...new Set(
+        resources.map((resource) => {
+          return resource.storageVersionId;
+        }),
+      ),
+    ].sort();
+    if (storageIds.length > 0) {
+      await tx
+        .select({ id: storages.id })
+        .from(storages)
+        .where(inArray(storages.id, storageIds))
+        .orderBy(asc(storages.id))
+        .for("key share");
+    }
+    if (versionIds.length > 0) {
+      await tx
+        .select({ id: storageVersions.id })
+        .from(storageVersions)
+        .where(inArray(storageVersions.id, versionIds))
+        .orderBy(asc(storageVersions.id))
+        .for("key share");
+    }
     const [head] = await tx
       .select({ id: piStableContextHeads.id })
       .from(piStableContextHeads)
@@ -536,7 +680,6 @@ async function publishProjection(
         projection,
       })
       .onConflictDoNothing();
-    const resources = projectionResources(projection);
     if (resources.length > 0) {
       await tx
         .insert(piStableContextArtifactResources)
@@ -647,7 +790,7 @@ export function preparePiStableContext(
     const startedAt = performance.now();
     if (!args.eligible) {
       const canonical = await get(prepareCanonical(args, signal));
-      return { ...canonical, kind: "dynamic" };
+      return { ...canonical, prompt: args.prompt, kind: "dynamic" };
     }
     const ready = await readReadyProjection(args);
     signal?.throwIfAborted();
@@ -666,14 +809,14 @@ export function preparePiStableContext(
           dimensions: { projection_state: "ready" },
         });
       }
-      return { ...result, kind: "ready" };
+      return { ...result, prompt: ready.projection.prompt, kind: "ready" };
     }
 
     const generations = await ensureSourceGenerations(args.db, args.owner);
     signal?.throwIfAborted();
     if (!generations.ready) {
       const canonical = await get(prepareCanonical(args, signal));
-      return { ...canonical, kind: "source_pending" };
+      return { ...canonical, prompt: args.prompt, kind: "source_pending" };
     }
     await args.beforeDemandRegistration?.();
     signal?.throwIfAborted();
@@ -681,11 +824,10 @@ export function preparePiStableContext(
     signal?.throwIfAborted();
     const canonical = await get(prepareCanonical(args, signal));
     signal?.throwIfAborted();
-    const published = await publishCanonicalRepair(
-      args.db,
-      demand,
-      canonical.snapshot,
-    );
+    const published =
+      demand === null
+        ? false
+        : await publishCanonicalRepair(args.db, demand, canonical.snapshot);
     signal?.throwIfAborted();
     if (args.runId) {
       recordSandboxOperation({
@@ -699,13 +841,14 @@ export function preparePiStableContext(
         },
       });
     }
-    return { ...canonical, kind: "missing" };
+    return { ...canonical, prompt: args.prompt, kind: "missing" };
   });
 }
 
 async function claimStableContextWork(
   db: Db,
   signal: AbortSignal,
+  scope?: PiStableContextWorkScope,
 ): Promise<readonly ClaimedStableContextWork[]> {
   const currentTime = nowDate();
   const leaseExpiresAt = new Date(
@@ -723,6 +866,7 @@ async function claimStableContextWork(
       .from(piStableContextHeads)
       .where(
         and(
+          scope ? inArray(piStableContextHeads.id, scope.headIds) : undefined,
           lte(piStableContextHeads.availableAt, currentTime),
           or(
             and(
@@ -899,9 +1043,12 @@ async function executeStableContextWorkItem(
 export async function executePiStableContextWork(
   db: Db,
   signal: AbortSignal,
-  hooks?: { readonly beforePublish?: () => Promise<void> },
+  hooks?: {
+    readonly beforePublish?: () => Promise<void>;
+    readonly scope?: PiStableContextWorkScope;
+  },
 ): Promise<StableContextWorkResult> {
-  const work = await claimStableContextWork(db, signal);
+  const work = await claimStableContextWork(db, signal, hooks?.scope);
   const result: StableContextWorkResult = {
     claimed: work.length,
     ready: 0,
