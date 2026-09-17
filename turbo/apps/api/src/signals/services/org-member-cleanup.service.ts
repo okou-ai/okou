@@ -130,6 +130,7 @@ async function revokeOrgMemberRunAuthority(
   // Membership revocation is a hard authority boundary, including credentials
   // retained by ordinary personal-settings disconnect. Commit revocation before
   // best-effort runner notification or the remaining member resource cleanup.
+  const revokedAt = nowDate();
   const cancelled = await db.transaction(async (tx) => {
     const rows = await transitionAgentRunsToTerminal(tx, {
       values: {
@@ -144,13 +145,15 @@ async function revokeOrgMemberRunAuthority(
       ],
     });
     // A Morning Brief collection attempt is the same kind of authority, so it
-    // loses its occurrence here rather than surviving until the member row it
-    // hangs from is removed further down this cleanup.
-    await revokeMorningBriefCollectionOwnership(tx, {
-      kind: "membership",
-      orgId: args.orgId,
-      userId: args.userId,
-    });
+    // is revoked here rather than surviving until the member row it hangs from
+    // is removed further down this cleanup. The durable stamp this writes is
+    // what also stops a claim admitted just before this commit, including when
+    // there is no occurrence to delete yet.
+    await revokeMorningBriefCollectionOwnership(
+      tx,
+      { kind: "membership", orgId: args.orgId, userId: args.userId },
+      revokedAt,
+    );
     // The departing member's legacy schedule occurrences lose the same
     // authority here, before the rows they hang from are torn down.
     await revokeMorningBriefScheduleOwnership(tx, {

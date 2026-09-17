@@ -24,9 +24,9 @@ import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import {
   claimMorningBriefCollection,
-  collectionLeaseExpiry,
   collectionLeaseHeld,
   finalizeMorningBriefCollection,
+  loadMorningBriefCollectionOwnerRow,
   type MorningBriefCollectionAdmission,
   type MorningBriefCollectionClaim,
   type MorningBriefCollectionCompletion,
@@ -40,7 +40,6 @@ import {
   MORNING_BRIEF_SLACK_COLLECTION_DEADLINE_MS,
   type MorningBriefSlackCollectionResult,
 } from "./morning-brief-slack-collection.service";
-import { loadOfficialWorkflowUserTimezone } from "./official-workflow-installation.service";
 import { slackUserInstallation } from "./slack-data.service";
 
 /**
@@ -270,11 +269,19 @@ const admitMorningBriefCollection$ = command(
       return { kind: "not-executed", reason: "brief-paused" };
     }
 
-    const timezone = await loadOfficialWorkflowUserTimezone(db, owner);
+    // One read of the durable member row supplies both the timezone an enabled
+    // brief requires and the generation of the parent this admission may write
+    // under. A member row that a cleanup removed is simply absent here.
+    const member = await loadMorningBriefCollectionOwnerRow(db, owner);
     signal.throwIfAborted();
-    if (timezone === null || !isValidTimeZone(timezone)) {
+    if (
+      member === null ||
+      member.timezone === null ||
+      !isValidTimeZone(member.timezone)
+    ) {
       return { kind: "not-executed", reason: "missing-timezone" };
     }
+    const timezone = member.timezone;
     const agentId = await loadInstallationAgentId(
       db,
       owner,
@@ -311,6 +318,7 @@ const admitMorningBriefCollection$ = command(
         botToken: installation.botToken,
         admission: {
           owner,
+          memberCreatedAt: member.memberCreatedAt,
           scheduledFor: args.scheduledFor,
           collectionKind: MORNING_BRIEF_COLLECTION_KIND_SLACK,
           windowStart: new Date(
@@ -393,6 +401,8 @@ const admissionStillCurrent$ = command(
     }
     const current = revalidated.admitted.admission;
     return (
+      current.memberCreatedAt.getTime() ===
+        admission.memberCreatedAt.getTime() &&
       current.membershipId === admission.membershipId &&
       current.workflowId === admission.workflowId &&
       current.automationId === admission.automationId &&
@@ -471,7 +481,6 @@ function completionOf(
 async function claimAttempt(
   db: Db,
   admission: MorningBriefCollectionAdmission,
-  at: Date,
 ): Promise<
   | { readonly kind: "claimed"; readonly claim: MorningBriefCollectionClaim }
   | { readonly kind: "already-completed"; readonly occurrence: OccurrenceRow }
@@ -480,13 +489,17 @@ async function claimAttempt(
       readonly reason: MorningBriefCollectionConflict;
     }
 > {
-  const requested: MorningBriefCollectionClaim = {
-    attempt: 1,
-    leaseToken: randomUUID(),
-    leaseExpiresAt: collectionLeaseExpiry(at),
-  };
+  // The lease, retry and lifetime instants belong to the admitted transition,
+  // not to the request that started before admission resolved, so the clock is
+  // handed to the guarded transition instead of being sampled here.
+  const leaseToken = randomUUID();
   const claimed = await db.transaction(async (tx) => {
-    return await claimMorningBriefCollection(tx, admission, requested, at);
+    return await claimMorningBriefCollection(
+      tx,
+      admission,
+      leaseToken,
+      nowDate,
+    );
   });
   if (claimed.kind === "rejected") {
     return { kind: "conflict", reason: claimed.reason };
@@ -528,7 +541,7 @@ export const executeMorningBriefSlackCollection$ = command(
     }
     const { admission, botToken } = admitted.admitted;
 
-    const claimed = await claimAttempt(db, admission, startedAt);
+    const claimed = await claimAttempt(db, admission);
     signal.throwIfAborted();
     if (claimed.kind === "conflict") {
       return claimed;
@@ -583,15 +596,16 @@ export const executeMorningBriefSlackCollection$ = command(
     // The guarded write is the lease check immediately before completion: it
     // matches the exact occurrence, attempt, token, running status and an
     // unexpired deadline in one statement, so no separate check can disagree
-    // with it. Equality with the deadline is already expired.
-    const finalizedAt = nowDate();
+    // with it. Equality with the deadline is already expired. The instant it
+    // compares is read inside that transition, after its owner and row locks,
+    // because waiting for them can outlast the lease this attempt holds.
     const finalized = await db.transaction(async (tx) => {
       const result = await finalizeMorningBriefCollection(
         tx,
         admission,
         claim,
         completion,
-        finalizedAt,
+        nowDate,
       );
       // The handoff joins this transaction rather than following it, so no
       // downstream stage can ever be admitted for a bundle whose collection
@@ -604,7 +618,7 @@ export const executeMorningBriefSlackCollection$ = command(
           completion,
           occurrence: result.occurrence,
           bundle: collected.bundle,
-          at: finalizedAt,
+          at: result.at,
         });
       }
       return result;

@@ -4,11 +4,14 @@ import { agents } from "@okouai/db/schema/agent";
 import { morningBriefCollectionOccurrences } from "@okouai/db/schema/morning-brief-collection-occurrence";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { onTestFinished } from "vitest";
 
+import { getApiTestMocks } from "../__tests__/mocks";
 import { db } from "../lib/db";
+import { createDeferredPromise } from "../signals/utils";
 import { holdDeferredRow } from "./pi-deferred-lock";
 
 /**
@@ -149,6 +152,26 @@ export async function seedInstalledMorningBrief(options: {
   };
 }
 
+/** The owner's durable member row, including its revocation stamp. */
+export async function readMorningBriefCollectionOwnerRow(
+  owner: MorningBriefCollectionOwner,
+) {
+  const [row] = await db()
+    .select({
+      timezone: orgMembersMetadata.timezone,
+      revokedAt: orgMembersMetadata.morningBriefCollectionRevokedAt,
+    })
+    .from(orgMembersMetadata)
+    .where(
+      and(
+        eq(orgMembersMetadata.orgId, owner.orgId),
+        eq(orgMembersMetadata.userId, owner.userId),
+      ),
+    )
+    .limit(1);
+  return row;
+}
+
 /** Every occurrence this owner holds, oldest attempt order, for assertions. */
 export async function readMorningBriefCollectionOccurrences(
   owner: MorningBriefCollectionOwner,
@@ -174,6 +197,38 @@ export async function readMorningBriefCollectionOccurrences(
  */
 export async function deleteMorningBriefAgent(agentId: string): Promise<void> {
   await db().delete(agents).where(eq(agents.id, agentId));
+}
+
+/**
+ * Move the installation onto a different Agent.
+ *
+ * The occurrence freezes the Agent its installation ran on, so this is the
+ * production change an administrator makes when the brief is rebuilt on another
+ * Agent — it must not let an occurrence admitted under the old one be reused.
+ */
+export async function repointMorningBriefInstallationAgent(installation: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly workflowId: string;
+}): Promise<string> {
+  const agentId = randomUUID();
+  await db()
+    .insert(agents)
+    .values({
+      id: agentId,
+      orgId: installation.orgId,
+      owner: installation.userId,
+      name: `brief-${agentId.slice(0, 8)}`,
+      visibility: "public",
+    });
+  await db()
+    .update(workflows)
+    .set({ agentId })
+    .where(eq(workflows.id, installation.workflowId));
+  onTestFinished(async () => {
+    await db().delete(agents).where(eq(agents.id, agentId));
+  });
+  return agentId;
 }
 
 /** Pause the seeded schedule the way the Settings surface would. */
@@ -277,4 +332,133 @@ export async function holdMorningBriefCollectionClaim(
     await dropTrigger();
   });
   return { waitForArrival: held.waitForBlocked, release: held.release };
+}
+
+/**
+ * Hold this owner's committed occurrence row.
+ *
+ * Claiming and finalizing both take that row with `FOR UPDATE` before they
+ * decide anything, so this is the real database wait a lease deadline can
+ * elapse inside. The suspended transition is observed through
+ * `pg_blocking_pids`, never a sleep.
+ */
+export async function holdMorningBriefCollectionOccurrence(
+  owner: MorningBriefCollectionOwner,
+  signal: AbortSignal,
+): Promise<{
+  readonly waitForArrival: () => Promise<number>;
+  readonly release: () => Promise<void>;
+}> {
+  const held = await holdDeferredRow(signal, async (tx) => {
+    await tx
+      .select({ orgId: morningBriefCollectionOccurrences.orgId })
+      .from(morningBriefCollectionOccurrences)
+      .where(
+        and(
+          eq(morningBriefCollectionOccurrences.orgId, owner.orgId),
+          eq(morningBriefCollectionOccurrences.userId, owner.userId),
+        ),
+      )
+      .for("update");
+  });
+  return { waitForArrival: held.waitForBlocked, release: held.release };
+}
+
+/**
+ * Pause a cleanup after its first revocation transaction has committed.
+ *
+ * Membership, user and organization cleanup all delete this member's Slack
+ * connection after they revoke and well before they remove the durable member
+ * row an occurrence hangs from. Holding that row therefore freezes each path in
+ * exactly the state the fence has to cover: revocation is already durable while
+ * the parent — and everything admission reads — still exists, so nothing
+ * observed here can be explained by the foreign-key cascade. A plain read still
+ * sees the locked row, so admission itself is unaffected.
+ */
+export async function holdCleanupAfterRevocation(
+  connection: { readonly userId: string; readonly workspaceId: string },
+  signal: AbortSignal,
+): Promise<{
+  readonly waitForArrival: () => Promise<number>;
+  readonly release: () => Promise<void>;
+}> {
+  const held = await holdDeferredRow(signal, async (tx) => {
+    await tx
+      .select({ id: slackOrgConnections.id })
+      .from(slackOrgConnections)
+      .where(
+        and(
+          eq(slackOrgConnections.userId, connection.userId),
+          eq(slackOrgConnections.slackWorkspaceId, connection.workspaceId),
+        ),
+      )
+      .for("update");
+  });
+  return { waitForArrival: held.waitForBlocked, release: held.release };
+}
+
+function isOwnerMembershipLookup(
+  args: readonly unknown[],
+  owner: MorningBriefCollectionOwner,
+): boolean {
+  const [query] = args;
+  if (typeof query !== "object" || query === null) {
+    return false;
+  }
+  const organizationId =
+    "organizationId" in query ? query.organizationId : undefined;
+  const userId = "userId" in query ? query.userId : undefined;
+  return (
+    organizationId === owner.orgId &&
+    Array.isArray(userId) &&
+    userId.includes(owner.userId)
+  );
+}
+
+/**
+ * Suspend this owner's next exact-member Clerk lookup after it answered.
+ *
+ * Admission resolves a fresh membership generation before anything is claimed,
+ * so a positive answer can be in hand while revocation commits underneath it.
+ * The answer is computed from the seeded memberships first and only then held,
+ * which is what makes the resumed claim a genuinely stale one rather than a
+ * lookup that observed the revocation.
+ */
+export function holdMorningBriefMembershipLookup(
+  owner: MorningBriefCollectionOwner,
+  signal: AbortSignal,
+): {
+  readonly waitForArrival: () => Promise<void>;
+  readonly release: () => void;
+} {
+  const lookup =
+    getApiTestMocks().clerk.organizations.getOrganizationMembershipList;
+  const answer = lookup.getMockImplementation();
+  if (!answer) {
+    throw new Error("Expected seeded Clerk organization membership mocks");
+  }
+  const arrived = createDeferredPromise<void>(signal);
+  const released = createDeferredPromise<void>(signal);
+  let suspended = false;
+  const release = () => {
+    if (!released.settled()) {
+      released.resolve();
+    }
+  };
+  lookup.mockImplementation(async (...args: unknown[]) => {
+    const membership = await answer(...args);
+    if (!suspended && isOwnerMembershipLookup(args, owner)) {
+      suspended = true;
+      arrived.resolve();
+      await released.promise;
+    }
+    return membership;
+  });
+  onTestFinished(release);
+  return {
+    waitForArrival: () => {
+      return arrived.promise;
+    },
+    release,
+  };
 }

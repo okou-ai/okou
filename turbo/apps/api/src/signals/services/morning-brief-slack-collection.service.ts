@@ -36,7 +36,9 @@ import { settle } from "../utils";
  * conversation's content, name, id or link without a fresh proof that the
  * connected member still shares it. What the final pass could not prove is
  * withheld — unproven is not proven revoked, and it is not a healthy empty
- * channel either.
+ * channel either. The wall clock bounds that authority as a whole rather than
+ * one conversation at a time: an attempt that expires releases nothing, even
+ * what an earlier page of the same final pass had already confirmed.
  *
  * **Coverage limit.** Threads are discovered from the roots that windowed
  * history returns, so a new reply on a root older than the window is not found.
@@ -251,6 +253,30 @@ class SlackCollectionBudget {
     }
     this.stop("deadline");
     return true;
+  }
+
+  /**
+   * Withhold everything still held once this attempt's wall clock has passed.
+   *
+   * The deadline bounds the whole attempt, not one conversation's proof. A
+   * channel named by an earlier page of the final enumeration is already
+   * settled and no longer pending, so an expiry that stops a later page of the
+   * same pass would otherwise leave that earlier channel releasable — and its
+   * messages, name, id and link would be published under a proof the attempt
+   * has outlived. The release decision therefore re-reads the clock after every
+   * awaited answer, and an expired attempt keeps each conversation it can still
+   * speak about inside the collector instead. A conversation already proven
+   * revoked stays a proven removal rather than being renamed unproven.
+   */
+  withholdIfExpired(channelIds: readonly string[]): void {
+    if (!this.stopIfExpired()) {
+      return;
+    }
+    for (const channelId of channelIds) {
+      if (this.isReleasable(channelId)) {
+        this.withholdChannel(channelId);
+      }
+    }
   }
 
   /**
@@ -566,10 +592,15 @@ async function authorizeChannelRead(
  * and it spends the allowance reserved for exactly this call.
  *
  * A pass that lists the member's whole intersection without a conversation
- * proves its removal. A pass that repeats a cursor, exhausts its pages, its
- * reserved requests or the wall clock proves nothing at all, and what it could
- * not prove is withheld rather than released. Partial coverage is an omission
- * of work; it is never permission to publish unconfirmed scope.
+ * proves its removal. A pass that repeats a cursor, exhausts its pages or its
+ * reserved requests proves nothing about what is still pending, and what it
+ * could not prove is withheld rather than released. Partial coverage is an
+ * omission of work; it is never permission to publish unconfirmed scope.
+ *
+ * The wall clock is not one of those page budgets. It bounds the attempt rather
+ * than this pass's remaining work, so an expiry is settled by the caller's
+ * release decision over every conversation, not only by the set still pending
+ * here.
  */
 async function confirmSharedScope(
   scope: MorningBriefSlackCollectionScope,
@@ -806,18 +837,18 @@ export async function collectMorningBriefSlackBundle(
       }
       // Nothing leaves this collector — message, name, id or link — before one
       // last live proof of the scope that produced it.
-      await confirmSharedScope(
-        scope,
-        channels
-          .filter((channel) => {
-            return !budget.isRevoked(channel.id);
-          })
-          .map((channel) => {
-            return channel.id;
-          }),
-        budget,
-        signal,
-      );
+      const pendingRelease = channels
+        .filter((channel) => {
+          return !budget.isRevoked(channel.id);
+        })
+        .map((channel) => {
+          return channel.id;
+        });
+      await confirmSharedScope(scope, pendingRelease, budget, signal);
+      // The proof is the last awaited work before the projection below, so this
+      // is where the attempt's own wall clock decides whether any of it may
+      // still be released at all.
+      budget.withholdIfExpired(pendingRelease);
       return { channels, readChannels, expandedThreads, truncatedChannels };
     })(),
   );

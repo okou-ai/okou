@@ -142,13 +142,21 @@ function isAgentIdentityRead(queryArgs: unknown[], agentId: string): boolean {
 /**
  * Where the paused transaction stops. `identity` precedes subject admission,
  * `agent-lock` sits between the unlocked identity read and the retained
- * identity lock, `update` precedes the single bulk statement, and `commit`
- * retains every barrier with every matched cursor already written.
+ * identity lock, `update` precedes the single bulk statement, `update-result`
+ * holds that statement's own result after PostgreSQL has executed it, and
+ * `commit` retains every barrier with every matched cursor already written.
+ *
+ * `update-result` uses the shared barrier's `pauseAfter` mode, so it is the only
+ * stop between the completed bulk write and the helper's last in-transaction
+ * cancellation check: an operation cancelled there has every matched row
+ * written and no `COMMIT` sent. A stop at `commit` is already past that check,
+ * where cancelling loses a race rather than rolling anything back.
  */
 type ChatThreadAgentReadBarrierStop =
   | "identity"
   | "agent-lock"
   | "update"
+  | "update-result"
   | "commit";
 
 function reachedBarrierStop(
@@ -163,7 +171,7 @@ function reachedBarrierStop(
   if (stop === "agent-lock") {
     return text.includes('from "agents"') && text.includes("for key share");
   }
-  if (stop === "update") {
+  if (stop === "update" || stop === "update-result") {
     return text.startsWith('with "updated_threads"');
   }
   return text === "commit";
@@ -189,6 +197,7 @@ export async function withChatThreadAgentReadBarrierFixture<T>(
       stopAt: (queryArgs, selectingStatement) => {
         return reachedBarrierStop(args.stopAt, queryArgs, selectingStatement);
       },
+      pauseAfter: args.stopAt === "update-result",
       work: args.work,
     },
     signal,

@@ -7,7 +7,7 @@ import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { and, eq, gt, type SQL } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
-import type { Db, ReadonlyDb } from "../external/db";
+import type { ReadonlyDb } from "../external/db";
 
 /**
  * Occurrence, attempt and lease ownership for the Morning Brief collector.
@@ -31,9 +31,28 @@ export interface MorningBriefCollectionOwner {
   readonly userId: string;
 }
 
+/** The member preference row an admission resolved its owner against. */
+interface MorningBriefCollectionOwnerRow {
+  readonly timezone: string | null;
+  /**
+   * When that durable parent row was created.
+   *
+   * Ordinary preference writes upsert the row and leave this untouched, while
+   * membership, user and organization cleanup delete it and a later rejoin
+   * inserts a new one. It is therefore the local generation of the parent an
+   * occurrence hangs from, and it is what the claim compares so a request
+   * admitted against the deleted generation cannot write under its
+   * replacement. It is deliberately not part of the occurrence's frozen
+   * binding: deleting the parent cascades every occurrence away, so a surviving
+   * row always hangs from the generation that admitted it.
+   */
+  readonly memberCreatedAt: Date;
+}
+
 /** The identity and frozen scope a claim is admitted with. */
 export interface MorningBriefCollectionAdmission {
   readonly owner: MorningBriefCollectionOwner;
+  readonly memberCreatedAt: Date;
   readonly scheduledFor: Date;
   readonly collectionKind: string;
   readonly windowStart: Date;
@@ -77,6 +96,8 @@ type MorningBriefCollectionFinalizeResult =
   | {
       readonly kind: "finalized";
       readonly occurrence: MorningBriefCollectionOccurrenceRow;
+      /** The admitted instant this completion was written with. */
+      readonly at: Date;
     }
   | { readonly kind: "claim-lost" }
   | { readonly kind: "owner-revoked" };
@@ -116,6 +137,13 @@ function occurrenceKey(
   );
 }
 
+function memberKey(owner: MorningBriefCollectionOwner): SQL | undefined {
+  return and(
+    eq(orgMembersMetadata.orgId, owner.orgId),
+    eq(orgMembersMetadata.userId, owner.userId),
+  );
+}
+
 /**
  * Admit this owner and take their durable member row.
  *
@@ -127,27 +155,117 @@ function occurrenceKey(
  * therefore either waits for this transaction and then cascades the row away,
  * or has already committed and leaves nothing to write. This never creates the
  * parent.
+ *
+ * The row's own `morning_brief_collection_revoked_at` is the durable half of
+ * that boundary. Revocation stamps it in the first transaction each cleanup
+ * commits, well before the parent itself is deleted, so a claim whose external
+ * membership answer was resolved earlier still loses here — including when
+ * revocation had no occurrence to delete. Because `FOR KEY SHARE` conflicts
+ * with the `FOR UPDATE` that revocation takes on the same row, the two
+ * transactions cannot decide at the same time in either order.
+ *
+ * This is the shared owner fence every later stage uses. A stage that already
+ * holds a persisted occurrence — generation, its saved result, delivery —
+ * proves the owner with exactly this call rather than reimplementing the
+ * subject admission, the lock mode or the stamp comparison. It deliberately
+ * does not compare an admission's parent generation, because such a stage has
+ * no admission to compare: deleting the parent cascades its occurrence away, so
+ * a surviving occurrence is itself the proof that the parent never changed.
  */
 export async function lockCollectionOwner(
   tx: Tx,
   owner: MorningBriefCollectionOwner,
 ): Promise<boolean> {
+  const member = await lockOwnerRow(tx, owner);
+  return member !== undefined && member.revokedAt === null;
+}
+
+async function lockOwnerRow(
+  tx: Tx,
+  owner: MorningBriefCollectionOwner,
+): Promise<
+  { readonly revokedAt: Date | null; readonly createdAt: Date } | undefined
+> {
   await assertErasureSubjectWritable(tx, [
     { subjectKind: "organization", subjectId: owner.orgId },
     { subjectKind: "user", subjectId: owner.userId },
   ]);
   const [member] = await tx
-    .select({ orgId: orgMembersMetadata.orgId })
+    .select({
+      revokedAt: orgMembersMetadata.morningBriefCollectionRevokedAt,
+      createdAt: orgMembersMetadata.createdAt,
+    })
     .from(orgMembersMetadata)
-    .where(
-      and(
-        eq(orgMembersMetadata.orgId, owner.orgId),
-        eq(orgMembersMetadata.userId, owner.userId),
-      ),
-    )
+    .where(memberKey(owner))
     .limit(1)
     .for("key share");
-  return member !== undefined;
+  return member;
+}
+
+/**
+ * The same lock, plus the parent generation this admission resolved against.
+ *
+ * The stamp dies with the row, so it cannot answer the case admission is
+ * exposed to: a cleanup that ran to completion, followed by a legitimate rejoin
+ * whose ordinary preference write inserts an unstamped replacement parent.
+ * `created_at` closes that one. It is stable across every preference upsert and
+ * new for every recreated row, so an admission resolved against the deleted
+ * generation is refused before it claims an attempt, reaches the provider, or
+ * leaves a stale occurrence in the rejoined member's way. Only admission can be
+ * stale this way, which is why the shared fence above stays narrower.
+ */
+async function lockAdmittedCollectionOwner(
+  tx: Tx,
+  admission: Pick<MorningBriefCollectionAdmission, "owner" | "memberCreatedAt">,
+): Promise<boolean> {
+  const member = await lockOwnerRow(tx, admission.owner);
+  return (
+    member !== undefined &&
+    member.revokedAt === null &&
+    member.createdAt.getTime() === admission.memberCreatedAt.getTime()
+  );
+}
+
+/**
+ * Read the member preference row an admission must hang from.
+ *
+ * This is the same canonical row the timezone comes from, read once so the
+ * admission also carries the parent generation its claim is checked against.
+ */
+export async function loadMorningBriefCollectionOwnerRow(
+  db: Pick<ReadonlyDb, "select">,
+  owner: MorningBriefCollectionOwner,
+): Promise<MorningBriefCollectionOwnerRow | null> {
+  const [member] = await db
+    .select({
+      timezone: orgMembersMetadata.timezone,
+      memberCreatedAt: orgMembersMetadata.createdAt,
+    })
+    .from(orgMembersMetadata)
+    .where(memberKey(owner))
+    .limit(1);
+  return member ?? null;
+}
+
+/**
+ * Take the occurrence row itself before any decision is made about it.
+ *
+ * Every wait this transition can block on happens at or before this statement:
+ * the erasure and member locks above, then this row lock behind a concurrent
+ * claimant. The decision clock is therefore sampled after all of them, and the
+ * guarded write that follows cannot queue again.
+ */
+async function lockOccurrence(
+  tx: Tx,
+  admission: MorningBriefCollectionAdmission,
+): Promise<MorningBriefCollectionOccurrenceRow | undefined> {
+  const [row] = await tx
+    .select()
+    .from(morningBriefCollectionOccurrences)
+    .where(occurrenceKey(admission))
+    .limit(1)
+    .for("update");
+  return row;
 }
 
 /**
@@ -203,9 +321,15 @@ function leaseValues(claim: MorningBriefCollectionClaim, at: Date) {
   };
 }
 
+/**
+ * Decide whether this attempt may take over an existing occurrence.
+ *
+ * `at` is the decision's own instant, sampled after every lock this transition
+ * waited on, so a lease, retry deadline or lifetime that elapsed during those
+ * waits is treated as elapsed rather than as the request's earlier reading.
+ */
 function reclaimDecision(
   row: MorningBriefCollectionOccurrenceRow,
-  admission: MorningBriefCollectionAdmission,
   at: Date,
 ): Extract<MorningBriefCollectionClaimResult, { kind: "rejected" }> | null {
   if (row.status === "running" && row.leaseExpiresAt !== null) {
@@ -215,8 +339,12 @@ function reclaimDecision(
       return { kind: "rejected", reason: "in-progress" };
     }
   }
+  // Equality with the lifetime deadline is already expired, exactly as it is
+  // for a lease: the occurrence stops being claimable at that instant rather
+  // than one millisecond later. `created_at` is never rewritten by a re-claim,
+  // so this measures the logical occurrence rather than its latest attempt.
   if (
-    at.getTime() - row.createdAt.getTime() >
+    at.getTime() - row.createdAt.getTime() >=
     MORNING_BRIEF_COLLECTION_MAX_LIFETIME_MS
   ) {
     return { kind: "rejected", reason: "expired" };
@@ -228,75 +356,88 @@ function reclaimDecision(
   if (retryAt !== null && retryAt.getTime() > at.getTime()) {
     return { kind: "rejected", reason: "retry-pending" };
   }
-  if (!morningBriefCollectionBindingMatches(row, admission)) {
-    return { kind: "rejected", reason: "binding-changed" };
-  }
   return null;
 }
 
 /**
  * Take exclusive ownership of one attempt on this occurrence.
  *
- * Concurrent invocations converge on a single admitted claimant: the losing
- * insert finds the conflicting row, then serializes behind `FOR UPDATE` before
- * deciding. A completed occurrence is never re-collected, a live lease is never
- * stolen, and a retry may only reuse an occurrence whose frozen window,
- * membership generation, installation, Agent and Slack binding are unchanged.
+ * The owner and the occurrence row are locked before anything is decided, so
+ * concurrent invocations converge on a single admitted claimant and the clock
+ * this decision uses is read after those waits rather than before them. A
+ * completed occurrence is never re-collected, a live lease is never stolen, and
+ * no existing occurrence — completed, failed or running — is reused unless its
+ * frozen window, timezone, membership generation, installation, schedule, Agent
+ * and Slack binding are all still exactly the admitted ones.
  */
 export async function claimMorningBriefCollection(
   tx: Tx,
   admission: MorningBriefCollectionAdmission,
-  claim: MorningBriefCollectionClaim,
-  at: Date,
+  leaseToken: string,
+  clock: () => Date,
 ): Promise<MorningBriefCollectionClaimResult> {
-  if (!(await lockCollectionOwner(tx, admission.owner))) {
+  if (!(await lockAdmittedCollectionOwner(tx, admission))) {
     return { kind: "rejected", reason: "owner-revoked" };
   }
-  const [created] = await tx
-    .insert(morningBriefCollectionOccurrences)
-    .values({
-      orgId: admission.owner.orgId,
-      userId: admission.owner.userId,
-      scheduledFor: admission.scheduledFor,
-      collectionKind: admission.collectionKind,
-      collectionVersion: MORNING_BRIEF_COLLECTION_VERSION,
-      windowStart: admission.windowStart,
-      windowEnd: admission.windowEnd,
-      timezone: admission.timezone,
-      membershipId: admission.membershipId,
-      workflowId: admission.workflowId,
-      automationId: admission.automationId,
-      agentId: admission.agentId,
-      slackWorkspaceId: admission.slackWorkspaceId,
-      slackUserId: admission.slackUserId,
-      createdAt: at,
-      ...leaseValues({ ...claim, attempt: 1 }, at),
-    })
-    .onConflictDoNothing()
-    .returning({ attempt: morningBriefCollectionOccurrences.attempt });
-  if (created) {
-    return { kind: "claimed", claim: { ...claim, attempt: 1 } };
+  let current = await lockOccurrence(tx, admission);
+  if (!current) {
+    const at = clock();
+    const claim = {
+      attempt: 1,
+      leaseToken,
+      leaseExpiresAt: collectionLeaseExpiry(at),
+    };
+    const [created] = await tx
+      .insert(morningBriefCollectionOccurrences)
+      .values({
+        orgId: admission.owner.orgId,
+        userId: admission.owner.userId,
+        scheduledFor: admission.scheduledFor,
+        collectionKind: admission.collectionKind,
+        collectionVersion: MORNING_BRIEF_COLLECTION_VERSION,
+        windowStart: admission.windowStart,
+        windowEnd: admission.windowEnd,
+        timezone: admission.timezone,
+        membershipId: admission.membershipId,
+        workflowId: admission.workflowId,
+        automationId: admission.automationId,
+        agentId: admission.agentId,
+        slackWorkspaceId: admission.slackWorkspaceId,
+        slackUserId: admission.slackUserId,
+        createdAt: at,
+        ...leaseValues(claim, at),
+      })
+      .onConflictDoNothing()
+      .returning({ attempt: morningBriefCollectionOccurrences.attempt });
+    if (created) {
+      return { kind: "claimed", claim };
+    }
+    // Another claimant committed its own first attempt between the lock above
+    // and this insert, so serialize behind its row and decide against that.
+    current = await lockOccurrence(tx, admission);
+    if (!current) {
+      // It was removed again while this insert waited for it, which means a
+      // cleanup or Agent deletion won. Refuse rather than resurrect it.
+      return { kind: "rejected", reason: "owner-revoked" };
+    }
   }
 
-  const [current] = await tx
-    .select()
-    .from(morningBriefCollectionOccurrences)
-    .where(occurrenceKey(admission))
-    .for("update")
-    .limit(1);
-  if (!current) {
-    // The conflicting row was removed while this insert waited for it, which
-    // means a cleanup or Agent deletion won. Refuse rather than resurrect it.
-    return { kind: "rejected", reason: "owner-revoked" };
+  const at = clock();
+  if (!morningBriefCollectionBindingMatches(current, admission)) {
+    return { kind: "rejected", reason: "binding-changed" };
   }
   if (current.status === "completed") {
     return { kind: "already-completed", occurrence: current };
   }
-  const rejected = reclaimDecision(current, admission, at);
+  const rejected = reclaimDecision(current, at);
   if (rejected) {
     return rejected;
   }
-  const reclaimed = { ...claim, attempt: current.attempt + 1 };
+  const reclaimed = {
+    attempt: current.attempt + 1,
+    leaseToken,
+    leaseExpiresAt: collectionLeaseExpiry(at),
+  };
   await tx
     .update(morningBriefCollectionOccurrences)
     .set(leaseValues(reclaimed, at))
@@ -307,22 +448,32 @@ export async function claimMorningBriefCollection(
 /**
  * Record what this attempt observed, but only if it is still the live owner.
  *
- * The update is conditional on the exact occurrence, attempt, lease token,
- * running status and an unexpired deadline, so a stale worker can neither
- * overwrite a newer claimant nor have its discarded bundle accepted. The owner
- * lock is retaken first, so a cleanup that won the race leaves this with
- * nothing to finalize instead of allowing a completed row to survive it.
+ * The owner and the occurrence row are locked first, and only then is the
+ * admission instant read: waiting for either lock can outlast a 60-second
+ * lease, so a timestamp sampled before those waits would let an attempt that
+ * lost its lease during them complete anyway. The update itself stays one
+ * conditional statement over the exact occurrence, attempt, lease token,
+ * membership generation, running status and a deadline strictly after that
+ * instant, and it can no longer queue because this transaction already holds
+ * the row. A stale worker therefore neither overwrites a newer claimant nor has
+ * its discarded bundle accepted, and a cleanup that won the race leaves this
+ * with nothing to finalize.
  */
 export async function finalizeMorningBriefCollection(
   tx: Tx,
   admission: MorningBriefCollectionAdmission,
   claim: MorningBriefCollectionClaim,
   completion: MorningBriefCollectionCompletion,
-  at: Date,
+  clock: () => Date,
 ): Promise<MorningBriefCollectionFinalizeResult> {
-  if (!(await lockCollectionOwner(tx, admission.owner))) {
+  if (!(await lockAdmittedCollectionOwner(tx, admission))) {
     return { kind: "owner-revoked" };
   }
+  const current = await lockOccurrence(tx, admission);
+  if (!current || !morningBriefCollectionBindingMatches(current, admission)) {
+    return { kind: "claim-lost" };
+  }
+  const at = clock();
   const [finalized] = await tx
     .update(morningBriefCollectionOccurrences)
     .set({
@@ -354,7 +505,7 @@ export async function finalizeMorningBriefCollection(
     )
     .returning();
   return finalized
-    ? { kind: "finalized", occurrence: finalized }
+    ? { kind: "finalized", occurrence: finalized, at }
     : { kind: "claim-lost" };
 }
 
@@ -381,21 +532,60 @@ function revocationWhere(
     : eq(morningBriefCollectionOccurrences.orgId, scope.orgId);
 }
 
+function revokedMemberWhere(
+  scope: MorningBriefCollectionRevocationScope,
+): SQL | undefined {
+  if (scope.kind === "membership") {
+    return memberKey({ orgId: scope.orgId, userId: scope.userId });
+  }
+  return scope.kind === "user"
+    ? eq(orgMembersMetadata.userId, scope.userId)
+    : eq(orgMembersMetadata.orgId, scope.orgId);
+}
+
 /**
- * Drop this scope's collection ownership inside a cleanup transaction.
+ * Revoke this scope's collection ownership inside a cleanup transaction.
  *
- * Called from the earliest local revocation each cleanup path already commits,
- * so an owner loses collection ownership before the rest of their state is torn
- * down. Deleting the row leaves a running attempt with nothing to finalize; its
- * in-flight Slack requests cannot be retracted, but its bundle can no longer be
- * accepted or returned. Other owners are untouched. The member and Agent
- * cascades remain the final guarantee when this runs first.
+ * This runs in the first transaction each membership, user and organization
+ * cleanup commits, so an owner loses collection ownership before the rest of
+ * their state is torn down — and the caller must pass that transaction, not a
+ * connection, because the decision has to become visible with the rest of that
+ * revocation and not a statement later.
+ *
+ * Deleting the occurrences is only half of it. Taking `FOR UPDATE` on the owner
+ * rows first serializes this against the `FOR KEY SHARE` a claim or
+ * finalization holds, and stamping those rows records the revocation durably.
+ * That explicit lock is load-bearing and must not be folded into the `UPDATE`:
+ * an `UPDATE` of a non-key column acquires `FOR NO KEY UPDATE`, which does not
+ * conflict with `FOR KEY SHARE`, so a single statement would let a claim read
+ * an unstamped row and commit its insert alongside this delete. No test would
+ * catch that, because the regressions depend on the blocking order rather than
+ * on the number of statements.
+ * A claim that commits first is therefore seen and deleted here; a claim that
+ * arrives later reads the stamp and refuses, even though this transaction found
+ * no occurrence to delete and even though the member row itself is removed only
+ * at the end of the cleanup. Other owners are untouched, and the member and
+ * Agent cascades remain the final guarantee.
+ *
+ * A running attempt is left with nothing to finalize. Its in-flight Slack
+ * requests cannot be retracted; what this guarantees is that no result of one
+ * is accepted, persisted or returned once this transaction commits.
  */
 export async function revokeMorningBriefCollectionOwnership(
-  executor: Pick<Db, "delete"> | Tx,
+  tx: Tx,
   scope: MorningBriefCollectionRevocationScope,
+  at: Date,
 ): Promise<void> {
-  await executor
+  await tx
+    .select({ orgId: orgMembersMetadata.orgId })
+    .from(orgMembersMetadata)
+    .where(revokedMemberWhere(scope))
+    .for("update");
+  await tx
+    .update(orgMembersMetadata)
+    .set({ morningBriefCollectionRevokedAt: at, updatedAt: at })
+    .where(revokedMemberWhere(scope));
+  await tx
     .delete(morningBriefCollectionOccurrences)
     .where(revocationWhere(scope));
 }
@@ -423,7 +613,7 @@ export async function readMorningBriefCollectionOccurrence(
 }
 
 /** The next lease deadline for an attempt claimed at `at`. */
-export function collectionLeaseExpiry(at: Date): Date {
+function collectionLeaseExpiry(at: Date): Date {
   return new Date(at.getTime() + MORNING_BRIEF_COLLECTION_LEASE_MS);
 }
 
