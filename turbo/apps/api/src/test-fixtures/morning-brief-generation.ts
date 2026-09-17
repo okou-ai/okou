@@ -7,6 +7,7 @@ import {
   morningBriefPlatformGenerationReceipts,
 } from "@okouai/db/schema/morning-brief-generation";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgUsageAllowanceWindows } from "@okouai/db/schema/org-usage-allowance";
 import { usageEvent } from "@okouai/db/schema/usage-event";
@@ -94,6 +95,23 @@ export async function removeMorningBriefMember(
         eq(orgMembersMetadata.userId, owner.userId),
       ),
     );
+}
+
+/**
+ * Rebind this member's connected Slack account to a different Slack user.
+ *
+ * The occurrence freezes the exact native binding it was admitted under, so a
+ * new Slack identity in the same workspace is a different authority even though
+ * the member and the installation are unchanged.
+ */
+export async function rebindMorningBriefSlackAccount(
+  userId: string,
+  slackUserId: string,
+): Promise<void> {
+  await db()
+    .update(slackOrgConnections)
+    .set({ slackUserId })
+    .where(eq(slackOrgConnections.userId, userId));
 }
 
 /**
@@ -237,6 +255,33 @@ export async function failMorningBriefGenerationUpdates(
   };
   onTestFinished(restore);
   return restore;
+}
+
+/**
+ * Hold this owner's durable member row exclusively.
+ *
+ * Every guarded generation write takes `FOR KEY SHARE` on that row first, so
+ * this suspends a persistence attempt at exactly the lock it really waits on.
+ * It is the production wait, not a sleep, which is what makes "the reservation
+ * expired while persistence was blocked" a reproducible ordering rather than a
+ * timing hope.
+ */
+export async function holdMorningBriefOwnerRow(
+  owner: MorningBriefGenerationOwner,
+  signal: AbortSignal,
+): Promise<{
+  readonly waitForArrival: () => Promise<number>;
+  readonly release: () => Promise<void>;
+}> {
+  const held = await holdDeferredRow(signal, async (tx) => {
+    await tx.execute(
+      sql`SELECT 1 FROM org_members_metadata
+          WHERE org_id = ${owner.orgId} AND user_id = ${owner.userId}
+          FOR UPDATE`,
+    );
+  });
+  onTestFinished(held.release);
+  return { waitForArrival: held.waitForBlocked, release: held.release };
 }
 
 function ownerDigest(owner: MorningBriefGenerationOwner): string {

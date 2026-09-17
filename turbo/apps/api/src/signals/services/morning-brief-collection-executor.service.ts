@@ -346,6 +346,43 @@ const admitMorningBriefCollection$ = command(
 );
 
 /**
+ * The owner's live Morning Brief authority, without the Slack credential.
+ *
+ * It is the same canonical resolution admission uses — the implementation
+ * switch, the canonical installed-and-enabled brief, the member timezone, the
+ * installation's Agent, a fresh exact-member Clerk membership and the native
+ * Slack binding — exposed so a later stage can revalidate that exact authority
+ * instead of inventing a second adoption algorithm. The bot token stays inside
+ * this module: a caller that only needs to know *whether* the authority still
+ * holds never receives a credential.
+ */
+export const currentMorningBriefCollectionAuthority$ = command(
+  async (
+    { set },
+    args: {
+      readonly owner: MorningBriefCollectionOwner;
+      readonly scheduledFor: Date;
+    },
+    signal: AbortSignal,
+  ): Promise<
+    | {
+        readonly kind: "admitted";
+        readonly admission: MorningBriefCollectionAdmission;
+      }
+    | {
+        readonly kind: "not-executed";
+        readonly reason: MorningBriefCollectionSkipReason;
+      }
+  > => {
+    const resolved = await set(admitMorningBriefCollection$, args, signal);
+    signal.throwIfAborted();
+    return resolved.kind === "admitted"
+      ? { kind: "admitted", admission: resolved.admitted.admission }
+      : resolved;
+  },
+);
+
+/**
  * Prove the admitted authority is still exactly the same before accepting data.
  *
  * Collection runs outside any transaction and can take seconds, so the

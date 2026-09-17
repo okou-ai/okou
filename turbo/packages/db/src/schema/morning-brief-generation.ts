@@ -16,6 +16,22 @@ import {
 import { morningBriefCollectionOccurrences } from "./morning-brief-collection-occurrence";
 
 /**
+ * A SQL literal list built from a program constant.
+ *
+ * The enumerations below are compile-time constants with no caller input, and
+ * the database has to reject an unexpected value itself: a TypeScript union is
+ * a claim about writers this process controls, not a guarantee about the text
+ * already stored in a column.
+ */
+function sqlLiterals(values: readonly string[]): string {
+  return values
+    .map((value) => {
+      return `'${value}'`;
+    })
+    .join(", ");
+}
+
+/**
  * The prompt and result-schema contracts one generation was produced under.
  *
  * They are provenance: a stored result records exactly which prompt and which
@@ -92,7 +108,21 @@ export const MORNING_BRIEF_GENERATION_FAILURE_REASONS = [
   "result_too_large",
   "reservation_expired",
   "owner_revoked",
+  "binding_changed",
   "persistence_failed",
+] as const;
+
+/**
+ * The collected coverage a generation was produced from.
+ *
+ * It mirrors the collector's own vocabulary because the distinction between a
+ * healthy empty read and a bounded one is exactly what this pipeline must never
+ * lose.
+ */
+export const MORNING_BRIEF_GENERATION_SOURCE_COVERAGES = [
+  "complete",
+  "partial",
+  "empty",
 ] as const;
 
 /** How the generation language was resolved. */
@@ -161,7 +191,9 @@ export const morningBriefGenerations = pgTable(
     /** True when deterministic reduction dropped candidates before sending. */
     inputReduced: boolean("input_reduced").notNull(),
     /** The collected coverage this generation was produced from. */
-    sourceCoverage: text("source_coverage").notNull(),
+    sourceCoverage: text("source_coverage", {
+      enum: MORNING_BRIEF_GENERATION_SOURCE_COVERAGES,
+    }).notNull(),
 
     /** Finite phase ownership: never the collection lease, never unbounded. */
     reservedAt: timestamp("reserved_at").notNull(),
@@ -220,6 +252,35 @@ export const morningBriefGenerations = pgTable(
         table.userId,
         table.expiresAt,
       ),
+      // Every enumerated column is enforced by the database, so a reader never
+      // has to guess what an unexpected stored value means.
+      check(
+        "chk_morning_brief_generation_purpose",
+        sql`${table.executionPurpose} IN (${sql.raw(sqlLiterals(MORNING_BRIEF_GENERATION_PURPOSES))})`,
+      ),
+      check(
+        "chk_morning_brief_generation_state",
+        sql`${table.state} IN (${sql.raw(sqlLiterals(MORNING_BRIEF_GENERATION_STATES))})`,
+      ),
+      check(
+        "chk_morning_brief_generation_language_source",
+        sql`${table.languageSource} IN (${sql.raw(sqlLiterals(MORNING_BRIEF_GENERATION_LANGUAGE_SOURCES))})`,
+      ),
+      // Coverage decides whether an empty day was healthy, so an unrecognized
+      // value must never reach a reader that would have to interpret it.
+      check(
+        "chk_morning_brief_generation_coverage",
+        sql`${table.sourceCoverage} IN (${sql.raw(sqlLiterals(MORNING_BRIEF_GENERATION_SOURCE_COVERAGES))})`,
+      ),
+      check(
+        "chk_morning_brief_generation_failure_reason",
+        sql`${table.failureReason} IS NULL
+          OR ${table.failureReason} IN (${sql.raw(sqlLiterals(MORNING_BRIEF_GENERATION_FAILURE_REASONS))})`,
+      ),
+      check(
+        "chk_morning_brief_generation_skip_reason",
+        sql`(${table.decision} = 'skip') = (${table.skipReason} IS NOT NULL)`,
+      ),
       // Only a terminal state carries a finished instant, so a reserved slot
       // can never look settled.
       check(
@@ -227,12 +288,17 @@ export const morningBriefGenerations = pgTable(
         sql`(${table.state} = 'reserved') = (${table.finishedAt} IS NULL)`,
       ),
       // An accepted result exists exactly in the succeeded state, and a
-      // delivered one always carries rendered content.
+      // delivered one always carries rendered content plus its real byte size.
+      // The size is stored rather than recomputed, so nothing downstream has to
+      // substitute a string length for a UTF-8 byte count.
       check(
         "chk_morning_brief_generation_decision",
         sql`(${table.state} = 'succeeded') = (${table.decision} IS NOT NULL)
           AND (${table.decision} = 'deliver') =
-            (${table.resultMarkdown} IS NOT NULL AND ${table.resultTitle} IS NOT NULL)`,
+            (${table.resultMarkdown} IS NOT NULL
+             AND ${table.resultTitle} IS NOT NULL
+             AND ${table.resultBytes} IS NOT NULL)
+          AND (${table.resultBytes} IS NULL OR ${table.resultBytes} > 0)`,
       ),
       check(
         "chk_morning_brief_generation_included_items",
@@ -250,6 +316,7 @@ export const morningBriefGenerations = pgTable(
 /** Which request field the stored provider cost was parsed from. */
 export const MORNING_BRIEF_PLATFORM_COST_SOURCES = [
   "chat_completion_usage_cost",
+  "generation_total_cost",
 ] as const;
 
 /**
@@ -336,6 +403,27 @@ export const morningBriefPlatformGenerationReceipts = pgTable(
     return [
       index("idx_morning_brief_platform_generation_receipts_started").on(
         table.startedAt,
+      ),
+      check(
+        "chk_morning_brief_platform_receipt_outcome",
+        sql`${table.outcome} IN (${sql.raw(sqlLiterals(MORNING_BRIEF_PLATFORM_RECEIPT_OUTCOMES))})`,
+      ),
+      check(
+        "chk_morning_brief_platform_receipt_cost_state",
+        sql`${table.costState} IN (${sql.raw(sqlLiterals(MORNING_BRIEF_PLATFORM_COST_STATES))})`,
+      ),
+      check(
+        "chk_morning_brief_platform_receipt_cost_source",
+        sql`${table.costSource} IS NULL
+          OR ${table.costSource} IN (${sql.raw(sqlLiterals(MORNING_BRIEF_PLATFORM_COST_SOURCES))})`,
+      ),
+      check(
+        "chk_morning_brief_platform_receipt_tokens",
+        sql`(${table.promptTokens} IS NULL OR ${table.promptTokens} >= 0)
+          AND (${table.completionTokens} IS NULL OR ${table.completionTokens} >= 0)
+          AND (${table.reasoningTokens} IS NULL OR ${table.reasoningTokens} >= 0)
+          AND (${table.cachedTokens} IS NULL OR ${table.cachedTokens} >= 0)
+          AND (${table.totalTokens} IS NULL OR ${table.totalTokens} >= 0)`,
       ),
       // An amount exists exactly when one was reported, and it always carries
       // the unit and field it came from.

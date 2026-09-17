@@ -14,9 +14,11 @@ import { afterEach, describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
-import { clearMockNow, now } from "../../../lib/time";
+import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import {
+  deleteMorningBriefAgent,
+  pauseMorningBriefAutomation,
   readMorningBriefCollectionOccurrences,
   seedInstalledMorningBrief,
 } from "../../../test-fixtures/morning-brief-collection";
@@ -25,9 +27,11 @@ import {
   expireMorningBriefGenerationReservation,
   failMorningBriefGenerationUpdates,
   holdMorningBriefGenerationReservation,
+  holdMorningBriefOwnerRow,
   readMorningBriefGenerations,
   readOwnerBillingFootprint,
   readPlatformGenerationReceipts,
+  rebindMorningBriefSlackAccount,
   removeMorningBriefMember,
   setMorningBriefMemberLocale,
 } from "../../../test-fixtures/morning-brief-generation";
@@ -48,6 +52,7 @@ const SLACK_USER_CONVERSATIONS_URL =
   "https://slack.com/api/users.conversations";
 const SLACK_HISTORY_URL = "https://slack.com/api/conversations.history";
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
+const OPENROUTER_GENERATION_URL = "https://openrouter.ai/api/v1/generation";
 
 const ANCHOR_MS = Math.floor((now() - 60 * 60 * 1000) / 1000) * 1000;
 const ANCHOR = new Date(ANCHOR_MS).toISOString();
@@ -855,6 +860,380 @@ describe("Morning Brief platform-funded generation", () => {
     expect(body.generation.language).toBe("en-US");
     expect(body.generation.languageSource).toBe("default");
     expect(traffic.bodies[0]).toContain("en-US");
+  });
+});
+
+/**
+ * A held provider request, with a chance to change the world while it is open.
+ *
+ * The response is produced only after `duringRequest` has finished, so every
+ * mutation it performs is already committed when the answer comes back — the
+ * exact interleaving where a stale authority could still be accepted.
+ */
+function scriptHeldProvider(
+  duringRequest: () => Promise<void>,
+  options: { readonly cost?: unknown } = {},
+): ProviderTraffic {
+  return scriptProvider(async () => {
+    await duringRequest();
+    return completion({ cost: options.cost ?? 0.007 });
+  });
+}
+
+describe("Morning Brief platform-funded generation authority", () => {
+  it.each([
+    [
+      "the brief is disabled",
+      async (f: Fixture) => {
+        await pauseMorningBriefAutomation(f.automationId);
+      },
+    ],
+    [
+      "the installation Agent is deleted",
+      async (f: Fixture) => {
+        await deleteMorningBriefAgent(f.agentId);
+      },
+    ],
+    [
+      "the member leaves and rejoins",
+      async (f: Fixture) => {
+        await store.set(
+          seedOrgMembership$,
+          {
+            userId: f.userId,
+            orgId: f.orgId,
+            role: "admin",
+            membershipId: `orgmem_${randomUUID()}`,
+          },
+          context.signal,
+        );
+      },
+    ],
+    [
+      "the connected Slack account is rebound",
+      async (f: Fixture) => {
+        await rebindMorningBriefSlackAccount(
+          f.userId,
+          `U${randomUUID().slice(0, 8)}`,
+        );
+      },
+    ],
+  ])(
+    "accepts no content when %s while the request is open",
+    async (_label, mutate) => {
+      const f = await fixture();
+      slackWithMessages();
+      const traffic = scriptHeldProvider(async () => {
+        await mutate(f);
+      });
+
+      const response = await accept(generate(f), [200]);
+      const body = expectGenerated(response.body);
+      expect(body.generation.state).not.toBe("succeeded");
+      expect(body.generation.result).toBeNull();
+      expect(traffic.bodies).toHaveLength(1);
+      // The charge really happened, so it is kept even though the answer is not.
+      expect(body.generation.receipt?.cost.state).toBe("reported");
+      await expect(
+        readPlatformGenerationReceipts([body.generation.attemptId]),
+      ).resolves.toHaveLength(1);
+
+      const [row] = await readMorningBriefGenerations(f);
+      // A deleted Agent cascades the occurrence away; everything else leaves a
+      // terminal slot that carries no owner content.
+      if (row) {
+        expect(row.state).not.toBe("succeeded");
+        expect(row.resultMarkdown).toBeNull();
+      }
+    },
+  );
+
+  it("makes no provider request when authority lapses before the call", async () => {
+    const f = await fixture();
+    slackWithMessages();
+    const traffic = scriptProvider(() => {
+      throw new Error("a lapsed authority must not reach the provider");
+    });
+    // Suspended after the reservation INSERT and before its COMMIT, which is
+    // the only window between owning the slot and using it.
+    const barrier = await holdMorningBriefGenerationReservation(
+      f,
+      context.signal,
+    );
+
+    const pending = accept(generate(f), [200]);
+    await barrier.waitForArrival();
+    await pauseMorningBriefAutomation(f.automationId);
+    await barrier.release();
+
+    const response = await pending;
+    const body = expectGenerated(response.body);
+    expect(body.generation.state).toBe("not_invoked");
+    expect(body.generation.failureReason).toBe("owner_revoked");
+    expect(body.generation.receipt).toBeNull();
+    expect(traffic.bodies).toStrictEqual([]);
+  });
+
+  it("does not release a stored result after the brief is disabled", async () => {
+    const f = await fixture();
+    slackWithMessages();
+    scriptProvider(() => {
+      return completion({ cost: 0.002 });
+    });
+    const first = await accept(generate(f), [200]);
+    expect(expectGenerated(first.body).generation.state).toBe("succeeded");
+
+    await pauseMorningBriefAutomation(f.automationId);
+    const second = await accept(generate(f), [200]);
+    if (second.body.result !== "not-executed") {
+      throw new Error(`Expected not-executed, got ${second.body.result}`);
+    }
+    expect(second.body.reason).toBe("brief-paused");
+    // The result still exists; it is simply not this authority's to read.
+    await expect(readMorningBriefGenerations(f)).resolves.toHaveLength(1);
+  });
+
+  it("does not release a stored result under a different Slack binding", async () => {
+    const f = await fixture();
+    slackWithMessages();
+    scriptProvider(() => {
+      return completion({ cost: 0.002 });
+    });
+    await accept(generate(f), [200]);
+
+    await rebindMorningBriefSlackAccount(
+      f.userId,
+      `U${randomUUID().slice(0, 8)}`,
+    );
+
+    const conflict = await accept(generate(f), [409]);
+    expect(conflict.body.error.code).toBe(
+      "MORNING_BRIEF_COLLECTION_BINDING_CHANGED",
+    );
+    await expect(readMorningBriefGenerations(f)).resolves.toHaveLength(1);
+  });
+
+  it("refuses content whose reservation expired while persistence waited", async () => {
+    const f = await fixture();
+    slackWithMessages();
+    const traffic = scriptProvider(async () => {
+      // Hold the row every guarded write locks first, then let real time pass
+      // beyond the reservation only after persistence is already blocked on it.
+      const held = await holdMorningBriefOwnerRow(f, context.signal);
+      void (async () => {
+        await held.waitForArrival();
+        mockNow(now() + 2 * 60 * 1000);
+        await held.release();
+      })();
+      return completion({ cost: 0.009 });
+    });
+
+    const response = await accept(generate(f), [200]);
+    const body = expectGenerated(response.body);
+    // The answer arrived before the deadline and was still refused, because the
+    // admission clock is sampled where the write is actually admitted.
+    expect(body.generation.state).toBe("result_discarded");
+    expect(body.generation.failureReason).toBe("reservation_expired");
+    expect(body.generation.result).toBeNull();
+    expect(traffic.bodies).toHaveLength(1);
+    await expect(
+      readPlatformGenerationReceipts([body.generation.attemptId]),
+    ).resolves.toHaveLength(1);
+  });
+});
+
+describe("Morning Brief platform-funded generation cost reconciliation", () => {
+  it("reconciles a missing cost from the read-only generation record", async () => {
+    const f = await fixture();
+    slackWithMessages();
+    const lookups: string[] = [];
+    server.use(
+      http.get(OPENROUTER_GENERATION_URL, ({ request }) => {
+        const id = new URL(request.url).searchParams.get("id") ?? "";
+        lookups.push(id);
+        return HttpResponse.json({
+          data: {
+            id,
+            is_byok: false,
+            total_cost: 0.0015,
+            upstream_inference_cost: 0.0012,
+          },
+        });
+      }),
+    );
+    scriptProvider(() => {
+      return completion({});
+    });
+
+    const response = await accept(generate(f), [200]);
+    const body = expectGenerated(response.body);
+    expect(lookups).toStrictEqual(["gen-01H0PLATFORM"]);
+    expect(body.generation.receipt?.cost).toStrictEqual({
+      state: "reported",
+      value: "0.0015",
+      unit: "openrouter_credits",
+      source: "generation_total_cost",
+    });
+    const [row] = await readMorningBriefGenerations(f);
+    const receipts = await readPlatformGenerationReceipts([
+      row?.attemptId ?? "",
+    ]);
+    expect(receipts[0]?.costValue).toBe("0.001500000000");
+  });
+
+  it.each([
+    [
+      "a 404",
+      () => {
+        return new HttpResponse("{}", {
+          status: 404,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    ],
+    [
+      "a record for another generation",
+      () => {
+        return HttpResponse.json({
+          data: { id: "gen-other", is_byok: false, total_cost: 9.99 },
+        });
+      },
+    ],
+    [
+      "a BYOK record",
+      () => {
+        return HttpResponse.json({
+          data: { id: "gen-01H0PLATFORM", is_byok: true, total_cost: 0.5 },
+        });
+      },
+    ],
+    [
+      "a malformed amount",
+      () => {
+        return HttpResponse.json({
+          data: { id: "gen-01H0PLATFORM", is_byok: false, total_cost: "0.5" },
+        });
+      },
+    ],
+  ])("leaves the cost unknown for %s", async (_label, reply) => {
+    const f = await fixture();
+    slackWithMessages();
+    server.use(http.get(OPENROUTER_GENERATION_URL, reply));
+    const traffic = scriptProvider(() => {
+      return completion({});
+    });
+
+    const response = await accept(generate(f), [200]);
+    const body = expectGenerated(response.body);
+    expect(body.generation.state).toBe("succeeded");
+    expect(body.generation.receipt?.cost).toStrictEqual({
+      state: "unavailable",
+      value: null,
+      unit: null,
+      source: null,
+    });
+    // Reconciliation never sends the completion again.
+    expect(traffic.bodies).toHaveLength(1);
+  });
+
+  it("does not look up a cost the completion already reported", async () => {
+    const f = await fixture();
+    slackWithMessages();
+    let lookups = 0;
+    server.use(
+      http.get(OPENROUTER_GENERATION_URL, () => {
+        lookups += 1;
+        return HttpResponse.json({ data: {} });
+      }),
+    );
+    scriptProvider(() => {
+      return completion({ cost: 0 });
+    });
+
+    const response = await accept(generate(f), [200]);
+    expect(expectGenerated(response.body).generation.receipt?.cost.state).toBe(
+      "reported",
+    );
+    expect(lookups).toBe(0);
+  });
+});
+
+describe("Morning Brief platform-funded generation output validation", () => {
+  it("rejects tool calls the provider labelled as a normal stop", async () => {
+    const f = await fixture();
+    slackWithMessages();
+    scriptProvider(() => {
+      return {
+        id: "gen-01H0PLATFORM",
+        model: "google/gemini-3.8-flash",
+        choices: [
+          {
+            finish_reason: "stop",
+            message: {
+              content: deliverContent(),
+              tool_calls: [{ id: "call_1", type: "function" }],
+            },
+          },
+        ],
+        usage: { prompt_tokens: 10, completion_tokens: 2, cost: 0.001 },
+      };
+    });
+
+    const response = await accept(generate(f), [200]);
+    const body = expectGenerated(response.body);
+    expect(body.generation.state).toBe("output_rejected");
+    expect(body.generation.failureReason).toBe("unexpected_tool_calls");
+    expect(body.generation.result).toBeNull();
+    expect(body.generation.receipt?.cost.state).toBe("reported");
+  });
+
+  it("rejects a result carrying fields the contract never declared", async () => {
+    const f = await fixture();
+    slackWithMessages();
+    scriptProvider(() => {
+      return completion({
+        cost: 0.001,
+        content: JSON.stringify({
+          decision: "deliver",
+          title: "Release readiness",
+          sections: [
+            {
+              heading: "Decisions",
+              items: [
+                {
+                  text: "The release ships today.",
+                  sourceIds: ["m1"],
+                  priority: "high",
+                },
+              ],
+            },
+          ],
+        }),
+      });
+    });
+
+    const response = await accept(generate(f), [200]);
+    const body = expectGenerated(response.body);
+    expect(body.generation.state).toBe("output_rejected");
+    expect(body.generation.failureReason).toBe("invalid_shape");
+  });
+
+  it("records fractional token counts as unavailable rather than rounding", async () => {
+    const f = await fixture();
+    slackWithMessages();
+    scriptProvider(() => {
+      return completion({
+        cost: 0.001,
+        usage: { prompt_tokens: 12.5, completion_tokens: -3 },
+      });
+    });
+
+    const response = await accept(generate(f), [200]);
+    const body = expectGenerated(response.body);
+    expect(body.generation.receipt?.tokens.prompt).toBeNull();
+    expect(body.generation.receipt?.tokens.completion).toBeNull();
+    // A usable count beside a malformed one is still recorded.
+    expect(body.generation.receipt?.tokens.total).toBe(1440);
   });
 });
 

@@ -14,6 +14,7 @@ import type {
 import {
   MORNING_BRIEF_GENERATION_PROMPT_VERSION,
   MORNING_BRIEF_GENERATION_RESULT_SCHEMA_VERSION,
+  MORNING_BRIEF_GENERATION_SOURCE_COVERAGES,
 } from "@okouai/db/schema/morning-brief-generation";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { command } from "ccstate";
@@ -24,6 +25,7 @@ import { optionalEnv } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import {
+  lookupPlatformGenerationCost,
   requestPlatformGeneration,
   unknownInvocationTokens,
   type PlatformGenerationCost,
@@ -33,11 +35,17 @@ import {
 } from "../external/openrouter-platform-generation";
 import { settleIncludingAbort } from "../utils";
 import {
+  currentMorningBriefCollectionAuthority$,
   executeMorningBriefSlackCollection$,
   type MorningBriefCollectionConflict,
   type MorningBriefCollectionHandoffContext,
 } from "./morning-brief-collection-executor.service";
-import type { MorningBriefCollectionOwner } from "./morning-brief-collection-occurrence.service";
+import {
+  morningBriefCollectionBindingMatches,
+  readMorningBriefCollectionOccurrence,
+  type MorningBriefCollectionOccurrenceRow,
+  type MorningBriefCollectionOwner,
+} from "./morning-brief-collection-occurrence.service";
 import {
   GENERATION_PROVIDER_DEADLINE_MS,
   MORNING_BRIEF_GENERATION_MODEL,
@@ -99,6 +107,8 @@ const GENERATION_PERSISTENCE_RESERVE_MS = 10_000;
 const GENERATION_RESULT_RETENTION_MS = 24 * 60 * 60 * 1000;
 /** Persistence attempts for one already observed receipt and result. */
 const GENERATION_PERSISTENCE_ATTEMPTS = 3;
+/** The read-only cost reconciliation is short and attempted at most once. */
+const GENERATION_COST_LOOKUP_MS = 5000;
 
 const GENERATION_OPERATION = "morning_brief_generation";
 const GENERATION_PROVIDER = "openrouter";
@@ -363,7 +373,10 @@ type InterpretedOutcome =
       readonly kind: "reject";
       readonly state: Extract<
         MorningBriefGenerationState,
-        "output_rejected" | "provider_failed" | "invocation_outcome_unknown"
+        | "output_rejected"
+        | "provider_failed"
+        | "result_discarded"
+        | "invocation_outcome_unknown"
       >;
       readonly failureReason: MorningBriefGenerationFailureReason;
     };
@@ -393,7 +406,10 @@ function interpretResponse(
       failureReason: "output_truncated",
     };
   }
-  if (observation.finishReason === "tool_calls") {
+  // Either signal is enough. This pipeline sends no tools, so a populated
+  // tool-call field is unexpected output even when the provider labelled the
+  // completion `stop`.
+  if (observation.finishReason === "tool_calls" || observation.toolCalls) {
     return {
       kind: "reject",
       state: "output_rejected",
@@ -475,10 +491,39 @@ function classifyTransport(
   };
 }
 
+/**
+ * Read one stored generation into its response view.
+ *
+ * Stored values are validated rather than defaulted. `source_coverage` decides
+ * whether an empty day was healthy and `result_bytes` is the real UTF-8 size of
+ * the rendered brief, so substituting a value for either would report a
+ * different fact than the one that was accepted. Both are constrained by the
+ * table's own check constraints, so a violation here means the row is corrupt
+ * or was written by something outside this contract — which is worth failing
+ * loudly for, not papering over.
+ */
 function viewOfRow(
   row: MorningBriefGenerationRow,
   receipt: MorningBriefPlatformReceiptView | null,
 ): MorningBriefGenerationView {
+  const coverage = MORNING_BRIEF_GENERATION_SOURCE_COVERAGES.find(
+    (candidate) => {
+      return candidate === row.sourceCoverage;
+    },
+  );
+  if (coverage === undefined) {
+    throw new Error(
+      "Morning Brief generation stores an unsupported source coverage",
+    );
+  }
+  if (
+    row.decision === "deliver" &&
+    (row.resultTitle === null ||
+      row.resultMarkdown === null ||
+      row.resultBytes === null)
+  ) {
+    throw new Error("Morning Brief generation stores an incomplete result");
+  }
   return {
     purpose: GENERATION_PURPOSE,
     state: row.state,
@@ -491,10 +536,7 @@ function viewOfRow(
     inputItems: row.inputItems,
     includedItems: row.includedItems,
     inputReduced: row.inputReduced,
-    sourceCoverage:
-      row.sourceCoverage === "complete" || row.sourceCoverage === "partial"
-        ? row.sourceCoverage
-        : "empty",
+    sourceCoverage: coverage,
     inputDigest: row.inputDigest,
     reservedAt: row.reservedAt.toISOString(),
     reservationExpiresAt: row.reservationExpiresAt.toISOString(),
@@ -503,12 +545,13 @@ function viewOfRow(
     result:
       row.decision === "deliver" &&
       row.resultTitle !== null &&
-      row.resultMarkdown !== null
+      row.resultMarkdown !== null &&
+      row.resultBytes !== null
         ? {
             decision: "deliver",
             title: row.resultTitle,
             markdown: row.resultMarkdown,
-            bytes: row.resultBytes ?? row.resultMarkdown.length,
+            bytes: row.resultBytes,
           }
         : row.decision === "skip"
           ? { decision: "skip", reason: "nothing_actionable" }
@@ -559,7 +602,6 @@ interface PersistenceArgs {
   readonly fence: MorningBriefGenerationFence;
   readonly receipt: MorningBriefPlatformReceiptValues;
   readonly interpreted: InterpretedOutcome;
-  readonly at: Date;
 }
 
 type OwnerWriteResult =
@@ -581,43 +623,90 @@ async function commitOwnerOutcome(
   args: PersistenceArgs,
 ): Promise<OwnerWriteResult> {
   if (args.interpreted.kind === "accept") {
-    const accepted = await acceptMorningBriefGenerationResult(
-      tx,
-      args.fence,
-      {
-        decision: args.interpreted.decision,
-        skipReason: args.interpreted.skipReason,
-        title: args.interpreted.title,
-        markdown: args.interpreted.markdown,
-        bytes: args.interpreted.bytes,
-      },
-      args.at,
-    );
+    const accepted = await acceptMorningBriefGenerationResult(tx, args.fence, {
+      decision: args.interpreted.decision,
+      skipReason: args.interpreted.skipReason,
+      title: args.interpreted.title,
+      markdown: args.interpreted.markdown,
+      bytes: args.interpreted.bytes,
+    });
     if (accepted.kind === "written") {
       return { kind: "written", row: accepted.row };
     }
     const discarded = await recordMorningBriefGenerationOutcome(
       tx,
       args.fence,
-      { state: "result_discarded", failureReason: "reservation_expired" },
-      args.at,
+      {
+        state: "result_discarded",
+        failureReason: "reservation_expired",
+      },
     );
     return discarded.kind === "written"
       ? { kind: "written", row: discarded.row }
       : { kind: "owner-revoked" };
   }
-  const written = await recordMorningBriefGenerationOutcome(
-    tx,
-    args.fence,
-    {
-      state: args.interpreted.state,
-      failureReason: args.interpreted.failureReason,
-    },
-    args.at,
-  );
+  const written = await recordMorningBriefGenerationOutcome(tx, args.fence, {
+    state: args.interpreted.state,
+    failureReason: args.interpreted.failureReason,
+  });
   return written.kind === "written"
     ? { kind: "written", row: written.row }
     : { kind: "owner-revoked" };
+}
+
+/**
+ * Whether the authority this occurrence was admitted under still holds.
+ *
+ * The occurrence row is the durable record of that authority, so the live
+ * canonical resolution is compared against it field by field rather than
+ * against anything a caller supplied. A different-but-valid current binding is
+ * a different authority: it does not license invoking for the old one, nor
+ * releasing what the old one produced.
+ */
+type GenerationAuthority =
+  | { readonly kind: "current" }
+  | {
+      readonly kind: "not-executed";
+      readonly reason: MorningBriefGenerationSkipReason;
+    }
+  | { readonly kind: "binding-changed" };
+
+const generationAuthorityStillCurrent$ = command(
+  async (
+    { set },
+    occurrence: MorningBriefCollectionOccurrenceRow,
+    signal: AbortSignal,
+  ): Promise<GenerationAuthority> => {
+    const resolved = await set(
+      currentMorningBriefCollectionAuthority$,
+      {
+        owner: { orgId: occurrence.orgId, userId: occurrence.userId },
+        scheduledFor: occurrence.scheduledFor,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (resolved.kind !== "admitted") {
+      return { kind: "not-executed", reason: resolved.reason };
+    }
+    return morningBriefCollectionBindingMatches(occurrence, resolved.admission)
+      ? { kind: "current" }
+      : { kind: "binding-changed" };
+  },
+);
+
+/** The terminal record an authority that no longer holds produces. */
+function lapsedAuthorityOutcome(
+  authority: Exclude<GenerationAuthority, { kind: "current" }>,
+): Extract<InterpretedOutcome, { kind: "reject" }> {
+  return {
+    kind: "reject",
+    state: "result_discarded",
+    failureReason:
+      authority.kind === "binding-changed"
+        ? "binding_changed"
+        : "owner_revoked",
+  };
 }
 
 type PersistOutcome =
@@ -690,50 +779,85 @@ async function loadReceiptView(
 /**
  * Report what an occurrence that already finished collecting holds.
  *
- * It never recollects and never regenerates. A terminal slot is read back as
- * it is; a reservation whose deadline has passed is settled as unknown,
- * because the original request may already have reached the provider; and an
- * occurrence that finished with no generation at all reports exactly that,
- * since a completed occurrence keeps no source body to rebuild one from.
+ * It never recollects and never regenerates. A stale reservation is settled as
+ * unknown, because the original request may already have reached the provider.
+ * Releasing a stored result is different: it hands back source-derived content,
+ * so it requires the same live authority the content was produced under. A
+ * brief that has since been disabled, or whose membership, installation, Agent
+ * or Slack binding changed, does not get the previous binding's work.
  */
-async function resolveExistingGeneration(
-  db: Db,
-  key: MorningBriefGenerationKey,
-  occurrence: MorningBriefCollectionOccurrenceView,
-): Promise<MorningBriefGenerationExecution> {
-  const row = await readMorningBriefGeneration(db, key, GENERATION_PURPOSE);
-  if (!row) {
-    return { kind: "collection-completed-without-generation", occurrence };
-  }
-  if (row.state !== "reserved") {
+const resolveExistingGeneration$ = command(
+  async (
+    { set },
+    args: {
+      readonly db: Db;
+      readonly key: MorningBriefGenerationKey;
+      readonly occurrence: MorningBriefCollectionOccurrenceView;
+    },
+    signal: AbortSignal,
+  ): Promise<MorningBriefGenerationExecution> => {
+    const { db, key, occurrence } = args;
+    const row = await readMorningBriefGeneration(db, key, GENERATION_PURPOSE);
+    signal.throwIfAborted();
+    if (!row) {
+      return { kind: "collection-completed-without-generation", occurrence };
+    }
+
+    if (row.state === "reserved") {
+      const at = nowDate();
+      // Equality with the deadline is already expired.
+      if (row.reservationExpiresAt.getTime() > at.getTime()) {
+        return { kind: "conflict", reason: "generation-in-progress" };
+      }
+      // Settling a lapsed reservation records an operational fact and releases
+      // no content, so it is not gated on the content-release authority below.
+      const resolved = await db.transaction(async (tx) => {
+        return await resolveStaleMorningBriefGeneration(tx, key);
+      });
+      signal.throwIfAborted();
+      if (!resolved) {
+        return { kind: "collection-completed-without-generation", occurrence };
+      }
+      return {
+        kind: "already-generated",
+        occurrence,
+        generation: viewOfRow(
+          resolved,
+          await loadReceiptView(db, resolved.attemptId),
+        ),
+      };
+    }
+
+    const occurrenceRow = await readMorningBriefCollectionOccurrence(db, {
+      owner: key.owner,
+      scheduledFor: key.scheduledFor,
+      collectionKind: key.collectionKind,
+    });
+    signal.throwIfAborted();
+    if (!occurrenceRow) {
+      // The occurrence cascaded away, so nothing here has an authority to
+      // release under.
+      return { kind: "collection-completed-without-generation", occurrence };
+    }
+    const authority = await set(
+      generationAuthorityStillCurrent$,
+      occurrenceRow,
+      signal,
+    );
+    signal.throwIfAborted();
+    if (authority.kind === "not-executed") {
+      return { kind: "not-executed", reason: authority.reason };
+    }
+    if (authority.kind === "binding-changed") {
+      return { kind: "conflict", reason: "binding-changed" };
+    }
     return {
       kind: "already-generated",
       occurrence,
       generation: viewOfRow(row, await loadReceiptView(db, row.attemptId)),
     };
-  }
-  const at = nowDate();
-  // Equality with the deadline is already expired.
-  if (row.reservationExpiresAt.getTime() > at.getTime()) {
-    return { kind: "conflict", reason: "generation-in-progress" };
-  }
-  const resolved = await db.transaction(async (tx) => {
-    return await resolveStaleMorningBriefGeneration(tx, key, at);
-  });
-  const settled =
-    resolved ?? (await readMorningBriefGeneration(db, key, GENERATION_PURPOSE));
-  if (!settled) {
-    return { kind: "collection-completed-without-generation", occurrence };
-  }
-  return {
-    kind: "already-generated",
-    occurrence,
-    generation: viewOfRow(
-      settled,
-      await loadReceiptView(db, settled.attemptId),
-    ),
-  };
-}
+  },
+);
 
 interface InvocationArgs {
   readonly db: Db;
@@ -743,121 +867,237 @@ interface InvocationArgs {
   readonly sources: ReadonlyMap<string, GenerationSource>;
   readonly coverage: MorningBriefSlackBundle["coverage"];
   readonly occurrence: MorningBriefCollectionOccurrenceView;
+  /** The durable record of the authority this invocation acts under. */
+  readonly occurrenceRow: MorningBriefCollectionOccurrenceRow;
+}
+
+/**
+ * Reconcile an amount the completion response did not carry.
+ *
+ * Read-only, bounded, and attempted at most once. A delayed, missing, refused
+ * or malformed answer leaves the cost exactly as unknown as it already was; it
+ * never becomes zero, and it is never a reason to send the completion again.
+ */
+async function reconcileCost(
+  args: {
+    readonly apiKey: string;
+    readonly observation: PlatformGenerationObservation;
+  },
+  providerSignal: AbortSignal,
+): Promise<PlatformGenerationObservation> {
+  const { observation } = args;
+  if (observation.cost.state === "reported" || !observation.generationId) {
+    return observation;
+  }
+  const reconciled = await lookupPlatformGenerationCost(
+    { apiKey: args.apiKey, generationId: observation.generationId },
+    AbortSignal.any([
+      providerSignal,
+      AbortSignal.timeout(GENERATION_COST_LOOKUP_MS),
+    ]),
+  );
+  return reconciled.state === "reported"
+    ? { ...observation, cost: reconciled }
+    : observation;
+}
+
+/**
+ * The irreversible step, and the one place cancellation must not short-circuit.
+ *
+ * Both awaits deliberately settle rather than propagate: once the request may
+ * have reached the provider, the caller still has to record what it observed.
+ * Cancellation is applied by the caller, after the anonymous charge is durable
+ * and before any of the answer can become owner content.
+ */
+async function requestAndRecordCharge(
+  args: {
+    readonly db: Db;
+    readonly apiKey: string;
+    readonly attemptId: string;
+    readonly body: string;
+    readonly sources: ReadonlyMap<string, GenerationSource>;
+  },
+  providerSignal: AbortSignal,
+): Promise<{
+  readonly receipt: MorningBriefPlatformReceiptValues;
+  readonly interpreted: InterpretedOutcome;
+}> {
+  const startedAt = nowDate();
+  const outcome = await requestPlatformGeneration(
+    { apiKey: args.apiKey, body: args.body },
+    providerSignal,
+  );
+  const observed =
+    outcome.kind === "response"
+      ? await reconcileCost(
+          { apiKey: args.apiKey, observation: outcome.observation },
+          providerSignal,
+        )
+      : null;
+  const finishedAt = nowDate();
+  const classified =
+    observed === null
+      ? classifyTransport(
+          outcome as Exclude<PlatformGenerationOutcome, { kind: "response" }>,
+        )
+      : {
+          receiptOutcome: "response_received" as const,
+          interpreted: interpretResponse(observed, args.sources),
+        };
+  const receipt = receiptValuesOf({
+    attemptId: args.attemptId,
+    outcome: classified.receiptOutcome,
+    observation: observed,
+    startedAt,
+    finishedAt,
+  });
+  // The charge is already incurred, so it is recorded before anything can
+  // refuse the owner-scoped write. This write is joined to this request and
+  // bounded; nothing is detached to finish after it.
+  await settleIncludingAbort(recordPlatformGenerationReceipt(args.db, receipt));
+  return { receipt, interpreted: classified.interpreted };
 }
 
 /**
  * Make the single provider request this reservation admitted, then record it.
  *
- * Everything before this point is reversible; this is not. The deadline is
- * checked before any contact — equality with the reservation deadline is
- * already expired — and the request is never retried, because the reservation
- * is already durable and a resent request could be a second inference.
+ * Everything before this point is reversible; this is not, so the live
+ * authority is proven twice: once before any provider contact, and once before
+ * any of the answer becomes owner content. The deadline is checked before
+ * contact — equality with the reservation deadline is already expired — and the
+ * request is never retried, because the reservation is already durable and a
+ * resent request could be a second inference.
  */
-async function invokeAndPersist(
-  args: InvocationArgs,
-  signal: AbortSignal,
-): Promise<MorningBriefGenerationExecution> {
-  const { admission, db } = args;
-  const fence: MorningBriefGenerationFence = {
-    key: admission.key,
-    attemptId: admission.attemptId,
-    membershipId: admission.membershipId,
-  };
-  const startedAt = nowDate();
-  const budgetMs = Math.min(
-    GENERATION_PROVIDER_DEADLINE_MS,
-    admission.reservationExpiresAt.getTime() -
-      startedAt.getTime() -
-      GENERATION_PERSISTENCE_RESERVE_MS,
-  );
-  if (budgetMs <= 0) {
-    // Deterministically uninvoked: no request was made, so this is a
-    // failure-before-contact and never an unknown outcome.
-    const written = await db.transaction(async (tx) => {
-      return await recordMorningBriefGenerationOutcome(
-        tx,
-        fence,
-        { state: "not_invoked", failureReason: "reservation_expired" },
-        nowDate(),
+const invokeAndPersist$ = command(
+  async (
+    { set },
+    args: InvocationArgs,
+    signal: AbortSignal,
+  ): Promise<MorningBriefGenerationExecution> => {
+    const { admission, db } = args;
+    const fence: MorningBriefGenerationFence = {
+      key: admission.key,
+      attemptId: admission.attemptId,
+      membershipId: admission.membershipId,
+    };
+    const uninvoked = async (
+      failureReason: MorningBriefGenerationFailureReason,
+    ): Promise<MorningBriefGenerationExecution> => {
+      const written = await db.transaction(async (tx) => {
+        return await recordMorningBriefGenerationOutcome(tx, fence, {
+          state: "not_invoked",
+          failureReason,
+        });
+      });
+      return {
+        kind: "generated",
+        occurrence: args.occurrence,
+        generation:
+          written.kind === "written"
+            ? viewOfRow(written.row, null)
+            : viewOfUncommittedAttempt(
+                admission,
+                args.coverage,
+                null,
+                "owner_revoked",
+              ),
+      };
+    };
+
+    const startedAt = nowDate();
+    const budgetMs = Math.min(
+      GENERATION_PROVIDER_DEADLINE_MS,
+      admission.reservationExpiresAt.getTime() -
+        startedAt.getTime() -
+        GENERATION_PERSISTENCE_RESERVE_MS,
+    );
+    if (budgetMs <= 0) {
+      // Deterministically uninvoked: no request was made, so this is a
+      // failure-before-contact and never an unknown outcome.
+      return await uninvoked("reservation_expired");
+    }
+
+    // The reservation proved this attempt owns the slot; it does not prove the
+    // owner still wants a brief or that the source is still theirs to read.
+    const admitted = await set(
+      generationAuthorityStillCurrent$,
+      args.occurrenceRow,
+      signal,
+    );
+    signal.throwIfAborted();
+    if (admitted.kind !== "current") {
+      return await uninvoked(
+        admitted.kind === "binding-changed"
+          ? "binding_changed"
+          : "owner_revoked",
       );
+    }
+
+    const { receipt, interpreted: observedOutcome } =
+      await requestAndRecordCharge(
+        {
+          db,
+          apiKey: args.apiKey,
+          attemptId: admission.attemptId,
+          body: args.plan.body,
+          sources: args.sources,
+        },
+        AbortSignal.any([signal, AbortSignal.timeout(budgetMs)]),
+      );
+    // Cancellation never accepts owner content, and the charge above is
+    // already durable when it propagates.
+    signal.throwIfAborted();
+    const view = receiptView(receipt);
+
+    const stillAdmitted = await set(
+      generationAuthorityStillCurrent$,
+      args.occurrenceRow,
+      signal,
+    );
+    signal.throwIfAborted();
+    const interpreted =
+      stillAdmitted.kind === "current"
+        ? observedOutcome
+        : lapsedAuthorityOutcome(stillAdmitted);
+
+    const persisted = await persistObservation(db, {
+      fence,
+      receipt,
+      interpreted,
     });
-    return written.kind === "written"
-      ? {
-          kind: "generated",
-          occurrence: args.occurrence,
-          generation: viewOfRow(written.row, null),
-        }
-      : {
-          kind: "generated",
-          occurrence: args.occurrence,
-          generation: viewOfUncommittedAttempt(
-            admission,
-            args.coverage,
-            null,
-            "owner_revoked",
-          ),
-        };
-  }
-
-  const outcome = await requestPlatformGeneration(
-    { apiKey: args.apiKey, body: args.plan.body },
-    AbortSignal.any([signal, AbortSignal.timeout(budgetMs)]),
-  );
-  const finishedAt = nowDate();
-  const observation = outcome.kind === "response" ? outcome.observation : null;
-  const classified =
-    outcome.kind === "response"
-      ? {
-          receiptOutcome: "response_received" as const,
-          interpreted: interpretResponse(outcome.observation, args.sources),
-        }
-      : classifyTransport(outcome);
-  const receipt = receiptValuesOf({
-    attemptId: admission.attemptId,
-    outcome: classified.receiptOutcome,
-    observation,
-    startedAt,
-    finishedAt,
-  });
-
-  const persisted = await persistObservation(db, {
-    fence,
-    receipt,
-    interpreted: classified.interpreted,
-    at: finishedAt,
-  });
-  const view = receiptView(receipt);
-  if (persisted.kind === "uncommitted") {
+    signal.throwIfAborted();
+    if (persisted.kind === "uncommitted") {
+      return {
+        kind: "generated",
+        occurrence: args.occurrence,
+        generation: viewOfUncommittedAttempt(
+          admission,
+          args.coverage,
+          view,
+          "persistence_failed",
+        ),
+      };
+    }
+    if (persisted.write.kind === "owner-revoked") {
+      // The incurred cost stays recorded; no owner row is recreated to hold it.
+      return {
+        kind: "generated",
+        occurrence: args.occurrence,
+        generation: viewOfUncommittedAttempt(
+          admission,
+          args.coverage,
+          view,
+          "owner_revoked",
+        ),
+      };
+    }
     return {
       kind: "generated",
       occurrence: args.occurrence,
-      generation: viewOfUncommittedAttempt(
-        admission,
-        args.coverage,
-        null,
-        "persistence_failed",
-      ),
+      generation: viewOfRow(persisted.write.row, view),
     };
-  }
-  if (persisted.write.kind === "owner-revoked") {
-    // The incurred cost stays recorded; no owner row is recreated to hold it.
-    return {
-      kind: "generated",
-      occurrence: args.occurrence,
-      generation: viewOfUncommittedAttempt(
-        admission,
-        args.coverage,
-        view,
-        "owner_revoked",
-      ),
-    };
-  }
-  return {
-    kind: "generated",
-    occurrence: args.occurrence,
-    generation: viewOfRow(persisted.write.row, view),
-  };
-}
+  },
+);
 
 export const executeMorningBriefPreviewGeneration$ = command(
   async (
@@ -883,6 +1123,7 @@ export const executeMorningBriefPreviewGeneration$ = command(
     }
 
     let admitted: AdmittedGeneration | undefined;
+    let occurrenceRow: MorningBriefCollectionOccurrenceRow | undefined;
     let bundleCoverage: MorningBriefSlackBundle["coverage"] = "empty";
     let sources: ReadonlyMap<string, GenerationSource> = new Map();
     const execution = await set(
@@ -893,6 +1134,7 @@ export const executeMorningBriefPreviewGeneration$ = command(
         handoff: {
           onCollected: async (tx, context) => {
             bundleCoverage = context.bundle.coverage;
+            occurrenceRow = context.occurrence;
             admitted = await admitGeneration(tx, context);
             if (admitted.kind === "reserved") {
               sources = admitted.plan.sources;
@@ -929,10 +1171,14 @@ export const executeMorningBriefPreviewGeneration$ = command(
     };
 
     if (execution.kind === "already-completed") {
-      return await resolveExistingGeneration(db, key, execution.occurrence);
+      return await set(
+        resolveExistingGeneration$,
+        { db, key, occurrence: execution.occurrence },
+        signal,
+      );
     }
 
-    if (!admitted) {
+    if (!admitted || !occurrenceRow) {
       throw new Error("Morning Brief collection finalized without a handoff");
     }
     if (admitted.kind === "skipped") {
@@ -948,7 +1194,8 @@ export const executeMorningBriefPreviewGeneration$ = command(
       };
     }
 
-    return await invokeAndPersist(
+    return await set(
+      invokeAndPersist$,
       {
         db,
         apiKey,
@@ -957,6 +1204,7 @@ export const executeMorningBriefPreviewGeneration$ = command(
         sources,
         coverage: bundleCoverage,
         occurrence: execution.occurrence,
+        occurrenceRow,
       },
       signal,
     );
