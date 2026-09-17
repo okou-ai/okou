@@ -16,7 +16,7 @@ import { settle } from "../utils";
  * complete subject set however many threads match. A thread scan would add no
  * subject and is never needed to admit this write.
  */
-export interface ChatThreadAgentIdentity {
+interface ChatThreadAgentIdentity {
   readonly agentId: string;
   readonly owner: string;
   readonly orgId: string;
