@@ -1,18 +1,7 @@
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { Check, Upload, UserPlus } from "lucide-react";
-import {
-  Button,
-  Card,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogTitle,
-  Input,
-  RadioGroup,
-  surfaceVariants,
-  cn,
-} from "@okouai/ui";
+import { Check } from "lucide-react";
+import { Button, Input, RadioGroup } from "@okouai/ui";
 import {
   nextSourcesFirstStep,
   sourcesFirstUi$,
@@ -20,25 +9,19 @@ import {
   updateSourcesFirstUi$,
 } from "../../signals/onboarding/onboarding-sources-first-state.ts";
 import {
-  OnboardingFooter,
-  OnboardingShell,
-} from "../onboarding/onboarding-shell.tsx";
-import {
   INDUSTRY_IDS,
   type IndustryId,
 } from "./onboarding-sources-first-data.ts";
 import {
   OnboardingChoiceCard,
   OnboardingIllustration,
-  OnboardingRow,
-  OnboardingRowStack,
+  OnboardingPanel,
+  OnboardingPosterCard,
   ProductMark,
 } from "./onboarding-step-parts.tsx";
+import { OnboardingStepLayout } from "./onboarding-step-layout.tsx";
 import { useWelcomeHandoff } from "./onboarding-welcome-dialog.tsx";
 import { useSourcesFirstFlow } from "./use-sources-first-flow.ts";
-
-const SKILL_FILE_ACCEPT = ".md,text/markdown";
-const SKILL_FILE_INPUT_ID = "onboarding-skill-file";
 
 export function OnboardingIndustryPage() {
   const { t } = useTranslation();
@@ -47,9 +30,7 @@ export function OnboardingIndustryPage() {
   const flow = useSourcesFirstFlow("industry", openWelcome);
 
   return (
-    <OnboardingShell
-      canvas
-      wide
+    <OnboardingStepLayout
       currentStep={flow.currentStep}
       totalSteps={flow.totalSteps}
       title={t(($) => {
@@ -58,16 +39,13 @@ export function OnboardingIndustryPage() {
       description={t(($) => {
         return $.onboarding.sourcesFirst.industry.copy;
       })}
-      footer={
-        <OnboardingFooter
-          onBack={flow.goBack}
-          onPrimary={flow.goNext}
-          primaryLabel={t(($) => {
-            return $.onboarding.sourcesFirst.common.continue;
-          })}
-          primaryDisabled={flow.draft.industry === null}
-        />
-      }
+      primaryLabel={t(($) => {
+        return $.onboarding.sourcesFirst.common.continue;
+      })}
+      onPrimary={flow.goNext}
+      primaryDisabled={flow.draft.industry === null}
+      onBack={flow.goBack}
+      contentWidth="grid"
     >
       {welcomeDialog}
       <RadioGroup
@@ -75,7 +53,7 @@ export function OnboardingIndustryPage() {
         onValueChange={(value) => {
           updateDraft({ industry: value as IndustryId });
         }}
-        className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
+        className="grid gap-4 sm:grid-cols-2"
       >
         {INDUSTRY_IDS.map((id) => {
           return (
@@ -93,7 +71,38 @@ export function OnboardingIndustryPage() {
           );
         })}
       </RadioGroup>
-    </OnboardingShell>
+    </OnboardingStepLayout>
+  );
+}
+
+/** The invitees already sent, under the form that sent them. */
+function InvitedList({ invites }: { readonly invites: readonly string[] }) {
+  const { t } = useTranslation();
+
+  return (
+    <div className="border-t border-border/60">
+      {invites.map((invitee) => {
+        return (
+          <div
+            key={invitee}
+            className="flex items-center gap-3 border-t border-border/60 px-5 py-3.5 first:border-t-0"
+          >
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium text-foreground">
+              {invitee.slice(0, 1).toUpperCase()}
+            </span>
+            <span className="min-w-0 flex-1 truncate text-sm text-foreground">
+              {invitee}
+            </span>
+            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Check size={14} aria-hidden="true" />
+              {t(($) => {
+                return $.onboarding.sourcesFirst.team.invited;
+              })}
+            </span>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -115,8 +124,7 @@ export function OnboardingTeamPage() {
   };
 
   return (
-    <OnboardingShell
-      canvas
+    <OnboardingStepLayout
       currentStep={flow.currentStep}
       totalSteps={flow.totalSteps}
       title={t(($) => {
@@ -125,28 +133,37 @@ export function OnboardingTeamPage() {
       description={t(($) => {
         return $.onboarding.sourcesFirst.team.copy;
       })}
-      footer={
-        <OnboardingFooter
-          onBack={flow.goBack}
-          onPrimary={flow.goNext}
-          primaryLabel={t(($) => {
-            return $.onboarding.sourcesFirst.common.continue;
-          })}
-        />
-      }
+      primaryLabel={t(($) => {
+        return $.onboarding.sourcesFirst.common.continue;
+      })}
+      onPrimary={flow.goNext}
+      secondaryLabel={t(($) => {
+        return $.onboarding.sourcesFirst.common.notNow;
+      })}
+      onSecondary={flow.goNext}
+      onBack={flow.goBack}
+      contentWidth="single"
     >
       {welcomeDialog}
-      <OnboardingRowStack>
-        <OnboardingRow
-          icon={UserPlus}
-          title={t(($) => {
-            return $.onboarding.sourcesFirst.team.label;
-          })}
-          description={t(($) => {
-            return $.onboarding.sourcesFirst.team.note;
-          })}
-        >
-          <div className="flex w-full gap-2 sm:w-[420px]">
+      <OnboardingPanel
+        mark={<OnboardingIllustration name="explore" alt="" size="header" />}
+        title={t(($) => {
+          return $.onboarding.sourcesFirst.team.panelTitle;
+        })}
+        description={t(($) => {
+          return $.onboarding.sourcesFirst.team.note;
+        })}
+      >
+        <div className="px-5 py-4">
+          <label
+            htmlFor="onboarding-invite-email"
+            className="block text-sm font-medium text-foreground"
+          >
+            {t(($) => {
+              return $.onboarding.sourcesFirst.team.label;
+            })}
+          </label>
+          <div className="mt-2 flex gap-2">
             <Input
               id="onboarding-invite-email"
               type="email"
@@ -165,34 +182,12 @@ export function OnboardingTeamPage() {
               })}
             </Button>
           </div>
-        </OnboardingRow>
+        </div>
         {flow.draft.invites.length > 0 ? (
-          <Card className="divide-y divide-border">
-            {flow.draft.invites.map((invitee) => {
-              return (
-                <div
-                  key={invitee}
-                  className="flex items-center gap-3 px-4 py-3.5"
-                >
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium text-foreground">
-                    {invitee.slice(0, 1).toUpperCase()}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate text-sm text-foreground">
-                    {invitee}
-                  </span>
-                  <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <Check size={14} aria-hidden="true" />
-                    {t(($) => {
-                      return $.onboarding.sourcesFirst.team.invited;
-                    })}
-                  </span>
-                </div>
-              );
-            })}
-          </Card>
+          <InvitedList invites={flow.draft.invites} />
         ) : null}
-      </OnboardingRowStack>
-    </OnboardingShell>
+      </OnboardingPanel>
+    </OnboardingStepLayout>
   );
 }
 
@@ -201,11 +196,11 @@ export function OnboardingExperiencePage() {
   const updateDraft = useSet(updateSourcesFirstDraft$);
   const { welcomeDialog, openWelcome } = useWelcomeHandoff();
   const flow = useSourcesFirstFlow("experience", openWelcome);
+  const experienced = flow.draft.experienced;
 
-  // The answer decides the branch, so the next step is resolved from the new
-  // answer instead of the one this render was built from.
-  const choose = (experienced: boolean): void => {
-    updateDraft({ experienced });
+  // The answer decides the branch, so the next step is resolved from the
+  // answer itself instead of the one this render was built from.
+  const goNext = (): void => {
     const next = nextSourcesFirstStep("experience", flow.flow, experienced);
     if (next) {
       flow.goTo(next);
@@ -215,8 +210,7 @@ export function OnboardingExperiencePage() {
   };
 
   return (
-    <OnboardingShell
-      canvas
+    <OnboardingStepLayout
       currentStep={flow.currentStep}
       totalSteps={flow.totalSteps}
       title={t(($) => {
@@ -225,27 +219,29 @@ export function OnboardingExperiencePage() {
       description={t(($) => {
         return $.onboarding.sourcesFirst.experience.copy;
       })}
-      footer={
-        <OnboardingFooter
-          onBack={flow.goBack}
-          onPrimary={() => {
-            choose(false);
-          }}
-          primaryLabel={t(($) => {
-            return $.onboarding.sourcesFirst.common.skip;
-          })}
-        />
-      }
+      primaryLabel={t(($) => {
+        return $.onboarding.sourcesFirst.common.continue;
+      })}
+      onPrimary={goNext}
+      primaryDisabled={experienced === null}
+      onBack={flow.goBack}
     >
       {welcomeDialog}
-      <OnboardingRowStack>
-        <OnboardingRow
-          icon={
+      <RadioGroup
+        value={experienced === null ? "" : experienced ? "yes" : "no"}
+        onValueChange={(value) => {
+          updateDraft({ experienced: value === "yes" });
+        }}
+        className="grid gap-5 sm:grid-cols-2"
+      >
+        <OnboardingPosterCard
+          value="yes"
+          selected={experienced === true}
+          mark={
             <OnboardingIllustration
               name="workflow-default"
-              alt={t(($) => {
-                return $.onboarding.sourcesFirst.experience.yes;
-              })}
+              alt=""
+              size="poster"
             />
           }
           title={t(($) => {
@@ -254,49 +250,20 @@ export function OnboardingExperiencePage() {
           description={t(($) => {
             return $.onboarding.sourcesFirst.experience.yesCopy;
           })}
-        >
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={() => {
-              choose(true);
-            }}
-          >
-            {t(($) => {
-              return $.onboarding.sourcesFirst.experience.choose;
-            })}
-          </Button>
-        </OnboardingRow>
-        <OnboardingRow
-          icon={
-            <OnboardingIllustration
-              name="explore"
-              alt={t(($) => {
-                return $.onboarding.sourcesFirst.experience.no;
-              })}
-            />
-          }
+        />
+        <OnboardingPosterCard
+          value="no"
+          selected={experienced === false}
+          mark={<OnboardingIllustration name="explore" alt="" size="poster" />}
           title={t(($) => {
             return $.onboarding.sourcesFirst.experience.no;
           })}
           description={t(($) => {
             return $.onboarding.sourcesFirst.experience.noCopy;
           })}
-        >
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={() => {
-              choose(false);
-            }}
-          >
-            {t(($) => {
-              return $.onboarding.sourcesFirst.experience.choose;
-            })}
-          </Button>
-        </OnboardingRow>
-      </OnboardingRowStack>
-    </OnboardingShell>
+        />
+      </RadioGroup>
+    </OnboardingStepLayout>
   );
 }
 
@@ -305,58 +272,17 @@ export function OnboardingSubscriptionPage() {
   const updateDraft = useSet(updateSourcesFirstDraft$);
   const { welcomeDialog, openWelcome } = useWelcomeHandoff();
   const flow = useSourcesFirstFlow("subscription", openWelcome);
-  const connected = flow.draft.providerConnected;
+  const provider = flow.draft.provider;
 
-  const providerRow = (
-    provider: "codex" | "claudeCode",
-    title: string,
-  ): ReturnType<typeof OnboardingRow> => {
-    const active = connected && flow.draft.provider === provider;
-    return (
-      <OnboardingRow
-        icon={
-          provider === "codex" ? (
-            <ProductMark name="openai" alt={title} invertInDarkMode />
-          ) : (
-            <ProductMark name="claude-code" alt={title} />
-          )
-        }
-        title={title}
-        description={t(($) => {
-          return $.onboarding.sourcesFirst.subscription.rowCopy;
-        })}
-        status={
-          active ? (
-            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Check size={14} aria-hidden="true" />
-              {t(($) => {
-                return $.onboarding.sourcesFirst.subscription.connected;
-              })}
-            </span>
-          ) : null
-        }
-      >
-        <Button
-          type="button"
-          variant={active ? "outline" : "secondary"}
-          disabled={active}
-          onClick={() => {
-            // Frontend pass: the personal model-provider connect flow is wired
-            // in the follow-up that adds the onboarding endpoints.
-            updateDraft({ provider, providerConnected: true });
-          }}
-        >
-          {t(($) => {
-            return $.onboarding.sourcesFirst.subscription.connect;
-          })}
-        </Button>
-      </OnboardingRow>
-    );
+  const connectAndContinue = (): void => {
+    // Frontend pass: the personal model-provider connect flow is wired in the
+    // follow-up that adds the onboarding endpoints.
+    updateDraft({ providerConnected: true });
+    flow.goNext();
   };
 
   return (
-    <OnboardingShell
-      canvas
+    <OnboardingStepLayout
       currentStep={flow.currentStep}
       totalSteps={flow.totalSteps}
       title={t(($) => {
@@ -365,345 +291,53 @@ export function OnboardingSubscriptionPage() {
       description={t(($) => {
         return $.onboarding.sourcesFirst.subscription.copy;
       })}
-      footer={
-        <div className="flex w-full items-center justify-between gap-3">
-          <Button type="button" variant="ghost" onClick={flow.goBack}>
-            {t(($) => {
-              return $.onboarding.sourcesFirst.common.back;
-            })}
-          </Button>
-          <div className="flex items-center gap-2">
-            {connected ? null : (
-              <Button type="button" variant="ghost" onClick={flow.goNext}>
-                {t(($) => {
-                  return $.onboarding.sourcesFirst.common.skip;
-                })}
-              </Button>
-            )}
-            <Button
-              type="button"
-              size="lg"
-              disabled={!connected}
-              onClick={flow.goNext}
-            >
-              {t(($) => {
-                return $.onboarding.sourcesFirst.common.continue;
-              })}
-            </Button>
-          </div>
-        </div>
-      }
-    >
-      {welcomeDialog}
-      <OnboardingRowStack>
-        {providerRow(
-          "codex",
-          t(($) => {
-            return $.onboarding.sourcesFirst.subscription.codex;
-          }),
-        )}
-        {providerRow(
-          "claudeCode",
-          t(($) => {
-            return $.onboarding.sourcesFirst.subscription.claudeCode;
-          }),
-        )}
-      </OnboardingRowStack>
-    </OnboardingShell>
-  );
-}
-
-/** Confirms the chosen SKILL.md before it becomes a personal workflow. */
-function SkillImportDialog() {
-  const { t } = useTranslation();
-  const ui = useGet(sourcesFirstUi$);
-  const updateUi = useSet(updateSourcesFirstUi$);
-  const updateDraft = useSet(updateSourcesFirstDraft$);
-
-  return (
-    <Dialog
-      open={ui.pendingSkillName !== null}
-      onOpenChange={(open) => {
-        if (!open) {
-          updateUi({ pendingSkillName: null });
-        }
-      }}
-    >
-      <DialogContent maxWidth="sm" contentClassName="p-6">
-        <DialogTitle className="text-base font-semibold">
-          {t(($) => {
-            return $.onboarding.sourcesFirst.skills.previewTitle;
-          })}
-        </DialogTitle>
-        <DialogDescription className="mt-1 text-sm text-muted-foreground">
-          {t(($) => {
-            return $.onboarding.sourcesFirst.skills.previewCopy;
-          })}
-        </DialogDescription>
-        <p
-          className={cn(
-            surfaceVariants(),
-            "mt-4 truncate p-3 text-sm text-foreground",
-          )}
-        >
-          {ui.pendingSkillName}
-        </p>
-        <div className="mt-5 flex justify-end gap-2">
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={() => {
-              updateUi({ pendingSkillName: null });
-            }}
-          >
-            {t(($) => {
-              return $.onboarding.sourcesFirst.common.cancel;
-            })}
-          </Button>
-          <Button
-            type="button"
-            onClick={() => {
-              // Frontend pass: the SKILL.md upload becomes a personal workflow
-              // once the import endpoint is wired.
-              updateDraft({ importedWorkflowName: ui.pendingSkillName });
-              updateUi({ pendingSkillName: null });
-            }}
-          >
-            {t(($) => {
-              return $.onboarding.sourcesFirst.skills.confirm;
-            })}
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-export function OnboardingSkillsPage() {
-  const { t } = useTranslation();
-  const { welcomeDialog, openWelcome } = useWelcomeHandoff();
-  const flow = useSourcesFirstFlow("skills", openWelcome);
-  const updateUi = useSet(updateSourcesFirstUi$);
-  const imported = flow.draft.importedWorkflowName;
-
-  return (
-    <OnboardingShell
-      canvas
-      currentStep={flow.currentStep}
-      totalSteps={flow.totalSteps}
-      title={
-        imported
-          ? t(($) => {
-              return $.onboarding.sourcesFirst.skills.importedTitle;
-            })
-          : t(($) => {
-              return $.onboarding.sourcesFirst.skills.title;
-            })
-      }
-      description={t(($) => {
-        return $.onboarding.sourcesFirst.skills.copy;
+      primaryLabel={t(($) => {
+        return $.onboarding.sourcesFirst.common.continue;
       })}
-      footer={
-        <div className="flex w-full items-center justify-between gap-3">
-          <Button type="button" variant="ghost" onClick={flow.goBack}>
-            {t(($) => {
-              return $.onboarding.sourcesFirst.common.back;
-            })}
-          </Button>
-          <div className="flex items-center gap-2">
-            {imported ? null : (
-              <Button type="button" variant="ghost" onClick={flow.goNext}>
-                {t(($) => {
-                  return $.onboarding.sourcesFirst.common.skip;
-                })}
-              </Button>
-            )}
-            <Button
-              type="button"
-              size="lg"
-              disabled={imported === null}
-              onClick={flow.goNext}
-            >
-              {t(($) => {
-                return $.onboarding.sourcesFirst.common.continue;
-              })}
-            </Button>
-          </div>
-        </div>
-      }
+      onPrimary={connectAndContinue}
+      primaryDisabled={provider === null}
+      secondaryLabel={t(($) => {
+        return $.onboarding.sourcesFirst.common.skip;
+      })}
+      onSecondary={flow.goNext}
+      onBack={flow.goBack}
     >
       {welcomeDialog}
-      <OnboardingRow
-        icon={
-          imported ? (
-            <OnboardingIllustration name="workflow-default" alt={imported} />
-          ) : (
-            Upload
-          )
-        }
-        title={
-          imported ??
-          t(($) => {
-            return $.onboarding.sourcesFirst.skills.panelTitle;
-          })
-        }
-        description={
-          imported
-            ? t(($) => {
-                return $.onboarding.sourcesFirst.skills.importedCopy;
-              })
-            : t(($) => {
-                return $.onboarding.sourcesFirst.skills.panelCopy;
-              })
-        }
-      >
-        {/* A label opens the file picker without reaching for the DOM. */}
-        <Button
-          variant="secondary"
-          render={<label htmlFor={SKILL_FILE_INPUT_ID} />}
-        >
-          {t(($) => {
-            return $.onboarding.sourcesFirst.skills.import;
-          })}
-        </Button>
-      </OnboardingRow>
-      <input
-        id={SKILL_FILE_INPUT_ID}
-        type="file"
-        accept={SKILL_FILE_ACCEPT}
-        className="hidden"
-        onChange={(event) => {
-          const file = event.target.files?.[0];
-          event.target.value = "";
-          if (file) {
-            updateUi({ pendingSkillName: file.name.replace(/\.md$/u, "") });
-          }
+      <RadioGroup
+        value={provider ?? ""}
+        onValueChange={(value) => {
+          updateDraft({
+            provider: value === "codex" ? "codex" : "claudeCode",
+            providerConnected: false,
+          });
         }}
-      />
-      <SkillImportDialog />
-    </OnboardingShell>
-  );
-}
-
-export function OnboardingSlackPage() {
-  const { t } = useTranslation();
-  const updateDraft = useSet(updateSourcesFirstDraft$);
-  const { welcomeDialog, openWelcome } = useWelcomeHandoff();
-  const flow = useSourcesFirstFlow("slack", openWelcome);
-  const connected = flow.draft.slackStatus === "connected";
-
-  return (
-    <OnboardingShell
-      canvas
-      currentStep={flow.currentStep}
-      totalSteps={flow.totalSteps}
-      title={
-        connected
-          ? t(($) => {
-              return $.onboarding.sourcesFirst.slack.connectedTitle;
-            })
-          : t(($) => {
-              return $.onboarding.sourcesFirst.slack.title;
-            })
-      }
-      description={
-        connected
-          ? t(($) => {
-              return $.onboarding.sourcesFirst.slack.connectedCopy;
-            })
-          : t(($) => {
-              return $.onboarding.sourcesFirst.slack.copy;
-            })
-      }
-      footer={
-        <div className="flex w-full items-center justify-between gap-3">
-          <Button type="button" variant="ghost" onClick={flow.goBack}>
-            {t(($) => {
-              return $.onboarding.sourcesFirst.common.back;
-            })}
-          </Button>
-          <div className="flex items-center gap-2">
-            {connected ? null : (
-              <Button type="button" variant="ghost" onClick={flow.goNext}>
-                {t(($) => {
-                  return $.onboarding.sourcesFirst.common.skip;
-                })}
-              </Button>
-            )}
-            <Button type="button" size="lg" onClick={flow.goNext}>
-              {connected
-                ? t(($) => {
-                    return $.onboarding.sourcesFirst.slack.open;
-                  })
-                : t(($) => {
-                    return $.onboarding.sourcesFirst.common.continue;
-                  })}
-            </Button>
-          </div>
-        </div>
-      }
-    >
-      {welcomeDialog}
-      <OnboardingRowStack>
-        <OnboardingRow
-          icon={
-            <ProductMark
-              name="slack"
-              alt={t(($) => {
-                return $.onboarding.sourcesFirst.slack.rowTitle;
-              })}
-            />
+        className="grid gap-5 sm:grid-cols-2"
+      >
+        <OnboardingPosterCard
+          value="codex"
+          selected={provider === "codex"}
+          mark={
+            <ProductMark name="openai" alt="" size="poster" invertInDarkMode />
           }
           title={t(($) => {
-            return $.onboarding.sourcesFirst.slack.rowTitle;
+            return $.onboarding.sourcesFirst.subscription.codex;
           })}
           description={t(($) => {
-            return $.onboarding.sourcesFirst.slack.copy;
+            return $.onboarding.sourcesFirst.subscription.rowCopy;
           })}
-          status={
-            connected ? (
-              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <Check size={14} aria-hidden="true" />
-                {t(($) => {
-                  return $.onboarding.sourcesFirst.slack.connectedStatus;
-                })}
-              </span>
-            ) : null
-          }
-        >
-          <Button
-            type="button"
-            variant={connected ? "outline" : "secondary"}
-            disabled={connected}
-            onClick={() => {
-              // Frontend pass: the Slack install round trip replaces this once
-              // the integration step is wired.
-              updateDraft({ slackStatus: "connected" });
-            }}
-          >
-            {t(($) => {
-              return $.onboarding.sourcesFirst.slack.add;
-            })}
-          </Button>
-        </OnboardingRow>
-        <Card className="p-4">
-          <p className="text-xs font-medium text-muted-foreground">
-            {t(($) => {
-              return $.onboarding.sourcesFirst.slack.previewChannel;
-            })}
-          </p>
-          <p className="mt-3 text-sm text-foreground">
-            {t(($) => {
-              return $.onboarding.sourcesFirst.slack.previewAsk;
-            })}
-          </p>
-          <p className="mt-2 rounded-lg bg-muted/50 p-3 text-sm text-foreground">
-            {t(($) => {
-              return $.onboarding.sourcesFirst.slack.previewReply;
-            })}
-          </p>
-        </Card>
-      </OnboardingRowStack>
-    </OnboardingShell>
+        />
+        <OnboardingPosterCard
+          value="claudeCode"
+          selected={provider === "claudeCode"}
+          mark={<ProductMark name="anthropic" alt="" size="poster" />}
+          title={t(($) => {
+            return $.onboarding.sourcesFirst.subscription.claudeCode;
+          })}
+          description={t(($) => {
+            return $.onboarding.sourcesFirst.subscription.rowCopy;
+          })}
+        />
+      </RadioGroup>
+    </OnboardingStepLayout>
   );
 }

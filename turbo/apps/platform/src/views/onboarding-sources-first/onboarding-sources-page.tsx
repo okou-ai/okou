@@ -22,10 +22,7 @@ import {
 } from "../../signals/onboarding/onboarding-sources-first-state.ts";
 import { ConnectorEntryCard } from "../okou-page/components/settings/connector-entry-card.tsx";
 import { OnboardingConnectorSetup } from "../onboarding/onboarding-connectors.tsx";
-import {
-  OnboardingFooter,
-  OnboardingShell,
-} from "../onboarding/onboarding-shell.tsx";
+import { OnboardingStepLayout } from "./onboarding-step-layout.tsx";
 import { FEATURED_SOURCE_SLUGS } from "./onboarding-sources-first-data.ts";
 import { useSourcesFirstFlow } from "./use-sources-first-flow.ts";
 
@@ -122,9 +119,7 @@ export function OnboardingSourcesPage() {
   });
 
   return (
-    <OnboardingShell
-      canvas
-      wide
+    <OnboardingStepLayout
       currentStep={flow.currentStep}
       totalSteps={flow.totalSteps}
       title={t(($) => {
@@ -133,16 +128,13 @@ export function OnboardingSourcesPage() {
       description={t(($) => {
         return $.onboarding.sourcesFirst.sources.copy;
       })}
-      footer={
-        <OnboardingFooter
-          onPrimary={flow.goNext}
-          primaryLabel={t(($) => {
-            return $.onboarding.sourcesFirst.common.continue;
-          })}
-          // At least one connected source is the one hard requirement.
-          primaryDisabled={connectedSlugs.length === 0}
-        />
-      }
+      primaryLabel={t(($) => {
+        return $.onboarding.sourcesFirst.common.continue;
+      })}
+      onPrimary={flow.goNext}
+      // At least one connected source is the one hard requirement.
+      primaryDisabled={connectedSlugs.length === 0}
+      contentWidth="grid"
     >
       <OnboardingConnectorSetup
         connectorSlugs={[...FEATURED_SOURCE_SLUGS, ...extraConnectedSlugs]}
@@ -196,6 +188,6 @@ export function OnboardingSourcesPage() {
           updateUi({ searchOpen: open });
         }}
       />
-    </OnboardingShell>
+    </OnboardingStepLayout>
   );
 }

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Button, cn } from "@okouai/ui";
+import { Button } from "@okouai/ui";
 import { useSet } from "ccstate-react";
 import { Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -183,8 +183,6 @@ export function OnboardingShell({
   description,
   children,
   footer,
-  wide = false,
-  canvas = false,
 }: {
   readonly currentStep: number;
   readonly totalSteps: number;
@@ -193,86 +191,44 @@ export function OnboardingShell({
   readonly children: ReactNode;
   readonly footer?: ReactNode;
   readonly preview?: ReactNode;
-  /** A step whose content is a card grid needs the app's content width. */
-  readonly wide?: boolean;
-  /** Renders the step on the app's canvas: a tinted page and one card. */
-  readonly canvas?: boolean;
 }) {
-  const columnClass = wide ? "max-w-[1120px]" : "max-w-[750px]";
   return (
-    <div
-      className={cn(
-        "relative box-border h-full max-h-full min-h-full w-full overflow-hidden pb-(--sab) text-foreground",
-        canvas ? "flex gap-0 bg-sidebar p-3" : "bg-background",
-      )}
-    >
+    <div className="relative box-border h-full max-h-full min-h-full w-full overflow-hidden bg-background pb-(--sab) text-foreground">
       <SettingsDialogMount />
-      {canvas ? (
-        // The canvas keeps the app's rail: the workspace at the top, the
-        // account at the bottom, and the step on its own card.
-        <div className="flex w-14 shrink-0 flex-col items-center justify-between py-1">
-          <OrgSwitcherCompact />
-          <OnboardingAccount collapsed />
-        </div>
-      ) : (
-        <>
-          <div className="fixed left-4 top-4 z-20 hidden w-60 sm:left-6 sm:top-6 sm:block">
-            <OrgSwitcher />
-          </div>
-          <div className="fixed left-4 top-4 z-20 sm:hidden">
-            <OrgSwitcherCompact />
-          </div>
-          <div className="fixed bottom-[max(1.5rem,var(--sab))] left-4 z-20 hidden w-60 sm:block">
-            <OnboardingAccount collapsed={false} />
-          </div>
-          <div className="fixed bottom-[max(2rem,var(--sab))] left-6 z-20 sm:hidden">
-            <OnboardingAccount collapsed />
-          </div>
-        </>
-      )}
+      <div className="fixed left-4 top-4 z-20 hidden w-60 sm:left-6 sm:top-6 sm:block">
+        <OrgSwitcher />
+      </div>
+      <div className="fixed left-4 top-4 z-20 sm:hidden">
+        <OrgSwitcherCompact />
+      </div>
+      <div className="fixed bottom-[max(1.5rem,var(--sab))] left-4 z-20 hidden w-60 sm:block">
+        <OnboardingAccount collapsed={false} />
+      </div>
+      <div className="fixed bottom-[max(2rem,var(--sab))] left-6 z-20 sm:hidden">
+        <OnboardingAccount collapsed />
+      </div>
 
-      <section
-        className={cn(
-          "flex h-full min-h-0 w-full flex-col",
-          canvas
-            ? "overflow-hidden rounded-2xl border border-border/60 bg-background shadow-surface"
-            : cn("mx-auto", columnClass),
-        )}
-      >
-        <div
-          className={cn(
-            "shrink-0 px-5 pb-4 sm:px-10",
-            canvas ? "pt-7" : "pt-[72px] lg:pt-8",
-          )}
-        >
-          <div className={cn("mx-auto w-full", canvas && columnClass)}>
-            <OnboardingProgress current={currentStep} total={totalSteps} />
-          </div>
+      <section className="mx-auto flex h-full min-h-0 w-full max-w-[750px] flex-col">
+        <div className="shrink-0 px-5 pb-4 pt-[72px] sm:px-10 lg:pt-8">
+          <OnboardingProgress current={currentStep} total={totalSteps} />
         </div>
         <main
           key={`${currentStep}-${title}`}
-          className={cn(
-            "min-h-0 flex-1 overflow-y-auto px-5 pb-6 [scrollbar-width:none] sm:px-10 [&::-webkit-scrollbar]:hidden",
-            canvas ? "pt-9" : "pt-[50px]",
-          )}
+          className="min-h-0 flex-1 overflow-y-auto px-5 pb-6 pt-[50px] [scrollbar-width:none] sm:px-10 [&::-webkit-scrollbar]:hidden"
         >
-          <div className={cn("mx-auto w-full", canvas && columnClass)}>
-            <header>
-              <h1 className="text-2xl font-semibold leading-[1.25]">{title}</h1>
-              {description ? (
-                <p className="mb-6 mt-2 text-sm leading-[1.625] text-muted-foreground">
-                  {description}
-                </p>
-              ) : null}
-            </header>
-            {children}
-          </div>
+          <header>
+            <h1 className="text-2xl font-semibold leading-[1.25]">{title}</h1>
+            {description ? (
+              <p className="mb-6 mt-2 text-sm leading-[1.625] text-muted-foreground">
+                {description}
+              </p>
+            ) : null}
+          </header>
+          {children}
         </main>
         {footer ? (
           <footer className="shrink-0 border-t border-border/40 px-5 py-5 sm:px-10">
-            <div className={cn("mx-auto w-full", canvas && columnClass)}>
-              {footer}
-            </div>
+            {footer}
           </footer>
         ) : null}
       </section>

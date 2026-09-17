@@ -2,10 +2,12 @@ import { command, type Command } from "ccstate";
 import { createElement, type ComponentType } from "react";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
-  OnboardingExperiencePage,
-  OnboardingIndustryPage,
   OnboardingSkillsPage,
   OnboardingSlackPage,
+} from "../../views/onboarding-sources-first/onboarding-import-pages.tsx";
+import {
+  OnboardingExperiencePage,
+  OnboardingIndustryPage,
   OnboardingSubscriptionPage,
   OnboardingTeamPage,
 } from "../../views/onboarding-sources-first/onboarding-setup-pages.tsx";

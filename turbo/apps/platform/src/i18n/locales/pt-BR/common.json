@@ -4197,6 +4197,8 @@
         "back": "",
         "cancel": "",
         "continue": "",
+        "finish": "",
+        "notNow": "",
         "skip": ""
       },
       "documentTitles": {
@@ -4209,7 +4211,6 @@
         "team": ""
       },
       "experience": {
-        "choose": "",
         "copy": "",
         "no": "",
         "noCopy": "",
@@ -4285,10 +4286,10 @@
         "connectedStatus": "",
         "connectedTitle": "",
         "copy": "",
-        "open": "",
         "previewAsk": "",
         "previewChannel": "",
         "previewReply": "",
+        "rowCopy": "",
         "rowTitle": "",
         "title": ""
       },
@@ -4618,8 +4619,6 @@
       "subscription": {
         "claudeCode": "",
         "codex": "",
-        "connect": "",
-        "connected": "",
         "copy": "",
         "rowCopy": "",
         "title": ""
@@ -4630,6 +4629,7 @@
         "invited": "",
         "label": "",
         "note": "",
+        "panelTitle": "",
         "placeholder": "",
         "title": ""
       },

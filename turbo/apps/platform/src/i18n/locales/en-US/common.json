@@ -4134,6 +4134,8 @@
         "back": "Back",
         "cancel": "Cancel",
         "continue": "Continue",
+        "finish": "Finish setup",
+        "notNow": "Not now",
         "skip": "Skip for now"
       },
       "documentTitles": {
@@ -4146,8 +4148,7 @@
         "team": "Invite a teammate"
       },
       "experience": {
-        "choose": "Choose",
-        "copy": "You can connect your subscription and import skills you already use.",
+        "copy": "This only changes what we set up next.",
         "no": "No, I’m new to this",
         "noCopy": "Skip the setup. Okou picks a first task for you instead.",
         "title": "Have you used Codex or Claude Code?",
@@ -4201,33 +4202,33 @@
         }
       },
       "industry": {
-        "copy": "Choose the field that best describes your work.",
+        "copy": "Okou uses this to pick your first task and the sources it starts from.",
         "title": "What kind of work do you do?"
       },
       "skills": {
         "confirm": "Import and continue",
-        "copy": "In Okou, skills are called workflows. Open Workflows to manage them, or type / in chat to run one.",
-        "import": "Import skills",
+        "copy": "Import a SKILL.md and it becomes a workflow in Okou, ready to run with /.",
+        "import": "Choose a file",
         "importedCopy": "Imported as an Okou workflow.",
         "importedTitle": "Your workflow is ready",
-        "panelCopy": "From Codex, Claude Code, or another agent.",
-        "panelTitle": "SKILL.md",
+        "panelCopy": "From Codex, Claude Code, or any agent that writes one.",
+        "panelTitle": "Drop a SKILL.md here",
         "previewCopy": "Imported as an Okou workflow. Only you can use it until you share it.",
         "previewTitle": "Review your skill",
-        "title": "Import your skills"
+        "title": "Bring the skills you already wrote."
       },
       "slack": {
         "add": "Add to Slack",
         "connectedCopy": "Open Slack and mention @Okou to give it a task.",
-        "connectedStatus": "Connected to your workspace",
+        "connectedStatus": "Added to your workspace",
         "connectedTitle": "Slack is connected",
-        "copy": "Mention @Okou in Slack to give it a task.",
-        "open": "Open Okou",
+        "copy": "Add it once, then mention @Okou where the work already happens.",
         "previewAsk": "@Okou recap the decisions and next steps.",
         "previewChannel": "# team-work",
         "previewReply": "The launch plan is approved. Alex will share the draft today.",
-        "rowTitle": "Slack",
-        "title": "Add Okou to Slack"
+        "rowCopy": "Works in any channel you add it to.",
+        "rowTitle": "Okou for Slack",
+        "title": "Give Okou a job without leaving Slack."
       },
       "sources": {
         "copy": "It works in the cloud, from the tools your team already uses. 10x the output, less operational friction, lower cost. Connect one source to start.",
@@ -4565,20 +4566,19 @@
       "subscription": {
         "claudeCode": "Claude Code",
         "codex": "Codex",
-        "connect": "Connect",
-        "connected": "Your subscription is connected.",
-        "copy": "Okou runs on Okou credits by default. Connect the plan you already pay for and it runs there instead.",
-        "rowCopy": "Runs your work on this plan, so it doesn't spend Okou credits.",
-        "title": "Connect your subscription"
+        "copy": "Okou runs on Okou credits by default. Connect your own plan and it runs there instead.",
+        "rowCopy": "Runs your work on this plan, so it doesn’t spend Okou credits.",
+        "title": "Connect the plan you already pay for."
       },
       "team": {
-        "copy": "Enter their email to invite them to your Okou workspace.",
+        "copy": "Invite a teammate now, or do it later from the workspace menu.",
         "invite": "Send invite",
         "invited": "Invited",
         "label": "Teammate’s email",
-        "note": "Their own accounts stay theirs.",
+        "note": "Teammates share the workspace; their own accounts stay theirs.",
+        "panelTitle": "Your workspace",
         "placeholder": "teammate@company.com",
-        "title": "Invite a teammate"
+        "title": "Bring the people who do this work with you."
       },
       "welcome": {
         "copy": "A first task, picked for your work.",
