@@ -366,9 +366,7 @@ export function parseCalendarDateTime(args: {
 
 /** Where a provider range sits, or that it is not a usable range at all. */
 export type MorningBriefCalendarRangePlacement =
-  | "in-window"
-  | "out-of-window"
-  | "invalid-range";
+  "in-window" | "out-of-window" | "invalid-range";
 
 /**
  * Where an all-day event sits against the window's local days.

@@ -1070,9 +1070,7 @@ describe("Morning Brief calendar collection preview", () => {
     }
 
     /** The calendar kept usable content but declared the events it lost. */
-    function expectDeclaredTimeGap(
-      body: MorningBriefCalendarCollection,
-    ): void {
+    function expectDeclaredTimeGap(body: MorningBriefCalendarCollection): void {
       expect(body.coverage.truncations).toContain("unreadable-event-time");
       expect(body.coverage.calendars[0]?.outcome).toBe("truncated");
       expect(body.status).toBe("partial");
@@ -1090,7 +1088,11 @@ describe("Morning Brief calendar collection preview", () => {
           start: { dateTime: "2026-02-30T01:00:00Z" },
           end: { dateTime: "2026-02-30T02:00:00Z" },
         },
-        timed("sibling", "2026-03-02T03:00:00.000Z", "2026-03-02T04:00:00.000Z"),
+        timed(
+          "sibling",
+          "2026-03-02T03:00:00.000Z",
+          "2026-03-02T04:00:00.000Z",
+        ),
       ]);
 
       const body = await collectAt(fixture, "2026-03-01T02:30:00.000Z");
@@ -1126,7 +1128,10 @@ describe("Morning Brief calendar collection preview", () => {
             dateTime: "2026-03-10T09:00:00",
             timeZone: "America/New_York",
           },
-          end: { dateTime: "2026-03-10T10:00:00", timeZone: "America/New_York" },
+          end: {
+            dateTime: "2026-03-10T10:00:00",
+            timeZone: "America/New_York",
+          },
         },
       ]);
 
@@ -1226,7 +1231,10 @@ describe("Morning Brief calendar collection preview", () => {
             dateTime: "2026-03-08T02:30:00",
             timeZone: "America/New_York",
           },
-          end: { dateTime: "2026-03-08T03:30:00", timeZone: "America/New_York" },
+          end: {
+            dateTime: "2026-03-08T03:30:00",
+            timeZone: "America/New_York",
+          },
         },
         {
           id: "repeated",
@@ -1237,7 +1245,10 @@ describe("Morning Brief calendar collection preview", () => {
             dateTime: "2026-11-01T01:30:00",
             timeZone: "America/New_York",
           },
-          end: { dateTime: "2026-11-01T02:30:00", timeZone: "America/New_York" },
+          end: {
+            dateTime: "2026-11-01T02:30:00",
+            timeZone: "America/New_York",
+          },
         },
         timed("kept", "2026-03-10T01:00:00.000Z", "2026-03-10T01:30:00.000Z"),
       ]);
@@ -1300,6 +1311,36 @@ describe("Morning Brief calendar collection preview", () => {
         localDayOffset: 0,
       });
       expectDeclaredTimeGap(response.body);
+    });
+
+    it("keeps an event that straddles either window edge", async () => {
+      const fixture = await setupOwner();
+      stubOwnerEvents([
+        // Begins before the window and runs into it: it overlaps rather than
+        // starting inside, so it has no covered local day.
+        timed(
+          "straddles-start",
+          "2026-03-09T15:00:00.000Z",
+          "2026-03-09T17:00:00.000Z",
+        ),
+        // Begins on the last covered day and runs past the exclusive end.
+        timed(
+          "straddles-end",
+          "2026-03-12T15:00:00.000Z",
+          "2026-03-12T17:00:00.000Z",
+        ),
+      ]);
+
+      const response = await collectOk(fixture);
+      expect(response.body.items).toMatchObject([
+        { eventId: "straddles-start", localDayOffset: null },
+        { eventId: "straddles-end", localDayOffset: 2 },
+      ]);
+      expect(response.body).toMatchObject({
+        status: "ok",
+        failure: null,
+        coverage: { truncations: [] },
+      });
     });
 
     it("rejects an event that states two different representations", async () => {
