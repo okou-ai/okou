@@ -63,6 +63,28 @@ class AuditSetupTests(unittest.TestCase):
     def client(self, service, **_kwargs):
         return self.clients[service]
 
+    def test_iam_trust_allows_only_current_and_renamed_production_subjects(self):
+        expected_subjects = [
+            "repo:vm0-ai/okou:environment:production",
+            "repo:maxandzoe/okou:environment:production",
+        ]
+        github_directory = SCRIPT.parent.parent
+        for relative_path in [
+            "aws-audit-32264/operator-trust.json",
+            "kms-migration-32264/role-trust.json",
+        ]:
+            with self.subTest(path=relative_path):
+                policy = json.loads((github_directory / relative_path).read_text())
+                conditions = policy["Statement"][0]["Condition"]["StringEquals"]
+                self.assertEqual(
+                    conditions["token.actions.githubusercontent.com:aud"],
+                    "sts.amazonaws.com",
+                )
+                self.assertEqual(
+                    conditions["token.actions.githubusercontent.com:sub"],
+                    expected_subjects,
+                )
+
     def main(self, account=audit.ACCOUNT, denied=False, oidc_status="200"):
         sts = self.stubs["sts"]
         sts.add_response(
