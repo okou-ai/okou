@@ -80,10 +80,13 @@ indicators. A tool argument cannot select or override the organization.
 Clerk is the authorization server; this API does not implement authorization,
 token exchange, client registration or a consent UI. Before hosted acceptance:
 
-1. Configure a development/staging OAuth application/resource with authorization
-   code + PKCE, the exact resource audience, supported scopes and intended client
-   redirect URIs. Verify issuer metadata and the registration mechanism supported
-   by each client; do not assume dynamic client registration is available.
+1. In **OAuth applications → Settings**, enable **Publish CIMD support**, disable
+   **Publish DCR support**, and select **Any compatible CIMD client**. Use JWT
+   access tokens with **Include Audience**, require PKCE S256, and configure the
+   supported scopes. Compatible clients identify themselves through their HTTPS
+   metadata document; no manual OAuth application or callback registration is
+   required for each client. Verify that issuer metadata advertises CIMD and
+   omits the DCR registration endpoint.
 2. Configure organization selection during consent and the provider's organization
    permission (`user:org:read` where required). Obtain a real grant and establish
    that its signed access JWT includes the selected `org_id`, resource `aud`,
@@ -95,6 +98,27 @@ token exchange, client registration or a consent UI. Before hosted acceptance:
 
 Synthetic signed-token tests prove verification and isolation, not provider-side
 consent or token issuance. Do not treat their success as completing this gate.
+
+### Login and consent return
+
+Keep Clerk's default Account Portal OAuth consent page. The App derives its
+trusted Account Portal origin from the active Clerk publishable key and preserves
+only that instance's HTTPS `/oauth-consent` return. This origin is shared with
+Clerk's redirect validation; client callback URLs are not App login destinations.
+The original consent query survives login, registration and switching between
+them. A fully active session on a root auth route continues through
+`clerk.redirectWithAuth()`, which carries development browser authentication
+across origins. Pending session tasks, factor routes and explicit authentication
+or account-selection intents remain with Clerk's forms. Consent and organization
+selection still happen on Clerk's hosted page.
+
+In the development Clerk Dashboard **Paths**, point sign-in and sign-up to the
+local App (`https://app.vm7.ai:8443/sign-in` and
+`https://app.vm7.ai:8443/sign-up`). The Marketing service does not host these
+pages. Keep OAuth consent on the default Account Portal. Production uses
+`https://app.okou.ai/sign-in`, `https://app.okou.ai/sign-up` and
+`https://accounts.okou.ai/oauth-consent`. No additional App environment variable
+is needed for the default hosted consent page.
 
 ## HTTP behavior
 

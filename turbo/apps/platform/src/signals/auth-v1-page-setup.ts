@@ -9,6 +9,7 @@ import {
 import {
   clerk$,
   ensureClerkUiLoaded$,
+  readClerkOAuthConsentContinuation,
   resolveAuthBrandContext,
 } from "./auth.ts";
 import { updateDocumentTitle$ } from "./document-title.ts";
@@ -39,6 +40,29 @@ function setupAuthV1Page(mode: AuthV1PageMode) {
     // after readiness lets its provider reuse the loaded instance directly.
     const clerk = await get(clerk$);
     signal.throwIfAborted();
+    const continuation = readClerkOAuthConsentContinuation(
+      location.search,
+      location.hash,
+    );
+    if (
+      location.pathname === `/${mode}` &&
+      clerk.user &&
+      clerk.session?.status === "active" &&
+      !clerk.session.currentTask &&
+      continuation
+    ) {
+      // The SDK decorates cross-origin development returns with the current
+      // browser token. Never send that credential to an unvalidated URL.
+      const redirect = await settle(
+        clerk.redirectWithAuth(continuation.href),
+        signal,
+      );
+      if (!redirect.ok) {
+        L.error("Clerk OAuth continuation failed", redirect.error);
+        set(updatePage$, createElement(AuthV1LoadError));
+      }
+      return;
+    }
     // The optional hosted UI can fail before a form exists, so `settle` keeps
     // cancellation propagating while this route offers a visible reload.
     const uiLoad = await settle(set(ensureClerkUiLoaded$, signal), signal);
