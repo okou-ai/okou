@@ -66,6 +66,9 @@ surface; the index does not replace their detailed rules.
   Slack source contract, occurrence/attempt/lease ownership, owner revocation
   boundary, live shared-scope revalidation, and the coverage limits this first
   collector declares.
+- [Morning Brief calendar collection](./morning-brief-calendar-collection.md):
+  the owner-timezone three-day window, readable-calendar selection, all-day and
+  recurrence semantics, calendar caps, and its use of the shared reader.
 - [Morning Brief Gmail collection](./morning-brief-gmail-collection.md): the
   shared Morning Brief OAuth authorization boundary, Gmail's two bounded
   branches and caps, source outcome classification, and the preview-only
