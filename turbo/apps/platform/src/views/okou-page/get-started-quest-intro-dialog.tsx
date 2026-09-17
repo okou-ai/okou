@@ -321,9 +321,11 @@ function InviteFigure() {
       <Tile accent={accent}>
         {/* Three apart, not overlapped: at this size an overlap of white
             busts on a white ring reads as one shape, not as a team. */}
-        <span className="flex items-center gap-[6px]">
+        {/* 3 x 20 + 2 x 4 = 68, inside the tile's 72 with a pixel to spare;
+            anything larger is clipped by the tile's own overflow. */}
+        <span className="flex items-center gap-[4px]">
           {["a", "b", "c"].map((id) => {
-            return <Person key={id} accent={accent} size={22} />;
+            return <Person key={id} accent={accent} size={20} />;
           })}
         </span>
       </Tile>
