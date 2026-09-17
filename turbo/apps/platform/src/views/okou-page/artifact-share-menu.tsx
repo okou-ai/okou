@@ -280,6 +280,9 @@ function ShareSessionMenu({
   const title = t(($) => {
     return $.artifacts.actions.share;
   });
+  if (!signal) {
+    throw new Error("Artifact sharing session is not mounted");
+  }
   const recipient = loadable.state === "hasData" && !loadable.data?.status;
   return (
     <Popover

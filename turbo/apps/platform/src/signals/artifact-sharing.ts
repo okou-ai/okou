@@ -166,11 +166,9 @@ function createAudienceSignals(
   return { draft$, change$ };
 }
 
-function createArtifactShareSession(
-  source: ShareSource,
-  lifecycleSignal: AbortSignal,
-) {
-  const signal$ = state(lifecycleSignal);
+function createArtifactShareSession(source: ShareSource) {
+  // The mount owner installs its live signal after this graph is constructed.
+  const signal$ = state<AbortSignal | null>(null);
   const reload$ = state(0);
   const details$ = computed((get) => {
     get(reload$);
@@ -231,7 +229,12 @@ export type ArtifactShareSession = ReturnType<
 >;
 
 function createArtifactShareScope() {
-  const session$ = state<ArtifactShareSession | null>(null);
+  const source$ = state<ShareSource | null>(null);
+  const session$ = computed((get) => {
+    const source = get(source$);
+    return source ? createArtifactShareSession(source) : null;
+  });
+  const resetMountSignal$ = resetSignal();
   const mountRef$ = onRef(
     command(
       ({ get, set }, element: HTMLSpanElement, mountSignal: AbortSignal) => {
@@ -239,18 +242,17 @@ function createArtifactShareScope() {
         if (!url) {
           return;
         }
-        const signal = AbortSignal.any([mountSignal, get(pageSignal$)]);
+        const signal = set(resetMountSignal$, mountSignal, get(pageSignal$));
         signal.throwIfAborted();
-        const session = createArtifactShareSession(
-          { url, copyUrl: element.dataset.copyUrl },
-          signal,
-        );
-        set(session$, session);
+        const source = { url, copyUrl: element.dataset.copyUrl };
+        set(source$, source);
+        const session = get(session$)!;
+        set(session.signal$, signal);
         signal.addEventListener(
           "abort",
           () => {
-            if (get(session$) === session) {
-              set(session$, null);
+            if (get(source$) === source) {
+              set(source$, null);
             }
           },
           { once: true },
