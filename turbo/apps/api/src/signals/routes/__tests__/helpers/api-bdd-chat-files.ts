@@ -257,6 +257,17 @@ function chatFilesApp(context: TestContext, signal?: AbortSignal) {
   return setupAppWithRoutes({ context, routes: chatFilesRoutes, signal });
 }
 
+/**
+ * The same chat routes on an app whose **operation** signal the caller owns.
+ * `honoSignalHandler` hands that app signal, never `c.req.raw.signal`, to every
+ * route command, and no chat route reads `requestSignal$`, so aborting it is the
+ * only way a test can drive these routes' production cancellation path. A
+ * `fetchOptions.signal` only abandons the client's own promise.
+ */
+function chatFilesOperationApp(context: TestContext, signal: AbortSignal) {
+  return setupAppWithRoutes({ context, routes: chatFilesRoutes, signal });
+}
+
 /** The optional pin query a client may send; omitted keys stay omitted. */
 interface PinQuery {
   readonly eventId?: string;
@@ -985,6 +996,30 @@ export function createChatFilesBddApi(context: TestContext) {
         [200],
       );
       return response.body;
+    },
+
+    /**
+     * Both read-cursor writers driven through an app whose operation signal the
+     * caller aborts, which is the signal those route commands actually receive.
+     * The requests are returned unnarrowed so a caller can assert the
+     * off-contract response a cancelled operation produces.
+     */
+    readCursorWritesWithOperationSignal(signal: AbortSignal) {
+      const operationApp = chatFilesOperationApp(context, signal);
+      return {
+        async markRead(actor: ApiTestUser, threadId: string) {
+          return await operationApp(chatThreadMarkReadContract).markRead({
+            headers: authenticate(context, actor),
+            params: { id: threadId },
+          });
+        },
+        async markUnread(actor: ApiTestUser, threadId: string) {
+          return await operationApp(chatThreadMarkUnreadContract).markUnread({
+            headers: authenticate(context, actor),
+            params: { id: threadId },
+          });
+        },
+      };
     },
 
     async requestMarkThreadRead(

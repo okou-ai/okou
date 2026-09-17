@@ -112,6 +112,14 @@ describe("CHAT-02: incomplete-round context", () => {
     });
     const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
     await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
+    await waitForThreadMessages(actor, anchor.threadId, (messages) => {
+      return messages.some((message) => {
+        return (
+          message.runId === anchor.runId &&
+          message.eventType === "run.completed"
+        );
+      });
+    });
 
     const first = await sendChatRun(actor, {
       agentId,
@@ -178,6 +186,21 @@ describe("CHAT-02: incomplete-round context", () => {
 describe("CHAT-02: initial thinking indicator", () => {
   // Provider text is untrusted and must never reach the thread.
   const privateProviderDetail = "private_prompt_history_authorization_canary";
+
+  // Opening copy is the producer an account keeps while thread activity
+  // summaries are off. That switch is generally available, so the cases below
+  // pin it off for their own actor instead of following the registry default.
+  async function openingCopyActor(): Promise<
+    Awaited<ReturnType<typeof entitledChatActor>>
+  > {
+    const fixture = await entitledChatActor();
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...fixture.actor, orgId: requireOrgId(fixture.actor) },
+      { [FeatureSwitchKey.ThreadActivitySummary]: false },
+    );
+    return fixture;
+  }
 
   it.each([
     { enabled: false, existingThread: false },
@@ -335,7 +358,7 @@ describe("CHAT-02: initial thinking indicator", () => {
       },
     },
   ])("omits opening copy after $name", async ({ thinkingResponse }) => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor, agentId } = await openingCopyActor();
     mockOptionalEnv("OPENROUTER_API_KEY", "thinking-classification-key");
     server.use(
       http.post(
@@ -377,7 +400,7 @@ describe("CHAT-02: initial thinking indicator", () => {
   });
 
   it("persists a fast assistant thinking marker with paragraphs for active web chat runs", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor, agentId } = await openingCopyActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     mockOptionalEnv("OPENROUTER_API_KEY", "thinking-key");
 
@@ -496,7 +519,7 @@ describe("CHAT-02: initial thinking indicator", () => {
   });
 
   it("discards token-limited progress copy instead of persisting a truncated marker", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor, agentId } = await openingCopyActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     mockOptionalEnv("OPENROUTER_API_KEY", "thinking-key");
 
@@ -554,7 +577,7 @@ describe("CHAT-02: initial thinking indicator", () => {
   });
 
   it("caps complete progress copy at 600 characters while preserving paragraph sanitization", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor, agentId } = await openingCopyActor();
     mockOptionalEnv("OPENROUTER_API_KEY", "thinking-key");
     chatCallbacks.mockOpenRouterCompletions((body) => {
       return body.messages[0]?.content.includes(
@@ -579,7 +602,7 @@ describe("CHAT-02: initial thinking indicator", () => {
   });
 
   it("does not request opening copy while a run waits for org capacity", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor, agentId } = await openingCopyActor();
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
     const blocker = await sendChatRun(actor, {
       agentId,
@@ -622,7 +645,7 @@ describe("CHAT-02: initial thinking indicator", () => {
   it.each([400, 429, 503])(
     "keeps the main run usable after an auxiliary HTTP %i",
     async (status) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      const { actor, agentId, runnerGroup } = await openingCopyActor();
       mockOptionalEnv("OPENROUTER_API_KEY", "thinking-key");
       server.use(
         http.post(
@@ -700,7 +723,7 @@ describe("CHAT-02: initial thinking indicator", () => {
   ])(
     "discards $name output without failing the run or leaking provider data",
     async ({ responseBody }) => {
-      const { actor, agentId } = await entitledChatActor();
+      const { actor, agentId } = await openingCopyActor();
       mockOptionalEnv("OPENROUTER_API_KEY", "thinking-key");
       server.use(
         http.post(
@@ -744,7 +767,7 @@ describe("CHAT-02: initial thinking indicator", () => {
   it.each(["answer", "completed", "cancelled"] as const)(
     "suppresses late progress copy after %s while the provider remains pending",
     async (outcome) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      const { actor, agentId, runnerGroup } = await openingCopyActor();
       mockOptionalEnv("OPENROUTER_API_KEY", "thinking-key");
       const entered = createDeferredPromise<void>(context.signal);
       const release = createDeferredPromise<void>(context.signal);

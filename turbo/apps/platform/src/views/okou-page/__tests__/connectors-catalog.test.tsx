@@ -409,7 +409,7 @@ test("Switch between built-in and custom connectors", async () => {
   });
 });
 
-test("Present a connector with no accounts", async () => {
+test("Present a connector with no accounts and allow cancelling direct OAuth", async () => {
   mockConnectors(context, []);
   mockPublicConnectorStatus(context, [
     publicStatusItem({
@@ -423,7 +423,8 @@ test("Present a connector with no accounts", async () => {
   ]);
   const oauthStarted = context.mocks.deferred<void>();
   mockOAuthCompletions(context);
-  context.mocks.browser.open(context.mocks.browser.authWindow());
+  const popup = context.mocks.browser.authWindow();
+  context.mocks.browser.open(popup);
   context.mocks.api(connectorOauthStartContract.start, async ({ respond }) => {
     await oauthStarted.promise;
     return respond(200, {
@@ -450,11 +451,19 @@ test("Present a connector with no accounts", async () => {
   });
 
   click(connect);
-  await expect(
-    screen.findByRole("status", { name: "Connecting..." }),
-  ).resolves.toBeVisible();
+  const progress = await screen.findByRole("dialog", {
+    name: "Connecting your account",
+  });
+  expect(within(progress).getByRole("status")).toHaveTextContent(
+    "Please wait while we finish setting up your connection.",
+  );
   expect(connect).toBeDisabled();
-  expect(screen.queryByRole("dialog")).toBeNull();
+  click(getConnectorAction("button", "Cancel", progress));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(connect).toBeEnabled();
+  });
+  expect(popup.closed).toBeTruthy();
   oauthStarted.resolve();
 });
 

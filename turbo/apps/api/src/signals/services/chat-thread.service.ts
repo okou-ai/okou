@@ -862,15 +862,6 @@ export const deleteChatThread$ = command(
         };
       }
 
-      await appendChatThreadEvent(tx, {
-        kind: "deleted",
-        userId: args.userId,
-        orgId: args.orgId,
-        chatThreadId: ownedThread.id,
-        agentId: ownedThread.agentId,
-        eventId: args.eventId,
-      });
-
       // Capture related active runs while the thread row blocks new FK attaches.
       // Terminal runs (completed/failed/cancelled) are left untouched; only
       // queued/pending/running runs need stopping.
@@ -911,13 +902,28 @@ export const deleteChatThread$ = command(
         .delete(chatEventSearchMessages)
         .where(eq(chatEventSearchMessages.chatThreadId, ownedThread.id));
 
-      // Delete the thread last inside the lock. Cascades chat_events; captured
-      // active runs lose their canonical chatThreadId, while any retained legacy
+      // Delete the thread after cleanup under its row lock. Cascades chat_events.
+      // Captured active runs lose their canonical chatThreadId, while any retained legacy
       // row is independently nulled by its own foreign key.
       const [deletedThread] = await tx
         .delete(chatThreads)
         .where(eq(chatThreads.id, ownedThread.id))
         .returning({ id: chatThreads.id });
+
+      if (deletedThread) {
+        // Acquire the user/org event sequence only after all cleanup and
+        // cascading deletes. A blocked child row must not hold this shared
+        // lock and stall events for other threads. Keep the tombstone in this
+        // transaction so deletion and its ordered event become visible together.
+        await appendChatThreadEvent(tx, {
+          kind: "deleted",
+          userId: args.userId,
+          orgId: args.orgId,
+          chatThreadId: ownedThread.id,
+          agentId: ownedThread.agentId,
+          eventId: args.eventId,
+        });
+      }
 
       return {
         deleted: Boolean(deletedThread),

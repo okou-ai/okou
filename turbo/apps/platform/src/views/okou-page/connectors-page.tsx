@@ -51,7 +51,7 @@ import {
 } from "../../signals/okou-page/settings/connector-directory-route.ts";
 import {
   connectorCatalogDiscovery$,
-  connectConnectorOAuthAuthCode$,
+  connectConnectorOAuthAuthCodeAndSettle$,
   connectConnectorNoAuth$,
   connectFlowConnectorSlug$,
   runConnectorConnectSuccess$,
@@ -1875,7 +1875,7 @@ export function ConnectorsPage() {
   const pollingAuthCodeSlug = useGet(pollingOAuthAuthCodeConnectorSlug$);
   const pollingDeviceAuthSlug = useGet(pollingOAuthDeviceAuthConnectorSlug$);
   const connectFlowSlug = useGet(connectFlowConnectorSlug$);
-  const connect = useSet(connectConnectorOAuthAuthCode$);
+  const connect = useSet(connectConnectorOAuthAuthCodeAndSettle$);
   const connectNoAuth = useSet(connectConnectorNoAuth$);
   const signal = useGet(pageSignal$);
   const scopeReviewSelection = useGet(scopeReviewSelection$);
@@ -1938,10 +1938,11 @@ export function ConnectorsPage() {
   const finishExplicitAccountAdd = async (
     connector: PlatformConnectorCatalogStatusItem,
     connectionId: string | null,
+    attemptSignal: AbortSignal,
   ): Promise<void> => {
     await runConnectSuccess(
       connector.slug,
-      (completedConnectionId) => {
+      (completedConnectionId, continuationSignal) => {
         return finishAccountConnection(
           {
             target: { kind: "builtin", connectorSlug: connector.slug },
@@ -1949,11 +1950,11 @@ export function ConnectorsPage() {
             connectorLabel: connector.label,
             mode: { kind: "add" },
           },
-          signal,
+          continuationSignal,
         );
       },
       connectionId,
-      signal,
+      attemptSignal,
     );
   };
 
@@ -1965,21 +1966,26 @@ export function ConnectorsPage() {
         openAccountConnect(connector, { kind: "add" });
       },
       connectBrowserAuth: async (authMethod) => {
-        const result = await connect(
-          connector.slug,
-          authMethod,
+        await connect(
           {
-            account: { intent: "add" },
-            authorizeVisibleAgents: true,
-            connectorLabel: connector.label,
-            connectorIcon: connector.icon,
+            connectorSlug: connector.slug,
+            method: authMethod,
+            options: {
+              account: { intent: "add" },
+              authorizeVisibleAgents: true,
+              connectorLabel: connector.label,
+              connectorIcon: connector.icon,
+            },
+            onSuccess: (connectionId, attemptSignal) => {
+              return finishExplicitAccountAdd(
+                connector,
+                connectionId,
+                attemptSignal,
+              );
+            },
           },
           signal,
         );
-        if (result) {
-          await finishExplicitAccountAdd(connector, result.connectionId);
-        }
-        return result;
       },
       connectNoAuth: async (authMethod) => {
         const result = await connectNoAuth(
@@ -1995,7 +2001,11 @@ export function ConnectorsPage() {
           signal,
         );
         if (result) {
-          await finishExplicitAccountAdd(connector, result.connectionId);
+          await finishExplicitAccountAdd(
+            connector,
+            result.connectionId,
+            signal,
+          );
         }
         return result;
       },
@@ -2250,7 +2260,7 @@ export function ConnectorsPage() {
           onClose={() => {
             closeAccountConnect();
           }}
-          onSuccess={async (connectionId) => {
+          onSuccess={async (connectionId, attemptSignal) => {
             await finishAccountConnection(
               {
                 target: {
@@ -2261,7 +2271,7 @@ export function ConnectorsPage() {
                 connectorLabel: accountConnect.connector.label,
                 mode: accountConnect.mode,
               },
-              signal,
+              attemptSignal,
             );
           }}
         />

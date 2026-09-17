@@ -5,7 +5,7 @@ use rfb_client::{
 };
 use rustls::{ServerConfig, pki_types::PrivatePkcs8KeyDer};
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
+    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
     net::{TcpListener, TcpStream},
     time::{Instant, timeout},
 };
@@ -30,6 +30,13 @@ pub async fn bounded<T>(future: impl Future<Output = T>) -> T {
 }
 
 pub async fn authenticated() -> (Authenticated<TcpStream>, Peer) {
+    authenticated_with(|stream| stream).await
+}
+
+pub async fn authenticated_with<S>(wrap: impl FnOnce(TcpStream) -> S) -> (Authenticated<S>, Peer)
+where
+    S: AsyncRead + AsyncWrite + Unpin + 'static,
+{
     let key = rcgen::KeyPair::generate().unwrap();
     let cert = rcgen::CertificateParams::new(vec!["vnc.example.test".to_owned()])
         .unwrap()
@@ -59,6 +66,7 @@ pub async fn authenticated() -> (Authenticated<TcpStream>, Peer) {
     let mut server = server.unwrap().0;
     client.set_nodelay(true).unwrap();
     server.set_nodelay(true).unwrap();
+    let client = wrap(client);
     let caller = authenticate(
         client,
         "vnc.example.test",

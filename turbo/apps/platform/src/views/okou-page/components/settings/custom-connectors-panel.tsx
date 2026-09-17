@@ -492,6 +492,7 @@ export function CustomConnectorGrid({
   const finishExplicitAccountAdd = async (
     connector: CustomConnectorResponse,
     connectionId: string | null,
+    attemptSignal: AbortSignal,
   ): Promise<void> => {
     await finishAccountConnection(
       {
@@ -500,7 +501,7 @@ export function CustomConnectorGrid({
         connectorLabel: connector.displayName,
         mode: { kind: "add" },
       },
-      signal,
+      attemptSignal,
     );
   };
   const handleConnect = (connector: CustomConnectorResponse) => {
@@ -510,8 +511,12 @@ export function CustomConnectorGrid({
           {
             id: connector.id,
             account: { intent: "add" },
-            onSuccess: (connectionId) => {
-              return finishExplicitAccountAdd(connector, connectionId);
+            onSuccess: (connectionId, attemptSignal) => {
+              return finishExplicitAccountAdd(
+                connector,
+                connectionId,
+                attemptSignal,
+              );
             },
           },
           signal,
@@ -590,7 +595,7 @@ function CustomAccountDialogs({
                   },
           }}
           onClose={closeAccountConnect}
-          onSuccess={async (connectionId) => {
+          onSuccess={async (connectionId, attemptSignal) => {
             await finishAccountConnection(
               {
                 target: {
@@ -601,7 +606,7 @@ function CustomAccountDialogs({
                 connectorLabel: accountConnect.connector.displayName,
                 mode: accountConnect.mode,
               },
-              signal,
+              attemptSignal,
             );
           }}
         />
@@ -629,7 +634,7 @@ function CustomAccountDialogs({
                   {
                     id: managedAccounts.id,
                     account: { intent: "add" },
-                    onSuccess: (connectionId) => {
+                    onSuccess: (connectionId, attemptSignal) => {
                       return finishAccountConnection(
                         {
                           target: {
@@ -640,7 +645,7 @@ function CustomAccountDialogs({
                           connectorLabel: managedAccounts.displayName,
                           mode: { kind: "add" },
                         },
-                        signal,
+                        attemptSignal,
                       );
                     },
                   },
