@@ -1461,8 +1461,10 @@
           },
           "later": "बाद में",
           "slack": {
+            "appBadge": "APP",
             "confirm": "Slack में जोड़ें",
             "description": "Slack में {{assistantName}} एक ऐसा साथी है जिसे कोई भी @ कर सकता है।",
+            "sampleChannel": "# growth",
             "scopeChannels": "यह सिर्फ़ उन्हीं चैनलों को देखता है जिनमें आप इसे बुलाते हैं।",
             "scopeOrganization": "आपका खाता टीम का बन जाता है, workflow साझा हो जाते हैं।",
             "scopeReward": "इनाम टीम के बैलेंस में जाता है।",

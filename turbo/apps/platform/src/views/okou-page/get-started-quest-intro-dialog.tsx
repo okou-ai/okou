@@ -60,8 +60,10 @@ export function questHasIntro(key: GetStartedQuestKey): boolean {
  * a waypoint at each end. No arrowheads — the line is the relationship, and
  * the tiles on either side say which way it runs.
  */
-const FIGURE_TILE_CLASS =
-  "inline-flex items-center justify-center overflow-hidden rounded-2xl border-(length:--border-width-illustration) border-solid border-border bg-card shadow-[0_12px_30px_-18px_rgba(0,0,0,0.5)]";
+const FIGURE_SURFACE_CLASS =
+  "border-(length:--border-width-illustration) border-solid border-border bg-card shadow-[0_12px_30px_-18px_rgba(0,0,0,0.5)]";
+
+const FIGURE_TILE_CLASS = `inline-flex items-center justify-center overflow-hidden rounded-2xl ${FIGURE_SURFACE_CLASS}`;
 
 /* The artwork's own orange and ink, literal for the same reason the diagram
    keeps them literal: they are artwork, and the theme tokens flip in Dark. */
@@ -192,25 +194,60 @@ function ConnectorFigure() {
   );
 }
 
-/** Okou moves into Slack, where the team already is. */
-function SlackFigure() {
+/**
+ * The channel, drawn as a message card.
+ *
+ * Tiles joined by a line say "these two are related", which is right for a
+ * connector but says nothing about what happens once the assistant is in
+ * Slack. A card of the thing itself does: a teammate mentions it, and it
+ * answers with the app badge Slack gives every bot.
+ */
+function SlackFigure({ assistantName }: { assistantName: string }) {
+  const { t } = useTranslation();
   return (
     <TileRow>
-      <OkouNode />
-      <FigureJoin />
-      <FigureTile size={56}>
-        <WorkflowConnectorIcon connectorSlug="slack" size={34} />
-      </FigureTile>
-      <FigureJoin />
-      <FigureTile size={56}>
-        <FigureStack>
-          {[
-            <PersonMark key="a" size={15} />,
-            <PersonMark key="b" size={15} />,
-            <PersonMark key="c" size={15} />,
-          ]}
-        </FigureStack>
-      </FigureTile>
+      <span
+        className={`w-[272px] overflow-hidden rounded-xl ${FIGURE_SURFACE_CLASS}`}
+      >
+        <span className="flex items-center gap-[7px] border-b border-border px-[13px] py-[9px]">
+          <WorkflowConnectorIcon connectorSlug="slack" size={14} />
+          <span className="text-[11px] font-semibold leading-none text-foreground">
+            {t(($) => {
+              return $.chat.agentPage.getStarted.intro.slack.sampleChannel;
+            })}
+          </span>
+        </span>
+        <span className="flex flex-col gap-[11px] px-[13px] py-[12px]">
+          <span className="flex items-center gap-[8px]">
+            <span className="grid size-[20px] shrink-0 place-items-center rounded-full bg-state-hover text-muted-foreground">
+              <User size={11} strokeWidth={2} />
+            </span>
+            <span className="rounded-[4px] bg-brand-subtle px-[5px] py-[2px] text-[10px] font-semibold leading-none text-brand-text">
+              {`@${assistantName.toLowerCase()}`}
+            </span>
+            <span className="h-[4px] w-[74px] rounded-full bg-divider" />
+          </span>
+          <span className="flex items-start gap-[8px]">
+            <OkouAvatar size={22} />
+            <span className="flex flex-col gap-[6px] pt-[1px]">
+              <span className="flex items-center gap-[5px]">
+                <span className="text-[11px] font-semibold leading-none text-foreground">
+                  {assistantName}
+                </span>
+                <span className="rounded-[3px] bg-state-hover px-[4px] py-[2px] text-[8px] font-semibold uppercase leading-none tracking-wide text-muted-foreground">
+                  {t(($) => {
+                    return $.chat.agentPage.getStarted.intro.slack.appBadge;
+                  })}
+                </span>
+              </span>
+              <span className="flex flex-col gap-[5px]">
+                <span className="h-[4px] w-[150px] rounded-full bg-divider" />
+                <span className="h-[4px] w-[104px] rounded-full bg-divider" />
+              </span>
+            </span>
+          </span>
+        </span>
+      </span>
     </TileRow>
   );
 }
@@ -439,7 +476,7 @@ function SlackIntro({ onConfirm, onClose }: IntroProps) {
         },
         { assistantName },
       )}
-      figure={<SlackFigure />}
+      figure={<SlackFigure assistantName={assistantName} />}
       secondaryLabel={useLaterLabel()}
       onSecondary={onClose}
       confirmLabel={t(($) => {
