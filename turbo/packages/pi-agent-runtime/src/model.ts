@@ -375,7 +375,9 @@ export function piAgentStreamForConfig(
     const fetch = observePiResponseStatus(
       observePiUsageFetch(
         configuredOptions.fetch ?? globalThis.fetch,
-        "responses",
+        config.dialect === "openai-codex-responses"
+          ? "codex-responses"
+          : "responses",
         configuredOptions.usageObserver,
       ),
       configuredOptions.onObservedResponseStatus,

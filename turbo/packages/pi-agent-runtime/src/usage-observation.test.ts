@@ -213,6 +213,30 @@ describe("API provider usage evidence", () => {
     });
   });
 
+  it.each([false, true])(
+    "stops Codex evidence at the SDK terminal boundary (fragmented %s)",
+    async (fragmented) => {
+      const body =
+        sse([
+          ...responseEvents(reportedUsage, "response.done"),
+          ...responseEvents(
+            { ...reportedUsage, input_tokens: 150 },
+            "response.done",
+          ).slice(-1),
+        ]) + "data: malformed trailing payload\n\n";
+      serveSse(body.replaceAll("\r\n", "\n"), fragmented);
+      const result = await run(model(true));
+      expect(result.assistantMessage).toMatchObject({
+        stopReason: "stop",
+        usage: { input: 25, cacheRead: 10, cacheWrite: 15, output: 20 },
+      });
+      expect(result.usageObservation).toEqual({
+        coverage: "complete",
+        tokens: reportedTokens,
+      });
+    },
+  );
+
   it.each([
     {
       name: "missing cache details",

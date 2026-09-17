@@ -5,7 +5,21 @@ import { NodeHttpHandler } from "@smithy/node-http-handler";
 import type { PiUsageObserver } from "./usage-observation";
 
 const MAX_FRAME_BYTES = 256 * 1024;
-type SseDialect = "responses" | "messages";
+type SseDialect = "responses" | "codex-responses" | "messages";
+
+/** The pinned Codex adapter stops consuming at its first terminal event. */
+function endsCodexStream(event: unknown): boolean {
+  if (typeof event !== "object" || event === null || !("type" in event)) {
+    return false;
+  }
+  return (
+    event.type === "response.done" ||
+    event.type === "response.completed" ||
+    event.type === "response.incomplete" ||
+    event.type === "response.failed" ||
+    event.type === "error"
+  );
+}
 
 function observeJson(
   text: string,
@@ -27,6 +41,7 @@ function sseReader(observer: PiUsageObserver, dialect: SseDialect) {
   let dropped = false;
   let lineHasContent = false;
   let previousCr = false;
+  let ended = false;
   const inspect = (): void => {
     if (dropped) return;
     const data = frame
@@ -43,8 +58,11 @@ function sseReader(observer: PiUsageObserver, dialect: SseDialect) {
     observeJson(
       data,
       (event) => {
-        if (dialect === "responses") observer.responses(event);
-        else observer.messages(event);
+        if (dialect === "messages") observer.messages(event);
+        else observer.responses(event);
+        if (dialect === "codex-responses" && endsCodexStream(event)) {
+          ended = true;
+        }
       },
       observer,
     );
@@ -52,6 +70,7 @@ function sseReader(observer: PiUsageObserver, dialect: SseDialect) {
   return {
     push(chunk: Uint8Array): void {
       for (const byte of chunk) {
+        if (ended) return;
         if (previousCr && byte === 10) {
           previousCr = false;
           continue;
@@ -77,6 +96,7 @@ function sseReader(observer: PiUsageObserver, dialect: SseDialect) {
       }
     },
     end(): void {
+      if (ended) return;
       if (size !== 0 || dropped) {
         inspect();
         observer.loseCoverage();
