@@ -116,7 +116,8 @@ Do not claim that unchanged timer boundaries imply unchanged measured values.
 ### Local overhead sample
 
 On September 17, 2026, a Linux local-profile comparison used baseline
-`e9001cdc0e69e7246209e62e2995a388a82077b5` and this observer with Rust 1.98.1.
+`e9001cdc0e69e7246209e62e2995a388a82077b5` and observer commit
+`21fbc6cca01f306e52b497d0b552c9a8e78f7117` with Rust 1.98.1.
 Twelve alternating baseline/observer process pairs each applied 64 tiny
 single-file gzip archives to distinct nested mounts, forcing serial scheduling.
 Both used the same loopback HTTP/1.1 server, real extraction, system-log appends

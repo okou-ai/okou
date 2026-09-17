@@ -92,7 +92,11 @@ fn concurrent_calls_keep_observations_separate() {
         .map(|index| fixture.dir.path().join(format!("mount-{index}")))
         .collect();
     let manifest = json!({"storageMounts": mounts.iter().enumerate().map(|(index, mount)| {
-        json!({"mountPath": mount, "archiveUrl": format!("{}/archive-{index}", server.base_url())})
+        let url = format!("{}/archive-{index}", server.base_url());
+        // URI schemes are case-insensitive; every accepted remote call must
+        // retain its diagnostic even when the manifest preserves mixed case.
+        let url = if index == 0 { url.replacen("http://", "HtTp://", 1) } else { url };
+        json!({"mountPath": mount, "archiveUrl": url})
     }).collect::<Vec<_>>()});
     let output = run_manifest(&fixture, &manifest).unwrap();
     assert!(output.status.success(), "{:?}", output);

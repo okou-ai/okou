@@ -49,8 +49,12 @@ pub(crate) fn open_archive(
     }
 
     let metrics = metrics.cloned().unwrap_or_default();
-    let observation =
-        (url.starts_with("http://") || url.starts_with("https://")).then(CallObservation::start);
+    let observation = url
+        .split_once("://")
+        .is_some_and(|(scheme, _)| {
+            scheme.eq_ignore_ascii_case("http") || scheme.eq_ignore_ascii_case("https")
+        })
+        .then(CallObservation::start);
     let request_start = Instant::now();
     let response = HTTP_AGENT.get(url).call();
     let request_elapsed = request_start.elapsed();
