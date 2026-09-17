@@ -566,7 +566,7 @@ function classifyTransport(
  * or was written by something outside this contract — which is worth failing
  * loudly for, not papering over.
  */
-function viewOfRow(
+export function viewOfRow(
   row: MorningBriefGenerationRow,
   receipt: MorningBriefPlatformReceiptView | null,
 ): MorningBriefGenerationView {

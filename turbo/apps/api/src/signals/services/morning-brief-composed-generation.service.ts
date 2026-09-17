@@ -1,7 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import type { MorningBriefCollectionOccurrenceView } from "@okouai/api-contracts/contracts/morning-brief-collection-preview";
-import type { MorningBriefGenerationView } from "@okouai/api-contracts/contracts/morning-brief-generation-preview";
 import {
   MORNING_BRIEF_COLLECTION_KIND_SOURCES,
   MORNING_BRIEF_COLLECTION_VERSION,
@@ -37,6 +36,7 @@ import { interpretComposedGenerationOutput } from "./morning-brief-generation-re
 import { MORNING_BRIEF_DEFAULT_LANGUAGE } from "./morning-brief-language-policy";
 import {
   invokeAndPersist$,
+  viewOfRow,
   type MorningBriefGenerationExecution,
 } from "./morning-brief-generation-executor.service";
 import {
@@ -46,7 +46,6 @@ import {
   reserveMorningBriefGeneration,
   sweepExpiredMorningBriefGenerations,
   type MorningBriefGenerationAdmission,
-  type MorningBriefGenerationRow,
 } from "./morning-brief-generation-store.service";
 import { MORNING_BRIEF_GENERATION_MODEL } from "./morning-brief-generation-prompt";
 import { loadMorningBriefMigrationState } from "./morning-brief-migration-state.service";
@@ -495,48 +494,7 @@ async function resolveExisting(
   return {
     kind: "already-generated",
     occurrence: occurrenceView(occurrence),
-    generation: composedView(row),
-  };
-}
-
-/** The stored row as the one generation view, with no content re-derived. */
-function composedView(
-  row: MorningBriefGenerationRow,
-): MorningBriefGenerationView {
-  const result =
-    row.decision === "deliver" &&
-    row.resultTitle !== null &&
-    row.resultMarkdown !== null
-      ? {
-          decision: "deliver" as const,
-          title: row.resultTitle,
-          markdown: row.resultMarkdown,
-          bytes: row.resultBytes ?? 0,
-        }
-      : row.decision === "skip"
-        ? { decision: "skip" as const, reason: "nothing_actionable" as const }
-        : null;
-  return {
-    purpose: row.executionPurpose,
-    state: row.state,
-    attemptId: row.attemptId,
-    model: row.model,
-    promptVersion: row.promptVersion,
-    resultSchemaVersion: row.resultSchemaVersion,
-    language: row.language,
-    languageSource: row.languageSource,
-    inputDigest: row.inputDigest,
-    inputItems: row.inputItems,
-    includedItems: row.includedItems,
-    inputReduced: row.inputReduced,
-    sourceCoverage: row.sourceCoverage,
-    reservedAt: row.reservedAt.toISOString(),
-    reservationExpiresAt: row.reservationExpiresAt.toISOString(),
-    expiresAt: row.expiresAt.toISOString(),
-    finishedAt: row.finishedAt?.toISOString() ?? null,
-    failureReason: row.failureReason,
-    result,
-    receipt: null,
+    generation: viewOfRow(row, null),
   };
 }
 
@@ -709,7 +667,11 @@ const reserveAndInvoke$ = command(
       if (!row) {
         throw new Error("Morning Brief generation skip was not recorded");
       }
-      return { kind: "generated", occurrence, generation: composedView(row) };
+      return {
+        kind: "generated",
+        occurrence,
+        generation: viewOfRow(row, null),
+      };
     }
 
     const language = composed.result.language;
