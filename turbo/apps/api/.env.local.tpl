@@ -10,7 +10,6 @@ CLERK_WEBHOOK_SIGNING_SECRET=op://Development/clerk/CLERK_WEBHOOK_SIGNING_SECRET
 # See docs/mcp-server.md; use the exact resource and issuer configured in Clerk.
 # MCP_RESOURCE_URL=https://api.example.test/mcp
 # MCP_OAUTH_ISSUER=https://your-instance.clerk.accounts.dev
-# MCP_ALLOWED_ORIGINS=https://your-browser-client.example.test
 
 # Required: API, web, and app URLs
 OKOU_API_BACKEND_URL=https://api.vm7.ai:8443

@@ -9,6 +9,9 @@ export const MCP_SCOPES = [
   "okou:run:cancel",
 ] as const;
 
+// Add browser clients here as exact HTTPS origins when support is needed.
+const MCP_ALLOWED_ORIGINS = Object.freeze(new Set<string>([]));
+
 function configuredUrl(value: string): URL {
   const url = new URL(value);
   if (
@@ -47,16 +50,5 @@ export function mcpServerConfig() {
 }
 
 export function allowedMcpOrigin(origin: string): boolean {
-  const origins = env("MCP_ALLOWED_ORIGINS")?.split(",") ?? [];
-  return origins.some((entry) => {
-    const allowed = entry.trim();
-    if (!allowed) {
-      return false;
-    }
-    const url = configuredUrl(allowed);
-    if (allowed !== url.origin) {
-      throw new Error("MCP_ALLOWED_ORIGINS must contain exact HTTPS origins");
-    }
-    return origin === allowed;
-  });
+  return MCP_ALLOWED_ORIGINS.has(origin);
 }

@@ -91,7 +91,6 @@ function protocolHeaders(token: string, method: string, modern = true) {
 async function fixture(enabled = true) {
   mockEnv("MCP_RESOURCE_URL", resource);
   mockEnv("MCP_OAUTH_ISSUER", issuer);
-  mockEnv("MCP_ALLOWED_ORIGINS", "https://client.example.test");
   const userId = `user_${randomUUID()}`;
   const orgId = `org_${randomUUID()}`;
   const keys = generateKeyPairSync("rsa", { modulusLength: 2048 });
@@ -154,15 +153,21 @@ async function fixture(enabled = true) {
 }
 
 describe("external MCP entry", () => {
-  it("publishes the configured resource and issuer without authentication", async () => {
+  it("publishes public cross-origin metadata without authentication", async () => {
     mockEnv("MCP_RESOURCE_URL", resource);
     mockEnv("MCP_OAUTH_ISSUER", issuer);
-    const response = await accept(client().metadata(), [200]);
+    const response = await accept(
+      client().metadata({
+        extraHeaders: { Origin: "https://client.example.test" },
+      }),
+      [200],
+    );
     expect(response.body).toMatchObject({
       resource,
       authorization_servers: [issuer],
       bearer_methods_supported: ["header"],
     });
+    expect(response.headers.get("access-control-allow-origin")).toBe("*");
   });
 
   it("isolates absent MCP configuration from first-party feature access", async () => {
@@ -596,7 +601,7 @@ describe("external MCP entry", () => {
     });
   });
 
-  it.each(["https://untrusted.example.test", "null"])(
+  it.each(["https://untrusted.example.test", "null", ""])(
     "rejects Origin %s before authorization",
     async (origin) => {
       await fixture();
@@ -611,7 +616,7 @@ describe("external MCP entry", () => {
     },
   );
 
-  it("allows an explicit browser origin and its preflight", async () => {
+  it("rejects an unlisted browser origin's preflight and authorized request", async () => {
     const auth = await fixture();
     const origin = "https://client.example.test";
     const raw = setupRawAppRequest({ context, routes: mcpServerRoutes });
@@ -624,7 +629,8 @@ describe("external MCP entry", () => {
           "authorization,mcp-protocol-version,mcp-method",
       },
     });
-    expect(preflight.status).toBe(204);
+    expect(preflight.status).toBe(403);
+    expect(preflight.body).toStrictEqual({ error: "Forbidden Origin" });
     const result = await accept(
       client().request({
         extraHeaders: {
@@ -633,13 +639,11 @@ describe("external MCP entry", () => {
         },
         body: requestBody("tools/list"),
       }),
-      [200],
+      [403],
     );
-    expect(result.headers.get("access-control-allow-origin")).toBe(origin);
+    expect(result.body).toStrictEqual({ error: "Forbidden Origin" });
+    expect(result.headers.get("access-control-allow-origin")).toBeNull();
     expect(result.headers.get("access-control-allow-credentials")).toBeNull();
-    expect(result.headers.get("access-control-expose-headers")).toContain(
-      "WWW-Authenticate",
-    );
   });
 
   it("bounds the request body before SDK dispatch", async () => {

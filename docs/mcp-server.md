@@ -21,11 +21,10 @@ tool calls require authorization and the feature override.
 
 Configure these optional API environment variables before enabling an account:
 
-| Variable              | Value                                                                                                               |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `MCP_RESOURCE_URL`    | Exact HTTPS resource identifier ending in `/mcp`, including the deployment's real origin.                           |
-| `MCP_OAUTH_ISSUER`    | Exact trusted HTTPS Clerk OAuth issuer for that deployment.                                                         |
-| `MCP_ALLOWED_ORIGINS` | Comma-separated exact HTTPS browser origins, with no paths or trailing slashes. Omit if all clients send no Origin. |
+| Variable           | Value                                                                                     |
+| ------------------ | ----------------------------------------------------------------------------------------- |
+| `MCP_RESOURCE_URL` | Exact HTTPS resource identifier ending in `/mcp`, including the deployment's real origin. |
+| `MCP_OAUTH_ISSUER` | Exact trusted HTTPS Clerk OAuth issuer for that deployment.                               |
 
 Missing resource/issuer configuration makes the MCP surface return 503 and does
 not change first-party API authentication. Resource and issuer are never derived
@@ -45,9 +44,8 @@ unset rather than guessing a production or frontend address.
 Set the non-secret `MCP_OAUTH_ISSUER` GitHub repository variable to the test Clerk
 instance's exact OAuth issuer. Override the same variable in the `production`
 GitHub Environment with `https://clerk.okou.ai`, matching that environment's
-Clerk credentials. Configure the optional `MCP_ALLOWED_ORIGINS` variable at the
-same scopes if clients send an Origin header. Missing values remain optional;
-without an issuer, MCP returns 503 while the existing API remains available.
+Clerk credentials. Without an issuer, MCP returns 503 while the existing API
+remains available.
 These deployment variables do not enable the `McpServer` feature switch or
 configure OAuth settings in either Clerk instance.
 
@@ -138,9 +136,13 @@ is offered; stateless GET/DELETE requests return 405. POST bodies are limited to
 64 KiB. Transport/request cancellation stops request work and never cancels a
 business run.
 
-Browser Origins must exactly match the MCP allowlist; `null` and other Origins
-are rejected before authentication. Native clients without an Origin work.
-Preflight allows bearer/protocol headers and responses expose the authentication
+Browser Origins must exactly match the fixed allowlist in
+[`mcp-server-config.ts`](../turbo/apps/api/src/lib/mcp-server-config.ts). The list
+starts empty; add exact HTTPS origins in code when a browser client needs access.
+There is no environment variable for this list. Unlisted Origins, including `null`
+and empty values, are rejected before authentication, including preflight requests.
+Native clients without an Origin work. For listed origins, preflight allows
+bearer/protocol headers and responses expose the authentication
 challenge and protocol headers. Cookie credentials are not used. Protected-resource
 metadata supports public cross-origin discovery.
 

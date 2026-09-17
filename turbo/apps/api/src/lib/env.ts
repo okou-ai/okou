@@ -23,7 +23,6 @@ const SCHEMA = {
   CLERK_PUBLISHABLE_KEY: z.string().min(1),
   MCP_RESOURCE_URL: z.url().optional(),
   MCP_OAUTH_ISSUER: z.url().optional(),
-  MCP_ALLOWED_ORIGINS: z.string().optional(),
   SECRETS_ENCRYPTION_KEY: z.string().length(64),
   SECRETS_KMS_KEY_ID: z.string().min(1).optional(),
   OFFICIAL_RUNNER_SECRET: z.string().length(64),

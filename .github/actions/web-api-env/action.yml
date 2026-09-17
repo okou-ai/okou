@@ -235,7 +235,6 @@ runs:
           # Repository variables configure previews; production overrides the
           # same names through its GitHub Environment, like the Clerk bindings.
           add_var MCP_OAUTH_ISSUER MCP_OAUTH_ISSUER
-          add_var MCP_ALLOWED_ORIGINS MCP_ALLOWED_ORIGINS
           # GitHub Environment production overrides the same repository keys.
           add_var GCP_LLM_PROJECT_ID GCP_LLM_PROJECT_ID
           add_var GCP_LLM_WORKLOAD_IDENTITY_PROVIDER GCP_LLM_WORKLOAD_IDENTITY_PROVIDER

@@ -515,14 +515,14 @@ assert_env_key_absent "$api_backend_url_absent_env_file" MCP_RESOURCE_URL
 # Exercise environment-specific audiences and issuers through the real renderer.
 # A shared resource variable must never override a deployment's own API URL.
 for mcp_case in \
-  'api|preview|https://pr-123-api.okou.test|https://clerk-dev.example.test|https://client-dev.example.test|https://pr-123-api.okou.test/mcp' \
-  'api|production|https://api.okou.test/|https://clerk.example.test|https://client.example.test,https://other-client.example.test|https://api.okou.test/mcp' \
-  'web|production|https://api.okou.test|https://clerk.example.test|https://client.example.test|'; do
-  IFS='|' read -r mcp_app mcp_environment mcp_api_url mcp_issuer mcp_origins mcp_resource <<< "$mcp_case"
+  'api|preview|https://pr-123-api.okou.test|https://clerk-dev.example.test|https://pr-123-api.okou.test/mcp' \
+  'api|production|https://api.okou.test/|https://clerk.example.test|https://api.okou.test/mcp' \
+  'web|production|https://api.okou.test|https://clerk.example.test|'; do
+  IFS='|' read -r mcp_app mcp_environment mcp_api_url mcp_issuer mcp_resource <<< "$mcp_case"
   mcp_dir="$(mktemp -d)"
   TEMP_DIRS+=("$mcp_dir")
-  mcp_vars="$(jq -nc --arg issuer "$mcp_issuer" --arg origins "$mcp_origins" \
-    '{MCP_OAUTH_ISSUER: $issuer, MCP_ALLOWED_ORIGINS: $origins, MCP_RESOURCE_URL: "https://wrong-resource.example.test/mcp"}')"
+  mcp_vars="$(jq -nc --arg issuer "$mcp_issuer" \
+    '{MCP_OAUTH_ISSUER: $issuer, MCP_RESOURCE_URL: "https://wrong-resource.example.test/mcp"}')"
   mcp_output="$(run_action "$(build_doppler_secrets_json)" "$mcp_dir" \
     "$mcp_app" "$mcp_environment" "https://static.okou.io/okou-cli/test-sha/package.tgz" \
     canonical "" "" pr-123 "$mcp_api_url" "" "$mcp_vars" 2>&1)"
@@ -531,11 +531,9 @@ for mcp_case in \
   if [[ "$mcp_app" == "api" ]]; then
     assert_env_value "$mcp_env_file" MCP_RESOURCE_URL "$mcp_resource"
     assert_env_value "$mcp_env_file" MCP_OAUTH_ISSUER "$mcp_issuer"
-    assert_env_value "$mcp_env_file" MCP_ALLOWED_ORIGINS "$mcp_origins"
   else
     assert_env_key_absent "$mcp_env_file" MCP_RESOURCE_URL
     assert_env_key_absent "$mcp_env_file" MCP_OAUTH_ISSUER
-    assert_env_key_absent "$mcp_env_file" MCP_ALLOWED_ORIGINS
   fi
 done
 
@@ -595,7 +593,6 @@ assert_env_value "$success_env_file" OKOU_PREVIEW_JOB_REF "pr-123"
 assert_api_backend_url_canonical "$success_env_file" "https://pr-123-api-backend.okou.test"
 assert_env_value "$success_env_file" MCP_RESOURCE_URL "https://pr-123-api-backend.okou.test/mcp"
 assert_env_value "$success_env_file" MCP_OAUTH_ISSUER ""
-assert_env_value "$success_env_file" MCP_ALLOWED_ORIGINS ""
 assert_google_llm_config "$success_env_file" "llm-dev@vm0-ai-488909.iam.gserviceaccount.com"
 assert_env_value "$success_env_file" LANGFUSE_PUBLIC_KEY "github-langfuse-public-key"
 assert_env_value "$success_env_file" LANGFUSE_SECRET_KEY "github-langfuse-secret-key"
