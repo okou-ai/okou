@@ -11,6 +11,31 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.912.0](https://github.com/vm0-ai/okou/compare/app-v0.911.3...app-v0.912.0) (2026-09-17)
+
+
+### Features
+
+* **app:** add chat thread archiving ([#35081](https://github.com/vm0-ai/okou/issues/35081)) ([c2c9e70](https://github.com/vm0-ai/okou/commit/c2c9e70124bf9457e69130566ab70d2e00cc06e5))
+
+
+### Documentation
+
+* **platform:** remove misleading source map comment ([#35085](https://github.com/vm0-ai/okou/issues/35085)) ([6e1b552](https://github.com/vm0-ai/okou/commit/6e1b552fddbbbe640f25d1fbfddff94b4fea0b15))
+
+
+### Refactoring
+
+* remove expired deployment compatibility ([#35084](https://github.com/vm0-ai/okou/issues/35084)) ([e94de40](https://github.com/vm0-ai/okou/commit/e94de408bfeaf7c5d21c5d3aa5de5f13908b1ea7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.461.1
+    * @okouai/core bumped to 8.677.0
+
 ## [0.911.3](https://github.com/vm0-ai/okou/compare/app-v0.911.2...app-v0.911.3) (2026-09-17)
 
 

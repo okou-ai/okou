@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.677.0](https://github.com/vm0-ai/okou/compare/core-v8.676.3...core-v8.677.0) (2026-09-17)
+
+
+### Features
+
+* **app:** add chat thread archiving ([#35081](https://github.com/vm0-ai/okou/issues/35081)) ([c2c9e70](https://github.com/vm0-ai/okou/commit/c2c9e70124bf9457e69130566ab70d2e00cc06e5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.461.1
+
 ## [8.676.3](https://github.com/vm0-ai/okou/compare/core-v8.676.2...core-v8.676.3) (2026-09-17)
 
 
