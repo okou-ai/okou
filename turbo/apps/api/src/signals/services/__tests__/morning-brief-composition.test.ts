@@ -48,7 +48,6 @@ import {
 } from "../morning-brief-source-authority";
 import {
   morningBriefEnvelopeBytes,
-  morningBriefRequestBytes,
   buildMorningBriefRequest,
   morningBriefCoverageReport,
   morningBriefWidestCoverageReport,
@@ -657,7 +656,7 @@ describe("exact request bytes", () => {
     });
 
     expect(allocated.omittedItems).toBeGreaterThan(0);
-    expect(morningBriefRequestBytes(request)).toBeLessThanOrEqual(
+    expect(request.bodyBytes).toBeLessThanOrEqual(
       MORNING_BRIEF_REQUEST_MAX_BYTES,
     );
   });
@@ -681,10 +680,15 @@ describe("exact request bytes", () => {
       coverage,
     });
 
-    // The field changes from `null` to a quoted string, so the growth is the
-    // whole text plus two quotes minus the four bytes `null` occupied.
+    // The whole file is reserved, and it is measured where it actually
+    // travels: inside the transport body, where the evidence document is
+    // nested as a JSON string. The field changes from `null` to a quoted
+    // string, and both of those quotes are themselves escaped on the way in —
+    // two bytes each — so the growth is the text plus four escaped quote bytes
+    // minus the four bytes `null` occupied. Measuring the inner document alone
+    // would have counted two bytes that the provider never receives.
     expect(withText - withoutText).toBe(
-      Buffer.byteLength(instructions, "utf8") + 2 - 4,
+      Buffer.byteLength(instructions, "utf8") + 4 - 4,
     );
   });
 });
@@ -827,7 +831,7 @@ describe("envelope reservation against the final report", () => {
     });
 
     expect(allocated.omittedItems).toBeGreaterThan(99);
-    expect(morningBriefRequestBytes(request)).toBeLessThanOrEqual(
+    expect(request.bodyBytes).toBeLessThanOrEqual(
       MORNING_BRIEF_REQUEST_MAX_BYTES,
     );
   });

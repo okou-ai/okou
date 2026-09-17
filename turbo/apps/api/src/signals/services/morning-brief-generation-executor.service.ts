@@ -799,6 +799,10 @@ const generationAuthorityStillCurrent$ = command(
       {
         owner: { orgId: occurrence.orgId, userId: occurrence.userId },
         scheduledFor: occurrence.scheduledFor,
+        // The occurrence decides which authority still has to hold, so a
+        // source-independent slot is never judged against a Slack binding it
+        // was not admitted under.
+        collectionKind: occurrence.collectionKind,
       },
       signal,
     );

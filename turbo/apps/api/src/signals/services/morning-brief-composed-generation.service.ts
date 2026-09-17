@@ -254,16 +254,11 @@ async function retainedSourcesStillAuthorized(
     return "owner_revoked";
   }
   const current = readmitted.scope;
-  if (
-    current.membershipId !== args.scope.membershipId ||
-    current.installationId !== args.scope.installationId ||
-    current.agentId !== args.scope.agentId
-  ) {
-    return "binding_changed";
-  }
-  // Each descriptor carries the membership and Agent its read was authorized
-  // under. A source whose proof no longer matches the live authority is a
-  // source this request may not send, even though the owner is still admitted.
+  // The descriptors are the frozen proof of what was read and under whose
+  // authority. They are compared against live state rather than against an
+  // earlier in-request snapshot: a second snapshot is not evidence, and the
+  // question this fence answers is whether *these inputs* are still the
+  // owner's to send.
   const moved = supplied.some((descriptor) => {
     return (
       descriptor.membershipId !== current.membershipId ||
@@ -389,9 +384,7 @@ export const executeMorningBriefComposedGeneration$ = command(
         orgId: args.owner.orgId,
         userId: args.owner.userId,
         anchor: args.scheduledFor,
-        deadline: startMorningBriefSourceDeadline(
-          COMPOSED_ADMISSION_BUDGET_MS,
-        ),
+        deadline: startMorningBriefSourceDeadline(COMPOSED_ADMISSION_BUDGET_MS),
       },
       signal,
     );
@@ -496,7 +489,9 @@ async function resolveExisting(
 }
 
 /** The stored row as the one generation view, with no content re-derived. */
-function composedView(row: MorningBriefGenerationRow): MorningBriefGenerationView {
+function composedView(
+  row: MorningBriefGenerationRow,
+): MorningBriefGenerationView {
   const result =
     row.decision === "deliver" &&
     row.resultTitle !== null &&
@@ -703,4 +698,3 @@ const reserveAndInvoke$ = command(
     );
   },
 );
-

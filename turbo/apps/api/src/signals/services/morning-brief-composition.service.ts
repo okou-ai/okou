@@ -626,7 +626,9 @@ function aggregateCoverage(
   omittedItems: number,
 ): "complete" | "partial" | "empty" {
   const bounded = collections.some((collection) => {
-    return collection.coverage === "partial" || collection.coverage === "failed";
+    return (
+      collection.coverage === "partial" || collection.coverage === "failed"
+    );
   });
   if (bounded || omittedItems > 0) {
     return "partial";

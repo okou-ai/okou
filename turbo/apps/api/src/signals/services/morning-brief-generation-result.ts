@@ -366,7 +366,10 @@ function renderComposedCitations(
 }
 
 function renderComposedMarkdown(
-  result: Extract<z.infer<typeof composedResultSchema>, { decision: "deliver" }>,
+  result: Extract<
+    z.infer<typeof composedResultSchema>,
+    { decision: "deliver" }
+  >,
   links: ReadonlyMap<string, MorningBriefDisplayLink | null>,
   coverageNote: string | null,
 ): string {

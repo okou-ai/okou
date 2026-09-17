@@ -143,7 +143,10 @@ const generateInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     };
   }
   if (execution.kind === "authority-changed") {
-    return { status: 200 as const, body: { result: "authority-changed" as const } };
+    return {
+      status: 200 as const,
+      body: { result: "authority-changed" as const },
+    };
   }
   if (execution.kind === "incomplete") {
     return {
