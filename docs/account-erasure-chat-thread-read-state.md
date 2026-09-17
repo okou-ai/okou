@@ -32,7 +32,8 @@ all-matching contract, an uncapped `RETURNING` list and a notification carrying
 every changed id, so it needs its own bounded-runtime and complete-scope
 disposition. Its erasure-subject cardinality is not the reason: every matched
 row shares one authenticated user and one selected Agent, so it has at most the
-same three deduplicated subjects as a single thread.
+same three deduplicated subjects as a single thread. That slice is
+[bulk Agent read-cursor writes](account-erasure-chat-thread-bulk-read.md).
 
 ## Preserved route contracts
 
@@ -207,8 +208,6 @@ realtime egress and read-response erasure or drain are separate broader
 obligations, and a closure may begin immediately after this commit. Still open
 in the parent epic, and explicitly outside this slice:
 
-- `POST /api/chat-thread-unreads/mark-read`, which needs the bounded-runtime and
-  complete-scope disposition described above.
 - Model selection, service tier, image and video model preferences.
 - The generated/LLM title workflow, message create/send/edit/revoke, run and
   queue admission, and the sidebar snapshot projector.
