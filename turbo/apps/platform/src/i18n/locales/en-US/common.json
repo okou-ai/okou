@@ -6296,7 +6296,8 @@
       "back": "Custom templates",
       "page": "Page {{number}}",
       "source_one": "{{count}} page · from {{filename}}",
-      "source_other": "{{count}} pages · from {{filename}}"
+      "source_other": "{{count}} pages · from {{filename}}",
+      "sourceFile": "From {{filename}}"
     },
     "empty": {
       "description": "Templates built from a file you upload will appear here.",

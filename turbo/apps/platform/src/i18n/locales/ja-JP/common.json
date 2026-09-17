@@ -6284,7 +6284,8 @@
     "detail": {
       "back": "カスタムテンプレート",
       "page": "{{number}} ページ目",
-      "source_other": "{{count}} ページ · {{filename}} から"
+      "source_other": "{{count}} ページ · {{filename}} から",
+      "sourceFile": "{{filename}} から"
     },
     "empty": {
       "description": "アップロードしたファイルから作成されたテンプレートがここに表示されます。",

@@ -6372,7 +6372,8 @@
       "page": "Pagina {{number}}",
       "source_one": "{{count}} pagina · da {{filename}}",
       "source_many": "{{count}} pagine · da {{filename}}",
-      "source_other": "{{count}} pagine · da {{filename}}"
+      "source_other": "{{count}} pagine · da {{filename}}",
+      "sourceFile": "Da {{filename}}"
     },
     "empty": {
       "description": "I modelli creati da un file che carichi appariranno qui.",

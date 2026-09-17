@@ -6284,7 +6284,8 @@
     "detail": {
       "back": "커스텀 템플릿",
       "page": "{{number}}페이지",
-      "source_other": "{{count}}페이지 · {{filename}}에서"
+      "source_other": "{{count}}페이지 · {{filename}}에서",
+      "sourceFile": "{{filename}}에서"
     },
     "empty": {
       "description": "업로드한 파일로 만든 템플릿이 여기에 표시됩니다.",

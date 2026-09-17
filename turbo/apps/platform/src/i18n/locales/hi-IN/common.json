@@ -6304,7 +6304,8 @@
       "back": "कस्टम टेम्पलेट",
       "page": "पृष्ठ {{number}}",
       "source_one": "{{count}} पृष्ठ · {{filename}} से",
-      "source_other": "{{count}} पृष्ठ · {{filename}} से"
+      "source_other": "{{count}} पृष्ठ · {{filename}} से",
+      "sourceFile": "{{filename}} से"
     },
     "empty": {
       "description": "आपके द्वारा अपलोड की गई फ़ाइल से बने टेम्पलेट यहाँ दिखाई देंगे।",

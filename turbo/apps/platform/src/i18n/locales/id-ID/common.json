@@ -6284,7 +6284,8 @@
     "detail": {
       "back": "Templat kustom",
       "page": "Halaman {{number}}",
-      "source_other": "{{count}} halaman · dari {{filename}}"
+      "source_other": "{{count}} halaman · dari {{filename}}",
+      "sourceFile": "Dari {{filename}}"
     },
     "empty": {
       "description": "Templat yang dibuat dari file yang Anda unggah akan muncul di sini.",

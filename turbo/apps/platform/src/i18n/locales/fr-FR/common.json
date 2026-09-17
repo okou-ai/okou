@@ -6372,7 +6372,8 @@
       "page": "Page {{number}}",
       "source_one": "{{count}} page · à partir de {{filename}}",
       "source_many": "{{count}} pages · à partir de {{filename}}",
-      "source_other": "{{count}} pages · à partir de {{filename}}"
+      "source_other": "{{count}} pages · à partir de {{filename}}",
+      "sourceFile": "À partir de {{filename}}"
     },
     "empty": {
       "description": "Les modèles créés à partir d'un fichier que vous importez apparaîtront ici.",

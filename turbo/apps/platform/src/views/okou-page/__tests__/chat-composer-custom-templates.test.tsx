@@ -281,6 +281,41 @@ test("Opening a custom template shows its pages and management controls", async 
   expect(buttonByName("Use this template", dialog)).toBeUndefined();
 });
 
+test("A document template is described by its file, not by a page count", async () => {
+  const documentTemplate = customTemplate({
+    id: "33333333-3333-4333-8333-333333333333",
+    title: "Brand report",
+    sourceFilename: "brand-report.docx",
+    kind: "document",
+    coverUrl: null,
+    pageCount: null,
+    pageUrls: [],
+  });
+  mockCustomTemplates([documentTemplate]);
+  context.mocks.api(userTemplatesContract.get, ({ respond }) => {
+    return respond(200, documentTemplate);
+  });
+
+  const { dialog } = await openCustomPanel();
+  click(tabByText("Custom"));
+
+  // A document is its styles. The card still names the file it was compiled
+  // from, and claims no pages rather than reporting zero of them.
+  await expect(
+    within(dialog).findByText("brand-report.docx"),
+  ).resolves.toBeInTheDocument();
+  expect(within(dialog).queryByText("0 pages")).not.toBeInTheDocument();
+
+  click(buttonByName("Preview Brand report", dialog)!);
+
+  await expect(
+    within(dialog).findByText("From brand-report.docx"),
+  ).resolves.toBeInTheDocument();
+  expect(
+    within(dialog).queryByText("0 pages · from brand-report.docx"),
+  ).not.toBeInTheDocument();
+});
+
 async function openDetail(
   dialog: HTMLElement,
   title: string,

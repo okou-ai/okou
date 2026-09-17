@@ -6372,7 +6372,8 @@
       "page": "Página {{number}}",
       "source_one": "{{count}} página · de {{filename}}",
       "source_many": "{{count}} páginas · de {{filename}}",
-      "source_other": "{{count}} páginas · de {{filename}}"
+      "source_other": "{{count}} páginas · de {{filename}}",
+      "sourceFile": "De {{filename}}"
     },
     "empty": {
       "description": "Las plantillas creadas a partir de un archivo que subas aparecerán aquí.",
