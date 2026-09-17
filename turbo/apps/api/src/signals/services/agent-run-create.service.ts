@@ -11580,14 +11580,60 @@ async function captureDurablePiResource(
   throw prepared.error;
 }
 
+function prepareDurablePiResource(
+  args: {
+    readonly input: AtomicLaunchRunInput;
+    readonly storagePlan: ResolvedAgentRunStorage;
+    readonly persistedStorageMounts: readonly PersistedStorageMount[];
+    readonly memoryRecall: PiMemoryRecallSelection | undefined;
+    readonly runId: string;
+  },
+  signal: AbortSignal,
+) {
+  const stableContext = args.input.args.piStableContext;
+  const stableContextEligible =
+    stableContext !== undefined &&
+    (args.input.context.body.additionalVolumes?.length ?? 0) === 0 &&
+    !piResourceDiscoveryMounts(args.storagePlan.metadata.storageMounts).some(
+      (mount) => {
+        return mount.writeback === true;
+      },
+    );
+  return stableContext
+    ? preparePiStableContext(
+        {
+          db: args.input.db,
+          owner: stableContext.owner,
+          variantDigest: stableContext.variantDigest,
+          prompt: stableContext.prompt,
+          source: stableContext.source,
+          mounts: args.storagePlan.metadata.storageMounts,
+          persistedStorageMounts: args.persistedStorageMounts,
+          ...(args.memoryRecall ? { memoryRecall: args.memoryRecall } : {}),
+          eligible: stableContextEligible,
+          checkedAt: new Date(args.input.args.apiStartTime),
+          runId: args.runId,
+        },
+        signal,
+      )
+    : preparePiResourceSnapshot(
+        {
+          db: args.input.db,
+          mounts: args.storagePlan.metadata.storageMounts,
+          ...(args.memoryRecall ? { memoryRecall: args.memoryRecall } : {}),
+          runId: args.runId,
+        },
+        signal,
+      );
+}
+
 function captureDurablePiInference(
   input: AtomicLaunchRunInput,
   signal: AbortSignal,
 ): Computed<Promise<CapturedDurablePiInference | null>> {
   return computed(async (get) => {
-    const piModelConfig = input.context.piSandbox;
     const chatThreadId = input.args.chatThreadId;
-    if (!piModelConfig || !chatThreadId) {
+    if (!input.context.piSandbox || !chatThreadId) {
       return null;
     }
     assertCurrentPiCliArtifact();
@@ -11666,46 +11712,19 @@ function captureDurablePiInference(
       storagePlan.metadata.persistedStorageMounts,
       memoryRecall,
     );
-    const stableContext = input.args.piStableContext;
-    const stableContextEligible =
-      stableContext !== undefined &&
-      (input.context.body.additionalVolumes?.length ?? 0) === 0 &&
-      !piResourceDiscoveryMounts(storagePlan.metadata.storageMounts).some(
-        (mount) => {
-          return mount.writeback === true;
-        },
-      );
     const resource = await captureDurablePiResource(
-      stableContext
-        ? get(
-            preparePiStableContext(
-              {
-                db: input.db,
-                owner: stableContext.owner,
-                variantDigest: stableContext.variantDigest,
-                prompt: stableContext.prompt,
-                source: stableContext.source,
-                mounts: storagePlan.metadata.storageMounts,
-                persistedStorageMounts,
-                ...(memoryRecall ? { memoryRecall } : {}),
-                eligible: stableContextEligible,
-                checkedAt: new Date(input.args.apiStartTime),
-                runId: identity.runId,
-              },
-              signal,
-            ),
-          )
-        : get(
-            preparePiResourceSnapshot(
-              {
-                db: input.db,
-                mounts: storagePlan.metadata.storageMounts,
-                ...(memoryRecall ? { memoryRecall } : {}),
-                runId: identity.runId,
-              },
-              signal,
-            ),
-          ),
+      get(
+        prepareDurablePiResource(
+          {
+            input,
+            storagePlan,
+            persistedStorageMounts,
+            memoryRecall,
+            runId: identity.runId,
+          },
+          signal,
+        ),
+      ),
       signal,
     );
     if (!resource) {

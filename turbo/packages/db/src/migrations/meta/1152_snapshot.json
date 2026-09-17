@@ -1,5 +1,5 @@
 {
-  "id": "308c1d1b-f48e-4b22-8408-e6685c41fd16",
+  "id": "91aeb363-0065-4554-9ace-6cb4c362373f",
   "prevId": "50f0f2d9-ddcd-4b05-8588-461e425369a1",
   "version": "7",
   "dialect": "postgresql",
@@ -24164,7 +24164,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         },
         "pi_stable_context_artifact_resources_version_fk": {
@@ -24177,7 +24177,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { PiStableContextBuildInput } from "@okouai/db/jsonb-contracts/pi-stable-context";
 import { agents } from "@okouai/db/schema/agent";
 import {
+  piStableContextArtifactResources,
   piStableContextArtifacts,
   piStableContextGenerations,
   piStableContextHeads,
@@ -24,6 +25,7 @@ import {
   lockPiStableContextPublication,
   PI_STABLE_CONTEXT_AGENT_SUBJECT,
 } from "../pi-stable-context-generation.service";
+import { deleteClerkAgentLifecycleData } from "../agent-lifecycle.service";
 import { preparePiStableContext } from "../pi-stable-context.service";
 
 describe("Pi stable context generation fences", () => {
@@ -45,23 +47,24 @@ describe("Pi stable context generation fences", () => {
     await pool.end();
   });
 
-  async function seed() {
+  async function seed(options?: { readonly ownedByOtherUser?: boolean }) {
     const orgId = `org_${randomUUID()}`;
     const userId = `user_${randomUUID()}`;
     const otherUserId = `user_${randomUUID()}`;
+    const agentOwnerId = options?.ownedByOtherUser ? otherUserId : userId;
     const agentId = randomUUID();
     agentIds.push(agentId);
     await db.insert(agents).values({
       id: agentId,
       orgId,
-      owner: userId,
+      owner: agentOwnerId,
       name: `stable-${agentId.slice(0, 8)}`,
     });
     const owner = {
       orgId,
       userId,
       agentId,
-      resourceOwner: { orgId, userId },
+      resourceOwner: { orgId, userId: agentOwnerId },
     };
     const input: PiStableContextBuildInput = {
       schemaVersion: 1,
@@ -196,7 +199,9 @@ describe("Pi stable context generation fences", () => {
         ),
       );
     const generationBySubject = new Map(
-      rows.map((row) => [row.subject, row.generation] as const),
+      rows.map((row) => {
+        return [row.subject, row.generation] as const;
+      }),
     );
     expect(generationBySubject.get(fixture.userId)).toBe(2);
     expect(generationBySubject.get(fixture.otherUserId)).toBe(1);
@@ -328,5 +333,96 @@ describe("Pi stable context generation fences", () => {
     ]);
     expect(artifactCount).toHaveLength(1);
     expect(indexCount).toHaveLength(0);
+
+    await invalidatePiStableContext(db, {
+      orgId: fixture.orgId,
+      agentId: fixture.agentId,
+    });
+    await expect(
+      db.delete(storages).where(eq(storages.id, storageId)),
+    ).resolves.toBeDefined();
+    await expect(
+      db
+        .select({ ordinal: piStableContextArtifactResources.ordinal })
+        .from(piStableContextArtifactResources)
+        .where(
+          inArray(
+            piStableContextArtifactResources.artifactDigest,
+            artifactCount.map((artifact) => {
+              return artifact.digest;
+            }),
+          ),
+        ),
+    ).resolves.toHaveLength(0);
+  });
+
+  it("erases an executing user's projection without deleting another owner's Agent", async () => {
+    const fixture = await seed({ ownedByOtherUser: true });
+    await createStore().get(
+      preparePiStableContext(
+        {
+          db,
+          owner: {
+            orgId: fixture.orgId,
+            userId: fixture.userId,
+            agentId: fixture.agentId,
+            resourceOwner: {
+              orgId: fixture.orgId,
+              userId: fixture.otherUserId,
+            },
+          },
+          variantDigest: "e".repeat(64),
+          prompt: {
+            agentIdentity: "identity",
+            executionLimit: "limit",
+            tools: "tools",
+          },
+          source: {
+            catalogIdentity: null,
+            featurePromptDigest: "feature",
+            permissionDigest: "permission",
+            connectorScopeDigest: "connector",
+            validityHorizon: null,
+            promptSchemaVersion: 1,
+            runtimeSchemaVersion: 1,
+          },
+          mounts: [],
+          persistedStorageMounts: [],
+          eligible: true,
+          checkedAt: new Date("2026-09-17T00:00:00.000Z"),
+        },
+        AbortSignal.timeout(5000),
+      ),
+    );
+
+    await deleteClerkAgentLifecycleData(db, {
+      kind: "user",
+      userId: fixture.userId,
+    });
+
+    await expect(
+      db
+        .select({ id: agents.id })
+        .from(agents)
+        .where(eq(agents.id, fixture.agentId)),
+    ).resolves.toHaveLength(1);
+    await expect(
+      db
+        .select({ id: piStableContextHeads.id })
+        .from(piStableContextHeads)
+        .where(eq(piStableContextHeads.userId, fixture.userId)),
+    ).resolves.toHaveLength(0);
+    await expect(
+      db
+        .select({ digest: piStableContextArtifacts.digest })
+        .from(piStableContextArtifacts)
+        .where(eq(piStableContextArtifacts.userId, fixture.userId)),
+    ).resolves.toHaveLength(0);
+    await expect(
+      db
+        .select({ subject: piStableContextGenerations.subject })
+        .from(piStableContextGenerations)
+        .where(eq(piStableContextGenerations.subject, fixture.userId)),
+    ).resolves.toHaveLength(0);
   });
 });

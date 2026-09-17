@@ -60,8 +60,8 @@ CREATE TABLE "pi_stable_context_heads" (
 );
 --> statement-breakpoint
 ALTER TABLE "pi_stable_context_artifact_resources" ADD CONSTRAINT "pi_stable_context_artifact_resources_artifact_fk" FOREIGN KEY ("artifact_digest") REFERENCES "public"."pi_stable_context_artifacts"("digest") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "pi_stable_context_artifact_resources" ADD CONSTRAINT "pi_stable_context_artifact_resources_storage_fk" FOREIGN KEY ("storage_id") REFERENCES "public"."storages"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "pi_stable_context_artifact_resources" ADD CONSTRAINT "pi_stable_context_artifact_resources_version_fk" FOREIGN KEY ("storage_version_id") REFERENCES "public"."storage_versions"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "pi_stable_context_artifact_resources" ADD CONSTRAINT "pi_stable_context_artifact_resources_storage_fk" FOREIGN KEY ("storage_id") REFERENCES "public"."storages"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "pi_stable_context_artifact_resources" ADD CONSTRAINT "pi_stable_context_artifact_resources_version_fk" FOREIGN KEY ("storage_version_id") REFERENCES "public"."storage_versions"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "pi_stable_context_artifacts" ADD CONSTRAINT "pi_stable_context_artifacts_agent_fk" FOREIGN KEY ("agent_id") REFERENCES "public"."agents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "pi_stable_context_heads" ADD CONSTRAINT "pi_stable_context_heads_artifact_digest_pi_stable_context_artifacts_digest_fk" FOREIGN KEY ("artifact_digest") REFERENCES "public"."pi_stable_context_artifacts"("digest") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "pi_stable_context_heads" ADD CONSTRAINT "pi_stable_context_heads_agent_fk" FOREIGN KEY ("agent_id") REFERENCES "public"."agents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint

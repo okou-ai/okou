@@ -209,12 +209,12 @@ export const piStableContextArtifactResources = pgTable(
         name: "pi_stable_context_artifact_resources_storage_fk",
         columns: [table.storageId],
         foreignColumns: [storages.id],
-      }),
+      }).onDelete("cascade"),
       foreignKey({
         name: "pi_stable_context_artifact_resources_version_fk",
         columns: [table.storageVersionId],
         foreignColumns: [storageVersions.id],
-      }),
+      }).onDelete("cascade"),
       uniqueIndex("pi_stable_context_artifact_resources_version_idx").on(
         table.artifactDigest,
         table.storageVersionId,

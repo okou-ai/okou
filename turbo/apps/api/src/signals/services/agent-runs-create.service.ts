@@ -965,7 +965,7 @@ async function loadAgentRunPostAuthorizationContext(
   };
 }
 
-function buildCreateAgentRunArgs(args: {
+interface BuildCreateAgentRunArgsInput {
   readonly command: AnyCreateAgentRunCommandArgs;
   readonly agent: AgentRunRecord;
   readonly userInfo: UserInfo;
@@ -980,10 +980,14 @@ function buildCreateAgentRunArgs(args: {
   readonly threadSessionResolution?: ChatThreadSessionResolution;
   readonly cloudBrowserEnabled: boolean | undefined;
   readonly featureSwitchContext: FeatureSwitchContext;
-}): CreateAgentRunArgs {
-  const command = args.command;
-  const agentModelProviderId = optionalAgentSetting(args.agent.modelProviderId);
-  const agentSelectedModel = optionalAgentSetting(args.agent.selectedModel);
+}
+
+function buildStableRunPromptContext(args: BuildCreateAgentRunArgsInput): {
+  readonly introVideoEnabled: boolean;
+  readonly userInfo: UserInfo;
+  readonly stablePrompt: PiStableContextPromptProjection;
+  readonly piStableContext: NonNullable<CreateAgentRunArgs["piStableContext"]>;
+} {
   const introVideoEnabled = isFeatureEnabled(
     FeatureSwitchKey.IntroVideo,
     args.featureSwitchContext,
@@ -1010,36 +1014,23 @@ function buildCreateAgentRunArgs(args: {
       args.featureSwitchContext,
     ),
     introVideoEnabled,
-    triggerSource: command.triggerSource ?? "web",
+    triggerSource: args.command.triggerSource ?? "web",
     cloudBrowserEnabled: args.cloudBrowserEnabled,
   };
-  const userInfo = { ...args.userInfo, ...command.userInfoExtras };
+  const userInfo = { ...args.userInfo, ...args.command.userInfoExtras };
   const stablePrompt = buildStableAgentPrompt({
     ...promptInputs,
     agent: args.agent,
     feishuPlatform: userInfo.feishuPlatform,
   });
-  const productAgentExecutionPlan = {
-    identity: "agent" as const,
-    content: buildAgentExecutionConfig(args.agent.name),
-  };
   return {
-    userId: command.auth.userId,
-    orgId: command.auth.orgId,
-    body: createRunBody({
-      body: command.body,
-      agent: args.agent,
-      userInfo,
-      stablePrompt,
-      permissionPolicies: args.runPermissionPolicies,
-      triggerSource: command.triggerSource,
-      appendSystemPrompt: command.appendSystemPrompt,
-    }),
-    apiStartTime: command.apiStartTime,
+    introVideoEnabled,
+    userInfo,
+    stablePrompt,
     piStableContext: {
       owner: {
-        orgId: command.auth.orgId,
-        userId: command.auth.userId,
+        orgId: args.command.auth.orgId,
+        userId: args.command.auth.userId,
         agentId: args.agent.id,
         resourceOwner: {
           orgId: args.agent.orgId,
@@ -1074,6 +1065,35 @@ function buildCreateAgentRunArgs(args: {
         runtimeSchemaVersion: 1,
       },
     },
+  };
+}
+
+function buildCreateAgentRunArgs(
+  args: BuildCreateAgentRunArgsInput,
+): CreateAgentRunArgs {
+  const command = args.command;
+  const agentModelProviderId = optionalAgentSetting(args.agent.modelProviderId);
+  const agentSelectedModel = optionalAgentSetting(args.agent.selectedModel);
+  const { introVideoEnabled, userInfo, stablePrompt, piStableContext } =
+    buildStableRunPromptContext(args);
+  const productAgentExecutionPlan = {
+    identity: "agent" as const,
+    content: buildAgentExecutionConfig(args.agent.name),
+  };
+  return {
+    userId: command.auth.userId,
+    orgId: command.auth.orgId,
+    body: createRunBody({
+      body: command.body,
+      agent: args.agent,
+      userInfo,
+      stablePrompt,
+      permissionPolicies: args.runPermissionPolicies,
+      triggerSource: command.triggerSource,
+      appendSystemPrompt: command.appendSystemPrompt,
+    }),
+    apiStartTime: command.apiStartTime,
+    piStableContext,
     modelProviderId: command.modelProviderId ?? agentModelProviderId,
     modelProviderCredentialScope: command.modelProviderCredentialScope,
     modelProviderType: command.body.modelProvider,

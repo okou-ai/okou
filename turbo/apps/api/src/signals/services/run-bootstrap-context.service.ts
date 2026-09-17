@@ -71,6 +71,9 @@ const nullableBootstrapMetadataSwitchesDecoder = nullableDriverValueDecoder(
 const nullablePermissionGrantActionDecoder = nullableDriverValueDecoder(
   permissionGrantActionDecoder,
 );
+const nullablePermissionGrantExpiresAtDecoder = nullableDriverValueDecoder(
+  userPermissionGrants.expiresAt,
+);
 const nullableCustomConnectorPermissionNamesDecoder =
   nullableDriverValueDecoder(customConnectorPermissionNamesDecoder);
 
@@ -151,7 +154,9 @@ function emptyBootstrapMetadataFields() {
     permissionBundleRef: sql`NULL::text`
       .mapWith(nullableTextDecoder)
       .as("permission_bundle_ref"),
-    expiresAt: sql<Date | null>`NULL::timestamp`.as("expires_at"),
+    expiresAt: sql`NULL::timestamp`
+      .mapWith(nullablePermissionGrantExpiresAtDecoder)
+      .as("expires_at"),
   };
 }
 
@@ -334,6 +339,22 @@ export async function loadRunBootstrapSnapshotRows(
   return { metadataRows, workflowRows };
 }
 
+function permissionValidityHorizon(
+  rows: readonly BootstrapMetadataQueryRow[],
+): string | null {
+  let horizon: Date | null = null;
+  for (const row of rows) {
+    if (
+      row.kind === "permission_grant" &&
+      row.expiresAt !== null &&
+      (horizon === null || row.expiresAt.getTime() < horizon.getTime())
+    ) {
+      horizon = row.expiresAt;
+    }
+  }
+  return horizon?.toISOString() ?? null;
+}
+
 export function materializeRunBootstrapContext(
   rows: RunBootstrapSnapshotRows,
   args: {
@@ -351,7 +372,6 @@ export function materializeRunBootstrapContext(
   const customConnectorRows: AgentCustomConnectorRow[] = [];
   const connectorCatalogMetadataSlugs = new Set<ConnectorSlug>();
   const permissionGrants: FirewallPermissionGrant[] = [];
-  let permissionValidityHorizon: Date | null = null;
 
   for (const row of rows.metadataRows) {
     switch (row.kind) {
@@ -407,13 +427,6 @@ export function materializeRunBootstrapContext(
           permission: row.detail,
           action: row.action,
         });
-        if (
-          row.expiresAt &&
-          (!permissionValidityHorizon ||
-            row.expiresAt.getTime() < permissionValidityHorizon.getTime())
-        ) {
-          permissionValidityHorizon = row.expiresAt;
-        }
         break;
       }
     }
@@ -445,7 +458,7 @@ export function materializeRunBootstrapContext(
     ...connectorScope,
     workflows: workflowsForRunFromRows(rows.workflowRows, args.userId),
     permissionGrants,
-    permissionValidityHorizon: permissionValidityHorizon?.toISOString() ?? null,
+    permissionValidityHorizon: permissionValidityHorizon(rows.metadataRows),
     connectorCatalogMetadataSlugs: [...connectorCatalogMetadataSlugs].sort(),
   };
 }

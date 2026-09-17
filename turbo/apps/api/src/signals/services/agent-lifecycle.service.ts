@@ -1,10 +1,15 @@
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { piStableContextGenerations } from "@okouai/db/schema/pi-stable-context";
+import {
+  piStableContextArtifacts,
+  piStableContextGenerations,
+  piStableContextHeads,
+} from "@okouai/db/schema/pi-stable-context";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 
+import type { Tx } from "../../lib/db-types";
 import { removeAgentInstructionsStorageInTransaction } from "./agent-instructions-storage-transaction.service";
 import { lockCanonicalAgentMutation } from "./agent-mutation-lock.service";
 import {
@@ -16,11 +21,50 @@ import {
 
 export const AGENT_LIFECYCLE_LOCK_TIMEOUT = "100ms";
 
+type ClerkAgentLifecycleScope =
+  | { readonly kind: "organization"; readonly orgId: string }
+  | { readonly kind: "user"; readonly userId: string };
+
+async function deleteStableContextLifecycleData(
+  tx: Tx,
+  scope: ClerkAgentLifecycleScope,
+  agentIds: readonly string[],
+): Promise<void> {
+  if (scope.kind === "organization") {
+    // Publication fences deliberately have no Agent FK, so organization
+    // erasure also removes any fence left by an interrupted Agent lifecycle.
+    await tx
+      .delete(piStableContextGenerations)
+      .where(eq(piStableContextGenerations.orgId, scope.orgId));
+    return;
+  }
+  // Stable artifacts are bound to the executing user even when the Agent is
+  // public or owned by somebody else. Remove heads before their artifacts;
+  // owned-Agent deletion separately cascades every other audience.
+  await tx
+    .delete(piStableContextHeads)
+    .where(eq(piStableContextHeads.userId, scope.userId));
+  await tx
+    .delete(piStableContextArtifacts)
+    .where(eq(piStableContextArtifacts.userId, scope.userId));
+  await tx
+    .delete(piStableContextGenerations)
+    .where(eq(piStableContextGenerations.subject, scope.userId));
+  if (agentIds.length > 0) {
+    await tx
+      .delete(piStableContextGenerations)
+      .where(
+        eq(
+          piStableContextGenerations.agentId,
+          sql`ANY(${sql.param(agentIds)}::uuid[])`,
+        ),
+      );
+  }
+}
+
 export async function deleteClerkAgentLifecycleData(
   db: NodePgDatabase,
-  scope:
-    | { readonly kind: "organization"; readonly orgId: string }
-    | { readonly kind: "user"; readonly userId: string },
+  scope: ClerkAgentLifecycleScope,
 ): Promise<void> {
   const receipt = await db.transaction(async (tx) => {
     await tx.execute(
@@ -103,6 +147,7 @@ export async function deleteClerkAgentLifecycleData(
     });
     const removed = await deleteRunConversations(tx, runIds);
     await deleteLockedRuns(tx, runIds);
+    await deleteStableContextLifecycleData(tx, scope, agentIds);
     if (scope.kind === "user") {
       for (const agent of ownedAgents) {
         await removeAgentInstructionsStorageInTransaction(tx, {
@@ -112,14 +157,6 @@ export async function deleteClerkAgentLifecycleData(
       }
     }
     if (agentIds.length > 0) {
-      await tx
-        .delete(piStableContextGenerations)
-        .where(
-          eq(
-            piStableContextGenerations.agentId,
-            sql`ANY(${sql.param(agentIds)}::uuid[])`,
-          ),
-        );
       await tx
         .delete(agents)
         .where(

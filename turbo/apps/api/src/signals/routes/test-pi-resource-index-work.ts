@@ -26,7 +26,21 @@ const run$ = command(async ({ get, set }, signal: AbortSignal) => {
     signal,
   );
   signal.throwIfAborted();
-  return { status: 200 as const, body: { success: true as const, ...result } };
+  return {
+    status: 200 as const,
+    body: {
+      success: true as const,
+      ...result,
+      stableContext: {
+        claimed: 0,
+        ready: 0,
+        pending: 0,
+        unindexable: 0,
+        failed: 0,
+        stale: 0,
+      },
+    },
+  };
 });
 
 // Mounted only by the test route slice; production uses the authenticated cron.

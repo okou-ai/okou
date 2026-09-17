@@ -23,11 +23,12 @@ import {
 } from "@okouai/db/schema/pi-stable-context";
 import type { PersistedStorageMount } from "@okouai/db/types";
 import { computed, type Computed } from "ccstate";
-import { and, asc, eq, inArray, lte, or, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, lt, lte, or } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 
 import { PI_RESOURCE_EXTRACTOR_VERSION } from "../../lib/pi-resource-index";
 import { now, nowDate } from "../../lib/time";
+import { settle } from "../utils";
 import type { Db } from "../external/db";
 import { recordSandboxOperation } from "../external/sandbox-op-log";
 import {
@@ -739,7 +740,7 @@ async function claimStableContextWork(
               lte(piStableContextHeads.leaseExpiresAt, currentTime),
             ),
           ),
-          sql`${piStableContextHeads.attemptCount} < ${PI_STABLE_CONTEXT_MAX_ATTEMPTS}`,
+          lt(piStableContextHeads.attemptCount, PI_STABLE_CONTEXT_MAX_ATTEMPTS),
         ),
       )
       .orderBy(
@@ -820,50 +821,56 @@ function errorClass(error: unknown): string {
     : "unknown";
 }
 
+async function buildStableContextWorkItem(
+  db: Db,
+  work: ClaimedStableContextWork,
+  signal: AbortSignal,
+): Promise<keyof Omit<StableContextWorkResult, "claimed" | "failed">> {
+  const mounts = piResourceDiscoveryMounts(
+    work.input.storageMounts.map(storageMountForComposer),
+  );
+  const indexed = await readPiResourceVersionIndexes(
+    db,
+    mounts.flatMap((mount) => {
+      return mount.empty ? [] : [mount.versionId];
+    }),
+    signal,
+  );
+  if (indexed.misses.unindexable > 0) {
+    return (await releaseWork(db, work, "unindexable", "resource_unindexable"))
+      ? "unindexable"
+      : "stale";
+  }
+  if (
+    indexed.misses.pending > 0 ||
+    indexed.misses.running > 0 ||
+    indexed.misses.missing > 0
+  ) {
+    return (await releaseWork(db, work, "pending", "resource_pending"))
+      ? "pending"
+      : "stale";
+  }
+  const projection = indexedProjection(work.input, indexed.indexes);
+  return (await publishProjection(db, work, projection)) ? "ready" : "stale";
+}
+
 async function executeStableContextWorkItem(
   db: Db,
   work: ClaimedStableContextWork,
   signal: AbortSignal,
 ): Promise<keyof Omit<StableContextWorkResult, "claimed">> {
-  try {
-    const mounts = piResourceDiscoveryMounts(
-      work.input.storageMounts.map(storageMountForComposer),
-    );
-    const indexed = await readPiResourceVersionIndexes(
-      db,
-      mounts.flatMap((mount) => {
-        return mount.empty ? [] : [mount.versionId];
-      }),
-      signal,
-    );
-    if (indexed.misses.unindexable > 0) {
-      return (await releaseWork(
-        db,
-        work,
-        "unindexable",
-        "resource_unindexable",
-      ))
-        ? "unindexable"
-        : "stale";
-    }
-    if (
-      indexed.misses.pending > 0 ||
-      indexed.misses.running > 0 ||
-      indexed.misses.missing > 0
-    ) {
-      return (await releaseWork(db, work, "pending", "resource_pending"))
-        ? "pending"
-        : "stale";
-    }
-    const projection = indexedProjection(work.input, indexed.indexes);
-    return (await publishProjection(db, work, projection)) ? "ready" : "stale";
-  } catch (error) {
-    const terminal =
-      error instanceof UnsupportedPiResourceError ? "unindexable" : "failed";
-    return (await releaseWork(db, work, terminal, errorClass(error)))
-      ? terminal
-      : "stale";
+  const built = await settle(buildStableContextWorkItem(db, work, signal));
+  signal.throwIfAborted();
+  if (built.ok) {
+    return built.value;
   }
+  const terminal =
+    built.error instanceof UnsupportedPiResourceError
+      ? "unindexable"
+      : "failed";
+  return (await releaseWork(db, work, terminal, errorClass(built.error)))
+    ? terminal
+    : "stale";
 }
 
 /** Bounded lease worker shared by cron and targeted test fixtures. */

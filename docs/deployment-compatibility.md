@@ -19,7 +19,7 @@ surfaces are on different versions.
 
 ## Pi stable-context schema rollout and rollback
 
-Migration 1151 adds `pi_stable_context_generations`,
+Migration 1152 adds `pi_stable_context_generations`,
 `pi_stable_context_heads`, `pi_stable_context_artifacts`, and
 `pi_stable_context_artifact_resources`. It creates empty tables only: it does
 not enumerate users, Agents, sessions or Storage and performs no materialization
@@ -46,9 +46,11 @@ running it. No release, activation, feature-switch write or backfill is part of
 the schema migration.
 
 Ready heads own immutable artifacts, and artifact-resource edges retain exact
-Storage/version rows. Cleanup can remove only an artifact older than seven days
-that no head references. Agent/account erasure removes heads/artifacts through
-owner edges and explicitly removes generation fences. A failed or rolled-back
+Storage/version rows. A source deletion first invalidates its heads in the same
+transaction; deleting that Storage then cascades its retention edges so normal
+Workflow/account erasure is not blocked. Cleanup can remove only an artifact
+older than seven days that no head references. Agent/account erasure removes
+heads/artifacts through owner edges and explicitly removes generation fences. A failed or rolled-back
 source transaction cannot advance its generation; a stale builder cannot attach
 to a newer head. These rules keep rollback and erasure safe without treating
 the seven-day legacy snapshot cache or run-only inference objects as live
