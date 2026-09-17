@@ -2,10 +2,9 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 
 import {
-  connectorCatalogV4ArtifactSchema,
+  connectorCatalogArtifactSchema,
   type ConnectorCatalogArtifact,
   type ConnectorCatalogArtifactConnector,
-  type ConnectorCatalogGeneration,
 } from "../connector-catalog/artifacts/artifacts";
 import {
   decodeAttestedConnectorCatalogSnapshot,
@@ -27,7 +26,7 @@ function publishedCatalog() {
       "utf8",
     ),
   );
-  return connectorCatalogV4ArtifactSchema.parse(value);
+  return connectorCatalogArtifactSchema.parse(value);
 }
 
 function requiredConnector(
@@ -44,12 +43,12 @@ function requiredConnector(
 }
 
 function snapshot(
-  artifact: ConnectorCatalogArtifact,
-  schemaVersion: ConnectorCatalogGeneration = artifact.artifactSchemaVersion,
+  artifact: Omit<ConnectorCatalogArtifact, "artifactSchemaVersion"> & {
+    artifactSchemaVersion: number;
+  },
 ) {
   const bytes = Buffer.from(JSON.stringify(artifact));
   return {
-    schemaVersion,
     catalogGzip: encodeConnectorCatalogSnapshot(bytes),
     catalogRawSize: bytes.length,
     catalogVersion: artifact.catalogVersion,
@@ -72,7 +71,7 @@ function filteredMethods(artifact: ConnectorCatalogArtifact) {
   });
 }
 
-describe("generation-specific connector catalog readers", () => {
+describe("v4 connector catalog reader", () => {
   it("reads published v4 HTTP contracts and preserves Plaud metadata without a skill", () => {
     const artifact = publishedCatalog();
     const decoded = decode(artifact);
@@ -103,46 +102,29 @@ describe("generation-specific connector catalog readers", () => {
     });
   });
 
-  it("keeps the default reader strictly v3 and rejects v4 data carrying a v3 header", () => {
+  it("binds deep and attested snapshots to the supported schema, release, and digest", () => {
     const artifact = publishedCatalog();
-    const { schemaVersion: _schemaVersion, ...defaultArgs } =
-      snapshot(artifact);
-    expect(() => {
-      decodeConnectorCatalogSnapshot(defaultArgs);
-    }).toThrow("unsupported-schema");
-    expect(() => {
-      decodeConnectorCatalogSnapshot(
-        snapshot({ ...artifact, artifactSchemaVersion: 3 }),
-      );
-    }).toThrow("invalid-artifact");
-    const legacy = {
-      ...artifact,
-      artifactSchemaVersion: 3 as const,
-      connectors: artifact.connectors.filter((connector) => {
-        return connector.mcp === undefined;
-      }),
-    };
-    const { schemaVersion: _legacySchemaVersion, ...legacyArgs } =
-      snapshot(legacy);
-    expect(decodeConnectorCatalogSnapshot(legacyArgs).artifact).toEqual(legacy);
-  });
-
-  it("binds both deep and attested snapshot decoders to the requested generation and digest", () => {
-    const args = snapshot(publishedCatalog());
+    const args = snapshot(artifact);
     for (const reader of [
       decodeConnectorCatalogSnapshot,
       decodeAttestedConnectorCatalogSnapshot,
     ]) {
+      expect(reader(args).artifact).toEqual(artifact);
+      for (const artifactSchemaVersion of [3, 5]) {
+        expect(() => {
+          reader(snapshot({ ...artifact, artifactSchemaVersion }));
+        }).toThrow("unsupported-schema");
+      }
       expect(() => {
-        reader({ ...args, schemaVersion: 3 });
-      }).toThrow("unsupported-schema");
+        reader({ ...args, catalogVersion: "another-release" });
+      }).toThrow("invalid-reference");
       expect(() => {
         reader({ ...args, catalogDigest: `sha256:${"0".repeat(64)}` });
       }).toThrow("digest-mismatch");
     }
   });
 
-  it("binds active pointers and candidate loads to their explicit generation", async () => {
+  it("loads candidates only from the canonical v4 release path", async () => {
     const artifact = publishedCatalog();
     const rawBytes = Buffer.from(JSON.stringify(artifact));
     const pointer = {
@@ -151,12 +133,7 @@ describe("generation-specific connector catalog readers", () => {
       catalogDigest: snapshot(artifact).catalogDigest,
     };
     const pointerBytes = Buffer.from(JSON.stringify(pointer));
-    expect(parseConnectorCatalogActivePointer(pointerBytes, 4)).toEqual(
-      pointer,
-    );
-    expect(() => {
-      parseConnectorCatalogActivePointer(pointerBytes);
-    }).toThrow("invalid-pointer");
+    expect(parseConnectorCatalogActivePointer(pointerBytes)).toEqual(pointer);
     const reader = {
       readArtifact: async () => {
         return rawBytes;
@@ -165,24 +142,25 @@ describe("generation-specific connector catalog readers", () => {
     const candidate = await loadConnectorCatalogCandidate({
       pointer,
       reader,
-      schemaVersion: 4,
     });
     expect(candidate.identity).toEqual({ ...pointer, schemaVersion: 4 });
     expect(candidate.rawBytes).toEqual(rawBytes);
-    await expect(
-      loadConnectorCatalogCandidate({ pointer, reader }),
-    ).rejects.toThrow("invalid-pointer");
-    expect(() => {
-      parseConnectorCatalogActivePointer(
-        Buffer.from(
-          JSON.stringify({
-            ...pointer,
-            catalogKey: "connectors/v4/releases/other/catalog.json",
-          }),
-        ),
-        4,
-      );
-    }).toThrow("invalid-pointer");
+    expect(candidate.artifact).toEqual(artifact);
+    for (const catalogKey of [
+      "connectors/v4/active.json",
+      "connectors/v4/releases/other/catalog.json",
+      `connectors/v5/releases/${artifact.catalogVersion}/catalog.json`,
+    ]) {
+      const invalidPointer = { ...pointer, catalogKey };
+      expect(() => {
+        parseConnectorCatalogActivePointer(
+          Buffer.from(JSON.stringify(invalidPointer)),
+        );
+      }).toThrow("invalid-pointer");
+      await expect(
+        loadConnectorCatalogCandidate({ pointer: invalidPointer, reader }),
+      ).rejects.toThrow("invalid-pointer");
+    }
   });
 
   it("classifies protocol only from metadata despite crossed slug names", () => {

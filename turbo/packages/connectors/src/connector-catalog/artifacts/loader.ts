@@ -9,12 +9,9 @@ import {
 } from "../contracts";
 import { attempt, parseJson } from "../safe";
 import {
-  connectorCatalogActiveKey,
   connectorCatalogArtifactSchema,
-  connectorCatalogV4ArtifactSchema,
   SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
   type ConnectorCatalogArtifact,
-  type ConnectorCatalogGeneration,
 } from "./artifacts";
 import {
   connectorCatalogVersionSchema,
@@ -46,39 +43,26 @@ export interface ConnectorCatalogValidationTiming {
   ): T;
 }
 
-function connectorCatalogActivePointerSchema(
-  schemaVersion: ConnectorCatalogGeneration,
-) {
-  return z
-    .object({
-      catalogVersion: connectorCatalogVersionSchema,
-      catalogKey: artifactKeySchema.refine((key) => {
-        return (
-          key.startsWith(`connectors/v${schemaVersion}/`) &&
-          key !== connectorCatalogActiveKey(schemaVersion) &&
-          key.endsWith(".json") &&
-          !key.includes("?") &&
-          !key.includes("#")
-        );
-      }, "Catalog key must belong to its expected generation"),
-      catalogDigest: digestSchema,
-    })
-    .strict()
-    .refine((pointer) => {
-      return (
-        schemaVersion === 3 ||
-        pointer.catalogKey ===
-          `connectors/v4/releases/${pointer.catalogVersion}/catalog.json`
-      );
-    }, "V4 catalog key must match its release version");
-}
+const connectorCatalogActivePointerSchema = z
+  .object({
+    catalogVersion: connectorCatalogVersionSchema,
+    catalogKey: artifactKeySchema,
+    catalogDigest: digestSchema,
+  })
+  .strict()
+  .refine((pointer) => {
+    return (
+      pointer.catalogKey ===
+      `connectors/v${SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION}/releases/${pointer.catalogVersion}/catalog.json`
+    );
+  }, "Catalog key must match its supported generation and release version");
 
 export type ConnectorCatalogActivePointer = z.infer<
-  ReturnType<typeof connectorCatalogActivePointerSchema>
+  typeof connectorCatalogActivePointerSchema
 >;
 
 export interface ConnectorCatalogIdentity {
-  readonly schemaVersion: ConnectorCatalogGeneration;
+  readonly schemaVersion: number;
   readonly catalogVersion: string;
   readonly catalogKey: string;
   readonly catalogDigest: string;
@@ -183,14 +167,11 @@ function parseStrict<T>(
   return parsed.data;
 }
 
-function assertSupportedArtifactSchema(
-  value: unknown,
-  schemaVersion: ConnectorCatalogGeneration,
-): void {
+function assertSupportedArtifactSchema(value: unknown): void {
   if (
     isRecord(value) &&
     typeof value.artifactSchemaVersion === "number" &&
-    value.artifactSchemaVersion !== schemaVersion
+    value.artifactSchemaVersion !== SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION
   ) {
     fail("unsupported-schema");
   }
@@ -207,26 +188,18 @@ function measureSnapshotPhase<T>(
 function validateCatalogJson(args: {
   readonly json: unknown;
   readonly catalogVersion: string;
-  readonly schemaVersion: ConnectorCatalogGeneration;
   readonly timing?: ConnectorCatalogValidationTiming;
 }): ConnectorCatalogArtifact {
   const artifact = measureSnapshotPhase(
     args.timing,
     "api_dispatch_connector_catalog_validate_schema",
     () => {
-      assertSupportedArtifactSchema(args.json, args.schemaVersion);
-      const parsed =
-        args.schemaVersion === 3
-          ? parseStrict(
-              args.json,
-              connectorCatalogArtifactSchema,
-              "invalid-artifact",
-            )
-          : parseStrict(
-              args.json,
-              connectorCatalogV4ArtifactSchema,
-              "invalid-artifact",
-            );
+      assertSupportedArtifactSchema(args.json);
+      const parsed = parseStrict(
+        args.json,
+        connectorCatalogArtifactSchema,
+        "invalid-artifact",
+      );
       if (parsed.catalogVersion !== args.catalogVersion) {
         fail("invalid-reference");
       }
@@ -281,13 +254,11 @@ function decodeCatalogJson(
 function parseAndValidateCatalog(args: {
   readonly bytes: Uint8Array;
   readonly catalogVersion: string;
-  readonly schemaVersion: ConnectorCatalogGeneration;
   readonly timing?: ConnectorCatalogValidationTiming;
 }): ConnectorCatalogArtifact {
   return validateCatalogJson({
     json: decodeCatalogJson(args.bytes, args.timing),
     catalogVersion: args.catalogVersion,
-    schemaVersion: args.schemaVersion,
     ...(args.timing === undefined ? {} : { timing: args.timing }),
   });
 }
@@ -296,14 +267,13 @@ export const CONNECTOR_CATALOG_ACTIVE_MAX_BYTES = ACTIVE_POINTER_MAX_BYTES;
 
 export function parseConnectorCatalogActivePointer(
   bytes: Uint8Array,
-  schemaVersion: ConnectorCatalogGeneration = SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
 ): ConnectorCatalogActivePointer {
   if (bytes.length > ACTIVE_POINTER_MAX_BYTES) {
     fail("object-too-large");
   }
   return parseStrict(
     decodedJson(bytes),
-    connectorCatalogActivePointerSchema(schemaVersion),
+    connectorCatalogActivePointerSchema,
     "invalid-pointer",
   );
 }
@@ -311,13 +281,10 @@ export function parseConnectorCatalogActivePointer(
 export async function loadConnectorCatalogCandidate(args: {
   readonly reader: ConnectorCatalogArtifactReader;
   readonly pointer: ConnectorCatalogActivePointer;
-  readonly schemaVersion?: ConnectorCatalogGeneration;
 }): Promise<ValidatedConnectorCatalogCandidate> {
-  const schemaVersion =
-    args.schemaVersion ?? SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION;
   parseStrict(
     args.pointer,
-    connectorCatalogActivePointerSchema(schemaVersion),
+    connectorCatalogActivePointerSchema,
     "invalid-pointer",
   );
   const rawBytes = await readBoundedArtifact(
@@ -329,11 +296,10 @@ export async function loadConnectorCatalogCandidate(args: {
   const artifact = parseAndValidateCatalog({
     bytes: rawBytes,
     catalogVersion: args.pointer.catalogVersion,
-    schemaVersion,
   });
   return {
     identity: {
-      schemaVersion,
+      schemaVersion: SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
       catalogVersion: args.pointer.catalogVersion,
       catalogKey: args.pointer.catalogKey,
       catalogDigest: args.pointer.catalogDigest,
@@ -366,7 +332,6 @@ function gunzipCatalog(bytes: Uint8Array): Buffer {
 }
 
 interface ConnectorCatalogSnapshotDecodeArgs {
-  readonly schemaVersion?: ConnectorCatalogGeneration;
   readonly catalogGzip: Uint8Array;
   readonly catalogRawSize: number;
   readonly catalogVersion: string;
@@ -411,8 +376,6 @@ export function decodeConnectorCatalogSnapshot(
     artifact: validateCatalogJson({
       json: decodeConnectorCatalogSnapshotJson(args),
       catalogVersion: args.catalogVersion,
-      schemaVersion:
-        args.schemaVersion ?? SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
       ...(args.timing === undefined ? {} : { timing: args.timing }),
     }),
   };
@@ -421,19 +384,19 @@ export function decodeConnectorCatalogSnapshot(
 function assertAttestedConnectorCatalogArtifact(
   value: unknown,
   catalogVersion: string,
-  schemaVersion: ConnectorCatalogGeneration,
 ): asserts value is ConnectorCatalogArtifact {
   if (!isRecord(value)) {
     fail("invalid-artifact");
   }
   if (
     typeof value.artifactSchemaVersion === "number" &&
-    value.artifactSchemaVersion !== schemaVersion
+    value.artifactSchemaVersion !== SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION
   ) {
     fail("unsupported-schema");
   }
   if (
-    value.artifactSchemaVersion !== schemaVersion ||
+    value.artifactSchemaVersion !==
+      SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION ||
     typeof value.catalogVersion !== "string"
   ) {
     fail("invalid-artifact");
@@ -449,10 +412,6 @@ export function decodeAttestedConnectorCatalogSnapshot(
   const artifact = decodeConnectorCatalogSnapshotJson(args);
   // The exact-digest compatibility row and current validator authority
   // establish deep schema and semantic validity. Keep this boundary local.
-  assertAttestedConnectorCatalogArtifact(
-    artifact,
-    args.catalogVersion,
-    args.schemaVersion ?? SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-  );
+  assertAttestedConnectorCatalogArtifact(artifact, args.catalogVersion);
   return { artifact };
 }

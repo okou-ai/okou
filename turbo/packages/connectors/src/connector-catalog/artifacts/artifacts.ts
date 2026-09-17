@@ -14,7 +14,6 @@ import {
 import {
   catalogSourceSchema,
   connectorAccessSourceSchema,
-  legacyConnectorAccessSourceSchema,
   connectorAuthClientSourceSchema,
   connectorAuthMethodIdSchema,
   connectorRevokeSourceSchema,
@@ -30,15 +29,8 @@ import {
 } from "./source";
 import { isConnectorCatalogIconKey } from "./icon";
 
-export const SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION = 3;
-export type ConnectorCatalogGeneration = 3 | 4;
+export const SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION = 4;
 export const CONNECTOR_CATALOG_ACTIVE_KEY = `connectors/v${SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION}/active.json`;
-
-export function connectorCatalogActiveKey(
-  schemaVersion: ConnectorCatalogGeneration,
-): string {
-  return `connectors/v${schemaVersion}/active.json`;
-}
 
 const CONNECTOR_SKILL_MAX_FILES = 64;
 const CONNECTOR_SKILL_MAX_TOTAL_BYTES = 1024 * 1024;
@@ -105,7 +97,9 @@ const connectorCatalogDeviceStartOptionSchema = z
   })
   .strict();
 
-const legacyConnectorCatalogGrantSchema = z.discriminatedUnion("kind", [
+const connectorCatalogGrantSchema = z.discriminatedUnion("kind", [
+  noneGrantSourceSchema,
+  automaticGrantSourceSchema,
   z
     .object({
       kind: z.literal("manual"),
@@ -142,12 +136,6 @@ const legacyConnectorCatalogGrantSchema = z.discriminatedUnion("kind", [
       startOptions: z.array(connectorCatalogDeviceStartOptionSchema),
     })
     .strict(),
-]);
-
-const connectorCatalogGrantSchema = z.discriminatedUnion("kind", [
-  noneGrantSourceSchema,
-  automaticGrantSourceSchema,
-  ...legacyConnectorCatalogGrantSchema.options,
 ]);
 
 export const connectorCatalogAuthMethodSchema = z
@@ -272,46 +260,10 @@ export const connectorCatalogArtifactConnectorSchema = z
     }
   });
 
-const legacyConnectorCatalogAuthMethodSchema =
-  connectorCatalogAuthMethodSchema.extend({
-    grant: legacyConnectorCatalogGrantSchema,
-    access: legacyConnectorAccessSourceSchema,
-  });
-
-const legacyConnectorCatalogArtifactConnectorSchema =
-  connectorCatalogArtifactConnectorSchema.safeExtend({
-    mcp: z.never().optional(),
-    replaces: z.never().optional(),
-    authMethods: z.array(legacyConnectorCatalogAuthMethodSchema).min(1),
-  });
-
 export const connectorCatalogArtifactSchema = z
   .object({
     ...artifactHeaderShape(),
     categoryMetadata: catalogSourceSchema.shape.categoryMetadata,
-    connectors: z.array(legacyConnectorCatalogArtifactConnectorSchema).min(1),
-  })
-  .strict()
-  .superRefine((artifact, context) => {
-    const connectorSlugs = artifact.connectors.map((connector) => {
-      return connector.slug;
-    });
-    const duplicates = connectorSlugs.filter((connectorSlug, index) => {
-      return connectorSlugs.indexOf(connectorSlug) !== index;
-    });
-    for (const connectorSlug of new Set(duplicates)) {
-      context.addIssue({
-        code: "custom",
-        message: `Connector catalog slugs must be unique: ${connectorSlug}`,
-        path: ["connectors"],
-      });
-    }
-  });
-
-export const connectorCatalogV4ArtifactSchema = z
-  .object({
-    ...connectorCatalogArtifactSchema.shape,
-    artifactSchemaVersion: z.literal(4),
     connectors: z.array(connectorCatalogArtifactConnectorSchema).min(1),
   })
   .strict()
@@ -345,12 +297,9 @@ export const connectorCatalogV4ArtifactSchema = z
     }
   });
 
-export type ConnectorCatalogArtifact = Omit<
-  z.infer<typeof connectorCatalogV4ArtifactSchema>,
-  "artifactSchemaVersion"
-> & {
-  artifactSchemaVersion: ConnectorCatalogGeneration;
-};
+export type ConnectorCatalogArtifact = z.infer<
+  typeof connectorCatalogArtifactSchema
+>;
 export type ConnectorCatalogArtifactConnector = z.infer<
   typeof connectorCatalogArtifactConnectorSchema
 >;

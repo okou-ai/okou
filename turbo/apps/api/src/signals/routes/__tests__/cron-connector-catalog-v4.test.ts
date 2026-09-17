@@ -119,14 +119,13 @@ function mcpConnector(slug = "notes-mcp") {
 }
 
 function release(args: {
-  readonly generation: 3 | 4;
   readonly label?: string;
   readonly httpSlug?: string;
   readonly mcpSlug?: string;
   readonly mutate?: (catalog: Record<string, unknown>) => void;
 }) {
   const catalog: Record<string, unknown> = {
-    artifactSchemaVersion: args.generation,
+    artifactSchemaVersion: 4,
     catalogVersion: CATALOG_VERSION,
     categoryMetadata: {
       categories: [
@@ -141,12 +140,12 @@ function release(args: {
     },
     connectors: [
       httpConnector(args.httpSlug ?? "catalog-service", args.label ?? "HTTP"),
-      ...(args.generation === 4 ? [mcpConnector(args.mcpSlug)] : []),
+      mcpConnector(args.mcpSlug),
     ],
   };
   args.mutate?.(catalog);
   const catalogBytes = bytes(catalog);
-  const catalogKey = `connectors/v${String(args.generation)}/releases/${CATALOG_VERSION}/catalog.json`;
+  const catalogKey = `connectors/v4/releases/${CATALOG_VERSION}/catalog.json`;
   const catalogDigest = digest(catalogBytes);
   const pointer = {
     catalogVersion: CATALOG_VERSION,
@@ -157,7 +156,7 @@ function release(args: {
     pointer,
     catalogBytes,
     objects: new Map([
-      [`connectors/v${String(args.generation)}/active.json`, bytes(pointer)],
+      ["connectors/v4/active.json", bytes(pointer)],
       [catalogKey, catalogBytes],
     ]),
   };
@@ -216,10 +215,6 @@ async function sync() {
   return await accept(cronClient().sync({ headers: cronHeaders }), [200]);
 }
 
-async function warmV4() {
-  return await accept(cronClient().warmV4({ headers: cronHeaders }), [200]);
-}
-
 async function publicCatalog() {
   return await accept(catalogClient().list({ headers: sessionHeaders }), [200]);
 }
@@ -231,25 +226,10 @@ beforeEach(() => {
 });
 
 describe("connector catalog v4 preparation", () => {
-  it("requires cron authentication for the unscheduled warm-up endpoint", async () => {
-    const response = await accept(
-      cronClient().warmV4({ headers: { authorization: "Bearer invalid" } }),
-      [401],
-    );
-    expect(response.body.error.code).toBe("UNAUTHORIZED");
-  });
-
-  it("warms v4 without changing default v3 serving, then serves only the explicitly selected generation", async () => {
-    const legacy = release({ generation: 3, label: "Accepted v3" });
-    const candidate = release({ generation: 4, label: "Accepted v4" });
-    serveObjects(new Map([...legacy.objects, ...candidate.objects]));
-
+  it("serves complete v4 HTTP data through normal sync while filtering unsupported MCP methods", async () => {
+    const candidate = release({ label: "Accepted v4" });
+    serveObjects(candidate.objects);
     expect((await sync()).body).toMatchObject({
-      outcome: "accepted",
-      schemaVersion: 3,
-    });
-    const warmed = await warmV4();
-    expect(warmed.body).toMatchObject({
       outcome: "accepted",
       schemaVersion: 4,
       state: "current",
@@ -261,6 +241,7 @@ describe("connector catalog v4 preparation", () => {
             connectorSlug: "notes-mcp",
             authMethodId: "automatic",
             reasons: expect.arrayContaining([
+              "unsupported-protocol",
               "missing-grant-provider",
               "missing-access-provider",
             ]),
@@ -269,34 +250,17 @@ describe("connector catalog v4 preparation", () => {
       },
     });
     expect((await publicCatalog()).body.connectors).toMatchObject([
-      { slug: "catalog-service", label: "Accepted v3" },
-    ]);
-    expect((await sync()).body).toMatchObject({
-      outcome: "unchanged",
-      schemaVersion: 3,
-      active: { catalogDigest: legacy.pointer.catalogDigest },
-    });
-
-    mockEnv("CONNECTOR_CATALOG_SERVING_GENERATION", "4");
-    expect((await publicCatalog()).body.connectors).toMatchObject([
       { slug: "catalog-service", label: "Accepted v4" },
     ]);
     expect((await sync()).body).toMatchObject({
       outcome: "unchanged",
       schemaVersion: 4,
     });
-    const blockedWarm = await accept(
-      cronClient().warmV4({ headers: cronHeaders }),
-      [409],
-    );
-    expect(blockedWarm.body.error.code).toBe("CONFLICT");
   });
 
-  it("keeps a cold v4 selection unavailable when only a valid v3 snapshot exists", async () => {
-    serveObjects(release({ generation: 3 }).objects);
-    await sync();
-    const warmed = await warmV4();
-    expect(warmed.body).toMatchObject({
+  it("reports a cold catalog as unavailable until v4 is accepted", async () => {
+    serveObjects(new Map());
+    expect((await sync()).body).toMatchObject({
       outcome: "rejected",
       schemaVersion: 4,
       state: "never-synced",
@@ -304,26 +268,24 @@ describe("connector catalog v4 preparation", () => {
       lastAttempt: { failureCode: "source-unavailable" },
     });
 
-    mockEnv("CONNECTOR_CATALOG_SERVING_GENERATION", "4");
     const unavailable = await accept(
       catalogClient().list({ headers: sessionHeaders }),
       [503],
     );
     expect(unavailable.body.error.code).toBe("PROVIDER_UNAVAILABLE");
 
-    mockEnv("CONNECTOR_CATALOG_SERVING_GENERATION", "3");
+    serveObjects(release({}).objects);
+    expect((await sync()).body.outcome).toBe("accepted");
     expect((await publicCatalog()).body.connectors).toMatchObject([
       { label: "HTTP" },
     ]);
   });
 
   it("retains the last accepted v4 snapshot when a later candidate has an invalid protocol", async () => {
-    const accepted = release({ generation: 4, label: "Last accepted" });
+    const accepted = release({ label: "Last accepted" });
     serveObjects(accepted.objects);
-    await warmV4();
-    mockEnv("CONNECTOR_CATALOG_SERVING_GENERATION", "4");
+    await sync();
     const invalid = release({
-      generation: 4,
       label: "Rejected candidate",
       mutate(catalog) {
         catalog.connectors = [
@@ -355,13 +317,19 @@ describe("connector catalog v4 preparation", () => {
     ]);
   });
 
-  it("rejects a v4 pointer that references the v3 namespace instead of downgrading", async () => {
-    const legacy = release({ generation: 3 });
-    const objects = new Map(legacy.objects);
-    objects.set("connectors/v4/active.json", bytes(legacy.pointer));
+  it("rejects a pointer outside the canonical v4 release namespace", async () => {
+    const candidate = release({});
+    const objects = new Map(candidate.objects);
+    objects.set(
+      "connectors/v4/active.json",
+      bytes({
+        ...candidate.pointer,
+        catalogKey: `connectors/v3/releases/${CATALOG_VERSION}/catalog.json`,
+      }),
+    );
     serveObjects(objects);
 
-    expect((await warmV4()).body).toMatchObject({
+    expect((await sync()).body).toMatchObject({
       outcome: "rejected",
       schemaVersion: 4,
       active: null,
@@ -370,10 +338,10 @@ describe("connector catalog v4 preparation", () => {
   });
 
   it("rejects changed bytes under the accepted digest without replacing the accepted projection", async () => {
-    const accepted = release({ generation: 4, label: "Verified bytes" });
+    const accepted = release({ label: "Verified bytes" });
     serveObjects(accepted.objects);
-    await warmV4();
-    const changed = release({ generation: 4, label: "Unverified bytes" });
+    await sync();
+    const changed = release({ label: "Unverified bytes" });
     // A new pointer identity forces fetching the candidate; its declared digest
     // deliberately belongs to the old bytes, not to this new immutable object.
     const catalogKey = "connectors/v4/releases/2026-09-18.fixture/catalog.json";
@@ -390,12 +358,11 @@ describe("connector catalog v4 preparation", () => {
         [catalogKey, changed.catalogBytes],
       ]),
     );
-    expect((await warmV4()).body).toMatchObject({
+    expect((await sync()).body).toMatchObject({
       outcome: "rejected",
       active: { catalogDigest: accepted.pointer.catalogDigest },
       lastAttempt: { failureCode: "digest-mismatch" },
     });
-    mockEnv("CONNECTOR_CATALOG_SERVING_GENERATION", "4");
     expect((await publicCatalog()).body.connectors).toMatchObject([
       { label: "Verified bytes" },
     ]);
@@ -403,14 +370,13 @@ describe("connector catalog v4 preparation", () => {
 
   it("uses explicit protocol metadata for crossed-name connectors and needs no MCP skill resources", async () => {
     const candidate = release({
-      generation: 4,
       httpSlug: "http-service-mcp",
       mcpSlug: "spoken-notes",
     });
     // Storage contains only the pointer and catalog. Both descriptors declare
     // skill:none, so accepting this release requires no skill resource fetch.
     serveObjects(candidate.objects);
-    expect((await warmV4()).body).toMatchObject({
+    expect((await sync()).body).toMatchObject({
       outcome: "accepted",
       filtering: {
         filteredAuthMethods: [
@@ -424,16 +390,14 @@ describe("connector catalog v4 preparation", () => {
         ],
       },
     });
-    mockEnv("CONNECTOR_CATALOG_SERVING_GENERATION", "4");
     expect((await publicCatalog()).body.connectors).toMatchObject([
       { slug: "http-service-mcp", authMethods: [{ grantKind: "manual" }] },
     ]);
   });
 
   it("does not expose an accepted MCP transport as an executable HTTP permission bundle", async () => {
-    serveObjects(release({ generation: 4 }).objects);
-    await warmV4();
-    mockEnv("CONNECTOR_CATALOG_SERVING_GENERATION", "4");
+    serveObjects(release({}).objects);
+    await sync();
     const client = setupApp({ context, routes: customConnectorsRoutes })(
       customConnectorsContract,
     );

@@ -33,10 +33,9 @@ emitting that record.
 - `sourceId` identifies the storage authority, bucket and snapshot generation.
   It is not a candidate identifier: equal source IDs do not establish equal
   catalog versions or contents.
-- `schemaVersion` identifies the independently evaluated catalog generation.
-  V4 warm-up and default v3 serving keep separate accepted/rejected state. See
-  [v4 reader preparation](connector-catalog-v4.md) for selection, warm-up and
-  activation gates.
+- `schemaVersion` identifies the catalog generation. New APIs sync and serve
+  only v4; old APIs keep their separate v3 state. See
+  [v4 consumption](connector-catalog-v4.md) for bootstrap and rollback gates.
 
 Fine-grained rules are not persisted. Cache-only observations therefore omit
 them; the API does not download or revalidate unchanged rejected content just to

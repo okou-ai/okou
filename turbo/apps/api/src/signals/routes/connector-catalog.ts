@@ -10,7 +10,6 @@ import { db$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import { userFeatureSwitchOverrides } from "../services/feature-switches.service";
 import { connectorCatalogDiagnostics$ } from "../services/connector-catalog-diagnostics.service";
-import { connectorCatalogServingGeneration } from "../services/connector-catalog-source";
 import {
   discoverPublicConnectorCatalogStatus,
   getPublicConnectorCatalogStatus,
@@ -186,11 +185,7 @@ const getConnectorCatalogDiagnosticsInner$ = command(
       return connectorCatalogDiagnosticsDisabled;
     }
 
-    const diagnostics = await set(
-      connectorCatalogDiagnostics$,
-      connectorCatalogServingGeneration(),
-      signal,
-    );
+    const diagnostics = await set(connectorCatalogDiagnostics$, signal);
     return { status: 200 as const, body: diagnostics };
   },
 );

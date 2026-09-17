@@ -42,7 +42,7 @@ import type {
 } from "./connector-server-firewall-catalog.service";
 import { connectorCatalogSource } from "./connector-catalog-source";
 import { connectorCatalogExecutableCapabilityDigest } from "./connector-catalog-compatibility.service";
-import type { ConnectorCatalogGeneration } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
+import { SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
 import {
   connectorCatalogValidationAuthorityIsCurrent,
   currentConnectorCatalogValidatorIdentity,
@@ -373,7 +373,6 @@ function baselineStaticIdentityIsCurrent(
   baseline: StoredConnectorPermissionBaseline,
   current: {
     readonly sourceId: string;
-    readonly generation: ConnectorCatalogGeneration;
     readonly capabilityDigest: string;
     readonly validator: ReturnType<
       typeof currentConnectorCatalogValidatorIdentity
@@ -382,7 +381,8 @@ function baselineStaticIdentityIsCurrent(
 ): boolean {
   return (
     baseline.catalogIdentity.sourceId === current.sourceId &&
-    baseline.catalogIdentity.schemaVersion === current.generation &&
+    baseline.catalogIdentity.schemaVersion ===
+      SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION &&
     baseline.catalogIdentity.capabilityDigest === current.capabilityDigest &&
     connectorCatalogValidationAuthorityIsCurrent({
       authority: {
@@ -451,10 +451,8 @@ export async function resolveActiveNetworkPolicyRefreshesFromBaseline(
   if (connectorSlugs.length === 0) {
     return { kind: "empty", refreshes: [] };
   }
-  const source = connectorCatalogSource();
   const current = {
-    sourceId: source.sourceId,
-    generation: source.generation,
+    sourceId: connectorCatalogSource().sourceId,
     capabilityDigest: connectorCatalogExecutableCapabilityDigest(),
     validator: currentConnectorCatalogValidatorIdentity(),
   };
@@ -495,7 +493,10 @@ export async function resolveActiveNetworkPolicyRefreshesFromBaseline(
       .where(
         and(
           eq(connectorCatalogActiveSnapshot.sourceId, current.sourceId),
-          eq(connectorCatalogActiveSnapshot.schemaVersion, current.generation),
+          eq(
+            connectorCatalogActiveSnapshot.schemaVersion,
+            SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
+          ),
           eq(
             connectorCatalogCompatibilityEvaluation.executableCapabilityDigest,
             current.capabilityDigest,

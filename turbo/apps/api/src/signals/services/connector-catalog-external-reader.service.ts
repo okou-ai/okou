@@ -27,11 +27,11 @@ import { logger } from "../../lib/log";
 import { singleton, testOverride } from "../../lib/singleton";
 import type { ReadonlyDb } from "../external/db";
 import { onRejection, settle } from "../utils";
-import type {
-  ConnectorCatalogGeneration,
-  ConnectorCatalogArtifact,
-  ConnectorCatalogArtifactConnector,
-  ConnectorCatalogAuthMethod,
+import {
+  SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
+  type ConnectorCatalogArtifact,
+  type ConnectorCatalogArtifactConnector,
+  type ConnectorCatalogAuthMethod,
 } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
 import {
   connectorCatalogArtifactFailureCode,
@@ -71,7 +71,7 @@ const CONNECTOR_CATALOG_ICON_BASE_URL = "https://static.vm0.io/";
 
 export interface ExternalCatalogIdentity {
   readonly sourceId: string;
-  readonly schemaVersion: ConnectorCatalogGeneration;
+  readonly schemaVersion: number;
   readonly catalogVersion: string;
   readonly catalogDigest: string;
   readonly capabilityDigest: string;
@@ -319,7 +319,6 @@ function externalCatalogJoin(capabilityDigest: string) {
 async function readCurrentIdentity(args: {
   readonly db: ReadonlyDb;
   readonly sourceId: string;
-  readonly generation: ConnectorCatalogGeneration;
   readonly capabilityDigest: string;
   readonly timing?: ConnectorCatalogLoadTiming;
 }): Promise<ExternalCatalogIdentity | undefined> {
@@ -337,7 +336,10 @@ async function readCurrentIdentity(args: {
         .where(
           and(
             eq(connectorCatalogActiveSnapshot.sourceId, args.sourceId),
-            eq(connectorCatalogActiveSnapshot.schemaVersion, args.generation),
+            eq(
+              connectorCatalogActiveSnapshot.schemaVersion,
+              SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
+            ),
           ),
         )
         .limit(1);
@@ -346,7 +348,7 @@ async function readCurrentIdentity(args: {
   return row
     ? {
         sourceId: args.sourceId,
-        schemaVersion: args.generation,
+        schemaVersion: SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
         catalogVersion: row.catalogVersion,
         catalogDigest: row.catalogDigest,
         capabilityDigest: args.capabilityDigest,
@@ -416,7 +418,6 @@ async function readCurrentCatalog(args: {
   }
 
   const decodeArgs = {
-    schemaVersion: args.identity.schemaVersion,
     catalogGzip: row.catalogGzip,
     catalogRawSize: row.catalogRawSize,
     catalogVersion: args.identity.catalogVersion,
@@ -543,12 +544,11 @@ async function loadAcceptedConnectorCatalogSnapshotAttempt(
   db: ReadonlyDb,
   timing: ConnectorCatalogLoadTiming | undefined,
 ): Promise<AcceptedConnectorCatalogSnapshot | undefined> {
-  const source = connectorCatalogSource();
+  const sourceId = connectorCatalogSource().sourceId;
   const capability = connectorCatalogExecutableCapabilityState();
   const currentIdentity = await readCurrentIdentity({
     db,
-    sourceId: source.sourceId,
-    generation: source.generation,
+    sourceId,
     capabilityDigest: capability.digest,
     ...(timing === undefined ? {} : { timing }),
   });

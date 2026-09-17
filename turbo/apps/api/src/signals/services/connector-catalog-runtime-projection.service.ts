@@ -11,9 +11,9 @@ import { and, count, eq, inArray } from "drizzle-orm";
 
 import { testOverride } from "../../lib/singleton";
 import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
-import type {
-  ConnectorCatalogArtifact,
-  ConnectorCatalogGeneration,
+import {
+  SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
+  type ConnectorCatalogArtifact,
 } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
 import { decodeConnectorCatalogSnapshot } from "@okouai/connectors/connector-catalog/artifacts/loader";
 import { connectorCatalogCompatibilityEvaluationSchema } from "@okouai/connectors/connector-catalog/compatibility";
@@ -116,7 +116,7 @@ export async function persistConnectorCatalogRuntimeProjection(args: {
         eq(connectorCatalogRuntimeProjectionSets.sourceId, args.sourceId),
         eq(
           connectorCatalogRuntimeProjectionSets.schemaVersion,
-          args.artifact.artifactSchemaVersion,
+          SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
         ),
       ),
     );
@@ -124,7 +124,7 @@ export async function persistConnectorCatalogRuntimeProjection(args: {
     .insert(connectorCatalogRuntimeProjectionSets)
     .values({
       sourceId: args.sourceId,
-      schemaVersion: args.artifact.artifactSchemaVersion,
+      schemaVersion: SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
       catalogVersion: args.identity.catalogVersion,
       catalogDigest: args.identity.catalogDigest,
       projectionVersion: CONNECTOR_CATALOG_RUNTIME_PROJECTION_VERSION,
@@ -154,7 +154,6 @@ export async function persistConnectorCatalogRuntimeProjection(args: {
 async function queryProjectionIdentity(
   db: ReadonlyDb,
   sourceId: string,
-  generation: ConnectorCatalogGeneration,
   capabilityDigest: string,
 ) {
   const [row] = await db
@@ -229,7 +228,10 @@ async function queryProjectionIdentity(
     .where(
       and(
         eq(connectorCatalogActiveSnapshot.sourceId, sourceId),
-        eq(connectorCatalogActiveSnapshot.schemaVersion, generation),
+        eq(
+          connectorCatalogActiveSnapshot.schemaVersion,
+          SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
+        ),
       ),
     )
     .limit(1);
@@ -239,15 +241,10 @@ async function queryProjectionIdentity(
 async function readProjectionIdentity(
   db: ReadonlyDb,
 ): Promise<ConnectorCatalogRuntimeProjectionIdentityRead> {
-  const source = connectorCatalogSource();
+  const sourceId = connectorCatalogSource().sourceId;
   const capabilityDigest = connectorCatalogExecutableCapabilityState().digest;
   const validator = currentConnectorCatalogValidatorIdentity();
-  const row = await queryProjectionIdentity(
-    db,
-    source.sourceId,
-    source.generation,
-    capabilityDigest,
-  );
+  const row = await queryProjectionIdentity(db, sourceId, capabilityDigest);
   // Route integration tests use this seam to replace the active identity after
   // the read, making both retry generations deterministic without timing sleeps.
   await projectionIdentityReadHook.get()?.();
@@ -306,8 +303,8 @@ async function readProjectionIdentity(
     projection: {
       identity: {
         projectionSetId: row.projectionSetId,
-        sourceId: source.sourceId,
-        schemaVersion: source.generation,
+        sourceId,
+        schemaVersion: SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
         catalogVersion: row.catalogVersion,
         catalogDigest: row.catalogDigest,
         capabilityDigest,
@@ -382,18 +379,17 @@ export async function countConnectorCatalogRuntimeProjectionRows(args: {
   return row.value;
 }
 
-async function lockSyncState(
-  db: Db,
-  sourceId: string,
-  generation: ConnectorCatalogGeneration,
-): Promise<boolean> {
+async function lockSyncState(db: Db, sourceId: string): Promise<boolean> {
   const [state] = await db
     .select({ sourceId: connectorCatalogSyncState.sourceId })
     .from(connectorCatalogSyncState)
     .where(
       and(
         eq(connectorCatalogSyncState.sourceId, sourceId),
-        eq(connectorCatalogSyncState.schemaVersion, generation),
+        eq(
+          connectorCatalogSyncState.schemaVersion,
+          SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
+        ),
       ),
     )
     .limit(1)
@@ -402,17 +398,12 @@ async function lockSyncState(
 }
 
 export const reconcileConnectorCatalogRuntimeProjection$ = command(
-  async (
-    { set },
-    generation: ConnectorCatalogGeneration,
-    signal: AbortSignal,
-  ): Promise<void> => {
+  async ({ set }, signal: AbortSignal): Promise<void> => {
     const db = set(writeDb$);
-    const source = connectorCatalogSource(generation);
-    const sourceId = source.sourceId;
+    const sourceId = connectorCatalogSource().sourceId;
     const validator = currentConnectorCatalogValidatorIdentity();
     await db.transaction(async (tx) => {
-      if (!(await lockSyncState(tx, sourceId, source.generation))) {
+      if (!(await lockSyncState(tx, sourceId))) {
         return;
       }
       const [snapshot] = await tx
@@ -426,7 +417,10 @@ export const reconcileConnectorCatalogRuntimeProjection$ = command(
         .where(
           and(
             eq(connectorCatalogActiveSnapshot.sourceId, sourceId),
-            eq(connectorCatalogActiveSnapshot.schemaVersion, source.generation),
+            eq(
+              connectorCatalogActiveSnapshot.schemaVersion,
+              SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
+            ),
           ),
         )
         .limit(1);
@@ -448,7 +442,7 @@ export const reconcileConnectorCatalogRuntimeProjection$ = command(
             eq(connectorCatalogRuntimeProjectionSets.sourceId, sourceId),
             eq(
               connectorCatalogRuntimeProjectionSets.schemaVersion,
-              source.generation,
+              SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
             ),
             eq(
               connectorCatalogRuntimeProjectionSets.catalogVersion,
@@ -483,7 +477,7 @@ export const reconcileConnectorCatalogRuntimeProjection$ = command(
             identity: {
               projectionSetId: ready.projectionSetId,
               sourceId,
-              schemaVersion: source.generation,
+              schemaVersion: SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
               catalogVersion: snapshot.catalogVersion,
               catalogDigest: snapshot.catalogDigest,
               projectionVersion: CONNECTOR_CATALOG_RUNTIME_PROJECTION_VERSION,
@@ -495,10 +489,7 @@ export const reconcileConnectorCatalogRuntimeProjection$ = command(
           }
         }
       }
-      const decoded = decodeConnectorCatalogSnapshot({
-        ...snapshot,
-        schemaVersion: source.generation,
-      });
+      const decoded = decodeConnectorCatalogSnapshot(snapshot);
       await persistConnectorCatalogRuntimeProjection({
         db: tx,
         sourceId,

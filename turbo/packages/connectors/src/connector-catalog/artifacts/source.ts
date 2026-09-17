@@ -278,11 +278,6 @@ const refreshTokenAccessSourceSchema = z
   })
   .strict();
 
-export const legacyConnectorAccessSourceSchema = z.discriminatedUnion("kind", [
-  staticAccessSourceSchema,
-  refreshTokenAccessSourceSchema,
-]);
-
 export const connectorAccessSourceSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("none") }).strict(),
   z
@@ -292,7 +287,8 @@ export const connectorAccessSourceSchema = z.discriminatedUnion("kind", [
       outputs: connectorAutomaticTokenBindingsSchema,
     })
     .strict(),
-  ...legacyConnectorAccessSourceSchema.options,
+  staticAccessSourceSchema,
+  refreshTokenAccessSourceSchema,
 ]);
 
 const noRevokeSourceSchema = z.object({ kind: z.literal("none") }).strict();

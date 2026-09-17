@@ -1,6 +1,5 @@
 import type { ConnectorCatalogDiagnostics } from "@okouai/api-contracts/contracts/connector-catalog-diagnostics";
 import { command } from "ccstate";
-import type { ConnectorCatalogGeneration } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
 
 import { db$ } from "../external/db";
 import { connectorCatalogCompatibilityStatus$ } from "./connector-catalog-compatibility.service";
@@ -10,14 +9,12 @@ import { loadConnectorCredentialReadiness } from "./connector-credential-readine
 export const connectorCatalogDiagnostics$ = command(
   async (
     { get, set },
-    generation: ConnectorCatalogGeneration,
     signal: AbortSignal,
   ): Promise<ConnectorCatalogDiagnostics> => {
-    const status = await set(connectorCatalogStatus$, generation, signal);
+    const status = await set(connectorCatalogStatus$, signal);
     const filtering = await set(
       connectorCatalogCompatibilityStatus$,
       status.active,
-      generation,
       signal,
     );
     const credentialStorage = await loadConnectorCredentialReadiness(get(db$));

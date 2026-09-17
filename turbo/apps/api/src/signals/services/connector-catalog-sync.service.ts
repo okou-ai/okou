@@ -23,8 +23,8 @@ import {
 } from "../external/s3";
 import { safeSync, settle } from "../utils";
 import {
-  connectorCatalogActiveKey,
-  type ConnectorCatalogGeneration,
+  CONNECTOR_CATALOG_ACTIVE_KEY,
+  SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
   type ConnectorCatalogArtifact,
 } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
 import {
@@ -60,7 +60,6 @@ import {
   type PreparedConnectorSkillRegistration,
 } from "./connector-catalog-skill-registration.service";
 import {
-  connectorCatalogServingGeneration,
   connectorCatalogSource,
   type ConnectorCatalogSource,
 } from "./connector-catalog-source";
@@ -271,7 +270,6 @@ async function publishCatalogPermissionBundleWakeups(args: {
 async function readSyncState(
   db: ReadonlyDb,
   sourceId: string,
-  generation: ConnectorCatalogGeneration,
 ): Promise<SyncStateSnapshot | undefined> {
   const [state] = await db
     .select({
@@ -324,7 +322,10 @@ async function readSyncState(
     .where(
       and(
         eq(connectorCatalogSyncState.sourceId, sourceId),
-        eq(connectorCatalogSyncState.schemaVersion, generation),
+        eq(
+          connectorCatalogSyncState.schemaVersion,
+          SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
+        ),
       ),
     )
     .limit(1);
@@ -428,11 +429,10 @@ function rejectedCandidateStatusFromState(
 
 function statusFromState(
   state: SyncStateSnapshot | undefined,
-  generation: ConnectorCatalogGeneration,
 ): ConnectorCatalogRawSyncStatus {
   const active = activeStatusFromState(state);
   return {
-    schemaVersion: generation,
+    schemaVersion: SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
     state:
       active === null
         ? "never-synced"
@@ -594,7 +594,6 @@ function pointerObservationValues(observation: PointerObservation | undefined) {
 async function recordRejectedAttempt(args: {
   readonly db: Db;
   readonly sourceId: string;
-  readonly generation: ConnectorCatalogGeneration;
   readonly baseline: SyncStateSnapshot | undefined;
   readonly attemptedAt: Date;
   readonly failureCode: ConnectorCatalogSyncFailureCode;
@@ -614,7 +613,7 @@ async function recordRejectedAttempt(args: {
       .insert(connectorCatalogSyncState)
       .values({
         sourceId: args.sourceId,
-        schemaVersion: args.generation,
+        schemaVersion: SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
         revision: nextRevision,
         lastAttemptAt: args.attemptedAt,
         lastAttemptOutcome: "rejected",
@@ -642,7 +641,10 @@ async function recordRejectedAttempt(args: {
     .where(
       and(
         eq(connectorCatalogSyncState.sourceId, args.sourceId),
-        eq(connectorCatalogSyncState.schemaVersion, args.generation),
+        eq(
+          connectorCatalogSyncState.schemaVersion,
+          SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
+        ),
         eq(connectorCatalogSyncState.revision, args.baseline.revision),
       ),
     )
@@ -653,7 +655,6 @@ async function recordRejectedAttempt(args: {
 async function recordUnchangedAttempt(args: {
   readonly db: Db;
   readonly sourceId: string;
-  readonly generation: ConnectorCatalogGeneration;
   readonly baseline: SyncStateSnapshot;
   readonly attemptedAt: Date;
   readonly pointerObservation?: PointerObservation;
@@ -675,7 +676,10 @@ async function recordUnchangedAttempt(args: {
     .where(
       and(
         eq(connectorCatalogSyncState.sourceId, args.sourceId),
-        eq(connectorCatalogSyncState.schemaVersion, args.generation),
+        eq(
+          connectorCatalogSyncState.schemaVersion,
+          SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
+        ),
         eq(connectorCatalogSyncState.revision, args.baseline.revision),
       ),
     )
@@ -722,7 +726,7 @@ async function activateCandidate(args: {
       .insert(connectorCatalogSyncState)
       .values({
         sourceId: args.sourceId,
-        schemaVersion: args.candidate.identity.schemaVersion,
+        schemaVersion: SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
         revision: nextRevision,
         ...stateValues,
       })
@@ -743,7 +747,7 @@ async function activateCandidate(args: {
           eq(connectorCatalogSyncState.sourceId, args.sourceId),
           eq(
             connectorCatalogSyncState.schemaVersion,
-            args.candidate.identity.schemaVersion,
+            SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
           ),
           eq(connectorCatalogSyncState.revision, args.baseline.revision),
         ),
@@ -763,7 +767,7 @@ async function activateCandidate(args: {
     .insert(connectorCatalogActiveSnapshot)
     .values({
       sourceId: args.sourceId,
-      schemaVersion: args.candidate.identity.schemaVersion,
+      schemaVersion: SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
       ...snapshotValues,
     })
     .onConflictDoUpdate({
@@ -834,13 +838,12 @@ async function commitCandidate(
 async function responseFromState(args: {
   readonly db: ReadonlyDb;
   readonly sourceId: string;
-  readonly generation: ConnectorCatalogGeneration;
   readonly outcome: ConnectorCatalogRawSyncResponse["outcome"];
 }): Promise<ConnectorCatalogRawSyncResponse> {
-  const state = await readSyncState(args.db, args.sourceId, args.generation);
+  const state = await readSyncState(args.db, args.sourceId);
   return {
     outcome: args.outcome,
-    ...statusFromState(state, args.generation),
+    ...statusFromState(state),
   };
 }
 
@@ -858,7 +861,6 @@ async function rejectCandidate(args: {
   const committed = await recordRejectedAttempt({
     db: args.db,
     sourceId: args.source.sourceId,
-    generation: args.source.generation,
     baseline: args.baseline,
     attemptedAt: nowDate(),
     failureCode: args.failureCode,
@@ -877,7 +879,7 @@ async function rejectCandidate(args: {
     : args.pointerObservation?.pointer;
   const fields = {
     sourceId: args.source.sourceId,
-    schemaVersion: args.source.generation,
+    schemaVersion: SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
     failureCode: args.failureCode,
     retainedActiveSnapshot,
     reusedCachedRejection: args.reusedCachedRejection,
@@ -899,13 +901,11 @@ async function rejectCandidate(args: {
   return await responseFromState({
     db: args.db,
     sourceId: args.source.sourceId,
-    generation: args.source.generation,
     outcome: "rejected",
   });
 }
 
 interface ConnectorCatalogSyncRuntime {
-  readonly publishRuntimeWakeups: boolean;
   readonly capability: ExecutableCapabilityState;
   readonly db: Db;
   readonly reader: ConnectorCatalogArtifactReader;
@@ -1013,10 +1013,7 @@ async function loadPointerForSync(
 
   const { buffer, etag } = downloaded.value;
   const parsed = safeSync(() => {
-    return parseConnectorCatalogActivePointer(
-      buffer,
-      runtime.source.generation,
-    );
+    return parseConnectorCatalogActivePointer(buffer);
   });
   if (!("ok" in parsed)) {
     return await rejectSyncAttempt(
@@ -1046,7 +1043,6 @@ async function loadCandidateForSync(
     loadConnectorCatalogCandidate({
       reader: runtime.reader,
       pointer: pointerObservation.pointer,
-      schemaVersion: runtime.source.generation,
     }),
     signal,
   );
@@ -1077,7 +1073,6 @@ async function completeUnchangedSync(
   const committed = await recordUnchangedAttempt({
     db: runtime.db,
     sourceId: runtime.source.sourceId,
-    generation: runtime.source.generation,
     baseline,
     attemptedAt: nowDate(),
     pointerObservation,
@@ -1089,7 +1084,6 @@ async function completeUnchangedSync(
   const response = await responseFromState({
     db: runtime.db,
     sourceId: runtime.source.sourceId,
-    generation: runtime.source.generation,
     outcome: "unchanged",
   });
   signal.throwIfAborted();
@@ -1106,10 +1100,9 @@ async function commitValidatedCandidate(
   },
   signal: AbortSignal,
 ): Promise<SyncAttemptResult> {
-  const previousSnapshotResult =
-    runtime.publishRuntimeWakeups && args.baseline?.activeCatalogVersion
-      ? await settle(loadConnectorRuntimeSnapshot(runtime.db), signal)
-      : undefined;
+  const previousSnapshotResult = args.baseline?.activeCatalogVersion
+    ? await settle(loadConnectorRuntimeSnapshot(runtime.db), signal)
+    : undefined;
   signal.throwIfAborted();
   if (previousSnapshotResult && !previousSnapshotResult.ok) {
     log.warn("Failed to load previous connector runtime snapshot", {
@@ -1151,28 +1144,25 @@ async function commitValidatedCandidate(
   }
   log.debug("Connector catalog sync completed", {
     sourceId: runtime.source.sourceId,
-    schemaVersion: runtime.source.generation,
+    schemaVersion: SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
     catalogVersion: args.candidate.identity.catalogVersion,
     catalogDigest: args.candidate.identity.catalogDigest,
     rawBytes: args.candidate.rawBytes.byteLength,
     compressedBytes: catalogGzip.byteLength,
     outcome,
   });
-  if (runtime.publishRuntimeWakeups) {
-    await publishCatalogPermissionBundleWakeups({
-      db: runtime.db,
-      currentArtifact: args.candidate.artifact,
-      previousSnapshot:
-        previousSnapshotResult?.ok === true
-          ? previousSnapshotResult.value
-          : undefined,
-    });
-  }
+  await publishCatalogPermissionBundleWakeups({
+    db: runtime.db,
+    currentArtifact: args.candidate.artifact,
+    previousSnapshot:
+      previousSnapshotResult?.ok === true
+        ? previousSnapshotResult.value
+        : undefined,
+  });
   signal.throwIfAborted();
   const response = await responseFromState({
     db: runtime.db,
     sourceId: runtime.source.sourceId,
-    generation: runtime.source.generation,
     outcome,
   });
   signal.throwIfAborted();
@@ -1226,11 +1216,7 @@ async function syncConnectorCatalogAttempt(
   runtime: ConnectorCatalogSyncRuntime,
   signal: AbortSignal,
 ): Promise<SyncAttemptResult> {
-  const baseline = await readSyncState(
-    runtime.db,
-    runtime.source.sourceId,
-    runtime.source.generation,
-  );
+  const baseline = await readSyncState(runtime.db, runtime.source.sourceId);
   signal.throwIfAborted();
   const pointerResult = await loadPointerForSync(runtime, baseline, signal);
   if (pointerResult.kind === "retry" || pointerResult.kind === "complete") {
@@ -1351,32 +1337,22 @@ async function syncConnectorCatalogAttempt(
 export const connectorCatalogStatus$ = command(
   async (
     { get },
-    generation: ConnectorCatalogGeneration,
     signal: AbortSignal,
   ): Promise<ConnectorCatalogRawSyncStatus> => {
-    const source = connectorCatalogSource(generation);
-    const state = await readSyncState(
-      get(db$),
-      source.sourceId,
-      source.generation,
-    );
+    const source = connectorCatalogSource();
+    const state = await readSyncState(get(db$), source.sourceId);
     signal.throwIfAborted();
-    return statusFromState(state, source.generation);
+    return statusFromState(state);
   },
 );
 
 export const syncConnectorCatalog$ = command(
   async (
     { get, set },
-    generation: ConnectorCatalogGeneration,
-    publishRuntimeWakeups: boolean,
     signal: AbortSignal,
   ): Promise<ConnectorCatalogRawSyncResponse> => {
-    const source = connectorCatalogSource(generation);
+    const source = connectorCatalogSource();
     const runtime: ConnectorCatalogSyncRuntime = {
-      publishRuntimeWakeups:
-        publishRuntimeWakeups &&
-        generation === connectorCatalogServingGeneration(),
       capability: connectorCatalogExecutableCapabilityState(),
       db: set(writeDb$),
       source,
@@ -1386,7 +1362,7 @@ export const syncConnectorCatalog$ = command(
         const result = await get(
           downloadS3BufferWithMaxBytesIfChanged(
             source.bucket,
-            connectorCatalogActiveKey(source.generation),
+            CONNECTOR_CATALOG_ACTIVE_KEY,
             CONNECTOR_CATALOG_ACTIVE_MAX_BYTES,
             ifNoneMatch,
             signal,

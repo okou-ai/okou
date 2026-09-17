@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import type { ConnectorCatalogGeneration } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
 
 import { env } from "../../lib/env";
 import { safeUrlParse } from "../utils";
@@ -7,18 +6,11 @@ import { safeUrlParse } from "../utils";
 export interface ConnectorCatalogSource {
   readonly bucket: string;
   readonly sourceId: string;
-  readonly generation: ConnectorCatalogGeneration;
 }
 
 const CONNECTOR_CATALOG_PERSISTED_SNAPSHOT_GENERATION = 3;
 
-export function connectorCatalogServingGeneration(): ConnectorCatalogGeneration {
-  return env("CONNECTOR_CATALOG_SERVING_GENERATION") === "4" ? 4 : 3;
-}
-
-export function connectorCatalogSource(
-  generation: ConnectorCatalogGeneration = connectorCatalogServingGeneration(),
-): ConnectorCatalogSource {
+export function connectorCatalogSource(): ConnectorCatalogSource {
   const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
   const endpoint =
     env("S3_ENDPOINT") ??
@@ -41,5 +33,5 @@ export function connectorCatalogSource(
     .update("\0connector-catalog-persisted-snapshot-generation:")
     .update(String(CONNECTOR_CATALOG_PERSISTED_SNAPSHOT_GENERATION))
     .digest("hex");
-  return { bucket, sourceId, generation };
+  return { bucket, sourceId };
 }

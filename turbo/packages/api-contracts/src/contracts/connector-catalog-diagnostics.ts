@@ -41,7 +41,9 @@ export const connectorCredentialStorageReadinessSchema = z.object({
 });
 
 export const connectorCatalogDiagnosticsSchema = z.object({
-  schemaVersion: z.union([z.literal(3), z.literal(4)]).optional(),
+  // Older serving/rollback APIs omit this diagnostic field. Remove optionality
+  // after those APIs leave the supported rollback window (#34913).
+  schemaVersion: z.literal(4).optional(),
   state: z.enum(["never-synced", "current", "stale"]),
   active: z
     .object({

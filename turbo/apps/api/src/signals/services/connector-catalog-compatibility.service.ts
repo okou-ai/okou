@@ -16,9 +16,9 @@ import { and, eq, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { optionalEnv } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
-import type {
-  ConnectorCatalogArtifact,
-  ConnectorCatalogGeneration,
+import {
+  SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
+  type ConnectorCatalogArtifact,
 } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
 import { decodeConnectorCatalogSnapshot } from "@okouai/connectors/connector-catalog/artifacts/loader";
 import {
@@ -65,7 +65,6 @@ export function connectorCatalogExecutableCapabilityDigest(): string {
 async function deleteReplacedEvaluations(args: {
   readonly db: Db;
   readonly sourceId: string;
-  readonly generation: ConnectorCatalogGeneration;
   readonly catalogDigest: string;
 }): Promise<void> {
   await args.db
@@ -75,7 +74,7 @@ async function deleteReplacedEvaluations(args: {
         eq(connectorCatalogCompatibilityEvaluation.sourceId, args.sourceId),
         eq(
           connectorCatalogCompatibilityEvaluation.schemaVersion,
-          args.generation,
+          SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
         ),
         ne(
           connectorCatalogCompatibilityEvaluation.catalogDigest,
@@ -88,7 +87,6 @@ async function deleteReplacedEvaluations(args: {
 async function persistConnectorCatalogCompatibilityEvaluation(args: {
   readonly db: Db;
   readonly sourceId: string;
-  readonly generation: ConnectorCatalogGeneration;
   readonly identity: ConnectorCatalogCompatibilityIdentity;
   readonly capabilityDigest: string;
   readonly validator: ConnectorCatalogValidatorIdentity;
@@ -99,7 +97,7 @@ async function persistConnectorCatalogCompatibilityEvaluation(args: {
     .insert(connectorCatalogCompatibilityEvaluation)
     .values({
       sourceId: args.sourceId,
-      schemaVersion: args.generation,
+      schemaVersion: SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
       catalogVersion: args.identity.catalogVersion,
       catalogDigest: args.identity.catalogDigest,
       executableCapabilityDigest: args.capabilityDigest,
@@ -147,7 +145,6 @@ export async function persistConnectorCatalogCompatibility(args: {
   await deleteReplacedEvaluations({
     db: args.db,
     sourceId: args.sourceId,
-    generation: args.artifact.artifactSchemaVersion,
     catalogDigest: args.identity.catalogDigest,
   });
   const filteredAuthMethods = evaluateConnectorCatalogCompatibility({
@@ -160,25 +157,23 @@ export async function persistConnectorCatalogCompatibility(args: {
   });
   await persistConnectorCatalogCompatibilityEvaluation({
     ...args,
-    generation: args.artifact.artifactSchemaVersion,
     capabilityDigest: args.capability.digest,
     evaluatedAt,
     payload,
   });
 }
 
-async function lockSyncState(
-  db: Db,
-  sourceId: string,
-  generation: ConnectorCatalogGeneration,
-): Promise<boolean> {
+async function lockSyncState(db: Db, sourceId: string): Promise<boolean> {
   const [state] = await db
     .select({ sourceId: connectorCatalogSyncState.sourceId })
     .from(connectorCatalogSyncState)
     .where(
       and(
         eq(connectorCatalogSyncState.sourceId, sourceId),
-        eq(connectorCatalogSyncState.schemaVersion, generation),
+        eq(
+          connectorCatalogSyncState.schemaVersion,
+          SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
+        ),
       ),
     )
     .limit(1)
@@ -189,7 +184,6 @@ async function lockSyncState(
 async function activeSnapshotForUpdate(
   db: Db,
   sourceId: string,
-  generation: ConnectorCatalogGeneration,
 ): Promise<CanonicalSnapshot | undefined> {
   const [snapshot] = await db
     .select({
@@ -202,7 +196,10 @@ async function activeSnapshotForUpdate(
     .where(
       and(
         eq(connectorCatalogActiveSnapshot.sourceId, sourceId),
-        eq(connectorCatalogActiveSnapshot.schemaVersion, generation),
+        eq(
+          connectorCatalogActiveSnapshot.schemaVersion,
+          SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
+        ),
       ),
     )
     .limit(1)
@@ -224,19 +221,14 @@ function staleFilteringStatus(
 async function reconcileCompatibility(args: {
   readonly db: Db;
   readonly sourceId: string;
-  readonly generation: ConnectorCatalogGeneration;
   readonly capability: ExecutableCapabilityState;
   readonly validator: ConnectorCatalogValidatorIdentity;
 }): Promise<void> {
-  const hasState = await lockSyncState(args.db, args.sourceId, args.generation);
+  const hasState = await lockSyncState(args.db, args.sourceId);
   if (!hasState) {
     return;
   }
-  const snapshot = await activeSnapshotForUpdate(
-    args.db,
-    args.sourceId,
-    args.generation,
-  );
+  const snapshot = await activeSnapshotForUpdate(args.db, args.sourceId);
   if (snapshot === undefined) {
     return;
   }
@@ -254,7 +246,7 @@ async function reconcileCompatibility(args: {
         eq(connectorCatalogCompatibilityEvaluation.sourceId, args.sourceId),
         eq(
           connectorCatalogCompatibilityEvaluation.schemaVersion,
-          args.generation,
+          SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
         ),
         eq(
           connectorCatalogCompatibilityEvaluation.catalogVersion,
@@ -285,10 +277,7 @@ async function reconcileCompatibility(args: {
     return;
   }
 
-  const decoded = decodeConnectorCatalogSnapshot({
-    ...snapshot,
-    schemaVersion: args.generation,
-  });
+  const decoded = decodeConnectorCatalogSnapshot(snapshot);
   await persistConnectorCatalogCompatibility({
     db: args.db,
     sourceId: args.sourceId,
@@ -314,7 +303,6 @@ function diagnosticFilteredAuthMethods(
 async function compatibilityStatus(args: {
   readonly db: ReadonlyDb;
   readonly sourceId: string;
-  readonly generation: ConnectorCatalogGeneration;
   readonly capabilityDigest: string;
   readonly snapshot: ConnectorCatalogCompatibilityIdentity | null;
 }): Promise<ConnectorCatalogFilteringStatus> {
@@ -334,7 +322,7 @@ async function compatibilityStatus(args: {
         eq(connectorCatalogCompatibilityEvaluation.sourceId, args.sourceId),
         eq(
           connectorCatalogCompatibilityEvaluation.schemaVersion,
-          args.generation,
+          SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
         ),
         eq(
           connectorCatalogCompatibilityEvaluation.catalogVersion,
@@ -367,19 +355,14 @@ async function compatibilityStatus(args: {
 }
 
 export const reconcileConnectorCatalogCompatibility$ = command(
-  async (
-    { set },
-    generation: ConnectorCatalogGeneration,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const source = connectorCatalogSource(generation);
+  async ({ set }, signal: AbortSignal): Promise<void> => {
+    const source = connectorCatalogSource();
     const capability = connectorCatalogExecutableCapabilityState();
     const validator = currentConnectorCatalogValidatorIdentity();
     await set(writeDb$).transaction(async (tx) => {
       await reconcileCompatibility({
         db: tx,
         sourceId: source.sourceId,
-        generation: source.generation,
         capability,
         validator,
       });
@@ -392,15 +375,13 @@ export const connectorCatalogCompatibilityStatus$ = command(
   async (
     { get },
     snapshot: ConnectorCatalogCompatibilityIdentity | null,
-    generation: ConnectorCatalogGeneration,
     signal: AbortSignal,
   ): Promise<ConnectorCatalogFilteringStatus> => {
-    const source = connectorCatalogSource(generation);
+    const source = connectorCatalogSource();
     const capability = connectorCatalogExecutableCapabilityState();
     const status = await compatibilityStatus({
       db: get(db$),
       sourceId: source.sourceId,
-      generation: source.generation,
       capabilityDigest: capability.digest,
       snapshot,
     });

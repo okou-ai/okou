@@ -2,10 +2,7 @@ import { createHash } from "node:crypto";
 
 import type { ConnectorSlug } from "../connector-identity";
 
-import type {
-  ConnectorCatalogArtifactConnector,
-  ConnectorCatalogGeneration,
-} from "./artifacts/artifacts";
+import type { ConnectorCatalogArtifactConnector } from "./artifacts/artifacts";
 import { BUILTIN_FIREWALL_CATALOG_MAX_BYTES } from "./contracts";
 import { parseJson } from "./safe";
 
@@ -24,7 +21,7 @@ export type ConnectorCatalogRuntimeProjectionFallbackReason =
 export interface ConnectorCatalogRuntimeProjectionRowSetIdentity {
   readonly projectionSetId: string;
   readonly sourceId: string;
-  readonly schemaVersion: ConnectorCatalogGeneration;
+  readonly schemaVersion: number;
   readonly catalogVersion: string;
   readonly catalogDigest: string;
   readonly projectionVersion: number;

@@ -2266,8 +2266,8 @@ const connectors = [
 ] satisfies readonly ConnectorCatalogArtifactConnector[];
 
 export const API_TEST_CONNECTOR_CATALOG_ARTIFACT = {
-  artifactSchemaVersion: 3,
-  catalogVersion: "api-test-v3",
+  artifactSchemaVersion: 4,
+  catalogVersion: "api-test-v4",
   categoryMetadata: {
     categories: [
       {
