@@ -155,7 +155,7 @@ async function fixture(
 }
 
 function generate(f: Pick<Fixture, "headers">, scheduledFor = ANCHOR) {
-  return generationClient().generate({
+  return generationClient().preview({
     headers: f.headers,
     body: { scheduledFor },
   });
@@ -882,7 +882,7 @@ describe("Morning Brief platform-funded generation admission", () => {
     });
 
     await accept(
-      generationClient().generate({
+      generationClient().preview({
         headers: { authorization: "" },
         body: { scheduledFor: ANCHOR },
       }),

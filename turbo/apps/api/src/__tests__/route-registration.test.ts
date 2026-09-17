@@ -50,6 +50,17 @@ describe("API route registrations", () => {
     expect(entry?.route).toBe(
       morningBriefGmailCollectionPreviewContract.collect,
     );
+    expect(ROUTES).toContain(entry);
+    expect(
+      ROUTES.filter((registered) => {
+        return (
+          registered.route.path ===
+          morningBriefGmailCollectionPreviewContract.collect.path
+        );
+      }),
+    ).toStrictEqual([entry]);
+  });
+
   // The platform-funded generation preview has the same requirement: its own
   // suite may not compose an app from this production-global table, so the
   // exact entry object is asserted here. Registration is what makes that
@@ -58,14 +69,13 @@ describe("API route registrations", () => {
   it("registers the Morning Brief generation preview an operator invokes", () => {
     const [entry, ...extra] = morningBriefGenerationPreviewRoutes;
     expect(extra).toHaveLength(0);
-    expect(entry?.route).toBe(morningBriefGenerationPreviewContract.generate);
+    expect(entry?.route).toBe(morningBriefGenerationPreviewContract.preview);
     expect(ROUTES).toContain(entry);
     expect(
       ROUTES.filter((registered) => {
         return (
           registered.route.path ===
-          morningBriefGmailCollectionPreviewContract.collect.path
-          morningBriefGenerationPreviewContract.generate.path
+          morningBriefGenerationPreviewContract.preview.path
         );
       }),
     ).toStrictEqual([entry]);
