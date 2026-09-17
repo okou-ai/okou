@@ -35,6 +35,7 @@ import {
 } from "./morning-brief-collection-occurrence.service";
 import { loadCurrentMembershipId } from "./morning-brief-membership.service";
 import { loadMorningBriefMigrationState } from "./morning-brief-migration-state.service";
+import { resolveMorningBriefChoiceAuthority } from "./morning-brief-native-schedule.service";
 import {
   collectMorningBriefSlackBundle,
   MORNING_BRIEF_SLACK_COLLECTION_DEADLINE_MS,
@@ -207,7 +208,7 @@ async function loadInstallationAgentId(
  * The exact-member lookup and its immutable-id pin are shared with the
  * Simple Morning Brief connector reader, so both admit on one authority.
  */
-const currentMembershipId$ = command(
+export const currentMembershipId$ = command(
   async (
     { get },
     owner: MorningBriefCollectionOwner,
@@ -253,34 +254,67 @@ const admitMorningBriefCollection$ = command(
       return { kind: "not-executed", reason: "feature-disabled" };
     }
 
-    const state = await loadMorningBriefMigrationState(db, owner);
+    // Once a member is in the native phase the durable native row is the whole
+    // choice: no live installation, catalog reconciliation or legacy enabled
+    // bit is consulted, which is exactly what lets the legacy scheduler be
+    // disabled without disabling the brief. Every other phase keeps reading the
+    // canonical legacy installation as before.
+    const authority = await resolveMorningBriefChoiceAuthority(db, owner);
     signal.throwIfAborted();
-    if (state.kind !== "installed") {
-      return {
-        kind: "not-executed",
-        reason:
-          state.kind === "absent"
-            ? "brief-absent"
-            : state.kind === "pending"
-              ? "brief-pending"
-              : "brief-inconsistent",
-      };
-    }
-    if (!state.automation.enabled) {
-      return { kind: "not-executed", reason: "brief-paused" };
-    }
 
-    const timezone = await loadOfficialWorkflowUserTimezone(db, owner);
+    let timezone: string | null;
+    let agentId: string | null;
+    let workflowId: string;
+    let automationId: string;
+
+    if (authority.kind === "native") {
+      const native = authority.row;
+      if (!native.enabled) {
+        return { kind: "not-executed", reason: "brief-paused" };
+      }
+      if (
+        native.legacyWorkflowId === null ||
+        native.legacyAutomationId === null
+      ) {
+        // Every migrated member carries its lineage. A native row without it
+        // would have no provenance to record on the occurrence, so admission
+        // refuses explicitly rather than inventing one.
+        return { kind: "not-executed", reason: "brief-inconsistent" };
+      }
+      timezone = isValidTimeZone(native.timezone) ? native.timezone : null;
+      agentId = await loadInstallationAgentId(db, owner, native.agentId);
+      workflowId = native.legacyWorkflowId;
+      automationId = native.legacyAutomationId;
+    } else {
+      const state = await loadMorningBriefMigrationState(db, owner);
+      signal.throwIfAborted();
+      if (state.kind !== "installed") {
+        return {
+          kind: "not-executed",
+          reason:
+            state.kind === "absent"
+              ? "brief-absent"
+              : state.kind === "pending"
+                ? "brief-pending"
+                : "brief-inconsistent",
+        };
+      }
+      if (!state.automation.enabled) {
+        return { kind: "not-executed", reason: "brief-paused" };
+      }
+      timezone = await loadOfficialWorkflowUserTimezone(db, owner);
+      agentId = await loadInstallationAgentId(
+        db,
+        owner,
+        state.installation.agentId,
+      );
+      workflowId = state.installation.id;
+      automationId = state.automation.id;
+    }
     signal.throwIfAborted();
     if (timezone === null || !isValidTimeZone(timezone)) {
       return { kind: "not-executed", reason: "missing-timezone" };
     }
-    const agentId = await loadInstallationAgentId(
-      db,
-      owner,
-      state.installation.agentId,
-    );
-    signal.throwIfAborted();
     if (agentId === null) {
       return { kind: "not-executed", reason: "missing-agent" };
     }
@@ -319,8 +353,8 @@ const admitMorningBriefCollection$ = command(
           windowEnd: args.scheduledFor,
           timezone,
           membershipId,
-          workflowId: state.installation.id,
-          automationId: state.automation.id,
+          workflowId,
+          automationId,
           agentId,
           slackWorkspaceId: installation.workspaceId,
           slackUserId: installation.slackUserId,

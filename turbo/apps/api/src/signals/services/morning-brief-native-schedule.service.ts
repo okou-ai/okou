@@ -168,16 +168,21 @@ export function computeNativeNextRunAt(args: {
 export async function materializeMorningBriefNativeSchedule(
   tx: MorningBriefNativeWriter,
   owner: MorningBriefMemberIdentity,
-  at: Date,
-  state?: MorningBriefMigrationState,
+  args: {
+    /** The membership generation the caller resolved from Clerk. */
+    readonly membershipId: string;
+    readonly at: Date;
+    readonly state?: MorningBriefMigrationState;
+  },
 ): Promise<MorningBriefMaterializationResult> {
+  const { membershipId, at } = args;
   const existing = await lockMorningBriefNativeSchedule(tx, owner);
   if (existing !== undefined) {
     return { kind: "materialized", row: existing };
   }
 
   const installed =
-    state ??
+    args.state ??
     (await loadMorningBriefMigrationState(
       tx as unknown as MorningBriefStateReader,
       owner,
@@ -193,11 +198,6 @@ export async function materializeMorningBriefNativeSchedule(
   }
   if (!isValidTimeZone(installed.automation.timezone)) {
     return { kind: "refused", reason: "missing-timezone" };
-  }
-
-  const membershipId = await loadCurrentMembershipGeneration(tx, owner);
-  if (membershipId === null) {
-    return { kind: "refused", reason: "missing-membership" };
   }
 
   // The first row keeps the legacy owner: materialization is bootstrap, never
@@ -237,29 +237,46 @@ export async function materializeMorningBriefNativeSchedule(
   }
   const raced = await lockMorningBriefNativeSchedule(tx, owner);
   return raced === undefined
-    ? { kind: "refused", reason: "missing-membership" }
+    ? { kind: "refused", reason: "not-installed" }
     : { kind: "materialized", row: raced };
 }
 
 /**
- * The member's current membership generation.
+ * Re-export of the single real membership-generation reader.
  *
- * Read fresh at every admission boundary. The cached row merely existing is not
- * evidence the member is still admitted, so callers compare this value with the
- * generation pinned on the native row and on the claimed occurrence.
+ * The authority is Clerk's immutable organization-membership id, resolved by
+ * the collection executor's existing `currentMembershipId$`. A remove and
+ * rejoin issues a new id, which is what stops a new membership from reviving an
+ * older occurrence. `org_members_cache` is a disposable read-through cache of
+ * the member's *role* and carries no generation, so it is never read here.
+ *
+ * It is a network read, so callers resolve it **before** their transaction and
+ * revalidate the pinned value inside it. It deliberately lives in the
+ * collection executor rather than being re-exported here, so this module never
+ * imports its consumer.
  */
-export async function loadCurrentMembershipGeneration(
+/**
+ * Which implementation's state decides whether a brief may execute right now.
+ *
+ * This is the single predicate S5 collection and S6 delivery consult instead of
+ * reading the legacy automation's enabled bit directly. Once a member reaches
+ * the `native` phase, the durable row is the whole answer — admission keeps
+ * working with the legacy scheduler disabled and with no live Official Workflow
+ * installation or catalog reconciliation. Every other phase keeps the existing
+ * legacy behaviour untouched.
+ */
+export type MorningBriefChoiceAuthority =
+  | { readonly kind: "native"; readonly row: MorningBriefNativeScheduleRow }
+  | { readonly kind: "legacy" };
+
+export async function resolveMorningBriefChoiceAuthority(
   db: MorningBriefNativeReader,
   owner: MorningBriefMemberIdentity,
-): Promise<string | null> {
-  const rows = await db
-    .select({ membershipId: sql<string>`membership_id` })
-    .from(sql`org_members_cache`)
-    .where(
-      sql`org_id = ${owner.orgId} AND user_id = ${owner.userId} AND deleted_at IS NULL`,
-    )
-    .limit(1);
-  return rows[0]?.membershipId ?? null;
+): Promise<MorningBriefChoiceAuthority> {
+  const row = await readMorningBriefNativeSchedule(db, owner);
+  return row !== undefined && row.phase === "native"
+    ? { kind: "native", row }
+    : { kind: "legacy" };
 }
 
 /** What a logical-choice writer intends to change. */
@@ -269,10 +286,21 @@ export interface MorningBriefLogicalChoicePatch {
   readonly timezone?: string;
   readonly chatThreadId?: string | null;
   readonly agentId?: string;
+  /**
+   * The epoch the caller's own preflight observed.
+   *
+   * A writer that read live state outside this transaction — a reconciliation
+   * restore, an enable compensation, a Settings round trip — passes what it saw.
+   * The mutation then refuses if the epoch moved, so a stale compensation can
+   * never restore an older epoch's state over a newer writer. A writer with no
+   * preflight of its own omits it and takes whatever it locks.
+   */
+  readonly expectedEpoch?: number;
 }
 
 export type MorningBriefChoiceApplication =
   | { readonly kind: "applied"; readonly row: MorningBriefNativeScheduleRow }
+  | { readonly kind: "stale"; readonly row: MorningBriefNativeScheduleRow }
   | { readonly kind: "absent" };
 
 /**
@@ -302,6 +330,12 @@ export async function applyMorningBriefLogicalChoice(
   if (current === undefined) {
     return { kind: "absent" };
   }
+  if (
+    patch.expectedEpoch !== undefined &&
+    patch.expectedEpoch !== current.ownerEpoch
+  ) {
+    return { kind: "stale", row: current };
+  }
 
   const enabled = patch.enabled ?? current.enabled;
   const cronExpression =
@@ -310,59 +344,29 @@ export async function applyMorningBriefLogicalChoice(
       : patch.cronExpression;
   const timezone = patch.timezone ?? current.timezone;
   const enabledChanged = enabled !== current.enabled;
+  // Replacing the canonical Agent or destination thread replaces the execution
+  // owner's identity, so admitted work must not deliver into the old one.
+  const destinationReplaced =
+    (patch.agentId !== undefined && patch.agentId !== current.agentId) ||
+    (patch.chatThreadId !== undefined &&
+      patch.chatThreadId !== current.chatThreadId);
+  const revokes = enabledChanged || destinationReplaced;
 
   const inFlight = await loadUnsettledOccurrence(tx, owner);
 
-  // Only a change of the enabled choice revokes. A schedule or timezone edit is
-  // deliberately not a revocation.
-  const ownerEpoch = enabledChanged
-    ? current.ownerEpoch + 1
-    : current.ownerEpoch;
+  // Only an enabled-choice change or a destination replacement revokes. A
+  // schedule or timezone edit is deliberately not a revocation.
+  const ownerEpoch = revokes ? current.ownerEpoch + 1 : current.ownerEpoch;
 
-  let nextRunAt: Date | null;
-  let scheduleOwner: MorningBriefNativeScheduleRow["scheduleOwner"];
-  if (!enabled) {
-    nextRunAt = null;
-    scheduleOwner = null;
-  } else if (enabledChanged) {
-    // Re-enabling starts from now, never from the revoked slot.
-    nextRunAt = computeNativeNextRunAt({
-      enabled,
-      cronExpression,
-      timezone,
-      from: at,
-    });
-    scheduleOwner =
-      nextRunAt === null ? null : scheduleOwnerForPhase(current.phase);
-  } else if (
-    inFlight !== undefined &&
-    inFlight.ownerEpoch === current.ownerEpoch
-  ) {
-    // The in-flight execution still owns the obligation; leave it to settle.
-    nextRunAt = current.nextRunAt;
-    scheduleOwner = current.scheduleOwner;
-  } else if (current.nextRunAt !== null) {
-    // A future unconsumed slot is already authoritative. Recompute it only
-    // because the recurrence itself may have changed, and never move it
-    // backwards past a slot a worker may already be about to claim.
-    const recomputed = computeNativeNextRunAt({
-      enabled,
-      cronExpression,
-      timezone,
-      from: at,
-    });
-    nextRunAt = recomputed;
-    scheduleOwner = recomputed === null ? null : current.scheduleOwner;
-  } else {
-    nextRunAt = computeNativeNextRunAt({
-      enabled,
-      cronExpression,
-      timezone,
-      from: at,
-    });
-    scheduleOwner =
-      nextRunAt === null ? null : scheduleOwnerForPhase(current.phase);
-  }
+  const { nextRunAt, scheduleOwner } = resolveObligationAfterChoice({
+    current,
+    enabled,
+    cronExpression,
+    timezone,
+    revokes,
+    inFlight,
+    at,
+  });
 
   const [row] = await tx
     .update(morningBriefNativeSchedules)
@@ -391,10 +395,93 @@ export async function applyMorningBriefLogicalChoice(
   return row === undefined ? { kind: "absent" } : { kind: "applied", row };
 }
 
+/**
+ * Where the scheduling obligation stands after a logical-choice write.
+ *
+ * Split out of {@link applyMorningBriefLogicalChoice} so each branch is
+ * readable on its own: a disabled choice owes nothing, a revocation restarts
+ * from now, an in-flight execution keeps the obligation it already holds, and a
+ * future unconsumed slot is recomputed under the edited recurrence.
+ */
+function resolveObligationAfterChoice(args: {
+  readonly current: MorningBriefNativeScheduleRow;
+  readonly enabled: boolean;
+  readonly cronExpression: string | null;
+  readonly timezone: string;
+  readonly revokes: boolean;
+  readonly inFlight: MorningBriefNativeOccurrenceRow | undefined;
+  readonly at: Date;
+}): {
+  readonly nextRunAt: Date | null;
+  readonly scheduleOwner: MorningBriefNativeScheduleRow["scheduleOwner"];
+} {
+  const { current, enabled, cronExpression, timezone, at } = args;
+  if (!enabled) {
+    return { nextRunAt: null, scheduleOwner: null };
+  }
+  const recomputed = computeNativeNextRunAt({
+    enabled,
+    cronExpression,
+    timezone,
+    from: at,
+  });
+  if (args.revokes) {
+    // Re-enabling — or continuing after a replacement — starts from now, never
+    // from the revoked slot.
+    return {
+      nextRunAt: recomputed,
+      scheduleOwner:
+        recomputed === null ? null : scheduleOwnerForPhase(current.phase),
+    };
+  }
+  if (
+    args.inFlight !== undefined &&
+    args.inFlight.ownerEpoch === current.ownerEpoch
+  ) {
+    // The in-flight execution still owns the obligation; leave it to settle.
+    return {
+      nextRunAt: current.nextRunAt,
+      scheduleOwner: current.scheduleOwner,
+    };
+  }
+  if (current.nextRunAt !== null) {
+    // A future unconsumed slot is already authoritative, but the recurrence
+    // itself may have changed, so it is recomputed under the current schedule.
+    return {
+      nextRunAt: recomputed,
+      scheduleOwner: recomputed === null ? null : current.scheduleOwner,
+    };
+  }
+  return {
+    nextRunAt: recomputed,
+    scheduleOwner:
+      recomputed === null ? null : scheduleOwnerForPhase(current.phase),
+  };
+}
+
+/**
+ * Which implementation owns a successor obligation while in this phase.
+ *
+ * `draining` still belongs to legacy: the transfer has not committed, so legacy
+ * must keep settling. `rollback-draining` still belongs to native for the same
+ * reason in the other direction — new native claims are already closed (claim
+ * requires `phase === "native"`), but the obligation cannot be handed to legacy
+ * until the rollback drain commits. Assigning legacy in both drain phases would
+ * let legacy claim a slot native still owes.
+ */
 function scheduleOwnerForPhase(
   phase: MorningBriefExecutionPhase,
 ): MorningBriefNativeScheduleRow["scheduleOwner"] {
-  return phase === "native" ? "native" : "legacy";
+  switch (phase) {
+    case "legacy":
+    case "draining": {
+      return "legacy";
+    }
+    case "native":
+    case "rollback-draining": {
+      return "native";
+    }
+  }
 }
 
 /** The unsettled occurrence a member currently owes, if any. */
@@ -491,6 +578,55 @@ export type MorningBriefTransitionResult =
  * legacy journal, queue, Run and outbox reads, which are not this module's
  * concern. An unproven drain stays draining and records why.
  */
+type PhaseCommit = (
+  next: MorningBriefExecutionPhase,
+  patch: Partial<typeof morningBriefNativeSchedules.$inferInsert>,
+) => Promise<MorningBriefNativeScheduleRow[]>;
+
+/**
+ * Commit a drain's transfer, or hold it with a bounded reason.
+ *
+ * Both directions install exactly one successor obligation, strictly in the
+ * future, from the CURRENT logical preference, timezone and cron — never an old
+ * copy and never the original enabled bit. The epoch bump is what stops an old
+ * completion or a late callback from writing into the new owner's state.
+ */
+async function commitTransfer(
+  settled: PhaseCommit,
+  current: MorningBriefNativeScheduleRow,
+  args: {
+    readonly drain:
+      | { readonly kind: "proven" }
+      | { readonly kind: "unresolved"; readonly reason: string };
+    readonly at: Date;
+  },
+  to: "native" | "legacy",
+): Promise<MorningBriefTransitionResult> {
+  if (args.drain.kind !== "proven") {
+    const [held] = await settled(current.phase, {
+      drainUnresolvedReason: args.drain.reason,
+    });
+    return held === undefined
+      ? { kind: "absent" }
+      : { kind: "held", row: held, reason: args.drain.reason };
+  }
+  const nextRunAt = computeNativeNextRunAt({
+    enabled: current.enabled,
+    cronExpression: current.cronExpression,
+    timezone: current.timezone,
+    from: args.at,
+  });
+  const [row] = await settled(to, {
+    ownerEpoch: current.ownerEpoch + 1,
+    nextRunAt,
+    scheduleOwner: nextRunAt === null ? null : to,
+    drainingEpoch: null,
+    drainDeadlineAt: null,
+    drainUnresolvedReason: null,
+  });
+  return row === undefined ? { kind: "absent" } : { kind: "transitioned", row };
+}
+
 export async function advanceMorningBriefExecutionPhase(
   tx: MorningBriefNativeWriter,
   owner: MorningBriefMemberIdentity,
@@ -542,33 +678,7 @@ export async function advanceMorningBriefExecutionPhase(
   }
 
   if (phase === "draining" && target === "native") {
-    if (args.drain.kind !== "proven") {
-      const [row] = await settled("draining", {
-        drainUnresolvedReason: args.drain.reason,
-      });
-      return row === undefined
-        ? { kind: "absent" }
-        : { kind: "held", row, reason: args.drain.reason };
-    }
-    // The transfer installs exactly one native obligation, strictly in the
-    // future under the current clock and the current recurrence.
-    const nextRunAt = computeNativeNextRunAt({
-      enabled: current.enabled,
-      cronExpression: current.cronExpression,
-      timezone: current.timezone,
-      from: at,
-    });
-    const [row] = await settled("native", {
-      ownerEpoch: current.ownerEpoch + 1,
-      nextRunAt,
-      scheduleOwner: nextRunAt === null ? null : "native",
-      drainingEpoch: null,
-      drainDeadlineAt: null,
-      drainUnresolvedReason: null,
-    });
-    return row === undefined
-      ? { kind: "absent" }
-      : { kind: "transitioned", row };
+    return await commitTransfer(settled, current, args, "native");
   }
 
   if (phase === "native" && target === "legacy") {
@@ -586,34 +696,7 @@ export async function advanceMorningBriefExecutionPhase(
   }
 
   if (phase === "rollback-draining" && target === "legacy") {
-    if (args.drain.kind !== "proven") {
-      const [row] = await settled("rollback-draining", {
-        drainUnresolvedReason: args.drain.reason,
-      });
-      return row === undefined
-        ? { kind: "absent" }
-        : { kind: "held", row, reason: args.drain.reason };
-    }
-    // Legacy is restored from the CURRENT logical preference and timezone and
-    // the next future unconsumed slot — never an old copy or the original
-    // enabled bit.
-    const nextRunAt = computeNativeNextRunAt({
-      enabled: current.enabled,
-      cronExpression: current.cronExpression,
-      timezone: current.timezone,
-      from: at,
-    });
-    const [row] = await settled("legacy", {
-      ownerEpoch: current.ownerEpoch + 1,
-      nextRunAt,
-      scheduleOwner: nextRunAt === null ? null : "legacy",
-      drainingEpoch: null,
-      drainDeadlineAt: null,
-      drainUnresolvedReason: null,
-    });
-    return row === undefined
-      ? { kind: "absent" }
-      : { kind: "transitioned", row };
+    return await commitTransfer(settled, current, args, "legacy");
   }
 
   // A flip back to the phase's own steady target only records the intent.
@@ -757,11 +840,16 @@ export async function settleMorningBriefNativeOccurrence(
     readonly outcome: MorningBriefNativeOutcome;
     readonly deliveryPending: boolean;
     readonly generationAttemptId?: string | null;
+    /** The epoch that admitted this claim. */
+    readonly expectedEpoch: number;
+    /** The exact lease this claimant still holds. */
+    readonly leaseToken: string;
     readonly at: Date;
   },
 ): Promise<
   | { readonly kind: "settled"; readonly nextRunAt: Date | null }
   | { readonly kind: "already-settled" }
+  | { readonly kind: "stale-claimant" }
   | { readonly kind: "absent" }
 > {
   const schedule = await lockMorningBriefNativeSchedule(tx, owner);
@@ -791,11 +879,24 @@ export async function settleMorningBriefNativeOccurrence(
         // Exactly one settlement per slot. A delivery retry re-entering here
         // matches nothing and therefore cannot advance the schedule again.
         sql`${morningBriefNativeOccurrences.settledAt} IS NULL`,
+        // And only by the exact claimant, under the exact epoch that admitted
+        // it. A worker whose lease was reclaimed, or whose epoch was revoked,
+        // returns to find nothing to settle: its observations are still
+        // reconcilable evidence, but it has no authority to schedule.
+        eq(morningBriefNativeOccurrences.ownerEpoch, args.expectedEpoch),
+        eq(morningBriefNativeOccurrences.leaseToken, args.leaseToken),
       ),
     )
     .returning();
   if (occurrence === undefined) {
-    return { kind: "already-settled" };
+    return (await claimantStillHolds(tx, owner, args))
+      ? { kind: "already-settled" }
+      : { kind: "stale-claimant" };
+  }
+  if (schedule.ownerEpoch !== args.expectedEpoch) {
+    // The slot is closed as evidence, but a revoked epoch never installs a
+    // successor: the revoking writer already assigned or cleared it.
+    return { kind: "settled", nextRunAt: schedule.nextRunAt };
   }
 
   const nextRunAt =
@@ -840,6 +941,42 @@ export async function settleMorningBriefNativeOccurrence(
 }
 
 /**
+ * Whether the row exists and was settled by this same claimant/epoch.
+ *
+ * Used only to report `already-settled` — an idempotent replay of the same
+ * worker — separately from `stale-claimant`, which is a fenced-out return.
+ */
+async function claimantStillHolds(
+  tx: MorningBriefNativeWriter,
+  owner: MorningBriefMemberIdentity,
+  args: {
+    readonly scheduledFor: Date;
+    readonly expectedEpoch: number;
+    readonly leaseToken: string;
+  },
+): Promise<boolean> {
+  const [row] = await tx
+    .select({
+      ownerEpoch: morningBriefNativeOccurrences.ownerEpoch,
+      settledAt: morningBriefNativeOccurrences.settledAt,
+    })
+    .from(morningBriefNativeOccurrences)
+    .where(
+      and(
+        eq(morningBriefNativeOccurrences.orgId, owner.orgId),
+        eq(morningBriefNativeOccurrences.userId, owner.userId),
+        eq(morningBriefNativeOccurrences.scheduledFor, args.scheduledFor),
+      ),
+    )
+    .limit(1);
+  return (
+    row !== undefined &&
+    row.settledAt !== null &&
+    row.ownerEpoch === args.expectedEpoch
+  );
+}
+
+/**
  * Record one finite pre-reservation configuration deferral.
  *
  * Returns `exhausted` once the bounded policy is used up, which is the caller's
@@ -852,11 +989,14 @@ export async function deferMorningBriefNativeOccurrence(
   args: {
     readonly scheduledFor: Date;
     readonly reason: string;
+    readonly expectedEpoch: number;
+    readonly leaseToken: string;
     readonly at: Date;
   },
 ): Promise<
   | { readonly kind: "deferred"; readonly until: Date }
   | { readonly kind: "exhausted" }
+  | { readonly kind: "stale-claimant" }
 > {
   const [row] = await tx
     .select()
@@ -870,10 +1010,16 @@ export async function deferMorningBriefNativeOccurrence(
     )
     .limit(1)
     .for("update");
+  if (row === undefined) {
+    return { kind: "stale-claimant" };
+  }
   if (
-    row === undefined ||
-    row.deferAttempt >= NATIVE_CONFIGURATION_DEFER_LIMIT
+    row.ownerEpoch !== args.expectedEpoch ||
+    row.leaseToken !== args.leaseToken
   ) {
+    return { kind: "stale-claimant" };
+  }
+  if (row.deferAttempt >= NATIVE_CONFIGURATION_DEFER_LIMIT) {
     return { kind: "exhausted" };
   }
   const until = new Date(args.at.getTime() + NATIVE_CONFIGURATION_DEFER_MS);
@@ -897,6 +1043,108 @@ export async function deferMorningBriefNativeOccurrence(
       ),
     );
   return { kind: "deferred", until };
+}
+
+/**
+ * Re-lease an occurrence a previous tick left unsettled.
+ *
+ * This is the recovery half of the claim protocol, and it is what makes the
+ * finite deferral and a crashed tick actually recoverable: the claim already
+ * took the schedule obligation away, so nothing would rediscover the slot
+ * through {@link loadDueNativeOwners}. The anchor, timezone and admitting epoch
+ * are reused exactly — a resumed slot is the *same* logical occurrence, so a
+ * reserved `generation_attempt_id` still fences a second model request.
+ *
+ * It refuses when the member's choice, phase, membership or epoch moved, which
+ * is how a revoked slot stops being resumable instead of silently re-running.
+ */
+export async function resumeMorningBriefNativeOccurrence(
+  tx: MorningBriefNativeWriter,
+  owner: MorningBriefMemberIdentity,
+  args: {
+    readonly scheduledFor: Date;
+    readonly now: Date;
+    readonly leaseToken: string;
+    readonly membershipId: string;
+  },
+): Promise<MorningBriefNativeClaim> {
+  const schedule = await lockMorningBriefNativeSchedule(tx, owner);
+  if (schedule === undefined) {
+    return { kind: "inadmissible", reason: "absent" };
+  }
+  if (schedule.phase !== "native") {
+    return { kind: "inadmissible", reason: `phase:${schedule.phase}` };
+  }
+  if (!schedule.enabled) {
+    return { kind: "inadmissible", reason: "disabled" };
+  }
+  if (schedule.membershipId !== args.membershipId) {
+    return { kind: "inadmissible", reason: "membership-generation" };
+  }
+
+  const leaseExpiresAt = new Date(
+    args.now.getTime() + NATIVE_OCCURRENCE_LEASE_MS,
+  );
+  const [occurrence] = await tx
+    .update(morningBriefNativeOccurrences)
+    .set({
+      state: "claimed",
+      leaseToken: args.leaseToken,
+      leaseExpiresAt,
+      attempt: sql`${morningBriefNativeOccurrences.attempt} + 1`,
+      updatedAt: args.now,
+    })
+    .where(
+      and(
+        eq(morningBriefNativeOccurrences.orgId, owner.orgId),
+        eq(morningBriefNativeOccurrences.userId, owner.userId),
+        eq(morningBriefNativeOccurrences.scheduledFor, args.scheduledFor),
+        eq(morningBriefNativeOccurrences.ownerEpoch, schedule.ownerEpoch),
+        sql`${morningBriefNativeOccurrences.settledAt} IS NULL`,
+        // Either its deferral is due, or its lease lapsed. A live lease held by
+        // another tick is never taken over here.
+        sql`(
+          (${morningBriefNativeOccurrences.deferredUntil} IS NOT NULL
+            AND ${morningBriefNativeOccurrences.deferredUntil} <= ${args.now})
+          OR ${morningBriefNativeOccurrences.leaseExpiresAt} IS NULL
+          OR ${morningBriefNativeOccurrences.leaseExpiresAt} < ${args.now}
+        )`,
+      ),
+    )
+    .returning();
+  return occurrence === undefined
+    ? { kind: "inadmissible", reason: "held-by-another-tick" }
+    : { kind: "claimed", occurrence, schedule };
+}
+
+/**
+ * Unsettled slots a later tick must resume.
+ *
+ * These are the occurrences whose schedule obligation is already held by the
+ * occurrence itself: a finite deferral that came due, or a claim whose tick
+ * died before it could settle. Without this reader an enabled owner would sit
+ * with `next_run_at = NULL` forever.
+ */
+export async function loadResumableOccurrences(
+  db: MorningBriefNativeReader,
+  args: { readonly now: Date; readonly limit: number },
+): Promise<readonly MorningBriefNativeOccurrenceRow[]> {
+  return await db
+    .select()
+    .from(morningBriefNativeOccurrences)
+    .where(
+      and(
+        sql`${morningBriefNativeOccurrences.settledAt} IS NULL`,
+        sql`(
+          (${morningBriefNativeOccurrences.deferredUntil} IS NOT NULL
+            AND ${morningBriefNativeOccurrences.deferredUntil} <= ${args.now})
+          OR ${morningBriefNativeOccurrences.leaseExpiresAt} IS NULL
+          OR ${morningBriefNativeOccurrences.leaseExpiresAt} < ${args.now}
+        )`,
+      ),
+    )
+    .orderBy(morningBriefNativeOccurrences.scheduledFor)
+    .limit(args.limit);
 }
 
 /**
@@ -959,6 +1207,34 @@ export async function clearMorningBriefDeliveryObligation(
         eq(morningBriefNativeOccurrences.scheduledFor, args.scheduledFor),
       ),
     );
+}
+
+/**
+ * Members whose execution ownership may need to move.
+ *
+ * It is every row that is mid-transition — both draining phases — plus every
+ * steady-state row, so the tick can both *initiate* a cutover for a member the
+ * switch now selects and *continue* one it already started. `drain_deadline_at`
+ * is only reporting metadata; it never decides whether a phase may advance.
+ */
+export async function loadTransitionCandidates(
+  db: MorningBriefNativeReader,
+  args: { readonly now: Date; readonly limit: number },
+): Promise<readonly MorningBriefNativeScheduleRow[]> {
+  return await db
+    .select()
+    .from(morningBriefNativeSchedules)
+    .where(
+      // A steady-state row whose stored target already matches its phase is
+      // skipped: only a mismatch, or an in-progress drain, is actionable.
+      sql`(
+        ${morningBriefNativeSchedules.phase} IN ('draining', 'rollback-draining')
+        OR (${morningBriefNativeSchedules.phase} = 'legacy' AND ${morningBriefNativeSchedules.target} = 'native')
+        OR (${morningBriefNativeSchedules.phase} = 'native' AND ${morningBriefNativeSchedules.target} = 'legacy')
+      )`,
+    )
+    .orderBy(morningBriefNativeSchedules.updatedAt)
+    .limit(args.limit);
 }
 
 /** Rows whose drain deadline lapsed, for bounded operational reporting only. */

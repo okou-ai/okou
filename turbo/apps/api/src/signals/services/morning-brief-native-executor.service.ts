@@ -1,25 +1,35 @@
 import type { CronExecuteMorningBriefsResponse } from "@okouai/api-contracts/contracts/cron";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { command } from "ccstate";
+import { command, type Setter } from "ccstate";
 
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { writeDb$, type ReadonlyDb } from "../external/db";
+import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import type { MorningBriefMemberIdentity } from "./morning-brief-enrollment-data.service";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
+import { currentMembershipId$ } from "./morning-brief-collection-executor.service";
 import {
   advanceMorningBriefExecutionPhase,
   claimMorningBriefNativeOccurrence,
   clearMorningBriefDeliveryObligation,
   deferMorningBriefNativeOccurrence,
-  loadCurrentMembershipGeneration,
   loadDueNativeOwners,
   loadPendingDeliveryOccurrences,
-  loadUnresolvedDrains,
+  loadResumableOccurrences,
+  loadTransitionCandidates,
+  resumeMorningBriefNativeOccurrence,
   settleMorningBriefNativeOccurrence,
+  type MorningBriefNativeClaim,
   type MorningBriefNativeOccurrenceRow,
 } from "./morning-brief-native-schedule.service";
+import type { MorningBriefExecutionTarget } from "@okouai/db/schema/morning-brief-native-schedule";
+
+/** The write-capable database handle one tick holds. */
+type TickDb = Db;
+
+/** The ccstate setter the tick hands to its per-slot helpers. */
+type TickSetter = Setter;
 
 const log = logger("MorningBriefNativeCron");
 
@@ -119,9 +129,7 @@ const advanceMemberTransition$ = command(
     args: {
       readonly owner: MorningBriefMemberIdentity;
       readonly target: "legacy" | "native";
-      readonly drain:
-        | { readonly kind: "proven" }
-        | { readonly kind: "unresolved"; readonly reason: string };
+      readonly drain: DrainVerdict;
       readonly at: Date;
     },
   ): Promise<"transitioned" | "held" | "unchanged"> => {
@@ -182,25 +190,33 @@ function outcomeFor(execution: NativeSlotExecution): {
   readonly deliveryPending: boolean;
 } {
   switch (execution.kind) {
-    case "empty-skip":
+    case "empty-skip": {
       return { outcome: "empty-skip", deliveryPending: false };
-    case "model-skip":
+    }
+    case "model-skip": {
       return { outcome: "model-skip", deliveryPending: false };
-    case "delivered":
+    }
+    case "delivered": {
       // The accepted result's delivery work is discoverable before the slot is
       // marked settled, so the next occurrence may become due while this
       // result's delivery recovery is still pending.
       return { outcome: "delivered", deliveryPending: true };
-    case "collection-failed":
+    }
+    case "collection-failed": {
       return { outcome: "collection-failed", deliveryPending: false };
-    case "generation-failed":
+    }
+    case "generation-failed": {
       return { outcome: "generation-failed", deliveryPending: false };
-    case "generation-unknown":
+    }
+    case "generation-unknown": {
       return { outcome: "generation-unknown", deliveryPending: false };
-    case "revoked":
+    }
+    case "revoked": {
       return { outcome: "revoked", deliveryPending: false };
-    case "defer":
+    }
+    case "defer": {
       return { outcome: "not-configured", deliveryPending: false };
+    }
   }
 }
 
@@ -235,10 +251,207 @@ export interface NativeTickDependencies {
   readonly legacyDrain: (
     owner: MorningBriefMemberIdentity,
     signal: AbortSignal,
-  ) => Promise<
-    | { readonly kind: "proven" }
-    | { readonly kind: "unresolved"; readonly reason: string }
-  >;
+  ) => Promise<DrainVerdict>;
+  /**
+   * The rollback drain predicate.
+   *
+   * Legacy's journal says nothing about native work, so the two directions need
+   * different evidence and must not share one predicate.
+   */
+  readonly nativeDrain: (
+    owner: MorningBriefMemberIdentity,
+    signal: AbortSignal,
+  ) => Promise<DrainVerdict>;
+}
+
+export type DrainVerdict =
+  | { readonly kind: "proven" }
+  | { readonly kind: "unresolved"; readonly reason: string };
+
+/**
+ * Resolve every pending delivery obligation this tick can reach.
+ *
+ * Returns true when the budget ran out mid-pass. The slots involved are already
+ * settled, so this never competes with, or wedges, the future scheduler.
+ */
+async function runDeliveryRecoveryPass(args: {
+  readonly db: TickDb;
+  readonly deps: NativeTickDependencies;
+  readonly counters: TickCounters;
+  readonly signal: AbortSignal;
+  readonly overBudget: () => boolean;
+}): Promise<boolean> {
+  const { db, deps, counters, signal } = args;
+  for (const occurrence of await loadPendingDeliveryOccurrences(db, {
+    limit: DELIVERY_RECOVERY_BATCH,
+  })) {
+    if (args.overBudget()) {
+      return true;
+    }
+    const owner = { orgId: occurrence.orgId, userId: occurrence.userId };
+    const resolution = await deps.delivery.resolve(owner, occurrence, signal);
+    if (resolution === "pending") {
+      continue;
+    }
+    await db.transaction(async (tx) => {
+      await clearMorningBriefDeliveryObligation(tx, owner, {
+        scheduledFor: occurrence.scheduledFor,
+        at: nowDate(),
+      });
+    });
+    counters.deliveriesRecovered += 1;
+    if (resolution === "terminal-failure") {
+      log.warn("Morning Brief delivery exhausted its retention", {
+        orgId: occurrence.orgId,
+        scheduledFor: occurrence.scheduledFor.toISOString(),
+      });
+    }
+  }
+  return false;
+}
+
+/**
+ * Advance cutover and rollback for every member whose ownership may need to
+ * move. The target is the switch's CURRENT intent, re-read per member, not the
+ * intent persisted by an older flip.
+ */
+async function runTransitionPass(args: {
+  readonly db: TickDb;
+  readonly deps: NativeTickDependencies;
+  readonly counters: TickCounters;
+  readonly signal: AbortSignal;
+  readonly overBudget: () => boolean;
+  readonly set: TickSetter;
+}): Promise<boolean> {
+  for (const row of await loadTransitionCandidates(args.db, {
+    now: nowDate(),
+    limit: DRAIN_REPORT_BATCH,
+  })) {
+    if (args.overBudget()) {
+      return true;
+    }
+    const owner = { orgId: row.orgId, userId: row.userId };
+    const target: MorningBriefExecutionTarget = (await nativeAdmissionAllowed(
+      args.db,
+      owner,
+    ))
+      ? "native"
+      : "legacy";
+    await advanceOneTransition(args.set, args.deps, {
+      owner,
+      target,
+      counters: args.counters,
+      signal: args.signal,
+    });
+  }
+  return false;
+}
+
+/** One slot's work: claim/resume, execute outside a transaction, settle once. */
+async function runOneSlot(args: {
+  readonly db: TickDb;
+  readonly deps: NativeTickDependencies;
+  readonly claim: Extract<MorningBriefNativeClaim, { kind: "claimed" }>;
+  readonly counters: TickCounters;
+  readonly signal: AbortSignal;
+}): Promise<void> {
+  const { db, deps, claim, counters, signal } = args;
+  const owner = {
+    orgId: claim.occurrence.orgId,
+    userId: claim.occurrence.userId,
+  };
+  const leaseToken = claim.occurrence.leaseToken;
+  const expectedEpoch = claim.occurrence.ownerEpoch;
+  if (leaseToken === null) {
+    return;
+  }
+
+  // The provider work runs outside every transaction, under the tick's own
+  // deadline so a slow source cannot outlive the request that admitted it.
+  const execution = await deps.executor.execute(
+    owner,
+    claim.occurrence,
+    signal,
+  );
+
+  if (execution.kind === "defer") {
+    const deferral = await db.transaction(async (tx) => {
+      return await deferMorningBriefNativeOccurrence(tx, owner, {
+        scheduledFor: claim.occurrence.scheduledFor,
+        reason: execution.reason,
+        expectedEpoch,
+        leaseToken,
+        at: nowDate(),
+      });
+    });
+    if (deferral.kind === "deferred") {
+      counters.deferred += 1;
+      return;
+    }
+    if (deferral.kind === "stale-claimant") {
+      // Reclaimed or revoked while this worker was away. Its observation is
+      // still evidence, but it has no authority to schedule.
+      return;
+    }
+    // Exhausted: settle as not configured and schedule the next occurrence
+    // rather than disabling the member's Morning Brief.
+  }
+
+  const { outcome, deliveryPending } = outcomeFor(execution);
+  const settlement = await db.transaction(async (tx) => {
+    return await settleMorningBriefNativeOccurrence(tx, owner, {
+      scheduledFor: claim.occurrence.scheduledFor,
+      outcome,
+      deliveryPending,
+      generationAttemptId:
+        "generationAttemptId" in execution
+          ? execution.generationAttemptId
+          : undefined,
+      expectedEpoch,
+      leaseToken,
+      at: nowDate(),
+    });
+  });
+  if (settlement.kind === "settled") {
+    counters.settled += 1;
+  }
+}
+
+/** Advance one member's transition toward the switch's current intent. */
+async function advanceOneTransition(
+  set: TickSetter,
+  deps: NativeTickDependencies,
+  args: {
+    readonly owner: MorningBriefMemberIdentity;
+    readonly target: MorningBriefExecutionTarget;
+    readonly counters: TickCounters;
+    readonly signal: AbortSignal;
+  },
+): Promise<void> {
+  // The drain evidence must match the direction being proven: legacy's journal
+  // says nothing about native work and vice versa.
+  const drain =
+    args.target === "native"
+      ? await deps.legacyDrain(args.owner, args.signal)
+      : await deps.nativeDrain(args.owner, args.signal);
+  const outcome = await set(advanceMemberTransition$, {
+    owner: args.owner,
+    target: args.target,
+    drain,
+    at: nowDate(),
+  });
+  if (outcome === "transitioned") {
+    args.counters.transitions += 1;
+    return;
+  }
+  if (outcome === "held") {
+    args.counters.drainsHeld += 1;
+    log.warn("Morning Brief drain still unresolved", {
+      orgId: args.owner.orgId,
+      target: args.target,
+      reason: drain.kind === "unresolved" ? drain.reason : "unknown",
+    });
+  }
 }
 
 /**
@@ -247,6 +460,10 @@ export interface NativeTickDependencies {
  * Every step re-reads the fences it depends on. A member whose choice, epoch or
  * membership changed between discovery and execution is simply not admitted,
  * which is why a disabled or revoked owner cannot reach the provider.
+ *
+ * The tick composes an absolute deadline into the signal it passes downstream,
+ * so a long provider read is cancelled by the same budget that stops the loop
+ * rather than being noticed only after it returns.
  */
 export const executeNativeMorningBriefTick$ = command(
   async (
@@ -257,73 +474,96 @@ export const executeNativeMorningBriefTick$ = command(
     const db = set(writeDb$);
     const counters = emptyCounters();
     const startedAt = nowDate();
+    const deadline = AbortSignal.any([
+      signal,
+      AbortSignal.timeout(TICK_BUDGET_MS),
+    ]);
     const overBudget = (): boolean => {
-      return nowDate().getTime() - startedAt.getTime() >= TICK_BUDGET_MS;
+      return (
+        deadline.aborted ||
+        nowDate().getTime() - startedAt.getTime() >= TICK_BUDGET_MS
+      );
+    };
+    const exhausted = (): CronExecuteMorningBriefsResponse => {
+      return { ...counters, budgetExhausted: true };
     };
 
-    // 1. Delivery recovery first. A pending receipt is already settled work, so
-    //    resolving it never competes with, or wedges, the future scheduler.
-    const pending = await loadPendingDeliveryOccurrences(db, {
-      limit: DELIVERY_RECOVERY_BATCH,
-    });
-    for (const occurrence of pending) {
-      if (overBudget()) {
-        return { ...counters, budgetExhausted: true };
-      }
-      signal.throwIfAborted();
-      const owner = { orgId: occurrence.orgId, userId: occurrence.userId };
-      const resolution = await deps.delivery.resolve(owner, occurrence, signal);
-      if (resolution === "pending") {
-        continue;
-      }
-      await db.transaction(async (tx) => {
-        await clearMorningBriefDeliveryObligation(tx, owner, {
-          scheduledFor: occurrence.scheduledFor,
-          at: nowDate(),
-        });
-      });
-      counters.deliveriesRecovered += 1;
-      if (resolution === "terminal-failure") {
-        log.warn("Morning Brief delivery exhausted its retention", {
-          orgId: occurrence.orgId,
-          scheduledFor: occurrence.scheduledFor.toISOString(),
-        });
-      }
+    if (
+      await runDeliveryRecoveryPass({
+        db,
+        deps,
+        counters,
+        signal: deadline,
+        overBudget,
+      })
+    ) {
+      return exhausted();
     }
 
-    // 2. Due native owners.
-    const due = await loadDueNativeOwners(db, {
+    // 2. Resume slots a previous tick left unsettled. The claim already took
+    //    the schedule obligation, so nothing else would rediscover them.
+    for (const stale of await loadResumableOccurrences(db, {
       now: nowDate(),
       limit: DUE_OWNER_BATCH,
-    });
-    for (const schedule of due) {
+    })) {
       if (overBudget()) {
-        return { ...counters, budgetExhausted: true };
+        return exhausted();
       }
-      signal.throwIfAborted();
+      const owner = { orgId: stale.orgId, userId: stale.userId };
+      if (!(await nativeAdmissionAllowed(db, owner))) {
+        continue;
+      }
+      const membershipId = await set(currentMembershipId$, owner, deadline);
+      if (membershipId === null) {
+        continue;
+      }
+      const leaseToken = crypto.randomUUID();
+      const resumed = await db.transaction(async (tx) => {
+        return await resumeMorningBriefNativeOccurrence(tx, owner, {
+          scheduledFor: stale.scheduledFor,
+          now: nowDate(),
+          leaseToken,
+          membershipId,
+        });
+      });
+      if (resumed.kind !== "claimed") {
+        continue;
+      }
+      counters.claimed += 1;
+      await runOneSlot({
+        db,
+        deps,
+        claim: resumed,
+        counters,
+        signal: deadline,
+      });
+    }
+
+    // 3. Due native owners.
+    for (const schedule of await loadDueNativeOwners(db, {
+      now: nowDate(),
+      limit: DUE_OWNER_BATCH,
+    })) {
+      if (overBudget()) {
+        return exhausted();
+      }
       counters.examined += 1;
       const owner = { orgId: schedule.orgId, userId: schedule.userId };
 
       // The switch gates new admission only. It never rewrites a durable
       // obligation, and a fresh default-off owner makes zero provider calls.
       if (!(await nativeAdmissionAllowed(db, owner))) {
-        const drain = await deps.legacyDrain(owner, signal);
-        const outcome = await set(advanceMemberTransition$, {
+        await advanceOneTransition(set, deps, {
           owner,
           target: "legacy",
-          drain,
-          at: nowDate(),
+          counters,
+          signal: deadline,
         });
-        if (outcome === "transitioned") {
-          counters.transitions += 1;
-        } else if (outcome === "held") {
-          counters.drainsHeld += 1;
-        }
         continue;
       }
 
       // Fresh membership generation, read at the admission boundary.
-      const membershipId = await loadCurrentMembershipGeneration(db, owner);
+      const membershipId = await set(currentMembershipId$, owner, deadline);
       if (membershipId === null) {
         continue;
       }
@@ -340,77 +580,26 @@ export const executeNativeMorningBriefTick$ = command(
         continue;
       }
       counters.claimed += 1;
-
-      // The provider work runs outside every transaction.
-      const execution = await deps.executor.execute(
-        owner,
-        claim.occurrence,
-        signal,
-      );
-
-      if (execution.kind === "defer") {
-        const deferral = await db.transaction(async (tx) => {
-          return await deferMorningBriefNativeOccurrence(tx, owner, {
-            scheduledFor: claim.occurrence.scheduledFor,
-            reason: execution.reason,
-            at: nowDate(),
-          });
-        });
-        if (deferral.kind === "deferred") {
-          counters.deferred += 1;
-          continue;
-        }
-        // Exhausted: settle as not configured and schedule the next occurrence
-        // rather than disabling the member's Morning Brief.
-      }
-
-      const { outcome, deliveryPending } = outcomeFor(execution);
-      const settlement = await db.transaction(async (tx) => {
-        return await settleMorningBriefNativeOccurrence(tx, owner, {
-          scheduledFor: claim.occurrence.scheduledFor,
-          outcome,
-          deliveryPending,
-          generationAttemptId:
-            "generationAttemptId" in execution
-              ? execution.generationAttemptId
-              : undefined,
-          at: nowDate(),
-        });
+      await runOneSlot({
+        db,
+        deps,
+        claim,
+        counters,
+        signal: deadline,
       });
-      if (settlement.kind === "settled") {
-        counters.settled += 1;
-      }
     }
 
-    // 3. Cutover progress for members the switch now selects but who are still
-    //    on legacy or mid-drain.
-    const held = await loadUnresolvedDrains(db, {
-      now: nowDate(),
-      limit: DRAIN_REPORT_BATCH,
-    });
-    for (const row of held) {
-      if (overBudget()) {
-        return { ...counters, budgetExhausted: true };
-      }
-      signal.throwIfAborted();
-      const owner = { orgId: row.orgId, userId: row.userId };
-      const drain = await deps.legacyDrain(owner, signal);
-      const outcome = await set(advanceMemberTransition$, {
-        owner,
-        target: row.target,
-        drain,
-        at: nowDate(),
-      });
-      if (outcome === "transitioned") {
-        counters.transitions += 1;
-      } else if (outcome === "held") {
-        counters.drainsHeld += 1;
-        log.warn("Morning Brief drain still unresolved", {
-          orgId: row.orgId,
-          phase: row.phase,
-          reason: drain.kind === "unresolved" ? drain.reason : "unknown",
-        });
-      }
+    if (
+      await runTransitionPass({
+        db,
+        deps,
+        counters,
+        signal: deadline,
+        overBudget,
+        set,
+      })
+    ) {
+      return exhausted();
     }
 
     return { ...counters, budgetExhausted: false };

@@ -22,10 +22,7 @@ export type MorningBriefScheduleClaimQueueDisposition = "queued" | "claimed";
 
 /** Whether this occurrence already advanced the schedule. */
 export type MorningBriefScheduleClaimSettlement =
-  | "unsettled"
-  | "completed"
-  | "failed"
-  | "pre_run_failure";
+  "unsettled" | "completed" | "failed" | "pre_run_failure";
 
 /**
  * Content-free execution journal for the legacy Morning Brief schedule.

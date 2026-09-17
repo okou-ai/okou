@@ -95,11 +95,20 @@ export type MorningBriefDeliveryResult =
       readonly reason: MorningBriefDeliveryRejection;
     };
 
+/** Which purpose's result a delivery may consume. */
+export type MorningBriefDeliveryPurpose =
+  (typeof morningBriefDeliveries.$inferSelect)["executionPurpose"];
+
 export interface MorningBriefDeliveryRequest {
   readonly orgId: string;
   readonly userId: string;
-  /** The opaque attempt the generation preview returned. Never an owner. */
+  /** The opaque attempt the generation returned. Never an owner. */
   readonly resultAttemptId: string;
+  /**
+   * Which purpose's result this call may consume. Defaults to `preview` so the
+   * operator endpoint is unchanged; the native scheduler passes `production`.
+   */
+  readonly purpose?: MorningBriefDeliveryPurpose;
 }
 
 function resultDigest(markdown: string): string {
@@ -325,6 +334,7 @@ async function loadDeliverableResult(
     readonly orgId: string;
     readonly userId: string;
     readonly resultAttemptId: string;
+    readonly purpose: MorningBriefDeliveryPurpose;
     readonly at: Date;
   },
 ): Promise<
@@ -536,6 +546,7 @@ export const deliverMorningBriefResult$ = command(
   ): Promise<MorningBriefDeliveryResult> => {
     const db = set(writeDb$);
     const owner = { orgId: request.orgId, userId: request.userId };
+    const purpose: MorningBriefDeliveryPurpose = request.purpose ?? "preview";
 
     // The occurrence this reference belongs to, read before any lock is held.
     // It carries no authority of its own: everything below re-derives that.
@@ -640,6 +651,7 @@ export const deliverMorningBriefResult$ = command(
           reason: "morning-brief-unavailable" as const,
         };
       }
+      const { destinationWorkflowId, destinationAgentId } = destination;
 
       const [installation] = await tx
         .select({ name: workflows.name })

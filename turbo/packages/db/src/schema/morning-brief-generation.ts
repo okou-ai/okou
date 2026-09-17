@@ -51,7 +51,10 @@ export const MORNING_BRIEF_GENERATION_RESULT_SCHEMA_VERSION = 1;
  * production occurrence. Purpose is recorded on the row rather than keyed into
  * it, which keeps one occurrence to one generation.
  */
-export const MORNING_BRIEF_GENERATION_PURPOSES = ["preview"] as const;
+export const MORNING_BRIEF_GENERATION_PURPOSES = [
+  "preview",
+  "production",
+] as const;
 
 /**
  * Where one generation stopped.

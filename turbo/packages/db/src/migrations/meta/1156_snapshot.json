@@ -1,5 +1,5 @@
 {
-  "id": "845328ad-283e-497f-ab1b-a61ad1d3f37a",
+  "id": "f989d78f-dc71-4070-89a1-d791dcab64d5",
   "prevId": "2549a437-fcc5-4f70-87fc-14fce8985316",
   "version": "7",
   "dialect": "postgresql",
@@ -20191,34 +20191,6 @@
         }
       },
       "foreignKeys": {
-        "fk_morning_brief_native_schedules_member": {
-          "name": "fk_morning_brief_native_schedules_member",
-          "tableFrom": "morning_brief_native_schedules",
-          "tableTo": "org_members_cache",
-          "columnsFrom": [
-            "org_id",
-            "user_id"
-          ],
-          "columnsTo": [
-            "org_id",
-            "user_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "fk_morning_brief_native_schedules_agent": {
-          "name": "fk_morning_brief_native_schedules_agent",
-          "tableFrom": "morning_brief_native_schedules",
-          "tableTo": "agents",
-          "columnsFrom": [
-            "agent_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
         "fk_morning_brief_native_schedules_thread": {
           "name": "fk_morning_brief_native_schedules_thread",
           "tableFrom": "morning_brief_native_schedules",

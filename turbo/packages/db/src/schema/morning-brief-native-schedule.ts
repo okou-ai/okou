@@ -11,9 +11,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
-import { agents } from "./agent";
 import { chatThreads } from "./chat-thread";
-import { orgMembersCache } from "./org-members-cache";
 
 /**
  * Which implementation currently owns a member's scheduled Morning Brief.
@@ -151,16 +149,16 @@ export const morningBriefNativeSchedules = pgTable(
         name: "morning_brief_native_schedules_pk",
         columns: [table.orgId, table.userId],
       }),
-      foreignKey({
-        name: "fk_morning_brief_native_schedules_member",
-        columns: [table.orgId, table.userId],
-        foreignColumns: [orgMembersCache.orgId, orgMembersCache.userId],
-      }).onDelete("cascade"),
-      foreignKey({
-        name: "fk_morning_brief_native_schedules_agent",
-        columns: [table.agentId],
-        foreignColumns: [agents.id],
-      }).onDelete("cascade"),
+      // Deliberately no foreign key to `org_members_cache` or `agents`.
+      //
+      // The membership cache is a disposable read-through cache of Clerk's
+      // role, and an Agent may be deleted while a slot still needs its
+      // content-free deduplication and drain facts. Cascading from either would
+      // let an eviction or an ordinary deletion erase authoritative scheduling
+      // state and make a delivered occurrence replayable. Membership loss,
+      // organization and user erasure, and Agent deletion instead run the
+      // explicit revocation writer, which fences admission, clears the
+      // obligation and records the drain it still owes.
       foreignKey({
         name: "fk_morning_brief_native_schedules_thread",
         columns: [table.chatThreadId],

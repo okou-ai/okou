@@ -100,10 +100,7 @@ export type EnsureMorningBriefDefaultEnabledResult =
       readonly outcome: "failed";
       readonly reason: "installation-failed";
       readonly failureKind:
-        | "bad-request"
-        | "not-found"
-        | "forbidden"
-        | "conflict";
+        "bad-request" | "not-found" | "forbidden" | "conflict";
       readonly message: string;
     };
 
