@@ -677,6 +677,11 @@ export const executeMorningBriefSlackCollection$ = command(
         MORNING_BRIEF_SLACK_COLLECTION_DEADLINE_MS,
       ),
     );
+    if (admission.slackUserId === null || admission.slackWorkspaceId === null) {
+      // A Slack occurrence always pins a real binding; the column is nullable
+      // only so a source-independent occurrence can honestly carry none.
+      throw new Error("Morning Brief Slack collection admitted without a binding");
+    }
     const collected = await collectMorningBriefSlackBundle(
       {
         botToken,

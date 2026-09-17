@@ -131,7 +131,7 @@ export type MorningBriefGenerationConflict =
   | MorningBriefCollectionConflict
   | "generation-in-progress";
 
-type MorningBriefGenerationExecution =
+export type MorningBriefGenerationExecution =
   | {
       readonly kind: "not-executed";
       readonly reason: MorningBriefGenerationSkipReason;
@@ -229,6 +229,14 @@ function admissionOf(args: {
   const language = resolveGenerationLanguage(args.locale);
   return {
     key: generationKeyOf(context),
+    executionPurpose: GENERATION_PURPOSE,
+    // The Slack-only input shape carries no Agent instruction context and no
+    // retained descriptor set. Recording nulls keeps it honest rather than
+    // asserting provenance nothing produced.
+    instructionsVersionId: null,
+    instructionsDigest: null,
+    retainedSources: null,
+    retainedUntil: null,
     attemptId: randomUUID(),
     membershipId: context.admission.membershipId,
     agentId: context.admission.agentId,
@@ -390,6 +398,8 @@ type InterpretedOutcome =
       readonly kind: "accept";
       readonly decision: "deliver" | "skip";
       readonly skipReason: string | null;
+      /** What the answer said it was written in; never what was asked for. */
+      readonly reportedLanguage: string | null;
       readonly title: string | null;
       readonly markdown: string | null;
       readonly bytes: number | null;
@@ -413,11 +423,39 @@ type InterpretedOutcome =
  * never supplied and an empty or oversized brief are all failures. None of them
  * is a skip, and none of them is repaired by a second request.
  */
+/**
+ * How one input shape turns raw model content into an outcome.
+ *
+ * The transport, reservation, receipt, cost and persistence engine below is
+ * shared by every caller; only the contract the answer must satisfy differs.
+ * Passing that contract in keeps it that way, instead of growing a second
+ * engine beside this one.
+ */
+export type MorningBriefContentInterpreter = (content: string) =>
+  | {
+      readonly kind: "accepted";
+      readonly result:
+        | {
+            readonly decision: "deliver";
+            readonly title: string;
+            readonly markdown: string;
+            readonly bytes: number;
+            readonly reportedLanguage?: string | null;
+          }
+        | {
+            readonly decision: "skip";
+            readonly reason: string;
+            readonly reportedLanguage?: string | null;
+          };
+    }
+  | {
+      readonly kind: "rejected";
+      readonly reason: MorningBriefGenerationFailureReason;
+    };
+
 function interpretResponse(
   observation: PlatformGenerationObservation,
-  sources: ReadonlyMap<string, GenerationSource>,
-  coverage: MorningBriefCoverageFacts,
-  language: string,
+  interpret: MorningBriefContentInterpreter,
 ): InterpretedOutcome {
   if (observation.completionError) {
     return {
@@ -450,12 +488,7 @@ function interpretResponse(
       failureReason: "invalid_shape",
     };
   }
-  const interpreted = interpretGenerationOutput({
-    content: observation.content,
-    sources,
-    coverage,
-    language,
-  });
+  const interpreted = interpret(observation.content);
   if (interpreted.kind === "rejected") {
     return {
       kind: "reject",
@@ -463,11 +496,13 @@ function interpretResponse(
       failureReason: interpreted.reason,
     };
   }
+  const reportedLanguage = interpreted.result.reportedLanguage ?? null;
   return interpreted.result.decision === "skip"
     ? {
         kind: "accept",
         decision: "skip",
         skipReason: interpreted.result.reason,
+        reportedLanguage,
         title: null,
         markdown: null,
         bytes: null,
@@ -476,6 +511,7 @@ function interpretResponse(
         kind: "accept",
         decision: "deliver",
         skipReason: null,
+        reportedLanguage,
         title: interpreted.result.title,
         markdown: interpreted.result.markdown,
         bytes: interpreted.result.bytes,
@@ -705,6 +741,7 @@ async function commitOwnerOutcome(
       {
         decision: interpreted.decision,
         skipReason: interpreted.skipReason,
+        reportedLanguage: interpreted.reportedLanguage,
         title: interpreted.title,
         markdown: interpreted.markdown,
         bytes: interpreted.bytes,
@@ -1079,16 +1116,29 @@ const resolveExistingGeneration$ = command(
   },
 );
 
-interface InvocationArgs {
+export interface InvocationArgs {
   readonly db: Db;
   readonly apiKey: string;
   readonly admission: MorningBriefGenerationAdmission;
-  readonly plan: GenerationRequestPlan;
-  readonly sources: ReadonlyMap<string, GenerationSource>;
-  readonly coverage: MorningBriefSlackBundle["coverage"];
+  /** The exact transport bytes this reservation admitted. Sent at most once. */
+  readonly body: string;
+  /** The contract the answer must satisfy, supplied by the input shape. */
+  readonly interpret: MorningBriefContentInterpreter;
+  readonly coverage: MorningBriefGenerationAdmission["sourceCoverage"];
   readonly occurrence: MorningBriefCollectionOccurrenceView;
   /** The durable record of the authority this invocation acts under. */
   readonly occurrenceRow: MorningBriefCollectionOccurrenceRow;
+  /**
+   * A last deterministic check, run after the reservation COMMIT and before
+   * any provider contact.
+   *
+   * It is where a caller consumes the shared retained-source revalidator: the
+   * sources were read before the reservation, and a revocation in between must
+   * stop the request rather than be discovered after it was sent.
+   */
+  readonly preflight?: (
+    signal: AbortSignal,
+  ) => Promise<MorningBriefGenerationFailureReason | null>;
 }
 
 /**
@@ -1122,19 +1172,6 @@ async function reconcileCost(
 }
 
 /**
- * The collector's own verdict plus the candidates the plan had to drop.
- *
- * Both come from the same place the request was built from, so the note the
- * reader sees cannot disagree with what the model was told.
- */
-function coverageFactsOf(args: InvocationArgs): MorningBriefCoverageFacts {
-  return {
-    collected: args.coverage,
-    omittedForSize: args.plan.droppedItems,
-  };
-}
-
-/**
  * The irreversible step, and the one place cancellation must not short-circuit.
  *
  * Every await here deliberately settles rather than propagates: once the
@@ -1150,10 +1187,7 @@ async function requestAndRecordCharge(
     readonly apiKey: string;
     readonly attemptId: string;
     readonly body: string;
-    readonly sources: ReadonlyMap<string, GenerationSource>;
-    /** The same numbers the request was built from, for the coverage note. */
-    readonly coverage: MorningBriefCoverageFacts;
-    readonly language: string;
+    readonly interpret: MorningBriefContentInterpreter;
   },
   providerSignal: AbortSignal,
 ): Promise<{
@@ -1181,12 +1215,7 @@ async function requestAndRecordCharge(
         )
       : {
           receiptOutcome: "response_received" as const,
-          interpreted: interpretResponse(
-            observed,
-            args.sources,
-            args.coverage,
-            args.language,
-          ),
+          interpreted: interpretResponse(observed, args.interpret),
         };
   const receipt = receiptValuesOf({
     attemptId: args.attemptId,
@@ -1302,7 +1331,7 @@ async function recordUninvokedAttempt(
  * request is never retried, because the reservation is already durable and a
  * resent request could be a second inference.
  */
-const invokeAndPersist$ = command(
+export const invokeAndPersist$ = command(
   async (
     { set },
     args: InvocationArgs,
@@ -1358,9 +1387,24 @@ const invokeAndPersist$ = command(
       );
     }
 
-    // Resampled immediately before contact, so a preflight that consumed the
-    // allowance cannot still admit the one request this reservation permits.
-    // Equality with the deadline is exhausted.
+    // The caller's own last deterministic check, after the reservation COMMIT
+    // and still before contact. A source revoked while the reservation was
+    // being committed stops the request here, where nothing has been sent, so
+    // it is a proven pre-contact failure rather than an unknown outcome. The
+    // immutable request is never edited or recollected to get past it.
+    if (args.preflight) {
+      const refused = await args.preflight(
+        AbortSignal.any([signal, AbortSignal.timeout(preflightBudgetMs)]),
+      );
+      signal.throwIfAborted();
+      if (refused !== null) {
+        return await uninvoked(refused);
+      }
+    }
+
+    // Resampled after every wait, so a preflight that consumed the allowance
+    // cannot still admit the one request this reservation permits. Equality
+    // with the deadline is exhausted.
     const budgetMs = remainingProviderBudgetMs(
       admission.reservationExpiresAt,
       nowDate(),
@@ -1378,10 +1422,8 @@ const invokeAndPersist$ = command(
         db,
         apiKey: args.apiKey,
         attemptId: admission.attemptId,
-        body: args.plan.body,
-        sources: args.sources,
-        coverage: coverageFactsOf(args),
-        language: args.plan.language,
+        body: args.body,
+        interpret: args.interpret,
       },
       AbortSignal.any([signal, AbortSignal.timeout(budgetMs)]),
     );
@@ -1524,14 +1566,25 @@ export const executeMorningBriefPreviewGeneration$ = command(
       };
     }
 
+    const plan = admitted.plan;
     return await set(
       invokeAndPersist$,
       {
         db,
         apiKey,
         admission: admitted.admission,
-        plan: admitted.plan,
-        sources,
+        body: plan.body,
+        interpret: (content) => {
+          return interpretGenerationOutput({
+            content,
+            sources,
+            coverage: {
+              collected: bundleCoverage,
+              omittedForSize: plan.droppedItems,
+            },
+            language: plan.language,
+          });
+        },
         coverage: bundleCoverage,
         occurrence: execution.occurrence,
         occurrenceRow,

@@ -5,11 +5,13 @@ import {
   foreignKey,
   index,
   integer,
+  jsonb,
   numeric,
   pgTable,
   primaryKey,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 
@@ -125,11 +127,37 @@ export const MORNING_BRIEF_GENERATION_SOURCE_COVERAGES = [
   "empty",
 ] as const;
 
-/** How the generation language was resolved. */
+/**
+ * How the generation language was resolved.
+ *
+ * `agent-instructions` records that the admitted Agent's complete instruction
+ * text travelled in the one request and was allowed to steer the output
+ * language. It is deliberately not a claim that the text contained a language
+ * directive: that decision belongs to the same call, and the fallback locale
+ * travels with it.
+ */
 export const MORNING_BRIEF_GENERATION_LANGUAGE_SOURCES = [
+  "agent-instructions",
   "member-locale",
   "default",
 ] as const;
+
+/**
+ * The states that prove this attempt never reached the provider.
+ *
+ * Everything else — including `reserved`, which is committed before the request
+ * — means a request may already have been sent and must never be sent again.
+ * The partial unique index below is built from exactly this list, so the
+ * database itself decides the question rather than a caller's judgement.
+ */
+export const MORNING_BRIEF_GENERATION_UNINVOKED_STATES = [
+  "not_invoked",
+  "skipped_empty",
+  "skipped_incomplete",
+] as const;
+
+/** The serialized ceiling the retained descriptor set is admitted under. */
+export const MORNING_BRIEF_GENERATION_RETAINED_SOURCES_MAX_BYTES = 8192;
 
 /**
  * One owner-scoped Morning Brief generation and its accepted result.
@@ -194,6 +222,41 @@ export const morningBriefGenerations = pgTable(
     sourceCoverage: text("source_coverage", {
       enum: MORNING_BRIEF_GENERATION_SOURCE_COVERAGES,
     }).notNull(),
+
+    /**
+     * The frozen provenance of the instruction text that travelled, if any.
+     *
+     * The text itself is ephemeral and never stored. What is kept is the exact
+     * version the request was assembled from and its digest, so a later
+     * instruction-only edit is detectable without being able to reproduce
+     * either version, and without becoming a reason to send a second request.
+     */
+    instructionsVersionId: text("instructions_version_id"),
+    instructionsDigest: text("instructions_digest"),
+    /**
+     * The output-language tag the invocation reported for itself.
+     *
+     * Provenance, not verification: it records what the answer claimed to be
+     * written in. An unrecognized tag is stored as null rather than coerced to
+     * the fallback, which would assert a language nothing observed.
+     */
+    reportedLanguage: text("reported_language"),
+    /**
+     * The bounded, credential-free proof that each supplied input was
+     * authorized, cited or not.
+     *
+     * It identifies the inputs a later phase must revalidate; it can never
+     * fetch them again, and it holds no source body, prompt or credential.
+     */
+    retainedSources: jsonb("retained_sources"),
+    /**
+     * How long that proof outlives the result body.
+     *
+     * The body expires on `expires_at`; the proof has to survive at least that
+     * long, because an obligation created just before the body expired is
+     * still owed a permission check afterwards. It is never reset by a retry.
+     */
+    retainedUntil: timestamp("retained_until"),
 
     /** Finite phase ownership: never the collection lease, never unbounded. */
     reservedAt: timestamp("reserved_at").notNull(),
@@ -309,10 +372,47 @@ export const morningBriefGenerations = pgTable(
         "chk_morning_brief_generation_included_items",
         sql`${table.includedItems} >= 0 AND ${table.includedItems} <= ${table.inputItems}`,
       ),
+      // One anchor, one possible provider invocation — across every collection
+      // kind and contract version this owner may have been admitted under.
+      //
+      // The occurrence primary key alone cannot say this: a source-independent
+      // occurrence is a different kind from a Slack-only one, so two rows can
+      // legitimately exist for one owner and one morning. What must never
+      // happen is a second request for that morning, and a caller-side check
+      // cannot guarantee it under concurrency. This index does: a row that may
+      // have reached the provider occupies the anchor, and a competing INSERT
+      // fails rather than sending again. Rows in a state that proves no contact
+      // leave the anchor free, which is what makes an uninvoked reservation
+      // legitimately retryable.
+      uniqueIndex("uq_morning_brief_generations_invoked_anchor")
+        .on(
+          table.orgId,
+          table.userId,
+          table.scheduledFor,
+          table.executionPurpose,
+        )
+        .where(
+          sql`${table.state} NOT IN (${sql.raw(sqlLiterals(MORNING_BRIEF_GENERATION_UNINVOKED_STATES))})`,
+        ),
       check(
         "chk_morning_brief_generation_reservation",
         sql`${table.reservationExpiresAt} > ${table.reservedAt}
           AND ${table.expiresAt} > ${table.reservedAt}`,
+      ),
+      // Source proof may outlive the body it was collected for, never the
+      // other way round: a row whose proof expired first would leave content
+      // that no later check could authorize.
+      check(
+        "chk_morning_brief_generation_retained_until",
+        sql`${table.retainedUntil} IS NULL
+          OR ${table.retainedUntil} >= ${table.expiresAt}`,
+      ),
+      // Provenance is a pair. Half of it would describe a version whose
+      // content nothing can be compared against.
+      check(
+        "chk_morning_brief_generation_instructions",
+        sql`(${table.instructionsVersionId} IS NULL) =
+          (${table.instructionsDigest} IS NULL)`,
       ),
     ];
   },

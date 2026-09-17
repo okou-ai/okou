@@ -5,10 +5,11 @@ import type {
 import {
   MORNING_BRIEF_GENERATION_PROMPT_VERSION,
   MORNING_BRIEF_GENERATION_RESULT_SCHEMA_VERSION,
+  MORNING_BRIEF_GENERATION_UNINVOKED_STATES,
   morningBriefGenerations,
   morningBriefPlatformGenerationReceipts,
 } from "@okouai/db/schema/morning-brief-generation";
-import { and, eq, gt, lte, sql } from "drizzle-orm";
+import { and, eq, gt, lte, notInArray, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { executeRawRows } from "../../lib/db-raw-rows";
@@ -102,6 +103,20 @@ export interface MorningBriefGenerationAdmission {
   readonly includedItems: number;
   readonly inputReduced: boolean;
   readonly sourceCoverage: (typeof morningBriefGenerations.$inferInsert)["sourceCoverage"];
+  /** Who may consume the result of this slot. */
+  readonly executionPurpose: (typeof morningBriefGenerations.$inferInsert)["executionPurpose"];
+  /** Frozen at reservation. Both present or both absent. */
+  readonly instructionsVersionId: string | null;
+  readonly instructionsDigest: string | null;
+  /**
+   * The bounded proof that every supplied input was authorized, cited or not.
+   *
+   * Frozen with the reservation because it describes the request that is about
+   * to be sent; a later phase revalidates it rather than recollecting it.
+   */
+  readonly retainedSources: readonly unknown[] | null;
+  /** Never earlier than `expiresAt`, and never extended by a retry. */
+  readonly retainedUntil: Date | null;
   readonly reservedAt: Date;
   readonly reservationExpiresAt: Date;
   readonly expiresAt: Date;
@@ -114,7 +129,7 @@ function admissionValues(admission: MorningBriefGenerationAdmission) {
     scheduledFor: admission.key.scheduledFor,
     collectionKind: admission.key.collectionKind,
     collectionVersion: admission.key.collectionVersion,
-    executionPurpose: "preview" as const,
+    executionPurpose: admission.executionPurpose,
     attemptId: admission.attemptId,
     membershipId: admission.membershipId,
     agentId: admission.agentId,
@@ -128,6 +143,10 @@ function admissionValues(admission: MorningBriefGenerationAdmission) {
     includedItems: admission.includedItems,
     inputReduced: admission.inputReduced,
     sourceCoverage: admission.sourceCoverage,
+    instructionsVersionId: admission.instructionsVersionId,
+    instructionsDigest: admission.instructionsDigest,
+    retainedSources: admission.retainedSources,
+    retainedUntil: admission.retainedUntil,
     reservedAt: admission.reservedAt,
     reservationExpiresAt: admission.reservationExpiresAt,
     expiresAt: admission.expiresAt,
@@ -145,6 +164,13 @@ function admissionValues(admission: MorningBriefGenerationAdmission) {
  * never obtain a second admission — and because the row exists before any
  * request is sent, a crash between this commit and the request leaves an
  * ambiguity the caller has to acknowledge rather than resolve by re-sending.
+ *
+ * `onConflictDoNothing` covers every unique constraint on the table, so this
+ * also refuses when the owner's anchor is already occupied by a possibly
+ * invoked generation admitted under a *different* collection kind or contract
+ * version. That is the case a per-occurrence key cannot see, and it is
+ * precisely the one that would otherwise turn a widened source set into a
+ * second provider request for the same morning.
  */
 export async function reserveMorningBriefGeneration(
   tx: Tx,
@@ -156,6 +182,40 @@ export async function reserveMorningBriefGeneration(
     .onConflictDoNothing()
     .returning({ attemptId: morningBriefGenerations.attemptId });
   return created !== undefined;
+}
+
+/**
+ * The generation already occupying this owner's anchor, if any.
+ *
+ * It reads the same predicate the anchor's unique index enforces, so a refused
+ * reservation can be reported as the conflict it is rather than as a broken
+ * invariant. It is purpose-scoped like every other read here: a preview
+ * generation never occupies a production anchor.
+ */
+export async function readInvokedAnchorGeneration(
+  tx: Tx,
+  args: {
+    readonly owner: MorningBriefCollectionOwner;
+    readonly scheduledFor: Date;
+    readonly executionPurpose: MorningBriefGenerationAdmission["executionPurpose"];
+  },
+): Promise<MorningBriefGenerationRow | undefined> {
+  const [row] = await tx
+    .select()
+    .from(morningBriefGenerations)
+    .where(
+      and(
+        eq(morningBriefGenerations.orgId, args.owner.orgId),
+        eq(morningBriefGenerations.userId, args.owner.userId),
+        eq(morningBriefGenerations.scheduledFor, args.scheduledFor),
+        eq(morningBriefGenerations.executionPurpose, args.executionPurpose),
+        notInArray(morningBriefGenerations.state, [
+          ...MORNING_BRIEF_GENERATION_UNINVOKED_STATES,
+        ]),
+      ),
+    )
+    .limit(1);
+  return row;
 }
 
 /**
@@ -228,6 +288,12 @@ type MorningBriefGenerationWriteResult =
 interface AcceptedResultValues {
   readonly decision: "deliver" | "skip";
   readonly skipReason: string | null;
+  /**
+   * The output language the invocation reported, when it is one this pipeline
+   * recognizes. Null records that nothing usable was reported; it is never the
+   * requested language standing in for an unobserved one.
+   */
+  readonly reportedLanguage?: string | null;
   readonly title: string | null;
   readonly markdown: string | null;
   readonly bytes: number | null;
@@ -296,6 +362,7 @@ export async function acceptMorningBriefGenerationResult(
       state: "succeeded",
       decision: result.decision,
       skipReason: result.skipReason,
+      reportedLanguage: result.reportedLanguage ?? null,
       resultTitle: result.title,
       resultMarkdown: result.markdown,
       resultBytes: result.bytes,

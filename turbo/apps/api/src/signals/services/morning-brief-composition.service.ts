@@ -78,9 +78,10 @@ import {
 import { loadMorningBriefMemberLocale } from "./morning-brief-member-locale.service";
 import {
   buildMorningBriefRequest,
+  morningBriefCitationLinks,
+  type MorningBriefModelRequest,
   morningBriefCoverageReport,
   morningBriefEnvelopeBytes,
-  morningBriefRequestBytes,
   morningBriefWidestCoverageReport,
 } from "./morning-brief-request-envelope";
 import { collectMorningBriefSlackBundle } from "./morning-brief-slack-collection.service";
@@ -95,6 +96,7 @@ import {
 import {
   boundCombinedNormalizedItems,
   dedupeMorningBriefItems,
+  type MorningBriefDisplayLink,
   type MorningBriefSourceCollection,
   type MorningBriefSourceKind,
 } from "./morning-brief-source-item";
@@ -121,6 +123,26 @@ interface SlackBinding {
 /** Slack's frozen window is the 24 hours ending at the anchor. */
 const MORNING_BRIEF_SLACK_WINDOW_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * The ephemeral request one composition produced, and what its citations mean.
+ *
+ * It exists only for the duration of the attempt that built it. The body is the
+ * exact bytes the transport sends and is never persisted, logged or returned to
+ * an HTTP caller; the citation map is program-owned and is the only way an
+ * accepted citation can become a link.
+ */
+export interface MorningBriefCompositionTransport {
+  readonly body: string;
+  readonly bodyBytes: number;
+  readonly inputDigest: string;
+  readonly citations: ReadonlyMap<string, MorningBriefDisplayLink | null>;
+  /** Candidates offered, and how many actually travelled. */
+  readonly inputItems: number;
+  readonly includedItems: number;
+  /** The aggregate the generation row records for the whole composition. */
+  readonly sourceCoverage: "complete" | "partial" | "empty";
+}
+
 /** What one composition attempt produced, with no provider payload in it. */
 interface MorningBriefCompositionResult {
   readonly sources: readonly {
@@ -145,10 +167,12 @@ interface MorningBriefCompositionResult {
 }
 
 /** Why a composition produced no model request. */
-type MorningBriefCompositionOutcome =
+export type MorningBriefCompositionOutcome =
   | {
       readonly kind: "composed";
       readonly result: MorningBriefCompositionResult;
+      /** Never serialized by a route; consumed only by the generation engine. */
+      readonly transport: MorningBriefCompositionTransport;
     }
   /** Nothing was configured or everything healthy-empty: settle, send nothing. */
   | {
@@ -308,7 +332,10 @@ export const composeMorningBrief$ = command(
     if (planned.kind !== "planned") {
       return planned;
     }
-    const { language, envelopeBytes, totalBytes, allocation } = planned;
+    const { language, envelopeBytes, request, allocation } = planned;
+    const offered = bounded.collections.reduce((total, collection) => {
+      return total + collection.items.length;
+    }, 0);
     return {
       kind: "composed",
       result: {
@@ -316,12 +343,24 @@ export const composeMorningBrief$ = command(
         language,
         request: {
           envelopeBytes,
-          totalBytes,
+          totalBytes: request.bodyBytes,
           maxBytes: MORNING_BRIEF_REQUEST_MAX_BYTES,
           items: allocation.items.length,
           omittedItems: allocation.omittedItems,
           omittedBytes: allocation.omittedBytes,
         },
+      },
+      transport: {
+        body: request.body,
+        bodyBytes: request.bodyBytes,
+        inputDigest: request.inputDigest,
+        citations: morningBriefCitationLinks(allocation.items),
+        inputItems: offered,
+        includedItems: allocation.items.length,
+        sourceCoverage: aggregateCoverage(
+          bounded.collections,
+          allocation.omittedItems,
+        ),
       },
     };
   },
@@ -452,7 +491,7 @@ const planMorningBriefRequest$ = command(
         readonly kind: "planned";
         readonly language: MorningBriefLanguagePlan;
         readonly envelopeBytes: number;
-        readonly totalBytes: number;
+        readonly request: MorningBriefModelRequest;
         readonly allocation: ReturnType<typeof allocateMorningBriefRequest>;
       }
     | {
@@ -525,7 +564,6 @@ const planMorningBriefRequest$ = command(
       ),
       items: allocation.items,
     });
-    const totalBytes = morningBriefRequestBytes(request);
 
     // Everything above awaited the network. Nothing has been released yet, so
     // this is where the owner's authority is proved again — against live state,
@@ -569,9 +607,36 @@ const planMorningBriefRequest$ = command(
         return { kind: "authority-changed" };
       }
     }
-    return { kind: "planned", language, envelopeBytes, totalBytes, allocation };
+    return { kind: "planned", language, envelopeBytes, request, allocation };
   },
 );
+
+/**
+ * The one coverage verdict the whole composition was produced under.
+ *
+ * `partial` wins over `complete` because a brief built from a bounded read is
+ * not a complete day, and a source that failed outright bounds it just as
+ * surely as one that hit a budget. `unconfigured` sources do not: an owner who
+ * never connected GitHub has no GitHub day to be missing. Items dropped for
+ * request size bound it too, which is why the allocator's own omission count is
+ * part of the verdict rather than only the collectors' reports.
+ */
+function aggregateCoverage(
+  collections: readonly MorningBriefSourceCollection[],
+  omittedItems: number,
+): "complete" | "partial" | "empty" {
+  const bounded = collections.some((collection) => {
+    return collection.coverage === "partial" || collection.coverage === "failed";
+  });
+  if (bounded || omittedItems > 0) {
+    return "partial";
+  }
+  return collections.some((collection) => {
+    return collection.items.length > 0;
+  })
+    ? "complete"
+    : "empty";
+}
 
 /** What each source contributed, with no evidence in it. */
 function sourceSummary(
