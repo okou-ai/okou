@@ -2185,7 +2185,11 @@ describe("historical writer consumer fences", () => {
         webhooks.configureClerkWebhookSecret();
         webhooks.verifyNextClerkWebhook({
           type: "organizationMembership.deleted",
-          data: { organization_id: f.actor.orgId, user_id: f.actor.userId },
+          data: {
+            id: `membership-${randomUUID()}`,
+            organization_id: f.actor.orgId,
+            user_id: f.actor.userId,
+          },
         });
         await webhooks.requestClerkWebhook("{}", {}, [200]);
         await flushWaitUntilForTest();

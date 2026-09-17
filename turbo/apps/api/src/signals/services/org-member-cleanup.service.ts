@@ -16,6 +16,7 @@ import { tapError } from "../utils";
 import { transitionAgentRunsToTerminal } from "./agent-run-terminal-transition.service";
 import { revokeMorningBriefCollectionOwnership } from "./morning-brief-collection-occurrence.service";
 import { revokeMorningBriefDeliveryOwnership } from "./morning-brief-delivery.service";
+import { eraseVncOwner } from "./vnc-owner-lifecycle.service";
 
 import type { Db } from "../external/db";
 
@@ -24,7 +25,7 @@ export async function cleanupOrgMemberResources(
   args: {
     readonly orgId: string;
     readonly userId: string;
-    readonly membershipId?: string;
+    readonly membershipId: string;
   },
   signal: AbortSignal,
 ): Promise<void> {
@@ -46,18 +47,16 @@ export async function cleanupOrgMemberResources(
       target: [morningBriefEnrollments.orgId, morningBriefEnrollments.userId],
       set: {
         state: "departed",
-        // Deletion can arrive before enrollment or after a missing live lookup.
-        // Retain its generation so a late created event cannot revive intent.
-        membershipId: args.membershipId ?? morningBriefEnrollments.membershipId,
+        // Deletion can arrive before enrollment. Retain its generation so a
+        // late created event cannot revive intent.
+        membershipId: args.membershipId,
         updatedAt: currentTime,
       },
       setWhere: and(
-        args.membershipId
-          ? or(
-              isNull(morningBriefEnrollments.membershipId),
-              eq(morningBriefEnrollments.membershipId, args.membershipId),
-            )
-          : undefined,
+        or(
+          isNull(morningBriefEnrollments.membershipId),
+          eq(morningBriefEnrollments.membershipId, args.membershipId),
+        ),
         inArray(morningBriefEnrollments.state, [
           "checking",
           "pending",
@@ -124,7 +123,11 @@ export async function cleanupOrgMemberResources(
 
 async function revokeOrgMemberRunAuthority(
   db: Db,
-  args: { readonly orgId: string; readonly userId: string },
+  args: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly membershipId: string;
+  },
   signal: AbortSignal,
 ): Promise<void> {
   // Membership revocation is a hard authority boundary, including credentials
@@ -132,6 +135,8 @@ async function revokeOrgMemberRunAuthority(
   // best-effort runner notification or the remaining member resource cleanup.
   const revokedAt = nowDate();
   const cancelled = await db.transaction(async (tx) => {
+    // Cleanup scope ownership precedes Run and all other business-row locks.
+    await eraseVncOwner(tx, { kind: "membership", ...args });
     const rows = await transitionAgentRunsToTerminal(tx, {
       values: {
         status: "cancelled",

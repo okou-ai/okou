@@ -58,6 +58,7 @@ export enum FeatureSwitchKey {
   LarkIntegration = "_larkIntegration",
   CustomConnectorMcp = "customConnectorMcp",
   McpServer = "mcpServer",
+  VncAccess = "vncAccess",
   PiDeferredSandbox = "piDeferredSandbox",
   PiLoop = "piLoop",
   PiMemory = "piMemory",

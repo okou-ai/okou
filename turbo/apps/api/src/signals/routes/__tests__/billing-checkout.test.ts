@@ -12656,6 +12656,7 @@ describe("usage pack allocation management", () => {
       clearMockNow();
     });
     const targetUserId = `user_${randomUUID()}`;
+    const targetMembershipId = `orgmem_${randomUUID()}`;
     const targetEmail = `${targetUserId}@example.test`;
     const fixture = await seedManagedUsagePack([
       { userId: `user_${randomUUID()}`, usagePackUsd: 20 },
@@ -12682,7 +12683,10 @@ describe("usage pack allocation management", () => {
       {
         data: [
           { publicUserData: { userId: adminUserId } },
-          { publicUserData: { userId: targetUserId } },
+          {
+            id: targetMembershipId,
+            publicUserData: { userId: targetUserId },
+          },
         ],
       },
     );
@@ -12692,7 +12696,7 @@ describe("usage pack allocation management", () => {
       async () => {
         deletionStarted.resolve(undefined);
         await deletionGate.promise;
-        return {};
+        return { id: targetMembershipId };
       },
     );
     const currentSubscription = managedUsagePackSubscription(
@@ -12799,7 +12803,7 @@ describe("usage pack allocation management", () => {
     const duplicateEvent = {
       type: "organizationMembership.deleted",
       data: {
-        id: `mem_removed_${randomUUID()}`,
+        id: targetMembershipId,
         organization: { id: fixture.orgId },
         publicUserData: { userId: targetUserId },
         role: "org:member",
@@ -12961,6 +12965,7 @@ describe("usage pack allocation management", () => {
       clearMockNow();
     });
     const targetUserId = `user_${randomUUID()}`;
+    const targetMembershipId = `orgmem_${randomUUID()}`;
     const targetEmail = `${targetUserId}@example.test`;
     const fixture = await seedManagedUsagePack([
       { userId: targetUserId, usagePackUsd: 20 },
@@ -12977,12 +12982,15 @@ describe("usage pack allocation management", () => {
       {
         data: [
           { publicUserData: { userId: fixture.userId } },
-          { publicUserData: { userId: targetUserId } },
+          {
+            id: targetMembershipId,
+            publicUserData: { userId: targetUserId },
+          },
         ],
       },
     );
     context.mocks.clerk.organizations.deleteOrganizationMembership.mockResolvedValue(
-      {},
+      { id: targetMembershipId },
     );
     const currentSubscription = managedUsagePackSubscription(
       fixture,
@@ -13114,6 +13122,7 @@ describe("usage pack allocation management", () => {
       clearMockNow();
     });
     const targetUserId = `user_${randomUUID()}`;
+    const targetMembershipId = `orgmem_${randomUUID()}`;
     const targetEmail = `${targetUserId}@example.test`;
     const fixture = await seedManagedUsagePack([
       { userId: targetUserId, usagePackUsd: 20 },
@@ -13130,12 +13139,15 @@ describe("usage pack allocation management", () => {
       {
         data: [
           { publicUserData: { userId: fixture.userId } },
-          { publicUserData: { userId: targetUserId } },
+          {
+            id: targetMembershipId,
+            publicUserData: { userId: targetUserId },
+          },
         ],
       },
     );
     context.mocks.clerk.organizations.deleteOrganizationMembership.mockResolvedValue(
-      {},
+      { id: targetMembershipId },
     );
     const currentSubscription = managedUsagePackSubscription(
       fixture,

@@ -507,6 +507,15 @@ export function createAuthOrgAgentsBddApi(context: TestContext) {
       const createdAt =
         state.createdAt ?? Date.parse("2026-01-01T00:00:00.000Z");
       const members = state.members ?? [defaultOrgMember(actor)];
+      const memberships = members.map((member) => {
+        return {
+          id: `membership-${member.actor.userId}-${actor.orgId}`,
+          role: member.role ?? member.actor.orgRole ?? "org:member",
+          organization: { id: actor.orgId, slug, name },
+          publicUserData: { userId: member.actor.userId },
+          createdAt: membershipDate(member),
+        };
+      });
       const pendingInvitations = state.pendingInvitations ?? [];
       const membershipRequests = state.membershipRequests ?? [];
       const orgActors = [
@@ -532,25 +541,10 @@ export function createAuthOrgAgentsBddApi(context: TestContext) {
         createdAt,
       });
       context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue(
-        {
-          data: members.map((member) => {
-            return {
-              role: member.role ?? member.actor.orgRole ?? "org:member",
-              organization: { id: actor.orgId, slug, name },
-            };
-          }),
-        },
+        { data: memberships },
       );
       context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
-        {
-          data: members.map((member) => {
-            return {
-              role: member.role ?? member.actor.orgRole ?? "org:member",
-              publicUserData: { userId: member.actor.userId },
-              createdAt: membershipDate(member),
-            };
-          }),
-        },
+        { data: memberships },
       );
       context.mocks.clerk.organizations.getOrganizationInvitationList.mockResolvedValue(
         {
@@ -580,8 +574,27 @@ export function createAuthOrgAgentsBddApi(context: TestContext) {
       context.mocks.clerk.organizations.updateOrganizationMembership.mockResolvedValue(
         {},
       );
-      context.mocks.clerk.organizations.deleteOrganizationMembership.mockResolvedValue(
-        {},
+      context.mocks.clerk.organizations.deleteOrganizationMembership.mockImplementation(
+        (params: unknown) => {
+          if (
+            typeof params !== "object" ||
+            params === null ||
+            !("organizationId" in params) ||
+            !("userId" in params)
+          ) {
+            throw new Error("Expected a Clerk membership deletion request");
+          }
+          const membership = memberships.find((entry) => {
+            return (
+              entry.organization.id === params.organizationId &&
+              entry.publicUserData.userId === params.userId
+            );
+          });
+          if (!membership) {
+            throw new Error("Deleted Clerk membership is absent from fixture");
+          }
+          return Promise.resolve(membership);
+        },
       );
       context.mocks.clerk.organizations.deleteOrganization.mockResolvedValue(
         {},
