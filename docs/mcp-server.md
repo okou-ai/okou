@@ -38,8 +38,8 @@ only into the API service. It builds `MCP_RESOURCE_URL` from the trusted
 slash), followed by `/mcp`. Preview workflows supply each PR/staging API alias;
 production supplies its configured API origin. Do not set a shared
 `MCP_RESOURCE_URL` repository variable: it is not read, and each deployment must
-use its own audience. If the API URL is absent, the action leaves the resource
-unset rather than guessing a production or frontend address.
+use its own audience. API deployments require `api-backend-url`; if it is empty,
+the action fails before creating an environment file. Web deployments may omit it.
 
 Set the non-secret `MCP_OAUTH_ISSUER` GitHub repository variable to the test Clerk
 instance's exact OAuth issuer. Override the same variable in the `production`
