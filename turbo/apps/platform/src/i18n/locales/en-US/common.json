@@ -4226,7 +4226,7 @@
         "title": "Add Okou to Slack"
       },
       "sources": {
-        "copy": "Connect one source to start.",
+        "copy": "Okou works from the tools your team already uses, and runs the job while you get on with yours. Connect one source to start.",
         "note": "You choose which accounts to connect.",
         "searchAction": "Find a source for your work",
         "searchCopy": "Search the full catalog by task or app name.",
