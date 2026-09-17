@@ -3,7 +3,7 @@ import { chatThreads } from "@okouai/db/schema/chat-thread";
 import { eq } from "drizzle-orm";
 
 import { db } from "../lib/db";
-import { createDeferredPromise } from "../signals/utils";
+import { createDeferredPromise, settleIncludingAbort } from "../signals/utils";
 import {
   barrierQueryBinds,
   barrierQueryText,
@@ -56,27 +56,28 @@ export async function holdChatThreadEventIdFixture(args: {
 }): Promise<{ readonly release: () => void; readonly done: Promise<void> }> {
   const started = createDeferredPromise<void>(args.signal);
   const released = createDeferredPromise<void>(args.signal);
-  const done = db()
-    .transaction(async (tx) => {
-      await tx.insert(chatThreadEvents).values({
-        id: args.eventId,
-        userId: args.userId,
-        orgId: args.orgId,
-        seqId: HELD_EVENT_SEQ_ID,
-        chatThreadId: args.chatThreadId,
-        kind: "renamed",
-        title: "held rename event",
-      });
-      started.resolve();
-      await released.promise;
-      // Roll the holder back so the id never becomes a durable event.
-      throw new HeldChatThreadEventRollback();
-    })
-    .catch((error: unknown) => {
-      if (!(error instanceof HeldChatThreadEventRollback)) {
-        throw error;
-      }
-    });
+  const done = (async () => {
+    const result = await settleIncludingAbort(
+      db().transaction(async (tx) => {
+        await tx.insert(chatThreadEvents).values({
+          id: args.eventId,
+          userId: args.userId,
+          orgId: args.orgId,
+          seqId: HELD_EVENT_SEQ_ID,
+          chatThreadId: args.chatThreadId,
+          kind: "renamed",
+          title: "held rename event",
+        });
+        started.resolve();
+        await released.promise;
+        // Roll the holder back so the id never becomes a durable event.
+        throw new HeldChatThreadEventRollback();
+      }),
+    );
+    if (!result.ok && !(result.error instanceof HeldChatThreadEventRollback)) {
+      throw result.error;
+    }
+  })();
   await started.promise;
   return {
     release: () => {
