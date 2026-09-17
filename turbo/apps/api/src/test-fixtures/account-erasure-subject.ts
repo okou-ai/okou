@@ -148,6 +148,12 @@ export interface TransactionBarrier {
   readonly entered: Promise<{
     readonly lockTimeout: string;
     readonly statementTimeout: string;
+    /**
+     * Rows the chosen statement itself reported. It carries a number only in
+     * `pauseAfter` mode, where that statement has already run inside the still
+     * open transaction, and is `null` when the barrier pauses before dispatch.
+     */
+    readonly rowCount: number | null;
   }>;
   /** Backends currently blocked by the paused transaction, so a test never
    * guesses at timing with a sleep. */
@@ -161,6 +167,17 @@ export interface TransactionBarrier {
   readonly release: () => void;
 }
 
+/** The row count `pg` reports for an executed statement. */
+function pausedRowCount(executed: unknown): number {
+  const parsed = z.object({ rowCount: z.number() }).safeParse(executed);
+  if (!parsed.success) {
+    throw new Error(
+      "Expected the paused statement result to carry a row count",
+    );
+  }
+  return parsed.data.rowCount;
+}
+
 /**
  * Infrastructure exception: no API can suspend a real transaction between its
  * statements, and a fenced writer's own transaction is the only place its
@@ -169,9 +186,15 @@ export interface TransactionBarrier {
  * transaction `select` identifies waits, at one chosen point. Nothing is mocked
  * and no result or error is replaced.
  *
- * The pause always happens before the chosen statement is dispatched, so no
- * server-side lock or statement timer runs during the observation window and a
- * test never has to win the writer's own bounded budget.
+ * By default the pause happens before the chosen statement is dispatched. With
+ * `pauseAfter` that statement runs first and the transaction pauses holding its
+ * result, which is the only way to observe a mutation that is applied and still
+ * uncommitted, and the only boundary at which a writer's own post-write
+ * cancellation check has not run yet. Either way the backend is idle inside its
+ * transaction for the whole window, so no lock or statement timer is running
+ * and a test never has to win the writer's own bounded budget. `pauseAfter`
+ * does retain the executed statement's row locks, so a concurrent writer to the
+ * same row waits; a plain reader is unaffected.
  *
  * `select` recognizes a candidate transaction from a statement it issues;
  * `stopAt` then chooses where that candidate pauses, and receives whether the
@@ -193,6 +216,7 @@ export async function withDatabaseTransactionBarrierFixture<T>(
       selectingStatement: boolean,
       transaction: SelectedTransaction,
     ) => boolean;
+    readonly pauseAfter?: boolean;
     readonly work: (barrier: TransactionBarrier) => Promise<T>;
   },
   signal: AbortSignal,
@@ -203,6 +227,9 @@ export async function withDatabaseTransactionBarrierFixture<T>(
       select: args.select,
       stopAt: (queryArgs, selectingStatement, transaction) => {
         return args.stopAt(queryArgs, selectingStatement, transaction);
+      },
+      pauseAfter: () => {
+        return args.pauseAfter === true;
       },
       work: async ([barrier]) => {
         if (!barrier) {
@@ -224,6 +251,7 @@ interface BarrierSlot {
       readonly pid: number;
       readonly lockTimeout: string;
       readonly statementTimeout: string;
+      readonly rowCount: number | null;
     }>
   >;
   readonly released: ReturnType<typeof createDeferredPromise<void>>;
@@ -246,17 +274,22 @@ const barrierSettingsSchema = z.object({
 
 /**
  * Reads the paused transaction's backend pid and its live deadlines through the
- * original driver method, reports them, then waits for the release and finally
- * dispatches the statement the barrier stopped at. Splitting this out keeps the
- * proxy handler small enough to read in one screen.
+ * original driver method, reports them together with the row count the stopped
+ * statement produced in `pauseAfter` mode, waits for the release, and finally
+ * returns the statement's result. Splitting this out keeps the proxy handler
+ * small enough to read in one screen.
  */
 function pauseBarrierSlot(
   slot: BarrierSlot,
   target: typeof Client.prototype.query,
   receiver: unknown,
   queryArgs: unknown[],
+  pauseAfter: boolean,
 ): Promise<unknown> {
   return (async () => {
+    const executed: unknown = pauseAfter
+      ? await Reflect.apply(target, receiver, queryArgs)
+      : undefined;
     const settings: unknown = await Reflect.apply(target, receiver, [
       BARRIER_SETTINGS_QUERY,
     ]);
@@ -268,9 +301,12 @@ function pauseBarrierSlot(
       pid: row.pid,
       lockTimeout: row.lock_timeout,
       statementTimeout: row.statement_timeout,
+      rowCount: pauseAfter ? pausedRowCount(executed) : null,
     });
     await slot.released.promise;
-    return await Reflect.apply(target, receiver, queryArgs);
+    return pauseAfter
+      ? executed
+      : await Reflect.apply(target, receiver, queryArgs);
   })();
 }
 
@@ -285,10 +321,11 @@ function pauseBarrierSlot(
  * request, awaits its barrier and only then starts the next therefore binds
  * each barrier to an exact HTTP request.
  *
- * Slots are claimed in index order, `stopAt` receives the slot index so two
- * writers of the same row can pause at two different statements, and every
- * barrier pauses at most once. A candidate that reaches `COMMIT` or `ROLLBACK`
- * without satisfying its `stopAt` frees its slot for the next candidate.
+ * Slots are claimed in index order, `stopAt` and `pauseAfter` receive the slot
+ * index so two writers of the same row can pause at two different statements in
+ * two different modes, and every barrier pauses at most once. A candidate that
+ * reaches `COMMIT` or `ROLLBACK` without satisfying its `stopAt` frees its slot
+ * for the next candidate.
  */
 export async function withDatabaseTransactionBarriersFixture<T>(
   args: {
@@ -300,6 +337,7 @@ export async function withDatabaseTransactionBarriersFixture<T>(
       transaction: SelectedTransaction,
       index: number,
     ) => boolean;
+    readonly pauseAfter?: (index: number) => boolean;
     readonly work: (barriers: readonly TransactionBarrier[]) => Promise<T>;
   },
   signal: AbortSignal,
@@ -317,6 +355,7 @@ export async function withDatabaseTransactionBarriersFixture<T>(
           readonly pid: number;
           readonly lockTimeout: string;
           readonly statementTimeout: string;
+          readonly rowCount: number | null;
         }>(signal),
         released: createDeferredPromise<void>(signal),
       };
@@ -374,7 +413,13 @@ export async function withDatabaseTransactionBarriersFixture<T>(
       }
       slot.paused = true;
       slot.statements.push(text);
-      return pauseBarrierSlot(slot, target, receiver, queryArgs);
+      return pauseBarrierSlot(
+        slot,
+        target,
+        receiver,
+        queryArgs,
+        args.pauseAfter?.(index) === true,
+      );
     },
   });
   const result = await settleIncludingAbort(

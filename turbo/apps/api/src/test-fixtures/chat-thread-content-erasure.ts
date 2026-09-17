@@ -142,6 +142,20 @@ function isTitleContextRead(
   );
 }
 
+/** The read-cursor `UPDATE` both mark-read and mark-unread issue as the last
+ * statement of their write, after the retained identity locks. */
+function isReadCursorUpdate(
+  queryArgs: unknown[],
+  chatThreadId: string,
+): boolean {
+  const text = barrierQueryText(queryArgs);
+  return (
+    text.startsWith("update") &&
+    text.includes('"chat_threads" set "last_read_at"') &&
+    barrierQueryBinds(queryArgs, chatThreadId)
+  );
+}
+
 function tookIdentityLock(transaction: SelectedTransaction): boolean {
   return transaction.statements.some((statement) => {
     return statement.includes("for key share");
@@ -174,8 +188,9 @@ function isContentRowUpdate(queryArgs: unknown[]): boolean {
  * of which the read-only initiation gate and the writer reach. `title-context`
  * is the generated-title gate's own prior-round read. `agent-lock` and
  * `thread-lock` sit between the unlocked identity read and the matching
- * identity lock, and `commit` retains every barrier with the title or draft
- * already written. A thread without an Agent issues no `agent-lock`.
+ * identity lock, and `commit` retains every barrier with the title, draft or
+ * read cursor already written. A thread without an Agent issues no
+ * `agent-lock`.
  *
  * `content-lock` and `content-update` are the route's own row lock and row
  * write under the retained identity locks.
@@ -183,6 +198,13 @@ function isContentRowUpdate(queryArgs: unknown[]): boolean {
  * `commit` additionally requires that the transaction already took an identity
  * lock. The read-only gate commits first and never locks, so without that the
  * barrier would pause the gate's commit instead of the writer's.
+ *
+ * `cursor-update` is the only stop that pauses **after** its statement: the
+ * read-cursor `UPDATE` has run and is still uncommitted, which is the boundary
+ * between the real mutation and the writer's own post-write cancellation check,
+ * and therefore the last point at which a rollback is still guaranteed. Pausing
+ * at `commit` is already past that check, so a cancellation arriving there
+ * races a `COMMIT` that still succeeds.
  */
 type ChatThreadContentBarrierStop =
   | "identity"
@@ -192,6 +214,8 @@ type ChatThreadContentBarrierStop =
   | "thread-lock"
   | "content-lock"
   | "content-update"
+  | "content-update-applied"
+  | "cursor-update"
   | "commit";
 
 function reachedBarrierStop(
@@ -219,12 +243,22 @@ function reachedBarrierStop(
   if (stop === "content-lock") {
     return isContentRowLock(queryArgs);
   }
-  if (stop === "content-update") {
+  if (stop === "content-update" || stop === "content-update-applied") {
     return isContentRowUpdate(queryArgs);
+  }
+  if (stop === "cursor-update") {
+    return isReadCursorUpdate(queryArgs, chatThreadId);
   }
   return (
     barrierQueryText(queryArgs) === "commit" && tookIdentityLock(transaction)
   );
+}
+
+/** The stops that pause **after** their statement instead of before it, so a
+ * test can read the row count that statement actually reported while its
+ * transaction is still open and still rollbackable. */
+function pausesAfterStatement(stop: ChatThreadContentBarrierStop): boolean {
+  return stop === "cursor-update" || stop === "content-update-applied";
 }
 
 /** Pauses the draft or rename transaction opened for one thread. See
@@ -288,6 +322,10 @@ export async function withChatThreadContentBarriersFixture<T>(
             transaction,
           )
         );
+      },
+      pauseAfter: (index) => {
+        const stop = args.stopAt[index];
+        return stop !== undefined && pausesAfterStatement(stop);
       },
       work: args.work,
     },

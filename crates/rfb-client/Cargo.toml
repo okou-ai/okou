@@ -3,21 +3,25 @@ name = "rfb-client"
 version = "0.3.0"
 edition.workspace = true
 publish = false
-description = "Verified RFB authentication and bounded framebuffer decoding"
+description = "Verified RFB authentication, bounded captures and serialized input"
 
 [dependencies]
 des = { workspace = true, features = ["zeroize"] }
 flate2 = { workspace = true, features = ["rust_backend"] }
+png = { workspace = true }
 rustls = { workspace = true, features = ["aws_lc_rs", "std", "tls12"] }
 thiserror = { workspace = true, features = ["std"] }
 tokio = { workspace = true, features = ["io-util", "time", "rt"] }
 tokio-rustls = { workspace = true, features = ["aws_lc_rs", "tls12"] }
+uuid = { workspace = true, features = ["v4"] }
 webpki-roots = { workspace = true }
 zeroize = { workspace = true, features = ["alloc"] }
 
 [dev-dependencies]
 rcgen = { workspace = true, features = ["crypto", "ring"] }
-tokio = { workspace = true, features = ["macros", "net", "rt", "sync"] }
+serde_json = { workspace = true, features = ["std"] }
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["macros", "net", "process", "rt", "sync"] }
 
 [lints]
 workspace = true

@@ -207,38 +207,47 @@ argument, so the cancellation path is production's own; calling it "request
 cancellation" is shorthand for the operation-lifetime abort the route really
 honours, not evidence of a per-connection cancel endpoint.
 
-The case stops at the thread `UPDATE` and aborts while that statement is still
-undispatched. What ran afterwards is asserted from the transaction itself rather
-than inferred from unchanged final state: the barrier records every statement
-that exact connection issued, and the test asserts one `update "chat_threads"`,
-two `insert into "chat_thread_event_sequences"`, two
-`insert into "chat_thread_events"`, a matching `savepoint sp1` /
-`release savepoint sp1` pair for the policy repair, no `commit` at all, and a
-`rollback` after the last event insert.
+The case stops at the thread `UPDATE` in the barrier's `pauseAfter` mode, so that
+statement has already run inside the still open transaction when the abort
+lands. Two independent observations replace any inference from unchanged final
+state:
 
-The server's own log shows the same window for one such request, with the
-barrier's settings probe standing where the `UPDATE` had not yet been sent:
+- the `UPDATE`'s **own reported row count is 1**, read from the statement result
+  the barrier captured, so the write is measured rather than assumed; and
+- the barrier records every statement that exact connection issued, and the test
+  asserts one `update "chat_threads"`, two
+  `insert into "chat_thread_event_sequences"`, two
+  `insert into "chat_thread_events"`, a matching `savepoint sp1` /
+  `release savepoint sp1` pair for the policy repair, **no** `commit` at all,
+  and a `rollback` positioned after the last event insert.
+
+The server's own log shows the same window for one such request. The barrier's
+settings probe sits immediately after the `UPDATE`, which is where the pause and
+the abort land, and the transaction still runs its whole event tail before
+ending in `ROLLBACK`:
 
 ```text
-17:43:17.651  select ... from "org_model_policies" ...
-17:43:17.652  savepoint sp1
-17:43:17.653  SELECT pg_advisory_xact_lock(hashtextextended($1, 0))
-17:43:17.657  insert into "org_model_policies" ...
-17:43:17.658  update "org_model_policies" set "is_default" = $1 ...
-17:43:17.662  release savepoint sp1
-17:43:17.666  SELECT pg_backend_pid() ... current_setting('lock_timeout') ...  <- paused here; the abort lands
-17:43:17.668  update "chat_threads" set ... "selected_model" = $4 ...
-17:43:17.670  insert into "chat_thread_event_sequences" ...
-17:43:17.671  insert into "chat_thread_events" ...
-17:43:17.673  insert into "chat_thread_event_sequences" ...
-17:43:17.674  insert into "chat_thread_events" ...
-17:43:17.674  rollback
+18:13:28.824  release savepoint sp1
+18:13:28.825  select "model", ... from "org_model_policies" ...
+18:13:28.827  select "type" from "model_providers" ...
+18:13:28.828  select "user_id", "switches" from "user_feature_switches" ...
+18:13:28.830  update "chat_threads" set ... "selected_model" = $4 ...   <- runs, reports 1 row
+18:13:28.831  SELECT pg_backend_pid() ... current_setting('lock_timeout') ...  <- paused here; the abort lands
+18:13:28.833  insert into "chat_thread_event_sequences" ...
+18:13:28.835  insert into "chat_thread_events" ...
+18:13:28.837  insert into "chat_thread_event_sequences" ...
+18:13:28.838  insert into "chat_thread_events" ...
+18:13:28.839  rollback
 ```
 
-The `UPDATE` matched its row: `writeModelSelection` returns early when the
-`RETURNING` row has no `agentId` and never reaches `appendChatThreadEvent`, so
-the two event inserts could not exist otherwise. Row counts are not observable
-at the statement level, and nothing here claims a measured one.
+The two event inserts corroborate the measured row count independently:
+`writeModelSelection` returns early when the `RETURNING` row has no `agentId`
+and never reaches `appendChatThreadEvent`, so they could not exist if the
+`UPDATE` had matched nothing.
+
+The `pauseAfter` mode and the row count it exposes are reused from the
+read-cursor evidence slice (#34902) rather than reinvented here; this slice only
+adds the stop that selects that mode for the thread `UPDATE`.
 
 Aborting at the `commit` stop would be unsound evidence instead: once `COMMIT`
 is on the wire the transaction may already have succeeded, so such a case could

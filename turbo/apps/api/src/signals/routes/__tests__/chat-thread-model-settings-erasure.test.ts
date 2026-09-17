@@ -631,7 +631,7 @@ describe("account erasure fences chat-thread model settings writes", () => {
     await withChatThreadContentBarrierFixture(
       {
         chatThreadId: fixture.threadId,
-        stopAt: "content-update",
+        stopAt: "content-update-applied",
         work: async (barrier) => {
           const updating = chat.requestUpdateThreadModelSelection(
             fixture.actor,
@@ -640,10 +640,13 @@ describe("account erasure fences chat-thread model settings writes", () => {
             [204, 404],
             { signal: cancelled.signal },
           );
-          // Paused on the thread `UPDATE` itself: admission has passed, both
-          // identity locks are retained and the resolver has already repaired
-          // the organization's default inside its savepoint.
-          await barrier.entered;
+          // Paused with the thread `UPDATE` already applied inside the still
+          // open transaction: admission has passed, both identity locks are
+          // retained and the resolver has already repaired the organization's
+          // default inside its savepoint. The row count is the statement's own,
+          // so the write is measured rather than assumed.
+          const applied = await barrier.entered;
+          expect(applied.rowCount).toBe(1);
           cancelled.abort();
           barrier.release();
           // The cancellation is observed by the route's own `throwIfAborted`
@@ -655,13 +658,12 @@ describe("account erasure fences chat-thread model settings writes", () => {
           await expect(updating).rejects.toThrow(/Unknown response status 500/);
 
           // What actually executed, read from the transaction itself rather
-          // than inferred from unchanged final state. The abort landed while
-          // the `UPDATE` was still undispatched, then the whole tail ran: the
-          // thread `UPDATE`, both sequence reservations and both sidebar event
-          // inserts, and the transaction ended in `ROLLBACK` with no `COMMIT`
-          // ever sent. The two event inserts are also what prove the `UPDATE`
-          // matched its row: `writeModelSelection` returns early on a missing
-          // `agentId` and never reaches `appendChatThreadEvent`.
+          // than inferred from unchanged final state: the thread `UPDATE` that
+          // reported one row, both sequence reservations and both sidebar event
+          // inserts, then `ROLLBACK` with no `COMMIT` ever sent. The two event
+          // inserts corroborate the row count, because `writeModelSelection`
+          // returns early on a missing `agentId` and never reaches
+          // `appendChatThreadEvent`.
           const issued = barrier.statements();
           const count = (prefix: string) => {
             return issued.filter((statement) => {

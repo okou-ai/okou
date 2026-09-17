@@ -5889,13 +5889,6 @@ export function ComposerPresentationRecommendations({
   const builtIn = PRESENTATION_TEMPLATE_PICKER_ITEMS;
   const openTemplates = useSet(signals.template.openTemplatePicker$);
   const setMode = useSet(signals.create.setMode$);
-  // The shelf keeps mixing uploaded and built-in covers — it recommends rather
-  // than classifies — but "more" has to land on the tab that now holds the
-  // uploaded ones.
-  const moreTemplatesCategory =
-    useGet(featureSwitch$)[FeatureSwitchKey.CustomTemplates] === true
-      ? "custom"
-      : "slides";
   const label = t(($) => {
     return $.chat.taskChips.presentationTemplates;
   });
@@ -5916,7 +5909,10 @@ export function ComposerPresentationRecommendations({
           size="xs"
           className="shrink-0 gap-1.5 font-normal"
           onClick={() => {
-            openTemplates({ kind: "insert", category: moreTemplatesCategory });
+            // This shelf is the presentation catalog's entry, so "more" opens
+            // the Presentation tab like every other type's shelf does, whether
+            // or not the member also has Custom.
+            openTemplates({ kind: "insert", category: "slides" });
           }}
         >
           {t(($) => {
