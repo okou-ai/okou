@@ -882,6 +882,48 @@ test("Recover from a personal model account limit", async () => {
   await expect(findButton("Stop")).resolves.toBeVisible();
 });
 
+test("Keep the failure card element while recovery resolves", async () => {
+  configureModelPolicies(["gpt-5.6-luna"]);
+  installRunChat({
+    selectedModel: "gpt-5.6-luna",
+    chatEvents: failedRunEvents(
+      "Selected model is at capacity. Please try a different model.",
+      "gpt-5.6-luna",
+    ),
+  });
+  const detailRequested = context.mocks.deferred<void>();
+  const releaseDetail = context.mocks.deferred<void>();
+  context.mocks.api(runsByIdContract.getById, async ({ params, respond }) => {
+    detailRequested.resolve();
+    await releaseDetail.promise;
+    return respond(200, {
+      runId: params.id,
+      status: "failed",
+      prompt: "Continue the analysis",
+      appendSystemPrompt: null,
+      createdAt: "2026-08-01T10:00:02.000Z",
+    });
+  });
+
+  await setupPage({ context, path: RUN_PATH });
+
+  await readyChat();
+  await detailRequested.promise;
+  const shell = await screen.findByTestId("assistant-error-card-shell");
+  const pendingCard = shell.firstElementChild;
+  expect(pendingCard).toBeInstanceOf(HTMLElement);
+  expect(screen.queryByTestId("assistant-error-recovery")).toBeNull();
+
+  releaseDetail.resolve();
+
+  // The classification replaces this card's contents. Mounting a second card
+  // element here would drop the transcript's scroll offset by the card's own
+  // height, which `docs/chat-cards.md` forbids.
+  const recovered = await screen.findByTestId("assistant-error-recovery");
+  expect(recovered).toBe(pendingCard);
+  expect(recovered).toHaveTextContent("This model is busy right now");
+});
+
 test("Recover when a model is at capacity", async () => {
   const user = userEvent.setup({ delay: null });
   configureModelPolicies(["gpt-5.6-luna", "deepseek-v4-flash", "gpt-5.6-sol"]);
