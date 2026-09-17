@@ -445,7 +445,9 @@ function IntroLayout({
   return (
     <>
       <DialogHeader>
-        <DialogTitle>{title}</DialogTitle>
+        {/* The close button is absolutely placed at the top right, so a title
+            long enough to wrap runs underneath it without this inset. */}
+        <DialogTitle className="pr-7">{title}</DialogTitle>
         <DialogDescription>{description}</DialogDescription>
       </DialogHeader>
       <div className="flex flex-col gap-3">
