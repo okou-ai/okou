@@ -2,7 +2,7 @@ import type { GetStartedQuestKey } from "@okouai/api-contracts/contracts/get-sta
 import type { ReactNode } from "react";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { ArrowRight, Link2, Play, User } from "lucide-react";
+import { Clock, Play, User } from "lucide-react";
 import {
   Button,
   Dialog,
@@ -23,18 +23,8 @@ import {
   showQuestIntroPrompt$,
 } from "../../signals/okou-page/get-started.ts";
 import { formatLocalizedNumber } from "../../i18n/format.ts";
-import { SlackMark } from "./components/slack-mark.tsx";
 import { platformStaticAssetUrl } from "../../lib/static-assets.ts";
-import {
-  BAND_ALPHA,
-  FILL_ALPHA,
-  ILLUSTRATION_ACCENTS,
-  LINE_ALPHA,
-  NODE_CLASS,
-  SOFT_ALPHA,
-  THUMBNAIL_CLASS,
-  TILE_ALPHA,
-} from "./start-cards.tsx";
+import { WorkflowConnectorIcon } from "../onboarding/onboarding-workflow-diagram.tsx";
 
 /**
  * The quests that explain themselves before they hand the user off.
@@ -64,21 +54,66 @@ export function questHasIntro(key: GetStartedQuestKey): boolean {
 }
 
 /**
- * The illustrated tile the product already uses on its start cards: one washed
- * square per idea, drawn from the avatar palette, with the art built out of
- * bordered card nodes rather than flat glyphs. A quest is introduced with a row
- * of these so the dialog reads as the same family as the page behind it.
+ * The illustration language the onboarding workflow diagram already uses for
+ * exactly this kind of picture: card tiles on the illustration stroke with a
+ * soft lift, real connector marks inside them, and nodes joined by a line with
+ * a waypoint at each end. No arrowheads — the line is the relationship, and
+ * the tiles on either side say which way it runs.
  */
-function Tile({ accent, children }: { accent: string; children: ReactNode }) {
+const FIGURE_TILE_CLASS =
+  "inline-flex items-center justify-center overflow-hidden rounded-2xl border-(length:--border-width-illustration) border-solid border-border bg-card shadow-[0_12px_30px_-18px_rgba(0,0,0,0.5)]";
+
+/* The artwork's own orange and ink, literal for the same reason the diagram
+   keeps them literal: they are artwork, and the theme tokens flip in Dark. */
+const FIGURE_LINE_COLOR = "#ed7a44";
+const FIGURE_DOT_CLASS =
+  "box-border size-[7px] shrink-0 rounded-full border-(length:--border-width-illustration-marker) border-solid border-[#ffffff] bg-[#29292e]";
+
+function FigureTile({ size, children }: { size: number; children: ReactNode }) {
   return (
-    <div
-      className={THUMBNAIL_CLASS}
-      style={{ backgroundColor: `${accent}${TILE_ALPHA}` }}
-    >
+    <span className={FIGURE_TILE_CLASS} style={{ width: size, height: size }}>
       {children}
-    </div>
+    </span>
   );
 }
+
+/** The join: a run of line with a waypoint at each end, and no arrow. */
+function FigureJoin() {
+  return (
+    <span className="flex shrink-0 items-center" aria-hidden="true">
+      <span className={FIGURE_DOT_CLASS} />
+      <span
+        className="h-[2px] w-[22px] rounded-full"
+        style={{ backgroundColor: FIGURE_LINE_COLOR }}
+      />
+      <span className={FIGURE_DOT_CLASS} />
+    </span>
+  );
+}
+
+/** Three marks in one slot, the way the diagram shows several sources. */
+function FigureStack({ children }: { children: readonly ReactNode[] }) {
+  return (
+    <span className="relative block size-[42px]">
+      {children.map((child, index) => {
+        return (
+          <span
+            key={STACK_POSITIONS[index]}
+            className={`absolute size-[26px] rounded-[9px] ${FIGURE_TILE_CLASS} ${STACK_POSITIONS[index]}`}
+          >
+            {child}
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
+const STACK_POSITIONS = [
+  "top-0 left-0",
+  "top-0 right-0",
+  "bottom-0 left-[8px]",
+] as const;
 
 /**
  * The illustration gets its own ground rather than floating on the dialog's
@@ -87,63 +122,9 @@ function Tile({ accent, children }: { accent: string; children: ReactNode }) {
  */
 function TileRow({ children }: { children: ReactNode }) {
   return (
-    <div className="flex items-center justify-center gap-3 rounded-xl bg-state-hover px-4 py-5">
+    <div className="flex items-center justify-center gap-[10px] rounded-xl bg-state-hover px-4 py-6">
       {children}
     </div>
-  );
-}
-
-/**
- * What happens between the two tiles.
- *
- * Three neutral dots said only "these are related". A link means the two are
- * joined and can be unjoined; an arrow means one moves into the other. The
- * figure is the only place that can carry this, because the copy under it is
- * down to two lines.
- */
-function Joint({ accent, kind }: { accent: string; kind: "link" | "arrow" }) {
-  const Glyph = kind === "link" ? Link2 : ArrowRight;
-  return (
-    <span className="shrink-0" style={{ color: `${accent}${FILL_ALPHA}` }}>
-      <Glyph size={16} strokeWidth={2.2} />
-    </span>
-  );
-}
-
-/** A stack of lines standing in for a document, message or row. */
-function Lines({
-  accent,
-  width,
-  count = 2,
-  height = 3,
-}: {
-  accent: string;
-  width: number;
-  count?: number;
-  height?: number;
-}) {
-  return (
-    <span className="flex flex-col gap-[4px]">
-      {/* The last line is short, the way a paragraph ends. */}
-      {Array.from({ length: count }, (_, index) => {
-        return {
-          id: `line-${index}`,
-          width: index === count - 1 ? width * 0.62 : width,
-        };
-      }).map(({ id, width: lineWidth }) => {
-        return (
-          <span
-            key={id}
-            className="rounded-full"
-            style={{
-              width: lineWidth,
-              height,
-              backgroundColor: `${accent}${SOFT_ALPHA}`,
-            }}
-          />
-        );
-      })}
-    </span>
   );
 }
 
@@ -167,263 +148,132 @@ function OkouAvatar({ size }: { size: number }) {
   );
 }
 
-/**
- * A person, drawn as one glyph rather than assembled.
- *
- * An earlier version stacked a filled circle over a filled dome, and at 20px
- * the gap between them read as a head floating above a shoulder rather than as
- * somebody. lucide's is one drawing at proportions that survive the size, and
- * it is the same source the start-card tiles already take their marks from.
- */
-function Person({ accent, size }: { accent: string; size: number }) {
+function OkouNode() {
   return (
-    <span
-      className="grid shrink-0 place-items-center rounded-full border bg-card"
-      style={{
-        width: size,
-        height: size,
-        borderColor: `${accent}${LINE_ALPHA}`,
-        color: accent,
-      }}
-    >
-      <User size={Math.round(size * 0.56)} strokeWidth={2.4} />
-    </span>
+    <FigureTile size={56}>
+      <OkouAvatar size={44} />
+    </FigureTile>
   );
 }
 
-/**
- * The user's own material: a fanned stack of documents.
- *
- * Drawn the way the start cards draw a deck — two cards rotated behind a front
- * one — because depth is what keeps a small object from reading as a diagram.
- */
-function ToolStackArt({ accent }: { accent: string }) {
-  const edge = { borderColor: `${accent}${LINE_ALPHA}` };
-  return (
-    <div className="relative h-[32px] w-[44px]">
-      <span
-        className={`absolute inset-0 -translate-x-[3px] translate-y-[2px] -rotate-6 ${NODE_CLASS}`}
-        style={edge}
-      />
-      <span
-        className={`absolute inset-0 translate-x-[3px] translate-y-px rotate-6 ${NODE_CLASS}`}
-        style={edge}
-      />
-      <span className={`absolute inset-0 ${NODE_CLASS}`} style={edge}>
-        <span
-          className="absolute left-[8px] top-[8px] size-[7px] rounded-[2px]"
-          style={{ backgroundColor: accent }}
-        />
-        <span
-          className="absolute left-[19px] top-[9px] h-[3px] w-[17px] rounded-full"
-          style={{ backgroundColor: `${accent}${SOFT_ALPHA}` }}
-        />
-        <span
-          className="absolute left-[8px] top-[20px] h-[3px] w-[28px] rounded-full"
-          style={{ backgroundColor: `${accent}${SOFT_ALPHA}` }}
-        />
-      </span>
-    </div>
-  );
+/** A person, one glyph, in the same tile the marks sit in. */
+function PersonMark({ size }: { size: number }) {
+  return <User size={size} strokeWidth={2} className="text-muted-foreground" />;
 }
 
+/** Okou joined to the accounts it will read: three of the user's own tools. */
 function ConnectorFigure() {
-  const accent = ILLUSTRATION_ACCENTS.website;
   return (
     <TileRow>
-      <Tile accent={accent}>
-        <OkouAvatar size={44} />
-      </Tile>
-      <Joint accent={accent} kind="link" />
-      <Tile accent={accent}>
-        <ToolStackArt accent={accent} />
-      </Tile>
+      <OkouNode />
+      <FigureJoin />
+      <FigureTile size={56}>
+        <FigureStack>
+          {[
+            <WorkflowConnectorIcon
+              key="gmail"
+              connectorSlug="gmail"
+              size={18}
+            />,
+            <WorkflowConnectorIcon
+              key="notion"
+              connectorSlug="notion"
+              size={18}
+            />,
+            <WorkflowConnectorIcon
+              key="calendar"
+              connectorSlug="google-calendar"
+              size={18}
+            />,
+          ]}
+        </FigureStack>
+      </FigureTile>
     </TileRow>
   );
 }
 
-/**
- * A channel with the assistant in it, at the size everything else is drawn.
- *
- * An earlier version was a 268px window with a rail and two messages, which
- * broke the tile grammar every other figure keeps and read as texture. The
- * header names the place and the row underneath says who is talking there.
- */
-function ChannelArt({ accent }: { accent: string }) {
-  return (
-    <span
-      className={`h-[34px] w-[46px] overflow-hidden ${NODE_CLASS}`}
-      style={{ borderColor: `${accent}${LINE_ALPHA}` }}
-    >
-      <span
-        className="flex h-[13px] items-center gap-[3px] border-b px-[4px]"
-        style={{
-          borderColor: `${accent}${LINE_ALPHA}`,
-          backgroundColor: `${accent}${BAND_ALPHA}`,
-        }}
-      >
-        <SlackMark size={7} />
-        <span
-          className="h-[3px] w-[20px] rounded-full"
-          style={{ backgroundColor: accent }}
-        />
-      </span>
-      {/* The team is already in the channel; the assistant joins them. A
-          channel drawn with nobody in it says nothing about "where your team
-          already works". */}
-      <span className="flex items-center gap-[2px] px-[4px] pt-[5px]">
-        <Person accent={accent} size={13} />
-        <Person accent={accent} size={13} />
-        <OkouAvatar size={14} />
-      </span>
-    </span>
-  );
-}
-
+/** Okou moves into Slack, where the team already is. */
 function SlackFigure() {
-  // Slack's own aubergine, so the channel is recognised before it is read.
-  const accent = "#4A154B";
   return (
     <TileRow>
-      <Tile accent={accent}>
-        <OkouAvatar size={44} />
-      </Tile>
-      <Joint accent={accent} kind="arrow" />
-      <Tile accent={accent}>
-        <ChannelArt accent={accent} />
-      </Tile>
+      <OkouNode />
+      <FigureJoin />
+      <FigureTile size={56}>
+        <WorkflowConnectorIcon connectorSlug="slack" size={34} />
+      </FigureTile>
+      <FigureJoin />
+      <FigureTile size={56}>
+        <FigureStack>
+          {[
+            <PersonMark key="a" size={15} />,
+            <PersonMark key="b" size={15} />,
+            <PersonMark key="c" size={15} />,
+          ]}
+        </FigureStack>
+      </FigureTile>
     </TileRow>
   );
 }
 
 /** One saved workflow, handed to everyone who joins. */
 function InviteFigure() {
-  // Terracotta, the avatar palette's colour for people.
-  const accent = ILLUSTRATION_ACCENTS.avatar;
-  const edge = { borderColor: `${accent}${LINE_ALPHA}` };
   return (
     <TileRow>
-      <Tile accent={accent}>
-        <span
-          className={`flex h-[32px] w-[44px] flex-col justify-center gap-[5px] px-[7px] ${NODE_CLASS}`}
-          style={edge}
-        >
+      <FigureTile size={56}>
+        <span className="flex w-[34px] flex-col gap-[5px]">
           <span
-            className="h-[3px] w-[20px] rounded-full"
-            style={{ backgroundColor: accent }}
+            className="h-[3px] w-[22px] rounded-full"
+            style={{ backgroundColor: FIGURE_LINE_COLOR }}
           />
-          <span
-            className="h-[3px] w-[28px] rounded-full"
-            style={{ backgroundColor: `${accent}${SOFT_ALPHA}` }}
-          />
+          <span className="h-[3px] w-full rounded-full bg-divider" />
+          <span className="h-[3px] w-[24px] rounded-full bg-divider" />
         </span>
-      </Tile>
-      <Joint accent={accent} kind="arrow" />
-      <Tile accent={accent}>
-        {/* A member list: overlapped, each with a ring of paper. */}
-        <span className="flex items-center">
-          {["a", "b", "c"].map((id, index) => {
-            return (
-              <span
-                key={id}
-                className="rounded-full bg-card p-[1.5px]"
-                style={{ marginLeft: index === 0 ? 0 : -6 }}
-              >
-                <Person accent={accent} size={22} />
-              </span>
-            );
-          })}
-        </span>
-      </Tile>
+      </FigureTile>
+      <FigureJoin />
+      <FigureTile size={56}>
+        <FigureStack>
+          {[
+            <PersonMark key="a" size={15} />,
+            <PersonMark key="b" size={15} />,
+            <PersonMark key="c" size={15} />,
+          ]}
+        </FigureStack>
+      </FigureTile>
     </TileRow>
   );
 }
 
 /** Step 1: a list of ready-made workflows with one of them chosen. */
-function TemplateArt({ accent }: { accent: string }) {
+function TemplateArt() {
   return (
-    <span className="flex flex-col gap-[3px]">
-      {[
-        { id: "above", chosen: false },
-        { id: "chosen", chosen: true },
-        { id: "below", chosen: false },
-      ].map(({ id, chosen }) => {
-        return (
-          <span
-            key={id}
-            className={`flex h-[13px] w-[44px] items-center gap-[4px] px-[4px] ${NODE_CLASS}`}
-            style={{
-              borderColor: chosen ? accent : `${accent}${LINE_ALPHA}`,
-              backgroundColor: chosen ? `${accent}${BAND_ALPHA}` : undefined,
-            }}
-          >
-            <span
-              className="size-[5px] shrink-0 rounded-[1px]"
-              style={{
-                backgroundColor: chosen ? accent : `${accent}${SOFT_ALPHA}`,
-              }}
-            />
-            <span
-              className="h-[2px] rounded-full"
-              style={{
-                width: 24,
-                backgroundColor: chosen ? accent : `${accent}${SOFT_ALPHA}`,
-              }}
-            />
-          </span>
-        );
-      })}
+    <span className="flex w-[30px] flex-col gap-[4px]">
+      <span className="h-[3px] w-full rounded-full bg-divider" />
+      <span
+        className="h-[3px] w-full rounded-full"
+        style={{ backgroundColor: FIGURE_LINE_COLOR }}
+      />
+      <span className="h-[3px] w-[18px] rounded-full bg-divider" />
     </span>
   );
 }
 
-/** Step 2: it runs, and the result is already there. */
-function RunArt({ accent }: { accent: string }) {
+/** Step 2: it runs once, and the result is already there. */
+function RunArt() {
   return (
     <span
-      className={`flex h-[42px] w-[48px] flex-col justify-center gap-[5px] px-[6px] ${NODE_CLASS}`}
-      style={{ borderColor: `${accent}${LINE_ALPHA}` }}
+      className="grid size-[26px] place-items-center rounded-full border-(length:--border-width-illustration) border-solid"
+      style={{ borderColor: FIGURE_LINE_COLOR, color: FIGURE_LINE_COLOR }}
     >
-      <span className="flex items-center gap-[4px]">
-        <span
-          className="grid size-[12px] place-items-center rounded-full"
-          style={{ backgroundColor: `${accent}${SOFT_ALPHA}`, color: accent }}
-        >
-          <Play size={6} fill="currentColor" />
-        </span>
-        <Lines accent={accent} width={20} count={1} />
-      </span>
-      <span
-        className="h-[12px] rounded-[2px]"
-        style={{ backgroundColor: `${accent}${FILL_ALPHA}` }}
-      />
+      <Play size={11} fill="currentColor" />
     </span>
   );
 }
 
 /** Step 3: saved, and from then on it keeps its own time. */
-function SaveArt({ accent }: { accent: string }) {
+function SaveArt() {
   return (
-    <span
-      className={`grid h-[42px] w-[48px] place-items-center ${NODE_CLASS}`}
-      style={{ borderColor: `${accent}${LINE_ALPHA}` }}
-    >
-      <span
-        className="relative grid size-[24px] place-items-center rounded-full border"
-        style={{ borderColor: `${accent}${LINE_ALPHA}` }}
-      >
-        <span
-          className="absolute left-1/2 top-1/2 h-[7px] w-[2px] origin-bottom rounded-full"
-          style={{
-            backgroundColor: accent,
-            transform: "translate(-50%,-100%)",
-          }}
-        />
-        <span
-          className="absolute left-1/2 top-1/2 h-[2px] w-[6px] origin-left rounded-full"
-          style={{ backgroundColor: accent, transform: "translateY(-50%)" }}
-        />
-      </span>
+    <span style={{ color: FIGURE_LINE_COLOR }}>
+      <Clock size={26} strokeWidth={1.8} />
     </span>
   );
 }
@@ -670,9 +520,9 @@ function WorkflowStepsIntro({ onConfirm, onClose }: IntroProps) {
       <div>
         <WorkflowStep
           art={
-            <Tile accent={ILLUSTRATION_ACCENTS.illustration}>
-              <TemplateArt accent={ILLUSTRATION_ACCENTS.illustration} />
-            </Tile>
+            <FigureTile size={48}>
+              <TemplateArt />
+            </FigureTile>
           }
           title={t(($) => {
             return $.chat.agentPage.getStarted.intro.workflow.stepTemplate;
@@ -684,9 +534,9 @@ function WorkflowStepsIntro({ onConfirm, onClose }: IntroProps) {
         />
         <WorkflowStep
           art={
-            <Tile accent={ILLUSTRATION_ACCENTS.website}>
-              <RunArt accent={ILLUSTRATION_ACCENTS.website} />
-            </Tile>
+            <FigureTile size={48}>
+              <RunArt />
+            </FigureTile>
           }
           title={t(($) => {
             return $.chat.agentPage.getStarted.intro.workflow.stepRun;
@@ -698,9 +548,9 @@ function WorkflowStepsIntro({ onConfirm, onClose }: IntroProps) {
         />
         <WorkflowStep
           art={
-            <Tile accent={ILLUSTRATION_ACCENTS.slides}>
-              <SaveArt accent={ILLUSTRATION_ACCENTS.slides} />
-            </Tile>
+            <FigureTile size={48}>
+              <SaveArt />
+            </FigureTile>
           }
           title={t(($) => {
             return $.chat.agentPage.getStarted.intro.workflow.stepSave;
