@@ -121,13 +121,19 @@ without writing a grant. Existing share responses and public delivery URLs
 remain supported for older Apps.
 
 The additive, unauthenticated `GET /api/artifact-references/:reference/public`
-returns only a currently published delivery URL. Private, organization-only,
-revoked, missing, and unselected version references return 404. Public copies
-use the same App reference as organization copies. Deploy the new API before
-relying on anonymous opening of these references; a new App against an older
-API retains the sign-in fallback on 404. Previously copied URLs remain valid
-under their existing policy. Owner resolution of an old organization alias
-continues after switching it to Only me; recipients lose access.
+returns a currently published delivery URL and `preview: { filename, contentType }`.
+Private, organization-only, revoked, missing, and unselected version references
+return 404 without metadata. Public copies use the same App reference as
+organization copies. The App renders public previews inside that address and
+shows its access page on 404; sign-in is an explicit action on that page.
+
+Deploy the API with preview metadata before the App that consumes it. The
+existing `url` field remains unchanged for older Apps. This is an iteration of
+the non-GA `privateArtifacts` feature, so the new App does not carry a tolerant
+reader for an API lacking the preview metadata. No database or host Worker
+protocol change is required. Previously copied URLs remain valid under their
+existing policy. Owner resolution of an old organization alias continues after
+switching it to Only me; recipients lose access.
 
 #### Private attachment uploads
 

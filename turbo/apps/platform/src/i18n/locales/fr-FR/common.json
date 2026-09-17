@@ -457,6 +457,8 @@
       "backToBrand": "Retour à {{brandName}}",
       "description": "Il est peut-être privé ou n’est plus disponible.",
       "help": "Demandez à la personne qui a partagé ce lien de vérifier l’accès.",
+      "signIn": "Se connecter",
+      "signInFailed": "Impossible d’ouvrir la connexion. Réessayez.",
       "signedInAs": "Connecté en tant que {{email}}",
       "switchAccount": "Changer de compte",
       "switchAccountFailed": "Impossible d’ouvrir le sélecteur de compte. Veuillez réessayer.",

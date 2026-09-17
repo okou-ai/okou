@@ -443,6 +443,8 @@
       "backToBrand": "Kembali ke {{brandName}}",
       "description": "Artefak ini mungkin bersifat pribadi atau sudah tidak tersedia.",
       "help": "Minta orang yang membagikan tautan ini untuk memeriksa akses.",
+      "signIn": "Masuk",
+      "signInFailed": "Tidak dapat membuka halaman masuk. Silakan coba lagi.",
       "signedInAs": "Masuk sebagai {{email}}",
       "switchAccount": "Ganti akun",
       "switchAccountFailed": "Tidak dapat membuka pemilih akun. Silakan coba lagi.",

@@ -443,6 +443,8 @@
       "backToBrand": "Back to {{brandName}}",
       "description": "It may be private or no longer available.",
       "help": "Ask the person who shared this link to check access.",
+      "signIn": "Sign in",
+      "signInFailed": "Could not open sign-in. Please try again.",
       "signedInAs": "Signed in as {{email}}",
       "switchAccount": "Switch account",
       "switchAccountFailed": "Could not open the account switcher. Please try again.",

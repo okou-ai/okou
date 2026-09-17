@@ -443,6 +443,8 @@
       "backToBrand": "{{brandName}} に戻る",
       "description": "非公開か、利用できなくなった可能性があります。",
       "help": "リンクを共有した人にアクセス権の確認を依頼してください。",
+      "signIn": "ログイン",
+      "signInFailed": "ログイン画面を開けませんでした。もう一度お試しください。",
       "signedInAs": "{{email}} としてログイン中",
       "switchAccount": "アカウントを切り替える",
       "switchAccountFailed": "アカウント切り替え画面を開けませんでした。もう一度お試しください。",
