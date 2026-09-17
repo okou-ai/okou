@@ -473,6 +473,13 @@ function malformedInspectFile(): File {
           triggerSource: "not-a-source",
           prompt: { nested: true },
           appendSystemPrompt: { nested: true },
+          source: {
+            providerType: null,
+            runtimeProviderType: null,
+            model: null,
+            credentialScope: null,
+            account: { status: "unknown" },
+          },
           createdAt: "bad-log-created-at",
           startedAt: "bad-started-at",
           completedAt: "bad-completed-at",
