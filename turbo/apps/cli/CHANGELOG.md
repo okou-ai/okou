@@ -1,5 +1,31 @@
 # Changelog
 
+## [9.340.0](https://github.com/vm0-ai/okou/compare/cli-v9.339.1...cli-v9.340.0) (2026-09-17)
+
+
+### Features
+
+* **api:** replace a custom template's package in place ([#34961](https://github.com/vm0-ai/okou/issues/34961)) ([a1dd59a](https://github.com/vm0-ai/okou/commit/a1dd59a97090f1bdc1f7a53f8cdb987a6606ce63))
+
+
+### Bug Fixes
+
+* **cli:** qualify remaining private artifact outputs ([#34972](https://github.com/vm0-ai/okou/issues/34972)) ([069eb83](https://github.com/vm0-ai/okou/commit/069eb835fb9c864665406d5ce53c6cdfa5976c40))
+
+
+### Performance Improvements
+
+* **cli:** extract camera review frames in one decode pass per video ([#34989](https://github.com/vm0-ai/okou/issues/34989)) ([03c5bb1](https://github.com/vm0-ai/okou/commit/03c5bb16012c48891f6784e01c3555cb232812f4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.458.0
+    * @okouai/core bumped to 8.676.0
+    * @okouai/pi-agent-runtime bumped to 1.33.3
+
 ## [9.339.1](https://github.com/vm0-ai/okou/compare/cli-v9.339.0...cli-v9.339.1) (2026-09-17)
 
 
