@@ -82,30 +82,23 @@ function presentationTemplateImportPrompt(): string {
 }
 
 /**
- * The same request, aimed at the custom template catalog, per kind.
+ * The same request, aimed at the custom template catalog.
  *
- * Naming the command is the one instruction this message has to carry. The
- * reverse guide the run already loads ends at `okou presentation-template
- * publish`, which writes to the presentation table; a template published there
- * never reaches the Custom pane, which reads the user template catalog. Until
- * that pinned guide moves, the message is where the run learns which catalog
- * the user asked for — and, now that a source can compile to more than one
- * kind, which command publishes it.
+ * One sentence for every kind, because the guide already sorts them: the
+ * `reverse-template` skill decides whether the file is a deck, a Word document
+ * or a PDF document and follows the branch that matches. Repeating that
+ * decision here would give the run two answers that can disagree, and the one
+ * in the guide is the one that read the pages.
  *
- * Each kind says its own sentence rather than one being what the others fall
- * through to: a document is not a deck read differently, it is styles rather
- * than pages, and a message that called it a deck would ask the run for page
- * images that a document template has no use for.
+ * Naming the catalog is what this message does have to carry. The guide's
+ * presentation branch ends at `okou presentation-template publish`, which
+ * writes to the presentation table; a template published there never reaches
+ * the Custom pane, which reads the user template catalog. Its document branch
+ * already publishes here and adds `--kind document` itself, so saying the
+ * command once covers both without this message claiming a kind.
  */
-function customTemplateImportPrompt(kind: UserTemplateKind): string {
-  switch (kind) {
-    case "presentation": {
-      return "Analyse this deck and save its visual language as a reusable template. Publish it with `okou user-template publish` so it appears under Custom.";
-    }
-    case "document": {
-      return "Analyse this document and save its styles as a reusable template. Publish it with `okou user-template publish --kind document` so it appears under Custom.";
-    }
-  }
+function customTemplateImportPrompt(): string {
+  return "Analyse this file with the `reverse-template` skill and save it as a reusable template. Publish the result with `okou user-template publish` so it appears under Custom — not with `okou presentation-template publish`, which the guide's presentation branch names for the other catalog.";
 }
 
 /**
@@ -123,8 +116,12 @@ function templateImportPrompt(args: {
   if (!args.customTemplates) {
     return presentationTemplateImportPrompt();
   }
-  const kind = importedTemplateKind(args.file);
-  return kind === null ? null : customTemplateImportPrompt(kind);
+  // The kind still decides whether the file can become a template at all, even
+  // though the message no longer names it: a source matching no kind is one
+  // this catalog cannot compile, and refusing it here costs the member nothing.
+  return importedTemplateKind(args.file) === null
+    ? null
+    : customTemplateImportPrompt();
 }
 
 /**

@@ -20,6 +20,10 @@ import {
   openTemplatePicker,
 } from "./chat-composer-template-gallery-test-helpers.ts";
 
+/** What the Custom entry sends, whatever the file turns out to be. */
+const PROMPT =
+  "Analyse this file with the `reverse-template` skill and save it as a reusable template. Publish the result with `okou user-template publish` so it appears under Custom — not with `okou presentation-template publish`, which the guide's presentation branch names for the other catalog.";
+
 function customTemplate(
   overrides: Partial<UserTemplateDetail> = {},
 ): UserTemplateDetail {
@@ -509,7 +513,7 @@ test("One entry takes every kind of source a template can be made from", async (
   expect(entry.getAttribute("accept")).toBe(".pptx,.ppt,.pdf,.docx,.doc");
 });
 
-test("A document is sent with the command that publishes a document", async () => {
+test("Every source is sent with one message that lets the guide sort it", async () => {
   mockCustomTemplates([]);
   context.mocks.upload.success({
     id: "81000000-0000-4000-a000-000000000011",
@@ -533,15 +537,14 @@ test("A document is sent with the command that publishes a document", async () =
   await waitFor(() => {
     expect(capture.runPrompts).toHaveLength(1);
   });
-  // The kind decides the command, and the command decides the table. A deck's
-  // sentence would ask this run for page images a document template has no use
-  // for, and would publish it where the Custom pane cannot see it.
-  expect(capture.runPrompts[0]).toBe(
-    "Analyse this document and save its styles as a reusable template. Publish it with `okou user-template publish --kind document` so it appears under Custom.",
-  );
+  // The `reverse-template` guide decides whether the file is a deck or a
+  // document; repeating that here would give the run two answers that can
+  // disagree. What this message does carry is the catalog, because the guide's
+  // presentation branch names the other one.
+  expect(capture.runPrompts[0]).toBe(PROMPT);
 });
 
-test("A deck uploaded from the same entry keeps the presentation command", async () => {
+test("A deck from the same entry is sent the same message", async () => {
   mockCustomTemplates([]);
   context.mocks.upload.success({
     id: "81000000-0000-4000-a000-000000000012",
@@ -565,9 +568,7 @@ test("A deck uploaded from the same entry keeps the presentation command", async
   await waitFor(() => {
     expect(capture.runPrompts).toHaveLength(1);
   });
-  expect(capture.runPrompts[0]).toBe(
-    "Analyse this deck and save its visual language as a reusable template. Publish it with `okou user-template publish` so it appears under Custom.",
-  );
+  expect(capture.runPrompts[0]).toBe(PROMPT);
 });
 
 test("A source no kind is made from is refused before it is uploaded", async () => {
