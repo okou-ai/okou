@@ -31,6 +31,7 @@ import {
   type MorningBriefCollectionCompletion,
   type MorningBriefCollectionOwner,
 } from "./morning-brief-collection-occurrence.service";
+import { loadCurrentMembershipId } from "./morning-brief-membership.service";
 import { loadMorningBriefMigrationState } from "./morning-brief-migration-state.service";
 import {
   collectMorningBriefSlackBundle,
@@ -170,10 +171,8 @@ async function loadInstallationAgentId(
 /**
  * The member's current Clerk membership generation.
  *
- * Ordinary request authentication may answer from the 60-second role cache, so
- * execution admission repeats the exact-member lookup here and pins the
- * immutable membership id. A remove and rejoin issues a new id, which is what
- * stops a new membership from reviving an older occurrence.
+ * The exact-member lookup and its immutable-id pin are shared with the
+ * Simple Morning Brief connector reader, so both admit on one authority.
  */
 const currentMembershipId$ = command(
   async (
@@ -181,21 +180,7 @@ const currentMembershipId$ = command(
     owner: MorningBriefCollectionOwner,
     signal: AbortSignal,
   ): Promise<string | null> => {
-    const memberships = await get(
-      clerk$,
-    ).organizations.getOrganizationMembershipList(
-      { organizationId: owner.orgId, userId: [owner.userId], limit: 1 },
-      undefined,
-      signal,
-    );
-    signal.throwIfAborted();
-    const membership = memberships.data.find((entry) => {
-      return (
-        entry.publicUserData?.userId === owner.userId &&
-        entry.organization.id === owner.orgId
-      );
-    });
-    return membership?.id ?? null;
+    return await loadCurrentMembershipId(get(clerk$), owner, signal);
   },
 );
 

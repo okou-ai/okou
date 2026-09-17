@@ -147,6 +147,33 @@ interface RequestSendEventOptions {
   readonly usagePricingResolution?: UsagePricingResolution;
 }
 
+/** Both body fields are optional on the contract, and an omitted
+ * `cloudBrowserEnabled` keeps the thread's stored flag, so a caller that passes
+ * no option must send no key rather than an explicit `false`. `signal` replaces
+ * the app-level request signal, which is how a caller cancels this route. */
+interface ComputerUseHostSelectionOptions {
+  readonly cloudBrowserEnabled?: boolean;
+  readonly eventId?: string;
+  readonly signal?: AbortSignal;
+}
+
+function computerUseHostSelectionBody(
+  computerUseHostId: string | null,
+  options: ComputerUseHostSelectionOptions | undefined,
+): {
+  readonly computerUseHostId: string | null;
+  readonly cloudBrowserEnabled?: boolean;
+  readonly eventId?: string;
+} {
+  return {
+    computerUseHostId,
+    ...(options?.cloudBrowserEnabled === undefined
+      ? {}
+      : { cloudBrowserEnabled: options.cloudBrowserEnabled }),
+    ...(options?.eventId === undefined ? {} : { eventId: options.eventId }),
+  };
+}
+
 function authHeaders(actor: ApiTestUser | null): AuthHeaders {
   return actor
     ? {
@@ -226,8 +253,8 @@ const chatFilesRoutes = [
   ...userModelPreferenceRoutes,
 ] as const;
 
-function chatFilesApp(context: TestContext) {
-  return setupAppWithRoutes({ context, routes: chatFilesRoutes });
+function chatFilesApp(context: TestContext, signal?: AbortSignal) {
+  return setupAppWithRoutes({ context, routes: chatFilesRoutes, signal });
 }
 
 /** The optional pin query a client may send; omitted keys stay omitted. */
@@ -263,6 +290,28 @@ export function persistedAttachment(
     contentType,
     size,
     url: `https://cdn.vm7.io/artifacts/test/${id}/${filename}`,
+  };
+}
+
+/** The App registers a separate optimistic event id per sidebar event, so a
+ * model-selection request can carry both the model and the service-tier id. */
+interface ModelSelectionRequestOptions {
+  readonly codexServiceTier?: CodexServiceTier | null;
+  readonly reasoningEffort?: ReasoningEffort;
+  readonly eventId?: string;
+  readonly serviceTierEventId?: string;
+}
+
+function modelSelectionBody(
+  model: SupportedRunModel | null,
+  options: ModelSelectionRequestOptions | undefined,
+) {
+  return {
+    model,
+    codexServiceTier: options?.codexServiceTier,
+    reasoningEffort: options?.reasoningEffort,
+    eventId: options?.eventId,
+    serviceTierEventId: options?.serviceTierEventId,
   };
 }
 
@@ -386,8 +435,8 @@ export function createChatFilesBddApi(context: TestContext) {
     return chatFilesApp(context)(userModelPreferenceContract);
   }
 
-  function threadComputerUseHostClient() {
-    return chatFilesApp(context)(chatThreadComputerUseHostContract);
+  function threadComputerUseHostClient(signal?: AbortSignal) {
+    return chatFilesApp(context, signal)(chatThreadComputerUseHostContract);
   }
 
   function chatSearchClient() {
@@ -987,22 +1036,13 @@ export function createChatFilesBddApi(context: TestContext) {
       actor: ApiTestUser,
       threadId: string,
       model: SupportedRunModel | null,
-      options?: {
-        readonly codexServiceTier?: CodexServiceTier | null;
-        readonly reasoningEffort?: ReasoningEffort;
-        readonly eventId?: string;
-      },
+      options?: ModelSelectionRequestOptions,
     ): Promise<void> {
       await accept(
         threadModelSelectionClient().update({
           headers: authenticate(context, actor),
           params: { id: threadId },
-          body: {
-            model,
-            codexServiceTier: options?.codexServiceTier,
-            reasoningEffort: options?.reasoningEffort,
-            eventId: options?.eventId,
-          },
+          body: modelSelectionBody(model, options),
         }),
         [204],
       );
@@ -1063,22 +1103,13 @@ export function createChatFilesBddApi(context: TestContext) {
       threadId: string,
       model: SupportedRunModel | null,
       statuses: readonly (204 | 400 | 401 | 402 | 404)[],
-      options?: {
-        readonly codexServiceTier?: CodexServiceTier | null;
-        readonly reasoningEffort?: ReasoningEffort;
-        readonly eventId?: string;
-      },
+      options?: ModelSelectionRequestOptions,
     ) {
       return await accept(
         threadModelSelectionClient().update({
           headers: authenticate(context, actor),
           params: { id: threadId },
-          body: {
-            model,
-            codexServiceTier: options?.codexServiceTier,
-            reasoningEffort: options?.reasoningEffort,
-            eventId: options?.eventId,
-          },
+          body: modelSelectionBody(model, options),
         }),
         statuses,
       );
@@ -1088,12 +1119,13 @@ export function createChatFilesBddApi(context: TestContext) {
       actor: ApiTestUser,
       threadId: string,
       computerUseHostId: string | null,
+      options?: ComputerUseHostSelectionOptions,
     ): Promise<void> {
       await accept(
-        threadComputerUseHostClient().update({
+        threadComputerUseHostClient(options?.signal).update({
           headers: authenticate(context, actor),
           params: { id: threadId },
-          body: { computerUseHostId },
+          body: computerUseHostSelectionBody(computerUseHostId, options),
         }),
         [204],
       );
@@ -1104,12 +1136,13 @@ export function createChatFilesBddApi(context: TestContext) {
       threadId: string,
       computerUseHostId: string | null,
       statuses: readonly (204 | 400 | 401 | 403 | 404)[],
+      options?: ComputerUseHostSelectionOptions,
     ) {
       return await accept(
-        threadComputerUseHostClient().update({
+        threadComputerUseHostClient(options?.signal).update({
           headers: authenticate(context, actor),
           params: { id: threadId },
-          body: { computerUseHostId },
+          body: computerUseHostSelectionBody(computerUseHostId, options),
         }),
         statuses,
       );

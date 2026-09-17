@@ -1,9 +1,11 @@
 import { morningBriefCollectionPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-collection-preview";
 import { morningBriefGithubCollectionContract } from "@okouai/api-contracts/contracts/morning-brief-github-collection";
+import { morningBriefGmailCollectionPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-gmail-collection-preview";
 
 import { ROUTES } from "../signals/route";
 import { assertUniqueRouteRegistrations } from "../signals/route-entry";
 import { morningBriefCollectionPreviewRoutes } from "../signals/routes/morning-brief-collection-preview";
+import { morningBriefGmailCollectionPreviewRoutes } from "../signals/routes/morning-brief-gmail-collection-preview";
 import { morningBriefPreviewGithubCollectionRoutes } from "../signals/routes/morning-brief-preview-github-collection";
 
 describe("API route registrations", () => {
@@ -39,10 +41,30 @@ describe("API route registrations", () => {
     ).toStrictEqual([entry]);
   });
 
-  // The same statement for the GitHub priorities preview: the deployed table
-  // must hold this module's own entry object, so the behaviour suite that
-  // drives that handler through the exported slice is talking about the
-  // endpoint an operator actually reaches.
+  // Same requirement for the Gmail preview, which is the first real consumer of
+  // the shared connector reader. A route reachable only from a test harness
+  // would pass its own suite and still be absent from the deployed table.
+  it("registers the Morning Brief Gmail collection preview an operator invokes", () => {
+    const [entry, ...extra] = morningBriefGmailCollectionPreviewRoutes;
+    expect(extra).toHaveLength(0);
+    expect(entry?.route).toBe(
+      morningBriefGmailCollectionPreviewContract.collect,
+    );
+    expect(ROUTES).toContain(entry);
+    expect(
+      ROUTES.filter((registered) => {
+        return (
+          registered.route.path ===
+          morningBriefGmailCollectionPreviewContract.collect.path
+        );
+      }),
+    ).toStrictEqual([entry]);
+  });
+
+  // And for the GitHub priorities preview, the reader's second consumer: the
+  // deployed table must hold this module's own entry object, so the behaviour
+  // suite that drives that handler through the exported slice is talking about
+  // the endpoint an operator actually reaches.
   it("registers the Morning Brief GitHub collection preview an operator invokes", () => {
     const [entry, ...extra] = morningBriefPreviewGithubCollectionRoutes;
     expect(extra).toHaveLength(0);

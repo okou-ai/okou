@@ -6309,8 +6309,7 @@
       "sourceFile": "From {{filename}}"
     },
     "empty": {
-      "description": "Templates built from a file you upload will appear here.",
-      "title": "No templates yet"
+      "description": "Okou turns your file's design into a template you can reuse."
     },
     "loadFailed": "Couldn't load templates.",
     "pageCount_one": "{{count}} page",

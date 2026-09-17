@@ -6386,8 +6386,7 @@
       "sourceFile": "Da {{filename}}"
     },
     "empty": {
-      "description": "I modelli creati da un file che carichi appariranno qui.",
-      "title": "Ancora nessun modello"
+      "description": "Okou trasforma il design del tuo file in un modello che puoi riutilizzare."
     },
     "loadFailed": "Impossibile caricare i modelli.",
     "pageCount_one": "{{count}} pagina",
