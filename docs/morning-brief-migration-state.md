@@ -359,14 +359,14 @@ Morning Brief already uses:
 - the `automation_id` cascade removes occurrences with their automation,
   including uninstall;
 - owner, organization and membership revocation deletes that scope's
-  occurrences and, in the same operation, disables that scope's Morning Brief
-  schedules and clears their `next_run_at`.
+  occurrences, and changes nothing else.
 
-The second step is what keeps removal fail-closed. Settlement requires an
-enabled automation, so a callback that arrives after revocation settles nothing
-instead of falling through to the untracked legacy branch. Only that scope's own
-Morning Brief automations are touched: no workflow is deleted and no other
-owner is affected.
+Known limit: after revocation a late callback for that scope no longer matches a
+recorded occurrence and falls back to the unjournaled legacy branch, exactly as
+it would for an execution this table never recorded. Closing that residual
+replay window requires the durable owner and revocation epoch S7b owns. It is
+recorded here rather than closed by disabling schedules in cleanup, which would
+change behavior other Morning Brief surfaces already rely on.
 
 ### What this slice does not do
 

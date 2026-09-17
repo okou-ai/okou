@@ -12165,9 +12165,8 @@ describe("Morning Brief legacy schedule claim journal", () => {
 
     await deliverClerkOrganizationMembershipDeleted(departing.actor);
 
-    // The journal is gone and the schedule cannot replay: settlement requires
-    // an enabled automation, so a late callback fails closed instead of
-    // reaching the untracked legacy branch.
+    // The departing member's occurrences are gone. Revocation deliberately
+    // changes nothing else, so the automation itself is untouched.
     await expect(
       readMorningBriefScheduleClaimsFixture(departing.automationId),
     ).resolves.toHaveLength(0);

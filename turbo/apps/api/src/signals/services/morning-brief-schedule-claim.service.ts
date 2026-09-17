@@ -275,27 +275,6 @@ function revocationWhere(scope: MorningBriefScheduleRevocationScope): SQL {
     : eq(morningBriefScheduleClaims.orgId, scope.orgId);
 }
 
-function revokedAutomationWhere(
-  scope: MorningBriefScheduleRevocationScope,
-): SQL {
-  const owned =
-    scope.kind === "membership"
-      ? (and(
-          eq(workflowAutomations.orgId, scope.orgId),
-          eq(workflowAutomations.ownerUserId, scope.userId),
-        ) as SQL)
-      : scope.kind === "user"
-        ? eq(workflowAutomations.ownerUserId, scope.userId)
-        : eq(workflowAutomations.orgId, scope.orgId);
-  return and(
-    owned,
-    eq(
-      workflowAutomations.officialBlueprintKey,
-      MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
-    ),
-  ) as SQL;
-}
-
 /**
  * Drop this scope's legacy schedule occurrences inside a cleanup transaction.
  *
@@ -307,21 +286,18 @@ function revokedAutomationWhere(
  * owner, organization and membership revocation points the rest of Morning
  * Brief already uses.
  *
- * Removing recorded occurrences would otherwise make a late callback look like
- * an untracked legacy execution that may still advance the schedule, so the
- * same scope's Morning Brief schedules are stopped in the same statement pair.
- * The settlement path requires an enabled automation, which makes that replay
- * fail closed. Only this scope's own Morning Brief automations are touched: no
- * workflow is deleted and no other owner is affected.
+ * Scope limit: this deletes only this scope's occurrences. It deliberately
+ * does not change any automation, workflow or other owner's rows. A callback
+ * that arrives after revocation therefore no longer matches a recorded
+ * occurrence and falls back to the unjournaled legacy branch, exactly as it
+ * would for any execution this table never recorded. Closing that residual
+ * replay window needs the owner and revocation epoch S7b owns; it is recorded
+ * as a limit rather than papered over here.
  */
 export async function revokeMorningBriefScheduleOwnership(
-  executor: Pick<Db, "delete" | "update"> | Tx,
+  executor: Pick<Db, "delete"> | Tx,
   scope: MorningBriefScheduleRevocationScope,
 ): Promise<void> {
-  await executor
-    .update(workflowAutomations)
-    .set({ enabled: false, nextRunAt: null, updatedAt: nowDate() })
-    .where(revokedAutomationWhere(scope));
   await executor
     .delete(morningBriefScheduleClaims)
     .where(revocationWhere(scope));
