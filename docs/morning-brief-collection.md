@@ -144,21 +144,72 @@ public and private channels. Direct messages and unshared conversations never
 appear. Windowed history is read per channel, and a bounded number of thread
 roots discovered inside that history are expanded.
 
+### Live shared scope
+
+Enumerating the intersection once authorizes nothing afterwards. The
+organization's bot keeps its own membership when the connected member loses
+theirs, so a channel discovered at the start of an attempt must not become
+standing read authority for the rest of it.
+
+Every protected history or reply page read is therefore preceded by a fresh
+bounded lookup of the same intersection, and one final lookup runs before the
+bundle leaves the collector. That last pass exists because a response can be
+held across a removal that happened after its own check; it stops as soon as
+every pending conversation is named, so it normally costs one request. Each
+lookup uses the exact organization bot token, connected Slack user and
+workspace, the same fixed `users.conversations` method discovery uses, and the
+same combined cancellation and deadline signal.
+
+Those lookups obey the same finite budgets as the reads, so an attempt that has
+already spent its request or wall-clock budget cannot buy the final lookup. Such
+an attempt is already `partial` under `requests` or `deadline`, and everything it
+returns still carries the per-read proof that preceded it. Raising a budget to
+buy the extra call would be a silent cap increase and is deliberately not done.
+
+A lookup produces one of three results, and only the first authorizes a read:
+
+| Result   | Meaning and effect                                                                                                                                                                                                                                                                               |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| shared   | The conversation was named in the member's live intersection. The read proceeds.                                                                                                                                                                                                                 |
+| revoked  | The whole intersection was listed without it. Nothing further is read, and everything the attempt already holds for that conversation is discarded, including its channel entry. The limit is `scope-lost`.                                                                                      |
+| unproven | The lookup ran out of pages, requests or time, or repeated a cursor, and established neither access nor its absence. Nothing further is read. Content an earlier live lookup did authorize is kept. The limit is `scope-unproven`, or the exhausted total budget's own `requests` or `deadline`. |
+
+An unproven lookup is never an allow, and never a healthy empty day: it always
+leaves a named limit and therefore `partial` coverage. There is no fallback to
+bot-only visibility, another workspace, a default account, or the channel list
+discovery produced earlier.
+
+**Linearization boundary.** The last live lookup is the acceptance boundary for
+scope. A removal that Slack commits after that lookup answers cannot be made
+atomic with this attempt, and a request already in flight cannot be recalled.
+What the boundary guarantees is that content is never released for a scope this
+attempt proved was gone, and that no protected page is read without a proof
+that preceded it.
+
 ### Finite budgets
 
-| Budget                    | Value                                  |
-| ------------------------- | -------------------------------------- |
-| Enumeration pages         | 3                                      |
-| Channels                  | 20                                     |
-| History pages per channel | 2                                      |
-| Expanded threads          | 10 (one reply page each)               |
-| Provider requests         | 40                                     |
-| Normalized messages       | 500                                    |
-| Projected text            | 128 KiB total, 4 KiB per message       |
-| Wall clock                | 30 s, never beyond the attempt's lease |
+| Budget                    | Value                                   |
+| ------------------------- | --------------------------------------- |
+| Enumeration pages         | 3 (per discovery or authorization pass) |
+| Channels                  | 20                                      |
+| History pages per channel | 2                                       |
+| Expanded threads          | 10 (one reply page each)                |
+| Provider requests         | 40                                      |
+| Normalized messages       | 500                                     |
+| Projected text            | 128 KiB total, 4 KiB per message        |
+| Wall clock                | 30 s, never beyond the attempt's lease  |
 
-Every provider read receives a combined cancellation and deadline signal. The
-unbounded convenience loops in `slack-client.ts` are not used.
+Authorization lookups are ordinary provider requests: they spend the same total
+request and wall-clock budgets as the reads they guard, and introduce no new
+cap. Fewer channels therefore fit inside one attempt than the channel budget
+alone suggests, and an attempt bounded that way reports `requests` or `deadline`
+and `partial` coverage rather than raising a limit.
+
+Every provider read and every authorization lookup receives a combined
+cancellation and deadline signal. The unbounded convenience loops in
+`slack-client.ts` are not used; `isSlackConversationShared` is the behavioral
+precedent for checking before a protected read, not a permissible
+implementation here.
 
 ### Window boundary
 
@@ -172,20 +223,43 @@ and replies keys on the exact `(channel, ts)` pair.
 ### Outcomes
 
 `complete` and `partial` both produced a bundle. `partial` means a documented
-budget, an unusable continuation or a repeated cursor bounded the read, and it
-names each limit that applied. `no_shared_channels` is a healthy empty read.
-`rate_limited`, `permission_denied` and `provider_failed` are failures and are
-deliberately distinct from an empty read: a mid-stream provider problem, a
-`has_more` without a usable cursor, a repeated cursor and an exhausted budget
-can never become false completeness.
+budget, an unusable continuation, a repeated cursor or an authorization boundary
+bounded the read, and it names each limit that applied. `no_shared_channels` is a
+healthy empty read. `rate_limited`, `permission_denied` and `provider_failed` are
+failures and are deliberately distinct from an empty read: a mid-stream provider
+problem, a `has_more` without a usable cursor, a repeated cursor and an exhausted
+budget can never become false completeness.
 
-### Coverage limit
+Every limit names work or content that was actually skipped or removed:
 
-Threads are discovered from the roots that windowed history returns, so **a new
-reply on a root older than the window is not found**. The declared scope of this
-first collector is bounded channels plus those discovered threads — not a
-complete Slack workspace or day. Whether the full pipeline needs older-root
-reply coverage is a content-policy decision recorded for the S4/S8 gate.
+| Limit                           | Recorded when                                                                                                         |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `channel-pages` / `channels`    | Enumeration stopped at its page budget, or the channel budget dropped a discovered conversation.                      |
+| `history-pages` / `reply-pages` | A channel's window, or a thread, still had pages this attempt may not read.                                           |
+| `threads`                       | An in-window replied root was discovered but not expanded, including roots beyond the tenth inside one complete page. |
+| `requests` / `deadline`         | The total request budget or the wall clock stopped the attempt.                                                       |
+| `messages` / `text-bytes`       | A message was refused because the attempt already held its full message or total text budget.                         |
+| `entry-text-bytes`              | At least one message's own text was clipped at the per-message ceiling.                                               |
+| `cursor-anomaly`                | A continuation repeated a cursor instead of advancing.                                                                |
+| `scope-lost` / `scope-unproven` | A live authorization lookup disproved, or could not establish, the member's shared access.                            |
+
+### Coverage limits
+
+Two different things bound this collector, and they are not interchangeable.
+
+**Declared scope.** Threads are discovered from the roots that windowed history
+returns, so **a new reply on a root older than the window is not found**. The
+declared scope of this first collector is bounded channels plus those discovered
+threads — not a complete Slack workspace or day. This is an accepted limit of the
+contract, so it is not reported as a per-attempt limit. Whether the full pipeline
+needs older-root reply coverage is a content-policy decision recorded for the
+S4/S8 gate.
+
+**Omitted work or content.** Everything inside the declared scope that a budget,
+a continuation anomaly or an authorization boundary actually removed is recorded
+as a named limit and makes the attempt `partial`. `complete` therefore means the
+declared scope was read without omission, never that the whole workspace or day
+was.
 
 ### Data handling
 
@@ -194,6 +268,13 @@ limits, the channels read, and entries with workspace and channel identity, the
 exact Slack timestamp and thread timestamp, author id, projected text and the
 existing channel URL. It does not download files, hydrate attachments, carry raw
 provider JSON or prompts, or fan out one permalink request per message.
+
+Per-message text longer than 4 KiB is clipped on a UTF-8 code point boundary and
+the entry carries `textTruncated: true`. Clipping at an arbitrary byte offset
+would decode a split sequence into a replacement character three bytes wide and
+push the projection back past the ceiling it enforces, so the clip never splits a
+code point, never substitutes characters, and stays within both the 4 KiB
+per-message and 128 KiB total UTF-8 ceilings.
 
 Source bodies, credentials, prompts, raw provider errors and results are kept
 out of every durable table and operational log. The envelope exists only in

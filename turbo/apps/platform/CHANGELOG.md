@@ -11,6 +11,26 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.909.0](https://github.com/vm0-ai/okou/compare/app-v0.908.2...app-v0.909.0) (2026-09-17)
+
+
+### Features
+
+* **platform:** upload a document as a custom template without leaving the picker ([#34865](https://github.com/vm0-ai/okou/issues/34865)) ([68c606a](https://github.com/vm0-ai/okou/commit/68c606a7e5812e589b81b04053ce4d298b233f66))
+
+
+### Bug Fixes
+
+* **platform:** instrument marketing onboarding handoff ([#34825](https://github.com/vm0-ai/okou/issues/34825)) ([cf7e0d8](https://github.com/vm0-ai/okou/commit/cf7e0d8725129beee2d9db7fcad7d2601b62bac2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.456.0
+    * @okouai/core bumped to 8.675.0
+
 ## [0.908.2](https://github.com/vm0-ai/okou/compare/app-v0.908.1...app-v0.908.2) (2026-09-17)
 
 

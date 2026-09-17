@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.197.2](https://github.com/vm0-ai/okou/compare/runner-rs-v0.197.1...runner-rs-v0.197.2) (2026-09-17)
+
+
+### Bug Fixes
+
+* unify agent failure classification and completion handling ([#34802](https://github.com/vm0-ai/okou/issues/34802)) ([8cf6c83](https://github.com/vm0-ai/okou/commit/8cf6c836cda07808f7536fc9ee35dcf36e71036b))
+
 ## [0.197.1](https://github.com/vm0-ai/okou/compare/runner-rs-v0.197.0...runner-rs-v0.197.1) (2026-09-17)
 
 
