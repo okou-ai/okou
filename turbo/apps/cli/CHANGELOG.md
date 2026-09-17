@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.338.0](https://github.com/vm0-ai/okou/compare/cli-v9.337.3...cli-v9.338.0) (2026-09-17)
+
+
+### Features
+
+* **cli:** publish a custom template from a reverse run ([#34707](https://github.com/vm0-ai/okou/issues/34707)) ([9cf9d91](https://github.com/vm0-ai/okou/commit/9cf9d91452b2401e54ef6f8b84abdd4d378a10bb))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.454.0
+    * @okouai/core bumped to 8.674.0
+    * @okouai/pi-agent-runtime bumped to 1.32.7
+
 ## [9.337.3](https://github.com/vm0-ai/okou/compare/cli-v9.337.2...cli-v9.337.3) (2026-09-17)
 
 

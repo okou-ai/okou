@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.674.0](https://github.com/vm0-ai/okou/compare/core-v8.673.2...core-v8.674.0) (2026-09-17)
+
+
+### Features
+
+* **platform:** keep only oauth-connector workflow templates ([#34665](https://github.com/vm0-ai/okou/issues/34665)) ([558905e](https://github.com/vm0-ai/okou/commit/558905e519c9e6b2ae00cc5c03fac2769e66a3b4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.454.0
+
 ## [8.673.2](https://github.com/vm0-ai/okou/compare/core-v8.673.1...core-v8.673.2) (2026-09-17)
 
 
