@@ -111,6 +111,7 @@ interface GenerationModelEndpoint {
   readonly label: string;
   readonly kind: "image_model_updated" | "video_model_updated";
   readonly barrierStop: "image-model-update" | "video-model-update";
+  readonly pinKey: "selectedImageModel" | "selectedVideoModel";
   readonly baselineModel: string;
   readonly nextModel: string;
   /** The accepted `nextModel` pin write. */
@@ -143,79 +144,87 @@ interface GenerationModelPins {
   readonly selectedVideoModel: string | null;
 }
 
-const IMAGE_ENDPOINT: GenerationModelEndpoint = {
-  label: "image",
-  kind: "image_model_updated",
-  barrierStop: "image-model-update",
-  baselineModel: "gpt-image-2",
-  nextModel: "fal-ai/qwen-image",
-  async pinNext(actor, threadId, options) {
-    await chat.updateThreadImageModel(
-      actor,
-      threadId,
-      "fal-ai/qwen-image",
-      options,
-    );
-  },
-  async requestPinNext(actor, threadId, statuses, options) {
-    return await chat.requestUpdateThreadImageModel(
-      actor,
-      threadId,
-      "fal-ai/qwen-image",
-      statuses,
-      options,
-    );
-  },
-  async pinBaseline(actor, threadId) {
-    await chat.updateThreadImageModel(actor, threadId, "gpt-image-2");
-  },
-  async pinNextWithOperationSignal(signal, actor, threadId) {
-    return await chat
-      .generationModelWritesWithOperationSignal(signal)
-      .updateImageModel(actor, threadId, "fal-ai/qwen-image");
-  },
-  pinOf(pins) {
-    return pins.selectedImageModel;
-  },
-};
+function imageEndpoint(): GenerationModelEndpoint {
+  return {
+    label: "image",
+    kind: "image_model_updated",
+    barrierStop: "image-model-update",
+    pinKey: "selectedImageModel",
+    baselineModel: "gpt-image-2",
+    nextModel: "fal-ai/qwen-image",
+    async pinNext(actor, threadId, options) {
+      await chat.updateThreadImageModel(
+        actor,
+        threadId,
+        "fal-ai/qwen-image",
+        options,
+      );
+    },
+    async requestPinNext(actor, threadId, statuses, options) {
+      return await chat.requestUpdateThreadImageModel(
+        actor,
+        threadId,
+        "fal-ai/qwen-image",
+        statuses,
+        options,
+      );
+    },
+    async pinBaseline(actor, threadId) {
+      await chat.updateThreadImageModel(actor, threadId, "gpt-image-2");
+    },
+    async pinNextWithOperationSignal(signal, actor, threadId) {
+      return await chat
+        .generationModelWritesWithOperationSignal(signal)
+        .updateImageModel(actor, threadId, "fal-ai/qwen-image");
+    },
+    pinOf(pins) {
+      return pins.selectedImageModel;
+    },
+  };
+}
 
-const VIDEO_ENDPOINT: GenerationModelEndpoint = {
-  label: "video",
-  kind: "video_model_updated",
-  barrierStop: "video-model-update",
-  baselineModel: "MiniMax-H3",
-  nextModel: "fal-ai/veo3.1/fast",
-  async pinNext(actor, threadId, options) {
-    await chat.updateThreadVideoModel(
-      actor,
-      threadId,
-      "fal-ai/veo3.1/fast",
-      options,
-    );
-  },
-  async requestPinNext(actor, threadId, statuses, options) {
-    return await chat.requestUpdateThreadVideoModel(
-      actor,
-      threadId,
-      "fal-ai/veo3.1/fast",
-      statuses,
-      options,
-    );
-  },
-  async pinBaseline(actor, threadId) {
-    await chat.updateThreadVideoModel(actor, threadId, "MiniMax-H3");
-  },
-  async pinNextWithOperationSignal(signal, actor, threadId) {
-    return await chat
-      .generationModelWritesWithOperationSignal(signal)
-      .updateVideoModel(actor, threadId, "fal-ai/veo3.1/fast");
-  },
-  pinOf(pins) {
-    return pins.selectedVideoModel;
-  },
-};
+function videoEndpoint(): GenerationModelEndpoint {
+  return {
+    label: "video",
+    kind: "video_model_updated",
+    barrierStop: "video-model-update",
+    pinKey: "selectedVideoModel",
+    baselineModel: "MiniMax-H3",
+    nextModel: "fal-ai/veo3.1/fast",
+    async pinNext(actor, threadId, options) {
+      await chat.updateThreadVideoModel(
+        actor,
+        threadId,
+        "fal-ai/veo3.1/fast",
+        options,
+      );
+    },
+    async requestPinNext(actor, threadId, statuses, options) {
+      return await chat.requestUpdateThreadVideoModel(
+        actor,
+        threadId,
+        "fal-ai/veo3.1/fast",
+        statuses,
+        options,
+      );
+    },
+    async pinBaseline(actor, threadId) {
+      await chat.updateThreadVideoModel(actor, threadId, "MiniMax-H3");
+    },
+    async pinNextWithOperationSignal(signal, actor, threadId) {
+      return await chat
+        .generationModelWritesWithOperationSignal(signal)
+        .updateVideoModel(actor, threadId, "fal-ai/veo3.1/fast");
+    },
+    pinOf(pins) {
+      return pins.selectedVideoModel;
+    },
+  };
+}
 
-const ENDPOINTS = [IMAGE_ENDPOINT, VIDEO_ENDPOINT];
+function generationModelEndpoints(): readonly GenerationModelEndpoint[] {
+  return [imageEndpoint(), videoEndpoint()];
+}
 
 async function readEventPage(fixture: GenerationModelFixture) {
   const response = await chat.requestThreadEvents(fixture.actor, {}, [200]);
@@ -309,7 +318,7 @@ async function flushedInvalidations(): Promise<number> {
   return threadListInvalidations();
 }
 
-describe.each(ENDPOINTS)(
+describe.each(generationModelEndpoints())(
   "account erasure fences direct chat-thread $label model writes",
   (endpoint) => {
     it("denies the pin for a closed thread user and keeps the pin, timestamp, event and sequence", async () => {
@@ -347,9 +356,7 @@ describe.each(ENDPOINTS)(
         { seqId: lastSeqId + 1, kind: endpoint.kind },
       ]);
       await expect(readPins(fixture)).resolves.toMatchObject({
-        [endpoint === IMAGE_ENDPOINT
-          ? "selectedImageModel"
-          : "selectedVideoModel"]: endpoint.nextModel,
+        [endpoint.pinKey]: endpoint.nextModel,
       });
     });
 
@@ -396,9 +403,7 @@ describe.each(ENDPOINTS)(
       );
       await endpoint.pinNext(unrelated.actor, unrelated.threadId);
       await expect(readPins(unrelated)).resolves.toMatchObject({
-        [endpoint === IMAGE_ENDPOINT
-          ? "selectedImageModel"
-          : "selectedVideoModel"]: endpoint.nextModel,
+        [endpoint.pinKey]: endpoint.nextModel,
       });
     });
 
@@ -463,9 +468,7 @@ describe.each(ENDPOINTS)(
         { seqId: lastSeqId + 1, kind: endpoint.kind },
       ]);
       await expect(readPins(fixture)).resolves.toMatchObject({
-        [endpoint === IMAGE_ENDPOINT
-          ? "selectedImageModel"
-          : "selectedVideoModel"]: endpoint.nextModel,
+        [endpoint.pinKey]: endpoint.nextModel,
       });
       // The accepted write published exactly one invalidation, on this
       // caller's own admitted user/org channel.
@@ -587,9 +590,7 @@ describe.each(ENDPOINTS)(
       // accepted once its operation is no longer cancelled.
       await endpoint.pinNext(fixture.actor, fixture.threadId);
       await expect(readPins(fixture)).resolves.toMatchObject({
-        [endpoint === IMAGE_ENDPOINT
-          ? "selectedImageModel"
-          : "selectedVideoModel"]: endpoint.nextModel,
+        [endpoint.pinKey]: endpoint.nextModel,
       });
     });
 
@@ -611,6 +612,10 @@ describe.each(ENDPOINTS)(
             );
             await barrier.entered;
             await chat.deleteThread(fixture.actor, fixture.threadId);
+            // The deletion publishes its own invalidation; clear it so the
+            // count below measures only what the resumed pin attempt does.
+            await flushWaitUntilForTest();
+            context.mocks.ably.publish.mockClear();
             barrier.release();
             return await pinning;
           },
@@ -650,9 +655,7 @@ describe.each(ENDPOINTS)(
       await expect(readPins(fixture)).resolves.toStrictEqual(before);
       await endpoint.pinNext(fixture.actor, fixture.threadId);
       await expect(readPins(fixture)).resolves.toMatchObject({
-        [endpoint === IMAGE_ENDPOINT
-          ? "selectedImageModel"
-          : "selectedVideoModel"]: endpoint.nextModel,
+        [endpoint.pinKey]: endpoint.nextModel,
       });
     });
 
@@ -702,8 +705,9 @@ describe.each(ENDPOINTS)(
  */
 describe("account erasure re-resolves moved parents for the generation model routes", () => {
   it("re-resolves a transferred Agent owner instead of pinning an image model under a stale label", async () => {
+    const image = imageEndpoint();
     const fixture = await createGenerationModelFixture("Transferred owner");
-    await IMAGE_ENDPOINT.pinBaseline(fixture.actor, fixture.threadId);
+    await image.pinBaseline(fixture.actor, fixture.threadId);
     const before = await readPins(fixture);
     const baselineEvents = await generationModelEvents(fixture);
     const newOwner = `user_${randomUUID()}`;
@@ -715,7 +719,7 @@ describe("account erasure re-resolves moved parents for the generation model rou
         chatThreadId: fixture.threadId,
         stopAt: "agent-lock",
         work: async (barrier) => {
-          const pinning = IMAGE_ENDPOINT.requestPinNext(
+          const pinning = image.requestPinNext(
             fixture.actor,
             fixture.threadId,
             [404],
@@ -742,8 +746,9 @@ describe("account erasure re-resolves moved parents for the generation model rou
   });
 
   it("re-resolves a changed Agent organization and never publishes a video pin to the stale one", async () => {
+    const video = videoEndpoint();
     const fixture = await createGenerationModelFixture("Moved organization");
-    await VIDEO_ENDPOINT.pinBaseline(fixture.actor, fixture.threadId);
+    await video.pinBaseline(fixture.actor, fixture.threadId);
     const before = await readPins(fixture);
     const baselineEvents = await generationModelEvents(fixture);
     const newOrgId = `org_${randomUUID()}`;
@@ -755,7 +760,7 @@ describe("account erasure re-resolves moved parents for the generation model rou
         chatThreadId: fixture.threadId,
         stopAt: "agent-lock",
         work: async (barrier) => {
-          const pinning = VIDEO_ENDPOINT.requestPinNext(
+          const pinning = video.requestPinNext(
             fixture.actor,
             fixture.threadId,
             [404],
@@ -820,10 +825,10 @@ describe("the fenced generation model routes keep their own write semantics", ()
     const videoEventId = randomUUID();
 
     for (const _attempt of [0, 1]) {
-      await IMAGE_ENDPOINT.pinNext(fixture.actor, fixture.threadId, {
+      await imageEndpoint().pinNext(fixture.actor, fixture.threadId, {
         eventId: imageEventId,
       });
-      await VIDEO_ENDPOINT.pinNext(fixture.actor, fixture.threadId, {
+      await videoEndpoint().pinNext(fixture.actor, fixture.threadId, {
         eventId: videoEventId,
       });
     }
@@ -843,13 +848,13 @@ describe("the fenced generation model routes keep their own write semantics", ()
     // that, so they serialize on the thread row instead of deadlocking on a
     // key-lock upgrade.
     await Promise.all([
-      IMAGE_ENDPOINT.pinNext(fixture.actor, fixture.threadId),
-      VIDEO_ENDPOINT.pinNext(fixture.actor, fixture.threadId),
+      imageEndpoint().pinNext(fixture.actor, fixture.threadId),
+      videoEndpoint().pinNext(fixture.actor, fixture.threadId),
     ]);
 
     await expect(readPins(fixture)).resolves.toStrictEqual({
-      selectedImageModel: IMAGE_ENDPOINT.nextModel,
-      selectedVideoModel: VIDEO_ENDPOINT.nextModel,
+      selectedImageModel: imageEndpoint().nextModel,
+      selectedVideoModel: videoEndpoint().nextModel,
     });
     const events = await generationModelEvents(fixture);
     expect(
