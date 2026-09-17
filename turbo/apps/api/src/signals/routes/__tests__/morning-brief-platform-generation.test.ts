@@ -643,6 +643,125 @@ describe("Morning Brief platform-funded generation", () => {
     expect(body.generation.receipt?.outcome).toBe("response_unreadable");
   });
 
+  it.each<
+    readonly [
+      string,
+      {
+        readonly title?: string;
+        readonly heading?: string;
+        readonly text?: string;
+      },
+    ]
+  >([
+    ["a title", { title: "\u0001" }],
+    ["a heading", { heading: "\u0001" }],
+    ["an item", { text: "\u0001" }],
+  ])(
+    "rejects a deliver whose %s is empty once escaped",
+    async (_label, override) => {
+      const f = await fixture();
+      slackWithMessages();
+      scriptProvider(() => {
+        return completion({
+          // U+0001 is not whitespace, so it survives trim and a min-length
+          // check, and then escaping turns it into a space and trims it away.
+          content: JSON.stringify({
+            decision: "deliver",
+            title: override.title ?? "Release readiness",
+            sections: [
+              {
+                heading: override.heading ?? "Decisions",
+                items: [
+                  {
+                    text: override.text ?? "The release ships today.",
+                    sourceIds: ["m1"],
+                  },
+                ],
+              },
+            ],
+          }),
+          cost: 0.01,
+        });
+      });
+
+      const response = await accept(generate(f), [200]);
+      const body = expectGenerated(response.body);
+      expect(body.generation.state).toBe("output_rejected");
+      expect(body.generation.result).toBeNull();
+      // The charge still happened; a rejection never rewrites what was spent.
+      expect(body.generation.receipt?.outcome).toBe("response_received");
+    },
+  );
+
+  it("forces a coverage statement into the delivered markdown when input was reduced", async () => {
+    const f = await fixture();
+    const long = "l".repeat(3000);
+    slackWithMessages(
+      Array.from({ length: 50 }, (_unused, index) => {
+        return `${String(index)} ${long}`;
+      }),
+    );
+    scriptProvider(() => {
+      return completion({ cost: 0.01 });
+    });
+
+    const response = await accept(generate(f), [200]);
+    const body = expectGenerated(response.body);
+    expect(body.generation.inputReduced).toBeTruthy();
+    const markdown =
+      body.generation.result?.decision === "deliver"
+        ? body.generation.result.markdown
+        : "";
+    // The reduction now reaches the reader, not only the prompt and metadata.
+    expect(markdown).toContain("Coverage:");
+    expect(markdown).toContain("did not fit this summary");
+    // The count is the program's own, taken from the same plan the request used.
+    const omitted = body.generation.inputItems - body.generation.includedItems;
+    expect(markdown).toContain(omitted.toString());
+  });
+
+  it("writes the coverage statement in the language the brief was frozen to", async () => {
+    const f = await fixture({ locale: "ja-JP" });
+    const long = "l".repeat(3000);
+    slackWithMessages(
+      Array.from({ length: 50 }, (_unused, index) => {
+        return `${String(index)} ${long}`;
+      }),
+    );
+    scriptProvider(() => {
+      return completion({ cost: 0.01 });
+    });
+
+    const response = await accept(generate(f), [200]);
+    const body = expectGenerated(response.body);
+    expect(body.generation.language).toBe("ja-JP");
+    const markdown =
+      body.generation.result?.decision === "deliver"
+        ? body.generation.result.markdown
+        : "";
+    expect(markdown).toContain("カバレッジ");
+    expect(markdown).not.toContain("Coverage:");
+  });
+
+  it("adds no coverage statement to a complete brief", async () => {
+    const f = await fixture();
+    slackWithMessages();
+    scriptProvider(() => {
+      return completion({ cost: 0.01 });
+    });
+
+    const response = await accept(generate(f), [200]);
+    const body = expectGenerated(response.body);
+    expect(body.generation.inputReduced).toBeFalsy();
+    const markdown =
+      body.generation.result?.decision === "deliver"
+        ? body.generation.result.markdown
+        : "";
+    // A complete read that dropped nothing has nothing to disclose, and a note
+    // on every brief would train readers to ignore the ones that matter.
+    expect(markdown).not.toContain("Coverage:");
+  });
+
   it("reduces oversized input deterministically and says so", async () => {
     const f = await fixture();
     // Just inside the collector's own projected-text budget, and past the

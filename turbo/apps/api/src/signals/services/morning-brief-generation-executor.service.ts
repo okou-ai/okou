@@ -54,6 +54,7 @@ import {
   type GenerationRequestPlan,
   type GenerationSource,
 } from "./morning-brief-generation-prompt";
+import type { MorningBriefCoverageFacts } from "./morning-brief-coverage-note";
 import { interpretGenerationOutput } from "./morning-brief-generation-result";
 import {
   acceptMorningBriefGenerationResult,
@@ -391,6 +392,8 @@ type InterpretedOutcome =
 function interpretResponse(
   observation: PlatformGenerationObservation,
   sources: ReadonlyMap<string, GenerationSource>,
+  coverage: MorningBriefCoverageFacts,
+  language: string,
 ): InterpretedOutcome {
   if (observation.completionError) {
     return {
@@ -426,6 +429,8 @@ function interpretResponse(
   const interpreted = interpretGenerationOutput({
     content: observation.content,
     sources,
+    coverage,
+    language,
   });
   if (interpreted.kind === "rejected") {
     return {
@@ -902,6 +907,19 @@ async function reconcileCost(
 }
 
 /**
+ * The collector's own verdict plus the candidates the plan had to drop.
+ *
+ * Both come from the same place the request was built from, so the note the
+ * reader sees cannot disagree with what the model was told.
+ */
+function coverageFactsOf(args: InvocationArgs): MorningBriefCoverageFacts {
+  return {
+    collected: args.coverage,
+    omittedForSize: args.plan.droppedItems,
+  };
+}
+
+/**
  * The irreversible step, and the one place cancellation must not short-circuit.
  *
  * Both awaits deliberately settle rather than propagate: once the request may
@@ -916,6 +934,9 @@ async function requestAndRecordCharge(
     readonly attemptId: string;
     readonly body: string;
     readonly sources: ReadonlyMap<string, GenerationSource>;
+    /** The same numbers the request was built from, for the coverage note. */
+    readonly coverage: MorningBriefCoverageFacts;
+    readonly language: string;
   },
   providerSignal: AbortSignal,
 ): Promise<{
@@ -942,7 +963,12 @@ async function requestAndRecordCharge(
         )
       : {
           receiptOutcome: "response_received" as const,
-          interpreted: interpretResponse(observed, args.sources),
+          interpreted: interpretResponse(
+            observed,
+            args.sources,
+            args.coverage,
+            args.language,
+          ),
         };
   const receipt = receiptValuesOf({
     attemptId: args.attemptId,
@@ -1079,6 +1105,8 @@ const invokeAndPersist$ = command(
           attemptId: admission.attemptId,
           body: args.plan.body,
           sources: args.sources,
+          coverage: coverageFactsOf(args),
+          language: args.plan.language,
         },
         AbortSignal.any([signal, AbortSignal.timeout(budgetMs)]),
       );

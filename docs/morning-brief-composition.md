@@ -99,6 +99,27 @@ every applicable source is partial. Only when no usable evidence remains does th
 attempt take an explicit incomplete or failed outcome — with zero model calls,
 and never relabelled as healthy-empty.
 
+## The coverage statement the brief must carry
+
+A brief built from a bounded read and a request that dropped candidates reads
+exactly like a brief about a quiet day. The reduction used to be recorded only
+in HTTP metadata and in the prompt — neither of which the reader ever sees.
+
+So the note is written by the program, from the same numbers the request was
+built from, and the model can neither produce it, edit it nor suppress it.
+There is no second model call: the wording is a fixed translation table covering
+the ten Settings locales plus both Chinese scripts, selected by the language the
+generation was frozen to, with the base subtag matching a supported variant and
+the declared default as the last resort. A complete read that dropped nothing
+carries no note, because a line on every brief teaches readers to skip it.
+
+Every published string must also survive sanitization. `trim()` removes
+whitespace and a C0 control character is not whitespace, so `U+0001` passes both
+trimming and a minimum-length check and is then escaped to a space and trimmed
+away — leaving a title, heading or bullet that renders as nothing. Validation
+therefore runs against the escaped value that actually gets published, not the
+raw one.
+
 ## Retained source authority
 
 A collection deadline does not make old authority valid forever. Result
