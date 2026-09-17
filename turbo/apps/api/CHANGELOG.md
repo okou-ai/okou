@@ -8,6 +8,30 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.624.0](https://github.com/vm0-ai/okou/compare/api-v1.623.0...api-v1.624.0) (2026-09-17)
+
+
+### Features
+
+* **api:** retain and revalidate exact morning brief source authority ([#35061](https://github.com/vm0-ai/okou/issues/35061)) ([14b3ab4](https://github.com/vm0-ai/okou/commit/14b3ab4d3fd6174a321fe74073375bf8a709978c))
+
+
+### Bug Fixes
+
+* **api:** fence morning brief completion after transaction waits ([#35062](https://github.com/vm0-ai/okou/issues/35062)) ([71155fb](https://github.com/vm0-ai/okou/commit/71155fb75505a0d257346f0e646bf08d8bdae04d))
+* **api:** fence morning brief instruction versions and storage reads ([#35065](https://github.com/vm0-ai/okou/issues/35065)) ([f8f9976](https://github.com/vm0-ai/okou/commit/f8f9976c4cbb165dfacd86f163250adccf7312e3))
+* **api:** reject ambiguous github morning brief urls and check states ([#35060](https://github.com/vm0-ai/okou/issues/35060)) ([680ebed](https://github.com/vm0-ai/okou/commit/680ebeda3c84766a755601ea8c429b6ae513e82c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.461.0
+    * @okouai/core bumped to 8.676.3
+    * @okouai/db bumped to 1.270.3
+    * @okouai/pi-agent-runtime bumped to 1.33.6
+
 ## [1.623.0](https://github.com/vm0-ai/okou/compare/api-v1.622.0...api-v1.623.0) (2026-09-17)
 
 
