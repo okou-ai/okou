@@ -188,29 +188,50 @@ request.
   released, together with whatever truncation its own reads recorded.
 - **Proven revoked.** The member's whole intersection was listed without it.
   Its content and identity are discarded and the limit is `scope-lost`.
-- **Unconfirmed.** The pass repeated a cursor, exhausted its three pages, its
-  reserved requests or the wall clock. Its content, name, id and link are all
-  withheld and the limit is `scope-unproven`. A pre-read proof covered only the
-  instant it ran and cannot stand in for this one.
+- **Unconfirmed.** The pass repeated a cursor, or exhausted its three pages or
+  its reserved requests, without resolving this conversation. Its content, name,
+  id and link are all withheld and the limit is `scope-unproven`. A pre-read
+  proof covered only the instant it ran and cannot stand in for this one.
 
-A pass may confirm some conversations and fail to resolve others. The bundle is
-then returned with exactly the confirmed ones, their valid content and their own
-counts; no unconfirmed identity appears anywhere in it. Counts describe the
-returned payload, while `requests` keeps describing the provider work this
-attempt really did. The attempt is never retried inside the collector to turn an
-unconfirmed result into a successful one.
+A pass may confirm some conversations and fail to resolve others. That is an
+**in-budget partial proof**: the bundle is returned with exactly the confirmed
+ones, their valid content and their own counts; no unconfirmed identity appears
+anywhere in it. Counts describe the returned payload, while `requests` keeps
+describing the provider work this attempt really did. The attempt is never
+retried inside the collector to turn an unconfirmed result into a successful
+one.
 
-An answer that lands after the attempt's own wall clock is not a current proof,
-so a deadline crossed while the final response is held withholds rather than
-releases. A cancellation during the final pass abandons the attempt and returns
-no bundle.
+#### Whole-attempt expiry
 
-**Linearization boundary.** The last live lookup is the acceptance boundary for
-scope. A removal that Slack commits after that lookup answers cannot be made
-atomic with this attempt, and a request already in flight cannot be recalled.
-What the boundary guarantees is that no content or conversation identity is
-released without a proof that Slack answered inside this attempt, and that no
-protected page is read without a proof that preceded it.
+The wall clock is not one more page budget. It bounds the attempt itself, so
+reaching it is not a partial proof but the end of this attempt's authority to
+say anything at all. Equality with the deadline is already expired.
+
+The release decision reads the clock again after the final pass, whatever that
+pass did and however it stopped. Once the deadline has passed, every
+conversation the bundle would have carried is withheld — including one an
+earlier page of the same pass had already named, because a pending set tracks
+one conversation's proof rather than the lifetime of the attempt. The bundle is
+returned with no entries, no channels, zero released counts, the `deadline` and
+`scope-unproven` limits and `partial` coverage, never as a healthy empty day;
+`requests` still reports the provider work the attempt really did. Nothing
+refreshes the deadline, extends the lease, raises a cap or retries to recover
+it, and the decision reads the clock rather than waiting for a timer to fire.
+
+An in-budget partial proof and an expired attempt are therefore different
+answers: the first may still release what it did confirm, the second may release
+nothing. A cancellation during the final pass abandons the attempt entirely and
+returns no bundle; the cancellation reaches the provider request itself, not
+only the caller's own wait.
+
+**Linearization boundary.** The acceptance boundary for scope is the final
+proof's own response, as it lands inside this attempt's wall clock — not the
+moment the bundle reaches the caller. A removal that Slack commits after that
+response cannot be made atomic with this attempt, and a request already in
+flight cannot be recalled. What the boundary guarantees is that no content or
+conversation identity is released without a proof that Slack answered inside
+this attempt, and that no protected page is read without a proof that preceded
+it.
 
 ### Finite budgets
 
@@ -239,7 +260,7 @@ an attempt that would previously have read one more channel now reports
 `requests` a little earlier and still releases what it collected. A content cap
 (`messages` or `text-bytes`) stops reading without spending the reserve, so it
 can never waive the final proof; the wall clock is not reserved the same way, so
-an attempt that runs out of time withholds instead.
+an attempt that runs out of time withholds everything instead.
 
 Every provider read and every authorization lookup receives a combined
 cancellation and deadline signal. The unbounded convenience loops in
@@ -273,7 +294,7 @@ Every limit names work or content that was actually skipped or removed:
 | `channel-pages` / `channels`    | Enumeration stopped at its page budget, or the channel budget dropped a discovered conversation.                      |
 | `history-pages` / `reply-pages` | A channel's window, or a thread, still had pages this attempt may not read.                                           |
 | `threads`                       | An in-window replied root was discovered but not expanded, including roots beyond the tenth inside one complete page. |
-| `requests` / `deadline`         | The read allowance or the wall clock stopped the attempt.                                                             |
+| `requests` / `deadline`         | The read allowance stopped the reads, or the wall clock ended the whole attempt.                                      |
 | `messages` / `text-bytes`       | A message was refused because the attempt already held its full message or total text budget.                         |
 | `entry-text-bytes`              | At least one message's own text was clipped at the per-message ceiling.                                               |
 | `cursor-anomaly`                | A continuation repeated a cursor instead of advancing.                                                                |
@@ -301,6 +322,8 @@ was.
 Omission is the only thing partial coverage buys. It never widens what the
 attempt may release: a conversation the final lookup could not confirm is
 withheld whichever budget ran out first, and the bundle simply describes less.
+An expired wall clock is not an omission of that kind. It ends the attempt's
+authority to release anything, so the bundle describes nothing at all.
 
 ### Data handling
 

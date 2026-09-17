@@ -58,6 +58,11 @@ const LAST_BEFORE_WINDOW = `${WINDOW_START_SECONDS - 1}.999999`;
 const WINDOW_END_EXCLUSIVE = `${ANCHOR_MS / 1000}.000000`;
 const THREAD_ROOT = `${WINDOW_START_SECONDS + 60}.000100`;
 const THREAD_REPLY = `${WINDOW_START_SECONDS + 90}.000001`;
+/**
+ * The documented wall clock one attempt gets, counted from the moment the
+ * executor starts collecting. Reaching it is already expired.
+ */
+const COLLECTION_DEADLINE_MS = 30_000;
 
 afterEach(() => {
   clearMockNow();
@@ -195,7 +200,14 @@ function collectWithHeaders(
   });
 }
 
-type SlackReply = (query: URLSearchParams) => unknown;
+/**
+ * One scripted Slack answer.
+ *
+ * It may hold its own response — returning a promise keeps the provider request
+ * genuinely in flight — and it receives the request so a test can observe what
+ * reaches that request, including its cancellation.
+ */
+type SlackReply = (query: URLSearchParams, request: Request) => unknown;
 
 interface SlackTraffic {
   readonly requests: { url: string; token: string | null }[];
@@ -210,17 +222,18 @@ function scriptSlack(script: {
 }): SlackTraffic {
   const traffic: SlackTraffic = { requests: [], queries: [] };
   const handle = (reply: SlackReply | undefined) => {
-    return ({ request }: { request: Request }) => {
+    return async ({ request }: { request: Request }) => {
       const url = new URL(request.url);
       traffic.requests.push({
         url: `${url.origin}${url.pathname}`,
         token: request.headers.get("authorization"),
       });
       traffic.queries.push(url.searchParams);
-      const result = reply?.(url.searchParams) ?? { ok: true, messages: [] };
-      return result instanceof HttpResponse
-        ? result
-        : HttpResponse.json(result);
+      const result = (await reply?.(url.searchParams, request)) ?? {
+        ok: true,
+        messages: [],
+      };
+      return result instanceof Response ? result : HttpResponse.json(result);
     };
   };
   server.use(
@@ -294,32 +307,36 @@ function historyPage(
  * Script one attempt whose reads succeed and whose final release proof then
  * meets a different live intersection.
  *
- * The switch is driven by the reads themselves: once every scripted channel has
- * answered its history request, the only enumeration the algorithm has left is
- * the release proof. That reproduces a member losing access, or an intersection
- * becoming unlistable, while a response is already held — without counting
- * calls from outside or naming an internal step.
+ * The switch is driven by the reads themselves: once every scripted history
+ * page has answered, the only enumeration the algorithm has left is the release
+ * proof. That reproduces a member losing access, or an intersection becoming
+ * unlistable, while a response is already held — without counting calls from
+ * outside or naming an internal step. `historyReads` states how many history
+ * pages the script itself offers when that is not one per channel, so a read
+ * phase bounded by its own request allowance still hands over cleanly.
  */
 function scriptHeldRelease(script: {
   readonly channels: readonly ChannelSpec[];
   readonly history?: SlackReply;
-  readonly release: (page: number) => unknown;
+  readonly historyReads?: number;
+  readonly release: (page: number, request: Request) => unknown;
 }): SlackTraffic {
   let reads = 0;
   let releasePages = 0;
   const discovery = channelPage(script.channels);
   const history = script.history ?? noMessages();
+  const scriptedReads = script.historyReads ?? script.channels.length;
   return scriptSlack({
-    channels: (query) => {
-      if (reads < script.channels.length) {
-        return discovery(query);
+    channels: (query, request) => {
+      if (reads < scriptedReads) {
+        return discovery(query, request);
       }
       releasePages += 1;
-      return script.release(releasePages);
+      return script.release(releasePages, request);
     },
-    history: (query) => {
+    history: (query, request) => {
       reads += 1;
-      return history(query);
+      return history(query, request);
     },
   });
 }
@@ -1575,11 +1592,11 @@ describe("Morning Brief Slack final release proof", () => {
         { id: "C1", name: "general" },
         { id: "C200", name: "secrets", is_private: true },
       ],
-      history: (query) => {
+      history: (query, request) => {
         const channel = query.get("channel") ?? "";
         return historyPage([
           { ts: FIRST_IN_WINDOW, text: `message in ${channel}` },
-        ])(query);
+        ])(query, request);
       },
       release: (page) => {
         releasePages = page;
@@ -1624,6 +1641,151 @@ describe("Morning Brief Slack final release proof", () => {
     expect(releasePages).toBe(2);
   });
 
+  /**
+   * Two channels, read normally, whose final proof needs a continuation.
+   *
+   * The first page proves C100 and leaves it with nothing pending of its own.
+   * The second page is genuinely held: the test observes its arrival, moves the
+   * attempt's own clock, and only then lets Slack answer — so what the release
+   * decision does with an earlier proof is the only thing under test.
+   */
+  function scriptHeldContinuation(barrier: {
+    readonly arrived: { readonly resolve: (value: void) => void };
+    readonly answer: Promise<void>;
+  }): { readonly traffic: SlackTraffic; readonly pages: () => number } {
+    let releasePages = 0;
+    const traffic = scriptHeldRelease({
+      channels: [
+        { id: "C100", name: "general" },
+        { id: "C200", name: "secrets", is_private: true },
+      ],
+      history: (query, request) => {
+        const channel = query.get("channel") ?? "";
+        return historyPage([
+          { ts: FIRST_IN_WINDOW, text: `message in ${channel}` },
+        ])(query, request);
+      },
+      release: async (page) => {
+        releasePages = page;
+        if (page === 1) {
+          return channelPageBody([{ id: "C100", name: "general" }], "next");
+        }
+        barrier.arrived.resolve();
+        await barrier.answer;
+        return channelPageBody([
+          { id: "C200", name: "secrets", is_private: true },
+        ]);
+      },
+    });
+    return {
+      traffic,
+      pages: () => {
+        return releasePages;
+      },
+    };
+  }
+
+  it.each([
+    ["exactly on", 0],
+    ["past", 1],
+  ])(
+    "withholds a channel an earlier final page proved when a later page lands %s the deadline",
+    async (_name, offset) => {
+      const f = await fixture();
+      mockNow(ANCHOR_MS);
+      const arrived = createDeferredPromise<void>(context.signal);
+      const answer = createDeferredPromise<void>(context.signal);
+      const held = scriptHeldContinuation({ arrived, answer: answer.promise });
+
+      const pending = collect(f);
+      await arrived.promise;
+      mockNow(ANCHOR_MS + COLLECTION_DEADLINE_MS + offset);
+      answer.resolve();
+
+      const response = await accept(pending, [200]);
+      if (response.body.result !== "collected") {
+        throw new Error(
+          `Expected a collected bundle, got ${response.body.result}`,
+        );
+      }
+      const { bundle } = response.body;
+      // The deadline bounds the attempt, not one channel's proof: C100 was
+      // confirmed inside the budget and still may not be published, because the
+      // enumeration that would have finished the release expired mid-pass.
+      expect(JSON.stringify(bundle)).not.toContain("message in C100");
+      expect(JSON.stringify(bundle)).not.toContain("general");
+      expect(JSON.stringify(bundle)).not.toContain("secrets");
+      expectNothingReleased(bundle);
+      expect(bundle.counts.threads).toBe(0);
+      expect(bundle.counts.textBytes).toBe(0);
+      expect(bundle.limits).toContain("deadline");
+      expect(bundle.limits).toContain("scope-unproven");
+      expect(bundle.coverage).toBe("partial");
+      expect(response.body.occurrence.outcome).toBe("partial");
+      // Discovery, a proof and a read for each channel, then the two final
+      // pages: the documented caps are untouched, the held answer is not
+      // retried, and no protected read follows it.
+      expect(held.pages()).toBe(2);
+      expect(bundle.counts.requests).toBe(7);
+      expect(held.traffic.requests).toHaveLength(7);
+      expect(queriesFor(held.traffic, SLACK_HISTORY_URL)).toHaveLength(2);
+      expect(held.traffic.requests.at(-1)?.url).toBe(
+        SLACK_USER_CONVERSATIONS_URL,
+      );
+      const [row, ...extra] = await readMorningBriefCollectionOccurrences(f);
+      expect(extra).toHaveLength(0);
+      expect(row).toMatchObject({
+        attempt: 1,
+        status: "completed",
+        outcome: "partial",
+        channelCount: 0,
+        messageCount: 0,
+      });
+    },
+  );
+
+  it("still releases both channels when the last final page lands inside the deadline", async () => {
+    const f = await fixture();
+    mockNow(ANCHOR_MS);
+    const arrived = createDeferredPromise<void>(context.signal);
+    const answer = createDeferredPromise<void>(context.signal);
+    const held = scriptHeldContinuation({ arrived, answer: answer.promise });
+
+    const pending = collect(f);
+    await arrived.promise;
+    // One microsecond of budget is still budget, so the same two-page proof
+    // that expires above completes here and authorizes the whole bundle.
+    mockNow(ANCHOR_MS + COLLECTION_DEADLINE_MS - 1);
+    answer.resolve();
+
+    const response = await accept(pending, [200]);
+    if (response.body.result !== "collected") {
+      throw new Error(
+        `Expected a collected bundle, got ${response.body.result}`,
+      );
+    }
+    const { bundle } = response.body;
+    expect(
+      bundle.channels.map((channel) => {
+        return channel.id;
+      }),
+    ).toStrictEqual(["C100", "C200"]);
+    expect(
+      bundle.entries.map((entry) => {
+        return entry.text;
+      }),
+    ).toStrictEqual(["message in C100", "message in C200"]);
+    expect(bundle.limits).toStrictEqual([]);
+    expect(bundle.coverage).toBe("complete");
+    expect(response.body.occurrence.outcome).toBe("complete");
+    expect(held.pages()).toBe(2);
+    expect(bundle.counts).toMatchObject({
+      channels: 2,
+      messages: 2,
+      requests: 7,
+    });
+  });
+
   it("releases no bundle when the caller cancels during the final proof", async () => {
     const f = await fixture();
     const cancellation = new Error(`cancelled ${randomUUID()}`);
@@ -1654,6 +1816,63 @@ describe("Morning Brief Slack final release proof", () => {
     expect(traffic.requests.at(-1)?.url).toBe(SLACK_USER_CONVERSATIONS_URL);
   });
 
+  it("cancels a held final proof at the provider request and releases no bundle", async () => {
+    const f = await fixture();
+    const cancellation = new Error(`cancelled ${randomUUID()}`);
+    const controller = new AbortController();
+    const arrived = createDeferredPromise<void>(context.signal);
+    const cancelled = createDeferredPromise<void>(context.signal);
+    const traffic = scriptHeldRelease({
+      channels: [{ id: "C100", name: "general" }],
+      history: historyPage([{ ts: FIRST_IN_WINDOW, text: "unconfirmed" }]),
+      release: async (_page, request) => {
+        request.signal.addEventListener(
+          "abort",
+          () => {
+            cancelled.resolve();
+          },
+          { once: true },
+        );
+        arrived.resolve();
+        // Slack never answers on its own: this response is still in flight when
+        // the caller goes away, so only a cancellation that actually reaches
+        // the provider request can end it.
+        await cancelled.promise;
+        return HttpResponse.error();
+      },
+    });
+
+    const pending = setupApp({
+      context,
+      routes: morningBriefCollectionPreviewRoutes,
+      signal: controller.signal,
+      rethrowErrors: true,
+    })(morningBriefCollectionPreviewContract).collect({
+      headers: f.headers,
+      body: { scheduledFor: ANCHOR },
+    });
+    await arrived.promise;
+    controller.abort(cancellation);
+    // Awaiting the provider request's own abort both proves the cancellation
+    // arrived there and joins the held handler before the attempt is judged.
+    await cancelled.promise;
+
+    await expect(pending).rejects.toThrow(cancellation.message);
+    expect(queriesFor(traffic, SLACK_HISTORY_URL)).toHaveLength(1);
+    expect(traffic.requests.at(-1)?.url).toBe(SLACK_USER_CONVERSATIONS_URL);
+    // The attempt never finalized, so it published neither a bundle nor a
+    // completed occurrence carrying the content it was holding.
+    const [row, ...extra] = await readMorningBriefCollectionOccurrences(f);
+    expect(extra).toHaveLength(0);
+    expect(row).toMatchObject({
+      attempt: 1,
+      status: "running",
+      outcome: null,
+      channelCount: null,
+      messageCount: null,
+    });
+  });
+
   it("keeps a complete positive proof releasing its content unchanged", async () => {
     const f = await fixture();
     let releasePages = 0;
@@ -1662,11 +1881,11 @@ describe("Morning Brief Slack final release proof", () => {
         { id: "C1", name: "general" },
         { id: "C200", name: "secrets", is_private: true },
       ],
-      history: (query) => {
+      history: (query, request) => {
         const channel = query.get("channel") ?? "";
         return historyPage([
           { ts: FIRST_IN_WINDOW, text: `message in ${channel}` },
-        ])(query);
+        ])(query, request);
       },
       release: (page) => {
         releasePages = page;
@@ -1935,6 +2154,63 @@ describe("Morning Brief Slack finite budgets", () => {
         return channel.truncated;
       }),
     ).toHaveLength(2);
+    expect(traffic.requests.at(-1)?.url).toBe(SLACK_USER_CONVERSATIONS_URL);
+  });
+
+  it("spends the whole reserved proof allowance without a forty-first request", async () => {
+    const f = await fixture();
+    const channels = Array.from({ length: 19 }, (_value, index) => {
+      return { id: `C${index}`, name: `channel-${index}` };
+    });
+    let releasePages = 0;
+    const traffic = scriptHeldRelease({
+      channels,
+      // Discovery plus a proof and a read for eighteen channels is the whole
+      // 37-request read allowance; the nineteenth channel is never reached.
+      historyReads: 18,
+      history: historyPage([{ ts: FIRST_IN_WINDOW, text: "collected" }]),
+      release: (page) => {
+        releasePages = page;
+        if (page === 1) {
+          return channelPageBody(channels.slice(0, 17), "final-2");
+        }
+        // Each reserved page advances honestly and still never names the
+        // channel the reads could not reach.
+        return page === 2
+          ? channelPageBody([{ id: "C17", name: "channel-17" }], "final-3")
+          : channelPageBody([], "final-4");
+      },
+    });
+
+    const response = await accept(collect(f), [200]);
+    if (response.body.result !== "collected") {
+      throw new Error("Expected a collected bundle");
+    }
+    const { bundle } = response.body;
+    // The reads stop at their own ceiling and the proof then spends all three
+    // reserved pages, landing exactly on the documented 40-request ceiling.
+    expect(bundle.counts.requests).toBe(40);
+    expect(traffic.requests).toHaveLength(40);
+    expect(releasePages).toBe(3);
+    expect(bundle.limits).toContain("requests");
+    expect(bundle.limits).toContain("scope-unproven");
+    expect(bundle.coverage).toBe("partial");
+    expect(response.body.occurrence.outcome).toBe("partial");
+    // Only the freshly confirmed channels survive: the one the pass could not
+    // resolve keeps its content, name, id and link inside the collector, and
+    // the counts describe exactly what was returned.
+    expect(
+      bundle.channels.map((channel) => {
+        return channel.id;
+      }),
+    ).toStrictEqual(
+      channels.slice(0, 18).map((channel) => {
+        return channel.id;
+      }),
+    );
+    expect(JSON.stringify(bundle)).not.toContain("channel-18");
+    expect(bundle.counts).toMatchObject({ channels: 18, messages: 18 });
+    expect(bundle.counts.textBytes).toBe(18 * "collected".length);
     expect(traffic.requests.at(-1)?.url).toBe(SLACK_USER_CONVERSATIONS_URL);
   });
 
