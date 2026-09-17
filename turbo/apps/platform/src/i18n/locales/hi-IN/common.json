@@ -4216,6 +4216,8 @@
         "tiny-wanderer": "छोटा पथिक"
       },
       "presentation": {
+        "bloom-pitch": "पंखुड़ी पिच",
+        "blueprint-academy": "ड्राफ्टिंग कैंपस",
         "botane-organic-deck": "मौवे उद्यान",
         "business-data-presentation": "बेरी डैशबोर्ड",
         "crayon-learning-deck": "क्रेयॉन डूडल",
@@ -4224,9 +4226,19 @@
         "editorial-magazine-deck": "कागज पत्रिका",
         "landing-consulting-deck": "नियॉन ब्राउज़र",
         "lumina-creative-studio": "ब्रश स्टिकर",
+        "meridian": "कोबाल्ट ब्लॉक्स",
         "mosaic-geometric-pitch": "बॉहॉस टाइल्स",
+        "neo-brutalism": "शैडो शॉप",
+        "nocturne": "मिडनाइट स्टेज",
+        "pixel-glitch": "आर्केड पिक्सल",
         "playful-launch-presentation": "सनबर्स्ट प्लेरूम",
-        "playful-pop-deck": "नियॉन कैंडी"
+        "playful-pop-deck": "नियॉन कैंडी",
+        "prospectus": "होमपेज पिच",
+        "schoolhouse": "क्राफ्ट पोस्टर",
+        "sticker-scrapbook": "स्टिकर नोटबुक",
+        "strata": "लाल सीढ़ी",
+        "taped-consulting": "पोलेरॉइड दीवार",
+        "vantage": "नंबर वाला बोर्डरूम"
       },
       "video": {
         "chinese-ink-art": "चीनी स्याही चित्रकारी",

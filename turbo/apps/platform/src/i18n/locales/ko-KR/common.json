@@ -4203,6 +4203,8 @@
         "tiny-wanderer": "작은 방랑자"
       },
       "presentation": {
+        "bloom-pitch": "꽃잎 피치",
+        "blueprint-academy": "제도 캠퍼스",
         "botane-organic-deck": "모브 가든",
         "business-data-presentation": "베리 대시보드",
         "crayon-learning-deck": "크레용 낙서",
@@ -4211,9 +4213,19 @@
         "editorial-magazine-deck": "종이 잡지",
         "landing-consulting-deck": "네온 브라우저",
         "lumina-creative-studio": "브러시 스티커",
+        "meridian": "코발트 블록",
         "mosaic-geometric-pitch": "바우하우스 타일",
+        "neo-brutalism": "섀도 숍",
+        "nocturne": "미드나이트 스테이지",
+        "pixel-glitch": "아케이드 픽셀",
         "playful-launch-presentation": "선버스트 놀이방",
-        "playful-pop-deck": "네온 캔디"
+        "playful-pop-deck": "네온 캔디",
+        "prospectus": "홈페이지 피치",
+        "schoolhouse": "크라프트 포스터",
+        "sticker-scrapbook": "스티커 노트",
+        "strata": "붉은 계단",
+        "taped-consulting": "폴라로이드 벽",
+        "vantage": "넘버링 회의실"
       },
       "video": {
         "chinese-ink-art": "중국 먹 그림",

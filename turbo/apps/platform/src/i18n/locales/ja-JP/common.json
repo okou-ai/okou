@@ -4203,6 +4203,8 @@
         "tiny-wanderer": "小さな放浪者"
       },
       "presentation": {
+        "bloom-pitch": "ペタルピッチ",
+        "blueprint-academy": "製図キャンパス",
         "botane-organic-deck": "モーブガーデン",
         "business-data-presentation": "ベリーダッシュボード",
         "crayon-learning-deck": "クレヨンの落書き",
@@ -4211,9 +4213,19 @@
         "editorial-magazine-deck": "紙の雑誌",
         "landing-consulting-deck": "ネオンブラウザ",
         "lumina-creative-studio": "ブラシステッカー",
+        "meridian": "コバルトブロック",
         "mosaic-geometric-pitch": "バウハウスタイル",
+        "neo-brutalism": "シャドウショップ",
+        "nocturne": "ミッドナイトステージ",
+        "pixel-glitch": "アーケードピクセル",
         "playful-launch-presentation": "サンバーストプレイルーム",
-        "playful-pop-deck": "ネオンキャンディー"
+        "playful-pop-deck": "ネオンキャンディー",
+        "prospectus": "ホームページピッチ",
+        "schoolhouse": "クラフトポスター",
+        "sticker-scrapbook": "ステッカーノート",
+        "strata": "赤い階段",
+        "taped-consulting": "ポラロイドウォール",
+        "vantage": "番号付き会議室"
       },
       "video": {
         "chinese-ink-art": "中国の水墨画",

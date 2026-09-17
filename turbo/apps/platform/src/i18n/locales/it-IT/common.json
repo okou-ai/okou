@@ -4271,6 +4271,8 @@
         "tiny-wanderer": "Piccolo vagabondo"
       },
       "presentation": {
+        "bloom-pitch": "Presentazione a petali",
+        "blueprint-academy": "Campus del disegno tecnico",
         "botane-organic-deck": "Giardino color malva",
         "business-data-presentation": "Cruscotto Berry",
         "crayon-learning-deck": "Scarabocchio a pastello",
@@ -4279,9 +4281,19 @@
         "editorial-magazine-deck": "Rivista cartacea",
         "landing-consulting-deck": "Browser al neon",
         "lumina-creative-studio": "Adesivi per pennelli",
+        "meridian": "Blocchi cobalto",
         "mosaic-geometric-pitch": "Piastrelle Bauhaus",
+        "neo-brutalism": "Negozio d'ombra",
+        "nocturne": "Palco di mezzanotte",
+        "pixel-glitch": "Pixel arcade",
         "playful-launch-presentation": "Sala giochi Sunburst",
-        "playful-pop-deck": "Caramelle al neon"
+        "playful-pop-deck": "Caramelle al neon",
+        "prospectus": "Presentazione homepage",
+        "schoolhouse": "Poster kraft",
+        "sticker-scrapbook": "Quaderno di adesivi",
+        "strata": "Scala rossa",
+        "taped-consulting": "Parete di polaroid",
+        "vantage": "Sala riunioni numerata"
       },
       "video": {
         "chinese-ink-art": "Pittura a inchiostro cinese",

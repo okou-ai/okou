@@ -4203,6 +4203,8 @@
         "tiny-wanderer": "Pengembara Kecil"
       },
       "presentation": {
+        "bloom-pitch": "Presentasi Kelopak",
+        "blueprint-academy": "Kampus Gambar Teknik",
         "botane-organic-deck": "Kebun Mauve",
         "business-data-presentation": "Dasbor Berry",
         "crayon-learning-deck": "Coretan Krayon",
@@ -4211,9 +4213,19 @@
         "editorial-magazine-deck": "Majalah Kertas",
         "landing-consulting-deck": "Browser Neon",
         "lumina-creative-studio": "Stiker Kuas",
+        "meridian": "Blok Kobalt",
         "mosaic-geometric-pitch": "Ubin Bauhaus",
+        "neo-brutalism": "Toko Bayangan",
+        "nocturne": "Panggung Tengah Malam",
+        "pixel-glitch": "Piksel Arkade",
         "playful-launch-presentation": "Ruang Bermain Semburat Matahari",
-        "playful-pop-deck": "Permen Neon"
+        "playful-pop-deck": "Permen Neon",
+        "prospectus": "Presentasi Beranda",
+        "schoolhouse": "Poster Kraft",
+        "sticker-scrapbook": "Buku Stiker",
+        "strata": "Tangga Merah",
+        "taped-consulting": "Dinding Polaroid",
+        "vantage": "Ruang Rapat Bernomor"
       },
       "video": {
         "chinese-ink-art": "Lukisan Tinta Tiongkok",
