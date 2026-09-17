@@ -1,9 +1,9 @@
-# RFB client authentication
+# RFB client authentication and framebuffer decoding
 
 This internal, unpublished crate establishes an authenticated connection for the
 VNC engine tracked by [#34778](https://github.com/vm0-ai/okou/issues/34778).
-It is not yet connected to Runner, guest RPC, CLI or owner settings. It does not
-provide framebuffer decoding or a usable remote desktop session.
+It is not yet connected to Runner, guest RPC, CLI or owner settings. It provides
+authenticated framebuffer decoding, but not a complete remote desktop session.
 
 ## Contract
 
@@ -43,13 +43,84 @@ Failure, timeout, or cancellation drops the owned stream. Callers must not retai
 socket clones if dropping it must disconnect the peer. No connection or input is
 retried automatically.
 
+## Framebuffer contract
+
+`Authenticated::initialize(deadline)` sends shared ClientInit, validates bounded
+ServerInit metadata, and negotiates 32-bit little-endian true-color RGBX (depth 24,
+8-bit channels at shifts 0/8/16). Native server formats are validated before this
+normalization. Desktop names are bounded and discarded. Only ZRLE, CopyRect, Raw,
+Cursor and DesktopSize are advertised, in that preference order.
+
+The returned `FramebufferConnection` owns the TLS stream, framebuffer, exact
+per-pixel coverage, cursor shape and one persistent zlib inflater. Call
+`update(false, deadline)` for the initial full-frame request. A full request clears
+coverage; subsequent `update(true, deadline)` calls can accumulate partial updates.
+`pixels()` returns borrowed immutable RGBA only when every pixel is known. It never
+substitutes black or stale pixels for missing coverage. CopyRect transfers validity
+alongside pixels with overlap-safe semantics, including invalidating a destination
+copied from an unknown source.
+
+DesktopSize advances `geometry_epoch()`, discards old framebuffer contents and
+requires the next request to be nonincremental. It can occur before other
+rectangles in the same message. `update_sequence()` advances only after processing
+a complete FramebufferUpdate. Neither sequence nor complete coverage proves that
+a remote application has settled; E3 owns capture freshness and input coordination.
+
+Cursor pixels and hotspot are separate from the desktop image. Alpha follows the
+per-row cursor mask; the Cursor extension does not supply the cursor's desktop
+position. Empty shapes remove the cursor. These APIs do not composite a cursor,
+encode PNG, send keyboard/pointer events, resize the server, or transfer clipboard
+text. Bell and bounded standard ServerCutText messages are consumed and discarded.
+
+Initialization and updates consume ownership. Error, timeout, or dropping the
+future drops the stream and its storage; a partially decoded connection cannot be
+reused. Each operation is bounded by the earlier of its caller deadline and 30
+seconds, with a fresh check before success. Decode work yields between rows/tiles
+and bounded inflate chunks. There are no detached workers or retries.
+
+## Decoder limits and accounting
+
+| Resource                                            | Bound                              |
+| --------------------------------------------------- | ---------------------------------- |
+| Width or height                                     | 8,192 pixels; neither may be zero  |
+| Total framebuffer pixels                            | 8,388,608                          |
+| ServerInit name / discarded standard clipboard text | 4 KiB each                         |
+| Rectangles per update                               | 4,096                              |
+| ZRLE compressed rectangle                           | 40 MiB                             |
+| Wire bytes per update, including headers            | 64 MiB                             |
+| Messages before a framebuffer update                | At most 63 Bell/clipboard messages |
+| Cursor dimensions                                   | 256 by 256                         |
+| Accounted owned decoder memory                      | 128 MiB                            |
+
+ZRLE decompressed storage is bounded before allocation by four bytes per rectangle
+pixel plus 382 bytes per 64-by-64 tile (and one overflow-detection byte). Every
+tile must decode to exactly its pixel count, with no extra decompressed data.
+Palette indices, per-row packed bits and run lengths are checked. The zlib stream
+continues across rectangles; each length field bounds its compressed chunk.
+
+Heap buffers use fallible allocation and reserve their actual capacity against a
+shared budget before use. Reservations cover framebuffer pixels, coverage bits,
+cursor replacement, compressed and decompressed rectangles, decoded RGBA, tile
+scratch and overlapping old/new resize buffers. An additional conservative 256 KiB
+reservation covers inflater state and fixed protocol/decoder overhead. Scratch is
+released after each rectangle. `memory_usage()` exposes retained and peak accounted
+bytes. Compressed input is released immediately after inflation, before allocating
+RGBA/tile scratch, allowing high-detail 4K frames within the same total budget.
+The compressed cap includes headroom above the geometry-derived decoded bound for
+normal deflate framing. Accounting measures buffers,
+not process RSS. TLS/socket buffers, allocator
+metadata and caller-created copies are outside this decoder budget. E3 must account
+for any retained image copies, workers and queues before adding them to a session.
+
 ## Verification
 
 Public-API integration tests use real TCP and TLS peers, synthetic certificates,
 an independent DES challenge vector, malformed protocol messages and observable
-peer disconnects. These tests do not establish full TigerVNC interoperability,
-framebuffer safety or complete session lifecycle behavior. Those are separate
-engine acceptance gates before any product exposure.
+peer disconnects. Framebuffer tests verify exact pixels, all ZRLE modes, independent
+persistent-zlib fixtures, CopyRect overlap/coverage, cursor/resize behavior,
+decompression limits, cancellation and maximum geometry allocation accounting.
+They do not establish full TigerVNC interoperability or complete session lifecycle
+behavior; those remain E3 acceptance gates before any product exposure.
 
 ```sh
 cargo test --manifest-path crates/Cargo.toml --profile local -p rfb-client
