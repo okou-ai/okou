@@ -1,6 +1,6 @@
 import { cn } from "@okouai/ui";
 
-export interface TemplateFilterPill {
+interface TemplateFilterPill {
   readonly id: string;
   readonly label: string;
 }

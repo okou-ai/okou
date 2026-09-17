@@ -124,9 +124,7 @@ function optionsRow(dialog: HTMLElement, label: "Voice" | "Avatar") {
   if (!optionsPanel(dialog)) {
     click(control("More options", dialog));
   }
-  if (
-    optionsPanel(dialog)?.getAttribute("data-intro-video-options") !== "root"
-  ) {
+  if (optionsPanel(dialog)?.dataset.introVideoOptions !== "root") {
     click(control("Back", dialog));
   }
   return control(label, dialog);
@@ -328,9 +326,9 @@ test("Applying and reopening a template restores all settings without creating a
   // Reopening lands on the gallery, so the restored settings have to be
   // readable without opening the options layer again.
   expect(optionsPanel(reopened)).toBeNull();
-  expect(
-    await within(reopened).findByLabelText("Select style Watercolor"),
-  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    within(reopened).findByLabelText("Select style Watercolor"),
+  ).resolves.toHaveAttribute("aria-pressed", "true");
   expect(summary(reopened)).toHaveTextContent("Voice: No voiceover");
   click(control("Select style Minimalism", reopened));
   click(control("Use selection", reopened));

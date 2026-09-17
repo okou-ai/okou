@@ -8,7 +8,7 @@ import { command, computed, state } from "ccstate";
  * the two library views replace it in place so the panel keeps one back stack
  * instead of opening a second dialog.
  */
-export type IntroVideoPickerPanelView = "root" | "voice" | "avatar";
+type IntroVideoPickerPanelView = "root" | "voice" | "avatar";
 
 /**
  * The style is the only required choice. A voice the user never opened is
