@@ -1,21 +1,22 @@
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
-import { Button, Skeleton, cn } from "@okouai/ui";
+import { Button, Input, Skeleton, cn } from "@okouai/ui";
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import {
   ArrowRight,
   Check,
-  LayoutTemplate,
+  ChevronLeft,
+  ChevronRight,
+  Search,
+  SlidersHorizontal,
   UserRound,
   UserRoundX,
   Volume2,
   VolumeX,
+  X,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import type {
-  IntroVideoPickerSignals,
-  IntroVideoPickerTab,
-} from "../../signals/okou-page/intro-video-picker.ts";
+import type { IntroVideoPickerSignals } from "../../signals/okou-page/intro-video-picker.ts";
 import { introVideoStyleGallerySignals } from "../../signals/okou-page/intro-video-style-gallery.ts";
 import { introVideoAvatarPickerSignals } from "../../signals/okou-page/intro-video-catalog-picker.ts";
 import { groupIntroVideoAvatars } from "../../signals/okou-page/intro-video-avatar-groups.ts";
@@ -28,6 +29,7 @@ import {
 } from "./intro-video-style-gallery.tsx";
 import { IntroVideoAvatarGroupCard } from "./intro-video-avatar-group-card.tsx";
 import { IntroVideoCatalogPagination } from "./intro-video-catalog-pagination.tsx";
+import { TemplateFilterPillRow } from "./template-filter-pill.tsx";
 import {
   VOICE_PREVIEW_CARD_CLASS,
   VOICE_PREVIEW_CARD_PROPS,
@@ -38,9 +40,17 @@ import {
 } from "./avatar-template-picker.tsx";
 import {
   avatarSelectionLabel,
-  styleSelectionLabel,
   voiceSelectionLabel,
 } from "./intro-video-selection-labels.ts";
+
+/**
+ * Width of the advanced options layer, plus the 8px of air it keeps on its
+ * right edge and the 8px gutter between it and the gallery. The gallery section
+ * reserves the whole figure as padding, so the panel floats over empty space
+ * rather than over cards.
+ */
+const OPTIONS_PANEL_WIDTH = "w-[344px]";
+const OPTIONS_PANEL_RESERVE = "pr-[360px]";
 
 interface PickerProps {
   readonly signals: IntroVideoPickerSignals;
@@ -196,7 +206,7 @@ function PickerMessage({
 
 function PickerSkeleton() {
   return (
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+    <div className="grid grid-cols-2 gap-3 @[560px]/panel:grid-cols-3">
       {Array.from({ length: 6 }, (_, index) => {
         return <Skeleton key={index} className="aspect-video rounded-xl" />;
       })}
@@ -204,121 +214,30 @@ function PickerSkeleton() {
   );
 }
 
-function ConfigurationTabs({ signals }: PickerProps) {
+/**
+ * Style search, placed where the workflow template tab puts its own: top left,
+ * above the filters. Same width and height, so the two tabs of one dialog do
+ * not present two different toolbars.
+ */
+function StyleSearch({ signals }: PickerProps) {
   const { t } = useTranslation();
-  const tab = useGet(signals.tab$);
-  const setTab = useSet(signals.setTab$);
-  const style = useGet(signals.style$);
-  const avatar = useGet(signals.avatar$);
-  const voice = useGet(signals.voice$);
-  const tabs = [
-    {
-      id: "style",
-      label: t(($) => {
-        return $.chat.introVideo.picker.style;
-      }),
-      value: style
-        ? styleSelectionLabel(t, style)
-        : t(($) => {
-            return $.chat.introVideo.picker.chooseStyle;
-          }),
-      Icon: LayoutTemplate,
-      selected: style !== null,
-    },
-    {
-      id: "avatar",
-      label: t(($) => {
-        return $.chat.introVideo.avatar.label;
-      }),
-      value: avatarSelectionLabel(t, avatar),
-      Icon: UserRound,
-      // The avatar step is optional: "No avatar" is the default, not a choice
-      // the user made, so it must not claim a tick while the footer still asks
-      // for one.
-      selected: avatar !== null,
-    },
-    {
-      id: "voice",
-      label: t(($) => {
-        return $.chat.introVideo.voice.label;
-      }),
-      value: voice
-        ? voiceSelectionLabel(t, voice, avatar)
-        : t(($) => {
-            return $.chat.introVideo.voice.heading;
-          }),
-      Icon: Volume2,
-      selected: voice !== null,
-    },
-  ] as const;
+  const query = useGet(signals.query$);
+  const setQuery = useSet(signals.setQuery$);
+  const label = t(($) => {
+    return $.chat.introVideo.picker.searchStyles;
+  });
   return (
-    <div
-      role="tablist"
-      aria-label={t(($) => {
-        return $.chat.introVideo.picker.settings;
-      })}
-      className="grid shrink-0 grid-cols-3 gap-1 border-b border-border px-4 py-2 sm:px-6 sm:pr-14"
-    >
-      {tabs.map(({ id, label, value, Icon, selected }, index) => {
-        return (
-          <Button
-            key={id}
-            type="button"
-            role="tab"
-            variant="quiet"
-            aria-label={label}
-            aria-selected={tab === id}
-            aria-controls="intro-video-panel"
-            tabIndex={tab === id ? 0 : -1}
-            onClick={() => {
-              setTab(id);
-            }}
-            onKeyDown={(event) => {
-              const nextIndex =
-                event.key === "ArrowRight"
-                  ? (index + 1) % tabs.length
-                  : event.key === "ArrowLeft"
-                    ? (index + tabs.length - 1) % tabs.length
-                    : event.key === "Home"
-                      ? 0
-                      : event.key === "End"
-                        ? tabs.length - 1
-                        : null;
-              if (nextIndex === null) {
-                return;
-              }
-              event.preventDefault();
-              const next = tabs[nextIndex];
-              if (next) {
-                setTab(next.id);
-                const controls =
-                  event.currentTarget.parentElement?.querySelectorAll<HTMLElement>(
-                    "[role=tab]",
-                  );
-                controls?.[nextIndex]?.focus();
-              }
-            }}
-            className={cn(
-              "relative h-10 min-w-0 justify-start gap-2 rounded-md px-2 py-1 text-left hover:bg-state-hover",
-              tab === id &&
-                "bg-state-selected text-foreground after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:bg-foreground",
-            )}
-          >
-            <Icon className="hidden shrink-0 text-muted-foreground sm:block" />
-            <span className="min-w-0 flex-1 sm:flex sm:items-center sm:gap-2">
-              <span className="block shrink-0 text-xs font-medium leading-4 sm:text-sm">
-                {label}
-              </span>
-              <span className="block truncate text-[10px] font-normal leading-3 text-muted-foreground sm:text-xs">
-                {value}
-              </span>
-            </span>
-            {selected && (
-              <Check size={12} className="shrink-0 text-brand-text" />
-            )}
-          </Button>
-        );
-      })}
+    <div className="relative w-56 shrink-0">
+      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+      <Input
+        aria-label={label}
+        placeholder={label}
+        className="h-9 pl-9 text-sm"
+        value={query}
+        onChange={(event) => {
+          setQuery(event.target.value);
+        }}
+      />
     </div>
   );
 }
@@ -331,89 +250,58 @@ function StyleTags({
   const labels = useIntroVideoStyleGroupLabels();
   const group = useGet(signals.group$);
   const setGroup = useSet(signals.setGroup$);
-  const tags = [
-    ...INTRO_VIDEO_STYLE_TAGS.map((id) => {
-      return { id, label: labels[id] };
-    }),
-    ...(hasOther ? [{ id: "other", label: labels.other }] : []),
-  ];
   return (
-    <div
-      role="group"
-      aria-label={t(($) => {
+    <TemplateFilterPillRow
+      className="shrink-0 px-4 sm:px-6"
+      label={t(($) => {
         return $.chat.introVideo.style.browseGroups;
       })}
-      className="flex shrink-0 flex-wrap gap-2 px-4 pb-3 sm:px-6"
-    >
-      {tags.map(({ id, label }) => {
-        return (
-          <Button
-            key={id}
-            type="button"
-            variant="quiet"
-            size="xs"
-            aria-pressed={group === id}
-            onClick={() => {
-              setGroup(group === id ? "all" : id);
-            }}
-            className={cn(
-              "rounded-md border border-border bg-background hover:bg-state-hover",
-              group === id &&
-                "border-primary bg-state-selected text-foreground ring-1 ring-primary",
-            )}
-          >
-            {label}
-          </Button>
-        );
-      })}
-    </div>
+      active={group}
+      pills={[
+        {
+          id: "all",
+          label: t(($) => {
+            return $.artifacts.templates.all;
+          }),
+        },
+        ...INTRO_VIDEO_STYLE_TAGS.map((id) => {
+          return { id, label: labels[id] };
+        }),
+        ...(hasOther ? [{ id: "other", label: labels.other }] : []),
+      ]}
+      onSelect={setGroup}
+    />
   );
 }
 
-function StylePicker({ signals }: PickerProps) {
-  const { t } = useTranslation();
+function StyleGallery({ signals }: PickerProps) {
   const catalog = useLoadable(introVideoStyleGallerySignals.catalog$);
   const reload = useSet(introVideoStyleGallerySignals.reload$);
   const style = useGet(signals.style$);
   const setStyle = useSet(signals.setStyle$);
   const group = useGet(signals.group$);
+  const query = useGet(signals.query$).trim().toLowerCase();
   const items =
     catalog.state === "hasData"
       ? catalog.data.filter((item) => {
-          return (
+          const matchesGroup =
             group === "all" ||
             (group === "other"
               ? !INTRO_VIDEO_STYLE_TAGS.some((tag) => {
                   return item.tags.includes(tag);
                 })
-              : item.tags.includes(group))
+              : item.tags.includes(group));
+          return (
+            matchesGroup &&
+            (query === "" || item.name.toLowerCase().includes(query))
           );
         })
       : [];
-  const hasOther =
-    catalog.state === "hasData" &&
-    catalog.data.some((item) => {
-      return !INTRO_VIDEO_STYLE_TAGS.some((tag) => {
-        return item.tags.includes(tag);
-      });
-    });
   return (
-    <>
-      <div className="flex min-w-0 shrink-0 items-center gap-2 px-4 py-3 sm:px-6">
-        <h3 className="text-xs font-medium">
-          {t(($) => {
-            return $.chat.introVideo.picker.chooseStyle;
-          })}
-        </h3>
-        {catalog.state === "hasData" && (
-          <span className="text-xs text-muted-foreground">{items.length}</span>
-        )}
-      </div>
-      <StyleTags signals={signals} hasOther={hasOther} />
+    <div className="relative flex min-h-0 flex-1 flex-col">
       <div
-        key={group}
         data-intro-video-catalog-scroll=""
-        className="min-h-0 flex-1 overflow-y-auto px-4 pb-5 sm:px-6"
+        className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pb-6 pt-4 sm:px-6"
       >
         {catalog.state === "hasError" ? (
           <PickerMessage error onRetry={reload} />
@@ -422,7 +310,9 @@ function StylePicker({ signals }: PickerProps) {
         ) : items.length === 0 ? (
           <PickerMessage />
         ) : (
-          <div className="grid grid-cols-2 items-start gap-3 lg:grid-cols-3">
+          // Columns follow the section's own width, not the viewport: the
+          // options panel takes 360px off it while the window never changes.
+          <div className="grid grid-cols-2 items-start gap-3 @[560px]/panel:grid-cols-3 @[880px]/panel:grid-cols-4">
             {items.map((item) => {
               return (
                 <IntroVideoStyleCard
@@ -440,6 +330,48 @@ function StylePicker({ signals }: PickerProps) {
           </div>
         )}
       </div>
+      {/* Soften the hard clip where cards scroll up under the filter row; the
+          workflow tab draws the same wash under its own pills. */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-6 bg-gradient-to-b from-card to-transparent" />
+    </div>
+  );
+}
+
+function StylePicker({ signals }: PickerProps) {
+  const { t } = useTranslation();
+  const catalog = useLoadable(introVideoStyleGallerySignals.catalog$);
+  const panelOpen = useGet(signals.panelOpen$);
+  const setPanelOpen = useSet(signals.setPanelOpen$);
+  const hasOther =
+    catalog.state === "hasData" &&
+    catalog.data.some((item) => {
+      return !INTRO_VIDEO_STYLE_TAGS.some((tag) => {
+        return item.tags.includes(tag);
+      });
+    });
+  return (
+    <>
+      {/* 68px, the height the sibling tabs' toolbar row states, so the search
+          box does not move when the category changes. */}
+      <div className="flex h-[68px] shrink-0 items-center gap-3 px-4 sm:px-6 sm:pr-14">
+        <StyleSearch signals={signals} />
+        <Button
+          type="button"
+          variant="outline"
+          aria-expanded={panelOpen}
+          onClick={() => {
+            setPanelOpen(!panelOpen);
+          }}
+          className="ml-auto shrink-0 gap-2"
+        >
+          <SlidersHorizontal size={16} />
+          {t(($) => {
+            return $.chat.introVideo.picker.moreOptions;
+          })}
+        </Button>
+      </div>
+      <StyleTags signals={signals} hasOther={hasOther} />
+      <StyleGallery signals={signals} />
     </>
   );
 }
@@ -467,12 +399,7 @@ function AvatarPicker({ signals }: PickerProps) {
   const groups = visible ? groupIntroVideoAvatars(visible.items) : [];
   return (
     <>
-      <div className="flex shrink-0 items-center gap-2 px-4 py-3 sm:px-6">
-        <h3 className="sr-only">
-          {t(($) => {
-            return $.chat.introVideo.avatar.heading;
-          })}
-        </h3>
+      <div className="flex shrink-0 items-center gap-2 px-3 pb-3">
         <Button
           type="button"
           variant="outline"
@@ -494,9 +421,9 @@ function AvatarPicker({ signals }: PickerProps) {
       </div>
       <div
         data-intro-video-catalog-scroll=""
-        className="min-h-0 flex-1 overflow-y-auto px-4 pb-5 sm:px-6"
+        className="min-h-0 flex-1 overflow-y-auto px-3 pb-3"
       >
-        <div className="grid grid-cols-2 items-stretch gap-3 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="grid grid-cols-2 items-stretch gap-3">
           {groups.map((group) => {
             return (
               <IntroVideoAvatarGroupCard
@@ -541,7 +468,6 @@ function VoicePicker({ signals }: PickerProps) {
   const avatar = useGet(signals.avatar$);
   const selection = useGet(signals.voice$);
   const setSelection = useSet(signals.setVoice$);
-  const setTab = useSet(signals.setTab$);
   const defaultVoiceTitle = t(($) => {
     return avatar.kind === "none"
       ? $.chat.introVideo.voice.auto
@@ -561,97 +487,205 @@ function VoicePicker({ signals }: PickerProps) {
         }
       : undefined;
   return (
-    <>
-      <div className="flex shrink-0 items-center justify-between gap-2 px-4 py-3 sm:px-6">
-        <h3 className="text-sm font-medium">
-          {t(($) => {
-            return $.chat.introVideo.voice.heading;
-          })}
-        </h3>
+    <div className="flex min-h-0 flex-1 flex-col gap-3 px-3 pb-3">
+      <div className="flex shrink-0 justify-end">
         <VoiceLibraryToolbar />
       </div>
-      <div className="flex min-h-0 flex-1 gap-5 px-4 pb-5 sm:px-6">
-        <aside className="hidden w-44 shrink-0 self-start overflow-hidden rounded-xl border border-border md:block">
-          <div className="grid aspect-square place-items-center bg-state-hover">
-            {avatar.kind === "catalog" && avatar.avatar.previewImageUrl ? (
-              <img
-                src={avatar.avatar.previewImageUrl}
-                alt=""
-                className="size-full object-contain"
+      <VoiceLibraryContent
+        header={
+          <>
+            {defaultVoiceSample ? (
+              <AvatarVoicePickerOption
+                voice={defaultVoiceSample}
+                title={defaultVoiceTitle}
+                description={defaultVoiceDescription}
+                selected={selection.kind === "default"}
+                onSelect={() => {
+                  setSelection({ kind: "default" });
+                }}
               />
             ) : (
-              <UserRoundX size={32} className="text-muted-foreground" />
+              <PickerOption
+                title={defaultVoiceTitle}
+                description={defaultVoiceDescription}
+                icon={<Volume2 size={17} />}
+                selected={selection.kind === "default"}
+                onSelect={() => {
+                  setSelection({ kind: "default" });
+                }}
+              />
             )}
-          </div>
-          <div className="p-3">
-            <p className="text-sm font-medium">
-              {avatarSelectionLabel(t, avatar)}
-            </p>
-            <Button
-              type="button"
-              variant="quiet"
-              size="sm"
-              className="mt-2"
-              onClick={() => {
-                setTab("avatar");
-              }}
-            >
-              {t(($) => {
-                return $.chat.introVideo.picker.changeAvatar;
+            <PickerOption
+              title={t(($) => {
+                return $.chat.introVideo.voice.none;
               })}
-            </Button>
-          </div>
-        </aside>
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <VoiceLibraryContent
-            header={
-              <>
-                {defaultVoiceSample ? (
-                  <AvatarVoicePickerOption
-                    voice={defaultVoiceSample}
-                    title={defaultVoiceTitle}
-                    description={defaultVoiceDescription}
-                    selected={selection?.kind === "default"}
-                    onSelect={() => {
-                      setSelection({ kind: "default" });
-                    }}
-                  />
-                ) : (
-                  <PickerOption
-                    title={defaultVoiceTitle}
-                    description={defaultVoiceDescription}
-                    icon={<Volume2 size={17} />}
-                    selected={selection?.kind === "default"}
-                    onSelect={() => {
-                      setSelection({ kind: "default" });
-                    }}
-                  />
-                )}
-                <PickerOption
-                  title={t(($) => {
-                    return $.chat.introVideo.voice.none;
-                  })}
-                  description={t(($) => {
-                    return $.chat.introVideo.voice.noneDescription;
-                  })}
-                  icon={<VolumeX size={17} />}
-                  selected={selection?.kind === "none"}
-                  onSelect={() => {
-                    setSelection({ kind: "none" });
-                  }}
-                />
-              </>
-            }
-            selectedVoiceId={
-              selection?.kind === "catalog" ? selection.voice.id : undefined
-            }
-            onSelect={(voice) => {
-              setSelection({ kind: "catalog", voice });
+              description={t(($) => {
+                return $.chat.introVideo.voice.noneDescription;
+              })}
+              icon={<VolumeX size={17} />}
+              selected={selection.kind === "none"}
+              onSelect={() => {
+                setSelection({ kind: "none" });
+              }}
+            />
+          </>
+        }
+        selectedVoiceId={
+          selection.kind === "catalog" ? selection.voice.id : undefined
+        }
+        onSelect={(voice) => {
+          setSelection({ kind: "catalog", voice });
+        }}
+      />
+    </div>
+  );
+}
+
+/**
+ * The panel's first screen: what the two optional settings are currently worth,
+ * and a way into each library. Reading the value here is the point — the user
+ * never has to open a library to find out what they are getting.
+ */
+function OptionsRow({
+  icon,
+  label,
+  value,
+  onSelect,
+}: {
+  readonly icon: ReactNode;
+  readonly label: string;
+  readonly value: string;
+  readonly onSelect: () => void;
+}) {
+  return (
+    <Button
+      type="button"
+      variant="quiet"
+      aria-label={label}
+      onClick={onSelect}
+      className="h-auto w-full justify-start gap-3 rounded-lg px-2 py-2.5 text-left hover:bg-state-hover"
+    >
+      <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-state-hover text-muted-foreground">
+        {icon}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-medium">{label}</span>
+        <span className="mt-0.5 block truncate text-xs font-normal text-muted-foreground">
+          {value}
+        </span>
+      </span>
+      <ChevronRight size={16} className="shrink-0 text-muted-foreground" />
+    </Button>
+  );
+}
+
+function OptionsRootView({ signals }: PickerProps) {
+  const { t } = useTranslation();
+  const avatar = useGet(signals.avatar$);
+  const voice = useGet(signals.voice$);
+  const setView = useSet(signals.setPanelView$);
+  return (
+    <div className="min-h-0 flex-1 overflow-y-auto p-2">
+      <OptionsRow
+        icon={<Volume2 size={17} />}
+        label={t(($) => {
+          return $.chat.introVideo.voice.label;
+        })}
+        value={voiceSelectionLabel(t, voice, avatar)}
+        onSelect={() => {
+          setView("voice");
+        }}
+      />
+      <OptionsRow
+        icon={<UserRound size={17} />}
+        label={t(($) => {
+          return $.chat.introVideo.avatar.label;
+        })}
+        value={avatarSelectionLabel(t, avatar)}
+        onSelect={() => {
+          setView("avatar");
+        }}
+      />
+    </div>
+  );
+}
+
+/**
+ * The advanced settings, floating 8px inside the dialog rather than docked to
+ * its edge. Two close buttons in one corner were the confusion; making the
+ * layers visibly separate — inset, own radius, own shadow — is what resolves
+ * it. The radius is derived from the dialog's: inner = outer (16) − gap (8).
+ */
+function OptionsPanel({ signals }: PickerProps) {
+  const { t } = useTranslation();
+  const view = useGet(signals.panelView$);
+  const setView = useSet(signals.setPanelView$);
+  const setPanelOpen = useSet(signals.setPanelOpen$);
+  return (
+    <aside
+      data-intro-video-options={view}
+      aria-label={t(($) => {
+        return $.chat.introVideo.picker.settings;
+      })}
+      className={cn(
+        "absolute inset-y-2 right-2 z-20 flex flex-col overflow-hidden rounded-lg border border-border bg-card",
+        "shadow-[0_8px_24px_-12px_rgba(0,0,0,0.12)] dark:shadow-[0_8px_24px_-8px_rgba(0,0,0,0.5)]",
+        "motion-safe:animate-intro-video-options-in",
+        OPTIONS_PANEL_WIDTH,
+      )}
+    >
+      <header className="flex shrink-0 items-center gap-1 p-2">
+        {view === "root" ? null : (
+          <Button
+            type="button"
+            variant="quiet"
+            size="icon-sm"
+            aria-label={t(($) => {
+              return $.chat.introVideo.picker.back;
+            })}
+            onClick={() => {
+              setView("root");
             }}
-          />
-        </div>
-      </div>
-    </>
+          >
+            <ChevronLeft size={16} />
+          </Button>
+        )}
+        <h3
+          className={cn(
+            "min-w-0 flex-1 truncate text-sm font-medium",
+            view === "root" && "pl-2",
+          )}
+        >
+          {t(($) => {
+            return view === "voice"
+              ? $.chat.introVideo.voice.heading
+              : view === "avatar"
+                ? $.chat.introVideo.avatar.heading
+                : $.chat.introVideo.picker.moreOptions;
+          })}
+        </h3>
+        <Button
+          type="button"
+          variant="quiet"
+          size="icon-sm"
+          aria-label={t(($) => {
+            return $.chat.introVideo.picker.closeOptions;
+          })}
+          onClick={() => {
+            setPanelOpen(false);
+          }}
+        >
+          <X size={16} />
+        </Button>
+      </header>
+      {view === "voice" ? (
+        <VoicePicker signals={signals} />
+      ) : view === "avatar" ? (
+        <AvatarPicker signals={signals} />
+      ) : (
+        <OptionsRootView signals={signals} />
+      )}
+    </aside>
   );
 }
 
@@ -664,71 +698,69 @@ export function IntroVideoPicker({
   readonly onCancel: () => void;
 }) {
   const { t } = useTranslation();
-  const tab = useGet(signals.tab$);
   const template = useGet(signals.template$);
   const style = useGet(signals.style$);
+  const avatar = useGet(signals.avatar$);
   const voice = useGet(signals.voice$);
-  const panels: Record<IntroVideoPickerTab, ReactNode> = {
-    style: <StylePicker signals={signals} />,
-    avatar: <AvatarPicker signals={signals} />,
-    voice: <VoicePicker signals={signals} />,
-  };
+  const panelOpen = useGet(signals.panelOpen$);
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <ConfigurationTabs signals={signals} />
+    <div className="relative flex min-h-0 flex-1 flex-col">
       <div
-        id="intro-video-panel"
-        role="tabpanel"
-        aria-label={t(($) => {
-          return tab === "style"
-            ? $.chat.introVideo.picker.style
-            : tab === "avatar"
-              ? $.chat.introVideo.avatar.label
-              : $.chat.introVideo.voice.label;
-        })}
-        className="flex min-h-0 flex-1 flex-col"
+        className={cn(
+          "@container/panel flex min-h-0 flex-1 flex-col",
+          "transition-[padding] duration-200 ease-[cubic-bezier(0.32,0.72,0,1)]",
+          panelOpen && OPTIONS_PANEL_RESERVE,
+        )}
       >
-        {panels[tab]}
+        <StylePicker signals={signals} />
+        <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-border px-4 py-3 sm:px-6">
+          <p
+            data-intro-video-summary=""
+            className="min-w-0 truncate text-xs text-muted-foreground"
+          >
+            {style
+              ? t(
+                  ($) => {
+                    return $.chat.introVideo.picker.selectionSummary;
+                  },
+                  {
+                    voice: voiceSelectionLabel(t, voice, avatar),
+                    avatar: avatarSelectionLabel(t, avatar),
+                  },
+                )
+              : t(($) => {
+                  return $.chat.introVideo.picker.chooseStyle;
+                })}
+          </p>
+          <div className="flex shrink-0 gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="hidden sm:inline-flex"
+              onClick={onCancel}
+            >
+              {t(($) => {
+                return $.chat.introVideo.footer.cancel;
+              })}
+            </Button>
+            <Button
+              type="button"
+              disabled={!template}
+              onClick={() => {
+                if (template) {
+                  onSelect(template);
+                }
+              }}
+            >
+              {t(($) => {
+                return $.chat.introVideo.picker.useSelection;
+              })}
+              <ArrowRight size={15} />
+            </Button>
+          </div>
+        </footer>
       </div>
-      <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-border px-4 py-3 sm:px-6">
-        <p className="text-xs text-muted-foreground">
-          {t(($) => {
-            return !style && !voice
-              ? $.chat.introVideo.picker.chooseStyleAndVoice
-              : !style
-                ? $.chat.introVideo.picker.chooseStyle
-                : !voice
-                  ? $.chat.introVideo.voice.heading
-                  : $.chat.introVideo.picker.ready;
-          })}
-        </p>
-        <div className="flex shrink-0 gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            className="hidden sm:inline-flex"
-            onClick={onCancel}
-          >
-            {t(($) => {
-              return $.chat.introVideo.footer.cancel;
-            })}
-          </Button>
-          <Button
-            type="button"
-            disabled={!template}
-            onClick={() => {
-              if (template) {
-                onSelect(template);
-              }
-            }}
-          >
-            {t(($) => {
-              return $.chat.introVideo.picker.useSelection;
-            })}
-            <ArrowRight size={15} />
-          </Button>
-        </div>
-      </footer>
+      {panelOpen ? <OptionsPanel signals={signals} /> : null}
     </div>
   );
 }

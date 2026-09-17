@@ -645,7 +645,6 @@
       "importedSlides_other": "{{count}} 枚",
       "importFile": "自分のファイルをインポート",
       "importFileHint": "({{formats}})",
-      "importStarted": "{{filename}} を解析しています。完成すると Custom に表示されます。",
       "importUnsupported": "テンプレートを作成するには {{formats}} のファイルを選択してください。",
       "introVideo": "イントロ動画",
       "introVideoUnavailable": "この動画テンプレートは現在利用できません。削除してメッセージを送信してください。",
@@ -1893,13 +1892,14 @@
       "picker": {
         "autoVoiceDescription": "コンテンツに合う音声を選びます。",
         "avatarVoice": "アバターの音声",
-        "changeAvatar": "アバターを変更",
+        "back": "戻る",
         "chooseStyle": "スタイルを選択",
-        "chooseStyleAndVoice": "スタイルと音声を選択してください。",
+        "closeOptions": "オプションを閉じる",
+        "moreOptions": "その他のオプション",
         "noMatches": "見つかりませんでした。",
-        "ready": "準備ができました。チャットにコンテンツを追加してください。",
+        "searchStyles": "スタイルを検索",
+        "selectionSummary": "音声: {{voice}} · アバター: {{avatar}}",
         "settings": "イントロ動画の設定",
-        "style": "スタイル",
         "useSelection": "この設定を使用"
       },
       "style": {
@@ -1968,10 +1968,12 @@
       "github": "GitHub",
       "lark": "Lark",
       "openChat": "オープンチャット",
+      "openChatIn": "{{integration}}でチャットを開く",
       "openFeishuChat": "Feishu で元のチャットを開く",
       "openGithubMessage": "GitHub で元の Issue または Pull Request を開く",
       "openLarkChat": "Lark で元のチャットを開く",
       "openMessage": "メッセージを開く",
+      "openMessages": "メッセージを開く",
       "openSlackMessage": "Slack で元のメッセージを開く",
       "openTeamsMessage": "Microsoft Teams で元のメッセージを開く",
       "openTelegramMessage": "Telegram で元のメッセージを開く",
@@ -4203,6 +4205,8 @@
         "tiny-wanderer": "小さな放浪者"
       },
       "presentation": {
+        "bloom-pitch": "ペタルピッチ",
+        "blueprint-academy": "製図キャンパス",
         "botane-organic-deck": "モーブガーデン",
         "business-data-presentation": "ベリーダッシュボード",
         "crayon-learning-deck": "クレヨンの落書き",
@@ -4211,9 +4215,19 @@
         "editorial-magazine-deck": "紙の雑誌",
         "landing-consulting-deck": "ネオンブラウザ",
         "lumina-creative-studio": "ブラシステッカー",
+        "meridian": "コバルトブロック",
         "mosaic-geometric-pitch": "バウハウスタイル",
+        "neo-brutalism": "シャドウショップ",
+        "nocturne": "ミッドナイトステージ",
+        "pixel-glitch": "アーケードピクセル",
         "playful-launch-presentation": "サンバーストプレイルーム",
-        "playful-pop-deck": "ネオンキャンディー"
+        "playful-pop-deck": "ネオンキャンディー",
+        "prospectus": "ホームページピッチ",
+        "schoolhouse": "クラフトポスター",
+        "sticker-scrapbook": "ステッカーノート",
+        "strata": "赤い階段",
+        "taped-consulting": "ポラロイドウォール",
+        "vantage": "番号付き会議室"
       },
       "video": {
         "chinese-ink-art": "中国の水墨画",
@@ -5310,7 +5324,8 @@
     "status": {
       "availableNow": "現在利用可能",
       "inUse_one": "{{limit}} スロットの {{active}} が使用中です",
-      "inUse_other": "{{limit}} スロット中 {{active}} が使用中です"
+      "inUse_other": "{{limit}} スロット中 {{active}} が使用中です",
+      "waitingForSandbox": "Sandbox を待機中"
     },
     "tiers": {
       "custom": "カスタム",
@@ -6266,6 +6281,18 @@
     "manage": "SSH ホストを管理",
     "notLearned": "ホスト鍵はまだ記憶されていません",
     "passphrase": "パスフレーズ（任意）",
+    "placeholders": {
+      "accessName": "例: 本番環境へのアクセス",
+      "clientId": "Service Token の Client ID を貼り付け",
+      "clientSecret": "Service Token の Client Secret を貼り付け",
+      "credentialName": "例: デプロイ用ログイン",
+      "displayName": "例: 本番サーバー",
+      "host": "例: ssh.example.com",
+      "passphrase": "鍵が暗号化されていなければ空欄",
+      "password": "SSH ユーザーのパスワードを入力",
+      "privateKey": "秘密鍵全体を貼り付け",
+      "username": "例: ubuntu"
+    },
     "port": "ポート",
     "privateKey": "秘密鍵",
     "reset": "ホスト鍵をリセット",

@@ -29,6 +29,7 @@ import {
 } from "../services/user-template-data.service";
 import { deleteUserTemplate$ } from "../services/user-template-delete.service";
 import { publishUserTemplate$ } from "../services/user-template-publish.service";
+import { replaceUserTemplatePackage$ } from "../services/user-template-repackage.service";
 import { templateArtifactBucket } from "../services/private-artifact-storage.service";
 import {
   presentationTemplatePreviewPresignedUrlCacheKey,
@@ -375,6 +376,60 @@ const resolvePreviewUrlsInner$ = command(
   },
 );
 
+const replacePackageParams$ = pathParamsOf(
+  userTemplatesContract.replacePackage,
+);
+const replacePackageBody$ = bodyResultOf(userTemplatesContract.replacePackage);
+const replacePackageInner$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    if (!(await get(customTemplatesEnabled$))) {
+      return customTemplatesDisabled;
+    }
+    signal.throwIfAborted();
+    const auth = get(organizationAuthContext$);
+    const params = get(replacePackageParams$);
+    const bodyResult = await get(replacePackageBody$);
+    signal.throwIfAborted();
+    if (!bodyResult.ok) {
+      return bodyResult.response;
+    }
+    const result = await set(
+      replaceUserTemplatePackage$,
+      {
+        orgId: auth.orgId,
+        userId: auth.userId,
+        templateId: params.templateId,
+        packageFileId: bodyResult.data.packageFileId,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (result.kind === "not-found") {
+      return templateNotFound(params.templateId);
+    }
+    if (result.kind === "rejected") {
+      return result.response;
+    }
+    const coverUrl = await set(coverUrlFor$, {
+      row: result.row,
+      orgId: auth.orgId,
+    });
+    signal.throwIfAborted();
+    // The guidance changed, not who can see it, so the same readers are told
+    // as would be told about any other edit to this row.
+    if (result.row.visibility === "organization") {
+      await publishPresentationTemplatesChangedForOrgSafely(auth.orgId);
+    } else {
+      await publishPresentationTemplatesChangedForUserSafely(auth.userId);
+    }
+    signal.throwIfAborted();
+    return {
+      status: 200 as const,
+      body: userTemplateSummary(result.row, coverUrl, auth.userId),
+    };
+  },
+);
+
 const updateParams$ = pathParamsOf(userTemplatesContract.update);
 const updateBody$ = bodyResultOf(userTemplatesContract.update);
 const updateInner$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -490,6 +545,10 @@ export const userTemplatesRoutes: readonly RouteEntry[] = [
   {
     route: userTemplatesContract.resolvePreviewUrls,
     handler: authRoute(templateReadAuth, resolvePreviewUrlsInner$),
+  },
+  {
+    route: userTemplatesContract.replacePackage,
+    handler: authRoute(templatePublishAuth, replacePackageInner$),
   },
   {
     route: userTemplatesContract.update,

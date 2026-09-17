@@ -536,8 +536,27 @@ const websiteGenerationTemplateRequestSchema = z.object({
     .strict(),
 });
 
+/**
+ * A template the member's own organization compiled from a file it uploaded.
+ *
+ * One arm for the whole catalog rather than one per kind: what the template
+ * produces is already on its row, and a selection that restated it could
+ * disagree with what the reverse run actually wrote. The row id needs no
+ * namespace prefix the way a presentation selection does — this arm is the
+ * namespace, so it cannot collide with a built-in slug.
+ */
+const customGenerationTemplateRequestSchema = z.object({
+  type: z.literal("custom"),
+  selection: z
+    .object({
+      userTemplateId: z.uuid(),
+    })
+    .strict(),
+});
+
 const generationTemplateRequestSchema = z.discriminatedUnion("type", [
   presentationGenerationTemplateRequestSchema,
+  customGenerationTemplateRequestSchema,
   videoGenerationTemplateRequestSchema,
   introVideoGenerationTemplateRequestSchema,
   illustrationGenerationTemplateRequestSchema,

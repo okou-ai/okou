@@ -1,3 +1,4 @@
+import { mockClerkUsers } from "./clerk-users";
 import type { z } from "zod";
 import {
   cliAuthTestCodexOauthContract,
@@ -114,9 +115,7 @@ export function createFirewallApi(context: TestContext) {
     },
 
     seedClerkDirectory(actor: ApiTestUser): void {
-      context.mocks.clerk.users.getUserList.mockResolvedValue({
-        data: [clerkUserProfile(actor)],
-      });
+      mockClerkUsers(context, [clerkUserProfile(actor)]);
       const memberships = clerkMemberships(actor);
       context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue(
         { data: memberships },

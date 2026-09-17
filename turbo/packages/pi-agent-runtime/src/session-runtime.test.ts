@@ -7,11 +7,19 @@ import { zstdDecompressSync } from "node:zlib";
 
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 import { piModelConfigSchema } from "@okouai/api-contracts/contracts/runners";
-import { SessionManager } from "@earendil-works/pi-coding-agent";
+import {
+  DefaultPackageManager,
+  DefaultResourceLoader,
+  ModelRuntime,
+  SessionManager,
+} from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { piMemorySummaryTokenCount } from "./memory-recall";
-import { createPiAgentSessionForRuntime } from "./session-runtime";
+import {
+  createPiAgentSessionForRuntime,
+  createPiApiFirstAgentSessionForRuntime,
+} from "./session-runtime";
 import type { PiPreheatedResourceSnapshot } from "./api-types";
 import type { PiAgentModelConfig, PiAgentRequestHeaders } from "./types";
 import { materializePiAgentModelConfig } from "./credential";
@@ -445,6 +453,187 @@ async function startResponsesProvider(
 }
 
 describe("official Pi AgentSession runtime", () => {
+  it("omits generic discovery and the redundant refresh only for the explicit API entry", async () => {
+    const root = await mkdtemp(join(tmpdir(), "pi-api-services-"));
+    onTestFinished(async () => {
+      await rm(root, { recursive: true, force: true });
+    });
+    const reload = vi.spyOn(DefaultResourceLoader.prototype, "reload");
+    const resolvePackages = vi.spyOn(
+      DefaultPackageManager.prototype,
+      "resolve",
+    );
+    const refresh = vi.spyOn(ModelRuntime.prototype, "refresh");
+    const args = {
+      cwd: join(root, "workspace"),
+      agentDir: join(root, "agent"),
+      model: TERRA_MODEL,
+      appendSystemPrompt: null,
+      resourceSnapshot: EMPTY_RESOURCE_SNAPSHOT,
+    } as const;
+
+    try {
+      const api = await createPiApiFirstAgentSessionForRuntime({
+        ...args,
+        sessionManager: SessionManager.inMemory(args.cwd, {
+          id: randomUUID(),
+        }),
+      });
+      api.session.dispose();
+      expect(reload).not.toHaveBeenCalled();
+      expect(resolvePackages).not.toHaveBeenCalled();
+      // Provider registration retains its required local refresh. The second
+      // services refresh is the redundant operation removed by this path.
+      expect(refresh).toHaveBeenCalledTimes(1);
+
+      reload.mockClear();
+      resolvePackages.mockClear();
+      refresh.mockClear();
+      const generic = await createPiAgentSessionForRuntime({
+        ...args,
+        sessionManager: SessionManager.inMemory(args.cwd, {
+          id: randomUUID(),
+        }),
+      });
+      generic.session.dispose();
+      expect(reload).toHaveBeenCalledTimes(1);
+      expect(resolvePackages).toHaveBeenCalledTimes(1);
+      expect(refresh).toHaveBeenCalledTimes(2);
+    } finally {
+      reload.mockRestore();
+      resolvePackages.mockRestore();
+      refresh.mockRestore();
+    }
+  });
+
+  it("matches the generic official request at the provider boundary", async () => {
+    const root = await mkdtemp(join(tmpdir(), "pi-api-services-parity-"));
+    onTestFinished(async () => {
+      await rm(root, { recursive: true, force: true });
+    });
+    const provider = await startResponsesProvider(
+      (_response, requestNumber) => {
+        responsesTextSse(_response, `parity answer ${requestNumber}`);
+      },
+    );
+    onTestFinished(async () => {
+      await provider.close();
+    });
+    const cwd = join(root, "workspace");
+    const agentDir = join(root, "agent");
+    const sessionId = randomUUID();
+    const snapshot = {
+      schemaVersion: 2 as const,
+      agentsFiles: [
+        {
+          path: join(cwd, "AGENTS.md"),
+          content: "Preserve the captured parity instruction.",
+        },
+      ],
+      skills: [
+        {
+          name: "parity-skill",
+          description: "Exercise the canonical skill prompt.",
+          filePath: join(agentDir, "skills", "parity-skill", "SKILL.md"),
+          baseDir: join(agentDir, "skills", "parity-skill"),
+          scope: "user" as const,
+          disableModelInvocation: false,
+        },
+        {
+          name: "manual-parity-skill",
+          description: "Remain available only for manual invocation.",
+          filePath: join(agentDir, "skills", "manual-parity-skill", "SKILL.md"),
+          baseDir: join(agentDir, "skills", "manual-parity-skill"),
+          scope: "user" as const,
+          disableModelInvocation: true,
+        },
+      ],
+      memoryRecall: {
+        status: "no-content" as const,
+        memoryStorageId: "memory-parity",
+        storageVersionId: "memory-parity-version",
+      },
+    };
+    const model = {
+      ...TERRA_MODEL,
+      baseUrl: provider.baseUrl,
+      model: "company-terra-production",
+      catalogModel: "gpt-5.6-terra",
+      thinkingLevel: "high" as const,
+      serviceTier: "priority" as const,
+    };
+    const createSessionManager = () => {
+      const sessionManager = SessionManager.inMemory(cwd, { id: sessionId });
+      sessionManager.appendMessage({
+        role: "user",
+        content: "Earlier parity question",
+        timestamp: 1,
+      });
+      sessionManager.appendMessage(
+        fauxAssistantMessage("Earlier parity answer", { timestamp: 2 }),
+      );
+      return sessionManager;
+    };
+    const systemPrompts: string[] = [];
+    const generic = await createPiAgentSessionForRuntime({
+      cwd,
+      agentDir,
+      sessionManager: createSessionManager(),
+      model,
+      appendSystemPrompt: "Caller parity instruction.",
+      resourceSnapshot: snapshot,
+    });
+    try {
+      systemPrompts.push(generic.session.systemPrompt);
+      await generic.session.prompt("Current parity question");
+    } finally {
+      generic.session.dispose();
+    }
+    const api = await createPiApiFirstAgentSessionForRuntime({
+      cwd,
+      agentDir,
+      sessionManager: createSessionManager(),
+      model,
+      appendSystemPrompt: "Caller parity instruction.",
+      resourceSnapshot: snapshot,
+    });
+    try {
+      systemPrompts.push(api.session.systemPrompt);
+      await api.session.prompt("Current parity question");
+    } finally {
+      api.session.dispose();
+    }
+
+    expect(provider.requests).toHaveLength(2);
+    expect(systemPrompts[1]).toBe(systemPrompts[0]);
+    expect(provider.requests[1]).toMatchObject({
+      url: provider.requests[0]?.url,
+      authorization: provider.requests[0]?.authorization,
+      apiKey: provider.requests[0]?.apiKey,
+      userAgent: provider.requests[0]?.userAgent,
+      accountId: provider.requests[0]?.accountId,
+    });
+    const requestDigest = (body: unknown) => {
+      return createHash("sha256").update(JSON.stringify(body)).digest("hex");
+    };
+    expect(requestDigest(provider.requests[1]?.body)).toBe(
+      requestDigest(provider.requests[0]?.body),
+    );
+    expect(JSON.stringify(provider.requests[0]?.body)).toContain(
+      "Earlier parity question",
+    );
+    expect(JSON.stringify(provider.requests[0]?.body)).toContain(
+      "Preserve the captured parity instruction.",
+    );
+    expect(provider.requests[0]?.body).toMatchObject({
+      model: "company-terra-production",
+      reasoning: { effort: "high" },
+      service_tier: "priority",
+    });
+    expect(systemPrompts[0]).toContain("parity-skill");
+    expect(systemPrompts[0]).not.toContain("manual-parity-skill");
+  });
+
   it.each(["api-first", "sandbox"] as const)(
     "appends intermediate commentary guidance in %s sessions",
     async (mode) => {

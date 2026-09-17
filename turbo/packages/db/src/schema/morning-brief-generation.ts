@@ -338,6 +338,29 @@ export const MORNING_BRIEF_PLATFORM_COST_STATES = [
   "invocation_unknown",
 ] as const;
 
+/**
+ * The exact domain a receipt's token columns can hold.
+ *
+ * They are `integer`, so PostgreSQL rejects anything above this with
+ * `integer out of range` and the whole receipt INSERT fails with it. A parser
+ * that accepts a wider range therefore does not record a wider range: it
+ * discards the cost, the sibling counts and the invocation record together.
+ * Readers and writers import this bound instead of restating it.
+ */
+export const MORNING_BRIEF_PLATFORM_RECEIPT_MAX_TOKENS = 2_147_483_647;
+
+/**
+ * The exact domain `cost_value` can hold, as `numeric(precision, scale)`.
+ *
+ * `scale` fractional digits are kept and anything finer is *rounded away* by
+ * PostgreSQL, which would silently turn a small reported amount into a durable
+ * reported zero. `precision - scale` integral digits are permitted and a larger
+ * amount fails with `numeric field overflow`. An amount this column cannot hold
+ * exactly is unavailable, never rounded and never stored as an approximation.
+ */
+export const MORNING_BRIEF_PLATFORM_RECEIPT_COST_PRECISION = 24;
+export const MORNING_BRIEF_PLATFORM_RECEIPT_COST_SCALE = 12;
+
 /** What the platform observed at the provider boundary. */
 export const MORNING_BRIEF_PLATFORM_RECEIPT_OUTCOMES = [
   "response_received",
@@ -382,7 +405,10 @@ export const morningBriefPlatformGenerationReceipts = pgTable(
       enum: MORNING_BRIEF_PLATFORM_COST_STATES,
     }).notNull(),
     /** The exact reported amount, stored without conversion or rounding. */
-    costValue: numeric("cost_value", { precision: 24, scale: 12 }),
+    costValue: numeric("cost_value", {
+      precision: MORNING_BRIEF_PLATFORM_RECEIPT_COST_PRECISION,
+      scale: MORNING_BRIEF_PLATFORM_RECEIPT_COST_SCALE,
+    }),
     /** The provider's own unit. Never Okou user credits, never assumed USD. */
     costUnit: text("cost_unit"),
     costSource: text("cost_source", {

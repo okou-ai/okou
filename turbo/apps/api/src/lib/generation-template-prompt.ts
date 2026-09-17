@@ -29,6 +29,8 @@ import {
 } from "@okouai/core/presentation-generation-instructions";
 import { WEBSITE_IMAGE_BATCH_INSTRUCTION } from "@okouai/core/website-generation-instructions";
 import { generationTemplateKind } from "@okouai/core/generation-template-kind";
+import { userTemplateDirectory } from "@okouai/core/user-template-selection";
+import type { MountedUserTemplate } from "../signals/services/user-template-data.service";
 import type { IntroVideoOptions } from "@okouai/api-contracts/contracts/intro-video-options";
 import { introVideoInstructionLines } from "@okouai/core/intro-video-template";
 
@@ -85,7 +87,13 @@ interface IntroVideoGenerationTemplateInput {
   };
 }
 
+interface CustomGenerationTemplateInput {
+  readonly type: "custom";
+  readonly selection: { readonly userTemplateId: string };
+}
+
 type GenerationTemplateInput =
+  | CustomGenerationTemplateInput
   | PresentationGenerationTemplateInput
   | VideoGenerationTemplateInput
   | IntroVideoGenerationTemplateInput
@@ -116,6 +124,14 @@ type GenerationTemplatePromptResult =
 interface GenerationTemplatePromptOptions {
   readonly introVideoEnabled?: boolean;
   readonly mountedUserPresentationTemplateIds?: readonly string[];
+  /**
+   * The custom templates this run will carry, each with the kind its row says
+   * it is. Same rule as the presentation ids above: guidance is emitted only
+   * for a template the run mounts. The kind comes from the row rather than the
+   * selection, so a caller cannot ask for a document's instructions and be
+   * handed a deck's package.
+   */
+  readonly mountedUserTemplates?: readonly MountedUserTemplate[];
 }
 
 export function buildGenerationTemplatePrompt(
@@ -143,6 +159,12 @@ export function buildGenerationTemplatePrompt(
   }
   if (generationTemplate.type === "website") {
     return buildWebsiteGenerationTemplatePrompt(generationTemplate);
+  }
+  if (generationTemplate.type === "custom") {
+    return buildCustomGenerationTemplatePrompt(
+      generationTemplate,
+      options.mountedUserTemplates ?? [],
+    );
   }
 
   return buildPresentationGenerationTemplatePrompt(
@@ -221,6 +243,57 @@ function buildWorkflowGenerationTemplatePrompt(
     return { status: "invalid", message: "Unknown workflow template" };
   }
   return { status: "resolved", prompt: template.promptGuidance };
+}
+
+/**
+ * Guidance for a template the member's organization compiled itself.
+ *
+ * The package's own `SKILL.md` is the authority for how to use it, because
+ * each reverse skill writes the one for what it produced: a deck's describes a
+ * visual language, a document's names `reference.docx` and the pandoc
+ * invocation that consumes it. So this prompt does not restate either — it
+ * says where the package is and what the run is expected to come back with.
+ *
+ * What the run is expected to come back with is the one thing SKILL.md cannot
+ * settle, because it differs by kind and the framing sentence is built before
+ * the package is read. Every kind names its own here rather than one being
+ * what the others fall through to.
+ */
+function customTemplateArtifactNoun(kind: MountedUserTemplate["kind"]): string {
+  switch (kind) {
+    case "presentation": {
+      return "a presentation";
+    }
+    case "document": {
+      return "a document";
+    }
+  }
+}
+
+function buildCustomGenerationTemplatePrompt(
+  generationTemplate: CustomGenerationTemplateInput,
+  mountedUserTemplates: readonly MountedUserTemplate[],
+): GenerationTemplatePromptResult {
+  const { userTemplateId } = generationTemplate.selection;
+  const mounted = mountedUserTemplates.find((candidate) => {
+    return candidate.templateId === userTemplateId;
+  });
+  // The guidance is worth nothing without the package it tells the agent to
+  // read, so it is emitted only for a row this run actually mounts.
+  if (!mounted) {
+    return { status: "invalid", message: "Custom template not found" };
+  }
+  const directory = userTemplateDirectory(userTemplateId);
+  return {
+    status: "resolved",
+    prompt: [
+      ...templateFraming(customTemplateArtifactNoun(mounted.kind)),
+      `Selected custom template: one this workspace compiled from its own file, mounted at ./${directory}.`,
+      "",
+      `- Read ./${directory}/SKILL.md fully and follow only the files and assets it names. It was written for this template and is the authority on how to apply it.`,
+      "- Do not substitute a house style, a built-in template, or your own defaults for what it specifies.",
+    ].join("\n"),
+  };
 }
 
 function buildPresentationGenerationTemplatePrompt(

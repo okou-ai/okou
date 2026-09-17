@@ -33,7 +33,15 @@ export function resetMockOrgMembers(): void {
 }
 
 export const apiOrgMembersHandlers = [
-  mockApi(orgMembersContract.members, ({ respond }) => {
+  mockApi(orgMembersContract.members, ({ query, respond }) => {
+    if (query.view === "members") {
+      return respond(200, {
+        name: mockOrgMembersResponse.name,
+        role: mockOrgMembersResponse.role,
+        members: mockOrgMembersResponse.members,
+        createdAt: mockOrgMembersResponse.createdAt,
+      });
+    }
     return respond(200, mockOrgMembersResponse);
   }),
 

@@ -1,8 +1,11 @@
 import { Readable, Transform, pipeline } from "node:stream";
 import { EventStreamCodec } from "@smithy/core/event-streams";
 import { NodeHttpHandler } from "@smithy/node-http-handler";
+import { classifyProviderHttpFailure } from "@okouai/api-contracts/contracts/provider-failure";
 
 import type { PiUsageObserver } from "./usage-observation";
+import type { ModelRequestObservation } from "./model-request-diagnostics";
+import { modelTransportFailure } from "./model-transport-diagnostics";
 
 const MAX_FRAME_BYTES = 256 * 1024;
 type SseDialect = "responses" | "codex-responses" | "messages";
@@ -266,22 +269,44 @@ function bedrockReader(observer: PiUsageObserver) {
 }
 
 /** Retain the existing handler's proxy, DNS, signing and cancellation policy. */
-export class PiUsageHttpHandler extends NodeHttpHandler {
+export class PiBedrockHttpHandler extends NodeHttpHandler {
   readonly #observer: PiUsageObserver | undefined;
+  readonly #observation: ModelRequestObservation;
+  readonly #onResponseStatus: ((status: number) => void) | undefined;
 
   constructor(
     options: ConstructorParameters<typeof NodeHttpHandler>[0],
     observer: PiUsageObserver | undefined,
+    observation: ModelRequestObservation,
+    onResponseStatus: ((status: number) => void) | undefined,
   ) {
     super(options);
     this.#observer = observer;
+    this.#observation = observation;
+    this.#onResponseStatus = onResponseStatus;
   }
 
   override async handle(...args: Parameters<NodeHttpHandler["handle"]>) {
-    const result = await super.handle(...args);
+    const observation = this.#observation;
+    observation.transportAttempts++;
+    observation.httpStatus = undefined;
+    observation.failureReason = undefined;
+    observation.transportFailure = undefined;
+    const result = await super.handle(...args).catch((error: unknown) => {
+      observation.transportFailure = modelTransportFailure(
+        error,
+        "request",
+        args[1]?.abortSignal?.aborted === true,
+      );
+      throw error;
+    });
+    observation.httpStatus = result.response.statusCode;
+    observation.failureReason = classifyProviderHttpFailure(
+      result.response.statusCode,
+    );
+    this.#onResponseStatus?.(result.response.statusCode);
     const observer = this.#observer;
-    if (!observer) return result;
-    observer.beginResponse();
+    observer?.beginResponse();
     const source: unknown = result.response.body;
     if (
       !(source instanceof Readable) ||
@@ -291,22 +316,29 @@ export class PiUsageHttpHandler extends NodeHttpHandler {
     ) {
       return result;
     }
-    const reader = bedrockReader(observer);
+    const reader = observer ? bedrockReader(observer) : undefined;
     const body = new Transform({
       transform(chunk: unknown, _encoding, callback) {
-        if (chunk instanceof Uint8Array) reader.push(chunk);
-        else observer.loseCoverage();
+        if (chunk instanceof Uint8Array) reader?.push(chunk);
+        else observer?.loseCoverage();
         callback(null, chunk);
       },
       flush(callback) {
-        reader.end();
+        reader?.end();
         callback();
       },
     });
     // Pipeline propagates source errors and destroys the source on SDK cancel.
     // The SDK owns consumption/errors; this callback records observation loss.
     pipeline(source, body, (error) => {
-      if (error) observer.loseCoverage();
+      if (error) {
+        observer?.loseCoverage();
+        observation.transportFailure = modelTransportFailure(
+          error,
+          "response_body",
+          args[1]?.abortSignal?.aborted === true,
+        );
+      }
     });
     result.response.body = body;
     return result;

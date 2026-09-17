@@ -461,7 +461,11 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
                 return part.type === "source";
               })
             : undefined,
-        ).toStrictEqual({ type: "source", kind: "agentphone" });
+        ).toStrictEqual({
+          type: "source",
+          kind: "agentphone",
+          href: `sms:${AGENTPHONE_BDD_PHONE_NUMBER}`,
+        });
       }
 
       const run1 = await claimDispatchedRun(runnerGroup);
@@ -784,7 +788,11 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         return (
           event.eventType === "input.prompt" &&
           event.userMessage.parts.some((part) => {
-            return part.type === "source" && part.kind === "agentphone";
+            return (
+              part.type === "source" &&
+              part.kind === "agentphone" &&
+              part.href === `sms:${AGENTPHONE_BDD_PHONE_NUMBER}`
+            );
           })
         );
       }),
@@ -1262,6 +1270,26 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       agentphoneUserLinkId: expect.any(String),
       agentphoneAgentId: AGENTPHONE_BDD_AGENT_ID,
     });
+    const groupThreadId = groupLaunchContext?.agentphoneChatThreadId;
+    if (!groupThreadId) {
+      throw new Error("Expected an AgentPhone group chat thread");
+    }
+    const groupEvents = await createChatFilesBddApi(context).listThreadEvents(
+      actor,
+      groupThreadId,
+    );
+    expect(groupEvents.events).toContainEqual(
+      expect.objectContaining({
+        id: admittedGroup.eventId,
+        userMessage: {
+          version: 1,
+          parts: expect.arrayContaining([
+            { type: "text", text: "@Okou summarize this thread" },
+            { type: "source", kind: "agentphone" },
+          ]),
+        },
+      }),
+    );
     const run1 = await claimDispatchedRun(runnerGroup);
     expect(run1.prompt).toBe("@Okou summarize this thread");
     const groupThreadContext = groupLaunchContext?.agentphoneThreadContext;

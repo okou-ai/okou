@@ -280,8 +280,10 @@ function CustomTemplateActions({
 
 function CustomTemplateCard({
   template,
+  onSelect,
 }: {
   readonly template: UserTemplateCatalogEntry;
+  readonly onSelect: (template: UserTemplateCatalogEntry) => void;
 }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
@@ -314,6 +316,23 @@ function CustomTemplateCard({
           ) : null}
           <span className="pointer-events-none absolute inset-x-0 bottom-0 z-[15] h-14 bg-gradient-to-t from-black/45 to-transparent opacity-0 transition-opacity group-hover/tile:opacity-100" />
         </button>
+        {/* Beside the preview rather than inside it: the tile opens the
+            template, and using it is a different decision from looking at
+            it. Revealed on hover like the actions menu above, and kept
+            reachable where hover does not exist. */}
+        <div className="absolute bottom-2 right-2 z-20 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/tile:opacity-100 [@media(hover:hover)]:has-[:focus-visible]:opacity-100">
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => {
+              onSelect(template);
+            }}
+          >
+            {t(($) => {
+              return $.artifacts.templates.use;
+            })}
+          </Button>
+        </div>
         {template.canManage ? (
           <CustomTemplateActions
             template={template}
@@ -509,10 +528,36 @@ function CustomTemplatesLoadError() {
   );
 }
 
-function CustomTemplateDetailSidebar({
+/** The sidebar's primary action, kept out of it so it stays one screenful. */
+function UseCustomTemplateButton({
   detail,
+  onSelect,
 }: {
   readonly detail: UserTemplateDetail;
+  readonly onSelect: (template: UserTemplateCatalogEntry) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <Button
+      type="button"
+      className="mb-3 w-full"
+      onClick={() => {
+        onSelect(detail);
+      }}
+    >
+      {t(($) => {
+        return $.artifacts.templates.useThisTemplate;
+      })}
+    </Button>
+  );
+}
+
+function CustomTemplateDetailSidebar({
+  detail,
+  onSelect,
+}: {
+  readonly detail: UserTemplateDetail;
+  readonly onSelect: (template: UserTemplateCatalogEntry) => void;
 }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
@@ -534,6 +579,7 @@ function CustomTemplateDetailSidebar({
   return (
     <aside className="w-full shrink-0 lg:w-[300px]">
       <div className="rounded-xl border border-border bg-background p-4">
+        <UseCustomTemplateButton detail={detail} onSelect={onSelect} />
         {detail.canManage ? (
           <Input
             key={detail.title}
@@ -635,7 +681,11 @@ function CustomTemplateDetailSidebar({
   );
 }
 
-function CustomTemplateDetail() {
+function CustomTemplateDetail({
+  onSelect,
+}: {
+  readonly onSelect: (template: UserTemplateCatalogEntry) => void;
+}) {
   const { t } = useTranslation();
   const detailLoadable = useLoadable(openCustomTemplateDetail$);
   const close = useSet(closeCustomTemplate$);
@@ -679,7 +729,7 @@ function CustomTemplateDetail() {
               );
             })}
           </div>
-          <CustomTemplateDetailSidebar detail={detail} />
+          <CustomTemplateDetailSidebar detail={detail} onSelect={onSelect} />
         </div>
       )}
     </div>
@@ -693,8 +743,10 @@ function CustomTemplateDetail() {
  */
 export function CustomTemplatePickerPane({
   signals,
+  onSelect,
 }: {
   readonly signals: ComposerSignals;
+  readonly onSelect: (template: UserTemplateCatalogEntry) => void;
 }) {
   const { t } = useTranslation();
   const query = useGet(customTemplateSearchQuery$);
@@ -703,7 +755,7 @@ export function CustomTemplatePickerPane({
   const templatesLoadable = useLoadable(visibleCustomTemplates$);
 
   if (openTemplateId !== null) {
-    return <CustomTemplateDetail />;
+    return <CustomTemplateDetail onSelect={onSelect} />;
   }
 
   const hasQuery = query.trim().length > 0;
@@ -732,7 +784,13 @@ export function CustomTemplatePickerPane({
       <div className="grid grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-2 lg:grid-cols-3">
         <CustomTemplateUploadCard signals={signals} />
         {templates.map((template) => {
-          return <CustomTemplateCard key={template.id} template={template} />;
+          return (
+            <CustomTemplateCard
+              key={template.id}
+              template={template}
+              onSelect={onSelect}
+            />
+          );
         })}
       </div>
     );

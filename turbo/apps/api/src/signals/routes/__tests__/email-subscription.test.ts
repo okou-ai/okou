@@ -1,3 +1,4 @@
+import { ClerkUserNotFoundTestError } from "./helpers/clerk-users";
 import { createHmac, randomUUID } from "node:crypto";
 
 import { emailSubscriptionContract } from "@okouai/api-contracts/contracts/email-subscription";
@@ -15,6 +16,7 @@ import { emailUnsubscribeRoutes } from "../email-unsubscribe";
 import { createRouteMocks } from "./helpers/route-test";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { ClerkTransportTestError } from "./helpers/clerk-transport-error";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -30,17 +32,13 @@ async function actor(enabled = true) {
   const userId = `user_${randomUUID()}`;
   const orgId = `org_${randomUUID()}`;
   const email = `${userId}@example.test`;
-  context.mocks.clerk.users.getUserList.mockResolvedValue({
-    data: [
-      {
-        id: userId,
-        primaryEmailAddressId: "primary",
-        firstName: "Test",
-        lastName: "User",
-        emailAddresses: [{ id: "primary", emailAddress: email }],
-        imageUrl: null,
-      },
-    ],
+  context.mocks.clerk.users.getUser.mockResolvedValue({
+    id: userId,
+    primaryEmailAddressId: "primary",
+    firstName: "Test",
+    lastName: "User",
+    emailAddresses: [{ id: "primary", emailAddress: email }],
+    imageUrl: null,
   });
   await updateFeatureSwitchesForUser(
     context,
@@ -141,10 +139,34 @@ describe("email subscription preferences", () => {
 
   it("reports a missing recipient without inventing an email address", async () => {
     await actor();
-    context.mocks.clerk.users.getUserList.mockResolvedValue({ data: [] });
+    context.mocks.clerk.users.getUser.mockRejectedValue(
+      new ClerkUserNotFoundTestError(),
+    );
     expect((await accept(client().get({ headers }), [200])).body).toStrictEqual(
       { subscribed: true, email: null, deliveryStatus: "no-email" },
     );
+    expect(context.mocks.clerk.users.getUser).toHaveBeenCalledOnce();
+    expect(context.mocks.clerk.users.getUserList).not.toHaveBeenCalled();
+  });
+
+  it("retains the first email when the primary address no longer resolves", async () => {
+    const owner = await actor();
+    context.mocks.clerk.users.getUser.mockResolvedValue({
+      id: owner.userId,
+      primaryEmailAddressId: "deleted-primary",
+      emailAddresses: [{ id: "secondary", emailAddress: owner.email }],
+    });
+    expect((await accept(client().get({ headers }), [200])).body).toStrictEqual(
+      {
+        subscribed: true,
+        email: owner.email,
+        deliveryStatus: "available",
+      },
+    );
+    expect(context.mocks.clerk.users.getUser).toHaveBeenCalledExactlyOnceWith(
+      owner.userId,
+    );
+    expect(context.mocks.clerk.users.getUserList).not.toHaveBeenCalled();
   });
 
   it("contains both endpoints under the Morning Brief switch", async () => {
@@ -174,14 +196,26 @@ describe("email subscription preferences", () => {
     ).toBeTruthy();
   });
 
-  it("does not disguise provider failure as an unavailable recipient", async () => {
-    await actor();
-    context.mocks.clerk.users.getUserList.mockRejectedValue(
-      new Error("Clerk request failed"),
-    );
-    const response = await accept(client().get({ headers }), [500]);
-    expect(response.status).toBe(500);
-  });
+  it.each([
+    ["unexpected failure", new Error("Clerk request failed")],
+    ["rate limit", new ClerkTransportTestError(429)],
+    ["server failure", new ClerkTransportTestError(503)],
+    ["transport failure", new ClerkTransportTestError()],
+    [
+      "unbranded 404",
+      Object.assign(new Error("Not a Clerk miss"), { status: 404 }),
+    ],
+  ])(
+    "does not disguise %s as an unavailable recipient",
+    async (_name, error) => {
+      await actor();
+      context.mocks.signalTimers.delay.mockResolvedValue(undefined);
+      context.mocks.clerk.users.getUser.mockRejectedValue(error);
+      const response = await accept(client().get({ headers }), [500]);
+      expect(response.status).toBe(500);
+      expect(context.mocks.clerk.users.getUserList).not.toHaveBeenCalled();
+    },
+  );
 
   it("requires an active workspace for rollout evaluation", async () => {
     const owner = await actor();

@@ -111,6 +111,38 @@ function control(
   return found;
 }
 
+/** The advanced options layer, or null while it is closed. */
+function optionsPanel(dialog: HTMLElement) {
+  return dialog.querySelector<HTMLElement>("[data-intro-video-options]");
+}
+
+/**
+ * Walks the options layer back to its first screen and returns one of its two
+ * rows, which is where the current voice and avatar are stated.
+ */
+function optionsRow(dialog: HTMLElement, label: "Voice" | "Avatar") {
+  if (!optionsPanel(dialog)) {
+    click(control("More options", dialog));
+  }
+  if (optionsPanel(dialog)?.dataset.introVideoOptions !== "root") {
+    click(control("Back", dialog));
+  }
+  return control(label, dialog);
+}
+
+function openOptions(dialog: HTMLElement, label: "Voice" | "Avatar") {
+  click(optionsRow(dialog, label));
+}
+
+/** The footer's one-line statement of what the template will produce. */
+function summary(dialog: HTMLElement) {
+  const node = dialog.querySelector("[data-intro-video-summary]");
+  if (!node) {
+    throw new Error("Missing intro video selection summary");
+  }
+  return node;
+}
+
 async function openIntroVideo() {
   const user = userEvent.setup({ delay: null });
   await setupPage({
@@ -176,12 +208,12 @@ test.each([
   expect(control("Intro video", dialog, "tab")).toBeVisible();
 });
 
-test("Expanded style tags filter the gallery and preserve the selected style", async () => {
+test("Style filters and search narrow the gallery and preserve the selected style", async () => {
   installCatalogs();
-  const { dialog } = await openIntroVideo();
+  const { dialog, user } = await openIntroVideo();
   expect(control("Use selection", dialog)).toBeDisabled();
   const tags = within(dialog).getByRole("group", { name: "Browse by style" });
-  expect(queryAllByRoleFast("button", tags)).toHaveLength(6);
+  expect(queryAllByRoleFast("button", tags)).toHaveLength(7);
   click(control("Select style Minimalism", dialog));
   click(control("Handmade and materials", tags));
   expect(control("Handmade and materials", tags)).toHaveAttribute(
@@ -190,12 +222,13 @@ test("Expanded style tags filter the gallery and preserve the selected style", a
   );
   expect(within(dialog).getByText("Watercolor")).toBeVisible();
   expect(within(dialog).queryByLabelText("Select style Minimalism")).toBeNull();
-  expect(control("Style", dialog, "tab")).toHaveTextContent("Minimalism");
+  // Filtering the selected style out of view must not drop the selection.
+  expect(control("Use selection", dialog)).toBeEnabled();
   click(control("Pop culture", tags));
   expect(within(dialog).getByRole("status")).toHaveTextContent(
     "No matches found",
   );
-  click(control("Pop culture", tags));
+  click(control("All", tags));
   expect(control("Handmade and materials", tags)).toHaveAttribute(
     "aria-pressed",
     "false",
@@ -204,27 +237,35 @@ test("Expanded style tags filter the gallery and preserve the selected style", a
     "aria-pressed",
     "true",
   );
+  await user.type(within(dialog).getByLabelText("Search styles"), "water");
+  expect(within(dialog).getByText("Watercolor")).toBeVisible();
+  expect(within(dialog).queryByLabelText("Select style Minimalism")).toBeNull();
 });
 
 test("Avatar looks require Use, and explicit voice choices survive removing the avatar", async () => {
   const capture = installCatalogs();
   const { dialog, user } = await openIntroVideo();
   click(control("Select style Minimalism", dialog));
-  click(control("Avatar", dialog, "tab"));
+  expect(summary(dialog)).toHaveTextContent("Avatar: No avatar");
+  openOptions(dialog, "Avatar");
   await within(dialog).findByText("Daphne");
-  expect(control("Avatar", dialog, "tab")).toHaveTextContent("No avatar");
+  // The footer reads the selection from behind the layer, so previewing a
+  // look and choosing it can be told apart without leaving the library: a
+  // group card shows its first look again once it is remounted.
   click(control("Preview look Daphne in Blue shirt", dialog));
-  expect(control("Avatar", dialog, "tab")).toHaveTextContent("No avatar");
+  expect(summary(dialog)).toHaveTextContent("Avatar: No avatar");
   click(control("Choose an avatar: Daphne in Blue shirt", dialog));
-  expect(control("Avatar", dialog, "tab")).toHaveTextContent(
+  expect(summary(dialog)).toHaveTextContent("Avatar: Daphne in Blue shirt");
+  expect(optionsRow(dialog, "Avatar")).toHaveTextContent(
     "Daphne in Blue shirt",
   );
   expect(control("Use selection", dialog)).toBeEnabled();
-  click(control("Voice", dialog, "tab"));
+  openOptions(dialog, "Voice");
   click(await within(dialog).findByLabelText("Select voice Annie"));
-  click(control("Avatar", dialog, "tab"));
+  openOptions(dialog, "Avatar");
   click(within(dialog).getByText("No avatar"));
-  expect(control("Voice", dialog, "tab")).toHaveTextContent("Annie");
+  expect(optionsRow(dialog, "Voice")).toHaveTextContent("Annie");
+  expect(summary(dialog)).toHaveTextContent("Voice: Annie · Avatar: No avatar");
   click(control("Use selection", dialog));
   await expectInlineTemplate("Intro video");
   await sendComposerMessage(user, "Explain our product");
@@ -246,7 +287,7 @@ test("Avatar looks require Use, and explicit voice choices survive removing the 
 test("A voice the provider repeats under a second id is listed once", async () => {
   installCatalogs();
   const { dialog } = await openIntroVideo();
-  click(control("Voice", dialog, "tab"));
+  openOptions(dialog, "Voice");
   await within(dialog).findByLabelText("Select voice Annie");
   expect(within(dialog).getAllByLabelText("Select voice Annie")).toHaveLength(
     1,
@@ -256,25 +297,26 @@ test("A voice the provider repeats under a second id is listed once", async () =
 test("The chosen avatar's own voice can be auditioned at the voice step", async () => {
   installCatalogs();
   const { dialog } = await openIntroVideo();
-  click(control("Avatar", dialog, "tab"));
+  openOptions(dialog, "Avatar");
   await within(dialog).findByText("Daphne");
   click(control("Choose an avatar: Daphne in Grey blazer", dialog));
-  click(control("Voice", dialog, "tab"));
+  openOptions(dialog, "Voice");
   const preview = await within(dialog).findByLabelText(
     "Preview voice Daphne - Warm & Friendly",
   );
   expect(preview).toBeEnabled();
   click(within(dialog).getByText("No voiceover"));
-  expect(control("Voice", dialog, "tab")).toHaveTextContent("No voiceover");
+  expect(optionsRow(dialog, "Voice")).toHaveTextContent("No voiceover");
+  openOptions(dialog, "Voice");
   click(within(dialog).getByText("Avatar’s voice"));
-  expect(control("Voice", dialog, "tab")).toHaveTextContent("Avatar’s voice");
+  expect(optionsRow(dialog, "Voice")).toHaveTextContent("Avatar’s voice");
 });
 
 test("Applying and reopening a template restores all settings without creating another chip", async () => {
   installCatalogs();
   const { dialog, user } = await openIntroVideo();
   click(control("Select style Watercolor", dialog));
-  click(control("Voice", dialog, "tab"));
+  openOptions(dialog, "Voice");
   click(within(dialog).getByText("No voiceover"));
   click(control("Use selection", dialog));
   const chip = await expectInlineTemplate("Intro video");
@@ -284,8 +326,13 @@ test("Applying and reopening a template restores all settings without creating a
   }
   await user.click(edit);
   const reopened = await screen.findByRole("dialog");
-  expect(control("Style", reopened, "tab")).toHaveTextContent("Watercolor");
-  expect(control("Voice", reopened, "tab")).toHaveTextContent("No voiceover");
+  // Reopening lands on the gallery, so the restored settings have to be
+  // readable without opening the options layer again.
+  expect(optionsPanel(reopened)).toBeNull();
+  await expect(
+    within(reopened).findByLabelText("Select style Watercolor"),
+  ).resolves.toHaveAttribute("aria-pressed", "true");
+  expect(summary(reopened)).toHaveTextContent("Voice: No voiceover");
   click(control("Select style Minimalism", reopened));
   click(control("Use selection", reopened));
   await expectInlineTemplate("Minimalism");
@@ -391,29 +438,34 @@ test("A failed style preview keeps its thumbnail and stays selectable", async ()
   expect(preview).toHaveAttribute("data-preview-playing", "false");
   expect(previewControl).toBeVisible();
   click(control("Select style Minimalism", dialog));
-  expect(control("Style", dialog, "tab")).toHaveTextContent("Minimalism");
-  click(control("Voice", dialog, "tab"));
+  expect(summary(dialog)).toHaveTextContent("Voice: Let Okou choose");
+  openOptions(dialog, "Voice");
   await within(dialog).findByLabelText("Select voice Annie");
-  click(control("Style", dialog, "tab"));
+  click(control("Close options", dialog));
   await expect(
     within(dialog).findByLabelText("Preview Minimalism"),
   ).resolves.toBeVisible();
 });
 
-test("Switching settings with the keyboard preserves the selection", async () => {
+test("The options layer opens from the keyboard and leaves the gallery selection alone", async () => {
   installCatalogs();
   const { dialog, user } = await openIntroVideo();
   click(control("Select style Minimalism", dialog));
-  const tab = control("Style", dialog, "tab");
-  tab.focus();
-  await user.keyboard("{ArrowRight}");
-  expect(control("Avatar", dialog, "tab")).toHaveFocus();
-  expect(control("Avatar", dialog, "tab")).toHaveAttribute(
-    "aria-selected",
-    "true",
-  );
-  await user.keyboard("{Home}");
-  expect(control("Style", dialog, "tab")).toHaveFocus();
+  control("More options", dialog).focus();
+  await user.keyboard("{Enter}");
+  const options = optionsPanel(dialog);
+  if (!options) {
+    throw new Error("The options layer did not open");
+  }
+  expect(within(options).getByText("Let Okou choose")).toBeInTheDocument();
+  expect(within(options).getByText("No avatar")).toBeInTheDocument();
+  click(control("Voice", dialog));
+  expect(within(options).getByText("Choose a voice")).toBeInTheDocument();
+  click(control("Back", dialog));
+  expect(within(options).getByText("No avatar")).toBeInTheDocument();
+  click(control("Close options", dialog));
+  expect(optionsPanel(dialog)).toBeNull();
+  // The gallery stays mounted behind the layer, so its selection survives.
   expect(control("Select style Minimalism", dialog)).toHaveAttribute(
     "aria-pressed",
     "true",
@@ -565,7 +617,7 @@ test("Intro Video never displays or submits the preceding Creative Video setting
   const dialog = await openTemplatePicker(user);
   click(control("Intro video", dialog, "tab"));
   click(await within(dialog).findByLabelText("Select style Minimalism"));
-  click(control("Voice", dialog, "tab"));
+  openOptions(dialog, "Voice");
   click(within(dialog).getByText("No voiceover"));
   await waitFor(() => {
     expect(control("Use selection", dialog)).toBeEnabled();

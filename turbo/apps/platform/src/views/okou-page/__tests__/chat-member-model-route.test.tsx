@@ -93,6 +93,9 @@ test.each(
       featureSwitches: {
         [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
         [FeatureSwitchKey.Effort]: layout === "compact",
+        // Fast rides on Effort, and a second row per model would make the
+        // model options ambiguous here.
+        [FeatureSwitchKey.CodexFastMode]: layout === "compact",
         [FeatureSwitchKey.ModelPickerFlyout]: layout !== "select",
       },
     });
