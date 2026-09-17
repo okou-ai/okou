@@ -293,7 +293,7 @@ class NativeGenerationAuthorityLost extends Error {
   }
 }
 
-export interface MorningBriefNativeGenerationAuthority {
+interface MorningBriefNativeGenerationAuthority {
   readonly ownerEpoch: number;
   readonly membershipId: string;
   readonly leaseToken: string;

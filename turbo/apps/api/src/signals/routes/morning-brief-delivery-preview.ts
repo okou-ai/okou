@@ -26,54 +26,65 @@ import {
  * result that already exists for that owner.
  */
 
-const rejections: Record<
+interface DeliveryRejectionResponse {
+  readonly status: 404 | 409;
+  readonly code: string;
+  readonly message: string;
+}
+
+/**
+ * The response each rejection maps to.
+ *
+ * A function rather than a package-scope object: the repository forbids mutable
+ * module state, and this table is read once per rejected request.
+ */
+function rejectionResponses(): Record<
   MorningBriefDeliveryRejection,
-  {
-    readonly status: 404 | 409;
-    readonly code: string;
-    readonly message: string;
-  }
-> = {
-  "result-not-found": {
-    status: 404,
-    code: "MORNING_BRIEF_RESULT_NOT_FOUND",
-    message: "No Morning Brief result exists for this reference.",
-  },
-  "result-not-deliverable": {
-    status: 409,
-    code: "MORNING_BRIEF_RESULT_NOT_DELIVERABLE",
-    message:
-      "This generation has no accepted deliverable result. A skip, a failure and an unfinished attempt are all undeliverable.",
-  },
-  "result-expired": {
-    status: 409,
-    code: "MORNING_BRIEF_RESULT_EXPIRED",
-    message:
-      "This result is past its retention. An expired result is never recreated to repeat a delivery.",
-  },
-  "morning-brief-unavailable": {
-    status: 409,
-    code: "MORNING_BRIEF_UNAVAILABLE",
-    message:
-      "Morning Brief is not currently installed and enabled for this member, or its installation changed since the result was produced.",
-  },
-  "implementation-disabled": {
-    status: 409,
-    code: "MORNING_BRIEF_IMPLEMENTATION_DISABLED",
-    message: "The simple-morning-brief implementation is off for this caller.",
-  },
-  "owner-revoked": {
-    status: 409,
-    code: "MORNING_BRIEF_OWNER_REVOKED",
-    message:
-      "Morning Brief ownership was revoked or the membership generation changed. Nothing was delivered.",
-  },
-  "destination-unavailable": {
-    status: 409,
-    code: "MORNING_BRIEF_DESTINATION_UNAVAILABLE",
-    message: "This member has no Agent that can own a Morning Brief thread.",
-  },
-};
+  DeliveryRejectionResponse
+> {
+  return {
+    "result-not-found": {
+      status: 404,
+      code: "MORNING_BRIEF_RESULT_NOT_FOUND",
+      message: "No Morning Brief result exists for this reference.",
+    },
+    "result-not-deliverable": {
+      status: 409,
+      code: "MORNING_BRIEF_RESULT_NOT_DELIVERABLE",
+      message:
+        "This generation has no accepted deliverable result. A skip, a failure and an unfinished attempt are all undeliverable.",
+    },
+    "result-expired": {
+      status: 409,
+      code: "MORNING_BRIEF_RESULT_EXPIRED",
+      message:
+        "This result is past its retention. An expired result is never recreated to repeat a delivery.",
+    },
+    "morning-brief-unavailable": {
+      status: 409,
+      code: "MORNING_BRIEF_UNAVAILABLE",
+      message:
+        "Morning Brief is not currently installed and enabled for this member, or its installation changed since the result was produced.",
+    },
+    "implementation-disabled": {
+      status: 409,
+      code: "MORNING_BRIEF_IMPLEMENTATION_DISABLED",
+      message:
+        "The simple-morning-brief implementation is off for this caller.",
+    },
+    "owner-revoked": {
+      status: 409,
+      code: "MORNING_BRIEF_OWNER_REVOKED",
+      message:
+        "Morning Brief ownership was revoked or the membership generation changed. Nothing was delivered.",
+    },
+    "destination-unavailable": {
+      status: 409,
+      code: "MORNING_BRIEF_DESTINATION_UNAVAILABLE",
+      message: "This member has no Agent that can own a Morning Brief thread.",
+    },
+  };
+}
 
 const body$ = bodyResultOf(morningBriefDeliveryPreviewContract.preview);
 
@@ -96,7 +107,7 @@ const deliver$ = command(async ({ get, set }, signal: AbortSignal) => {
   signal.throwIfAborted();
 
   if (outcome.kind === "rejected") {
-    const rejection = rejections[outcome.reason];
+    const rejection = rejectionResponses()[outcome.reason];
     if (rejection.status === 404) {
       return createErrorResponse("NOT_FOUND", rejection.message);
     }

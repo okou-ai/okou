@@ -1,4 +1,3 @@
-import { lockMorningBriefNativeSchedule } from "./morning-brief-native-schedule.service";
 import { createHash } from "node:crypto";
 
 import { emailOutbox } from "@okouai/db/schema/email-outbox";
@@ -13,6 +12,7 @@ import { morningBriefCollectionOccurrences } from "@okouai/db/schema/morning-bri
 import {
   morningBriefDeliveries,
   type MorningBriefDeliveryEmailResolution,
+  type MorningBriefDeliveryPurpose,
 } from "@okouai/db/schema/morning-brief-delivery";
 import { morningBriefGenerations } from "@okouai/db/schema/morning-brief-generation";
 import { userCache } from "@okouai/db/schema/user-cache";
@@ -27,6 +27,7 @@ import { logger } from "../../lib/log";
 import type { Tx } from "../../lib/db-types";
 import { writeDb$, type Db } from "../external/db";
 import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
+import { safeSync, settle } from "../utils";
 import { insertChatEvent } from "./chat-event.service";
 import { touchChatThreadLastMessageAt } from "./chat-event-shared.service";
 import {
@@ -123,18 +124,14 @@ function rejectionOf(reason: string): MorningBriefDeliveryRejection {
     : "morning-brief-unavailable";
 }
 
-/** Which purpose's result a delivery may consume. */
-type MorningBriefDeliveryPurpose =
-  (typeof morningBriefDeliveries.$inferSelect)["executionPurpose"];
-
 /**
  * The validated native execution authority a production delivery must present.
  *
  * It is the epoch and membership generation the occurrence was *claimed* under,
- * not whatever the row happens to hold now. A currently enabled native row is
- * not proof that an older occurrence still owns the member: a disable and
- * re-enable, an Agent or thread replacement, or a transfer all bump the epoch,
- * and an occurrence admitted before that must not deliver.
+ * not whatever the row holds now. A currently enabled native row is not proof
+ * that an older occurrence still owns the member: a disable and re-enable, a
+ * destination replacement or a transfer all bump the epoch, and an occurrence
+ * admitted before that must not deliver.
  */
 interface MorningBriefNativeDeliveryAuthority {
   readonly ownerEpoch: number;
@@ -250,17 +247,18 @@ async function resolveEmailIntent(
     threadUrl: args.threadUrl,
     manageUrl: args.manageUrl,
   };
-  try {
-    // Rendered here only to prove the accepted body survives this template.
-    // The outbox still stores template plus props, so the first delivery
-    // attempt renders under the then-current template version.
-    renderMorningBriefResultEmail(props, unsubscribeUrl);
-  } catch (error) {
-    if (!(error instanceof MorningBriefResultEmailRenderError)) {
-      throw error;
+  // Rendered here only to prove the accepted body survives this template. The
+  // outbox still stores template plus props, so the first delivery attempt
+  // renders under the then-current template version.
+  const rendered = safeSync(() => {
+    return renderMorningBriefResultEmail(props, unsubscribeUrl);
+  });
+  if ("error" in rendered) {
+    if (!(rendered.error instanceof MorningBriefResultEmailRenderError)) {
+      throw rendered.error;
     }
     log.warn("Morning Brief result cannot be carried by email", {
-      reason: error.message,
+      reason: rendered.error.message,
     });
     return { resolution: "render_rejected", outboxId: null };
   }
@@ -611,6 +609,28 @@ function sameBinding(
  * happened, so every decision from that point on unwinds the transaction
  * instead. Read-only rejections before it return normally.
  */
+class DeliveryCancelled extends Error {
+  constructor() {
+    super("Morning Brief delivery was cancelled before it was accepted");
+    this.name = "DeliveryCancelled";
+  }
+}
+
+/**
+ * Stop a not-yet-accepted delivery the caller has abandoned.
+ *
+ * The transaction does most of its waiting on row locks, and PostgreSQL does
+ * not surrender those to an abort signal, so cancellation is observed at each
+ * point a wait has just finished. Throwing unwinds the prepared destination and
+ * provenance writes; a delivery that has already committed is never replayed or
+ * undone by a late cancellation.
+ */
+function throwIfCancelled(signal: AbortSignal): void {
+  if (signal.aborted) {
+    throw new DeliveryCancelled();
+  }
+}
+
 class DeliveryRejected extends Error {
   constructor(readonly reason: MorningBriefDeliveryRejection) {
     super(`Morning Brief delivery rejected: ${reason}`);
@@ -674,46 +694,12 @@ async function lockSubscription(
 }
 
 /**
- * Prove the live choice still owns this delivery, with the durable native row
- * as the authority once the member is native.
+ * Everything a delivery must hold and prove before it may write anything.
  *
- * Split out of {@link deliverInTransaction} for readability; the lock it takes
- * and the order it takes it in are unchanged.
+ * Returns the committed delivery when this occurrence already has one, so the
+ * caller can answer a repeat request without preparing a destination.
  */
-async function assertLiveChoiceStillOwns(
-  tx: Tx,
-  owner: { readonly orgId: string; readonly userId: string },
-  request: MorningBriefDeliveryRequest,
-  current: MorningBriefCollectionAdmission,
-): Promise<void> {
-  // The live choice, locked so a mid-flight disable cannot be overtaken. Once a
-  // member is in the native phase the durable native row *is* that choice and
-  // the legacy automation is not consulted at all, which is what lets a
-  // production delivery commit after legacy scheduling is disabled and with no
-  // live Official Workflow installation reconciliation.
-  const choice = await lockLiveMorningBriefChoice(tx, owner, {
-    automationId: current.automationId,
-    workflowId: current.workflowId,
-  });
-  if (!choice.enabled) {
-    throw new DeliveryRejected("morning-brief-unavailable");
-  }
-  if (choice.kind === "native") {
-    const authority = request.nativeAuthority;
-    if (
-      authority === undefined ||
-      choice.ownerEpoch !== authority.ownerEpoch ||
-      choice.membershipId !== authority.membershipId ||
-      choice.agentId !== current.agentId
-    ) {
-      // The admitted native epoch no longer owns this member, so this result
-      // belongs to a revoked occurrence and must not reach Chat or email.
-      throw new DeliveryRejected("owner-revoked");
-    }
-  }
-}
-
-async function deliverInTransaction(
+async function admitDelivery(
   tx: Tx,
   args: {
     readonly request: MorningBriefDeliveryRequest;
@@ -721,7 +707,8 @@ async function deliverInTransaction(
     readonly anchor: ResultAnchor;
     readonly current: MorningBriefCollectionAdmission;
   },
-): Promise<CommittedDelivery> {
+  signal: AbortSignal,
+): Promise<CommittedDelivery | null> {
   const { request, anchor, current } = args;
   const owner = { orgId: request.orgId, userId: request.userId };
 
@@ -748,6 +735,7 @@ async function deliverInTransaction(
   if (!occurrence) {
     throw new DeliveryRejected("owner-revoked");
   }
+  throwIfCancelled(signal);
 
   const existing = await loadExistingDelivery(tx, owner, anchor);
   if (existing) {
@@ -769,20 +757,78 @@ async function deliverInTransaction(
   });
 
   await lockUsableAgent(tx, owner, current.agentId);
+  throwIfCancelled(signal);
+  return null;
+}
 
+/** The installation name the canonical thread binding is created under. */
+async function loadInstallationName(
+  tx: Tx,
+  args: { readonly orgId: string; readonly workflowId: string },
+): Promise<string> {
   const [installation] = await tx
     .select({ name: workflows.name })
     .from(workflows)
     .where(
-      and(
-        eq(workflows.id, current.workflowId),
-        eq(workflows.orgId, request.orgId),
-      ),
+      and(eq(workflows.id, args.workflowId), eq(workflows.orgId, args.orgId)),
     )
     .limit(1);
   if (!installation) {
     throw new DeliveryRejected("destination-unavailable");
   }
+  return installation.name;
+}
+
+/** Require the member's schedule to still be enabled, under its own row lock. */
+async function lockEnabledAutomation(
+  tx: Tx,
+  args: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly workflowId: string;
+    readonly automationId: string;
+  },
+): Promise<void> {
+  const [automation] = await tx
+    .select({ enabled: workflowAutomations.enabled })
+    .from(workflowAutomations)
+    .where(
+      and(
+        eq(workflowAutomations.id, args.automationId),
+        eq(workflowAutomations.orgId, args.orgId),
+        eq(workflowAutomations.ownerUserId, args.userId),
+        eq(workflowAutomations.workflowId, args.workflowId),
+      ),
+    )
+    .limit(1)
+    .for("update");
+  if (!automation?.enabled) {
+    throw new DeliveryRejected("morning-brief-unavailable");
+  }
+}
+
+async function deliverInTransaction(
+  tx: Tx,
+  args: {
+    readonly request: MorningBriefDeliveryRequest;
+    readonly purpose: MorningBriefDeliveryPurpose;
+    readonly anchor: ResultAnchor;
+    readonly current: MorningBriefCollectionAdmission;
+  },
+  signal: AbortSignal,
+): Promise<CommittedDelivery> {
+  const { request, anchor, current } = args;
+  const owner = { orgId: request.orgId, userId: request.userId };
+
+  const admitted = await admitDelivery(tx, args, signal);
+  if (admitted) {
+    return admitted;
+  }
+
+  const workflowName = await loadInstallationName(tx, {
+    orgId: request.orgId,
+    workflowId: current.workflowId,
+  });
 
   // Thread, then binding, then automation: the exact order thread deletion
   // takes across the same rows. Delivery must never hold the automation while
@@ -792,20 +838,27 @@ async function deliverInTransaction(
     userId: request.userId,
     workflowId: current.workflowId,
     agentId: current.agentId,
-    workflowName: installation.name,
+    workflowName,
     at: nowDate(),
   });
 
-  await assertLiveChoiceStillOwns(tx, owner, request, current);
+  await lockEnabledAutomation(tx, {
+    orgId: request.orgId,
+    userId: request.userId,
+    workflowId: current.workflowId,
+    automationId: current.automationId,
+  });
+  throwIfCancelled(signal);
 
   // The last admission wait. Everything after it is local work only.
   const subscription = await lockSubscription(tx, request.userId);
+  throwIfCancelled(signal);
 
-  // Every blocking lock is held now, so this is the first honest instant. The
-  // result's own deadline is evaluated against it: a result that expired while
-  // this transaction waited behind the occurrence, the thread, the automation
-  // or a concurrent unsubscribe is refused, and the destination preparation
-  // above unwinds with it.
+  // The admission waits this transaction can predict are held now. The
+  // result's own deadline is evaluated against a fresh clock, so a result that
+  // expired while this transaction waited is refused and the destination
+  // preparation above unwinds with it. One more wait still follows the message
+  // write, and it is re-checked there.
   const acceptedAt = nowDate();
   const result = await loadDeliverableResult(tx, {
     ...owner,
@@ -817,10 +870,9 @@ async function deliverInTransaction(
     throw new DeliveryRejected("owner-revoked");
   }
 
-  // The displayed instant may have to move forward past a marker that
-  // committed while this transaction waited, so that the delivery cannot land
-  // behind the thread's own read cursor. It is deliberately not the acceptance
-  // deadline, which stays the real clock above.
+  // The displayed instant may have to move past a marker that committed while
+  // this transaction waited, so the delivery cannot land behind the thread's
+  // own read cursor. It is deliberately not the acceptance deadline.
   const at = await monotonicDeliveryInstant(tx, chatThreadId, acceptedAt);
 
   // Exactly the operation #34815 owns. The exclusion and the content it
@@ -839,7 +891,19 @@ async function deliverInTransaction(
   if (!appended) {
     throw new Error("Morning Brief delivery event was not appended");
   }
+
+  // This UPSERTs the owner's sidebar sequence row, which is shared across all
+  // of their threads, so another thread's mutation can hold it. It is the last
+  // wait in the transaction, and the acceptance deadline is therefore checked
+  // once more after it rather than assumed still valid from before.
   await touchChatThreadLastMessageAt(tx, chatThreadId, at, appended.id);
+  throwIfCancelled(signal);
+  await loadDeliverableResult(tx, {
+    ...owner,
+    resultAttemptId: request.resultAttemptId,
+    purpose: args.purpose,
+    at: nowDate(),
+  });
 
   const appUrl = env("APP_URL");
   const intent = await resolveEmailIntent(tx, {
@@ -879,55 +943,6 @@ async function deliverInTransaction(
     deliveredAt: appended.createdAt,
     seqId: appended.seqId,
   };
-}
-
-/**
- * The member's live Morning Brief choice, locked against a mid-flight disable.
- *
- * Once a member is in the native phase the durable native row is the whole
- * choice: the legacy automation is not read, so delivery keeps working after
- * legacy scheduling is disabled and with no live catalog reconciliation. Every
- * other phase locks the legacy automation exactly as before, because that row
- * is still the authority there.
- */
-async function lockLiveMorningBriefChoice(
-  tx: Tx,
-  owner: { readonly orgId: string; readonly userId: string },
-  legacy: { readonly automationId: string; readonly workflowId: string },
-): Promise<
-  | {
-      readonly kind: "native";
-      readonly enabled: boolean;
-      readonly ownerEpoch: number;
-      readonly membershipId: string;
-      readonly agentId: string;
-    }
-  | { readonly kind: "legacy"; readonly enabled: boolean }
-> {
-  const native = await lockMorningBriefNativeSchedule(tx, owner);
-  if (native !== undefined && native.phase === "native") {
-    return {
-      kind: "native",
-      enabled: native.enabled,
-      ownerEpoch: native.ownerEpoch,
-      membershipId: native.membershipId,
-      agentId: native.agentId,
-    };
-  }
-  const [automation] = await tx
-    .select({ enabled: workflowAutomations.enabled })
-    .from(workflowAutomations)
-    .where(
-      and(
-        eq(workflowAutomations.id, legacy.automationId),
-        eq(workflowAutomations.orgId, owner.orgId),
-        eq(workflowAutomations.ownerUserId, owner.userId),
-        eq(workflowAutomations.workflowId, legacy.workflowId),
-      ),
-    )
-    .limit(1)
-    .for("update");
-  return { kind: "legacy", enabled: automation?.enabled === true };
 }
 
 export const deliverMorningBriefResult$ = command(
@@ -986,25 +1001,30 @@ export const deliverMorningBriefResult$ = command(
       return { kind: "rejected", reason: rejectionOf(authority.reason) };
     }
 
-    let committed: CommittedDelivery;
-    try {
-      committed = await db.transaction(async (tx) => {
-        return await deliverInTransaction(tx, {
-          request,
-          purpose,
-          anchor,
-          current: authority.admission,
-        });
-      });
-    } catch (error) {
-      // A rejection after the destination was prepared unwinds the whole
-      // transaction, so nothing partial is committed for a delivery that did
-      // not happen.
-      if (error instanceof DeliveryRejected) {
-        return { kind: "rejected", reason: error.reason };
+    // A rejection after the destination was prepared unwinds the whole
+    // transaction, so nothing partial is committed for a delivery that did not
+    // happen.
+    const settled = await settle(
+      db.transaction(async (tx) => {
+        return await deliverInTransaction(
+          tx,
+          { request, purpose, anchor, current: authority.admission },
+          signal,
+        );
+      }),
+    );
+    signal.throwIfAborted();
+    // A cancelled attempt reports cancellation rather than an outcome. When it
+    // was cancelled before acceptance nothing was committed; when a delivery
+    // had already committed, the receipt-first lookup above recovers it on the
+    // next request rather than replaying it here.
+    if (!settled.ok) {
+      if (settled.error instanceof DeliveryRejected) {
+        return { kind: "rejected", reason: settled.error.reason };
       }
-      throw error;
+      throw settled.error;
     }
+    const committed = settled.value;
     signal.throwIfAborted();
 
     if (committed.kind === "delivered") {
@@ -1017,6 +1037,7 @@ export const deliverMorningBriefResult$ = command(
         threadId: committed.chatThreadId,
         syncThroughSeqId: committed.seqId,
       });
+      signal.throwIfAborted();
     }
     return {
       kind: committed.kind,
@@ -1036,7 +1057,11 @@ type MorningBriefDeliveryRevocationScope =
       readonly userId: string;
     }
   | { readonly kind: "user"; readonly userId: string }
-  | { readonly kind: "organization"; readonly orgId: string };
+  | { readonly kind: "organization"; readonly orgId: string }
+  /** One destination thread, removed before its own cascade runs. */
+  | { readonly kind: "thread"; readonly chatThreadId: string }
+  /** One Agent, removed before its own cascade runs. */
+  | { readonly kind: "agent"; readonly agentId: string };
 
 function revocationWhere(scope: MorningBriefDeliveryRevocationScope) {
   if (scope.kind === "membership") {
@@ -1045,8 +1070,14 @@ function revocationWhere(scope: MorningBriefDeliveryRevocationScope) {
       eq(morningBriefDeliveries.userId, scope.userId),
     );
   }
-  return scope.kind === "user"
-    ? eq(morningBriefDeliveries.userId, scope.userId)
+  if (scope.kind === "user") {
+    return eq(morningBriefDeliveries.userId, scope.userId);
+  }
+  if (scope.kind === "thread") {
+    return eq(morningBriefDeliveries.chatThreadId, scope.chatThreadId);
+  }
+  return scope.kind === "agent"
+    ? eq(morningBriefDeliveries.agentId, scope.agentId)
     : eq(morningBriefDeliveries.orgId, scope.orgId);
 }
 
@@ -1054,7 +1085,11 @@ function revocationWhere(scope: MorningBriefDeliveryRevocationScope) {
  * Drop this scope's delivery ownership inside a cleanup transaction.
  *
  * Called from the earliest local revocation each cleanup path already commits,
- * alongside collection ownership. An unsent native intent still carries the
+ * alongside collection ownership, and from the Agent and thread deletions
+ * themselves. Those two cascade the delivery row away, which would otherwise
+ * drop the only association to its still-unsent mail; running this first inside
+ * the same deleting transaction is what keeps that content from being
+ * orphaned. An unsent native intent still carries the
  * recipient address and the rendered brief, so owner deletion removes the mail
  * itself rather than relying on the drain to refuse an orphan. The delete
  * returns the outbox identities it just detached, so the association and the

@@ -27,7 +27,7 @@ import { loadResumableOccurrences } from "../signals/services/morning-brief-nati
  * registered cron route.
  */
 
-export interface MorningBriefNativeOwner {
+interface MorningBriefNativeOwner {
   readonly orgId: string;
   readonly userId: string;
 }

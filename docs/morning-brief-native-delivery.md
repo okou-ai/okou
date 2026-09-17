@@ -136,12 +136,27 @@ decides only whether a request is made.
 
 ### Owner deletion
 
-`revokeMorningBriefDeliveryOwnership` runs in the same cleanup transactions that
-already revoke collection ownership — membership cleanup, Clerk user deletion
-and Clerk organization deletion. It deletes the delivery rows **and** their
-still-unsent outbox rows, because an unsent native intent carries the recipient
-address and the rendered brief. Relying on the drain to refuse an orphan is not
-cleanup. Other producers and other owners are untouched.
+`revokeMorningBriefDeliveryOwnership` deletes the delivery rows **and**, from
+the outbox identities that delete returns, their still-unsent mail — one atomic
+step, because an unsent native intent carries the recipient address and the
+rendered brief. Relying on the drain to refuse an orphan is not cleanup. Other
+producers and other owners are untouched, and mail the provider has already
+accepted cannot be retracted; only its local record goes.
+
+Where it runs, precisely:
+
+| Path                                                 | Transaction                                                                                                                 |
+| ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Agent deletion (`agent-deletion`, `agent-lifecycle`) | The deleting transaction itself, before the cascade removes the receipt.                                                    |
+| Thread deletion (`deleteChatThread$`)                | The deleting transaction itself, under the thread's own row lock.                                                           |
+| Membership cleanup (`org-member-cleanup`)            | The same transaction that revokes collection ownership.                                                                     |
+| Clerk user / organization deletion                   | **A separate later transaction**, after run cancellation and collection revocation — not the earliest committed revocation. |
+
+The Agent and thread rows are the ones that would otherwise cascade the receipt
+away and strand its mail, so those two run inside the deleting transaction. The
+Clerk paths do not yet share the earliest revocation transaction; a fault
+between them leaves the mail to its ordinary outbox lifetime while the next
+drain fails it closed.
 
 ## Unread
 

@@ -59,6 +59,7 @@ import { now, nowDate } from "../../lib/time";
 import { type Db, db$, type ReadonlyDb, writeDb$ } from "../external/db";
 import { inferMimetype } from "./chat-event-shared.service";
 import { latestReadWatermarkEventSubquery } from "./chat-thread-read-state-query";
+import { revokeMorningBriefDeliveryOwnership } from "./morning-brief-delivery.service";
 import {
   appendChatThreadEvent,
   chatThreadServiceTierFromCodex,
@@ -913,10 +914,17 @@ export const deleteChatThread$ = command(
         .delete(chatEventSearchMessages)
         .where(eq(chatEventSearchMessages.chatThreadId, ownedThread.id));
 
-      // Delete the thread after cleanup under its row lock. Cascades
-      // chat_events. Captured active runs lose their canonical chatThreadId,
-      // while any retained legacy row is independently nulled by its own
-      // foreign key.
+      // A native Morning Brief delivery cascades away with this thread, and it
+      // is the only association to its still-unsent mail. Remove both here, so
+      // the cascade cannot orphan content-bearing email.
+      await revokeMorningBriefDeliveryOwnership(tx, {
+        kind: "thread",
+        chatThreadId: ownedThread.id,
+      });
+
+      // Delete the thread after cleanup under its row lock. Cascades chat_events.
+      // Captured active runs lose their canonical chatThreadId, while any retained legacy
+      // row is independently nulled by its own foreign key.
       const [deletedThread] = await tx
         .delete(chatThreads)
         .where(eq(chatThreads.id, ownedThread.id))
