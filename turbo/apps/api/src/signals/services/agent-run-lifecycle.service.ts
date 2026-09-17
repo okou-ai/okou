@@ -35,7 +35,7 @@ export const drainOrgQueue$ = command(
       if (signal.aborted) {
         L.debug("Request aborted after queued run promotion commit", {
           runId:
-            promotion?.kind === "terminal"
+            promotion?.kind === "terminal" || promotion?.kind === "deferred"
               ? promotion.runId
               : promotion?.activation.runnerNotification.runId,
           orgId: args.orgId,
@@ -46,6 +46,9 @@ export const drainOrgQueue$ = command(
           signal.throwIfAborted();
         }
         return 0;
+      }
+      if (promotion.kind === "deferred") {
+        return 1;
       }
       if (promotion.kind === "terminal") {
         finishCommittedDrain = true;

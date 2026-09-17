@@ -1,3 +1,7 @@
+import {
+  readGetStartedStatus,
+  setGetStartedEnabled,
+} from "./helpers/get-started";
 /**
  * helper gap:
  * - Expired OAuth states, stale/hidden legacy connector rows, stale OAuth scope
@@ -259,6 +263,7 @@ describe("CONN-01 and CHAIN-CONNECTOR: connector discovery and manual grant life
   it("keeps a manual-grant connection and authorization when realtime publishing fails", async () => {
     const bdd = createBddApi(context);
     const actor = bdd.user();
+    await setGetStartedEnabled(context, actor);
     const agent = await authOrgApi.createAgent(actor, {
       displayName: "Manual Connector Agent",
     });
@@ -285,6 +290,11 @@ describe("CONN-01 and CHAIN-CONNECTOR: connector discovery and manual grant life
     await expect(
       authOrgApi.readEnabledConnectorSlugs(actor, agent.agentId),
     ).resolves.toContain("openai");
+    expect(
+      (await readGetStartedStatus(context, actor)).quests.find((q) => {
+        return q.key === "connector";
+      })?.claimedCount,
+    ).toBe(0);
   });
 
   it("authorizes a manual-grant connector for the current default agent when no agent is requested", async () => {
@@ -588,6 +598,7 @@ describe("CONN-02: OAuth start and callback", () => {
 
     const bdd = createBddApi(context);
     const actor = bdd.user();
+    await setGetStartedEnabled(context, actor);
     const initialStart = await connectorsApi.startOauth(
       actor,
       "github",
@@ -671,6 +682,11 @@ describe("CONN-02: OAuth start and callback", () => {
     expect(accounts).toContainEqual(
       expect.objectContaining({ displayName: "Personal", isDefault: false }),
     );
+    expect(
+      (await readGetStartedStatus(context, actor)).quests.find((q) => {
+        return q.key === "connector";
+      })?.claimedCount,
+    ).toBe(1);
   });
 
   it("persists the callback-selected Datadog site through the public OAuth flow", async () => {

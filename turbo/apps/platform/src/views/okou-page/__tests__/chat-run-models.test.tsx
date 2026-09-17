@@ -17,7 +17,7 @@ import {
 } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test } from "vitest";
+import { beforeEach, describe, expect, it, test } from "vitest";
 
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import {
@@ -40,6 +40,7 @@ import {
   RUN_PATH,
   sendText,
 } from "./chat-run-test-fixtures.ts";
+import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
 import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
 
 const RUN_A = "a0000000-0000-4000-a000-000000000301";
@@ -59,6 +60,16 @@ function installRecoverySource(source: NonNullable<GetRunResponse["source"]>) {
       source,
     });
   });
+}
+
+async function openRecoveryDetails(): Promise<HTMLElement> {
+  const card = await screen.findByTestId("assistant-error-recovery");
+  const trigger = queryButton("View details", card);
+  if (!trigger) {
+    throw new Error("Recovery details are unavailable");
+  }
+  click(trigger);
+  return screen.findByRole("dialog");
 }
 
 function configureModelPolicies(
@@ -153,43 +164,52 @@ async function selectComposerModel(
   await user.click(await screen.findByRole("option", { name: nextModelName }));
 }
 
-test("Explain a model or speed change that will apply next", async () => {
-  const user = userEvent.setup({ delay: null });
-  configureModelPolicies(["gpt-5.6-sol", "gpt-5.6-luna"]);
-  installRunChat({
-    selectedModel: "gpt-5.6-sol",
-    activeRunIds: [RUN_A],
-    chatEvents: [
-      promptEvent({
-        id: "next-model-user",
-        runId: RUN_A,
-        seqId: 1,
-        text: "Active Sol request",
-        model: "gpt-5.6-sol",
-      }),
-      assistantEvent({
-        id: "next-model-progress",
-        runId: RUN_A,
-        seqId: 2,
-        text: "Sol is still working.",
-      }),
-    ],
+describe("a model or speed change during an active run", () => {
+  beforeEach(async () => {
+    configureModelPolicies(["gpt-5.6-sol", "gpt-5.6-luna"]);
+    installRunChat({
+      selectedModel: "gpt-5.6-sol",
+      activeRunIds: [RUN_A],
+      chatEvents: [
+        promptEvent({
+          id: "next-model-user",
+          runId: RUN_A,
+          seqId: 1,
+          text: "Active Sol request",
+          model: "gpt-5.6-sol",
+        }),
+        assistantEvent({
+          id: "next-model-progress",
+          runId: RUN_A,
+          seqId: 2,
+          text: "Sol is still working.",
+        }),
+      ],
+    });
+
+    await setupPage({
+      context,
+      path: RUN_PATH,
+      featureSwitches: {
+        [FeatureSwitchKey.CodexFastMode]: true,
+        // The speed change is read from the legacy select's option list.
+        [FeatureSwitchKey.ModelPickerFlyout]: false,
+      },
+    });
+
+    await readyChat();
   });
 
-  await setupPage({
-    context,
-    path: RUN_PATH,
-    featureSwitches: { [FeatureSwitchKey.CodexFastMode]: true },
+  it("explains a model or speed change that will apply next", async () => {
+    const user = userEvent.setup({ delay: null });
+    expect(screen.getByText("Sol is still working.")).toBeVisible();
+    await selectComposerModel(user, "GPT 5.6 Sol", "GPT 5.6 Luna");
+
+    await expect(
+      screen.findByText("Next run will use GPT 5.6 Luna"),
+    ).resolves.toBeVisible();
+    expect(screen.getByText("Active Sol request")).toBeVisible();
   });
-
-  await readyChat();
-  expect(screen.getByText("Sol is still working.")).toBeVisible();
-  await selectComposerModel(user, "GPT 5.6 Sol", "GPT 5.6 Luna");
-
-  await expect(
-    screen.findByText("Next run will use GPT 5.6 Luna"),
-  ).resolves.toBeVisible();
-  expect(screen.getByText("Active Sol request")).toBeVisible();
 });
 
 test("Keep a next-run model choice through active-run steering", async () => {
@@ -331,7 +351,7 @@ test("Preserve which model a message was sent with", async () => {
 
   await readyChat();
   await expect(
-    screen.findByRole("combobox", { name: "Claude Sonnet 4.6" }),
+    composerModelTrigger("Claude Sonnet 4.6"),
   ).resolves.toHaveTextContent("Claude Sonnet 4.6");
   await sendText("Preserve this model attribution");
   await expect(
@@ -456,7 +476,7 @@ test("A Codex capacity failure offers a neutral retry", async () => {
   });
 
   await readyChat();
-  const recovery = await screen.findByTestId("assistant-error-recovery");
+  const recovery = await openRecoveryDetails();
   expect(recovery).toHaveTextContent("This model is busy right now");
   expect(recovery).toHaveTextContent("Try again shortly, or switch models.");
   expect(queryButton("Try again", recovery)).toBeVisible();
@@ -490,7 +510,7 @@ test("A structured capacity failure offers recovery despite generic provider tex
   });
 
   await readyChat();
-  const recovery = await screen.findByTestId("assistant-error-recovery");
+  const recovery = await openRecoveryDetails();
   expect(recovery).toHaveTextContent("This model is busy right now");
   expect(queryButton("Try again", recovery)).toBeVisible();
   expect(recovery).not.toHaveTextContent(providerError);
@@ -503,8 +523,13 @@ test.each([
     "Your connected model provider account has insufficient balance.",
   ],
   ["built-in", undefined, "The current model is unavailable."],
+  [
+    "queue expiry",
+    "provider_queue_timeout",
+    "Oops, something went wrong. Please try again later.",
+  ],
 ] as const)(
-  "A balance failure (%s) displays its message without a recovery action",
+  "A terminal provider failure (%s) displays its message without a recovery action",
   async (_owner, failureReason, message) => {
     configureModelPolicies(["gpt-5.6-sol"]);
     installRunChat({
@@ -572,9 +597,11 @@ test.each([
     const card = await screen.findByRole("status");
     expect(card).toHaveTextContent("Cette exécution n’a pas pu se terminer");
     expect(card).toHaveTextContent(expected);
-    expect(queryButton("Réessayer", card)).not.toBeInTheDocument();
+    click(await findButton("Voir les détails"));
+    const details = await screen.findByRole("dialog");
+    expect(queryButton("Réessayer", details)).not.toBeInTheDocument();
     expect(
-      queryButton("Réinitialiser et réessayer", card),
+      queryButton("Réinitialiser et réessayer", details),
     ).not.toBeInTheDocument();
   },
 );
@@ -620,13 +647,21 @@ test.each([
     const card = await screen.findByRole("status");
     expect(card).toHaveTextContent(expected);
     expect(card).toHaveTextContent(action);
-    const link = queryAllByRoleFast("link", card).find((candidate) => {
-      return candidate.textContent === url;
+    click(await findButton("Voir les détails"));
+    const details = await screen.findByRole("dialog");
+    const link = await waitFor(() => {
+      const candidate = queryAllByRoleFast("link", details).find((element) => {
+        return element.textContent === url;
+      });
+      if (!candidate) {
+        throw new Error("Localized guidance link is unavailable");
+      }
+      return candidate;
     });
     expect(link).toHaveAttribute("href", url);
-    expect(queryButton("Réessayer", card)).not.toBeInTheDocument();
+    expect(queryButton("Réessayer", details)).not.toBeInTheDocument();
     expect(
-      queryButton("Réinitialiser et réessayer", card),
+      queryButton("Réinitialiser et réessayer", details),
     ).not.toBeInTheDocument();
   },
 );
@@ -664,9 +699,11 @@ test.each([
     await setupPage({ context, path: RUN_PATH, locale: "fr-FR" });
     const card = await screen.findByRole("status");
     expect(card).toHaveTextContent(expected);
-    expect(queryButton("Réessayer", card)).not.toBeInTheDocument();
+    click(await findButton("Voir les détails"));
+    const details = await screen.findByRole("dialog");
+    expect(queryButton("Réessayer", details)).not.toBeInTheDocument();
     expect(
-      queryButton("Réinitialiser et réessayer", card),
+      queryButton("Réinitialiser et réessayer", details),
     ).not.toBeInTheDocument();
   },
 );
@@ -723,8 +760,10 @@ test.each([
     const card = screen.getByRole("status");
     expect(card).toHaveTextContent(title);
     expect(card).toHaveTextContent(description);
-    expect(queryButton("Réessayer", card)).toBeInTheDocument();
-    expect(within(card).getByRole("combobox")).toBeInTheDocument();
+    click(await findButton("Voir les détails"));
+    const details = await screen.findByRole("dialog");
+    expect(queryButton("Réessayer", details)).toBeInTheDocument();
+    expect(within(details).getByRole("combobox")).toBeInTheDocument();
   },
 );
 
@@ -769,7 +808,7 @@ test("A Claude Code capacity failure offers a neutral retry", async () => {
   });
 
   await readyChat();
-  const recovery = await screen.findByTestId("assistant-error-recovery");
+  const recovery = await openRecoveryDetails();
   expect(recovery).toHaveTextContent("This model is busy right now");
   expect(recovery).toHaveTextContent("Try again shortly, or switch models.");
   expect(queryButton("Try again", recovery)).toBeVisible();
@@ -832,7 +871,7 @@ test("Recover from a personal model account limit", async () => {
   });
 
   await readyChat();
-  const recovery = await screen.findByTestId("assistant-error-recovery");
+  const recovery = await openRecoveryDetails();
   expect(recovery).toHaveTextContent("Codex limit reached");
   expect(recovery).toHaveTextContent(/resets/iu);
   expect(within(recovery).getByRole("combobox")).toBeVisible();
@@ -863,7 +902,7 @@ test("Recover when a model is at capacity", async () => {
   });
 
   await readyChat();
-  const recovery = await screen.findByTestId("assistant-error-recovery");
+  const recovery = await openRecoveryDetails();
   const picker = within(recovery).getByRole("combobox");
   await user.click(picker);
   await expect(
@@ -962,6 +1001,7 @@ test.each([false, true])(
       },
     });
     await readyChat();
+    await openRecoveryDetails();
     await expect(
       screen.findByText(
         "This run used your personal subscription: original-a@example.com.",
@@ -1027,6 +1067,7 @@ test.each(["unknown", "unavailable"] as const)(
       featureSwitches: { [FeatureSwitchKey.OkouDebug]: false },
     });
     await readyChat();
+    await openRecoveryDetails();
     await expect(
       screen.findByText(
         status === "unknown"
@@ -1106,12 +1147,14 @@ test("An old API cannot downgrade a verified recovery to a settings reset", asyn
     featureSwitches: { [FeatureSwitchKey.OkouDebug]: false },
   });
   await readyChat();
+  await openRecoveryDetails();
   click(await findButton("Reset and try again"));
   await expect(
     screen.findByText("This recovery endpoint is unavailable."),
   ).resolves.toBeInTheDocument();
   expect(settingsResets).toStrictEqual([]);
   expect(sent).toStrictEqual([]);
+  click(await findButton("Close"));
   expect(screen.getByRole("textbox", { name: "Message" })).toBeEnabled();
 });
 
@@ -1163,12 +1206,17 @@ test("A held or missing run detail leaves chat usable and reads only the latest 
   await waitFor(() => {
     expect(reads).toStrictEqual([RUN_A]);
   });
+  expect(screen.getByText("This run couldn't finish")).toBeInTheDocument();
   detailGate.resolve();
   await expect(
     screen.findByText("Codex limit reached"),
   ).resolves.toBeInTheDocument();
   expect(queryButton("Reset and try again")).toBeNull();
   expect(reads).toStrictEqual([RUN_A]);
+  await openRecoveryDetails();
+  expect(
+    queryButton("Try again", await screen.findByRole("dialog")),
+  ).toBeEnabled();
 });
 
 test("Continue a run that reached its execution time limit", async () => {
@@ -1193,7 +1241,7 @@ test("Continue a run that reached its execution time limit", async () => {
   });
 
   await readyChat();
-  const recovery = await screen.findByTestId("assistant-error-recovery");
+  const recovery = await openRecoveryDetails();
   expect(recovery).toHaveTextContent("Time limit reached");
   expect(recovery).toHaveTextContent(
     "This run reached its time limit. Continue to keep working.",
@@ -1235,7 +1283,7 @@ test("Continue a run classified by a structured execution timeout reason", async
   });
 
   await readyChat();
-  const recovery = await screen.findByTestId("assistant-error-recovery");
+  const recovery = await openRecoveryDetails();
   expect(recovery).toHaveTextContent("Time limit reached");
   expect(recovery).toHaveTextContent(
     "This run reached its time limit. Continue to keep working.",
@@ -1243,6 +1291,103 @@ test("Continue a run classified by a structured execution timeout reason", async
   expect(within(recovery).queryByRole("combobox")).toBeNull();
   expect(queryButton("Continue", recovery)).toBeVisible();
 });
+
+test.each(["AUTONOMY_BUDGET_EXHAUSTED", "autonomy_budget_exhausted"])(
+  "Confirm continuation after an automatic run limit (%s)",
+  async (error) => {
+    const sentMessages: unknown[] = [];
+    configureModelPolicies(["gpt-5.6-sol"]);
+    installRunChat({
+      selectedModel: "gpt-5.6-sol",
+      chatEvents: [
+        {
+          id: "autonomy-error",
+          eventType: "output.error",
+          role: "assistant",
+          content:
+            "Maximum autonomous delegation depth reached. Send a new human message or confirm a permission request to continue.",
+          error,
+          seqId: 1,
+          createdAt: "2026-08-01T10:00:01.000Z",
+        },
+      ],
+      onRunCreate: (body) => {
+        sentMessages.push(body.userMessage);
+      },
+    });
+
+    await setupPage({ context, path: RUN_PATH });
+
+    await readyChat();
+    const recovery = await openRecoveryDetails();
+    expect(recovery).toHaveTextContent("Automatic run limit reached");
+    expect(recovery).toHaveTextContent(
+      "The limit for consecutive automatic runs has been reached. Confirm to continue.",
+    );
+    expect(within(recovery).queryByRole("combobox")).toBeNull();
+    expect(queryButton("Reset and try again", recovery)).toBeNull();
+
+    const continueButton = queryButton("Continue", recovery);
+    if (!continueButton) {
+      throw new Error("Continue button was not visible");
+    }
+    click(continueButton);
+
+    await expect(screen.findByText("continue")).resolves.toBeInTheDocument();
+    await waitFor(() => {
+      expect(sentMessages).toStrictEqual([
+        {
+          version: 1,
+          parts: [{ type: "text", text: "continue" }],
+        },
+      ]);
+    });
+  },
+);
+
+test.each(["AUTONOMY_BUDGET_EXHAUSTED", "autonomy_budget_exhausted"])(
+  "Retire an automatic run limit after the conversation continues (%s)",
+  async (error) => {
+    configureModelPolicies(["gpt-5.6-sol"]);
+    installRunChat({
+      selectedModel: "gpt-5.6-sol",
+      chatEvents: [
+        {
+          id: "past-autonomy-error",
+          eventType: "output.error",
+          role: "assistant",
+          content:
+            "Maximum autonomous delegation depth reached. Send a new human message or confirm a permission request to continue.",
+          error,
+          seqId: 1,
+          createdAt: "2026-08-01T10:00:01.000Z",
+        },
+        promptEvent({
+          id: "continued-user",
+          runId: RUN_A,
+          seqId: 2,
+          text: "Continue the analysis",
+        }),
+        assistantEvent({
+          id: "continued-answer",
+          runId: RUN_A,
+          seqId: 3,
+          text: "The analysis is complete.",
+        }),
+        completedEvent({ id: "continued-done", runId: RUN_A, seqId: 4 }),
+      ],
+    });
+
+    await setupPage({ context, path: RUN_PATH });
+
+    await readyChat();
+    await expect(
+      screen.findByText("The analysis is complete."),
+    ).resolves.toBeInTheDocument();
+    expect(screen.queryByTestId("assistant-error-card-shell")).toBeNull();
+    expect(screen.queryByTestId("assistant-error-recovery")).toBeNull();
+  },
+);
 
 test("Preserve provider errors that have no guided recovery", async () => {
   const providerError =
@@ -1302,7 +1447,7 @@ test("Switch away from a model rejected by the connected account", async () => {
   ).resolves.toBeVisible();
   expect(queryButton("Reset and try again")).toBeNull();
   expect(queryButton("Continue")).toBeNull();
-  const recovery = await screen.findByTestId("assistant-error-recovery");
+  const recovery = await openRecoveryDetails();
   const picker = within(recovery).getByRole("combobox");
   await user.click(picker);
   expect(
@@ -1316,6 +1461,7 @@ test("Switch away from a model rejected by the connected account", async () => {
   expect(screen.getAllByText("Continue the analysis")).toHaveLength(1);
   expect(sentModels).toHaveLength(0);
 
+  click(await findButton("Close"));
   await sendText("Try a new instruction with Luna");
 
   await expect(

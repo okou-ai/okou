@@ -236,7 +236,7 @@ export function createSessionReadCommand(requireCapability: () => void) {
     )
     .addHelpText(
       "after",
-      "\nLimits: 35 seconds collecting, 256 chunks, 64 page requests, then up to 5 seconds reporting. Cancellation/time-limit reporting gets 1 second. Only 2 reads per Run may wait for future output. Wait expiry is not remote failure. Reading/cancellation never closes the session. A disconnected reader may hold its Runner request/park reservation until its wait ends (up to 30 seconds plus terminal reserve). Exit 0 means the read succeeded, not that the remote process succeeded.\n",
+      "\nLimits: 35 seconds collecting, 256 chunks, 64 page requests, then up to 5 seconds reporting. Cancellation/time-limit reporting gets 1 second. Only 2 reads per Run may wait for future output; avoid busy polling. Wait expiry is not remote failure. Reading/cancellation never closes the session. A disconnected reader may hold its Runner request/park reservation until its wait ends (up to 30 seconds plus terminal reserve). Exit 0 means the read succeeded, not that the remote process succeeded. Follow next_command and next_cursor, and respect reported lost ranges. JSON preserves exact base64 chunks and separates reader failure/stop reason from remote state/exit.\n",
     )
     .action(
       withErrorHandler(async (sessionId: string, options: ReadOptions) => {

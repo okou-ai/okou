@@ -1,3 +1,4 @@
+import * as getStartedClaimSchema from "./schema/get-started-claim";
 import * as accountErasureBridgeSchema from "./schema/account-erasure-bridge";
 import * as accountErasureSchema from "./schema/account-erasure";
 import * as billingRunAttributionSchema from "./schema/billing-run-attribution";
@@ -44,6 +45,7 @@ import * as modelProviderAuthSessionSchema from "./schema/model-provider-auth-se
 import * as connectorOauthDeviceAuthorizationSessionSchema from "./schema/connector-oauth-device-authorization-session";
 import * as connectorOauthStateSchema from "./schema/connector-oauth-state";
 import * as usageEventSchema from "./schema/usage-event";
+import * as xResourceUsageSchema from "./schema/x-resource-usage";
 import * as usageEventHourlyRollupSchema from "./schema/usage-event-hourly-rollup";
 import * as usagePackCreditGrantSchema from "./schema/usage-pack-credit-grant";
 import * as usagePackCreditRefundSchema from "./schema/usage-pack-credit-refund";
@@ -133,6 +135,7 @@ import * as officialWorkflowCatalogSchema from "./schema/official-workflow-catal
 import * as mailDraftSchema from "./schema/mail-draft";
 import * as browserSessionSchema from "./schema/browser-session";
 import * as presentationTemplateSchema from "./schema/presentation-template";
+import * as userTemplateSchema from "./schema/user-template";
 import * as piResourceSnapshotSchema from "./schema/pi-resource-snapshot";
 import * as piResourceVersionIndexSchema from "./schema/pi-resource-version-index";
 import * as memorySummaryProjectionSchema from "./schema/memory-summary-projection";
@@ -146,6 +149,7 @@ import * as agentSshAccessSchema from "./schema/agent-ssh-access";
 import * as cloudflareAccessConfigSchema from "./schema/cloudflare-access-config";
 
 export const schema = {
+  ...getStartedClaimSchema,
   ...accountErasureSchema,
   ...accountErasureBridgeSchema,
   ...runActivitySnapshotSchema,
@@ -207,6 +211,7 @@ export const schema = {
   ...connectorOauthStateSchema,
   ...billingRunAttributionSchema,
   ...usageEventSchema,
+  ...xResourceUsageSchema,
   ...usageEventHourlyRollupSchema,
   ...usagePackCreditGrantSchema,
   ...usagePackCreditRefundSchema,
@@ -281,6 +286,7 @@ export const schema = {
   ...mailDraftSchema,
   ...browserSessionSchema,
   ...presentationTemplateSchema,
+  ...userTemplateSchema,
   ...piResourceSnapshotSchema,
   ...piResourceVersionIndexSchema,
   ...memorySummaryProjectionSchema,

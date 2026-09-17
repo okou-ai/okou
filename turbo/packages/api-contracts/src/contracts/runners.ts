@@ -1,3 +1,4 @@
+import { piSandboxContinuationSchema } from "./pi-inference-lifecycle";
 import { z } from "zod";
 import { piCredentialHeaderSchema } from "./pi-credential";
 import { piModelConfigV4Schema } from "./pi-native";
@@ -790,7 +791,23 @@ export const PI_MEMORY_SUMMARY_SOURCE_MAX_TOKENS =
 export const PI_SKILLS_ROOT = `${PI_AGENT_DIR}/skills`;
 export const PI_API_FIRST_TURN_SESSION_MAX_BYTES = 16 * 1024 * 1024;
 
-const piSessionCheckpointSchema = z
+/**
+ * What the API established about a deferred Sandbox release proof.
+ * `released` changed capacity. `stale` is a definitive acknowledgement that the
+ * proof owns no capacity here, so the Runner may close its receipt.
+ * `inconclusive` means the owner could not be reconstructed, so an obligation
+ * may remain and the receipt and claim barrier must be retained for a retry.
+ */
+export const deferredSandboxReleaseOutcomeSchema = z.enum([
+  "released",
+  "stale",
+  "inconclusive",
+]);
+export type DeferredSandboxReleaseOutcome = z.infer<
+  typeof deferredSandboxReleaseOutcomeSchema
+>;
+
+export const piSessionCheckpointSchema = z
   .object({
     sessionId: z.uuid(),
     sha256: z
@@ -1007,6 +1024,40 @@ export const piApiFirstTurnConfigSchema = z
   })
   .strict()
   .readonly();
+
+/** Reader capability is advertised in a header ignored by previous APIs. */
+export const PI_DEFERRED_SANDBOX_HEADER = "X-Pi-Deferred-Sandbox";
+export const piDeferredSandboxConfigSchema = z
+  .strictObject({
+    schemaVersion: z.literal(2),
+    ownerEpoch: z.number().int().positive(),
+    generation: z.number().int().positive(),
+    deadlineAt: z.number().int().positive(),
+    resourceSnapshotDigest: z.string().regex(/^[a-f0-9]{64}$/),
+    baseSession: piSessionCheckpointSchema,
+    sandboxEventSequenceStart: piSandboxEventSequenceStartSchema,
+    continuation: piSandboxContinuationSchema,
+    runId: z.uuid(),
+    historyHash: z.string().regex(/^[a-f0-9]{64}$/),
+    activeInput: z.boolean(),
+  })
+  .readonly();
+export const piDeferredHandoffDataSchema = z.strictObject({
+  sessionHistory: z.string().max(PI_API_FIRST_TURN_SESSION_MAX_BYTES),
+  resourceSnapshot: piResourceSnapshotSchema,
+});
+export const piDeferredHandoffChunkSchema = z.strictObject({
+  chunk: z.string().max(1_400_000),
+  nextOffset: z
+    .number()
+    .int()
+    .nonnegative()
+    .max(32 * 1024 * 1024)
+    .nullable(),
+});
+export type PiDeferredSandboxConfig = z.infer<
+  typeof piDeferredSandboxConfigSchema
+>;
 
 /**
  * Non-secret Pi model metadata forwarded to the Sandbox. `apiKeyEnv` names the
@@ -1277,7 +1328,10 @@ export const piMemoryPhase2MaintenanceSchema = z
 export const piLaunchConfigSchema = z
   .object({
     schemaVersion: z.literal(2),
-    apiFirstTurn: piApiFirstTurnConfigSchema,
+    apiFirstTurn: z.union([
+      piApiFirstTurnConfigSchema,
+      piDeferredSandboxConfigSchema,
+    ]),
     memoryRecall: piMemoryRecallSelectionSchema.optional(),
     maintenance: piMemoryPhase2MaintenanceSchema.optional(),
   })
@@ -1556,6 +1610,58 @@ export const executionContextSchema = executionContextObjectSchema.superRefine(
  * Verifies that the job's agent_run belongs to the authenticated user
  */
 export const runnersJobClaimContract = c.router({
+  handoff: {
+    method: "GET",
+    path: "/api/runners/jobs/:id/pi-handoff/:offset",
+    headers: authHeadersSchema,
+    pathParams: z.object({
+      id: z.uuid(),
+      offset: z.string().regex(/^[0-9]{1,8}$/u),
+    }),
+    responses: {
+      200: piDeferredHandoffChunkSchema,
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      404: apiErrorSchema,
+    },
+    summary:
+      "Read bounded immutable continuation bytes for the current Sandbox owner",
+  },
+  release: {
+    method: "POST",
+    path: "/api/runners/jobs/:id/release",
+    headers: authHeadersSchema,
+    pathParams: z.object({ id: z.uuid() }),
+    body: z.discriminatedUnion("proof", [
+      z.strictObject({
+        runnerId: z.uuid(),
+        ownerEpoch: z.number().int().positive(),
+        generation: z.number().int().positive(),
+        proof: z.literal("destroyed"),
+      }),
+      z.strictObject({
+        runnerId: z.uuid(),
+        heartbeatGeneration: z.number().int().positive(),
+        ownerEpoch: z.number().int().positive(),
+        generation: z.number().int().positive(),
+        proof: z.literal("process-absent"),
+      }),
+      z.strictObject({
+        runnerId: z.uuid(),
+        heartbeatGeneration: z.number().int().positive(),
+        proof: z.literal("not-started"),
+      }),
+    ]),
+    responses: {
+      200: z.strictObject({
+        outcome: deferredSandboxReleaseOutcomeSchema,
+      }),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+    },
+    summary: "Record a physically destroyed deferred Pi Sandbox",
+  },
   claim: {
     method: "POST",
     path: "/api/runners/jobs/:id/claim",
@@ -1578,6 +1684,57 @@ export const runnersJobClaimContract = c.router({
       500: apiErrorSchema,
     },
     summary: "Claim a pending job for execution",
+  },
+});
+
+export const runnerCancellationModeSchema = z.enum(["cooperative", "hard"]);
+export type RunnerCancellationMode = z.infer<
+  typeof runnerCancellationModeSchema
+>;
+
+const runCancellationIdentitySchema = z.object({
+  protocolVersion: z.literal(1),
+  runId: z.uuid(),
+});
+
+export const runnerCancellationResponseSchema = z.discriminatedUnion("state", [
+  runCancellationIdentitySchema
+    .extend({
+      state: z.literal("present"),
+      mode: runnerCancellationModeSchema.nullable(),
+    })
+    .strict(),
+  runCancellationIdentitySchema.extend({ state: z.literal("gone") }).strict(),
+  runCancellationIdentitySchema
+    .extend({ state: z.literal("unavailable") })
+    .strict(),
+]);
+export type RunnerCancellationResponse = z.infer<
+  typeof runnerCancellationResponseSchema
+>;
+
+export const runnersCancellationContract = c.router({
+  get: {
+    method: "GET",
+    path: "/api/runners/runs/:runId/cancellation",
+    headers: authHeadersSchema,
+    pathParams: z.object({ runId: z.uuid() }),
+    query: z
+      .object({
+        runnerGroup: runnerGroupSchema,
+        runnerId: z.uuid(),
+        heartbeatGeneration: z.coerce
+          .number()
+          .pipe(runnerHeartbeatGenerationSchema),
+      })
+      .strict(),
+    responses: {
+      200: runnerCancellationResponseSchema,
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      500: apiErrorSchema,
+    },
+    summary: "Read the stop intent or confirmed absence of a claimed Run",
   },
 });
 

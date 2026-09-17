@@ -178,44 +178,52 @@ describe("managed video render command", () => {
     expect(submissions).toBe(1);
   });
 
-  it("does not resubmit expired tasks and returns the permanent artifact on completion", async () => {
-    let done = false;
-    server.use(
-      http.get(`${BASE}/${ID}`, () => {
-        return HttpResponse.json(
-          done
-            ? {
-                ...pending,
-                status: "completed",
-                phase: "completed",
-                recovery: { action: "none" },
-                result: {
-                  url: "https://a.okou.io/intro.mp4",
-                  filename: "intro.mp4",
-                  contentType: "video/mp4",
-                  size: 1024,
-                  durationSeconds: 10,
+  it.each(["https://a.okou.io/intro.mp4", "/artifacts/abcxyz1234.mp4"])(
+    "does not resubmit expired tasks and returns a complete URL for %s on completion",
+    async (url) => {
+      vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
+      const expectedUrl = url.startsWith("/artifacts/")
+        ? `https://app.okou.ai${url}`
+        : url;
+      let done = false;
+      server.use(
+        http.get(`${BASE}/${ID}`, () => {
+          return HttpResponse.json(
+            done
+              ? {
+                  ...pending,
+                  status: "completed",
+                  phase: "completed",
+                  recovery: { action: "none" },
+                  result: {
+                    url,
+                    filename: "intro.mp4",
+                    contentType: "video/mp4",
+                    size: 1024,
+                    durationSeconds: 10,
+                  },
+                  billing: { status: "settled", creditsCharged: 12 },
+                  completedAt: "2026-09-12T00:02:00.000Z",
+                }
+              : {
+                  ...pending,
+                  phase: "needs_attention",
+                  providerRenderId: null,
+                  recovery: { action: "manual_check" },
                 },
-                billing: { status: "settled", creditsCharged: 12 },
-                completedAt: "2026-09-12T00:02:00.000Z",
-              }
-            : {
-                ...pending,
-                phase: "needs_attention",
-                providerRenderId: null,
-                recovery: { action: "manual_check" },
-              },
-        );
-      }),
-    );
-    await renderCommand.parseAsync(["node", "okou", "resume", ID, "--json"]);
-    expect(JSON.parse(String(log.mock.calls.at(-1)?.[0]))).toMatchObject({
-      recovery: { action: "manual_check" },
-    });
-    done = true;
-    await renderCommand.parseAsync(["node", "okou", "status", ID, "--json"]);
-    expect(JSON.parse(String(log.mock.calls.at(-1)?.[0]))).toMatchObject({
-      inlineMarkdownLink: "[intro.mp4](<https://a.okou.io/intro.mp4>)",
-    });
-  });
+          );
+        }),
+      );
+      await renderCommand.parseAsync(["node", "okou", "resume", ID, "--json"]);
+      expect(JSON.parse(String(log.mock.calls.at(-1)?.[0]))).toMatchObject({
+        recovery: { action: "manual_check" },
+      });
+      done = true;
+      await renderCommand.parseAsync(["node", "okou", "status", ID, "--json"]);
+      expect(JSON.parse(String(log.mock.calls.at(-1)?.[0]))).toMatchObject({
+        result: { url: expectedUrl },
+        inlineMarkdownLink: `[intro.mp4](<${expectedUrl}>)`,
+      });
+    },
+  );
 });

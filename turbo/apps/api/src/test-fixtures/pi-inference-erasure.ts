@@ -7,14 +7,23 @@ import { blobs } from "@okouai/db/schema/blob";
 import { conversations } from "@okouai/db/schema/conversation";
 import { agentRunInference } from "@okouai/db/schema/agent-run-inference";
 import { usageEvent } from "@okouai/db/schema/usage-event";
+import { piInferenceObjects } from "@okouai/db/schema/pi-inference-object";
+import { createPiSessionJsonl } from "@okouai/pi-agent-runtime/api";
 import { db } from "../lib/db";
 import { env } from "../lib/env";
+import { nowDate } from "../lib/time";
 import {
   deleteLockedRuns,
   deleteRunConversations,
   releaseDeletedConversationReferences,
 } from "../signals/services/conversation-history-deletion.service";
 import { settleIncludingAbort, throwIfAbort } from "../signals/utils";
+import {
+  publishPiInferenceObject,
+  retainPiInferenceObject,
+  deletePiObjectOrphansForOwner,
+} from "../signals/services/pi-inference-object.service";
+import { piDeferredH1Schema } from "../signals/services/pi-deferred-sandbox-contract";
 import type { PiInferenceFixture } from "./pi-inference-lifecycle";
 
 function historyHash(f: PiInferenceFixture) {
@@ -39,6 +48,34 @@ export async function seedPiErasureHistoryFixture(f: PiInferenceFixture) {
       cliAgentSessionId: f.sessionId,
       cliAgentSessionHistoryHash: historyHash(f),
     });
+  if (f.launchSnapshot.schemaVersion === 4) {
+    const sessionHistory = createPiSessionJsonl({
+      cwd: "/home/user/workspace",
+      sessionId: f.sessionId,
+      timestamp: nowDate().toISOString(),
+    });
+    const hash = await publishPiInferenceObject(
+      db(),
+      f,
+      "h1",
+      piDeferredH1Schema,
+      {
+        schemaVersion: 1,
+        manifestGeneration: 3,
+        lastEventSequence: 4,
+        sessionHistory,
+        historyHash: createHash("sha256").update(sessionHistory).digest("hex"),
+      },
+    );
+    await db().transaction(async (tx) => {
+      await tx
+        .select({ id: agentRuns.id })
+        .from(agentRuns)
+        .where(eq(agentRuns.id, f.runId))
+        .for("update");
+      await retainPiInferenceObject(tx, { ...f, kind: "h1", hash });
+    });
+  }
 }
 
 export async function settlePiErasureUsageFixture(f: PiInferenceFixture) {
@@ -54,6 +91,7 @@ export async function removePiErasureEvidenceFixture(f: PiInferenceFixture) {
   await db()
     .delete(blobs)
     .where(eq(blobs.hash, historyHash(f)));
+  await deletePiObjectOrphansForOwner(db(), { userId: f.userId });
 }
 
 export async function readPiErasureEvidenceFixture(f: PiInferenceFixture) {
@@ -69,7 +107,11 @@ export async function readPiErasureEvidenceFixture(f: PiInferenceFixture) {
     .select({ runId: usageEvent.runId, quantity: usageEvent.quantity })
     .from(usageEvent)
     .where(eq(usageEvent.userId, f.userId));
-  return { history, blob, usage };
+  const objects = await db()
+    .select({ count: count() })
+    .from(piInferenceObjects)
+    .where(eq(piInferenceObjects.userId, f.userId));
+  return { history, blob, usage, objects };
 }
 
 /**
@@ -84,6 +126,7 @@ export async function erasePiInferenceRunSetFixture(
 ) {
   const client = new Client({ connectionString: env("DATABASE_URL") });
   const preflightParameters: unknown[][] = [];
+  const objectReferenceParameters: unknown[][] = [];
   let deletionStatements = 0;
   const database = drizzle(client, {
     logger: {
@@ -93,6 +136,12 @@ export async function erasePiInferenceRunSetFixture(
           query.includes('from "agent_run_inference"')
         ) {
           preflightParameters.push(parameters);
+        }
+        if (
+          query.startsWith("select") &&
+          query.includes('from "agent_run_inference_objects"')
+        ) {
+          objectReferenceParameters.push(parameters);
         }
         if (query.startsWith("delete") || query.includes("delete from")) {
           deletionStatements++;
@@ -127,7 +176,12 @@ export async function erasePiInferenceRunSetFixture(
   if (!result.ok) {
     throwIfAbort(result.error);
   }
-  return { result, preflightParameters, deletionStatements };
+  return {
+    result,
+    preflightParameters,
+    objectReferenceParameters,
+    deletionStatements,
+  };
 }
 
 export async function countPiErasureInferenceFixture(

@@ -4,6 +4,7 @@
 //! owns the spawned task body: executor orchestration, provider completion,
 //! deferred telemetry/network-log uploads, and outer-task panic cleanup.
 
+use crate::provider::DeferredSandboxFence;
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -302,6 +303,7 @@ struct FinalizationPhase {
 }
 
 struct FinalizedJob {
+    release_proven: bool,
     finalization_ready: FinalizationReady,
     telemetry: JobTelemetry,
 }
@@ -459,6 +461,7 @@ impl FinalizationPhase {
         );
 
         FinalizedJob {
+            release_proven: disposition == RunCleanupDisposition::DestroyCompleted,
             finalization_ready,
             telemetry,
         }
@@ -617,6 +620,17 @@ pub(super) async fn run_job(
     let active_run_reuse = active_run_guard.reuse_publisher();
     let (context, completion_auth, active_input_source) = claimed.into_parts();
     let run_id = context.run_id;
+    let deferred_fence = context
+        .pi_launch_config
+        .as_ref()
+        .and_then(|launch| launch.get("apiFirstTurn"))
+        .filter(|handoff| {
+            handoff
+                .get("schemaVersion")
+                .and_then(serde_json::Value::as_u64)
+                == Some(2)
+        })
+        .and_then(|handoff| serde_json::from_value::<DeferredSandboxFence>(handoff.clone()).ok());
     let reuse_key = context.reuse_key().map(str::to_owned);
     let cli_agent_session_id = if executor::validate_resume_session_id(&context).is_ok() {
         context.cli_agent_session_id().map(String::from)
@@ -764,6 +778,7 @@ pub(super) async fn run_job(
     executor
         .pre_spawn_timing
         .record_phase_elapsed(RunnerPreSpawnPhase::SpawnJobSetup, started_at);
+    let recovery_provider = Arc::clone(&provider);
     let body = async move {
         #[cfg(test)]
         maybe_panic_outer_job(outer_job_panic, OuterJobPanicPoint::ActiveOrUnknown, run_id);
@@ -810,9 +825,13 @@ pub(super) async fn run_job(
             }
         };
         let FinalizedJob {
+            release_proven,
             finalization_ready,
             mut telemetry,
         } = finalized;
+        if release_proven && let Some(fence) = deferred_fence {
+            provider.release_deferred_sandbox(run_id, fence).await;
+        }
         completion_report.record(&mut telemetry);
         completion_settlement
             .settle(finalization_ready, &mut telemetry)
@@ -820,7 +839,9 @@ pub(super) async fn run_job(
         deferred_upload.flush(telemetry).await;
     };
 
-    match AssertUnwindSafe(body).catch_unwind().await {
+    let body_result = AssertUnwindSafe(body).catch_unwind().await;
+    recovery_provider.claimed_actor_gone(run_id).await;
+    match body_result {
         Ok(()) => cancellation,
         Err(payload) => {
             let cleanup = cleanup_panicked_job(

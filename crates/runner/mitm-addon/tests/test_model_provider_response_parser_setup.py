@@ -1,6 +1,7 @@
 """Model-provider response parser setup integration tests."""
 
 import gzip
+import json
 from typing import cast
 
 import pytest
@@ -27,6 +28,49 @@ class TestModelJsonResponseInspectorProtocolDispatch:
                 include_usage=True,
                 include_failure=False,
             )
+
+
+class TestModelJsonFailureMessageOverflow:
+    """Pin the current optional-message contract for each active consumer set."""
+
+    @pytest.mark.parametrize("chunk_size", [None, 1], ids=["whole-body", "byte-at-a-time"])
+    @pytest.mark.parametrize(
+        ("include_usage", "message_size", "expected_valid", "expected_codes"),
+        [
+            pytest.param(False, 512, True, ("billing_error",), id="failure-only-at-limit"),
+            pytest.param(False, 513, False, (), id="failure-only-over-limit"),
+            pytest.param(True, 512, True, ("billing_error",), id="combined-at-limit"),
+            pytest.param(True, 513, True, ("billing_error",), id="combined-over-limit"),
+        ],
+    )
+    def test_known_code_with_bounded_optional_message(
+        self,
+        include_usage: bool,
+        message_size: int,
+        expected_valid: bool,
+        expected_codes: tuple[str, ...],
+        chunk_size: int | None,
+    ) -> None:
+        body = json.dumps(
+            {"type": "error", "error": {"type": "billing_error", "message": "x" * message_size}}
+        ).encode()
+        inspector = usage.create_model_json_response_inspector(
+            "anthropic_messages",
+            include_usage=include_usage,
+            include_failure=True,
+        )
+        step = len(body) if chunk_size is None else chunk_size
+        for start in range(0, len(body), step):
+            if not inspector.accepts_more_input():
+                break
+            inspector.feed(body[start : start + step])
+
+        inspection = inspector.finish()
+
+        assert inspection.failure.is_valid is expected_valid
+        assert inspection.failure.failure_codes == expected_codes
+        assert inspection.usage is None
+        assert inspection.usage_error is None
 
 
 class TestResponseHeadersModelJsonParser:
@@ -448,7 +492,7 @@ class TestResponseHeadersSseParser:
         assert isinstance(flow.metadata[metadata_keys.MODEL_PROVIDER_USAGE], dict)
         assert "model_sse_usage_finish" in flow.metadata
 
-    def test_non_billable_model_provider_skips_sse_usage_parser(self, real_flow, headers):
+    def test_non_billable_model_provider_extracts_sse_usage(self, real_flow, headers):
         flow = real_flow(with_response=False, host="api.anthropic.com")
         flow.response = tutils.tresp(
             status_code=200, headers=header_map({"content-type": "text/event-stream"})
@@ -459,8 +503,11 @@ class TestResponseHeadersSseParser:
 
         mitm_addon.responseheaders(flow)
 
-        assert metadata_keys.MODEL_PROVIDER_USAGE not in flow.metadata
-        assert "model_sse_usage_finish" not in flow.metadata
+        data = (
+            b'event: message_delta\ndata: {"type":"message_delta","usage":{"output_tokens":7}}\n\n'
+        )
+        assert response_stream(flow)(data) == data
+        assert flow.metadata[metadata_keys.MODEL_PROVIDER_USAGE]["tokens.output"] == 7
 
     def test_no_sse_parser_without_firewall_name(self, real_flow, headers):
         flow = real_flow(with_response=False, host="api.anthropic.com")

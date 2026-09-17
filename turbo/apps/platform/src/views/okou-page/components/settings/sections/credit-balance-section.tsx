@@ -504,7 +504,7 @@ function UsagePackMemberBalancesDialog({
           return $.settings.shared.close;
         })}
         maxWidth="3xl"
-        contentClassName="okou-app flex flex-col gap-0 overflow-hidden p-0"
+        contentClassName="flex flex-col gap-0 overflow-hidden p-0"
       >
         <DialogHeader className="shrink-0 border-b border-border/70 px-6 pb-4 pt-6">
           <DialogTitle>

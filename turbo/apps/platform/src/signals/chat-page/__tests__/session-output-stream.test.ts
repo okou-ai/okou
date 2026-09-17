@@ -67,7 +67,7 @@ async function setupStreamingViewer(): Promise<void> {
   await context.store.set(setupRealtime$, context.signal);
   context.store.set(setFeatureSwitchState$, {
     ...getAllFeatureStates(),
-    [FeatureSwitchKey.SessionOutputStreaming]: true,
+    [FeatureSwitchKey.PiLoop]: true,
   });
 }
 

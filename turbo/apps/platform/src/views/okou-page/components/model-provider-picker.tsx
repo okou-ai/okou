@@ -211,12 +211,15 @@ function ByokBadge({
       <Tooltip>
         <TooltipTrigger asChild>
           <span className="shrink-0 cursor-help text-xs font-medium text-muted-foreground underline decoration-dotted decoration-muted-foreground/50 underline-offset-2 hover:text-foreground hover:decoration-muted-foreground">
-            {subscriptionProvider
-              ? getModelProviderPresentationLabel(subscriptionProvider)
-              : "BYOK"}
+            BYOK
           </span>
         </TooltipTrigger>
         <TooltipContent side="top" className="text-xs">
+          {subscriptionProvider && (
+            <span>
+              {getModelProviderPresentationLabel(subscriptionProvider)}:{" "}
+            </span>
+          )}
           {t(($) => {
             return subscriptionProvider
               ? $.settings.models.personal.description
@@ -522,9 +525,7 @@ function ModelFirstPolicyRowContent({
       ) : (
         <ByokBadge
           subscriptionProvider={
-            policy.memberEffective && route.credentialScope === "member"
-              ? route.providerType
-              : undefined
+            route.credentialScope === "member" ? route.providerType : undefined
           }
         />
       )}

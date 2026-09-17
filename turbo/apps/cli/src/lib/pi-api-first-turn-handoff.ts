@@ -1,15 +1,18 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, rename, writeFile } from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
+import { mkdir, open, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { gunzip, zstdDecompress } from "node:zlib";
 
 import {
   PI_API_FIRST_TURN_SESSION_MAX_BYTES,
+  piDeferredHandoffDataSchema,
   piApiFirstTurnManifestSchema,
   type PiApiFirstTurnConfig,
   type PiApiFirstTurnManifest,
   type PiApiFirstTurnOwnershipTransferMode,
+  type PiDeferredSandboxConfig,
 } from "@okouai/api-contracts/contracts/runners";
 import {
   inspectPiSessionJsonl,
@@ -19,6 +22,7 @@ import {
 const MANIFEST_MAX_BYTES = 16 * 1024;
 const INITIAL_POLL_DELAY_MS = 100;
 const MAX_POLL_DELAY_MS = 500;
+const DEFERRED_HANDOFF_MAX_BYTES = 32 * 1024 * 1024;
 const gunzipHistory = promisify(gunzip);
 const unzstdHistory = promisify(zstdDecompress);
 
@@ -55,6 +59,9 @@ export interface PiApiFirstTurnBoundaryControl {
 }
 
 interface PiApiFirstTurnHandoff {
+  readonly resourceSnapshot?: ReturnType<
+    typeof piDeferredHandoffDataSchema.parse
+  >["resourceSnapshot"];
   readonly sessionFile: string;
   readonly boundaryControl: PiApiFirstTurnBoundaryControl;
   readonly ownershipTransferMode: PiApiFirstTurnOwnershipTransferMode;
@@ -439,12 +446,20 @@ async function restoreSession(args: {
 
 /** Poll the wire coordination deadline and restore the validated checkpoint. */
 export async function resolvePiApiFirstTurnHandoff(args: {
-  readonly config: PiApiFirstTurnConfig;
+  readonly config: PiApiFirstTurnConfig | PiDeferredSandboxConfig;
   readonly sessionDir: string;
   readonly sessionId: string;
+  readonly deferredHandoffFile?: string;
   readonly runtime?: HandoffRuntime;
 }): Promise<PiApiFirstTurnHandoff> {
   const runtime = args.runtime ?? defaultRuntime;
+  if (args.config.schemaVersion === 2) {
+    return restoreDeferredSandboxHandoff({
+      ...args,
+      config: args.config,
+      runtime,
+    });
+  }
   const manifest = await pollManifest(args.config, runtime);
   const boundaryControl: PiApiFirstTurnBoundaryControl = {
     schemaVersion: 2,
@@ -465,5 +480,124 @@ export async function resolvePiApiFirstTurnHandoff(args: {
       sessionId: args.sessionId,
       mode: manifest.mode,
     }),
+  };
+}
+
+async function readDeferredHandoffData(path: string | undefined) {
+  if (!path) {
+    throw new Error("Deferred Pi requires its authenticated handoff file");
+  }
+  const file = await open(
+    path,
+    fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW | fsConstants.O_NONBLOCK,
+  );
+  try {
+    const stat = await file.stat();
+    if (
+      !stat.isFile() ||
+      stat.size <= 0 ||
+      stat.size > DEFERRED_HANDOFF_MAX_BYTES
+    ) {
+      throw new Error("Pi durable handoff file bounds mismatch");
+    }
+    const bytes = await file.readFile();
+    if (
+      bytes.length !== stat.size ||
+      bytes.length > DEFERRED_HANDOFF_MAX_BYTES
+    ) {
+      throw new Error("Pi durable handoff file changed while being read");
+    }
+    return piDeferredHandoffDataSchema.parse(
+      JSON.parse(bytes.toString("utf8")) as unknown,
+    );
+  } finally {
+    await file.close();
+  }
+}
+
+/** The durable payload has already won Runner claim. Validate its exact native
+ * checkpoint before RPC startup; no polling or first-provider replay. */
+async function restoreDeferredSandboxHandoff(args: {
+  readonly config: PiDeferredSandboxConfig;
+  readonly sessionDir: string;
+  readonly sessionId: string;
+  readonly deferredHandoffFile?: string;
+  readonly runtime: HandoffRuntime;
+}): Promise<PiApiFirstTurnHandoff> {
+  const { config } = args;
+  const data = await readDeferredHandoffData(args.deferredHandoffFile);
+  const bytes = Buffer.from(data.sessionHistory, "utf8");
+  if (
+    bytes.length > PI_API_FIRST_TURN_SESSION_MAX_BYTES ||
+    createHash("sha256").update(bytes).digest("hex") !== config.historyHash ||
+    createHash("sha256")
+      .update(JSON.stringify(data.resourceSnapshot))
+      .digest("hex") !== config.resourceSnapshotDigest ||
+    args.runtime.now() >= config.deadlineAt
+  ) {
+    throw new Error(
+      "Pi durable handoff failed its integrity or deadline check",
+    );
+  }
+  const inspection = inspectPiSessionJsonl(data.sessionHistory);
+  if (
+    inspection.sessionId !== args.sessionId ||
+    config.baseSession.sessionId !== args.sessionId
+  ) {
+    throw new Error("Pi durable handoff session identity mismatch");
+  }
+  const mode =
+    config.continuation.mode === "pending-tools"
+      ? "pending-tool-continuation"
+      : config.continuation.mode === "settled-session"
+        ? "settled-session-continuation"
+        : "sandbox-first";
+  if (
+    config.continuation.mode === "pending-tools" &&
+    JSON.stringify(inspection.pendingToolIds) !==
+      JSON.stringify(config.continuation.pendingToolIds)
+  ) {
+    throw new Error("Pi durable handoff pending tool identities mismatch");
+  }
+  if (
+    config.continuation.mode !== "untouched-h0" &&
+    config.sandboxEventSequenceStart !==
+      config.continuation.lastEventSequence + 1
+  ) {
+    throw new Error("Pi durable handoff event sequence mismatch");
+  }
+  validateSessionMode({
+    inspection,
+    mode,
+    manifest: {
+      schemaVersion: 3,
+      outcome: "ownership-transfer",
+      mode,
+      baseSession: config.baseSession,
+      session: {
+        sessionId: args.sessionId,
+        sha256: config.historyHash,
+        rawSize: bytes.length,
+      },
+      sandboxEventSequenceStart: config.sandboxEventSequenceStart,
+    },
+  });
+  const sessionFile = join(
+    args.sessionDir,
+    `deferred-${config.ownerEpoch}-${config.generation}-${args.sessionId}.jsonl`,
+  );
+  const temporaryFile = `${sessionFile}.${randomUUID()}.tmp`;
+  await mkdir(args.sessionDir, { recursive: true });
+  await writeFile(temporaryFile, bytes, { mode: 0o600 });
+  await rename(temporaryFile, sessionFile);
+  return {
+    sessionFile,
+    resourceSnapshot: data.resourceSnapshot,
+    ownershipTransferMode: mode,
+    boundaryControl: {
+      schemaVersion: 2,
+      sandboxEventSequenceStart: config.sandboxEventSequenceStart,
+      ownershipTransferMode: mode,
+    },
   };
 }

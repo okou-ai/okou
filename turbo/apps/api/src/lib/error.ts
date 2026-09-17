@@ -14,8 +14,25 @@ function httpError<STATUS extends number, CODE extends string>(
   });
 }
 
+export function artifactVisibilityUnavailable() {
+  return httpError(
+    403,
+    "FORBIDDEN",
+    "Artifact visibility requires private artifacts to be enabled",
+  );
+}
+
 export function notFound(message: string) {
   return httpError(404, "NOT_FOUND", message);
+}
+
+/**
+ * Generic denial for a resource the caller may not write right now. It names no
+ * subject, owner or reason, so it cannot be read back as a statement about
+ * another account.
+ */
+export function resourceUnavailable(message: string) {
+  return httpError(403, "FORBIDDEN", message);
 }
 
 export function conflict(message: string) {

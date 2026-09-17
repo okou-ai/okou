@@ -16,12 +16,19 @@ import { z } from "zod";
 import { artifactUrlSchema } from "@okouai/api-contracts/contracts/artifact-references";
 import { ApiRequestError } from "../../lib/api/core/client-factory";
 import { generateWebImage } from "../../lib/api/domains/web";
+import { absoluteArtifactUrl } from "../../lib/artifact-url";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { generatedImageAsset } from "../shared/generated-image-asset";
 import {
   ARTIFACT_PRESENTATION_CONTEXT,
   createArtifactPresentation,
 } from "../shared/artifact-return";
+import {
+  applyArtifactVisibility,
+  createArtifactVisibilityOption,
+  prepareArtifactVisibility,
+  type ArtifactVisibility,
+} from "../shared/artifact-visibility";
 
 const MAX_CONCURRENCY = 3;
 const DEFAULT_SIZE = "816x816";
@@ -38,6 +45,8 @@ const imageBatchArtifactsSchema = z.object({
       assetId: z.string(),
       asset: z.string(),
       url: artifactUrlSchema,
+      ownerUrl: artifactUrlSchema.optional(),
+      visibility: z.enum(["only-me", "org", "public"]).optional(),
       inlineMarkdownLink: z.string(),
       previewMarkdownBlock: z.string(),
     }),
@@ -57,6 +66,10 @@ interface ImageBatchJob {
 interface ImageBatchWaitOptions {
   readonly timeout: number;
   readonly json?: boolean;
+}
+
+interface ImageBatchGenerationOptions {
+  readonly visibility?: ArtifactVisibility;
 }
 
 function shellQuoteArg(value: string): string {
@@ -148,7 +161,10 @@ function shouldRetry(error: unknown): boolean {
   );
 }
 
-async function generateOne(job: ImageBatchJob) {
+async function generateOne(
+  job: ImageBatchJob,
+  requirePrivateArtifact: true | undefined,
+) {
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     try {
       const result = await generateWebImage({
@@ -161,6 +177,7 @@ async function generateOne(job: ImageBatchJob) {
         moderation: "auto",
         safetyTolerance: "4",
         imageUrls: [],
+        requirePrivateArtifact,
       });
       return result;
     } catch (error) {
@@ -185,8 +202,12 @@ async function writeAtomic(path: string, contents: string): Promise<void> {
 async function runBatch(
   manifestPath: string,
   stateDirectory: string,
+  options: ImageBatchGenerationOptions,
 ): Promise<void> {
   const jobs = await readManifest(manifestPath);
+  const requirePrivateArtifact = await prepareArtifactVisibility(
+    options.visibility,
+  );
   const results: Array<ImageBatchArtifact | undefined> = Array.from({
     length: jobs.length,
   });
@@ -202,13 +223,24 @@ async function runBatch(
         throw new Error(`Image batch job ${index} is missing`);
       }
       try {
-        const result = await generateOne(job);
-        const asset = await generatedImageAsset(result, job.id, stateDirectory);
+        const generated = await generateOne(job, requirePrivateArtifact);
+        const result = await applyArtifactVisibility(
+          generated,
+          { kind: "file", id: generated.id },
+          options.visibility,
+        );
+        const asset = await generatedImageAsset(
+          generated,
+          job.id,
+          stateDirectory,
+        );
         const presentation = createArtifactPresentation(job.id, result.url);
         results[index] = {
           assetId: job.id,
           asset,
           url: result.url,
+          ...(result.ownerUrl ? { ownerUrl: result.ownerUrl } : {}),
+          ...(result.visibility ? { visibility: result.visibility } : {}),
           inlineMarkdownLink: presentation.json.inlineMarkdownLink,
           previewMarkdownBlock: presentation.json.previewMarkdownBlock,
         };
@@ -260,12 +292,13 @@ async function runBatch(
 async function runInternal(
   manifestPathValue: string,
   stateDirectoryValue: string,
+  options: ImageBatchGenerationOptions,
 ): Promise<void> {
   const manifestPath = resolve(manifestPathValue);
   const stateDirectory = resolve(stateDirectoryValue);
   let exitCode = 0;
   try {
-    await runBatch(manifestPath, stateDirectory);
+    await runBatch(manifestPath, stateDirectory, options);
     console.log(`Image batch complete: ${join(stateDirectory, "results.tsv")}`);
   } catch (error) {
     exitCode = 1;
@@ -279,6 +312,7 @@ async function runInternal(
 function childArguments(
   manifestPath: string,
   stateDirectory: string,
+  options: ImageBatchGenerationOptions,
 ): string[] {
   const entrypoint = process.argv[1];
   if (!entrypoint) {
@@ -293,6 +327,7 @@ function childArguments(
     "__run",
     manifestPath,
     stateDirectory,
+    ...(options.visibility ? ["--visibility", options.visibility] : []),
   ];
 }
 
@@ -306,6 +341,7 @@ async function waitForSpawn(child: ReturnType<typeof spawn>): Promise<void> {
 async function startBatch(
   manifestPathValue: string,
   stateDirectoryValue: string,
+  options: ImageBatchGenerationOptions,
 ): Promise<void> {
   const manifestPath = resolve(manifestPathValue);
   const stateDirectory = resolve(stateDirectoryValue);
@@ -316,6 +352,7 @@ async function startBatch(
     );
   }
 
+  await prepareArtifactVisibility(options.visibility);
   await mkdir(stateDirectory, { recursive: false });
   const copiedManifest = join(stateDirectory, "manifest.tsv");
   const logHandle = await open(join(stateDirectory, "output.log"), "a");
@@ -323,7 +360,7 @@ async function startBatch(
     await copyFile(manifestPath, copiedManifest);
     const child = spawn(
       process.execPath,
-      childArguments(copiedManifest, stateDirectory),
+      childArguments(copiedManifest, stateDirectory, options),
       {
         detached: true,
         env: process.env,
@@ -355,11 +392,30 @@ async function startBatch(
 
 async function readBatchArtifacts(stateDirectory: string) {
   try {
-    return imageBatchArtifactsSchema.parse(
+    const metadata = imageBatchArtifactsSchema.parse(
       JSON.parse(
         await readFile(join(stateDirectory, "artifacts.json"), "utf8"),
       ),
     );
+    const artifacts = await Promise.all(
+      metadata.artifacts.map(async (artifact) => {
+        const url = await absoluteArtifactUrl(artifact.url);
+        const presentation =
+          url === artifact.url
+            ? artifact
+            : createArtifactPresentation(artifact.assetId, url).json;
+        return {
+          ...artifact,
+          url,
+          ...(artifact.ownerUrl === undefined
+            ? {}
+            : { ownerUrl: await absoluteArtifactUrl(artifact.ownerUrl) }),
+          inlineMarkdownLink: presentation.inlineMarkdownLink,
+          previewMarkdownBlock: presentation.previewMarkdownBlock,
+        };
+      }),
+    );
+    return { ...metadata, artifacts };
   } catch (error) {
     // Persisted batches created before presentation metadata still contain usable
     // TSV assets. Retain until support for those stored batch directories is retired.
@@ -462,6 +518,7 @@ const startCommand = new Command("start")
   .description("Start a detached image batch")
   .argument("<manifest.tsv>", "ID, raw prompt, and optional size per line")
   .argument("<state-dir>", "New directory for batch state and results")
+  .addOption(createArtifactVisibilityOption())
   .action(withErrorHandler(startBatch));
 
 const waitCommand = new Command("wait")
@@ -474,6 +531,7 @@ const waitCommand = new Command("wait")
 const runCommand = new Command("__run")
   .argument("<manifest.tsv>")
   .argument("<state-dir>")
+  .addOption(createArtifactVisibilityOption())
   .action(runInternal);
 
 export const imageBatchCommand = new Command("image-batch")

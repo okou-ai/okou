@@ -43,6 +43,8 @@ interface ClerkFixtureState {
   readonly organizations: StoredOrganization[];
   readonly organizationRequests: OrganizationRequest[];
   readonly deletionEvents: string[];
+  readonly requests: string[];
+  readonly memberships: Map<string, { userId: string; role: string }>;
   userCreateCount: number;
 }
 
@@ -50,6 +52,17 @@ interface ClerkFixture {
   readonly apiUrl: string;
   readonly server: Server;
   readonly state: ClerkFixtureState;
+}
+
+interface FixtureOptions {
+  readonly failUserCreateAt?: number;
+  failOrganizationDelete?: boolean;
+  readonly creatorRole?: string;
+  readonly failMembershipUpdate?: boolean;
+  readonly organizationSettingsResponse?: {
+    readonly status: number;
+    readonly body: unknown;
+  };
 }
 
 test("prepares and cleans one generation of runner accounts", async () => {
@@ -63,6 +76,9 @@ test("prepares and cleans one generation of runner accounts", async () => {
 
     await runRunnerAccount("prepare", environment);
 
+    // Baseline: five user POSTs, five organization POSTs and five role PATCHes.
+    assert.equal(fixture.state.requests.length, 11);
+    await assertPreparedAdminMemberships(fixture.apiUrl, githubOutput);
     assert.deepEqual(fixture.state.organizationRequests, [
       organizationRequest("user_1", "e2e-runner-pr-123", "runner"),
       organizationRequest(
@@ -80,6 +96,11 @@ test("prepares and cleans one generation of runner accounts", async () => {
         "e2e-runner-mock-claude-pr-123",
         "runner-mock-claude",
       ),
+      organizationRequest(
+        "user_5",
+        "e2e-runner-real-codex-built-in-pr-123",
+        "runner-real-codex-built-in",
+      ),
     ]);
     assert.equal(
       await readFile(githubOutput, "utf8"),
@@ -88,10 +109,12 @@ test("prepares and cleans one generation of runner accounts", async () => {
         "codex-organization-id=org_2",
         "claude-organization-id=org_3",
         "mock-claude-organization-id=org_4",
+        "codex-built-in-organization-id=org_5",
         "runner-email=pr-123+clerk_test+9001-3+runner@vm0-e2e.ai",
         "codex-email=pr-123+clerk_test+9001-3+runner-real-codex@vm0-e2e.ai",
         "claude-email=pr-123+clerk_test+9001-3+runner-real-claude@vm0-e2e.ai",
         "mock-claude-email=pr-123+clerk_test+9001-3+runner-mock-claude@vm0-e2e.ai",
+        "codex-built-in-email=pr-123+clerk_test+9001-3+runner-real-codex-built-in@vm0-e2e.ai",
         "",
       ].join("\n"),
     );
@@ -125,10 +148,12 @@ test("prepares and cleans one generation of runner accounts", async () => {
       "organization:org_2",
       "organization:org_3",
       "organization:org_4",
+      "organization:org_5",
       "user:user_1",
       "user:user_2",
       "user:user_3",
       "user:user_4",
+      "user:user_5",
     ]);
     assert.deepEqual(fixture.state.users, [
       {
@@ -146,6 +171,111 @@ test("prepares and cleans one generation of runner accounts", async () => {
   }
 });
 
+test("prepares admin identities when Clerk uses a non-default creator role", async () => {
+  const fixture = await startClerkFixture({ creatorRole: "org:owner" });
+  const directory = await mkdtemp(join(tmpdir(), "runner-creator-role-"));
+  const githubOutput = join(directory, "github-output");
+  const environment = runnerEnvironment(fixture.apiUrl, {
+    GITHUB_OUTPUT: githubOutput,
+    E2E_CLERK_RESOURCE_DIR: join(directory, "resources"),
+  });
+  try {
+    await runRunnerAccount("prepare", environment);
+    assert.equal(fixture.state.requests.length, 16);
+    await assertPreparedAdminMemberships(fixture.apiUrl, githubOutput);
+    await runRunnerAccount("cleanup-recorded-generation", environment);
+    assert.deepEqual(fixture.state.users, []);
+    assert.deepEqual(fixture.state.organizations, []);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+    await closeServer(fixture.server);
+  }
+});
+
+test("rejects unsupported or unavailable creator settings before provisioning", async (context) => {
+  const cases = [
+    { name: "missing role", status: 200, body: { enabled: true } },
+    {
+      name: "invalid role",
+      status: 200,
+      body: { enabled: true, creator_role: null },
+    },
+    {
+      name: "empty role",
+      status: 200,
+      body: { enabled: true, creator_role: " " },
+    },
+    {
+      name: "disabled organizations",
+      status: 200,
+      body: { enabled: false, creator_role: "org:admin" },
+    },
+    { name: "provider error", status: 403, body: { errors: [] } },
+    { name: "rate limited", status: 429, body: { errors: [] } },
+  ];
+  for (const scenario of cases) {
+    await context.test(scenario.name, async () => {
+      const fixture = await startClerkFixture({
+        organizationSettingsResponse: scenario,
+      });
+      const directory = await mkdtemp(join(tmpdir(), "runner-settings-error-"));
+      const githubOutput = join(directory, "github-output");
+      try {
+        await assert.rejects(
+          runRunnerAccount(
+            "prepare",
+            runnerEnvironment(fixture.apiUrl, {
+              GITHUB_OUTPUT: githubOutput,
+              E2E_CLERK_RESOURCE_DIR: join(directory, "resources"),
+            }),
+          ),
+          /read Clerk organization settings/,
+        );
+        assert.deepEqual(fixture.state.users, []);
+        assert.deepEqual(fixture.state.organizations, []);
+        assert.deepEqual(fixture.state.requests, [
+          "GET /v1/instance/organization_settings",
+        ]);
+        await assert.rejects(readFile(githubOutput), { code: "ENOENT" });
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+        await closeServer(fixture.server);
+      }
+    });
+  }
+});
+
+test("rolls back a non-default creator when explicit admin setup fails", async () => {
+  const fixture = await startClerkFixture({
+    creatorRole: "org:owner",
+    failMembershipUpdate: true,
+  });
+  const directory = await mkdtemp(join(tmpdir(), "runner-role-rollback-"));
+  const githubOutput = join(directory, "github-output");
+  try {
+    await assert.rejects(
+      runRunnerAccount(
+        "prepare",
+        runnerEnvironment(fixture.apiUrl, {
+          GITHUB_OUTPUT: githubOutput,
+          E2E_CLERK_RESOURCE_DIR: join(directory, "resources"),
+        }),
+      ),
+      /update Clerk organization membership failed with HTTP 400/,
+    );
+    assert.deepEqual(fixture.state.users, []);
+    assert.deepEqual(fixture.state.organizations, []);
+    assert.deepEqual(fixture.state.deletionEvents, [
+      "organization:org_1",
+      "user:user_1",
+    ]);
+    await assert.rejects(readFile(githubOutput), { code: "ENOENT" });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+    await closeServer(fixture.server);
+  }
+});
+
 test("runner resource records survive preparation and a later cleanup attempt", async () => {
   const fixture = await startClerkFixture();
   const directory = await mkdtemp(join(tmpdir(), "runner-records-test-"));
@@ -155,14 +285,14 @@ test("runner resource records survive preparation and a later cleanup attempt", 
       E2E_CLERK_RESOURCE_DIR: join(directory, "resources"),
     });
     await runRunnerAccount("prepare", environment);
-    assert.equal(fixture.state.organizations.length, 4);
+    assert.equal(fixture.state.organizations.length, 5);
     await runRunnerAccount("cleanup-recorded-run", {
       ...environment,
       GITHUB_RUN_ATTEMPT: "4",
     });
     assert.deepEqual(fixture.state.organizations, []);
     assert.deepEqual(fixture.state.users, []);
-    assert.equal(fixture.state.deletionEvents.length, 8);
+    assert.equal(fixture.state.deletionEvents.length, 10);
   } finally {
     await rm(directory, { recursive: true, force: true });
     await closeServer(fixture.server);
@@ -245,6 +375,8 @@ test("run cleanup removes every runner generation for the exact workflow run", a
       "organization:org_6",
       "organization:org_7",
       "organization:org_8",
+      "organization:org_9",
+      "organization:org_10",
       "user:user_1",
       "user:user_2",
       "user:user_3",
@@ -253,6 +385,8 @@ test("run cleanup removes every runner generation for the exact workflow run", a
       "user:user_6",
       "user:user_7",
       "user:user_8",
+      "user:user_9",
+      "user:user_10",
     ]);
     assert.deepEqual(
       fixture.state.users.map((user) => user.id),
@@ -293,6 +427,7 @@ test("partial runner preparation cleans resources without outputs", async () => 
         "prepare",
         runnerEnvironment(fixture.apiUrl, {
           GITHUB_OUTPUT: join(tempDirectory, "github-output"),
+          E2E_CLERK_RESOURCE_DIR: join(tempDirectory, "resources"),
         }),
       ),
       /create Clerk user failed with HTTP 400 \(json\)/,
@@ -310,14 +445,54 @@ test("partial runner preparation cleans resources without outputs", async () => 
   }
 });
 
+test("failed preparation preserves its original error and recorded resources when cleanup fails", async () => {
+  const options: FixtureOptions = {
+    failUserCreateAt: 2,
+    failOrganizationDelete: true,
+  };
+  const fixture = await startClerkFixture(options);
+  const directory = await mkdtemp(join(tmpdir(), "runner-cleanup-failure-"));
+  const environment = runnerEnvironment(fixture.apiUrl, {
+    GITHUB_OUTPUT: join(directory, "github-output"),
+    E2E_CLERK_RESOURCE_DIR: join(directory, "resources"),
+  });
+  try {
+    await assert.rejects(
+      runRunnerAccount("prepare", environment),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.match(error.message, /Recorded runner cleanup failed/);
+        assert.match(
+          error.message,
+          /delete Clerk test organization failed with HTTP 403/,
+        );
+        assert.match(error.message, /create Clerk user failed with HTTP 400/);
+        return true;
+      },
+    );
+    assert.equal(fixture.state.users.length, 1);
+    assert.equal(fixture.state.organizations.length, 1);
+    assert.deepEqual(fixture.state.deletionEvents, []);
+    options.failOrganizationDelete = false;
+    await runRunnerAccount("cleanup-recorded-generation", environment);
+    assert.deepEqual(fixture.state.users, []);
+    assert.deepEqual(fixture.state.organizations, []);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+    await closeServer(fixture.server);
+  }
+});
+
 async function startClerkFixture(
-  options: { readonly failUserCreateAt?: number } = {},
+  options: FixtureOptions = {},
 ): Promise<ClerkFixture> {
   const state: ClerkFixtureState = {
     users: [],
     organizations: [],
     organizationRequests: [],
     deletionEvents: [],
+    requests: [],
+    memberships: new Map(),
     userCreateCount: 0,
   };
   const server = createServer((request, response) => {
@@ -351,10 +526,47 @@ async function handleClerkRequest(
   request: IncomingMessage,
   response: ServerResponse,
   state: ClerkFixtureState,
-  options: { readonly failUserCreateAt?: number },
+  options: FixtureOptions,
 ): Promise<void> {
   const path = request.url ?? "";
   const url = new URL(path, "http://clerk.test");
+  state.requests.push(`${request.method} ${path}`);
+  if (
+    request.method === "GET" &&
+    url.pathname === "/v1/instance/organization_settings"
+  ) {
+    const result = options.organizationSettingsResponse;
+    sendJson(
+      response,
+      result
+        ? result.body
+        : {
+            object: "organization_settings",
+            enabled: true,
+            creator_role: options.creatorRole ?? "org:admin",
+          },
+      result ? result.status : 200,
+    );
+    return;
+  }
+  const membershipPath = /^\/v1\/organizations\/(org_\d+)\/memberships$/.exec(
+    url.pathname,
+  );
+  if (request.method === "GET" && membershipPath) {
+    const membership = state.memberships.get(membershipPath[1]);
+    sendJson(response, {
+      data: membership
+        ? [
+            {
+              role: membership.role,
+              public_user_data: { user_id: membership.userId },
+            },
+          ]
+        : [],
+      total_count: membership ? 1 : 0,
+    });
+    return;
+  }
   if (request.method === "GET" && url.pathname.startsWith("/v1/users/")) {
     const id = url.pathname.slice("/v1/users/".length);
     const user = state.users.find((candidate) => candidate.id === id);
@@ -419,6 +631,10 @@ async function handleClerkRequest(
     const id = `org_${state.organizations.length + 1}`;
     state.organizationRequests.push(body);
     state.organizations.push({ id, request: body });
+    state.memberships.set(id, {
+      userId: body.created_by,
+      role: options.creatorRole ?? "org:admin",
+    });
     sendJson(response, { id });
     return;
   }
@@ -426,6 +642,23 @@ async function handleClerkRequest(
     request.method === "PATCH" &&
     /^\/v1\/organizations\/org_\d+\/memberships\/user_\d+$/.test(url.pathname)
   ) {
+    if (options.failMembershipUpdate) {
+      sendJson(response, { errors: [] }, 400);
+      return;
+    }
+    const [, , , organizationId, , userId] = url.pathname.split("/");
+    const membership = state.memberships.get(organizationId);
+    const body = await readJsonBody(request);
+    if (
+      !membership ||
+      membership.userId !== userId ||
+      !isRecord(body) ||
+      body.role !== "org:admin"
+    ) {
+      sendJson(response, { errors: [] }, 422);
+      return;
+    }
+    membership.role = body.role;
     sendJson(response, { role: "org:admin" });
     return;
   }
@@ -433,7 +666,12 @@ async function handleClerkRequest(
     request.method === "DELETE" &&
     url.pathname.startsWith("/v1/organizations/")
   ) {
+    if (options.failOrganizationDelete) {
+      sendJson(response, {}, 403);
+      return;
+    }
     const id = url.pathname.slice("/v1/organizations/".length);
+    state.memberships.delete(id);
     deleteStoredResource(
       state.organizations,
       id,
@@ -450,6 +688,32 @@ async function handleClerkRequest(
     return;
   }
   sendJson(response, { error: "not found" }, 404);
+}
+
+async function assertPreparedAdminMemberships(
+  apiUrl: string,
+  githubOutput: string,
+): Promise<void> {
+  const output = await readFile(githubOutput, "utf8");
+  const organizationIds = output
+    .split("\n")
+    .filter((line) => line.includes("-organization-id="))
+    .map((line) => line.split("=")[1]);
+  assert.equal(organizationIds.length, 5);
+  assert.equal(new Set(organizationIds).size, 5);
+  for (const [index, id] of organizationIds.entries()) {
+    const response = await fetch(`${apiUrl}/organizations/${id}/memberships`);
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      data: [
+        {
+          role: "org:admin",
+          public_user_data: { user_id: `user_${index + 1}` },
+        },
+      ],
+      total_count: 1,
+    });
+  }
 }
 
 function deleteStoredResource<T extends { readonly id: string }>(
@@ -560,6 +824,7 @@ async function runRunnerAccount(
     | "prepare"
     | "cleanup-generation"
     | "cleanup-run"
+    | "cleanup-recorded-generation"
     | "cleanup-recorded-run",
   environment: Readonly<NodeJS.ProcessEnv>,
 ): Promise<void> {

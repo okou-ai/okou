@@ -1142,28 +1142,6 @@ export const updateOrgModelPolicies$ = command(
         params.policies,
         existing,
       );
-      if (
-        priorityEnabled &&
-        policies.some((policy) => {
-          if (policy.credentialScope !== "member") {
-            return false;
-          }
-          const previous = existing.find((row) => {
-            return row.model === policy.model;
-          });
-          return (
-            !previous ||
-            previous.credentialScope !== "member" ||
-            previous.defaultProviderType !== policy.defaultProviderType ||
-            previous.modelProviderId !== policy.modelProviderId ||
-            previous.modelProviderSurfaceId !== policy.modelProviderSurfaceId
-          );
-        })
-      ) {
-        return bad<undefined>(
-          "Subscriptions are managed in personal settings. Choose an API route for new workspace routes.",
-        );
-      }
       const capabilities = await orgModelCapabilities(tx, params.orgId);
       const validation = await validateUpdatePolicies(
         tx,

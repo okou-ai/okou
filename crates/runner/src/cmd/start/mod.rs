@@ -940,6 +940,7 @@ async fn run_start_with_home(
             http.clone(),
             server.token,
             ApiProviderConfig {
+                deferred_release_root: home.deferred_sandbox_recovery_dir(),
                 ssh: ssh.clone(),
                 runner_identity,
                 runner_hostname: hostname.clone(),
@@ -967,7 +968,7 @@ async fn run_start_with_home(
         network_log_drain,
         mitm_jsonl_flush: Some(mitm.jsonl_flush_handle()),
         connector_runtime_sync,
-        ssh,
+        guest_rpc: ssh.map(|ssh| crate::guest_rpc::Runtime { ssh: Some(ssh) }),
         session_history_cpu: SessionHistoryCpuPool::for_host_cpus(host_cpus),
         session_history_probe: SessionHistoryProbe::default(),
         fresh_archive_delivery: crate::storage_cache::FreshArchiveDeliveryAdmission::new(),
@@ -2822,45 +2823,11 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
 
     shutdown_runtime(runtime.as_mut(), Some(&teardown)).await;
 
-    // Wait for buffered and pending proxy webhook work before stopping the proxy.
-    // The runner writes a shutdown request marker, then the addon replies with
-    // fresh pending snapshots after SIGUSR1-triggered flush requests. This
-    // remains bounded best-effort, and timeout is the abnormal data-loss path.
+    // Observe actual delivery work within the existing total shutdown budget.
+    // Quiescence is not an all-delivered receipt; the addon retains final retry ownership.
     let phase = teardown.phase_start("wait_usage_flush");
-    if let Some(usage_flush_target) = mitm.usage_flush_target() {
-        let addon_dir = paths.base_dir.join("mitm-addon");
-        match proxy::write_usage_flush_request(&addon_dir, &usage_flush_target).await {
-            Ok(usage_flush_request) => {
-                info!("requesting proxy usage flush");
-                if mitm.request_usage_flush() {
-                    info!("waiting for proxy usage reports to flush");
-                    let flushed = proxy::wait_usage_flush_requesting(
-                        &addon_dir,
-                        proxy::USAGE_FLUSH_TIMEOUT,
-                        &usage_flush_request,
-                        || mitm.request_usage_flush(),
-                    )
-                    .await;
-                    if flushed {
-                        info!("all usage reports flushed");
-                    } else {
-                        warn!("usage flush did not complete, some reports may be lost");
-                    }
-                } else {
-                    warn!("failed to request proxy usage flush, skipping usage wait");
-                }
-            }
-            Err(e) => {
-                error!(
-                    r#type = "usage_underbilling",
-                    reason = "usage_flush_request_create_failed",
-                    underbilling_class = "risk",
-                    component = "runner",
-                    error = %e,
-                    "failed to create proxy usage flush request, skipping usage wait"
-                );
-            }
-        }
+    if let Some(target) = mitm.usage_flush_target() {
+        target.drain().await;
     } else {
         info!("proxy is not running; skipping usage flush wait");
     }

@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 use guest_agent::cli::{CliExecutionControls, execute_cli_with_controls_for_config_started_at};
 use guest_agent::masker::SecretMasker;
 use guest_contracts::diagnostics::{CliTerminationReason, CliTerminationSignal};
+use tokio::process::Command;
 use tokio_util::sync::CancellationToken;
 
 const RESPONSE_PAYLOAD_MIB: usize = 9;
@@ -107,67 +108,126 @@ done
     std::fs::set_permissions(&npx, permissions)?;
 
     let runtime_dir = guest_contracts::runtime_paths::run_dir_for_home(&case_dir, case.run_id)?;
-    unsafe {
-        common::clear_guest_agent_bootstrap_env_for_test();
-        std::env::set_var(guest_contracts::env::CLI_AGENT_TYPE_ENV, "pi");
-        std::env::set_var(guest_contracts::env::RUN_ID_ENV, case.run_id);
-        std::env::set_var(
+    let payload_path = common::write_run_payload_file_for_test(
+        &runtime_dir,
+        &guest_contracts::env::RunPayload {
+            prompt: "x".repeat(PROMPT_BYTES),
+            pi_launch_config:
+                r#"{"schemaVersion":2,"apiFirstTurn":{"sandboxEventSequenceStart":1}}"#.to_string(),
+            pi_model_config: "{}".to_string(),
+            pi_session_id: case.session_id.to_string(),
+            ..guest_contracts::env::RunPayload::default()
+        },
+    )?;
+    let user_env_dir = runtime_dir.join(guest_contracts::env::USER_ENV_PRIVATE_DIR_NAME);
+    std::fs::create_dir_all(&user_env_dir)?;
+    let user_env_path = user_env_dir.join(guest_contracts::env::USER_ENV_FILENAME);
+    std::fs::write(
+        &user_env_path,
+        serde_json::to_vec(&HashMap::from([
+            (
+                "CLI_PKG_URL".to_string(),
+                "https://example.invalid/current-okou-cli.tgz".to_string(),
+            ),
+            (
+                "PI_CHILD_PID_PATH".to_string(),
+                child_pid_path.to_string_lossy().into_owned(),
+            ),
+            (
+                "PI_PROMPT_STARTED_PATH".to_string(),
+                prompt_started_path.to_string_lossy().into_owned(),
+            ),
+            ("PI_OVERLOAD_CASE".to_string(), case.name.to_string()),
+            (
+                "PI_RESPONSE_PAYLOAD_MIB".to_string(),
+                RESPONSE_PAYLOAD_MIB.to_string(),
+            ),
+            ("PI_SESSION_ID".to_string(), case.session_id.to_string()),
+        ]))?,
+    )?;
+    common::ensure_canonical_workspace_for_test()?;
+
+    // Configure startup inputs without mutating either running test process.
+    // Clearing the environment also excludes inherited runner/bootstrap controls.
+    let mut command = Command::new(std::env::current_exe()?);
+    command
+        .args([
+            "--exact",
+            "pi_response_buffer_overload_child",
+            "--ignored",
+            "--nocapture",
+        ])
+        .env_clear()
+        .env(guest_contracts::env::CLI_AGENT_TYPE_ENV, "pi")
+        .env(guest_contracts::env::RUN_ID_ENV, case.run_id)
+        .env(
             guest_contracts::env::CANONICAL_API_URL_ENV,
             &server.base_url,
-        );
-        std::env::set_var(guest_contracts::env::CANONICAL_API_TOKEN_ENV, "test-token");
-        std::env::set_var(
+        )
+        .env(guest_contracts::env::CANONICAL_API_TOKEN_ENV, "test-token")
+        .env(
             guest_contracts::env::CANONICAL_SANDBOX_ID_ENV,
             "00000000-0000-4000-8000-000000000abc",
-        );
-        std::env::set_var(
+        )
+        .env(
             guest_contracts::env::CANONICAL_SANDBOX_REUSE_RESULT_ENV,
             "reused",
-        );
-        std::env::set_var("HOME", &case_dir);
-        let mut paths = vec![bin_dir];
-        paths.extend(std::env::split_paths(
-            &std::env::var_os("PATH").unwrap_or_default(),
-        ));
-        std::env::set_var("PATH", std::env::join_paths(paths)?);
-        common::set_run_payload_file_env_for_test(
-            &runtime_dir,
-            &guest_contracts::env::RunPayload {
-                prompt: "x".repeat(PROMPT_BYTES),
-                pi_launch_config:
-                    r#"{"schemaVersion":2,"apiFirstTurn":{"sandboxEventSequenceStart":1}}"#
-                        .to_string(),
-                pi_model_config: "{}".to_string(),
-                pi_session_id: case.session_id.to_string(),
-                ..guest_contracts::env::RunPayload::default()
-            },
-        )?;
-        common::set_user_env_file_env_for_test(
-            &runtime_dir,
-            &HashMap::from([
-                (
-                    "CLI_PKG_URL".to_string(),
-                    "https://example.invalid/current-okou-cli.tgz".to_string(),
-                ),
-                (
-                    "PI_CHILD_PID_PATH".to_string(),
-                    child_pid_path.to_string_lossy().into_owned(),
-                ),
-                (
-                    "PI_PROMPT_STARTED_PATH".to_string(),
-                    prompt_started_path.to_string_lossy().into_owned(),
-                ),
-                ("PI_OVERLOAD_CASE".to_string(), case.name.to_string()),
-                (
-                    "PI_RESPONSE_PAYLOAD_MIB".to_string(),
-                    RESPONSE_PAYLOAD_MIB.to_string(),
-                ),
-                ("PI_SESSION_ID".to_string(), case.session_id.to_string()),
-            ]),
-        )?;
+        )
+        .env("HOME", &case_dir)
+        .env(
+            "PATH",
+            std::env::join_paths([bin_dir.as_path(), Path::new("/usr/bin"), Path::new("/bin")])?,
+        )
+        .env(
+            guest_contracts::env::CANONICAL_RUN_PAYLOAD_FILE_ENV,
+            payload_path,
+        )
+        .env(
+            guest_contracts::env::CANONICAL_USER_ENV_FILE_ENV,
+            user_env_path,
+        )
+        .env("PI_OVERLOAD_CASE", case.name)
+        .current_dir(&case_dir);
+    if let Some(llvm_profile_file) = std::env::var_os("LLVM_PROFILE_FILE") {
+        command.env("LLVM_PROFILE_FILE", llvm_profile_file);
     }
-    common::ensure_canonical_workspace_for_test()?;
-    std::env::set_current_dir(&case_dir)?;
+
+    // The session owner also cleans CLI descendants in separate process groups
+    // when the worker fails or times out, before the parent removes its files.
+    let output = common::command_output_with_timeout(
+        &mut command,
+        Duration::from_secs(25),
+        &format!("{} overload child test did not finish", case.name),
+    )
+    .await?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "{} overload child test failed with {}; stdout:\n{stdout}\nstderr:\n{stderr}",
+        case.name,
+        output.status
+    );
+    assert!(
+        stdout.contains(&format!("Pi {} overload assertions passed", case.name)),
+        "{} overload child did not complete its assertions; stdout:\n{stdout}\nstderr:\n{stderr}",
+        case.name
+    );
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[ignore = "spawned per case by the response-overload parent test"]
+async fn pi_response_buffer_overload_child() -> Result<(), Box<dyn std::error::Error>> {
+    let case = match std::env::var("PI_OVERLOAD_CASE")?.as_str() {
+        "count" => COUNT_CASE,
+        "bytes" => BYTE_CASE,
+        other => return Err(format!("unknown Pi overload case: {other}").into()),
+    };
+    let case_dir = std::env::current_dir()?;
+    let child_pid_path = case_dir.join("pi-child.pid");
+    let prompt_started_path = case_dir.join("pi-prompt-started");
 
     let runtime = common::guest_runtime_from_process_env()?;
     let _run_files = common::RunFilesGuard::new_for_paths(&runtime.paths);
@@ -223,5 +283,6 @@ done
         case.name
     );
 
+    println!("Pi {} overload assertions passed", case.name);
     Ok(())
 }

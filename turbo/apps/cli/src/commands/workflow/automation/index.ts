@@ -2196,6 +2196,10 @@ Notes:
   - GitHub automations require the GitHub App installation in the workspace
   - GitHub workflow run filters accept comma-separated values; omit a filter to match any value
   - Google Meet automations run only when a meeting you organize generates a transcript
+  - chat-run-finished watches the user-owned thread, not one run ID; status defaults to completed,failed,cancelled
+  - chat-run-finished --output-pattern is a case-insensitive * wildcard match against final assistant text
+  - Each match starts a new run in the workflow's automation thread; it does not resume the watched or creating run
+  - An automation stays enabled for future matches until explicitly disabled or removed
   - Webhook automations print the signing secret only once after creation
   - Use the workflow ID when a name is ambiguous`,
     )
@@ -2407,5 +2411,13 @@ Examples:
   Update a schedule:     okou workflow automation update <automation-id> --every 10m
   List automations:      okou workflow automation list <workflow-id>
   Inspect an automation: okou workflow automation show <automation-id>
-  Pause one automation:  okou workflow automation disable <automation-id>`,
+  Pause one automation:  okou workflow automation disable <automation-id>
+
+chat-run-finished:
+  Watches one user-owned chat thread, not one run ID. It can filter terminal
+  status and a case-insensitive * wildcard over final assistant text. A match
+  starts a new run in the workflow's automation thread rather than resuming the
+  watched run. It remains enabled for future matches until disabled or removed.
+  chat messages is only a point-in-time read; use this event when completion
+  should trigger work instead of polling.`,
   );

@@ -19,9 +19,10 @@ import { useTranslation } from "react-i18next";
 
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
 import {
+  connectorConnectionCompleted$,
   connectorConnectionPending$,
-  dismissConnectorConnectionProgress$,
 } from "../../../../signals/connector-connection-progress.ts";
+import { useConnectorConnectionDialogClose } from "../../../components/connector-connection-progress.tsx";
 import { ConnectorConnectionDialogBody } from "../../../components/connector-connection-dialog-body.tsx";
 import {
   closeCustomConnectorDialog$,
@@ -73,6 +74,27 @@ function declaredValuesFromForm(
     return value.length > 0
       ? [{ key: field.key, kind: field.kind, value }]
       : [];
+  });
+}
+
+function customConnectorValuesReady(
+  connector: CustomConnectorResponse,
+  values: readonly CustomConnectorValueInput[],
+  mode: ConnectorAccountConnectMode | undefined,
+): boolean {
+  const submittedKeys = new Set(
+    values.map((value) => {
+      return value.key;
+    }),
+  );
+  const requiredKeys =
+    mode?.kind === "add"
+      ? connector.fields.flatMap((field) => {
+          return field.required ? [field.key] : [];
+        })
+      : connector.missingRequiredFields;
+  return requiredKeys.every((key) => {
+    return submittedKeys.has(key);
   });
 }
 
@@ -184,6 +206,10 @@ function useCustomConnectorConnectionSubmitters(
   };
   const submitAuthorizationMode = async (
     connectorId: string,
+    onSuccess: (
+      result: CustomConnectorConnectionSubmission,
+      signal: AbortSignal,
+    ) => Promise<void>,
     signal: AbortSignal,
   ): Promise<CustomConnectorConnectionSubmission> => {
     if (agentId) {
@@ -192,6 +218,7 @@ function useCustomConnectorConnectionSubmitters(
           id: connectorId,
           agentId,
           account,
+          onSuccess,
           ...(usesDefaultProjection
             ? { useDefaultConnectorProjection: true as const }
             : {}),
@@ -203,6 +230,7 @@ function useCustomConnectorConnectionSubmitters(
       {
         id: connectorId,
         account,
+        onSuccess,
         ...(usesDefaultProjection
           ? { useDefaultConnectorProjection: true as const }
           : {}),
@@ -236,6 +264,7 @@ function ConnectDialogFooter({
   readonly onClose: () => void;
 }) {
   const { t } = useTranslation();
+  const completed = useGet(connectorConnectionCompleted$);
   const submitLabel = submitting
     ? authorization || noAuth
       ? t(($) => {
@@ -261,10 +290,12 @@ function ConnectDialogFooter({
         type="button"
         variant="outline"
         onClick={onClose}
-        disabled={submitting}
+        disabled={submitting && !authorization}
       >
         {t(($) => {
-          return $.connectors.actions.cancel;
+          return submitting && authorization && completed
+            ? $.connectors.actions.close
+            : $.connectors.actions.cancel;
         })}
       </Button>
       <Button type="submit" disabled={!canSubmit}>
@@ -278,7 +309,10 @@ interface CustomConnectorConnectDialogProps {
   readonly connector: CustomConnectorResponse;
   readonly agentId?: string;
   readonly onClose?: () => void;
-  readonly onSuccess?: (connectionId: string | null) => void | Promise<void>;
+  readonly onSuccess?: (
+    connectionId: string | null,
+    signal: AbortSignal,
+  ) => void | Promise<void>;
   readonly accountOptions: ConnectorAccountMutationOptions;
   readonly accountMode?: ConnectorAccountConnectMode;
 }
@@ -369,27 +403,17 @@ export function CustomConnectorConnectDialog({
     submitAuthorizationMode,
   } = useCustomConnectorConnectionSubmitters(agentId, accountOptions);
   const pending = useGet(connectorConnectionPending$);
-  const dismissProgress = useSet(dismissConnectorConnectionProgress$);
   const submitting = connectionSubmitting || pending;
   const signal = useGet(pageSignal$);
   const authorization =
     connector.authMode === "oauth" || connector.authMode === "automatic";
   const noAuth = connector.authMode === "none";
   const values = declaredValuesFromForm(connector, form.values);
-  const submittedKeys = new Set(
-    values.map((value) => {
-      return value.key;
-    }),
+  const hasRequiredValues = customConnectorValuesReady(
+    connector,
+    values,
+    accountMode,
   );
-  const requiredFieldKeys =
-    accountMode?.kind === "add"
-      ? connector.fields.flatMap((field) => {
-          return field.required ? [field.key] : [];
-        })
-      : connector.missingRequiredFields;
-  const hasRequiredValues = requiredFieldKeys.every((key) => {
-    return submittedKeys.has(key);
-  });
   const canSubmit =
     !submitting &&
     (authorization || (hasRequiredValues && (noAuth || values.length > 0)));
@@ -398,6 +422,25 @@ export function CustomConnectorConnectDialog({
     connector.fields.length === 1 &&
     connector.fields[0]?.kind === "secret";
 
+  const { close: cancel, onOpenChange } = useConnectorConnectionDialogClose(
+    connectionSubmitting,
+    close,
+  );
+
+  const finish = async (
+    result: CustomConnectorConnectionSubmission,
+    attemptSignal: AbortSignal,
+  ) => {
+    if (!result.connected) {
+      return;
+    }
+    if (result.targetAuthorized || accountMode) {
+      await onSuccess?.(result.connectionId, attemptSignal);
+      attemptSignal.throwIfAborted();
+    }
+    close();
+  };
+
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!canSubmit) {
@@ -405,31 +448,22 @@ export function CustomConnectorConnectDialog({
     }
     detach(
       (async () => {
-        const result = authorization
-          ? await submitAuthorizationMode(connector.id, signal)
-          : await submitDeclaredValues({ id: connector.id, values }, signal);
-        if (!result.connected) {
+        if (authorization) {
+          await submitAuthorizationMode(connector.id, finish, signal);
           return;
         }
-        if (result.targetAuthorized || accountMode) {
-          await onSuccess?.(result.connectionId);
-        }
-        close();
+        const result = await submitDeclaredValues(
+          { id: connector.id, values },
+          signal,
+        );
+        await finish(result, signal);
       })(),
       Reason.DomCallback,
     );
   };
 
   return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!open) {
-          dismissProgress();
-          close();
-        }
-      }}
-    >
+    <Dialog open onOpenChange={onOpenChange}>
       <DialogContent
         maxWidth="md"
         aria-describedby={undefined}
@@ -469,7 +503,7 @@ export function CustomConnectorConnectDialog({
             setField={setField}
             submitting={submitting}
             canSubmit={canSubmit}
-            close={close}
+            close={cancel}
             onSubmit={onSubmit}
           />
         </ConnectorConnectionDialogBody>

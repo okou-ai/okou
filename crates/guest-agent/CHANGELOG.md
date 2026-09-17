@@ -1,5 +1,48 @@
 # Changelog
 
+## [0.91.12](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.11...guest-agent-v0.91.12) (2026-09-17)
+
+## [0.91.11](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.10...guest-agent-v0.91.11) (2026-09-17)
+
+
+### Bug Fixes
+
+* unify agent failure classification and completion handling ([#34802](https://github.com/vm0-ai/okou/issues/34802)) ([8cf6c83](https://github.com/vm0-ai/okou/commit/8cf6c836cda07808f7536fc9ee35dcf36e71036b))
+
+## [0.91.10](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.9...guest-agent-v0.91.10) (2026-09-17)
+
+
+### Bug Fixes
+
+* **pi:** authenticate deferred handoff in guest ([#34845](https://github.com/vm0-ai/okou/issues/34845)) ([2562612](https://github.com/vm0-ai/okou/commit/2562612020484e515569c2cb78d11f672b5bff5d))
+
+## [0.91.9](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.8...guest-agent-v0.91.9) (2026-09-17)
+
+## [0.91.8](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.7...guest-agent-v0.91.8) (2026-09-17)
+
+## [0.91.7](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.6...guest-agent-v0.91.7) (2026-09-16)
+
+## [0.91.6](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.5...guest-agent-v0.91.6) (2026-09-16)
+
+## [0.91.5](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.4...guest-agent-v0.91.5) (2026-09-16)
+
+## [0.91.4](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.3...guest-agent-v0.91.4) (2026-09-16)
+
+## [0.91.3](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.2...guest-agent-v0.91.3) (2026-09-16)
+
+
+### Bug Fixes
+
+* **pi:** preserve causal transport failure diagnostics ([#34505](https://github.com/vm0-ai/okou/issues/34505)) ([9ae5a27](https://github.com/vm0-ai/okou/commit/9ae5a2748353914dce8bcf983dac554f7ae5a4af))
+* **runner:** classify contained tool oom as informational ([#34520](https://github.com/vm0-ai/okou/issues/34520)) ([02e789d](https://github.com/vm0-ai/okou/commit/02e789d0129298079e23570bc319c5c0557a2d77))
+
+## [0.91.2](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.1...guest-agent-v0.91.2) (2026-09-16)
+
+
+### Bug Fixes
+
+* align provider failure classification across pi, codex, and claude code ([#34396](https://github.com/vm0-ai/okou/issues/34396)) ([ff4f23f](https://github.com/vm0-ai/okou/commit/ff4f23fa72b471204d0a27bcbc5466679ab16042))
+
 ## [0.91.1](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.91.0...guest-agent-v0.91.1) (2026-09-15)
 
 ## [0.91.0](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.90.5...guest-agent-v0.91.0) (2026-09-15)

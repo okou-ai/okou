@@ -25,6 +25,7 @@ import type {
 } from "@okouai/api-contracts/contracts/social-discovery";
 
 import { ApiRequestError, getClientConfig } from "../core/client-factory";
+import { withAbsoluteArtifactUrl } from "../../artifact-url";
 
 const SOCIALKIT_API_TIMEOUT_MS = 280_000;
 
@@ -88,10 +89,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function publicSocialDownloadResponse<T extends SocialKitDownloadResponse>(
-  response: T,
-): T {
-  const publicResponse = redactSocialProviderIdentity(response) as T;
+async function publicSocialDownloadResponse<
+  T extends SocialKitDownloadResponse,
+>(response: T): Promise<T> {
+  const publicResponse = redactSocialProviderIdentity({
+    ...response,
+    artifact: response.artifact
+      ? await withAbsoluteArtifactUrl(response.artifact)
+      : response.artifact,
+  }) as T;
   if (!publicResponse.error) {
     return publicResponse;
   }
@@ -241,9 +247,11 @@ export async function listSocialKitDownloads(
   if (result.status === 200) {
     return {
       ...result.body,
-      downloads: result.body.downloads.map((download) => {
-        return publicSocialDownloadResponse(download);
-      }),
+      downloads: await Promise.all(
+        result.body.downloads.map((download) => {
+          return publicSocialDownloadResponse(download);
+        }),
+      ),
     };
   }
   handlePublicSocialError(result, "Okou Social download discovery failed");

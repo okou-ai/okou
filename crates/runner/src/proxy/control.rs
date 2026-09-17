@@ -7,7 +7,8 @@
 use std::io;
 use std::os::fd::AsRawFd;
 use std::os::unix::fs::MetadataExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -15,8 +16,89 @@ use tokio::net::UnixStream;
 use tokio::time::Instant;
 use uuid::Uuid;
 
+use super::registry_application::{
+    RegistryPublication,
+    observer::{ObservationTask, PendingObservation},
+};
+
 const MAX_FRAME_BYTES: usize = 64 * 1024;
 pub(super) const SOCKET_NAME: &str = "control.sock";
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct ControlTarget {
+    pub directory: PathBuf,
+    pub generation: String,
+}
+
+/// Short launch lookup/admission only; no I/O or operation waits hold this lock.
+#[derive(Clone)]
+pub(super) struct ControlHandle {
+    launch: Arc<Mutex<Option<ControlLaunch>>>,
+    pub(super) usage_admission: Arc<tokio::sync::Semaphore>,
+}
+
+impl Default for ControlHandle {
+    fn default() -> Self {
+        Self {
+            launch: Arc::default(),
+            usage_admission: Arc::new(tokio::sync::Semaphore::new(8)),
+        }
+    }
+}
+
+struct ControlLaunch {
+    target: ControlTarget,
+    observations: Option<ObservationTask>,
+}
+
+impl ControlHandle {
+    pub fn set_target(&self, target: Option<ControlTarget>) {
+        let old = std::mem::replace(
+            &mut *self
+                .launch
+                .lock()
+                .unwrap_or_else(|error| error.into_inner()),
+            target.map(|target| ControlLaunch {
+                target,
+                observations: None,
+            }),
+        );
+        // Cancel the old owner even when registry/log handles outlive the proxy.
+        drop(old);
+    }
+
+    pub fn target(&self) -> Option<ControlTarget> {
+        self.launch
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .as_ref()
+            .map(|launch| launch.target.clone())
+    }
+
+    pub fn observe_registry(&self, publication: RegistryPublication) {
+        if publication.target.is_none() {
+            return;
+        }
+        let rejected = {
+            let mut launch = self
+                .launch
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            match launch
+                .as_mut()
+                .filter(|launch| Some(&launch.target) == publication.target.as_ref())
+            {
+                Some(launch) => launch
+                    .observations
+                    .get_or_insert_with(ObservationTask::new)
+                    .request(publication),
+                None => Err(PendingObservation::new(publication, "stale_generation")),
+            }
+        };
+        // Rejected admission records an unknown outcome outside the launch lock.
+        drop(rejected);
+    }
+}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -54,6 +136,26 @@ enum ErrorCode {
     StaleGeneration,
     UnknownMethod,
     Busy,
+    NotReady,
+    Deadline,
+    InternalError,
+}
+
+impl std::fmt::Display for ErrorCode {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "addon control request rejected: {self:?}")
+    }
+}
+
+impl std::error::Error for ErrorCode {}
+
+pub(super) fn is_busy(error: &io::Error) -> bool {
+    matches!(
+        error
+            .get_ref()
+            .and_then(|error| error.downcast_ref::<ErrorCode>()),
+        Some(ErrorCode::Busy)
+    )
 }
 
 #[derive(Deserialize)]
@@ -145,9 +247,9 @@ pub(super) async fn exchange<P: Serialize, T: serde::de::DeserializeOwned>(
                 request_id: Some(actual_id),
                 generation: actual_generation,
                 code,
-            } if actual_id == request_id && actual_generation == generation => Err(
-                io::Error::other(format!("addon control request rejected: {code:?}")),
-            ),
+            } if actual_id == request_id && actual_generation == generation => {
+                Err(io::Error::other(code))
+            }
             _ => Err(invalid("addon control response identity mismatch")),
         }
     })

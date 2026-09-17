@@ -27,6 +27,9 @@ on:
         description: "Apply the approved loss of recovery for historical old-key ciphertext"
         type: boolean
         default: false
+      skip_verification_for_key:
+        description: "Explicit waiver: old key ARN; accept any remaining current/historical dependency loss"
+        type: string
 
 concurrency:
   group: kms-production-operation-32264
@@ -56,6 +59,7 @@ jobs:
           VERIFICATION_ARTIFACT_SHA256: ${{ inputs.verification_artifact_sha256 }}
           EXPECTED_DEPLOYMENT_ID: ${{ inputs.expected_deployment_id }}
           ACCEPT_HISTORICAL_RECOVERY_LOSS: ${{ inputs.accept_historical_recovery_loss }}
+          SKIP_VERIFICATION_FOR_KEY: ${{ inputs.skip_verification_for_key }}
           SOURCE_AUDIT_WINDOW_START: "2026-09-10T07:38:23.484Z"
           EXPECTED_BACKUP_SHA256: 60d1500d90c83a8b40996c3e9e6fbb9453ffbf598a9ae1c670d38f60b340e9f8
           DOPPLER_SERVICE_IDENTITY_ID: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}

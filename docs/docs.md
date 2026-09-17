@@ -24,6 +24,8 @@ surface; the index does not replace their detailed rules.
   concrete account ownership, bounded disconnect retention and activation gates.
 - [Subscription decryption experiment](./subscription-decryption-experiment.md):
   bounded KMS concurrency, provider-lock measurements and failure trade-offs.
+- [Subscription equivalence experiment](./subscription-equivalence-experiment.md):
+  paired canonical/mirror proof decryption and complete caller measurements.
 - [Connector-account workflow automations](./connector-account-workflow-automation.md):
   workflow-thread account authority, exact provider ingress, lifecycle
   convergence, and persisted compatibility for account-backed triggers.
@@ -42,6 +44,8 @@ surface; the index does not replace their detailed rules.
   capabilities, live health normalization, freshness and rollout boundaries.
 - [Billing attribution foundation](./database/billing-attribution.md): immutable
   billing identity, writer inventory, bounded backfill and activation boundaries.
+- [X resource observations](./x-resource-observations.md): atomic daily
+  deduplication, two-date cleanup, transient remainder and activation gates.
 - [Database trigger retirement](./database-trigger-retirement.md): explicit API
   entitlement writers, repair paths, and the serving/rollback removal gate.
 - [Account telemetry and recovery erasure](./account-erasure-evidence.md):
@@ -52,6 +56,29 @@ surface; the index does not replace their detailed rules.
   publication-order evidence.
 - [Dependency override audit](./dependency-overrides.md): retained dependency
   constraints, their origins, and evidence for removing obsolete overrides.
+- [Morning Brief migration state](./morning-brief-migration-state.md): the
+  canonical reader for a member's existing brief, its ownership and thread
+  invariants, and the boundary the `simple-morning-brief` cutover must respect.
+- [Morning Brief GitHub collection](./morning-brief-github-collection.md): the
+  protected preview entrypoint, live connector authorization, GitHub branch
+  semantics, budgets, and coverage/failure classification.
+- [Morning Brief source collection](./morning-brief-collection.md): the bounded
+  Slack source contract, occurrence/attempt/lease ownership, owner revocation
+  boundary, live shared-scope revalidation, and the coverage limits this first
+  collector declares.
+- [Morning Brief calendar collection](./morning-brief-calendar-collection.md):
+  the owner-timezone three-day window, readable-calendar selection, all-day and
+  recurrence semantics, calendar caps, and its use of the shared reader.
+- [Morning Brief Gmail collection](./morning-brief-gmail-collection.md): the
+  shared Morning Brief OAuth authorization boundary, Gmail's two bounded
+  branches and caps, source outcome classification, and the preview-only
+  deployment boundary.
+- [Morning Brief platform-funded generation](./morning-brief-generation.md): the
+  single-invocation reservation contract, the validated result shape, and the
+  anonymous platform cost receipt kept outside every user ledger.
+- [Morning Brief thread provenance](./morning-brief-chat-provenance.md): the
+  sticky whole-thread exclusion, its producers and coverage limits, the bounded
+  unread Chat collection that consumes it, and the old-writer activation gate.
 - [Marketing privacy rollback](./marketing-privacy-choices.md): withdrawn runtime
   behavior, storage retirement, and rollout boundaries.
 - [Google Cloud LLM voice routing](./google-llm-voice.md): shared Vercel workload
@@ -71,6 +98,9 @@ surface; the index does not replace their detailed rules.
   commits.
 - [Chat cards](./chat-cards.md): recognizing links in chat messages, creating
   thread-scoped card signals, and rendering rich interactive cards.
+- [Incomplete chat context](./chat-incomplete-context.md): stable retained-round
+  ordering, delayed events, visibility, and the newest-20 boundary.
+- [Durable Pi Sandbox consumer](./pi-deferred-sandbox-consumer.md): captured objects, demand admission, continuation readers and release proof.
 - [Pi native provider preparation](./pi-native-provider-preparation.md): additive
   native readers, transport/auth ownership, accounting and activation gates.
 - [Pi candidate reference accounting](./database/pi-memory-candidate-accounting.md):
@@ -89,6 +119,12 @@ surface; the index does not replace their detailed rules.
   control/runtime reclaim protection, and tool OOM trade-offs.
 - [Workspace history restore telemetry](./workspace-history-restore-telemetry.md):
   local source and restored payload sizes, representation and timing semantics.
+- [Host archive phase diagnostics](./host-archive-phase-diagnostics.md): bounded
+  early download, apply-gate and publication timing with cancellation semantics.
+- [Guest archive connection observation](./guest-archive-connection-observation.md):
+  resolver and combined setup timing, observed transport reuse and attribution limits.
+- [Guest file compression](./guest-file-compression.md): caller-owned history
+  selection, bounded streaming, failure semantics and bundled compatibility.
 - [Runner multi-architecture rollout](./runner-multi-architecture.md): build,
   deploy, and validate runner artifacts for supported host architectures.
 - [Testing catalog](./testing/anti-patterns.md): detailed testing anti-patterns.

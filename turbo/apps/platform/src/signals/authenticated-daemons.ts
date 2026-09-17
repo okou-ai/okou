@@ -1,3 +1,4 @@
+import { setupGetStartedRewards$ } from "./okou-page/get-started.ts";
 import { command } from "ccstate";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { clerk$, clerkUser$, setupClerk$ } from "./auth.ts";
@@ -36,6 +37,7 @@ const runAppRealtimeDaemons$ = command(
     if (!bridge) {
       return;
     }
+    set(setupGetStartedRewards$, signal);
     set(subscribePermissionUpdate$, signal);
     set(setupBillingRealtime$, signal);
     set(setupUserPreferenceRealtime$, signal);

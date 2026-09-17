@@ -6,15 +6,33 @@ import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor } from "@testing-library/react";
 import { HttpResponse } from "msw";
-import { expect, test, vi } from "vitest";
+import { beforeEach, expect, test, vi } from "vitest";
+import { mockedClerk } from "../../../__tests__/mock-auth.ts";
 import {
   click,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  testContext,
+  warmMermaidParser,
+} from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
+beforeEach(() => {
+  context.mocks.api(artifactSharesContract.status, ({ respond }) => {
+    return respond(404, {
+      error: { code: "NOT_FOUND", message: "Artifact not found" },
+    });
+  });
+  context.mocks.api(artifactReferencesContract.publicUrl, ({ respond }) => {
+    return respond(404, {
+      error: { code: "NOT_FOUND", message: "Artifact unavailable" },
+    });
+  });
+});
+
+warmMermaidParser();
 const artifactId = "00000000-0000-4000-8000-000000000010";
 const imagePath = artifactReferencePath(artifactId, "launch.png");
 const imageUrl = "https://artifacts.example.com/launch.png?signature=private";
@@ -45,23 +63,18 @@ async function openViewer({
   url?: string;
   colorThemes?: boolean;
 } = {}) {
-  const resolutions: string[] = [];
-  context.mocks.api(
-    artifactReferencesContract.resolve,
-    ({ params, respond }) => {
-      resolutions.push(params.reference);
-      return respond(200, {
-        url,
-        expiresAt: "2099-01-01T00:00:00Z",
-        filename,
-        contentType,
-        target: {
-          kind: contentType === "text/html" ? "html" : "file",
-          id: artifactId,
-        },
-      });
-    },
-  );
+  context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
+    return respond(200, {
+      url,
+      expiresAt: "2099-01-01T00:00:00Z",
+      filename,
+      contentType,
+      target: {
+        kind: contentType === "text/html" ? "html" : "file",
+        id: artifactId,
+      },
+    });
+  });
   await setupPage({
     context,
     path,
@@ -71,7 +84,6 @@ async function openViewer({
       [FeatureSwitchKey.GradientColorThemes]: colorThemes,
     },
   });
-  return resolutions;
 }
 
 test("an image link stays in the app and reuses the lightbox preview and zoom controls", async () => {
@@ -167,21 +179,18 @@ test("the standalone viewer restores the selected app color theme", async () => 
 });
 
 test.each([
-  [
-    `/share/artifacts/${artifactId}?source=shared#detail`,
-    artifactId.replaceAll("-", ""),
-  ],
-  ["/artifacts/a1b2c3d4e5.png#detail", "a1b2c3d4e5.png"],
+  `/share/artifacts/${artifactId}?source=shared#detail`,
+  "/artifacts/a1b2c3d4e5.png#detail",
 ])(
   "downloads resolve references and save the original filename and bytes: %s",
-  async (path, reference) => {
+  async (path) => {
     const browser = context.mocks.browser.blobDownload();
     context.mocks.http.get("https://artifacts.example.com/launch.png", () => {
       return HttpResponse.text("original image bytes", {
         headers: { "Content-Type": "image/png" },
       });
     });
-    const resolutions = await openViewer({
+    await openViewer({
       path,
     });
     click(action("button", "Download options"));
@@ -198,7 +207,6 @@ test.each([
     await expect(browser.downloads[0]?.blob?.text()).resolves.toBe(
       "original image bytes",
     );
-    expect(resolutions).toStrictEqual([reference, reference]);
   },
 );
 
@@ -251,9 +259,16 @@ test("PDF page fragments survive embedding in the viewer", async () => {
   );
 });
 
-test.each([400, 403, 404] as const)(
-  "unavailable links retain the branded shell without content or actions: %s",
-  async (status) => {
+test.each([
+  [400, true],
+  [403, true],
+  [404, true],
+  [404, false],
+] as const)(
+  "unavailable links offer recovery without disclosing content: status %s, viewer %s",
+  async (status, privateArtifacts) => {
+    context.mocks.browser.matchMedia(true);
+    context.mocks.data.userPreferences({ colorTheme: "blue-horizon" });
     context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
       return respond(status, {
         error: { code: "NOT_FOUND", message: "Artifact unavailable" },
@@ -263,13 +278,21 @@ test.each([400, 403, 404] as const)(
       context,
       path: imagePath,
       host: "app.okou.ai",
-      featureSwitches: { [FeatureSwitchKey.PrivateArtifacts]: true },
+      auth: {
+        user: {
+          id: "recipient",
+          fullName: "Alex Rivera",
+          email: "alex@example.test",
+        },
+      },
+      featureSwitches: {
+        [FeatureSwitchKey.PrivateArtifacts]: privateArtifacts,
+        [FeatureSwitchKey.GradientColorThemes]: true,
+      },
     });
 
     expect(
-      screen.getByText(
-        "This artifact is unavailable or you do not have access.",
-      ),
+      screen.getByRole("heading", { name: "You can’t view this artifact" }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("heading", { name: "Artifacts" }),
@@ -278,6 +301,105 @@ test.each([400, 403, 404] as const)(
       screen.queryByTestId("attachment-lightbox-image"),
     ).not.toBeInTheDocument();
     expect(screen.getByRole("main").querySelector("iframe")).toBeNull();
-    expect(queryAllByRoleFast("button")).toHaveLength(0);
+    expect(document.title).toBe("Artifacts | Okou");
+    expect(screen.queryByText("launch.png")).not.toBeInTheDocument();
+    expect(action("button", "Switch account")).toBeEnabled();
+    expect(action("button", "Try again")).toBeEnabled();
+    expect(action("link", "Back to Okou")).toHaveAttribute("href", "/");
+    expect(queryAllByRoleFast("button")).toHaveLength(2);
+    await expect(
+      screen.findByText("Signed in as alex@example.test"),
+    ).resolves.toBeInTheDocument();
+    await waitFor(() => {
+      expect(document.documentElement).toHaveAttribute("data-theme", "dark");
+      expect(document.documentElement).toHaveAttribute(
+        "data-color-theme",
+        "blue-horizon",
+      );
+      expect(document.documentElement).toHaveAttribute(
+        "data-gradient-color-themes",
+      );
+    });
   },
 );
+
+async function openUnavailableArtifact(path = imagePath) {
+  context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
+    return respond(404, {
+      error: { code: "NOT_FOUND", message: "Artifact unavailable" },
+    });
+  });
+  await setupPage({ context, path, host: "app.okou.ai" });
+  expect(
+    screen.getByRole("heading", { name: "You can’t view this artifact" }),
+  ).toBeInTheDocument();
+}
+
+test("switching accounts keeps the artifact URL and leaves the current session signed in", async () => {
+  await openUnavailableArtifact(`${imagePath}?source=shared#detail`);
+  click(action("button", "Switch account"));
+  await waitFor(() => {
+    expect(mockedClerk.openSignIn).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        fallbackRedirectUrl: `https://app.okou.ai${imagePath}?source=shared#detail`,
+        forceRedirectUrl: `https://app.okou.ai${imagePath}?source=shared#detail`,
+      }),
+    );
+  });
+  expect(mockedClerk.signOut).not.toHaveBeenCalled();
+});
+
+test("a failed account switch can be retried", async () => {
+  mockedClerk.openSignIn.mockRejectedValueOnce(
+    new Error("Account switch unavailable"),
+  );
+  await openUnavailableArtifact();
+  click(action("button", "Switch account"));
+  await expect(
+    screen.findByText("Could not open the account switcher. Please try again."),
+  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(action("button", "Switch account")).toBeEnabled();
+  });
+  click(action("button", "Switch account"));
+  await waitFor(() => {
+    expect(mockedClerk.openSignIn).toHaveBeenCalledTimes(2);
+  });
+});
+
+test("retry reloads the current artifact without dropping its query or fragment", async () => {
+  const reload = vi
+    .spyOn(window.location, "reload")
+    .mockImplementation(() => {});
+  await openUnavailableArtifact(`${imagePath}?source=shared#detail`);
+  click(action("button", "Try again"));
+  expect(reload).toHaveBeenCalledExactlyOnceWith();
+  expect(window.location.href).toBe(
+    `https://app.okou.ai${imagePath}?source=shared#detail`,
+  );
+});
+
+test("A shared Markdown artifact displays its diagram", async () => {
+  const browser = context.mocks.browser.blobDownload();
+  const url = "https://artifacts.example.com/plan.md";
+  context.mocks.http.get(url, () => {
+    return HttpResponse.text(
+      "# Shared plan\n\n```mermaid\nflowchart LR\n  Shared --> Preview\n```",
+    );
+  });
+  await openViewer({
+    path: artifactReferencePath(artifactId, "plan.md"),
+    filename: "plan.md",
+    contentType: "text/markdown",
+    url,
+  });
+
+  await expect(screen.findByText("Shared plan")).resolves.toBeInTheDocument();
+  const image = await screen.findByRole("img", { name: "Diagram" });
+  const imageUrl = image.getAttribute("src");
+  if (!imageUrl) {
+    throw new Error("Expected the shared diagram image URL");
+  }
+  expect(browser.blobForUrl(imageUrl)?.type).toBe("image/svg+xml");
+  expect(action("button", "Expand diagram")).toBeEnabled();
+});

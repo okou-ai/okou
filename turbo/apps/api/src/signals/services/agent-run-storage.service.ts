@@ -3318,3 +3318,37 @@ export function materializeAgentRunStorage(
     });
   });
 }
+
+/** Resume a durable exact mount selection without resolving today's HEADs or
+ * interpreting read-only Run mounts as session writeback state. */
+export function resolveCapturedAgentRunStorage(args: {
+  readonly db: Db;
+  readonly mounts: readonly PersistedStorageMount[];
+  readonly timing?: ApiDispatchTimingCollector;
+  readonly stats?: StorageManifestBuildStats;
+}): Computed<Promise<ResolvedAgentRunStorage>> {
+  return computed(async (get) => {
+    if (
+      args.mounts.some((mount) => {
+        return (
+          mount.version === undefined || !/^[0-9a-f]{64}$/u.test(mount.version)
+        );
+      })
+    ) {
+      throw new Error("Captured Pi storage must pin every version");
+    }
+    const requested = await get(
+      resolveEntriesFromPersistedStorageMounts({
+        ...args,
+        bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
+      }),
+    );
+    return {
+      requested,
+      sessionWriteback: undefined,
+      metadata: await finalizePreparedStorage({
+        entries: storageEntriesMetadata(requested),
+      }),
+    };
+  });
+}

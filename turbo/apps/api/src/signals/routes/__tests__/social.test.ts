@@ -1,5 +1,4 @@
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { artifactReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { webFileUrlRoutes } from "../web-file-url";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
@@ -14,7 +13,7 @@ import {
   UploadPartCommand,
 } from "@aws-sdk/client-s3";
 import { HttpResponse, http } from "msw";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it, onTestFinished, beforeEach } from "vitest";
 
 import {
   findManagedSocialKitTool,
@@ -2185,6 +2184,146 @@ describe("managed SocialKit route", () => {
 
   it.each([
     {
+      path: "/linkedin/profile",
+      url: "https://www.linkedin.com/in/example/",
+      providerStatus: 503,
+      status: 502,
+      code: "SOCIALKIT_UPSTREAM_ERROR",
+      reason: "upstream_failure",
+      retryable: true,
+    },
+    {
+      path: "/twitter/tweets",
+      url: "https://x.com/example",
+      providerStatus: 503,
+      status: 502,
+      code: "SOCIALKIT_UPSTREAM_ERROR",
+      reason: "upstream_failure",
+      retryable: true,
+    },
+    {
+      path: "/facebook/channel-stats",
+      url: "https://www.facebook.com/example/",
+      providerStatus: 503,
+      status: 502,
+      code: "SOCIALKIT_UPSTREAM_ERROR",
+      reason: "upstream_failure",
+      retryable: true,
+    },
+    {
+      path: "/twitter/profile",
+      url: "https://x.com/example",
+      providerStatus: 503,
+      status: 502,
+      code: "SOCIALKIT_UPSTREAM_ERROR",
+      reason: "upstream_failure",
+      retryable: true,
+    },
+    {
+      path: "/tiktok/comments",
+      url: "https://www.tiktok.com/@example/video/123",
+      providerStatus: 404,
+      status: 404,
+      code: "SOCIALKIT_CONTENT_UNAVAILABLE",
+      reason: "content_unavailable",
+      retryable: false,
+    },
+    {
+      path: "/tiktok/transcript",
+      url: "https://www.tiktok.com/@example/video/123",
+      providerStatus: 404,
+      status: 404,
+      code: "SOCIALKIT_TRANSCRIPT_AVAILABILITY_UNKNOWN",
+      reason: "availability_unknown",
+      retryable: false,
+    },
+  ])(
+    "preserves non-input provider failures for $path / $providerStatus without billing",
+    async (testCase) => {
+      const actor = createBddApi(context).user();
+      configureProvider();
+      const pricing = await setupConfiguredPricing();
+      await fundActor(actor);
+      const beforeCredits = await credits(actor);
+      let providerRequests = 0;
+      server.use(
+        providerHandler("GET", testCase.path, () => {
+          providerRequests += 1;
+          return HttpResponse.json(
+            {
+              message: `Provider failed for ${testCase.url} with test-socialkit-key`,
+            },
+            { status: testCase.providerStatus },
+          );
+        }),
+      );
+
+      const response = await accept(
+        client(pricing.resolution)(socialContract).request({
+          headers: authenticate(actor),
+          body: requestForPath(testCase.path, { url: testCase.url }),
+        }),
+        [404, 502],
+      );
+
+      expect(response.status).toBe(testCase.status);
+      expect(response.body).toMatchObject({
+        error: {
+          code: testCase.code,
+          reason: testCase.reason,
+          retryable: testCase.retryable,
+        },
+      });
+      expect(JSON.stringify(response.body)).not.toContain(testCase.url);
+      expect(JSON.stringify(response.body)).not.toContain("test-socialkit-key");
+      expect(providerRequests).toBe(1);
+      await expect(credits(actor)).resolves.toBe(beforeCredits);
+    },
+  );
+
+  it.each([
+    {
+      providerStatus: 400,
+      errorCode: undefined,
+      retryable: undefined,
+      reason: "invalid_input",
+      status: 400,
+      expectedRetryable: false,
+    },
+    {
+      providerStatus: 400,
+      errorCode: "future_code",
+      retryable: undefined,
+      reason: "invalid_input",
+      status: 400,
+      expectedRetryable: false,
+    },
+    {
+      providerStatus: 400,
+      errorCode: "content_unavailable",
+      retryable: false,
+      reason: "content_unavailable",
+      status: 404,
+      expectedRetryable: false,
+    },
+    {
+      providerStatus: 400,
+      errorCode: "upstream_timeout",
+      retryable: true,
+      reason: "upstream_failure",
+      status: 502,
+      expectedRetryable: true,
+    },
+    {
+      providerStatus: 400,
+      errorCode: "content_unavailable",
+      code: "insufficient_credits",
+      retryable: false,
+      reason: "provider_quota_exhausted",
+      status: 503,
+      expectedRetryable: false,
+    },
+    {
       providerStatus: 422,
       errorCode: "content_restricted",
       retryable: false,
@@ -2966,8 +3105,8 @@ describe("managed SocialKit route", () => {
         },
       });
       if (privateFiles) {
-        expect(completed.body.artifact?.url).toBe(
-          artifactReferencePath(created.body.downloadId, "Public _ 视频.mp4"),
+        expect(completed.body.artifact?.url).toMatch(
+          /^\/artifacts\/[a-z0-9]{10}\.mp4$/u,
         );
         context.mocks.s3.send.mockImplementation((command) => {
           expect(command).toBeInstanceOf(HeadObjectCommand);
@@ -3669,36 +3808,54 @@ describe("managed SocialKit route", () => {
     });
   });
 
-  it.each([
+  describe.each([
     { format: "mp4", contentType: "video/mp4" },
     { format: "m4a", contentType: "audio/mp4" },
     { format: "mp3", contentType: "audio/mpeg" },
   ] as const)(
     "keeps requested $format hints and unknown delivery for an unrecognized container",
-    async ({ format, contentType }) => {
-      const actor = createBddApi(context).user();
-      configureProvider();
-      const pricing = await setupConfiguredPricing();
-      await fundActor(actor);
-      const payload = new Uint8Array([
-        0x1a, 0x45, 0xdf, 0xa3, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00,
-      ]);
-
-      const body = await completeDownloadWithPayload(actor, pricing, payload, {
-        format,
-        creditsCost: 2,
+    ({ format, contentType }) => {
+      async function prepareScenario() {
+        const actor = createBddApi(context).user();
+        configureProvider();
+        const pricing = await setupConfiguredPricing();
+        await fundActor(actor);
+        const payload = new Uint8Array([
+          0x1a, 0x45, 0xdf, 0xa3, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+          0x00, 0x00, 0x00,
+        ]);
+        return { actor, pricing, payload };
+      }
+      let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
+      beforeEach(async () => {
+        preparedScenario = await prepareScenario();
       });
+      it("preserves the complete scenario", async () => {
+        const { actor, pricing, payload } = preparedScenario;
 
-      expect(body).toMatchObject({
-        status: "completed",
-        delivered: { quality: format === "mp4" ? "720p" : null, format: null },
-        artifact: {
-          filename: `Public clip.${format}`,
-          contentType,
-          sizeBytes: payload.byteLength,
-          format: null,
-        },
+        const body = await completeDownloadWithPayload(
+          actor,
+          pricing,
+          payload,
+          {
+            format,
+            creditsCost: 2,
+          },
+        );
+
+        expect(body).toMatchObject({
+          status: "completed",
+          delivered: {
+            quality: format === "mp4" ? "720p" : null,
+            format: null,
+          },
+          artifact: {
+            filename: `Public clip.${format}`,
+            contentType,
+            sizeBytes: payload.byteLength,
+            format: null,
+          },
+        });
       });
     },
   );

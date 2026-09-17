@@ -35,6 +35,7 @@ pub(in crate::exec_operation) enum ExecTerminalLogReason {
     ExpectedTimeout,
     Notable,
     OomEvidence,
+    ContainedToolOom,
     Slow,
 }
 
@@ -45,6 +46,7 @@ impl ExecTerminalLogReason {
             ExecTerminalLogReason::ExpectedTimeout => "expected_timeout",
             ExecTerminalLogReason::Notable => "notable",
             ExecTerminalLogReason::OomEvidence => "oom_evidence",
+            ExecTerminalLogReason::ContainedToolOom => "contained_tool_oom",
             ExecTerminalLogReason::Slow => "slow",
         }
     }
@@ -57,7 +59,8 @@ pub(in crate::exec_operation) struct ExecTerminalLogDecision {
 }
 
 #[derive(Clone, Copy)]
-pub(in crate::exec_operation) struct ExecTerminalLogContext {
+pub(in crate::exec_operation) struct ExecTerminalLogContext<'a> {
+    pub(in crate::exec_operation) label: &'a str,
     pub(in crate::exec_operation) lifecycle: ExecTerminalLogLifecycle,
     pub(in crate::exec_operation) timeout_is_expected: bool,
     pub(in crate::exec_operation) slow: bool,
@@ -72,6 +75,7 @@ pub(in crate::exec_operation) struct ExecTerminalLogContext {
     /// The transported evidence proves an OOM decision rather than recording an
     /// inspected-and-empty capture candidate.
     pub(in crate::exec_operation) evidence_has_proof: bool,
+    pub(in crate::exec_operation) contained_tool_oom: bool,
     /// A line claimed the evidence prefix but broke its bounds or encoding.
     pub(in crate::exec_operation) evidence_malformed: bool,
     pub(in crate::exec_operation) host_cancel_requested: bool,
@@ -201,6 +205,23 @@ impl ExecOperationDiagnostic {
         let evidence_has_proof = split.has_proof();
         let evidence_malformed = split.malformed_lines > 0;
         let oom_evidence = split.evidence.is_some();
+        let contained_tool_oom = self.process_class == ExecProcessRole::Agent.process_class()
+            && lifecycle == ExecTerminalLogLifecycle::Supervised
+            && split.evidence.as_ref().is_some_and(|evidence| {
+                evidence.operation_sequence() == Some(self.seq)
+                    && evidence.proves_contained_tool_oom()
+            });
+        let oom_classification = if contained_tool_oom {
+            "contained_tool_oom"
+        } else {
+            "unproven_containment"
+        };
+        // Parse identity before logging so malformed payload text never becomes
+        // an unbounded log field. The owning Runner supplies run_id separately.
+        let operation_id = split
+            .evidence
+            .as_ref()
+            .and_then(|evidence| uuid::Uuid::parse_str(&evidence.operation_id).ok());
         let oom_incidents = split
             .evidence
             .as_ref()
@@ -217,6 +238,7 @@ impl ExecOperationDiagnostic {
             .as_ref()
             .map_or(0, |evidence| evidence.dropped_incidents);
         let Some(decision) = exec_terminal_log_decision(ExecTerminalLogContext {
+            label: &self.label_log,
             lifecycle,
             timeout_is_expected: self.timeout_is_expected,
             slow,
@@ -226,23 +248,24 @@ impl ExecOperationDiagnostic {
             stream_overflowed,
             actionable_diagnostic: diagnostic_present,
             evidence_has_proof,
+            contained_tool_oom,
             evidence_malformed,
             host_cancel_requested,
         }) else {
             return;
         };
-        let lifecycle = lifecycle.as_str();
         let terminal_reason = decision.reason.as_str();
 
         macro_rules! emit_terminal_result_log {
-            ($level:expr) => {
+            ($level:expr $(, $field:ident = $value:expr)*) => {
                 tracing::event!(
                     $level,
+                    $($field = $value,)*
                     seq = self.seq,
                     label = %self.label_log,
                     elapsed_ms,
                     slow,
-                    lifecycle,
+                    lifecycle = lifecycle.as_str(),
                     terminal_reason,
                     guest_duration_ms = result.duration_ms,
                     termination = ?result.termination,
@@ -251,6 +274,8 @@ impl ExecOperationDiagnostic {
                     stderr_truncated,
                     diagnostic_present,
                     oom_evidence,
+                    operation_id = ?operation_id,
+                    oom_classification,
                     oom_evidence_proof = evidence_has_proof,
                     oom_evidence_malformed = evidence_malformed,
                     oom_incidents,
@@ -265,6 +290,14 @@ impl ExecOperationDiagnostic {
         }
 
         match decision.severity {
+            ExecTerminalLogSeverity::Info
+                if decision.reason == ExecTerminalLogReason::Slow
+                    && lifecycle == ExecTerminalLogLifecycle::OneShot =>
+            {
+                // Preserve this bounded latency observation in Axiom without
+                // admitting unrelated informational terminal events.
+                emit_terminal_result_log!(tracing::Level::INFO, storage_download_latency = true)
+            }
             ExecTerminalLogSeverity::Info => emit_terminal_result_log!(tracing::Level::INFO),
             ExecTerminalLogSeverity::Warn => emit_terminal_result_log!(tracing::Level::WARN),
         }
@@ -296,7 +329,7 @@ pub(in crate::exec_operation) fn exec_termination_requires_low_level_warning(
 }
 
 pub(in crate::exec_operation) fn exec_terminal_cancel_is_expected(
-    context: ExecTerminalLogContext,
+    context: ExecTerminalLogContext<'_>,
 ) -> bool {
     matches!(context.termination, ExecTermination::Cancelled)
         && context.host_cancel_requested
@@ -305,6 +338,7 @@ pub(in crate::exec_operation) fn exec_terminal_cancel_is_expected(
         && !context.stream_overflowed
         && !context.actionable_diagnostic
         && !context.evidence_malformed
+        && !context.evidence_has_proof
 }
 
 pub(in crate::exec_operation) fn exec_terminal_log_lifecycle(
@@ -320,13 +354,13 @@ pub(in crate::exec_operation) fn exec_terminal_log_lifecycle(
 
 #[cfg(test)]
 pub(in crate::exec_operation) fn exec_terminal_log_severity(
-    context: ExecTerminalLogContext,
+    context: ExecTerminalLogContext<'_>,
 ) -> Option<ExecTerminalLogSeverity> {
     exec_terminal_log_decision(context).map(|decision| decision.severity)
 }
 
 pub(in crate::exec_operation) fn exec_terminal_log_decision(
-    context: ExecTerminalLogContext,
+    context: ExecTerminalLogContext<'_>,
 ) -> Option<ExecTerminalLogDecision> {
     if exec_terminal_cancel_is_expected(context) {
         return Some(ExecTerminalLogDecision {
@@ -342,6 +376,7 @@ pub(in crate::exec_operation) fn exec_terminal_log_decision(
         && !context.stream_overflowed
         && !context.actionable_diagnostic
         && !context.evidence_malformed
+        && !context.evidence_has_proof
     {
         return Some(ExecTerminalLogDecision {
             severity: ExecTerminalLogSeverity::Info,
@@ -361,19 +396,41 @@ pub(in crate::exec_operation) fn exec_terminal_log_decision(
             reason: ExecTerminalLogReason::Notable,
         });
     }
-    // Proven guest memory pressure stays visible even when the operation itself
-    // reached an ordinary terminal status. A capture candidate proves nothing
-    // and is classified exactly like an operation that carried no metadata.
     if context.evidence_has_proof {
+        // A clean process exit permits this informational observation; it does
+        // not assert run success. Guest Agent/Runner retain semantic failures.
+        let contained = context.contained_tool_oom
+            && matches!(
+                context.termination,
+                ExecTermination::Exited { exit_code: 0 }
+            );
         return Some(ExecTerminalLogDecision {
-            severity: ExecTerminalLogSeverity::Warn,
-            reason: ExecTerminalLogReason::OomEvidence,
+            severity: if contained {
+                ExecTerminalLogSeverity::Info
+            } else {
+                ExecTerminalLogSeverity::Warn
+            },
+            reason: if contained {
+                ExecTerminalLogReason::ContainedToolOom
+            } else {
+                ExecTerminalLogReason::OomEvidence
+            },
         });
     }
     if !context.slow {
         return None;
     }
     let severity = match context.lifecycle {
+        ExecTerminalLogLifecycle::OneShot
+            if context.label == "storage-download"
+                && matches!(
+                    context.termination,
+                    ExecTermination::Exited { exit_code: 0 }
+                )
+                && !context.host_cancel_requested =>
+        {
+            ExecTerminalLogSeverity::Info
+        }
         ExecTerminalLogLifecycle::OneShot => ExecTerminalLogSeverity::Warn,
         ExecTerminalLogLifecycle::Supervised => ExecTerminalLogSeverity::Info,
     };

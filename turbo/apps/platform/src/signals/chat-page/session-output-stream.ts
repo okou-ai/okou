@@ -22,7 +22,7 @@ function createActiveRunId$(
   chatEvents$: Computed<ChatEvent[]>,
 ): Computed<string | null> {
   return computed((get) => {
-    if (!get(featureSwitchState$)[FeatureSwitchKey.SessionOutputStreaming]) {
+    if (!get(featureSwitchState$)[FeatureSwitchKey.PiLoop]) {
       return null;
     }
     const events = get(chatEvents$);

@@ -1,3 +1,4 @@
+import { mockClerkUsers } from "./helpers/clerk-users";
 import { randomUUID } from "node:crypto";
 
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
@@ -68,9 +69,7 @@ async function emailOrg(): Promise<EmailOrgFixture> {
   await runs.ensureOrgModelProvider(actor);
   await runs.heartbeatRunner(runnerGroup);
 
-  context.mocks.clerk.users.getUserList.mockResolvedValue({
-    data: [clerkUserListEntry(actor.userId, actor.email)],
-  });
+  mockClerkUsers(context, [clerkUserListEntry(actor.userId, actor.email)]);
   context.mocks.clerk.organizations.getOrganization.mockResolvedValue({
     id: orgId,
     slug: orgSlug,
@@ -109,7 +108,7 @@ beforeEach(() => {
 });
 
 describe("low-credit email delivery", () => {
-  it("uses the configured sender domain for low-credit alerts", async () => {
+  it("sends branded low-credit alerts with billing and unsubscribe links", async () => {
     const actor = bdd.user();
     const billing = createBillingMediaApi(context);
     bdd.acceptAgentStorageWrites();
@@ -216,7 +215,28 @@ describe("low-credit email delivery", () => {
           "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
         },
       }),
+      { idempotencyKey: `okou-email-outbox/v1/${item.id}` },
     );
+    const sent = resendMocks.send.mock.calls[0]?.[0];
+    for (const content of [
+      "Your credit balance is running low",
+      "4,999 credits",
+      "5,000 credits or less",
+      "Manage billing",
+      "The Okou Team",
+      "https://app.okou.ai/email/unsubscribe?token=",
+    ]) {
+      expect(sent).toMatchObject({
+        html: expect.stringContaining(content),
+        text: expect.stringContaining(content),
+      });
+    }
+    expect(sent).toMatchObject({
+      html: expect.stringContaining('alt="Okou"'),
+      text: expect.stringContaining(
+        "https://app.okou.ai/?settings=billing&billingView=credits",
+      ),
+    });
   });
 });
 
@@ -274,6 +294,7 @@ describe("POST /api/email/inbound", () => {
     expect(resendMocks.send).toHaveBeenCalledTimes(1);
     expect(resendMocks.send).toHaveBeenCalledWith(
       expect.objectContaining({ to: controlActor.email }),
+      { idempotencyKey: `okou-email-outbox/v1/${item.id}` },
     );
     const sent = resendMocks.send.mock.calls[0]?.[0];
     if (!sent) {
@@ -323,9 +344,9 @@ describe("POST /api/email/inbound", () => {
 
   it("keeps complained recipients out of transactional sends", async () => {
     const complainedActor = bdd.user();
-    context.mocks.clerk.users.getUserList.mockResolvedValue({
-      data: [clerkUserListEntry(complainedActor.userId, complainedActor.email)],
-    });
+    mockClerkUsers(context, [
+      clerkUserListEntry(complainedActor.userId, complainedActor.email),
+    ]);
 
     await postInbound({
       type: "email.complained",

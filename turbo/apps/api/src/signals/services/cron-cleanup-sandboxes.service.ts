@@ -1,4 +1,10 @@
 import {
+  hasDurablePiApiRecoveryOwner,
+  recoverDurablePiApiInference$,
+} from "./pi-api-inference-recovery.service";
+import { recoverDeferredPiRuns$ } from "./pi-deferred-sandbox.service";
+import { reclaimPiInferenceObjects } from "./pi-inference-object.service";
+import {
   isPiInferenceRun,
   readPiInferenceLifecycle,
   piInferenceDeadline,
@@ -35,6 +41,7 @@ import { writeDb$, type Db } from "../external/db";
 import {
   publishCancelToRunnerGroup,
   publishChatThreadMessageCreatedSafely,
+  publishRunQueueChangedForOrgSafely,
   publishThreadListChanged,
 } from "../external/realtime";
 import { deleteS3Objects } from "../external/s3";
@@ -386,6 +393,9 @@ async function commitStaleRunTimeout(
           lockedRun.launchSnapshot,
         );
         if (lifecycle) {
+          if (hasDurablePiApiRecoveryOwner(lifecycle.inference)) {
+            return { kind: "skipped" };
+          }
           const deadlineExpired =
             piInferenceDeadline(lifecycle).getTime() <= now();
           const heartbeatExpired =
@@ -411,6 +421,7 @@ async function commitStaleRunTimeout(
         const [updatedRun] = await transitionAgentRunsToTerminal(tx, {
           values: {
             status: "timeout",
+            runnerCancellationMode: "hard",
             completedAt: nowDate(),
             error: timeoutReason,
           },
@@ -477,6 +488,9 @@ const cleanupSingleRun$ = command(
       L.debug("Run already transitioned, skipping timeout", { runId: run.id });
       return undefined;
     }
+
+    await publishRunQueueChangedForOrgSafely(committed.orgId);
+    signal.throwIfAborted();
 
     if (committed.previousStatus === "running" && committed.runnerGroup) {
       const cancellation = await settleIncludingAbort(
@@ -779,6 +793,24 @@ const cleanupFixtureMaintenance$ = command(
   },
 );
 
+const recoverPiExecutionOwners$ = command(
+  async (
+    { set },
+    db: Db,
+    runIds: readonly string[] | null,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    await set(recoverDurablePiApiInference$, runIds, signal);
+    signal.throwIfAborted();
+    await set(recoverDeferredPiRuns$, runIds, signal);
+    signal.throwIfAborted();
+    if (runIds === null) {
+      await reclaimPiInferenceObjects(db);
+      signal.throwIfAborted();
+    }
+  },
+);
+
 export const cleanupSandboxes$ = command(
   async (
     { set },
@@ -787,6 +819,8 @@ export const cleanupSandboxes$ = command(
   ): Promise<CleanupSandboxesResult> => {
     const db = set(writeDb$);
     const runIds = scope.kind === "global" ? null : scope.runIds;
+    await set(recoverPiExecutionOwners$, db, runIds, signal);
+    signal.throwIfAborted();
     const orgIds = scope.kind === "global" ? null : scope.orgIds;
     const currentTime = now();
     const cutoffs = {

@@ -640,6 +640,7 @@ interface OrgMembersListArgs {
   readonly orgId: string;
   readonly userId: string;
   readonly callerRole: OrgRole;
+  readonly includeManagement: boolean;
 }
 
 interface ClerkUserProfile {
@@ -771,6 +772,7 @@ async function fetchUserProfileMap(
 async function fetchOrgMemberDirectory(
   client: ReturnType<typeof clerk$.read>,
   orgId: string,
+  includeInvitations: boolean,
   context: ClerkReadContext,
   signal: AbortSignal,
 ) {
@@ -791,12 +793,14 @@ async function fetchOrgMemberDirectory(
         context,
         readSignal,
       ),
-      listAllPendingOrganizationInvitations(
-        client.organizations,
-        orgId,
-        context,
-        readSignal,
-      ),
+      includeInvitations
+        ? listAllPendingOrganizationInvitations(
+            client.organizations,
+            orgId,
+            context,
+            readSignal,
+          )
+        : [],
     ]),
     () => {
       controller.abort();
@@ -854,7 +858,13 @@ export const orgMembersList$ = command(
     const readContext = createClerkReadContext(now);
 
     const { organization, memberships, invitations } =
-      await fetchOrgMemberDirectory(client, args.orgId, readContext, signal);
+      await fetchOrgMemberDirectory(
+        client,
+        args.orgId,
+        args.includeManagement && args.callerRole === "admin",
+        readContext,
+        signal,
+      );
     signal.throwIfAborted();
 
     const membersWithUserIds = memberships.map((membership) => {
@@ -890,6 +900,16 @@ export const orgMembersList$ = command(
           : "",
       };
     });
+
+    const memberResponse = {
+      name: organization.name,
+      role: args.callerRole,
+      members: memberList,
+      createdAt: new Date(organization.createdAt).toISOString(),
+    };
+    if (!args.includeManagement) {
+      return memberResponse;
+    }
 
     const pendingInvitationIds = invitations.map((invitation) => {
       return invitation.id;
@@ -954,12 +974,9 @@ export const orgMembersList$ = command(
         : [];
 
     return {
-      name: organization.name,
-      role: args.callerRole,
-      members: memberList,
+      ...memberResponse,
       pendingInvitations,
       membershipRequests,
-      createdAt: new Date(organization.createdAt).toISOString(),
     };
   },
 );

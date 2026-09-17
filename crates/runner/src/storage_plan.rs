@@ -63,7 +63,6 @@ pub(crate) struct StoragePlan {
     instruction_cleanups: Vec<InstructionCleanup>,
     reused_entries: usize,
     decoded_prepared: bool,
-    decoded_manifest_admitted: Option<bool>,
     decoded: Vec<(
         String,
         std::sync::Arc<crate::storage_cache::decoded::CachedFiles>,
@@ -79,6 +78,26 @@ struct StoragePlanEntry {
     vas_version_id: String,
     archive_size: Option<u64>,
     action: StorageAction,
+}
+
+impl StoragePlanEntry {
+    fn into_guest_entry(self) -> wire::StorageEntry {
+        let (archive_url, cached) = match self.action {
+            StorageAction::Download { source } | StorageAction::DownloadAndNormalize { source } => {
+                (Some(source.wire_url()), false)
+            }
+            StorageAction::ReuseExisting | StorageAction::NormalizeInPlace => (None, true),
+        };
+        wire::StorageEntry {
+            mount_path: self.mount_path,
+            extract_path: self.extract_path,
+            archive_url,
+            instructions_target_filename: self.instructions_target_filename,
+            cached,
+            vas_storage_name: Some(self.vas_storage_name),
+            vas_version_id: Some(self.vas_version_id),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -320,7 +339,6 @@ pub(crate) fn build_storage_plan(
         instruction_cleanups,
         reused_entries,
         decoded_prepared: false,
-        decoded_manifest_admitted: None,
         decoded: Vec::new(),
     })
 }
@@ -328,6 +346,10 @@ pub(crate) fn build_storage_plan(
 impl StoragePlan {
     pub(crate) fn decoded_prepared(&self) -> bool {
         self.decoded_prepared
+    }
+
+    pub(crate) fn decoded_mount_count(&self) -> usize {
+        self.decoded.len()
     }
 
     pub(crate) fn finish_decoded_preparation(&mut self) {
@@ -352,25 +374,24 @@ impl StoragePlan {
             })
     }
 
-    pub(crate) fn decoded_manifest_rejected(&self) -> bool {
-        self.decoded_manifest_admitted == Some(false)
-    }
-
-    /// Decide once, on a ready hit and before omitting any archive staging.
-    /// Misses never clone/serialize an otherwise unchanged manifest for this.
-    pub(crate) fn admit_decoded_manifest(&mut self) -> RunnerResult<bool> {
-        if let Some(admitted) = self.decoded_manifest_admitted {
-            return Ok(admitted);
+    /// A ready mount must fit one bounded request before its archive is omitted.
+    /// The executor batches larger combined manifests after source resolution.
+    pub(crate) fn decoded_entry_fits(&self, handle: ArchiveHandle) -> RunnerResult<bool> {
+        if !matches!(handle.kind, ArchiveKind::Storage) {
+            return Ok(false);
         }
-        let bytes = serde_json::to_vec(&self.clone().into_guest_manifest())
+        let Some(entry) = self.storages.get(handle.index) else {
+            return Ok(false);
+        };
+        let manifest = wire::Manifest {
+            storages: vec![entry.clone().into_guest_entry()],
+            artifacts: Vec::new(),
+            cleanup_paths: Vec::new(),
+            instruction_cleanups: Vec::new(),
+        };
+        let bytes = serde_json::to_vec(&manifest)
             .map_err(|error| RunnerError::Internal(format!("manifest JSON: {error}")))?;
-        // Reserve for every remaining URL becoming a bounded staged URL.
-        let admitted = bytes
-            .len()
-            .saturating_add(self.entry_count().saturating_mul(192))
-            <= guest_contracts::storage_files::MAX_MANIFEST_BYTES;
-        self.decoded_manifest_admitted = Some(admitted);
-        Ok(admitted)
+        Ok(bytes.len() <= guest_contracts::storage_files::MAX_MANIFEST_BYTES)
     }
 
     pub(crate) fn is_ordinary_storage_download(&self, handle: ArchiveHandle) -> bool {
@@ -599,26 +620,7 @@ impl StoragePlan {
             storages: self
                 .storages
                 .into_iter()
-                .map(|entry| {
-                    let (archive_url, cached) = match entry.action {
-                        StorageAction::Download { source }
-                        | StorageAction::DownloadAndNormalize { source } => {
-                            (Some(source.wire_url()), false)
-                        }
-                        StorageAction::ReuseExisting | StorageAction::NormalizeInPlace => {
-                            (None, true)
-                        }
-                    };
-                    wire::StorageEntry {
-                        mount_path: entry.mount_path,
-                        extract_path: entry.extract_path,
-                        archive_url,
-                        instructions_target_filename: entry.instructions_target_filename,
-                        cached,
-                        vas_storage_name: Some(entry.vas_storage_name),
-                        vas_version_id: Some(entry.vas_version_id),
-                    }
-                })
+                .map(StoragePlanEntry::into_guest_entry)
                 .collect(),
             artifacts: self
                 .artifacts

@@ -1,3 +1,14 @@
+import {
+  billingStatusContract,
+  billingUsagePackCreditsContract,
+} from "@okouai/api-contracts/contracts/billing";
+import { billingStatusRoutes } from "../billing-status";
+import { billingUsagePackCreditsRoutes } from "../billing-usage-pack-credits";
+import { setupApp } from "../../../__tests__/test-helpers";
+import {
+  readGetStartedStatus,
+  setGetStartedEnabled,
+} from "./helpers/get-started";
 import { randomBytes } from "node:crypto";
 
 import { createStore } from "ccstate";
@@ -5,7 +16,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
-import { testContext } from "../../../__tests__/test-context";
+import { accept, testContext } from "../../../__tests__/test-context";
 import { mockNow, now, withMockNowForTest } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { slackOauthRoutes } from "../slack-oauth";
@@ -801,6 +812,7 @@ describe("Slack OAuth API routes", () => {
           context.signal,
         ),
       );
+      await setGetStartedEnabled(context, fixture);
       await store.set(deleteSlackConnectOrg$, fixture, context.signal);
       await seedMembership(fixture.orgId, fixture.userId, "member");
       mockOAuthSuccess({ teamId: fixture.slackWorkspaceId });
@@ -817,6 +829,9 @@ describe("Slack OAuth API routes", () => {
       const location = response.headers.get("location");
       expect(location).toContain("/slack/failed");
       expect(decodeURIComponent(location ?? "")).toContain("Only org admins");
+      expect(
+        (await readGetStartedStatus(context, fixture)).recentGrants,
+      ).toStrictEqual([]);
     });
 
     it("returns a framework error when the platform installer is not an org member", async () => {
@@ -1055,6 +1070,7 @@ describe("Slack OAuth API routes", () => {
           context.signal,
         ),
       );
+      await setGetStartedEnabled(context, fixture);
       await store.set(deleteSlackConnectOrg$, fixture, context.signal);
       await seedMembership(fixture.orgId, fixture.userId, "admin");
       const state = await installStateFor({
@@ -1084,6 +1100,58 @@ describe("Slack OAuth API routes", () => {
         context.signal,
       );
       expect(count).toBe(1);
+      const rewards = await readGetStartedStatus(context, fixture);
+      expect(
+        rewards.quests.find((q) => {
+          return q.key === "slack";
+        }),
+      ).toMatchObject({
+        claimedCount: 1,
+        earnedCredits: 2000,
+        rewardTarget: "org",
+      });
+      expect(rewards.recentGrants).toHaveLength(1);
+      const grant = rewards.recentGrants[0];
+      expect(grant?.rewardTarget).toBe("org");
+      if (!grant?.expiresAt || !grant.grantedAt) {
+        throw new Error("Missing Slack reward expiry");
+      }
+      expect(Date.parse(grant.expiresAt) - Date.parse(grant.grantedAt)).toBe(
+        168 * 60 * 60 * 1000,
+      );
+
+      const headers = { authorization: "Bearer clerk-session" };
+      const billing = () => {
+        return accept(
+          setupApp({ context, routes: billingStatusRoutes })(
+            billingStatusContract,
+          ).get({ headers }),
+          [200],
+        );
+      };
+      expect((await billing()).body.creditGrants).toContainEqual(
+        expect.objectContaining({
+          source: "get_started_reward",
+          remaining: 2000,
+          expiresAt: grant.expiresAt,
+        }),
+      );
+      const personal = await accept(
+        setupApp({ context, routes: billingUsagePackCreditsRoutes })(
+          billingUsagePackCreditsContract,
+        ).get({ headers }),
+        [200],
+      );
+      expect(personal.body.bonusCredits).toBe(0);
+      mockNow(Date.parse(grant.expiresAt));
+      expect((await billing()).body.creditGrants).not.toContainEqual(
+        expect.objectContaining({ source: "get_started_reward" }),
+      );
+      expect(
+        (await readGetStartedStatus(context, fixture)).quests.find((q) => {
+          return q.key === "slack";
+        })?.claimedCount,
+      ).toBe(1);
     });
 
     it("sends the pending prompt DM for platform installs when state includes a prompt", async () => {

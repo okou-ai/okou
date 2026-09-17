@@ -126,26 +126,6 @@ test("runner entitlement requires settled Pro, BYOK and unrestricted models", as
   );
 });
 
-test("runner entitlement reads the retired alias from an API before the rename", async () => {
-  let state = {
-    tier: "pro",
-    onboardingPaymentPending: false,
-    supportByok: true,
-    restrictedVm0Models: true,
-  };
-  await withApi(
-    (request, response) => {
-      send(response, state);
-    },
-    async (apiUrl) => {
-      const options = { apiUrl, clerkSessionToken: "session-token" };
-      assert.equal(await readRunnerPaidEntitlement(options), false);
-      state = { ...state, restrictedVm0Models: false };
-      assert.equal(await readRunnerPaidEntitlement(options), true);
-    },
-  );
-});
-
 test("runner setup rejects unsuccessful completion and non-Stripe checkout destinations", async () => {
   await withApi(
     (request, response) => {

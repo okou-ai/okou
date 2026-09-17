@@ -116,30 +116,6 @@ jobs:
           branch-name: "pr-${{ github.event.pull_request.number }}"
           action: "cleanup"
 
-  cleanup-clerk-test-resources:
-    # Delete generation-scoped Clerk test users and organizations for this PR.
-    if: "github.event.action == 'closed' && !startsWith(github.head_ref || '', 'release-please--branches--')"
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.event.repository.default_branch }}
-          persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: 22
-      - name: Install pnpm
-        run: corepack enable pnpm
-      - name: Install E2E dependencies
-        run: cd e2e && pnpm install --frozen-lockfile
-      - name: Delete Clerk test resources for closed PR
-        run: cd e2e && pnpm exec tsx playwright/clerk-test-resources.ts cleanup-job-ref
-        env:
-          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
-          JOB_REF: pr-${{ github.event.pull_request.number }}
-
   cleanup-deployments:
     # Skip for release-please PRs (only version bumps and changelogs)
     if: "github.event.action == 'closed' && !startsWith(github.head_ref || '', 'release-please--branches--')"

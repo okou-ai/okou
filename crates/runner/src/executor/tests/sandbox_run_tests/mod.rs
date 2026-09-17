@@ -61,6 +61,7 @@ mod execution_diagnostics;
 mod fresh_sandbox;
 mod idle_pool;
 mod proxy_registry;
+mod registry_observation;
 mod reuse;
 mod ssh;
 mod workspace_cache;

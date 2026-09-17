@@ -92,7 +92,11 @@ export function embedImageLoadSignals(
 ): void {
   const visitNode = (node: Root | Element, insideLink: boolean): void => {
     for (const child of node.children) {
-      if (child.type !== "element" || child.data?.card) {
+      if (
+        child.type !== "element" ||
+        child.data?.card ||
+        child.data?.hostedSite
+      ) {
         continue;
       }
       const url = mediaImageUrl(child);

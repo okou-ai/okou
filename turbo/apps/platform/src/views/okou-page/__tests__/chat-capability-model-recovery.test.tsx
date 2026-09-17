@@ -65,6 +65,8 @@ test("Match model-provider recovery guidance to the failure", async () => {
   await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
 
   await readyChat();
+  click(await findButton("View details"));
+  await screen.findByRole("dialog", { name: "This run couldn't finish" });
   const configureProvider = await findButton(
     "Set one up in Workspace Settings",
   );
@@ -93,6 +95,8 @@ test("Start a compatible session after a model-provider mismatch", async () => {
       "This session was started with a different model provider and can't be continued with the current one.",
     ),
   ).resolves.toBeVisible();
+  click(await findButton("View details"));
+  await screen.findByRole("dialog", { name: "This run couldn't finish" });
   await expect(findLink("Start a new session")).resolves.toHaveAttribute(
     "href",
     "/",
@@ -107,6 +111,8 @@ test("Start a new conversation after a model provider disappears", async () => {
   await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
 
   await readyChat();
+  click(await findButton("View details"));
+  await screen.findByRole("dialog", { name: "This run couldn't finish" });
   const startNewChat = await findLink("Start a new chat thread");
   expect(startNewChat.parentElement).toHaveTextContent(
     "The model provider used by this thread has been deleted.",

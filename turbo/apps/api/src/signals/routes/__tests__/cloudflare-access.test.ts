@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
+import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
 import {
   sshConnectionsContract,
   sshConnectionResponseSchema,
@@ -18,7 +19,6 @@ import {
   testSshConnectionStateContract,
   type TestSshConnectionStateActionBody,
 } from "@okouai/api-contracts/contracts/test-ssh-connection-state";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
@@ -31,7 +31,6 @@ import { sshConnectionsRoutes } from "../ssh-connections";
 import { sshAccessRoutes } from "../ssh-access";
 import { testSshConnectionStateRoutes } from "../test-ssh-connection-state";
 import { createRouteMocks } from "./helpers/route-test";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 
 const context = testContext();
@@ -67,6 +66,215 @@ const connections = () => {
     sshConnectionsContract,
   );
 };
+const credentials = () => {
+  return setupApp({ context, routes: sshConnectionsRoutes })(
+    sshCredentialsContract,
+  );
+};
+
+async function resources() {
+  return {
+    hosts: (await accept(connections().list({ headers }), [200])).body
+      .connections,
+    credentials: (await accept(credentials().list({ headers }), [200])).body
+      .credentials,
+    configs: (await accept(configs().list({ headers }), [200])).body.configs,
+  };
+}
+
+describe("inline SSH resource creation", () => {
+  const login = {
+    name: "Inline login",
+    username: "deploy",
+    authentication: {
+      method: "password" as const,
+      password: "inline-password-canary",
+    },
+  };
+  const gateway = { name: "Inline gateway", credentials: token };
+
+  it.each(["create", "update"] as const)(
+    "%s supports each reuse/new combination and returns only resolved metadata",
+    async (operation) => {
+      owner();
+      const existingConfig = await config();
+      const existingHost = await host(existingConfig.id);
+      let current = existingHost;
+      for (const newAccess of [false, true]) {
+        for (const newCredential of [false, true]) {
+          const before = await resources();
+          const fields = {
+            displayName: "Combined host",
+            host: "new.example.com",
+            port: 443,
+            credential: newCredential
+              ? { create: login }
+              : { id: existingHost.credentialId },
+            transport: newAccess
+              ? { type: "cloudflare_access" as const, create: gateway }
+              : {
+                  type: "cloudflare_access" as const,
+                  configId: existingConfig.id,
+                },
+          };
+          const result =
+            operation === "create"
+              ? (
+                  await accept(
+                    connections().create({
+                      headers,
+                      body: { id: randomUUID(), ...fields },
+                    }),
+                    [201],
+                  )
+                ).body
+              : (
+                  await accept(
+                    connections().update({
+                      headers,
+                      params: { connectionId: current.id },
+                      body: {
+                        ...fields,
+                        expectedGeneration: current.generation,
+                      },
+                    }),
+                    [200],
+                  )
+                ).body;
+          current = result;
+          const parsed = sshConnectionResponseSchema.parse(result);
+          expect(parsed).toStrictEqual(result);
+          expect(JSON.stringify(result)).not.toContain("canary");
+          expect(result).toMatchObject({
+            transport: {
+              type: "cloudflare_access",
+              configId: expect.any(String),
+            },
+          });
+          const after = await resources();
+          expect(after.hosts).toHaveLength(
+            before.hosts.length + (operation === "create" ? 1 : 0),
+          );
+          expect(after.credentials).toHaveLength(
+            before.credentials.length + Number(newCredential),
+          );
+          expect(after.configs).toHaveLength(
+            before.configs.length + Number(newAccess),
+          );
+          expect(after.hosts).toContainEqual(result);
+          expect(
+            after.credentials.find((entry) => {
+              return entry.id === result.credentialId;
+            })?.hosts,
+          ).toContainEqual({ id: result.id, displayName: result.displayName });
+          if (!("transport" in parsed)) {
+            throw new Error("Missing protected transport");
+          }
+          const selectedConfigId = parsed.transport.configId;
+          expect(
+            after.configs.find((entry) => {
+              return entry.id === selectedConfigId;
+            })?.hosts,
+          ).toContainEqual({ id: result.id, displayName: result.displayName });
+        }
+      }
+    },
+  );
+
+  it("rejects invalid references, destinations and stale versions without creating either resource", async () => {
+    const other = owner();
+    const otherConfig = await config();
+    const otherHost = await host();
+    owner({ orgId: other.orgId });
+    const existingHost = await host();
+    const initial = await resources();
+    const fields = {
+      displayName: "Rejected host",
+      host: "ssh.example.com",
+      port: 443,
+      credential: { create: login },
+      transport: { type: "cloudflare_access" as const, create: gateway },
+    };
+    for (const credentialId of [randomUUID(), otherHost.credentialId]) {
+      await accept(
+        connections().create({
+          headers,
+          body: {
+            id: randomUUID(),
+            ...fields,
+            credential: { id: credentialId },
+          },
+        }),
+        [404],
+      );
+      await accept(
+        connections().update({
+          headers,
+          params: { connectionId: existingHost.id },
+          body: {
+            ...fields,
+            expectedGeneration: existingHost.generation,
+            credential: { id: credentialId },
+          },
+        }),
+        [404],
+      );
+    }
+    for (const configId of [randomUUID(), otherConfig.id]) {
+      const transport = { type: "cloudflare_access" as const, configId };
+      await accept(
+        connections().create({
+          headers,
+          body: { id: randomUUID(), ...fields, transport },
+        }),
+        [404],
+      );
+      await accept(
+        connections().update({
+          headers,
+          params: { connectionId: existingHost.id },
+          body: {
+            ...fields,
+            expectedGeneration: existingHost.generation,
+            transport,
+          },
+        }),
+        [404],
+      );
+    }
+    await accept(
+      connections().create({
+        headers,
+        body: { id: randomUUID(), ...fields, host: "127.0.0.1" },
+      }),
+      [400],
+    );
+    await accept(
+      connections().update({
+        headers,
+        params: { connectionId: existingHost.id },
+        body: {
+          ...fields,
+          expectedGeneration: existingHost.generation,
+          port: 22,
+        },
+      }),
+      [400],
+    );
+    await accept(
+      connections().update({
+        headers,
+        params: { connectionId: existingHost.id },
+        body: {
+          ...fields,
+          expectedGeneration: existingHost.generation + 1,
+        },
+      }),
+      [409],
+    );
+    await expect(resources()).resolves.toStrictEqual(initial);
+  });
+});
 const runner = () => {
   return setupApp({ context, routes: runnerSshRoutes })(runnerSshContract);
 };
@@ -87,16 +295,12 @@ function authenticate(owner: Owner) {
     ],
   });
 }
-async function owner(overrides: Partial<Owner> = {}) {
+function owner(overrides: Partial<Owner> = {}) {
   const result = {
     orgId: `org_access_${randomUUID()}`,
     userId: `user_access_${randomUUID()}`,
     ...overrides,
   };
-  await updateFeatureSwitchesForUser(context, result, {
-    [FeatureSwitchKey.SshAccess]: true,
-    [FeatureSwitchKey.CloudflareAccess]: true,
-  });
   authenticate(result);
   return result;
 }
@@ -136,7 +340,10 @@ async function runtime(owner: Owner, overrides: Partial<RuntimeBody> = {}) {
 async function config(name = "Service token") {
   return (
     await accept(
-      configs().create({ headers, body: { name, credentials: token } }),
+      configs().create({
+        headers,
+        body: { id: randomUUID(), name, credentials: token },
+      }),
       [201],
     )
   ).body;
@@ -147,6 +354,7 @@ async function host(configId?: string) {
       connections().create({
         headers,
         body: {
+          id: randomUUID(),
           displayName: configId ? "Protected host" : "Direct host",
           host: "ssh.example.com",
           port: configId ? 443 : 22,
@@ -170,7 +378,7 @@ async function host(configId?: string) {
   ).body;
 }
 async function fixture() {
-  const o = await owner();
+  const o = owner();
   const r = await runtime(o, { runnerGroup: `access-${randomUUID()}` });
   const c = await config();
   const h = await host(c.id);
@@ -202,7 +410,7 @@ beforeEach(() => {
 
 describe("Cloudflare Access owner configuration", () => {
   it("refreshes SSH metadata for unreferenced config changes without runtime invalidation", async () => {
-    const o = await owner();
+    const o = owner();
     await runtime(o, { runnerGroup: "config-only" });
     const assertNotice = () => {
       expect(context.mocks.ably.publish.mock.calls).toStrictEqual([
@@ -240,14 +448,10 @@ describe("Cloudflare Access owner configuration", () => {
     assertNotice();
   });
 
-  it("is default-off and session-only, and rejects unsafe token headers before encryption", async () => {
+  it("requires a session and rejects unsafe token headers before encryption", async () => {
     await accept(configs().list({ headers: {} }), [401]);
-    mocks.clerk.session(`user_off_${randomUUID()}`, `org_off_${randomUUID()}`);
-    await accept(
-      configs().create({ headers, body: { name: "Off", credentials: token } }),
-      [404],
-    );
-    await owner();
+    const kms = useSecretKmsProbe();
+    owner();
     const request = setupRawAppRequest({
       context,
       routes: cloudflareAccessRoutes,
@@ -263,6 +467,7 @@ describe("Cloudflare Access owner configuration", () => {
         method: "POST",
         headers: { ...headers, "content-type": "application/json" },
         body: JSON.stringify({
+          id: randomUUID(),
           name: "Unsafe",
           credentials: { ...token, clientSecret: value },
         }),
@@ -272,6 +477,7 @@ describe("Cloudflare Access owner configuration", () => {
     expect(
       (await accept(configs().list({ headers }), [200])).body.configs,
     ).toStrictEqual([]);
+    expect(kms.generateDataKeyCalls).toBe(0);
   });
 
   it("shares one configuration across hosts without public secret readback and rejects stale/dependent deletion", async () => {
@@ -351,9 +557,9 @@ describe("Cloudflare Access owner configuration", () => {
   it.each(["user", "org"] as const)(
     "isolates foreign %s configuration IDs and metadata",
     async (dimension) => {
-      const first = await owner();
+      const first = owner();
       const c = await config();
-      await owner(
+      owner(
         dimension === "user"
           ? { orgId: first.orgId }
           : { userId: first.userId },
@@ -380,6 +586,7 @@ describe("Cloudflare Access owner configuration", () => {
       const result = await connections().create({
         headers,
         body: {
+          id: randomUUID(),
           displayName: "Foreign binding",
           host: "ssh.example.com",
           port: 443,
@@ -398,7 +605,7 @@ describe("Cloudflare Access owner configuration", () => {
   );
 
   it("does not configure SSH or grant it when only Access configs are created", async () => {
-    const o = await owner();
+    const o = owner();
     const r = await runtime(o);
     await config();
     const params = { agentId: r.agentId };
@@ -499,7 +706,7 @@ describe("protected SSH authority", () => {
   });
 
   it("uses only the Run owner's protected hosts for a shared Agent and rejects lost visibility", async () => {
-    const creator = await owner();
+    const creator = owner();
     const shared = await accept(
       setupApp({ context, routes: agentsRoutes })(agentsMainContract).create({
         headers,
@@ -509,7 +716,7 @@ describe("protected SSH authority", () => {
     );
     const creatorConfig = await config();
     const creatorHost = await host(creatorConfig.id);
-    const user = await owner({ orgId: creator.orgId });
+    const user = owner({ orgId: creator.orgId });
     const r = await runtime(user, { agentId: shared.body.agentId });
     const ownConfig = await config();
     const ownHost = await host(ownConfig.id);
@@ -637,7 +844,7 @@ describe("protected SSH authority", () => {
     const second = await host(f.config.id);
     const direct = await host();
     const otherAgent = await runtime(f, { runnerGroup: "other-agent" });
-    const otherOwner = await owner({ orgId: f.orgId });
+    const otherOwner = owner({ orgId: f.orgId });
     await runtime(otherOwner, { runnerGroup: "other-owner" });
     authenticate(f);
     const notices = () => {
@@ -804,7 +1011,7 @@ describe("protected SSH authority", () => {
 
   it("rejects foreign Run owners before decrypting protected credentials", async () => {
     const f = await fixture();
-    const foreign = await owner({ orgId: f.orgId });
+    const foreign = owner({ orgId: f.orgId });
     const r = await runtime(foreign, { agentId: f.agentId, access: true });
     const kms = useSecretKmsProbe();
     const result = await accept(
@@ -887,7 +1094,10 @@ describe("protected SSH authority", () => {
       connections().update({
         headers,
         params,
-        body: { expectedGeneration: 1, displayName: "Renamed host" },
+        body: {
+          expectedGeneration: 1,
+          displayName: "Renamed host",
+        },
       }),
       [200],
     );
@@ -982,7 +1192,7 @@ describe("protected SSH authority", () => {
     },
   );
 
-  it("keeps Direct management and execution available when the Access feature is disabled", async () => {
+  it("allows ordinary owners to manage and execute Direct and Access hosts without feature overrides", async () => {
     const f = await fixture();
     const direct = await host();
     const inventory = setupApp({ context, routes: sshAccessRoutes })(
@@ -991,31 +1201,13 @@ describe("protected SSH authority", () => {
     await expect(resolve(f)).resolves.toMatchObject({
       outcome: "resolved_access",
     });
-    await updateFeatureSwitchesForUser(context, f, {
-      [FeatureSwitchKey.SshAccess]: true,
-      [FeatureSwitchKey.CloudflareAccess]: false,
-    });
-    authenticate(f);
-    await expect(resolve(f)).resolves.toStrictEqual({ outcome: "unavailable" });
     expect(
       (
         await accept(inventory.list({ headers: f.guestHeaders }), [200])
       ).body.hosts.map((h) => {
         return h.id;
       }),
-    ).toStrictEqual([direct.id]);
-    await accept(configs().list({ headers }), [404]);
-    await accept(
-      connections().update({
-        headers,
-        params: { connectionId: direct.id },
-        body: {
-          expectedGeneration: direct.generation,
-          displayName: "Still direct",
-        },
-      }),
-      [200],
-    );
+    ).toStrictEqual(expect.arrayContaining([f.host.id, direct.id]));
     expect(
       (
         await accept(
@@ -1028,11 +1220,16 @@ describe("protected SSH authority", () => {
         )
       ).body.outcome,
     ).toBe("resolved_password");
-    await accept(connections().list({ headers }), [200]);
-    await accept(
-      connections().delete({ headers, params: { connectionId: f.host.id } }),
-      [404],
-    );
+    authenticate(f);
+    expect(
+      (await accept(configs().list({ headers }), [200])).body.configs,
+    ).toContainEqual(expect.objectContaining({ id: f.config.id, revision: 1 }));
+    expect(
+      (await accept(connections().list({ headers }), [200])).body.connections,
+    ).toHaveLength(2);
+    await expect(resolve(f)).resolves.toMatchObject({
+      outcome: "resolved_access",
+    });
   });
 
   it("preserves host trust across rotation, protected edits and Access transitions; rejects stale evidence", async () => {
@@ -1116,7 +1313,10 @@ describe("protected SSH authority", () => {
         connections().update({
           headers,
           params: { connectionId: f.host.id },
-          body: { expectedGeneration: generation, ...body },
+          body: {
+            expectedGeneration: generation,
+            ...body,
+          },
         }),
         [200],
       );
@@ -1160,7 +1360,7 @@ describe("protected SSH authority", () => {
   });
 
   it("rejects unsafe protected destinations without silently creating Direct hosts", async () => {
-    await owner();
+    owner();
     const c = await config();
     const request = setupRawAppRequest({
       context,

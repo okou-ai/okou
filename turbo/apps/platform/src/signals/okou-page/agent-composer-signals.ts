@@ -281,6 +281,11 @@ function createAgentSubmitMessage(
           ...(submission.videoRunOptions === undefined
             ? {}
             : { videoRunOptions: submission.videoRunOptions }),
+          // A forward stays on this page, so only a send that opens the new
+          // thread hands the selection over to it.
+          ...(options.forward
+            ? {}
+            : { composerTask: submission.taskSelection }),
           ...(access.kind === "computerUse"
             ? { computerUseHostId: hostId }
             : {}),
@@ -331,6 +336,7 @@ function createAgentComposerSignalsWithDraft(
     chatEvents$,
     voiceDraftTarget: `agent:${agentId}`,
     singleLineOnMobile: false,
+    forwardComposer: options.forward !== undefined,
     modelSelection$: chatPageModelSelection$,
     selectedModelOauthAvailable$: chatPageSelectedModelOauthAvailable$,
     setModelSelection$,

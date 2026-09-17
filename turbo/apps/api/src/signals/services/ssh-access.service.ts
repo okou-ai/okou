@@ -1,6 +1,4 @@
 import { sshHostSchema } from "@okouai/api-contracts/contracts/ssh-access";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
@@ -12,7 +10,6 @@ import { and, asc, eq } from "drizzle-orm";
 
 import type { Db, ReadonlyDb } from "../external/db";
 import { visibleJoinedAgentCondition } from "./agent-data.service";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import { publishSshRuntimeInvalidation } from "./ssh-runtime-wakeup.service";
 
 interface Owner {
@@ -21,20 +18,6 @@ interface Owner {
 }
 interface AgentAccessScope extends Owner {
   readonly agentId: string;
-}
-
-export async function isSshAccessAvailable(
-  db: ReadonlyDb,
-  owner: Owner,
-  signal: AbortSignal,
-): Promise<boolean> {
-  const context = await loadUserFeatureSwitchContext(
-    db,
-    owner.orgId,
-    owner.userId,
-  );
-  signal.throwIfAborted();
-  return isFeatureEnabled(FeatureSwitchKey.SshAccess, context);
 }
 
 function visibleAgent(owner: AgentAccessScope) {
@@ -182,15 +165,6 @@ export async function listRunSshHosts(
   if (rows.length === 0) {
     return null;
   }
-  const hasProtectedHosts = rows.some((row) => {
-    return row.accessId !== null;
-  });
-  const accessEnabled =
-    hasProtectedHosts &&
-    isFeatureEnabled(
-      FeatureSwitchKey.CloudflareAccess,
-      await loadUserFeatureSwitchContext(db, owner.orgId, owner.userId),
-    );
   signal.throwIfAborted();
   return {
     hosts: rows.flatMap((row) => {
@@ -200,9 +174,6 @@ export async function listRunSshHosts(
       if (row.accessId !== null) {
         if (row.accessConfigId === null) {
           throw new Error("SSH Cloudflare Access configuration is missing");
-        }
-        if (!accessEnabled) {
-          return [];
         }
       }
       return [

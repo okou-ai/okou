@@ -67,6 +67,78 @@ pub mod runners {
                     crate::ResolvedRoute::new(CLAIM.method, path(params))
                 }
             }
+
+            /// Generated route bindings under `runners::jobs::by_id::pi_handoff`.
+            pub mod pi_handoff {
+                /// Generated route bindings under `runners::jobs::by_id::pi_handoff::by_offset`.
+                pub mod by_offset {
+                    /// Read bounded immutable continuation bytes for the current Sandbox owner.
+                    /// Route contract: `GET /api/runners/jobs/:id/pi-handoff/:offset`.
+                    pub const GET: crate::RouteTemplate = crate::RouteTemplate {
+                        method: crate::Method::Get,
+                        path: "/api/runners/jobs/:id/pi-handoff/:offset",
+                    };
+
+                    /// Path parameters for `GET /api/runners/jobs/:id/pi-handoff/:offset`.
+                    #[derive(Debug, Clone, Copy)]
+                    pub struct Params<'a> {
+                        /// Value for the `:id` path parameter.
+                        pub id: &'a str,
+                        /// Value for the `:offset` path parameter.
+                        pub offset: &'a str,
+                    }
+
+                    /// Build the concrete path for `GET /api/runners/jobs/:id/pi-handoff/:offset`.
+                    /// Percent-encodes each path parameter as a URL path segment.
+                    #[must_use]
+                    pub fn path(params: Params<'_>) -> String {
+                        format!(
+                            "/api/runners/jobs/{}/pi-handoff/{}",
+                            crate::route::encode_path_segment(params.id),
+                            crate::route::encode_path_segment(params.offset),
+                        )
+                    }
+
+                    /// Build a resolved route for `GET /api/runners/jobs/:id/pi-handoff/:offset`.
+                    #[must_use]
+                    pub fn route(params: Params<'_>) -> crate::ResolvedRoute {
+                        crate::ResolvedRoute::new(GET.method, path(params))
+                    }
+                }
+            }
+
+            /// Generated route bindings under `runners::jobs::by_id::release`.
+            pub mod release {
+                /// Record a physically destroyed deferred Pi Sandbox.
+                /// Route contract: `POST /api/runners/jobs/:id/release`.
+                pub const RELEASE: crate::RouteTemplate = crate::RouteTemplate {
+                    method: crate::Method::Post,
+                    path: "/api/runners/jobs/:id/release",
+                };
+
+                /// Path parameters for `POST /api/runners/jobs/:id/release`.
+                #[derive(Debug, Clone, Copy)]
+                pub struct Params<'a> {
+                    /// Value for the `:id` path parameter.
+                    pub id: &'a str,
+                }
+
+                /// Build the concrete path for `POST /api/runners/jobs/:id/release`.
+                /// Percent-encodes each path parameter as a URL path segment.
+                #[must_use]
+                pub fn path(params: Params<'_>) -> String {
+                    format!(
+                        "/api/runners/jobs/{}/release",
+                        crate::route::encode_path_segment(params.id),
+                    )
+                }
+
+                /// Build a resolved route for `POST /api/runners/jobs/:id/release`.
+                #[must_use]
+                pub fn route(params: Params<'_>) -> crate::ResolvedRoute {
+                    crate::ResolvedRoute::new(RELEASE.method, path(params))
+                }
+            }
         }
     }
 
@@ -172,6 +244,39 @@ pub mod runners {
                     pub fn route(params: Params<'_>) -> crate::ResolvedRoute {
                         crate::ResolvedRoute::new(RESERVE.method, path(params))
                     }
+                }
+            }
+
+            /// Generated route bindings under `runners::runs::by_run_id::cancellation`.
+            pub mod cancellation {
+                /// Read the stop intent or confirmed absence of a claimed Run.
+                /// Route contract: `GET /api/runners/runs/:runId/cancellation`.
+                pub const GET: crate::RouteTemplate = crate::RouteTemplate {
+                    method: crate::Method::Get,
+                    path: "/api/runners/runs/:runId/cancellation",
+                };
+
+                /// Path parameters for `GET /api/runners/runs/:runId/cancellation`.
+                #[derive(Debug, Clone, Copy)]
+                pub struct Params<'a> {
+                    /// Value for the `:runId` path parameter.
+                    pub run_id: &'a str,
+                }
+
+                /// Build the concrete path for `GET /api/runners/runs/:runId/cancellation`.
+                /// Percent-encodes each path parameter as a URL path segment.
+                #[must_use]
+                pub fn path(params: Params<'_>) -> String {
+                    format!(
+                        "/api/runners/runs/{}/cancellation",
+                        crate::route::encode_path_segment(params.run_id),
+                    )
+                }
+
+                /// Build a resolved route for `GET /api/runners/runs/:runId/cancellation`.
+                #[must_use]
+                pub fn route(params: Params<'_>) -> crate::ResolvedRoute {
+                    crate::ResolvedRoute::new(GET.method, path(params))
                 }
             }
 

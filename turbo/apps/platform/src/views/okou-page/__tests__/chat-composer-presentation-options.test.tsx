@@ -1,4 +1,5 @@
 import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import type {
   ChatRunOptionsRequest,
@@ -60,15 +61,22 @@ async function setupComposer(): Promise<HTMLElement> {
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.ComposerCreateCommands]: true },
+    featureSwitches: { [FeatureSwitchKey.ComposerSlashTemplatePanel]: true },
   });
   return await findComposerEditor();
 }
 
 async function enterPresentation(editor: HTMLElement): Promise<HTMLElement> {
-  await fill(editor, "Our launch /create presentation");
+  await fill(editor, "Our launch /");
   const menu = await screen.findByTestId("slash-workflow-menu");
-  click(button("Create presentation", menu));
+  const user = userEvent.setup({ delay: null });
+  // The panel's rows act on mousedown, which only a full pointer sequence fires.
+  await user.click(button("Presentation", menu));
+  // The row opens the template picker as well, and it covers the composer.
+  await user.click(button("Close", await screen.findByRole("dialog")));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
   return await screen.findByRole("combobox", { name: "Slide count" });
 }
 

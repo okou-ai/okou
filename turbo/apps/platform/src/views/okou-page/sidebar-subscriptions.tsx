@@ -195,7 +195,7 @@ function AccountMenuSubscriptionProviderSection({
           onModalSelect={() => {
             onResetCodexUsage?.(resetCredits ?? null);
           }}
-          className="mt-1 flex h-7 items-center justify-between gap-2 rounded-md px-2 py-1 text-xs"
+          className="mt-1 flex items-center justify-between gap-2 rounded-md px-2 text-xs"
         >
           <ResetCreditsLabel
             resetCredits={resetCredits}

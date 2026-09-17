@@ -7,6 +7,7 @@ import {
   resolveConnectorAuthClient,
 } from "@okouai/connectors/connector-auth-method";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
+import { awardCompletedGetStartedQuest } from "./get-started-rewards.service";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 
 import { env, optionalEnv } from "../../lib/env";
@@ -192,18 +193,29 @@ const storeInstallation$ = command(
       botScopes: JSON.stringify(oauth.botScopes.split(",").filter(Boolean)),
       publicBrand: OFFICIAL_SLACK_PUBLIC_BRAND,
     } as const;
-    const [installation] = await set(writeDb$)
-      .insert(slackOrgInstallations)
-      .values({ slackWorkspaceId: oauth.teamId, ...values })
-      .onConflictDoUpdate({
-        target: slackOrgInstallations.slackWorkspaceId,
-        set: { ...values, updatedAt: nowDate() },
-        setWhere: or(
-          eq(slackOrgInstallations.orgId, context.orgId),
-          isNull(slackOrgInstallations.orgId),
-        ),
-      })
-      .returning({ id: slackOrgInstallations.slackWorkspaceId });
+    const installation = await set(writeDb$).transaction(async (tx) => {
+      const [stored] = await tx
+        .insert(slackOrgInstallations)
+        .values({ slackWorkspaceId: oauth.teamId, ...values })
+        .onConflictDoUpdate({
+          target: slackOrgInstallations.slackWorkspaceId,
+          set: { ...values, updatedAt: nowDate() },
+          setWhere: or(
+            eq(slackOrgInstallations.orgId, context.orgId),
+            isNull(slackOrgInstallations.orgId),
+          ),
+        })
+        .returning({ id: slackOrgInstallations.slackWorkspaceId });
+      if (stored) {
+        await awardCompletedGetStartedQuest(tx, {
+          orgId: context.orgId,
+          userId: context.userId,
+          questKey: "slack",
+          sourceKey: stored.id,
+        });
+      }
+      return stored;
+    });
     signal.throwIfAborted();
     if (!installation) {
       throw new Error(

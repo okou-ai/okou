@@ -16,7 +16,10 @@ import {
   Plus,
   Settings,
 } from "lucide-react";
-import { FEISHU_OAUTH_SCOPES } from "@okouai/api-contracts/contracts/feishu-connect";
+import {
+  FEISHU_OAUTH_SCOPES,
+  FEISHU_TENANT_SCOPES,
+} from "@okouai/api-contracts/contracts/feishu-connect";
 import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
 import { surfaceVariants, Button } from "@okouai/ui";
 import {
@@ -58,6 +61,7 @@ import {
   platformFeishuSecuritySettingsRedirectUrlImg,
   platformFeishuVersionAvailabilityEditImg,
   platformFeishuVersionManagementCreateVersionImg,
+  platformLarkAddBotFeatureImg,
   platformLarkCreateAppForAgentImg,
 } from "../../lib/static-assets.ts";
 import {
@@ -860,7 +864,7 @@ function FeishuPermissionsStep({ data }: { data: FeishuDialogData | null }) {
   const scopeImportJson = JSON.stringify(
     {
       scopes: {
-        tenant: [],
+        tenant: FEISHU_TENANT_SCOPES,
         user: scopes,
       },
     },
@@ -934,7 +938,7 @@ function FeishuPermissionsStep({ data }: { data: FeishuDialogData | null }) {
         <div className="rounded-md bg-muted/40 p-3">
           <code
             className="whitespace-pre-wrap break-words text-xs text-foreground"
-            data-testid="feishu-user-scope-import-json"
+            data-testid="feishu-scope-import-json"
           >
             {scopeImportJson}
           </code>
@@ -1860,6 +1864,38 @@ function FeishuSetupFaq() {
         </h2>
       </div>
       <div className="divide-y divide-border/50">
+        <details className="group px-4 py-4 sm:px-5">
+          <summary className="flex cursor-pointer list-none items-start gap-2 text-sm font-medium text-foreground">
+            <ChevronRight
+              size={17}
+              aria-hidden="true"
+              className="mt-0.5 shrink-0 transition-transform group-open:rotate-90"
+            />
+            <span>
+              {t(($) => {
+                return $.connectors.providerSettings[platform].faq
+                  .botFeatureQuestion;
+              })}
+            </span>
+          </summary>
+          <div className="mt-2 space-y-3 pl-[25px] text-sm leading-relaxed text-muted-foreground">
+            <p>
+              {t(($) => {
+                return $.connectors.providerSettings[platform].faq
+                  .botFeatureAnswer;
+              })}
+            </p>
+            <FeishuGuideImage
+              src={platformLarkAddBotFeatureImg}
+              width={2112}
+              height={1358}
+              alt={t(($) => {
+                return $.connectors.providerSettings[platform].faq
+                  .botFeatureImageAlt;
+              })}
+            />
+          </div>
+        </details>
         <details className="group px-4 py-4 sm:px-5">
           <summary className="flex cursor-pointer list-none items-start gap-2 text-sm font-medium text-foreground">
             <ChevronRight

@@ -1,9 +1,25 @@
 use std::os::unix::fs::symlink;
+use std::path::Path;
 
 use super::super::write_abandoned_result_marker;
 use super::support::{submit_queue_entry, write_queue_job_file};
 use crate::ids::RunId;
 use crate::local_queue::{self, JobResponse};
+
+fn write_orphaned_active_input(group_dir: &Path, job_id: RunId) {
+    local_queue::ensure_run_inputs_dir(group_dir, job_id).unwrap();
+    let entry = local_queue::ActiveInputEntry {
+        run_id: job_id,
+        sequence: 1,
+        text: "orphaned follow-up".to_string(),
+    };
+    local_queue::write_private_file(
+        &local_queue::active_input_path(group_dir, job_id, entry.sequence),
+        &serde_json::to_vec(&entry).unwrap(),
+        "test orphaned active input",
+    )
+    .unwrap();
+}
 
 #[test]
 fn cancelled_abandon_preserves_active_claim_without_result() {
@@ -158,13 +174,7 @@ fn abandoned_cleanup_removes_unclaimed_active_inputs_when_job_already_absent() {
     std::fs::write(&queue.cancel, b"").unwrap();
     let marker =
         write_abandoned_result_marker(&queue.result, job_id, "local submit abandoned").unwrap();
-    local_queue::LocalQueue::new(group_dir.to_path_buf())
-        .write_active_input_sync(&local_queue::ActiveInputEntry {
-            run_id: job_id,
-            sequence: 1,
-            text: "one".to_string(),
-        })
-        .unwrap();
+    write_orphaned_active_input(group_dir, job_id);
 
     queue.cleanup_abandoned(Some(&marker));
 
@@ -186,13 +196,7 @@ fn abandoned_cleanup_removes_late_unclaimed_active_inputs_after_job_cleanup() {
     std::fs::write(&queue.cancel, b"").unwrap();
 
     queue.abandon_cancelled();
-    local_queue::LocalQueue::new(group_dir.to_path_buf())
-        .write_active_input_sync(&local_queue::ActiveInputEntry {
-            run_id: job_id,
-            sequence: 1,
-            text: "late".to_string(),
-        })
-        .unwrap();
+    write_orphaned_active_input(group_dir, job_id);
 
     queue.cleanup_abandoned(None);
 

@@ -4,6 +4,7 @@ import { Plus } from "lucide-react";
 import {
   Button,
   Input,
+  Checkbox,
   Select,
   SelectTrigger,
   SelectValue,
@@ -17,13 +18,12 @@ import {
 import { SSH_ERROR_CODES } from "@okouai/api-contracts/contracts/ssh-errors";
 import {
   sshCloudflareConfigs$,
-  sshCloudflareEnabled$,
   sshTransportEditor$,
   chooseSshAccessConfig$,
-  openSshAccessStep$,
   openSshCloudflareDialog$,
-  mountSshAccessCreateButton$,
-  invalidateSsh$,
+  retrySsh$,
+  sshReplaceAccessToken$,
+  replaceSshAccessToken$,
   sshConflict$,
   sshConflictReview$,
   acceptSshConflictReview$,
@@ -44,6 +44,9 @@ export function SshConflictReview() {
   }
   const current = review.state === "hasData" ? review.data : null;
   const hostConflict = conflict === SSH_ERROR_CODES.GENERATION_CONFLICT;
+  const credentialConflict =
+    conflict === SSH_ERROR_CODES.CREDENTIAL_REVISION_CONFLICT ||
+    conflict === SSH_ERROR_CODES.CREDENTIAL_IN_USE;
   return (
     <div className="grid gap-3 rounded-lg border p-4 text-sm">
       <p role="alert">
@@ -53,11 +56,19 @@ export function SshConflictReview() {
           })}
       </p>
       {review.state === "hasError" &&
-        (hostConflict ? <SshLoadError /> : <AccessLoadError />)}
+        (hostConflict || credentialConflict ? (
+          <SshLoadError />
+        ) : (
+          <AccessLoadError />
+        ))}
       {review.state === "loading" && (
         <p role="status">
           {t(($) => {
-            return hostConflict ? $.ssh.loading : $.ssh.cloudflare.loading;
+            return hostConflict
+              ? $.ssh.loading
+              : credentialConflict
+                ? $.ssh.credential.loading
+                : $.ssh.cloudflare.loading;
           })}
         </p>
       )}
@@ -72,6 +83,14 @@ export function SshConflictReview() {
             <>
               <p>{current.config.name}</p>
               <AccessImpact config={current.config} />
+            </>
+          )}
+          {current.credential && (
+            <>
+              <p>
+                {current.credential.name} · {current.credential.username}
+              </p>
+              <AccessImpact config={current.credential} />
             </>
           )}
           {current.connection && (
@@ -102,8 +121,11 @@ export function SshConflictReview() {
             type="button"
             variant="outline"
             disabled={
-              current.kind === "delete-access" &&
-              (current.config?.hosts.length ?? 0) > 0
+              (current.kind === "delete-access" ||
+                current.kind === "delete-credential") &&
+              (current.config?.hosts.length ??
+                current.credential?.hosts.length ??
+                0) > 0
             }
             onClick={() => {
               return detach(acceptReview(current, signal), Reason.DomCallback);
@@ -121,7 +143,8 @@ export function SshConflictReview() {
 
 function AccessLoadError() {
   const { t } = useTranslation();
-  const retry = useSet(invalidateSsh$);
+  const retry = useSet(retrySsh$);
+  const signal = useGet(pageSignal$);
   return (
     <div
       role="alert"
@@ -132,7 +155,13 @@ function AccessLoadError() {
           return $.ssh.cloudflare.loadFailed;
         })}
       </p>
-      <Button type="button" variant="outline" onClick={retry}>
+      <Button
+        type="button"
+        variant="outline"
+        onClick={() => {
+          return detach(retry(signal), Reason.DomCallback);
+        }}
+      >
         {t(($) => {
           return $.ssh.retry;
         })}
@@ -144,7 +173,7 @@ function AccessLoadError() {
 export function AccessImpact({
   config,
 }: {
-  readonly config: CloudflareAccessConfig;
+  readonly config: Pick<CloudflareAccessConfig, "hosts">;
 }) {
   const { t } = useTranslation();
   return (
@@ -174,26 +203,41 @@ export function AccessImpact({
 
 export function AccessFields({
   config,
-  replace,
 }: {
   readonly config: CloudflareAccessConfig | null;
-  readonly replace: boolean;
 }) {
   const { t } = useTranslation();
+  const replace = useGet(sshReplaceAccessToken$);
+  const setReplace = useSet(replaceSshAccessToken$);
   return (
     <>
-      {!replace && (
-        <label className="grid gap-2">
-          {t(($) => {
-            return $.ssh.cloudflare.name;
+      <label className="grid gap-2">
+        {t(($) => {
+          return $.ssh.cloudflare.name;
+        })}
+        <Input
+          name="accessName"
+          placeholder={t(($) => {
+            return $.ssh.placeholders.accessName;
           })}
-          <Input
-            name="accessName"
-            required
-            pattern=".*\S.*"
-            maxLength={128}
-            defaultValue={config?.name}
+          required
+          pattern=".*\S.*"
+          maxLength={128}
+          defaultValue={config?.name}
+        />
+      </label>
+      {config && (
+        <label className="flex items-center gap-2 text-sm">
+          <Checkbox
+            name="replaceToken"
+            checked={replace}
+            onCheckedChange={(checked) => {
+              return setReplace(checked === true);
+            }}
           />
+          {t(($) => {
+            return $.ssh.cloudflare.replace;
+          })}
         </label>
       )}
       {(!config || replace) && (
@@ -209,6 +253,9 @@ export function AccessFields({
             })}
             <Input
               name="clientId"
+              placeholder={t(($) => {
+                return $.ssh.placeholders.clientId;
+              })}
               required
               type="password"
               pattern="[!-~]+"
@@ -223,6 +270,9 @@ export function AccessFields({
             })}
             <Input
               name="clientSecret"
+              placeholder={t(($) => {
+                return $.ssh.placeholders.clientSecret;
+              })}
               required
               type="password"
               pattern="[!-~]+"
@@ -237,21 +287,12 @@ export function AccessFields({
   );
 }
 
-export function AccessSelection({
-  disabled,
-  active,
-}: {
-  readonly disabled: boolean;
-  readonly active: boolean;
-}) {
+export function AccessSelection({ disabled }: { readonly disabled: boolean }) {
   const { t } = useTranslation();
-  const enabled = useGet(sshCloudflareEnabled$);
   const configs = useLoadable(sshCloudflareConfigs$);
   const editor = useGet(sshTransportEditor$);
   const choose = useSet(chooseSshAccessConfig$);
-  const create = useSet(openSshAccessStep$);
-  const mountCreate = useSet(mountSshAccessCreateButton$);
-  if (!enabled || (configs.state === "hasData" && configs.data === null)) {
+  if (configs.state === "hasData" && configs.data === null) {
     return (
       <p role="alert" className="text-sm text-muted-foreground">
         {t(($) => {
@@ -261,12 +302,12 @@ export function AccessSelection({
     );
   }
   return (
-    <div className="grid gap-3">
-      <p className="text-sm text-muted-foreground">
+    <fieldset className="grid min-w-0 gap-4">
+      <legend className="mb-3 text-sm font-semibold">
         {t(($) => {
-          return $.ssh.cloudflare.gatewayHelp;
+          return $.ssh.cloudflare.title;
         })}
-      </p>
+      </legend>
       {configs.state === "hasError" ? (
         <AccessLoadError />
       ) : configs.state === "loading" ? (
@@ -275,7 +316,7 @@ export function AccessSelection({
             return $.ssh.cloudflare.loading;
           })}
         </p>
-      ) : configs.data && configs.data.length > 0 ? (
+      ) : configs.data ? (
         <div className="grid gap-2">
           <label htmlFor="ssh-access-config">
             {t(($) => {
@@ -302,9 +343,15 @@ export function AccessSelection({
                   </SelectItem>
                 );
               })}
+              <SelectItem value="new">
+                {t(($) => {
+                  return $.ssh.cloudflare.createNew;
+                })}
+              </SelectItem>
             </SelectContent>
           </Select>
           {editor.configId &&
+            editor.configId !== "new" &&
             !configs.data.some((config) => {
               return config.id === editor.configId;
             }) && (
@@ -315,28 +362,13 @@ export function AccessSelection({
               </p>
             )}
         </div>
-      ) : (
-        <p className="text-sm text-muted-foreground">
-          {t(($) => {
-            return $.ssh.cloudflare.empty;
-          })}
-        </p>
+      ) : null}
+      {editor.configId === "new" && (
+        <div className="grid gap-4 rounded-lg border bg-muted/30 p-4">
+          <AccessFields config={null} />
+        </div>
       )}
-      {active && !disabled && configs.state === "hasData" && configs.data && (
-        <Button
-          ref={mountCreate}
-          type="button"
-          variant="outline"
-          className="justify-self-start"
-          onClick={create}
-        >
-          <Plus size={16} aria-hidden="true" />
-          {t(($) => {
-            return $.ssh.cloudflare.createNew;
-          })}
-        </Button>
-      )}
-    </div>
+    </fieldset>
   );
 }
 
@@ -411,26 +443,13 @@ export function CloudflareAccessConfigs() {
                 variant="outline"
                 onClick={() => {
                   return detach(
-                    open("rename-access", config, signal),
+                    open("edit-access", config, signal),
                     Reason.DomCallback,
                   );
                 }}
               >
                 {t(($) => {
-                  return $.ssh.cloudflare.rename;
-                })}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  return detach(
-                    open("replace-access", config, signal),
-                    Reason.DomCallback,
-                  );
-                }}
-              >
-                {t(($) => {
-                  return $.ssh.cloudflare.replace;
+                  return $.ssh.cloudflare.edit;
                 })}
               </Button>
               <Button

@@ -18,6 +18,7 @@ import type { Db, ReadonlyDb } from "../external/db";
 import { encryptStoredSecretValue } from "./crypto.utils";
 import { publishSshClientInvalidation } from "./ssh-client-invalidation.service";
 import { publishSshRuntimeInvalidation } from "./ssh-runtime-wakeup.service";
+import { checkSshCreationId } from "./ssh-creation.service";
 
 interface Owner {
   readonly orgId: string;
@@ -211,22 +212,37 @@ export async function createSshCredential(args: {
   readonly db: Db;
   readonly owner: Owner;
   readonly body: CreateSshCredentialRequest;
+  readonly id: string;
   readonly featureContext: FeatureSwitchContext;
-}): Promise<SshCredentialResponse> {
+}): Promise<SshResult<SshCredentialResponse | undefined>> {
   const prepared = await prepareCredential(args.body, args.featureContext);
   const row = await args.db.transaction(async (tx) => {
     await lockSshOwner(tx, args.owner);
+    const creation = await checkSshCreationId(
+      tx,
+      args.owner,
+      sshCredentials,
+      args.id,
+    );
+    if (!creation.ok) {
+      return creation;
+    }
+    if (!creation.value) {
+      return { ok: true as const, value: undefined };
+    }
     const [created] = await tx
       .insert(sshCredentials)
-      .values({ ...args.owner, ...prepared })
+      .values({ ...args.owner, ...prepared, id: args.id })
       .returning(metadata);
     if (!created) {
       throw new Error("SSH credential insert returned no row");
     }
-    return created;
+    return { ok: true as const, value: response(created, []) };
   });
-  await publishSshClientInvalidation(args.owner);
-  return response(row, []);
+  if (row.ok && row.value) {
+    await publishSshClientInvalidation(args.owner);
+  }
+  return row;
 }
 export async function updateSshCredential(args: {
   readonly db: Db;

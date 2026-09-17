@@ -1,0 +1,21 @@
+// Production service configuration. The Clerk publishable key is public.
+OKOU_API_BASE_URL = https:/$()/api.okou.ai
+OKOU_WEB_BASE_URL = https:/$()/app.okou.ai
+CLERK_PUBLISHABLE_KEY = pk_live_Y2xlcmsub2tvdS5haSQ
+
+IPHONEOS_DEPLOYMENT_TARGET = 26.0
+SWIFT_VERSION = 6.0
+SWIFT_STRICT_CONCURRENCY = complete
+TARGETED_DEVICE_FAMILY = 1
+SUPPORTED_PLATFORMS = iphoneos iphonesimulator
+SUPPORTS_MACCATALYST = NO
+SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO
+SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO
+DEVELOPMENT_TEAM = C5UWSXYB67
+CODE_SIGN_STYLE = Automatic
+MARKETING_VERSION = 0.1.0
+CURRENT_PROJECT_VERSION = 1
+ENABLE_USER_SCRIPT_SANDBOXING = YES
+
+// Optional, ignored local overrides. Never put a Clerk secret key here.
+#include? "Local.xcconfig"

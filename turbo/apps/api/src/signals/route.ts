@@ -1,3 +1,4 @@
+import { getStartedRoutes } from "./routes/get-started";
 import { introVideoRenderRoutes } from "./routes/intro-video-render";
 import { cronMaterializePiResourceIndexesRoutes } from "./routes/cron-materialize-pi-resource-indexes";
 import { authMeRoutes } from "./routes/auth-me";
@@ -10,6 +11,7 @@ import { cronSnapshotChatEventsRoutes } from "./routes/cron-snapshot-chat-events
 import { cronRetainChatEventsRoutes } from "./routes/cron-retain-chat-events";
 import { cronCompactUsageEventsRoutes } from "./routes/cron-compact-usage-events";
 import { cronCleanupSandboxesRoutes } from "./routes/cron-cleanup-sandboxes";
+import { cronCleanupXResourceReadsRoutes } from "./routes/cron-cleanup-x-resource-reads";
 import { cronConnectorCatalogRoutes } from "./routes/cron-connector-catalog";
 import { cronOfficialWorkflowCatalogRoutes } from "./routes/cron-official-workflow-catalog";
 import { cronConnectorOauthStateCleanupRoutes } from "./routes/cron-connector-oauth-state-cleanup";
@@ -40,6 +42,7 @@ import { buildInfoRoutes } from "./routes/build-info";
 import { githubOauthRoutes } from "./routes/github-oauth";
 import { registryResourceDownloadRoutes } from "./routes/registry-resources-download";
 import { runnersRoutes } from "./routes/runners";
+import { runnerCancellationRoutes } from "./routes/runner-cancellation";
 import { userExportRoutes } from "./routes/user-export";
 import { webhooksAgentCheckpointsRoutes } from "./routes/webhooks-agent-checkpoints";
 import { webhooksAgentCompleteRoutes } from "./routes/webhooks-agent-complete";
@@ -64,7 +67,6 @@ import { agentDraftRoutes } from "./routes/agent-draft";
 import { agentInstructionsRoutes } from "./routes/agent-instructions";
 import { agentsRoutes } from "./routes/agents";
 import { artifactCatalogRoutes } from "./routes/artifact-catalog";
-import { impactMarketingRoutes } from "./routes/impact-marketing";
 import { acquisitionAttributionRoutes } from "./routes/acquisition-attribution";
 import { billingAutoRechargeRoutes } from "./routes/billing-auto-recharge";
 import { billingCheckoutRoutes } from "./routes/billing-checkout";
@@ -83,7 +85,6 @@ import { bankingRoutes } from "./routes/banking";
 import { chatThreadRoutes } from "./routes/chat-threads";
 import { welcomeChatThreadRoutes } from "./routes/welcome-chat-threads";
 import { chatEventsRoutes } from "./routes/chat-events";
-import { chatTranslationRoutes } from "./routes/chat-translation";
 import { sharedThreadRoutes } from "./routes/shared-threads";
 import { claudeCodeDeviceAuthRoutes } from "./routes/claude-code-device-auth";
 import { computerUseAuthorizationRoutes } from "./routes/computer-use-authorization";
@@ -110,6 +111,7 @@ import { mailRoutes } from "./routes/mail";
 import { mapsRoutes } from "./routes/maps";
 import { mcpConnectorsRoutes } from "./routes/mcp-connectors";
 import { mcpOAuthClientMetadataRoutes } from "./routes/mcp-oauth-client-metadata";
+import { morningBriefPreviewGithubCollectionRoutes } from "./routes/morning-brief-preview-github-collection";
 import { weatherRoutes } from "./routes/weather";
 import { modelPoliciesRoutes } from "./routes/model-policies";
 import { modelProviderGatewayRoutes } from "./routes/model-provider-gateways";
@@ -147,6 +149,11 @@ import { browserAuthorizationRoutes } from "./routes/browser-authorization";
 import { workflowsRoutes } from "./routes/workflows";
 import { officialWorkflowRoutes } from "./routes/official-workflows";
 import { emailSubscriptionRoutes } from "./routes/email-subscription";
+import { morningBriefChatCollectionPreviewRoutes } from "./routes/morning-brief-chat-collection-preview";
+import { morningBriefCalendarCollectionPreviewRoutes } from "./routes/morning-brief-calendar-collection-preview";
+import { morningBriefCollectionPreviewRoutes } from "./routes/morning-brief-collection-preview";
+import { morningBriefGenerationPreviewRoutes } from "./routes/morning-brief-generation-preview";
+import { morningBriefGmailCollectionPreviewRoutes } from "./routes/morning-brief-gmail-collection-preview";
 import { morningBriefPreferenceRoutes } from "./routes/morning-brief-preference";
 import { workflowAutomationsRoutes } from "./routes/workflow-automations";
 import { integrationsGithubRoutes } from "./routes/integrations-github";
@@ -192,6 +199,7 @@ import { uploadsCompleteRoutes } from "./routes/uploads-complete";
 import { uploadsMultipartRoutes } from "./routes/uploads-multipart";
 import { uploadsPrepareRoutes } from "./routes/uploads-prepare";
 import { presentationTemplatesRoutes } from "./routes/presentation-templates";
+import { userTemplatesRoutes } from "./routes/user-templates";
 import { usageMembersRoutes } from "./routes/usage-members";
 import { usageRecordRoutes } from "./routes/usage-record";
 import { userPreferencesRoutes } from "./routes/user-preferences";
@@ -210,6 +218,7 @@ import { webDownloadRoutes } from "./routes/web-download";
 import { webFileUrlRoutes } from "./routes/web-file-url";
 
 export const ROUTES: readonly RouteEntry[] = [
+  ...getStartedRoutes,
   ...healthRoutes,
   ...buildInfoRoutes,
   ...authMeRoutes,
@@ -244,6 +253,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...cronRetainChatEventsRoutes,
   ...cronCompactUsageEventsRoutes,
   ...cronCleanupSandboxesRoutes,
+  ...cronCleanupXResourceReadsRoutes,
   ...cronConnectorCatalogRoutes,
   ...cronOfficialWorkflowCatalogRoutes,
   ...cronConnectorOauthStateCleanupRoutes,
@@ -273,7 +283,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...agentsRoutes,
   ...artifactCatalogRoutes,
   ...acquisitionAttributionRoutes,
-  ...impactMarketingRoutes,
   ...billingAutoRechargeRoutes,
   ...billingCheckoutRoutes,
   ...billingConcurrencyCheckoutRoutes,
@@ -291,7 +300,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...chatThreadRoutes,
   ...welcomeChatThreadRoutes,
   ...chatEventsRoutes,
-  ...chatTranslationRoutes,
   ...sharedThreadRoutes,
   ...claudeCodeDeviceAuthRoutes,
   ...computerUseAuthorizationRoutes,
@@ -323,6 +331,9 @@ export const ROUTES: readonly RouteEntry[] = [
   ...mapsRoutes,
   ...mcpConnectorsRoutes,
   ...mcpOAuthClientMetadataRoutes,
+  // Registered here so the protected preview has real application ingress. It
+  // is 404 in production: the environment gate runs before authentication.
+  ...morningBriefPreviewGithubCollectionRoutes,
   ...weatherRoutes,
   ...scrapeRoutes,
   ...peopleSearchRoutes,
@@ -368,6 +379,11 @@ export const ROUTES: readonly RouteEntry[] = [
   ...userPreferencesRoutes,
   ...userModelPreferenceRoutes,
   ...morningBriefPreferenceRoutes,
+  ...morningBriefCalendarCollectionPreviewRoutes,
+  ...morningBriefCollectionPreviewRoutes,
+  ...morningBriefGmailCollectionPreviewRoutes,
+  ...morningBriefGenerationPreviewRoutes,
+  ...morningBriefChatCollectionPreviewRoutes,
   ...emailSubscriptionRoutes,
   ...workflowsRoutes,
   ...officialWorkflowRoutes,
@@ -415,8 +431,10 @@ export const ROUTES: readonly RouteEntry[] = [
   ...uploadsMultipartRoutes,
   ...uploadsPrepareRoutes,
   ...presentationTemplatesRoutes,
+  ...userTemplatesRoutes,
   ...registryResourceDownloadRoutes,
   ...usageMembersRoutes,
   ...usageRecordRoutes,
   ...runnersRoutes,
+  ...runnerCancellationRoutes,
 ];

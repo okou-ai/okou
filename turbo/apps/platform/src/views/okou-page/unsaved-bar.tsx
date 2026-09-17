@@ -26,10 +26,9 @@ interface AnchorConfig {
 const ANCHORS: Readonly<Record<UnsavedBarAnchor, AnchorConfig>> = {
   page: {
     containerId: "root",
-    // The shell root is outside the `.okou-app` subtree, so the bar re-enters
-    // that scope to read its tokens. Modal and floating Base UI portals live
-    // outside it and stay above the bar without coordinating z-index values.
-    className: "okou-app fixed bottom-[max(1.5rem,var(--sab))] z-40",
+    // Modal and floating Base UI portals live outside this container and stay
+    // above the bar without coordinating z-index values.
+    className: "fixed bottom-[max(1.5rem,var(--sab))] z-40",
     renderInPlaceWithoutContainer: true,
   },
   "settings-dialog": {

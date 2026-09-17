@@ -974,243 +974,258 @@ describe("Google Forms Pub/Sub webhook", () => {
     expect(formsApi.watchIds).toHaveLength(2);
   });
 
-  it("repairs watches after Google Forms account deletion, replacement, and re-add", async () => {
-    const {
-      actor,
-      agentId,
-      first,
-      second,
-      firstConnector,
-      firstWatchId,
-      secondWatchId,
-      secondConnector,
-      formsApi,
-    } = await setupGoogleFormsMultiAccountAutomations();
-
-    mocks.clerk.session(actor.userId, actor.orgId, "org:member");
-    const deletedSelected = await accept(
-      connectorAccountsClient().delete({
-        headers: authHeaders(),
-        params: { connectionId: secondConnector.id },
-        body: {
-          target: { kind: "builtin", connectorSlug: "google-forms" },
-        },
-      }),
-      [200],
-    );
-    expect(deletedSelected.body).toStrictEqual({
-      deletedConnectionId: secondConnector.id,
-      resolvedSelectionCount: 1,
-      promotedDefaultConnectionId: null,
-    });
-    expect(formsApi.stoppedWatchIds).toStrictEqual([secondWatchId]);
-    const defaultedSecond = await accept(
-      automationsClient().get({
-        headers: authHeaders(),
-        params: { id: second.automationId },
-      }),
-      [200],
-    );
-    if (
-      defaultedSecond.body.kind !== "event" ||
-      defaultedSecond.body.eventType !== "google-forms-response-submitted"
-    ) {
-      throw new Error("Expected a defaulted Google Forms automation");
-    }
-    expect(defaultedSecond.body.eventConfig.connectorId).toBe(
-      firstConnector.id,
-    );
-
-    mockGoogleFormsConnectorOAuth({
-      accessToken: "google-forms-replaced-access-token",
-      refreshToken: "google-forms-replaced-refresh-token",
-      subject: "bdd-google-forms-replaced-user-id",
-      email: "bdd-google-forms-replaced@example.test",
-    });
-    const replaceOauth = await connectors.startOauth(
-      actor,
-      "google-forms",
-      "oauth",
-      agentId,
-      { intent: "add" },
-    );
-    const replaceState = new URL(
-      replaceOauth.authorizationUrl,
-    ).searchParams.get("state");
-    if (!replaceState) {
-      throw new Error("Expected Google Forms replacement OAuth state");
-    }
-    await connectors.completeOauthCallback("google-forms", {
-      code: "google-forms-replaced-code",
-      state: replaceState,
-    });
-    const replacedAccounts = await connectors.listBuiltinConnectorAccounts(
-      actor,
-      "google-forms",
-    );
-    const replacementAccount = replacedAccounts.find((account) => {
-      return account.externalEmail === "bdd-google-forms-replaced@example.test";
-    });
-    if (!replacementAccount) {
-      throw new Error("Expected the replacement Google Forms account");
-    }
-    expect(replacementAccount.id).not.toBe(firstConnector.id);
-    expect(replacedAccounts).toHaveLength(2);
-    expect(formsApi.watchIds).toHaveLength(2);
-
-    const deletedFirst = await accept(
-      connectorAccountsClient().delete({
-        headers: authHeaders(),
-        params: { connectionId: firstConnector.id },
-        body: {
-          target: { kind: "builtin", connectorSlug: "google-forms" },
-        },
-      }),
-      [200],
-    );
-    expect(deletedFirst.body).toStrictEqual({
-      deletedConnectionId: firstConnector.id,
-      resolvedSelectionCount: 0,
-      promotedDefaultConnectionId: replacementAccount.id,
-    });
-    expect(formsApi.watchIds).toHaveLength(3);
-    const replacementWatchId = formsApi.watchIds[2];
-    if (!replacementWatchId) {
-      throw new Error("Expected a replacement Google Forms watch");
-    }
-    expect(formsApi.stoppedWatchIds).toStrictEqual([
-      secondWatchId,
-      firstWatchId,
-    ]);
-    const replacedAccountPush = await postWebhook(
-      formsPushBody("pubsub-replaced-account", firstWatchId),
-    );
-    expect(replacedAccountPush).toMatchObject({
-      status: 200,
-      body: { watchStates: 0, dispatched: 0 },
+  describe("watch recovery across Google Forms account replacement", () => {
+    let prepared: Awaited<
+      ReturnType<typeof setupGoogleFormsMultiAccountAutomations>
+    >;
+    beforeEach(async () => {
+      prepared = await setupGoogleFormsMultiAccountAutomations();
     });
 
-    const deletedLast = await accept(
-      connectorAccountsClient().delete({
-        headers: authHeaders(),
-        params: { connectionId: replacementAccount.id },
-        body: {
-          target: { kind: "builtin", connectorSlug: "google-forms" },
-        },
-      }),
-      [200],
-    );
-    expect(deletedLast.body).toStrictEqual({
-      deletedConnectionId: replacementAccount.id,
-      resolvedSelectionCount: 0,
-      promotedDefaultConnectionId: null,
-    });
-    expect(formsApi.stoppedWatchIds).toStrictEqual([
-      secondWatchId,
-      firstWatchId,
-      replacementWatchId,
-    ]);
-    const removedLastAccountPush = await postWebhook(
-      formsPushBody("pubsub-removed-last-account", replacementWatchId),
-    );
-    expect(removedLastAccountPush).toMatchObject({
-      status: 200,
-      body: { watchStates: 0, dispatched: 0 },
-    });
+    it("repairs watches after Google Forms account deletion, replacement, and re-add", async () => {
+      const {
+        actor,
+        agentId,
+        first,
+        second,
+        firstConnector,
+        firstWatchId,
+        secondWatchId,
+        secondConnector,
+        formsApi,
+      } = prepared;
 
-    mockGoogleFormsConnectorOAuth({
-      accessToken: "google-forms-readded-access-token",
-      refreshToken: "google-forms-readded-refresh-token",
-      subject: "bdd-google-forms-readded-user-id",
-      email: "bdd-google-forms-readded@example.test",
-    });
-    const addOauth = await connectors.startOauth(
-      actor,
-      "google-forms",
-      "oauth",
-      agentId,
-      { intent: "add", displayName: "Re-added Google Forms" },
-    );
-    const addState = new URL(addOauth.authorizationUrl).searchParams.get(
-      "state",
-    );
-    if (!addState) {
-      throw new Error("Expected Google Forms re-add OAuth state");
-    }
-    await connectors.completeOauthCallback("google-forms", {
-      code: "google-forms-readded-code",
-      state: addState,
-    });
-    const readdedAccounts = await connectors.listBuiltinConnectorAccounts(
-      actor,
-      "google-forms",
-    );
-    const readdedConnector = readdedAccounts.find((account) => {
-      return account.externalEmail === "bdd-google-forms-readded@example.test";
-    });
-    if (!readdedConnector) {
-      throw new Error("Expected the re-added Google Forms account");
-    }
-    expect(readdedConnector).toMatchObject({ isDefault: true });
-    expect(readdedConnector.id).not.toBe(firstConnector.id);
-    expect(formsApi.watchIds).toHaveLength(4);
-    const readdedWatchId = formsApi.watchIds[3];
-    if (!readdedWatchId) {
-      throw new Error("Expected a re-added Google Forms watch");
-    }
-    for (const automation of [first, second]) {
-      const repaired = await accept(
+      mocks.clerk.session(actor.userId, actor.orgId, "org:member");
+      const deletedSelected = await accept(
+        connectorAccountsClient().delete({
+          headers: authHeaders(),
+          params: { connectionId: secondConnector.id },
+          body: {
+            target: { kind: "builtin", connectorSlug: "google-forms" },
+          },
+        }),
+        [200],
+      );
+      expect(deletedSelected.body).toStrictEqual({
+        deletedConnectionId: secondConnector.id,
+        resolvedSelectionCount: 1,
+        promotedDefaultConnectionId: null,
+      });
+      expect(formsApi.stoppedWatchIds).toStrictEqual([secondWatchId]);
+      const defaultedSecond = await accept(
         automationsClient().get({
           headers: authHeaders(),
-          params: { id: automation.automationId },
+          params: { id: second.automationId },
         }),
         [200],
       );
       if (
-        repaired.body.kind !== "event" ||
-        repaired.body.eventType !== "google-forms-response-submitted"
+        defaultedSecond.body.kind !== "event" ||
+        defaultedSecond.body.eventType !== "google-forms-response-submitted"
       ) {
-        throw new Error("Expected a repaired Google Forms automation");
+        throw new Error("Expected a defaulted Google Forms automation");
       }
-      expect(repaired.body.eventConfig.connectorId).toBe(readdedConnector.id);
-    }
-
-    const readdedAccountPush = await postWebhook(
-      formsPushBody("pubsub-readded-account", readdedWatchId),
-    );
-    expect(readdedAccountPush).toMatchObject({
-      status: 200,
-      body: { watchStates: 1, dispatched: 2, duplicates: 0 },
-    });
-    expect(formsApi.authorizationHeaders).toContain(
-      "Bearer google-forms-readded-access-token",
-    );
-    const firstEvents = await workflows.readThreadEvents(first.chatThreadId);
-    const secondEvents = await workflows.readThreadEvents(second.chatThreadId);
-    const runIds = [firstEvents, secondEvents].map((events) => {
-      return events.find((event) => {
-        return event.eventType === "input.prompt" && event.runId;
-      })?.runId;
-    });
-    if (
-      runIds.some((runId) => {
-        return !runId;
-      })
-    ) {
-      throw new Error("Expected both repaired Google Forms workflow runs");
-    }
-    await runs.heartbeatRunner(RUNNER_GROUP);
-    for (const runId of runIds) {
-      if (!runId) {
-        throw new Error("Expected a repaired Google Forms workflow run");
-      }
-      const claim = await runs.claimRunnerJob(runId);
-      expect(
-        Object.values(claim.secretConnectorMetadataMap ?? {}),
-      ).toContainEqual(
-        expect.objectContaining({ sourceId: readdedConnector.id }),
+      expect(defaultedSecond.body.eventConfig.connectorId).toBe(
+        firstConnector.id,
       );
-    }
-    await flushWaitUntilForTest();
+
+      mockGoogleFormsConnectorOAuth({
+        accessToken: "google-forms-replaced-access-token",
+        refreshToken: "google-forms-replaced-refresh-token",
+        subject: "bdd-google-forms-replaced-user-id",
+        email: "bdd-google-forms-replaced@example.test",
+      });
+      const replaceOauth = await connectors.startOauth(
+        actor,
+        "google-forms",
+        "oauth",
+        agentId,
+        { intent: "add" },
+      );
+      const replaceState = new URL(
+        replaceOauth.authorizationUrl,
+      ).searchParams.get("state");
+      if (!replaceState) {
+        throw new Error("Expected Google Forms replacement OAuth state");
+      }
+      await connectors.completeOauthCallback("google-forms", {
+        code: "google-forms-replaced-code",
+        state: replaceState,
+      });
+      const replacedAccounts = await connectors.listBuiltinConnectorAccounts(
+        actor,
+        "google-forms",
+      );
+      const replacementAccount = replacedAccounts.find((account) => {
+        return (
+          account.externalEmail === "bdd-google-forms-replaced@example.test"
+        );
+      });
+      if (!replacementAccount) {
+        throw new Error("Expected the replacement Google Forms account");
+      }
+      expect(replacementAccount.id).not.toBe(firstConnector.id);
+      expect(replacedAccounts).toHaveLength(2);
+      expect(formsApi.watchIds).toHaveLength(2);
+
+      const deletedFirst = await accept(
+        connectorAccountsClient().delete({
+          headers: authHeaders(),
+          params: { connectionId: firstConnector.id },
+          body: {
+            target: { kind: "builtin", connectorSlug: "google-forms" },
+          },
+        }),
+        [200],
+      );
+      expect(deletedFirst.body).toStrictEqual({
+        deletedConnectionId: firstConnector.id,
+        resolvedSelectionCount: 0,
+        promotedDefaultConnectionId: replacementAccount.id,
+      });
+      expect(formsApi.watchIds).toHaveLength(3);
+      const replacementWatchId = formsApi.watchIds[2];
+      if (!replacementWatchId) {
+        throw new Error("Expected a replacement Google Forms watch");
+      }
+      expect(formsApi.stoppedWatchIds).toStrictEqual([
+        secondWatchId,
+        firstWatchId,
+      ]);
+      const replacedAccountPush = await postWebhook(
+        formsPushBody("pubsub-replaced-account", firstWatchId),
+      );
+      expect(replacedAccountPush).toMatchObject({
+        status: 200,
+        body: { watchStates: 0, dispatched: 0 },
+      });
+
+      const deletedLast = await accept(
+        connectorAccountsClient().delete({
+          headers: authHeaders(),
+          params: { connectionId: replacementAccount.id },
+          body: {
+            target: { kind: "builtin", connectorSlug: "google-forms" },
+          },
+        }),
+        [200],
+      );
+      expect(deletedLast.body).toStrictEqual({
+        deletedConnectionId: replacementAccount.id,
+        resolvedSelectionCount: 0,
+        promotedDefaultConnectionId: null,
+      });
+      expect(formsApi.stoppedWatchIds).toStrictEqual([
+        secondWatchId,
+        firstWatchId,
+        replacementWatchId,
+      ]);
+      const removedLastAccountPush = await postWebhook(
+        formsPushBody("pubsub-removed-last-account", replacementWatchId),
+      );
+      expect(removedLastAccountPush).toMatchObject({
+        status: 200,
+        body: { watchStates: 0, dispatched: 0 },
+      });
+
+      mockGoogleFormsConnectorOAuth({
+        accessToken: "google-forms-readded-access-token",
+        refreshToken: "google-forms-readded-refresh-token",
+        subject: "bdd-google-forms-readded-user-id",
+        email: "bdd-google-forms-readded@example.test",
+      });
+      const addOauth = await connectors.startOauth(
+        actor,
+        "google-forms",
+        "oauth",
+        agentId,
+        { intent: "add", displayName: "Re-added Google Forms" },
+      );
+      const addState = new URL(addOauth.authorizationUrl).searchParams.get(
+        "state",
+      );
+      if (!addState) {
+        throw new Error("Expected Google Forms re-add OAuth state");
+      }
+      await connectors.completeOauthCallback("google-forms", {
+        code: "google-forms-readded-code",
+        state: addState,
+      });
+      const readdedAccounts = await connectors.listBuiltinConnectorAccounts(
+        actor,
+        "google-forms",
+      );
+      const readdedConnector = readdedAccounts.find((account) => {
+        return (
+          account.externalEmail === "bdd-google-forms-readded@example.test"
+        );
+      });
+      if (!readdedConnector) {
+        throw new Error("Expected the re-added Google Forms account");
+      }
+      expect(readdedConnector).toMatchObject({ isDefault: true });
+      expect(readdedConnector.id).not.toBe(firstConnector.id);
+      expect(formsApi.watchIds).toHaveLength(4);
+      const readdedWatchId = formsApi.watchIds[3];
+      if (!readdedWatchId) {
+        throw new Error("Expected a re-added Google Forms watch");
+      }
+      for (const automation of [first, second]) {
+        const repaired = await accept(
+          automationsClient().get({
+            headers: authHeaders(),
+            params: { id: automation.automationId },
+          }),
+          [200],
+        );
+        if (
+          repaired.body.kind !== "event" ||
+          repaired.body.eventType !== "google-forms-response-submitted"
+        ) {
+          throw new Error("Expected a repaired Google Forms automation");
+        }
+        expect(repaired.body.eventConfig.connectorId).toBe(readdedConnector.id);
+      }
+
+      const readdedAccountPush = await postWebhook(
+        formsPushBody("pubsub-readded-account", readdedWatchId),
+      );
+      expect(readdedAccountPush).toMatchObject({
+        status: 200,
+        body: { watchStates: 1, dispatched: 2, duplicates: 0 },
+      });
+      expect(formsApi.authorizationHeaders).toContain(
+        "Bearer google-forms-readded-access-token",
+      );
+      const firstEvents = await workflows.readThreadEvents(first.chatThreadId);
+      const secondEvents = await workflows.readThreadEvents(
+        second.chatThreadId,
+      );
+      const runIds = [firstEvents, secondEvents].map((events) => {
+        return events.find((event) => {
+          return event.eventType === "input.prompt" && event.runId;
+        })?.runId;
+      });
+      if (
+        runIds.some((runId) => {
+          return !runId;
+        })
+      ) {
+        throw new Error("Expected both repaired Google Forms workflow runs");
+      }
+      await runs.heartbeatRunner(RUNNER_GROUP);
+      for (const runId of runIds) {
+        if (!runId) {
+          throw new Error("Expected a repaired Google Forms workflow run");
+        }
+        const claim = await runs.claimRunnerJob(runId);
+        expect(
+          Object.values(claim.secretConnectorMetadataMap ?? {}),
+        ).toContainEqual(
+          expect.objectContaining({ sourceId: readdedConnector.id }),
+        );
+      }
+      await flushWaitUntilForTest();
+    });
   });
 });

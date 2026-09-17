@@ -735,13 +735,11 @@ function RouteChoiceButton({
       aria-checked={active}
       disabled={disabled}
       onClick={onClick}
-      style={{
-        border: active
-          ? "var(--border-width-surface) solid hsl(var(--primary))"
-          : "var(--border-width-surface) solid hsl(var(--gray-400))",
-      }}
       className={cn(
-        "flex flex-col gap-0.5 rounded-xl bg-card px-5 py-4 text-left transition-colors",
+        "flex flex-col gap-0.5 rounded-xl border bg-card px-5 py-4 text-left transition-colors",
+        // A text card, so selection recolours the shared hairline rather than
+        // thickening it.
+        active ? "border-primary" : "border-surface-border",
         active && "bg-primary/5",
         !active && !disabled && "hover:bg-state-hover",
         disabled && "cursor-not-allowed opacity-50",
@@ -1224,7 +1222,6 @@ function ProviderRouteChoices({
   oauthTypes,
   gatewayCount,
   supportByok,
-  subscriptionChoicesAllowed,
   onChoose,
 }: {
   routeKind: ModelPolicyRouteKind;
@@ -1232,7 +1229,6 @@ function ProviderRouteChoices({
   oauthTypes: ModelProviderType[];
   gatewayCount: number;
   supportByok: boolean;
-  subscriptionChoicesAllowed: boolean;
   onChoose: (routeKind: ModelPolicyRouteKind) => void;
 }) {
   const { t } = useTranslation();
@@ -1294,7 +1290,6 @@ function ProviderRouteChoices({
         {oauthTypes.length > 0 && (
           <RouteChoiceButton
             active={routeKind === "oauth"}
-            disabled={!subscriptionChoicesAllowed}
             pro={!supportByok}
             title={
               oauthRouteKind === "codex"
@@ -1385,19 +1380,6 @@ function ProviderRouteConfiguration({
   return null;
 }
 
-function visibleSubscriptionProviderTypes({
-  types,
-  routeKind,
-  allowNewChoices,
-}: {
-  types: ModelProviderType[];
-  routeKind: ModelPolicyRouteKind;
-  allowNewChoices: boolean;
-}): ModelProviderType[] {
-  // Keep the saved subscription visible even when new org routes are API-only.
-  return allowNewChoices || routeKind === "oauth" ? types : [];
-}
-
 function ModelPolicyRouteDialog({
   policies,
   addableModels,
@@ -1418,9 +1400,6 @@ function ModelPolicyRouteDialog({
   onSubmit: (next: UpdateOrgModelPolicy[]) => void;
 }) {
   const { t } = useTranslation();
-  const policySnapshot = useLastResolved(orgModelPolicies$);
-  const subscriptionChoicesAllowed =
-    policySnapshot?.writePreconditionRequired !== true;
   const dialog = useGet(modelPolicyDialogState$);
   const close = useSet(closeModelPolicyDialog$);
   const completeClose = useSet(completeModelPolicyDialogClose$);
@@ -1640,12 +1619,7 @@ function ModelPolicyRouteDialog({
           <ProviderRouteChoices
             routeKind={dialog.routeKind}
             apiTypes={apiTypes}
-            oauthTypes={visibleSubscriptionProviderTypes({
-              types: oauthTypes,
-              routeKind: dialog.routeKind,
-              allowNewChoices: subscriptionChoicesAllowed,
-            })}
-            subscriptionChoicesAllowed={subscriptionChoicesAllowed}
+            oauthTypes={oauthTypes}
             gatewayCount={gatewayOptions.length}
             supportByok={modelCapabilities.supportByok}
             onChoose={chooseRoute}

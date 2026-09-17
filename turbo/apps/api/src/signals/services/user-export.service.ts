@@ -39,6 +39,7 @@ import { logger } from "../../lib/log";
 import { extractFilesFromTarGz } from "../../lib/tar";
 import { db$, writeDb$, type Db } from "../external/db";
 import { clerk$ } from "../external/clerk";
+import { findClerkUser } from "../external/clerk-users";
 import {
   downloadManifest,
   downloadS3Buffer,
@@ -1232,12 +1233,8 @@ function getCachedUserEmail(
     }
 
     const client = get(clerk$);
-    const clerkUsers = await client.users.getUserList({ userId: [userId] });
+    const user = await findClerkUser(client, userId, signal);
     signal.throwIfAborted();
-
-    const user = clerkUsers.data.find((candidate: ClerkEmailProfile) => {
-      return candidate.id === userId;
-    });
     if (!user) {
       throw new Error(`No Clerk user found for user ${userId}`);
     }

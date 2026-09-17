@@ -1,3 +1,4 @@
+import { deletePiObjectOrphansForOwner } from "./pi-inference-object.service";
 import {
   assertPiInferenceScopeErasureReady,
   piInferenceErasureScopePredicate,
@@ -71,10 +72,6 @@ import { cleanupOrgMemberResources } from "./org-member-cleanup.service";
 import { removeUsagePackMemberAllocation } from "./usage-pack-allocation-change.service";
 import { refundUsagePackMemberCredits } from "./usage-pack-credit-refund.service";
 import {
-  deleteOrgUsageData,
-  deleteUserUsageData,
-} from "./usage-event-cleanup.service";
-import {
   deleteConnectorLocalState$,
   loadStoredConnectorRuntimeSnapshot,
 } from "./connector-data.service";
@@ -83,6 +80,7 @@ import {
   deleteClerkAgentLifecycleData,
 } from "./agent-lifecycle.service";
 import { deleteConnectorOwnerState } from "./connector-owner-cleanup.service";
+import { revokeMorningBriefCollectionOwnership } from "./morning-brief-collection-occurrence.service";
 import { deleteStoragesWithPiMemoryCandidates } from "./pi-memory-stage1-candidate.service";
 import { transitionAgentRunsToTerminal } from "./agent-run-terminal-transition.service";
 
@@ -108,16 +106,33 @@ async function publishCancelBestEffort(
   );
 }
 
+/**
+ * What a deletion's first committed transaction revokes beyond its own runs.
+ *
+ * `cascadeOwnedAgents` widens run cancellation to the erasure scope, and
+ * `revokeMorningBriefCollection` joins Morning Brief collection ownership to
+ * that same commit. A ban is neither, so it keeps the narrow default.
+ */
+interface RunCancellationScope {
+  readonly cascadeOwnedAgents?: boolean;
+  readonly revokeMorningBriefCollection?: boolean;
+}
+
 async function cancelOrgRuns(
   db: Db,
   orgId: string,
-  cascadeOwnedAgents = false,
+  scope: RunCancellationScope = {},
 ): Promise<void> {
+  const revokedAt = nowDate();
   const cancelled = await db.transaction(async (tx) => {
     const rows = await transitionAgentRunsToTerminal(tx, {
-      values: { status: "cancelled", completedAt: nowDate() },
+      values: {
+        status: "cancelled",
+        completedAt: nowDate(),
+        runnerCancellationMode: "hard",
+      },
       conditions: [
-        cascadeOwnedAgents
+        scope.cascadeOwnedAgents
           ? piInferenceErasureScopePredicate(tx, {
               kind: "organization",
               orgId,
@@ -127,6 +142,13 @@ async function cancelOrgRuns(
       ],
     });
     await tx.delete(agentRunQueue).where(eq(agentRunQueue.orgId, orgId));
+    if (scope.revokeMorningBriefCollection) {
+      await revokeMorningBriefCollectionOwnership(
+        tx,
+        { kind: "organization", orgId },
+        revokedAt,
+      );
+    }
     return rows;
   });
   await Promise.all(
@@ -182,19 +204,31 @@ async function cancelLastAdminOrgsStripeSubscriptions(
 async function cancelUserRuns(
   db: Db,
   userId: string,
-  cascadeOwnedAgents = false,
+  scope: RunCancellationScope = {},
 ): Promise<void> {
+  const revokedAt = nowDate();
   const cancelled = await db.transaction(async (tx) => {
     const rows = await transitionAgentRunsToTerminal(tx, {
-      values: { status: "cancelled", completedAt: nowDate() },
+      values: {
+        status: "cancelled",
+        completedAt: nowDate(),
+        runnerCancellationMode: "hard",
+      },
       conditions: [
-        cascadeOwnedAgents
+        scope.cascadeOwnedAgents
           ? piInferenceErasureScopePredicate(tx, { kind: "user", userId })
           : eq(agentRuns.userId, userId),
         inArray(agentRuns.status, ["queued", "pending", "running"]),
       ],
     });
     await tx.delete(agentRunQueue).where(eq(agentRunQueue.userId, userId));
+    if (scope.revokeMorningBriefCollection) {
+      await revokeMorningBriefCollectionOwnership(
+        tx,
+        { kind: "user", userId },
+        revokedAt,
+      );
+    }
     return rows;
   });
   await Promise.all(
@@ -799,7 +833,6 @@ async function deleteOrgData(
     await cleanupWorkspaceInstallation(db, installation.slackWorkspaceId);
   }
 
-  await deleteOrgUsageData(db, orgId);
   await db.delete(sharedThreads).where(
     inArray(
       sharedThreads.id,
@@ -851,6 +884,7 @@ async function deleteOrgData(
     .delete(morningBriefEnrollments)
     .where(eq(morningBriefEnrollments.orgId, orgId));
   await db.delete(orgMetadata).where(eq(orgMetadata.orgId, orgId));
+  await deletePiObjectOrphansForOwner(db, { orgId });
 }
 
 async function deleteUserData(
@@ -876,7 +910,6 @@ async function deleteUserData(
   await db
     .delete(telegramInstallations)
     .where(eq(telegramInstallations.ownerUserId, userId));
-  await deleteUserUsageData(db, userId);
   await db
     .delete(artifacts)
     .where(
@@ -928,12 +961,16 @@ async function deleteUserData(
     );
     await tx.delete(users).where(eq(users.id, userId));
   });
+  await deletePiObjectOrphansForOwner(db, { userId });
 }
 
 export const cleanupClerkDeletedOrg$ = command(
   async ({ get, set }, orgId: string, signal: AbortSignal): Promise<void> => {
     const db = set(writeDb$);
-    await cancelOrgRuns(db, orgId, true);
+    await cancelOrgRuns(db, orgId, {
+      cascadeOwnedAgents: true,
+      revokeMorningBriefCollection: true,
+    });
     signal.throwIfAborted();
     await assertPiInferenceScopeErasureReady(db, {
       kind: "organization",
@@ -964,7 +1001,10 @@ export const cleanupClerkDeletedOrgBilling$ = command(
 export const cleanupClerkDeletedUser$ = command(
   async ({ get, set }, userId: string, signal: AbortSignal): Promise<void> => {
     const db = set(writeDb$);
-    await cancelUserRuns(db, userId, true);
+    await cancelUserRuns(db, userId, {
+      cascadeOwnedAgents: true,
+      revokeMorningBriefCollection: true,
+    });
     signal.throwIfAborted();
     await assertPiInferenceScopeErasureReady(db, { kind: "user", userId });
     signal.throwIfAborted();
@@ -980,7 +1020,10 @@ export const cleanupClerkDeletedUser$ = command(
     await set(cleanupUserExternalServices$, db, userId, signal);
     signal.throwIfAborted();
     for (const orgId of emptyOrgIds) {
-      await cancelOrgRuns(db, orgId, true);
+      await cancelOrgRuns(db, orgId, {
+        cascadeOwnedAgents: true,
+        revokeMorningBriefCollection: true,
+      });
       signal.throwIfAborted();
       await assertPiInferenceScopeErasureReady(db, {
         kind: "organization",
@@ -1021,7 +1064,11 @@ export const cleanupClerkDeletedUser$ = command(
 
 async function commitClerkDeletedOrgMembershipCleanup(
   db: Db,
-  args: { readonly orgId: string; readonly userId: string },
+  args: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly membershipId?: string;
+  },
 ): Promise<void> {
   const commitSignal = new AbortController().signal;
   await removeUsagePackMemberAllocation(db, args, commitSignal);
@@ -1038,6 +1085,7 @@ export const cleanupClerkDeletedOrgMembership$ = command(
     args: {
       readonly orgId: string;
       readonly userId: string;
+      readonly membershipId?: string;
     },
     signal: AbortSignal,
   ): Promise<void> => {

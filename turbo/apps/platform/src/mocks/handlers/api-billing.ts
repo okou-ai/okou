@@ -29,6 +29,7 @@ type BillingPlanCapabilities = Pick<
   | "canBuyCredits"
   | "autoRechargeAllowed"
   | "supportByok"
+  | "restrictedBuiltInModels"
   | "videoGenerationAllowed"
   | "workflowWebhookAutomationAllowed"
   | "canRestorePlan"
@@ -44,6 +45,7 @@ export function billingPlanCapabilities(tier: string): BillingPlanCapabilities {
         canBuyCredits: true,
         autoRechargeAllowed: false,
         supportByok: true,
+        restrictedBuiltInModels: false,
         videoGenerationAllowed: true,
         workflowWebhookAutomationAllowed: false,
         canRestorePlan: false,
@@ -57,6 +59,7 @@ export function billingPlanCapabilities(tier: string): BillingPlanCapabilities {
         canBuyCredits: false,
         autoRechargeAllowed: false,
         supportByok: false,
+        restrictedBuiltInModels: true,
         videoGenerationAllowed: false,
         workflowWebhookAutomationAllowed: false,
         canRestorePlan: false,
@@ -70,6 +73,7 @@ export function billingPlanCapabilities(tier: string): BillingPlanCapabilities {
         canBuyCredits: false,
         autoRechargeAllowed: false,
         supportByok: true,
+        restrictedBuiltInModels: false,
         videoGenerationAllowed: false,
         workflowWebhookAutomationAllowed: false,
         canRestorePlan: false,
@@ -84,6 +88,7 @@ export function billingPlanCapabilities(tier: string): BillingPlanCapabilities {
         canBuyCredits: true,
         autoRechargeAllowed: true,
         supportByok: true,
+        restrictedBuiltInModels: false,
         videoGenerationAllowed: true,
         workflowWebhookAutomationAllowed: true,
         canRestorePlan: false,
@@ -97,6 +102,7 @@ export function billingPlanCapabilities(tier: string): BillingPlanCapabilities {
         canBuyCredits: true,
         autoRechargeAllowed: true,
         supportByok: true,
+        restrictedBuiltInModels: false,
         videoGenerationAllowed: true,
         workflowWebhookAutomationAllowed: false,
         canRestorePlan: false,

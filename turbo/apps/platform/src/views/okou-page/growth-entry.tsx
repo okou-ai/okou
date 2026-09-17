@@ -65,7 +65,7 @@ function GrowthCreditMenuItem({ openCredits }: { openCredits: () => void }) {
     <>
       <DropdownMenuSeparator />
       <DropdownMenuModalItem
-        className="gap-3 px-3 py-2.5"
+        className="gap-3 px-3"
         onModalSelect={openCredits}
         data-testid="growth-credits"
       >
@@ -119,8 +119,11 @@ function GrowthEntry({ slackInstalled }: { slackInstalled: boolean }) {
     <DropdownMenu>
       <div
         // 12px, not the Button default 8px: the split control and the menu it
-        // opens read as one object when their outer radii agree.
-        className="inline-flex h-8 items-stretch rounded-[12px] border border-[hsl(var(--gray-400))] bg-card shadow-[var(--okou-card-shadow)]"
+        // opens read as one object when their outer radii agree. The surface
+        // tokens name that radius, hairline and elevation, which is how the
+        // Get started entry beside it in the corner spells the same three
+        // decisions, so the two controls cannot drift apart.
+        className="inline-flex h-8 items-stretch rounded-surface-compact border border-surface-border bg-card shadow-surface"
       >
         <Button
           type="button"
@@ -168,7 +171,7 @@ function GrowthEntry({ slackInstalled }: { slackInstalled: boolean }) {
 
       <DropdownMenuContent align="end" className="w-[268px]">
         <DropdownMenuItem
-          className="gap-3 px-3 py-2.5"
+          className="gap-3 px-3"
           onClick={openWorks}
           data-testid="growth-slack"
         >
@@ -199,7 +202,7 @@ function GrowthEntry({ slackInstalled }: { slackInstalled: boolean }) {
           )}
         </DropdownMenuItem>
 
-        <DropdownMenuItem className="gap-3 px-3 py-2.5" onClick={openWorks}>
+        <DropdownMenuItem className="gap-3 px-3" onClick={openWorks}>
           <img src={telegramIconImg} alt="" className="h-4 w-4 shrink-0" />
           <span className="min-w-0 flex-1 truncate">
             {t(($) => {
@@ -211,7 +214,7 @@ function GrowthEntry({ slackInstalled }: { slackInstalled: boolean }) {
         <DropdownMenuSeparator />
 
         <DropdownMenuModalItem
-          className="gap-3 px-3 py-2.5"
+          className="gap-3 px-3"
           onModalSelect={openInvite}
           data-testid="growth-invite"
         >

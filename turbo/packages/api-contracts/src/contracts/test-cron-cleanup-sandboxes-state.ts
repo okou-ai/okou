@@ -30,6 +30,13 @@ export const testCronCleanupSandboxesStateActionBodySchema = z
       "corrupt-connector-diagnostic-registration",
       "delete-connector-diagnostic-registration",
       "transition-run-terminal",
+      "get-pi-inference-recovery-deadline",
+      "seed-pi-inference-recovery",
+      "expire-pi-inference",
+      "delete-pi-inference-model-key",
+      "hold-pi-inference-test-lock",
+      "get-pi-inference-test-lock",
+      "release-pi-inference-test-lock",
     ]),
   })
   .passthrough();

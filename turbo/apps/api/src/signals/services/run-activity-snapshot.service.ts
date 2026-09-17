@@ -16,6 +16,13 @@ import { writeDb$, type Db } from "../external/db";
 import { settleIncludingAbort } from "../utils";
 import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
+import {
+  AgentEventRunNotFoundError,
+  RunContentOwnershipChangedError,
+  readRunContentOwnership,
+  withRunContentWrite,
+  type RunContentOwnership,
+} from "./run-content-erasure-admission.service";
 
 const log = logger("api:run-activity");
 
@@ -24,7 +31,7 @@ const activityExpiry = sql`${activityClock} + interval '24 hours'`;
 export type ActivityTx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 export type ActivitySnapshot = typeof runActivitySnapshots.$inferSelect;
 
-export async function activityTransaction<T>(
+async function activityTransaction<T>(
   db: Db,
   work: (tx: ActivityTx) => Promise<T>,
 ): Promise<T> {
@@ -51,6 +58,55 @@ export interface ActivityRunIdentity {
   readonly threadId: string;
   readonly userId: string;
   readonly orgId: string;
+}
+
+/** Each activity writer owns fresh admission; an earlier pin only fixes identity.
+ * Cleanup deliberately does not use this content-creating transaction.
+ */
+export async function activityContentTransaction<T>(
+  db: Db,
+  identity: ActivityRunIdentity,
+  ownership: RunContentOwnership | undefined,
+  work: (tx: ActivityTx, ownership: RunContentOwnership) => Promise<T>,
+  signal: AbortSignal,
+): Promise<T | undefined> {
+  const result = await settleIncludingAbort(
+    (async () => {
+      const pinned =
+        ownership ??
+        (await readRunContentOwnership(db, identity.runId, "activity"));
+      signal.throwIfAborted();
+      return await withRunContentWrite(
+        db,
+        {
+          runId: identity.runId,
+          runOwner: identity,
+          destination: identity,
+          ownership: pinned,
+          deadlineProfile: "activity",
+        },
+        async (tx, admitted) => {
+          if (!(await eligibleActivityRun(tx, identity))[0]) {
+            return undefined;
+          }
+          signal.throwIfAborted();
+          return await work(tx, admitted);
+        },
+        signal,
+      );
+    })(),
+  );
+  signal.throwIfAborted();
+  if (result.ok) {
+    return result.value.outcome === "written" ? result.value.value : undefined;
+  }
+  if (
+    result.error instanceof AgentEventRunNotFoundError ||
+    result.error instanceof RunContentOwnershipChangedError
+  ) {
+    return undefined;
+  }
+  throw result.error;
 }
 
 /** Admission binds this pointer atomically; queued work does not replace it. */
@@ -93,69 +149,58 @@ export async function lockActivitySnapshot(tx: ActivityTx, runId: string) {
 }
 
 export const captureRunActivity$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
+  async ({ get, set }, ownership: RunContentOwnership, signal: AbortSignal) => {
+    signal.throwIfAborted();
     const payload = get(eventConsumerPayload$);
+    if (!ownership.thread || mergeActivity([], payload.events).length === 0) {
+      return { status: 200 };
+    }
     const db = set(writeDb$);
+    const identity = {
+      runId: payload.runId,
+      threadId: ownership.thread.chatThreadId,
+      ...payload.context,
+    };
     const outcome = await settleIncludingAbort(
-      activityTransaction(db, async (tx) => {
-        const [run] = await tx
-          .select({
-            threadId: agentRuns.chatThreadId,
-            userId: agentRuns.userId,
-            orgId: agentRuns.orgId,
-          })
-          .from(agentRuns)
-          .where(eq(agentRuns.id, payload.runId));
-        if (
-          !run?.threadId ||
-          run.userId !== payload.context.userId ||
-          run.orgId !== payload.context.orgId
-        ) {
-          return;
-        }
-        if (!(await activityEnabled(tx, run.orgId, run.userId))) {
-          return;
-        }
-        const identity = {
-          ...run,
-          threadId: run.threadId,
-          runId: payload.runId,
-        };
-        if (!(await eligibleActivityRun(tx, identity))[0]) {
-          return;
-        }
-        if (mergeActivity([], payload.events).length === 0) {
-          return;
-        }
-        signal.throwIfAborted();
-        const row = await lockActivitySnapshot(tx, payload.runId);
-        const expired = row.expiresAt <= row.clock;
-        const entries = mergeActivity(
-          expired ? [] : row.entries,
-          payload.events,
-        );
-        const revision = activityRevision(entries);
-        if (!expired && revision === row.activityRevision) {
-          return;
-        }
-        await tx
-          .update(runActivitySnapshots)
-          .set({
-            entries,
-            activityRevision: revision,
-            expiresAt: activityExpiry,
-            ...(expired
-              ? {
-                  summary: null,
-                  summaryRevision: null,
-                  claimId: null,
-                  claimRevision: null,
-                  claimExpiresAt: null,
-                }
-              : {}),
-          })
-          .where(eq(runActivitySnapshots.runId, payload.runId));
-      }),
+      activityContentTransaction(
+        db,
+        identity,
+        ownership,
+        async (tx) => {
+          if (!(await activityEnabled(tx, identity.orgId, identity.userId))) {
+            return;
+          }
+          signal.throwIfAborted();
+          const row = await lockActivitySnapshot(tx, payload.runId);
+          const expired = row.expiresAt <= row.clock;
+          const entries = mergeActivity(
+            expired ? [] : row.entries,
+            payload.events,
+          );
+          const revision = activityRevision(entries);
+          if (!expired && revision === row.activityRevision) {
+            return;
+          }
+          await tx
+            .update(runActivitySnapshots)
+            .set({
+              entries,
+              activityRevision: revision,
+              expiresAt: activityExpiry,
+              ...(expired
+                ? {
+                    summary: null,
+                    summaryRevision: null,
+                    claimId: null,
+                    claimRevision: null,
+                    claimExpiresAt: null,
+                  }
+                : {}),
+            })
+            .where(eq(runActivitySnapshots.runId, payload.runId));
+        },
+        signal,
+      ),
     );
     signal.throwIfAborted();
     // Concurrent delivery for one run contends routinely, and a run can be

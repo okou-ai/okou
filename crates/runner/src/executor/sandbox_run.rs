@@ -1635,8 +1635,8 @@ pub(super) async fn execute_prepared_sandbox_run_with_process_cancel_timeouts(
         prepared_guest_runtime,
     } = run;
     let cleanup_cancel = inputs.controls.cancel.clone();
-    let ssh = config
-        .ssh
+    let guest_rpc = config
+        .guest_rpc
         .as_ref()
         .and_then(|runtime| runtime.install(sandbox.as_ref(), context.run_id, &cleanup_cancel));
     let reuse_result = start.reuse_result;
@@ -1655,8 +1655,8 @@ pub(super) async fn execute_prepared_sandbox_run_with_process_cancel_timeouts(
     )
     .await;
 
-    if let Some(ssh) = ssh {
-        ssh.shutdown().await;
+    if let Some(guest_rpc) = guest_rpc {
+        guest_rpc.shutdown().await;
     }
 
     let pre_process_resource_diagnostics = match result.as_ref() {
@@ -1813,7 +1813,7 @@ pub(super) async fn register_proxy(
         billable_firewalls: &context.billable_firewalls,
         model_usage_provider: context.model_usage_provider.as_deref(),
     };
-    config
+    let publication = config
         .registry
         .register_sandbox(source_ip, &registration)
         .await
@@ -1833,6 +1833,7 @@ pub(super) async fn register_proxy(
             })
             .await;
     }
+    config.registry.observe_registration(publication);
     Ok(network_log_session)
 }
 
@@ -1900,7 +1901,9 @@ pub(super) async fn unregister_proxy_registry(
     if let Some(runtime_sync) = config.connector_runtime_sync.as_ref() {
         runtime_sync.unregister_run(run_id).await;
     }
-    result
+    let publication = result?;
+    publication.observe().await;
+    Ok(())
 }
 
 /// Post-job cleanup: copy logs, unregister proxy registry.

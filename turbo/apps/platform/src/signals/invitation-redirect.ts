@@ -145,7 +145,7 @@ export const handleInvitationRedirect$ = command(
             return $.invitationRedirect.actions.switchAccount;
           }),
           onClick: onDomEventFn(async () => {
-            await set(openClerkAddAccount$, signal);
+            await set(openClerkAddAccount$, "/", signal);
           }),
         },
       },

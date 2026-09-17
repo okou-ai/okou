@@ -83,6 +83,47 @@ describe("shared SDK ingestion", () => {
       session_history_source_bytes: 0,
       session_history_guest_bytes: 0,
     };
+    const transfer = {
+      ...operation,
+      action_type: "session_history_transfer",
+      session_history_framework: "codex",
+      session_history_restore_representation: "raw",
+      session_history_transfer_source: "workspace_cache",
+      session_history_wire_codec: "zstd",
+      session_history_codec_reason: "sample_accepted",
+      session_history_transfer_bytes: RESUME_SESSION_HISTORY_MAX_BYTES,
+      session_history_wire_bytes: 1024,
+      session_history_write_requests: 9,
+      session_history_selection_ms: 0,
+      session_history_file_gate_wait_ms: 0,
+      session_history_requests_ms: 1200,
+      session_history_encoder_pipeline_ms: 1000,
+      session_history_publication_ms: 0,
+    } as const;
+    const emptyTransfer = {
+      ...transfer,
+      session_history_transfer_source: "inline",
+      session_history_transfer_bytes: 0,
+      session_history_wire_bytes: 0,
+      session_history_write_requests: 1,
+      session_history_wire_codec: "none",
+      session_history_codec_reason: "below_threshold",
+      session_history_encoder_pipeline_ms: 0,
+    } as const;
+    const failedTransfer = {
+      ...operation,
+      action_type: "session_history_transfer",
+      success: false,
+      session_history_framework: "codex",
+      session_history_transfer_source: "downloaded",
+    } as const;
+    const largeInlineTransfer = {
+      ...transfer,
+      session_history_transfer_source: "inline",
+      session_history_transfer_bytes: 256 * 1024 * 1024,
+      session_history_wire_bytes: 288 * 1024 * 1024,
+      session_history_write_requests: 18,
+    } as const;
     const response = await accept(
       setupApp({ context, routes: webhooksAgentHealthUsageTelemetryRoutes })(
         webhookTelemetryContract,
@@ -95,6 +136,10 @@ describe("shared SDK ingestion", () => {
             { ...operation, ...metadata, success: false },
             { ...operation, ...zero },
             { ...operation, action_type: "legacy_operation" },
+            transfer,
+            emptyTransfer,
+            failedTransfer,
+            largeInlineTransfer,
           ],
         },
       }),
@@ -124,6 +169,17 @@ describe("shared SDK ingestion", () => {
       expect(context.mocks.axiom.sdkIngest).toHaveBeenCalledWith(
         "vm0-sandbox-op-log-dev",
         [event],
+      );
+    }
+    for (const { ts: transferTime, action_type: opType, ...fields } of [
+      transfer,
+      emptyTransfer,
+      failedTransfer,
+      largeInlineTransfer,
+    ]) {
+      expect(context.mocks.axiom.sdkIngest).toHaveBeenCalledWith(
+        "vm0-sandbox-op-log-dev",
+        [{ ...expected, ...fields, _time: transferTime, op_type: opType }],
       );
     }
   });

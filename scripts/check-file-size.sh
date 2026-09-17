@@ -7,7 +7,14 @@ set -euo pipefail
 
 # Configuration
 LIMIT_BYTES=${FILE_SIZE_LIMIT:-1048576}  # Default 1MB
-LIMIT_MB=$((LIMIT_BYTES / 1048576))
+
+# Drizzle regenerates one complete schema snapshot per migration. It is
+# generated metadata that must never be hand-edited, reformatted or compressed,
+# and it grows monotonically with the schema, so it gets its own explicit
+# ceiling instead of the ordinary source limit. Only files matching the exact
+# generated-snapshot path qualify; `_journal.json` and everything else in that
+# directory keep the ordinary limit.
+SNAPSHOT_LIMIT_BYTES=${DRIZZLE_SNAPSHOT_FILE_SIZE_LIMIT:-4194304}  # Default 4MB
 
 # Allow override via environment variable
 if [ "${ALLOW_LARGE_FILES:-}" = "1" ]; then
@@ -19,6 +26,20 @@ fi
 if [ $# -eq 0 ]; then
   exit 0
 fi
+
+# The applicable byte limit for one path. Callers pass repository-relative
+# paths, so the leading segment is matched as well as accepted without it.
+limit_for() {
+  case "$1" in
+    */packages/db/src/migrations/meta/[0-9][0-9][0-9][0-9]_snapshot.json | \
+      packages/db/src/migrations/meta/[0-9][0-9][0-9][0-9]_snapshot.json)
+      printf '%s' "$SNAPSHOT_LIMIT_BYTES"
+      ;;
+    *)
+      printf '%s' "$LIMIT_BYTES"
+      ;;
+  esac
+}
 
 failed=0
 checked=0
@@ -32,10 +53,12 @@ for file in "$@"; do
   # Get file size (portable across Linux/macOS)
   size=$(wc -c < "$file" | tr -d ' ')
   checked=$((checked + 1))
+  limit=$(limit_for "$file")
 
-  if [ "$size" -gt "$LIMIT_BYTES" ]; then
+  if [ "$size" -gt "$limit" ]; then
     size_mb=$(awk "BEGIN {printf \"%.2f\", $size / 1048576}")
-    echo "ERROR: $file is ${size_mb}MB (limit: ${LIMIT_MB}MB)"
+    limit_mb=$(awk "BEGIN {printf \"%.0f\", $limit / 1048576}")
+    echo "ERROR: $file is ${size_mb}MB (limit: ${limit_mb}MB)"
     failed=1
   fi
 done

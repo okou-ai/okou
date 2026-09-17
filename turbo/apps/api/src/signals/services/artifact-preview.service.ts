@@ -1,3 +1,5 @@
+import { performance } from "node:perf_hooks";
+
 import { command } from "ccstate";
 import { v5 as uuidv5 } from "uuid";
 import { eq } from "drizzle-orm";
@@ -16,7 +18,7 @@ import { safeJsonParse, tapError } from "../utils";
 import { allocateArtifactObject$ } from "./artifact-storage.service";
 import {
   allocatePrivateArtifact$,
-  artifactFileReference,
+  resolveArtifactFileReference,
   completePrivateArtifact$,
   privateArtifactCreationEnabled,
   privateArtifactRecord,
@@ -40,17 +42,31 @@ const PREVIEW_IMAGE_CONTENT_TYPE = "image/webp";
 const PREVIEW_IMAGE_EXTENSION = "webp";
 const PREVIEW_IMAGE_BASENAME = "preview-v3";
 const PREVIEW_WAF_COOKIE_NAME = "vm0_artifact_preview";
-const SNAPSHOT_ACTION_TIMEOUT_MS = 30_000;
+// Cloudflare starts this timer only once navigation has finished, and runs it
+// over the action itself: content extraction and the screenshot. Its own
+// ceiling is 5 minutes, but the render runs inside `waitUntil` on a Vercel
+// function budgeted at 300s, and a function killed mid-render loses the failure
+// record that #34591 exists to produce. The retry branch is the longest chain:
+// a 20s primary navigation timeout, then the retry's 15s navigation and 3s
+// settle window, then this budget, plus the surrounding storage and database
+// work. 120s puts that worst case near 175s and keeps the record.
+const SNAPSHOT_ACTION_TIMEOUT_MS = 120_000;
 const PRIMARY_NAVIGATION_OPTIONS = {
   gotoOptions: { waitUntil: "networkidle2", timeout: 20_000 },
 } as const;
+// `domcontentloaded` fires before late content paints, so this retry needs a
+// settle window. It must not be `waitForSelector` on `body > *`: Browser
+// Rendering applies Puppeteer semantics, which resolve the selector's *first*
+// match and then wait for that one element to become visible. Whichever node a
+// document happens to open its body with decides the outcome, and an icon
+// sprite (`<svg display:none>`) or a leading script can never satisfy the
+// visibility check, so ready pages burned the probe's whole budget and failed
+// the retry. A fixed wait does not depend on document shape. 3s covers every
+// failing artifact measured here, whose `networkidle2` came at p90 1.8s and at
+// most 2.7s from navigation start.
 const NAVIGATION_TIMEOUT_RETRY_OPTIONS = {
   gotoOptions: { waitUntil: "domcontentloaded", timeout: 15_000 },
-  waitForSelector: {
-    selector: "body > *",
-    visible: true,
-    timeout: 10_000,
-  },
+  waitForTimeout: 3000,
 } as const;
 
 const browserSnapshotSchema = z.object({
@@ -141,11 +157,16 @@ async function extractVideoPoster(
 }
 
 const renderVideoPoster$ = command(
-  async ({ set }, args: RenderArtifactPreviewArgs, signal: AbortSignal) => {
+  async (
+    { get, set },
+    args: RenderArtifactPreviewArgs,
+    signal: AbortSignal,
+  ) => {
     if (!canExtractVideoPoster(args.contentType)) {
       return null;
     }
-    const reference = artifactFileReference(args.url);
+    const reference = await get(resolveArtifactFileReference(args.url, signal));
+    signal.throwIfAborted();
     if (reference) {
       if (!reference.id) {
         return null;
@@ -266,6 +287,97 @@ function fetchArtifactSnapshot(
   );
 }
 
+/** Which of the two request profiles produced an observation. */
+type SnapshotAttempt = "primary" | "navigation-retry";
+
+interface SnapshotFailure {
+  readonly attempt: SnapshotAttempt;
+  readonly status: number;
+  readonly elapsedMs: number;
+  readonly body: string;
+}
+
+type SnapshotAttemptResult =
+  | { readonly ok: true; readonly response: Response }
+  | { readonly ok: false; readonly failure: SnapshotFailure };
+
+/**
+ * Browser Rendering reports every timer as `6002` and distinguishes them only
+ * through `detail`, while the request runs independent navigation, selector and
+ * action timers. Carry the stage and the duration on the error so the one warn
+ * record this render already emits can be grouped by timer, which a message
+ * string cannot be.
+ */
+class ArtifactSnapshotError extends Error {
+  readonly attempt: SnapshotAttempt;
+  readonly elapsedMs: number;
+  readonly errorCode: number | undefined;
+  readonly errorDetail: string | undefined;
+
+  constructor(failure: SnapshotFailure) {
+    super(
+      `browser-rendering snapshot failed (${failure.status}): ${failure.body}`,
+    );
+    this.name = "ArtifactSnapshotError";
+    this.attempt = failure.attempt;
+    this.elapsedMs = failure.elapsedMs;
+    const parsed = browserSnapshotErrorSchema.safeParse(
+      safeJsonParse(failure.body),
+    );
+    const error = parsed.success ? parsed.data.errors[0] : undefined;
+    this.errorCode = error?.code;
+    this.errorDetail = error?.detail;
+  }
+}
+
+/** Promotes a snapshot failure's carried stage and duration into log fields. */
+function snapshotFailureLogFields(error: unknown): {
+  readonly attempt?: SnapshotAttempt;
+  readonly elapsedMs?: number;
+  readonly errorCode?: number;
+  readonly errorDetail?: string;
+} {
+  if (!(error instanceof ArtifactSnapshotError)) {
+    return {};
+  }
+  return {
+    attempt: error.attempt,
+    elapsedMs: error.elapsedMs,
+    ...(error.errorCode === undefined ? {} : { errorCode: error.errorCode }),
+    ...(error.errorDetail === undefined
+      ? {}
+      : { errorDetail: error.errorDetail }),
+  };
+}
+
+/**
+ * Cloudflare responds only once the render finishes, so this duration is the
+ * render itself rather than transport. Reading the failure body here also gives
+ * the retry gate and the thrown error one shared copy instead of consuming the
+ * stream separately.
+ */
+async function observeArtifactSnapshot(
+  args: FetchArtifactSnapshotArgs,
+  attempt: SnapshotAttempt,
+  signal: AbortSignal,
+): Promise<SnapshotAttemptResult> {
+  const startedAt = performance.now();
+  const response = await fetchArtifactSnapshot(args, signal);
+  if (response.ok) {
+    return { ok: true, response };
+  }
+  const body = await response.text();
+  return {
+    ok: false,
+    failure: {
+      attempt,
+      status: response.status,
+      elapsedMs: Math.round(performance.now() - startedAt),
+      body,
+    },
+  };
+}
+
 async function renderArtifactSnapshot(
   token: string,
   wafSecret: string,
@@ -283,43 +395,31 @@ async function renderArtifactSnapshot(
     throw new Error("artifact preview URL must use a hosted-site domain");
   }
 
-  let response = await fetchArtifactSnapshot(
-    {
-      token,
-      wafSecret,
-      url,
-      previewUrl,
-      navigationOptions: PRIMARY_NAVIGATION_OPTIONS,
-    },
+  const requestArgs = { token, wafSecret, url, previewUrl } as const;
+  let attempt = await observeArtifactSnapshot(
+    { ...requestArgs, navigationOptions: PRIMARY_NAVIGATION_OPTIONS },
+    "primary",
     signal,
   );
-  if (!response.ok) {
-    const responseBody = await response.text();
+  if (!attempt.ok) {
     // Keep the extra Browser Rendering request exclusive to navigation: action
     // and request-stage timeouts need different fixes and should not double cost.
-    if (!isNavigationTimeoutResponse(response.status, responseBody)) {
-      throw new Error(
-        `browser-rendering snapshot failed (${response.status}): ${responseBody}`,
-      );
+    if (
+      !isNavigationTimeoutResponse(attempt.failure.status, attempt.failure.body)
+    ) {
+      throw new ArtifactSnapshotError(attempt.failure);
     }
-    response = await fetchArtifactSnapshot(
-      {
-        token,
-        wafSecret,
-        url,
-        previewUrl,
-        navigationOptions: NAVIGATION_TIMEOUT_RETRY_OPTIONS,
-      },
+    attempt = await observeArtifactSnapshot(
+      { ...requestArgs, navigationOptions: NAVIGATION_TIMEOUT_RETRY_OPTIONS },
+      "navigation-retry",
       signal,
     );
   }
-  if (!response.ok) {
-    throw new Error(
-      `browser-rendering snapshot failed (${response.status}): ${await response.text()}`,
-    );
+  if (!attempt.ok) {
+    throw new ArtifactSnapshotError(attempt.failure);
   }
 
-  const responseBody: unknown = await response.json();
+  const responseBody: unknown = await attempt.response.json();
   const snapshot = browserSnapshotSchema.parse(responseBody);
   if (snapshot.meta.status !== undefined && snapshot.meta.status >= 400) {
     throw new Error(
@@ -492,6 +592,7 @@ export const scheduleArtifactPreviewRender$ = command(
               ? error.message
               : String(error)
             ).replace(/pv-[a-f0-9]{48}/gu, "pv-[redacted]"),
+            ...snapshotFailureLogFields(error),
           });
         },
       ),

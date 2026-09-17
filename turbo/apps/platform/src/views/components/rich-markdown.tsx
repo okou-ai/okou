@@ -18,10 +18,16 @@ import type {
   ArtifactKind,
   ArtifactSignals,
 } from "../../signals/chat-page/artifact-card-signals.ts";
+import type { HostedSiteCard } from "../../signals/hosted-site-card.ts";
 import type { ImageLoadSignals } from "../../signals/image-load.ts";
 import type { AttachmentPreviewSignals } from "../../signals/attachment-resource-url.ts";
 import { isImageUrl, isSafeMediaUrl } from "../../lib/media-url.ts";
 import { MarkdownCardView } from "../okou-page/chat-body-cards.tsx";
+import {
+  fallbackHtmlPreviewTitle,
+  SitePreviewCard,
+  SitePreviewViewport,
+} from "../okou-page/attachment-preview.tsx";
 import { CodeBlockCopyButton } from "./code-block-copy-button.tsx";
 import { MarkdownColorPreview } from "./markdown-color-preview.tsx";
 import { MarkdownFrame } from "./markdown-frame.tsx";
@@ -284,8 +290,33 @@ function MediaImageRenderer(props: MarkdownImageProps) {
   return <img {...omitMarkdownNodeProp(rest)} src={src} alt={alt} />;
 }
 
+/**
+ * A hosted site embedded as a Markdown image. Without artifact signals to open
+ * it in place, the card opens the site itself in a new tab.
+ */
+function MarkdownSitePreview({ site }: { readonly site: HostedSiteCard }) {
+  const title = fallbackHtmlPreviewTitle(
+    site.title.trim() || site.url,
+    site.url,
+  );
+  return (
+    <SitePreviewCard
+      href={site.url}
+      testId="markdown-site-preview"
+      openInNewTab
+      title={title}
+    >
+      <SitePreviewViewport src={site.url} title={title} />
+    </SitePreviewCard>
+  );
+}
+
 function LinkedMediaImageRenderer(props: MarkdownImageProps) {
   const { src, alt } = props;
+  const site = props.node?.data?.hostedSite;
+  if (site) {
+    return <MarkdownSitePreview site={site} />;
+  }
   const load = props.node?.data?.imageLoadSignals;
   if (typeof src === "string" && isSafeMediaUrl(src) && load) {
     return (
@@ -310,8 +341,8 @@ function containsBlockArtifact(node: Element): boolean {
     const card = child.data?.card;
     return (
       (child.tagName === "img" &&
-        card?.kind === "artifact" &&
-        card.signals.kind !== "image") ||
+        ((card?.kind === "artifact" && card.signals.kind !== "image") ||
+          child.data?.hostedSite !== undefined)) ||
       containsBlockArtifact(child)
     );
   });
@@ -423,6 +454,8 @@ const MEDIA_MARKDOWN_COMPONENTS = {
 
 const LINKED_MEDIA_MARKDOWN_COMPONENTS = {
   ...PLAIN_MARKDOWN_COMPONENTS,
+  // A site card is a block, so its paragraph has to become a div here too.
+  p: MediaParagraphRenderer,
   img: LinkedMediaImageRenderer,
 } as const;
 

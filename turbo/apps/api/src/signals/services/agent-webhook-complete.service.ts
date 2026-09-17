@@ -1,9 +1,9 @@
 import {
   readPiInferenceLifecycle,
+  assertPiInferenceApiFailure,
   assertPiInferencePublication,
 } from "./pi-inference-lifecycle.service";
 import { command } from "ccstate";
-import { isLegacyProviderBalanceError } from "@okouai/api-contracts/contracts/run-balance-errors";
 import type { z } from "zod";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import {
@@ -61,7 +61,6 @@ import {
   prepareAgentCheckpointPersistence$,
 } from "./agent-webhook-checkpoints.service";
 import { lockPiMemoryCandidateStorage } from "./pi-memory-stage1-candidate.service";
-import { isGptApiKeyPiProviderType } from "./pi-sandbox-config";
 import { transitionAgentRunsToTerminal } from "./agent-run-terminal-transition.service";
 
 type WebhookCompleteBody = z.infer<
@@ -75,7 +74,6 @@ interface CompleteAgentRunInput {
   readonly body: WebhookCompleteBody;
   readonly allowCheckpointlessSuccess?: boolean;
   readonly executionOwner?: "api-first";
-  readonly suppressFailureLog?: boolean;
 }
 
 export interface TerminalSideEffectsInput {
@@ -175,42 +173,6 @@ type CompletionTransactionResult =
 
 const L = logger("webhook:complete");
 
-function logGptApiKeyPiSandboxOutcome(
-  input: CompleteAgentRunInput,
-  commit: CompletionCommit,
-): boolean {
-  if (
-    input.executionOwner === "api-first" ||
-    commit.transitionFailureReason === "provider_insufficient_credits" ||
-    commit.run.launchSnapshot?.framework !== "pi" ||
-    !isGptApiKeyPiProviderType(commit.run.modelProvider)
-  ) {
-    return false;
-  }
-  const details = {
-    runId: input.body.runId,
-    productProvider: commit.run.modelProvider,
-    dialect: "openai-responses",
-    executionOwner: "sandbox",
-    outcome:
-      commit.responseStatus === "completed"
-        ? "sandbox_completion"
-        : "terminal_failure",
-    reason:
-      commit.transitionFailureReason ??
-      (commit.responseStatus === "completed"
-        ? "settled_session"
-        : "sandbox_failure"),
-    ownershipStage: "sandbox",
-  } as const;
-  if (commit.responseStatus === "completed") {
-    L.debug("Pi API first-turn outcome", details);
-    return false;
-  }
-  L.warn("Pi API first-turn outcome", details);
-  return true;
-}
-
 const KNOWN_FAILURE_LOG_POLICY = Object.freeze({
   // Input and execution limits need no operator action for either key owner.
   safety_policy_refusal: "suppress",
@@ -226,6 +188,7 @@ const KNOWN_FAILURE_LOG_POLICY = Object.freeze({
   provider_rate_limited: "suppress-byok",
   provider_overloaded: "suppress-byok",
   provider_stream_timeout: "suppress-byok",
+  provider_queue_timeout: "suppress-byok",
   provider_server_error: "suppress-byok",
   response_connection_lost: "suppress-byok",
   reconnect_required: "suppress-byok",
@@ -261,12 +224,8 @@ function logAgentRunCompletionOutcome(
   input: CompleteAgentRunInput,
   commit: CompletionCommit,
 ): void {
-  const loggedPiSandboxFailure = logGptApiKeyPiSandboxOutcome(input, commit);
   if (commit.responseStatus === "completed") {
     L.debug("Run completed successfully", { runId: input.body.runId });
-    return;
-  }
-  if (loggedPiSandboxFailure) {
     return;
   }
   if (commit.transitionFailureKind === "missing-checkpoint") {
@@ -276,10 +235,7 @@ function logAgentRunCompletionOutcome(
     });
     return;
   }
-  if (
-    !input.suppressFailureLog &&
-    !shouldSuppressFailureLog(commit.run, commit.transitionFailureReason)
-  ) {
+  if (!shouldSuppressFailureLog(commit.run, commit.transitionFailureReason)) {
     logRunFailure(input, commit);
   }
 }
@@ -434,15 +390,10 @@ async function prepareCompletion(
   if (input.body.exitCode !== 0) {
     const error =
       input.body.error?.trim() || "Run failed without error message";
-    const reason = input.body.failureReason;
     return {
       status: "failed",
       error,
-      failureReason:
-        reason === "insufficient_credits" &&
-        isLegacyProviderBalanceError(error, null)
-          ? "provider_insufficient_credits"
-          : reason,
+      failureReason: input.body.failureReason,
       failureKind: "reported",
     };
   }
@@ -507,7 +458,25 @@ async function lockCompletionRun(
     input.body.runId,
     run.launchSnapshot,
   );
-  assertPiInferencePublication(lifecycle, input.inferenceOwnerEpoch);
+  const sandboxFence = input.auth.piSandbox;
+  if (sandboxFence) {
+    if (
+      lifecycle?.lease?.claimedOwnerEpoch !== sandboxFence.ownerEpoch ||
+      lifecycle.lease.claimedGeneration !== sandboxFence.generation
+    ) {
+      throw new Error("Stale Pi Sandbox completion");
+    }
+    if (lifecycle.inference.phase !== "terminal") {
+      assertPiInferencePublication(lifecycle, sandboxFence.ownerEpoch);
+    }
+  } else if (
+    input.executionOwner === "api-first" &&
+    input.body.exitCode !== 0
+  ) {
+    assertPiInferenceApiFailure(lifecycle, input.inferenceOwnerEpoch);
+  } else {
+    assertPiInferencePublication(lifecycle, input.inferenceOwnerEpoch);
+  }
 
   return { ...run, status: runStatusSchema.parse(run.status) };
 }
@@ -582,6 +551,9 @@ async function applyTerminalCompletion(
     values: {
       status: prepared.status,
       completedAt,
+      ...(input.executionOwner === "api-first"
+        ? { runnerCancellationMode: "hard" as const }
+        : {}),
       ...(prepared.error !== undefined ? { error: prepared.error } : {}),
       failureReason: prepared.failureReason ?? null,
       ...(prepared.result !== undefined ? { result: prepared.result } : {}),

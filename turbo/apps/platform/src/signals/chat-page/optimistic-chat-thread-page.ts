@@ -53,6 +53,10 @@ import {
   textToMessageDocument,
   type EditorDocumentSnapshot,
 } from "../okou-page/user-message-document-codec.ts";
+import {
+  rememberComposerTaskForThread$,
+  type ComposerTaskSelection,
+} from "../okou-page/composer-task-handoff.ts";
 import type { ChatForwardContext } from "./chat-forward.ts";
 import { withOptimisticAgentRunSource } from "./chat-event-signals.ts";
 
@@ -78,6 +82,8 @@ interface SendNewThreadMessageRequest {
   imageModel?: ImageModel;
   videoModel?: VideoModel;
   videoRunOptions?: ChatRunVideoOptionsRequest;
+  /** What the composer was set to make, for the thread this send creates. */
+  composerTask?: ComposerTaskSelection;
   routeSearchParams?: URLSearchParams;
   forward?: ChatForwardContext;
   onOptimisticSend?: () => void;
@@ -594,6 +600,9 @@ const sendNewThreadMessage$ = command(
       },
       signal,
     );
+    if (request.composerTask) {
+      set(rememberComposerTaskForThread$, threadId, request.composerTask);
+    }
     request.onOptimisticSend?.();
     set(draft.clear$);
     const clearDraftResult = request.forward

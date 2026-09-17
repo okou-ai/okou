@@ -160,7 +160,11 @@ async function seedRun(
 }
 
 function createDeployment(db: ApiDb, args: ReturnType<typeof deploymentArgs>) {
-  return createHostedSiteDeployment(db, args, { now: nowDate() });
+  return createHostedSiteDeployment(db, args, {
+    now: nowDate(),
+    deploymentId: randomUUID(),
+    privateReference: args.privateArtifacts ? "scope12345" : null,
+  });
 }
 
 async function requireDeployment(

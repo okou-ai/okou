@@ -1,5 +1,4 @@
 import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
-import { SSH_ERROR_CODES } from "@okouai/api-contracts/contracts/ssh-errors";
 import { command } from "ccstate";
 import { sshErrorResponse } from "../../lib/ssh-error";
 import { organizationAuthContext$ } from "../auth/auth-context";
@@ -11,7 +10,6 @@ import type { RouteEntry } from "../route-entry";
 import {
   createCloudflareAccessConfig,
   deleteCloudflareAccessConfig,
-  isCloudflareAccessEnabled,
   listCloudflareAccessConfigs,
   updateCloudflareAccessConfig,
 } from "../services/cloudflare-access.service";
@@ -22,26 +20,16 @@ const ownerAuth = {
   missingOrganizationStatus: 401,
   accept: ["session"],
 } as const;
-const unavailable = Object.freeze(
-  sshErrorResponse(
-    404,
-    SSH_ERROR_CODES.ACCESS_UNAVAILABLE,
-    "Cloudflare Access is not available",
-  ),
-);
-const featureContext$ = command(async ({ get, set }, signal: AbortSignal) => {
-  set(setResHeader$, "Cache-Control", "no-store");
+const encryptionContext$ = command(async ({ get }, signal: AbortSignal) => {
   const owner = get(organizationAuthContext$);
   const context = await get(
     userFeatureSwitchContext(owner.orgId, owner.userId),
   );
   signal.throwIfAborted();
-  return isCloudflareAccessEnabled(context) ? context : null;
+  return context;
 });
 const list$ = command(async ({ get, set }, signal: AbortSignal) => {
-  if (!(await set(featureContext$, signal))) {
-    return unavailable;
-  }
+  set(setResHeader$, "Cache-Control", "no-store");
   const configs = await listCloudflareAccessConfigs(
     get(db$),
     get(organizationAuthContext$),
@@ -50,10 +38,8 @@ const list$ = command(async ({ get, set }, signal: AbortSignal) => {
   return { status: 200 as const, body: { configs } };
 });
 const create$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const featureContext = await set(featureContext$, signal);
-  if (!featureContext) {
-    return unavailable;
-  }
+  set(setResHeader$, "Cache-Control", "no-store");
+  const featureContext = await set(encryptionContext$, signal);
   const body = await get(bodyResultOf(cloudflareAccessContract.create));
   signal.throwIfAborted();
   if (!body.ok) {
@@ -63,16 +49,20 @@ const create$ = command(async ({ get, set }, signal: AbortSignal) => {
     db: set(writeDb$),
     owner: get(organizationAuthContext$),
     body: body.data,
+    id: body.data.id,
     featureContext,
   });
   signal.throwIfAborted();
-  return { status: 201 as const, body: config };
+  if (!config.ok) {
+    return sshErrorResponse(409, config.code, config.message);
+  }
+  return config.value === undefined
+    ? { status: 204 as const, body: undefined }
+    : { status: 201 as const, body: config.value };
 });
 const update$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const featureContext = await set(featureContext$, signal);
-  if (!featureContext) {
-    return unavailable;
-  }
+  set(setResHeader$, "Cache-Control", "no-store");
+  const featureContext = await set(encryptionContext$, signal);
   const body = await get(bodyResultOf(cloudflareAccessContract.update));
   signal.throwIfAborted();
   if (!body.ok) {
@@ -96,9 +86,7 @@ const update$ = command(async ({ get, set }, signal: AbortSignal) => {
       );
 });
 const delete$ = command(async ({ get, set }, signal: AbortSignal) => {
-  if (!(await set(featureContext$, signal))) {
-    return unavailable;
-  }
+  set(setResHeader$, "Cache-Control", "no-store");
   const body = await get(bodyResultOf(cloudflareAccessContract.delete));
   signal.throwIfAborted();
   if (!body.ok) {

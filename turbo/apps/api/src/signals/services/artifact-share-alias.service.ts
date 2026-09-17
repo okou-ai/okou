@@ -1,100 +1,20 @@
-import { command, computed } from "ccstate";
+import { command } from "ccstate";
 import { randomUUID } from "node:crypto";
 import { and, eq, ne } from "drizzle-orm";
-import { z } from "zod";
 import type { ArtifactSharePolicy } from "@okouai/api-contracts/contracts/artifact-shares";
 import { artifactFilenameExtension } from "@okouai/api-contracts/contracts/artifact-delivery";
 import { hostedSites } from "@okouai/db/schema/hosted-site";
 import { artifactHash } from "../../lib/file-url";
 import { publicSlugCandidate } from "../../lib/hosted-site-slug";
-import { env } from "../../lib/env";
 import { db$ } from "../external/db";
-import {
-  readArtifactSharePolicyObject,
-  writeArtifactSharePolicyObject,
-} from "../external/s3";
 import { settle } from "../utils";
+import { allocateArtifactReference$ } from "./artifact-reference.service";
 import {
   ArtifactDeliveryAliasConflict,
   registerArtifactDelivery$,
 } from "./artifact-delivery.service";
 
 const MAX_ALIAS_ATTEMPTS = 10;
-const referenceRecordSchema = z.object({
-  version: z.literal(1),
-  shareId: z.uuid(),
-});
-
-function bucket(): string {
-  const value = env("R2_HOSTED_SITES_BUCKET_NAME");
-  if (!value) {
-    throw new Error("Artifact sharing storage is not configured");
-  }
-  return value;
-}
-
-function referenceKey(reference: string): string {
-  return `artifact-references/${reference}.json`;
-}
-
-/** An immutable index locates a share; its current policy still authorizes it. */
-export function artifactShareReference(reference: string, signal: AbortSignal) {
-  return computed(async (get) => {
-    const stored = await settle(
-      get(
-        readArtifactSharePolicyObject(
-          bucket(),
-          referenceKey(reference),
-          signal,
-        ),
-      ),
-      signal,
-    );
-    if (!stored.ok) {
-      if (stored.error instanceof Error && stored.error.name === "NoSuchKey") {
-        return null;
-      }
-      throw stored.error;
-    }
-    return referenceRecordSchema.parse(
-      JSON.parse(stored.value.buffer.toString("utf8")),
-    ).shareId;
-  });
-}
-
-const allocateArtifactShareReference$ = command(
-  async ({ get }, shareId: string, signal: AbortSignal) => {
-    for (let attempt = 0; attempt < MAX_ALIAS_ATTEMPTS; attempt += 1) {
-      const reference = artifactHash(shareId, `organization:${attempt}`);
-      const written = await settle(
-        get(
-          writeArtifactSharePolicyObject(
-            bucket(),
-            referenceKey(reference),
-            JSON.stringify({ version: 1, shareId }),
-            null,
-            signal,
-          ),
-        ),
-        signal,
-      );
-      if (written.ok) {
-        return reference;
-      }
-      if (
-        !(written.error instanceof Error) ||
-        written.error.name !== "PreconditionFailed"
-      ) {
-        throw written.error;
-      }
-      if ((await get(artifactShareReference(reference, signal))) === shareId) {
-        return reference;
-      }
-    }
-    throw new Error("Unable to allocate a unique artifact share reference");
-  },
-);
-
 const allocatePublicArtifactSlug$ = command(
   async ({ get, set }, policy: ArtifactSharePolicy, signal: AbortSignal) => {
     if (policy.target.kind !== "html" || !policy.publicToken) {
@@ -212,10 +132,10 @@ export const prepareArtifactShareAliases$ = command(
     signal: AbortSignal,
   ): Promise<ArtifactSharePolicy> => {
     let organizationReference = args.previous?.organizationReference;
-    if (!organizationReference && args.policy.audience === "organization") {
+    if (args.policy.audience === "organization") {
       organizationReference = await set(
-        allocateArtifactShareReference$,
-        args.policy.shareId,
+        allocateArtifactReference$,
+        { kind: args.policy.target.kind, id: args.policy.target.id },
         signal,
       );
     }

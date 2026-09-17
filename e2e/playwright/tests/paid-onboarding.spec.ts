@@ -46,10 +46,6 @@ test("paid onboarding completes through the video template deep link", async ({
       /^\/(?:prompt|agents\/[^/]+\/chat|chats\/[^/]+)$/,
     );
   } finally {
-    await deleteClerkTestOwnerResources(
-      email,
-      organizationId,
-      "paid-onboarding",
-    );
+    await deleteClerkTestOwnerResources(email, organizationId);
   }
 });

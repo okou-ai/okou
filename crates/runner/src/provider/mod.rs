@@ -6,6 +6,7 @@
 
 mod api;
 mod api_ably_supervisor;
+mod api_cancellation_reconciliation;
 mod api_claim_cooldowns;
 mod api_direct_candidates;
 mod builtin_firewall_catalog;
@@ -23,6 +24,7 @@ pub(crate) use connector_runtime_sync::{
 };
 pub use local::LocalProvider;
 
+mod deferred_release;
 use chrono::{DateTime, FixedOffset, Utc};
 use serde::{Deserialize, Serialize, de::Error as _};
 use std::path::{Path, PathBuf};
@@ -246,6 +248,7 @@ impl JobDiscoverySource {
 /// Discovered work item ready for the non-cancellable claim phase.
 #[derive(Clone, Debug)]
 pub struct JobCandidate {
+    deferred_sandbox: bool,
     run_id: RunId,
     profile_name: String,
     local_job_path: Option<PathBuf>,
@@ -280,6 +283,7 @@ impl JobCandidate {
             run_id,
             profile_name,
             local_job_path: None,
+            deferred_sandbox: false,
             discovered_at,
             provider_discovery_returned_at: None,
             provider_discovery_to_main_loop_elapsed: None,
@@ -307,6 +311,15 @@ impl JobCandidate {
 
     pub fn run_id(&self) -> RunId {
         self.run_id
+    }
+
+    pub(crate) fn with_deferred_sandbox(mut self, value: bool) -> Self {
+        self.deferred_sandbox = value;
+        self
+    }
+
+    pub(crate) fn deferred_sandbox(&self) -> bool {
+        self.deferred_sandbox
     }
 
     pub fn profile_name(&self) -> &str {
@@ -727,6 +740,13 @@ impl CompletionAuth {
 /// `discover()` and `claim()` are deliberately separate so that `discover()`
 /// can live as a cancellable `select!` branch future while `claim()` runs
 /// inside the branch handler where it cannot be interrupted.
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeferredSandboxFence {
+    pub owner_epoch: u64,
+    pub generation: u64,
+}
+
 #[async_trait::async_trait]
 pub trait JobProvider: Send + Sync {
     /// Wait for the next job candidate. Returns `None` on shutdown signal.
@@ -787,6 +807,17 @@ pub trait JobProvider: Send + Sync {
     /// `completion_auth` is returned by [`claim()`](JobProvider::claim) and
     /// carried by the claimed job lifecycle until completion.
     async fn complete(&self, request: CompleteRequest, completion_auth: CompletionAuth);
+
+    /// Only the physical finalizer may call this after confirmed destruction.
+    async fn release_deferred_sandbox(&self, _run_id: RunId, _fence: DeferredSandboxFence) {}
+    async fn bind_claimed_sandbox(
+        &self,
+        _run_id: RunId,
+        _sandbox_id: sandbox::SandboxId,
+    ) -> crate::error::RunnerResult<()> {
+        Ok(())
+    }
+    async fn claimed_actor_gone(&self, _run_id: RunId) {}
 
     /// Report runner state to the server as a best-effort operation.
     ///

@@ -30,7 +30,9 @@ import {
   type SecretKmsClient,
 } from "../lib/secret-kms-client";
 import { encryptStoredSecretValue } from "../signals/services/crypto.utils";
+import { ApiDispatchTimingCollector } from "../signals/services/api-dispatch-timing.service";
 import {
+  preparePersonalSubscriptionAdmission,
   readPersonalSubscriptionCredentialBundle,
   type PersonalSubscriptionProviderType,
 } from "../signals/services/model-provider-account.service";
@@ -42,6 +44,8 @@ interface Sample {
   kmsMs: number;
   totalMs: number;
   failed: boolean;
+  proofMs: number;
+  controller: AbortController;
   queries: { kind: string; ms: number; end: number }[];
 }
 
@@ -50,6 +54,39 @@ interface WorkloadState {
   workloadPeak: number;
   dependencyDelay: number;
   failFirst: boolean;
+  comparisonMode?: ComparisonMode;
+}
+
+type ComparisonMode =
+  | "equal"
+  | "equivalent"
+  | "unequal"
+  | "first-error"
+  | "second-error"
+  | "both-errors"
+  | "slow-sibling"
+  | "abort-error"
+  | "cancel-request"
+  | "same-provider-4"
+  | "different-providers-4";
+
+const equivalenceExperiment = process.argv.includes("--equivalence");
+const repetitions = equivalenceExperiment ? 20 : 5;
+
+/** Observe the existing whole-proof timing boundary without flushing telemetry. */
+class ComparisonTiming extends ApiDispatchTimingCollector {
+  constructor(private readonly sample: Sample) {
+    super();
+  }
+
+  override recordDuration(
+    ...args: Parameters<ApiDispatchTimingCollector["recordDuration"]>
+  ): void {
+    if (args[0] === "api_dispatch_subscription_prepare_bundle_proof") {
+      this.sample.proofMs += args[2];
+    }
+    super.recordDuration(...args);
+  }
 }
 
 async function seed(database: Db, type: PersonalSubscriptionProviderType) {
@@ -128,7 +165,9 @@ async function seed(database: Db, type: PersonalSubscriptionProviderType) {
           throw new Error("Missing synthetic row");
         }
         const plaintext =
-          mode === "replacement" && name === "CHATGPT_ACCESS_TOKEN"
+          mode === "replacement" &&
+          (name === "CHATGPT_ACCESS_TOKEN" ||
+            name === "CLAUDE_CODE_OAUTH_TOKEN")
             ? randomUUID()
             : value;
         await database
@@ -149,7 +188,13 @@ async function seed(database: Db, type: PersonalSubscriptionProviderType) {
 async function measure(
   samples: AsyncLocalStorage<Sample>,
   expectedFailure: boolean,
-  args: Parameters<typeof readPersonalSubscriptionCredentialBundle>[0],
+  args: Parameters<typeof readPersonalSubscriptionCredentialBundle>[0] & {
+    sourceId: string;
+  },
+  comparison?: {
+    boundary: "prepare" | "bundle";
+    mode: ComparisonMode;
+  },
 ): Promise<Sample> {
   const sample: Sample = {
     calls: 0,
@@ -158,23 +203,41 @@ async function measure(
     kmsMs: 0,
     totalMs: 0,
     failed: false,
+    proofMs: 0,
+    controller: new AbortController(),
     queries: [],
   };
   const start = performance.now();
   await samples.run(sample, async () => {
-    const result = await settleIncludingAbort(
-      readPersonalSubscriptionCredentialBundle(args),
-    );
+    const read = async () => {
+      return comparison?.boundary === "prepare"
+        ? await preparePersonalSubscriptionAdmission(
+            {
+              ...args,
+              sourceId: args.sourceId,
+              timing: new ComparisonTiming(sample),
+            },
+            sample.controller.signal,
+          )
+        : await readPersonalSubscriptionCredentialBundle(args);
+    };
+    const result = await settleIncludingAbort(read());
     if (result.ok) {
-      if (!result.value) {
+      const expectsMismatch =
+        comparison?.boundary === "prepare" && comparison.mode === "unequal";
+      if (Boolean(result.value) === expectsMismatch) {
         throw new Error("Missing synthetic bundle");
       }
     } else {
       const error = result.error;
-      if (
-        !(error instanceof Error) ||
-        error.message !== "Synthetic KMS failure"
-      ) {
+      const expectedMessage =
+        comparison?.mode === "second-error"
+          ? "Synthetic mirror KMS failure"
+          : comparison?.mode === "abort-error" ||
+              comparison?.mode === "cancel-request"
+            ? "Synthetic cancellation"
+            : "Synthetic KMS failure";
+      if (!(error instanceof Error) || error.message !== expectedMessage) {
         throw error;
       }
       sample.failed = true;
@@ -185,6 +248,35 @@ async function measure(
     throw new Error(
       "Operation ended with unexpected outcome or unjoined decrypts",
     );
+  }
+  if (comparison) {
+    if (sample.peak > 2) {
+      throw new Error("Comparison exceeded the per-operation pair bound");
+    }
+    if (
+      (expectedFailure && comparison.mode !== "cancel-request") ||
+      (comparison.boundary === "prepare" && comparison.mode === "unequal")
+    ) {
+      if (sample.calls > 2) {
+        throw new Error("A later field started after a comparison failure");
+      }
+    }
+    if (comparison.mode === "equal" || comparison.mode === "equivalent") {
+      const fields = args.type === "claude-code-oauth-token" ? 1 : 4;
+      const expectedCalls =
+        (comparison.mode === "equal" ? 0 : fields * 2) +
+        (comparison.boundary === "bundle" ? fields : 0);
+      if (sample.calls !== expectedCalls) {
+        throw new Error("Unexpected complete-bundle KMS call count");
+      }
+    }
+    if (
+      comparison.boundary === "prepare" &&
+      comparison.mode === "unequal" &&
+      sample.calls !== 2
+    ) {
+      throw new Error("Mismatch did not stop after the first field pair");
+    }
   }
   return sample;
 }
@@ -198,6 +290,8 @@ function summary(observations: readonly Sample[]) {
       min: sorted[0],
       p50: sorted[Math.ceil(sorted.length * 0.5) - 1],
       p90: sorted[Math.ceil(sorted.length * 0.9) - 1],
+      p95: sorted[Math.ceil(sorted.length * 0.95) - 1],
+      p99: sorted[Math.ceil(sorted.length * 0.99) - 1],
       max: sorted.at(-1),
     };
   };
@@ -217,6 +311,12 @@ function summary(observations: readonly Sample[]) {
     }),
     totalMs: numbers((sample) => {
       return sample.totalMs;
+    }),
+    proofMs: numbers((sample) => {
+      return sample.proofMs;
+    }),
+    activeAtReturn: numbers((sample) => {
+      return sample.active;
     }),
     queryCount: numbers((sample) => {
       return sample.queries.length;
@@ -281,12 +381,127 @@ async function reportEnvironment(pool: Pool) {
           .digest("hex"),
         postgres: (await pool.query("SHOW server_version")).rows,
         poolMax: 8,
-        repetitions: 5,
+        repetitions,
+        lockfileSha256: createHash("sha256")
+          .update(
+            await readFile(
+              new URL("../../../../pnpm-lock.yaml", import.meta.url),
+            ),
+          )
+          .digest("hex"),
         limits:
           "Synthetic KMS; local instrumented bundle service including transaction completion, not HTTP, OAuth refresh or api_to_spawn",
       },
     }) + "\n",
   );
+}
+
+async function measureComparisons(
+  database: Db,
+  pool: Pool,
+  samples: AsyncLocalStorage<Sample>,
+  state: WorkloadState,
+) {
+  await reportEnvironment(pool);
+  for (const [type, boundary] of [
+    ["claude-code-oauth-token", "prepare"],
+    ["claude-code-oauth-token", "bundle"],
+    ["codex-oauth-token", "prepare"],
+    ["codex-oauth-token", "bundle"],
+  ] as const) {
+    for (const mode of [
+      "equal",
+      "equivalent",
+      "unequal",
+      "first-error",
+      "second-error",
+      "both-errors",
+      "slow-sibling",
+      "abort-error",
+      "cancel-request",
+      "same-provider-4",
+      "different-providers-4",
+    ] as const) {
+      // Claude mismatch needs an upstream identity lookup; request cancellation
+      // is checked by admission preparation, not by the locked bundle reader.
+      if (
+        boundary === "bundle" &&
+        (mode === "cancel-request" ||
+          (mode === "unequal" && type === "claude-code-oauth-token"))
+      ) {
+        continue;
+      }
+      state.comparisonMode = mode;
+      state.dependencyDelay = 20;
+      state.workloadPeak = 0;
+      const observations: Sample[] = [];
+      const expectedFailure = [
+        "first-error",
+        "second-error",
+        "both-errors",
+        "abort-error",
+        "cancel-request",
+      ].includes(mode);
+      for (let repeat = 0; repeat <= repetitions; repeat++) {
+        const fixtures: Awaited<ReturnType<typeof seed>>[] = [];
+        const work = async () => {
+          const count = mode === "different-providers-4" ? 4 : 1;
+          for (let index = 0; index < count; index++) {
+            const fixture = await seed(database, type);
+            fixtures.push(fixture);
+            if (mode !== "equal") {
+              await fixture.mirror(
+                mode === "unequal" ? "replacement" : "equivalent",
+              );
+            }
+          }
+          const first = fixtures[0];
+          if (!first) {
+            throw new Error("Missing comparison fixture");
+          }
+          const owners =
+            mode === "same-provider-4"
+              ? Array.from({ length: 4 }, () => {
+                  return first;
+                })
+              : fixtures;
+          const results = await joinAll(
+            owners.map((owner) => {
+              return measure(samples, expectedFailure, owner.args, {
+                boundary,
+                mode,
+              });
+            }),
+          );
+          if (repeat > 0) {
+            observations.push(...results);
+          }
+        };
+        const result = await settleIncludingAbort(work());
+        await joinAll(
+          fixtures.map((fixture) => {
+            return fixture.close();
+          }),
+        );
+        if (!result.ok) {
+          throw result.error;
+        }
+        if (state.workloadActive !== 0) {
+          throw new Error("Unjoined comparison workload");
+        }
+      }
+      process.stdout.write(
+        JSON.stringify({
+          type,
+          boundary,
+          mode,
+          simulatedKmsDelayMs: 20,
+          workloadPeak: state.workloadPeak,
+          ...summary(observations),
+        }) + "\n",
+      );
+    }
+  }
 }
 
 async function measureWorkloads(
@@ -380,7 +595,9 @@ async function measureWorkloads(
 
 async function runExperiment() {
   const samples = new AsyncLocalStorage<Sample>();
-  const signal = AbortSignal.timeout(60_000);
+  // The expanded 20-repetition comparison matrix owns a five-minute harness
+  // deadline. Production KMS/request timeouts are not configured here.
+  const signal = AbortSignal.timeout(equivalenceExperiment ? 300_000 : 60_000);
   const key = Buffer.from("0123456789abcdef0123456789abcdef");
   const url = new URL(env("DATABASE_URL"));
   if (!["localhost", "127.0.0.1", "postgres"].includes(url.hostname)) {
@@ -411,13 +628,39 @@ async function runExperiment() {
       state.workloadPeak = Math.max(state.workloadPeak, ++state.workloadActive);
       const started = performance.now();
       const work = async () => {
+        const mode = state.comparisonMode;
+        if (mode === "cancel-request" && call === 1) {
+          sample.controller.abort(
+            new DOMException("Synthetic cancellation", "AbortError"),
+          );
+        }
         // Simulated logical-call service time, including a slow retrying sibling.
         await delay(
-          state.failFirst && call === 2 ? 80 : state.dependencyDelay,
+          (state.failFirst ||
+            mode === "first-error" ||
+            mode === "abort-error" ||
+            mode === "slow-sibling" ||
+            mode === "cancel-request") &&
+            call === 2
+            ? 80
+            : mode === "both-errors" && call === 1
+              ? 80
+              : state.dependencyDelay,
           { signal },
         );
-        if (state.failFirst && call === 1) {
+        if (mode === "abort-error" && call === 1) {
+          throw new DOMException("Synthetic cancellation", "AbortError");
+        }
+        if (
+          (state.failFirst ||
+            mode === "first-error" ||
+            mode === "both-errors") &&
+          call === 1
+        ) {
           throw new Error("Synthetic KMS failure");
+        }
+        if ((mode === "second-error" || mode === "both-errors") && call === 2) {
+          throw new Error("Synthetic mirror KMS failure");
         }
         return key;
       };
@@ -462,7 +705,11 @@ async function runExperiment() {
 
   const result = await settleIncludingAbort(
     withSecretKmsClientForTest(kms, async () => {
-      await measureWorkloads(database, pool, samples, state);
+      if (equivalenceExperiment) {
+        await measureComparisons(database, pool, samples, state);
+      } else {
+        await measureWorkloads(database, pool, samples, state);
+      }
     }),
   );
   await pool.end();

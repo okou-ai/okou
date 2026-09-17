@@ -196,13 +196,9 @@ describe("CHAT-02: model-first provider policies", () => {
         lock.release();
         await lock.done;
       });
-      const resourceRead = createDeferredPromise<void>(context.signal);
       const requests: string[] = [];
       server.use(
         http.get(PI_RESOURCE_ARCHIVE_DOWNLOAD_URL, ({ request }) => {
-          if (!resourceRead.settled()) {
-            resourceRead.resolve(undefined);
-          }
           const key = new URL(request.url).searchParams.get("object");
           if (!key) {
             throw new Error("Expected exact resource identity");
@@ -232,37 +228,44 @@ describe("CHAT-02: model-first provider policies", () => {
           hasTextContent: true,
           model: "gpt-5.6-terra",
         },
-        controller.signal,
+        AbortSignal.any([controller.signal, context.signal]),
         usagePricingResolution,
       );
-      await expect.poll(lock.waiterCount).toBe(1);
-      await resourceRead.promise;
-      await sdk.ready;
-      expect(requests).toHaveLength(0);
-      expect(
-        [...checkpointObjects.keys()].filter((key) => {
-          return key.includes("/pi-api-first-turn/");
+      const [completedResponse] = await Promise.all([
+        send,
+        sdk.ready.then(async () => {
+          // The held lock keeps admission uncommitted while the SDK's own
+          // readiness signal establishes the completed-preparation boundary.
+          expect(requests).toHaveLength(0);
+          expect(
+            [...checkpointObjects.keys()].filter((key) => {
+              return key.includes("/pi-api-first-turn/");
+            }),
+          ).toStrictEqual([]);
+          const events = (await chat.listThreadEvents(actor, thread.id)).events;
+          expect(
+            events.filter((event) => {
+              return (
+                event.eventType.startsWith("output.") ||
+                event.eventType === "run.completed"
+              );
+            }),
+          ).toStrictEqual([]);
+          if (caller === "disconnected") {
+            controller.abort(new Error("caller disconnected during admission"));
+          }
+          if (caller === "rolled-back") {
+            // Only rollback needs a blocked query to cancel. Keep the lock
+            // until the request returns so cancellation wins over admission.
+            await expect.poll(lock.waiterCount).toBe(1);
+            await expect(lock.cancelBlockedQueries()).resolves.toBe(1);
+          } else {
+            lock.release();
+          }
         }),
-      ).toStrictEqual([]);
-      const events = (await chat.listThreadEvents(actor, thread.id)).events;
-      expect(
-        events.filter((event) => {
-          return (
-            event.eventType.startsWith("output.") ||
-            event.eventType === "run.completed"
-          );
-        }),
-      ).toStrictEqual([]);
-      if (caller === "disconnected") {
-        controller.abort(new Error("caller disconnected during admission"));
-      }
-      if (caller === "rolled-back") {
-        await expect(lock.cancelBlockedQueries()).resolves.toBe(1);
-      }
-      const response = caller === "rolled-back" ? await send : undefined;
+      ]);
       lock.release();
       await lock.done;
-      const completedResponse = response ?? (await send);
       if (caller === "connected") {
         expect(completedResponse.status).toBe(201);
       }

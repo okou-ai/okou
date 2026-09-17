@@ -199,6 +199,17 @@ describe("dormant account erasure persistence", () => {
   function deferred<T>() {
     return createDeferredPromise<T>(context.signal);
   }
+  function releaseGate() {
+    const gate = deferred<void>();
+    return {
+      promise: gate.promise,
+      release() {
+        if (!gate.settled()) {
+          gate.resolve();
+        }
+      },
+    };
+  }
   async function waitForAdvisoryWaiter() {
     for (let attempt = 0; attempt < 100; attempt++) {
       const result = await pool.query(
@@ -1201,8 +1212,140 @@ describe("dormant account erasure persistence", () => {
     ).resolves.toHaveLength(1);
   });
 
-  it("rejects a writer that raced a first closure already holding the subject lock", async () => {
+  it("matches complete subject pairs and denies a non-first closed subject", async () => {
+    const user = decision();
+    const organization = decision({ subjectKind: "organization" });
+    // A same-spelled identity in the other domain must not deny this set.
+    await project(decision({ subjectId: organization.subjectId }));
+    await db.transaction(async (tx) => {
+      await assertErasureSubjectWritable(tx, [user, organization, user]);
+    });
+    await project(organization);
+    await expect(
+      db.transaction(async (tx) => {
+        await assertErasureSubjectWritable(tx, [user, organization, user]);
+      }),
+    ).rejects.toThrow("account_erasure:subject_closed");
+  });
+
+  it.each(["user", "organization"] as const)(
+    "admits concurrent %s writers and waits for both before closure",
+    async (subjectKind) => {
+      const input = decision({ subjectKind });
+      const entered = [deferred<void>(), deferred<void>()];
+      const release = [releaseGate(), releaseGate()];
+      const writing: Promise<void>[] = [];
+      const tasks: Promise<unknown>[] = [];
+      onTestFinished(async () => {
+        for (const gate of release) {
+          gate.release();
+        }
+        await Promise.allSettled(tasks);
+      });
+      for (const [index, gate] of entered.entries()) {
+        const writer = db.transaction(async (tx) => {
+          await tx.execute(sql`SET LOCAL lock_timeout = '1s'`);
+          await assertErasureSubjectWritable(tx, [input, input]);
+          gate.resolve();
+          await release[index]!.promise;
+        });
+        writing.push(writer);
+        tasks.push(writer);
+        // Surface a failed admission instead of waiting for a gate it cannot open.
+        await Promise.race([gate.promise, writer]);
+      }
+      const closing = project(input);
+      tasks.push(closing);
+      await waitForAdvisoryWaiter();
+      release[0]!.release();
+      await writing[0];
+      await waitForAdvisoryWaiter();
+      release[1]!.release();
+      await Promise.all([...writing, closing]);
+      await expect(
+        db.transaction(async (tx) => {
+          await assertErasureSubjectWritable(tx, [input]);
+        }),
+      ).rejects.toThrow("subject_closed");
+    },
+  );
+
+  it("allows a writer after the first closure rolls back", async () => {
     const input = decision();
+    const entered = deferred<void>();
+    const release = releaseGate();
+    const rollback = new Error("synthetic closure rollback");
+    const closing = Promise.allSettled([
+      db.transaction(async (tx) => {
+        await projectErasureDecision(tx, input);
+        entered.resolve();
+        await release.promise;
+        throw rollback;
+      }),
+    ]);
+    onTestFinished(async () => {
+      release.release();
+      await closing;
+    });
+    await entered.promise;
+    const writing = db.transaction(async (tx) => {
+      await assertErasureSubjectWritable(tx, [input]);
+    });
+    onTestFinished(async () => {
+      release.release();
+      await Promise.allSettled([writing]);
+    });
+    await waitForAdvisoryWaiter();
+    release.release();
+    await writing;
+    await expect(closing).resolves.toStrictEqual([
+      { status: "rejected", reason: rollback },
+    ]);
+  });
+
+  it.each(["admission", "exclusive"] as const)(
+    "preserves mixed-version exclusion with %s first",
+    async (first) => {
+      const input = decision();
+      const entered = deferred<void>();
+      const release = releaseGate();
+      const lock =
+        first === "admission"
+          ? assertErasureSubjectWritable
+          : lockErasureSubjects;
+      const otherLock =
+        first === "admission"
+          ? lockErasureSubjects
+          : assertErasureSubjectWritable;
+      const holding = db.transaction(async (tx) => {
+        await lock(tx, [input]);
+        entered.resolve();
+        await release.promise;
+      });
+      onTestFinished(async () => {
+        release.release();
+        await Promise.allSettled([holding]);
+      });
+      await entered.promise;
+      const waiting = db.transaction(async (tx) => {
+        await otherLock(tx, [input]);
+      });
+      onTestFinished(async () => {
+        release.release();
+        await Promise.allSettled([waiting]);
+      });
+      await waitForAdvisoryWaiter();
+      release.release();
+      await expect(Promise.all([holding, waiting])).resolves.toStrictEqual([
+        undefined,
+        undefined,
+      ]);
+    },
+  );
+
+  it("rejects a writer after waiting for a non-first subject's first closure", async () => {
+    const input = decision();
+    const open = decision({ subjectKind: "organization" });
     const entered = deferred<void>();
     const release = deferred<void>();
     const closing = db.transaction(async (tx) => {
@@ -1214,7 +1357,9 @@ describe("dormant account erasure persistence", () => {
     await entered.promise;
     const writing = Promise.allSettled([
       db.transaction(async (tx) => {
-        return await assertErasureSubjectWritable(tx, [input]);
+        // Organization locks sort before user locks. The final closure read
+        // must see the new user decision committed while that second lock waits.
+        return await assertErasureSubjectWritable(tx, [open, input]);
       }),
     ]);
     const completed = Promise.allSettled([closing, writing]);

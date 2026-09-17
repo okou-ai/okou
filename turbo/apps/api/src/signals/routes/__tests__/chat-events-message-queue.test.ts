@@ -848,6 +848,14 @@ describe("CHAT-02: queueing and recalling messages", () => {
     }
 
     await chat.deleteThread(actor, active.threadId);
+    await flushWaitUntilForTest();
+    await expect(
+      api.readRunnerCancellation(
+        claimed.claim.sandboxToken,
+        active.runId,
+        runnerGroup,
+      ),
+    ).resolves.toMatchObject({ state: "present", mode: "hard" });
     const missingDelivery = await api.requestRecordRunnerActiveInputDeliveryAs(
       `Bearer ${claimed.claim.sandboxToken}`,
       active.runId,

@@ -552,6 +552,7 @@ test("Explain empty and unavailable CSV previews", async () => {
 });
 
 test("Expand a diagram from a Markdown artifact", async () => {
+  const browser = context.mocks.browser.blobDownload();
   vi.spyOn(HTMLImageElement.prototype, "naturalWidth", "get").mockReturnValue(
     1600,
   );
@@ -607,6 +608,13 @@ test("Expand a diagram from a Markdown artifact", async () => {
     ).toBeVisible();
   });
 
+  const inlineUrl = within(artifactPreview())
+    .getByRole("img", { name: "Diagram" })
+    .getAttribute("src");
+  if (!inlineUrl) {
+    throw new Error("Expected the Markdown diagram image URL");
+  }
+  const inlineSvg = await browser.blobForUrl(inlineUrl)?.text();
   click(buttonNamed("Expand diagram", artifactPreview()));
   await waitFor(() => {
     const expanded = within(artifactPreview()).getByAltText("diagram.svg");
@@ -619,6 +627,18 @@ test("Expand a diagram from a Markdown artifact", async () => {
       artifactPreview().querySelector('[data-mermaid-status="rendered"]'),
     ).not.toBeInTheDocument();
   });
+  const expandedUrl = within(artifactPreview())
+    .getByAltText("diagram.svg")
+    .getAttribute("src");
+  if (!expandedUrl) {
+    throw new Error("Expected the expanded diagram image URL");
+  }
+  expect(expandedUrl).not.toBe(inlineUrl);
+  expect(browser.revokedUrls).toContain(inlineUrl);
+  expect(browser.revokedUrls).not.toContain(expandedUrl);
+  await expect(browser.blobForUrl(expandedUrl)?.text()).resolves.toBe(
+    inlineSvg,
+  );
 });
 
 test("Preview a hosted site artifact in the thread sidebar", async () => {

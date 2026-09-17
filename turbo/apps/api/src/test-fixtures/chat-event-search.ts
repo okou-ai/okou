@@ -101,6 +101,24 @@ export async function writeChatEventSearchProjectionFixture(args: {
   });
 }
 
+/**
+ * Removes canonical parents while leaving their derived search rows behind.
+ * The product deletion path removes both under one lock and the projector now
+ * conflicts with it, so this is the only way to reconstruct the orphans left by
+ * rows written before that fence or by an older producer.
+ */
+export async function removeChatSearchParentThreadsFixture(
+  chatThreadIds: readonly string[],
+): Promise<void> {
+  const deleted = await db()
+    .delete(chatThreads)
+    .where(inArray(chatThreads.id, [...chatThreadIds]))
+    .returning({ id: chatThreads.id });
+  if (deleted.length !== chatThreadIds.length) {
+    throw new Error("Expected every chat search parent thread to be removed");
+  }
+}
+
 export async function removeChatEventSearchProjectionRowsFixture(
   chatThreadId: string,
 ): Promise<void> {
@@ -229,8 +247,10 @@ export async function removeChatSearchSourceEventsFixture(
 }
 
 /**
- * Changes source-thread ownership and agent metadata after projection so a
- * reader test can prove those fields are not reloaded from chat_threads.
+ * Moves one thread to another user and Agent. No production writer updates
+ * either column, so this models the change a future ownership transfer would
+ * persist: a reader test proves the stored labels are not reloaded from
+ * chat_threads, and a projector test proves authority is re-derived instead.
  */
 export async function updateChatSearchSourceThreadFixture(args: {
   readonly chatThreadId: string;

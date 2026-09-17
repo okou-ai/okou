@@ -1,3 +1,4 @@
+import { mockClerkUsers } from "./clerk-users";
 import { randomUUID } from "node:crypto";
 
 import type StripeSDK from "stripe";
@@ -39,6 +40,7 @@ import { voiceIoSttContract } from "@okouai/api-contracts/contracts/voice-io-stt
 import { mockEnv } from "../../../../lib/env";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
+import type { UsagePricingResolution } from "../../../context/usage-pricing-resolution";
 import {
   mockListStripeInvoices,
   mockStripeClient,
@@ -244,9 +246,7 @@ export function createBillingMediaApi(context: TestContext) {
     }
 
     routeMocks.clerk.session(actor.userId, actor.orgId, clerkRole(actor));
-    context.mocks.clerk.users.getUserList.mockResolvedValue({
-      data: [clerkUserProfile(actor)],
-    });
+    mockClerkUsers(context, [clerkUserProfile(actor)]);
     const memberships = clerkOrganizationMemberships(actor);
     context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
       data: memberships,
@@ -539,13 +539,17 @@ export function createBillingMediaApi(context: TestContext) {
       );
     },
 
-    async processOrgUsageEvents(actor: ApiTestUser) {
+    async processOrgUsageEvents(
+      actor: ApiTestUser,
+      usagePricingResolution?: UsagePricingResolution,
+    ) {
       if (!actor.orgId) {
         throw new Error("Cannot process usage without an organization");
       }
       const client = setupApp({
         context,
         routes: testUsageSettlementRoutes,
+        usagePricingResolution,
       })(testUsageSettlementContract);
       return await accept(
         client.process({ body: { org_id: actor.orgId } }),

@@ -2,8 +2,7 @@ use std::future::Future;
 use std::path::{Path, PathBuf};
 
 use super::procfs::{
-    ProcessStatRead, read_cmdline, read_cwd, read_ppid_from, read_process_stat_checked_from,
-    scan_proc_cmdlines,
+    ProcessStatRead, read_cmdline, read_cwd, read_process_stat_checked_from, scan_proc_cmdlines,
 };
 use super::types::{
     DiscoveredProcesses, DnsmasqProcessInfo, FirecrackerProcessInfo, MitmproxyProcessInfo,
@@ -264,6 +263,49 @@ where
     stable_firecracker_resolution(pid, cwd_info, initial_stat, process_stat)
 }
 
+async fn resolve_mitmdump_candidate<Fut>(
+    proc_root: &Path,
+    pid: u32,
+    read_stat: &mut impl FnMut(u32) -> Fut,
+) -> Option<MitmproxyProcessInfo>
+where
+    Fut: Future<Output = ProcessStatRead>,
+{
+    // The scan's argv may already belong to an exited process. Bracket a new
+    // cmdline read so a reused PID cannot lend its generation to the old port.
+    let before = read_stat(pid).await;
+    let port = parse_mitmdump_cmdline(&read_cmdline(proc_root, pid).await?)?;
+    let after = read_stat(pid).await;
+    for observation in [&before, &after] {
+        match observation {
+            ProcessStatRead::Missing => return None,
+            ProcessStatRead::Found(stat) if !process_stat_is_live(stat) => return None,
+            _ => {}
+        }
+    }
+    let generation = match (&before, &after) {
+        (ProcessStatRead::Found(before), ProcessStatRead::Found(after)) => {
+            if before.procfs_generation() != after.procfs_generation() {
+                return None;
+            }
+            Some(after.procfs_generation())
+        }
+        // A cmdline still establishes port presence when stat is unreadable,
+        // but cannot establish identity for a persistent orphan warning.
+        _ => None,
+    };
+    let ppid = match after {
+        ProcessStatRead::Found(stat) => Some(stat.ppid),
+        _ => None,
+    };
+    Some(MitmproxyProcessInfo {
+        pid,
+        ppid,
+        port,
+        generation,
+    })
+}
+
 /// Scan `/proc` once for sandbox child process facts.
 ///
 /// Live runner identity is published by `live_runner_instances`; this scan
@@ -309,8 +351,8 @@ where
         if is_firecracker_cmdline(argv) {
             firecrackers.push(*pid);
         }
-        if let Some(port) = parse_mitmdump_cmdline(argv) {
-            mitmdumps.push((*pid, port));
+        if parse_mitmdump_cmdline(argv).is_some() {
+            mitmdumps.push(*pid);
         }
         if let Some(port) = parse_dnsmasq_cmdline(argv) {
             dnsmasqs.push(DnsmasqProcessInfo { pid: *pid, port });
@@ -328,11 +370,12 @@ where
         }
     }
 
-    // Resolve ppid for mitmdump processes
+    // Resolve the current port, ppid, and generation for mitmdump processes.
     let mut mitm_infos = Vec::with_capacity(mitmdumps.len());
-    for (pid, port) in mitmdumps {
-        let ppid = read_ppid_from(proc_root, pid).await;
-        mitm_infos.push(MitmproxyProcessInfo { pid, ppid, port });
+    for pid in mitmdumps {
+        if let Some(info) = resolve_mitmdump_candidate(proc_root, pid, &mut read_stat).await {
+            mitm_infos.push(info);
+        }
     }
 
     ProcessDiscovery {
@@ -377,6 +420,123 @@ mod tests {
             ppid,
             pgid,
             starttime,
+        }
+    }
+
+    fn mitmdump_fixture() -> ProcfsFixture {
+        let fixture = ProcfsFixture::new(Path::new("/data/runner"));
+        std::fs::write(
+            fixture
+                .root()
+                .join(FIRECRACKER_PID.to_string())
+                .join("cmdline"),
+            b"mitmdump\0--listen-port\x0032821\0--set\0okou_proxy_registry_path=/registry\0",
+        )
+        .unwrap();
+        fixture
+    }
+
+    #[tokio::test]
+    async fn mitmdump_discovery_records_stable_generation() {
+        let fixture = mitmdump_fixture();
+        let discovered = fixture.discover().await;
+        assert!(discovered.processes.firecrackers.is_empty());
+        assert_eq!(discovered.processes.mitmdumps.len(), 1);
+        let mitm = &discovered.processes.mitmdumps[0];
+        assert_eq!(mitm.pid, FIRECRACKER_PID);
+        assert_eq!(mitm.port, 32821);
+        assert_eq!(mitm.ppid, Some(1));
+        assert_eq!(
+            mitm.generation,
+            Some(stat('S', 42, 123456).procfs_generation())
+        );
+    }
+
+    #[tokio::test]
+    async fn mitmdump_discovery_revalidates_cmdline_after_scan() {
+        // Exec/PID reuse between procfs reads is controlled by the kernel,
+        // not a doctor CLI input. Change the real fixture at the stat boundary.
+        for (cmdline, expected_port) in [
+            (b"sleep\0infinity\0".as_slice(), None),
+            (
+                b"mitmdump\0--listen-port\x0032822\0--set\0okou_proxy_registry_path=/registry\0"
+                    .as_slice(),
+                Some(32822),
+            ),
+        ] {
+            let fixture = mitmdump_fixture();
+            let discovered = discover_all_with_status_from(fixture.root(), |pid| {
+                let fixture = &fixture;
+                async move {
+                    std::fs::write(
+                        fixture.root().join(pid.to_string()).join("cmdline"),
+                        cmdline,
+                    )
+                    .unwrap();
+                    read_process_stat_checked_from(fixture.root(), pid).await
+                }
+            })
+            .await;
+            assert_eq!(
+                discovered.processes.mitmdumps.first().map(|mitm| mitm.port),
+                expected_port
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn mitmdump_discovery_rejects_generation_change_but_allows_reparenting() {
+        for (after, present) in [
+            (stat_with_ppid('R', 1, 42, 123457), false),
+            (stat_with_ppid('R', 1, 43, 123456), false),
+            (stat_with_ppid('R', 2, 42, 123456), true),
+        ] {
+            let fixture = mitmdump_fixture();
+            let mut reads = 0;
+            let discovered = discover_all_with_status_from(fixture.root(), |_| {
+                reads += 1;
+                std::future::ready(ProcessStatRead::Found(if reads == 1 {
+                    stat_with_ppid('S', 1, 42, 123456)
+                } else {
+                    after.clone()
+                }))
+            })
+            .await;
+            assert_eq!(!discovered.processes.mitmdumps.is_empty(), present);
+            if present {
+                assert_eq!(discovered.processes.mitmdumps[0].ppid, Some(2));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn mitmdump_discovery_distinguishes_stat_uncertainty_from_exit() {
+        for fault in UNCERTAIN_STAT_FAULTS.into_iter().chain([
+            StatFault::Missing,
+            StatFault::Terminal('Z'),
+            StatFault::Terminal('X'),
+            StatFault::Terminal('x'),
+        ]) {
+            for successful_reads in 0..2 {
+                let fixture = mitmdump_fixture();
+                let discovered = fixture
+                    .discover_with_stat_fault(successful_reads, fault)
+                    .await;
+                let uncertain = matches!(
+                    fault,
+                    StatFault::PermissionDenied | StatFault::Emfile | StatFault::Invalid
+                );
+                assert_eq!(
+                    !discovered.processes.mitmdumps.is_empty(),
+                    uncertain,
+                    "{fault:?} after {successful_reads} successful stat reads"
+                );
+                if uncertain {
+                    let mitm = &discovered.processes.mitmdumps[0];
+                    assert_eq!(mitm.port, 32821);
+                    assert_eq!(mitm.generation, None);
+                }
+            }
         }
     }
 

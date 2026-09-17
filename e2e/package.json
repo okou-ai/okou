@@ -9,12 +9,7 @@
   },
   "scripts": {
     "check-types": "tsc --noEmit",
-    "test": "tsx --test playwright/lib/*.test.ts",
-    "style:migration": "tsx playwright/style-migration/run.ts",
-    "style:migration:tone": "tsx playwright/style-migration/run-tone.ts",
-    "style:migration:settings-select": "tsx playwright/style-migration/run-settings-select.ts",
-    "style:migration:swatch": "tsx playwright/style-migration/run-swatch.ts",
-    "style:migration:tone-preview": "tsx playwright/style-migration/run-tone-preview.ts"
+    "test": "tsx --test playwright/lib/*.test.ts"
   },
   "keywords": [],
   "author": "",
@@ -22,11 +17,9 @@
   "dependencies": {
     "@playwright/test": "^1.60.0",
     "@types/node": "^25.9.3",
-    "dotenv": "^17.4.2",
-    "pngjs": "7.0.0"
+    "dotenv": "^17.4.2"
   },
   "devDependencies": {
-    "@types/pngjs": "6.0.5",
     "tsx": "^4.22.4",
     "typescript": "6.0.3"
   }

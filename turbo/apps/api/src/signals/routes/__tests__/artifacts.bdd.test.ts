@@ -1,9 +1,13 @@
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
+import {
+  artifactReferencesContract,
+  parseArtifactReference,
+} from "@okouai/api-contracts/contracts/artifact-references";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { webFileUrlRoutes } from "../web-file-url";
+import { artifactReferenceRoutes } from "../artifact-references";
 import { createHash, randomUUID } from "node:crypto";
 import { createStore } from "ccstate";
 
@@ -49,6 +53,25 @@ interface ArtifactActor {
   readonly agentId: string;
   readonly runnerGroup: string;
   readonly objectStore: ChatObjectStorage;
+}
+
+async function resolvePrivatePreviewReference(url: string) {
+  const reference = parseArtifactReference(url);
+  if (!reference) {
+    throw new Error("Expected a private preview reference");
+  }
+  const resolved = await accept(
+    setupApp({ context, routes: artifactReferenceRoutes })(
+      artifactReferencesContract,
+    ).resolve({
+      headers: { authorization: "Bearer clerk-session" },
+      params: { reference: `${reference.hash}${reference.extension}` },
+    }),
+    [200],
+  );
+  expect(reference.hash).toMatch(/^[a-z0-9]{10}$/u);
+  expect(resolved.body.target.kind).toBe("file");
+  return resolved.body.target;
 }
 
 interface SnapshotRequest {
@@ -250,6 +273,7 @@ async function createHostedArtifact(args: {
   readonly actor: ApiTestUser;
   readonly agentId: string;
   readonly runnerGroup: string;
+  readonly objectStore: ChatObjectStorage;
   readonly site: string;
   readonly artifactKind?: "hosted-site" | "presentation-html";
 }): Promise<{
@@ -268,14 +292,24 @@ async function createHostedArtifact(args: {
     run.runId,
   );
   const bearer = `Bearer ${okouTokenFromClaim(claim)}`;
+  const content = `<main>${args.site}</main>`;
   const prepared = await chat.prepareHostedSiteWithBearer(bearer, {
     site: args.site,
     artifactKind: args.artifactKind ?? "hosted-site",
     spaFallback: false,
-    files: [hostedTextFile("/index.html", `<main>${args.site}</main>`)],
+    files: [hostedTextFile("/index.html", content)],
   });
   if (!prepared.artifactUrl) {
     throw new Error("Expected a versioned hosted artifact URL");
+  }
+  if (parseArtifactReference(prepared.artifactUrl)) {
+    args.objectStore.addObject({
+      bucket: "test-hosted-sites",
+      key: `private-sites/okou/${prepared.deploymentId}/index.html`,
+      body: Buffer.from(content),
+      size: Buffer.byteLength(content),
+      contentType: "text/html",
+    });
   }
   await chat.completeHostedSiteWithBearer(bearer, prepared.deploymentId);
   await completeChatRunOk(run.runId, sandboxHeaders);
@@ -390,10 +424,9 @@ describe("video Artifact previews", () => {
         expect.stringMatching(/^Bearer [a-f0-9]{48}$/u),
       ]);
       const artifact = await findCatalogArtifact(actor, "private-video.mp4");
-      const reference = parseArtifactReference(artifact?.thumbnail?.url ?? "");
-      if (!reference?.id) {
-        throw new Error("Expected private poster reference");
-      }
+      const reference = await resolvePrivatePreviewReference(
+        artifact?.thumbnail?.url ?? "",
+      );
       expect(
         owner.objectStore.puts.filter((put) => {
           return put.contentType === "image/jpeg";
@@ -543,10 +576,9 @@ describe("video Artifact previews", () => {
     });
     await flushWaitUntilForTest();
     const artifact = await findCatalogArtifact(actor, "old-video.mp4");
-    const reference = parseArtifactReference(artifact?.thumbnail?.url ?? "");
-    if (!reference?.id) {
-      throw new Error("Expected a stable private poster reference");
-    }
+    const reference = await resolvePrivatePreviewReference(
+      artifact?.thumbnail?.url ?? "",
+    );
     expect(
       owner.objectStore.puts.filter((put) => {
         return put.contentType === "image/jpeg";
@@ -838,6 +870,7 @@ describe("hosted Artifact previews", () => {
         actor,
         agentId: owner.agentId,
         runnerGroup: owner.runnerGroup,
+        objectStore: owner.objectStore,
         site,
       });
       await flushWaitUntilForTest();
@@ -846,12 +879,9 @@ describe("hosted Artifact previews", () => {
         url: expect.stringMatching(/^https:\/\/pv-[a-f0-9]{48}\.okou\.app\/$/u),
       });
       const catalogArtifact = await findCatalogArtifact(actor, site);
-      const reference = parseArtifactReference(
+      const reference = await resolvePrivatePreviewReference(
         catalogArtifact?.thumbnail?.url ?? "",
       );
-      if (!reference?.id) {
-        throw new Error("Expected private screenshot reference");
-      }
       const filename = `preview-v3-${artifact.deploymentId}.webp`;
       expect(
         owner.objectStore.puts.filter((put) => {
@@ -922,6 +952,7 @@ describe("hosted Artifact previews", () => {
       actor: owner.actor,
       agentId: owner.agentId,
       runnerGroup: owner.runnerGroup,
+      objectStore: owner.objectStore,
       site,
     });
     await flushWaitUntilForTest();
@@ -965,6 +996,7 @@ describe("hosted Artifact previews", () => {
       actor: owner.actor,
       agentId: owner.agentId,
       runnerGroup: owner.runnerGroup,
+      objectStore: owner.objectStore,
       site,
     });
     await flushWaitUntilForTest();
@@ -1009,7 +1041,7 @@ describe("hosted Artifact previews", () => {
           deviceScaleFactor: 0.5,
         },
         gotoOptions: { waitUntil: "networkidle2", timeout: 20_000 },
-        actionTimeout: 30_000,
+        actionTimeout: 120_000,
         screenshotOptions: { type: "webp", quality: 80 },
       },
     });
@@ -1035,7 +1067,7 @@ describe("hosted Artifact previews", () => {
     expect(snapshotRequests).toHaveLength(1);
   }, 120_000);
 
-  it("retries navigation timeouts once with explicit DOM readiness", async () => {
+  it("retries navigation timeouts once with a shape-independent settle wait", async () => {
     const owner = await artifactActor("Artifacts API navigation retry agent");
     mockEnv("CLOUDFLARE_BROWSER_RENDERING_API_TOKEN", "preview-token");
     mockEnv("ARTIFACT_PREVIEW_WAF_SECRET", ARTIFACT_PREVIEW_WAF_SECRET);
@@ -1057,6 +1089,7 @@ describe("hosted Artifact previews", () => {
       actor: owner.actor,
       agentId: owner.agentId,
       runnerGroup: owner.runnerGroup,
+      objectStore: owner.objectStore,
       site,
     });
     await flushWaitUntilForTest();
@@ -1064,17 +1097,16 @@ describe("hosted Artifact previews", () => {
     expect(snapshotRequests).toHaveLength(2);
     expect(snapshotRequests[0]?.body).toMatchObject({
       gotoOptions: { waitUntil: "networkidle2", timeout: 20_000 },
-      actionTimeout: 30_000,
+      actionTimeout: 120_000,
     });
     expect(snapshotRequests[1]?.body).toMatchObject({
       gotoOptions: { waitUntil: "domcontentloaded", timeout: 15_000 },
-      waitForSelector: {
-        selector: "body > *",
-        visible: true,
-        timeout: 10_000,
-      },
-      actionTimeout: 30_000,
+      waitForTimeout: 3000,
+      actionTimeout: 120_000,
     });
+    // Readiness must not depend on which node the document opens its body with:
+    // a leading hidden sprite or script can never satisfy a visibility probe.
+    expect(snapshotRequests[1]?.body).not.toHaveProperty("waitForSelector");
     const previewedArtifact = await findCatalogArtifact(owner.actor, site);
     expect(previewedArtifact?.thumbnail?.url).toMatch(
       /^https:\/\/a\.okou\.io\/[0-9a-z]{10}\.webp$/u,
@@ -1102,6 +1134,7 @@ describe("hosted Artifact previews", () => {
       actor: owner.actor,
       agentId: owner.agentId,
       runnerGroup: owner.runnerGroup,
+      objectStore: owner.objectStore,
       site,
     });
     await flushWaitUntilForTest();
@@ -1133,6 +1166,7 @@ describe("hosted Artifact previews", () => {
       actor: owner.actor,
       agentId: owner.agentId,
       runnerGroup: owner.runnerGroup,
+      objectStore: owner.objectStore,
       site: pageErrorSite,
     });
     await flushWaitUntilForTest();
@@ -1150,6 +1184,7 @@ describe("hosted Artifact previews", () => {
       actor: owner.actor,
       agentId: owner.agentId,
       runnerGroup: owner.runnerGroup,
+      objectStore: owner.objectStore,
       site: challengeSite,
     });
     await flushWaitUntilForTest();

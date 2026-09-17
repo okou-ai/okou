@@ -1,5 +1,6 @@
 import { agentSshAccessContract } from "@okouai/api-contracts/contracts/ssh-access";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
+import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
 import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
@@ -110,7 +111,6 @@ test("The SSH directory summarizes attention like Connectors and recovers withou
   await setupPage({
     context,
     path: "/connectors?keywords=ssh",
-    featureSwitches: { [FeatureSwitchKey.SshAccess]: true },
     auth: {
       user: { id: "test-user-123", fullName: "Test User" },
       organization: {
@@ -193,7 +193,6 @@ test.each([0, 2])(
       context,
       path: "/connectors",
       featureSwitches: {
-        [FeatureSwitchKey.SshAccess]: true,
         [FeatureSwitchKey.ConnectorDirectory]: true,
       },
     });
@@ -305,23 +304,12 @@ function mockCatalog() {
   });
 }
 
-async function page(path = "/connectors", enabled = true) {
+async function page(path = "/connectors") {
   await setupPage({
     context,
     path,
-    featureSwitches: { [FeatureSwitchKey.SshAccess]: enabled },
   });
 }
-
-test("SSH is absent from global Connectors when disabled, without requesting SSH data", async () => {
-  mockCatalog();
-  await page("/connectors?keywords=ssh", false);
-  await screen.findByText(/No connectors matching/u);
-  expect(queryConnectorAction("link", "Manage SSH hosts")).toBeNull();
-  expect(
-    screen.queryByRole("heading", { name: "Remote access" }),
-  ).not.toBeInTheDocument();
-});
 
 test("The remote-access category is localized independently of the SSH service name", async () => {
   mockCatalog();
@@ -332,7 +320,6 @@ test("The remote-access category is localized independently of the SSH service n
     context,
     path: "/connectors?keywords=ssh",
     locale: "fr-FR",
-    featureSwitches: { [FeatureSwitchKey.SshAccess]: true },
   });
   await screen.findByRole("heading", { name: "Accès à distance" });
   expect(
@@ -345,6 +332,9 @@ test.each([0, 1, 2])(
   async (count) => {
     mockCatalog();
     context.mocks.data.agents([]);
+    context.mocks.api(sshCredentialsContract.list, ({ respond }) => {
+      return respond(200, { credentials: [] });
+    });
     context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
       return respond(200, { configuredCount: count });
     });
@@ -389,7 +379,8 @@ test.each([0, 1, 2])(
       click(getConnectorAction("button", "Add host"));
     }
     const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getByLabelText("Private key")).toHaveValue("");
+    const key = await within(dialog).findByLabelText("Private key");
+    expect(key).toHaveValue("");
     expect(within(dialog).queryByText("OAuth")).not.toBeInTheDocument();
   },
 );

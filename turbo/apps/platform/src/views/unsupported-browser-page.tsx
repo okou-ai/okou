@@ -45,7 +45,7 @@ function UnsupportedBrowserPage({
 
   return (
     <div
-      className="okou-app relative flex h-full min-h-0 items-center justify-center overflow-hidden bg-background p-6 text-foreground"
+      className="relative flex h-full min-h-0 items-center justify-center overflow-hidden bg-background p-6 text-foreground"
       role="status"
       aria-live="polite"
     >

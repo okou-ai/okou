@@ -153,7 +153,7 @@ export function InstatusStatusNotice({
       className={
         placement === "sidebar"
           ? "mx-2 mt-2 flex max-h-[min(40dvh,320px)] shrink-0 flex-col gap-2 overflow-y-auto overscroll-contain"
-          : "okou-app pointer-events-none fixed inset-x-3 bottom-[calc(var(--sab,0px)+16px)] z-[2147483646] flex max-h-[calc(100dvh-32px)] flex-col gap-3 overflow-y-auto sm:left-6 sm:right-auto sm:w-[390px]"
+          : "pointer-events-none fixed inset-x-3 bottom-[calc(var(--sab,0px)+16px)] z-[2147483646] flex max-h-[calc(100dvh-32px)] flex-col gap-3 overflow-y-auto sm:left-6 sm:right-auto sm:w-[390px]"
       }
     >
       {issues.map((issue) => {

@@ -5,6 +5,8 @@ Never unlink an existing endpoint here, including after a failed bind or shutdow
 Status and log flush share transport; the JSONL writer owns pending prefixes.
 """
 
+from __future__ import annotations
+
 import asyncio
 import json
 import os
@@ -12,12 +14,19 @@ import re
 import socket
 import struct
 import threading
+from collections.abc import Callable
 from concurrent.futures import Future
 from pathlib import Path, PurePosixPath
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 import addon_process_logging
 import jsonl_writer
+import registry_observation
+
+if TYPE_CHECKING:
+    import registry_control
+    import runner_flush_lifecycle
 
 MAX_FRAME_BYTES = 64 * 1024
 MAX_CONNECTIONS = 16
@@ -72,9 +81,20 @@ def _bind(directory: Path) -> socket.socket:
 class ControlServer:
     """One launch's I/O owner; callers must stop it before blocking addon drains."""
 
-    def __init__(self, directory: Path, generation: str) -> None:
+    def __init__(
+        self,
+        directory: Path,
+        generation: str,
+        registry_owner: registry_control.RegistryControl | None = None,
+        delivery_owner: runner_flush_lifecycle.DeliveryControl | None = None,
+        *,
+        usage_snapshot: Callable[[str], dict[str, object]] | None = None,
+    ) -> None:
         self._directory = directory
         self._generation = _identifier(generation)
+        self._registry_owner = registry_owner
+        self._delivery_owner = delivery_owner
+        self._usage_snapshot = usage_snapshot
         self._started: Future[None] = Future()
         self._shutdown: Future[None] = Future()
         self._tasks: set[asyncio.Task[None]] = set()
@@ -188,8 +208,24 @@ class ControlServer:
                 return self._error(request_id, "invalid_request")
             if generation != self._generation:
                 return self._error(request_id, "stale_generation")
+            if method == "usage.snapshot":
+                params = request["params"]
+                if set(params) != {"runId"}:
+                    return self._error(request_id, "invalid_request")
+                run_id = _identifier(params["runId"])
+                if self._usage_snapshot is None:
+                    return self._error(request_id, "not_ready")
+                return self._result(request_id, self._usage_snapshot(run_id))
+            if method in {"delivery.flush", "delivery.status", "delivery.drain"}:
+                return await self._delivery(request_id, method, request["params"])
             if method == "logs.flush":
                 return await self._flush_logs(request_id, request["params"])
+            if method == "registry.apply":
+                return await self._apply_registry(request_id, request["params"])
+            if method == "registry.status":
+                if request["params"]:
+                    return self._error(request_id, "invalid_request")
+                return self._result(request_id, registry_observation.snapshot())
             if method != "proxy.status":
                 return self._error(request_id, "unknown_method")
             if request["params"]:
@@ -202,6 +238,71 @@ class ControlServer:
             "type": "result",
             "data": {"state": "running"},
         }
+
+    def _result(self, request_id: str, data: dict[str, object]) -> dict[str, object]:
+        return {
+            "requestId": request_id,
+            "generation": self._generation,
+            "type": "result",
+            "data": data,
+        }
+
+    async def _delivery(
+        self, request_id: str, method: str, params: dict[str, object]
+    ) -> dict[str, object]:
+        if params:
+            return self._error(request_id, "invalid_request")
+        owner = self._delivery_owner
+        if owner is None:
+            return self._error(request_id, "not_ready")
+        try:
+            if method == "delivery.status":
+                return self._result(request_id, owner.status())
+            if owner.status()["closed"]:
+                return self._error(request_id, "not_ready")
+            if method == "delivery.flush":
+                state = owner.flush()
+                if state == "closed":
+                    return self._error(request_id, "not_ready")
+                return self._result(request_id, {"state": state})
+            result = await owner.drain()
+            if result is None:
+                return self._error(request_id, "busy")
+            return self._result(request_id, result)
+        except Exception as error:
+            addon_process_logging.emit_addon_process_event(
+                "error", f"Delivery control failed ({type(error).__name__})"
+            )
+            return self._error(request_id, "internal_error")
+
+    async def _apply_registry(
+        self, request_id: str, params: dict[str, object]
+    ) -> dict[str, object]:
+        digest = params.get("digest")
+        if (
+            set(params) != {"digest"}
+            or not isinstance(digest, str)
+            or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+        ):
+            return self._error(request_id, "invalid_request")
+        if self._registry_owner is None:
+            return self._error(request_id, "not_ready")
+        try:
+            future = self._registry_owner.apply(digest)
+            if future is None:
+                return self._error(request_id, "busy")
+            async with asyncio.timeout(4.0):
+                result = await asyncio.shield(asyncio.wrap_future(future))
+        except TimeoutError:
+            return self._error(request_id, "deadline")
+        except Exception as error:
+            addon_process_logging.emit_addon_process_event(
+                "error", f"Registry control application failed ({type(error).__name__})"
+            )
+            return self._error(request_id, "internal_error")
+        if result is None:
+            return self._error(request_id, "internal_error")
+        return self._result(request_id, result)
 
     async def _flush_logs(self, request_id: str, params: dict[str, object]) -> dict[str, object]:
         if set(params) != {"runId", "path"}:

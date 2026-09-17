@@ -58,11 +58,53 @@ interface SharedWorkerFailureTelemetry {
   readonly script_path: string;
 }
 
+interface SkeletonTimeoutTelemetry {
+  readonly event_name: "app.skeleton.timeout";
+  readonly threshold_ms: number;
+  readonly visibility_state: DocumentVisibilityState;
+}
+
 interface HttpRequestTelemetry {
   readonly event_name: "http.request";
   readonly method: HttpMethod;
   readonly route: string;
   readonly response_status_code?: number;
+}
+
+export interface MarketingOnboardingTelemetry {
+  readonly event_name: "marketing.onboarding";
+  readonly user_id: string;
+  readonly org_id: string;
+  readonly phase: "attempt" | "token" | "request" | "complete";
+  readonly result_code:
+    | "started"
+    | "received"
+    | "acknowledged"
+    | "duplicate_attempt"
+    | "attempt_error"
+    | "token_missing"
+    | "token_error"
+    | "http_error"
+    | "request_error"
+    | "timeout"
+    | "aborted";
+  readonly response_status_code?: number;
+  readonly marketing_request_id?: string;
+}
+
+export interface MarketingCheckoutTelemetry {
+  readonly event_name: "marketing.checkout";
+  readonly checkout_source: "onboarding_video" | "paywall";
+  readonly result_code:
+    | "acknowledged"
+    | "token_missing"
+    | "token_error"
+    | "http_error"
+    | "request_error"
+    | "timeout"
+    | "aborted";
+  readonly response_status_code?: number;
+  readonly marketing_request_id?: string;
 }
 
 export type ClientTelemetryOperation =
@@ -71,13 +113,25 @@ export type ClientTelemetryOperation =
   | IndexedDbTransactionTelemetry
   | SharedDatabaseQueryTelemetry
   | SharedWorkerFailureTelemetry
-  | HttpRequestTelemetry;
+  | SkeletonTimeoutTelemetry
+  | HttpRequestTelemetry
+  | MarketingOnboardingTelemetry
+  | MarketingCheckoutTelemetry;
 
 function runtimeName(): "shared_worker" | "window" {
   return typeof window === "undefined" ? "shared_worker" : "window";
 }
 
 function scopeName(operation: ClientTelemetryOperation): string {
+  if (operation.event_name === "marketing.checkout") {
+    return "okou-app/marketing-checkout";
+  }
+  if (operation.event_name === "marketing.onboarding") {
+    return "okou-app/marketing-onboarding";
+  }
+  if (operation.event_name === "app.skeleton.timeout") {
+    return "okou-app/startup";
+  }
   if (operation.event_name === "shared_worker.failure") {
     return "okou-app/shared-worker";
   }
@@ -110,7 +164,12 @@ function statusCode(
 }
 
 function operationName(operation: ClientTelemetryOperation): string {
-  if (operation.event_name === "shared_worker.failure") {
+  if (
+    operation.event_name === "shared_worker.failure" ||
+    operation.event_name === "marketing.onboarding" ||
+    operation.event_name === "marketing.checkout" ||
+    operation.event_name === "app.skeleton.timeout"
+  ) {
     return operation.event_name;
   }
   if (operation.event_name === "http.request") {
@@ -128,6 +187,38 @@ function operationName(operation: ClientTelemetryOperation): string {
 function operationAttributes(
   operation: ClientTelemetryOperation,
 ): ClientTelemetryAttributes {
+  if (operation.event_name === "marketing.checkout") {
+    return {
+      "okou.marketing.checkout.source": operation.checkout_source,
+      "okou.marketing.checkout.result": operation.result_code,
+      ...(operation.marketing_request_id === undefined
+        ? {}
+        : {
+            "okou.marketing.checkout.request_id":
+              operation.marketing_request_id,
+          }),
+    };
+  }
+  if (operation.event_name === "marketing.onboarding") {
+    return {
+      "okou.marketing.onboarding.user_id": operation.user_id,
+      "okou.marketing.onboarding.org_id": operation.org_id,
+      "okou.marketing.onboarding.phase": operation.phase,
+      "okou.marketing.onboarding.result": operation.result_code,
+      ...(operation.marketing_request_id === undefined
+        ? {}
+        : {
+            "okou.marketing.onboarding.request_id":
+              operation.marketing_request_id,
+          }),
+    };
+  }
+  if (operation.event_name === "app.skeleton.timeout") {
+    return {
+      "okou.skeleton.threshold_ms": operation.threshold_ms,
+      "okou.document.visibility_state": operation.visibility_state,
+    };
+  }
   if (operation.event_name === "shared_worker.failure") {
     return {
       "okou.shared_worker.failure.phase": operation.phase,
@@ -161,6 +252,17 @@ function operationAttributes(
 function httpAttributes(
   operation: ClientTelemetryOperation,
 ): ClientTelemetryAttributes {
+  if (
+    operation.event_name === "marketing.onboarding" ||
+    operation.event_name === "marketing.checkout"
+  ) {
+    return operation.response_status_code === undefined
+      ? {}
+      : {
+          "attributes.http.response.status_code":
+            operation.response_status_code,
+        };
+  }
   if (operation.event_name !== "http.request") {
     return {};
   }

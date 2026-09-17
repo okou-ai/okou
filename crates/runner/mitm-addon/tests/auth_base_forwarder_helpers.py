@@ -7,6 +7,7 @@ import io
 import threading
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from mitmproxy import http
@@ -487,6 +488,9 @@ def fake_forwarder_upstream(
     )
     with (
         patch.object(transport, "_dns_resolver", upstream),
+        # Keep the external transport fake local: the delivery control reactor
+        # and its clients must still be able to open real Unix sockets.
+        patch.object(transport, "socket", SimpleNamespace(**vars(transport.socket))),
         patch.object(
             transport.socket,
             "socket",

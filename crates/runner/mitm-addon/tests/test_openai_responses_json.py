@@ -145,6 +145,7 @@ class TestOpenAIResponsesModelJsonResponseInspector:
         result, error = _inspect_openai_responses_json(body)
         assert error is None
         assert result == {
+            "input_partition_incomplete": True,
             "model": "gpt-5.6-sol",
             "tokens.input": 0,
             "tokens.cache_read": 8,
@@ -159,6 +160,7 @@ class TestOpenAIResponsesModelJsonResponseInspector:
         result, error = _inspect_openai_responses_json(body)
         assert error is None
         assert result == {
+            "input_partition_incomplete": True,
             "model": "gpt-5.5",
             "tokens.input": 0,
             "tokens.cache_read": 5,

@@ -12,7 +12,6 @@ import type { OrgMembersPinnedAgentIds } from "@okouai/db/jsonb-contracts/org-me
 import type { ModelSettings } from "@okouai/db/jsonb-contracts/chat-model-settings";
 import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import type {
-  ChatTranslationLanguage,
   ColorTheme,
   ThemePreference,
 } from "@okouai/api-contracts/contracts/user-preferences";
@@ -28,9 +27,9 @@ export const orgMembersMetadata = pgTable(
     userId: text("user_id").notNull(),
     timezone: text("timezone"),
     locale: text("locale"),
-    translationLanguage: text(
-      "translation_language",
-    ).$type<ChatTranslationLanguage>(),
+    // Retired chat preference; keep the physical column and schema in sync
+    // until API versions that select it have drained before a later migration.
+    translationLanguage: text("translation_language"),
     onboardingRole: text("onboarding_role"),
     pinnedAgentIds: jsonb("pinned_agent_ids")
       .$type<OrgMembersPinnedAgentIds>()
@@ -57,6 +56,21 @@ export const orgMembersMetadata = pgTable(
     /** Voice input v2 model selected in Debug preferences. */
     voiceInputModel: varchar("voice_input_model", { length: 255 }),
     onboardingDone: boolean("onboarding_done").notNull().default(false),
+    /**
+     * When Morning Brief collection ownership was revoked for this member.
+     *
+     * The first transaction every membership, user and organization cleanup
+     * commits stamps this column on the member rows it revokes, so the decision
+     * survives that COMMIT instead of living only in a lock. Claiming and
+     * finalizing read it under the same member-row lock they already take,
+     * which is what stops an admission resolved against a stale external
+     * membership answer from inserting an occurrence afterwards — including
+     * when revocation found no occurrence to delete. Only the row's own
+     * deletion clears it, so a rejoining member starts from a fresh row.
+     */
+    morningBriefCollectionRevokedAt: timestamp(
+      "morning_brief_collection_revoked_at",
+    ),
     captureNetworkBodiesRemaining: integer(
       "capture_network_bodies_remaining",
     ).default(0),

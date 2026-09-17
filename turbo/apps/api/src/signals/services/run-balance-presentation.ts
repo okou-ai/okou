@@ -1,6 +1,6 @@
 import {
   formatRunBalanceError,
-  isLegacyProviderBalanceError,
+  isProviderBalanceErrorMessage,
   isProviderBalanceErrorBody,
   MODEL_UNAVAILABLE_MESSAGE,
 } from "@okouai/api-contracts/contracts/run-balance-errors";
@@ -28,15 +28,15 @@ export function publicAssistantBalanceError(
   }
   for (const block of content) {
     const item = record(block);
-    if (item?.type === "text" && typeof item.text === "string") {
-      const error = formatRunBalanceError({
-        message: item.text,
+    if (
+      item?.type === "text" &&
+      typeof item.text === "string" &&
+      isProviderBalanceErrorMessage(item.text, "claude-code")
+    ) {
+      return formatRunBalanceError({
+        failureReason: "provider_insufficient_credits",
         modelProvider,
-        framework: "claude-code",
       });
-      if (error !== undefined) {
-        return error;
-      }
     }
   }
   return undefined;
@@ -66,10 +66,15 @@ function publicBalanceEventBody(
     eventType === "result" &&
     (event.is_error === true || event.subtype === "error") &&
     typeof event.result === "string" &&
-    isLegacyProviderBalanceError(event.result, "claude-code")
+    (event.failureReason === "provider_insufficient_credits" ||
+      isProviderBalanceErrorMessage(event.result, "claude-code"))
   ) {
+    const visible = { ...event };
+    if (visible.failureReason === "provider_insufficient_credits") {
+      delete visible.failureReason;
+    }
     return {
-      ...event,
+      ...visible,
       result: MODEL_UNAVAILABLE_MESSAGE,
       ...(Array.isArray(event.errors)
         ? { errors: [MODEL_UNAVAILABLE_MESSAGE] }
@@ -104,7 +109,7 @@ function publicProviderErrorEvent(
       eventType === "response.failed") &&
     (isProviderBalanceErrorBody(event) ||
       (typeof record(event.error)?.message === "string" &&
-        isLegacyProviderBalanceError(
+        isProviderBalanceErrorMessage(
           String(record(event.error)?.message),
           null,
         )))

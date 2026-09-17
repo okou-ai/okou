@@ -23,6 +23,7 @@ import {
   mockAgent,
   mockBillingCapabilities,
   mockOrgModelRoutes,
+  tabByText,
   workflowSummary,
 } from "./chat-composer-test-helpers.ts";
 
@@ -79,15 +80,14 @@ function setupModels(): void {
   });
 }
 
-async function openSlashMenu(panel: boolean, query = ""): Promise<void> {
+async function openSlashMenu(query = ""): Promise<void> {
   setupModels();
   mockChatLifecycle(context);
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
-      [FeatureSwitchKey.ComposerCreateCommands]: true,
-      [FeatureSwitchKey.ComposerSlashTemplatePanel]: panel,
+      [FeatureSwitchKey.ComposerSlashTemplatePanel]: true,
     },
   });
   const editor = await findComposerEditor();
@@ -113,15 +113,8 @@ function slashButton(name: string): HTMLElement {
   return result;
 }
 
-test("The slash menu keeps its flat Create group until the panel switch is on", async () => {
-  await openSlashMenu(false);
-  expect(document.querySelector('[data-slot="slash-panel"]')).toBeNull();
-  expect(detailPane()).toBeNull();
-  expect(slashButton("Create")).toBeInTheDocument();
-});
-
 test("The slash panel initially previews the keyboard-selected type's covers", async () => {
-  await openSlashMenu(true);
+  await openSlashMenu();
   const pane = detailPane();
   if (!pane) {
     throw new Error("Expected the detail pane");
@@ -141,7 +134,7 @@ test("The slash panel initially previews the keyboard-selected type's covers", a
 });
 
 test("The pane carries more than one row of covers, so later templates are reachable", async () => {
-  await openSlashMenu(true);
+  await openSlashMenu();
   const pane = detailPane();
   if (!pane) {
     throw new Error("Expected the detail pane");
@@ -157,7 +150,7 @@ test("The pane carries more than one row of covers, so later templates are reach
 
 test("Illustration covers keep their own proportion; decks keep the 16:9 tile", async () => {
   const user = userEvent.setup();
-  await openSlashMenu(true);
+  await openSlashMenu();
 
   // A deck cover really is a slide, so it still asks for the 16:9 box.
   const deckCover = detailPane()?.querySelector("img");
@@ -189,7 +182,7 @@ test("Illustration covers keep their own proportion; decks keep the 16:9 tile", 
 
 test("Hovering a website row previews the website catalog", async () => {
   const user = userEvent.setup();
-  await openSlashMenu(true);
+  await openSlashMenu();
   await user.hover(slashButton("Website"));
   await waitFor(() => {
     expect(detailPane()).toHaveAttribute("data-category", "website");
@@ -207,7 +200,7 @@ test("Hovering a website row previews the website catalog", async () => {
 
 test("Hovering a workflow closes the preview pane", async () => {
   const user = userEvent.setup();
-  await openSlashMenu(true);
+  await openSlashMenu();
   expect(detailPane()).not.toBeNull();
   await user.hover(slashButton(`/${WORKFLOW_NAME}`));
   await waitFor(() => {
@@ -215,11 +208,42 @@ test("Hovering a workflow closes the preview pane", async () => {
   });
 });
 
+test("Hovering the Workflow type closes the preview pane", async () => {
+  const user = userEvent.setup();
+  await openSlashMenu();
+  expect(detailPane()).not.toBeNull();
+  await user.hover(slashButton("Workflow"));
+  await waitFor(() => {
+    expect(detailPane()).toBeNull();
+  });
+});
+
+test("The closed preview pane stays closed when the panel leaves a still pointer", async () => {
+  await openSlashMenu();
+  const workflow = slashButton("Workflow");
+  // The popover is content-width, so closing the pane narrows it. When the
+  // popover has been collision-shifted against a boundary, that narrowing
+  // re-pins it and the left column slides away from a pointer that never
+  // moved, which the browser reports as a leave at the move's own
+  // coordinates. Replayed here because jsdom has no layout to shift.
+  const still = { clientX: 300, clientY: 470 };
+  fireEvent.mouseOver(workflow, still);
+  fireEvent.mouseMove(workflow, still);
+  await waitFor(() => {
+    expect(detailPane()).toBeNull();
+  });
+
+  fireEvent.mouseOut(workflow, { ...still, relatedTarget: document.body });
+
+  expect(detailPane()).toBeNull();
+  expect(slashButton("Presentation")).not.toHaveAttribute("data-active");
+});
+
 test.each(WORKFLOW_NAVIGATION_CASES)(
   "Enter keeps the keyboard selection while another workflow is hovered for query '$query'",
   async ({ query, downCount }) => {
     const user = userEvent.setup();
-    await openSlashMenu(true, query);
+    await openSlashMenu(query);
     const editor = await findComposerEditor();
     const workflow = await waitFor(() => {
       return slashButton(`/${WORKFLOW_NAME}`);
@@ -248,7 +272,7 @@ test.each(WORKFLOW_NAVIGATION_CASES)(
   "Clicking a workflow activates the pointer target for query '$query'",
   async ({ query, downCount }) => {
     const user = userEvent.setup();
-    await openSlashMenu(true, query);
+    await openSlashMenu(query);
     const editor = await findComposerEditor();
     const workflow = await waitFor(() => {
       return slashButton(`/${WORKFLOW_NAME}`);
@@ -270,7 +294,7 @@ test.each(WORKFLOW_NAVIGATION_CASES)(
   "Arrow navigation continues from the keyboard selection after hover for query '$query'",
   async ({ query, downCount }) => {
     const user = userEvent.setup();
-    await openSlashMenu(true, query);
+    await openSlashMenu(query);
     const editor = await findComposerEditor();
     const workflow = await waitFor(() => {
       return slashButton(`/${WORKFLOW_NAME}`);
@@ -290,7 +314,7 @@ test.each(WORKFLOW_NAVIGATION_CASES)(
 
 test("Tab keeps the keyboard selection after the pointer leaves the menu", async () => {
   const user = userEvent.setup();
-  await openSlashMenu(true, "axi");
+  await openSlashMenu("axi");
   const editor = await findComposerEditor();
   const workflow = await waitFor(() => {
     return slashButton(`/${WORKFLOW_NAME}`);
@@ -308,13 +332,13 @@ test("Tab keeps the keyboard selection after the pointer leaves the menu", async
 });
 
 test.each([
-  { action: "Enter", expectedMode: "Create presentation" },
-  { action: "click", expectedMode: "Create video" },
+  { action: "Enter", expectedTab: "Presentation" },
+  { action: "click", expectedTab: "Video" },
 ])(
-  "$action activates the appropriate category while Video is hovered",
-  async ({ action, expectedMode }) => {
+  "$action opens the picker on the $expectedTab tab while Video is hovered",
+  async ({ action, expectedTab }) => {
     const user = userEvent.setup();
-    await openSlashMenu(true);
+    await openSlashMenu();
     const video = slashButton("Video");
     await user.hover(video);
     await waitFor(() => {
@@ -327,16 +351,47 @@ test.each([
       await user.keyboard("{Enter}");
     }
 
-    await expect(
-      screen.findByTestId("composer-create-mode"),
-    ).resolves.toHaveTextContent(expectedMode);
+    await waitFor(() => {
+      return screen.getByRole("dialog");
+    });
+    expect(tabByText(expectedTab)).toHaveAttribute("aria-selected", "true");
     expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
   },
 );
 
+// The two rows without a create mode are the ones that used to leave the menu
+// standing, so the dialog they opened had to compete with it.
+test.each(["Website", "Workflow"])(
+  "Clicking %s opens the picker on its own tab",
+  async (category) => {
+    const user = userEvent.setup();
+    await openSlashMenu();
+
+    await user.click(slashButton(category));
+
+    await waitFor(() => {
+      return screen.getByRole("dialog");
+    });
+    expect(tabByText(category)).toHaveAttribute("aria-selected", "true");
+    expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+  },
+);
+
+test("Browse all templates opens the picker", async () => {
+  const user = userEvent.setup();
+  await openSlashMenu();
+
+  await user.click(slashButton("Browse all templates"));
+
+  await waitFor(() => {
+    return screen.getByRole("dialog");
+  });
+  expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+});
+
 test("Keyboard navigation restores its preview even at the first row boundary", async () => {
   const user = userEvent.setup();
-  await openSlashMenu(true);
+  await openSlashMenu();
   const website = slashButton("Website");
   await user.hover(website);
   await waitFor(() => {
@@ -356,14 +411,15 @@ test("Keyboard navigation restores its preview even at the first row boundary", 
     expect(detailPane()).toHaveAttribute("data-category", "website");
   });
   await user.keyboard("{Enter}");
-  await expect(
-    screen.findByTestId("composer-create-mode"),
-  ).resolves.toHaveTextContent("Create presentation");
+  await waitFor(() => {
+    return screen.getByRole("dialog");
+  });
+  expect(tabByText("Presentation")).toHaveAttribute("aria-selected", "true");
 });
 
 test("Leaving the panel restores the keyboard-selected category preview", async () => {
   const user = userEvent.setup();
-  await openSlashMenu(true);
+  await openSlashMenu();
   const website = slashButton("Website");
   await user.hover(website);
   await waitFor(() => {
@@ -378,7 +434,7 @@ test("Leaving the panel restores the keyboard-selected category preview", async 
 
 test("Changing the slash query resets the pointer preview to the filtered selection", async () => {
   const user = userEvent.setup();
-  await openSlashMenu(true);
+  await openSlashMenu();
   const editor = await findComposerEditor();
   await user.hover(slashButton("Website"));
   await waitFor(() => {
@@ -394,7 +450,7 @@ test("Changing the slash query resets the pointer preview to the filtered select
 
 test("Reopening the slash panel clears the previous pointer preview", async () => {
   const user = userEvent.setup();
-  await openSlashMenu(true);
+  await openSlashMenu();
   await user.hover(slashButton("Website"));
   await waitFor(() => {
     expect(detailPane()).toHaveAttribute("data-category", "website");
@@ -409,7 +465,7 @@ test("Reopening the slash panel clears the previous pointer preview", async () =
 
 test("A hovered category's template stays selectable when the pointer enters its preview", async () => {
   const user = userEvent.setup();
-  await openSlashMenu(true);
+  await openSlashMenu();
   const website = slashButton("Website");
   // user-event 14 omits relatedTarget on mouseout. Use the browser's exact
   // boundary events here so React can distinguish entering a child of the
@@ -437,7 +493,7 @@ test("A hovered category's template stays selectable when the pointer enters its
 });
 
 test("A category row keeps no mark once the pointer is in its covers", async () => {
-  await openSlashMenu(true);
+  await openSlashMenu();
   const presentation = slashButton("Presentation");
   const website = slashButton("Website");
   expect(presentation).toHaveAttribute("data-active", "true");
@@ -467,7 +523,7 @@ test("A category row keeps no mark once the pointer is in its covers", async () 
 
 test("The keyboard selection is marked again once the pointer leaves", async () => {
   const user = userEvent.setup();
-  await openSlashMenu(true);
+  await openSlashMenu();
   const presentation = slashButton("Presentation");
   const website = slashButton("Website");
 
@@ -490,7 +546,6 @@ test("The panel emphasizes the typed query inside a workflow name", async () => 
     context,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
-      [FeatureSwitchKey.ComposerCreateCommands]: true,
       [FeatureSwitchKey.ComposerSlashTemplatePanel]: true,
     },
   });
@@ -510,7 +565,7 @@ test("The panel emphasizes the typed query inside a workflow name", async () => 
 
 test("Choosing a cover in the pane attaches that template without opening the picker", async () => {
   const user = userEvent.setup();
-  await openSlashMenu(true);
+  await openSlashMenu();
   const [first] = PRESENTATION_TEMPLATE_PICKER_ITEMS;
   if (!first) {
     throw new Error("Expected a presentation template");
@@ -518,6 +573,23 @@ test("Choosing a cover in the pane attaches that template without opening the pi
   await user.click(slashButton(first.title));
   await expectInlineTemplateInComposer(first.title);
   expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+test("Choosing a cover consumes the slash token that opened the panel", async () => {
+  const user = userEvent.setup();
+  await openSlashMenu("pre");
+  const editor = await findComposerEditor();
+  const [first] = PRESENTATION_TEMPLATE_PICKER_ITEMS;
+  if (!first) {
+    throw new Error("Expected a presentation template");
+  }
+
+  await user.click(slashButton(first.title));
+
+  await expectInlineTemplateInComposer(first.title);
+  // The whole token goes, not only its slash, and the prose before it stays.
+  expect(editor).not.toHaveTextContent("/");
+  expect(editor).toHaveTextContent("Draft");
 });
 
 const IMPORT_PROMPT =
@@ -535,7 +607,7 @@ function uploadedFilePart(message: UserMessageDocument) {
 
 test("Only the Presentation pane offers the deck import, and it leads the covers", async () => {
   const user = userEvent.setup();
-  await openSlashMenu(true);
+  await openSlashMenu();
   const pane = detailPane();
   if (!pane) {
     throw new Error("Expected the detail pane");
@@ -578,7 +650,6 @@ test("Importing a deck from the panel sends it for analysis", async () => {
     path: `/chats/${THREAD_ID}`,
     host: "app.okou.ai",
     featureSwitches: {
-      [FeatureSwitchKey.ComposerCreateCommands]: true,
       [FeatureSwitchKey.ComposerSlashTemplatePanel]: true,
     },
   });

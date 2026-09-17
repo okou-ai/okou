@@ -1,8 +1,9 @@
+import mermaid from "@okouai/mermaid-lite";
 import type {
   ChatThreadArtifactFile,
   UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { expect, test, vi } from "vitest";
 
@@ -11,7 +12,10 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  testContext,
+  warmMermaidParser,
+} from "../../../signals/__tests__/test-helpers.ts";
 import {
   ATTACHMENT_RUN_ID,
   ATTACHMENT_THREAD_ID,
@@ -32,6 +36,8 @@ import {
 } from "./chat-attachment-test-helpers.ts";
 
 const context = testContext();
+
+warmMermaidParser();
 const CREATED_AT = "2026-03-10T00:00:01Z";
 
 function assistantMessage(
@@ -660,4 +666,144 @@ test("A user's Markdown image syntax stays literal", async () => {
   expect(
     userMessageContainer.querySelector('[data-testid^="attachment-preview-"]'),
   ).toBeNull();
+});
+
+async function setupMarkdownDiagramAttachments(): Promise<void> {
+  const files = [
+    { id: "diagram-first", filename: "first.md", label: "First" },
+    { id: "diagram-second", filename: "second.md", label: "Second" },
+  ];
+  mockAttachmentChat(context, {
+    chatEvents: [
+      sentUserMessage(
+        userMessage(
+          files.map((file) => {
+            return filePart(file.id, file.filename, "text/markdown");
+          }),
+        ),
+      ),
+    ],
+    artifacts: files.map((file) => {
+      return artifactFile(file.filename, {
+        id: file.id,
+        contentType: "text/markdown",
+        url: publicArtifactUrl(file.filename),
+      });
+    }),
+  });
+  mockPrivateUrlSequence(
+    context,
+    Object.fromEntries(
+      files.map((file) => {
+        return [file.id, [publicArtifactUrl(file.filename)]];
+      }),
+    ),
+  );
+  for (const file of files) {
+    context.mocks.http.get(publicArtifactUrl(file.filename), () => {
+      return HttpResponse.text(
+        `# ${file.label} notes\n\n\`\`\`mermaid\nflowchart LR\n  ${file.label} --> Preview\n\`\`\``,
+      );
+    });
+  }
+  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+  await findNamedButton("Open markdown preview for first.md");
+}
+
+test("Markdown diagrams get fresh URLs when reopened or moved to split view", async () => {
+  const browser = context.mocks.browser.blobDownload();
+  await setupMarkdownDiagramAttachments();
+
+  click(getNamedButton("Open markdown preview for first.md"));
+  const firstImage = await screen.findByRole("img", { name: "Diagram" });
+  const firstUrl = firstImage.getAttribute("src");
+  if (!firstUrl) {
+    throw new Error("Expected the Markdown preview diagram URL");
+  }
+  const firstSvg = await browser.blobForUrl(firstUrl)?.text();
+  expect(browser.blobForUrl(firstUrl)?.type).toBe("image/svg+xml");
+
+  await closeFocusedPreview();
+  expect(browser.revokedUrls).toContain(firstUrl);
+
+  click(getNamedButton("Open markdown preview for first.md"));
+  const reopened = await screen.findByRole("img", { name: "Diagram" });
+  const reopenedUrl = reopened.getAttribute("src");
+  expect(reopenedUrl).toMatch(/^blob:/);
+  expect(reopenedUrl).not.toBe(firstUrl);
+
+  click(getNamedButton("Open in split view"));
+  const sidebar = await screen.findByTestId("artifact-sidebar");
+  const splitImage = await within(sidebar).findByRole("img", {
+    name: "Diagram",
+  });
+  const splitUrl = splitImage.getAttribute("src");
+  if (!splitUrl) {
+    throw new Error("Expected the split view diagram URL");
+  }
+  await waitFor(() => {
+    expect(screen.queryByTestId("attachment-lightbox")).not.toBeInTheDocument();
+  });
+  expect(browser.revokedUrls).toContain(reopenedUrl);
+  expect(splitUrl).not.toBe(reopenedUrl);
+  expect(browser.revokedUrls).not.toContain(splitUrl);
+  await expect(browser.blobForUrl(splitUrl)?.text()).resolves.toBe(firstSvg);
+});
+
+test("Closing a Markdown preview during layout does not allocate an abandoned image URL", async () => {
+  const browser = context.mocks.browser.blobDownload();
+  const createUrl = vi.spyOn(URL, "createObjectURL");
+  const layoutStarted = context.mocks.deferred<void>();
+  const renderGate = context.mocks.deferred<void>();
+  const renderDiagram = mermaid.render.bind(mermaid);
+  vi.spyOn(mermaid, "render").mockImplementationOnce(async (...args) => {
+    layoutStarted.resolve();
+    await renderGate.promise;
+    return await renderDiagram(...args);
+  });
+  await setupMarkdownDiagramAttachments();
+
+  click(getNamedButton("Open markdown preview for first.md"));
+  await expect(screen.findByText("First notes")).resolves.toBeInTheDocument();
+  expect(getNamedButton("Expand diagram")).toBeDisabled();
+  await layoutStarted.promise;
+  await closeFocusedPreview();
+
+  click(getNamedButton("Open markdown preview for second.md"));
+  await expect(screen.findByText("Second notes")).resolves.toBeInTheDocument();
+  renderGate.resolve();
+
+  const image = await screen.findByRole("img", { name: "Diagram" });
+  const url = image.getAttribute("src");
+  if (!url) {
+    throw new Error("Expected the active preview diagram URL");
+  }
+  expect(browser.blobForUrl(url)?.type).toBe("image/svg+xml");
+  const activeSvg = await browser.blobForUrl(url)?.text();
+  const allocatedDiagrams = createUrl.mock.calls.flatMap(([blob], index) => {
+    const result = createUrl.mock.results[index];
+    if (
+      !(blob instanceof File) ||
+      blob.name !== "diagram.svg" ||
+      result?.type !== "return"
+    ) {
+      return [];
+    }
+    return [{ file: blob, url: result.value }];
+  });
+  // Ref replay can allocate more than one URL for the active image. None
+  // may belong to the closed preview, and every replaced URL must be freed.
+  const allocatedSvgs = await Promise.all(
+    allocatedDiagrams.map(({ file }) => {
+      return file.text();
+    }),
+  );
+  expect(new Set(allocatedSvgs)).toStrictEqual(new Set([activeSvg]));
+  const replacedUrls = allocatedDiagrams.flatMap((diagram) => {
+    return diagram.url === url ? [] : [diagram.url];
+  });
+  expect(browser.revokedUrls).toStrictEqual(
+    expect.arrayContaining(replacedUrls),
+  );
+  expect(browser.revokedUrls).not.toContain(url);
 });

@@ -32,10 +32,12 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { rootSignal$ } from "../../signals/root-signal.ts";
 import {
   connectorConnectionProgressActive$,
-  dismissConnectorConnectionProgress$,
+  cancelConnectorConnection$,
+  connectorConnectionAttempt$,
   registerConnectorConnectionDialog$,
 } from "../../signals/connector-connection-progress.ts";
 import { ConnectorConnectionStatus } from "../components/connector-connection-dialog-body.tsx";
+import { ConnectorConnectionCancelButton } from "../components/connector-connection-progress.tsx";
 import {
   currentLeftThread$,
   currentRightThread$,
@@ -49,7 +51,6 @@ import {
 import type { ImageLoadSignals } from "../../signals/image-load.ts";
 import type { TextPreviewComputed } from "../../signals/text-preview.ts";
 import type { MarkdownPreviewTreeComputed } from "../../signals/markdown-preview-tree.ts";
-import { retryRichMarkdown$ } from "../../signals/rich-markdown-retry.ts";
 import { MarkdownEventBody } from "../components/markdown.tsx";
 import {
   attachmentSidebarRef,
@@ -412,13 +413,7 @@ function ArtifactDialogLoadingBody() {
   );
 }
 
-function ArtifactDialogUnavailableBody({
-  label,
-  onRetry,
-}: {
-  label: string;
-  onRetry?: () => void;
-}) {
+function ArtifactDialogUnavailableBody({ label }: { label: string }) {
   const { t } = useTranslation();
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-sm text-muted-foreground">
@@ -430,13 +425,6 @@ function ArtifactDialogUnavailableBody({
           { kind: label },
         )}
       </span>
-      {onRetry !== undefined && (
-        <Button type="button" variant="outline" size="sm" onClick={onRetry}>
-          {t(($) => {
-            return $.chat.errors.recovery.tryAgain;
-          })}
-        </Button>
-      )}
     </div>
   );
 }
@@ -499,7 +487,6 @@ function ArtifactDialogMarkdownBody({
   tree$: MarkdownPreviewTreeComputed;
 }) {
   const { t } = useTranslation();
-  const retry = useSet(retryRichMarkdown$);
   const loadable = useLoadable(tree$);
   if (loadable.state === "loading") {
     return (
@@ -518,7 +505,6 @@ function ArtifactDialogMarkdownBody({
             label={t(($) => {
               return $.artifacts.kinds.markdown;
             })}
-            onRetry={retry}
           />
         </ArtifactDialogCard>
       </ArtifactDialogStage>
@@ -1192,9 +1178,10 @@ function ArtifactPreviewDialogThreadResolver({
 function useCloseArtifactPreview() {
   const rootSignal = useGet(rootSignal$);
   const closeArtifactCatalogPreview = useSet(closeArtifactCatalogPreview$);
-  const dismissProgress = useSet(dismissConnectorConnectionProgress$);
+  const cancelConnection = useSet(cancelConnectorConnection$);
+  const connectionAttempt = useGet(connectorConnectionAttempt$);
   return () => {
-    dismissProgress();
+    cancelConnection(connectionAttempt);
     closeArtifactCatalogPreview(rootSignal);
   };
 }
@@ -1268,6 +1255,7 @@ function ArtifactPreviewDialogActions({
       )}
       {showShare && (
         <ArtifactShareButton
+          surface="dialog"
           shareUrl={shareUrl}
           ariaLabel={t(($) => {
             return $.artifacts.actions.share;
@@ -1327,7 +1315,15 @@ function ArtifactPreviewDialogContent({
     <Dialog
       open={visible}
       onOpenChangeComplete={completeDialogExit}
-      onOpenChange={(nextOpen) => {
+      onOpenChange={(nextOpen, details) => {
+        if (
+          !nextOpen &&
+          connectionProgressActive &&
+          details.reason === "outside-press"
+        ) {
+          details.cancel();
+          return;
+        }
         if (!nextOpen && visible) {
           closeWithAnimation();
         }
@@ -1387,8 +1383,9 @@ function ArtifactPreviewDialogContent({
           </div>
           <DialogBody className="overflow-hidden bg-background">
             {connectionProgressActive ? (
-              <div className="flex h-full items-center justify-center p-6">
+              <div className="flex h-full flex-col items-center justify-center gap-4 p-6">
                 <ConnectorConnectionStatus />
+                <ConnectorConnectionCancelButton />
               </div>
             ) : (
               <ArtifactPreviewBody
@@ -1756,7 +1753,7 @@ function ComposerImagePreviewButton({
         <span
           data-testid="composer-attachment-mark-count"
           style={{ background: DEFAULT_ANNOTATION_INK }}
-          className="absolute -bottom-0.5 -left-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full border-[1.5px] border-background px-1 text-[9px] font-bold leading-none text-white"
+          className="absolute -bottom-0.5 -left-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full border-(length:--border-width-emphasis) border-background px-1 text-[9px] font-bold leading-none text-white"
         >
           {markCount}
         </span>

@@ -15,6 +15,7 @@ import {
   chatThreadMetadataContract,
   chatThreadModelSelectionContract,
   chatThreadPinContract,
+  chatThreadPinOrderContract,
   chatThreadRenameContract,
   chatThreadUnpinContract,
   chatThreadsContract,
@@ -89,6 +90,7 @@ import { chatThreadMarkReadRoutes } from "../../chat-threads-mark-read";
 import { chatThreadModelSelectionRoutes } from "../../chat-threads-model-selection";
 import { chatThreadPatchRoutes } from "../../chat-threads-patch";
 import { chatThreadPinRoutes } from "../../chat-threads-pin";
+import { chatThreadPinOrderRoutes } from "../../chat-threads-pin-order";
 import { chatThreadRenameRoutes } from "../../chat-threads-rename";
 import { chatThreadRoutes } from "../../chat-threads";
 import { chatThreadUnpinRoutes } from "../../chat-threads-unpin";
@@ -143,6 +145,33 @@ type BddSendEventBody =
 
 interface RequestSendEventOptions {
   readonly usagePricingResolution?: UsagePricingResolution;
+}
+
+/** Both body fields are optional on the contract, and an omitted
+ * `cloudBrowserEnabled` keeps the thread's stored flag, so a caller that passes
+ * no option must send no key rather than an explicit `false`. `signal` replaces
+ * the app-level request signal, which is how a caller cancels this route. */
+interface ComputerUseHostSelectionOptions {
+  readonly cloudBrowserEnabled?: boolean;
+  readonly eventId?: string;
+  readonly signal?: AbortSignal;
+}
+
+function computerUseHostSelectionBody(
+  computerUseHostId: string | null,
+  options: ComputerUseHostSelectionOptions | undefined,
+): {
+  readonly computerUseHostId: string | null;
+  readonly cloudBrowserEnabled?: boolean;
+  readonly eventId?: string;
+} {
+  return {
+    computerUseHostId,
+    ...(options?.cloudBrowserEnabled === undefined
+      ? {}
+      : { cloudBrowserEnabled: options.cloudBrowserEnabled }),
+    ...(options?.eventId === undefined ? {} : { eventId: options.eventId }),
+  };
 }
 
 function authHeaders(actor: ApiTestUser | null): AuthHeaders {
@@ -208,6 +237,7 @@ const chatFilesRoutes = [
   ...chatThreadPatchRoutes,
   ...chatThreadMarkReadRoutes,
   ...chatThreadPinRoutes,
+  ...chatThreadPinOrderRoutes,
   ...chatThreadUnpinRoutes,
   ...chatThreadRenameRoutes,
   ...chatThreadImageModelRoutes,
@@ -223,8 +253,40 @@ const chatFilesRoutes = [
   ...userModelPreferenceRoutes,
 ] as const;
 
-function chatFilesApp(context: TestContext) {
-  return setupAppWithRoutes({ context, routes: chatFilesRoutes });
+function chatFilesApp(context: TestContext, signal?: AbortSignal) {
+  return setupAppWithRoutes({ context, routes: chatFilesRoutes, signal });
+}
+
+/**
+ * The same chat routes on an app whose **operation** signal the caller owns.
+ * `honoSignalHandler` hands that app signal, never `c.req.raw.signal`, to every
+ * route command, and no chat route reads `requestSignal$`, so aborting it is the
+ * only way a test can drive these routes' production cancellation path. A
+ * `fetchOptions.signal` only abandons the client's own promise.
+ */
+function chatFilesOperationApp(context: TestContext, signal: AbortSignal) {
+  return setupAppWithRoutes({ context, routes: chatFilesRoutes, signal });
+}
+
+/** The optional pin query a client may send; omitted keys stay omitted. */
+interface PinQuery {
+  readonly eventId?: string;
+  readonly pinOrder?: string;
+}
+
+function pinQuery(query: PinQuery) {
+  return {
+    ...(query.eventId === undefined ? {} : { eventId: query.eventId }),
+    ...(query.pinOrder === undefined ? {} : { pinOrder: query.pinOrder }),
+  };
+}
+
+interface EventIdQuery {
+  readonly eventId?: string;
+}
+
+function unpinQuery(query: EventIdQuery) {
+  return query.eventId === undefined ? {} : { eventId: query.eventId };
 }
 
 export function persistedAttachment(
@@ -239,6 +301,28 @@ export function persistedAttachment(
     contentType,
     size,
     url: `https://cdn.vm7.io/artifacts/test/${id}/${filename}`,
+  };
+}
+
+/** The App registers a separate optimistic event id per sidebar event, so a
+ * model-selection request can carry both the model and the service-tier id. */
+interface ModelSelectionRequestOptions {
+  readonly codexServiceTier?: CodexServiceTier | null;
+  readonly reasoningEffort?: ReasoningEffort;
+  readonly eventId?: string;
+  readonly serviceTierEventId?: string;
+}
+
+function modelSelectionBody(
+  model: SupportedRunModel | null,
+  options: ModelSelectionRequestOptions | undefined,
+) {
+  return {
+    model,
+    codexServiceTier: options?.codexServiceTier,
+    reasoningEffort: options?.reasoningEffort,
+    eventId: options?.eventId,
+    serviceTierEventId: options?.serviceTierEventId,
   };
 }
 
@@ -338,6 +422,10 @@ export function createChatFilesBddApi(context: TestContext) {
     return chatFilesApp(context)(chatThreadUnpinContract);
   }
 
+  function threadPinOrderClient() {
+    return chatFilesApp(context)(chatThreadPinOrderContract);
+  }
+
   function threadRenameClient() {
     return chatFilesApp(context)(chatThreadRenameContract);
   }
@@ -358,8 +446,8 @@ export function createChatFilesBddApi(context: TestContext) {
     return chatFilesApp(context)(userModelPreferenceContract);
   }
 
-  function threadComputerUseHostClient() {
-    return chatFilesApp(context)(chatThreadComputerUseHostContract);
+  function threadComputerUseHostClient(signal?: AbortSignal) {
+    return chatFilesApp(context, signal)(chatThreadComputerUseHostContract);
   }
 
   function chatSearchClient() {
@@ -788,22 +876,28 @@ export function createChatFilesBddApi(context: TestContext) {
       threadId: string,
       title: string,
       statuses: readonly (204 | 400 | 401 | 404)[],
+      eventId?: string,
     ) {
       return await accept(
         threadRenameClient().rename({
           headers: authenticate(context, actor),
           params: { id: threadId },
-          body: { title },
+          body: { title, ...(eventId === undefined ? {} : { eventId }) },
         }),
         statuses,
       );
     },
 
-    async pinThread(actor: ApiTestUser, threadId: string): Promise<void> {
+    async pinThread(
+      actor: ApiTestUser,
+      threadId: string,
+      query: PinQuery = {},
+    ): Promise<void> {
       await accept(
         threadPinClient().pin({
           headers: authenticate(context, actor),
           params: { id: threadId },
+          query: pinQuery(query),
         }),
         [204],
       );
@@ -813,21 +907,28 @@ export function createChatFilesBddApi(context: TestContext) {
       actor: ApiTestUser | null,
       threadId: string,
       statuses: readonly (204 | 400 | 401 | 404)[],
+      query: PinQuery = {},
     ) {
       return await accept(
         threadPinClient().pin({
           headers: authenticate(context, actor),
           params: { id: threadId },
+          query: pinQuery(query),
         }),
         statuses,
       );
     },
 
-    async unpinThread(actor: ApiTestUser, threadId: string): Promise<void> {
+    async unpinThread(
+      actor: ApiTestUser,
+      threadId: string,
+      query: EventIdQuery = {},
+    ): Promise<void> {
       await accept(
         threadUnpinClient().unpin({
           headers: authenticate(context, actor),
           params: { id: threadId },
+          query: unpinQuery(query),
         }),
         [204],
       );
@@ -837,11 +938,44 @@ export function createChatFilesBddApi(context: TestContext) {
       actor: ApiTestUser | null,
       threadId: string,
       statuses: readonly (204 | 400 | 401 | 404)[],
+      query: EventIdQuery = {},
     ) {
       return await accept(
         threadUnpinClient().unpin({
           headers: authenticate(context, actor),
           params: { id: threadId },
+          query: unpinQuery(query),
+        }),
+        statuses,
+      );
+    },
+
+    async reorderPinnedThread(
+      actor: ApiTestUser,
+      threadId: string,
+      body: { readonly pinOrder: string; readonly eventId: string },
+    ): Promise<void> {
+      await accept(
+        threadPinOrderClient().reorder({
+          headers: authenticate(context, actor),
+          params: { id: threadId },
+          body: { pinOrder: body.pinOrder, eventId: body.eventId },
+        }),
+        [204],
+      );
+    },
+
+    async requestReorderPinnedThread(
+      actor: ApiTestUser | null,
+      threadId: string,
+      body: { readonly pinOrder: string; readonly eventId: string },
+      statuses: readonly (204 | 400 | 401 | 403 | 404)[],
+    ) {
+      return await accept(
+        threadPinOrderClient().reorder({
+          headers: authenticate(context, actor),
+          params: { id: threadId },
+          body: { pinOrder: body.pinOrder, eventId: body.eventId },
         }),
         statuses,
       );
@@ -862,6 +996,39 @@ export function createChatFilesBddApi(context: TestContext) {
         [200],
       );
       return response.body;
+    },
+
+    /**
+     * The read-cursor writers driven through an app whose operation signal the
+     * caller aborts, which is the signal those route commands actually receive:
+     * the two single-thread writers and the bulk per-Agent one. The requests
+     * are returned unnarrowed so a caller can assert the off-contract response
+     * a cancelled operation produces.
+     */
+    readCursorWritesWithOperationSignal(signal: AbortSignal) {
+      const operationApp = chatFilesOperationApp(context, signal);
+      return {
+        async markRead(actor: ApiTestUser, threadId: string) {
+          return await operationApp(chatThreadMarkReadContract).markRead({
+            headers: authenticate(context, actor),
+            params: { id: threadId },
+          });
+        },
+        async markUnread(actor: ApiTestUser, threadId: string) {
+          return await operationApp(chatThreadMarkUnreadContract).markUnread({
+            headers: authenticate(context, actor),
+            params: { id: threadId },
+          });
+        },
+        async markAgentRead(actor: ApiTestUser, agentId: string) {
+          return await operationApp(
+            chatThreadMarkAgentReadContract,
+          ).markAgentRead({
+            headers: authenticate(context, actor),
+            body: { agentId },
+          });
+        },
+      };
     },
 
     async requestMarkThreadRead(
@@ -913,22 +1080,13 @@ export function createChatFilesBddApi(context: TestContext) {
       actor: ApiTestUser,
       threadId: string,
       model: SupportedRunModel | null,
-      options?: {
-        readonly codexServiceTier?: CodexServiceTier | null;
-        readonly reasoningEffort?: ReasoningEffort;
-        readonly eventId?: string;
-      },
+      options?: ModelSelectionRequestOptions,
     ): Promise<void> {
       await accept(
         threadModelSelectionClient().update({
           headers: authenticate(context, actor),
           params: { id: threadId },
-          body: {
-            model,
-            codexServiceTier: options?.codexServiceTier,
-            reasoningEffort: options?.reasoningEffort,
-            eventId: options?.eventId,
-          },
+          body: modelSelectionBody(model, options),
         }),
         [204],
       );
@@ -989,22 +1147,13 @@ export function createChatFilesBddApi(context: TestContext) {
       threadId: string,
       model: SupportedRunModel | null,
       statuses: readonly (204 | 400 | 401 | 402 | 404)[],
-      options?: {
-        readonly codexServiceTier?: CodexServiceTier | null;
-        readonly reasoningEffort?: ReasoningEffort;
-        readonly eventId?: string;
-      },
+      options?: ModelSelectionRequestOptions,
     ) {
       return await accept(
         threadModelSelectionClient().update({
           headers: authenticate(context, actor),
           params: { id: threadId },
-          body: {
-            model,
-            codexServiceTier: options?.codexServiceTier,
-            reasoningEffort: options?.reasoningEffort,
-            eventId: options?.eventId,
-          },
+          body: modelSelectionBody(model, options),
         }),
         statuses,
       );
@@ -1014,12 +1163,13 @@ export function createChatFilesBddApi(context: TestContext) {
       actor: ApiTestUser,
       threadId: string,
       computerUseHostId: string | null,
+      options?: ComputerUseHostSelectionOptions,
     ): Promise<void> {
       await accept(
-        threadComputerUseHostClient().update({
+        threadComputerUseHostClient(options?.signal).update({
           headers: authenticate(context, actor),
           params: { id: threadId },
-          body: { computerUseHostId },
+          body: computerUseHostSelectionBody(computerUseHostId, options),
         }),
         [204],
       );
@@ -1030,12 +1180,13 @@ export function createChatFilesBddApi(context: TestContext) {
       threadId: string,
       computerUseHostId: string | null,
       statuses: readonly (204 | 400 | 401 | 403 | 404)[],
+      options?: ComputerUseHostSelectionOptions,
     ) {
       return await accept(
-        threadComputerUseHostClient().update({
+        threadComputerUseHostClient(options?.signal).update({
           headers: authenticate(context, actor),
           params: { id: threadId },
-          body: { computerUseHostId },
+          body: computerUseHostSelectionBody(computerUseHostId, options),
         }),
         statuses,
       );

@@ -386,10 +386,8 @@ export function logDetail(
       appendSystemPrompt: run.appendSystemPrompt ?? null,
       error: run.error
         ? (formatRunBalanceError({
-            message: run.error,
             failureReason: run.failureReason,
             modelProvider,
-            framework,
           }) ?? run.error)
         : null,
       createdAt: run.createdAt.toISOString(),

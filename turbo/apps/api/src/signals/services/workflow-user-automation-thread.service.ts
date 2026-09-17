@@ -2,6 +2,7 @@ import {
   userLocaleSchema,
   type UserLocale,
 } from "@okouai/api-contracts/contracts/user-preferences";
+import { agents } from "@okouai/db/schema/agent";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
 import {
@@ -22,6 +23,7 @@ import {
 } from "./chat-thread-event.service";
 import { loadNewChatThreadMediaModels } from "./chat-thread-media-model.service";
 import { loadNewChatThreadModelSettings } from "./chat-thread-model-settings.service";
+import { recordOfficialWorkflowThreadProvenance } from "./morning-brief-thread-provenance.service";
 import {
   readAcceptedOfficialWorkflowDefinition,
   readAcceptedOfficialWorkflowRevision,
@@ -108,7 +110,7 @@ async function resolveAutomationChatThreadTitle(
 }
 
 export async function loadWorkflowUserAutomationThreadId(
-  db: ReadonlyDb,
+  db: Pick<ReadonlyDb, "select">,
   args: {
     readonly orgId: string;
     readonly userId: string;
@@ -260,6 +262,27 @@ export async function ensureWorkflowUserAutomationThread(
     readonly currentTime: Date;
   },
 ): Promise<string> {
+  // Acquire the parent FK locks before the binding and shared event sequence.
+  // An existing binding with a deleted thread otherwise postpones the workflow
+  // FK lock until an automation is inserted, reversing copy's lock order.
+  // Agent first also preserves the order used by agent deletion cascades.
+  await db
+    .select({ id: agents.id })
+    .from(agents)
+    .where(and(eq(agents.orgId, args.orgId), eq(agents.id, args.agentId)))
+    .for("key share");
+  await db
+    .select({ id: workflows.id })
+    .from(workflows)
+    .where(
+      and(
+        eq(workflows.orgId, args.orgId),
+        eq(workflows.id, args.workflowId),
+        eq(workflows.agentId, args.agentId),
+      ),
+    )
+    .for("key share");
+
   const [existing] = await db
     .select({ chatThreadId: workflowUserAutomationThreads.chatThreadId })
     .from(workflowUserAutomationThreads)
@@ -273,6 +296,14 @@ export async function ensureWorkflowUserAutomationThread(
     .limit(1)
     .for("update");
   if (existing?.chatThreadId) {
+    // A reused binding is as much a Morning Brief destination as a fresh one,
+    // and this thread may predate the classification column entirely.
+    await recordOfficialWorkflowThreadProvenance(db, {
+      chatThreadId: existing.chatThreadId,
+      userId: args.userId,
+      orgId: args.orgId,
+      workflowIds: [args.workflowId],
+    });
     return existing.chatThreadId;
   }
 
@@ -308,6 +339,12 @@ export async function ensureWorkflowUserAutomationThread(
         .limit(1)
         .for("update");
       if (conflicting?.chatThreadId) {
+        await recordOfficialWorkflowThreadProvenance(db, {
+          chatThreadId: conflicting.chatThreadId,
+          userId: args.userId,
+          orgId: args.orgId,
+          workflowIds: [args.workflowId],
+        });
         return conflicting.chatThreadId;
       }
     }
@@ -325,6 +362,15 @@ export async function ensureWorkflowUserAutomationThread(
     agentId: args.agentId,
     title,
     currentTime: args.currentTime,
+  });
+  // An automation thread is not ordinary Chat, so it stays unknown unless this
+  // workflow is the official Morning Brief, whose destination is excluded from
+  // the moment it exists.
+  await recordOfficialWorkflowThreadProvenance(db, {
+    chatThreadId,
+    userId: args.userId,
+    orgId: args.orgId,
+    workflowIds: [args.workflowId],
   });
 
   const [updated] = await db

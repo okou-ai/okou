@@ -50,7 +50,7 @@ const scrapeRoute$ = command(async ({ set }, signal: AbortSignal) => {
     type: "provider_unavailable",
     provider: "clerk",
     provider_status: unavailable.providerStatus,
-    failure_class: "transient_read_exhausted",
+    failure_class: unavailable.failureClass,
     method: "POST",
     route: "/api/scrape",
   });

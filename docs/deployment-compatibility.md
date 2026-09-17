@@ -80,12 +80,13 @@ active, or introduce a versioned/new endpoint and migrate the frontend first.
 
 #### Artifact share names and short references
 
-Share status adds optional `shortUrl`; `url` continues returning the legacy
-32-character organization reference for already-open App bundles. New Apps
-prefer `shortUrl` and fall back to `url` when talking to an older API. An explicit
-share action allocates the new alias when a current API reports `shortUrl: null`;
-opening the menu does not mutate a share. Both organization reference formats
-resolve through the same membership and policy checks.
+Organization share status returns the same short reference in `url` and
+`shortUrl`; it no longer produces a 32-character share-level URL. The `url` field
+remains available to clients that consume only that field. New Apps prefer
+`shortUrl` and fall back to `url` when talking to an older API. An older policy
+without a short reference returns null for both fields until an explicit share
+action allocates the alias; opening the menu does not mutate a share. Previously
+copied organization references retain their membership and policy checks.
 
 The R2 policy fields `organizationReference` and `publicSlug` are optional, so
 old policies remain readable. The immutable reference index and public alias
@@ -94,26 +95,88 @@ reuse the same organization index and retain the legacy public-token registry
 entry. Named public sites use the existing generic Worker publication reader;
 they require no database migration or new Worker routing format. Current APIs
 must serve short-reference resolution before Apps begin copying those links.
-Rolling the API back removes short-reference support until it is restored;
-existing legacy organization URLs remain available in the `url` response.
+Serving and rollback APIs must support the reference formats emitted by the
+enabled writer.
 
 The compatibility scope preserves the explicitly requested existing links;
 `privateArtifacts` being non-GA does not independently require a rollback bridge.
 Issue [#32492](https://github.com/vm0-ai/vm0/issues/32492) owns later retirement:
 the optional response reader can be removed once older APIs leave serving and
-supported rollback targets. The legacy organization `url` projection can be
-removed only after the short-reference App is live and an App minimum version
-excludes earlier bundles. Open pages have no passive expiry. Neither gate is
-closed in this PR. Durable-link readers and aliases remain until a separate
-retirement decision accounts for the stored references; a deployment or App
-floor alone cannot invalidate links already copied by users.
+supported rollback targets. The long organization URL writer is retired by
+the explicit short-reference change. Durable-link readers and aliases remain
+until a separate retirement decision accounts for the stored references; a
+deployment or App floor alone cannot invalidate links already copied by users.
 
 The iframe loading correction spans the App's explicit first-party iframe
 referrer policy and the host Worker's same-origin resource policy. Both must be
 deployed to verify full HTML resource loading against the hosted-domain WAF.
 The viewer and sharing use the existing `privateArtifacts` rollout switch.
 
+#### Artifact sharing controls and public references
+
+The App separates permission changes from copying and retains the existing
+`privateArtifacts` switch. Owner status is read from the existing owner-only
+endpoint; a resolved recipient with status 404 copies the original reference
+without writing a grant. Existing share responses and public delivery URLs
+remain supported for older Apps.
+
+The additive, unauthenticated `GET /api/artifact-references/:reference/public`
+returns a currently published delivery URL and `preview: { filename, contentType }`.
+Private, organization-only, revoked, missing, and unselected version references
+return 404 without metadata. Public copies use the same App reference as
+organization copies. The App renders public previews inside that address and
+shows its access page on 404; sign-in is an explicit action on that page.
+
+Deploy the API with preview metadata before the App that consumes it. The
+existing `url` field remains unchanged for older Apps. This is an iteration of
+the non-GA `privateArtifacts` feature, so the new App does not carry a tolerant
+reader for an API lacking the preview metadata. No database or host Worker
+protocol change is required. Previously copied URLs remain valid under their
+existing policy. Owner resolution of an old organization alias continues after
+switching it to Only me; recipients lose access.
+
 #### Private attachment uploads
+
+CLI artifact output qualifies hostless references with its configured app origin
+(`OKOU_APP_URL`, or the existing API-to-App origin mapping). Production output is
+`https://app.okou.ai/artifacts/<reference>`. Generation, upload, hosting and media
+download results use the same complete URL in text, JSON and Markdown. Integration
+upload completion (Teams, Telegram, Feishu/Lark, AgentPhone and GitHub) and Slack
+canonical publication apply the same CLI normalization before printing. Image
+batch waits also qualify stored artifact and owner references in JSON output,
+including the generated Markdown, without rewriting the batch files. Public
+URLs keep their original bytes, including query strings. API responses and stored
+references retain their existing shapes, so older pinned CLIs retain their prior
+output and the new CLI can consume an older API. Downloading or cloning newly
+qualified URLs requires the updated CLI; previously captured contexts retain
+their own CLI package. No database rewrite or API rollout ordering is required.
+CLI download, generation-input and clone readers accept both
+hostless references and absolute references from that same app origin. Existing
+App thread readers already accept same-origin absolute references and resolve
+them through the authenticated artifact endpoint.
+
+New private artifact creation allocates a ten-character version-2 R2 reference
+index and stores the reference in file metadata or the hosted deployment URL.
+Organization sharing reuses that version reference. Readers retain the existing
+32-character owner URLs and version-1 organization indexes. These are durable
+links, not a rollout cache; #32492 owns retirement only after accounting for
+stored and previously copied links. Files without `metadata.artifactReference`
+retain their original long URL, and no bulk rewrite or database migration runs.
+
+CLI owner resolution adds optional `kind=file|html` to the existing reference
+endpoint. Each mode requires its existing read capability and denies recipient
+access; the browser resolver retains its sharing authorization. Deploy the
+matching API and CLI before relying on short references in clone/download or
+generation-input commands. Existing file IDs and deployment IDs remain valid.
+An older API cannot resolve new version-2 indexes; keep capable readers in
+serving and rollback targets once the new writer is enabled.
+
+Thread resource records and policies accept both new ten-character tokens and
+persisted 24-character tokens. New registry records also bind `targetId` before
+publication; old records continue to resolve through their parent policy. Deploy
+the host Worker with the tolerant schemas before the API emits short snapshot
+links. An older Worker rejects the new records, failing closed. Original files,
+snapshot bytes, revocation policies, and rollout-switch defaults are unchanged.
 
 The API accepts the previous attachment prepare request without `purpose`, and
 selects private storage from the existing `privateArtifacts` switch. The current
@@ -225,6 +288,20 @@ sends that field; no CLI caller was found. The complete retained 72-hour
 request-log query ending 2026-09-15 at 07:14:20 UTC contained one POST: App
 `0.893.2`, response `202`. It found no non-App or unidentified POST; this is
 bounded caller evidence, not a guarantee about every external client.
+
+#### Organization member display queries
+
+`GET /api/org/members?view=members` retains the existing organization summary
+and current-member profile shape while omitting invitation and membership-request
+data and their provider reads. The Agents page uses this view; organization
+management keeps the full default response. Membership authorization, profile
+cache lifetime, batching, and missing-creator presentation are unchanged.
+
+Old Apps omit `view` and receive the full response from a new API. New Apps can
+also consume an old API: its query-less route ignores `view` and returns the
+same member shape, with the previous management-read cost until the API updates.
+No temporary fallback, App version-floor increase, migration, or Runner protocol
+change is required.
 
 ### Backend
 
@@ -687,9 +764,31 @@ also bounds each extracted entry's inode footprint.
 
 Unsupported-archive admission records use separate
 `decoded-v1-rejected-<version-hash>/` keys under the same GC and lock rules.
-Only background fill reads these records; foreground lookup probes positive
+Only post-spawn background work reads these records; foreground lookup probes positive
 file entries only, so unsupported archives do not pay a rejection-record lock
 and read on every startup. Each reader validates its expected entry kind.
+
+For an ordinary archive hit, optional decoded warming is omitted when this
+plan's existing foreground lookup already validated positive decoded contents,
+even if mount or payload admission did not select them for delivery. This
+observation belongs only to that prepared plan and adds no lookup or retained
+file contents. A missing compressed archive still selects its required fill;
+later plans perform their own positive lookup, so GC eviction cannot become a
+permanent warming exclusion. Unobserved positive entries retain the existing
+background checks.
+
+After Agent spawn, ordinary warm-source candidates can pass through one
+runner-owned classification batch of at most 16 keys before queue admission.
+Classification shares the existing decoded worker/memory budget, never waits
+for a permit, and owns no waiting queue or remembered negative state. It omits
+warming only after validating a current rejection record and a still-present
+compressed source under their existing locks. Missing fills and archive-required
+consumers keep normal admission. Busy, missing, invalid or unavailable
+classification retains the ordinary background path, including its errors.
+The coordinator owns classification completion and reporting through shutdown;
+dropping its last owner closes admission before any delayed classification can
+submit. Foreground lookup still probes only positive entries. Neither persisted
+format, GC, nor the four-worker/32-queued admission bounds change.
 
 Readers hold that lock while validating the bounded index, identity, file types,
 sizes and content digests, then pin owned bytes through Guest apply. GC can evict
@@ -699,9 +798,27 @@ and revalidates the lock only for a present entry, then reopens the directory
 under the lock. Missing, busy or unsupported entries keep ordinary delivery;
 malformed present cache data is an error, not an unverified hit.
 
-The bounded binary-manifest check is computed once on the first usable ready
-hit, before omitting archive staging. Miss-only runs do not clone and serialize
-the manifest just to decide whether an unused binary input would fit.
+Before omitting archive staging, a ready decoded mount must individually fit
+the existing 64 KiB canonical manifest bound. Other mounts' signed URLs or
+cleanup metadata do not reject that ready mount. Miss-only runs do not serialize
+entries to decide whether an unused binary input would fit. The selected files
+still share the 15 MiB payload and 1,024-mount limits across the entire run.
+
+After source resolution, a combined manifest that fits uses one Guest operation.
+An oversized combined manifest is composed into bounded existing-format
+requests: ordinary storage, artifacts, reused paths and all cleanup run first;
+decoded-only batches follow without repeating cleanup. The Runner validates
+decoded bindings against the complete manifest before partitioning, and the
+Guest validates each binary request. Every batch retains the existing 64 KiB
+manifest and 15 MiB payload limits, real source URLs and file/path validation.
+All batches are encoded before the first storage-apply operation, and a failure stops
+later batches and prevents Agent spawn. The existing non-transactional partial
+filesystem-change semantics remain; multiple requests do not imply rollback.
+Oversized ordinary JSON retains its existing manifest-file transport. No API,
+wire shape, persisted cache format, archive eligibility or generic stdin limit
+changes. Split runs can emit multiple Guest storage-apply operations inside one
+enclosing Runner storage-apply stage; per-helper entry indices are not globally
+unique within such a run.
 
 Lookup windows admit at most 128 identities with 128 KiB of owned key bytes,
 retaining the per-key limits. Non-admitted keys retain ordinary delivery;
@@ -718,6 +835,25 @@ shutdown joins background work and extracted-cache blocking tasks. The binary
 final-file input is private to the bundled Runner/Guest storage operation;
 ordinary HTTP downloads, API manifests and generic exec-stdin limits do not
 change. No backend reader-first deployment is required for that bundled input.
+
+The Runner-wide owner admits at most 32 waiting identities and runs at most four
+workers. Missing-archive observations and maintenance (warming an observed archive
+hit or retiring its compressed source) each leave four waiting positions for the
+other class; the remaining 24 positions are shared. Pure-class bursts can therefore
+be rejected at 28 waiting entries. Admission never waits, evicts an accepted task,
+or retains rejected work for retry. Queued same-key archive demand supersedes
+retirement, and missing demand promotes warming without losing its decoded-cache
+consumer. Such promotions retain accepted ownership even above a class quota,
+while the total queue bound remains unchanged.
+
+Dispatch is FIFO within each class. While both classes wait, at most three missing
+fills start before one maintenance task; an empty class does not idle workers.
+This gives every accepted warming and retirement task finite dispatch progress
+provided active operations finish, not a wall-clock deadline or guaranteed
+admission at mixed saturation. Classification uses existing preparation outcomes
+only: workers still validate actual cache state under the original locks, so an
+evicted warm source can be downloaded and a newly filled miss can be reused. No
+new foreground lookup, network request or maintenance barrier is introduced.
 
 After a run actually selects extracted-file delivery and successfully spawns its
 Agent, that same bounded background owner may retire the corresponding compressed
@@ -909,16 +1045,42 @@ uses persisted run ownership to display a platform-owned balance failure as
 metadata. Model unavailability is presentation, not a completion failure reason.
 The webhook and Chat Event V7 schemas accept all valid reason tokens; older readers
 use generic failure copy for an unknown token instead of rejecting the run or
-showing the vm0 recharge card. No schema migration is required.
+showing the vm0 recharge card. The token addition required no schema migration.
 
-Prefer API readers before the runner writer for this change. Old runners and
-retained rows can still have missing reasons or legacy upstream affordability
-text labeled `insufficient_credits`; exact legacy presentation remains supported
-without inferring an unobserved status or suppressing unknown diagnostics. Remove
-that compatibility only after old runners drain and affected retained rows are
-gone or migrated. Public run, activity, HTTP callback, model-error event, and network-export
-projections keep built-in balance details internal; rolling back these readers
-can restore the prior disclosure behavior even though the tokens remain readable.
+The #34219 cleanup follows the reader/writer rollout in #34251. The production
+read on 2026-09-16 found API `1.607.0`, App `0.902.2`, and all three running
+Runners on `0.194.6`, containing the owner-aware reader and structured writer
+commit `0367d976a87fe1251fcb9b6cfe545a8b24e4f2b6`.
+
+Historical errors remain as stored, including missing or misclassified failure
+reasons. No data migration or repair is required. The user accepted that those
+records may display raw errors or the old incorrect credit classification after
+terminal text inference is removed. Terminal readers use the persisted cause.
+Current failed provider-event detection and network-export redaction remain.
+The production rollback resolver enforces the commit above for both the API
+target and its independently resolved Runner tag, preventing an older writer or
+public reader from returning for new runs.
+
+This change does not certify alert delivery. #34219 remains open for actual
+built-in/BYOK production samples, Axiom monitor configuration and delivered-alert
+verification. Runner INFO events are below the Axiom upload threshold, and the
+investigation token could not read monitor configuration.
+
+Pi queue expiry adds `provider_queue_timeout` under the same open-token
+contract. Prefer API/App readers and terminal policy before the patched CLI;
+Guest and Runner typed contracts ship as a supported pair. An old API's
+transient allowlist excludes the new token. Old Guests may ignore the optional
+runtime diagnosis but preserve failure; a new Guest can refine an old CLI's
+generic server/overload evidence from exact terminal text. It cannot undo
+retries already performed by an old SDK. No new protocol, database column or
+session format is introduced, and local-deadline handoff is unchanged.
+
+Queued or active commit-addressed contexts can retain the old CLI. Release
+acceptance must record API SHA, CLI package SHA and Runner/Guest versions, run
+the controlled fixture against that artifact, and observe a fixed 24-hour
+window for unique affected runs, actual statuses/attempts and built-in warning
+visibility. No occurrence means no observed exposure, not proven recovery.
+Rollback can restore old retry behavior; retained reason tokens stay readable.
 
 Avoid one-shot protocol flips:
 
@@ -1268,6 +1430,17 @@ capabilities in their client version. The API projects a stored locale to
 writes that the client did not advertise. Keep this compatibility layer until
 stale browser clients and API rollback windows have closed.
 
+### Retired Limelight color theme
+
+`limelight` is removed from `COLOR_THEMES`, so the API no longer parses it in
+either direction. Migration `1147_retire_limelight_color_theme` moves stored
+selections to `citrus-spark`, which declares the same two colours; it must run
+before the API that rejects the value, which is the normal migrate-then-promote
+order. The App is promoted after the API, so between the two an already-open
+bundle can still offer Limelight and receive `400` on that one write; every
+other palette, and the member's stored selection, is unaffected. The palette was
+only reachable under the `GradientColorThemes` rollout switch.
+
 ### Treat Database/API Transitions as a First-class Boundary
 
 Schema changes have two independent compatibility directions:
@@ -1441,53 +1614,94 @@ These objects are contracts, not generic fallbacks. Verify the exact outgoing
 SQL against them, record the release they protect, and remove the functions,
 triggers, and views after that release drains.
 
+## SSH general availability
+
+SSH, including Direct and Cloudflare Access, is generally available. The
+`sshAccess` registry entry, overrides consumer, UI gates and API/Run gates are
+retired together. Existing registered-key filtering ignores retired overrides;
+no migration, data deletion or rewrite is needed. Owner isolation, Agent grants,
+winning Run/Runner authority, credential encryption and host trust remain required.
+The existing Run-lifetime authority cache and missed-notification window are unchanged.
+
+Promote the API before the App. An older API can still enforce its rollout switch;
+the App retains its existing unavailable/error handling for that response, never
+an authorization bypass. Older loaded Apps may hide SSH until refreshed. Already
+created Runs retain their minted capabilities and prompt snapshot; create a new
+Run to obtain SSH guidance and capabilities. Runner/guest/CLI DTOs and stored
+hosts, credentials, pins, grants and observations do not change. Source-level GA
+does not attest deployment state or waive the protected-reader constraints below.
+
 ## Cloudflare Access for SSH
 
 The #31996 delivery adds a protected transport to the existing SSH host domain.
 #34077 is additive database/API authority preparation, including the minimal
 current Runner contract reader and Platform diagnostic translations.
-`sshAccess` is staff-only, and `cloudflareAccess` stays disabled, including for staff.
-Under the [pre-GA policy](fallback.md), this feature keeps one canonical contract:
+Direct and Cloudflare Access are generally available with no rollout switches;
+the SSH Agent grant still covers both. The initial delivery used the
+[pre-GA policy](fallback.md) and keeps one canonical contract:
 no profile selector, duplicate old/new DTO, or legacy diagnostic projection.
 
 Before the first protected configuration or binding is written in a deployed
 environment, every serving API must understand protected authority, Runners from
 #34080 must own new Run admission, and incompatible active Runs must have drained.
-#34081 owns Access management UI and full real-Run acceptance before activation.
+#34081 owns Access management UI; #34370 records integrated real-Run acceptance
+and the owner-approved evidence boundaries at closure.
 Management stays inside `/connectors/ssh`. Access is a reusable host connection
 setting under the existing SSH Agent grant, not a separately authorized service.
-The Access feature switch controls rollout; it does not add an Agent permission.
+General availability does not replace the existing Agent permission.
 Native Service Auth interoperability must be verified; S1 contract tests are not
 provider E2E evidence. Do not use a production feature override as a test fixture.
 
 The management UI uses the existing canonical Access endpoints; it adds no
-schema or private Runner contract. With Access off it keeps Direct management
-available and hides Access creation. Already-bound hosts still identify their
-protected transport; editing, resetting keys and deleting them remain unavailable
-under the canonical API gate. Removing a binding requires Access eligibility and
-an explicit Direct selection. Losing the feature or changing
-owner clears open secret forms and cancels their pending UI work. API authorization
-and same-owner foreign keys remain authoritative; frontend visibility is not an
+schema or private Runner contract. Unified host forms also accept inline Access
+creation in the host write request. Existing `configId` selections remain valid;
+responses still return only the resolved binding. Deploy API support before the
+App uses inline creation. An older API rejects that write alternative;
+clients should refresh after the current API/App deployment, without a second
+save path or automatic fallback. Existing rows and older App requests remain
+valid, and Runner versions do not need a new decoder for this management change.
+
+Access management and protected host creation require no additional opt-in.
+Already-bound hosts are never silently converted to Direct. Removing a binding
+requires owner authorization and an explicit Direct selection. Changing owner
+clears open secret forms and cancels their pending UI work. API authorization and
+same-owner foreign keys remain authoritative; frontend visibility is not an
 access check.
 
-| State                                                                 | Required behavior                                                                                      |
-| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Existing Direct data after the additive migration                     | Hosts, credentials, pins, grants and observations remain unchanged; bindings are null.                 |
-| Current API and S1 Runner with protected handoff                      | Runner returns unavailable without dialing Direct SSH or forwarding the token.                         |
-| Current API and S2 Runner with authorized protected handoff           | Runner uses native WSS/443, verifies gateway TLS and SSH identity separately, without Direct fallback. |
-| Current API with an unauthorized protected host or Access feature off | Private authority is unavailable; guest inventory omits that host.                                     |
-| Pre-Access API with protected rows                                    | Forbidden: the old reader can interpret the row as Direct.                                             |
-| Protected writes before the native carrier and real-Run acceptance    | Forbidden outside controlled local tests.                                                              |
+SSH save retries (#34503) require a client-generated resource `id` on host creation
+and standalone credential/Access creation. New resources return `201`; same-owner
+existing IDs return `204` without mutation. Host edits retain their existing
+`expectedGeneration` contract. There is no database migration or backfill, and
+Runner/guest protocols are unchanged. Deploy the API before the App. This change shipped
+under the staff-only pre-GA policy; stale Apps/APIs could reject the new/missing
+field or fail to handle `204`. Refresh clients after deployment. Do not fall back to a
+new-ID save or automatically replay it. Deduplication only covers the existing
+resource's lifetime, not deletion or abandoned forms; see
+[SSH access](ssh-access.md#save-retries).
 
-Feature disable does not make a protected row safe for a pre-Access reader.
+| State                                                              | Required behavior                                                                                      |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| Existing Direct data after the additive migration                  | Hosts, credentials, pins, grants and observations remain unchanged; bindings are null.                 |
+| Current API and S1 Runner with protected handoff                   | Runner returns unavailable without dialing Direct SSH or forwarding the token.                         |
+| Current API and S2 Runner with authorized protected handoff        | Runner uses native WSS/443, verifies gateway TLS and SSH identity separately, without Direct fallback. |
+| Current API with an unauthorized host                              | Private authority and guest inventory remain unavailable under owner and Agent authorization.          |
+| Pre-Access API with protected rows                                 | Forbidden: the old reader can interpret the row as Direct.                                             |
+| Protected writes before the native carrier and real-Run acceptance | Forbidden outside controlled local tests.                                                              |
+
+A rollout switch does not make a protected row safe for a pre-Access reader.
 Do not deploy such a reader after protected writes exist; no automatic deletion
 or conversion is part of deployment.
 
 #34080 changes the Runner transport without changing guest CLI terminal enums or
 the S1 private API contract. Existing Direct requests keep their behavior. A
 missing/incompatible authority response fails closed; no pre-GA dual decoder is
-introduced. The feature remains default-off after the carrier code lands, pending
-authorized real-provider evidence and #34081's integrated acceptance.
+introduced. The separate switch removal changes API eligibility and Platform
+visibility only; Runner/guest wire contracts and stored credentials stay unchanged.
+Old pre-removal APIs may still enforce their Access switch, and old App bundles
+may hide Access until refreshed. Deploy the current API/App and refresh clients
+rather than adding a compatibility alias or second decoder; see the SSH GA
+boundary above. Retired switch overrides are ignored by the existing registered-key
+filter; no database migration or destructive cleanup is required.
 
 Run cache invalidations are best-effort and identifier-only. Token/SSH-grant changes
 may leave cached authority usable for the remainder of an active Run if a notice
@@ -1502,6 +1716,28 @@ failure eviction and Run/sandbox teardown remain effective. The accepted
 Run-lifetime missed-notification window includes observed outages; this introduces
 no reconnect grace deadline, periodic reauthorization or new TTL. No coordinated
 API rollout or migration is required for this Runner change.
+
+## Integration source links
+
+Telegram bot DMs, Teams chats, and AgentPhone DMs store their return link in
+the existing optional `source.href` field of the V1 user-message document.
+No new document fields, context columns, or migrations are introduced. Older
+Apps and APIs already accept these URLs, including `sms:`; older Apps may
+label a conversation link as an original-message link until refreshed.
+
+New Apps distinguish message links from conversation links by the provider's
+documented URL shape. Events already stored without `href` remain unlinked;
+their immutable user-message documents and archived snapshots are not rewritten.
+Telegram DMs open the bot conversation. Teams Bot Framework `a:` IDs open
+the bot chat using its `28:` recipient rather than pretending to be Graph
+`19:` chat IDs. AgentPhone DMs open Messages addressed to the inbound destination
+(the assistant number); group events do not expose a single-recipient link.
+
+Desktop adds a narrow external-navigation allowance for single-recipient
+`sms:+E164` links without query parameters or fragments. Older Desktop builds
+continue to deny these links until the Desktop update is installed; browser
+delivery does not upgrade the Electron navigation policy. Opening Messages
+requires a registered handler on the user's device and does not send a message.
 
 ## Integration input attachments
 
@@ -1589,6 +1825,30 @@ The App uses the exact attempt receipt, not account timestamps, account counts, 
 - The new table is additive and does not change existing OAuth-state or connector-account rows. No Runner protocol changes or immediate App minimum-version increase are required.
 
 The receipt-capable writer from [#32880](https://github.com/vm0-ai/vm0/pull/32880) shipped in release `3d58eaa4609967a4f655f7cd61d0d7cd454ba2a1`: API `1.575.2` completed [production promotion](https://github.com/vm0-ai/vm0/actions/runs/34335229479/job/102417239410) on 2026-09-09 at 09:48:46 UTC, followed by App `0.873.0` at 09:50:38 UTC. Cleanup [#32870](https://github.com/vm0-ai/vm0/issues/32870) retires the optional response field and absent-ID branch after that release. The maintainer explicitly excludes old API rollback compatibility; no rollback restriction is added or changed. Pre-receipt APIs are outside this cleanup's supported boundary. Existing App requests remain accepted, and already-loaded pre-receipt App bundles are not retired by this change; no App version floor increase is included.
+
+### User cancellation in the App
+
+Cancelling a connector connection aborts the current App attempt: owned requests
+and polling stop, its popup closes when the browser still permits access, busy controls are
+released, and unfinished local continuations (including account naming and Chat
+callbacks) must not start or update a newer attempt. Explicit dialog close and
+Escape have the same meaning; outside presses do not cancel pending work. Once
+the App has confirmed success, the action is labelled Close rather than Cancel.
+Provider isolation policies can sever the popup handle, so closing that external
+window is best-effort and is not required to release the App's attempt.
+
+This is **local cancellation**, not a provider revocation or an API transaction
+rollback. The API may already have claimed OAuth state and may finish persisting
+credentials, grants, and the completion receipt after the App stops waiting.
+Keep those accounts and reconcile them through normal refresh/notifications;
+never delete accounts or revoke credentials as compensation. A late receipt
+cannot resume a cancelled App attempt, but it does not prevent an already-started
+API reconnect callback from writing the same account after a newer callback.
+
+No API, persisted-state, or Runner contract changes are needed. Already-loaded
+old Apps retain their previous, non-cancellable behavior until refreshed. A
+stronger cancellation or reconnect-write-order guarantee would require a
+separately designed server protocol.
 
 ## Pi memory summary storage and injection budget
 
@@ -1720,3 +1980,285 @@ requires the API's matching commit-addressed CLI for new admission and preserves
 old captured contexts. Existing Responses schemas and Runner claims are unchanged.
 Retain the V4.1 reader and API billing writer in serving/recovery and rollback
 targets while admitted V4.1 Pi work remains.
+
+## Durable Run stop intent (#34383)
+
+The [Run cancellation reconciliation contract](run-cancellation-reconciliation.md)
+adds nullable `agent_runs.runner_cancellation_mode` and an authenticated v1 read
+endpoint. Apply migration 1143 before promoting API code. Its CHECK remains
+`NOT VALID` because all existing rows receive NULL; new writes are constrained
+without a historical scan. Old writers remain valid with NULL. Rollback retains
+the additive column.
+Deploy the API across the serving fleet before enabling the Runner consumer in
+#34384. Unsupported endpoints and other inconclusive reads must not become
+disappearance decisions. This API slice alone adds no new stop-delay bound.
+
+## Deferred Pi Sandbox reader floor
+
+Before a v4 API-inference producer can emit Sandbox demand, deploy the
+[durable consumer and its Runner/CLI readers](./pi-deferred-sandbox-consumer.md).
+Its optional Runner header is ignored by older APIs; older Runners remain
+excluded from v4 jobs. The release endpoint and Runner use one strict explicit
+outcome contract: a missing, malformed or unknown outcome retains the receipt
+instead of fabricating a stale acknowledgement. No mixed-response bridge is
+required while the feature is non-GA: no production publisher is enabled and
+`piDeferredSandbox` is off, so an older API cannot produce a v4 job for a newer
+Runner. The outer Pi launch-config v2 contains a new versioned continuation slot.
+The co-built Guest uses its private Sandbox control token to assemble the handoff
+in a 0600 run-scoped file and passes only an additive path variable to the CLI.
+An older CLI fails its legacy ordinary-token read; a newer CLI under an older
+Guest fails because the authenticated file is absent. Both combinations stop
+before the RPC boundary. Enablement therefore requires the capable API,
+Runner/Guest and newly captured commit-addressed CLI.
+Drain existing v4 intents, leases and release receipts before rolling any of
+those readers back below that floor. No switch is enabled by the consumer
+implementation.
+
+## Email outbox provider replay and send-time expiry (#34645, #34695)
+
+Migration 1148 adds nullable `email_outbox.provider_idempotency_key` and
+`email_outbox.provider_request`, plus a unique index over the key. Apply it
+before promoting API code; both columns stay NULL for producer-enqueued rows and
+for every row written before the migration, so an older API keeps working and a
+rollback retains the additive columns.
+
+The first delivery attempt of a row renders its template, commits that provider
+request together with a key derived from the row's own id, and only then calls
+Resend. Later attempts replay the committed request byte-for-byte under the same
+key, so a template change, a sender/`APP_URL` change, a restart, or a provider
+acceptance whose completion write is lost resolves to the same email instead of a
+second one. Attempts never derive a new key, and an idempotency conflict
+(`invalid_idempotent_request`) fails the row visibly rather than re-keying it.
+
+Recovery and bounds:
+
+- A prepared row stays `sending` and owns a 60-second lease. After the lease, a
+  drain re-selects it and replays the same request; the abandoned attempt's
+  completion is fenced on `(status, attempts)` and cannot overwrite the newer
+  one. `sending` is now a durable state, not only an in-transaction marker.
+- A row's deadline is its persisted creation time plus the 15-minute TTL. No
+  claim, retry or lease moves it. Preparation admits a row against that deadline
+  rather than against the timestamp its batch started with, and the drain then
+  rechecks the same deadline against a fresh clock after the claim commits and
+  immediately before the provider call, because the suppression lookup, the claim
+  update and that commit all take real time. A row that reaches its deadline
+  inside that window makes no provider request: its owned attempt is failed with
+  `Email outbox item expired before contacting the provider`, under the same
+  `(id, status, attempts)` fence as any other completion, so it cannot overwrite a
+  newer claim or recreate a row that was removed meanwhile. It keeps its committed
+  request and key, because an earlier attempt may still be unresolved at the
+  provider and that pair is the only record of it. Attempt-exhausted rows are
+  failed the same way, and the existing cleanup removes both.
+- Expiry decides admission, not retraction. Once `resend.emails.send` has been
+  called the email belongs to the provider, so a request already in flight is
+  delivered whether or not the deadline passes while it is outstanding.
+- Three attempts within a 15-minute TTL stay well inside Resend's documented
+  24-hour idempotency retention. Outside that window the provider no longer
+  replays a key, so this is bounded retry safety, not unlimited exactly-once
+  delivery, and sends made before this rollout carried no key and cannot be
+  deduplicated retroactively.
+- Delivery clears the committed request and keeps only the key and provider id.
+  Undelivered rows are removed by the existing TTL cleanup, so the rendered
+  message is retained no longer than the template and recipient already on the
+  row, and no new retention or erasure obligation is created.
+
+Mixed-version limitation: an old drain worker selects only `pending` rows and
+sends without a key, so it can still duplicate a row that a new worker returned
+to `pending`. A worker predating the send-time recheck also samples expiry only
+while preparing, so it can still send a row that crossed its deadline during that
+preparation. Both protections start once every drain worker runs the new path.
+Row locking with `SKIP LOCKED` keeps the two versions from processing the same
+row at the same time, and an old worker never claims a `sending` row.
+
+Scale at the time of the change: a fully paginated masked read at 2026-09-16
+09:56:29 UTC found 1,008 retained outbox rows, all `sent` and none past one
+attempt. That is retained row inventory under the 15-minute TTL, not historical
+volume, and it does not establish that an ambiguous send never happened.
+
+## Morning Brief installed preference projection (#34693)
+
+Migration 1149 adds the empty `morning_brief_installed_preferences` table, its
+indexes, and its foreign keys to `org_members_cache(org_id, user_id)`,
+`agents(id)` and `chat_threads(id)`. It is purely additive and needs no
+backfill, `LOCK TABLE` or historical scan, so apply it before promoting API
+code. An older API neither reads nor writes the table, and a rollback leaves it
+in place holding only derived rows.
+
+`FeatureSwitchKey.SimpleMorningBrief` stays off by default. While it is off the
+Settings read and write paths behave exactly as before; turning it on makes the
+Settings writers copy the member's installed state into the projection and lets
+the Settings GET answer from that copy. Turning it back off immediately restores
+the legacy read and write path and discards nothing: every user choice still
+lives in the legacy installation and its automation.
+
+Both schema directions are therefore closed. Old code after migration never
+names the new table. New code before migration cannot reach it either: every
+statement against `morning_brief_installed_preferences` sits behind that
+default-off switch, so the release's normal migration-before-promotion ordering
+is not the only thing standing between a new API artifact and a `42P01`.
+
+Mixed-version and old-writer behavior is the reason the reader validates instead
+of trusting the row:
+
+- An old API binary changes the legacy state without refreshing the projection.
+  So does the automation poller advancing `next_run_at`, catalog reconciliation,
+  and thread deletion. A new binary therefore accepts a row only when its
+  `projection_version` matches and every copied field — selected installation,
+  automation, Agent, bound thread, enabled, cron expression, timezone and next
+  run — still equals the live canonical state. Any mismatch serves the legacy
+  answer, so a stale row can never restore an old enabled, schedule, timezone or
+  thread state.
+- The projection's own `updated_at` is not freshness evidence and is never used
+  as one.
+- The legacy mutation and the copy are not atomic: the mutation runs on the
+  outer `Db` and commits before the copy starts, even though both are inside the
+  preference advisory lock. A failed copy is reported operationally and the real
+  committed outcome is still returned; the next read falls back to legacy.
+
+The row's lifetime is an evictable cache, not durable ownership. The composite
+key to `org_members_cache` fences the current membership, user and organization
+cleanup paths, and the refresh locks and rechecks that exact parent with
+`FOR KEY SHARE` without ever recreating it. `org_members_cache` is a 60-second
+read-through role cache that a concurrent membership read can refill, and the
+Clerk erasure bridge is still unregistered, so this is a local fence rather than
+global deletion finality. Before native state becomes execution authority, that
+lifetime must be replaced with durable membership and erasure ownership.
+
+This slice transfers no execution ownership: it consumes no occurrence and adds
+no Run, Chat event, email, provider request or credit operation. See
+[the migration contract](morning-brief-migration-state.md) for the full
+invariants.
+
+## Morning Brief bounded Slack collection (#34727)
+
+Migration 1151 adds the empty `morning_brief_collection_occurrences` table, its
+two indexes, its check constraints, and its foreign keys to
+`org_members_metadata(org_id, user_id)` and `agents(id)`. It is purely additive
+and needs no backfill, `LOCK TABLE` or historical scan, so apply it before
+promoting API code. The production scale note below is automation inventory, not
+a cutover census, and nothing existing is materialized by this slice.
+
+Both schema directions are closed, but for different reasons, and the default-off
+switch is only half the story:
+
+- **Old code after migration** never names the new table. Its only readers and
+  writers ship with this change.
+- **New code before migration** reaches the table from two places. The collector
+  itself is registered in the deployed route table but is gated by the
+  development / protected-preview environment check and by the default-off
+  `FeatureSwitchKey.SimpleMorningBrief`, so it cannot run in production at all.
+  The cleanup revocation added to membership, user and organization deletion is
+  **unconditional** — it is a `DELETE` that runs whenever those webhooks fire,
+  with no feature check in front of it. A default-off switch does not protect
+  it. The repository's migration-before-promotion ordering is therefore the
+  actual requirement here, not a convenience: promoting the API artifact before
+  migration 1151 has shipped would make Clerk membership, user and organization
+  cleanup fail with `42P01`.
+- A rollback leaves the table in place holding only operational metadata. An
+  older API neither reads nor deletes it; its rows stay fenced by the two
+  foreign keys until a newer artifact returns.
+
+The row's lifetime is durable member ownership rather than an evictable cache.
+`org_members_metadata` is the source of truth for the member's own preferences,
+including the timezone an enabled brief requires; it is deleted by membership,
+user and organization cleanup and is not refilled by a background reader. This
+is deliberately stronger than the `org_members_cache` parent the installed
+preference projection uses, which a concurrent membership read can refill.
+Claiming and finalizing take erasure admission first and then lock and recheck
+that member row with `FOR KEY SHARE`, so a cleanup either waits for the writer
+and cascades its row away or has already committed and leaves nothing to write.
+
+This slice transfers no execution ownership. It starts no Run, makes no LLM,
+credit or usage operation, writes no Chat event, email or outbox row, and leaves
+`next_run_at` and `last_run_at` untouched. The existing Settings, legacy
+automation and native Slack read contracts are unchanged. Durable membership and
+materialization ownership, global deletion readiness, scheduling and cutover
+remain S7 gates; the Clerk erasure bridge is still unregistered, so this is a
+local fence rather than global deletion finality.
+
+Requests already in flight to Slack cannot be retracted. Revocation guarantees
+only that no result of such a request is accepted, persisted or returned after
+the revoking transaction commits. See
+[the collection contract](morning-brief-collection.md) for the source contract,
+lease semantics, finite budgets and declared coverage limits.
+
+## Marketing browser funnel events
+
+The App posts onboarding entry to `/api/marketing/onboarding-start` and actual
+Stripe redirect actions to `/api/marketing/checkout-start` on the Marketing
+origin. The owner confirmed this feature has not launched and requested removal
+of `/api/marketing/finish-onboarding` without an alias, with a client force
+upgrade as the supported-client boundary.
+
+Deploy the Marketing receiver before this App. Verify the production App version
+and commit contain the new callers, then raise `minimumSupportedVersion` in
+`turbo/apps/api/src/lib/web-client-compatibility.json` to that verified version
+in a separate release. Do not guess a version from this PR or raise the floor
+with the first replacement App deployment: production promotes the API first,
+so a refresh could still load an unsupported build. This PR does not activate
+the floor increase before the replacement App is live.
+
+The existing App API check prompts old clients to refresh on their next handled
+API request. Direct Marketing requests do not pass through that middleware;
+cached old callers before the floor takes effect are outside this prelaunch
+support boundary. Do not roll the App back below the floor or Marketing back
+behind the new receivers while those App builds are supported.
+
+Onboarding remains bodyless and preserves the existing
+`marketing_onboarding_attempts` user/org attempt marker. Changing the URL does
+not replay past attempts, including failed attempts. Checkout sends only a fresh
+UUID, its UTC occurrence time and the bounded source `onboarding_video` or
+`paywall`; Marketing derives identity from the bearer token and attribution from
+its own consented cookies. Both requests include credentials, run under the App
+root with a ten-second deadline and never delay navigation for their response.
+There is no periodic check or browser retry.
+
+The new receiver records Google Ads funnel shadows only. Marketing deduplicates
+onboarding by user/org and checkout by user/org/event UUID. These counts differ
+intentionally from the legacy gtag browser-session/account deduplication: another
+checkout action produces another event. A shadow acknowledgement is neither
+proof of eligible consent nor a Google Ads delivery receipt. Existing App gtag
+and PostHog reporting remain active; this change adds no GA4/PostHog sender,
+provider cutover, historical replay, App table or MaskDB scan. Checkout coverage
+matches the existing `RedirectToStripe` producers, excluding previews and other
+payment paths without that producer.
+
+## Morning Brief collection revocation stamp (#34860)
+
+Migration 1154 adds the nullable `org_members_metadata.morning_brief_collection_revoked_at`
+column. It is additive, has no default and needs no backfill, scan or
+`LOCK TABLE`, so it applies as an ordinary short transaction.
+
+`FOR KEY SHARE` on the member row only orders two transactions; it does not
+outlive either of them. The revocation decision now persists in this column, so
+a claim admitted against an external membership answer resolved before
+revocation still loses after that cleanup commits — including when the cleanup
+found no occurrence to delete, and long before the member row itself is removed.
+
+- **Old code after migration** never reads or writes the column. It stays `NULL`
+  for every member an old artifact touches, which is exactly the unrevoked
+  state, and the older collector keeps its previous behavior.
+- **New code before migration** must not be promoted. Membership, user and
+  organization cleanup write this column **unconditionally**, in the same
+  transaction that already revokes run authority, with no feature check in front
+  of it; the default-off `simpleMorningBrief` switch does not protect it.
+  Promoting the API artifact before migration 1154 has shipped would make those
+  Clerk cleanup webhooks fail with `42703`. Claiming and finalizing read the
+  column in the same unconditional statement that locks the member row.
+- **Rollback** leaves stamped rows behind. An older artifact ignores them, so a
+  member whose cleanup was interrupted after revocation simply keeps their
+  pre-existing behavior; the rows themselves are deleted with the member row at
+  the end of each cleanup path. There is no dual-write window and nothing to
+  contract later.
+
+The companion parent-generation check needs no schema of its own: the admission
+carries the member row's existing `created_at`, and the claim requires it to be
+unchanged. Ordinary preference upserts preserve that value, so no deployed
+writer has to change; only a deleted and recreated row reads differently, which
+is exactly the case it refuses. An older artifact simply does not compare it.
+
+This repair changes no route registration, environment gate, feature switch,
+schedule, Run, credit, Chat or email behavior, and it does not activate the
+still-unregistered Clerk erasure bridge. It is a local serialization boundary
+for one owner's collection authority; durable membership and materialization
+ownership and global deletion finality remain S7 gates.

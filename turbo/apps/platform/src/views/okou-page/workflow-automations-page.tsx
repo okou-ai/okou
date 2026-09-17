@@ -1053,7 +1053,7 @@ export function CreateWorkflowAutomationDialog() {
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent
         smMaxWidth="xl"
-        contentClassName="okou-app flex flex-col overflow-hidden gap-0 p-0"
+        contentClassName="flex flex-col overflow-hidden gap-0 p-0"
       >
         <DialogHeader className="shrink-0 px-5 pb-3 pt-5">
           <DialogTitle className="text-base font-semibold">

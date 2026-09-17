@@ -39,6 +39,8 @@ const BILLING_CODES = new Set([
   "billing_error",
   "insufficient_quota",
   "payment_required",
+  "billing_hard_limit_reached",
+  "insufficient_credits",
 ]);
 
 /** A provider error object, never a local vm0 `error: "insufficient_credits"` envelope. */
@@ -59,8 +61,8 @@ export function isProviderBalanceErrorBody(body: unknown): boolean {
   );
 }
 
-/** Legacy terminal error presentation only; raw text is not diagnostic provenance. */
-export function isLegacyProviderBalanceError(
+/** Current provider error messages; callers must establish a failed provider event. */
+export function isProviderBalanceErrorMessage(
   message: string,
   framework: string | null | undefined,
 ): boolean {
@@ -110,23 +112,13 @@ export function publicProviderBalanceFailureReason(
 /** Keep explicit vm0 credit failures independent of the run's credential owner. */
 export function formatRunBalanceError(params: {
   readonly failureReason?: RunFailureReasonToken | null;
-  readonly message: string;
   readonly modelProvider?: string | null;
-  readonly framework?: string | null;
 }): string | undefined {
-  if (
-    params.failureReason === "provider_insufficient_credits" ||
-    ((params.failureReason == null ||
-      params.failureReason === "insufficient_credits") &&
-      isLegacyProviderBalanceError(
-        params.message,
-        params.modelProvider === "built-in" ? "claude-code" : params.framework,
-      ))
-  ) {
-    return publicProviderBalanceFailureReason(params.modelProvider) ===
-      "provider_insufficient_credits"
-      ? PROVIDER_INSUFFICIENT_CREDITS_MESSAGE
-      : MODEL_UNAVAILABLE_MESSAGE;
+  if (params.failureReason !== "provider_insufficient_credits") {
+    return undefined;
   }
-  return undefined;
+  return publicProviderBalanceFailureReason(params.modelProvider) ===
+    "provider_insufficient_credits"
+    ? PROVIDER_INSUFFICIENT_CREDITS_MESSAGE
+    : MODEL_UNAVAILABLE_MESSAGE;
 }

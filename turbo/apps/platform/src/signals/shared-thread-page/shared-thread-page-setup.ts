@@ -54,14 +54,11 @@ export const setupSharedThreadPage$ = command(
         }
         messages.push({ ...message, tree });
       }
-      sharedThread = {
-        ...result.body,
-        messages,
-        richContent:
-          richMessages.length === 0
-            ? undefined
-            : createSharedThreadRichContentSignals(richMessages, signal),
-      };
+      const richContent =
+        richMessages.length === 0
+          ? undefined
+          : createSharedThreadRichContentSignals(richMessages);
+      sharedThread = { ...result.body, messages, richContent };
     }
     set(
       updateDocumentTitle$,

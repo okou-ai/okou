@@ -626,7 +626,10 @@ async function loadResourceVersionIndexes(
   const pending = new Map<string, Promise<PiResourceVersionIndex | null>>();
   const projections = await Promise.all(
     mounts.map(async (mount) => {
-      if (!mount.archiveUrl) {
+      // An explicit empty writeback has no archive by contract. Its ready
+      // zero-file index records sourceArchiveSize=0, while the mount correctly
+      // omits archiveSize; neither value is needed to contribute no files.
+      if (mount.empty) {
         return null;
       }
       const indexed = indexes.get(mount.versionId);
@@ -642,6 +645,13 @@ async function loadResourceVersionIndexes(
           );
         }
         return indexed.projection;
+      }
+      if (!mount.archiveUrl) {
+        throw resourcePreparationError(
+          new Error(
+            "Pi resource index is unavailable without a captured archive URL",
+          ),
+        );
       }
       // Pending asynchronous writes and pre-index rollout versions both need
       // exact-version reads. Remove the latter case after #33619's backfill

@@ -14,7 +14,7 @@ import {
   embedImageLoadSignals,
 } from "../../../../signals/image-load.ts";
 import {
-  createMermaidDiagramSignals,
+  createMermaidDiagramRegistry,
   embedMermaidSignals,
 } from "../../../../signals/mermaid-diagram.ts";
 import { testContext } from "../../../../signals/__tests__/test-helpers.ts";
@@ -31,6 +31,10 @@ import { Markdown, MarkdownEventBody } from "../../rich-markdown.tsx";
 // ---------------------------------------------------------------------------
 
 const context = testContext();
+
+// Match the chat parse pass: registration only returns signals to embed;
+// prewarming or a visible diagram starts layout by reading its computed.
+const mermaidDiagrams = createMermaidDiagramRegistry();
 
 function progressMessage(index: number): string {
   return [
@@ -102,9 +106,7 @@ const THREAD_TAIL = THREAD.slice(-10);
 /** What the ensure command does per event: parse + embed prepared signals. */
 function prepareTree(source: string): Root {
   const tree = parseMarkdownTree(source, { mermaid: true });
-  embedMermaidSignals(tree, (code) => {
-    return createMermaidDiagramSignals(code, context.signal);
-  });
+  embedMermaidSignals(tree, mermaidDiagrams.register);
   embedImageLoadSignals(tree, createImageLoadSignals);
   return tree;
 }
@@ -224,9 +226,7 @@ function ensurePass(
     const tree = parseMarkdownTree(plan.treeSource, {
       mermaid: true,
     });
-    embedMermaidSignals(tree, (code) => {
-      return createMermaidDiagramSignals(code, context.signal);
-    });
+    embedMermaidSignals(tree, mermaidDiagrams.register);
     embedImageLoadSignals(tree, createImageLoadSignals);
     next ??= new Map(cache);
     next.set(event.id, { content: plan.content, tree });

@@ -45,19 +45,6 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
-  [FeatureSwitchKey.SessionOutputStreaming]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Subscribe to transient session text output while a run is active",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.SocialStatus]: {
-    maintainer: "liangyou@okou.ai",
-    description: "On-demand public Social service health",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.WelcomeThread]: {
     maintainer: "lancy@okou.ai",
     description: "Manually create a welcome conversation with fixed examples",
@@ -68,18 +55,22 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "lancy@okou.ai",
     description:
       "Generate short public activity summaries for active thread subscriptions.",
+    enabled: true,
+  },
+  [FeatureSwitchKey.CustomTemplates]: {
+    maintainer: "bingjie@okou.ai",
+    description:
+      "Templates compiled from a file the user uploaded, with their own catalog.",
     enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    // Narrowed from the staff org to the maintainer while nothing in the
+    // product publishes a row: the API route exists, but no upload surface
+    // calls it yet, so everyone else would only ever see the empty panel.
+    enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
+    enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
   },
   [FeatureSwitchKey.ComposerTaskChips]: {
     maintainer: "bingjie@okou.ai",
     description: "Lightweight chat task chips and contextual starting ideas",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.ComposerCreateCommands]: {
-    maintainer: "bingjie@okou.ai",
-    description: "Create commands and mode-specific composer controls",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -242,6 +233,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Enable Morning Brief and email subscription management in Preferences.",
     enabled: true,
   },
+  [FeatureSwitchKey.SimpleMorningBrief]: {
+    maintainer: "lancy@okou.ai",
+    description:
+      "Select the platform-funded simple-morning-brief pipeline instead of the Official Workflow Run. Separate from the user's Morning Brief preference.",
+    enabled: false,
+  },
   [FeatureSwitchKey.TestOauthConnector]: {
     maintainer: "liangyou@okou.ai",
     description:
@@ -270,27 +267,25 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
   },
 
+  // Effort's run controls carry Fast, so Fast reaches every user the moment
+  // Effort does. Keep this switch enabled for as long as Effort is enabled:
+  // the client send path still reads it directly to attach the run's tier.
   [FeatureSwitchKey.CodexFastMode]: {
     maintainer: "lancy@okou.ai",
     description: "Enable Codex fast mode for GPT 5.6 runs.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   [FeatureSwitchKey.Effort]: {
     maintainer: "bingjie@okou.ai",
     description:
       "Set Fast mode and chat reasoning effort from the composer's run controls.",
-    enabled: false,
-    enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
-    enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   [FeatureSwitchKey.ModelPickerFlyout]: {
     maintainer: "tongx@okou.ai",
     description:
       "Pick a model from a detached flyout: model types on the left, that type's models in a panel beside it.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   [FeatureSwitchKey.ChatPreference]: {
     maintainer: "lancy@okou.ai",
@@ -314,7 +309,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.PiLoop]: {
     maintainer: "lancy@okou.ai",
     description:
-      "Run owned chat threads with the official Pi runtime, native session persistence, and shared memory learning across interactive and automation turns.",
+      "Run owned chat threads with the official Pi runtime, streamed session output, native session persistence, and shared memory learning across interactive and automation turns.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -357,12 +352,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.ChatTranslation]: {
-    maintainer: "yuma@okou.ai",
-    description:
-      "Translate selected assistant text into a remembered target language.",
-    enabled: false,
-  },
   [FeatureSwitchKey.ZapierConnector]: {
     maintainer: "yuma@okou.ai",
     description:
@@ -382,6 +371,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Use private artifact storage, the Okou viewer, and organization and public sharing.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ComposerImageAnnotation]: {
     maintainer: "tongx@okou.ai",
@@ -407,6 +397,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Preserve personal subscription identities for admitted runs and gate the personal subscription priority rollout.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.PersonalModelProviderAccounts]: {
     maintainer: "ethan@okou.ai",
@@ -419,12 +410,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "linghan@okou.ai",
     description: "Enable Lark bot setup, account connections, and messaging.",
     enabled: false,
-  },
-  [FeatureSwitchKey.TelegramDmSessions]: {
-    maintainer: "linghan@okou.ai",
-    description:
-      "Use agent/model-scoped Telegram DM sessions and separate reply chains.",
-    enabled: true,
   },
   [FeatureSwitchKey.FeishuIntegration]: {
     maintainer: "linghan@okou.ai",
@@ -439,17 +424,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Enable remote Streamable HTTP MCP definitions for organization Custom Connectors.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.SshAccess]: {
-    maintainer: "liangyou@okou.ai",
-    description: "Enable standalone Runner-mediated SSH configuration",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.CloudflareAccess]: {
-    maintainer: "liangyou@okou.ai",
-    description: "Enable user-owned Cloudflare Access for saved SSH hosts",
-    enabled: false,
   },
   [FeatureSwitchKey.ConnectorDirectory]: {
     maintainer: "tongx@okou.ai",
@@ -475,7 +449,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.GetStartedQuests]: {
     maintainer: "ming@okou.ai",
     description:
-      "Show the home corner's Get started quest list. Progress is placeholder data; no credits are awarded yet.",
+      "Enable Get started quests, reward progress, and credit rewards.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -483,6 +457,20 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "tongx@okou.ai",
     description:
       "Show the chosen template's cover image on the composer's inline template chip instead of a generic glyph.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.ComposerAddMenu]: {
+    maintainer: "bingjie@okou.ai",
+    description:
+      "Collapse the composer toolbar's attach, template and create workflow buttons into a single plus menu.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.DeliveryFormatGuidance]: {
+    maintainer: "bingjie@okou.ai",
+    description:
+      "Replace the hosted-HTML-first delivery guidance with a rule that picks docx, xlsx, PDF, CSV, a hosted view or a chat reply from what the user will do with the result.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

@@ -17,7 +17,7 @@ function client() {
 }
 
 describe("/api/feature-switches", () => {
-  it("keeps subscription priority off for staff and applies overrides consistently across an organization", async () => {
+  it("defaults subscription priority on for staff and applies overrides consistently across an organization", async () => {
     const clerk = createRouteMocks(context).clerk;
     const headers = { authorization: "Bearer clerk-session" };
     const userId = `user_${randomUUID()}`;
@@ -27,7 +27,7 @@ describe("/api/feature-switches", () => {
       staff.body.effectiveSwitches[
         FeatureSwitchKey.PersonalSubscriptionPriority
       ],
-    ).toBeFalsy();
+    ).toBeTruthy();
     const orgId = `org_${randomUUID()}`;
     clerk.session(userId, orgId, "org:member");
     const ordinary = await accept(client().get({ headers }), [200]);
@@ -52,6 +52,22 @@ describe("/api/feature-switches", () => {
         FeatureSwitchKey.PersonalSubscriptionPriority
       ],
     ).toBeTruthy();
+    await accept(
+      client().update({
+        headers,
+        body: {
+          switches: { [FeatureSwitchKey.PersonalSubscriptionPriority]: false },
+        },
+      }),
+      [200],
+    );
+    clerk.session(userId, orgId, "org:member");
+    const disabled = await accept(client().get({ headers }), [200]);
+    expect(
+      disabled.body.effectiveSwitches[
+        FeatureSwitchKey.PersonalSubscriptionPriority
+      ],
+    ).toBeFalsy();
     clerk.session(userId, `org_${randomUUID()}`, "org:member");
     const elsewhere = await accept(client().get({ headers }), [200]);
     expect(
@@ -61,45 +77,26 @@ describe("/api/feature-switches", () => {
     ).toBeFalsy();
   });
 
-  it("enables SSH by default only in the staff organization", async () => {
+  it("defaults the composer run controls to every organization", async () => {
     const clerk = createRouteMocks(context).clerk;
     const headers = { authorization: "Bearer clerk-session" };
     const userId = `user_${randomUUID()}`;
 
     clerk.session(userId, "org_3ANttyrbWYJk6JKRSTRLEsbsDLe", "org:member");
     const staff = await accept(client().get({ headers }), [200]);
-    expect(
-      staff.body.effectiveSwitches[FeatureSwitchKey.SshAccess],
-    ).toBeTruthy();
+    expect(staff.body.effectiveSwitches[FeatureSwitchKey.Effort]).toBeTruthy();
 
     clerk.session(userId, `org_${randomUUID()}`, "org:member");
     const ordinary = await accept(client().get({ headers }), [200]);
     expect(
-      ordinary.body.effectiveSwitches[FeatureSwitchKey.SshAccess],
-    ).toBeFalsy();
-  });
-
-  it("defaults model selection refactoring to Bingjie and the staff org while excluding other orgs", async () => {
-    const clerk = createRouteMocks(context).clerk;
-    const headers = { authorization: "Bearer clerk-session" };
-    clerk.session(
-      "user_3EWY21Oe3f15kfs3yYmbGgDb3NV",
-      `org_${randomUUID()}`,
-      "org:member",
-    );
-    const owner = await accept(client().get({ headers }), [200]);
-    expect(owner.body.effectiveSwitches[FeatureSwitchKey.Effort]).toBeTruthy();
-
-    const staffUserId = `user_${randomUUID()}`;
-    clerk.session(staffUserId, "org_3ANttyrbWYJk6JKRSTRLEsbsDLe", "org:member");
-    const staff = await accept(client().get({ headers }), [200]);
-    expect(staff.body.effectiveSwitches[FeatureSwitchKey.Effort]).toBeTruthy();
-
-    clerk.session(staffUserId, `org_${randomUUID()}`, "org:member");
-    const nonStaffOrg = await accept(client().get({ headers }), [200]);
+      ordinary.body.effectiveSwitches[FeatureSwitchKey.Effort],
+    ).toBeTruthy();
     expect(
-      nonStaffOrg.body.effectiveSwitches[FeatureSwitchKey.Effort],
-    ).toBeFalsy();
+      ordinary.body.effectiveSwitches[FeatureSwitchKey.CodexFastMode],
+    ).toBeTruthy();
+    expect(
+      ordinary.body.effectiveSwitches[FeatureSwitchKey.ModelPickerFlyout],
+    ).toBeTruthy();
   });
 
   it.each([true, false])(

@@ -16,7 +16,7 @@ echo ""
 echo "Press Ctrl+C to cancel, or Enter to continue..."
 read
 
-cd /workspaces/vm01/turbo
+cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
 pnpm tsx scripts/rebuild-snapshots-from-db.ts 16 17
 
 echo ""

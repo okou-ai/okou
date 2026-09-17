@@ -49,7 +49,8 @@ pub use factory::{
 pub use guest_rpc::{AcceptedGuestRpc, GuestRpcAcceptor, GuestRpcStream};
 pub use runtime::{RuntimeProvider, SandboxRuntime};
 pub use sandbox::{
-    GuestMemorySnapshot, Sandbox, SandboxFinalExecParkHandoff, SandboxFinalExecParkHandoffOutcome,
+    FileCompression, FileWriteMeasurements, GuestMemorySnapshot, Sandbox,
+    SandboxFinalExecParkHandoff, SandboxFinalExecParkHandoffOutcome,
     SandboxFinalExecParkHandoffPoint, SandboxFinalExecParkObserver, SandboxFinalExecParkOutcome,
     SandboxFinalExecParkStage, SandboxFinalExecParkSubstage, SandboxFinalExecParkSubstageOutcome,
     SandboxGuestConnectionPhase, SandboxParkNonReusableReason, SandboxParkOutcome,
