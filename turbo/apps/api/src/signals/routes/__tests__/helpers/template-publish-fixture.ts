@@ -95,6 +95,7 @@ export function installS3Fixture(context: TestContext) {
       metadata: Readonly<Record<string, string>>;
     }
   >();
+  const signedObjects = new Map<string, string>();
   let signature = 0;
 
   function readMetadata(input: Record<string, unknown>) {
@@ -170,10 +171,15 @@ export function installS3Fixture(context: TestContext) {
       const input = commandInput(command);
       signature += 1;
       const url = `https://r2.example.test/signed/${signature.toString()}`;
+      const key = typeof input.Key === "string" ? input.Key : "";
+      // Signed URLs are opaque, so remember which object each one was minted
+      // for: a caller handed the wrong object's URL is otherwise indist-
+      // inguishable from one handed the right object's.
+      signedObjects.set(url, key);
       if (command instanceof PutObjectCommand) {
         signedPuts.set(url, {
           bucket: typeof input.Bucket === "string" ? input.Bucket : "",
-          key: typeof input.Key === "string" ? input.Key : "",
+          key,
           metadata: readMetadata(input),
         });
       }
@@ -197,6 +203,10 @@ export function installS3Fixture(context: TestContext) {
       return [...objects.keys()].map((id) => {
         return id.slice(id.indexOf("\0") + 1);
       });
+    },
+    /** The object a signed URL was minted for. */
+    signedKey(url: string): string | undefined {
+      return signedObjects.get(url);
     },
   };
 }
