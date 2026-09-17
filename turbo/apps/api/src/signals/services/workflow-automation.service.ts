@@ -70,6 +70,7 @@ import { and, asc, eq, isNotNull, isNull, or } from "drizzle-orm";
 import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { publishChatThreadAutomationsChangedSafely } from "../external/realtime";
 import { nowDate } from "../../lib/time";
+import type { Tx } from "../../lib/db-types";
 import {
   bestEffort,
   isValidTimeZone,
@@ -138,6 +139,7 @@ import {
   type WorkflowAutomationAccountConnectorSlug,
 } from "./workflow-automation-account-classification.service";
 import { lockWorkflowWebhookAutomationTierEligibleForOrg } from "./workflow-webhook-automation-entitlement.service";
+import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import {
   buildWorkflowWebhookSummaryFields,
   defaultWebhookReceivedEventConfig,
@@ -1541,6 +1543,7 @@ interface CreateWebhookEventAutomationInput {
   readonly eventConfig?: WebhookReceivedEventConfig;
   readonly enabled: boolean;
   readonly autonomyBudget?: number;
+  readonly officialInstallation?: OfficialAutomationCreationMetadata;
 }
 
 export interface OfficialAutomationCreationMetadata {
@@ -1761,26 +1764,74 @@ async function insertEventAutomation(
   });
 }
 
+type PreparedWebhookCredentials = Pick<
+  typeof workflowWebhookAutomations.$inferInsert,
+  "tokenHash" | "encryptedToken" | "encryptedSecret" | "secretLastFour"
+>;
+
+async function prepareWebhookCredentials(
+  args: { readonly orgId: string; readonly userId: string },
+  signal: AbortSignal,
+): Promise<{
+  readonly token: string;
+  readonly secret: string;
+  readonly row: PreparedWebhookCredentials;
+}> {
+  const token = mintWorkflowWebhookToken();
+  const secret = mintWorkflowWebhookSecret();
+  const encryptedToken = await encryptWorkflowWebhookToken(token, args);
+  signal.throwIfAborted();
+  const encryptedSecret = await encryptWorkflowWebhookSecret(secret, args);
+  signal.throwIfAborted();
+  return {
+    token,
+    secret,
+    row: {
+      tokenHash: hashWorkflowWebhookToken(token),
+      encryptedToken,
+      encryptedSecret,
+      secretLastFour: secret.slice(-4),
+    },
+  };
+}
+
 async function insertWebhookEventAutomation(
   db: Db,
   args: {
     readonly input: CreateWebhookEventAutomationInput;
     readonly workflowId: string;
     readonly agentId: string;
-    readonly workflowTitle: string;
     readonly automationId?: string;
     readonly currentTime: Date;
   },
   signal: AbortSignal,
-): Promise<WorkflowAutomationSummary | null> {
+): Promise<AutomationResult> {
+  const capabilities = await loadOrgPlanCapabilities(db, args.input.orgId);
+  signal.throwIfAborted();
+  if (capabilities?.workflowWebhookAutomationAllowed !== true) {
+    return workflowWebhookTeamRequiredResult();
+  }
+  // KMS can stall independently of PostgreSQL. Prepare both ciphertexts before
+  // taking the entitlement, workflow binding, or shared chat sequence locks.
+  const credentials = await prepareWebhookCredentials(
+    { orgId: args.input.orgId, userId: args.input.member.userId },
+    signal,
+  );
+  signal.throwIfAborted();
   return await db.transaction(async (tx) => {
+    // A downgrade may have committed while credentials were being prepared.
     const tierEligible = await lockWorkflowWebhookAutomationTierEligibleForOrg(
       tx,
       { orgId: args.input.orgId },
       signal,
     );
     if (!tierEligible) {
-      return null;
+      return workflowWebhookTeamRequiredResult();
+    }
+    const access = await lockWebhookAutomationCreationAccess(tx, args);
+    signal.throwIfAborted();
+    if (access.kind !== "ok") {
+      return access;
     }
 
     const chatThreadId = await ensureWorkflowUserAutomationThread(tx, {
@@ -1788,7 +1839,7 @@ async function insertWebhookEventAutomation(
       userId: args.input.member.userId,
       workflowId: args.workflowId,
       agentId: args.agentId,
-      workflowTitle: args.workflowTitle,
+      workflowTitle: access.workflow.displayName ?? access.workflow.name,
       currentTime: args.currentTime,
     });
 
@@ -1818,30 +1869,94 @@ async function insertWebhookEventAutomation(
       throw new Error("Failed to create workflow automation");
     }
 
-    const token = mintWorkflowWebhookToken();
-    const secret = mintWorkflowWebhookSecret();
     await tx.insert(workflowWebhookAutomations).values({
       automationId: row.id,
-      tokenHash: hashWorkflowWebhookToken(token),
-      encryptedToken: await encryptWorkflowWebhookToken(token, {
-        orgId: args.input.orgId,
-        userId: args.input.member.userId,
-      }),
-      encryptedSecret: await encryptWorkflowWebhookSecret(secret, {
-        orgId: args.input.orgId,
-        userId: args.input.member.userId,
-      }),
-      secretLastFour: secret.slice(-4),
+      ...credentials.row,
       createdAt: args.currentTime,
       updatedAt: args.currentTime,
     });
 
-    return await rowToSummary(tx, row, {
-      chatThreadId,
-      webhookToken: token,
-      webhookSecret: secret,
-    });
+    return {
+      kind: "ok",
+      summary: await rowToSummary(tx, row, {
+        chatThreadId,
+        webhookToken: credentials.token,
+        webhookSecret: credentials.secret,
+      }),
+    };
   });
+}
+
+async function lockWebhookAutomationCreationAccess(
+  tx: Tx,
+  args: {
+    readonly input: CreateWebhookEventAutomationInput;
+    readonly workflowId: string;
+    readonly agentId: string;
+  },
+): Promise<
+  | { readonly kind: "ok"; readonly workflow: WorkflowRow }
+  | AutomationActionFailure
+> {
+  // Freeze the source permissions in agent -> workflow order. Access may have
+  // been revoked while KMS prepared the credentials outside this transaction.
+  const [agent] = await tx
+    .select({
+      id: agents.id,
+      owner: agents.owner,
+      visibility: agents.visibility,
+    })
+    .from(agents)
+    .where(and(eq(agents.id, args.agentId), eq(agents.orgId, args.input.orgId)))
+    .for("share");
+  const [workflow] = await tx
+    .select({ agentId: workflows.agentId })
+    .from(workflows)
+    .where(
+      and(
+        eq(workflows.id, args.workflowId),
+        eq(workflows.orgId, args.input.orgId),
+      ),
+    )
+    .for("share");
+  if (!agent || workflow?.agentId !== agent.id) {
+    return { kind: "not-found" };
+  }
+  const visible = await loadVisibleWorkflowById(tx, {
+    orgId: args.input.orgId,
+    member: args.input.member,
+    workflowId: args.workflowId,
+    includeInstallingOfficial: args.input.officialInstallation !== undefined,
+  });
+  if (!visible) {
+    return { kind: "not-found" };
+  }
+  const official = args.input.officialInstallation;
+  if (
+    official !== undefined &&
+    (visible.workflow.officialDefinitionName !== official.definitionName ||
+      visible.workflow.officialInstallationState !==
+        (official.installationState ?? "installing") ||
+      visible.workflow.ownerUserId !== args.input.member.userId)
+  ) {
+    return { kind: "not-found" };
+  }
+  if (
+    visible.workflow.officialDefinitionName !== null &&
+    official === undefined
+  ) {
+    return {
+      kind: "conflict",
+      message: OFFICIAL_WORKFLOW_AUTOMATION_READ_ONLY_MESSAGE,
+    };
+  }
+  if (!canUseAgent(agent, args.input.member)) {
+    return {
+      kind: "forbidden",
+      message: "You do not have access to the workflow's agent",
+    };
+  }
+  return { kind: "ok", workflow: visible.workflow };
 }
 
 async function prepareGmailEventConfigForPersist(
@@ -2138,23 +2253,19 @@ async function createWebhookEventAutomationForWorkflow(
   },
   signal: AbortSignal,
 ): Promise<AutomationResult> {
-  const summary = await insertWebhookEventAutomation(
+  const result = await insertWebhookEventAutomation(
     args.context.db,
     {
       input: args.input,
       workflowId: args.context.workflowId,
       agentId: args.context.agentId,
-      workflowTitle: args.context.workflowTitle,
       automationId: args.context.automationId,
       currentTime: nowDate(),
     },
     signal,
   );
   signal.throwIfAborted();
-  if (!summary) {
-    return workflowWebhookTeamRequiredResult();
-  }
-  return { kind: "ok", summary };
+  return result;
 }
 
 async function createGithubWorkflowRunEventAutomationForWorkflow(
@@ -3397,6 +3508,7 @@ export interface OfficialAutomationEventPreparation {
   readonly eventConfig: WorkflowAutomationEventConfig;
   readonly eventConnectorId?: string;
   readonly googleFormsSeedCursor?: string;
+  readonly webhookCredentials?: PreparedWebhookCredentials;
 }
 
 type OfficialAutomationSubtypeTransitionAutomation = Pick<
@@ -3430,20 +3542,13 @@ export async function syncOfficialAutomationSubtypeRows(
       return workflowWebhookTeamRequiredResult();
     }
     if (!webhook) {
-      const token = mintWorkflowWebhookToken();
-      const secret = mintWorkflowWebhookSecret();
+      const credentials = args.preparation?.webhookCredentials;
+      if (!credentials) {
+        throw new Error("Missing prepared Official webhook credentials");
+      }
       await db.insert(workflowWebhookAutomations).values({
         automationId: args.current.id,
-        tokenHash: hashWorkflowWebhookToken(token),
-        encryptedToken: await encryptWorkflowWebhookToken(token, {
-          orgId: args.current.orgId,
-          userId: args.current.ownerUserId,
-        }),
-        encryptedSecret: await encryptWorkflowWebhookSecret(secret, {
-          orgId: args.current.orgId,
-          userId: args.current.ownerUserId,
-        }),
-        secretLastFour: secret.slice(-4),
+        ...credentials,
         createdAt: args.currentTime,
         updatedAt: args.currentTime,
       });
@@ -3922,8 +4027,24 @@ export const prepareOfficialAutomationReconfiguration$ = command(
         : stripeInvoicePaidWorkflowAutomationsDisabledResult();
     }
     if (input.eventType === "webhook-received") {
+      const [webhook] = await db
+        .select({ automationId: workflowWebhookAutomations.automationId })
+        .from(workflowWebhookAutomations)
+        .where(eq(workflowWebhookAutomations.automationId, automation.id))
+        .limit(1);
+      signal.throwIfAborted();
+      // Finalization keeps its existing catalog, entitlement, identity, and
+      // updatedAt guards. It only consumes prepared ciphertext under locks.
+      const credentials = webhook
+        ? undefined
+        : await prepareWebhookCredentials(
+            { orgId: input.orgId, userId: input.member.userId },
+            signal,
+          );
+      signal.throwIfAborted();
       return preparedOfficialEvent(
         input.eventConfig ?? defaultWebhookReceivedEventConfig(),
+        credentials ? { webhookCredentials: credentials.row } : undefined,
       );
     }
     return { kind: "not-found" };

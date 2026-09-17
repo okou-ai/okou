@@ -23,6 +23,7 @@ import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-
 import { CANCELLATION_RECOVERY_STALE_AFTER_MS } from "@okouai/api-contracts/contracts/runners";
 import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 import {
+  FeatureSwitchKey,
   ILLUSTRATION_TEMPLATE_ITEMS,
   PRESENTATION_TEMPLATE_PICKER_ITEMS,
 } from "@okouai/core";
@@ -733,6 +734,11 @@ describe("CHAT-02: completed chat callback", () => {
     });
 
     const prompt = "How do I debug my Node app?";
+    function titlePromptsForThisThread(): string[] {
+      return titlePrompts.filter((titlePrompt) => {
+        return titlePrompt.includes(prompt);
+      });
+    }
     const first = await startChatRun(actor, {
       agentId,
       prompt,
@@ -782,7 +788,10 @@ describe("CHAT-02: completed chat callback", () => {
     await api.requestCancelRun(actor, sentinel.runId, [200]);
     await waitForRunStatus(actor, sentinel.runId, "cancelled");
     await waitForThreadTitle(actor, first.threadId, "Debugging Node Apps");
-    const titlePromptCountBeforeComplete = titlePrompts.length;
+    // The sentinel thread titles itself on its own detached schedule, so count
+    // only this thread's requests. A shared counter would otherwise measure
+    // whichever background title work happened to land first.
+    const titlePromptCountBeforeComplete = titlePromptsForThisThread().length;
 
     await chatCallbacks.registerPushSubscription(actor);
     chatCallbacks.enableVapid();
@@ -847,7 +856,9 @@ describe("CHAT-02: completed chat callback", () => {
     );
 
     await waitForThreadTitle(actor, first.threadId, "Debugging Node Apps");
-    expect(titlePrompts).toHaveLength(titlePromptCountBeforeComplete);
+    expect(titlePromptsForThisThread()).toHaveLength(
+      titlePromptCountBeforeComplete,
+    );
     const initialTitlePrompt = titlePrompts.find((titlePrompt) => {
       return titlePrompt.includes(`Most recent user message:\n${prompt}`);
     });
@@ -1246,6 +1257,17 @@ describe("CHAT-02: completed chat callback", () => {
 
   it("silently degrades all four callback features while delivering the generic notification", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
+    if (!actor.orgId) {
+      throw new Error("Expected an organization");
+    }
+    // Opening copy is the producer accounts keep when thread activity
+    // summaries are off, so pin the switch instead of following its generally
+    // available default: this case is about the other generations degrading.
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId: actor.orgId },
+      { [FeatureSwitchKey.ThreadActivitySummary]: false },
+    );
     mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
     chatCallbacks.mockOpenRouterCompletions((body) => {
       const system = body.messages[0]?.content ?? "";

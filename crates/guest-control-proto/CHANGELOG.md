@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.15](https://github.com/vm0-ai/okou/compare/guest-control-proto-v0.21.14...guest-control-proto-v0.21.15) (2026-09-17)
+
+
+### Documentation
+
+* **rust:** document fixed-helper exec role values ([#34856](https://github.com/vm0-ai/okou/issues/34856)) ([993c5d5](https://github.com/vm0-ai/okou/commit/993c5d52db76c034d6346beab408b93fcec86029))
+
 ## [0.21.14](https://github.com/vm0-ai/okou/compare/guest-control-proto-v0.21.13...guest-control-proto-v0.21.14) (2026-09-17)
 
 

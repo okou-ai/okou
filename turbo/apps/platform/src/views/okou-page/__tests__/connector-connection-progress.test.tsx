@@ -108,7 +108,45 @@ async function dismissProgress(
     await user.click(viewport);
   }
   await waitFor(() => {
+    expect(screen.queryAllByRole("dialog")).toHaveLength(
+      method === "backdrop" ? 1 : 0,
+    );
+  });
+}
+
+async function expectCancelledConnection(popup: Window, connect: HTMLElement) {
+  expect(popup.closed).toBeTruthy();
+  await waitFor(() => {
+    expect(connect).toBeEnabled();
+  });
+  expect(screen.queryByRole("dialog")).toBeNull();
+}
+
+async function closeCompletedConnection(
+  dialog: HTMLElement,
+  connectorLabel: string,
+  releaseDetails: () => void,
+) {
+  click(within(dialog).getByText("Close"));
+  await waitFor(() => {
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  releaseDetails();
+  await waitFor(() => {
+    expect(
+      getConnectorAction("button", `Manage ${connectorLabel} accounts`),
+    ).toBeEnabled();
+  });
+  expect(
+    screen.queryByRole("dialog", {
+      name: `Name your ${connectorLabel} account`,
+    }),
+  ).toBeNull();
+}
+
+async function expectAuthorizationPage(popup: Window, url: string) {
+  await waitFor(() => {
+    expect(popup.location.href).toBe(url);
   });
 }
 
@@ -118,8 +156,10 @@ test.each([
   { grantKind: "auth-code", existing: true, dismiss: null },
   { grantKind: "auth-code", existing: true, dismiss: "Close" },
   { grantKind: "auth-code", existing: true, dismiss: "Escape" },
+  { grantKind: "auth-code", existing: false, dismiss: "details" },
+  { grantKind: "openid-auth", existing: true, dismiss: "details" },
 ] as const)(
-  "Keep existing $grantKind feedback through naming without an extra dialog (dialog: $existing, dismissal: $dismiss)",
+  "Keep $grantKind feedback through naming, or cancel explicitly (dialog: $existing, dismissal: $dismiss)",
   async ({ grantKind, existing, dismiss }) => {
     const account = connectedAccount({
       kind: "builtin",
@@ -213,19 +253,23 @@ test.each([
       click(getConnectorAction("button", "Connect", chooser));
     }
     await expect(screen.findByRole("status")).resolves.toBeVisible();
-    expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(
-      existing ? 1 : 0,
-    );
-    expect(screen.queryByRole("dialog", { name: PROGRESS })).toBeNull();
+    expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(1);
+    expect(
+      screen.getByRole("dialog", { name: existing ? "Stripe" : PROGRESS }),
+    ).toBeVisible();
     expect(connect).toBeDisabled();
     await waitFor(() => {
       return expect(popup.location.href).toBe(start.authorizationUrl);
     });
-    if (dismiss) {
+    if (dismiss && dismiss !== "details") {
       await dismissProgress(
         screen.getByRole("dialog", { name: "Stripe" }),
         dismiss,
       );
+      await expectCancelledConnection(popup, connect);
+      permissions.resolve();
+      details.resolve();
+      return;
     }
     expect(popup.closed).toBeFalsy();
     expect(connect).toBeDisabled();
@@ -235,18 +279,23 @@ test.each([
     context.mocks.data.connectors([{ ...account, slug: "stripe" }]);
     popup.close();
     await permissionRequest.promise;
-    expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(
-      existing && !dismiss ? 1 : 0,
-    );
+    expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(1);
     expect(screen.getByRole("status")).toBeVisible();
     expect(
       screen.queryByRole("dialog", { name: "Name your Stripe account" }),
     ).toBeNull();
     permissions.resolve();
     await detailRequest.promise;
-    expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(
-      existing && !dismiss ? 1 : 0,
-    );
+    if (dismiss === "details") {
+      const progress = screen.getByRole("dialog", {
+        name: existing ? "Stripe" : PROGRESS,
+      });
+      await closeCompletedConnection(progress, "Stripe", () => {
+        return details.resolve();
+      });
+      return;
+    }
+    expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(1);
     expect(screen.getByRole("status")).toBeVisible();
     details.resolve();
     const naming = await screen.findByRole("dialog", {
@@ -271,7 +320,7 @@ test.each([
 );
 
 test.each([false, true])(
-  "Keep a later access dialog usable when a background connection finishes (existing dialog: %s)",
+  "Keep a later access dialog usable after cancelling authorization (existing dialog: %s)",
   async (existing) => {
     const account = connectedAccount({
       kind: "builtin",
@@ -354,16 +403,12 @@ test.each([false, true])(
     await waitFor(() => {
       expect(popup.location.href).toBe(authorizationUrl);
     });
-    if (existing) {
-      await dismissProgress(
-        screen.getByRole("dialog", { name: "Stripe" }),
-        "Close",
-      );
-    }
+    await dismissProgress(
+      screen.getByRole("dialog", { name: existing ? "Stripe" : PROGRESS }),
+      "Close",
+    );
     expect(screen.queryByRole("dialog", { name: PROGRESS })).toBeNull();
-    expect(
-      getConnectorAction("button", "Manage Axiom accounts"),
-    ).toBeDisabled();
+    expect(getConnectorAction("button", "Manage Axiom accounts")).toBeEnabled();
     click(getConnectorAction("button", "Manage Axiom access"));
     const axiom = await screen.findByRole("dialog", {
       name: "Manage Axiom access",
@@ -377,9 +422,6 @@ test.each([false, true])(
       { ...account, slug: "stripe" },
     ]);
     popup.close();
-    await waitFor(() => {
-      expect(screen.getByLabelText("Manage Stripe accounts")).toBeEnabled();
-    });
     expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
     expect(axiom).toBeVisible();
     expect(
@@ -387,16 +429,8 @@ test.each([false, true])(
     ).toBeNull();
 
     click(within(axiom).getByLabelText("Close"));
-    const naming = await screen.findByRole("dialog", {
-      name: "Name your Stripe account",
-    });
-    expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
-    expect(within(naming).getByLabelText("Account name")).toHaveAttribute(
-      "placeholder",
-      "alice",
-    );
     await waitFor(() => {
-      expect(within(naming).getByLabelText("Account name")).toHaveFocus();
+      expect(screen.queryByRole("dialog")).toBeNull();
     });
   },
 );
@@ -431,8 +465,7 @@ test("Show progress for a custom connection after dismissing the previous attemp
     expect(firstPopup.location.href).toBe(authorizationUrl);
   });
   await dismissProgress(progress, "Close");
-  expect(firstPopup.closed).toBeFalsy();
-  firstPopup.close();
+  expect(firstPopup.closed).toBeTruthy();
   await waitFor(() => {
     expect(connect).toBeEnabled();
   });
@@ -456,6 +489,7 @@ test.each([
   { kind: "http", dismiss: "Close" },
   { kind: "http", dismiss: "Escape" },
   { kind: "http", dismiss: "backdrop" },
+  { kind: "automatic", dismiss: "details" },
 ] as const)(
   "Keep custom $kind progress until naming is ready and respect dismissal ($dismiss)",
   async ({ kind, dismiss }) => {
@@ -563,8 +597,14 @@ test.each([
     await waitFor(() => {
       return expect(popup.location.href).toBe(start.authorizationUrl);
     });
-    if (dismiss) {
+    if (dismiss && dismiss !== "details") {
       await dismissProgress(progress, dismiss);
+      if (dismiss !== "backdrop") {
+        await expectCancelledConnection(popup, connect);
+        confirmation.resolve();
+        details.resolve();
+        return;
+      }
     }
     authorized = true;
     connector = {
@@ -575,14 +615,16 @@ test.each([
     };
     popup.close();
     await confirmRequest.promise;
-    expect(screen.queryAllByRole("dialog", { name: PROGRESS })).toHaveLength(
-      dismiss ? 0 : 1,
-    );
+    expect(screen.queryAllByRole("dialog", { name: PROGRESS })).toHaveLength(1);
     confirmation.resolve();
     await detailRequest.promise;
-    expect(screen.queryAllByRole("dialog", { name: PROGRESS })).toHaveLength(
-      dismiss ? 0 : 1,
-    );
+    if (dismiss === "details") {
+      await closeCompletedConnection(progress, connector.displayName, () => {
+        return details.resolve();
+      });
+      return;
+    }
+    expect(screen.queryAllByRole("dialog", { name: PROGRESS })).toHaveLength(1);
     expect(
       screen.queryByRole("dialog", {
         name: `Name your ${connector.displayName} account`,
@@ -604,7 +646,7 @@ test.each([
   },
 );
 
-test("Finish custom OAuth without covering a new connector draft", async () => {
+test("Cancelled custom OAuth cannot cover or replace a new connector draft", async () => {
   let connector = customConnector({
     authMode: "oauth",
     oauthConfig: customOAuthConfig(),
@@ -678,11 +720,6 @@ test("Finish custom OAuth without covering a new connector draft", async () => {
     missingRequiredFields: [],
   };
   popup.close();
-  await waitFor(() => {
-    expect(
-      screen.getByLabelText(`Manage ${connector.displayName} accounts`),
-    ).toBeEnabled();
-  });
   expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
   expect(within(draft).getByLabelText("Display name")).toHaveValue(
     "Another API",
@@ -694,11 +731,135 @@ test("Finish custom OAuth without covering a new connector draft", async () => {
   ).toBeNull();
 
   click(getConnectorAction("button", "Cancel", draft));
-  const naming = await screen.findByRole("dialog", {
-    name: `Name your ${connector.displayName} account`,
-  });
-  expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
   await waitFor(() => {
-    expect(within(naming).getByLabelText("Account name")).toHaveFocus();
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 });
+
+test.each([
+  { custom: false, blocked: "start" },
+  { custom: false, blocked: "completion" },
+  { custom: true, blocked: "start" },
+  { custom: true, blocked: "completion" },
+] as const)(
+  "Cancel a pending $blocked request and retry without stale cleanup (custom: $custom)",
+  async ({ custom, blocked }) => {
+    const oldAttempt = crypto.randomUUID();
+    const nextAttempt = crypto.randomUUID();
+    const oldConnection = crypto.randomUUID();
+    const blockedRequest = context.mocks.deferred<void>();
+    const releaseOldRequest = context.mocks.deferred<void>();
+    const oldResponse = context.mocks.deferred<void>();
+    const authorizationUrl = "https://oauth.test/authorize";
+    let starts = 0;
+    const nextStart = async () => {
+      const attemptId = starts++ === 0 ? oldAttempt : nextAttempt;
+      if (attemptId === oldAttempt && blocked === "start") {
+        blockedRequest.resolve();
+        await releaseOldRequest.promise;
+        oldResponse.resolve();
+      }
+      return attemptId;
+    };
+    mockConnectors(context, []);
+    mockPublicConnectorStatus(context, [
+      publicStatusItem({
+        connectorSlug: "stripe",
+        label: "Stripe",
+        singleAuthCodeAuthMethodId: "oauth",
+        authMethods: [
+          {
+            id: "oauth",
+            label: "OAuth",
+            description: null,
+            grantKind: "auth-code",
+            manualFields: [],
+            startOptions: [],
+          },
+        ],
+      }),
+    ]);
+    const connector = customConnector({
+      authMode: "oauth",
+      oauthConfig: customOAuthConfig(),
+      fields: [],
+      missingRequiredFields: ["oauth"],
+    });
+    context.mocks.api(customConnectorsContract.list, ({ respond }) => {
+      return respond(200, { connectors: [connector] });
+    });
+    context.mocks.api(
+      connectorOauthStartContract.start,
+      async ({ respond }) => {
+        return respond(200, {
+          authorizationUrl,
+          oauthAttemptId: await nextStart(),
+        });
+      },
+    );
+    context.mocks.api(
+      customConnectorOAuth2Contract.start,
+      async ({ respond }) => {
+        return respond(200, {
+          result: "authorization",
+          authorizationUrl,
+          oauthAttemptId: await nextStart(),
+        });
+      },
+    );
+    context.mocks.api(
+      connectorAccountsContract.oauthCompletion,
+      async ({ params, respond }) => {
+        if (params.attemptId === oldAttempt && blocked === "completion") {
+          blockedRequest.resolve();
+          await releaseOldRequest.promise;
+          oldResponse.resolve();
+          return respond(200, { connectionId: oldConnection });
+        }
+        return respond(404, {
+          error: { code: "NOT_FOUND", message: "OAuth completion not found" },
+        });
+      },
+    );
+    const firstPopup = authorizationWindow();
+    await setupPage({
+      context,
+      path: custom ? "/connectors?tab=custom" : "/connectors?keywords=stripe",
+    });
+    const connect = await waitFor(() => {
+      return getConnectorAction(
+        "button",
+        `Connect ${custom ? connector.displayName : "Stripe"}`,
+      );
+    });
+    click(connect);
+    const firstDialog = await expectProgressDialog();
+    if (blocked === "completion" && custom) {
+      await expectAuthorizationPage(firstPopup, authorizationUrl);
+      firstPopup.close();
+    }
+    await blockedRequest.promise;
+    click(getConnectorAction("button", "Cancel", firstDialog));
+    await waitFor(() => {
+      expect(connect).toBeEnabled();
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+    expect(firstPopup.closed).toBeTruthy();
+
+    const secondPopup = authorizationWindow();
+    click(connect);
+    const nextDialog = await expectProgressDialog();
+    await expectAuthorizationPage(secondPopup, authorizationUrl);
+    releaseOldRequest.resolve();
+    await oldResponse.promise;
+    expect(secondPopup.closed).toBeFalsy();
+    expect(nextDialog).toBeVisible();
+    expect(connect).toBeDisabled();
+    expect(screen.queryByRole("dialog", { name: /^Name your/ })).toBeNull();
+    click(getConnectorAction("button", "Cancel", nextDialog));
+    await waitFor(() => {
+      expect(connect).toBeEnabled();
+    });
+    expect(secondPopup.closed).toBeTruthy();
+  },
+);

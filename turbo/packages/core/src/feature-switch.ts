@@ -55,8 +55,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "lancy@okou.ai",
     description:
       "Generate short public activity summaries for active thread subscriptions.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   [FeatureSwitchKey.CustomTemplates]: {
     maintainer: "bingjie@okou.ai",

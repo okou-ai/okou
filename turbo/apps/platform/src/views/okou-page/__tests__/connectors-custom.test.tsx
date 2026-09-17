@@ -1753,7 +1753,7 @@ test.each([
     await waitFor(() => {
       expect(screen.queryAllByRole("dialog")).toHaveLength(dismiss ? 0 : 1);
     });
-    expect(completedWindow.closed).toBeFalsy();
+    expect(completedWindow.closed).toBe(dismiss);
     personal = {
       ...personal,
       connectionStatus: "connected",

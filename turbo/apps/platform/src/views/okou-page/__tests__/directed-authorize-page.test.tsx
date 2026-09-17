@@ -543,9 +543,12 @@ test("Leave an agent unauthorized when OAuth is cancelled", async () => {
     );
   });
   await expect(screen.findByText("Connecting...")).resolves.toBeVisible();
-  expect(screen.queryByRole("dialog")).toBeNull();
+  const progress = screen.getByRole("dialog", {
+    name: "Connecting your account",
+  });
 
-  authWindow.close();
+  click(within(progress).getByText("Cancel"));
+  expect(authWindow.closed).toBeTruthy();
 
   await screen.findByText("Authorize Okou");
   expect(updateCalls).toBe(0);

@@ -105,6 +105,7 @@ import {
   setOfficialWorkflowAutomationAdmissionStateFixture,
 } from "./helpers/runtime-state";
 import { createRouteMocks } from "./helpers/route-test";
+import { holdSecretKms } from "./helpers/hold-secret-kms";
 import {
   createCronOfficialWorkflowCatalogRoutes,
   cronOfficialWorkflowCatalogRoutes,
@@ -123,6 +124,7 @@ import {
   createDeferredPromise,
   onRejection,
   settle,
+  settleIncludingAbort,
 } from "../../utils";
 
 const context = testContext();
@@ -7760,6 +7762,133 @@ describe("Official Workflow installations", () => {
       readAgentRunFamilyCountsFixture(context, agentId),
     ).resolves.toStrictEqual(beforeRuns);
   });
+
+  it("prepares Official webhook credentials without blocking an effective downgrade", async () => {
+    installCatalogStorageFixture();
+    const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
+    const definitionName = `api-test-webhook-kms-${suffix}`;
+    await syncCatalog(
+      catalog([
+        activeDefinition(definitionName, [
+          structureTransitionScheduleBlueprint(),
+        ]),
+      ]),
+    );
+    const { actor, customerId, subscriptionId } =
+      await workflowBdd.setupWorkflowOrg({ tier: "team" });
+    const { agentId } = await workflowBdd.createAgent(actor);
+    const pendingPreparation: {
+      current?: {
+        readonly release: () => void;
+        readonly settled: Promise<unknown>;
+      };
+    } = {};
+    onTestFinished(async () => {
+      pendingPreparation.current?.release();
+      await pendingPreparation.current?.settled;
+      installCatalogStorageFixture();
+      await bdd.deleteAgent(actor, agentId);
+      await cleanupCatalog();
+    });
+    await setOfficialWorkflowsEnabled(actor, true);
+    const headers = authHeaders(actor);
+    const installed = await accept(
+      officialClient().install({
+        headers,
+        params: { definitionName },
+        body: {
+          agentId,
+          blueprints: [{ blueprintKey: "lifecycle-transition", bindings: [] }],
+        },
+      }),
+      [201],
+    );
+    const workflowId = installed.body.workflow.id;
+    const original = installed.body.workflow.automations[0];
+    if (!original) {
+      throw new Error("Expected an Official schedule Automation");
+    }
+    await syncCatalog(
+      catalog([
+        activeDefinition(definitionName, [
+          { ...webhookBlueprint(), key: "lifecycle-transition" },
+        ]),
+      ]),
+    );
+    const kms = holdSecretKms(1, context.signal);
+    const reconciling = runOfficialWorkflowReconciliationWorker();
+    const settled = settleIncludingAbort(reconciling);
+    pendingPreparation.current = { release: kms.release, settled };
+    await kms.entered;
+    await webhooks.postStripeEvent(
+      {
+        id: `evt_official_kms_downgrade_${suffix}`,
+        type: "customer.subscription.deleted",
+        data: { object: { id: subscriptionId } },
+      },
+      [200],
+    );
+    kms.release();
+    await reconciling;
+    const rejected = await accept(
+      installationClient().get({ headers, params: { workflowId } }),
+      [200],
+    );
+    expect(rejected.body.workflow.automations).toStrictEqual([
+      expect.objectContaining({
+        id: original.id,
+        kind: "schedule",
+        official: expect.objectContaining({ reconciliationStatus: "failed" }),
+      }),
+    ]);
+
+    await runs.grantProEntitlement(actor, {
+      customerId,
+      subscriptionId,
+      tier: "team",
+    });
+    await makeOfficialWorkflowReconciliationWorkDue(definitionName);
+    await runOfficialWorkflowReconciliationWorker();
+    const transitioned = await accept(
+      installationClient().get({ headers, params: { workflowId } }),
+      [200],
+    );
+    expect(transitioned.body.workflow.automations).toStrictEqual([
+      expect.objectContaining({
+        id: original.id,
+        kind: "event",
+        eventType: "webhook-received",
+        official: expect.objectContaining({ reconciliationStatus: "current" }),
+      }),
+    ]);
+    const revealed = await accept(
+      automationClient().revealWebhookSecret({
+        headers,
+        params: { id: original.id },
+        body: undefined,
+      }),
+      [200],
+    );
+    expect(revealed.body.webhookUrl).toContain("/whk_");
+    expect(revealed.body.webhookSecret).toBeTruthy();
+    await syncCatalog(
+      catalog([
+        activeDefinition(definitionName, [
+          { ...webhookBlueprint(true), key: "lifecycle-transition" },
+        ]),
+      ]),
+    );
+    await runOfficialWorkflowReconciliationWorker();
+    const preserved = await accept(
+      automationClient().revealWebhookSecret({
+        headers,
+        params: { id: original.id },
+        body: undefined,
+      }),
+      [200],
+    );
+    expect(preserved.body).toStrictEqual(revealed.body);
+  }, 30_000);
 
   it("preserves identity and history across schedule/event transitions and retries failed compensation", async () => {
     installCatalogStorageFixture();
