@@ -13,21 +13,37 @@ import {
   MORNING_BRIEF_SOURCE_BUDGETS,
 } from "../morning-brief-collection-plan";
 import {
+  MORNING_BRIEF_ARCHIVE_MAX_BYTES,
+  MORNING_BRIEF_ARCHIVE_MAX_DECOMPRESSED_BYTES,
+  MORNING_BRIEF_INSTRUCTIONS_MAX_BYTES,
+  MORNING_BRIEF_MANIFEST_MAX_BYTES,
+  MORNING_BRIEF_STORAGE_PHASE_MS,
+} from "../morning-brief-language-bounds";
+import {
   isMorningBriefOutputLanguage,
   planMorningBriefLanguage,
   validateReportedLanguage,
   MORNING_BRIEF_DEFAULT_LANGUAGE,
+  MORNING_BRIEF_OUTPUT_LANGUAGES,
 } from "../morning-brief-language-policy";
-import { normalizeMorningBriefSlack } from "../morning-brief-slack-source";
+import {
+  normalizeMorningBriefSlack,
+  MORNING_BRIEF_SLACK_READ_SURFACE,
+} from "../morning-brief-slack-source";
 import {
   boundMorningBriefDescriptors,
   morningBriefDescriptorRetainUntil,
   morningBriefScopeDigest,
   morningBriefSourcesToRevalidate,
+  MORNING_BRIEF_ACCOUNT_REF_MAX_BYTES,
+  MORNING_BRIEF_DESCRIPTOR_MAX_BYTES,
+  MORNING_BRIEF_DESCRIPTOR_SET_MAX_BYTES,
+  MORNING_BRIEF_MAX_RETAINED_DESCRIPTORS,
   MORNING_BRIEF_OUTBOX_DEADLINE_MS,
   MORNING_BRIEF_RESULT_RETENTION_MS,
   type MorningBriefRetainedSourceDescriptor,
 } from "../morning-brief-source-authority";
+import { MORNING_BRIEF_SLACK_COLLECTION_DEADLINE_MS } from "../morning-brief-slack-collection.service";
 import { serializeMorningBriefItem as serializeForTest } from "../morning-brief-source-item";
 import {
   morningBriefEnvelopeBytes,
@@ -40,6 +56,7 @@ import {
   dedupeMorningBriefItems,
   morningBriefItemBytes,
   morningBriefItemsBytes,
+  MORNING_BRIEF_COMBINED_NORMALIZED_MAX_BYTES,
   type MorningBriefSourceCollection,
   type MorningBriefSourceItem,
   type MorningBriefSourceKind,
@@ -721,5 +738,52 @@ describe("truncation provenance", () => {
         serializeForTest(normalized.items[0] as MorningBriefSourceItem),
       ),
     ).toContain('"truncated":true');
+  });
+});
+describe("declared bounds", () => {
+  it("pins the documented collection and request ceilings", () => {
+    expect(MORNING_BRIEF_COLLECTION_PHASE_MS).toBe(45_000);
+    expect(MORNING_BRIEF_FINAL_CHECK_RESERVE_MS).toBe(5000);
+    expect(MORNING_BRIEF_NEW_READ_CUTOFF_MS).toBe(40_000);
+    expect(MORNING_BRIEF_MAX_CONCURRENT_SOURCES).toBe(3);
+    expect(MORNING_BRIEF_REQUEST_MAX_BYTES).toBe(128 * 1024);
+    expect(MORNING_BRIEF_COMBINED_NORMALIZED_MAX_BYTES).toBe(1024 * 1024);
+  });
+
+  it("keeps each source's own ceiling rather than one shared number", () => {
+    expect(MORNING_BRIEF_SOURCE_BUDGETS).toStrictEqual({
+      gmail: { deadlineMs: 20_000, maxRequests: 44 },
+      calendar: { deadlineMs: 20_000, maxRequests: 18 },
+      github: { deadlineMs: 20_000, maxRequests: 24 },
+      slack: {
+        deadlineMs: MORNING_BRIEF_SLACK_COLLECTION_DEADLINE_MS,
+        maxRequests: 40,
+      },
+      chat: { deadlineMs: 15_000, maxRequests: 0 },
+    });
+  });
+
+  it("pins the bounded language-context storage reads", () => {
+    expect(MORNING_BRIEF_MANIFEST_MAX_BYTES).toBe(256 * 1024);
+    expect(MORNING_BRIEF_ARCHIVE_MAX_BYTES).toBe(1024 * 1024);
+    expect(MORNING_BRIEF_ARCHIVE_MAX_DECOMPRESSED_BYTES).toBe(2 * 1024 * 1024);
+    expect(MORNING_BRIEF_INSTRUCTIONS_MAX_BYTES).toBe(64 * 1024);
+    expect(MORNING_BRIEF_STORAGE_PHASE_MS).toBe(5000);
+  });
+
+  it("pins the retained descriptor bounds", () => {
+    expect(MORNING_BRIEF_MAX_RETAINED_DESCRIPTORS).toBe(5);
+    expect(MORNING_BRIEF_DESCRIPTOR_MAX_BYTES).toBe(2048);
+    expect(MORNING_BRIEF_DESCRIPTOR_SET_MAX_BYTES).toBe(8192);
+    expect(MORNING_BRIEF_ACCOUNT_REF_MAX_BYTES).toBe(128);
+  });
+
+  it("offers Chinese beyond the ten UI locales and digests the read surface", () => {
+    expect(MORNING_BRIEF_OUTPUT_LANGUAGES).toHaveLength(12);
+    expect(MORNING_BRIEF_SLACK_READ_SURFACE).toStrictEqual([
+      "users.conversations",
+      "conversations.history",
+      "conversations.replies",
+    ]);
   });
 });

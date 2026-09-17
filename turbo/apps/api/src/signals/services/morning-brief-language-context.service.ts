@@ -43,22 +43,14 @@ import { db$, type ReadonlyDb } from "../external/db";
 import { downloadS3BufferWithMaxBytes } from "../external/s3";
 import { safeJsonParse, settle, throwIfAbort } from "../utils";
 import { APPLICATION_OWNED_AGENT_EXECUTION_PLAN } from "./agent-execution-plan";
+import {
+  MORNING_BRIEF_ARCHIVE_MAX_BYTES,
+  MORNING_BRIEF_ARCHIVE_MAX_DECOMPRESSED_BYTES,
+  MORNING_BRIEF_INSTRUCTIONS_MAX_BYTES,
+  MORNING_BRIEF_MANIFEST_MAX_BYTES,
+  MORNING_BRIEF_STORAGE_PHASE_MS,
+} from "./morning-brief-language-bounds";
 import type { MorningBriefCollectionOwner } from "./morning-brief-collection-occurrence.service";
-
-/** The storage manifest this pipeline is willing to read. */
-export const MORNING_BRIEF_MANIFEST_MAX_BYTES = 256 * 1024;
-
-/** The compressed archive ceiling. */
-export const MORNING_BRIEF_ARCHIVE_MAX_BYTES = 1024 * 1024;
-
-/** The decompressed archive ceiling, enforced by the gunzip itself. */
-export const MORNING_BRIEF_ARCHIVE_MAX_DECOMPRESSED_BYTES = 2 * 1024 * 1024;
-
-/** The complete canonical instruction file ceiling. */
-export const MORNING_BRIEF_INSTRUCTIONS_MAX_BYTES = 64 * 1024;
-
-/** The absolute storage phase, inside the collection budget. */
-export const MORNING_BRIEF_STORAGE_PHASE_MS = 5000;
 
 /** Why the instruction text could not be read, distinctly from absence. */
 export type MorningBriefLanguageContextFailure =
@@ -165,7 +157,7 @@ function parseManifest(buffer: Buffer): StorageManifest | null {
  * a later instructions-only edit apply to the *next* occurrence instead of
  * silently changing the one already in flight.
  */
-export async function resolveMorningBriefInstructionsVersion(
+async function resolveMorningBriefInstructionsVersion(
   db: Pick<ReadonlyDb, "select">,
   owner: MorningBriefCollectionOwner,
   agentId: string,

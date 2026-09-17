@@ -90,19 +90,6 @@ export interface MorningBriefRetainedSourceDescriptor {
   readonly contributed: boolean;
 }
 
-/** Why a retained source stopped being usable. */
-export type MorningBriefSourceRevocation =
-  | "account"
-  | "membership"
-  | "agent"
-  | "scope"
-  | "thread"
-  | "owner";
-
-export type MorningBriefSourceAuthorityCheck =
-  | { readonly kind: "current" }
-  | { readonly kind: "revoked"; readonly reason: MorningBriefSourceRevocation };
-
 /**
  * Digest the granted scope set so a later narrowing is detectable.
  *
@@ -120,7 +107,7 @@ function descriptorBytes(
   return Buffer.byteLength(JSON.stringify(descriptor), "utf8");
 }
 
-export type MorningBriefDescriptorSetError =
+type MorningBriefDescriptorSetError =
   | "duplicate-source"
   | "too-many-sources"
   | "descriptor-too-large"

@@ -11,6 +11,7 @@
  * [the composition contract](../../../../../../docs/morning-brief-composition.md).
  */
 
+import { MORNING_BRIEF_SLACK_COLLECTION_DEADLINE_MS } from "./morning-brief-slack-collection.service";
 import {
   MORNING_BRIEF_SOURCE_ORDER,
   morningBriefItemBytes,
@@ -48,7 +49,10 @@ export const MORNING_BRIEF_SOURCE_BUDGETS: Readonly<
   gmail: { deadlineMs: 20_000, maxRequests: 44 },
   calendar: { deadlineMs: 20_000, maxRequests: 18 },
   github: { deadlineMs: 20_000, maxRequests: 24 },
-  slack: { deadlineMs: 30_000, maxRequests: 40 },
+  slack: {
+    deadlineMs: MORNING_BRIEF_SLACK_COLLECTION_DEADLINE_MS,
+    maxRequests: 40,
+  },
   chat: { deadlineMs: 15_000, maxRequests: 0 },
 };
 
@@ -56,7 +60,7 @@ export const MORNING_BRIEF_SOURCE_BUDGETS: Readonly<
 export const MORNING_BRIEF_REQUEST_MAX_BYTES = 128 * 1024;
 
 /** What one source may spend on this attempt. */
-export interface MorningBriefSourceBudget {
+interface MorningBriefSourceBudget {
   readonly source: MorningBriefSourceKind;
   readonly deadlineAt: Date;
   readonly maxRequests: number;
@@ -138,7 +142,7 @@ export function morningBriefSourceWaves(
 }
 
 /** What survived request budgeting, and what it cost to say so honestly. */
-export interface MorningBriefRequestAllocation {
+interface MorningBriefRequestAllocation {
   readonly items: readonly MorningBriefSourceItem[];
   readonly bytes: number;
   readonly omittedBySource: Readonly<
