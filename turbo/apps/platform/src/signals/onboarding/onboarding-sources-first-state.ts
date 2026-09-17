@@ -25,8 +25,9 @@ export type SubscriptionProvider = "codex" | "claudeCode";
 export interface SourcesFirstDraft {
   readonly industry: IndustryId | null;
   readonly invites: readonly string[];
-  readonly experienced: boolean;
-  readonly provider: SubscriptionProvider;
+  /** Null until the step is answered, so nothing is pre-chosen for the user. */
+  readonly experienced: boolean | null;
+  readonly provider: SubscriptionProvider | null;
   readonly providerConnected: boolean;
   readonly importedWorkflowName: string | null;
   readonly slackStatus: SlackSetupStatus;
@@ -41,8 +42,8 @@ function emptyDraft(): SourcesFirstDraft {
   return {
     industry: null,
     invites: [],
-    experienced: false,
-    provider: "codex",
+    experienced: null,
+    provider: null,
     providerConnected: false,
     importedWorkflowName: null,
     slackStatus: "disconnected",
@@ -135,12 +136,11 @@ const MEMBER_BASE_STEPS = [
  */
 export function sourcesFirstSteps(
   flow: SourcesFirstFlow,
-  experienced: boolean,
+  experienced: boolean | null,
 ): readonly SourcesFirstStep[] {
   const base = flow === "owner" ? OWNER_BASE_STEPS : MEMBER_BASE_STEPS;
-  const experiencedSteps: readonly SourcesFirstStep[] = experienced
-    ? ["subscription", "skills"]
-    : [];
+  const experiencedSteps: readonly SourcesFirstStep[] =
+    experienced === true ? ["subscription", "skills"] : [];
   const slackStep: readonly SourcesFirstStep[] =
     flow === "owner" ? ["slack"] : [];
   return [...base, ...experiencedSteps, ...slackStep];
@@ -153,7 +153,7 @@ export function sourcesFirstSteps(
 export function sourcesFirstProgress(
   step: SourcesFirstStep,
   flow: SourcesFirstFlow,
-  experienced: boolean,
+  experienced: boolean | null,
 ): { readonly current: number; readonly total: number } {
   const markers = sourcesFirstSteps(flow, experienced).filter((candidate) => {
     return candidate !== "subscription";
@@ -167,7 +167,7 @@ export function sourcesFirstProgress(
 export function previousSourcesFirstStep(
   step: SourcesFirstStep,
   flow: SourcesFirstFlow,
-  experienced: boolean,
+  experienced: boolean | null,
 ): SourcesFirstStep | null {
   const steps = sourcesFirstSteps(flow, experienced);
   const index = steps.indexOf(step);
@@ -178,7 +178,7 @@ export function previousSourcesFirstStep(
 export function nextSourcesFirstStep(
   step: SourcesFirstStep,
   flow: SourcesFirstFlow,
-  experienced: boolean,
+  experienced: boolean | null,
 ): SourcesFirstStep | null {
   const steps = sourcesFirstSteps(flow, experienced);
   const index = steps.indexOf(step);

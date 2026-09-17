@@ -99,7 +99,7 @@ export function OnboardingStepLayout({
   return (
     <div className="relative box-border flex h-full max-h-full min-h-full w-full flex-col overflow-hidden bg-sidebar pb-(--sab) text-foreground lg:flex-row">
       <SettingsDialogMount />
-      <div className="flex shrink-0 flex-col gap-8 px-6 pb-6 pt-6 lg:w-[430px] lg:px-10 lg:pb-8 lg:pt-10">
+      <div className="flex shrink-0 flex-col gap-8 overflow-y-auto px-6 pb-6 pt-6 lg:w-[430px] lg:px-10 lg:pb-8 lg:pt-10">
         <div className="w-60">
           <OrgSwitcher />
         </div>
@@ -112,7 +112,7 @@ export function OnboardingStepLayout({
             {description}
           </p>
         </div>
-        <div className="flex flex-col gap-3">
+        <div className="flex shrink-0 flex-col gap-3">
           <Button
             type="button"
             onClick={onPrimary}
