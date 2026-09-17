@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.197.4](https://github.com/vm0-ai/okou/compare/runner-rs-v0.197.3...runner-rs-v0.197.4) (2026-09-17)
+
+
+### Performance Improvements
+
+* **runner:** suppress warming for persisted decoded rejections ([#34964](https://github.com/vm0-ai/okou/issues/34964)) ([0a77993](https://github.com/vm0-ai/okou/commit/0a77993e0eb9eb9d21931026e5d1b6ced42a089c))
+
 ## [0.197.3](https://github.com/vm0-ai/okou/compare/runner-rs-v0.197.2...runner-rs-v0.197.3) (2026-09-17)
 
 

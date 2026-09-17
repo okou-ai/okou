@@ -63,6 +63,7 @@ use tokio::io::AsyncReadExt as _;
 use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore, mpsc, oneshot};
 use tokio::task::{JoinHandle, JoinSet};
 use tokio_util::sync::CancellationToken;
+use tokio_util::task::TaskTracker;
 use tracing::{info, warn};
 
 use crate::error::{RunnerError, RunnerResult};
@@ -402,6 +403,8 @@ struct BackgroundFillCoordinatorInner {
     active_limit: usize,
     queue_capacity: usize,
     shutdown: CancellationToken,
+    classifiers: TaskTracker,
+    classification_slot: Arc<Semaphore>,
 }
 
 struct BackgroundFillCoordinatorLifecycle {
@@ -461,6 +464,8 @@ impl StorageCacheBackgroundFillCoordinator {
             active_limit,
             queue_capacity,
             shutdown: CancellationToken::new(),
+            classifiers: TaskTracker::new(),
+            classification_slot: Arc::new(Semaphore::new(1)),
         });
         let lifecycle = Arc::new(BackgroundFillCoordinatorLifecycle {
             inner: Arc::clone(&inner),
@@ -481,11 +486,20 @@ impl StorageCacheBackgroundFillCoordinator {
         reporter: SandboxOpReporter,
         action: BackgroundFillAction,
     ) -> BackgroundFillAdmission {
+        Self::submit_inner(&self.lifecycle.inner, group, home, reporter, action)
+    }
+
+    fn submit_inner(
+        inner: &BackgroundFillCoordinatorInner,
+        group: CacheTargetGroup,
+        home: HomePaths,
+        reporter: SandboxOpReporter,
+        action: BackgroundFillAction,
+    ) -> BackgroundFillAdmission {
         let Some(key) = group_key(&group) else {
             warn!("storage_cache: refusing empty background fill group");
             return BackgroundFillAdmission::Closed;
         };
-        let inner = &self.lifecycle.inner;
         let mut state = inner
             .state
             .lock()
@@ -578,6 +592,79 @@ impl StorageCacheBackgroundFillCoordinator {
         BackgroundFillAdmission::Accepted
     }
 
+    /// At most one bounded batch runs classification; it consumes an
+    /// existing decoded worker rather than creating another classifier queue.
+    fn try_classify_warming(
+        &self,
+        groups: Vec<(CacheTargetGroup, BackgroundFillAction)>,
+        home: HomePaths,
+        reporter: SandboxOpReporter,
+    ) -> Result<(), Vec<(CacheTargetGroup, BackgroundFillAction)>> {
+        let Some((_, BackgroundFillAction::WarmDecoded(cache))) = groups.first() else {
+            return Err(groups);
+        };
+        let Some(keys) = groups.iter().map(|(group, _)| group_key(group)).collect() else {
+            return Err(groups);
+        };
+        let inner = &self.lifecycle.inner;
+        let state = inner
+            .state
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if state.closed {
+            return Err(groups);
+        }
+        let Ok(slot) = Arc::clone(&inner.classification_slot).try_acquire_owned() else {
+            return Err(groups);
+        };
+        let check = match cache.try_rejected_archives(keys) {
+            Ok(Some(check)) => check,
+            Ok(None) => return Err(groups),
+            Err(error) => {
+                warn!(%error, "storage_cache: rejection classification unavailable");
+                return Err(groups);
+            }
+        };
+        // Register completion and reporting under the same lock as shutdown.
+        let task = inner.classifiers.token();
+        let inner = Arc::clone(inner);
+        drop(state);
+        tokio::spawn(async move {
+            let (_task, _slot) = (task, slot);
+            // The blocking task releases decoded memory/workers before these
+            // results can admit useful warming that needs those same permits.
+            let rejected = match check.await {
+                Ok(Ok(rejected)) => rejected,
+                result => {
+                    warn!(?result, "storage_cache: rejection classification failed");
+                    vec![false; groups.len()]
+                }
+            };
+            let mut accepted = 0;
+            let mut records = Vec::new();
+            for ((group, action), rejected) in groups.into_iter().zip(rejected) {
+                if rejected {
+                    continue;
+                }
+                let admission =
+                    Self::submit_inner(&inner, group, home.clone(), reporter.clone(), action);
+                record_background_admission(admission, &mut accepted, &mut records);
+            }
+            if accepted > 0 {
+                records.push(SandboxOpRecord::new(
+                    background_fill_scheduled_count_action(accepted),
+                    Duration::ZERO,
+                    true,
+                    None,
+                ));
+            }
+            if !records.is_empty() {
+                reporter.report(records).await;
+            }
+        });
+        Ok(())
+    }
+
     /// Close admissions, cancel queued work, drain active atomic operations,
     /// and join all terminal telemetry reports before returning.
     pub(crate) async fn shutdown(&self) {
@@ -592,6 +679,7 @@ impl StorageCacheBackgroundFillCoordinator {
                 return;
             }
             state.closed = true;
+            self.lifecycle.inner.classifiers.close();
         }
         let supervisor = self
             .lifecycle
@@ -619,6 +707,7 @@ impl StorageCacheBackgroundFillCoordinator {
         if let Err(error) = supervisor.await {
             warn!(%error, "storage_cache: background fill supervisor failed during shutdown");
         }
+        self.lifecycle.inner.classifiers.wait().await;
     }
 
     #[cfg(test)]
@@ -653,6 +742,14 @@ impl StorageCacheBackgroundFillCoordinator {
 
 impl Drop for BackgroundFillCoordinatorLifecycle {
     fn drop(&mut self) {
+        // Classification may finish after the last executor owner disappears.
+        // Close admission before aborting the only supervisor that can drain it.
+        self.inner
+            .state
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .closed = true;
+        self.inner.classifiers.close();
         self.inner.shutdown.cancel();
         if let Some(supervisor) = self
             .supervisor
@@ -736,7 +833,7 @@ async fn run_background_fill_supervisor(
                     #[cfg(test)]
                     Some(BackgroundFillCommand::Checkpoint(complete)) => {
                         let state = inner.state.lock().unwrap_or_else(|e| e.into_inner());
-                        let _ = complete.send((workers.len(), state.pending.len()));
+                        let _ = complete.send((workers.len() + inner.classifiers.len(), state.pending.len()));
                     }
                     Some(BackgroundFillCommand::Shutdown(complete)) => {
                         let mut state = inner
@@ -1350,28 +1447,40 @@ impl DeferredBackgroundFill {
         );
         let reporter = telemetry.reporter();
         let mut accepted = 0;
-        for (group, action) in self.groups {
-            match coordinator.submit(group, self.home.clone(), reporter.clone(), action) {
-                BackgroundFillAdmission::Accepted => accepted += 1,
-                BackgroundFillAdmission::Deduplicated => telemetry.record(
-                    STORAGE_CACHE_BACKGROUND_FILL_DEDUPLICATED,
-                    Duration::ZERO,
-                    true,
-                    None,
-                ),
-                BackgroundFillAdmission::QueueSaturated => telemetry.record(
-                    STORAGE_CACHE_BACKGROUND_FILL_QUEUE_SATURATED,
-                    Duration::ZERO,
-                    true,
-                    Some("queue-capacity"),
-                ),
-                BackgroundFillAdmission::Closed => telemetry.record(
-                    STORAGE_CACHE_BACKGROUND_FILL_SHUTDOWN_CANCELLED,
-                    Duration::ZERO,
-                    false,
-                    Some(STORAGE_CACHE_BACKGROUND_FILL_SHUTDOWN_ERROR),
-                ),
+        let mut records = Vec::new();
+        let mut groups = self.groups.into_iter().peekable();
+        while let Some((group, action)) = groups.next() {
+            let batch = if matches!(action, BackgroundFillAction::WarmDecoded(_)) {
+                let mut batch = vec![(group, action)];
+                while batch.len() < decoded::REJECTION_BATCH_SIZE
+                    && groups.peek().is_some_and(|(_, action)| {
+                        matches!(action, BackgroundFillAction::WarmDecoded(_))
+                    })
+                {
+                    if let Some(next) = groups.next() {
+                        batch.push(next);
+                    }
+                }
+                match coordinator.try_classify_warming(batch, self.home.clone(), reporter.clone()) {
+                    Ok(()) => continue,
+                    Err(batch) => batch,
+                }
+            } else {
+                vec![(group, action)]
+            };
+            for (group, action) in batch {
+                let admission =
+                    coordinator.submit(group, self.home.clone(), reporter.clone(), action);
+                record_background_admission(admission, &mut accepted, &mut records);
             }
+        }
+        for record in records {
+            telemetry.record(
+                record.action_type,
+                record.duration,
+                record.success,
+                record.error,
+            );
         }
         if accepted > 0 {
             telemetry.record(
@@ -1382,6 +1491,33 @@ impl DeferredBackgroundFill {
             );
         }
     }
+}
+
+fn record_background_admission(
+    admission: BackgroundFillAdmission,
+    accepted: &mut usize,
+    records: &mut Vec<SandboxOpRecord>,
+) {
+    let (action, success, error) = match admission {
+        BackgroundFillAdmission::Accepted => {
+            *accepted += 1;
+            return;
+        }
+        BackgroundFillAdmission::Deduplicated => {
+            (STORAGE_CACHE_BACKGROUND_FILL_DEDUPLICATED, true, None)
+        }
+        BackgroundFillAdmission::QueueSaturated => (
+            STORAGE_CACHE_BACKGROUND_FILL_QUEUE_SATURATED,
+            true,
+            Some("queue-capacity"),
+        ),
+        BackgroundFillAdmission::Closed => (
+            STORAGE_CACHE_BACKGROUND_FILL_SHUTDOWN_CANCELLED,
+            false,
+            Some(STORAGE_CACHE_BACKGROUND_FILL_SHUTDOWN_ERROR),
+        ),
+    };
+    records.push(SandboxOpRecord::new(action, Duration::ZERO, success, error));
 }
 
 struct ProcessedGroup {
@@ -3948,6 +4084,7 @@ mod tests {
     mod decoded_observation;
     mod http_reuse;
     mod phase_diagnostics;
+    mod rejected_observation;
 
     use async_trait::async_trait;
     use httpmock::Method::{GET, HEAD};
@@ -7031,7 +7168,10 @@ mod tests {
             .await
             .unwrap();
             drop(plan);
-            deferred.unwrap().start(&coordinator, &mut telemetry);
+            let Some(deferred) = deferred else {
+                break;
+            };
+            deferred.start(&coordinator, &mut telemetry);
             coordinator.wait_idle_for_test().await;
         }
         coordinator.shutdown().await;

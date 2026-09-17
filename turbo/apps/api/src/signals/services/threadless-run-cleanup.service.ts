@@ -32,6 +32,7 @@ import {
   drainOrgQueue$,
 } from "./agent-run-lifecycle.service";
 import { cancelRun$, dispatchCancelSideEffects$ } from "./run-cancel.service";
+import { lockUsageEventCompaction } from "./usage-event-compaction-lock.service";
 import {
   activePiMemoryPhase2MaintenanceRunCondition,
   lockPiMemoryPhase2MaintenanceCleanupProtection,
@@ -279,6 +280,9 @@ async function deleteIfStillEligible(
   quietBefore: Date,
 ): Promise<boolean> {
   const receipt = await db.transaction(async (tx) => {
+    // Account cleanup and compaction hold ledger rows before Runs. Exclude
+    // that maintenance before our Run-delete FK acquires ledger-row locks.
+    await lockUsageEventCompaction(tx, "shared");
     const [current] = await tx
       .select({
         status: agentRuns.status,

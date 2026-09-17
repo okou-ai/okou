@@ -764,7 +764,7 @@ also bounds each extracted entry's inode footprint.
 
 Unsupported-archive admission records use separate
 `decoded-v1-rejected-<version-hash>/` keys under the same GC and lock rules.
-Only background fill reads these records; foreground lookup probes positive
+Only post-spawn background work reads these records; foreground lookup probes positive
 file entries only, so unsupported archives do not pay a rejection-record lock
 and read on every startup. Each reader validates its expected entry kind.
 
@@ -774,8 +774,21 @@ even if mount or payload admission did not select them for delivery. This
 observation belongs only to that prepared plan and adds no lookup or retained
 file contents. A missing compressed archive still selects its required fill;
 later plans perform their own positive lookup, so GC eviction cannot become a
-permanent warming exclusion. Unobserved positive entries and rejection records
-retain the existing background checks.
+permanent warming exclusion. Unobserved positive entries retain the existing
+background checks.
+
+After Agent spawn, ordinary warm-source candidates can pass through one
+runner-owned classification batch of at most 16 keys before queue admission.
+Classification shares the existing decoded worker/memory budget, never waits
+for a permit, and owns no waiting queue or remembered negative state. It omits
+warming only after validating a current rejection record and a still-present
+compressed source under their existing locks. Missing fills and archive-required
+consumers keep normal admission. Busy, missing, invalid or unavailable
+classification retains the ordinary background path, including its errors.
+The coordinator owns classification completion and reporting through shutdown;
+dropping its last owner closes admission before any delayed classification can
+submit. Foreground lookup still probes only positive entries. Neither persisted
+format, GC, nor the four-worker/32-queued admission bounds change.
 
 Readers hold that lock while validating the bounded index, identity, file types,
 sizes and content digests, then pin owned bytes through Guest apply. GC can evict

@@ -85,12 +85,28 @@ ownership and a run row lock; combined completion also owns its chat-thread
 boundary. Checkpoint persistence can retain a blob before promoting the session.
 Candidate cleanup takes storage ownership before releasing candidate references.
 
-Agent deletion retains canonical mutation advisory -> agent -> sessions -> runs,
-with existing NOWAIT and 100 ms behavior. Clerk revalidates agents after canonical
-mutation ownership, then locks sessions and the deduplicated run set in ID order,
-retaining its 100 ms lock timeout. Threadless cleanup retains its run and Phase 2
-maintenance barriers. The new helper never acquires the checkpoint advisory lock
-after acquiring the run.
+Agent deletion and threadless cleanup take shared usage-compaction admission
+before parent/Run locks, so their ledger FK updates cannot invert maintenance's
+ledger-before-Run order. Agent deletion then retains canonical mutation advisory
+-> agent -> sessions -> runs, with existing NOWAIT and 100 ms behavior; the
+shared admission wait also uses that 100 ms retry boundary.
+With X resource billing configured,
+Clerk first takes the scoped account-erasure subject lock exclusively to drain
+Run creation and queue promotion, which lock Agent rows before allowances.
+It then takes exclusive usage admission and the usage-compaction advisory lock,
+and deletes scoped ledger/entitlement rows before applying the 100 ms timeout
+or taking parent/run locks. Settlement takes shared compaction admission before
+its organization credit lock, so cleanup drains both compaction and settlement.
+Ledger and Run deletion commit together on one connection, excluding late
+uploads throughout. The Pi erasure preflight also takes usage admission before
+its 100 ms Run locks. See [activation prerequisites](x-resource-observations.md).
+While X billing is unset, ledger cleanup and lifecycle deletion retain separate
+commits for compatibility with older settlement APIs. Clerk revalidates agents
+after canonical mutation ownership, then locks sessions and the deduplicated
+run set in ID order. Parent, Run and subsequent deletion locks retain 100 ms;
+blob locks still use NOWAIT. Threadless cleanup retains its run and Phase 2
+maintenance barriers. The
+new helper never acquires the checkpoint advisory lock after acquiring the run.
 
 All parent cascades and storage mutations finish before blob release. Hashes are
 sorted globally and locked in that order. Blob locks use `FOR UPDATE NOWAIT`:

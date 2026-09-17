@@ -89,6 +89,14 @@ function pickerTrigger(label: string): HTMLElement {
   return trigger;
 }
 
+/** A slash panel row opens the template picker, and it covers the composer. */
+async function closeTemplatePicker(): Promise<void> {
+  click(fastControl("button", "Close", await screen.findByRole("dialog")));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+}
+
 function fastControl(
   role: "button" | "radio",
   label: string,
@@ -437,6 +445,8 @@ test.each(["task", "command"] as const)(
       await userEvent
         .setup({ delay: null })
         .keyboard("{ArrowDown}{ArrowDown}{Enter}");
+      // The row opens the template picker as well, and it covers the composer.
+      await closeTemplatePicker();
       await enterText(prompt);
     }
     click(await screen.findByRole("combobox", { name: "Video models" }));

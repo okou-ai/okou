@@ -6,7 +6,13 @@
  */
 
 import { execFileSync } from "child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -35,6 +41,19 @@ vi.mock("child_process", async () => {
         const outputPath = args.at(-1);
         if (commandsPath && outputPath) {
           writeFileSync(outputPath, readFileSync(commandsPath));
+        }
+        // the review pass writes one file per selected frame, named after the
+        // frame index rather than its position in the output sequence
+        if (args.includes("-frame_pts") && outputPath && filter) {
+          for (const match of filter.matchAll(/eq\(n\\,(\d+)\)/gu)) {
+            const frameIndex = match[1];
+            if (frameIndex !== undefined) {
+              writeFileSync(
+                outputPath.replace("%d", frameIndex),
+                Buffer.from(`frame-${frameIndex}`),
+              );
+            }
+          }
         }
       }
       return Buffer.from("");
@@ -179,6 +198,27 @@ describe("okou video camera command", () => {
         outputFramePath: expect.stringMatching(/-output\.jpg$/u),
       }),
     );
+    for (const checkpoint of review.checkpoints) {
+      expect(existsSync(checkpoint.sourceFramePath)).toBe(true);
+      expect(existsSync(checkpoint.outputFramePath)).toBe(true);
+    }
+    // Checkpoint frames cost one decode pass per video, not one seek per
+    // frame: extracting them used to take longer than rendering the cut.
+    const frameCalls = vi.mocked(execFileSync).mock.calls.filter((call) => {
+      return call[0] === "ffmpeg" && call[1]?.includes("-frame_pts");
+    });
+    expect(frameCalls).toHaveLength(2);
+    expect(review.checkpoints.length).toBeGreaterThan(frameCalls.length);
+    for (const call of frameCalls) {
+      // a variable-rate capture is resampled onto the render's frame grid so
+      // that both videos are addressed by the same frame index
+      expect(call[1]).toEqual(
+        expect.arrayContaining([
+          "-vf",
+          expect.stringContaining("fps=30,select="),
+        ]),
+      );
+    }
 
     const generatedCommands = readFileSync(outputPath, "utf8");
     // the wide shot before the first click, and the 2.2x focus on the click

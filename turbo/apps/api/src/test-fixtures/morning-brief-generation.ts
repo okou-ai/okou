@@ -291,6 +291,138 @@ function ownerDigest(owner: MorningBriefGenerationOwner): string {
     .slice(0, 32);
 }
 
+function generationDigest(generationId: string): string {
+  return createHash("sha256")
+    .update(generationId, "utf8")
+    .digest("hex")
+    .slice(0, 32);
+}
+
+interface ReceiptWriteBarrier {
+  readonly waitForArrival: () => Promise<number>;
+  readonly release: () => Promise<void>;
+}
+
+/**
+ * Make receipt writes for one invocation fail, wait, or both.
+ *
+ * The receipt table carries no owner identity by design, so this scopes itself
+ * to the provider generation id the test scripted: the trigger hashes
+ * `NEW.provider_generation_id` and compares it to a digest carried in its own
+ * `TG_NAME`, exactly as the owner-scoped fixtures above do, so no caller text
+ * reaches the DDL and a concurrent suite's receipts are untouched.
+ *
+ * `failures` is how many matching writes fail before storage recovers. The
+ * counter is a sequence, so it keeps counting across the aborted transactions
+ * the failures produce — which is what makes "the second attempt succeeds" a
+ * fact rather than a hope.
+ *
+ * `suspend` blocks each matching write inside the trigger on an advisory lock
+ * this fixture holds. That is a real PostgreSQL wait on a real write, so a test
+ * can cancel a request while its receipt INSERT is genuinely in progress and
+ * observe arrival through `pg_blocking_pids` rather than a sleep.
+ */
+export async function interceptPlatformGenerationReceiptWrites(
+  options: {
+    readonly generationId: string;
+    readonly failures?: number;
+    readonly suspend?: boolean;
+  },
+  signal: AbortSignal,
+): Promise<{
+  readonly barrier: ReceiptWriteBarrier | null;
+  readonly restore: () => Promise<void>;
+}> {
+  const failures = options.failures ?? 0;
+  if (!Number.isInteger(failures) || failures < 0 || failures > 99) {
+    throw new Error(`Invalid receipt failure count: ${String(failures)}`);
+  }
+  const digest = generationDigest(options.generationId);
+  const nonce = randomUUID().replaceAll("-", "").slice(0, 12);
+  // `mbr_fault_<digest>_<nonce>_<failures>`, 58 characters at most so
+  // PostgreSQL never truncates it. Fields 3, 4 and 5 are read back out of
+  // `TG_NAME` by the body, so nothing is interpolated into a function body that
+  // cannot carry driver parameters, exactly as the fixtures above do.
+  const triggerName = `mbr_fault_${digest}_${nonce}_${String(failures)}`;
+  const functionName = `test_mb_receipt_fault_${nonce}`;
+  const sequenceName = `test_mb_receipt_seq_${nonce}`;
+  await db().transaction(async (tx) => {
+    await tx.execute(
+      sql`CREATE SEQUENCE ${sql.identifier(sequenceName)} START WITH 1`,
+    );
+    signal.throwIfAborted();
+    await tx.execute(sql`
+      CREATE FUNCTION ${sql.identifier(functionName)}() RETURNS trigger
+      LANGUAGE plpgsql AS $$
+      BEGIN
+        IF substring(
+             encode(
+               sha256(
+                 convert_to(coalesce(NEW.provider_generation_id, ''), 'UTF8')
+               ),
+               'hex'
+             ) from 1 for 32
+           ) = split_part(TG_NAME, '_', 3) THEN
+          PERFORM pg_advisory_xact_lock(
+            hashtextextended(
+              'morning-brief-receipt-write:' || split_part(TG_NAME, '_', 3), 0
+            )
+          );
+          IF nextval(
+               ('test_mb_receipt_seq_' || split_part(TG_NAME, '_', 4))::regclass
+             ) <= split_part(TG_NAME, '_', 5)::bigint THEN
+            RAISE EXCEPTION 'injected morning brief receipt write fault';
+          END IF;
+        END IF;
+        RETURN NEW;
+      END;
+      $$
+    `);
+    signal.throwIfAborted();
+    await tx.execute(sql`
+      CREATE TRIGGER ${sql.identifier(triggerName)}
+      BEFORE INSERT ON morning_brief_platform_generation_receipts
+      FOR EACH ROW EXECUTE FUNCTION ${sql.identifier(functionName)}()
+    `);
+    signal.throwIfAborted();
+  });
+
+  let restored = false;
+  const restore = async () => {
+    if (restored) {
+      return;
+    }
+    restored = true;
+    await db().transaction(async (tx) => {
+      await tx.execute(
+        sql`DROP TRIGGER ${sql.identifier(triggerName)} ON morning_brief_platform_generation_receipts`,
+      );
+      await tx.execute(sql`DROP FUNCTION ${sql.identifier(functionName)}()`);
+      await tx.execute(sql`DROP SEQUENCE ${sql.identifier(sequenceName)}`);
+    });
+  };
+
+  if (!options.suspend) {
+    onTestFinished(restore);
+    return { barrier: null, restore };
+  }
+  const held = await holdDeferredRow(signal, async (tx) => {
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtextextended(${`morning-brief-receipt-write:${digest}`}, 0))`,
+    );
+  });
+  // Registered after the hold, so this runs first and frees any suspended
+  // write before the trigger's exclusive-lock drop.
+  onTestFinished(async () => {
+    await held.release();
+    await restore();
+  });
+  return {
+    barrier: { waitForArrival: held.waitForBlocked, release: held.release },
+    restore,
+  };
+}
+
 async function installReservationTrigger(
   digest: string,
   signal: AbortSignal,

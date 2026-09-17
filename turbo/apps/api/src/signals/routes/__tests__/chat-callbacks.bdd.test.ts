@@ -17,6 +17,7 @@ import {
 import {
   CHAT_RUN_CONTENT_POLICY_REJECTED_MESSAGE,
   CHAT_RUN_EXECUTION_TIMEOUT_MESSAGE,
+  CHAT_RUN_USAGE_LIMIT_MESSAGE,
 } from "@okouai/api-contracts/contracts/errors";
 import type { SupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
@@ -4536,6 +4537,7 @@ describe("CHAT-02: failed chat callbacks", () => {
         prompt: "round eight",
         error:
           "Claude Sonnet 5 is overloaded. Please wait a few minutes and try again, or switch to another model.",
+        expectedError: CHAT_RUN_USAGE_LIMIT_MESSAGE,
         failureReason: "usage_limit",
         selectedModel: "claude-sonnet-5",
       },

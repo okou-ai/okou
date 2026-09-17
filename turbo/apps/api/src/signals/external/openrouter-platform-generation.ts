@@ -1,4 +1,10 @@
 import {
+  MORNING_BRIEF_PLATFORM_RECEIPT_COST_PRECISION,
+  MORNING_BRIEF_PLATFORM_RECEIPT_COST_SCALE,
+  MORNING_BRIEF_PLATFORM_RECEIPT_MAX_TOKENS,
+} from "@okouai/db/schema/morning-brief-generation";
+
+import {
   readBoundedResponseText,
   safeJsonParse,
   settleIncludingAbort,
@@ -26,6 +32,11 @@ import { OPENROUTER_CHAT_COMPLETIONS_URL } from "./openrouter";
  * - **Nothing is inferred.** A missing or malformed cost is unknown, never
  *   zero and never derived from token counts. An explicitly reported zero is a
  *   known zero.
+ * - **Every observation is durable as observed.** Counts and amounts are
+ *   accepted against the exact domain the receipt columns hold, so what this
+ *   adapter reports is what PostgreSQL stores and returns. A value outside that
+ *   domain is *unavailable*: it is never rounded into an invented measurement,
+ *   and it never takes a valid sibling field or a valid cost down with it.
  * - **No payload escapes.** It never throws provider text, never logs a body
  *   and never carries the credential into its result.
  *
@@ -134,18 +145,20 @@ function property(value: unknown, key: string): unknown {
 }
 
 /**
- * Provider counts are untrusted numbers; keep only bounded non-negative
- * integers.
+ * Provider counts are untrusted numbers; keep only counts the receipt holds.
  *
  * A fractional or out-of-range count is *unavailable*, not something to round:
  * truncating it would manufacture an exact-looking number the provider never
- * reported.
+ * reported. The ceiling is the receipt column's own domain rather than
+ * `Number.MAX_SAFE_INTEGER`, because a count above it is not stored wider — it
+ * fails the whole INSERT and takes the observed cost and every sibling count
+ * with it.
  */
 function tokenCount(value: unknown): number | null {
   return typeof value === "number" &&
     Number.isInteger(value) &&
     value >= 0 &&
-    value <= Number.MAX_SAFE_INTEGER
+    value <= MORNING_BRIEF_PLATFORM_RECEIPT_MAX_TOKENS
     ? value
     : null;
 }
@@ -167,24 +180,73 @@ function readTokens(usage: unknown): PlatformGenerationTokens {
   };
 }
 
+/** The integral digits `numeric(precision, scale)` leaves for the amount. */
+const COST_MAX_INTEGRAL_DIGITS =
+  MORNING_BRIEF_PLATFORM_RECEIPT_COST_PRECISION -
+  MORNING_BRIEF_PLATFORM_RECEIPT_COST_SCALE;
+
+/** `<digits>[.<digits>][e<±digits>]`, the only shapes `String(number)` emits. */
+const NUMBER_TEXT = /^(\d+)(?:\.(\d+))?(?:[eE]([+-]?\d+))?$/;
+
 /**
- * Read `usage.cost` and nothing else.
+ * The exact decimal the receipt column will hold, or `null` if it cannot.
  *
- * Only a finite, non-negative JSON number counts. A string, a negative value,
- * `NaN`, a missing `usage` object and a missing field are all *unavailable*,
+ * `String` gives the shortest decimal that round-trips the reported double, and
+ * this shifts that decimal by its own exponent rather than reformatting through
+ * floating point, so no digit is introduced or lost on the way. The result is
+ * padded to the column's scale because that is the text PostgreSQL returns, so
+ * one accepted amount reads back byte-identical to the amount first reported.
+ *
+ * An amount needing finer digits than the scale, or more integral digits than
+ * the precision leaves, has no exact representation here. Rounding `1e-13` into
+ * the scale would publish a *durable reported zero* for a real nonzero charge,
+ * so such an amount stays unavailable — an honest unknown, with the generation
+ * id retained for out-of-band reconciliation.
+ */
+function durableCostValue(cost: number): string | null {
+  const parsed = NUMBER_TEXT.exec(String(cost));
+  if (!parsed) {
+    return null;
+  }
+  const [, whole = "", fraction = "", exponent = "0"] = parsed;
+  const digits = `${whole}${fraction}`;
+  const pointIndex = whole.length + Number(exponent);
+  const integral =
+    pointIndex <= 0 ? "0" : digits.slice(0, pointIndex).padEnd(pointIndex, "0");
+  const fractional =
+    pointIndex <= 0
+      ? `${"0".repeat(-pointIndex)}${digits}`
+      : digits.slice(pointIndex);
+  const significantIntegral = integral.replace(/^0+(?=\d)/, "");
+  const significantFractional = fractional.replace(/0+$/, "");
+  if (
+    significantIntegral.length > COST_MAX_INTEGRAL_DIGITS ||
+    significantFractional.length > MORNING_BRIEF_PLATFORM_RECEIPT_COST_SCALE
+  ) {
+    return null;
+  }
+  return `${significantIntegral}.${significantFractional.padEnd(MORNING_BRIEF_PLATFORM_RECEIPT_COST_SCALE, "0")}`;
+}
+
+/**
+ * Accept one reported amount, or report that none is known.
+ *
+ * Only a finite, non-negative JSON number the receipt column holds exactly
+ * counts. A string, a negative value, `NaN`, a missing `usage` object, a
+ * missing field and an amount outside the durable domain are all *unavailable*,
  * which is distinct from a reported `0`.
  */
-function readCost(usage: unknown): PlatformGenerationCost {
-  const cost = property(usage, "cost");
+function reportedCost(
+  cost: unknown,
+  source: PlatformGenerationCostSource,
+): PlatformGenerationCost {
   if (typeof cost !== "number" || !Number.isFinite(cost) || cost < 0) {
     return { state: "unavailable" };
   }
-  return {
-    state: "reported",
-    value: String(cost),
-    unit: OPENROUTER_COST_UNIT,
-    source: OPENROUTER_COST_SOURCE,
-  };
+  const value = durableCostValue(cost);
+  return value === null
+    ? { state: "unavailable" }
+    : { state: "reported", value, unit: OPENROUTER_COST_UNIT, source };
 }
 
 /** Untrusted identifier-shaped strings are bounded before they are retained. */
@@ -233,7 +295,7 @@ function observe(data: unknown): PlatformGenerationObservation {
       property(data, "error") !== undefined ||
       property(choice, "error") !== undefined,
     tokens: readTokens(usage),
-    cost: readCost(usage),
+    cost: reportedCost(property(usage, "cost"), OPENROUTER_COST_SOURCE),
   };
 }
 
@@ -366,16 +428,12 @@ export async function lookupPlatformGenerationCost(
     // absent flag is not evidence that it was platform-funded.
     return { state: "unavailable" };
   }
-  const total = property(data, "total_cost");
-  if (typeof total !== "number" || !Number.isFinite(total) || total < 0) {
-    return { state: "unavailable" };
-  }
-  return {
-    state: "reported",
-    value: String(total),
-    unit: OPENROUTER_COST_UNIT,
-    source: OPENROUTER_GENERATION_COST_SOURCE,
-  };
+  // The same durable contract as the inline amount: a delayed reconciliation
+  // is no reason to accept a value the receipt cannot hold exactly.
+  return reportedCost(
+    property(data, "total_cost"),
+    OPENROUTER_GENERATION_COST_SOURCE,
+  );
 }
 
 /** The token counts an outcome without a readable response can still record. */

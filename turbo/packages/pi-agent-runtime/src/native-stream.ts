@@ -5,17 +5,22 @@ import { streamSimple as streamMessages } from "@earendil-works/pi-ai/api/anthro
 import { streamSimple as streamBedrock } from "@earendil-works/pi-ai/api/bedrock-converse-stream";
 import { resolveHttpProxyUrlForTarget } from "@earendil-works/pi-ai/utils/node-http-proxy";
 import type { Api, Context, Model } from "@earendil-works/pi-ai";
-import { observePiUsageFetch, PiUsageHttpHandler } from "./usage-transport";
+import { observePiUsageFetch, PiBedrockHttpHandler } from "./usage-transport";
 import { HttpProxyAgent } from "http-proxy-agent";
 import { HttpsProxyAgent } from "https-proxy-agent";
 
 import { assertPiNativeCredential } from "./credential";
+import { observeBedrockEventStreamFailures } from "./bedrock-failure-diagnostics";
 import type { PiAgentStreamConfig } from "./types";
 import {
   observePiResponseStatus,
   type PiAgentStreamOptions,
 } from "./stream-options";
-import { streamWithModelRequestDiagnostics } from "./model-request-diagnostics";
+import {
+  ModelRequestEventStream,
+  type ModelRequestObservation,
+  streamWithModelRequestDiagnostics,
+} from "./model-request-diagnostics";
 
 function isMessages(model: Model<Api>): model is Model<"anthropic-messages"> {
   return model.api === "anthropic-messages";
@@ -130,7 +135,8 @@ export function streamPiNative(
   const auth = config.bedrockAuth;
   for (const value of Object.values(auth)) assertPiNativeCredential(value);
   const proxy = resolveHttpProxyUrlForTarget(model.baseUrl);
-  const requestHandler = new PiUsageHttpHandler(
+  const observation: ModelRequestObservation = { transportAttempts: 0 };
+  const requestHandler = new PiBedrockHttpHandler(
     proxy
       ? {
           httpAgent: new HttpProxyAgent(proxy),
@@ -141,8 +147,10 @@ export function streamPiNative(
           httpsAgent: new HttpsAgent({ lookup: nativePublicLookup }),
         },
     options.usageObserver,
+    observation,
+    options.onObservedResponseStatus,
   );
-  return streamBedrock(
+  const source = streamBedrock(
     { ...model, id: config.catalogModel, name: config.catalogModel },
     nativeContext,
     {
@@ -152,6 +160,8 @@ export function streamPiNative(
         region: config.region,
         maxAttempts: 1,
         requestHandler,
+        eventStreamSerdeProvider:
+          observeBedrockEventStreamFailures(observation),
         // Explicit credentials disable every SDK profile/role/metadata chain,
         // including bearer mode. Sandbox SigV4 uses only fake signing markers;
         // the existing Runner egress signer owns the real signing credentials.
@@ -172,4 +182,5 @@ export function streamPiNative(
       },
     },
   );
+  return new ModelRequestEventStream(source, observation);
 }

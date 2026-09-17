@@ -591,6 +591,7 @@ describe("native provider usage evidence", () => {
       const result = await run(materialized);
       expect(result.assistantMessage).toMatchObject({
         stopReason: "error",
+        failureReason: "provider_server_error",
         usage: { input: 11, cacheRead: 7, cacheWrite: 5, output: 3 },
       });
       expect(result.usageObservation).toEqual({

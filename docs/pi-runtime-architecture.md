@@ -147,7 +147,12 @@ count and optional allowlisted failure reason. A bounded non-success body is
 classified before the SDK rewrites it; successful response bodies keep their
 native streaming path. Failed native assistant messages carry this evidence in
 `okou_model_request`. Both stream iteration and `result()` expose the same
-diagnostic. Bedrock keeps its native SDK transport without fetch diagnostics.
+diagnostic. Bedrock records actual HTTP status and attempts through its native
+Smithy handler. Its event-stream deserializer classifies only successfully
+decoded, consumed modeled error events or exceptions thrown by the SDK. Unknown
+normal events remain ignored. A later buffered error frame cannot replace an
+earlier protocol or adapter failure. Usage observation retains its separate
+bounded reader and forwards original bytes.
 
 Request rejection and response-body read failure also retain optional
 `transportFailure` before the SDK reduces the exception to display text. It
