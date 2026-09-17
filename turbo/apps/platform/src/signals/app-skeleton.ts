@@ -1,5 +1,11 @@
 import { command, computed, state } from "ccstate";
-import { onRef } from "./utils.ts";
+import { delay } from "signal-timers";
+import { onRef, resetSignal, setDaemon } from "./utils.ts";
+import {
+  flushClientTelemetry,
+  recordClientTelemetry,
+  startClientTelemetryMeasurement,
+} from "../lib/client-telemetry.ts";
 import {
   captureBootstrapPhaseTiming$,
   captureFirstSkeletonHide$,
@@ -14,8 +20,10 @@ const internalOverlayMounted$ = state(true);
 
 const APP_BOOTSTRAP_SKELETON_ID = "app-bootstrap-skeleton";
 const APP_BOOTSTRAP_SKELETON_HIDDEN_CLASS = "app-bootstrap-skeleton--hidden";
+const SKELETON_TIMEOUT_MS = 10_000;
 
 const internalBootstrapSkeletonActive$ = state(false);
+const resetSkeletonTimeout$ = resetSignal();
 
 export const mainStylesheetLoaded$ = computed(async () => {
   return (await window.__mainStylesheetLoaded) !== "failed";
@@ -25,11 +33,48 @@ export const bootstrapSkeletonActive$ = computed((get) => {
   return get(internalBootstrapSkeletonActive$);
 });
 
-export const initBootstrapSkeleton$ = command(({ set }) => {
-  const active = document.getElementById(APP_BOOTSTRAP_SKELETON_ID) !== null;
-  set(internalOverlayMounted$, !active);
-  set(internalBootstrapSkeletonActive$, active);
-});
+export const initBootstrapSkeleton$ = command(
+  ({ set }, signal: AbortSignal) => {
+    const timeoutSignal = set(resetSkeletonTimeout$, signal);
+    const active = document.getElementById(APP_BOOTSTRAP_SKELETON_ID) !== null;
+    set(internalOverlayMounted$, !active);
+    set(internalBootstrapSkeletonActive$, active);
+
+    const startMark = window.__appBootstrapStart;
+    if (typeof startMark !== "number") {
+      return;
+    }
+    const measurement = startClientTelemetryMeasurement();
+    const elapsedBeforeSetup = Math.max(
+      0,
+      measurement.startedAtMonotonic - startMark,
+    );
+    // Include the time spent loading the entry module, before signals existed.
+    const skeletonMeasurement = {
+      startedAt: new Date(
+        Date.parse(measurement.startedAt) - elapsedBeforeSetup,
+      ).toISOString(),
+      startedAtMonotonic: measurement.startedAtMonotonic - elapsedBeforeSetup,
+    };
+    setDaemon(async (ownerSignal) => {
+      const remaining = Math.ceil(SKELETON_TIMEOUT_MS - elapsedBeforeSetup);
+      if (remaining > 0) {
+        await delay(remaining, { signal: ownerSignal });
+      }
+      ownerSignal.throwIfAborted();
+      recordClientTelemetry(
+        skeletonMeasurement,
+        {
+          event_name: "app.skeleton.timeout",
+          threshold_ms: SKELETON_TIMEOUT_MS,
+          visibility_state: document.visibilityState,
+        },
+        "error",
+      );
+      await flushClientTelemetry();
+    }, timeoutSignal);
+  },
+);
 
 export async function hideBootstrapSkeleton(
   signal?: AbortSignal,
@@ -80,6 +125,7 @@ export const showAppSkeleton$ = command(({ get, set }) => {
 export const hideAppSkeleton$ = command(
   async ({ set }, signal: AbortSignal): Promise<void> => {
     await hideBootstrapSkeleton(signal);
+    set(resetSkeletonTimeout$);
     set(internalBootstrapSkeletonActive$, false);
     set(internalVisible$, false);
     set(captureFirstSkeletonHide$);
