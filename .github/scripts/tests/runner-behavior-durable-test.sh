@@ -494,22 +494,4 @@ if [ -e "$replay_marker" ]; then
   exit 1
 fi
 
-for pressure_case in "636 508" "640 512" "641 512" "703 512"; do
-  read -r available_mib expected_allocation_mib <<< "$pressure_case"
-  actual_allocation_mib=$(bash -c \
-    'source "$1"; pressure_allocation_mib "$2"' \
-    runner-behavior-pressure-allocation "$BALLOON_REMOTE_WORKER" "$available_mib")
-  if [ "$actual_allocation_mib" -ne "$expected_allocation_mib" ]; then
-    echo "expected ${available_mib}MiB available to select ${expected_allocation_mib}MiB; got ${actual_allocation_mib}MiB" >&2
-    exit 1
-  fi
-done
-
-if bash -c \
-  'source "$1"; pressure_allocation_mib "$2"' \
-  runner-behavior-pressure-allocation "$BALLOON_REMOTE_WORKER" 704; then
-  echo "expected 704MiB available to exceed the bounded pressure allocation" >&2
-  exit 1
-fi
-
 echo "runner-behavior-durable-test: ok"

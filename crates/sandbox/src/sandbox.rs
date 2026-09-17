@@ -465,7 +465,7 @@ pub enum SandboxFinalExecParkStage {
 /// Fixed low-cardinality provider operations inside the final physical park.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SandboxFinalExecParkSubstage {
-    /// Stops the reactive controller and submits the park-time balloon target.
+    /// Submits the park-time balloon target under lifecycle ownership.
     BalloonSetup,
     /// Waits for the guest balloon to reach the existing settle policy.
     BalloonSettle,
