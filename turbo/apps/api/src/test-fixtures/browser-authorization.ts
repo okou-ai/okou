@@ -1,9 +1,12 @@
 import { createHash } from "node:crypto";
 
 import { browserAuthorizationRequests } from "@okouai/db/schema/browser-session";
-import { eq } from "drizzle-orm";
+import { count, eq, sql } from "drizzle-orm";
+import { z } from "zod";
 
 import { db } from "../lib/db";
+import { executeRawRows } from "../lib/db-raw-rows";
+import { createDeferredPromise } from "../signals/utils";
 import {
   barrierQueryBinds,
   barrierQueryText,
@@ -64,6 +67,96 @@ export async function expireBrowserAuthorizationRequestFixture(args: {
   if (updated.length !== 1) {
     throw new Error("Expected one browser authorization request to expire");
   }
+}
+
+const databasePidRowSchema = z.object({ pid: z.int() });
+const waiterCountRowSchema = z.object({ waiterCount: z.number() });
+
+/**
+ * Backends the holder blocks whose current statement is the apply's own request
+ * pin. Counting the pin specifically, rather than any waiter, is what makes a
+ * non-zero result proof that this exact apply reached the request lock instead
+ * of merely proof that something waits somewhere.
+ */
+async function blockedRequestPinCount(holderPid: number): Promise<number> {
+  const rows = await executeRawRows(
+    db(),
+    sql`
+      SELECT ${count()}::int AS "waiterCount"
+      FROM pg_stat_activity AS activity
+      WHERE ${holderPid} = ANY(pg_blocking_pids(activity.pid))
+        AND lower(activity.query) LIKE '%browser_authorization_requests%'
+        AND lower(activity.query) LIKE '%for no key update%'
+    `,
+    waiterCountRowSchema,
+  );
+  return rows[0]?.waiterCount ?? 0;
+}
+
+/**
+ * Holds one request row from a second real session, so an apply that reaches
+ * its own `FOR NO KEY UPDATE` pin waits in PostgreSQL for a lock this fixture
+ * owns. That wait is the window the service's expiry recheck has to survive,
+ * and it cannot be produced through any API: nothing in production locks a
+ * browser authorization request outside the apply itself.
+ *
+ * The holder is idle inside its transaction while it waits for `release`, so it
+ * runs no statement timer of its own; the waiting apply keeps its unchanged
+ * `1s` budget, which is why a caller releases as soon as
+ * {@link blockedRequestPinCount} reports the pin rather than after any delay.
+ */
+export async function holdBrowserAuthorizationRequestRowLockFixture(args: {
+  readonly requestToken: string;
+  readonly signal: AbortSignal;
+}): Promise<{
+  readonly release: () => void;
+  readonly done: Promise<void>;
+  readonly blockedRequestPinCount: () => Promise<number>;
+}> {
+  const started = createDeferredPromise<number>(args.signal);
+  const released = createDeferredPromise<void>(args.signal);
+  const done = db().transaction(async (tx) => {
+    const [request] = await tx
+      .select({ id: browserAuthorizationRequests.id })
+      .from(browserAuthorizationRequests)
+      .where(
+        eq(
+          browserAuthorizationRequests.requestTokenHash,
+          requestTokenHash(args.requestToken),
+        ),
+      )
+      .for("update")
+      .limit(1);
+    if (!request) {
+      throw new Error("Expected the browser authorization request row");
+    }
+    const pidRows = await executeRawRows(
+      tx,
+      sql`
+        SELECT pg_backend_pid() AS "pid"
+      `,
+      databasePidRowSchema,
+    );
+    const holderPid = pidRows[0]?.pid;
+    if (!holderPid) {
+      throw new Error("Expected the authorization request lock holder pid");
+    }
+    started.resolve(holderPid);
+    await released.promise;
+  });
+  const holderPid = await started.promise;
+
+  return {
+    release: () => {
+      if (!released.settled()) {
+        released.resolve(undefined);
+      }
+    },
+    done,
+    blockedRequestPinCount: async () => {
+      return await blockedRequestPinCount(holderPid);
+    },
+  };
 }
 
 /** The fenced transaction's first statement: the shared admission helper's

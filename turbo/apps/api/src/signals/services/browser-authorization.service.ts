@@ -232,8 +232,9 @@ export const readBrowserAuthorizationRequest$ = command(
  *
  * Inside the admitted transaction the exact request is re-read and pinned
  * before any content mutation, so a request deleted or expired after the
- * preflight can never leave a committed thread update, a consumed sidebar
- * sequence or a false success behind.
+ * preflight — including one that lapses while that pin is being acquired —
+ * can never leave a committed thread update, a consumed sidebar sequence or a
+ * false success behind.
  */
 async function applyAuthorizedBrowserSelection(
   tx: Tx,
@@ -245,12 +246,12 @@ async function applyAuthorizedBrowserSelection(
     readonly chatThreadId: string;
   },
 ): Promise<ApplyBrowserAuthorizationRequestResult> {
-  const appliedAt = nowDate();
-  // `FOR NO KEY UPDATE` is the weakest mode that still blocks a concurrent
-  // `DELETE` of this row, and it is exactly the lock the completion `UPDATE`
-  // below takes, so the pin never upgrades. No other statement in the codebase
-  // locks `browser_authorization_requests`: the only writers are this service's
-  // own creation `INSERT`, this completion `UPDATE`, and the token lookups both
+  // `FOR NO KEY UPDATE` is exactly the lock the completion `UPDATE` below
+  // takes, so the pin never upgrades mid-transaction; it also blocks a
+  // concurrent `DELETE`, though that alone would not require this mode, since
+  // `KEY SHARE` blocks `DELETE` too. No other statement in the codebase locks
+  // `browser_authorization_requests`: the only writers are this service's own
+  // creation `INSERT`, this completion `UPDATE`, and the token lookups both
   // read paths share, and none of them takes a canonical Agent or thread lock,
   // so this subject -> Agent -> thread -> request order has no inverse.
   const [request] = await tx
@@ -273,6 +274,14 @@ async function applyAuthorizedBrowserSelection(
   if (!request) {
     return { status: "not_found" };
   }
+  // Read the clock only once the pin is held. Acquiring it can wait on a
+  // concurrent holder and on the transaction's own bounded budget, so a reading
+  // taken before that wait can report a request as live that has already
+  // lapsed, and would let this transaction write thread settings, a durable
+  // sidebar event and a completion stamp for it. This one reading decides the
+  // TTL and is then reused for every timestamp the accepted write stores, so
+  // they all keep sharing a single value.
+  const appliedAt = nowDate();
   if (request.expiresAt.getTime() <= appliedAt.getTime()) {
     return { status: "expired" };
   }
