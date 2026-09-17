@@ -1,20 +1,27 @@
-//! Verified RFB 3.8 / VeNCrypt 0.2 / X509Vnc and bounded framebuffer decoding.
+//! Verified RFB 3.8 / VeNCrypt 0.2 / X509Vnc, bounded captures and serialized input.
 //!
 //! [`authenticate`] consumes an already connected stream. The caller owns
 //! destination/authorization policy; this crate never resolves or connects a host.
 //! Authentication stops before ClientInit. [`Authenticated::initialize`] adds
 //! shared-mode desktop negotiation and owned framebuffer updates.
+//! [`Session`] adds immutable PNG captures and balanced keyboard/pointer input.
 //! Failure or cancellation drops the stream, with no background tasks.
 
 #![forbid(unsafe_code)]
 
 mod authentication;
+mod capture;
 mod framebuffer;
+mod input;
 mod memory;
 mod pixels;
+mod session;
 mod trust;
 mod wire;
 mod zrle;
+
+#[cfg(test)]
+mod tigervnc_tests;
 
 use std::{fmt, io, time::Duration};
 
@@ -23,7 +30,10 @@ use tokio::time::Instant;
 use tokio_rustls::client::TlsStream;
 use zeroize::Zeroizing;
 
+pub use capture::{Capture, CaptureMetadata};
 pub use framebuffer::{Cursor, FramebufferConnection};
+pub use input::{Input, InputOutcome, Key, MouseButton, ScrollAxis};
+pub use session::{Geometry, Session};
 pub use trust::TrustRoots;
 
 /// Maximum lifetime of the complete negotiation, including TLS and authentication.
@@ -108,6 +118,16 @@ where
 /// or included in Display/Debug output.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("RFB session is closed")]
+    SessionClosed,
+    #[error("invalid or oversized RFB input operation")]
+    InvalidInput,
+    #[error("screenshot geometry belongs to another session or has changed")]
+    StaleGeometry,
+    #[error("PNG exceeds the 16 MiB image limit")]
+    ImageTooLarge,
+    #[error("PNG encoding failed")]
+    ImageEncoding,
     #[error("invalid framebuffer dimensions or rectangle")]
     InvalidFramebuffer,
     #[error("invalid server pixel format")]
