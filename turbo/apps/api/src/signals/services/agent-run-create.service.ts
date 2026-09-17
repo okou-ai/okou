@@ -13254,6 +13254,18 @@ export const completeAgentRun$ = command(
         { ...input.prepared, context: legacyContext },
         legacyAppendSystemPrompt,
       );
+    } else if (args.piExecution && args.piStableContext) {
+      // API-first Pi can still take the established legacy launch when durable
+      // preparation is disabled or unavailable. Its eager body intentionally
+      // omitted the stable prefix, so bind the canonical prompt before launch.
+      launchContext = finalizePreparedRunContext(
+        input.prepared,
+        bindStableAppendSystemPrompt(
+          args.piStableContext.buildPrompt(),
+          input.finalAppendSystemPrompt ??
+            args.piStableContext.dynamicAppendSystemPrompt,
+        ),
+      );
     }
 
     return await set(
