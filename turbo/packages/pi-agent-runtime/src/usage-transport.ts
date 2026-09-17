@@ -1,10 +1,7 @@
 import { Readable, Transform, pipeline } from "node:stream";
 import { EventStreamCodec } from "@smithy/core/event-streams";
 import { NodeHttpHandler } from "@smithy/node-http-handler";
-import {
-  classifyProviderFailureCode,
-  classifyProviderHttpFailure,
-} from "@okouai/api-contracts/contracts/provider-failure";
+import { classifyProviderHttpFailure } from "@okouai/api-contracts/contracts/provider-failure";
 
 import type { PiUsageObserver } from "./usage-observation";
 import type { ModelRequestObservation } from "./model-request-diagnostics";
@@ -203,10 +200,7 @@ export function observePiUsageFetch(
   };
 }
 
-function bedrockReader(
-  observer: PiUsageObserver | undefined,
-  observation: ModelRequestObservation,
-) {
+function bedrockReader(observer: PiUsageObserver) {
   const codec = new EventStreamCodec(
     (bytes) => {
       return Buffer.from(bytes).toString("utf8");
@@ -225,17 +219,10 @@ function bedrockReader(
       const messageType = message.headers[":message-type"]?.value;
       // Smithy's decoder throws on these envelopes before later metadata.
       if (messageType === "error" || messageType === "exception") {
-        const code =
-          message.headers[
-            messageType === "exception" ? ":exception-type" : ":error-code"
-          ]?.value;
-        const reason = classifyProviderFailureCode(code);
-        if (reason) observation.failureReason = reason;
         disabled = true;
         return;
       }
       if (
-        observer &&
         messageType === "event" &&
         message.headers[":event-type"]?.value === "metadata"
       ) {
@@ -248,7 +235,7 @@ function bedrockReader(
         );
       }
     } catch {
-      observer?.loseCoverage();
+      observer.loseCoverage();
     }
   };
   return {
@@ -263,7 +250,7 @@ function bedrockReader(
         if (size === 4) {
           length = frame.readUInt32BE(0);
           if (length < 16 || length > MAX_FRAME_BYTES) {
-            observer?.loseCoverage();
+            observer.loseCoverage();
             disabled = true;
             return;
           }
@@ -276,7 +263,7 @@ function bedrockReader(
       }
     },
     end(): void {
-      if (size !== 0) observer?.loseCoverage();
+      if (size !== 0) observer.loseCoverage();
     },
   };
 }
@@ -329,15 +316,15 @@ export class PiBedrockHttpHandler extends NodeHttpHandler {
     ) {
       return result;
     }
-    const reader = bedrockReader(observer, observation);
+    const reader = observer ? bedrockReader(observer) : undefined;
     const body = new Transform({
       transform(chunk: unknown, _encoding, callback) {
-        if (chunk instanceof Uint8Array) reader.push(chunk);
+        if (chunk instanceof Uint8Array) reader?.push(chunk);
         else observer?.loseCoverage();
         callback(null, chunk);
       },
       flush(callback) {
-        reader.end();
+        reader?.end();
         callback();
       },
     });

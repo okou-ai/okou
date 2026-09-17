@@ -132,7 +132,9 @@ function bedrockFrame(
       ]);
     }),
   );
-  const body = Buffer.from(JSON.stringify(payload));
+  const body = Buffer.isBuffer(payload)
+    ? payload
+    : Buffer.from(JSON.stringify(payload));
   const prefix = Buffer.alloc(12);
   prefix.writeUInt32BE(16 + headers.length + body.length);
   prefix.writeUInt32BE(headers.length, 4);
@@ -570,6 +572,56 @@ describe("native Pi execution edges", () => {
           }),
         );
       }
+    },
+  );
+
+  it.each(["checksum", "json", "role"] as const)(
+    "does not classify an unread Bedrock exception after an invalid %s frame",
+    async (invalid) => {
+      const fixture = fixtures.find(({ config }) => {
+        return config.dialect === "bedrock-converse-stream";
+      });
+      if (!fixture) throw new Error("Missing Bedrock fixture");
+      const config = piModelConfigV4Schema.parse(fixture.config);
+      const materialized = await materialize(config);
+      const model = resolvePiAgentModel(materialized);
+      if (!model) throw new Error("Missing native model");
+      const firstFrame = bedrockFrame(
+        "messageStart",
+        invalid === "json"
+          ? Buffer.from("invalid json")
+          : { role: invalid === "role" ? "user" : "assistant" },
+      );
+      if (invalid === "checksum")
+        firstFrame.writeUInt32BE(0, firstFrame.length - 4);
+      server.use(
+        http.post(piNativeInferenceUrl(config), () => {
+          return new HttpResponse(
+            new Uint8Array(
+              Buffer.concat([
+                firstFrame,
+                bedrockFrame(
+                  "throttlingException",
+                  { message: "Provider rejected request" },
+                  "exception",
+                ),
+              ]),
+            ),
+            {
+              headers: { "content-type": "application/vnd.amazon.eventstream" },
+            },
+          );
+        }),
+      );
+      const result = await piAgentStreamForConfig(materialized)(
+        model,
+        { messages: [{ role: "user", content: "hello", timestamp: 1 }] },
+        { apiKey: materialized.apiKey },
+      ).result();
+      expect(result.stopReason).toBe("error");
+      expect(
+        projectPiApiAssistantMessage(result).failureReason,
+      ).toBeUndefined();
     },
   );
 

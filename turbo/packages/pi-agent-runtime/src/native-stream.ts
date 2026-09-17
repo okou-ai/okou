@@ -10,6 +10,7 @@ import { HttpProxyAgent } from "http-proxy-agent";
 import { HttpsProxyAgent } from "https-proxy-agent";
 
 import { assertPiNativeCredential } from "./credential";
+import { observeBedrockEventStreamFailures } from "./bedrock-failure-diagnostics";
 import type { PiAgentStreamConfig } from "./types";
 import {
   observePiResponseStatus,
@@ -159,6 +160,8 @@ export function streamPiNative(
         region: config.region,
         maxAttempts: 1,
         requestHandler,
+        eventStreamSerdeProvider:
+          observeBedrockEventStreamFailures(observation),
         // Explicit credentials disable every SDK profile/role/metadata chain,
         // including bearer mode. Sandbox SigV4 uses only fake signing markers;
         // the existing Runner egress signer owns the real signing credentials.
