@@ -69,10 +69,10 @@ behavior must be verified before rollout.
 Initial and invalid-token `401` challenges request the complete default grant:
 
 ```text
-openid email profile user:org:read okou:chat:read okou:chat:send okou:chat:manage okou:run:cancel offline_access
+email profile user:org:read okou:chat:read okou:chat:send okou:chat:manage okou:run:cancel offline_access
 ```
 
-Protected-resource metadata advertises the same nine scopes for clients that
+Protected-resource metadata advertises the same eight scopes for clients that
 select scopes through discovery. The defaults include identity information,
 organization selection, the planned chat operations and refresh-token access, so
 clients can request them in one consent flow without relying on incremental
@@ -95,7 +95,7 @@ token exchange, client registration or a consent UI. Before hosted acceptance:
    **Publish DCR support**, and select **Any compatible CIMD client**. Use JWT
    access tokens with **Include Audience**, require PKCE S256, and configure the
    supported scopes. Under **Client onboarding → Default scopes for dynamic
-   clients**, set the same nine default scopes listed above. Clerk applies these
+   clients**, set the same eight default scopes listed above. Clerk applies these
    defaults when a client omits `scope`; it does not expand an explicitly requested
    scope set. Creating or advertising scopes alone does not set these defaults.
    Compatible clients identify themselves through their HTTPS metadata document;
