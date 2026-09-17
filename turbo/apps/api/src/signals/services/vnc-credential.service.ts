@@ -19,6 +19,7 @@ import {
 import {
   checkVncCreationId,
   inspectVncCreationId,
+  recordVncCreationReceipt,
 } from "./vnc-creation.service";
 import {
   enterVncWrite,
@@ -162,6 +163,7 @@ export async function selectVncCredential(
   if (!row) {
     throw new Error("VNC credential insert returned no row");
   }
+  await recordVncCreationReceipt(tx, owner, vncCredentials, row.id);
   return { ok: true, value: row };
 }
 
@@ -209,6 +211,7 @@ export async function createVncCredential(args: {
     if (!created) {
       throw new Error("VNC credential insert returned no row");
     }
+    await recordVncCreationReceipt(tx, owner, vncCredentials, created.id);
     return { ok: true as const, value: response(created, []) };
   });
 }

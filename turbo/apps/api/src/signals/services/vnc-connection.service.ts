@@ -18,6 +18,7 @@ import {
 import {
   checkVncCreationId,
   inspectVncCreationId,
+  recordVncCreationReceipt,
 } from "./vnc-creation.service";
 import {
   findVncCredential,
@@ -215,6 +216,7 @@ export async function createVncConnection(args: {
     if (!created) {
       throw new Error("VNC connection insert returned no row");
     }
+    await recordVncCreationReceipt(tx, owner, vncConnections, created.id);
     return { ok: true as const, value: response(created, credential.value) };
   });
 }

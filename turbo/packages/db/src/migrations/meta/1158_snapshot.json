@@ -1,5 +1,5 @@
 {
-  "id": "24ad6a1a-4f8a-438b-ba47-ac4bed0616d7",
+  "id": "e7c81465-05da-4913-9323-8a96f2474034",
   "prevId": "186a8b37-6ae5-4530-9a9d-622d79fa9815",
   "version": "7",
   "dialect": "postgresql",
@@ -34719,6 +34719,54 @@
         "chk_vnc_connections_trust": {
           "name": "chk_vnc_connections_trust",
           "value": "(\"vnc_connections\".\"trust_mode\" = 'system' AND \"vnc_connections\".\"ca_bundle\" IS NULL) OR (\"vnc_connections\".\"trust_mode\" = 'custom_ca' AND \"vnc_connections\".\"ca_bundle\" IS NOT NULL AND octet_length(\"vnc_connections\".\"ca_bundle\") BETWEEN 1 AND 65536)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.vnc_creation_receipts": {
+      "name": "vnc_creation_receipts",
+      "schema": "",
+      "columns": {
+        "resource_kind": {
+          "name": "resource_kind",
+          "type": "varchar(16)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "resource_id": {
+          "name": "resource_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "owner_key": {
+          "name": "owner_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "vnc_creation_receipts_pk": {
+          "name": "vnc_creation_receipts_pk",
+          "columns": [
+            "resource_kind",
+            "resource_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_vnc_creation_receipts_kind": {
+          "name": "chk_vnc_creation_receipts_kind",
+          "value": "\"vnc_creation_receipts\".\"resource_kind\" IN ('vnc_credentials', 'vnc_connections')"
+        },
+        "chk_vnc_creation_receipts_owner_key": {
+          "name": "chk_vnc_creation_receipts_owner_key",
+          "value": "\"vnc_creation_receipts\".\"owner_key\" ~ '^[0-9a-f]{64}$'"
         }
       },
       "isRLSEnabled": false

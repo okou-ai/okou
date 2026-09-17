@@ -40,10 +40,12 @@ creation commit atomically. A conflicting endpoint cannot leave an orphaned
 inline credential. Canonical host and port are unique for one organization/user.
 
 Repeating a creation UUID belonging to the current owner and membership returns
-204 without changing any metadata or secret. A foreign UUID returns an opaque
-conflict. Updates and deletes reject stale versions; the caller must refresh
-metadata before deciding whether to resubmit. Password rotation advances every
-referencing connection's generation. Referenced credentials cannot be deleted
+204 without changing any metadata or secret, including after that resource was
+deleted. Consumed resource UUIDs are never reused: delayed creation requests
+cannot restore a deleted host or credential, or reset its version. A foreign
+UUID returns an opaque conflict. Updates and deletes reject stale versions;
+the caller must refresh metadata before deciding whether to resubmit. Password
+rotation advances every referencing connection's generation. Referenced credentials cannot be deleted
 until their hosts are rebound or deleted. Deleting a host retains its reusable
 credential.
 
@@ -88,6 +90,12 @@ no raw user, organization or membership identifiers, passwords or hostnames.
 Deleting these fences without an admission-drain protocol can reintroduce
 delayed-write races.
 
+`vnc_creation_receipts` retains each consumed resource kind/UUID and a
+domain-separated hash of its owner/membership tuple after resource or owner
+deletion. These pseudonymous receipts contain no passwords, hostnames or raw
+owner identifiers. They prevent delayed creation retries from resurrecting
+deleted configuration; deleting the receipts would break that guarantee.
+
 ## Deployment and rollback
 
 The generated migration is additive: deploy it before the API code. Old API
@@ -100,16 +108,17 @@ Before enabling the feature, every serving API version must include VNC-aware
 deletion cleanup. Once any VNC configuration exists, that cleanup support is an
 API rollback floor: disabling the feature does not erase saved credentials.
 Rollback may disable `vncAccess`, but must retain VNC-aware cleanup, the additive
-schema and lifecycle fences. Rolling back below this floor requires a separately
-verified drain and erasure of all VNC configuration first. Do not drop the tables
-as an application rollback. Runtime/Runner compatibility and activation belong
+schema, lifecycle fences and creation receipts. Rolling back below this floor
+requires a separately verified drain and erasure of all VNC configuration first.
+Do not drop the tables as an application rollback. Runtime/Runner compatibility and activation belong
 to #34980 and the remaining VNC delivery work.
 
 ## Verification
 
 Route integration tests exercise auth, fresh membership, owner isolation,
-secret-free output, validation, retries, optimistic concurrency, rotation,
-inline rollback, and lifecycle races through production HTTP boundaries.
+secret-free output, validation, retries including after deletion, optimistic
+concurrency, rotation, inline rollback, and lifecycle races through production
+HTTP boundaries.
 The dedicated migration test validates database ownership and version/trust
 constraints on a disposable schema. Broader API tests and required checks run
 in the PR pipeline.

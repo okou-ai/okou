@@ -28,6 +28,15 @@ CREATE TABLE "vnc_connections" (
 	CONSTRAINT "chk_vnc_connections_trust" CHECK (("vnc_connections"."trust_mode" = 'system' AND "vnc_connections"."ca_bundle" IS NULL) OR ("vnc_connections"."trust_mode" = 'custom_ca' AND "vnc_connections"."ca_bundle" IS NOT NULL AND octet_length("vnc_connections"."ca_bundle") BETWEEN 1 AND 65536))
 );
 --> statement-breakpoint
+CREATE TABLE "vnc_creation_receipts" (
+	"resource_kind" varchar(16) NOT NULL,
+	"resource_id" uuid NOT NULL,
+	"owner_key" text NOT NULL,
+	CONSTRAINT "vnc_creation_receipts_pk" PRIMARY KEY("resource_kind","resource_id"),
+	CONSTRAINT "chk_vnc_creation_receipts_kind" CHECK ("vnc_creation_receipts"."resource_kind" IN ('vnc_credentials', 'vnc_connections')),
+	CONSTRAINT "chk_vnc_creation_receipts_owner_key" CHECK ("vnc_creation_receipts"."owner_key" ~ '^[0-9a-f]{64}$')
+);
+--> statement-breakpoint
 CREATE TABLE "vnc_credentials" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"org_id" text NOT NULL,

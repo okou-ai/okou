@@ -12,6 +12,7 @@ import { vncConnectionsRoutes } from "../vnc-connections";
 import { createRouteMocks } from "./helpers/route-test";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
+import { holdSecretKms } from "./helpers/hold-secret-kms";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -397,16 +398,110 @@ describe("VNC owner configuration", () => {
     useSecretKmsProbe();
     await owner();
     await accept(connections().create({ headers, body: hostBody() }), [201]);
-    await accept(
-      connections().create({ headers, body: hostBody("VNC.EXAMPLE.COM.") }),
-      [409],
-    );
+    const conflicting = hostBody("VNC.EXAMPLE.COM.");
+    await accept(connections().create({ headers, body: conflicting }), [409]);
     expect(
       (await accept(credentials().list({ headers }), [200])).body.credentials,
     ).toHaveLength(1);
     expect(
       (await accept(connections().list({ headers }), [200])).body.connections,
     ).toHaveLength(1);
+    const corrected = await accept(
+      connections().create({
+        headers,
+        body: { ...conflicting, host: "corrected.example.com" },
+      }),
+      [201],
+    );
+    expect(corrected.body.id).toBe(conflicting.id);
+  });
+
+  it("does not recreate a deleted credential when its earlier creation finishes", async () => {
+    await owner();
+    const held = holdSecretKms(1, context.signal);
+    const body = { id: randomUUID(), name: "Deleted", password: "original" };
+    const delayed = credentials().create({ headers, body });
+    await held.entered;
+    const saved = await accept(credentials().create({ headers, body }), [201]);
+    await accept(
+      credentials().delete({
+        headers,
+        params: { credentialId: saved.body.id },
+        body: { expectedRevision: saved.body.revision },
+      }),
+      [204],
+    );
+    held.release();
+    await accept(delayed, [204]);
+    await accept(credentials().create({ headers, body }), [204]);
+    expect(
+      (await accept(credentials().list({ headers }), [200])).body.credentials,
+    ).toStrictEqual([]);
+    await accept(
+      credentials().update({
+        headers,
+        params: { credentialId: body.id },
+        body: { expectedRevision: 1, name: "Stale edit" },
+      }),
+      [404],
+    );
+    await owner();
+    await accept(credentials().create({ headers, body }), [409]);
+  });
+
+  it("does not recreate a deleted host or its inline credential from creation retries", async () => {
+    await owner();
+    const held = holdSecretKms(1, context.signal);
+    const body = hostBody();
+    const delayed = connections().create({ headers, body });
+    await held.entered;
+    const saved = await accept(connections().create({ headers, body }), [201]);
+    await accept(
+      connections().delete({
+        headers,
+        params: { connectionId: saved.body.id },
+        body: { expectedGeneration: saved.body.generation },
+      }),
+      [204],
+    );
+    await accept(
+      credentials().delete({
+        headers,
+        params: { credentialId: saved.body.credentialId },
+        body: { expectedRevision: 1 },
+      }),
+      [204],
+    );
+    held.release();
+    await accept(delayed, [204]);
+    await accept(connections().create({ headers, body }), [204]);
+    await accept(
+      credentials().create({
+        headers,
+        body: {
+          id: saved.body.credentialId,
+          name: "Inline retry",
+          password: "retry",
+        },
+      }),
+      [204],
+    );
+    expect(
+      (await accept(connections().list({ headers }), [200])).body.connections,
+    ).toStrictEqual([]);
+    expect(
+      (await accept(credentials().list({ headers }), [200])).body.credentials,
+    ).toStrictEqual([]);
+    await accept(
+      connections().update({
+        headers,
+        params: { connectionId: body.id },
+        body: { expectedGeneration: 1, displayName: "Stale edit" },
+      }),
+      [404],
+    );
+    await owner();
+    await accept(connections().create({ headers, body }), [409]);
   });
 
   it("acknowledges completed creation retries during a KMS outage", async () => {
