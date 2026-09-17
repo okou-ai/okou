@@ -163,7 +163,21 @@ On September 17, 2026:
 
 Wide-code/table scrolling, link opening, image rendering, and further
 long-history performance checks remain outside the completed interactive sample.
-The conversation stack currently lays out all loaded messages eagerly.
+
+The transcript now uses a separate native `List` row for each message, instead
+of eagerly laying out the entire history in a `VStack`. Markdown, message
+grouping, context-menu copying, and the composer remain unchanged. Initial
+positioning follows the bottom while Markdown changes row heights; starting a
+manual scroll stops this following. A new message requests bottom positioning
+again. Keep these behaviors in local acceptance when changing the container.
+
+A local investigation of a long conversation observed approximately 1.3 GB of
+process physical footprint with the eager stack and approximately 269 MB with
+the list. These are diagnostic snapshots from separate runs, not a controlled
+frame-rate benchmark. Sampling also found repeated ISO-8601 formatter creation
+during list refresh. The decoder now reuses its formatters under a lock. A local
+3,000-timestamp comparison took approximately 0.79 seconds before and 0.40 seconds
+after, with identical decoded dates across UTC, offset, and SQL-style inputs.
 
 Also verify uncertain-send recovery, signing out or switching workspaces clears
 the previous workspace's chats and drafts, and Emoji render on the replacement
