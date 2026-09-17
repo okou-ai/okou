@@ -21,6 +21,7 @@ import { createPrivateHostedPreview$ } from "../services/private-hosted-preview.
 import {
   resolveArtifactShare$,
   resolveArtifactTargetShare$,
+  resolvePublicArtifactUrl$,
 } from "../services/artifact-shares.service";
 import { artifactReferenceRecord } from "../services/artifact-reference.service";
 import type { RouteEntry } from "../route-entry";
@@ -105,7 +106,7 @@ const resolve$ = command(async ({ get, set }, signal: AbortSignal) => {
       }
       const shared = await set(
         resolveArtifactShare$,
-        { id: record.shareId, userId: auth.userId },
+        { id: record.shareId, userId: auth.userId, allowPrivateOwner: true },
         signal,
       );
       return shared
@@ -177,7 +178,7 @@ const resolve$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const shared = await set(
     resolveArtifactShare$,
-    { id, userId: auth.userId },
+    { id, userId: auth.userId, allowPrivateOwner: true },
     signal,
   );
   return shared
@@ -200,6 +201,38 @@ const authorizedArtifactResolve$ = authRoute(
 );
 
 export const artifactReferenceRoutes: readonly RouteEntry[] = [
+  {
+    route: artifactReferencesContract.publicUrl,
+    handler: command(async ({ get, set }, signal: AbortSignal) => {
+      set(setResHeader$, "Cache-Control", "private, no-store");
+      set(setResHeader$, "Referrer-Policy", "no-referrer");
+      const { reference } = get(
+        pathParamsOf(artifactReferencesContract.publicUrl),
+      );
+      const parsed = parseArtifactReference(`/artifacts/${reference}`);
+      if (!parsed) {
+        return notFound("Artifact unavailable");
+      }
+      const record =
+        parsed.id === null
+          ? await get(artifactReferenceRecord(parsed.hash, signal))
+          : null;
+      signal.throwIfAborted();
+      const target =
+        parsed.id !== null
+          ? { id: parsed.id }
+          : record?.version === 1
+            ? { id: record.shareId, kind: "share" as const }
+            : record?.target;
+      if (!target) {
+        return notFound("Artifact unavailable");
+      }
+      const result = await set(resolvePublicArtifactUrl$, target, signal);
+      return result
+        ? { status: 200 as const, body: result }
+        : notFound("Artifact unavailable");
+    }),
+  },
   {
     route: artifactReferencesContract.resolve,
     handler: command(async ({ get, set }, signal: AbortSignal) => {

@@ -1,4 +1,4 @@
-import { command } from "ccstate";
+import { command, computed, state, type Computed, type State } from "ccstate";
 import {
   artifactReferencesContract,
   parseArtifactReference,
@@ -13,16 +13,18 @@ import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../i18n/index.ts";
 import { accept } from "../lib/accept.ts";
 import { copyAttachmentLinkToClipboard } from "../views/okou-page/attachment-url.ts";
-import { apiClient$ } from "./api-client.ts";
+import { apiClient$, type ApiClientFactory } from "./api-client.ts";
 import { resolveApiBase } from "./api-base.ts";
 import { isAuthenticatedAttachmentUrl } from "./attachment-resource-url.ts";
-import { pageVersion$ } from "./page-signal.ts";
-import { onRejection } from "./utils.ts";
-
-interface ArtifactShareSelection {
-  readonly url: string;
-  readonly audience: Exclude<ArtifactShareStatus["audience"], "private">;
-}
+import { throttleCommand } from "./command-scheduling.ts";
+import { pageSignal$ } from "./page-signal.ts";
+import {
+  onRef,
+  resetSignal,
+  settle,
+  waitForOperation,
+  withCleanup,
+} from "./utils.ts";
 
 function artifactSharingTarget(url: string): ArtifactShareTarget | null {
   const id = privateHostedDeploymentId(url, resolveApiBase());
@@ -43,102 +45,230 @@ export function isShareableArtifactReference(url: string): boolean {
   );
 }
 
-const resolveSharingTarget$ = command(
-  async ({ get }, url: string, signal: AbortSignal) => {
-    const reference = parseArtifactReference(url, location.origin);
-    if (!reference) {
-      return artifactSharingTarget(url);
-    }
-    const response = await accept(
-      get(apiClient$)(artifactReferencesContract).resolve({
-        params: { reference: `${reference.hash}${reference.extension}` },
-        fetchOptions: { signal, cache: "no-store" },
-      }),
-      [200],
-      signal,
-    );
-    return response.body.target;
-  },
-);
+interface ShareSource {
+  readonly url: string;
+  readonly copyUrl?: string;
+}
+type Audience = ArtifactShareStatus["audience"];
+interface AudienceDraft {
+  readonly audience: Audience;
+}
 
-const artifactShareUrl$ = command(
-  async ({ get, set }, args: ArtifactShareSelection, signal: AbortSignal) => {
-    signal.throwIfAborted();
-    const pageVersion = get(pageVersion$);
-    const target = await set(resolveSharingTarget$, args.url, signal);
-    if (!target) {
-      return null;
-    }
-    const { body: status } = await accept(
-      get(apiClient$)(artifactSharesContract).status({
-        body: target,
-        fetchOptions: { signal },
-      }),
-      [200],
-      signal,
-    );
-    if (get(pageVersion$) !== pageVersion) {
-      return null;
-    }
-    if (
-      status.url &&
-      status.audience === args.audience &&
-      status.selectedTarget &&
-      status.selectedVersion === status.candidateVersion &&
-      // A current API explicitly reports null until the owner allocates the
-      // short organization link or named site URL. Older APIs omit the field.
-      // #32492 retires the absent-field reader after old APIs leave serving
-      // and rollback; the legacy response stays until the App floor advances.
-      !(
-        (args.audience === "organization" || target.kind === "html") &&
-        status.shortUrl === null
-      )
-    ) {
-      return status.shortUrl ?? status.url;
-    }
-    const response = await accept(
-      get(apiClient$)(artifactSharesContract).update({
-        body: { target, audience: args.audience },
-        fetchOptions: { signal },
-      }),
-      [200],
-      signal,
-    );
-    signal.throwIfAborted();
-    if (get(pageVersion$) !== pageVersion) {
-      return null;
-    }
-    return response.body.shortUrl ?? response.body.url;
-  },
-);
+async function loadShareDetails(client: ApiClientFactory, source: ShareSource) {
+  const reference = parseArtifactReference(source.url, location.origin);
+  const target = reference
+    ? (
+        await accept(
+          client(artifactReferencesContract).resolve({
+            params: { reference: `${reference.hash}${reference.extension}` },
+            fetchOptions: { cache: "no-store" },
+          }),
+          [200],
+        )
+      ).body.target
+    : artifactSharingTarget(source.url);
+  if (!target) {
+    return null;
+  }
+  // Viewing access does not imply ownership. Only this endpoint authorizes the
+  // permission controls; its 404 response identifies a read-only recipient.
+  const result = await accept(
+    client(artifactSharesContract).status({
+      body: target,
+    }),
+    [200, 404],
+  );
+  const status = result.status === 200 ? result.body : null;
+  const copyUrl = new URL(
+    status ? status.ownerUrl : (source.copyUrl ?? source.url),
+    location.origin,
+  );
+  if (status) {
+    copyUrl.hash = reference?.fragment ?? "";
+  }
+  const audience =
+    status?.selectedTarget && status.selectedTarget.id !== target.id
+      ? "private"
+      : status?.audience;
+  return { target, status, audience, copyUrl: copyUrl.href };
+}
+type ShareDetails = Awaited<ReturnType<typeof loadShareDetails>>;
 
-export const shareArtifact$ = command(
-  async ({ set }, selection: ArtifactShareSelection, signal: AbortSignal) => {
-    signal.throwIfAborted();
-    const toastId = toast.loading(
-      i18n.t(($) => {
-        return $.artifacts.toasts.sharing;
-      }),
+function createAudienceSignals(
+  details$: Computed<Promise<ShareDetails>>,
+  reload$: State<number>,
+) {
+  // The user's latest choice stays visible while earlier writes settle. Object
+  // identity prevents an earlier completion from clearing a newer selection.
+  const draft$ = state<AudienceDraft | null>(null);
+  const persist$ = command(
+    async ({ get, set }, draft: AudienceDraft, signal: AbortSignal) => {
+      const details = await waitForOperation(get(details$), signal);
+      signal.throwIfAborted();
+      if (!details?.status) {
+        return;
+      }
+      if (
+        details.audience === draft.audience &&
+        (draft.audience === "private" ||
+          details.status.selectedVersion === details.status.candidateVersion)
+      ) {
+        return;
+      }
+      await withCleanup(
+        accept(
+          get(apiClient$)(artifactSharesContract).update({
+            body: { target: details.target, audience: draft.audience },
+            fetchOptions: { signal },
+          }),
+          [200],
+          signal,
+        ),
+        () => {
+          if (!signal.aborted) {
+            set(reload$, (value) => {
+              return value + 1;
+            });
+          }
+        },
+      );
+      signal.throwIfAborted();
+      await waitForOperation(get(details$), signal);
+      signal.throwIfAborted();
+      if (get(draft$) === draft) {
+        toast.success(
+          i18n.t(($) => {
+            return $.artifacts.sharing.permissionsUpdated;
+          }),
+        );
+      }
+    },
+  );
+  const save$ = throttleCommand(
+    command(({ get, set }, draft: AudienceDraft, signal: AbortSignal) => {
+      return withCleanup(set(persist$, draft, signal), () => {
+        if (get(draft$) === draft) {
+          set(draft$, null);
+        }
+      });
+    }),
+    0,
+  );
+  const change$ = command(
+    ({ get, set }, audience: Audience, signal: AbortSignal) => {
+      signal.throwIfAborted();
+      const current = get(draft$);
+      const draft = current?.audience === audience ? current : { audience };
+      set(draft$, draft);
+      return set(save$, draft, signal);
+    },
+  );
+  return { draft$, change$ };
+}
+
+function createArtifactShareSession(source: ShareSource) {
+  // The mount owner installs its live signal after this graph is constructed.
+  const signal$ = state<AbortSignal | null>(null);
+  const reload$ = state(0);
+  const details$ = computed((get) => {
+    get(reload$);
+    return loadShareDetails(get(apiClient$), source);
+  });
+  const open$ = state(false);
+  const resetOpenSignal$ = resetSignal();
+  const close$ = command(({ set }) => {
+    set(open$, false);
+    set(resetOpenSignal$);
+  });
+  const show$ = command(async ({ get, set }, parentSignal: AbortSignal) => {
+    const signal = set(resetOpenSignal$, parentSignal);
+    set(open$, true);
+    // Errors belong to the popover's retry state, not a toast from opening it.
+    const result = await settle(
+      waitForOperation(get(details$), signal),
+      signal,
     );
-    const dismissLoadingToast = () => {
-      toast.dismiss(toastId);
-      signal.removeEventListener("abort", dismissLoadingToast);
-    };
-    signal.addEventListener("abort", dismissLoadingToast, { once: true });
-    const shareUrl = await onRejection(
-      set(artifactShareUrl$, selection, signal),
-      dismissLoadingToast,
-    );
-    signal.throwIfAborted();
-    if (!shareUrl) {
-      dismissLoadingToast();
-      return;
+    if (result.ok && !result.value?.status) {
+      set(open$, false);
+      if (result.value) {
+        await copyAttachmentLinkToClipboard(
+          result.value.copyUrl,
+          undefined,
+          signal,
+        );
+      }
     }
-    await onRejection(
-      copyAttachmentLinkToClipboard(shareUrl, toastId, signal),
-      dismissLoadingToast,
-    );
+  });
+  const refresh$ = command(async ({ get, set }, signal: AbortSignal) => {
     signal.throwIfAborted();
-    signal.removeEventListener("abort", dismissLoadingToast);
-  },
-);
+    set(reload$, (value) => {
+      return value + 1;
+    });
+    await settle(waitForOperation(get(details$), signal), signal);
+  });
+  const copy$ = command(async ({ get }, signal: AbortSignal) => {
+    const details = await waitForOperation(get(details$), signal);
+    signal.throwIfAborted();
+    if (details?.status) {
+      await copyAttachmentLinkToClipboard(details.copyUrl, undefined, signal);
+    }
+  });
+  return {
+    signal$,
+    details$,
+    open$,
+    close$,
+    show$,
+    refresh$,
+    copy$,
+    ...createAudienceSignals(details$, reload$),
+  };
+}
+export type ArtifactShareSession = ReturnType<
+  typeof createArtifactShareSession
+>;
+
+function createArtifactShareScope() {
+  const source$ = state<ShareSource | null>(null);
+  const session$ = computed((get) => {
+    const source = get(source$);
+    return source ? createArtifactShareSession(source) : null;
+  });
+  const resetMountSignal$ = resetSignal();
+  const mountRef$ = onRef(
+    command(
+      ({ get, set }, element: HTMLSpanElement, mountSignal: AbortSignal) => {
+        const url = element.dataset.shareUrl;
+        if (!url) {
+          return;
+        }
+        const signal = set(resetMountSignal$, mountSignal, get(pageSignal$));
+        signal.throwIfAborted();
+        const source = { url, copyUrl: element.dataset.copyUrl };
+        set(source$, source);
+        const session = get(session$)!;
+        set(session.signal$, signal);
+        signal.addEventListener(
+          "abort",
+          () => {
+            if (get(source$) === source) {
+              set(source$, null);
+            }
+          },
+          { once: true },
+        );
+      },
+    ),
+  );
+  return { session$, mountRef$ };
+}
+
+// These are the three existing singleton preview surfaces, not a URL cache.
+const shareScopes = Object.freeze({
+  dialog: createArtifactShareScope(),
+  sidebar: createArtifactShareScope(),
+  viewer: createArtifactShareScope(),
+});
+export function getArtifactShareScope(surface: keyof typeof shareScopes) {
+  return shareScopes[surface];
+}

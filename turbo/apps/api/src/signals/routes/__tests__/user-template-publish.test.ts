@@ -141,6 +141,33 @@ describe("POST /api/user-templates", () => {
     ).toBeTruthy();
   });
 
+  it("accepts a pdf source, which the import picker already offers", async () => {
+    const fixture = installS3Fixture(context);
+    const actor = bdd.user();
+    await enableFor(actor);
+    const client = templateClient();
+
+    const body = await publishBody(actor, fixture);
+    // Rejecting a format the picker lets the user choose would fail only after
+    // the reverse run had already done its work.
+    const pdfSourceId = await uploadTemplateFile(
+      context,
+      actor,
+      fixture,
+      { filename: "brand-system.pdf", contentType: "application/pdf" },
+      Buffer.from("%PDF-1.7", "utf8"),
+    );
+
+    const response = await accept(
+      client.publish({
+        headers: webHeaders(),
+        body: { ...body, sourceFileId: pdfSourceId },
+      }),
+      [200],
+    );
+    expect(response.body.sourceFilename).toBe("brand-system.pdf");
+  });
+
   it("rejects a package that is missing its required guidance", async () => {
     const fixture = installS3Fixture(context);
     const actor = bdd.user();

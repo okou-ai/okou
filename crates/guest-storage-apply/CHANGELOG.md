@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.94](https://github.com/vm0-ai/okou/compare/guest-storage-apply-v0.23.93...guest-storage-apply-v0.23.94) (2026-09-17)
+
+
+### Performance Improvements
+
+* **runner:** retain decoded cache hits in large storage plans ([#34747](https://github.com/vm0-ai/okou/issues/34747)) ([d170bf9](https://github.com/vm0-ai/okou/commit/d170bf9b7b92f028bf6803e4912d2176798dab42))
+
 ## [0.23.93](https://github.com/vm0-ai/okou/compare/guest-storage-apply-v0.23.92...guest-storage-apply-v0.23.93) (2026-09-16)
 
 ## [0.23.92](https://github.com/vm0-ai/okou/compare/guest-storage-apply-v0.23.91...guest-storage-apply-v0.23.92) (2026-09-16)

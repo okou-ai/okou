@@ -157,12 +157,14 @@ export function ArtifactActionTooltip({
 
 export function ArtifactShareButton({
   shareUrl,
+  surface,
   ariaLabel,
   className,
   iconSize = 16,
   url,
 }: {
   shareUrl: string | null | undefined;
+  surface: "dialog" | "sidebar";
   ariaLabel?: string;
   className?: string;
   iconSize?: number;
@@ -176,13 +178,13 @@ export function ArtifactShareButton({
       return $.artifacts.actions.share;
     });
   if (
-    shareUrl === null &&
     features?.[FeatureSwitchKey.PrivateArtifacts] &&
     isShareableArtifactReference(url)
   ) {
     return (
       <ArtifactShareMenu
         url={url}
+        surface={surface}
         ariaLabel={label}
         className={className}
         iconSize={iconSize}

@@ -4,7 +4,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { artifactFilenameExtension } from "@okouai/api-contracts/contracts/artifact-delivery";
 import { artifactShareReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
 import { command, computed } from "ccstate";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, or } from "drizzle-orm";
 import { artifactShares } from "@okouai/db/schema/artifact-share";
 import {
   hostedSites,
@@ -550,6 +550,7 @@ export const resolveArtifactShare$ = command(
       readonly id: string;
       readonly userId: string;
       readonly expectedTarget?: ArtifactShareTarget;
+      readonly allowPrivateOwner?: boolean;
     },
     signal: AbortSignal,
   ) => {
@@ -567,7 +568,8 @@ export const resolveArtifactShare$ = command(
     const policy = stored?.policy;
     if (
       !policy ||
-      policy.status !== "active" ||
+      (policy.status !== "active" &&
+        !(args.allowPrivateOwner && policy.ownerId === args.userId)) ||
       (args.expectedTarget &&
         (policy.target.kind !== args.expectedTarget.kind ||
           policy.target.id !== args.expectedTarget.id))
@@ -646,5 +648,80 @@ export const resolveArtifactTargetShare$ = command(
           signal,
         )
       : null;
+  },
+);
+
+/** Public references disclose only an already published URL, never private bytes. */
+export const resolvePublicArtifactUrl$ = command(
+  async (
+    { get },
+    args: { readonly id: string; readonly kind?: "file" | "html" | "share" },
+    signal: AbortSignal,
+  ) => {
+    const [direct] =
+      args.kind === "html"
+        ? []
+        : await get(db$)
+            .select()
+            .from(artifactShares)
+            .where(
+              or(
+                args.kind === undefined || args.kind === "share"
+                  ? eq(artifactShares.id, args.id)
+                  : undefined,
+                args.kind === undefined || args.kind === "file"
+                  ? and(
+                      eq(artifactShares.targetKind, "file"),
+                      eq(artifactShares.targetId, args.id),
+                    )
+                  : undefined,
+              ),
+            )
+            .limit(1);
+    signal.throwIfAborted();
+    let row = direct;
+    if (!row && (args.kind === undefined || args.kind === "html")) {
+      const [deployment] = await get(db$)
+        .select({ siteId: privateHostedDeployments.siteId })
+        .from(privateHostedDeployments)
+        .innerJoin(
+          hostedSites,
+          eq(hostedSites.id, privateHostedDeployments.siteId),
+        )
+        .where(
+          and(
+            eq(privateHostedDeployments.id, args.id),
+            isNull(hostedSites.deletedAt),
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      row = deployment
+        ? ((await get(shareIdentity("html", deployment.siteId))) ?? undefined)
+        : undefined;
+      signal.throwIfAborted();
+    }
+    if (!row) {
+      return null;
+    }
+    const stored = await get(policyFor(row, signal));
+    signal.throwIfAborted();
+    const policy = stored?.policy;
+    if (
+      !policy ||
+      policy.status !== "active" ||
+      policy.audience !== "public" ||
+      (row.id !== args.id &&
+        args.kind !== "share" &&
+        policy.target.id !== args.id)
+    ) {
+      return null;
+    }
+    // A removed artifact must not become discoverable through an old reference.
+    const target = await get(
+      ownedShareTarget(policy.target, row.userId, row.orgId),
+    );
+    signal.throwIfAborted();
+    return target ? { url: publicShareUrl(policy) } : null;
   },
 );

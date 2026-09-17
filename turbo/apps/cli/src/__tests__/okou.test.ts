@@ -82,6 +82,7 @@ describe("Okou CLI program", () => {
       "artifact",
       "presentation",
       "presentation-template",
+      "user-template",
       "maps",
       "weather",
       "scrape",
@@ -128,8 +129,8 @@ describe("Okou CLI program", () => {
     expect(canonicalCommandNames).not.toContain("__intro-video-voice");
   });
 
-  it("should have exactly 42 canonical commands", () => {
-    expect(canonicalCommandNames).toHaveLength(42);
+  it("should have exactly 43 canonical commands", () => {
+    expect(canonicalCommandNames).toHaveLength(43);
   });
 });
 

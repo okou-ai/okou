@@ -112,6 +112,23 @@ referrer policy and the host Worker's same-origin resource policy. Both must be
 deployed to verify full HTML resource loading against the hosted-domain WAF.
 The viewer and sharing use the existing `privateArtifacts` rollout switch.
 
+#### Artifact sharing controls and public references
+
+The App separates permission changes from copying and retains the existing
+`privateArtifacts` switch. Owner status is read from the existing owner-only
+endpoint; a resolved recipient with status 404 copies the original reference
+without writing a grant. Existing share responses and public delivery URLs
+remain supported for older Apps.
+
+The additive, unauthenticated `GET /api/artifact-references/:reference/public`
+returns only a currently published delivery URL. Private, organization-only,
+revoked, missing, and unselected version references return 404. Public copies
+use the same App reference as organization copies. Deploy the new API before
+relying on anonymous opening of these references; a new App against an older
+API retains the sign-in fallback on 404. Previously copied URLs remain valid
+under their existing policy. Owner resolution of an old organization alias
+continues after switching it to Only me; recipients lose access.
+
 #### Private attachment uploads
 
 CLI artifact output qualifies hostless references with its configured app origin

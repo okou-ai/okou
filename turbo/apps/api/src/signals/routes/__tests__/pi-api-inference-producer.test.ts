@@ -1151,6 +1151,8 @@ describe("durable Pi API producer", () => {
       usagePricingResolution,
     );
     await waitForRunStatus(actor, recoveryRunId, "cancelled", 10_000);
+    // Finish cancellation's settlement before recovery creates fresh usage.
+    await flushWaitUntilForTest();
     await expirePiInference(recoveryRunId);
 
     await expect(
@@ -1223,6 +1225,7 @@ describe("durable Pi API producer", () => {
       usagePricingResolution,
     );
     await waitForRunStatus(actor, recoveryRunId, "cancelled", 10_000);
+    await flushWaitUntilForTest();
     await expirePiInference(recoveryRunId);
 
     await expect(

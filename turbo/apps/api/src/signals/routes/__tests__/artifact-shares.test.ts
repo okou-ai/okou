@@ -811,6 +811,13 @@ test.each(["short", "legacy", "legacy-short"] as const)(
       }),
       [200],
     );
+    await accept(
+      api()(artifactReferencesContract).resolve({
+        headers,
+        params: { reference },
+      }),
+      [200],
+    );
     session(recipient, `org_${randomUUID()}`);
     await accept(
       api()(artifactReferencesContract).resolve({
@@ -1741,6 +1748,135 @@ test("a delayed writer cannot resurrect a public grant after a newer revocation"
     api()(artifactSharesContract).resolve({
       headers,
       params: { id: shared.body.shareId! },
+    }),
+    [404],
+  );
+});
+
+test("canonical file links disclose a public URL only while explicitly public, without authentication", async () => {
+  const { members, session } = await fixture();
+  const target = await file();
+  const reference = artifactReferencePath(target.id, "report.pdf")
+    .split("/")
+    .at(-1)!;
+  const publicUrl = () => {
+    return api()(artifactReferencesContract).publicUrl({
+      params: { reference },
+    });
+  };
+  await accept(publicUrl(), [404]);
+  const shared = await accept(
+    api()(artifactSharesContract).update({
+      headers,
+      body: { target, audience: "organization" },
+    }),
+    [200],
+  );
+  const shortReference = new URL(shared.body.shortUrl!).pathname
+    .split("/")
+    .at(-1)!;
+  await accept(publicUrl(), [404]);
+  const published = await accept(
+    api()(artifactSharesContract).update({
+      headers,
+      body: { target, audience: "public" },
+    }),
+    [200],
+  );
+  for (const value of [reference, shortReference]) {
+    const result = await accept(
+      api()(artifactReferencesContract).publicUrl({
+        params: { reference: value },
+      }),
+      [200],
+    );
+    expect(result.body.url).toBe(published.body.url);
+    expect(result.headers.get("cache-control")).toBe("private, no-store");
+  }
+  await accept(
+    api()(artifactSharesContract).update({
+      headers,
+      body: { target, audience: "private" },
+    }),
+    [200],
+  );
+  await accept(publicUrl(), [404]);
+  await accept(
+    api()(artifactReferencesContract).publicUrl({
+      params: { reference: shortReference },
+    }),
+    [404],
+  );
+  await accept(
+    api()(artifactReferencesContract).resolve({
+      headers,
+      params: { reference: shortReference },
+    }),
+    [200],
+  );
+  const recipient = `user_${randomUUID()}`;
+  members.add(recipient);
+  session(recipient);
+  await flag(true);
+  await accept(
+    api()(artifactReferencesContract).resolve({
+      headers,
+      params: { reference: shortReference },
+    }),
+    [404],
+  );
+  await accept(
+    api()(artifactSharesContract).update({
+      headers,
+      body: { target, audience: "public" },
+    }),
+    [404],
+  );
+});
+
+test("public HTML reference resolution preserves the selected version", async () => {
+  const { owner, org } = await fixture();
+  const memberships =
+    context.mocks.clerk.organizations.getOrganizationMembershipList.getMockImplementation()!;
+  const actor = createBddApi(context).user({ userId: owner, orgId: org });
+  await createRunsApi(context).grantProEntitlement(actor);
+  const host = createHostMapsBddApi(context);
+  const body = {
+    site: `public-reference-${randomUUID().slice(0, 8)}`,
+    artifactKind: "hosted-site" as const,
+    spaFallback: false,
+    files: [hostedTextFile("/index.html", "<h1>First</h1>")],
+  };
+  const first = await host.prepareHostedSite(actor, body);
+  await host.completeHostedSite(actor, first.deploymentId);
+  const second = await host.prepareHostedSite(actor, {
+    ...body,
+    files: [hostedTextFile("/index.html", "<h1>Second</h1>")],
+  });
+  await host.completeHostedSite(actor, second.deploymentId);
+  context.mocks.clerk.organizations.getOrganizationMembershipList.mockImplementation(
+    memberships,
+  );
+  const published = await accept(
+    api()(artifactSharesContract).update({
+      headers,
+      body: {
+        target: { kind: "html", id: first.deploymentId },
+        audience: "public",
+      },
+    }),
+    [200],
+  );
+  const result = await accept(
+    api()(artifactReferencesContract).publicUrl({
+      params: { reference: first.url.split("/").at(-1)! },
+    }),
+    [200],
+  );
+  expect(result.body.url).toBe(published.body.url);
+  await accept(
+    api()(artifactReferencesContract).publicUrl({
+      params: { reference: second.url.split("/").at(-1)! },
     }),
     [404],
   );

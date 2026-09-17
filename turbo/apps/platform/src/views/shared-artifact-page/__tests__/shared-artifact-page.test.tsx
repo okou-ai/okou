@@ -6,7 +6,7 @@ import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor } from "@testing-library/react";
 import { HttpResponse } from "msw";
-import { expect, test, vi } from "vitest";
+import { beforeEach, expect, test, vi } from "vitest";
 import { mockedClerk } from "../../../__tests__/mock-auth.ts";
 import {
   click,
@@ -19,6 +19,18 @@ import {
 } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
+beforeEach(() => {
+  context.mocks.api(artifactSharesContract.status, ({ respond }) => {
+    return respond(404, {
+      error: { code: "NOT_FOUND", message: "Artifact not found" },
+    });
+  });
+  context.mocks.api(artifactReferencesContract.publicUrl, ({ respond }) => {
+    return respond(404, {
+      error: { code: "NOT_FOUND", message: "Artifact unavailable" },
+    });
+  });
+});
 
 warmMermaidParser();
 const artifactId = "00000000-0000-4000-8000-000000000010";
@@ -51,23 +63,18 @@ async function openViewer({
   url?: string;
   colorThemes?: boolean;
 } = {}) {
-  const resolutions: string[] = [];
-  context.mocks.api(
-    artifactReferencesContract.resolve,
-    ({ params, respond }) => {
-      resolutions.push(params.reference);
-      return respond(200, {
-        url,
-        expiresAt: "2099-01-01T00:00:00Z",
-        filename,
-        contentType,
-        target: {
-          kind: contentType === "text/html" ? "html" : "file",
-          id: artifactId,
-        },
-      });
-    },
-  );
+  context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
+    return respond(200, {
+      url,
+      expiresAt: "2099-01-01T00:00:00Z",
+      filename,
+      contentType,
+      target: {
+        kind: contentType === "text/html" ? "html" : "file",
+        id: artifactId,
+      },
+    });
+  });
   await setupPage({
     context,
     path,
@@ -77,7 +84,6 @@ async function openViewer({
       [FeatureSwitchKey.GradientColorThemes]: colorThemes,
     },
   });
-  return resolutions;
 }
 
 test("an image link stays in the app and reuses the lightbox preview and zoom controls", async () => {
@@ -173,21 +179,18 @@ test("the standalone viewer restores the selected app color theme", async () => 
 });
 
 test.each([
-  [
-    `/share/artifacts/${artifactId}?source=shared#detail`,
-    artifactId.replaceAll("-", ""),
-  ],
-  ["/artifacts/a1b2c3d4e5.png#detail", "a1b2c3d4e5.png"],
+  `/share/artifacts/${artifactId}?source=shared#detail`,
+  "/artifacts/a1b2c3d4e5.png#detail",
 ])(
   "downloads resolve references and save the original filename and bytes: %s",
-  async (path, reference) => {
+  async (path) => {
     const browser = context.mocks.browser.blobDownload();
     context.mocks.http.get("https://artifacts.example.com/launch.png", () => {
       return HttpResponse.text("original image bytes", {
         headers: { "Content-Type": "image/png" },
       });
     });
-    const resolutions = await openViewer({
+    await openViewer({
       path,
     });
     click(action("button", "Download options"));
@@ -204,7 +207,6 @@ test.each([
     await expect(browser.downloads[0]?.blob?.text()).resolves.toBe(
       "original image bytes",
     );
-    expect(resolutions).toStrictEqual([reference, reference]);
   },
 );
 

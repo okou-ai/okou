@@ -6,7 +6,6 @@ import {
   ArrowRightLeft,
   ArrowUpRight,
   LockKeyhole,
-  Share2,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { currentUserInfo$ } from "../../signals/auth.ts";
@@ -14,10 +13,9 @@ import { openClerkAddAccount$ } from "../../signals/clerk-add-account.ts";
 import { BRAND_NAME } from "../../signals/branding.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { shellDocumentAttributesRef$ } from "../../signals/theme.ts";
-import {
-  copySharedArtifactLink$,
-  type SharedArtifactPreview,
-  type SharedArtifactViewerSignals,
+import type {
+  SharedArtifactPreview,
+  SharedArtifactViewerSignals,
 } from "../../signals/shared-artifact-page.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ProductBrandMark } from "../components/product-brand-mark.tsx";
@@ -26,6 +24,7 @@ import {
   ArtifactActionSeparator,
   ArtifactDownloadMenu,
 } from "../okou-page/artifact-actions.tsx";
+import { ArtifactShareMenu } from "../okou-page/artifact-share-menu.tsx";
 import { artifactFallbackSubtitle } from "../okou-page/artifact-display.ts";
 
 function ArtifactViewerActions({
@@ -34,8 +33,6 @@ function ArtifactViewerActions({
   artifact: SharedArtifactPreview;
 }) {
   const { t } = useTranslation();
-  const pageSignal = useGet(pageSignal$);
-  const copyLink = useSet(copySharedArtifactLink$);
   const continueUrl = new URL("/", window.location.origin);
   continueUrl.searchParams.set(
     "prompt",
@@ -54,24 +51,12 @@ function ArtifactViewerActions({
   );
   return (
     <div className="flex shrink-0 items-center gap-1">
-      <Button
-        type="button"
-        variant="quiet"
-        size="icon-sm"
-        showTooltip
-        aria-label={t(($) => {
-          return $.artifacts.actions.share;
-        })}
-        onClick={() => {
-          detach(
-            copyLink(pageSignal),
-            Reason.DomCallback,
-            "copy artifact link",
-          );
-        }}
-      >
-        <Share2 size={18} />
-      </Button>
+      <ArtifactShareMenu
+        surface="viewer"
+        url={artifact.preview.url}
+        copyUrl={window.location.href}
+        iconSize={18}
+      />
       <ArtifactDownloadMenu
         filename={artifact.filename}
         url={artifact.preview.url}

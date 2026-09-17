@@ -1041,7 +1041,7 @@ describe("hosted Artifact previews", () => {
           deviceScaleFactor: 0.5,
         },
         gotoOptions: { waitUntil: "networkidle2", timeout: 20_000 },
-        actionTimeout: 30_000,
+        actionTimeout: 120_000,
         screenshotOptions: { type: "webp", quality: 80 },
       },
     });
@@ -1097,12 +1097,12 @@ describe("hosted Artifact previews", () => {
     expect(snapshotRequests).toHaveLength(2);
     expect(snapshotRequests[0]?.body).toMatchObject({
       gotoOptions: { waitUntil: "networkidle2", timeout: 20_000 },
-      actionTimeout: 30_000,
+      actionTimeout: 120_000,
     });
     expect(snapshotRequests[1]?.body).toMatchObject({
       gotoOptions: { waitUntil: "domcontentloaded", timeout: 15_000 },
       waitForTimeout: 3000,
-      actionTimeout: 30_000,
+      actionTimeout: 120_000,
     });
     // Readiness must not depend on which node the document opens its body with:
     // a leading hidden sprite or script can never satisfy a visibility probe.

@@ -39,12 +39,12 @@ import { voiceIoSttContract } from "@okouai/api-contracts/contracts/voice-io-stt
 import { mockEnv } from "../../../../lib/env";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
+import type { UsagePricingResolution } from "../../../context/usage-pricing-resolution";
 import {
   mockListStripeInvoices,
   mockStripeClient,
 } from "../../../external/stripe-client";
 import { testUsageSettlementRoutes } from "../../test-usage-settlement";
-import type { UsagePricingResolution } from "../../../context/usage-pricing-resolution";
 import type { ApiTestUser } from "./api-bdd";
 import { createRouteMocks } from "./route-test";
 import { acquisitionAttributionRoutes } from "../../acquisition-attribution";

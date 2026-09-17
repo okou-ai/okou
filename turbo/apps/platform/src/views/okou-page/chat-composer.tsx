@@ -5889,6 +5889,13 @@ export function ComposerPresentationRecommendations({
   const builtIn = PRESENTATION_TEMPLATE_PICKER_ITEMS;
   const openTemplates = useSet(signals.template.openTemplatePicker$);
   const setMode = useSet(signals.create.setMode$);
+  // The shelf keeps mixing uploaded and built-in covers — it recommends rather
+  // than classifies — but "more" has to land on the tab that now holds the
+  // uploaded ones.
+  const moreTemplatesCategory =
+    useGet(featureSwitch$)[FeatureSwitchKey.CustomTemplates] === true
+      ? "custom"
+      : "slides";
   const label = t(($) => {
     return $.chat.taskChips.presentationTemplates;
   });
@@ -5909,7 +5916,7 @@ export function ComposerPresentationRecommendations({
           size="xs"
           className="shrink-0 gap-1.5 font-normal"
           onClick={() => {
-            openTemplates({ kind: "insert", category: "slides" });
+            openTemplates({ kind: "insert", category: moreTemplatesCategory });
           }}
         >
           {t(($) => {
@@ -6004,29 +6011,39 @@ function PptTemplateGrid({
   onImported: () => void;
   signals: ComposerSignals;
 }) {
-  // Import tile, then accessible uploaded decks (owned decks are sorted first),
-  // then the built-in templates.
+  // Uploading and the decks it produced belong to whichever catalog this
+  // member can open. Once Custom is theirs, both live there, and this tab is
+  // the built-in templates alone; until then it is the import tile, the
+  // accessible uploaded decks (owned decks first), then the built-ins.
+  const customTemplates =
+    useGet(featureSwitch$)[FeatureSwitchKey.CustomTemplates] === true;
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      <ImportedPresentationTemplateLibraryStatus signals={signals} />
-      <PptImportCard signals={signals} onImported={onImported} />
-      {importedItems.map(({ imageBuffers, template }) => {
-        return (
-          <ImportedPptCard
-            key={template.id}
-            imageSignals={imageBuffers.card}
-            template={template}
-            selected={
-              value?.type === "presentation" &&
-              value.selection.templateId ===
-                formatUserPresentationTemplateId(template.id)
-            }
-            onSelect={onSelectImported}
-            onPreview={onPreviewImported}
-            signals={signals}
-          />
-        );
-      })}
+      {customTemplates ? null : (
+        <>
+          <ImportedPresentationTemplateLibraryStatus signals={signals} />
+          <PptImportCard signals={signals} onImported={onImported} />
+        </>
+      )}
+      {(customTemplates ? [] : importedItems).map(
+        ({ imageBuffers, template }) => {
+          return (
+            <ImportedPptCard
+              key={template.id}
+              imageSignals={imageBuffers.card}
+              template={template}
+              selected={
+                value?.type === "presentation" &&
+                value.selection.templateId ===
+                  formatUserPresentationTemplateId(template.id)
+              }
+              onSelect={onSelectImported}
+              onPreview={onPreviewImported}
+              signals={signals}
+            />
+          );
+        },
+      )}
       {items.map((item) => {
         return (
           <PptCard
@@ -6635,7 +6652,7 @@ function TemplatePickerCategoryContent({
   if (selectedCategory === "custom") {
     return (
       <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-6 pt-0.5">
-        <CustomTemplatePickerPane />
+        <CustomTemplatePickerPane signals={signals} />
       </div>
     );
   }

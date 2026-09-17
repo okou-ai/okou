@@ -590,8 +590,20 @@
       "videoLabel": "Video preview for {{filename}}"
     },
     "sharing": {
-      "shareOrganization": "Share to organization",
-      "sharePublic": "Share to Public"
+      "accessLabel": "Who can access",
+      "copyLink": "Copy link",
+      "loadFailed": "Unable to load permissions",
+      "loadingPermissions": "Loading permissions",
+      "onlyMe": "Only me",
+      "onlyMeDescription": "Only you can view this artifact",
+      "organization": "Organization",
+      "organizationDescription": "Anyone in {{organization}} with the link",
+      "permissionsUpdated": "Access updated",
+      "publicAccess": "Public access",
+      "publicDescription": "Anyone with the link can view",
+      "retry": "Retry",
+      "savedAutomatically": "Changes saved automatically",
+      "saving": "Saving…"
     },
     "sidebar": {
       "openSharedConversation": "Open shared conversation",
@@ -696,11 +708,6 @@
       "websitePreview": "{{title}} website template preview",
       "workflow": "Workflow",
       "workflowCatalog": {
-        "alert-metric-moves-slack": {
-          "description": "Watch your key metrics and alert Slack when one moves sharply.",
-          "shortDescription": "Alert Slack when a key metric moves sharply.",
-          "title": "Alert when a metric moves"
-        },
         "auto-inbox-label": {
           "description": "Create a workflow that runs when a Gmail label is applied and handles the labeled inbox item.",
           "shortDescription": "Run a workflow when you apply a Gmail label.",
@@ -710,21 +717,6 @@
           "description": "Review PRs labeled ready-to-merge, wait for CI, then merge and post to Slack.",
           "shortDescription": "Merge ready-to-merge PRs once CI passes.",
           "title": "Auto-merge GitHub PRs"
-        },
-        "blog-posts-to-x": {
-          "description": "Turn each new blog post into social variants queued via Buffer.",
-          "shortDescription": "Turn each new blog post into social posts.",
-          "title": "Turn blog posts into social posts"
-        },
-        "build-weekly-deck-gamma": {
-          "description": "Turn the week's metrics into a ready-to-present deck in Gamma.",
-          "shortDescription": "Turn the week's metrics into a Gamma deck.",
-          "title": "Build the weekly deck in Gamma"
-        },
-        "business-review-gamma": {
-          "description": "Turn the month's metrics into a business review deck in Gamma.",
-          "shortDescription": "Turn the month's metrics into a review deck.",
-          "title": "Build the business review in Gamma"
         },
         "catch-calendar-conflicts": {
           "description": "Scan your calendar for double-bookings and alert you early.",
@@ -746,30 +738,15 @@
           "shortDescription": "Post the signup funnel's biggest drop-off.",
           "title": "Check the PostHog signup funnel"
         },
-        "clickup-slack-standup": {
-          "description": "Pull ClickUp tasks each morning and post a team standup summary to Slack.",
-          "shortDescription": "Post a morning standup from ClickUp tasks.",
-          "title": "ClickUp Slack standup"
-        },
         "compare-google-ads-last-month": {
           "description": "Compare ad spend and ROAS to last month and flag anomalies in Slack.",
           "shortDescription": "Compare ad spend and ROAS to last month.",
           "title": "Compare Google Ads vs last month"
         },
-        "competitive-intel-monitor": {
-          "description": "Monitor competitor sites for pricing and feature changes, save findings to Notion, and alert Slack.",
-          "shortDescription": "Log competitor pricing changes in Notion.",
-          "title": "Competitive intel monitor"
-        },
-        "daily-company-brief-slack": {
-          "description": "Pull product, growth, and revenue into a daily brief on Slack.",
-          "shortDescription": "Pull product, growth, and revenue into a brief.",
-          "title": "Post a daily company brief to Slack"
-        },
-        "daily-industry-news-slack": {
-          "description": "Round up the day's relevant industry news into a Slack brief.",
-          "shortDescription": "Round up the day's industry news for Slack.",
-          "title": "Post daily industry news to Slack"
+        "creator-shortlist-to-sheets": {
+          "description": "Score the creators you are considering on reach and engagement, ranked in one sheet.",
+          "shortDescription": "Rank creators by reach and engagement in a sheet.",
+          "title": "Build a creator shortlist in Google Sheets"
         },
         "daily-standup-report": {
           "description": "Pull product and engineering signals each morning, create a short report, and post it to Slack.",
@@ -786,11 +763,6 @@
           "shortDescription": "Assemble recent updates into a newsletter.",
           "title": "Draft the newsletter in Mailchimp"
         },
-        "draft-replies-notion-faq": {
-          "description": "Draft ticket replies grounded in your Notion FAQ.",
-          "shortDescription": "Draft ticket replies from your Notion FAQ.",
-          "title": "Draft replies from your Notion FAQ"
-        },
         "feedback-router": {
           "description": "Watch a Slack channel and route product feedback into Notion with labels and owners.",
           "shortDescription": "Route product feedback from Slack into Notion.",
@@ -805,11 +777,6 @@
           "description": "Rank new Sentry errors by user impact and file the worst as GitHub issues.",
           "shortDescription": "File the worst Sentry errors as GitHub issues.",
           "title": "File Sentry crashes as GitHub issues"
-        },
-        "flag-figma-designs-no-task": {
-          "description": "Flag Figma designs that have no linked Linear task yet.",
-          "shortDescription": "Flag Figma designs with no Linear task.",
-          "title": "Flag Figma designs without a task"
         },
         "flagged-gmail-todoist-tasks": {
           "description": "Turn the emails you flag into Todoist tasks automatically.",
@@ -826,11 +793,6 @@
           "shortDescription": "Collect merged pull requests into a report.",
           "title": "GitHub PR summarizer"
         },
-        "gmail-followups-auto": {
-          "description": "Find contacts who didn't reply and draft the next follow-up.",
-          "shortDescription": "Draft follow-ups for contacts who didn't reply.",
-          "title": "Send Gmail follow-ups automatically"
-        },
         "gmail-reconnect-reminders": {
           "description": "Surface important contacts you haven't emailed in a while.",
           "shortDescription": "Surface contacts you haven't emailed lately.",
@@ -841,25 +803,10 @@
           "shortDescription": "Surface the emails that need your attention.",
           "title": "Highlight key emails in Gmail"
         },
-        "investor-update-google-docs": {
-          "description": "Assemble metrics and highlights into an investor update in Docs.",
-          "shortDescription": "Assemble metrics into an investor update.",
-          "title": "Draft the investor update in Google Docs"
-        },
-        "log-gong-calls-hubspot": {
-          "description": "Pull notes and next steps from a Gong call into the HubSpot deal.",
-          "shortDescription": "Pull Gong call notes into the HubSpot deal.",
-          "title": "Log Gong calls to HubSpot"
-        },
-        "meeting-notes-asana-tasks": {
-          "description": "Turn meeting notes into assigned, due-dated tasks in Asana.",
-          "shortDescription": "Turn meeting notes into tasks in Asana.",
-          "title": "Turn meeting notes into Asana tasks"
-        },
-        "meeting-recaps-slack": {
-          "description": "Share a recap with decisions and action items after each meeting.",
-          "shortDescription": "Share decisions and action items after meetings.",
-          "title": "Get meeting recaps in Slack"
+        "keyword-ranks-to-sheets": {
+          "description": "Check where your pages rank for the keywords you care about and log the movers.",
+          "shortDescription": "Log weekly keyword rank movement to a sheet.",
+          "title": "Track keyword rankings in Google Sheets"
         },
         "morning-brief": {
           "description": "Turn Gmail, Calendar, and Notion updates into a short daily plan in Slack.",
@@ -871,20 +818,10 @@
           "shortDescription": "Add unknown email senders to HubSpot.",
           "title": "Add new Gmail contacts to HubSpot"
         },
-        "onboard-new-hires-asana": {
-          "description": "Create the onboarding task checklist for each new hire in Asana.",
-          "shortDescription": "Create an onboarding checklist per new hire.",
-          "title": "Onboard new hires in Asana"
-        },
         "personal-weekly-digest": {
           "description": "Summarize GitHub, Gmail, and Calendar activity into one weekly Slack update.",
           "shortDescription": "Summarize your week across GitHub and Gmail.",
           "title": "Personal weekly digest"
-        },
-        "post-daily-metrics-slack": {
-          "description": "Post daily visitors, signups, and activation numbers to Slack.",
-          "shortDescription": "Post daily visitors and signups to Slack.",
-          "title": "Post daily metrics to Slack"
         },
         "post-release-notes-slack": {
           "description": "Draft a changelog from recently shipped work and post it to Slack.",
@@ -896,35 +833,10 @@
           "shortDescription": "Send a prep brief before external meetings.",
           "title": "Prep for Google Calendar meetings"
         },
-        "publish-scheduled-posts-buffer": {
-          "description": "Publish the day's scheduled content and queue the social posts.",
-          "shortDescription": "Publish the day's scheduled social posts.",
-          "title": "Publish scheduled posts to Buffer"
-        },
         "research-calendar-meetings": {
           "description": "Research the people you're meeting before each calendar event.",
           "shortDescription": "Research the people you meet before each event.",
           "title": "Research your calendar meetings"
-        },
-        "research-new-signups-apollo": {
-          "description": "Research each new signup and post a quick snapshot.",
-          "shortDescription": "Research each new signup and post a snapshot.",
-          "title": "Research new signups"
-        },
-        "revenuecat-subscription-digest": {
-          "description": "Track subscriptions in Sheets and alert Slack when churn or cancellation patterns change.",
-          "shortDescription": "Track subscriptions and alert Slack on churn.",
-          "title": "RevenueCat subscription digest"
-        },
-        "run-daily-query-sheets": {
-          "description": "Run your saved SQL on a schedule and append the results to a Sheet.",
-          "shortDescription": "Run saved SQL and append results to a Sheet.",
-          "title": "Run a daily query into Google Sheets"
-        },
-        "salesforce-pipeline-digest": {
-          "description": "Summarize Salesforce opportunity changes and close-date risks in Slack each week.",
-          "shortDescription": "Summarize Salesforce pipeline risks weekly.",
-          "title": "Salesforce pipeline digest"
         },
         "send-bugs-github-slack": {
           "description": "File bug-tagged reports as GitHub issues and alert the team on Slack.",
@@ -936,25 +848,20 @@
           "shortDescription": "Send a daily digest of critical Sentry issues.",
           "title": "Sentry issue digest"
         },
+        "social-posts-to-sheets": {
+          "description": "Gather public posts and engagement from the accounts you track into one sheet.",
+          "shortDescription": "Gather public social posts into one sheet.",
+          "title": "Collect social posts into Google Sheets"
+        },
         "sort-gmail-draft-replies": {
           "description": "Sort your inbox and draft replies to the emails that need them.",
           "shortDescription": "Sort your inbox and draft the replies needed.",
           "title": "Sort Gmail and draft replies"
         },
-        "spot-churn-risk-stripe-zendesk": {
-          "description": "Flag accounts at risk of churn and draft a recovery email.",
-          "shortDescription": "Flag churn risk and draft a recovery email.",
-          "title": "Spot churn risk in Stripe and Zendesk"
-        },
         "summarize-gmail-newsletters": {
           "description": "Digest the newsletters in your inbox into one short summary.",
           "shortDescription": "Digest your newsletters into one summary.",
           "title": "Summarize Gmail newsletters"
-        },
-        "summarize-zendesk-tickets-daily": {
-          "description": "Summarize the last day of Zendesk tickets and post it to Slack.",
-          "shortDescription": "Post a daily summary of Zendesk tickets.",
-          "title": "Summarize Zendesk tickets daily"
         },
         "support-ticket-router": {
           "description": "Classify support emails, create Notion records, and alert Slack for critical tickets.",
@@ -976,30 +883,20 @@
           "shortDescription": "Surface the week's biggest usage shifts.",
           "title": "Track feature usage with PostHog"
         },
-        "track-keyword-ranks-ahrefs": {
-          "description": "Track keyword rankings in Ahrefs and report the movers in Notion.",
-          "shortDescription": "Report the week's keyword rank movers.",
-          "title": "Track keyword ranks with Ahrefs"
-        },
-        "track-signup-sources-sheets": {
-          "description": "Attribute each new signup to its source in a tracking Sheet.",
-          "shortDescription": "Attribute each signup to its source in a Sheet.",
-          "title": "Track signup sources in Google Sheets"
-        },
         "vercel-deploy-digest": {
           "description": "Monitor Vercel deployments, link them to GitHub commits, and alert Slack on failures.",
           "shortDescription": "Alert Slack when a Vercel deploy fails.",
           "title": "Vercel deploy digest"
         },
+        "web-data-to-sheets": {
+          "description": "Pull the same fields from a list of pages on a schedule and keep the history in one sheet.",
+          "shortDescription": "Pull fields from a page list into one sheet.",
+          "title": "Collect web page data into a spreadsheet"
+        },
         "x-brand-monitor": {
           "description": "Track brand mentions on X, save relevant posts in Notion, and alert Slack on high-signal mentions.",
           "shortDescription": "Alert Slack on strong brand mentions on X.",
           "title": "X brand monitor"
-        },
-        "zendesk-knowledge-base": {
-          "description": "Find recurring Zendesk questions, draft FAQ entries, and save them to Notion.",
-          "shortDescription": "Turn recurring questions into FAQ entries.",
-          "title": "Zendesk knowledge base"
         }
       },
       "workflowCategories": {
@@ -1018,8 +915,7 @@
     "toasts": {
       "copyLinkFailed": "Failed to copy link",
       "downloadFailed": "Download failed",
-      "linkCopied": "Link copied",
-      "sharing": "Sharing…"
+      "linkCopied": "Link copied"
     },
     "viewer": {
       "continuePrompt": "Help me work with this artifact: {{url}}",
@@ -2637,7 +2533,7 @@
               "three": "A short explanation of what changed",
               "two": "Source links for every finding"
             },
-            "scope": "Firecrawl for page checks and Notion for findings; Slack alerts are optional.",
+            "scope": "Built-in web research for page checks and Notion for findings; Slack alerts are optional.",
             "steps": {
               "one": "Check the competitor pages you choose on a schedule",
               "three": "Save findings with sources to Notion; optionally alert Slack",
@@ -2707,13 +2603,13 @@
             "description": "Visitors, signups, and activation in one readable daily snapshot.",
             "name": "Daily metrics brief",
             "next": "Choose the site, available metrics, comparison period, and Slack destination.",
-            "prompt": "Help me get a daily Slack snapshot of visitors, signups, and activation, using Plausible and any relevant PostHog or Clerk data I have. Clearly label the reporting period. Help me choose the available metrics, delivery time, and Slack destination.",
+            "prompt": "Help me get a daily Slack snapshot of visitors, signups, and activation, using the PostHog data I have. Clearly label the reporting period. Help me choose the available metrics, delivery time, and Slack destination.",
             "results": {
               "one": "Daily visitors",
               "three": "A clear reporting period",
               "two": "Signup and activation numbers when available"
             },
-            "scope": "Plausible and Slack; PostHog or Clerk can add signup and activation data.",
+            "scope": "PostHog and Slack.",
             "steps": {
               "one": "Read the agreed website and signup metrics",
               "three": "Share the snapshot in the Slack destination you choose",
@@ -2745,13 +2641,13 @@
             "description": "A clear recap with decisions, action items, and owners.",
             "name": "Meeting recap",
             "next": "Choose how often to check for new notes and where the recap should go.",
-            "prompt": "Help me turn new Fireflies meeting notes into a concise recap with decisions, action items, owners, and due dates. Mark details that were not stated. Help me choose how often to check for new notes and where to deliver the recap.",
+            "prompt": "Help me turn new Google Meet transcripts into a concise recap with decisions, action items, owners, and due dates. Mark details that were not stated. Help me choose how often to check for new notes and where to deliver the recap.",
             "results": {
               "one": "Decisions from the conversation",
               "three": "Missing details flagged clearly",
               "two": "Action items and stated owners"
             },
-            "scope": "Checks Fireflies for new transcripts on a schedule. Gmail or Slack delivery is optional.",
+            "scope": "Checks Google Meet for new transcripts on a schedule. Gmail or Slack delivery is optional.",
             "steps": {
               "one": "Read a new meeting transcript",
               "three": "Deliver a concise recap to the destination you choose",

@@ -8,6 +8,28 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.615.0](https://github.com/vm0-ai/okou/compare/api-v1.614.1...api-v1.615.0) (2026-09-17)
+
+
+### Features
+
+* **api:** start durable pi inference before sandbox demand ([#34750](https://github.com/vm0-ai/okou/issues/34750)) ([081084b](https://github.com/vm0-ai/okou/commit/081084bc84bc97750a11a8ef065bef4d320a7624))
+
+
+### Bug Fixes
+
+* **api:** coalesce activity summary claims under contention ([#34753](https://github.com/vm0-ai/okou/issues/34753)) ([1e9adef](https://github.com/vm0-ai/okou/commit/1e9adef92c4b0348d0d3d686ad2994500ee6a2b7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.453.0
+    * @okouai/core bumped to 8.673.2
+    * @okouai/db bumped to 1.269.2
+    * @okouai/pi-agent-runtime bumped to 1.32.6
+
 ## [1.614.1](https://github.com/vm0-ai/okou/compare/api-v1.614.0...api-v1.614.1) (2026-09-16)
 
 

@@ -608,8 +608,20 @@
       "videoLabel": "Vista previa de vídeo para {{filename}}"
     },
     "sharing": {
-      "shareOrganization": "Compartir con la organización",
-      "sharePublic": "Compartir públicamente"
+      "accessLabel": "Quién tiene acceso",
+      "copyLink": "Copiar enlace",
+      "loadFailed": "No se pudieron cargar los permisos",
+      "loadingPermissions": "Cargando permisos",
+      "onlyMe": "Solo yo",
+      "onlyMeDescription": "Solo tú puedes ver este artefacto",
+      "organization": "Organización",
+      "organizationDescription": "Cualquier persona de {{organization}} con el enlace",
+      "permissionsUpdated": "Acceso actualizado",
+      "publicAccess": "Acceso público",
+      "publicDescription": "Cualquier persona con el enlace puede verlo",
+      "retry": "Reintentar",
+      "savedAutomatically": "Los cambios se guardan automáticamente",
+      "saving": "Guardando…"
     },
     "sidebar": {
       "openSharedConversation": "Abrir conversación compartida",
@@ -715,11 +727,6 @@
       "websitePreview": "Vista previa de la plantilla de sitio web {{title}}",
       "workflow": "Flujo de trabajo",
       "workflowCatalog": {
-        "alert-metric-moves-slack": {
-          "description": "Supervisa tus métricas clave y avisa en Slack cuando una cambie bruscamente.",
-          "shortDescription": "Avisa en Slack si una métrica clave se mueve mucho.",
-          "title": "Alerta cuando se mueve una métrica"
-        },
         "auto-inbox-label": {
           "description": "Crea un flujo que se ejecuta al aplicar una etiqueta de Gmail y se ocupa del correo etiquetado.",
           "shortDescription": "Ejecuta un flujo al aplicar una etiqueta de Gmail.",
@@ -729,21 +736,6 @@
           "description": "Revisa los PR etiquetados como listos para fusionar, espera a que pase CI, fusiónalos y publica el resultado en Slack.",
           "shortDescription": "Fusiona las PR listas cuando pasa la CI.",
           "title": "Fusionar automáticamente PR de GitHub"
-        },
-        "blog-posts-to-x": {
-          "description": "Convierte cada nuevo artículo del blog en variantes sociales en la cola de Buffer.",
-          "shortDescription": "Convierte cada artículo nuevo en publicaciones sociales.",
-          "title": "Convierte entradas de blog en publicaciones sociales"
-        },
-        "build-weekly-deck-gamma": {
-          "description": "Convierte las métricas de la semana en una presentación de Gamma lista para exponer.",
-          "shortDescription": "Convierte las métricas de la semana en un deck de Gamma.",
-          "title": "Crear la presentación semanal en Gamma"
-        },
-        "business-review-gamma": {
-          "description": "Convierte las métricas del mes en una presentación de análisis empresarial en Gamma.",
-          "shortDescription": "Convierte las métricas del mes en un deck de revisión.",
-          "title": "Crear el análisis empresarial en Gamma"
         },
         "catch-calendar-conflicts": {
           "description": "Busca reservas duplicadas en tu calendario y avísate con antelación.",
@@ -765,30 +757,15 @@
           "shortDescription": "Publica dónde se cae más el embudo de registro.",
           "title": "Comprobar el embudo de registro de PostHog"
         },
-        "clickup-slack-standup": {
-          "description": "Reúne cada mañana las tareas de ClickUp y publica en Slack el standup del equipo.",
-          "shortDescription": "Publica el standup matinal desde ClickUp.",
-          "title": "Standup de ClickUp en Slack"
-        },
         "compare-google-ads-last-month": {
           "description": "Compara la inversión y el ROAS con el mes pasado y señala las anomalías en Slack.",
           "shortDescription": "Compara inversión y ROAS con el mes pasado.",
           "title": "Comparar Google Ads con el mes anterior"
         },
-        "competitive-intel-monitor": {
-          "description": "Vigila precios y funciones en las webs de la competencia, guarda los hallazgos en Notion y avisa en Slack.",
-          "shortDescription": "Anota en Notion los cambios de precio de la competencia.",
-          "title": "Monitor de competencia"
-        },
-        "daily-company-brief-slack": {
-          "description": "Reúne producto, crecimiento e ingresos en un informe diario para Slack.",
-          "shortDescription": "Reúne producto, crecimiento e ingresos en un resumen.",
-          "title": "Publica un informe diario de la empresa para Slack"
-        },
-        "daily-industry-news-slack": {
-          "description": "Reúne las noticias relevantes del sector en un breve resumen diario para Slack.",
-          "shortDescription": "Recopila para Slack las noticias del sector.",
-          "title": "Publica noticias diarias del sector en Slack"
+        "creator-shortlist-to-sheets": {
+          "description": "Puntúa a los creadores que estás valorando por alcance e interacción, ordenados en una hoja.",
+          "shortDescription": "Ordena creadores por alcance e interacción.",
+          "title": "Crear una lista de creadores en Google Sheets"
         },
         "daily-standup-report": {
           "description": "Reúne cada mañana las señales de producto e ingeniería, crea un informe breve y publícalo en Slack.",
@@ -805,11 +782,6 @@
           "shortDescription": "Reúne las novedades recientes en una newsletter.",
           "title": "Redacta el boletín en Mailchimp"
         },
-        "draft-replies-notion-faq": {
-          "description": "Redacta respuestas a tickets basadas en tus preguntas frecuentes de Notion.",
-          "shortDescription": "Redacta respuestas con tu FAQ de Notion.",
-          "title": "Redactar respuestas desde las preguntas frecuentes de Notion"
-        },
         "feedback-router": {
           "description": "Vigila un canal de Slack y lleva el feedback de producto a Notion con etiquetas y responsables.",
           "shortDescription": "Lleva el feedback de producto de Slack a Notion.",
@@ -824,11 +796,6 @@
           "description": "Ordena los nuevos errores de Sentry por su impacto y registra los más graves como incidencias de GitHub.",
           "shortDescription": "Crea issues de GitHub con los peores errores de Sentry.",
           "title": "Registrar fallos de Sentry como incidencias de GitHub"
-        },
-        "flag-figma-designs-no-task": {
-          "description": "Marca los diseños de Figma que todavía no tienen una tarea de Linear vinculada.",
-          "shortDescription": "Señala los diseños de Figma sin tarea en Linear.",
-          "title": "Marcar diseños de Figma sin tarea"
         },
         "flagged-gmail-todoist-tasks": {
           "description": "Convierte automáticamente los correos que marcas en tareas Todoist.",
@@ -845,11 +812,6 @@
           "shortDescription": "Reúne las pull requests fusionadas en un informe.",
           "title": "Resumen de PR de GitHub"
         },
-        "gmail-followups-auto": {
-          "description": "Busca contactos que no respondieron y redacta el siguiente seguimiento.",
-          "shortDescription": "Redacta seguimientos para quien no ha respondido.",
-          "title": "Enviar seguimientos de Gmail automáticamente"
-        },
         "gmail-reconnect-reminders": {
           "description": "Destaca los contactos importantes a los que no has escrito últimamente.",
           "shortDescription": "Muestra contactos a los que hace tiempo no escribes.",
@@ -860,25 +822,10 @@
           "shortDescription": "Muestra los correos que necesitan tu atención.",
           "title": "Resalta los correos clave en Gmail"
         },
-        "investor-update-google-docs": {
-          "description": "Reúne métricas y destacados en una actualización para inversores en Docs.",
-          "shortDescription": "Reúne las métricas en un informe para inversores.",
-          "title": "Redacta la actualización para inversores en Google Docs"
-        },
-        "log-gong-calls-hubspot": {
-          "description": "Añade al acuerdo de HubSpot las notas y los siguientes pasos de una llamada de Gong.",
-          "shortDescription": "Lleva las notas de Gong al negocio de HubSpot.",
-          "title": "Registrar llamadas de Gong en HubSpot"
-        },
-        "meeting-notes-asana-tasks": {
-          "description": "Convierte las notas de las reuniones en tareas asignadas y con fecha de vencimiento en Asana.",
-          "shortDescription": "Convierte las notas de reunión en tareas de Asana.",
-          "title": "Convierte las notas de reuniones en tareas Asana"
-        },
-        "meeting-recaps-slack": {
-          "description": "Comparte un resumen con las decisiones y acciones después de cada reunión.",
-          "shortDescription": "Comparte decisiones y tareas tras las reuniones.",
-          "title": "Recibir resúmenes de reuniones en Slack"
+        "keyword-ranks-to-sheets": {
+          "description": "Comprueba en qué posición aparecen tus páginas para tus palabras clave y registra los cambios.",
+          "shortDescription": "Registra cada semana los cambios de posición.",
+          "title": "Seguir posiciones de palabras clave en Google Sheets"
         },
         "morning-brief": {
           "description": "Convierte las novedades de Gmail, Calendar y Notion en un plan diario breve en Slack.",
@@ -890,20 +837,10 @@
           "shortDescription": "Añade a HubSpot los remitentes desconocidos.",
           "title": "Añadir nuevos contactos de Gmail a HubSpot"
         },
-        "onboard-new-hires-asana": {
-          "description": "Crea la lista de tareas de incorporación para cada nuevo empleado en Asana.",
-          "shortDescription": "Crea una checklist de alta por cada incorporación.",
-          "title": "Incorporar a nuevos empleados en Asana"
-        },
         "personal-weekly-digest": {
           "description": "Resume la actividad de GitHub, Gmail y Calendar en una actualización semanal en Slack.",
           "shortDescription": "Resume tu semana en GitHub y Gmail.",
           "title": "Resumen semanal personal"
-        },
-        "post-daily-metrics-slack": {
-          "description": "Publica cada día en Slack las cifras de visitantes, registros y activación.",
-          "shortDescription": "Publica visitantes y registros diarios en Slack.",
-          "title": "Publicar métricas diarias en Slack"
         },
         "post-release-notes-slack": {
           "description": "Redacta un registro de cambios a partir del trabajo publicado recientemente y compártelo en Slack.",
@@ -915,35 +852,10 @@
           "shortDescription": "Envía un resumen antes de las reuniones externas.",
           "title": "Prepara las reuniones de Google Calendar"
         },
-        "publish-scheduled-posts-buffer": {
-          "description": "Publica el contenido programado del día y deja en cola las publicaciones sociales.",
-          "shortDescription": "Publica las redes programadas para hoy.",
-          "title": "Publicar las publicaciones programadas en Buffer"
-        },
         "research-calendar-meetings": {
           "description": "Investiga a las personas que vas a conocer antes de cada evento del calendario.",
           "shortDescription": "Investiga a quien verás antes de cada reunión.",
           "title": "Investiga tus reuniones en el calendario"
-        },
-        "research-new-signups-apollo": {
-          "description": "Investiga cada nuevo registro y publica un breve perfil.",
-          "shortDescription": "Investiga cada registro nuevo y publica su ficha.",
-          "title": "Investiga nuevas inscripciones"
-        },
-        "revenuecat-subscription-digest": {
-          "description": "Sigue las suscripciones en Sheets y avisa en Slack cuando cambien las bajas o las cancelaciones.",
-          "shortDescription": "Sigue las suscripciones y avisa de las bajas en Slack.",
-          "title": "Resumen de suscripciones de RevenueCat"
-        },
-        "run-daily-query-sheets": {
-          "description": "Ejecuta tu SQL guardado según una programación y añade los resultados a una hoja.",
-          "shortDescription": "Ejecuta SQL guardado y añade el resultado a una hoja.",
-          "title": "Ejecutar una consulta diaria en Google Sheets"
-        },
-        "salesforce-pipeline-digest": {
-          "description": "Resume cada semana en Slack los cambios de oportunidades de Salesforce y los riesgos de cierre.",
-          "shortDescription": "Resume cada semana los riesgos del pipeline.",
-          "title": "Resumen del pipeline de Salesforce"
         },
         "send-bugs-github-slack": {
           "description": "Registra los informes etiquetados como errores en incidencias de GitHub y avisa al equipo en Slack.",
@@ -955,25 +867,20 @@
           "shortDescription": "Envía un resumen diario de las incidencias críticas.",
           "title": "Resumen de incidencias de Sentry"
         },
+        "social-posts-to-sheets": {
+          "description": "Reúne las publicaciones públicas y la interacción de las cuentas que sigues en una hoja.",
+          "shortDescription": "Reúne publicaciones públicas en una sola hoja.",
+          "title": "Reunir publicaciones sociales en Google Sheets"
+        },
         "sort-gmail-draft-replies": {
           "description": "Ordena tu bandeja de entrada y redacta las respuestas a los correos que las necesiten.",
           "shortDescription": "Ordena la bandeja y redacta las respuestas.",
           "title": "Ordena Gmail y redacta las respuestas"
         },
-        "spot-churn-risk-stripe-zendesk": {
-          "description": "Marca cuentas en riesgo de abandono y redacta un correo de recuperación.",
-          "shortDescription": "Detecta riesgo de baja y redacta un correo.",
-          "title": "Detectar riesgo de abandono en Stripe y Zendesk"
-        },
         "summarize-gmail-newsletters": {
           "description": "Resume los boletines que tienes en tu bandeja de entrada en un breve resumen.",
           "shortDescription": "Reúne tus newsletters en un solo resumen.",
           "title": "Resumir boletines de Gmail"
-        },
-        "summarize-zendesk-tickets-daily": {
-          "description": "Resume los tickets de Zendesk del último día y publica el resultado en Slack.",
-          "shortDescription": "Publica un resumen diario de los tickets.",
-          "title": "Resumir diariamente los tickets de Zendesk"
         },
         "support-ticket-router": {
           "description": "Clasifica los correos de soporte, crea registros en Notion y avisa en Slack de los tickets críticos.",
@@ -995,30 +902,20 @@
           "shortDescription": "Muestra los mayores cambios de uso de la semana.",
           "title": "Seguir el uso de funciones con PostHog"
         },
-        "track-keyword-ranks-ahrefs": {
-          "description": "Sigue las posiciones de tus palabras clave en Ahrefs y anota los mayores cambios en Notion.",
-          "shortDescription": "Informa de los cambios de posición de la semana.",
-          "title": "Seguir posiciones de palabras clave con Ahrefs"
-        },
-        "track-signup-sources-sheets": {
-          "description": "Atribuye cada nuevo registro a su fuente en una hoja de seguimiento.",
-          "shortDescription": "Atribuye cada registro a su origen en una hoja.",
-          "title": "Seguir las fuentes de registro en Google Sheets"
-        },
         "vercel-deploy-digest": {
           "description": "Vigila los despliegues de Vercel, enlázalos con los commits de GitHub y avisa en Slack de los fallos.",
           "shortDescription": "Avisa en Slack si falla un despliegue de Vercel.",
           "title": "Resumen de despliegues de Vercel"
         },
+        "web-data-to-sheets": {
+          "description": "Extrae los mismos campos de una lista de páginas de forma periódica y guarda el histórico en una hoja.",
+          "shortDescription": "Extrae campos de una lista de páginas a una hoja.",
+          "title": "Reunir datos de páginas web en una hoja de cálculo"
+        },
         "x-brand-monitor": {
           "description": "Sigue las menciones de marca en X, guarda las publicaciones relevantes en Notion y avisa en Slack de las importantes.",
           "shortDescription": "Avisa en Slack de las menciones fuertes en X.",
           "title": "Monitor de marca en X"
-        },
-        "zendesk-knowledge-base": {
-          "description": "Encuentra las preguntas recurrentes de Zendesk, redacta entradas de FAQ y guárdalas en Notion.",
-          "shortDescription": "Convierte las preguntas repetidas en FAQ.",
-          "title": "Base de conocimiento de Zendesk"
         }
       },
       "workflowCategories": {
@@ -1037,8 +934,7 @@
     "toasts": {
       "copyLinkFailed": "No se pudo copiar el enlace",
       "downloadFailed": "Descarga fallida",
-      "linkCopied": "Enlace copiado",
-      "sharing": "Compartiendo…"
+      "linkCopied": "Enlace copiado"
     },
     "viewer": {
       "continuePrompt": "Ayúdame a trabajar con este artefacto: {{url}}",
