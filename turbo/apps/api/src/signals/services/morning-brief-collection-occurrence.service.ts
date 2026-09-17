@@ -100,7 +100,42 @@ type MorningBriefCollectionFinalizeResult =
       readonly at: Date;
     }
   | { readonly kind: "claim-lost" }
-  | { readonly kind: "owner-revoked" };
+  | { readonly kind: "owner-revoked" }
+  | { readonly kind: "binding-changed" };
+
+/**
+ * Whether a completion may still be written, decided after every lock wait.
+ *
+ * This layer owns database ownership and knows nothing about the caller or the
+ * owner's live authority, so the one decision it cannot make itself is injected
+ * as a callback. There is deliberately no default: a finalization without a
+ * final admission would be an always-allow path.
+ */
+export type MorningBriefCollectionFinalAdmission =
+  | { readonly kind: "admitted" }
+  | {
+      readonly kind: "rejected";
+      readonly reason: "owner-revoked" | "binding-changed";
+    };
+
+/**
+ * The last check a completion passes, taken inside its own transaction.
+ *
+ * It runs after the owner and occurrence locks and before any mutation, with
+ * the persisted occurrence it is about to write. Throwing from it unwinds the
+ * whole transaction, which is how a cancelled caller leaves nothing behind.
+ */
+type MorningBriefCollectionFinalAdmit = (
+  tx: Tx,
+  occurrence: MorningBriefCollectionOccurrenceRow,
+) => Promise<MorningBriefCollectionFinalAdmission>;
+
+/** The two decisions a finalization takes from its caller. */
+interface MorningBriefCollectionFinalization {
+  /** Sampled after every wait, immediately before the guarded write. */
+  readonly clock: () => Date;
+  readonly admit: MorningBriefCollectionFinalAdmit;
+}
 
 /** The terminal facts a finished attempt records. Never source content. */
 export interface MorningBriefCollectionCompletion {
@@ -448,23 +483,32 @@ export async function claimMorningBriefCollection(
 /**
  * Record what this attempt observed, but only if it is still the live owner.
  *
- * The owner and the occurrence row are locked first, and only then is the
- * admission instant read: waiting for either lock can outlast a 60-second
- * lease, so a timestamp sampled before those waits would let an attempt that
- * lost its lease during them complete anyway. The update itself stays one
- * conditional statement over the exact occurrence, attempt, lease token,
- * membership generation, running status and a deadline strictly after that
- * instant, and it can no longer queue because this transaction already holds
- * the row. A stale worker therefore neither overwrites a newer claimant nor has
- * its discarded bundle accepted, and a cleanup that won the race leaves this
- * with nothing to finalize.
+ * The owner and the occurrence row are locked first, and only then is anything
+ * decided: waiting for either lock can outlast a 60-second lease, so a decision
+ * taken before those waits would let an attempt that lost its lease — or its
+ * caller, or its owner's authority — complete anyway. `admit` is therefore
+ * consulted after both locks and before any mutation is issued, and the
+ * admission instant is read last, immediately before the guarded write.
+ *
+ * Comparing the persisted occurrence with the admission cannot replace that
+ * callback. Both copies are frozen, so they still agree after a Settings
+ * disable, an Agent transfer or a Slack rebinding that committed during the
+ * wait; only a fresh resolution notices. Rejecting here writes nothing at all,
+ * which is strictly stronger than unwinding a committed completion.
+ *
+ * The update itself stays one conditional statement over the exact occurrence,
+ * attempt, lease token, membership generation, running status and a deadline
+ * strictly after that instant, and it can no longer queue because this
+ * transaction already holds the row. A stale worker therefore neither
+ * overwrites a newer claimant nor has its discarded bundle accepted, and a
+ * cleanup that won the race leaves this with nothing to finalize.
  */
 export async function finalizeMorningBriefCollection(
   tx: Tx,
   admission: MorningBriefCollectionAdmission,
   claim: MorningBriefCollectionClaim,
   completion: MorningBriefCollectionCompletion,
-  clock: () => Date,
+  finalization: MorningBriefCollectionFinalization,
 ): Promise<MorningBriefCollectionFinalizeResult> {
   if (!(await lockAdmittedCollectionOwner(tx, admission))) {
     return { kind: "owner-revoked" };
@@ -473,7 +517,13 @@ export async function finalizeMorningBriefCollection(
   if (!current || !morningBriefCollectionBindingMatches(current, admission)) {
     return { kind: "claim-lost" };
   }
-  const at = clock();
+  const admitted = await finalization.admit(tx, current);
+  if (admitted.kind === "rejected") {
+    return admitted.reason === "owner-revoked"
+      ? { kind: "owner-revoked" }
+      : { kind: "binding-changed" };
+  }
+  const at = finalization.clock();
   const [finalized] = await tx
     .update(morningBriefCollectionOccurrences)
     .set({

@@ -67,6 +67,15 @@ after its guarded update matched. That placement is the contract:
 - Collection facts and the right to call the provider become durable together.
   Throwing from the handoff rolls the finalization back and leaves the
   occurrence reclaimable.
+- Cancellation crosses that boundary. The finalizing transaction admits the
+  completion after its own lock waits, and again after `onCollected` returns and
+  its own waits are behind it, so a caller that went away commits neither the
+  collected facts nor the reservation. The same admission refuses a lapsed local
+  authority before either write is issued, which leaves the occurrence
+  reclaimable instead of completed-without-a-result. Once the transaction
+  commits, the collection contract's
+  [acceptance boundary](morning-brief-collection.md) owns what can no longer be
+  retracted.
 - The collect-only entrypoint passes no handoff and keeps exactly its previous
   behavior.
 
