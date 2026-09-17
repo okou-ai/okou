@@ -158,7 +158,11 @@ import {
   getSkillStorageName,
   MEMORY_ARTIFACT_NAME,
 } from "@okouai/core/storage-names";
-import { INTRO_VIDEO_SKILL_NAME, SEED_SKILLS } from "@okouai/core/seed-skills";
+import {
+  INTRO_VIDEO_SKILL_NAME,
+  REVERSE_TEMPLATE_SKILL_NAME,
+  SEED_SKILLS,
+} from "@okouai/core/seed-skills";
 import {
   expandVariables,
   expandVariablesInString,
@@ -1500,6 +1504,7 @@ function buildInjectedSkillVolumes(
   args: {
     readonly injectSkillVolumes: CreateAgentRunArgs["injectSkillVolumes"];
     readonly introVideoEnabled: boolean;
+    readonly customTemplatesEnabled: boolean;
     readonly systemSkillStorageResolution: SystemSkillStorageResolution;
     readonly allowedConnectorSlugs: readonly ConnectorSlug[];
     readonly connectorCatalogSelection: RunConnectorCatalogSelection;
@@ -1526,6 +1531,19 @@ function buildInjectedSkillVolumes(
     ...(args.introVideoEnabled
       ? buildLegacySystemSkillVolumes(
           [INTRO_VIDEO_SKILL_NAME],
+          skillsRoot,
+          args.systemSkillStorageResolution,
+        ).map((volume) => {
+          return { volume, source: "system_skill" as const };
+        })
+      : []),
+    // The guide a template upload asks the run to follow. Mounted with the
+    // switch rather than seeded for everyone, so a member without the feature
+    // carries nothing new — the presentation import they already have reaches
+    // its own pinned guide by a different route.
+    ...(args.customTemplatesEnabled
+      ? buildLegacySystemSkillVolumes(
+          [REVERSE_TEMPLATE_SKILL_NAME],
           skillsRoot,
           args.systemSkillStorageResolution,
         ).map((volume) => {
@@ -9746,6 +9764,10 @@ function preparedRunAdditionalVolumes(args: {
           FeatureSwitchKey.IntroVideo,
           args.featureSwitchContext,
         ),
+      customTemplatesEnabled: isFeatureEnabled(
+        FeatureSwitchKey.CustomTemplates,
+        args.featureSwitchContext,
+      ),
       allowedConnectorSlugs: args.connectorScope.allowedConnectorSlugs,
       connectorCatalogSelection: args.connectorCatalogSelection,
       officialWorkflowRun: args.officialWorkflowRun,

@@ -30,7 +30,11 @@ import type {
 } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import { testCustomConnectorSkillVersionAssociationContract } from "@okouai/api-contracts/contracts/test-custom-connector-skill-version-association";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { INTRO_VIDEO_SKILL_NAME, SEED_SKILLS } from "@okouai/core/seed-skills";
+import {
+  INTRO_VIDEO_SKILL_NAME,
+  REVERSE_TEMPLATE_SKILL_NAME,
+  SEED_SKILLS,
+} from "@okouai/core/seed-skills";
 import {
   getCustomConnectorSkillStorageName,
   getCustomSkillStorageName,
@@ -1125,6 +1129,77 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
         return mount.mountPath;
       }),
     ).not.toContain(`/home/user/.claude/skills/${INTRO_VIDEO_SKILL_NAME}`);
+  });
+
+  it("mounts the reverse-template guide only while custom templates are on", async () => {
+    const fullPath = `vm0-ai/vm0-skills/tree/fixture-${randomUUID()}/${REVERSE_TEMPLATE_SKILL_NAME}`;
+    const skillUrl = `https://github.com/${fullPath}`;
+    const storageName = `agent-skills@${fullPath}`;
+    onTestFinished(async () => {
+      await cleanupOwnedSkillsState(context, {
+        skillUrls: [skillUrl],
+        storageNames: [storageName],
+      });
+    });
+    await seedCurrentSkillVersionsState(context, {
+      staleCommitSha: "reverse-template-rollout-fixture",
+      versions: [
+        {
+          name: REVERSE_TEMPLATE_SKILL_NAME,
+          url: skillUrl,
+          full_path: fullPath,
+          storage_name: storageName,
+          version_hash: createHash("sha256").update(randomUUID()).digest("hex"),
+          size: 1024,
+          archive_size: 1024,
+          file_count: 1,
+          frontmatter: {
+            name: REVERSE_TEMPLATE_SKILL_NAME,
+            description:
+              "Decide what an uploaded file is and hand it to the matching reverse guide",
+          },
+        },
+      ],
+    });
+    const bdd = createBddApi(context);
+    const api = createRunsApi(context, {
+      [REVERSE_TEMPLATE_SKILL_NAME]: storageName,
+    });
+    const connectors = createConnectorBddApi(context);
+    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const mountPath = `/home/user/.claude/skills/${REVERSE_TEMPLATE_SKILL_NAME}`;
+    await bdd.readMe(actor);
+
+    const mountedPaths = async () => {
+      const created = await api.createRun(actor, {
+        agentId,
+        prompt: "Save this deck's look as a reusable template.",
+        modelProvider: "anthropic-api-key",
+      });
+      await api.heartbeatRunner(runnerGroup);
+      const claim = await api.claimRunnerJob(created.runId);
+      // Released before the next one, or the queue has nothing to hand over.
+      await api.requestCancelRun(actor, created.runId, [200]);
+      return expectCanonicalStorageManifest(
+        claim.storageManifest,
+      )?.storageMounts.map((mount) => {
+        return mount.mountPath;
+      });
+    };
+
+    // One guide for every kind of upload, carried by the switch rather than
+    // seeded for everyone: a member without the feature has nothing to reverse
+    // into this catalog, and their presentation import reaches its own pinned
+    // guide by a different route.
+    await connectors.updateFeatureSwitches(actor, {
+      [FeatureSwitchKey.CustomTemplates]: false,
+    });
+    await expect(mountedPaths()).resolves.not.toContain(mountPath);
+
+    await connectors.updateFeatureSwitches(actor, {
+      [FeatureSwitchKey.CustomTemplates]: true,
+    });
+    await expect(mountedPaths()).resolves.toContain(mountPath);
   });
 
   it("advertises artifact sharing only when private artifacts are enabled", async () => {
