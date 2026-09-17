@@ -24,9 +24,10 @@ import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import {
   claimMorningBriefCollection,
-  collectionLeaseExpiry,
   collectionLeaseHeld,
   finalizeMorningBriefCollection,
+  loadMorningBriefCollectionOwnerRow,
+  morningBriefCollectionBindingMatches,
   type MorningBriefCollectionAdmission,
   type MorningBriefCollectionClaim,
   type MorningBriefCollectionCompletion,
@@ -41,8 +42,10 @@ import {
   MORNING_BRIEF_SLACK_COLLECTION_DEADLINE_MS,
   type MorningBriefSlackCollectionResult,
 } from "./morning-brief-slack-collection.service";
-import { loadOfficialWorkflowUserTimezone } from "./official-workflow-installation.service";
-import { slackUserInstallation } from "./slack-data.service";
+import {
+  loadSlackUserBinding,
+  slackUserInstallation,
+} from "./slack-data.service";
 
 /**
  * The explicitly invoked Morning Brief collection executor.
@@ -120,6 +123,21 @@ type AdmissionResult =
       readonly kind: "not-executed";
       readonly reason: MorningBriefCollectionSkipReason;
     };
+
+/**
+ * Whether an occurrence's local authority is unchanged, and how it moved.
+ *
+ * `binding-changed` is deliberately distinct from a brief that stopped being
+ * executable at all: a different-but-valid current binding is a different
+ * authority, never a licence to act for the old one.
+ */
+export type MorningBriefLocalAuthority =
+  | { readonly kind: "current" }
+  | {
+      readonly kind: "not-executed";
+      readonly reason: MorningBriefCollectionSkipReason;
+    }
+  | { readonly kind: "binding-changed" };
 
 /** Everything this attempt owns at the instant its collection becomes durable. */
 export interface MorningBriefCollectionHandoffContext {
@@ -218,14 +236,152 @@ export const currentMembershipId$ = command(
   },
 );
 
+/** The installation-side authority, with no Slack binding and no membership. */
+type LocalMorningBriefInstallation =
+  | {
+      readonly kind: "resolved";
+      readonly timezone: string;
+      /** The parent generation this resolution hangs from. */
+      readonly memberCreatedAt: Date;
+      readonly workflowId: string;
+      readonly automationId: string;
+      readonly agentId: string;
+    }
+  | {
+      readonly kind: "not-executed";
+      readonly reason: MorningBriefCollectionSkipReason;
+    };
+
+/**
+ * Everything the local database decides about this owner's brief.
+ *
+ * It is deliberately separate from the Clerk membership: a caller holding a
+ * transaction may re-resolve exactly this much without ever waiting on a
+ * network round trip, while the remote evidence stays outside that transaction.
+ * Nothing here reads the disposable installed-preference projection — the
+ * canonical installation and its schedule decide whether a brief is enabled.
+ */
+async function resolveLocalMorningBriefInstallation(
+  db: Pick<ReadonlyDb, "select">,
+  owner: MorningBriefCollectionOwner,
+): Promise<LocalMorningBriefInstallation> {
+  const featureSwitchContext = await loadUserFeatureSwitchContext(
+    db,
+    owner.orgId,
+    owner.userId,
+  );
+  if (
+    !isFeatureEnabled(FeatureSwitchKey.SimpleMorningBrief, featureSwitchContext)
+  ) {
+    return { kind: "not-executed", reason: "feature-disabled" };
+  }
+
+  // Once a member is in the native phase the durable native row is the whole
+  // choice: no live installation, catalog reconciliation or legacy enabled bit
+  // is consulted, which is what lets the legacy scheduler be disabled without
+  // disabling the brief. Every other phase keeps reading the canonical legacy
+  // installation exactly as before.
+  const authority = await resolveMorningBriefChoiceAuthority(db, owner);
+  const native = authority.kind === "native" ? authority.row : null;
+  if (native !== null && !native.enabled) {
+    return { kind: "not-executed", reason: "brief-paused" };
+  }
+  if (
+    native !== null &&
+    (native.legacyWorkflowId === null || native.legacyAutomationId === null)
+  ) {
+    // Every migrated member carries its lineage. A native row without it has no
+    // provenance to record on the occurrence, so admission refuses explicitly
+    // rather than inventing one.
+    return { kind: "not-executed", reason: "brief-inconsistent" };
+  }
+
+  const state = await loadMorningBriefMigrationState(db, owner);
+  if (native === null) {
+    if (state.kind !== "installed") {
+      return {
+        kind: "not-executed",
+        reason:
+          state.kind === "absent"
+            ? "brief-absent"
+            : state.kind === "pending"
+              ? "brief-pending"
+              : "brief-inconsistent",
+      };
+    }
+    if (!state.automation.enabled) {
+      return { kind: "not-executed", reason: "brief-paused" };
+    }
+  }
+
+  // One read of the durable member row supplies both the timezone an enabled
+  // brief requires and the generation of the parent this resolution acts under.
+  // A member row that a cleanup removed is simply absent here.
+  const member = await loadMorningBriefCollectionOwnerRow(db, owner);
+  if (
+    member === null ||
+    member.timezone === null ||
+    !isValidTimeZone(member.timezone)
+  ) {
+    return { kind: "not-executed", reason: "missing-timezone" };
+  }
+  const installedAgentId =
+    native !== null
+      ? native.agentId
+      : state.kind === "installed"
+        ? state.installation.agentId
+        : null;
+  if (installedAgentId === null) {
+    return { kind: "not-executed", reason: "missing-agent" };
+  }
+  const agentId = await loadInstallationAgentId(db, owner, installedAgentId);
+  if (agentId === null) {
+    return { kind: "not-executed", reason: "missing-agent" };
+  }
+  if (native !== null) {
+    return {
+      kind: "resolved",
+      // The frozen execution context is the native row's, and its legacy ids
+      // are lineage recorded on the occurrence, never admission authority.
+      timezone: isValidTimeZone(native.timezone)
+        ? native.timezone
+        : member.timezone,
+      memberCreatedAt: member.memberCreatedAt,
+      workflowId: native.legacyWorkflowId ?? "",
+      automationId: native.legacyAutomationId ?? "",
+      agentId,
+    };
+  }
+  if (state.kind !== "installed") {
+    return { kind: "not-executed", reason: "brief-inconsistent" };
+  }
+  return {
+    kind: "resolved",
+    timezone: member.timezone,
+    memberCreatedAt: member.memberCreatedAt,
+    workflowId: state.installation.id,
+    automationId: state.automation.id,
+    agentId,
+  };
+}
+
+/** One vocabulary for an unusable Slack binding, whatever read produced it. */
+function slackBindingSkipReason(
+  kind: "not-installed" | "not-connected",
+): MorningBriefCollectionSkipReason {
+  return kind === "not-installed"
+    ? "slack-not-installed"
+    : "slack-not-connected";
+}
+
 /**
  * Resolve every authority this collection depends on, against live state.
  *
- * Nothing here reads the disposable installed-preference projection: the
- * canonical installation and its schedule decide whether a brief is enabled,
- * and the Slack binding is the organization's own native bot installation
- * intersected with this member's connected account in that exact workspace.
- * Each way it can fail is an explicit non-executing outcome returned before any
+ * The local installation resolution above decides whether a brief is enabled
+ * and which Agent it runs on; the Slack binding is the organization's own
+ * native bot installation intersected with this member's connected account in
+ * that exact workspace, and the membership generation comes from Clerk. Each
+ * way it can fail is an explicit non-executing outcome returned before any
  * claim exists, so none of them reaches Slack.
  */
 const admitMorningBriefCollection$ = command(
@@ -239,84 +395,10 @@ const admitMorningBriefCollection$ = command(
   ): Promise<AdmissionResult> => {
     const db = set(writeDb$);
     const { owner } = args;
-    const featureSwitchContext = await loadUserFeatureSwitchContext(
-      db,
-      owner.orgId,
-      owner.userId,
-    );
+    const local = await resolveLocalMorningBriefInstallation(db, owner);
     signal.throwIfAborted();
-    if (
-      !isFeatureEnabled(
-        FeatureSwitchKey.SimpleMorningBrief,
-        featureSwitchContext,
-      )
-    ) {
-      return { kind: "not-executed", reason: "feature-disabled" };
-    }
-
-    // Once a member is in the native phase the durable native row is the whole
-    // choice: no live installation, catalog reconciliation or legacy enabled
-    // bit is consulted, which is exactly what lets the legacy scheduler be
-    // disabled without disabling the brief. Every other phase keeps reading the
-    // canonical legacy installation as before.
-    const authority = await resolveMorningBriefChoiceAuthority(db, owner);
-    signal.throwIfAborted();
-
-    let timezone: string | null;
-    let agentId: string | null;
-    let workflowId: string;
-    let automationId: string;
-
-    if (authority.kind === "native") {
-      const native = authority.row;
-      if (!native.enabled) {
-        return { kind: "not-executed", reason: "brief-paused" };
-      }
-      if (
-        native.legacyWorkflowId === null ||
-        native.legacyAutomationId === null
-      ) {
-        // Every migrated member carries its lineage. A native row without it
-        // would have no provenance to record on the occurrence, so admission
-        // refuses explicitly rather than inventing one.
-        return { kind: "not-executed", reason: "brief-inconsistent" };
-      }
-      timezone = isValidTimeZone(native.timezone) ? native.timezone : null;
-      agentId = await loadInstallationAgentId(db, owner, native.agentId);
-      workflowId = native.legacyWorkflowId;
-      automationId = native.legacyAutomationId;
-    } else {
-      const state = await loadMorningBriefMigrationState(db, owner);
-      signal.throwIfAborted();
-      if (state.kind !== "installed") {
-        return {
-          kind: "not-executed",
-          reason:
-            state.kind === "absent"
-              ? "brief-absent"
-              : state.kind === "pending"
-                ? "brief-pending"
-                : "brief-inconsistent",
-        };
-      }
-      if (!state.automation.enabled) {
-        return { kind: "not-executed", reason: "brief-paused" };
-      }
-      timezone = await loadOfficialWorkflowUserTimezone(db, owner);
-      agentId = await loadInstallationAgentId(
-        db,
-        owner,
-        state.installation.agentId,
-      );
-      workflowId = state.installation.id;
-      automationId = state.automation.id;
-    }
-    signal.throwIfAborted();
-    if (timezone === null || !isValidTimeZone(timezone)) {
-      return { kind: "not-executed", reason: "missing-timezone" };
-    }
-    if (agentId === null) {
-      return { kind: "not-executed", reason: "missing-agent" };
+    if (local.kind !== "resolved") {
+      return local;
     }
 
     const membershipId = await set(currentMembershipId$, owner, signal);
@@ -332,10 +414,7 @@ const admitMorningBriefCollection$ = command(
     if (installation.kind !== "connected") {
       return {
         kind: "not-executed",
-        reason:
-          installation.kind === "not-installed"
-            ? "slack-not-installed"
-            : "slack-not-connected",
+        reason: slackBindingSkipReason(installation.kind),
       };
     }
 
@@ -345,17 +424,18 @@ const admitMorningBriefCollection$ = command(
         botToken: installation.botToken,
         admission: {
           owner,
+          memberCreatedAt: local.memberCreatedAt,
           scheduledFor: args.scheduledFor,
           collectionKind: MORNING_BRIEF_COLLECTION_KIND_SLACK,
           windowStart: new Date(
             args.scheduledFor.getTime() - COLLECTION_WINDOW_MS,
           ),
           windowEnd: args.scheduledFor,
-          timezone,
+          timezone: local.timezone,
           membershipId,
-          workflowId,
-          automationId,
-          agentId,
+          workflowId: local.workflowId,
+          automationId: local.automationId,
+          agentId: local.agentId,
           slackWorkspaceId: installation.workspaceId,
           slackUserId: installation.slackUserId,
         },
@@ -363,6 +443,54 @@ const admitMorningBriefCollection$ = command(
     };
   },
 );
+
+/**
+ * Whether the local half of an occurrence's authority still holds, right now.
+ *
+ * It exists because remote evidence and local state expire differently. A
+ * caller that already proved the Clerk membership outside a transaction still
+ * has to survive a Settings disable, an Agent transfer or a Slack rebinding
+ * that committed while it waited for a lock, and those are all local rows. This
+ * re-resolves exactly the installation resolution admission uses and compares
+ * it against the occurrence with the shared binding comparator, so there is no
+ * second adoption algorithm and no always-allow path. The membership generation
+ * is carried over from the occurrence rather than re-resolved: holding a
+ * transaction open across a Clerk round trip is never acceptable.
+ */
+export async function morningBriefLocalAuthorityStillCurrent(
+  db: Pick<ReadonlyDb, "select">,
+  occurrence: MorningBriefCollectionOccurrenceRow,
+): Promise<MorningBriefLocalAuthority> {
+  const owner = { orgId: occurrence.orgId, userId: occurrence.userId };
+  const local = await resolveLocalMorningBriefInstallation(db, owner);
+  if (local.kind !== "resolved") {
+    return local;
+  }
+  const binding = await loadSlackUserBinding(db, owner);
+  if (binding.kind !== "connected") {
+    return {
+      kind: "not-executed",
+      reason: slackBindingSkipReason(binding.kind),
+    };
+  }
+  return morningBriefCollectionBindingMatches(occurrence, {
+    owner,
+    memberCreatedAt: local.memberCreatedAt,
+    scheduledFor: occurrence.scheduledFor,
+    collectionKind: occurrence.collectionKind,
+    windowStart: occurrence.windowStart,
+    windowEnd: occurrence.windowEnd,
+    timezone: local.timezone,
+    membershipId: occurrence.membershipId,
+    workflowId: local.workflowId,
+    automationId: local.automationId,
+    agentId: local.agentId,
+    slackWorkspaceId: binding.installation.slackWorkspaceId,
+    slackUserId: binding.slackUserId,
+  })
+    ? { kind: "current" }
+    : { kind: "binding-changed" };
+}
 
 /**
  * The owner's live Morning Brief authority, without the Slack credential.
@@ -427,6 +555,8 @@ const admissionStillCurrent$ = command(
     }
     const current = revalidated.admitted.admission;
     return (
+      current.memberCreatedAt.getTime() ===
+        admission.memberCreatedAt.getTime() &&
       current.membershipId === admission.membershipId &&
       current.workflowId === admission.workflowId &&
       current.automationId === admission.automationId &&
@@ -505,7 +635,6 @@ function completionOf(
 async function claimAttempt(
   db: Db,
   admission: MorningBriefCollectionAdmission,
-  at: Date,
 ): Promise<
   | { readonly kind: "claimed"; readonly claim: MorningBriefCollectionClaim }
   | { readonly kind: "already-completed"; readonly occurrence: OccurrenceRow }
@@ -514,13 +643,17 @@ async function claimAttempt(
       readonly reason: MorningBriefCollectionConflict;
     }
 > {
-  const requested: MorningBriefCollectionClaim = {
-    attempt: 1,
-    leaseToken: randomUUID(),
-    leaseExpiresAt: collectionLeaseExpiry(at),
-  };
+  // The lease, retry and lifetime instants belong to the admitted transition,
+  // not to the request that started before admission resolved, so the clock is
+  // handed to the guarded transition instead of being sampled here.
+  const leaseToken = randomUUID();
   const claimed = await db.transaction(async (tx) => {
-    return await claimMorningBriefCollection(tx, admission, requested, at);
+    return await claimMorningBriefCollection(
+      tx,
+      admission,
+      leaseToken,
+      nowDate,
+    );
   });
   if (claimed.kind === "rejected") {
     return { kind: "conflict", reason: claimed.reason };
@@ -562,7 +695,7 @@ export const executeMorningBriefSlackCollection$ = command(
     }
     const { admission, botToken } = admitted.admitted;
 
-    const claimed = await claimAttempt(db, admission, startedAt);
+    const claimed = await claimAttempt(db, admission);
     signal.throwIfAborted();
     if (claimed.kind === "conflict") {
       return claimed;
@@ -617,15 +750,16 @@ export const executeMorningBriefSlackCollection$ = command(
     // The guarded write is the lease check immediately before completion: it
     // matches the exact occurrence, attempt, token, running status and an
     // unexpired deadline in one statement, so no separate check can disagree
-    // with it. Equality with the deadline is already expired.
-    const finalizedAt = nowDate();
+    // with it. Equality with the deadline is already expired. The instant it
+    // compares is read inside that transition, after its owner and row locks,
+    // because waiting for them can outlast the lease this attempt holds.
     const finalized = await db.transaction(async (tx) => {
       const result = await finalizeMorningBriefCollection(
         tx,
         admission,
         claim,
         completion,
-        finalizedAt,
+        nowDate,
       );
       // The handoff joins this transaction rather than following it, so no
       // downstream stage can ever be admitted for a bundle whose collection
@@ -638,7 +772,7 @@ export const executeMorningBriefSlackCollection$ = command(
           completion,
           occurrence: result.occurrence,
           bundle: collected.bundle,
-          at: finalizedAt,
+          at: result.at,
         });
       }
       return result;

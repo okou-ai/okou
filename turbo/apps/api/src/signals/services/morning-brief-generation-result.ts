@@ -2,6 +2,10 @@ import type { MorningBriefGenerationFailureReason } from "@okouai/api-contracts/
 import { z } from "zod";
 
 import { safeJsonParse } from "../utils";
+import {
+  morningBriefCoverageNote,
+  type MorningBriefCoverageFacts,
+} from "./morning-brief-coverage-note";
 import type { GenerationSource } from "./morning-brief-generation-prompt";
 
 /**
@@ -33,14 +37,25 @@ const MAX_SOURCE_IDS = 4;
 const LINK_SHAPED = /https?:\/\/|mailto:/i;
 
 const proseSchema = (max: number) => {
-  return z
-    .string()
-    .trim()
-    .min(1)
-    .max(max)
-    .refine((value) => {
-      return !LINK_SHAPED.test(value);
-    });
+  return (
+    z
+      .string()
+      .trim()
+      .min(1)
+      .max(max)
+      .refine((value) => {
+        return !LINK_SHAPED.test(value);
+      })
+      // `trim` removes whitespace, and a C0 control character is not whitespace:
+      // `"\u0001"` survives both `trim()` and `min(1)`, and then escaping turns
+      // it into a space and trims it to nothing. Judging the raw string therefore
+      // admits a title, heading or item that renders as an empty bullet. The
+      // value that has to carry meaning is the one that gets published, so this
+      // refinement is applied to exactly that.
+      .refine((value) => {
+        return escapeMarkdown(value).length > 0;
+      })
+  );
 };
 
 /**
@@ -166,6 +181,7 @@ function renderCitations(
 function renderMarkdown(
   result: Extract<z.infer<typeof modelResultSchema>, { decision: "deliver" }>,
   sources: ReadonlyMap<string, GenerationSource>,
+  coverageNote: string | null,
 ): string {
   const lines = [`# ${escapeMarkdown(result.title)}`];
   for (const section of result.sections) {
@@ -175,6 +191,11 @@ function renderMarkdown(
         `- ${escapeMarkdown(item.text)}${renderCitations(item.sourceIds, sources)}`,
       );
     }
+  }
+  if (coverageNote !== null) {
+    // Escaped like any other prose, even though the program wrote it: the
+    // rendering rule is about the document, not about who is trusted.
+    lines.push("", `_${escapeMarkdown(coverageNote)}_`);
   }
   return `${lines.join("\n")}\n`;
 }
@@ -188,6 +209,10 @@ function renderMarkdown(
 export function interpretGenerationOutput(args: {
   readonly content: string;
   readonly sources: ReadonlyMap<string, GenerationSource>;
+  /** What the pipeline knows about how bounded this brief's input was. */
+  readonly coverage: MorningBriefCoverageFacts;
+  /** The language this generation was frozen to, for the coverage note. */
+  readonly language: string;
 }): GenerationResultOutcome {
   const parsed = safeJsonParse(args.content.trim());
   if (parsed === undefined) {
@@ -216,13 +241,28 @@ export function interpretGenerationOutput(args: {
     return { kind: "rejected", reason: "unknown_source_reference" };
   }
 
-  const markdown = renderMarkdown(result, args.sources);
-  const bytes = Buffer.byteLength(markdown, "utf8");
-  // A deliver decision has to carry a brief. The schema already rejects empty
-  // sections and items, so this catches a body that escaping emptied out.
-  if (markdown.trim().length <= result.title.length + 2) {
+  // Every published string now has to carry meaning after escaping, so this is
+  // a structural check rather than a length heuristic about the whole document.
+  const emptyAfterEscaping =
+    escapeMarkdown(result.title).length === 0 ||
+    result.sections.some((section) => {
+      return (
+        escapeMarkdown(section.heading).length === 0 ||
+        section.items.some((item) => {
+          return escapeMarkdown(item.text).length === 0;
+        })
+      );
+    });
+  if (emptyAfterEscaping) {
     return { kind: "rejected", reason: "empty_deliver" };
   }
+
+  const markdown = renderMarkdown(
+    result,
+    args.sources,
+    morningBriefCoverageNote(args.coverage, args.language),
+  );
+  const bytes = Buffer.byteLength(markdown, "utf8");
   if (bytes > GENERATION_RESULT_MAX_BYTES) {
     return { kind: "rejected", reason: "result_too_large" };
   }
