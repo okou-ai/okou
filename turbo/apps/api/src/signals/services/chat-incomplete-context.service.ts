@@ -10,19 +10,18 @@ import {
   asc,
   desc,
   eq,
-  gt,
+  exists,
   inArray,
   isNotNull,
-  max,
-  not,
+  lt,
+  ne,
   notExists,
   or,
   sql,
 } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import { z } from "zod";
 
-import { executeRawRows } from "../../lib/db-raw-rows";
+import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import type { Db } from "../external/db";
 import {
   chatEventTextCondition,
@@ -34,14 +33,8 @@ import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
 
 const INCOMPLETE_ROUND_LIMIT = 20;
 const INCOMPLETE_EVENT_CHAR_CAP = 4000;
-const successfulRunBoundaryEvent = alias(
-  chatEvents,
-  "successful_run_boundary_event",
-);
-const successfulRunBoundaryRevoker = alias(
-  chatEvents,
-  "successful_run_boundary_revoker",
-);
+const incompleteRunAnchor = alias(chatEvents, "incomplete_run_anchor");
+const earlierRunEvent = alias(chatEvents, "earlier_run_event");
 
 type IncompleteRunStatus = "cancelled" | "failed" | "timeout";
 
@@ -61,12 +54,6 @@ interface IncompleteRound extends IncompleteRoundSelection {
   readonly events: IncompleteRoundEvent[];
 }
 
-const incompleteRoundFrontierRowSchema = z.object({
-  runId: z.string(),
-  runStatus: z.string(),
-  isSuccess: z.boolean(),
-});
-
 function isIncompleteRunStatus(value: string): value is IncompleteRunStatus {
   return value === "cancelled" || value === "failed" || value === "timeout";
 }
@@ -74,10 +61,7 @@ function isIncompleteRunStatus(value: string): value is IncompleteRunStatus {
 async function selectIncompleteRoundFrontier(
   db: Db,
   threadId: string,
-): Promise<{
-  readonly rounds: readonly IncompleteRoundSelection[];
-  readonly successfulRunId: string | null;
-}> {
+): Promise<readonly IncompleteRoundSelection[]> {
   const isSuccessfulRun = sql`COALESCE(
     ${and(
       sql`${agentRuns.result} ? 'agentSessionId'`,
@@ -87,78 +71,65 @@ async function selectIncompleteRoundFrontier(
       ),
     )},
     FALSE
-  )`;
-  // Terminal chat materialization runs in waitUntil, so lifecycle rows can lag
-  // behind agent_runs.status. Walk the existing recent-event index instead.
-  // The fixed 21-run frontier is the 20-round output plus one boundary candidate.
-  const rows = await executeRawRows(
-    db,
-    sql`
-      WITH RECURSIVE incomplete_frontier AS (
-      SELECT
-        ARRAY[]::uuid[] AS seen_run_ids,
-        NULL::uuid AS run_id,
-        NULL::text AS run_status,
-        FALSE AS is_success,
-        0 AS depth
-
-      UNION ALL
-
-      SELECT
-        incomplete_frontier.seen_run_ids || candidate.run_id,
-        candidate.run_id,
-        candidate.run_status,
-        candidate.is_success,
-        incomplete_frontier.depth + 1
-      FROM incomplete_frontier
-      CROSS JOIN LATERAL (
-        SELECT
-          ${chatEvents.runId} AS run_id,
-          ${agentRuns.status} AS run_status,
-          (${isSuccessfulRun}) AS is_success
-        FROM ${chatEvents}
-        INNER JOIN ${agentRuns}
-          ON ${eq(agentRuns.id, chatEvents.runId)}
-        WHERE ${and(
-          eq(chatEvents.chatThreadId, threadId),
-          isNotNull(chatEvents.runId),
-          runOwnedChatEventCondition(),
-          not(sql`${chatEvents.runId} = ANY(incomplete_frontier.seen_run_ids)`),
-          visibleChatEventCondition(db),
-          or(
-            isSuccessfulRun,
-            and(
-              inArray(
-                agentRuns.status,
-                sql`('cancelled', 'failed', 'timeout')`,
+  )`.mapWith(pgBooleanDecoder);
+  // A later append cannot move the first retained event for a run. Include
+  // revoked rows in this ordering fact; visibility only controls eligibility
+  // and content. control.interrupt targets a run without belonging to it.
+  // This reader remains hot-only: archival retention may remove its anchor.
+  const rows = await db
+    .select({
+      runId: agentRuns.id,
+      runStatus: agentRuns.status,
+      isSuccess: isSuccessfulRun,
+    })
+    .from(incompleteRunAnchor)
+    .innerJoin(agentRuns, eq(agentRuns.id, incompleteRunAnchor.runId))
+    .where(
+      and(
+        eq(incompleteRunAnchor.chatThreadId, threadId),
+        isNotNull(incompleteRunAnchor.runId),
+        ne(incompleteRunAnchor.eventType, "control.interrupt"),
+        or(
+          isSuccessfulRun,
+          inArray(agentRuns.status, sql`('cancelled', 'failed', 'timeout')`),
+        ),
+        notExists(
+          db
+            .select({ id: earlierRunEvent.id })
+            .from(earlierRunEvent)
+            .where(
+              and(
+                eq(earlierRunEvent.chatThreadId, threadId),
+                eq(earlierRunEvent.runId, incompleteRunAnchor.runId),
+                ne(earlierRunEvent.eventType, "control.interrupt"),
+                lt(earlierRunEvent.seqId, incompleteRunAnchor.seqId),
               ),
-              chatEventTypeIn(CHAT_EVENT_TYPES),
             ),
-          ),
-        )}
-        ORDER BY
-          ${desc(chatEvents.seqId)}
-        LIMIT 1
-      ) AS candidate
-      WHERE incomplete_frontier.depth < ${INCOMPLETE_ROUND_LIMIT + 1}
-        AND NOT incomplete_frontier.is_success
+        ),
+        exists(
+          db
+            .select({ id: chatEvents.id })
+            .from(chatEvents)
+            .where(
+              and(
+                eq(chatEvents.chatThreadId, threadId),
+                eq(chatEvents.runId, incompleteRunAnchor.runId),
+                runOwnedChatEventCondition(),
+                visibleChatEventCondition(db),
+                or(isSuccessfulRun, chatEventTypeIn(CHAT_EVENT_TYPES)),
+              ),
+            ),
+        ),
+      ),
     )
-    SELECT
-      run_id AS "runId",
-      run_status AS "runStatus",
-      is_success AS "isSuccess"
-    FROM incomplete_frontier
-    WHERE depth > 0
-      ORDER BY depth
-    `,
-    incompleteRoundFrontierRowSchema,
-  );
+    .orderBy(desc(incompleteRunAnchor.seqId))
+    // Bound candidate rounds before loading their text. The extra row can be
+    // the successful boundary after the maximum 20 incomplete rounds.
+    .limit(INCOMPLETE_ROUND_LIMIT + 1);
 
   const rounds: IncompleteRoundSelection[] = [];
-  let successfulRunId: string | null = null;
   for (const row of rows) {
     if (row.isSuccess) {
-      successfulRunId = row.runId;
       break;
     }
     if (
@@ -169,50 +140,19 @@ async function selectIncompleteRoundFrontier(
     }
   }
 
-  return { rounds: rounds.reverse(), successfulRunId };
-}
-
-function afterSuccessfulRunBoundary(
-  db: Pick<Db, "select">,
-  threadId: string,
-  successfulRunId: string,
-) {
-  const boundary = db
-    .select({ seqId: max(successfulRunBoundaryEvent.seqId) })
-    .from(successfulRunBoundaryEvent)
-    .where(
-      and(
-        eq(successfulRunBoundaryEvent.chatThreadId, threadId),
-        eq(successfulRunBoundaryEvent.runId, successfulRunId),
-        notExists(
-          db
-            .select({ id: successfulRunBoundaryRevoker.id })
-            .from(successfulRunBoundaryRevoker)
-            .where(
-              eq(
-                successfulRunBoundaryRevoker.revokesEventId,
-                successfulRunBoundaryEvent.id,
-              ),
-            ),
-        ),
-      ),
-    );
-  return gt(chatEvents.seqId, sql`COALESCE(${boundary}, 0::bigint)`);
+  return rounds.reverse();
 }
 
 async function loadSelectedIncompleteRounds(
   db: Db,
   threadId: string,
-  selection: {
-    readonly rounds: readonly IncompleteRoundSelection[];
-    readonly successfulRunId: string | null;
-  },
+  selection: readonly IncompleteRoundSelection[],
 ): Promise<readonly IncompleteRound[]> {
-  if (selection.rounds.length === 0) {
+  if (selection.length === 0) {
     return [];
   }
 
-  const runIds = selection.rounds.map((round) => {
+  const runIds = selection.map((round) => {
     return round.runId;
   });
   const rows = await db
@@ -230,37 +170,23 @@ async function loadSelectedIncompleteRounds(
         inArray(chatEvents.runId, runIds),
         chatEventTextCondition(),
         visibleChatEventCondition(db),
-        ...(selection.successfulRunId === null
-          ? []
-          : [
-              afterSuccessfulRunBoundary(
-                db,
-                threadId,
-                selection.successfulRunId,
-              ),
-            ]),
       ),
     )
     .orderBy(asc(chatEvents.seqId));
 
-  const statusByRunId = new Map(
-    selection.rounds.map((round) => {
-      return [round.runId, round.status] as const;
-    }),
-  );
+  // Seed the map in selected run order. Interleaved late text can change the
+  // first visible row of a round, but must not change the round's position.
   const roundsByRunId = new Map<string, IncompleteRound>();
+  for (const round of selection) {
+    roundsByRunId.set(round.runId, { ...round, events: [] });
+  }
   for (const row of rows) {
     if (row.runId === null) {
       continue;
     }
-    const status = statusByRunId.get(row.runId);
-    if (status === undefined) {
-      continue;
-    }
-    let round = roundsByRunId.get(row.runId);
+    const round = roundsByRunId.get(row.runId);
     if (round === undefined) {
-      round = { runId: row.runId, status, events: [] };
-      roundsByRunId.set(row.runId, round);
+      continue;
     }
     round.events.push({
       eventType: row.eventType,
@@ -270,7 +196,9 @@ async function loadSelectedIncompleteRounds(
     });
   }
 
-  return [...roundsByRunId.values()];
+  return [...roundsByRunId.values()].filter((round) => {
+    return round.events.length > 0;
+  });
 }
 
 function truncateIncomplete(value: string): string {

@@ -112,6 +112,14 @@ describe("CHAT-02: incomplete-round context", () => {
     });
     const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
     await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
+    await waitForThreadMessages(actor, anchor.threadId, (messages) => {
+      return messages.some((message) => {
+        return (
+          message.runId === anchor.runId &&
+          message.eventType === "run.completed"
+        );
+      });
+    });
 
     const first = await sendChatRun(actor, {
       agentId,
