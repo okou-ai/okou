@@ -3356,7 +3356,7 @@ describe("actual compute transactions versus the B1 projector", () => {
         await expect(snapshot(f)).resolves.toHaveLength(0);
       });
 
-      it("retains silent capture lock contention, propagates summary storage failure and preserves the row", async () => {
+      it("retains silent capture contention, degrades the summary claim and preserves the row", async () => {
         const f = await activityFixture();
         await capture(f);
         const before = await snapshot(f);
@@ -3370,7 +3370,10 @@ describe("actual compute transactions versus the B1 projector", () => {
         });
         await expect(accepted.dispatch()).resolves.toBeUndefined();
         await expect(snapshot(f)).resolves.toStrictEqual(before);
-        await expect(summarize(f)).resolves.toMatchObject({ status: 500 });
+        await expect(summarize(f)).resolves.toMatchObject({
+          status: 200,
+          body: { runId: f.runId, status: "unavailable", messages: [] },
+        });
         // The API intentionally hides SQLSTATE. At the real PG infrastructure
         // boundary verify the original error, rather than inspecting a log.
         const failure = await settle(
