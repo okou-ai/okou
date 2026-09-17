@@ -768,6 +768,8 @@ function unavailableCollection(args: {
   return {
     source: "gmail",
     status: "unavailable",
+    // A source that never became readable has no observed mailbox.
+    accountEmail: null,
     anchor: args.scope.anchor.toISOString(),
     collectedAt: args.collectedAt.toISOString(),
     timezone: args.scope.timezone,
@@ -897,6 +899,7 @@ export async function collectMorningBriefGmail(
   return {
     source: "gmail",
     status,
+    accountEmail,
     anchor: scope.anchor.toISOString(),
     collectedAt: collectedAt.toISOString(),
     timezone: scope.timezone,

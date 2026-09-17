@@ -143,10 +143,12 @@ function sameChatThreadAgentIdentity(
  * `agents` carries the `(id, org_id, owner)` unique key, so KEY SHARE conflicts
  * with an owner or organization transfer and with Agent deletion, which cascades
  * the matched threads. It does not conflict with the FOR NO KEY UPDATE that this
- * transaction's own cursor UPDATE takes on `chat_threads`, so unrelated thread
- * traffic is never serialized behind it, and this route locks no individual
- * thread: the admitted subject set is the same for one matched thread and for
- * every matched thread.
+ * transaction's own cursor UPDATE takes on `chat_threads`, so holding it adds no
+ * serialization of its own to thread traffic, and this route takes no separate
+ * per-thread admission lock: the admitted subject set is the same for one
+ * matched thread and for every matched thread. The cursor UPDATE itself still
+ * locks every row it matches until COMMIT, so writers of those same rows do
+ * contend.
  *
  * Re-reading the same content-free identity under the retained lock turns a
  * transfer committed between resolution and lock acquisition into a rollback,
