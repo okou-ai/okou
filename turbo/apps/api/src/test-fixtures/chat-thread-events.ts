@@ -16,10 +16,6 @@ import { createDeferredPromise } from "../signals/utils";
 
 const databasePidRowSchema = z.object({ pid: z.int() });
 const waiterCountRowSchema = z.object({ waiterCount: z.int() });
-const blockedTransactionRowSchema = z.object({
-  pid: z.int(),
-  transactionStartedAt: z.string(),
-});
 
 interface ChatThreadEventFixtureArgs {
   readonly userId: string;
@@ -61,30 +57,6 @@ async function transitiveBlockedWaiterCount(
   return rows[0]?.waiterCount ?? 0;
 }
 
-async function blockedSequenceWriterTransactionIds(
-  holderPid: number,
-): Promise<readonly string[]> {
-  const rows = await executeRawRows(
-    db(),
-    sql`
-      SELECT
-        activity.pid,
-        activity.xact_start::text AS "transactionStartedAt"
-      FROM pg_stat_activity AS activity
-      WHERE ${holderPid} = ANY(pg_blocking_pids(activity.pid))
-        AND activity.wait_event_type = 'Lock'
-        AND activity.xact_start IS NOT NULL
-        AND activity.query LIKE '%chat_thread_event_sequences%'
-    `,
-    blockedTransactionRowSchema,
-  );
-  return rows.map((row) => {
-    // Keep PostgreSQL's full timestamp precision: pooled connections may be
-    // reused by successive transactions after a lock timeout.
-    return `${row.pid}:${row.transactionStartedAt}`;
-  });
-}
-
 /**
  * Appends an event through the production writer and pauses before commit.
  * Product endpoints cannot expose this boundary, so the fixture makes the
@@ -97,9 +69,6 @@ export async function holdChatThreadEventInsertTransactionFixture(
   readonly release: () => void;
   readonly done: Promise<void>;
   readonly blockedWaiterCount: () => Promise<number>;
-  readonly blockedSequenceWriterTransactionIds: () => Promise<
-    readonly string[]
-  >;
 }> {
   const started = createDeferredPromise<{
     readonly pid: number;
@@ -152,9 +121,6 @@ export async function holdChatThreadEventInsertTransactionFixture(
     done,
     blockedWaiterCount: async () => {
       return await transitiveBlockedWaiterCount(pid);
-    },
-    blockedSequenceWriterTransactionIds: async () => {
-      return await blockedSequenceWriterTransactionIds(pid);
     },
   };
 }
