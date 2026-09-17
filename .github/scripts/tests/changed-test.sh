@@ -30,7 +30,18 @@ git -C "$repo" commit -qm current
 cat >"$test_dir/bin/npx" <<'STUB'
 #!/usr/bin/env bash
 set -euo pipefail
-[[ "$*" == '-y turbo@^2.5.6 run build --dry=json' ]] || exit 99
+[[ "$*" == '-y turbo@^2.5.6 --skip-infer bin' ]] || exit 99
+if [[ "$STUB_MODE" == resolution-failure ]]; then
+  echo 'stdout-private-fixture'
+  printf 'npm error ETEST: unable to resolve Turbo %s\n' "$HASH_TEST_TOKEN" >&2
+  exit "$STUB_STATUS"
+fi
+printf '%s/turbo\n' "$(dirname "$0")"
+STUB
+cat >"$test_dir/bin/turbo" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "$*" == '--skip-infer run build --dry=json' ]] || exit 99
 phase=$(cat phase)
 if [[ "$phase" != "$STUB_PHASE" ]]; then
   cat result.json
@@ -69,7 +80,7 @@ case "$STUB_MODE" in
   *) exit 98 ;;
 esac
 STUB
-chmod +x "$test_dir/bin/npx"
+chmod +x "$test_dir/bin/npx" "$test_dir/bin/turbo"
 
 run_case() {
   local mode=$1 phase=$2 expected=$3 status=0
@@ -92,6 +103,11 @@ run_case() {
 
 run_case success current 0
 jq -se 'length == 1 and .[0] == {stable: false, changed: true, new: true}' "$test_dir/stdout" >/dev/null || fail 'incorrect success comparison'
+
+run_case resolution-failure current 39
+grep -q 'Turbo executable resolution failed' "$test_dir/stderr" || fail 'missing resolution failure context'
+grep -q 'npm error ETEST: unable to resolve Turbo' "$test_dir/stderr" || fail 'missing resolution diagnostic'
+! grep -Eq 'stdout-private-fixture|synthetic-environment-credential' "$test_dir/stderr" || fail 'resolution diagnostics exposed private output'
 
 for phase in current base; do
   run_case failure "$phase" 37

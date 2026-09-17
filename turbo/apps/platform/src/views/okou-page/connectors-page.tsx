@@ -71,6 +71,7 @@ import {
 } from "../../signals/okou-page/settings/connectors.ts";
 import {
   buildConnectorShelves,
+  emptyConnectorShelfLayout,
   type ConnectorShelfLayout,
 } from "../../signals/okou-page/settings/connector-shelves.ts";
 import {
@@ -1356,16 +1357,22 @@ function buildConnectorsBrowseModel({
       return group.sections;
     });
   };
-  const layout = buildConnectorShelves({
-    // Shelves cover the whole catalog, connected included: a connector this
-    // workspace already has is still the answer to "what talks to Slack", and
-    // its card says so by showing the account instead of an add button.
-    sections: sectionsOf(catalogItems),
-    categoryCounts,
-    headLabel,
-    // The page's card grid is three wide, so six is two whole rows.
-    previewSize: 6,
-  });
+  // Shelving is the unfiltered view's own work, and a filtered one throws the
+  // result away. Inside a category that discarded pass groups and shelves the
+  // whole category -- the largest holds over a thousand connectors -- on every
+  // render of the page.
+  const layout = filtered
+    ? emptyConnectorShelfLayout<PlatformConnectorCatalogStatusItem>()
+    : buildConnectorShelves({
+        // Shelves cover the whole catalog, connected included: a connector this
+        // workspace already has is still the answer to "what talks to Slack",
+        // and its card says so by showing the account instead of an add button.
+        sections: sectionsOf(catalogItems),
+        categoryCounts,
+        headLabel,
+        // The page's card grid is three wide, so six is two whole rows.
+        previewSize: 6,
+      });
   // The filter lists the catalog's categories, not the ones the current
   // response happens to contain: inside a category the response holds only
   // that category, and a filter that offers nothing else is a dead end.

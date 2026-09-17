@@ -8,6 +8,29 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.622.0](https://github.com/vm0-ai/okou/compare/api-v1.621.0...api-v1.622.0) (2026-09-17)
+
+
+### Features
+
+* **api:** collect bounded multi-calendar morning brief context ([#34896](https://github.com/vm0-ai/okou/issues/34896)) ([833815e](https://github.com/vm0-ai/okou/commit/833815e857c145a79827c48207373381cc73f8b0)), closes [#34810](https://github.com/vm0-ai/okou/issues/34810)
+
+
+### Bug Fixes
+
+* **api:** fence morning brief collection authority at commit ([#34885](https://github.com/vm0-ai/okou/issues/34885)) ([5577586](https://github.com/vm0-ai/okou/commit/55775863b5b86f6aade5333c102490d9b2ac3728))
+* **api:** withhold all slack brief payload after the collection deadline ([#35006](https://github.com/vm0-ai/okou/issues/35006)) ([34c28c7](https://github.com/vm0-ai/okou/commit/34c28c76be961094d8de9b82d7c0a75ea980aa7d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.459.0
+    * @okouai/core bumped to 8.676.1
+    * @okouai/db bumped to 1.270.1
+    * @okouai/pi-agent-runtime bumped to 1.33.4
+
 ## [1.621.0](https://github.com/vm0-ai/okou/compare/api-v1.620.0...api-v1.621.0) (2026-09-17)
 
 
