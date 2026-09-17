@@ -882,7 +882,13 @@ test("Recover from a personal model account limit", async () => {
   await expect(findButton("Stop")).resolves.toBeVisible();
 });
 
-test("Keep the failure card element while recovery resolves", async () => {
+// The transcript's scroll result when this card resolves is a layout contract:
+// jsdom reports the scroller as zero-height, so `isAtBottom` is trivially true
+// here. `e2e/playwright/regressions/chat-card-scroll.ts` owns that result for
+// the recovery card in Chromium and WebKit. This case covers what the page
+// shows: the generic failure copy while the run detail is held, then the
+// resolved recovery copy in its place.
+test("Replace the failure card copy when recovery resolves", async () => {
   configureModelPolicies(["gpt-5.6-luna"]);
   installRunChat({
     selectedModel: "gpt-5.6-luna",
@@ -909,19 +915,21 @@ test("Keep the failure card element while recovery resolves", async () => {
 
   await readyChat();
   await detailRequested.promise;
-  const shell = await screen.findByTestId("assistant-error-card-shell");
-  const pendingCard = shell.firstElementChild;
-  expect(pendingCard).toBeInstanceOf(HTMLElement);
+  await expect(
+    within(await screen.findByTestId("assistant-error-card-shell")).findByText(
+      "This run couldn't finish",
+    ),
+  ).resolves.toBeInTheDocument();
   expect(screen.queryByTestId("assistant-error-recovery")).toBeNull();
 
   releaseDetail.resolve();
 
-  // The classification replaces this card's contents. Mounting a second card
-  // element here would drop the transcript's scroll offset by the card's own
-  // height, which `docs/chat-cards.md` forbids.
-  const recovered = await screen.findByTestId("assistant-error-recovery");
-  expect(recovered).toBe(pendingCard);
-  expect(recovered).toHaveTextContent("This model is busy right now");
+  await expect(
+    within(await screen.findByTestId("assistant-error-card-shell")).findByText(
+      "This model is busy right now",
+    ),
+  ).resolves.toBeInTheDocument();
+  expect(screen.queryByText("This run couldn't finish")).toBeNull();
 });
 
 test("Recover when a model is at capacity", async () => {
