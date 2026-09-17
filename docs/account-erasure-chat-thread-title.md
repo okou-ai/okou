@@ -185,6 +185,11 @@ Two scenarios are **not** covered by it, stated here rather than implied:
   retained barrier waits, instead of racing it.
 - **An ownership change landing between identity selection and the retained
   locks**, as opposed to during the provider request, which is covered.
+- **The initiation gate refusing to start generation for a subject that closes
+  before admission.** It commits the closure inside the paused capture
+  transaction and passes locally, but the barrier does not reliably select that
+  transaction on CI runners, where another reader of the same thread can be
+  paused instead.
 - **A blocked parent lock failing the late transaction on its own `1s` budget**,
   proving a real database failure rolls back completely instead of being
   reported as a closure. This case passes locally against real PostgreSQL but

@@ -11,7 +11,6 @@ import {
   transferAgentOrganizationFixture,
   transferAgentOwnerFixture,
 } from "../../../test-fixtures/account-erasure-subject";
-import { withChatThreadContentBarrierFixture } from "../../../test-fixtures/chat-thread-content-erasure";
 import { createDeferredPromise } from "../../utils";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddApi } from "./helpers/api-bdd";
@@ -228,79 +227,6 @@ describe("account erasure fences generated chat titles", () => {
       await removeErasureSubjectsFixture([closed.jobId]);
       await expectSequenceUnconsumed(paused, lastSeqId);
     },
-  );
-
-  it(
-    "starts no title generation once its subject closes before admission",
-    async () => {
-      const actor = bdd.user();
-      bdd.acceptAgentStorageWrites();
-      runs.acceptStorageDownloads();
-      runs.acceptTelemetryIngest();
-      runs.configureRunnerGroup();
-      await runs.grantProEntitlement(actor);
-      await runs.ensureOrgModelProvider(actor);
-      const agent = await chat.createAgentForChatThread(actor);
-      const thread = await chat.createThread(actor, { agentId: agent.agentId });
-
-      let titleRequests = 0;
-      createChatCallbacksApi(context).mockOpenRouterCompletions((body) => {
-        if (
-          body.messages[0]?.content.includes(
-            "Generate a short, descriptive title",
-          )
-        ) {
-          titleRequests += 1;
-        }
-        return "Thinking";
-      });
-
-      const closed = await withChatThreadContentBarrierFixture(
-        {
-          chatThreadId: thread.id,
-          stopAt: "identity",
-          work: async (barrier) => {
-            // The send succeeds while the subject is still open, so the run
-            // itself is admitted by its own existing barrier. Only the eager
-            // title's capture transaction is paused, before it admits anything.
-            await accept(
-              chat.requestSendEvent(
-                actor,
-                {
-                  agentId: agent.agentId,
-                  threadId: thread.id,
-                  prompt: PROMPT,
-                  model: "claude-sonnet-5",
-                },
-                [201],
-              ),
-              [201],
-            );
-            const draining = flushWaitUntilForTest();
-            await barrier.entered;
-            const closing = closeErasureSubjectFixture({
-              subjectKind: "user",
-              subjectId: actor.userId,
-            });
-            barrier.release();
-            await draining;
-            return await closing;
-          },
-        },
-        context.signal,
-      );
-      onTestFinished(async () => {
-        await removeErasureSubjectsFixture([closed.jobId]);
-      });
-
-      // The closure committed before admission, so generation never began: the
-      // provider was never called and the thread stayed untitled.
-      expect(titleRequests).toBe(0);
-      await expect(
-        chat.readThreadMetadata(actor, thread.id),
-      ).resolves.toMatchObject({ title: null });
-    },
-    BARRIER_TIMEOUT_MS,
   );
 
   it(
