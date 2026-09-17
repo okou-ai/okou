@@ -93,8 +93,8 @@ const MORNING_BRIEF_CALENDAR_FIELD_CAPS = Object.freeze({
   instant: 64,
   /** An IANA timezone name. */
   timezone: 64,
-  /** A documented response status such as `needsAction`. */
-  responseStatus: 64,
+  /** A documented provider label such as `needsAction` or `freeBusyReader`. */
+  label: 64,
   /** A Google Calendar `htmlLink`; browsers stop honouring far longer URLs. */
   link: 2048,
 });
@@ -308,8 +308,11 @@ function outcomeForFailure(
   }
 }
 
-function truncate(value: string | undefined, max: number): string | null {
-  if (value === undefined) {
+function truncate(
+  value: string | null | undefined,
+  max: number,
+): string | null {
+  if (value === undefined || value === null) {
     return null;
   }
   const trimmed = value.trim();
@@ -475,7 +478,7 @@ async function enumerateCalendars(
           summary,
           accessRole: truncate(
             entry.accessRole,
-            MORNING_BRIEF_CALENDAR_FIELD_CAPS.responseStatus,
+            MORNING_BRIEF_CALENDAR_FIELD_CAPS.label,
           ),
           primary: entry.primary === true,
           outcome: known ? "free-busy-only" : "unknown-access",
@@ -685,7 +688,7 @@ function normalizeEvent(
     start: time.start,
     end: time.end,
     eventTimezone: truncate(
-      time.timezone ?? undefined,
+      time.timezone,
       MORNING_BRIEF_CALENDAR_FIELD_CAPS.timezone,
     ),
     localDayOffset: time.localDayOffset,
@@ -695,7 +698,7 @@ function normalizeEvent(
     ),
     selfResponseStatus: truncate(
       self?.responseStatus,
-      MORNING_BRIEF_CALENDAR_FIELD_CAPS.responseStatus,
+      MORNING_BRIEF_CALENDAR_FIELD_CAPS.label,
     ),
     attendees: kept.flatMap((attendee) => {
       const label = truncate(
@@ -709,7 +712,7 @@ function normalizeEvent(
               label,
               responseStatus: truncate(
                 attendee.responseStatus,
-                MORNING_BRIEF_CALENDAR_FIELD_CAPS.responseStatus,
+                MORNING_BRIEF_CALENDAR_FIELD_CAPS.label,
               ),
               optional: attendee.optional === true,
             },

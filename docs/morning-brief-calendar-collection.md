@@ -178,6 +178,13 @@ from the presence of that hint. A `429` is `rate-limited` whether or not the
 provider said for how long, and a `403` that volunteered a wait is still a
 denial rather than throttling.
 
+One classification is deliberately coarse. The shared source-failure vocabulary
+has no value for "the collector's own caps left nothing", so a collection that
+produced no content purely because it stopped at its own page, request or byte
+budget reports the generic `provider-failed`. The specific limit is still named
+in `coverage.truncations`, which is where a reader should look; widening the
+shared vocabulary would change every other source.
+
 ## Concurrent worker lifetime
 
 The per-calendar reads run at concurrency two. Two properties follow from that,
