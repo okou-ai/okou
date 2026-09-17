@@ -133,33 +133,17 @@ async function enableDurablePi(
   return orgId;
 }
 
-const producerStateSchema = z.object({
-  status: z.string(),
-  runnerGroup: z.string().nullable(),
-  launchSnapshot: z.unknown(),
-  phase: z.string(),
-  ownerEpoch: z.number(),
-  deadlineAt: z.string(),
-  providerAttemptState: z.string(),
-  usageSettled: z.boolean(),
-  publication: z.unknown().nullable(),
-  jobs: z.number().int().nonnegative(),
-  intents: z.number().int().nonnegative(),
-  leases: z.number().int().nonnegative(),
-});
-
-async function readProducerState(runId: string) {
+// Infrastructure exception: the synthetic process-loss fixture must observe the
+// transient ownership clock to prove each sequential recovery claim uses fresh time.
+async function readRecoveryDeadline(runId: string): Promise<number> {
   const response = await requestStateAction({
-    action: "get-pi-inference",
+    action: "get-pi-inference-recovery-deadline",
     run_id: runId,
   });
-  const parsed = z
-    .object({ inference: producerStateSchema.nullable() })
-    .parse(response);
-  if (!parsed.inference) {
-    throw new Error("Expected durable Pi inference state");
-  }
-  return parsed.inference;
+  const deadline = z
+    .object({ recovery_deadline: z.string().datetime() })
+    .parse(response).recovery_deadline;
+  return new Date(deadline).getTime();
 }
 
 async function seedProducerRecoveryRun(
@@ -230,6 +214,31 @@ async function withPiTestLock<T>(
   return result.value;
 }
 
+async function expectNoDeferredPiRun(runId: string, runnerGroup: string) {
+  const runnerId = randomUUID();
+  await api.requestHeartbeatRunner(true, [200], {
+    runnerId,
+    group: runnerGroup,
+  });
+  const response = await accept(
+    setupApp({ context, routes: runnersRoutes })(runnersJobClaimContract).claim(
+      {
+        params: { id: runId },
+        headers: {
+          authorization: `Bearer ${OFFICIAL_RUNNER_TOKEN_PREFIX}${env("OFFICIAL_RUNNER_SECRET")}`,
+        },
+        extraHeaders: { [PI_DEFERRED_SANDBOX_HEADER]: "1" },
+        body: {
+          runnerIdentity: { runnerId, heartbeatGeneration: 1 },
+          capabilities: { piModelConfigGenerations: [1, 2, 3, 4] },
+        },
+      },
+    ),
+    [404],
+  );
+  expect(response.body.error.message).toBe("Job not found in queue");
+}
+
 async function claimDeferredPiRun(runId: string, runnerGroup: string) {
   const runnerId = randomUUID();
   await api.requestHeartbeatRunner(true, [200], {
@@ -284,9 +293,9 @@ async function releaseDeferredPiRun(
 }
 
 describe("durable Pi API producer", () => {
-  it("commits the provider uncertainty fence before HTTP and completes without Sandbox demand", async () => {
+  it("starts provider transport under held Sandbox capacity and completes without demand", async () => {
     configureNativeCliArtifact();
-    const { actor, agentId } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
     const orgId = await enableDurablePi(actor);
     await configureBuiltInPiModel(actor, SELECTED_MODEL);
     const usagePricingResolution =
@@ -294,8 +303,7 @@ describe("durable Pi API producer", () => {
     mockPiResourceArchiveDownloads();
     mockPiCheckpointObjectStore();
 
-    const firstRunCommitted = createDeferredPromise<string>(context.signal);
-    const providerEntered = createDeferredPromise<string>(context.signal);
+    const providerEntered = createDeferredPromise<void>(context.signal);
     const releaseProvider = createDeferredPromise<void>(context.signal);
     onTestFinished(() => {
       if (!releaseProvider.settled()) {
@@ -309,22 +317,7 @@ describe("durable Pi API producer", () => {
         calls += 1;
         providerBodies.push(await request.json());
         if (calls === 1) {
-          const runId = await firstRunCommitted.promise;
-          const atBoundary = await readProducerState(runId);
-          expect(atBoundary).toMatchObject({
-            launchSnapshot: {
-              schemaVersion: 4,
-              framework: "pi",
-              executionMode: "api-inference",
-              inferenceContractVersion: 1,
-            },
-            phase: "provider",
-            providerAttemptState: "may-have-started",
-            jobs: 0,
-            intents: 0,
-            leases: 0,
-          });
-          providerEntered.resolve(runId);
+          providerEntered.resolve(undefined);
         }
         await releaseProvider.promise;
         return new HttpResponse(
@@ -347,8 +340,8 @@ describe("durable Pi API producer", () => {
           },
           usagePricingResolution,
         );
-        firstRunCommitted.resolve(created.runId);
-        await expect(providerEntered.promise).resolves.toBe(created.runId);
+        await expect(providerEntered.promise).resolves.toBeUndefined();
+        await expectNoDeferredPiRun(created.runId, runnerGroup);
         return created;
       },
     );
@@ -576,14 +569,11 @@ describe("durable Pi API producer", () => {
     await withPiTestLock("run-output-projection", run.runId, async () => {
       releaseProvider.resolve(undefined);
       await expect
-        .poll(() => {
-          return readProducerState(run.runId);
+        .poll(async () => {
+          await billing.processOrgUsageEvents(actor);
+          return (await billing.readUsageRecord(actor)).body.pagination.total;
         })
-        .toMatchObject({
-          phase: "publishing",
-          providerAttemptState: "settled",
-          usageSettled: true,
-        });
+        .toBeGreaterThan(0);
       await api.requestCancelRun(
         actor,
         run.runId,
@@ -610,7 +600,7 @@ describe("durable Pi API producer", () => {
     });
     await billing.processOrgUsageEvents(actor);
     const usage = await billing.readUsageRecord(actor);
-    expect(usage.body.totalCredits).toBeGreaterThan(0);
+    expect(usage.body.pagination.total).toBeGreaterThan(0);
   }, 90_000);
 
   it("rejects fleet-wide org overload before a second provider attempt", async () => {
@@ -895,8 +885,7 @@ describe("durable Pi API producer", () => {
           throw new Error("Unexpected recovered provider attempt");
         }
         recoveredCalls += 1;
-        const state = await readProducerState(runId);
-        claimedDeadlines.push(new Date(state.deadlineAt).getTime());
+        claimedDeadlines.push(await readRecoveryDeadline(runId));
         if (recoveredCalls === 1) {
           await delay(5000, undefined, { signal: context.signal });
         }

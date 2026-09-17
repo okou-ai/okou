@@ -30,7 +30,7 @@ export const testCronCleanupSandboxesStateActionBodySchema = z
       "corrupt-connector-diagnostic-registration",
       "delete-connector-diagnostic-registration",
       "transition-run-terminal",
-      "get-pi-inference",
+      "get-pi-inference-recovery-deadline",
       "seed-pi-inference-recovery",
       "expire-pi-inference",
       "delete-pi-inference-model-key",

@@ -17,11 +17,7 @@ import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { agentRunQueue } from "@okouai/db/schema/agent-run-queue";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import {
-  agentRunInference,
-  agentRunSandboxIntent,
-  agentRunSandboxLease,
-} from "@okouai/db/schema/agent-run-inference";
+import { agentRunInference } from "@okouai/db/schema/agent-run-inference";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
@@ -1080,7 +1076,9 @@ async function getExportJobForAction(
   return actionOk({ export_job: job ?? null });
 }
 
-async function getPiInferenceForAction(
+// Narrow infrastructure probe for process-loss fixtures: the recovery deadline
+// is intentionally absent from public Run APIs but defines the claim-time fence.
+async function getPiInferenceRecoveryDeadlineForAction(
   db: Db,
   body: Record<string, unknown>,
   signal: AbortSignal,
@@ -1089,48 +1087,15 @@ async function getPiInferenceForAction(
   if (!runId) {
     return actionBadRequest("run_id is required");
   }
-  const [state] = await db
-    .select({
-      status: agentRuns.status,
-      runnerGroup: agentRuns.runnerGroup,
-      launchSnapshot: agentRuns.launchSnapshot,
-      phase: agentRunInference.phase,
-      ownerEpoch: agentRunInference.ownerEpoch,
-      deadlineAt: agentRunInference.deadlineAt,
-      providerAttemptState: agentRunInference.providerAttemptState,
-      usageSettled: agentRunInference.usageSettled,
-      publication: agentRunInference.publication,
-    })
-    .from(agentRuns)
-    .innerJoin(agentRunInference, eq(agentRunInference.runId, agentRuns.id))
-    .where(eq(agentRuns.id, runId))
+  const [inference] = await db
+    .select({ deadlineAt: agentRunInference.deadlineAt })
+    .from(agentRunInference)
+    .where(eq(agentRunInference.runId, runId))
     .limit(1);
-  const [jobs, intents, leases] = await Promise.all([
-    db
-      .select({ runId: runnerJobQueue.runId })
-      .from(runnerJobQueue)
-      .where(eq(runnerJobQueue.runId, runId)),
-    db
-      .select({ runId: agentRunSandboxIntent.runId })
-      .from(agentRunSandboxIntent)
-      .where(eq(agentRunSandboxIntent.runId, runId)),
-    db
-      .select({ runId: agentRunSandboxLease.runId })
-      .from(agentRunSandboxLease)
-      .where(eq(agentRunSandboxLease.runId, runId)),
-  ]);
   signal.throwIfAborted();
-  return actionOk({
-    inference: state
-      ? {
-          ...state,
-          deadlineAt: state.deadlineAt.toISOString(),
-          jobs: jobs.length,
-          intents: intents.length,
-          leases: leases.length,
-        }
-      : null,
-  });
+  return inference
+    ? actionOk({ recovery_deadline: inference.deadlineAt.toISOString() })
+    : actionBadRequest("recovery fixture not found");
 }
 
 type AgentRunRow = typeof agentRuns.$inferSelect;
@@ -1576,7 +1541,7 @@ const cronCleanupSandboxesActionHandlers = {
   "delete-connector-diagnostic-registration":
     deleteConnectorDiagnosticRegistrationForAction,
   "transition-run-terminal": transitionRunTerminalForAction,
-  "get-pi-inference": getPiInferenceForAction,
+  "get-pi-inference-recovery-deadline": getPiInferenceRecoveryDeadlineForAction,
   "seed-pi-inference-recovery": seedPiInferenceRecoveryForAction,
   "expire-pi-inference": expirePiInferenceForAction,
   "delete-pi-inference-model-key": deletePiInferenceModelKeyForAction,
