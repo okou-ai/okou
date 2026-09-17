@@ -132,6 +132,9 @@ case "${1:-} ${2:-}" in
     if [ -n "${MOCK_ADDITIONAL_CHANGED_FILE:-}" ]; then
       printf '%s\n' "$MOCK_ADDITIONAL_CHANGED_FILE"
     fi
+    if [ -n "${MOCK_ADDITIONAL_CHANGED_FILES_PATH:-}" ]; then
+      cat "$MOCK_ADDITIONAL_CHANGED_FILES_PATH"
+    fi
     ;;
   "api repos/vm0-ai/vm0/check-runs")
     printf '%s\n' "$*" >>"$MOCK_GH_LOG"
@@ -212,15 +215,16 @@ for ios_input in ios/Okou/App/OkouApp.swift .github/workflows/ios.yml .github/sc
 done
 
 # A large diff must not turn an early iOS match into an unearned successful gate.
-long_changed_files=$(
+long_changed_files_path="${TEST_ROOT}/long-changed-files.txt"
+{
   printf '%s\n' ios/Okou/App/OkouApp.swift
   for ((i = 0; i < 2000; i++)); do
     printf 'docs/release-changelog-fixture-with-a-long-filename-to-exercise-large-changed-file-lists-%04d.md\n' "$i"
   done
-)
+} >"$long_changed_files_path"
 : >"$GH_LOG"
 ios_output=""
-if ios_output=$(MOCK_ADDITIONAL_CHANGED_FILE="$long_changed_files" run_gates "$VALID_HEAD" 2>&1); then
+if ios_output=$(MOCK_ADDITIONAL_CHANGED_FILES_PATH="$long_changed_files_path" run_gates "$VALID_HEAD" 2>&1); then
   fail "a large release PR diff containing iOS changes must not skip iOS validation"
 fi
 grep -Eq 'name=ci-gate-ios .*conclusion=failure' "$GH_LOG" ||
