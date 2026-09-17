@@ -879,15 +879,7 @@ export function createRunsApi(
       actor: ApiTestUser | null,
       body: DirectRunRequest,
       statuses: readonly (
-        | 201
-        | 400
-        | 401
-        | 402
-        | 403
-        | 404
-        | 409
-        | 429
-        | 503
+        201 | 400 | 401 | 402 | 403 | 404 | 409 | 429 | 503
       )[],
     ) {
       return await accept(createDirectRunThroughService(actor, body), statuses);
@@ -1116,15 +1108,7 @@ export function createRunsApi(
       actor: ApiTestUser | null,
       body: AgentRunRequest,
       statuses: readonly (
-        | 201
-        | 400
-        | 401
-        | 402
-        | 403
-        | 404
-        | 409
-        | 429
-        | 503
+        201 | 400 | 401 | 402 | 403 | 404 | 409 | 429 | 503
       )[],
       extraHeaders?: Readonly<Record<string, string>>,
     ) {
@@ -1144,15 +1128,7 @@ export function createRunsApi(
       actor: ApiTestUser | null,
       body: unknown,
       statuses: readonly (
-        | 201
-        | 400
-        | 401
-        | 402
-        | 403
-        | 404
-        | 409
-        | 429
-        | 503
+        201 | 400 | 401 | 402 | 403 | 404 | 409 | 429 | 503
       )[],
     ) {
       return await accept(

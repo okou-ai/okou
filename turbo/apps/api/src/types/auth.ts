@@ -59,10 +59,7 @@ export type AgentAuthContext =
     };
 
 export type AuthContext =
-  | SessionAuthContext
-  | PatAuthContext
-  | SandboxAuthContext
-  | AgentAuthContext;
+  SessionAuthContext | PatAuthContext | SandboxAuthContext | AgentAuthContext;
 
 export type AuthTokenType = AuthContext["tokenType"];
 

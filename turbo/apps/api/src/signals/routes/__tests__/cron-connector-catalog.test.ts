@@ -383,11 +383,7 @@ function assertFixtureAuthComponentsComplete(artifact: JsonRecord): void {
 function publicAuthMethod(args: {
   readonly id: string;
   readonly grantKind:
-    | "manual"
-    | "auth-code"
-    | "openid-auth"
-    | "external-code"
-    | "device-auth";
+    "manual" | "auth-code" | "openid-auth" | "external-code" | "device-auth";
   readonly manual?: boolean;
 }): JsonRecord {
   return {

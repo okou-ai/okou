@@ -12,10 +12,7 @@ export const unauthorizedRunMismatch = Object.freeze({
 });
 
 type SandboxAuthFailureReason =
-  | "missing_bearer"
-  | "non_sandbox_token"
-  | "invalid_token"
-  | "run_id_mismatch";
+  "missing_bearer" | "non_sandbox_token" | "invalid_token" | "run_id_mismatch";
 
 type SandboxAuthForRunResult =
   | {

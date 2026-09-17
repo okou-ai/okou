@@ -1,6 +1,6 @@
 {
-  "id": "891a7e61-c1d5-49dd-a456-6354aa279579",
-  "prevId": "c06a099c-7e1c-4d6c-8f02-b98c309e47b2",
+  "id": "f0ec8dc0-0a44-40e0-bdf6-ae481a15e502",
+  "prevId": "871060ab-db52-4d77-bc99-34894d7d990a",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -18816,6 +18816,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "result_attempt_id": {
+          "name": "result_attempt_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
         "membership_id": {
           "name": "membership_id",
           "type": "text",
@@ -18885,6 +18891,33 @@
         }
       },
       "indexes": {
+        "morning_brief_deliveries_attempt_unique": {
+          "name": "morning_brief_deliveries_attempt_unique",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "result_attempt_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "morning_brief_deliveries_chat_event_unique": {
           "name": "morning_brief_deliveries_chat_event_unique",
           "columns": [

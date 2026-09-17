@@ -1567,15 +1567,7 @@ export function createBddIntegrationApi(context: TestContext) {
       actor: ApiTestUser | null,
       body: TelegramRegisterBody,
       statuses: readonly (
-        | 200
-        | 201
-        | 400
-        | 401
-        | 403
-        | 404
-        | 409
-        | 500
-        | 502
+        200 | 201 | 400 | 401 | 403 | 404 | 409 | 500 | 502
       )[],
     ) {
       const client = setupApp({

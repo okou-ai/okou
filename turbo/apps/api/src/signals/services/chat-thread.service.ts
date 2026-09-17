@@ -320,7 +320,10 @@ export function chatThreadUnreads(args: {
 }): Computed<Promise<readonly { threadId: string; unreadAt: string }[]>> {
   return computed(async (get) => {
     const db = get(db$);
-    const latestReadWatermark = latestReadWatermarkEventSubquery(db, chatThreads.id);
+    const latestReadWatermark = latestReadWatermarkEventSubquery(
+      db,
+      chatThreads.id,
+    );
     const rows = await db
       .select({
         threadId: chatThreads.id,
@@ -380,7 +383,10 @@ export function chatIndicators(args: {
           ),
         ),
     );
-    const latestReadWatermark = latestReadWatermarkEventSubquery(db, chatThreads.id);
+    const latestReadWatermark = latestReadWatermarkEventSubquery(
+      db,
+      chatThreads.id,
+    );
     const unreadThreads = db.$with("unread_threads").as(
       db
         .select({

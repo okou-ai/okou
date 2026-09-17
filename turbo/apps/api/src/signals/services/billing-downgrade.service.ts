@@ -52,9 +52,7 @@ const CANCELED_SUBSCRIPTION_TARGET_TIER = "limited-free-1";
 type CancellationTargetTier = typeof CANCELED_SUBSCRIPTION_TARGET_TIER;
 type LegacyCancellationTargetTier = "pro-suspend";
 type DowngradeTargetTier =
-  | CancellationTargetTier
-  | LegacyCancellationTargetTier
-  | "pro";
+  CancellationTargetTier | LegacyCancellationTargetTier | "pro";
 
 type DowngradeResult =
   | {

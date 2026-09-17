@@ -475,8 +475,7 @@ describe("cron snapshot chat events", () => {
     const { runId, threadId } = sent.body;
     await api.heartbeatRunner(runnerGroup);
     let claim:
-      | Awaited<ReturnType<typeof api.requestClaimRunnerJob>>
-      | undefined;
+      Awaited<ReturnType<typeof api.requestClaimRunnerJob>> | undefined;
     await expect
       .poll(async () => {
         claim = await api.requestClaimRunnerJob(true, runId, [200, 404]);

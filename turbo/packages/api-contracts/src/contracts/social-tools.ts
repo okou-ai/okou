@@ -25,11 +25,7 @@ export type SocialKitTranscriptErrorReason = z.infer<
 export type ManagedSocialKitToolAvailability = "transcript";
 
 export type ManagedSocialKitResultField =
-  | "comments"
-  | "items"
-  | "posts"
-  | "results"
-  | "tweets";
+  "comments" | "items" | "posts" | "results" | "tweets";
 
 export type ManagedSocialKitReportedTotalField = "commentCount" | "count";
 

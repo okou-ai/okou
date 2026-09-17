@@ -55,7 +55,10 @@ async function markAgentThreadsRead(
     readonly orgId: string;
   },
 ): Promise<readonly string[]> {
-  const latestReadWatermark = latestReadWatermarkEventSubquery(tx, chatThreads.id);
+  const latestReadWatermark = latestReadWatermarkEventSubquery(
+    tx,
+    chatThreads.id,
+  );
   const unreadThreads = tx
     .select({
       threadId: chatThreads.id,

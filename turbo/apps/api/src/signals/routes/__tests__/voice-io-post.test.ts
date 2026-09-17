@@ -1245,15 +1245,13 @@ describe("POST /api/voice-io/*", () => {
       response_format: "wav",
     });
 
-    if (
-      !(
-        typeof body === "object" &&
-        body !== null &&
-        "id" in body &&
-        "filename" in body &&
-        "url" in body
-      )
-    ) {
+    if (!(
+      typeof body === "object" &&
+      body !== null &&
+      "id" in body &&
+      "filename" in body &&
+      "url" in body
+    )) {
       throw new Error("Expected speech response id and filename");
     }
     const fileId = String(body.id);

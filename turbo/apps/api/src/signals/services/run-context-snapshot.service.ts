@@ -81,8 +81,7 @@ type RunContextAxiomInlineFirewall = z.infer<
   typeof runContextAxiomInlineFirewallSchema
 >;
 type RunContextAxiomFirewall =
-  | RunContextBuiltinFirewall
-  | RunContextAxiomInlineFirewall;
+  RunContextBuiltinFirewall | RunContextAxiomInlineFirewall;
 
 // Pi generation observations are creation-time only. Historical snapshots may
 // also carry retired field classifications; neither enters RunContextResponse.
@@ -290,8 +289,7 @@ function sanitizedFirewallFromUnknown(
 
 function authEntriesToRecord(
   entries:
-    | readonly z.infer<typeof runContextAxiomAuthEntrySchema>[]
-    | undefined,
+    readonly z.infer<typeof runContextAxiomAuthEntrySchema>[] | undefined,
 ): Record<string, string> | undefined {
   return entries === undefined
     ? undefined

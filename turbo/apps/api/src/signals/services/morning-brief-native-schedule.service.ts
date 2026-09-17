@@ -1122,6 +1122,9 @@ export async function resumeMorningBriefNativeOccurrence(
       state: "claimed",
       leaseToken: args.leaseToken,
       leaseExpiresAt,
+      // The deferral is consumed here. Leaving it set would make the resumed
+      // claimant's own live lease stealable the moment that timestamp passed.
+      deferredUntil: null,
       attempt: sql`${morningBriefNativeOccurrences.attempt} + 1`,
       updatedAt: args.now,
     })
@@ -1135,10 +1138,12 @@ export async function resumeMorningBriefNativeOccurrence(
         // Either its deferral is due, or its lease lapsed. A live lease held by
         // another tick is never taken over here.
         sql`(
-          (${morningBriefNativeOccurrences.deferredUntil} IS NOT NULL
+          (${morningBriefNativeOccurrences.state} = 'deferred'
+            AND ${morningBriefNativeOccurrences.deferredUntil} IS NOT NULL
             AND ${morningBriefNativeOccurrences.deferredUntil} <= ${args.now})
-          OR ${morningBriefNativeOccurrences.leaseExpiresAt} IS NULL
-          OR ${morningBriefNativeOccurrences.leaseExpiresAt} < ${args.now}
+          OR (${morningBriefNativeOccurrences.state} = 'claimed'
+            AND (${morningBriefNativeOccurrences.leaseExpiresAt} IS NULL
+              OR ${morningBriefNativeOccurrences.leaseExpiresAt} < ${args.now}))
         )`,
       ),
     )
@@ -1167,10 +1172,12 @@ export async function loadResumableOccurrences(
       and(
         sql`${morningBriefNativeOccurrences.settledAt} IS NULL`,
         sql`(
-          (${morningBriefNativeOccurrences.deferredUntil} IS NOT NULL
+          (${morningBriefNativeOccurrences.state} = 'deferred'
+            AND ${morningBriefNativeOccurrences.deferredUntil} IS NOT NULL
             AND ${morningBriefNativeOccurrences.deferredUntil} <= ${args.now})
-          OR ${morningBriefNativeOccurrences.leaseExpiresAt} IS NULL
-          OR ${morningBriefNativeOccurrences.leaseExpiresAt} < ${args.now}
+          OR (${morningBriefNativeOccurrences.state} = 'claimed'
+            AND (${morningBriefNativeOccurrences.leaseExpiresAt} IS NULL
+              OR ${morningBriefNativeOccurrences.leaseExpiresAt} < ${args.now}))
         )`,
       ),
     )

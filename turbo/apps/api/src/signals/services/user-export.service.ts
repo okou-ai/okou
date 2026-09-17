@@ -988,13 +988,11 @@ function collectConversationMessages(
       const messages: ExportTextMessage[] = rows.flatMap((message) => {
         const userMessage = canonicalArchivedChatEventUserMessage(message);
         const content = canonicalArchivedChatEventContent(message);
-        if (
-          !(
-            (isChatEventUserMessageTextType(message.eventType) &&
-              userMessage !== null) ||
-            (isChatEventContentTextType(message.eventType) && content !== null)
-          )
-        ) {
+        if (!(
+          (isChatEventUserMessageTextType(message.eventType) &&
+            userMessage !== null) ||
+          (isChatEventContentTextType(message.eventType) && content !== null)
+        )) {
           return [];
         }
         const role = chatEventCompatibilityRole(message.eventType);

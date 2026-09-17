@@ -39,8 +39,7 @@ export class PiApiFirstTurnPreparation {
   #adopted = false;
   #disposed = false;
   #failure:
-    | { readonly ok: false; readonly error: PiApiFirstTurnError }
-    | undefined;
+    { readonly ok: false; readonly error: PiApiFirstTurnError } | undefined;
 
   constructor(
     activation: PiApiFirstTurnActivation,

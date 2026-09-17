@@ -73,10 +73,7 @@ export interface ClerkOrganizationInvitation {
 }
 
 export type ClerkOrganizationInvitationStatus =
-  | "pending"
-  | "accepted"
-  | "revoked"
-  | "expired";
+  "pending" | "accepted" | "revoked" | "expired";
 
 export interface ClerkUsersApi {
   getUser(
@@ -218,8 +215,7 @@ const CLERK_READ_PROVIDER_UNAVAILABLE_DELAY_MS = 1000;
 export interface ClerkReadUnavailable {
   readonly providerStatus: number | null;
   readonly failureClass:
-    | "transient_read_exhausted"
-    | "transport_read_exhausted";
+    "transient_read_exhausted" | "transport_read_exhausted";
 }
 
 class ClerkReadUnavailableError extends Error implements ClerkReadUnavailable {

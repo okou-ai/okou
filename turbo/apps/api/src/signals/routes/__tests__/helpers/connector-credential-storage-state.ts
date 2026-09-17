@@ -130,9 +130,7 @@ export async function seedAutomaticOAuthBindingState(
           readonly method: "dcr";
           readonly registrationId: string;
           readonly tokenEndpointAuthMethod:
-            | "none"
-            | "client_secret_basic"
-            | "client_secret_post";
+            "none" | "client_secret_basic" | "client_secret_post";
           readonly encryptedClientSecret: string | null;
         };
   },

@@ -3,10 +3,7 @@ const ALLOWED_SLACK_DOWNLOAD_HOSTNAMES: ReadonlySet<string> = Object.freeze(
 );
 
 type SlackFileFetchErrorCode =
-  | "invalid-url"
-  | "download-failed"
-  | "html-response"
-  | "too-large";
+  "invalid-url" | "download-failed" | "html-response" | "too-large";
 
 export class SlackFileFetchError extends Error {
   constructor(

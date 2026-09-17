@@ -167,8 +167,7 @@ type ConnectorConnectionMutationFailure =
   | { readonly status: "siblingDisabled" };
 
 type ConnectorConnectionWriteFailureStatus =
-  | ConnectorConnectionMutationFailure["status"]
-  | "identityMismatch";
+  ConnectorConnectionMutationFailure["status"] | "identityMismatch";
 
 export function connectorConnectionWriteFailureMessage(
   status: ConnectorConnectionWriteFailureStatus,

@@ -809,8 +809,7 @@ function checkoutSessionMetadata(args: {
   readonly tier: SubscriptionCheckoutTier;
   readonly priceId: string;
   readonly adAttribution:
-    | Readonly<Record<string, string | undefined>>
-    | undefined;
+    Readonly<Record<string, string | undefined>> | undefined;
 }): Record<string, string> {
   const metadata: Record<string, string> = {
     orgId: args.orgId,

@@ -584,11 +584,7 @@ export async function claimPiMemoryPhase2Job(
 
 interface LockedClaimableJob extends PiMemoryPhase2OwnerScope {
   readonly status:
-    | "pending"
-    | "leased"
-    | "retryable_failure"
-    | "idle"
-    | "terminal_failure";
+    "pending" | "leased" | "retryable_failure" | "idle" | "terminal_failure";
   readonly inputRevision: number;
   readonly completedRevision: number;
   readonly reconciliationRevision: number;

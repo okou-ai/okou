@@ -1417,16 +1417,7 @@ export function createChatFilesBddApi(context: TestContext) {
       actor: ApiTestUser | null,
       body: BddSendEventBody,
       statuses: readonly (
-        | 201
-        | 400
-        | 401
-        | 402
-        | 403
-        | 404
-        | 409
-        | 422
-        | 429
-        | 503
+        201 | 400 | 401 | 402 | 403 | 404 | 409 | 422 | 429 | 503
       )[],
       options: RequestSendEventOptions = {},
       signal?: AbortSignal,

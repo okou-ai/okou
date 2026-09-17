@@ -157,14 +157,12 @@ function providerErrorPayload(
   const start = message.indexOf("{");
   if (start < 0) return undefined;
   const prefix = message.slice(0, start).trim().toLowerCase();
-  if (
-    !(
-      prefix === "" ||
-      prefix === "codex error:" ||
-      /^(?:openai|anthropic) api error \(\d{3}\):$/u.test(prefix) ||
-      /^(?:api error: |unexpected status |\d{3}(?:\s|$))/u.test(prefix)
-    )
-  )
+  if (!(
+    prefix === "" ||
+    prefix === "codex error:" ||
+    /^(?:openai|anthropic) api error \(\d{3}\):$/u.test(prefix) ||
+    /^(?:api error: |unexpected status |\d{3}(?:\s|$))/u.test(prefix)
+  ))
     return undefined;
   try {
     return object(JSON.parse(message.slice(start)) as unknown);

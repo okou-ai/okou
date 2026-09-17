@@ -196,8 +196,7 @@ describe("CHAT-02: run-level model overrides", () => {
       async ({ change, accountsEnabled }) => {
         const f = await prepareHeldSubscription(accountsEnabled);
         let replacement:
-          | ReturnType<typeof mockCodexDeviceAuthProvider>
-          | undefined;
+          ReturnType<typeof mockCodexDeviceAuthProvider> | undefined;
         const replacementIdentity = `replacement-${randomUUID()}`;
         if (change === "different-identity reconnect") {
           replacement = mockCodexDeviceAuthProvider({

@@ -57,9 +57,7 @@ function buildPersonalModelProvidersUrl(): string {
 function buildClaudeCodeCredentialRecoveryUrl(params: {
   readonly modelProviderType: ModelProviderType | null | undefined;
   readonly modelProviderCredentialScope:
-    | ModelProviderCredentialScope
-    | null
-    | undefined;
+    ModelProviderCredentialScope | null | undefined;
 }): string {
   if (
     params.modelProviderType === "claude-code-oauth-token" &&

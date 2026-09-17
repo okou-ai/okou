@@ -319,9 +319,7 @@ const FAL_PROVIDER_FAILURE_STATUSES: ReadonlySet<number> = Object.freeze(
 );
 
 type FalGenerationFailureRetryPolicy =
-  | "manual_once"
-  | "after_input_change"
-  | "retry_once";
+  "manual_once" | "after_input_change" | "retry_once";
 
 interface FalGenerationFailure {
   readonly error: {

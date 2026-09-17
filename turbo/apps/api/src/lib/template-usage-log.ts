@@ -17,9 +17,7 @@ const TEMPLATE_USED_TYPE = "template_used";
  * template is used, or be steered into a run that is already executing.
  */
 export type TemplateUsageDispatchPath =
-  | "active-input"
-  | "normal-send"
-  | "queued-claim";
+  "active-input" | "normal-send" | "queued-claim";
 
 /** What the surrounding request knows about a template usage. */
 export interface TemplateUsageLogContext {

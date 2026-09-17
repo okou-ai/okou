@@ -22,9 +22,7 @@ const PI_API_FIRST_TURN_USAGE_NAMESPACE =
   "26e1c547-485d-4438-bf6d-4b77959da0cb";
 
 type PiApiFirstTurnUsageProvider =
-  | PiGptModel
-  | PiDeepSeekModel
-  | z.infer<typeof piNativeCatalogModelSchema>;
+  PiGptModel | PiDeepSeekModel | z.infer<typeof piNativeCatalogModelSchema>;
 
 function gptLongContextMinimumInputTokens(model: PiGptModel): number {
   const minimum = MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS[model];

@@ -67,8 +67,7 @@ interface FeishuConnectorInstallation {
 interface ExistingFeishuCustomConnector {
   readonly connector: CustomConnectorDefinitionRow;
   readonly oauthConfig:
-    | typeof orgCustomConnectorOauthConfigs.$inferSelect
-    | null;
+    typeof orgCustomConnectorOauthConfigs.$inferSelect | null;
 }
 
 interface ReconciledFeishuCustomConnector {

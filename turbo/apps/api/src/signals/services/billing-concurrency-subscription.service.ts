@@ -2313,10 +2313,7 @@ export const cancelConcurrencySubscription$ = command(
 );
 
 type RestoreConcurrencyStripeResult =
-  | "restored"
-  | "not_found"
-  | "pending_update"
-  | "plan_ending";
+  "restored" | "not_found" | "pending_update" | "plan_ending";
 
 async function restoreScheduledConcurrencyChange(
   stripe: StripeClient,

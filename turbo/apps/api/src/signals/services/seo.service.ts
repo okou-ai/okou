@@ -101,9 +101,7 @@ type DataForSeoBodyResult =
     };
 
 type DataForSeoAttemptResult =
-  | DataForSeoBodyResult
-  | SeoRetryableErrorResult
-  | { readonly kind: "empty" };
+  DataForSeoBodyResult | SeoRetryableErrorResult | { readonly kind: "empty" };
 
 type SeoCommandResponse =
   | { readonly status: 200; readonly body: SeoResponse }

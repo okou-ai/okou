@@ -174,14 +174,10 @@ export type QueueFirstRunClaimResult =
   | { readonly kind: "lost" };
 
 export type QueueFirstRunAdmission =
-  | { readonly kind: "blocked" }
-  | { readonly kind: "idle" };
+  { readonly kind: "blocked" } | { readonly kind: "idle" };
 
 export type QueueFirstRunSessionSnapshotState =
-  | "binding_changed"
-  | "current"
-  | "session_changed"
-  | "unvalidated";
+  "binding_changed" | "current" | "session_changed" | "unvalidated";
 
 /**
  * Establish the shared thread lock for every event-backed queue claim,

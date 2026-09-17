@@ -32,20 +32,14 @@ export interface PiMemoryQuotaDecision {
     | "cash_percentage_unknown"
     | "entitlement_stale";
   readonly bucket?:
-    | "primary"
-    | "secondary"
-    | "short"
-    | "weekly"
-    | "member_pool";
+    "primary" | "secondary" | "short" | "weekly" | "member_pool";
   readonly remainingPercent?: number;
 }
 
 export class PiMemoryQuotaError extends Error {
   constructor(
     readonly errorClass:
-      | "quota_below_threshold"
-      | "quota_limit_reached"
-      | "quota_unavailable",
+      "quota_below_threshold" | "quota_limit_reached" | "quota_unavailable",
   ) {
     super("Pi memory quota admission failed");
     this.name = "PiMemoryQuotaError";

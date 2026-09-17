@@ -588,8 +588,7 @@ export function createAcceptedConnectorServerFirewallCatalogFromConnectors(args:
   });
   const connectorSlugs = [...entries.keys()].sort(compareStrings);
   let fixedHostOwners:
-    | ReadonlyMap<string, ConnectorServerFirewallHostOwner>
-    | undefined;
+    ReadonlyMap<string, ConnectorServerFirewallHostOwner> | undefined;
   return {
     connectorSlugs,
     has: (connectorSlug) => {

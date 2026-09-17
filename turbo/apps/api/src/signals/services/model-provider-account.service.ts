@@ -53,8 +53,7 @@ const CODEX_ACCOUNT_ID_SECRET = "CHATGPT_ACCOUNT_ID";
 const CODEX_ID_TOKEN_SECRET = "CHATGPT_ID_TOKEN";
 
 export type PersonalSubscriptionProviderType =
-  | typeof CODEX_TYPE
-  | typeof CLAUDE_CODE_TYPE;
+  typeof CODEX_TYPE | typeof CLAUDE_CODE_TYPE;
 
 export function isPersonalSubscriptionProviderType(
   type: string,
@@ -86,8 +85,7 @@ interface EncryptedAccountSecret {
 type AccountRow = typeof modelProviderAccounts.$inferSelect;
 type ProviderRow = typeof modelProviders.$inferSelect;
 export type PersonalProviderAccountErrorResponse =
-  | ReturnType<typeof badRequestMessage>
-  | ReturnType<typeof notFound>;
+  ReturnType<typeof badRequestMessage> | ReturnType<typeof notFound>;
 
 function normalizedText(value: string | null | undefined): string | null {
   const trimmed = value?.trim();

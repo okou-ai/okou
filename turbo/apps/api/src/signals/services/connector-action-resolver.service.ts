@@ -63,12 +63,10 @@ export type ResolvedConnectorActionMethod = ResolvedConnectorSlug & {
 };
 
 export type ConnectorSlugResolution =
-  | ResolvedConnectorSlug
-  | ConnectorSlugResolutionFailure;
+  ResolvedConnectorSlug | ConnectorSlugResolutionFailure;
 
 export type ConnectorActionMethodResolution =
-  | ResolvedConnectorActionMethod
-  | ConnectorActionResolutionFailure;
+  ResolvedConnectorActionMethod | ConnectorActionResolutionFailure;
 
 export type ConnectorSlugsResolution =
   | {

@@ -290,8 +290,7 @@ interface UsagePackInvitationAcceptanceIdentity {
 
 function enqueueUsagePackInvitationAcceptance(
   eventType:
-    | "organizationInvitation.accepted"
-    | "organizationMembership.created",
+    "organizationInvitation.accepted" | "organizationMembership.created",
   identity: UsagePackInvitationAcceptanceIdentity,
   db: Db,
   signal: AbortSignal,

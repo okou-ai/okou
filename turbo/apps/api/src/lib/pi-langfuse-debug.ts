@@ -46,8 +46,7 @@ function validLangfuseBaseUrl(value: string): string | undefined {
 
 /** Read the isolated debug-project configuration without enabling any run. */
 export function readPiLangfuseServerConfig():
-  | PiLangfuseServerConfig
-  | undefined {
+  PiLangfuseServerConfig | undefined {
   const publicKey = trimmedOptionalEnv(LANGFUSE_PUBLIC_KEY_ENV);
   const secretKey = trimmedOptionalEnv(LANGFUSE_SECRET_KEY_ENV);
   if (!publicKey || !secretKey) {

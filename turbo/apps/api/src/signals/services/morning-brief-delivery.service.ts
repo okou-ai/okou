@@ -1,3 +1,4 @@
+import { lockMorningBriefNativeSchedule } from "./morning-brief-native-schedule.service";
 import { createHash } from "node:crypto";
 
 import { emailOutbox } from "@okouai/db/schema/email-outbox";
@@ -35,8 +36,10 @@ import {
   EMAIL_PUBLIC_BRAND,
 } from "./email-common.service";
 import { currentMorningBriefCollectionAuthority$ } from "./morning-brief-collection-executor.service";
-import type { MorningBriefCollectionAdmission } from "./morning-brief-collection-occurrence.service";
-import { lockCollectionOwner } from "./morning-brief-collection-occurrence.service";
+import {
+  lockCollectionOwner,
+  type MorningBriefCollectionAdmission,
+} from "./morning-brief-collection-occurrence.service";
 import { MORNING_BRIEF_RESULT_EMAIL_TEMPLATE } from "./morning-brief-native-email-admission.service";
 import {
   MORNING_BRIEF_RESULT_EMAIL_SUBJECT_MAX_CHARACTERS,
@@ -120,11 +123,36 @@ function rejectionOf(reason: string): MorningBriefDeliveryRejection {
     : "morning-brief-unavailable";
 }
 
+/** Which purpose's result a delivery may consume. */
+export type MorningBriefDeliveryPurpose =
+  (typeof morningBriefDeliveries.$inferSelect)["executionPurpose"];
+
+/**
+ * The validated native execution authority a production delivery must present.
+ *
+ * It is the epoch and membership generation the occurrence was *claimed* under,
+ * not whatever the row happens to hold now. A currently enabled native row is
+ * not proof that an older occurrence still owns the member: a disable and
+ * re-enable, an Agent or thread replacement, or a transfer all bump the epoch,
+ * and an occurrence admitted before that must not deliver.
+ */
+export interface MorningBriefNativeDeliveryAuthority {
+  readonly ownerEpoch: number;
+  readonly membershipId: string;
+}
+
 export interface MorningBriefDeliveryRequest {
   readonly orgId: string;
   readonly userId: string;
-  /** The opaque attempt the generation preview returned. Never an owner. */
+  /** The opaque attempt the generation returned. Never an owner. */
   readonly resultAttemptId: string;
+  /**
+   * Which purpose's result this call may consume. Defaults to `preview` so the
+   * operator endpoint is unchanged; the native scheduler passes `production`.
+   */
+  readonly purpose?: MorningBriefDeliveryPurpose;
+  /** Required for `production`; rejected when absent or stale. */
+  readonly nativeAuthority?: MorningBriefNativeDeliveryAuthority;
 }
 
 function resultDigest(markdown: string): string {
@@ -289,12 +317,13 @@ function generationReferenceCondition(args: {
   readonly orgId: string;
   readonly userId: string;
   readonly resultAttemptId: string;
+  readonly purpose: MorningBriefDeliveryPurpose;
 }) {
   return and(
     eq(morningBriefGenerations.orgId, args.orgId),
     eq(morningBriefGenerations.userId, args.userId),
     eq(morningBriefGenerations.attemptId, args.resultAttemptId),
-    eq(morningBriefGenerations.executionPurpose, "preview"),
+    eq(morningBriefGenerations.executionPurpose, args.purpose),
   );
 }
 
@@ -312,6 +341,7 @@ async function loadResultAnchor(
     readonly orgId: string;
     readonly userId: string;
     readonly resultAttemptId: string;
+    readonly purpose: MorningBriefDeliveryPurpose;
   },
 ): Promise<ResultAnchor | undefined> {
   const [row] = await db
@@ -341,6 +371,7 @@ async function loadDeliverableResult(
     readonly orgId: string;
     readonly userId: string;
     readonly resultAttemptId: string;
+    readonly purpose: MorningBriefDeliveryPurpose;
     readonly at: Date;
   },
 ): Promise<DeliverableResult> {
@@ -390,6 +421,7 @@ async function loadDeliveryByAttempt(
     readonly orgId: string;
     readonly userId: string;
     readonly resultAttemptId: string;
+    readonly purpose: MorningBriefDeliveryPurpose;
   },
 ) {
   const [row] = await db
@@ -404,7 +436,7 @@ async function loadDeliveryByAttempt(
       and(
         eq(morningBriefDeliveries.orgId, args.orgId),
         eq(morningBriefDeliveries.userId, args.userId),
-        eq(morningBriefDeliveries.executionPurpose, "preview"),
+        eq(morningBriefDeliveries.executionPurpose, args.purpose),
         eq(morningBriefDeliveries.resultAttemptId, args.resultAttemptId),
       ),
     )
@@ -641,10 +673,51 @@ async function lockSubscription(
   return { unsubscribed: preference?.emailUnsubscribed ?? false };
 }
 
+/**
+ * Prove the live choice still owns this delivery, with the durable native row
+ * as the authority once the member is native.
+ *
+ * Split out of {@link deliverInTransaction} for readability; the lock it takes
+ * and the order it takes it in are unchanged.
+ */
+async function assertLiveChoiceStillOwns(
+  tx: Tx,
+  owner: { readonly orgId: string; readonly userId: string },
+  request: MorningBriefDeliveryRequest,
+  current: MorningBriefCollectionAdmission,
+): Promise<void> {
+  // The live choice, locked so a mid-flight disable cannot be overtaken. Once a
+  // member is in the native phase the durable native row *is* that choice and
+  // the legacy automation is not consulted at all, which is what lets a
+  // production delivery commit after legacy scheduling is disabled and with no
+  // live Official Workflow installation reconciliation.
+  const choice = await lockLiveMorningBriefChoice(tx, owner, {
+    automationId: current.automationId,
+    workflowId: current.workflowId,
+  });
+  if (!choice.enabled) {
+    throw new DeliveryRejected("morning-brief-unavailable");
+  }
+  if (choice.kind === "native") {
+    const authority = request.nativeAuthority;
+    if (
+      authority === undefined ||
+      choice.ownerEpoch !== authority.ownerEpoch ||
+      choice.membershipId !== authority.membershipId ||
+      choice.agentId !== current.agentId
+    ) {
+      // The admitted native epoch no longer owns this member, so this result
+      // belongs to a revoked occurrence and must not reach Chat or email.
+      throw new DeliveryRejected("owner-revoked");
+    }
+  }
+}
+
 async function deliverInTransaction(
   tx: Tx,
   args: {
     readonly request: MorningBriefDeliveryRequest;
+    readonly purpose: MorningBriefDeliveryPurpose;
     readonly anchor: ResultAnchor;
     readonly current: MorningBriefCollectionAdmission;
   },
@@ -691,6 +764,7 @@ async function deliverInTransaction(
   await loadDeliverableResult(tx, {
     ...owner,
     resultAttemptId: request.resultAttemptId,
+    purpose: args.purpose,
     at: nowDate(),
   });
 
@@ -722,22 +796,7 @@ async function deliverInTransaction(
     at: nowDate(),
   });
 
-  const [automation] = await tx
-    .select({ enabled: workflowAutomations.enabled })
-    .from(workflowAutomations)
-    .where(
-      and(
-        eq(workflowAutomations.id, current.automationId),
-        eq(workflowAutomations.orgId, request.orgId),
-        eq(workflowAutomations.ownerUserId, request.userId),
-        eq(workflowAutomations.workflowId, current.workflowId),
-      ),
-    )
-    .limit(1)
-    .for("update");
-  if (!automation?.enabled) {
-    throw new DeliveryRejected("morning-brief-unavailable");
-  }
+  await assertLiveChoiceStillOwns(tx, owner, request, current);
 
   // The last admission wait. Everything after it is local work only.
   const subscription = await lockSubscription(tx, request.userId);
@@ -751,6 +810,7 @@ async function deliverInTransaction(
   const result = await loadDeliverableResult(tx, {
     ...owner,
     resultAttemptId: request.resultAttemptId,
+    purpose: args.purpose,
     at: acceptedAt,
   });
   if (result.membershipId !== current.membershipId) {
@@ -797,7 +857,7 @@ async function deliverInTransaction(
     scheduledFor: anchor.scheduledFor,
     collectionKind: anchor.collectionKind,
     collectionVersion: anchor.collectionVersion,
-    executionPurpose: "preview",
+    executionPurpose: args.purpose,
     resultAttemptId: request.resultAttemptId,
     membershipId: current.membershipId,
     workflowId: current.workflowId,
@@ -821,6 +881,55 @@ async function deliverInTransaction(
   };
 }
 
+/**
+ * The member's live Morning Brief choice, locked against a mid-flight disable.
+ *
+ * Once a member is in the native phase the durable native row is the whole
+ * choice: the legacy automation is not read, so delivery keeps working after
+ * legacy scheduling is disabled and with no live catalog reconciliation. Every
+ * other phase locks the legacy automation exactly as before, because that row
+ * is still the authority there.
+ */
+async function lockLiveMorningBriefChoice(
+  tx: Tx,
+  owner: { readonly orgId: string; readonly userId: string },
+  legacy: { readonly automationId: string; readonly workflowId: string },
+): Promise<
+  | {
+      readonly kind: "native";
+      readonly enabled: boolean;
+      readonly ownerEpoch: number;
+      readonly membershipId: string;
+      readonly agentId: string;
+    }
+  | { readonly kind: "legacy"; readonly enabled: boolean }
+> {
+  const native = await lockMorningBriefNativeSchedule(tx, owner);
+  if (native !== undefined && native.phase === "native") {
+    return {
+      kind: "native",
+      enabled: native.enabled,
+      ownerEpoch: native.ownerEpoch,
+      membershipId: native.membershipId,
+      agentId: native.agentId,
+    };
+  }
+  const [automation] = await tx
+    .select({ enabled: workflowAutomations.enabled })
+    .from(workflowAutomations)
+    .where(
+      and(
+        eq(workflowAutomations.id, legacy.automationId),
+        eq(workflowAutomations.orgId, owner.orgId),
+        eq(workflowAutomations.ownerUserId, owner.userId),
+        eq(workflowAutomations.workflowId, legacy.workflowId),
+      ),
+    )
+    .limit(1)
+    .for("update");
+  return { kind: "legacy", enabled: automation?.enabled === true };
+}
+
 export const deliverMorningBriefResult$ = command(
   async (
     { set },
@@ -829,6 +938,7 @@ export const deliverMorningBriefResult$ = command(
   ): Promise<MorningBriefDeliveryResult> => {
     const db = set(writeDb$);
     const owner = { orgId: request.orgId, userId: request.userId };
+    const purpose: MorningBriefDeliveryPurpose = request.purpose ?? "preview";
 
     // A delivery that already committed is recoverable from the reference the
     // caller still holds, even after the generation row has been swept. This
@@ -838,6 +948,7 @@ export const deliverMorningBriefResult$ = command(
     const recovered = await loadDeliveryByAttempt(db, {
       ...owner,
       resultAttemptId: request.resultAttemptId,
+      purpose,
     });
     signal.throwIfAborted();
     if (recovered) {
@@ -855,6 +966,7 @@ export const deliverMorningBriefResult$ = command(
     const anchor = await loadResultAnchor(db, {
       ...owner,
       resultAttemptId: request.resultAttemptId,
+      purpose,
     });
     signal.throwIfAborted();
     if (!anchor) {
@@ -879,6 +991,7 @@ export const deliverMorningBriefResult$ = command(
       committed = await db.transaction(async (tx) => {
         return await deliverInTransaction(tx, {
           request,
+          purpose,
           anchor,
           current: authority.admission,
         });

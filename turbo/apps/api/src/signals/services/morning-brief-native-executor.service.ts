@@ -25,7 +25,10 @@ import {
   type MorningBriefNativeClaim,
   type MorningBriefNativeOccurrenceRow,
 } from "./morning-brief-native-schedule.service";
-import type { MorningBriefExecutionTarget } from "@okouai/db/schema/morning-brief-native-schedule";
+import type {
+  MorningBriefExecutionPhase,
+  MorningBriefExecutionTarget,
+} from "@okouai/db/schema/morning-brief-native-schedule";
 
 /** The write-capable database handle one tick holds. */
 type TickDb = Db;
@@ -344,10 +347,70 @@ async function runTransitionPass(args: {
     await advanceOneTransition(args.set, args.deps, {
       owner,
       target,
+      phase: row.phase,
       counters: args.counters,
       signal: args.signal,
     });
   }
+  return false;
+}
+
+/**
+ * Resume slots a previous tick left unsettled.
+ *
+ * The claim already took the schedule obligation away, so nothing else would
+ * rediscover these. Returns true when the tick budget ran out mid-pass.
+ */
+async function runResumePass(args: {
+  readonly db: TickDb;
+  readonly deps: NativeTickDependencies;
+  readonly counters: TickCounters;
+  readonly signal: AbortSignal;
+  readonly overBudget: () => boolean;
+  readonly set: TickSetter;
+}): Promise<boolean> {
+  const { db, deps, counters, set } = args;
+  const deadline = args.signal;
+  const overBudget = args.overBudget;
+  // 2. Resume slots a previous tick left unsettled. The claim already took
+  //    the schedule obligation, so nothing else would rediscover them.
+  for (const stale of await loadResumableOccurrences(db, {
+    now: nowDate(),
+    limit: DUE_OWNER_BATCH,
+  })) {
+    if (overBudget()) {
+      return true;
+    }
+    const owner = { orgId: stale.orgId, userId: stale.userId };
+    if (!(await nativeAdmissionAllowed(db, owner))) {
+      continue;
+    }
+    const membershipId = await set(currentMembershipId$, owner, deadline);
+    if (membershipId === null) {
+      continue;
+    }
+    const leaseToken = crypto.randomUUID();
+    const resumed = await db.transaction(async (tx) => {
+      return await resumeMorningBriefNativeOccurrence(tx, owner, {
+        scheduledFor: stale.scheduledFor,
+        now: nowDate(),
+        leaseToken,
+        membershipId,
+      });
+    });
+    if (resumed.kind !== "claimed") {
+      continue;
+    }
+    counters.claimed += 1;
+    await runOneSlot({
+      db,
+      deps,
+      claim: resumed,
+      counters,
+      signal: deadline,
+    });
+  }
+
   return false;
 }
 
@@ -428,16 +491,20 @@ async function advanceOneTransition(
   args: {
     readonly owner: MorningBriefMemberIdentity;
     readonly target: MorningBriefExecutionTarget;
+    /** The phase actually recorded on the row this tick read. */
+    readonly phase: MorningBriefExecutionPhase;
     readonly counters: TickCounters;
     readonly signal: AbortSignal;
   },
 ): Promise<void> {
-  // The drain evidence must match the direction being proven: legacy's journal
-  // says nothing about native work and vice versa.
+  // The drain evidence must match the **actual phase edge**, not the target.
+  // A rollback that reverses back to native still has native work to reconcile,
+  // and a cutover that reverses back to legacy has only legacy work: choosing
+  // by target alone hands one edge the other side's proof.
   const drain =
-    args.target === "native"
-      ? await deps.legacyDrain(args.owner, args.signal)
-      : await deps.nativeDrain(args.owner, args.signal);
+    args.phase === "native" || args.phase === "rollback-draining"
+      ? await deps.nativeDrain(args.owner, args.signal)
+      : await deps.legacyDrain(args.owner, args.signal);
   const outcome = await set(advanceMemberTransition$, {
     owner: args.owner,
     target: args.target,
@@ -526,43 +593,17 @@ export const executeNativeMorningBriefTick$ = command(
       return exhausted();
     }
 
-    // 2. Resume slots a previous tick left unsettled. The claim already took
-    //    the schedule obligation, so nothing else would rediscover them.
-    for (const stale of await loadResumableOccurrences(db, {
-      now: nowDate(),
-      limit: DUE_OWNER_BATCH,
-    })) {
-      if (overBudget()) {
-        return exhausted();
-      }
-      const owner = { orgId: stale.orgId, userId: stale.userId };
-      if (!(await nativeAdmissionAllowed(db, owner))) {
-        continue;
-      }
-      const membershipId = await set(currentMembershipId$, owner, deadline);
-      if (membershipId === null) {
-        continue;
-      }
-      const leaseToken = crypto.randomUUID();
-      const resumed = await db.transaction(async (tx) => {
-        return await resumeMorningBriefNativeOccurrence(tx, owner, {
-          scheduledFor: stale.scheduledFor,
-          now: nowDate(),
-          leaseToken,
-          membershipId,
-        });
-      });
-      if (resumed.kind !== "claimed") {
-        continue;
-      }
-      counters.claimed += 1;
-      await runOneSlot({
+    if (
+      await runResumePass({
         db,
         deps,
-        claim: resumed,
         counters,
         signal: deadline,
-      });
+        overBudget,
+        set,
+      })
+    ) {
+      return exhausted();
     }
 
     // 3. Due native owners.
@@ -582,6 +623,7 @@ export const executeNativeMorningBriefTick$ = command(
         await advanceOneTransition(set, deps, {
           owner,
           target: "legacy",
+          phase: schedule.phase,
           counters,
           signal: deadline,
         });

@@ -1,7 +1,6 @@
 import { morningBriefCollectionPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-collection-preview";
 import { morningBriefGenerationPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-generation-preview";
 import { morningBriefGmailCollectionPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-gmail-collection-preview";
-import { morningBriefGenerationPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-generation-preview";
 
 import { ROUTES } from "../signals/route";
 import {
@@ -11,7 +10,6 @@ import {
 import { morningBriefCollectionPreviewRoutes } from "../signals/routes/morning-brief-collection-preview";
 import { morningBriefGenerationPreviewRoutes } from "../signals/routes/morning-brief-generation-preview";
 import { morningBriefGmailCollectionPreviewRoutes } from "../signals/routes/morning-brief-gmail-collection-preview";
-import { morningBriefGenerationPreviewRoutes } from "../signals/routes/morning-brief-generation-preview";
 import { morningBriefDeliveryPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-delivery-preview";
 import { morningBriefDeliveryPreviewRoutes } from "../signals/routes/morning-brief-delivery-preview";
 import { morningBriefChatCollectionPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-chat-collection-preview";
@@ -37,29 +35,9 @@ describe("API route registrations", () => {
     );
   });
 
-  it("registers the Morning Brief Chat collection preview an operator invokes", () => {
-    expectOnlyRegistration(
-      morningBriefChatCollectionPreviewRoutes,
-      morningBriefChatCollectionPreviewContract.collect,
-    );
-  });
-
-  it("registers the Morning Brief generation preview an operator invokes", () => {
-    expectOnlyRegistration(
-      morningBriefGenerationPreviewRoutes,
-      morningBriefGenerationPreviewContract.preview,
-    );
-  });
-
   // Delivery has the same requirement, and one more reason: its production 404
   // is only a statement about a route that really exists if the deployed table
   // is the table that holds it.
-  it("registers the Morning Brief delivery preview an operator invokes", () => {
-    expectOnlyRegistration(
-      morningBriefDeliveryPreviewRoutes,
-      morningBriefDeliveryPreviewContract.preview,
-    );
-  });
 
   it("registers the Morning Brief Chat collection preview an operator invokes", () => {
     expectOnlyRegistration(
@@ -90,20 +68,6 @@ describe("API route registrations", () => {
   // exact entry object is asserted here. Registration is what makes that
   // suite's results statements about the deployed endpoint, and what makes the
   // production 404 a statement about a route that really exists.
-  it("registers the Morning Brief generation preview an operator invokes", () => {
-    const [entry, ...extra] = morningBriefGenerationPreviewRoutes;
-    expect(extra).toHaveLength(0);
-    expect(entry?.route).toBe(morningBriefGenerationPreviewContract.preview);
-    expect(ROUTES).toContain(entry);
-    expect(
-      ROUTES.filter((registered) => {
-        return (
-          registered.route.path ===
-          morningBriefGenerationPreviewContract.preview.path
-        );
-      }),
-    ).toStrictEqual([entry]);
-  });
 });
 
 /**

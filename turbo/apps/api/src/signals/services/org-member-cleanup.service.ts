@@ -16,6 +16,7 @@ import { tapError } from "../utils";
 import { transitionAgentRunsToTerminal } from "./agent-run-terminal-transition.service";
 import { revokeMorningBriefCollectionOwnership } from "./morning-brief-collection-occurrence.service";
 import { revokeMorningBriefDeliveryOwnership } from "./morning-brief-delivery.service";
+import { revokeMorningBriefNativeAuthority } from "./morning-brief-native-schedule.service";
 import { revokeMorningBriefScheduleOwnership } from "./morning-brief-schedule-claim.service";
 
 import type { Db } from "../external/db";
@@ -133,6 +134,10 @@ async function revokeOrgMemberRunAuthority(
     // the rendered body, so it is removed here rather than left for the drain
     // to refuse.
     await revokeMorningBriefDeliveryOwnership(tx, {
+      kind: "membership",
+      orgId: args.orgId,
+      userId: args.userId,
+    });
     // The departing member's legacy schedule occurrences lose the same
     // authority here, before the rows they hang from are torn down.
     await revokeMorningBriefScheduleOwnership(tx, {
@@ -140,6 +145,14 @@ async function revokeOrgMemberRunAuthority(
       orgId: args.orgId,
       userId: args.userId,
     });
+    // The durable native authority goes with them: the epoch is bumped so no
+    // admitted occurrence can still deliver or settle, and the scheduling
+    // obligation is cleared in this same transaction rather than left unowned.
+    await revokeMorningBriefNativeAuthority(
+      tx,
+      { orgId: args.orgId, userId: args.userId },
+      nowDate(),
+    );
     await tx
       .delete(agentRunQueue)
       .where(

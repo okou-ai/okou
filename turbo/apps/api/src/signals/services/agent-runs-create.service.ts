@@ -96,8 +96,7 @@ type AgentRunCreateBody = z.infer<typeof runCreateBodySchema>;
 // rather than a restatement that this is an agent run.
 type AgentRunOrigin = "direct" | "workflow_automation";
 export type AgentRunPreCreateSource =
-  | "chat_callback_auto_send"
-  | "workflow_slash_command";
+  "chat_callback_auto_send" | "workflow_slash_command";
 
 const DISALLOWED_TOOLS = [
   "CronCreate",
@@ -215,8 +214,7 @@ interface CreateQueueFirstAgentRunCommandArgs extends Omit<
 }
 
 type AnyCreateAgentRunCommandArgs =
-  | CreateAgentRunCommandArgs
-  | CreateQueueFirstAgentRunCommandArgs;
+  CreateAgentRunCommandArgs | CreateQueueFirstAgentRunCommandArgs;
 
 export interface OfficialWorkflowBootstrapRequirement {
   readonly workflowIds: readonly string[];

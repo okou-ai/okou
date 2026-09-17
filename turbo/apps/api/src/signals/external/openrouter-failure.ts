@@ -48,11 +48,7 @@ export interface OpenRouterDiagnostics extends OpenRouterTokenCounts {
   upstreamStatus?: number;
   finishReason?: "stop" | "length" | "content_filter" | "tool_calls" | "error";
   nativeFinishReason?:
-    | "MAX_TOKENS"
-    | "STOP"
-    | "SAFETY"
-    | "RECITATION"
-    | "OTHER";
+    "MAX_TOKENS" | "STOP" | "SAFETY" | "RECITATION" | "OTHER";
 }
 
 const failureReasons = singleton(() => {

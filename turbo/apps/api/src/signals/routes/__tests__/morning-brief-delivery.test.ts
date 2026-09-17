@@ -430,14 +430,14 @@ describe("Morning Brief native delivery", () => {
     expect(second.body.result).toBe("already-delivered");
     expect(second.body.delivery).toStrictEqual(first.body.delivery);
     expect(calls.generation).toHaveLength(1);
-    expect(await readDeliveries(f)).toHaveLength(1);
+    await expect(readDeliveries(f)).resolves.toHaveLength(1);
     const events = await readThreadEvents(first.body.delivery.chatThreadId);
     expect(
       events.filter((event) => {
         return event.eventType === "output.message";
       }),
     ).toHaveLength(1);
-    expect(await readOutbox(f)).toHaveLength(1);
+    await expect(readOutbox(f)).resolves.toHaveLength(1);
   });
 
   it("recovers a committed delivery after its source result expires", async () => {
@@ -457,7 +457,7 @@ describe("Morning Brief native delivery", () => {
     const replay = await accept(deliver(f, attemptId), [200]);
     expect(replay.body.result).toBe("already-delivered");
     expect(replay.body.delivery).toStrictEqual(first.body.delivery);
-    expect(await readDeliveries(f)).toHaveLength(1);
+    await expect(readDeliveries(f)).resolves.toHaveLength(1);
   });
 
   it("refuses an expired result that was never delivered", async () => {
@@ -472,7 +472,7 @@ describe("Morning Brief native delivery", () => {
 
     const response = await accept(deliver(f, attemptId), [409]);
     expect(response.body.error.code).toBe("MORNING_BRIEF_RESULT_EXPIRED");
-    expect(await readDeliveries(f)).toHaveLength(0);
+    await expect(readDeliveries(f)).resolves.toHaveLength(0);
   });
 
   it("refuses another member's result reference", async () => {
@@ -483,9 +483,9 @@ describe("Morning Brief native delivery", () => {
     const attemptId = await generateAcceptedResult(owner);
 
     const response = await accept(deliver(stranger, attemptId), [404]);
-    expect(response.body.error.code).toBe("NOT_FOUND");
-    expect(await readDeliveries(owner)).toHaveLength(0);
-    expect(await readDeliveries(stranger)).toHaveLength(0);
+    expect(response.body).toMatchObject({ error: { code: "NOT_FOUND" } });
+    await expect(readDeliveries(owner)).resolves.toHaveLength(0);
+    await expect(readDeliveries(stranger)).resolves.toHaveLength(0);
   });
 
   it("refuses to deliver after the brief is disabled", async () => {
@@ -497,7 +497,7 @@ describe("Morning Brief native delivery", () => {
 
     const response = await accept(deliver(f, attemptId), [409]);
     expect(response.body.error.code).toBe("MORNING_BRIEF_UNAVAILABLE");
-    expect(await readDeliveries(f)).toHaveLength(0);
+    await expect(readDeliveries(f)).resolves.toHaveLength(0);
   });
 
   it("still delivers to Chat when the recipient has opted out", async () => {
@@ -521,7 +521,7 @@ describe("Morning Brief native delivery", () => {
         return event.id === response.body.delivery.chatEventId;
       }),
     ).toHaveLength(1);
-    expect(await readOutbox(f)).toHaveLength(0);
+    await expect(readOutbox(f)).resolves.toHaveLength(0);
     expect(calls.email).toHaveLength(0);
   });
 
@@ -540,7 +540,7 @@ describe("Morning Brief native delivery", () => {
 
     const response = await accept(deliver(f, attemptId), [200]);
     expect(response.body.delivery.emailResolution).toBe("suppressed");
-    expect(await readOutbox(f)).toHaveLength(0);
+    await expect(readOutbox(f)).resolves.toHaveLength(0);
   });
 
   it("records no_email rather than refilling an erased user cache", async () => {
@@ -594,7 +594,7 @@ describe("Morning Brief native delivery", () => {
       });
     });
 
-    expect(await readDeliveries(f)).toHaveLength(0);
+    await expect(readDeliveries(f)).resolves.toHaveLength(0);
     const remaining = await db()
       .select({ id: emailOutbox.id })
       .from(emailOutbox)
@@ -658,7 +658,7 @@ describe("Morning Brief native delivery", () => {
     expect(response.body.error.code).toBe(
       "MORNING_BRIEF_IMPLEMENTATION_DISABLED",
     );
-    expect(await readDeliveries(f)).toHaveLength(0);
+    await expect(readDeliveries(f)).resolves.toHaveLength(0);
   });
 
   it("answers 404 in production before doing any authentication work", async () => {
@@ -672,7 +672,7 @@ describe("Morning Brief native delivery", () => {
     // feature, is what makes the endpoint absent.
     const denied = await accept(deliver(f, attemptId), [404]);
     expect(denied.body).toBe("Not found");
-    expect(await readDeliveries(f)).toHaveLength(0);
+    await expect(readDeliveries(f)).resolves.toHaveLength(0);
 
     // The same request without any credential is equally absent, so production
     // discloses nothing by answering before authentication.

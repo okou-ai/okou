@@ -48,12 +48,7 @@ interface BuiltInGenerationRequestInternal {
   readonly admissionId?: string;
   readonly publicBrand?: PublicBrand;
   readonly provider?:
-    | "openai"
-    | "fal"
-    | "byteplus"
-    | "minimax"
-    | "joggai"
-    | "heygen";
+    "openai" | "fal" | "byteplus" | "minimax" | "joggai" | "heygen";
   readonly providerJobId?: string;
   readonly providerSessionId?: string;
   readonly providerStatus?: string;

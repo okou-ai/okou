@@ -10,11 +10,7 @@ const RUN_BUILT_IN_MAX_STARTED = 50;
 const RUN_BUILT_IN_ADMISSION_TTL_MS = 30 * 60 * 1000;
 
 type RunBuiltInGenerationKind =
-  | "image"
-  | "video"
-  | "presentation"
-  | "website"
-  | "voice";
+  "image" | "video" | "presentation" | "website" | "voice";
 
 export interface RunBuiltInAdmission {
   readonly id: string;
@@ -33,9 +29,7 @@ type RunBuiltInAdmissionError = {
 };
 
 type RunBuiltInAdmissionResult =
-  | RunBuiltInAdmission
-  | RunBuiltInAdmissionError
-  | null;
+  RunBuiltInAdmission | RunBuiltInAdmissionError | null;
 
 export function isRunBuiltInAdmissionError(
   result: RunBuiltInAdmissionResult,

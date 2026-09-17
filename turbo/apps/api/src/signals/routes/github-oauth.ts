@@ -206,8 +206,7 @@ const writeGithubConnectorConnection$ = command(
 );
 
 function githubAppUserOauthCredentials():
-  | { readonly clientId: string; readonly clientSecret: string }
-  | undefined {
+  { readonly clientId: string; readonly clientSecret: string } | undefined {
   const clientId = optionalEnv("GITHUB_APP_CLIENT_ID");
   const clientSecret = optionalEnv("GITHUB_APP_CLIENT_SECRET");
   if (!clientId || !clientSecret) {

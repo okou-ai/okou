@@ -28,8 +28,7 @@ import {
 } from "./usage-allowance.service";
 
 type RunAdmissionFailure =
-  | ReturnType<typeof insufficientCredits>
-  | ReturnType<typeof badRequestMessage>;
+  ReturnType<typeof insufficientCredits> | ReturnType<typeof badRequestMessage>;
 
 type CreditDb = Pick<Db, "$with" | "select" | "with">;
 

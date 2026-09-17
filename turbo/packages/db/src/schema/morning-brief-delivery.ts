@@ -22,7 +22,10 @@ import { orgMembersMetadata } from "./org-members-metadata";
  * never be delivered by a later production occurrence that happens to share an
  * owner and an anchor.
  */
-export const MORNING_BRIEF_DELIVERY_PURPOSES = ["preview"] as const;
+export const MORNING_BRIEF_DELIVERY_PURPOSES = [
+  "preview",
+  "production",
+] as const;
 export type MorningBriefDeliveryPurpose =
   (typeof MORNING_BRIEF_DELIVERY_PURPOSES)[number];
 

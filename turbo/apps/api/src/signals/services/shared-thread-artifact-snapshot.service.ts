@@ -521,8 +521,8 @@ async function rewriteSnapshotMessages(
   const messages: SharedMessage[] = [];
   for (const message of sourceMessages) {
     const attachments:
-      | NonNullable<SharedMessage["attachments"]>[number][]
-      | undefined = message.attachments === undefined ? undefined : [];
+      NonNullable<SharedMessage["attachments"]>[number][] | undefined =
+      message.attachments === undefined ? undefined : [];
     for (const attachment of message.attachments ?? []) {
       attachments?.push({
         ...attachment,

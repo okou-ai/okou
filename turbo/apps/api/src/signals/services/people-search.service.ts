@@ -201,8 +201,7 @@ interface PeopleSearchErrorResult {
 }
 
 type PerplexityBodyResult =
-  | PeopleSearchErrorResult
-  | { readonly kind: "body"; readonly body: unknown };
+  PeopleSearchErrorResult | { readonly kind: "body"; readonly body: unknown };
 
 type PerplexityResponseResult =
   | PeopleSearchErrorResult

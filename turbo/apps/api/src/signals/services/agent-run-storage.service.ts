@@ -130,8 +130,7 @@ interface PrepareAgentRunStorageManifestArgs {
   readonly volumeVersionOverrides: Record<string, string> | undefined;
   readonly additionalVolumes: readonly AdditionalVolume[] | undefined;
   readonly additionalVolumeSources:
-    | readonly StorageManifestSource[]
-    | undefined;
+    readonly StorageManifestSource[] | undefined;
   readonly framework: SupportedFramework | "pi";
   /** Canonical session persistence replaces matching request writeback artifacts. */
   readonly persistedStorageMounts?: readonly PersistedStorageMount[];
@@ -271,8 +270,7 @@ interface BuildStorageManifestEntriesArgs {
   readonly composeVolumes: readonly ResolvedVolume[];
   readonly additionalVolumes: readonly AdditionalVolume[] | undefined;
   readonly additionalVolumeSources:
-    | readonly StorageManifestSource[]
-    | undefined;
+    readonly StorageManifestSource[] | undefined;
   readonly artifacts: readonly ContextArtifact[];
   readonly timing?: ApiDispatchTimingCollector;
   readonly stats?: StorageManifestBuildStats;
@@ -900,11 +898,9 @@ class StorageManifestEntryPhaseTiming {
     private readonly resolveActionType: ApiDispatchTimingActionType,
     private readonly generateActionType: ApiDispatchTimingActionType,
     private readonly resolveDimensions:
-      | ApiDispatchTimingDimensionsInput
-      | undefined,
+      ApiDispatchTimingDimensionsInput | undefined,
     private readonly generateDimensions:
-      | ApiDispatchTimingDimensionsInput
-      | undefined,
+      ApiDispatchTimingDimensionsInput | undefined,
   ) {}
 
   async measureResolve<T>(operation: () => Promise<T>): Promise<T> {
@@ -2506,8 +2502,7 @@ function storageManifestRequests(args: {
   readonly composeVolumes: readonly ResolvedVolume[];
   readonly additionalVolumes: readonly AdditionalVolume[] | undefined;
   readonly additionalVolumeSources:
-    | readonly StorageManifestSource[]
-    | undefined;
+    readonly StorageManifestSource[] | undefined;
   readonly artifacts: readonly ContextArtifact[];
 }): readonly StorageRequest[] {
   const requests: StorageRequest[] = [];

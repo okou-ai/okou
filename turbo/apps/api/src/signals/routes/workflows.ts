@@ -1289,8 +1289,7 @@ async function copyWorkflowDatabaseRows(
 function copiedWorkflowVolumeFiles(
   sourceWorkflow: Pick<WorkflowRow, "name" | "description" | "instruction">,
   sourceFiles:
-    | readonly { readonly path: string; readonly content: string }[]
-    | null,
+    readonly { readonly path: string; readonly content: string }[] | null,
 ) {
   const skillMd = synthesizeWorkflowSkillMd({
     name: sourceWorkflow.name,
@@ -1347,8 +1346,7 @@ const publishCopiedWorkflow$ = command(
       readonly member: WorkflowMember;
       readonly sourceWorkflow: WorkflowRow;
       readonly sourceFiles:
-        | readonly { readonly path: string; readonly content: string }[]
-        | null;
+        readonly { readonly path: string; readonly content: string }[] | null;
       readonly targetAgentId: string;
       readonly inheritedAutonomyBudget: number | undefined;
       readonly currentTime: Date;

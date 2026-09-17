@@ -42,10 +42,7 @@ const TIER_MONTHLY_CREDITS = Object.freeze<Record<PlanCreditTier, number>>({
 type CreditBreakdownCategory = "plan" | "free" | "promotional" | "payAsYouGo";
 type PlanCreditTier = "pro" | "team";
 type ScheduledBillingTargetTier =
-  | "limited-free-1"
-  | "pro-suspend"
-  | "pro"
-  | "team";
+  "limited-free-1" | "pro-suspend" | "pro" | "team";
 type UsageAllowanceWindowKind = "short" | "weekly";
 
 const CANCELED_SUBSCRIPTION_TARGET_TIER = "limited-free-1";

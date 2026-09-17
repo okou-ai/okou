@@ -13,6 +13,7 @@ import { clerk$ } from "../external/clerk";
 import type { Db } from "../external/db";
 import { lockCollectionOwner } from "./morning-brief-collection-occurrence.service";
 import { loadMorningBriefMigrationState } from "./morning-brief-migration-state.service";
+import { lockMorningBriefNativeSchedule } from "./morning-brief-native-schedule.service";
 
 /**
  * Outbox template name of a native Morning Brief delivery.
@@ -143,45 +144,45 @@ function rejected(reason: string): NativeMorningBriefEmailAdmission {
  * provider cannot be retracted; this gate only decides whether a request is
  * made at all.
  */
-export async function admitNativeMorningBriefEmail(
+/**
+ * Re-check the owner's live Morning Brief choice for one queued native email.
+ *
+ * Once the member is in the native phase, the durable native row is the whole
+ * choice: no live Official Workflow installation, catalog reconciliation or
+ * legacy `enabled` bit is consulted, so an email enqueued by a native delivery
+ * still sends after legacy scheduling has been disabled. The epoch recorded on
+ * the delivery must still be the member's current one, which is what stops a
+ * revoked occurrence's mail from going out after a disable and re-enable.
+ *
+ * Every other phase keeps the previous behaviour exactly: the installation,
+ * schedule and Agent must all still be current, and the automation row is
+ * locked rather than read so a mid-flight disable is waited for.
+ *
+ * Returns `null` when the owner still permits the send.
+ */
+/**
+ * Prove the recipient is still the same member generation this delivery owned.
+ *
+ * Split out of {@link admitNativeMorningBriefEmail}; the reads, locks and their
+ * order are unchanged. Returns `null` when the member still permits the send.
+ */
+async function admitMemberGenerationForNativeEmail(
   tx: Tx,
-  outboxId: string,
-  preflight: NativeMorningBriefOwnerPreflight | null,
-): Promise<NativeMorningBriefEmailAdmission> {
-  const [delivery] = await tx
-    .select({
-      orgId: morningBriefDeliveries.orgId,
-      userId: morningBriefDeliveries.userId,
-      scheduledFor: morningBriefDeliveries.scheduledFor,
-      collectionKind: morningBriefDeliveries.collectionKind,
-      collectionVersion: morningBriefDeliveries.collectionVersion,
-      membershipId: morningBriefDeliveries.membershipId,
-      workflowId: morningBriefDeliveries.workflowId,
-      automationId: morningBriefDeliveries.automationId,
-      agentId: morningBriefDeliveries.agentId,
-      chatThreadId: morningBriefDeliveries.chatThreadId,
-    })
-    .from(morningBriefDeliveries)
-    .where(eq(morningBriefDeliveries.emailOutboxId, outboxId))
-    .limit(1);
-  if (!delivery) {
-    return rejected("Morning Brief email has no native delivery provenance");
-  }
-
-  const owner = { orgId: delivery.orgId, userId: delivery.userId };
-  if (
-    !preflight ||
-    preflight.orgId !== owner.orgId ||
-    preflight.userId !== owner.userId
-  ) {
-    // The claim took a different row than the one this pass resolved live
-    // evidence for. Leave it untouched for the next pass rather than send on
-    // evidence that belongs to somebody else.
-    return {
-      kind: "deferred",
-      reason: "Morning Brief email has no live-owner evidence for this pass",
+  owner: { readonly orgId: string; readonly userId: string },
+  args: {
+    readonly preflightMembershipId: string | null;
+    readonly delivery: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly scheduledFor: Date;
+      readonly collectionKind: string;
+      readonly collectionVersion: number;
+      readonly membershipId: string;
     };
-  }
+  },
+): Promise<NativeMorningBriefEmailAdmission | null> {
+  const preflight = { membershipId: args.preflightMembershipId };
+  const delivery = args.delivery;
   if (preflight.membershipId === null) {
     return rejected(
       "Morning Brief recipient is no longer an organization member",
@@ -224,6 +225,33 @@ export async function admitNativeMorningBriefEmail(
     );
   }
 
+  return null;
+}
+
+async function admitOwnerChoiceForNativeEmail(
+  tx: Tx,
+  owner: { readonly orgId: string; readonly userId: string },
+  delivery: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly workflowId: string;
+    readonly automationId: string;
+    readonly agentId: string;
+  },
+): Promise<NativeMorningBriefEmailAdmission | null> {
+  const native = await lockMorningBriefNativeSchedule(tx, owner);
+  if (native !== undefined && native.phase === "native") {
+    if (!native.enabled) {
+      return rejected("Morning Brief is no longer enabled for this owner");
+    }
+    if (native.agentId !== delivery.agentId) {
+      return rejected(
+        "Morning Brief now speaks as a different Agent than this delivery used",
+      );
+    }
+    return null;
+  }
+
   // The exact installation, schedule and Agent this delivery acted under, all
   // still current and still enabled. Comparing the Agent alone would let a
   // reinstalled brief on the same Agent authorize the previous installation's
@@ -255,6 +283,61 @@ export async function admitNativeMorningBriefEmail(
     .for("update");
   if (!automation?.enabled) {
     return rejected("Morning Brief is no longer enabled for this owner");
+  }
+
+  return null;
+}
+
+export async function admitNativeMorningBriefEmail(
+  tx: Tx,
+  outboxId: string,
+  preflight: NativeMorningBriefOwnerPreflight | null,
+): Promise<NativeMorningBriefEmailAdmission> {
+  const [delivery] = await tx
+    .select({
+      orgId: morningBriefDeliveries.orgId,
+      userId: morningBriefDeliveries.userId,
+      scheduledFor: morningBriefDeliveries.scheduledFor,
+      collectionKind: morningBriefDeliveries.collectionKind,
+      collectionVersion: morningBriefDeliveries.collectionVersion,
+      membershipId: morningBriefDeliveries.membershipId,
+      workflowId: morningBriefDeliveries.workflowId,
+      automationId: morningBriefDeliveries.automationId,
+      agentId: morningBriefDeliveries.agentId,
+      chatThreadId: morningBriefDeliveries.chatThreadId,
+    })
+    .from(morningBriefDeliveries)
+    .where(eq(morningBriefDeliveries.emailOutboxId, outboxId))
+    .limit(1);
+  if (!delivery) {
+    return rejected("Morning Brief email has no native delivery provenance");
+  }
+
+  const owner = { orgId: delivery.orgId, userId: delivery.userId };
+  if (
+    !preflight ||
+    preflight.orgId !== owner.orgId ||
+    preflight.userId !== owner.userId
+  ) {
+    // The claim took a different row than the one this pass resolved live
+    // evidence for. Leave it untouched for the next pass rather than send on
+    // evidence that belongs to somebody else.
+    return {
+      kind: "deferred",
+      reason: "Morning Brief email has no live-owner evidence for this pass",
+    };
+  }
+  const member = await admitMemberGenerationForNativeEmail(tx, owner, {
+    preflightMembershipId: preflight.membershipId,
+    delivery,
+  });
+  if (member !== null) {
+    return member;
+  }
+
+  const binding = await admitOwnerChoiceForNativeEmail(tx, owner, delivery);
+  if (binding !== null) {
+    return binding;
   }
 
   // The installation Agent must still be one this member may actually use: a

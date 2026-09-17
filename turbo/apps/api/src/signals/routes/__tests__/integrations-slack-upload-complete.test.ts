@@ -315,8 +315,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
   async function claimRun(runnerGroup: string, runId: string) {
     await runsApi.heartbeatRunner(runnerGroup);
     let response:
-      | Awaited<ReturnType<typeof runsApi.requestClaimRunnerJob>>
-      | undefined;
+      Awaited<ReturnType<typeof runsApi.requestClaimRunnerJob>> | undefined;
     await expect
       .poll(
         async () => {

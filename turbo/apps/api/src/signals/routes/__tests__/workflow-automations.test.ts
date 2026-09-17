@@ -4450,8 +4450,7 @@ describe("okou workflow automations", () => {
     let primaryWatchCalls = 0;
     let eventListCalls = 0;
     let legacyChannel:
-      | { readonly id: string; readonly token: string }
-      | undefined;
+      { readonly id: string; readonly token: string } | undefined;
     const stoppedResourceIds: string[] = [];
     server.use(
       http.get(
@@ -4609,8 +4608,7 @@ describe("okou workflow automations", () => {
     let baselineCalls = 0;
     let incrementalCalls = 0;
     let initialChannel:
-      | { readonly id: string; readonly token: string }
-      | undefined;
+      { readonly id: string; readonly token: string } | undefined;
     server.use(
       http.get(
         "https://www.googleapis.com/calendar/v3/calendars/:calendarId/events",

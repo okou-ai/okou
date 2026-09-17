@@ -1471,15 +1471,13 @@ describe("POST /api/video-io/generate", () => {
         generate_audio: true,
       });
 
-      if (
-        !(
-          typeof body === "object" &&
-          body !== null &&
-          "id" in body &&
-          "filename" in body &&
-          "url" in body
-        )
-      ) {
+      if (!(
+        typeof body === "object" &&
+        body !== null &&
+        "id" in body &&
+        "filename" in body &&
+        "url" in body
+      )) {
         throw new Error("Expected video response id, filename, and url");
       }
       const fileId = String(body.id);
