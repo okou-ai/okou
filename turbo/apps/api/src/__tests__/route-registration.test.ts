@@ -36,7 +36,7 @@ describe("API route registrations", () => {
         morningBriefCollectionPreviewRoutes,
         morningBriefCollectionPreviewContract.collect,
       ),
-    ).toStrictEqual(SOLE_PRODUCTION_REGISTRATION);
+    ).toStrictEqual(soleProductionRegistration());
   });
 
   it("registers the Morning Brief Gmail collection preview an operator invokes", () => {
@@ -45,7 +45,7 @@ describe("API route registrations", () => {
         morningBriefGmailCollectionPreviewRoutes,
         morningBriefGmailCollectionPreviewContract.collect,
       ),
-    ).toStrictEqual(SOLE_PRODUCTION_REGISTRATION);
+    ).toStrictEqual(soleProductionRegistration());
   });
 
   // The native cron is not a preview: it is the deployed scheduling entry point
@@ -57,7 +57,7 @@ describe("API route registrations", () => {
         cronExecuteMorningBriefsRoutes,
         cronExecuteMorningBriefsContract.execute,
       ),
-    ).toStrictEqual(SOLE_PRODUCTION_REGISTRATION);
+    ).toStrictEqual(soleProductionRegistration());
   });
 
   // Delivery has the same requirement, and one more reason: its production 404
@@ -70,7 +70,7 @@ describe("API route registrations", () => {
         morningBriefChatCollectionPreviewRoutes,
         morningBriefChatCollectionPreviewContract.collect,
       ),
-    ).toStrictEqual(SOLE_PRODUCTION_REGISTRATION);
+    ).toStrictEqual(soleProductionRegistration());
   });
 
   it("registers the Morning Brief generation preview an operator invokes", () => {
@@ -79,7 +79,7 @@ describe("API route registrations", () => {
         morningBriefGenerationPreviewRoutes,
         morningBriefGenerationPreviewContract.preview,
       ),
-    ).toStrictEqual(SOLE_PRODUCTION_REGISTRATION);
+    ).toStrictEqual(soleProductionRegistration());
   });
 
   // Delivery has the same requirement, and one more reason: its production 404
@@ -91,7 +91,7 @@ describe("API route registrations", () => {
         morningBriefDeliveryPreviewRoutes,
         morningBriefDeliveryPreviewContract.preview,
       ),
-    ).toStrictEqual(SOLE_PRODUCTION_REGISTRATION);
+    ).toStrictEqual(soleProductionRegistration());
   });
 
   // The platform-funded generation preview has the same requirement: its own
@@ -117,12 +117,14 @@ interface RegistrationFacts {
 }
 
 /** What a correctly registered, non-colliding endpoint looks like. */
-const SOLE_PRODUCTION_REGISTRATION: RegistrationFacts = {
-  extraRegistrations: 0,
-  exportsTheContractRoute: true,
-  heldByTheProductionTable: true,
-  registrationsForThatPath: 1,
-};
+function soleProductionRegistration(): RegistrationFacts {
+  return {
+    extraRegistrations: 0,
+    exportsTheContractRoute: true,
+    heldByTheProductionTable: true,
+    registrationsForThatPath: 1,
+  };
+}
 
 function registrationFacts(
   routes: readonly RouteEntry[],

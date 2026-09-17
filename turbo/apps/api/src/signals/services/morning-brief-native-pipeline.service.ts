@@ -1,8 +1,9 @@
 import { morningBriefDeliveries } from "@okouai/db/schema/morning-brief-delivery";
+import { morningBriefNativeOccurrences } from "@okouai/db/schema/morning-brief-native-schedule";
 import { morningBriefScheduleClaims } from "@okouai/db/schema/morning-brief-schedule-claim";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
-import { and, eq, sql } from "drizzle-orm";
+import { and, count, eq, isNotNull, isNull, sql } from "drizzle-orm";
 
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
@@ -81,10 +82,16 @@ async function proveLegacyMorningBriefDrain(
 
   const [counts] = await db
     .select({
-      total: sql<number>`count(*)::int`,
-      unsettled: sql<number>`count(*) FILTER (WHERE ${morningBriefScheduleClaims.settlement} = 'unsettled')::int`,
-      queued: sql<number>`count(*) FILTER (WHERE ${morningBriefScheduleClaims.queueDisposition} = 'queued' AND ${morningBriefScheduleClaims.queueEventId} IS NOT NULL)::int`,
-      liveRuns: sql<number>`count(*) FILTER (WHERE ${morningBriefScheduleClaims.runId} IS NOT NULL AND ${morningBriefScheduleClaims.settlement} = 'unsettled')::int`,
+      total: count(),
+      unsettled: count(
+        sql`CASE WHEN ${eq(morningBriefScheduleClaims.settlement, "unsettled")} THEN 1 END`,
+      ),
+      queued: count(
+        sql`CASE WHEN ${and(eq(morningBriefScheduleClaims.queueDisposition, "queued"), isNotNull(morningBriefScheduleClaims.queueEventId))} THEN 1 END`,
+      ),
+      liveRuns: count(
+        sql`CASE WHEN ${and(isNotNull(morningBriefScheduleClaims.runId), eq(morningBriefScheduleClaims.settlement, "unsettled"))} THEN 1 END`,
+      ),
     })
     .from(morningBriefScheduleClaims)
     .where(
@@ -143,11 +150,20 @@ async function proveNativeMorningBriefDrain(
 ): Promise<MorningBriefDrainVerdict> {
   const [counts] = await db
     .select({
-      unsettled: sql<number>`count(*) FILTER (WHERE settled_at IS NULL)::int`,
-      pendingDelivery: sql<number>`count(*) FILTER (WHERE delivery_pending)::int`,
+      unsettled: count(
+        sql`CASE WHEN ${isNull(morningBriefNativeOccurrences.settledAt)} THEN 1 END`,
+      ),
+      pendingDelivery: count(
+        sql`CASE WHEN ${eq(morningBriefNativeOccurrences.deliveryPending, true)} THEN 1 END`,
+      ),
     })
-    .from(sql`morning_brief_native_occurrences`)
-    .where(sql`org_id = ${owner.orgId} AND user_id = ${owner.userId}`);
+    .from(morningBriefNativeOccurrences)
+    .where(
+      and(
+        eq(morningBriefNativeOccurrences.orgId, owner.orgId),
+        eq(morningBriefNativeOccurrences.userId, owner.userId),
+      ),
+    );
 
   if (counts === undefined) {
     return { kind: "proven" };
@@ -282,6 +298,7 @@ export const executeNativeMorningBriefSlot$ = command(
         at: nowDate(),
       });
     });
+    signal.throwIfAborted();
     if (!bound) {
       // Reclaimed or revoked while the provider call was in flight. The
       // invocation stays recorded on the generation row; this worker simply has
@@ -350,6 +367,7 @@ export const recoverNativeMorningBriefDelivery$ = command(
         ),
       )
       .limit(1);
+    signal.throwIfAborted();
     if (receipt !== undefined) {
       // Already delivered. Email recovery stays with S6's receipt and the S2
       // shared outbox; this consumer only releases the scheduler's obligation.

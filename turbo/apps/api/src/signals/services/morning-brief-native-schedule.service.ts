@@ -8,7 +8,7 @@ import {
 } from "@okouai/db/schema/morning-brief-native-schedule";
 import { MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
-import { and, eq, isNotNull, lte, sql } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 import type { ReadonlyDb } from "../external/db";
@@ -497,7 +497,7 @@ async function loadUnsettledOccurrence(
       and(
         eq(morningBriefNativeOccurrences.orgId, owner.orgId),
         eq(morningBriefNativeOccurrences.userId, owner.userId),
-        sql`${morningBriefNativeOccurrences.settledAt} IS NULL`,
+        isNull(morningBriefNativeOccurrences.settledAt),
       ),
     )
     .orderBy(morningBriefNativeOccurrences.scheduledFor)
@@ -824,7 +824,7 @@ export async function claimMorningBriefNativeOccurrence(
       // lease are both untouchable, which is what keeps a second model request
       // impossible for a slot another tick may still be executing.
       setWhere: and(
-        sql`${morningBriefNativeOccurrences.settledAt} IS NULL`,
+        isNull(morningBriefNativeOccurrences.settledAt),
         sql`${morningBriefNativeOccurrences.leaseExpiresAt} < ${args.now}`,
         eq(morningBriefNativeOccurrences.ownerEpoch, schedule.ownerEpoch),
       ),
@@ -887,7 +887,7 @@ export async function bindNativeGenerationAttempt(
         eq(morningBriefNativeOccurrences.scheduledFor, args.scheduledFor),
         eq(morningBriefNativeOccurrences.ownerEpoch, args.expectedEpoch),
         eq(morningBriefNativeOccurrences.leaseToken, args.leaseToken),
-        sql`${morningBriefNativeOccurrences.settledAt} IS NULL`,
+        isNull(morningBriefNativeOccurrences.settledAt),
       ),
     )
     .returning({ scheduledFor: morningBriefNativeOccurrences.scheduledFor });
@@ -952,7 +952,7 @@ export async function settleMorningBriefNativeOccurrence(
         eq(morningBriefNativeOccurrences.scheduledFor, args.scheduledFor),
         // Exactly one settlement per slot. A delivery retry re-entering here
         // matches nothing and therefore cannot advance the schedule again.
-        sql`${morningBriefNativeOccurrences.settledAt} IS NULL`,
+        isNull(morningBriefNativeOccurrences.settledAt),
         // And only by the exact claimant, under the exact epoch that admitted
         // it. A worker whose lease was reclaimed, or whose epoch was revoked,
         // returns to find nothing to settle: its observations are still
@@ -1177,21 +1177,27 @@ export async function resumeMorningBriefNativeOccurrence(
         eq(morningBriefNativeOccurrences.userId, owner.userId),
         eq(morningBriefNativeOccurrences.scheduledFor, args.scheduledFor),
         eq(morningBriefNativeOccurrences.ownerEpoch, schedule.ownerEpoch),
-        sql`${morningBriefNativeOccurrences.settledAt} IS NULL`,
+        isNull(morningBriefNativeOccurrences.settledAt),
         // The same receipt-first invariant, enforced on the mutation and not
         // only on the discovery query, so no other caller can bypass it.
-        sql`${morningBriefNativeOccurrences.generationAttemptId} IS NULL`,
-        sql`NOT ${morningBriefNativeOccurrences.deliveryPending}`,
+        isNull(morningBriefNativeOccurrences.generationAttemptId),
+        eq(morningBriefNativeOccurrences.deliveryPending, false),
         // Either its deferral is due, or its lease lapsed. A live lease held by
         // another tick is never taken over here.
-        sql`(
-          (${morningBriefNativeOccurrences.state} = 'deferred'
-            AND ${morningBriefNativeOccurrences.deferredUntil} IS NOT NULL
-            AND ${morningBriefNativeOccurrences.deferredUntil} <= ${args.now})
-          OR (${morningBriefNativeOccurrences.state} = 'claimed'
-            AND (${morningBriefNativeOccurrences.leaseExpiresAt} IS NULL
-              OR ${morningBriefNativeOccurrences.leaseExpiresAt} < ${args.now}))
-        )`,
+        or(
+          and(
+            eq(morningBriefNativeOccurrences.state, "deferred"),
+            isNotNull(morningBriefNativeOccurrences.deferredUntil),
+            lte(morningBriefNativeOccurrences.deferredUntil, args.now),
+          ),
+          and(
+            eq(morningBriefNativeOccurrences.state, "claimed"),
+            or(
+              isNull(morningBriefNativeOccurrences.leaseExpiresAt),
+              lt(morningBriefNativeOccurrences.leaseExpiresAt, args.now),
+            ),
+          ),
+        ),
       ),
     )
     .returning();
@@ -1217,7 +1223,7 @@ export async function loadResumableOccurrences(
     .from(morningBriefNativeOccurrences)
     .where(
       and(
-        sql`${morningBriefNativeOccurrences.settledAt} IS NULL`,
+        isNull(morningBriefNativeOccurrences.settledAt),
         // Receipt-first is a per-occurrence invariant, not a property of one
         // scan happening to fit in one batch. A slot that already bound an
         // attempt is reachable only through the receipt pass, which resolves
@@ -1225,16 +1231,22 @@ export async function loadResumableOccurrences(
         // first, and after the real result sweep a completed collection with no
         // generation reads as a healthy empty day — bypassing a Chat receipt
         // that has already committed.
-        sql`${morningBriefNativeOccurrences.generationAttemptId} IS NULL`,
-        sql`NOT ${morningBriefNativeOccurrences.deliveryPending}`,
-        sql`(
-          (${morningBriefNativeOccurrences.state} = 'deferred'
-            AND ${morningBriefNativeOccurrences.deferredUntil} IS NOT NULL
-            AND ${morningBriefNativeOccurrences.deferredUntil} <= ${args.now})
-          OR (${morningBriefNativeOccurrences.state} = 'claimed'
-            AND (${morningBriefNativeOccurrences.leaseExpiresAt} IS NULL
-              OR ${morningBriefNativeOccurrences.leaseExpiresAt} < ${args.now}))
-        )`,
+        isNull(morningBriefNativeOccurrences.generationAttemptId),
+        eq(morningBriefNativeOccurrences.deliveryPending, false),
+        or(
+          and(
+            eq(morningBriefNativeOccurrences.state, "deferred"),
+            isNotNull(morningBriefNativeOccurrences.deferredUntil),
+            lte(morningBriefNativeOccurrences.deferredUntil, args.now),
+          ),
+          and(
+            eq(morningBriefNativeOccurrences.state, "claimed"),
+            or(
+              isNull(morningBriefNativeOccurrences.leaseExpiresAt),
+              lt(morningBriefNativeOccurrences.leaseExpiresAt, args.now),
+            ),
+          ),
+        ),
       ),
     )
     .orderBy(morningBriefNativeOccurrences.scheduledFor)
@@ -1273,7 +1285,7 @@ export async function loadBootstrapCandidates(
           MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
         ),
         eq(workflowAutomations.kind, "schedule"),
-        sql`${morningBriefNativeSchedules.orgId} IS NULL`,
+        isNull(morningBriefNativeSchedules.orgId),
       ),
     )
     .limit(args.limit);
@@ -1410,7 +1422,7 @@ export async function closeRecoveredMorningBriefDelivery(
         eq(morningBriefNativeOccurrences.scheduledFor, args.scheduledFor),
         eq(morningBriefNativeOccurrences.ownerEpoch, args.expectedEpoch),
         args.leaseToken === null
-          ? sql`${morningBriefNativeOccurrences.leaseToken} IS NULL`
+          ? isNull(morningBriefNativeOccurrences.leaseToken)
           : eq(morningBriefNativeOccurrences.leaseToken, args.leaseToken),
       ),
     )
