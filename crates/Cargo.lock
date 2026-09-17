@@ -3389,6 +3389,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "rfb-client"
+version = "0.1.0"
+dependencies = [
+ "des",
+ "rcgen",
+ "rustls",
+ "thiserror",
+ "tokio",
+ "tokio-rustls",
+ "webpki-roots",
+ "zeroize",
+]
+
+[[package]]
 name = "rfc6979"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

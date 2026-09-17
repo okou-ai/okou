@@ -26,6 +26,7 @@ members = [
     "sandbox-mock",
     "shell-quote",
     "runner-rpc-proto",
+    "rfb-client",
     "tracing-test-support",
     "guest-control-server",
     "guest-control-client",
@@ -79,6 +80,7 @@ bitvec = { version = "1", default-features = false }
 bytes = { version = "1", default-features = false }
 chrono = { version = "0.4", default-features = false }
 clap = { version = "4", default-features = false }
+des = { version = "0.9", default-features = false }
 flate2 = { version = "1", default-features = false }
 futures-util = { version = "0.3", default-features = false }
 hex = { version = "0.4", default-features = false }
