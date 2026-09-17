@@ -33,6 +33,24 @@ from the request Host or an unverified token. Configure the deployed environment
 through its normal deployment process; this code does not configure Clerk or
 activate production.
 
+The shared `.github/actions/web-api-env` deployment action injects these values
+only into the API service. It builds `MCP_RESOURCE_URL` from the trusted
+`api-backend-url` deployment input (the API origin, with an optional trailing
+slash), followed by `/mcp`. Preview workflows supply each PR/staging API alias;
+production supplies its configured API origin. Do not set a shared
+`MCP_RESOURCE_URL` repository variable: it is not read, and each deployment must
+use its own audience. If the API URL is absent, the action leaves the resource
+unset rather than guessing a production or frontend address.
+
+Set the non-secret `MCP_OAUTH_ISSUER` GitHub repository variable to the test Clerk
+instance's exact OAuth issuer. Override the same variable in the `production`
+GitHub Environment with `https://clerk.okou.ai`, matching that environment's
+Clerk credentials. Configure the optional `MCP_ALLOWED_ORIGINS` variable at the
+same scopes if clients send an Origin header. Missing values remain optional;
+without an issuer, MCP returns 503 while the existing API remains available.
+These deployment variables do not enable the `McpServer` feature switch or
+configure OAuth settings in either Clerk instance.
+
 The resource server accepts only `Authorization: Bearer` OAuth access JWTs signed
 by the configured Clerk instance. It requires an access-token header type
 (`at+jwt` or `application/at+jwt`), exact issuer, the configured resource in `aud`,
