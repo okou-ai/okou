@@ -8,6 +8,23 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.625.0](https://github.com/vm0-ai/okou/compare/api-v1.624.1...api-v1.625.0) (2026-09-17)
+
+
+### Features
+
+* **billing:** group usage by thread and show member breakdowns ([#35082](https://github.com/vm0-ai/okou/issues/35082)) ([6b7e3ae](https://github.com/vm0-ai/okou/commit/6b7e3ae71559d4c2ba8552c1fdb650054e4b41f6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.462.0
+    * @okouai/core bumped to 8.678.0
+    * @okouai/db bumped to 1.270.5
+    * @okouai/pi-agent-runtime bumped to 1.33.8
+
 ## [1.624.1](https://github.com/vm0-ai/okou/compare/api-v1.624.0...api-v1.624.1) (2026-09-17)
 
 

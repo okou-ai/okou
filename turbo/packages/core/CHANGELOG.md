@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.678.0](https://github.com/vm0-ai/okou/compare/core-v8.677.0...core-v8.678.0) (2026-09-17)
+
+
+### Features
+
+* **billing:** group usage by thread and show member breakdowns ([#35082](https://github.com/vm0-ai/okou/issues/35082)) ([6b7e3ae](https://github.com/vm0-ai/okou/commit/6b7e3ae71559d4c2ba8552c1fdb650054e4b41f6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.462.0
+
 ## [8.677.0](https://github.com/vm0-ai/okou/compare/core-v8.676.3...core-v8.677.0) (2026-09-17)
 
 
