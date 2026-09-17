@@ -1,6 +1,7 @@
 # Account erasure: cloud browser authorization apply (B2b2-R10)
 
-Scope: [#34975](https://github.com/vm0-ai/okou/issues/34975), under
+Scope: [#34975](https://github.com/vm0-ai/okou/issues/34975), repaired by
+[#35021](https://github.com/vm0-ai/okou/issues/35021), under
 [#33745](https://github.com/vm0-ai/okou/issues/33745).
 
 Accepted [R8](account-erasure-chat-thread-computer-use.md) fenced the direct
@@ -21,12 +22,12 @@ or production operation, and it fences no other browser writer.
 
 ## What this path actually writes
 
-| Durable effect                                                                | Where it comes from                        |
-| ----------------------------------------------------------------------------- | ------------------------------------------ |
-| `chat_threads.computer_use_host_id = NULL`, `cloud_browser_enabled = true`, `updated_at` | the service's own `UPDATE`       |
-| One `computer_use_host_updated` sidebar event and its durable sequence id      | `appendChatThreadEvent`                    |
-| `browser_authorization_requests.completed_at`, `updated_at`                    | the completion `UPDATE`                    |
-| One content-free `threadListChanged` invalidation                              | `publishThreadListChanged`, after `COMMIT` |
+| Durable effect                                                                           | Where it comes from                        |
+| ---------------------------------------------------------------------------------------- | ------------------------------------------ |
+| `chat_threads.computer_use_host_id = NULL`, `cloud_browser_enabled = true`, `updated_at` | the service's own `UPDATE`                 |
+| One `computer_use_host_updated` sidebar event and its durable sequence id                | `appendChatThreadEvent`                    |
+| `browser_authorization_requests.completed_at`, `updated_at`                              | the completion `UPDATE`                    |
+| One content-free `threadListChanged` invalidation                                        | `publishThreadListChanged`, after `COMMIT` |
 
 Nothing else. This apply issues **no** provider or Browser Use request, starts
 and stops no session, and none was added here.
@@ -73,7 +74,8 @@ Each attempt is one bounded `READ COMMITTED` transaction:
 5. `agents` **FOR KEY SHARE**, then `chat_threads` **FOR KEY SHARE**.
 6. Re-read the same content-free identity under those locks and compare.
 7. Re-read **this exact request** — same row id, token hash, user, organization
-   and thread — **FOR NO KEY UPDATE**, and recheck its TTL.
+   and thread — **FOR NO KEY UPDATE**, and recheck its TTL against a clock read
+   only once that row is held.
 8. The thread `UPDATE`, the sequence reservation, the event insert and the
    completion `UPDATE`.
 
@@ -88,9 +90,12 @@ with **no** partial commit: no thread update, no consumed sidebar sequence, no
 event and no completion stamp. The service never writes first and reports
 failure afterwards.
 
-`FOR NO KEY UPDATE` is the weakest mode that still blocks a concurrent `DELETE`
-of the row, and it is exactly the lock the completion `UPDATE` in step 8 takes,
-so the pin never upgrades mid-transaction.
+`FOR NO KEY UPDATE` is exactly the lock the completion `UPDATE` in step 8 takes,
+so the pin never upgrades mid-transaction, and that is why this mode is used. It
+does also block a concurrent `DELETE`, but that property alone would not select
+it: `KEY SHARE`, a weaker mode, blocks `DELETE` as well. An earlier revision of
+this document called `FOR NO KEY UPDATE` the weakest mode that blocks `DELETE`,
+which is wrong.
 
 The lock order has no inverse. Every statement that touches
 `browser_authorization_requests` anywhere in the repository lives in
@@ -103,7 +108,15 @@ canonical Agent or thread lock, so no other writer can acquire this row before
 
 `chat_threads` keeps taking its own `FOR NO KEY UPDATE` through the selection
 `UPDATE`, which does not conflict with the retained `FOR KEY SHARE`, so no new
-self-deadlock is introduced and unrelated threads are never serialized.
+self-deadlock is introduced and these locks add no serialization between
+different threads.
+
+That is a statement about the locks this slice adds, not a claim that two
+applies by the same owner never contend. They do, and they did before this
+slice: the unchanged sequence reservation writes
+`chat_thread_event_sequences`, whose row is keyed by `(user_id, org_id)` rather
+than by thread, so two of one owner's writes still serialize on that row for the
+remainder of whichever transaction reaches it first.
 
 ## Timestamps
 
@@ -111,25 +124,40 @@ The preflight keeps its own clock reading for the TTL check it already
 performed. Inside the admitted transaction one further reading is taken and used
 for **all** of the write: the TTL recheck, `chat_threads.updated_at`, the event
 `created_at` and `completed_at`/`updated_at` on the request. The existing
-invariant that those written timestamps share a single value is preserved; the
-value is now read at the moment of the write rather than before admission, which
-is what lets a TTL that lapses during a lock wait or a bounded reselection be
-caught instead of applied.
+invariant that those written timestamps share a single value is preserved.
+
+That reading is taken **after step 7's pin has been acquired and its row
+returned**, and before any content mutation. Where it is taken is the whole
+point. Acquiring the pin is an `await`: it can wait on a concurrent holder of
+the same row, and on the transaction's own `1s` lock budget. A reading sampled
+before that `await` describes a moment that has already passed by the time the
+row is in hand, so a request that was live when it was sampled and has since
+lapsed would compare as valid and go on to commit a thread update, a durable
+sidebar sequence and event, and a completion stamp.
+
+[#34975](https://github.com/vm0-ai/okou/issues/34975) moved the reading inside
+the transaction but sampled it before the pin, so it still described a moment
+before the wait it was meant to cover; the reading now happens after.
+[#35021](https://github.com/vm0-ai/okou/issues/35021) is that repair, and two
+cases hold the pin open across a lapse to keep it. No production incident is
+claimed. Preflight expiry is still decided by the preflight's own reading, and
+the bounded reselection loop re-enters this same sequence, so each attempt
+rechecks the TTL with a reading taken inside that attempt.
 
 ## Failure contract
 
-| Outcome                                                     | Disposition                                                   |
-| ----------------------------------------------------------- | ------------------------------------------------------------- |
-| Unknown token, or token for another user or organization    | The existing `404 ... request not found`                      |
-| Request expired at the preflight                            | The existing `410`                                            |
-| Request deleted between the preflight and the write         | The same `404`, nothing written                               |
-| Request expired between the preflight and the write         | The same `410`, nothing written                               |
-| Thread missing, foreign, organization-foreign or Agent-less | The existing `404 ... scope not found`                        |
-| B1 subject closure                                          | The same scope `404`, with no update, event or completion     |
-| No organization on the session                              | The existing `401`, from unchanged `requireOrganization`      |
-| Identity moved under the locks                              | Roll back and reselect, at most three attempts                |
-| Attempts exhausted                                          | `ChatThreadContentOwnershipChangedError` propagates           |
-| Lock wait, statement timeout, abort                         | Original database error or cancellation, propagated unchanged |
+| Outcome                                                                                        | Disposition                                                   |
+| ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| Unknown token, or token for another user or organization                                       | The existing `404 ... request not found`                      |
+| Request expired at the preflight                                                               | The existing `410`                                            |
+| Request deleted between the preflight and the write                                            | The same `404`, nothing written                               |
+| Request expired between the preflight and the write, including while its pin is being acquired | The same `410`, nothing written                               |
+| Thread missing, foreign, organization-foreign or Agent-less                                    | The existing `404 ... scope not found`                        |
+| B1 subject closure                                                                             | The same scope `404`, with no update, event or completion     |
+| No organization on the session                                                                 | The existing `401`, from unchanged `requireOrganization`      |
+| Identity moved under the locks                                                                 | Roll back and reselect, at most three attempts                |
+| Attempts exhausted                                                                             | `ChatThreadContentOwnershipChangedError` propagates           |
+| Lock wait, statement timeout, abort                                                            | Original database error or cancellation, propagated unchanged |
 
 Closure reuses the existing scope-not-found disposition without revealing which
 subject closed, so the endpoint stays non-oracular. Closure is **not** a success
@@ -144,13 +172,27 @@ completed request is therefore still a live writer that closure denies, not a
 bypassing no-op.
 
 `publishThreadListChanged` runs only after a successful `COMMIT`, to the
-admitted user and organization. A denied, rolled-back, paused or cancelled
-request consumes no sequence id, appends no event and publishes nothing.
+admitted user and organization. A denied, rolled-back or paused request consumes
+no sequence id, appends no event and publishes nothing.
+
+Cancellation is bounded, and the bound is the pre-`COMMIT` rollback window.
+While the writer's own `signal.throwIfAborted()` still runs before `COMMIT`, an
+abort rolls the executed statements back, and that is what a case proves: the
+thread update, the sequence, the event and the completion had all executed and
+none of them survived. That guarantee stops at `COMMIT`. An abort that arrives
+after the transaction has committed cannot undo the data, and the caller can
+still lose the `200` response and the `threadListChanged` publication that
+follows it — the write is durable, the notification is not retried, and the
+cursor a client later reads is the durable event. So "a cancelled request
+consumes nothing" is true only before `COMMIT`; after it, cancellation costs a
+response and possibly a publication, not the write. Cancellation of the
+application operation is what the writer observes; a raw client disconnect is
+not by itself server-side cancellation. No publication retry is introduced here.
 
 ## Evidence
 
 `turbo/apps/api/src/signals/routes/__tests__/browser-authorization-erasure.test.ts`
-holds sixteen cases at the real HTTP boundary against real PostgreSQL and the
+holds eighteen cases at the real HTTP boundary against real PostgreSQL and the
 real dormant B1 projector. Requests are created with a real run token through
 the real create endpoint and applied with a real authenticated session.
 
@@ -176,6 +218,30 @@ the real create endpoint and applied with a real authenticated session.
   preflight, both rechecked with no partial write; and the pin itself, where a
   concurrent `DELETE` is observed blocked on the apply's own row lock through
   `pg_blocking_pids` and can only land after `COMMIT`.
+- A TTL that lapses **while the pin is being acquired**, which is the window
+  [#35021](https://github.com/vm0-ai/okou/issues/35021) repaired, covered twice
+  and without moving the stored `expires_at`:
+  - A second real session holds that exact request row, so the apply's own
+    `FOR NO KEY UPDATE` waits in PostgreSQL. `pg_blocking_pids` is filtered to
+    the pin statement itself, so a non-zero count is proof that this exact apply
+    reached the request lock rather than proof that something waits somewhere.
+    The clock is then advanced past the TTL and the holder released, well inside
+    the apply's unchanged `1s` budget and with no sleep. The apply returns `410`
+    and leaves the thread selection, the completion stamp, the event list, the
+    sidebar sequence and the outbound invalidation count untouched. While the
+    request is lapsed, another member's session and an unknown token still get
+    `404`, so token and ownership keep their precedence over expiry. A later
+    link minted from the same run is the unexpired control: it waits on the very
+    same pin, still applies, and takes exactly the sidebar sequence id the
+    denial never consumed, so a vacuous denial cannot pass this case.
+  - The shared `pauseAfter` barrier stops the apply holding the pin's own
+    executed result with `rowCount` 1, which shows the same lapse with the
+    backend idle inside its transaction and no budget of its own running.
+
+  Only the test's own mock clock moves in these cases; it is restored before the
+  unchanged read endpoint is asked to report the request's state, because that
+  endpoint would otherwise refuse a lapsed request rather than describe it.
+
 - Atomic failure: holding the next `(user_id, org_id, seq_id)` slot makes the
   event insert fail on its own bounded budget after the thread `UPDATE` and the
   sequence reservation, and all four effects roll back together.
@@ -196,42 +262,69 @@ the real create endpoint and applied with a real authenticated session.
 
 ### Baseline failure and candidate pass
 
-Same tree, same fixture, one blob different: the candidate is the fenced
-service, the baseline is the identical tree with only
-`turbo/apps/api/src/signals/services/browser-authorization.service.ts` reverted
-to current `main`'s `491c13c3a8978d45e36679dee5dba3e8da2d24a1`.
+Same tree, one blob different in each row: only
+`turbo/apps/api/src/signals/services/browser-authorization.service.ts` is
+replaced, and the whole eighteen-case file is run against each build.
 
-| Build     | Result                          |
-| --------- | ------------------------------- |
-| Baseline  | 14 failed, 2 passed, 284.67 s   |
-| Candidate | 16 passed, 19.91 s              |
+| Build                                                   | Result                        |
+| ------------------------------------------------------- | ----------------------------- |
+| Pre-fence `89dcfaf69404070fc8fd5c4c2dc932faf0914544`    | 16 failed, 2 passed, 326.92 s |
+| Merged fence `45bb5cdc0acf3d7e79ac1b0cf99b975aae48d121` | 2 failed, 16 passed, 22.69 s  |
+| Candidate `4f59282b0b129c8a186dc6dfdc8625f2acad113e`    | 18 passed, 22.10 s            |
 
-The two cases that pass on both builds are exactly the parity cases — the
+The two cases that pass on every build are exactly the parity cases — the
 unchanged token/ownership/expiry/Agent dispositions, and run-token creation with
 host clearing and repeat apply — which is the intended separation: they assert
-behavior this slice preserves. Every fence, atomicity, window and cancellation
-case fails on the baseline. The closure cases fail with
+behavior this slice preserves.
+
+Against the **pre-fence** service every fence, atomicity, window and
+cancellation case fails. The closure cases fail with
 `Expected API response status to be one of 404, received 200. Body: {"ok":true,"cloudBrowserEnabled":true}`;
 the cross-organization case fails the same way; the expiry-window case fails with
-the same shape against `410`. The barrier-driven cases time out on the baseline
-because the baseline transaction never issues the identity read the barrier
-selects on, and the held-parent-lock case times out because a plain transaction
-sets no `lock_timeout`.
+the same shape against `410`. The barrier-driven cases time out because that
+transaction never issues the identity read the barrier selects on, the
+held-parent-lock case times out because a plain transaction sets no
+`lock_timeout`, and the new real-holder case times out waiting for a request pin
+that service never takes.
+
+Against the **merged fence** — the blob `main` carried before this repair —
+exactly the two new cases fail, and both fail the same way:
+`Expected API response status to be one of 410, received 200. Body: {"ok":true,"cloudBrowserEnabled":true}`.
+That is the defect stated plainly: the request had lapsed while the apply held
+or awaited its own pin, and the apply committed the selection, the durable
+event and the completion stamp anyway. The other sixteen cases pass on that
+build, which is why they could not catch it.
 
 ## Measured local cost
 
 Local PostgreSQL 18.6 with the repository migrations applied, the API test
 harness at its real HTTP boundary, one organization / user / Agent / thread and
-four authorization links minted from one run, single process, requests issued
-sequentially. Both builds share that fixture and differ in exactly one blob.
+authorization links minted from one run, single process, requests issued
+sequentially. The two builds differ in exactly one blob:
+
+| Build     | `browser-authorization.service.ts`         |
+| --------- | ------------------------------------------ |
+| Baseline  | `89dcfaf69404070fc8fd5c4c2dc932faf0914544` |
+| Candidate | `4f59282b0b129c8a186dc6dfdc8625f2acad113e` |
+
+The baseline is the pre-fence service, the blob `main` carried at
+`491c13c3a8978d45e36679dee5dba3e8da2d24a1` before this slice. The candidate is
+the final repaired service. Each build was measured in its own process with that
+blob in place, against an equivalent fixture created by that run rather than
+literally the same rows, in a local database that still held rows from earlier
+runs.
 
 ### Round-trip inventory
 
-Statements counted per request from the driver, four traced applies per build:
+Statements counted per request from a driver-level proxy over one traced apply
+per build. The counts are every statement the driver issues for that request,
+**including the transaction-control statements**: the baseline's `BEGIN` and the
+candidate's `BEGIN ISOLATION LEVEL READ COMMITTED` are each counted, as is each
+build's single `COMMIT`.
 
-| Request               | Baseline | Candidate |
-| --------------------- | -------: | --------: |
-| Apply an authorization |       7 |        18 |
+| Request                | Baseline | Candidate |
+| ---------------------- | -------: | --------: |
+| Apply an authorization |        7 |        18 |
 
 Both builds keep the same preflight token lookup, the same thread `UPDATE`, the
 same sequence reservation, the same event insert, the same completion `UPDATE`
@@ -247,13 +340,13 @@ adds one further advisory lock, for three subjects, giving 19.
 `EXPLAIN (ANALYZE, BUFFERS)` inside one transaction that had already set the
 `1s` and `5s` deadlines, second (warm) execution, on the local fixture:
 
-| Added statement              | Plan                                                                     | Rows | Buffers | Execution |
-| ---------------------------- | ------------------------------------------------------------------------ | ---: | ------: | --------: |
-| Identity read (left join)    | Nested Loop Left Join, `agents_pkey` Index Scan over a `chat_threads` Seq Scan | 1 | 4 hits | 0.055 ms |
-| B1 closure lookup            | Seq Scan on the empty `account_erasure_jobs`                             |    0 |  1 hit  |  0.017 ms |
-| `agents` FOR KEY SHARE       | LockRows over `agents_pkey`                                              |    1 |  3 hits |  0.033 ms |
-| `chat_threads` FOR KEY SHARE | LockRows over a `chat_threads` Seq Scan                                  |    1 |  4 hits |  0.021 ms |
-| Request pin                  | Limit over LockRows over a `browser_authorization_requests` Seq Scan     |    1 |  3 hits |  0.026 ms |
+| Added statement              | Plan                                                                           | Rows | Buffers | Execution |
+| ---------------------------- | ------------------------------------------------------------------------------ | ---: | ------: | --------: |
+| Identity read (left join)    | Nested Loop Left Join, `agents_pkey` Index Scan over a `chat_threads` Seq Scan |    1 |  4 hits |  0.055 ms |
+| B1 closure lookup            | Seq Scan on the empty `account_erasure_jobs`                                   |    0 |   1 hit |  0.017 ms |
+| `agents` FOR KEY SHARE       | LockRows over `agents_pkey`                                                    |    1 |  3 hits |  0.033 ms |
+| `chat_threads` FOR KEY SHARE | LockRows over a `chat_threads` Seq Scan                                        |    1 |  4 hits |  0.021 ms |
+| Request pin                  | Limit over LockRows over a `browser_authorization_requests` Seq Scan           |    1 |  3 hits |  0.026 ms |
 
 The sequential scans are a property of the fixture, not of the statements: the
 local `chat_threads` table held 3 rows, `browser_authorization_requests` 2 rows
@@ -262,15 +355,45 @@ single heap page. Re-planned with `enable_seqscan = off`, the request pin uses
 `uq_browser_authorization_requests_token_hash` (Index Scan, 3 buffer hits,
 0.020 ms) and the closure lookup uses the
 `account_erasure_subject_generation` `(subject_kind, subject_id)` prefix
-(BitmapOr of two Bitmap Index Scans, 2 buffer hits, 0.015 ms). Every added
-statement resolves at most one row and none sorts, aggregates or scans a range.
-The advisory locks touch no relation at all.
+(BitmapOr of two Bitmap Index Scans, 2 buffer hits, 0.015 ms). None of the added
+statements sorts, aggregates or scans a range, and the advisory locks touch no
+relation at all.
+
+An earlier revision claimed every added statement resolves at most one row. That
+is not true of the B1 closure lookup: it is a disjunction over all the admitted
+subjects, so it can match one row per closed subject, and per generation of a
+subject, up to the three subjects this path admits. It returned zero rows here
+only because the local `account_erasure_jobs` table was empty. The identity
+reads, the two `FOR KEY SHARE` locks and the request pin do each resolve at most
+one row, by primary key or by a unique token hash.
+
+### Per-request timing
+
+The suite durations above are whole-suite wall clock dominated by the baseline's
+`30 s` case timeouts and are **not** a per-request cost comparison. This is.
+
+Method: one authorization link per build, three untimed warm-up applies, then
+ten applies issued one after another with no concurrency, each timed around the
+HTTP call alone. Repeat apply is accepted and unchanged, so every sample does
+the identical admitted write. Milliseconds, in the order they were produced:
+
+| Build     | Raw samples (ms)                                                     | Median |   Min |   Max |
+| --------- | -------------------------------------------------------------------- | -----: | ----: | ----: |
+| Baseline  | 13.21, 6.41, 8.38, 6.42, 5.96, 6.40, 6.50, 6.31, 6.87, 5.76          |   6.42 |  5.76 | 13.21 |
+| Candidate | 23.47, 13.75, 13.45, 10.71, 13.85, 25.31, 11.97, 13.58, 12.28, 13.35 |  13.52 | 10.71 | 25.31 |
+
+On this sandbox the fenced apply cost roughly 7 ms more per request at the
+median, a little over twice the pre-fence path, for eleven added round trips
+against a local socket. Both builds show single outliers well above their own
+median, which is what a shared two-core sandbox produces; ten samples per build
+do not separate that noise from the signal, and no variance claim is made.
 
 These are bounded local observations on a two-core sandbox with empty erasure
-tables. They are not production throughput, not a universal overhead bound, and
-not evidence that the added cost is irreducible. The baseline and candidate
-suite durations above are whole-suite wall clock dominated by the baseline's
-`30 s` case timeouts; they are not a per-request cost comparison.
+tables and a local database, measured by the run that wrote this document. They
+are not production throughput, not a per-request cost on any deployed
+configuration, not a universal overhead bound, and not evidence that the added
+cost is irreducible. A different database, latency, table size or closure
+population would move both columns.
 
 ## Residual work
 

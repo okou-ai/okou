@@ -398,7 +398,7 @@ test("Preserve the visible message when earlier content grows", async () => {
   });
 });
 
-test("Keep passage actions until the selection moves beyond the scroll buffer", async () => {
+async function selectPassageAfterCompensatedGrowth() {
   mockMutableConversation(
     THREAD_IDS.selectedPassage,
     completedHistoryEvents(8),
@@ -461,6 +461,17 @@ test("Keep passage actions until the selection moves beyond the scroll buffer", 
 
   expect(queryPassageAction("Quote")).toBeVisible();
 
+  return { container, animationFrames };
+}
+
+test("Keep selected passage actions when earlier content growth is compensated", async () => {
+  await selectPassageAfterCompensatedGrowth();
+  expect(queryPassageAction("Quote")).toBeVisible();
+});
+
+test("Dismiss passage actions only after cumulative user scrolling exceeds the buffer", async () => {
+  const { container, animationFrames } =
+    await selectPassageAfterCompensatedGrowth();
   scrollFromUser(container, container.scrollTop - 4);
   act(() => {
     animationFrames.flush();
@@ -483,7 +494,7 @@ test("Keep passage actions until the selection moves beyond the scroll buffer", 
   });
 });
 
-test("Keep a visible work message in place when its run completes", async () => {
+async function completeRunWhileReadingExpandedWork() {
   const activeRunId = "scroll-expanded-work-run";
   const conversation = mockMutableConversation(
     THREAD_IDS.expandedWork,
@@ -562,10 +573,23 @@ test("Keep a visible work message in place when its run completes", async () => 
   });
 
   await screen.findByText("The rollout is healthy");
+  await screen.findByText("Worked for 1m");
+  return { container, historyMessageTop };
+}
+
+test("Keep expanded work history and its duration visible after the run completes", async () => {
+  await completeRunWhileReadingExpandedWork();
   await waitFor(() => {
     expect(screen.getByText("Checked the first rollout stage")).toBeVisible();
     expect(buttonByLabel("Collapse work history")).toBeVisible();
     expect(screen.getByText("Worked for 1m")).toBeVisible();
+  });
+});
+
+test("Keep the visible work message anchored when its run completes", async () => {
+  const { container, historyMessageTop } =
+    await completeRunWhileReadingExpandedWork();
+  await waitFor(() => {
     expect(
       anchorById(
         container,

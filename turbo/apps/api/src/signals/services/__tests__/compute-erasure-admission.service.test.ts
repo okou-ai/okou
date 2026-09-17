@@ -1971,7 +1971,7 @@ describe("actual compute transactions versus the B1 projector", () => {
         expect(diagnostics.takeFailure(error)).toBeUndefined();
       }
 
-      it.each([
+      describe.each([
         "user",
         "organization",
         "resource_identity_locks",
@@ -1980,9 +1980,8 @@ describe("actual compute transactions versus the B1 projector", () => {
         "run_lock",
         "session_lock",
         "projection_write",
-      ] as const)(
-        "attributes a real %s timeout after rollback and allows an idempotent HTTP retry",
-        async (phase) => {
+      ] as const)("real %s output timeout", (phase) => {
+        async function prepareBlockedOutput() {
           const f = await outputFixture();
           await sendOutput(f);
           await flushWaitUntilForTest();
@@ -2040,6 +2039,11 @@ describe("actual compute transactions versus the B1 projector", () => {
               }
             }
           });
+          return { f, before, held };
+        }
+
+        it(`attributes a real ${phase} timeout after complete diagnostic rollback`, async () => {
+          const { f, before, held } = await prepareBlockedOutput();
           const diagnostics = new RunOutputDiagnostics();
           const writing = settle(projectOutput(f, diagnostics, context.signal));
           await waitForBlockedBy(held.pid);
@@ -2057,6 +2061,11 @@ describe("actual compute transactions versus the B1 projector", () => {
               : phase,
           );
           await expect(contentState(f)).resolves.toStrictEqual(before);
+          await held.release();
+        });
+
+        it(`retries a real ${phase} HTTP timeout after rollback and keeps replay idempotent`, async () => {
+          const { f, before, held } = await prepareBlockedOutput();
           await webhooks.requestAgentEvents(
             outputBody(f, 10),
             outputHeaders(f),
@@ -2081,8 +2090,8 @@ describe("actual compute transactions versus the B1 projector", () => {
             run: accepted.run,
             materialization: [{ latestResultText: "result 10" }],
           });
-        },
-      );
+        });
+      });
 
       it("progresses same-org and unrelated writers around a blocked invocation", async () => {
         const f = await outputFixture();
@@ -5112,25 +5121,26 @@ describe("actual compute transactions versus the B1 projector", () => {
       expect(samples).toHaveLength(4);
     });
 
-    it("measures bounded output diagnostic overhead on four subject layouts", async () => {
-      const f = await outputFixture();
-      const sameUserAgent = await bdd.createAgent(f.actor, {
-        displayName: "Synthetic same-user peer",
-        visibility: "public",
-      });
-      const sameUser = await outputForFixture({
-        ...f,
-        agentId: sameUserAgent.agentId,
-      });
-      const sameOrg = await outputFixture(f.orgId);
-      const unrelated = await outputFixture();
-      const samples: { layout: string; elapsedMs: number }[] = [];
-      for (const [layout, peer] of [
-        ["uncontended", undefined],
-        ["same-user", sameUser],
-        ["same-org", sameOrg],
-        ["unrelated", unrelated],
-      ] as const) {
+    it.each(["uncontended", "same-user", "same-org", "unrelated"] as const)(
+      "measures bounded output diagnostic overhead for the %s subject layout",
+      async (layout) => {
+        const f = await outputFixture();
+        let peer: OutputFixture | undefined;
+        if (layout === "same-user") {
+          const sameUserAgent = await bdd.createAgent(f.actor, {
+            displayName: "Synthetic same-user peer",
+            visibility: "public",
+          });
+          peer = await outputForFixture({
+            ...f,
+            agentId: sameUserAgent.agentId,
+          });
+        } else if (layout === "same-org") {
+          peer = await outputFixture(f.orgId);
+        } else if (layout === "unrelated") {
+          peer = await outputFixture();
+        }
+        const samples: { layout: string; elapsedMs: number }[] = [];
         for (let sample = 0; sample < 3; sample++) {
           const sequence = 100 + samples.length * 10;
           const start = performance.now();
@@ -5142,11 +5152,11 @@ describe("actual compute transactions versus the B1 projector", () => {
           // Await owned consumers outside the measured HTTP completion interval.
           await flushWaitUntilForTest();
         }
-      }
-      process.stdout.write(
-        `B2B2_OUTPUT_DIAGNOSTIC_MS ${JSON.stringify(samples)}\n`,
-      );
-      expect(samples).toHaveLength(12);
-    });
+        process.stdout.write(
+          `B2B2_OUTPUT_DIAGNOSTIC_MS ${JSON.stringify(samples)}\n`,
+        );
+        expect(samples).toHaveLength(3);
+      },
+    );
   });
 });

@@ -403,11 +403,22 @@ describe("retained source authority", () => {
     connectionId: null,
     accountRef: "T123:U456",
     scopeDigest: morningBriefScopeDigest(["conversations.history"]),
+    endpoints: [],
     membershipId: "orgmem_1",
     agentId: "agent_1",
     capturedAt: "2026-09-17T06:00:00.000Z",
     containers: ["C1"],
     contributed: true,
+  };
+
+  /** A connector-backed source proves a connection, an account and endpoints. */
+  const gmailDescriptor: MorningBriefRetainedSourceDescriptor = {
+    ...descriptor,
+    source: "gmail",
+    connectionId: "conn_1",
+    accountRef: "owner@example.test",
+    endpoints: ["https://gmail.googleapis.com/gmail/v1/users/me/messages"],
+    containers: ["thread-1"],
   };
 
   it("digests an unchanged grant identically regardless of order", () => {
@@ -433,10 +444,44 @@ describe("retained source authority", () => {
     ).toBe("rejected");
   });
 
+  it("rejects supplied material whose account was never proved", () => {
+    // Null identity is "not observed", never "any account": a later check given
+    // this descriptor would have nothing to ask the provider about.
+    expect(
+      boundMorningBriefDescriptors([{ ...gmailDescriptor, accountRef: null }]),
+    ).toStrictEqual({ kind: "rejected", reason: "unproven-authority" });
+    expect(
+      boundMorningBriefDescriptors([
+        { ...gmailDescriptor, connectionId: null },
+      ]),
+    ).toStrictEqual({ kind: "rejected", reason: "unproven-authority" });
+    expect(
+      boundMorningBriefDescriptors([{ ...gmailDescriptor, endpoints: [] }]),
+    ).toStrictEqual({ kind: "rejected", reason: "unproven-authority" });
+  });
+
+  it("accepts an unproven source that supplied nothing", () => {
+    // An unconfigured connector has no retained input, so there is nothing for
+    // a later check to defend and no reason to fail the whole composition.
+    expect(
+      boundMorningBriefDescriptors([
+        {
+          ...gmailDescriptor,
+          connectionId: null,
+          accountRef: null,
+          scopeDigest: "",
+          endpoints: [],
+          containers: [],
+          contributed: false,
+        },
+      ]).kind,
+    ).toBe("bounded");
+  });
+
   it("revalidates supplied-but-uncited material and skips sources that supplied none", () => {
     const supplied = morningBriefSourcesToRevalidate([
       descriptor,
-      { ...descriptor, source: "gmail", contributed: false },
+      { ...gmailDescriptor, contributed: false },
     ]);
 
     expect(

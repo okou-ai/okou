@@ -309,23 +309,6 @@ describe.each(targets)(
         context: { ...context, signal: initialPageSignal },
         path,
       });
-      return {
-        resetInitialPage$,
-        get successful() {
-          return successful;
-        },
-        set successful(next: typeof successful) {
-          successful = next;
-        },
-        uploads,
-      };
-    }
-    let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
-    beforeEach(async () => {
-      preparedScenario = await prepareScenario();
-    });
-    it("preserves the complete scenario", async () => {
-      const { resetInitialPage$, uploads } = preparedScenario;
       click(await findEnabledButton("Voice input"));
       click(await findEnabledButton("Stop recording"));
       await findEnabledButton("Retry");
@@ -342,8 +325,28 @@ describe.each(targets)(
       });
       const dialog = await openForwardComposer(name);
       await findEnabledButton("Retry", dialog);
+      return {
+        saved,
+        originalComposer,
+        dialog,
+        get successful() {
+          return successful;
+        },
+        set successful(next: typeof successful) {
+          successful = next;
+        },
+        uploads,
+      };
+    }
+    it("offers the restored recording for retry without replacing its saved audio", async () => {
+      const { dialog, saved } = await prepareScenario();
       expect(queryButton("Voice input", dialog)).toBeNull();
       await expect(recordings()).resolves.toStrictEqual(saved);
+    });
+
+    it("recovers the restored audio into the forward dialog without changing the original composer", async () => {
+      const preparedScenario = await prepareScenario();
+      const { dialog, originalComposer, uploads } = preparedScenario;
       preparedScenario.successful = true;
       click(await findEnabledButton("Retry", dialog));
       await findEnabledButton("Voice input", dialog);

@@ -8,6 +8,38 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.623.0](https://github.com/vm0-ai/okou/compare/api-v1.622.0...api-v1.623.0) (2026-09-17)
+
+
+### Features
+
+* **api:** compose morning brief sources with agent language context ([#34898](https://github.com/vm0-ai/okou/issues/34898)) ([934dd89](https://github.com/vm0-ai/okou/commit/934dd891c47174c1239e5dfda443438200e26f2d))
+
+
+### Bug Fixes
+
+* **api:** align morning brief thread reuse with deletion lock order ([#35028](https://github.com/vm0-ai/okou/issues/35028)) ([cd25e62](https://github.com/vm0-ai/okou/commit/cd25e62ea704e85a60020099cff26d5ed117ef57))
+* **api:** bound calendar collection output and join every started read ([#35059](https://github.com/vm0-ai/okou/issues/35059)) ([f8c1520](https://github.com/vm0-ai/okou/commit/f8c15204fd0f9c33b54814dec478fa1517764f02))
+* **api:** fence browser authorization apply during account erasure ([#35015](https://github.com/vm0-ai/okou/issues/35015)) ([784efea](https://github.com/vm0-ai/okou/commit/784efea0df7dcf5ee73288f319f44114528bf31a))
+* **api:** fence morning brief result acceptance, release and retention ([#34993](https://github.com/vm0-ai/okou/issues/34993)) ([a7c2e9b](https://github.com/vm0-ai/okou/commit/a7c2e9bec4337eabc1555b3402b60e87d8deca34))
+* **api:** fence prepared morning brief reads and enforce source budgets ([#34976](https://github.com/vm0-ai/okou/issues/34976)) ([df00a0e](https://github.com/vm0-ai/okou/commit/df00a0ed016cae2db635d915d9bb19280fbcc57d))
+* **api:** fence unread chat brief authority and collection deadline ([#35024](https://github.com/vm0-ai/okou/issues/35024)) ([6cf2c28](https://github.com/vm0-ai/okou/commit/6cf2c287c4289374089ccb3423ab3914209c3de6))
+* **api:** guide private artifact delivery per integration ([#35009](https://github.com/vm0-ai/okou/issues/35009)) ([3ad2539](https://github.com/vm0-ai/okou/commit/3ad25397bb1dcf27a7e19d89806840996baf981a))
+* **api:** preserve morning brief provider numeric tokens before receipt validation ([#35029](https://github.com/vm0-ai/okou/issues/35029)) ([f5b53f9](https://github.com/vm0-ai/okou/commit/f5b53f9b05e36c1241f833fa894763eb201a9d80))
+* **api:** recheck browser authorization expiry after the request lock ([#35058](https://github.com/vm0-ai/okou/issues/35058)) ([e5f3a33](https://github.com/vm0-ai/okou/commit/e5f3a338c6638da3bbe590d7b5a8c3d7980ef332)), closes [#35021](https://github.com/vm0-ai/okou/issues/35021)
+* **api:** validate morning brief calendar times without inventing events ([#35057](https://github.com/vm0-ai/okou/issues/35057)) ([68e9e34](https://github.com/vm0-ai/okou/commit/68e9e34d38761eba44b61da754c4630a66f3aae7))
+* retire gpt 5.5 from run models ([#34450](https://github.com/vm0-ai/okou/issues/34450)) ([d68750c](https://github.com/vm0-ai/okou/commit/d68750c8cfea642e0c94ab547ec1c683ecbab41e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.460.0
+    * @okouai/core bumped to 8.676.2
+    * @okouai/db bumped to 1.270.2
+    * @okouai/pi-agent-runtime bumped to 1.33.5
+
 ## [1.622.0](https://github.com/vm0-ai/okou/compare/api-v1.621.0...api-v1.622.0) (2026-09-17)
 
 
