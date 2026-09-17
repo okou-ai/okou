@@ -140,7 +140,11 @@ switching it to Only me; recipients lose access.
 CLI artifact output qualifies hostless references with its configured app origin
 (`OKOU_APP_URL`, or the existing API-to-App origin mapping). Production output is
 `https://app.okou.ai/artifacts/<reference>`. Generation, upload, hosting and media
-download results use the same complete URL in text, JSON and Markdown. Public
+download results use the same complete URL in text, JSON and Markdown. Integration
+upload completion (Teams, Telegram, Feishu/Lark, AgentPhone and GitHub) and Slack
+canonical publication apply the same CLI normalization before printing. Image
+batch waits also qualify stored artifact and owner references in JSON output,
+including the generated Markdown, without rewriting the batch files. Public
 URLs keep their original bytes, including query strings. API responses and stored
 references retain their existing shapes, so older pinned CLIs retain their prior
 output and the new CLI can consume an older API. Downloading or cloning newly
