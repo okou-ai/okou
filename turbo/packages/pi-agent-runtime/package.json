@@ -31,6 +31,7 @@
     "@langfuse/pi-observability-plugin": "0.1.2",
     "@okouai/api-contracts": "workspace:*",
     "@okouai/connectors": "workspace:*",
+    "@smithy/core": "3.33.3",
     "@smithy/node-http-handler": "4.7.3",
     "gpt-tokenizer": "^3.4.0",
     "http-proxy-agent": "7.0.2",

@@ -3,6 +3,7 @@ import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { projectPiMemoryCitationSegments } from "@okouai/api-contracts/contracts/pi-memory-citations";
 
 import { piAgentStreamForConfig } from "./model";
+import { PiUsageObserver } from "./usage-observation";
 import {
   piModelFailureReason,
   piModelTransportFailure,
@@ -219,6 +220,7 @@ export async function preparePiApiTurn(
       try {
         executionSignal?.throwIfAborted();
         let observedServiceTier: PiObservedServiceTier;
+        const usageObserver = new PiUsageObserver();
         const turn = await runPiFirstModelTurn({
           model: shell.model,
           session: memorySession,
@@ -228,6 +230,7 @@ export async function preparePiApiTurn(
           prompt: args.prompt,
           thinkingLevel: args.model.thinkingLevel,
           streamOptions: {
+            usageObserver,
             apiKey: args.model.apiKey,
             signal: executionSignal,
             ...(args.model.provider === "openrouter"
@@ -258,6 +261,10 @@ export async function preparePiApiTurn(
           ),
           handoffRequired: turn.handoffRequired,
           observedServiceTier,
+          usageObservation: usageObserver.snapshot(
+            turn.assistantMessage.stopReason === "error" ||
+              turn.assistantMessage.stopReason === "aborted",
+          ),
           sessionJsonl: memorySession.toJsonl(),
         };
       } finally {
