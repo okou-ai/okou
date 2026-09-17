@@ -22,6 +22,7 @@ import {
   createConnectorBddApi,
   manualHttpCustomConnectorCreateBody,
 } from "./helpers/api-bdd-connectors";
+import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -450,6 +451,122 @@ describe("connector catalog v4 preparation", () => {
       { label: "Preferred v4" },
     ]);
   });
+
+  it.each(["preserved", "removed"] as const)(
+    "handles a %s retained v3 permission bundle for claimed custom connector runtimes during the first v4 sync",
+    async (bundleState) => {
+      // Historical-state exception: today's sync endpoint cannot recreate a
+      // retained v3 snapshot left by an older API. All runtime setup uses APIs.
+      await installRetainedV3();
+      const runs = createRunsApi(context);
+      const actor = bdd.user();
+      bdd.acceptAgentStorageWrites();
+      runs.acceptStorageDownloads();
+      runs.acceptTelemetryIngest();
+      const runnerGroup = runs.configureRunnerGroup();
+      await runs.grantProEntitlement(actor);
+      await runs.ensureOrgModelProvider(actor);
+      const agent = await bdd.createAgent(actor, {
+        displayName: "Catalog bootstrap permission agent",
+        visibility: "private",
+      });
+      const custom = await connectorsApi.createCustomConnector(
+        actor,
+        manualHttpCustomConnectorCreateBody({
+          displayName: "Catalog bootstrap custom API",
+          prefixTemplates: ["https://custom-catalog.example.test/v1/"],
+          permissionBundleRef: "builtin:catalog-service@1",
+        }),
+      );
+      const created: { runId?: string } = {};
+      onTestFinished(async () => {
+        context.mocks.s3.send.mockResolvedValue({ Contents: [] });
+        if (created.runId) {
+          await runs.requestCancelRun(actor, created.runId, [200, 404]);
+        }
+        await connectorsApi.deleteCustomConnector(actor, custom.id);
+        await bdd.deleteAgent(actor, agent.agentId);
+      });
+      await connectorsApi.setCustomConnectorSecret(
+        actor,
+        custom.id,
+        "catalog-bootstrap-custom-secret",
+      );
+      await connectorsApi.requestUpdateAgentCustomConnectorGrants(
+        actor,
+        agent.agentId,
+        [{ customConnectorId: custom.id, permissionNames: ["items.read"] }],
+        [200],
+      );
+      const run = await runs.createRun(actor, {
+        agentId: agent.agentId,
+        prompt: "Use the retained catalog permission bundle",
+        modelProvider: "anthropic-api-key",
+      });
+      created.runId = run.runId;
+      await runs.heartbeatRunner(runnerGroup);
+      const claim = await runs.claimRunnerJob(run.runId);
+      const registration = claim.connectorRuntimeTargets.find((target) => {
+        return (
+          target.kind === "custom" && target.customConnectorId === custom.id
+        );
+      });
+      if (!registration) {
+        throw new Error("Expected the claimed custom connector runtime");
+      }
+      const target = { kind: "custom", customConnectorId: custom.id };
+      const [initialRuntime] = await runs.syncConnectorRuntime(run.runId, {
+        targets: [registration],
+      });
+      expect(initialRuntime).toMatchObject({
+        target,
+        state: "available",
+        networkPolicy: { allow: ["items.read"] },
+      });
+
+      const candidate = release({
+        mutate(catalog) {
+          catalog.connectors = [
+            bundleState === "preserved"
+              ? httpConnectorWithFirewall("Retained v3")
+              : httpConnector("catalog-service", "Retained v3"),
+            mcpConnector(),
+          ];
+        },
+      });
+      serveObjects(candidate.objects);
+      context.mocks.ably.batchPublish.mockClear();
+      expect((await sync()).body.outcome).toBe("accepted");
+      const [updatedRuntime] = await runs.syncConnectorRuntime(run.runId, {
+        targets: [registration],
+      });
+      if (bundleState === "preserved") {
+        expect(updatedRuntime).toMatchObject({
+          target,
+          state: "available",
+          networkPolicy: { allow: ["items.read"] },
+        });
+        expect(context.mocks.ably.batchPublish).not.toHaveBeenCalled();
+      } else {
+        expect(updatedRuntime).toStrictEqual({
+          target,
+          state: "unresolved",
+          reason: "permission-bundle-unavailable",
+        });
+        expect(context.mocks.ably.batchPublish).toHaveBeenCalledWith({
+          channels: [expect.stringMatching(/^runner-group:/)],
+          messages: [
+            {
+              name: "connector-runtime-sync",
+              data: JSON.stringify({ runId: run.runId, target }),
+              encoding: "json",
+            },
+          ],
+        });
+      }
+    },
+    15_000,
+  );
 
   it("does not return retained v3 when an accepted v4 snapshot is corrupt", async () => {
     await installRetainedV3();

@@ -15,6 +15,10 @@ The existing authenticated `GET /api/cron/sync-connector-catalog` reads
 `connectors/v4/active.json`, validates the referenced immutable release, and
 transactionally accepts its snapshot, compatibility evaluation and projections.
 It uses the existing cron bearer secret and normal runtime wakeup behavior.
+Permission-bundle change detection compares against the currently serving
+accepted snapshot, including retained v3 during first-v4 bootstrap. Unchanged
+bundles send no wakeup; changed or removed bundles notify affected custom
+connectors through the existing runtime sync path.
 
 The existing release workflow and best-effort post-deployment sync are unchanged.
 While a source has no accepted v4 snapshot, the shared accepted-catalog reader
