@@ -4756,25 +4756,18 @@ const CHAT_NOTICE_DESCRIPTION_CLASS =
  */
 const CHAT_NOTICE_ACTION_SLOT_CLASS = "flex h-8 shrink-0 items-center";
 
-function CreditsAvailableMessage() {
-  const { t } = useTranslation();
-  return (
-    <div className="flex flex-col justify-between gap-3 p-3 @[640px]:flex-row @[640px]:items-center">
-      <div className="min-w-0">
-        <p className="truncate text-[0.9375rem] font-medium text-emerald-700 dark:text-emerald-300">
-          {t(($) => {
-            return $.chat.billing.creditsAvailable;
-          })}
-        </p>
-        <p className={cn("mt-1", CHAT_NOTICE_DESCRIPTION_CLASS)}>
-          {t(($) => {
-            return $.chat.billing.creditsAdded;
-          })}
-        </p>
-      </div>
-      <div className={CHAT_NOTICE_ACTION_SLOT_CLASS} />
-    </div>
-  );
+function creditsAvailableCopy(): {
+  readonly headline: string;
+  readonly helper: string;
+} {
+  return {
+    headline: i18n.t(($) => {
+      return $.chat.billing.creditsAvailable;
+    }),
+    helper: i18n.t(($) => {
+      return $.chat.billing.creditsAdded;
+    }),
+  };
 }
 
 function insufficientCreditsCopy(params: {
@@ -4938,21 +4931,26 @@ function InsufficientCreditsCard() {
   const canManageBilling = roleResolved ? isAdminLoadable.data : false;
   const hasAvailableCredits = canBuyCredits && credits !== null && credits > 0;
   const shouldStartProCheckout = !canBuyCredits;
-  const canShowBillingAction = billingResolved && canManageBilling;
+  // Credits on hand leave the reserved action slot empty, the way this notice
+  // has always read once a purchase lands.
+  const canShowBillingAction =
+    billingResolved && canManageBilling && !hasAvailableCredits;
   const checkoutRedirecting = checkoutLoadable.state === "loading";
   const creditCheckoutPreparing =
     creditCheckoutLoadable.state === "loading" ||
     creditPurchaseOrigin === "chat";
 
-  if (hasAvailableCredits) {
-    return <CreditsAvailableMessage />;
-  }
-
-  const { headline, helper } = insufficientCreditsCopy({
-    canBuyCredits,
-    roleResolved: billingResolved && roleResolved,
-    canManageBilling: billingResolved && canManageBilling,
-  });
+  // Credits arriving while the card is on screen replaces this copy and the
+  // action inside the element below, rather than swapping the element itself:
+  // `docs/chat-cards.md` keeps the mounted card's box in layout through every
+  // asynchronous state change.
+  const { headline, helper } = hasAvailableCredits
+    ? creditsAvailableCopy()
+    : insufficientCreditsCopy({
+        canBuyCredits,
+        roleResolved: billingResolved && roleResolved,
+        canManageBilling: billingResolved && canManageBilling,
+      });
 
   const openBilling = () => {
     setSubPage(false);
@@ -4985,7 +4983,14 @@ function InsufficientCreditsCard() {
   return (
     <div className="flex flex-col justify-between gap-3 p-3 @[640px]:flex-row @[640px]:items-center">
       <div className="min-w-0">
-        <p className="truncate text-[0.9375rem] font-medium text-foreground">
+        <p
+          className={cn(
+            "truncate text-[0.9375rem] font-medium",
+            hasAvailableCredits
+              ? "text-emerald-700 dark:text-emerald-300"
+              : "text-foreground",
+          )}
+        >
           {headline}
         </p>
         <p className={cn("mt-1", CHAT_NOTICE_DESCRIPTION_CLASS)}>{helper}</p>
@@ -5152,6 +5157,25 @@ function AssistantRecoveryActions({
   );
 }
 
+/**
+ * The contents of one error card, chosen by the caller and handed to the single
+ * `AssistantErrorCard` element it keeps mounted. `docs/chat-cards.md` requires
+ * the sized element itself to survive every asynchronous state change: the
+ * failure-recovery classification lands after the transcript has already
+ * scrolled, and replacing the card component at that moment removes its box
+ * from layout for one pass, which makes WebKit clamp the transcript's scroll
+ * offset by the card's own height. Equal heights do not prevent that; only the
+ * retained element does.
+ */
+interface AssistantErrorCardContent {
+  readonly icon: LucideIcon;
+  readonly title: string;
+  readonly description: string;
+  readonly details?: ReactNode;
+  readonly actions?: ReactNode;
+  readonly testId?: string;
+}
+
 function AssistantErrorCard({
   icon: Icon,
   title,
@@ -5159,14 +5183,7 @@ function AssistantErrorCard({
   details,
   actions,
   testId,
-}: {
-  icon: LucideIcon;
-  title: string;
-  description: string;
-  details?: ReactNode;
-  actions?: ReactNode;
-  testId?: string;
-}) {
+}: AssistantErrorCardContent) {
   return (
     <div
       role="status"
@@ -5198,14 +5215,11 @@ function AssistantErrorCard({
   );
 }
 
-function AssistantErrorRecoveryCard({
-  recovery,
-  thread,
-}: {
-  recovery: AssistantErrorRecovery;
-  thread: ChatPanelSignals;
-}) {
-  const { t } = useTranslation();
+function assistantErrorRecoveryContent(
+  recovery: AssistantErrorRecovery,
+  thread: ChatPanelSignals,
+  t: TFunction<"common">,
+): AssistantErrorCardContent {
   const resetText = assistantRecoveryResetText(recovery);
   const title = (() => {
     if (recovery.kind === "subscription-error") {
@@ -5290,93 +5304,102 @@ function AssistantErrorRecoveryCard({
           : null
     : null;
 
-  return (
-    <AssistantErrorCard
-      icon={
-        recovery.kind === "autonomy-budget-exhausted"
-          ? Hand
-          : recovery.kind === "usage-limit" ||
-              recovery.kind === "execution-timeout"
-            ? Clock
-            : Coffee
-      }
-      title={title}
-      description={`${description}${resetText ? ` ${resetText}` : ""}`}
-      details={
-        <>
-          {`${description}${resetText ? ` ${resetText}` : ""}`}
-          {sourceDescription && <p className="mt-1">{sourceDescription}</p>}
-          {personalSource && (
-            <p className="mt-1">
-              {t(($) => {
-                return $.chat.errors.recovery.newRunCurrentSettings;
-              })}
-            </p>
-          )}
-        </>
-      }
-      actions={<AssistantRecoveryActions recovery={recovery} thread={thread} />}
-      testId="assistant-error-recovery"
-    />
-  );
+  return {
+    icon:
+      recovery.kind === "autonomy-budget-exhausted"
+        ? Hand
+        : recovery.kind === "usage-limit" ||
+            recovery.kind === "execution-timeout"
+          ? Clock
+          : Coffee,
+    title,
+    description: `${description}${resetText ? ` ${resetText}` : ""}`,
+    details: (
+      <>
+        {`${description}${resetText ? ` ${resetText}` : ""}`}
+        {sourceDescription && <p className="mt-1">{sourceDescription}</p>}
+        {personalSource && (
+          <p className="mt-1">
+            {t(($) => {
+              return $.chat.errors.recovery.newRunCurrentSettings;
+            })}
+          </p>
+        )}
+      </>
+    ),
+    actions: <AssistantRecoveryActions recovery={recovery} thread={thread} />,
+    testId: "assistant-error-recovery",
+  };
 }
 
-function NoModelProviderErrorCard() {
+/** Owns the settings command so the card's contents stay hook-free. */
+function ModelSettingsButton() {
   const { t } = useTranslation();
   const openSettings = useSet(openSettingsDialogAt$);
   const pageSignal = useGet(pageSignal$);
 
   return (
-    <AssistantErrorCard
-      icon={AlertCircle}
-      title={t(($) => {
-        return $.chat.errors.genericTitle;
+    <button
+      type="button"
+      className="inline-flex items-center gap-1 text-amber-500 underline underline-offset-2 hover:text-amber-400"
+      onClick={() => {
+        detach(openSettings("model", pageSignal), Reason.DomCallback);
+      }}
+    >
+      {t(($) => {
+        return $.chat.errors.noModelProviderAction;
       })}
-      description={t(($) => {
-        return $.chat.errors.noModelProviderPrefix;
-      })}
-      details={
-        <span>
-          {t(($) => {
-            return $.chat.errors.noModelProviderPrefix;
-          })}{" "}
-          <button
-            type="button"
-            className="inline-flex items-center gap-1 text-amber-500 underline underline-offset-2 hover:text-amber-400"
-            onClick={() => {
-              detach(openSettings("model", pageSignal), Reason.DomCallback);
-            }}
-          >
-            {t(($) => {
-              return $.chat.errors.noModelProviderAction;
-            })}
-          </button>{" "}
-          {t(($) => {
-            return $.chat.errors.noModelProviderSuffix;
-          })}
-        </span>
-      }
-    />
+    </button>
   );
 }
 
-function AssistantErrorFallback({ error }: { error: string }) {
-  const { t } = useTranslation();
+function noModelProviderErrorContent(
+  t: TFunction<"common">,
+): AssistantErrorCardContent {
+  return {
+    icon: AlertCircle,
+    title: t(($) => {
+      return $.chat.errors.genericTitle;
+    }),
+    description: t(($) => {
+      return $.chat.errors.noModelProviderPrefix;
+    }),
+    details: (
+      <span>
+        {t(($) => {
+          return $.chat.errors.noModelProviderPrefix;
+        })}{" "}
+        <ModelSettingsButton />{" "}
+        {t(($) => {
+          return $.chat.errors.noModelProviderSuffix;
+        })}
+      </span>
+    ),
+  };
+}
 
+/**
+ * Returns null for the billing errors that own a different card. That choice
+ * reads the failure text the card mounts with, so it cannot change while the
+ * card is on screen: the recovery classification never claims
+ * `insufficient_credits` or `pro_required`.
+ */
+function assistantErrorFallbackContent(
+  error: string,
+  t: TFunction<"common">,
+): AssistantErrorCardContent | null {
   if (isBillingRecoveryError(error)) {
-    return <InsufficientCreditsCard />;
+    return null;
   }
 
   if (error.trim().toLowerCase() === "run cancelled") {
-    return (
-      <AssistantErrorCard
-        icon={Hand}
-        title={t(($) => {
-          return $.chat.errors.runCancelled;
-        })}
-        description=""
-      />
-    );
+    return {
+      icon: Hand,
+      title: t(($) => {
+        return $.chat.errors.runCancelled;
+      }),
+      description: "",
+    };
   }
 
   const noProviderGuidance = RUN_ERROR_GUIDANCE.NO_MODEL_PROVIDER;
@@ -5385,7 +5408,7 @@ function AssistantErrorFallback({ error }: { error: string }) {
     error.toLowerCase().includes(noProviderGuidance.title.toLowerCase());
 
   if (isNoModelProvider) {
-    return <NoModelProviderErrorCard />;
+    return noModelProviderErrorContent(t);
   }
 
   const incompatibleGuidance = RUN_ERROR_GUIDANCE.PROVIDER_INCOMPATIBLE;
@@ -5396,32 +5419,30 @@ function AssistantErrorFallback({ error }: { error: string }) {
     error.includes("Invalid signature in thinking block");
 
   if (isProviderIncompatible) {
-    return (
-      <AssistantErrorCard
-        icon={AlertCircle}
-        title={t(($) => {
-          return $.chat.errors.genericTitle;
-        })}
-        description={t(($) => {
-          return $.chat.errors.providerIncompatiblePrefix;
-        })}
-        details={
-          <span>
+    return {
+      icon: AlertCircle,
+      title: t(($) => {
+        return $.chat.errors.genericTitle;
+      }),
+      description: t(($) => {
+        return $.chat.errors.providerIncompatiblePrefix;
+      }),
+      details: (
+        <span>
+          {t(($) => {
+            return $.chat.errors.providerIncompatiblePrefix;
+          })}{" "}
+          <Link
+            pathname="/"
+            className="inline-flex items-center gap-1 text-amber-500 underline underline-offset-2 hover:text-amber-400"
+          >
             {t(($) => {
-              return $.chat.errors.providerIncompatiblePrefix;
-            })}{" "}
-            <Link
-              pathname="/"
-              className="inline-flex items-center gap-1 text-amber-500 underline underline-offset-2 hover:text-amber-400"
-            >
-              {t(($) => {
-                return $.chat.errors.providerIncompatibleAction;
-              })}
-            </Link>
-          </span>
-        }
-      />
-    );
+              return $.chat.errors.providerIncompatibleAction;
+            })}
+          </Link>
+        </span>
+      ),
+    };
   }
 
   const deletedGuidance = RUN_ERROR_GUIDANCE.PROVIDER_DELETED;
@@ -5431,52 +5452,48 @@ function AssistantErrorFallback({ error }: { error: string }) {
       error.toLowerCase().includes(deletedGuidance.guidance.toLowerCase()));
 
   if (isProviderDeleted) {
-    return (
-      <AssistantErrorCard
-        icon={AlertCircle}
-        title={t(($) => {
-          return $.chat.errors.genericTitle;
-        })}
-        description={t(($) => {
-          return $.chat.errors.providerDeletedPrefix;
-        })}
-        details={
-          <span>
+    return {
+      icon: AlertCircle,
+      title: t(($) => {
+        return $.chat.errors.genericTitle;
+      }),
+      description: t(($) => {
+        return $.chat.errors.providerDeletedPrefix;
+      }),
+      details: (
+        <span>
+          {t(($) => {
+            return $.chat.errors.providerDeletedPrefix;
+          })}{" "}
+          <Link
+            pathname="/"
+            className="inline-flex items-center gap-1 text-amber-500 underline underline-offset-2 hover:text-amber-400"
+          >
             {t(($) => {
-              return $.chat.errors.providerDeletedPrefix;
-            })}{" "}
-            <Link
-              pathname="/"
-              className="inline-flex items-center gap-1 text-amber-500 underline underline-offset-2 hover:text-amber-400"
-            >
-              {t(($) => {
-                return $.chat.errors.providerDeletedAction;
-              })}
-            </Link>{" "}
-            {t(($) => {
-              return $.chat.errors.providerDeletedSuffix;
+              return $.chat.errors.providerDeletedAction;
             })}
-          </span>
-        }
-      />
-    );
+          </Link>{" "}
+          {t(($) => {
+            return $.chat.errors.providerDeletedSuffix;
+          })}
+        </span>
+      ),
+    };
   }
 
-  return (
-    <AssistantErrorCard
-      icon={AlertCircle}
-      title={t(($) => {
-        return $.chat.errors.genericTitle;
-      })}
-      description={localizedRunError(error)}
-      details={
-        <Markdown
-          className="!text-muted-foreground"
-          source={localizedRunError(error)}
-        />
-      }
-    />
-  );
+  return {
+    icon: AlertCircle,
+    title: t(($) => {
+      return $.chat.errors.genericTitle;
+    }),
+    description: localizedRunError(error),
+    details: (
+      <Markdown
+        className="!text-muted-foreground"
+        source={localizedRunError(error)}
+      />
+    ),
+  };
 }
 
 function AssistantErrorContent({
@@ -5504,12 +5521,19 @@ function AssistantErrorState({
   eventId: string;
   thread: ChatPanelSignals;
 }) {
-  const recovery = useLastResolved(thread.assistantErrorRecovery$);
-  return recovery?.sourceEventId === eventId ? (
-    <AssistantErrorRecoveryCard recovery={recovery} thread={thread} />
-  ) : (
-    <AssistantErrorFallback error={error} />
-  );
+  const { t } = useTranslation();
+  const resolved = useLastResolved(thread.assistantErrorRecovery$);
+  const recovery = resolved?.sourceEventId === eventId ? resolved : null;
+  // The classification resolves after the first paint and selects contents,
+  // not a component: choosing between two card components here would remove
+  // the mounted card and move the transcript by its height.
+  const content = recovery
+    ? assistantErrorRecoveryContent(recovery, thread, t)
+    : assistantErrorFallbackContent(error, t);
+  if (content === null) {
+    return <InsufficientCreditsCard />;
+  }
+  return <AssistantErrorCard {...content} />;
 }
 
 function AssistantBubbleAvatar({ thread }: { thread: ChatPanelSignals }) {

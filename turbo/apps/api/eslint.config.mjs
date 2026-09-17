@@ -683,6 +683,13 @@ export default [
       // transaction at a row lock or fires an automation into a chosen thread;
       // the preview route suite owns every constructible case.
       "src/signals/services/__tests__/morning-brief-chat-collection.service.test.ts",
+      // #35016 needs both commit orders of a Morning Brief binding reuse and a
+      // thread deletion over the two row locks their cycle ran through. The one
+      // endpoint that reaches an existing binding continues into queue
+      // admission once its binding transaction commits, so it cannot be
+      // suspended at that boundary; deletion stays the real endpoint and the
+      // route suite owns the constructible reuse cases.
+      "src/signals/services/__tests__/workflow-user-automation-thread.service.test.ts",
     ],
     rules: {
       "no-restricted-syntax": [
@@ -864,6 +871,10 @@ export default [
       // transactions and a chosen destination thread, neither of which an HTTP
       // caller can construct; the preview route suite owns the rest.
       "src/signals/services/__tests__/morning-brief-chat-collection.service.test.ts",
+      // #35016's binding reuse and thread deletion have to arrive in both
+      // orders on the same two rows, which needs a suspended PostgreSQL
+      // transaction; the reuse route suite owns the constructible cases.
+      "src/signals/services/__tests__/workflow-user-automation-thread.service.test.ts",
     ],
     rules: {
       "no-restricted-imports": [
