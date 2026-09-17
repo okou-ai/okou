@@ -11,6 +11,7 @@ import type {
   InternalRunCallbackEnvelope,
   InternalRunCallbackKind,
 } from "./internal-run-callback";
+import { settleMorningBriefScheduleForRun } from "./morning-brief-schedule-claim.service";
 import {
   automationCronCallbackPayloadSchema,
   type AutomationCronCallbackPayload,
@@ -75,6 +76,27 @@ export async function handleWorkflowAutomationInternalCallback(
     return { success: true, skipped: true };
   }
 
+  // A journaled occurrence owns its own settlement: the binding committed with
+  // the Run itself, so it is authoritative even before the post-return
+  // `lastRunId` write, and a duplicate or superseded callback settles nothing.
+  const settled = await settleMorningBriefScheduleForRun(db, {
+    automationId: payload.data.automationId,
+    runId: input.callback.runId,
+    settlement: input.callback.status === "completed" ? "completed" : "failed",
+    resolveIsCreditError: () => {
+      return isInsufficientCreditsRun(db, input.callback);
+    },
+    settledAt: nowDate(),
+  });
+  signal?.throwIfAborted();
+  if (settled) {
+    return { success: true };
+  }
+
+  // Historical, manual and every unjournaled legacy execution keeps the exact
+  // behavior below. It is deliberately unchanged and carries no journaled
+  // protection; S7b removes it once no unjournaled execution can still call
+  // back. It never infers an anchor for a run it does not recognize.
   return await db.transaction(async (tx) => {
     // Serialize completion with schedule edits so the entire current schedule
     // remains authoritative until its next run has been written.
@@ -144,6 +166,26 @@ export async function handleWorkflowAutomationInternalCallback(
 
     return { success: true };
   });
+}
+
+/**
+ * The failure reason comes from the authoritative Run rather than the callback
+ * payload. The caller has already matched this exact Run to its journaled
+ * occurrence, which is what authorizes reading it by id alone.
+ */
+async function isInsufficientCreditsRun(
+  db: Db,
+  callback: InternalRunCallbackEnvelope,
+): Promise<boolean> {
+  if (callback.status === "completed") {
+    return false;
+  }
+  const [run] = await db
+    .select({ failureReason: agentRuns.failureReason })
+    .from(agentRuns)
+    .where(eq(agentRuns.id, callback.runId))
+    .limit(1);
+  return run?.failureReason === "insufficient_credits";
 }
 
 export const handleWorkflowAutomationInternalCallback$ = command(

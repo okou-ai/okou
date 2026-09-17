@@ -1147,6 +1147,14 @@ export interface CreateAgentRunArgs {
   readonly enforceBuiltInCredits?: boolean;
   readonly dispatchFailedCallbacks?: DispatchFailedRunCallbacks;
   readonly queueFirstAssociation?: QueueFirstRunAssociation;
+  /**
+   * In-memory binding fence for a caller that journals the occurrence this run
+   * belongs to. It runs only after the exact original queue event has been
+   * claimed, inside the same launch transaction that still has to insert the
+   * Run, so a lost claim or a rolled-back INSERT leaves no binding. It is never
+   * serialized into run metadata or the durable queue payload.
+   */
+  readonly bindClaimedQueueFirstRun?: (tx: Tx, runId: string) => Promise<void>;
   readonly agentRunModelPin?: AgentRunModelPin;
   /** Immutable Pi eligibility captured by the caller's admission snapshot. */
   readonly piExecution: boolean;
@@ -8369,7 +8377,7 @@ async function claimQueueFirstAssociationForLaunch(args: {
   if (!args.createArgs.agentRunModelPin) {
     throw new Error("Queue-first claim requires a run model pin");
   }
-  return await claimQueueFirstRunAssociation(args.tx, {
+  const claim = await claimQueueFirstRunAssociation(args.tx, {
     ...association,
     admission: args.admission,
     runId: args.identity.runId,
@@ -8379,6 +8387,13 @@ async function claimQueueFirstAssociationForLaunch(args: {
       : {}),
     timing: args.timing,
   });
+  if (claim.kind === "claimed") {
+    await args.createArgs.bindClaimedQueueFirstRun?.(
+      args.tx,
+      args.identity.runId,
+    );
+  }
+  return claim;
 }
 
 interface CommitFailedLaunchArgs {

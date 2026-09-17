@@ -7,14 +7,18 @@ import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/mode
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { writeDb$, type Db } from "../external/db";
+import type { Tx } from "../../lib/db-types";
 import { now, nowDate } from "../../lib/time";
 import {
   isQueueFirstRunClaimLost,
   type DispatchFailedRunCallbacks,
 } from "./agent-run-create.service";
-import type { PersistWorkflowQueueSourceTransition } from "./workflow-chat-event-queue.service";
+import type {
+  PersistWorkflowQueueSourceTransition,
+  WorkflowScheduleClaimPlan,
+} from "./workflow-chat-event-queue.service";
 import type { InternalRunCallbackKind } from "./internal-run-callback";
 import {
   finalizeClaimedRunUserMessage,
@@ -29,6 +33,10 @@ import {
   measureApiDispatchTiming,
 } from "./api-dispatch-timing.service";
 import { createQueueFirstAgentRun$ } from "./agent-runs-create.service";
+import {
+  bindMorningBriefScheduleClaimRun,
+  morningBriefScheduleClaimIsNotSuperseded,
+} from "./morning-brief-schedule-claim.service";
 import { workflowAutomationCanFire } from "./workflow-automation-access.service";
 import { loadComputerUseHostGrantForAutoSend } from "./chat-computer-use-host.service";
 import { shouldUsePiExecution } from "./pi-sandbox-config";
@@ -117,6 +125,11 @@ export interface RunWorkflowAutomationNowArgs {
    * the durable workflow queue payload.
    */
   readonly persistSourceTransition?: PersistWorkflowQueueSourceTransition;
+  /**
+   * Consumes the due schedule occurrence inside the queue admission
+   * transaction. Only journaled legacy Morning Brief ticks pass one.
+   */
+  readonly scheduleClaim?: WorkflowScheduleClaimPlan;
   readonly dispatchFailedCallbacks: DispatchFailedRunCallbacks;
   readonly timing?: ApiDispatchTimingCollector;
 }
@@ -523,6 +536,18 @@ async function buildTimedWorkflowAutomationRunInput(args: {
   );
 }
 
+/**
+ * Ordinary, failed-launch and Pi commits all claim the queue event through the
+ * same helper, so one hook binds the journaled occurrence at the authoritative
+ * transaction boundary for every path. It is a no-op for the events this API
+ * version does not journal.
+ */
+function bindJournaledOccurrenceRun(queueEventId: string) {
+  return (tx: Tx, runId: string): Promise<void> => {
+    return bindMorningBriefScheduleClaimRun(tx, { queueEventId, runId });
+  };
+}
+
 async function recordWorkflowAutomationRunStart(
   input: {
     readonly db: Db;
@@ -556,7 +581,12 @@ async function recordWorkflowAutomationRunStart(
         : {}),
       updatedAt: nowDate(),
     })
-    .where(eq(workflowAutomations.id, automation.id));
+    .where(
+      and(
+        eq(workflowAutomations.id, automation.id),
+        morningBriefScheduleClaimIsNotSuperseded(db, runId),
+      ),
+    );
   signal.throwIfAborted();
 }
 
@@ -720,6 +750,7 @@ export const launchQueuedWorkflowAutomation$ = command(
           prompt: runInput.prompt,
           automationId: automation.id,
         },
+        bindClaimedQueueFirstRun: bindJournaledOccurrenceRun(args.queueEventId),
         agentRunModelPin: {
           modelProvider: effectiveModelProvider ?? null,
           modelProviderId: modelPin.modelProviderId,
