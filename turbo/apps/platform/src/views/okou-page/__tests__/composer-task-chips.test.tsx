@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core";
+import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
 import {
   click,
   fill,
@@ -13,6 +14,7 @@ import {
   composerInlineTemplates,
   findComposerEditor,
   tabByText,
+  composerModelTrigger,
 } from "./chat-composer-test-helpers.ts";
 import {
   AGENT_ID,
@@ -22,6 +24,9 @@ import {
   mockPresentationTemplateLibrary,
   mockTemplateChat,
 } from "./chat-composer-template-gallery-test-helpers.ts";
+
+const CREATE_WORKFLOW_PROMPT =
+  "Help me create a workflow for this agent. Use the workflow-setup skill, then ask me for the desired outcome, automation, and action before creating the workflow and automation.";
 
 function button(
   label: string,
@@ -44,6 +49,19 @@ async function setupChips(enabled = true): Promise<HTMLElement> {
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
       [FeatureSwitchKey.ComposerTaskChips]: enabled,
+    },
+  });
+  return await findComposerEditor();
+}
+
+/** The chips and the add menu are separate switches, so both are named. */
+async function setupChipsWithAddMenu(chips: boolean): Promise<HTMLElement> {
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: {
+      [FeatureSwitchKey.ComposerTaskChips]: chips,
+      [FeatureSwitchKey.ComposerAddMenu]: true,
     },
   });
   return await findComposerEditor();
@@ -75,14 +93,33 @@ async function setupChipsWithCustomTemplates(): Promise<HTMLElement> {
   return await findComposerEditor();
 }
 
-// The selected task is one control: the chip itself removes the selection, so
-// it is addressed by that action rather than by a wrapping group.
-function selectedTask(editor: HTMLElement, task: string): HTMLElement {
+function composerCard(editor: HTMLElement): HTMLElement {
   const card = editor.closest<HTMLElement>('[data-slot="chat-composer-card"]');
   if (!card) {
     throw new Error("Expected composer card");
   }
-  return button(`Remove ${task}`, card);
+  return card;
+}
+
+// The selected task is one control: the chip itself removes the selection, so
+// it is addressed by that action rather than by a wrapping group.
+function selectedTask(editor: HTMLElement, task: string): HTMLElement {
+  return button(`Remove ${task}`, composerCard(editor));
+}
+
+async function addMenuRow(
+  editor: HTMLElement,
+  label: string,
+): Promise<HTMLElement> {
+  click(button("Add", composerCard(editor)));
+  const menu = await screen.findByRole("menu", { name: "Add" });
+  const row = queryAllByRoleFast("menuitem", menu).find((candidate) => {
+    return candidate.textContent?.trim() === label;
+  });
+  if (!row) {
+    throw new Error(`Expected the ${label} row`);
+  }
+  return row;
 }
 
 function isPager(item: HTMLElement): boolean {
@@ -601,7 +638,7 @@ test("Task changes preserve uploaded files and the draft, and toggling off resto
   click(portrait);
   await user.keyboard("{Escape}");
   click(selectedTask(editor, "Video"));
-  await screen.findByRole("combobox", { name: "Claude Sonnet 4.6" });
+  await composerModelTrigger("Claude Sonnet 4.6");
   expect(screen.queryByTestId("composer-create-mode")).toBeNull();
   expect(editor).toHaveTextContent("Keep my draft");
   expect(screen.getByText("brief.txt")).toBeInTheDocument();
@@ -727,6 +764,18 @@ test.each([
   },
 );
 
+/**
+ * A slash panel row opens the picker as well as selecting the task, and the
+ * open dialog hides the composer from the accessibility tree. Close it to read
+ * what the row left behind.
+ */
+async function closeTemplatePicker(): Promise<void> {
+  click(button("Close", await screen.findByRole("dialog")));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+}
+
 test("Slash commands keep the selected task and recommendations in sync", async () => {
   mockTemplateChat();
   const editor = await setupChipsWithSlashPanel();
@@ -735,6 +784,7 @@ test("Slash commands keep the selected task and recommendations in sync", async 
   const user = userEvent.setup({ delay: null });
   // The panel's rows act on mousedown, which only a full pointer sequence fires.
   await user.click(button("Illustration", menu));
+  await closeTemplatePicker();
   await waitFor(() => {
     expect(selectedTask(editor, "Image")).toBeVisible();
   });
@@ -744,12 +794,59 @@ test("Slash commands keep the selected task and recommendations in sync", async 
   await fill(editor, "A quiet garden /vid");
   const videoMenu = await screen.findByTestId("slash-workflow-menu");
   await user.click(button("Video", videoMenu));
+  await closeTemplatePicker();
   await waitFor(() => {
     expect(selectedTask(editor, "Video")).toBeVisible();
   });
   expect(screen.queryByRole("group", { name: "Image" })).toBeNull();
   await screen.findByText("Turn a photo into a video");
   expect(editor).toHaveTextContent("A quiet garden");
+});
+
+// Website has no create mode, so the chips are the only surface that can carry
+// its selection; the row still has to open the picker on the way there.
+test("A slash panel row opens the picker and lands on its task", async () => {
+  mockTemplateChat();
+  const editor = await setupChipsWithSlashPanel();
+  await fill(editor, "A launch page /web");
+  const menu = await screen.findByTestId("slash-workflow-menu");
+  const user = userEvent.setup({ delay: null });
+
+  await user.click(button("Website", menu));
+
+  await waitFor(() => {
+    return screen.getByRole("dialog");
+  });
+  expect(tabByText("Website")).toHaveAttribute("aria-selected", "true");
+  await closeTemplatePicker();
+  await waitFor(() => {
+    expect(selectedTask(editor, "Website")).toBeVisible();
+  });
+  expect(editor).toHaveTextContent("A launch page");
+  expect(editor).not.toHaveTextContent("/web");
+});
+
+// A cover brings its template along instead of opening the picker, but lands
+// the composer in the same task its category row would.
+test("A slash panel cover attaches its template and lands on its task", async () => {
+  mockTemplateChat();
+  const editor = await setupChipsWithSlashPanel();
+  await fill(editor, "A launch page /web");
+  const menu = await screen.findByTestId("slash-workflow-menu");
+  const [first] = WEBSITE_TEMPLATE_ITEMS;
+  if (!first) {
+    throw new Error("Expected a website template");
+  }
+  const user = userEvent.setup({ delay: null });
+
+  await user.click(button(`Use template ${first.title}`, menu));
+
+  await waitFor(() => {
+    expect(selectedTask(editor, "Website")).toBeVisible();
+  });
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(editor).toHaveTextContent("A launch page");
+  expect(editor).not.toHaveTextContent("/web");
 });
 
 test("A presentation suggestion inserts a canonical template and preserves the prompt", async () => {
@@ -1200,6 +1297,57 @@ test("Closing or navigating a workflow preview does not edit or send the draft",
   });
   expect(editor.textContent).toBe("My existing draft");
   expect(capture.sentMessages).toHaveLength(0);
+});
+
+/**
+ * The add menu's row and the Workflow chip start the same job, so the row
+ * leaves the composer where the chip would: the prompt in the draft and the
+ * workflow ideas open, rather than a written prompt the member still has to
+ * pair with a chip.
+ */
+test("Create workflow writes its prompt and opens the workflow task", async () => {
+  mockTemplateChat();
+  const editor = await setupChipsWithAddMenu(true);
+  click(await addMenuRow(editor, "Create workflow"));
+
+  await waitFor(() => {
+    expect(editor).toHaveTextContent(CREATE_WORKFLOW_PROMPT);
+  });
+  expect(selectedTask(editor, "Workflow")).toBeVisible();
+  await expect(
+    screen.findByRole("group", { name: "Ideas to get started" }),
+  ).resolves.toBeVisible();
+
+  // Choosing the row again restates the task it already opened, so the ideas
+  // have to survive it rather than close as a second chip press would.
+  click(await addMenuRow(editor, "Create workflow"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Replace composer draft?",
+  });
+  click(button("Continue", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(selectedTask(editor, "Workflow")).toBeVisible();
+  expect(
+    screen.getByRole("group", { name: "Ideas to get started" }),
+  ).toBeVisible();
+});
+
+// With the chips off there is no task to open, and the row is still the prompt.
+test("Create workflow selects no task while the chips are off", async () => {
+  mockTemplateChat();
+  const editor = await setupChipsWithAddMenu(false);
+  click(await addMenuRow(editor, "Create workflow"));
+
+  await waitFor(() => {
+    expect(editor).toHaveTextContent(CREATE_WORKFLOW_PROMPT);
+  });
+  expect(
+    queryAllByRoleFast("button", composerCard(editor)).some((item) => {
+      return item.getAttribute("aria-label") === "Remove Workflow";
+    }),
+  ).toBeFalsy();
 });
 
 test("Reply tracking prepares a custom workflow request without an unrelated template", async () => {

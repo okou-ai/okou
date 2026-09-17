@@ -11,6 +11,7 @@ import { cronSnapshotChatEventsRoutes } from "./routes/cron-snapshot-chat-events
 import { cronRetainChatEventsRoutes } from "./routes/cron-retain-chat-events";
 import { cronCompactUsageEventsRoutes } from "./routes/cron-compact-usage-events";
 import { cronCleanupSandboxesRoutes } from "./routes/cron-cleanup-sandboxes";
+import { cronCleanupXResourceReadsRoutes } from "./routes/cron-cleanup-x-resource-reads";
 import { cronConnectorCatalogRoutes } from "./routes/cron-connector-catalog";
 import { cronOfficialWorkflowCatalogRoutes } from "./routes/cron-official-workflow-catalog";
 import { cronConnectorOauthStateCleanupRoutes } from "./routes/cron-connector-oauth-state-cleanup";
@@ -111,6 +112,7 @@ import { mailRoutes } from "./routes/mail";
 import { mapsRoutes } from "./routes/maps";
 import { mcpConnectorsRoutes } from "./routes/mcp-connectors";
 import { mcpOAuthClientMetadataRoutes } from "./routes/mcp-oauth-client-metadata";
+import { morningBriefPreviewGithubCollectionRoutes } from "./routes/morning-brief-preview-github-collection";
 import { weatherRoutes } from "./routes/weather";
 import { modelPoliciesRoutes } from "./routes/model-policies";
 import { modelProviderGatewayRoutes } from "./routes/model-provider-gateways";
@@ -149,6 +151,7 @@ import { workflowsRoutes } from "./routes/workflows";
 import { officialWorkflowRoutes } from "./routes/official-workflows";
 import { emailSubscriptionRoutes } from "./routes/email-subscription";
 import { morningBriefChatCollectionPreviewRoutes } from "./routes/morning-brief-chat-collection-preview";
+import { morningBriefCalendarCollectionPreviewRoutes } from "./routes/morning-brief-calendar-collection-preview";
 import { morningBriefCollectionPreviewRoutes } from "./routes/morning-brief-collection-preview";
 import { morningBriefDeliveryPreviewRoutes } from "./routes/morning-brief-delivery-preview";
 import { morningBriefGenerationPreviewRoutes } from "./routes/morning-brief-generation-preview";
@@ -252,6 +255,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...cronRetainChatEventsRoutes,
   ...cronCompactUsageEventsRoutes,
   ...cronCleanupSandboxesRoutes,
+  ...cronCleanupXResourceReadsRoutes,
   ...cronConnectorCatalogRoutes,
   ...cronOfficialWorkflowCatalogRoutes,
   ...cronConnectorOauthStateCleanupRoutes,
@@ -330,6 +334,9 @@ export const ROUTES: readonly RouteEntry[] = [
   ...mapsRoutes,
   ...mcpConnectorsRoutes,
   ...mcpOAuthClientMetadataRoutes,
+  // Registered here so the protected preview has real application ingress. It
+  // is 404 in production: the environment gate runs before authentication.
+  ...morningBriefPreviewGithubCollectionRoutes,
   ...weatherRoutes,
   ...scrapeRoutes,
   ...peopleSearchRoutes,
@@ -375,6 +382,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...userPreferencesRoutes,
   ...userModelPreferenceRoutes,
   ...morningBriefPreferenceRoutes,
+  ...morningBriefCalendarCollectionPreviewRoutes,
   ...morningBriefCollectionPreviewRoutes,
   ...morningBriefGmailCollectionPreviewRoutes,
   ...morningBriefGenerationPreviewRoutes,

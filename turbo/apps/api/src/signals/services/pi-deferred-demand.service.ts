@@ -1,4 +1,4 @@
-import { and, asc, eq, exists, gt, lt, lte, or } from "drizzle-orm";
+import { and, asc, count, eq, exists, gt, lt, lte, or } from "drizzle-orm";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunSandboxIntent } from "@okouai/db/schema/agent-run-inference";
 import { agentRunInferenceObjects } from "@okouai/db/schema/pi-inference-object";
@@ -29,6 +29,20 @@ function retainedDemand(tx: Pick<Db, "select">) {
           ),
       );
     }),
+  );
+}
+
+export function eligibleDeferredPiDemandPredicate(
+  db: Pick<Db, "select">,
+  orgId: string,
+  at: Date = nowDate(),
+) {
+  return and(
+    eq(agentRuns.orgId, orgId),
+    eq(agentRuns.status, "pending"),
+    eq(agentRunSandboxIntent.state, "waiting"),
+    retainedDemand(db),
+    gt(agentRunSandboxIntent.expiresAt, at),
   );
 }
 
@@ -65,23 +79,19 @@ export async function listDeferredPiCandidates(
  * Already expired demand is excluded so an ineligible head cannot block eligible
  * work until a consumer sweeps it.
  */
-export async function hasEarlierDeferredDemand(
+export async function countEarlierDeferredDemand(
   tx: Tx,
   orgId: string,
   at: Date,
   runId?: string,
-): Promise<boolean> {
+): Promise<number> {
   const [earlier] = await tx
-    .select({ id: agentRunSandboxIntent.runId })
+    .select({ count: count() })
     .from(agentRunSandboxIntent)
     .innerJoin(agentRuns, eq(agentRuns.id, agentRunSandboxIntent.runId))
     .where(
       and(
-        eq(agentRuns.orgId, orgId),
-        eq(agentRuns.status, "pending"),
-        eq(agentRunSandboxIntent.state, "waiting"),
-        retainedDemand(tx),
-        gt(agentRunSandboxIntent.expiresAt, nowDate()),
+        eligibleDeferredPiDemandPredicate(tx, orgId),
         runId === undefined
           ? lte(agentRunSandboxIntent.enqueuedAt, at)
           : or(
@@ -92,7 +102,9 @@ export async function hasEarlierDeferredDemand(
               ),
             ),
       ),
-    )
-    .limit(1);
-  return !!earlier;
+    );
+  if (!earlier) {
+    throw new Error("Earlier deferred demand count query returned no row");
+  }
+  return earlier.count;
 }

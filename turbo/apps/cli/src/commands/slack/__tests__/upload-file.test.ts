@@ -204,7 +204,18 @@ describe("okou slack upload-file command", () => {
       });
     });
 
-    it("publishes to canonical storage before delivering to Slack", async () => {
+    it.each([
+      {
+        url: "/artifacts/abcxyz1234.pdf",
+        expectedUrl: "https://app.okou.ai/artifacts/abcxyz1234.pdf",
+      },
+      {
+        url: "https://cdn.vm7.io/artifacts/user/asset/test-report.pdf?download=1",
+        expectedUrl:
+          "https://cdn.vm7.io/artifacts/user/asset/test-report.pdf?download=1",
+      },
+    ])("prints publication URL $url", async ({ url, expectedUrl }) => {
+      vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
       const assetId = "a0000000-0000-4000-a000-000000000061";
       const operationId = "a0000000-0000-4000-a000-000000000062";
       const sequence: string[] = [];
@@ -223,7 +234,7 @@ describe("okou slack upload-file command", () => {
               uploadHeaders: {
                 "x-amz-meta-artifact-id": assetId,
               },
-              url: "https://cdn.vm7.io/artifacts/user/asset/test-report.pdf",
+              url,
             },
             { status: 200 },
           );
@@ -238,7 +249,7 @@ describe("okou slack upload-file command", () => {
           return HttpResponse.json(
             {
               assetId,
-              url: "https://cdn.vm7.io/artifacts/user/asset/test-report.pdf",
+              url,
               delivery: {
                 status: "pending",
                 uploadUrl: SLACK_PRESIGNED_URL,
@@ -310,6 +321,7 @@ describe("okou slack upload-file command", () => {
       });
       const logCalls = mockConsoleLog.mock.calls.flat().join("\n");
       expect(logCalls).toContain(`File published (asset_id: ${assetId})`);
+      expect(logCalls).toContain(`  url: ${expectedUrl}`);
       expect(logCalls).toContain("Delivered to Slack");
     });
 

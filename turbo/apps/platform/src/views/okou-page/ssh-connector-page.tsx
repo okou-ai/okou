@@ -52,7 +52,6 @@ import {
   mountSshPrivateKey$,
   mountSshForm$,
   sshPrivateKeyFileResult$,
-  sshEnabled$,
   sshCloudflareConfigs$,
   sshTransportEditor$,
   chooseSshTransport$,
@@ -92,7 +91,6 @@ function EndpointFields({
   readonly disabled: boolean;
 }) {
   const { t } = useTranslation();
-  const enabled = useGet(sshEnabled$);
   const editor = useGet(sshTransportEditor$);
   const choose = useSet(chooseSshTransport$);
   const protectedHost = editor.mode === "cloudflare_access";
@@ -109,39 +107,40 @@ function EndpointFields({
         })}
         <Input
           name="displayName"
+          placeholder={t(($) => {
+            return $.ssh.placeholders.displayName;
+          })}
           required
           pattern=".*\S.*"
           maxLength={SSH_DISPLAY_NAME_MAX_LENGTH}
           defaultValue={connection?.displayName}
         />
       </label>
-      {(enabled || (connection && "transport" in connection)) && (
-        <div className="grid gap-2">
-          <span id="ssh-connection-mode">
+      <div className="grid gap-2">
+        <span id="ssh-connection-mode">
+          {t(($) => {
+            return $.ssh.cloudflare.mode;
+          })}
+        </span>
+        <SegmentControl
+          className="justify-self-start"
+          aria-labelledby="ssh-connection-mode"
+          disabled={disabled}
+          value={editor.mode}
+          onValueChange={choose}
+        >
+          <SegmentControlItem value="direct">
             {t(($) => {
-              return $.ssh.cloudflare.mode;
+              return $.ssh.cloudflare.direct;
             })}
-          </span>
-          <SegmentControl
-            className="justify-self-start"
-            aria-labelledby="ssh-connection-mode"
-            disabled={disabled}
-            value={editor.mode}
-            onValueChange={choose}
-          >
-            <SegmentControlItem value="direct">
-              {t(($) => {
-                return $.ssh.cloudflare.direct;
-              })}
-            </SegmentControlItem>
-            <SegmentControlItem value="cloudflare_access" disabled={!enabled}>
-              {t(($) => {
-                return $.ssh.cloudflare.title;
-              })}
-            </SegmentControlItem>
-          </SegmentControl>
-        </div>
-      )}
+          </SegmentControlItem>
+          <SegmentControlItem value="cloudflare_access">
+            {t(($) => {
+              return $.ssh.cloudflare.title;
+            })}
+          </SegmentControlItem>
+        </SegmentControl>
+      </div>
       <div
         className={
           protectedHost
@@ -155,6 +154,9 @@ function EndpointFields({
           })}
           <Input
             name="host"
+            placeholder={t(($) => {
+              return $.ssh.placeholders.host;
+            })}
             required
             pattern=".*\S.*"
             maxLength={SSH_HOST_MAX_LENGTH}
@@ -243,6 +245,9 @@ function PrivateKeyFields() {
           id="ssh-private-key"
           ref={mountPrivateKey}
           name="privateKey"
+          placeholder={t(($) => {
+            return $.ssh.placeholders.privateKey;
+          })}
           required
           maxLength={SSH_PRIVATE_KEY_MAX_LENGTH}
           autoComplete="off"
@@ -276,6 +281,9 @@ function PrivateKeyFields() {
         })}
         <Input
           name="passphrase"
+          placeholder={t(($) => {
+            return $.ssh.placeholders.passphrase;
+          })}
           type="password"
           maxLength={SSH_PASSPHRASE_MAX_LENGTH}
           autoComplete="new-password"
@@ -304,6 +312,9 @@ function CredentialFields({
         })}
         <Input
           name="credentialName"
+          placeholder={t(($) => {
+            return $.ssh.placeholders.credentialName;
+          })}
           required
           pattern=".*\S.*"
           maxLength={SSH_DISPLAY_NAME_MAX_LENGTH}
@@ -316,6 +327,9 @@ function CredentialFields({
         })}
         <Input
           name="username"
+          placeholder={t(($) => {
+            return $.ssh.placeholders.username;
+          })}
           required
           pattern=".*\S.*"
           maxLength={SSH_USERNAME_MAX_LENGTH}
@@ -370,6 +384,9 @@ function CredentialFields({
               })}
               <Input
                 name="password"
+                placeholder={t(($) => {
+                  return $.ssh.placeholders.password;
+                })}
                 type="password"
                 required
                 maxLength={SSH_PASSWORD_MAX_LENGTH}
@@ -688,7 +705,6 @@ function hasResourceSelection(
 }
 
 function useSshHostSaveBlocked(dialog: SshDialogState, isSaving: boolean) {
-  const enabled = useGet(sshEnabled$);
   const configs = useLoadable(sshCloudflareConfigs$);
   const transport = useGet(sshTransportEditor$);
   const conflict = useGet(sshConflict$);
@@ -699,12 +715,12 @@ function useSshHostSaveBlocked(dialog: SshDialogState, isSaving: boolean) {
   const unavailableProtectedHost =
     dialog.connection !== null &&
     "transport" in dialog.connection &&
-    (!enabled || (configs.state === "hasData" && configs.data === null));
+    configs.state === "hasData" &&
+    configs.data === null;
   const invalidAccess =
     hostEditor &&
     transport.mode === "cloudflare_access" &&
-    (!enabled ||
-      configs.state !== "hasData" ||
+    (configs.state !== "hasData" ||
       !hasResourceSelection(configs.data, transport.configId));
   const invalidCredential =
     hostEditor &&
@@ -884,13 +900,11 @@ function HostCard({
   const { t } = useTranslation();
   const open = useSet(openSshDialog$);
   const signal = useGet(pageSignal$);
-  const enabled = useGet(sshEnabled$);
   const configs = useLoadable(sshCloudflareConfigs$);
   const configId =
     "transport" in connection ? connection.transport.configId : null;
   const unavailable =
-    configId !== null &&
-    (!enabled || (configs.state === "hasData" && configs.data === null));
+    configId !== null && configs.state === "hasData" && configs.data === null;
   const config =
     configs.state === "hasData"
       ? configs.data?.find((value) => {
@@ -1176,7 +1190,6 @@ export function SshConnectorPage() {
   const { t } = useTranslation();
   const view = useGet(sshView$);
   const changeView = useSet(changeSshView$);
-  const accessEnabled = useGet(sshEnabled$);
   return (
     <DetailPageShell>
       <DetailPageBreadcrumbBar>
@@ -1237,13 +1250,11 @@ export function SshConnectorPage() {
                 return $.ssh.credentialsTab;
               })}
             </SegmentControlItem>
-            {accessEnabled && (
-              <SegmentControlItem value="access">
-                {t(($) => {
-                  return $.ssh.cloudflare.title;
-                })}
-              </SegmentControlItem>
-            )}
+            <SegmentControlItem value="access">
+              {t(($) => {
+                return $.ssh.cloudflare.title;
+              })}
+            </SegmentControlItem>
           </SegmentControl>
         </div>
         {view === "hosts" ? (

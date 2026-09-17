@@ -72,10 +72,6 @@ import { cleanupOrgMemberResources } from "./org-member-cleanup.service";
 import { removeUsagePackMemberAllocation } from "./usage-pack-allocation-change.service";
 import { refundUsagePackMemberCredits } from "./usage-pack-credit-refund.service";
 import {
-  deleteOrgUsageData,
-  deleteUserUsageData,
-} from "./usage-event-cleanup.service";
-import {
   deleteConnectorLocalState$,
   loadStoredConnectorRuntimeSnapshot,
 } from "./connector-data.service";
@@ -811,7 +807,6 @@ async function deleteOrgData(
     await cleanupWorkspaceInstallation(db, installation.slackWorkspaceId);
   }
 
-  await deleteOrgUsageData(db, orgId);
   await db.delete(sharedThreads).where(
     inArray(
       sharedThreads.id,
@@ -889,7 +884,6 @@ async function deleteUserData(
   await db
     .delete(telegramInstallations)
     .where(eq(telegramInstallations.ownerUserId, userId));
-  await deleteUserUsageData(db, userId);
   await db
     .delete(artifacts)
     .where(
@@ -1077,7 +1071,11 @@ export const cleanupClerkDeletedUser$ = command(
 
 async function commitClerkDeletedOrgMembershipCleanup(
   db: Db,
-  args: { readonly orgId: string; readonly userId: string },
+  args: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly membershipId?: string;
+  },
 ): Promise<void> {
   const commitSignal = new AbortController().signal;
   await removeUsagePackMemberAllocation(db, args, commitSignal);
@@ -1094,6 +1092,7 @@ export const cleanupClerkDeletedOrgMembership$ = command(
     args: {
       readonly orgId: string;
       readonly userId: string;
+      readonly membershipId?: string;
     },
     signal: AbortSignal,
   ): Promise<void> => {

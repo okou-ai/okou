@@ -1,3 +1,4 @@
+import { mockClerkUsers } from "./clerk-users";
 import { Buffer } from "node:buffer";
 import { generateKeyPairSync, randomInt } from "node:crypto";
 
@@ -260,9 +261,7 @@ export function createGithubBddApi(context: TestContext) {
       return { authorization: `Bearer ${auth.bearer}` };
     }
     routeMocks.clerk.session(auth.userId, auth.orgId, auth.orgRole);
-    context.mocks.clerk.users.getUserList.mockResolvedValue({
-      data: [clerkUserProfile(auth)],
-    });
+    mockClerkUsers(context, [clerkUserProfile(auth)]);
     return { authorization: "Bearer clerk-session" };
   }
 

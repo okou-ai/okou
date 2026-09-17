@@ -1456,7 +1456,12 @@ test.each([
   async ({ accountId, onboarding, checkout }) => {
     const marketing = "https://www.okou.ai/api/marketing";
     const requests: Request[] = [];
-    context.mocks.http.post(`${marketing}/finish-onboarding`, ({ request }) => {
+    const checkoutReceived = context.mocks.deferred<Request>();
+    context.mocks.http.post(`${marketing}/checkout-start`, ({ request }) => {
+      checkoutReceived.resolve(request);
+      return new Response(null, { status: 204 });
+    });
+    context.mocks.http.post(`${marketing}/onboarding-start`, ({ request }) => {
       requests.push(request);
       return new Response(null, { status: 204 });
     });
@@ -1512,5 +1517,11 @@ test.each([
     });
     expect(requests).toHaveLength(1);
     await expect(requests[0]?.text()).resolves.toBe("");
+    const checkoutRequest = await checkoutReceived.promise;
+    await expect(checkoutRequest.json()).resolves.toStrictEqual({
+      eventId: expect.any(String),
+      occurredAt: expect.any(String),
+      checkoutSource: "onboarding_video",
+    });
   },
 );

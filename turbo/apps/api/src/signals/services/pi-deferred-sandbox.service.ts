@@ -13,6 +13,7 @@ import { createHash } from "node:crypto";
 import { command } from "ccstate";
 import {
   and,
+  count,
   eq,
   exists,
   inArray,
@@ -47,6 +48,7 @@ import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import type { Tx } from "../../lib/db-types";
 import { nowDate, now } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
+import { publishRunQueueChangedForOrgSafely } from "../external/realtime";
 import {
   prepareComputeRunAdmission,
   validateComputeRunAdmission,
@@ -69,7 +71,7 @@ import {
   readPublishedPiInferenceObject,
   retainPiInferenceObject,
 } from "./pi-inference-object.service";
-import { hasEarlierDeferredDemand } from "./pi-deferred-demand.service";
+import { countEarlierDeferredDemand } from "./pi-deferred-demand.service";
 import {
   assertDeferredHandoffWithinLimits,
   piDeferredConfigurationSchema,
@@ -411,15 +413,57 @@ export async function publishPiSandboxDemand(
   const accepted = await commitPiSandboxDemand(db, fence, continuation);
   if (accepted) {
     const [intent] = await db
-      .select({ enqueuedAt: agentRunSandboxIntent.enqueuedAt })
+      .select({
+        enqueuedAt: agentRunSandboxIntent.enqueuedAt,
+        orgId: agentRuns.orgId,
+      })
       .from(agentRunSandboxIntent)
+      .innerJoin(agentRuns, eq(agentRuns.id, agentRunSandboxIntent.runId))
       .where(eq(agentRunSandboxIntent.runId, fence.runId));
     logger("PiDeferredSandbox").debug("Deferred Sandbox intent committed", {
       ...fence,
       enqueuedAt: intent?.enqueuedAt.getTime(),
     });
+    if (intent) {
+      await publishRunQueueChangedForOrgSafely(intent.orgId);
+    }
   }
   return accepted;
+}
+
+async function deferredDemandProjection(db: Db, runId: string) {
+  const [projection] = await db
+    .select({
+      orgId: agentRuns.orgId,
+      state: agentRunSandboxIntent.state,
+    })
+    .from(agentRunSandboxIntent)
+    .innerJoin(agentRuns, eq(agentRuns.id, agentRunSandboxIntent.runId))
+    .where(eq(agentRunSandboxIntent.runId, runId));
+  return projection;
+}
+
+async function publishDeferredDemandProjectionChanged(
+  db: Db,
+  runId: string,
+): Promise<void> {
+  const projection = await deferredDemandProjection(db, runId);
+  if (projection) {
+    await publishRunQueueChangedForOrgSafely(projection.orgId);
+  }
+}
+
+async function publishTerminalDeferredDemandRemoval(
+  db: Db,
+  runId: string,
+): Promise<void> {
+  const projection = await deferredDemandProjection(db, runId);
+  if (
+    projection &&
+    ["cancelled", "expired", "settled"].includes(projection.state)
+  ) {
+    await publishRunQueueChangedForOrgSafely(projection.orgId);
+  }
 }
 
 async function reserveDeferredPiRun(db: Db, runId: string) {
@@ -447,8 +491,8 @@ async function reserveDeferredPiRun(db: Db, runId: string) {
       });
       return undefined;
     }
-    const [legacy] = await tx
-      .select({ id: agentRunQueue.runId })
+    const [legacyEarlier] = await tx
+      .select({ count: count() })
       .from(agentRunQueue)
       .innerJoin(agentRuns, eq(agentRuns.id, agentRunQueue.runId))
       .where(
@@ -464,30 +508,30 @@ async function reserveDeferredPiRun(db: Db, runId: string) {
             ),
           ),
         ),
-      )
-      .limit(1);
-    if (
-      legacy ||
-      (await hasEarlierDeferredDemand(
-        tx,
-        run.orgId,
-        lifecycle.intent.enqueuedAt,
-        runId,
-      ))
-    ) {
-      return undefined;
+      );
+    if (!legacyEarlier) {
+      throw new Error("Earlier queued demand count query returned no row");
     }
+    const earlierDeferredDemand = await countEarlierDeferredDemand(
+      tx,
+      run.orgId,
+      lifecycle.intent.enqueuedAt,
+      runId,
+    );
     const capacity = await loadOrgConcurrencyState(tx, {
       orgId: run.orgId,
       at,
       activePendingAfter: new Date(at.getTime() - 15 * 60 * 1000),
     });
+    const limit = totalConcurrencyLimit({
+      baseLimit: cappedBaseConcurrencyLimit(capacity.baseConcurrencyLimit),
+      paidSlots: capacity.paidSlots,
+    });
     if (
-      capacity.activeRunCount >=
-      totalConcurrencyLimit({
-        baseLimit: cappedBaseConcurrencyLimit(capacity.baseConcurrencyLimit),
-        paidSlots: capacity.paidSlots,
-      })
+      capacity.activeRunCount +
+        Number(legacyEarlier.count) +
+        earlierDeferredDemand >=
+      limit
     ) {
       return undefined;
     }
@@ -524,6 +568,7 @@ async function reserveDeferredPiRun(db: Db, runId: string) {
       });
     return {
       runId,
+      orgId: run.orgId,
       ownerEpoch,
       generation: lifecycle.intent.generation,
       enqueuedAt: lifecycle.intent.enqueuedAt.getTime(),
@@ -790,8 +835,13 @@ export const consumeDeferredPiRun$ = command(
     signal.throwIfAborted();
     if (!fence) {
       await set(settleDeferredPiTerminal$, runId, signal);
+      signal.throwIfAborted();
+      await publishTerminalDeferredDemandRemoval(db, runId);
+      signal.throwIfAborted();
       return false;
     }
+    await publishRunQueueChangedForOrgSafely(fence.orgId);
+    signal.throwIfAborted();
     const reservedAt = now();
     logger("PiDeferredSandbox").debug(
       "Deferred Sandbox reservation committed",
@@ -807,6 +857,9 @@ export const consumeDeferredPiRun$ = command(
     signal.throwIfAborted();
     if (!input) {
       await set(settleDeferredPiTerminal$, runId, signal);
+      signal.throwIfAborted();
+      await publishRunQueueChangedForOrgSafely(fence.orgId);
+      signal.throwIfAborted();
       return false;
     }
     const prepared = await set(materializeDeferredPiRun$, input, signal);
@@ -1174,7 +1227,8 @@ export async function releaseDeferredPiSandbox(
   db: Db,
   args: DeferredReleaseProof,
 ): Promise<DeferredSandboxReleaseOutcome> {
-  return await withComputeOwnershipRetry(async () => {
+  let orgId: string | undefined;
+  const outcome = await withComputeOwnershipRetry(async () => {
     const [owner] = await db
       .select({
         userId: agentRuns.userId,
@@ -1189,6 +1243,7 @@ export async function releaseDeferredPiSandbox(
     if (!owner) {
       return "stale";
     }
+    orgId = owner.orgId;
     const captured = await readPublishedPiInferenceObject(
       db,
       { ...owner, hash: owner.input.configurationHash, kind: "configuration" },
@@ -1272,13 +1327,17 @@ export async function releaseDeferredPiSandbox(
       },
     );
   });
+  if (outcome === "released" && orgId) {
+    await publishRunQueueChangedForOrgSafely(orgId);
+  }
+  return outcome;
 }
 
 export async function failWaitingPiCandidate(
   db: Db,
   runId: string,
 ): Promise<void> {
-  await withDeferredAdmission(
+  const failed = await withDeferredAdmission(
     db,
     runId,
     async (tx, run) => {
@@ -1288,7 +1347,7 @@ export async function failWaitingPiCandidate(
         run.launchSnapshot,
       );
       if (lifecycle?.inference.phase !== "sandbox_waiting") {
-        return;
+        return false;
       }
       const at = nowDate();
       await failDeferredPiRun(tx, {
@@ -1298,10 +1357,14 @@ export async function failWaitingPiCandidate(
         status: "failed",
         error: "Invalid durable Pi Sandbox demand",
       });
+      return true;
     },
     undefined,
     true,
   );
+  if (failed) {
+    await publishDeferredDemandProjectionChanged(db, runId);
+  }
 }
 
 /** Periodic recovery is the outbox reader. Notifications are optional hints. */
@@ -1362,6 +1425,9 @@ export const recoverDeferredPiRuns$ = command(
         signal,
       );
       if (result.ok) {
+        if (result.value) {
+          await publishDeferredDemandProjectionChanged(db, runId);
+        }
         await set(settleDeferredPiTerminal$, runId, signal);
       }
       if (!result.ok) {

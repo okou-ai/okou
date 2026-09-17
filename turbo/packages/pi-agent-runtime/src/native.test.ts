@@ -110,11 +110,15 @@ function messagesResponse(model = "claude-sonnet-4-6") {
   );
 }
 
-function bedrockFrame(event: string, payload: unknown): Buffer {
+function bedrockFrame(
+  event: string,
+  payload: unknown,
+  messageType: "event" | "exception" = "event",
+): Buffer {
   const headers = Buffer.concat(
     Object.entries({
-      ":message-type": "event",
-      ":event-type": event,
+      ":message-type": messageType,
+      [messageType === "exception" ? ":exception-type" : ":event-type"]: event,
       ":content-type": "application/json",
     }).map(([name, value]) => {
       const length = Buffer.alloc(2);
@@ -128,7 +132,9 @@ function bedrockFrame(event: string, payload: unknown): Buffer {
       ]);
     }),
   );
-  const body = Buffer.from(JSON.stringify(payload));
+  const body = Buffer.isBuffer(payload)
+    ? payload
+    : Buffer.from(JSON.stringify(payload));
   const prefix = Buffer.alloc(12);
   prefix.writeUInt32BE(16 + headers.length + body.length);
   prefix.writeUInt32BE(headers.length, 4);
@@ -397,11 +403,267 @@ describe("native Pi execution edges", () => {
       ).result();
       expect(result.stopReason).toBe("error");
       expect(attempts).toBe(1);
-      if (config.dialect === "anthropic-messages") {
-        expect(projectPiApiAssistantMessage(result).failureReason).toBe(
-          "provider_rate_limited",
+      expect(projectPiApiAssistantMessage(result).failureReason).toBe(
+        "provider_rate_limited",
+      );
+    },
+  );
+
+  it.each(
+    fixtures.filter(({ config }) => {
+      return config.dialect === "bedrock-converse-stream";
+    }),
+  )(
+    "preserves failed model evidence for $name without replay",
+    async ({ config: input }) => {
+      const config = piModelConfigV4Schema.parse(input);
+      const materialized = await materialize(config);
+      const model = resolvePiAgentModel(materialized);
+      if (!model) throw new Error("Missing native model");
+      for (const scenario of [
+        {
+          status: 429,
+          code: "ThrottlingException",
+          reason: "provider_rate_limited",
+        },
+        {
+          status: 503,
+          code: "ServiceUnavailableException",
+          reason: "provider_server_error",
+        },
+        { status: 403, code: "AccessDeniedException", reason: undefined },
+        { status: 400, code: "ValidationException", reason: undefined },
+        {
+          status: 200,
+          code: "throttlingException",
+          reason: "provider_rate_limited",
+        },
+        {
+          status: 200,
+          code: "internalServerException",
+          reason: "provider_server_error",
+        },
+        {
+          status: 200,
+          code: "serviceUnavailableException",
+          reason: "provider_server_error",
+        },
+        { status: 200, code: "validationException", reason: undefined },
+        { status: 200, code: "UnknownException", reason: undefined },
+      ] as const) {
+        let attempts = 0;
+        server.use(
+          http.post(piNativeInferenceUrl(config), () => {
+            attempts++;
+            return scenario.status === 200
+              ? new HttpResponse(
+                  new Uint8Array(
+                    bedrockFrame(
+                      scenario.code,
+                      { message: "Provider rejected request" },
+                      "exception",
+                    ),
+                  ),
+                  {
+                    headers: {
+                      "content-type": "application/vnd.amazon.eventstream",
+                    },
+                  },
+                )
+              : HttpResponse.json(
+                  {
+                    __type: scenario.code,
+                    message: "Provider rejected request",
+                  },
+                  {
+                    status: scenario.status,
+                    headers: { "x-amzn-errortype": scenario.code },
+                  },
+                );
+          }),
+        );
+        const onObservedResponseStatus = vi.fn();
+        const result = await piAgentStreamForConfig(materialized)(
+          model,
+          { messages: [{ role: "user", content: "hello", timestamp: 1 }] },
+          { apiKey: materialized.apiKey, onObservedResponseStatus },
+        ).result();
+        expect(result.stopReason, scenario.code).toBe("error");
+        expect(attempts, scenario.code).toBe(1);
+        expect(onObservedResponseStatus.mock.calls).toEqual([
+          [scenario.status],
+        ]);
+        expect(
+          projectPiApiAssistantMessage(result).failureReason,
+          scenario.code,
+        ).toBe(scenario.reason);
+        expect(result.diagnostics).toContainEqual(
+          expect.objectContaining({
+            type: "okou_model_request",
+            details: expect.objectContaining({
+              httpStatus: scenario.status,
+              transportAttempts: 1,
+            }),
+          }),
         );
       }
+    },
+  );
+
+  it.each(["transport-error", "answer"] as const)(
+    "keeps Bedrock %s separate from provider failures",
+    async (scenario) => {
+      const fixture = fixtures.find(({ config }) => {
+        return config.dialect === "bedrock-converse-stream";
+      });
+      if (!fixture) throw new Error("Missing Bedrock fixture");
+      const config = piModelConfigV4Schema.parse(fixture.config);
+      const materialized = await materialize(config);
+      const model = resolvePiAgentModel(materialized);
+      if (!model) throw new Error("Missing native model");
+      let attempts = 0;
+      server.use(
+        http.post(piNativeInferenceUrl(config), () => {
+          attempts++;
+          if (scenario === "transport-error") return HttpResponse.error();
+          return new HttpResponse(
+            new Uint8Array(
+              Buffer.concat([
+                bedrockFrame("messageStart", { role: "assistant" }),
+                bedrockFrame("contentBlockDelta", {
+                  contentBlockIndex: 0,
+                  delta: {
+                    text: "ThrottlingException and InternalServerException are examples.",
+                  },
+                }),
+                bedrockFrame("contentBlockStop", { contentBlockIndex: 0 }),
+                bedrockFrame("messageStop", { stopReason: "end_turn" }),
+              ]),
+            ),
+            {
+              headers: { "content-type": "application/vnd.amazon.eventstream" },
+            },
+          );
+        }),
+      );
+      const result = await piAgentStreamForConfig(materialized)(
+        model,
+        { messages: [{ role: "user", content: "hello", timestamp: 1 }] },
+        { apiKey: materialized.apiKey },
+      ).result();
+      expect(attempts).toBe(1);
+      expect(result.stopReason).toBe(
+        scenario === "transport-error" ? "error" : "stop",
+      );
+      expect(
+        projectPiApiAssistantMessage(result).failureReason,
+      ).toBeUndefined();
+      if (scenario === "transport-error") {
+        expect(result.diagnostics).toContainEqual(
+          expect.objectContaining({
+            type: "okou_model_request",
+            details: expect.objectContaining({
+              transportAttempts: 1,
+              transportFailure: expect.objectContaining({
+                phase: "request",
+                signalAborted: false,
+              }),
+            }),
+          }),
+        );
+      }
+    },
+  );
+
+  it.each(["checksum", "json", "role"] as const)(
+    "does not classify an unread Bedrock exception after an invalid %s frame",
+    async (invalid) => {
+      const fixture = fixtures.find(({ config }) => {
+        return config.dialect === "bedrock-converse-stream";
+      });
+      if (!fixture) throw new Error("Missing Bedrock fixture");
+      const config = piModelConfigV4Schema.parse(fixture.config);
+      const materialized = await materialize(config);
+      const model = resolvePiAgentModel(materialized);
+      if (!model) throw new Error("Missing native model");
+      const firstFrame = bedrockFrame(
+        "messageStart",
+        invalid === "json"
+          ? Buffer.from("invalid json")
+          : { role: invalid === "role" ? "user" : "assistant" },
+      );
+      if (invalid === "checksum")
+        firstFrame.writeUInt32BE(0, firstFrame.length - 4);
+      server.use(
+        http.post(piNativeInferenceUrl(config), () => {
+          return new HttpResponse(
+            new Uint8Array(
+              Buffer.concat([
+                firstFrame,
+                bedrockFrame(
+                  "throttlingException",
+                  { message: "Provider rejected request" },
+                  "exception",
+                ),
+              ]),
+            ),
+            {
+              headers: { "content-type": "application/vnd.amazon.eventstream" },
+            },
+          );
+        }),
+      );
+      const result = await piAgentStreamForConfig(materialized)(
+        model,
+        { messages: [{ role: "user", content: "hello", timestamp: 1 }] },
+        { apiKey: materialized.apiKey },
+      ).result();
+      expect(result.stopReason).toBe("error");
+      expect(
+        projectPiApiAssistantMessage(result).failureReason,
+      ).toBeUndefined();
+    },
+  );
+
+  it.each(["event", "exception"] as const)(
+    "preserves the SDK's distinction for an unmodeled Bedrock %s envelope",
+    async (messageType) => {
+      const fixture = fixtures.find(({ config }) => {
+        return config.dialect === "bedrock-converse-stream";
+      });
+      if (!fixture) throw new Error("Missing Bedrock fixture");
+      const config = piModelConfigV4Schema.parse(fixture.config);
+      const materialized = await materialize(config);
+      const model = resolvePiAgentModel(materialized);
+      if (!model) throw new Error("Missing native model");
+      server.use(
+        http.post(piNativeInferenceUrl(config), () => {
+          return new HttpResponse(
+            new Uint8Array(
+              Buffer.concat([
+                bedrockFrame(
+                  "ThrottlingException",
+                  { message: "Provider rejected request" },
+                  messageType,
+                ),
+                bedrockFrame("messageStart", { role: "user" }),
+              ]),
+            ),
+            {
+              headers: { "content-type": "application/vnd.amazon.eventstream" },
+            },
+          );
+        }),
+      );
+      const result = await piAgentStreamForConfig(materialized)(
+        model,
+        { messages: [{ role: "user", content: "hello", timestamp: 1 }] },
+        { apiKey: materialized.apiKey },
+      ).result();
+      expect(result.stopReason).toBe("error");
+      expect(projectPiApiAssistantMessage(result).failureReason).toBe(
+        messageType === "exception" ? "provider_rate_limited" : undefined,
+      );
     },
   );
 

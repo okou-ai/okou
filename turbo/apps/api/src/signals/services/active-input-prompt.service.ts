@@ -307,7 +307,10 @@ async function materializeActiveInputPrompt(
     // Steered into a run that is already executing, whose volumes were fixed
     // when it was created. There is no package to point the agent at, so a
     // private template contributes no guidance rather than a dangling path.
+    // The custom catalog is mounted the same way and loses it for the same
+    // reason.
     mountedUserPresentationTemplateIds: [],
+    mountedUserTemplates: [],
   });
   const generationTemplatePrompt = generationTemplates.prompt;
   const prompt = integration?.prompt ?? projection.agentPrompt;

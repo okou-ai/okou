@@ -13424,55 +13424,39 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     await api.requestCancelRun(actor, run.runId, [200]);
   });
 
-  it.each([true, false])(
-    "gates SSH guidance and Run scopes only on enabled=%s for an ordinary organization",
-    async (enabled) => {
-      const api = createRunsApi(context);
-      const connectors = createConnectorBddApi(context);
-      const { actor, agentId, runnerGroup } = await entitledRunActor();
-      await connectors.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.SshAccess]: enabled,
-      });
-      const run = await api.createRun(actor, {
-        agentId,
-        prompt: "inspect my SSH hosts",
-        modelProvider: "anthropic-api-key",
-      });
-      const prompt =
-        (await api.readRun(actor, run.runId)).appendSystemPrompt ?? "";
-      if (enabled) {
-        expect(prompt).toContain("okou ssh host list --json");
-        expect(prompt).toContain("okou ssh exec");
-        expect(prompt).toContain("okou ssh session");
-        expect(prompt).toContain("okou ssh upload");
-        expect(prompt).toContain("okou ssh download");
-        expect(prompt).toContain("okou ssh --help");
-        expect(prompt).toContain("relevant subcommand's `--help` before use");
-        const sshGuidance = prompt.split("\n").filter((line) => {
-          return line.startsWith("- SSH");
-        });
-        expect(sshGuidance).toHaveLength(1);
-        expect(sshGuidance.join("\n").length).toBeLessThanOrEqual(400);
-      } else {
-        expect(prompt).not.toContain("okou ssh");
-      }
-      await api.heartbeatRunner(runnerGroup);
-      const claim = await api.claimRunnerJob(run.runId);
-      const token = claim.platformEnvironment.OKOU_TOKEN;
-      if (!token) {
-        throw new Error("Expected a minted Run token");
-      }
-      const capabilities = verifyOkouToken(token)?.capabilities;
-      if (enabled) {
-        expect(capabilities).toContain("ssh:read");
-        expect(capabilities).toContain("ssh:write");
-      } else {
-        expect(capabilities).not.toContain("ssh:read");
-        expect(capabilities).not.toContain("ssh:write");
-      }
-      await api.requestCancelRun(actor, run.runId, [200]);
-    },
-  );
+  it("advertises SSH guidance and grants Run scopes for an ordinary organization", async () => {
+    const api = createRunsApi(context);
+    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const run = await api.createRun(actor, {
+      agentId,
+      prompt: "inspect my SSH hosts",
+      modelProvider: "anthropic-api-key",
+    });
+    const prompt =
+      (await api.readRun(actor, run.runId)).appendSystemPrompt ?? "";
+    expect(prompt).toContain("okou ssh host list --json");
+    expect(prompt).toContain("okou ssh exec");
+    expect(prompt).toContain("okou ssh session");
+    expect(prompt).toContain("okou ssh upload");
+    expect(prompt).toContain("okou ssh download");
+    expect(prompt).toContain("okou ssh --help");
+    expect(prompt).toContain("relevant subcommand's `--help` before use");
+    const sshGuidance = prompt.split("\n").filter((line) => {
+      return line.startsWith("- SSH");
+    });
+    expect(sshGuidance).toHaveLength(1);
+    expect(sshGuidance.join("\n").length).toBeLessThanOrEqual(400);
+    await api.heartbeatRunner(runnerGroup);
+    const claim = await api.claimRunnerJob(run.runId);
+    const token = claim.platformEnvironment.OKOU_TOKEN;
+    if (!token) {
+      throw new Error("Expected a minted Run token");
+    }
+    const capabilities = verifyOkouToken(token)?.capabilities;
+    expect(capabilities).toContain("ssh:read");
+    expect(capabilities).toContain("ssh:write");
+    await api.requestCancelRun(actor, run.runId, [200]);
+  });
 
   it("advertises connector account switching", async () => {
     const api = createRunsApi(context);

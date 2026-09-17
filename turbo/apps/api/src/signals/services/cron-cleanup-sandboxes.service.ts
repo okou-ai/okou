@@ -41,6 +41,7 @@ import { writeDb$, type Db } from "../external/db";
 import {
   publishCancelToRunnerGroup,
   publishChatThreadMessageCreatedSafely,
+  publishRunQueueChangedForOrgSafely,
   publishThreadListChanged,
 } from "../external/realtime";
 import { deleteS3Objects } from "../external/s3";
@@ -487,6 +488,9 @@ const cleanupSingleRun$ = command(
       L.debug("Run already transitioned, skipping timeout", { runId: run.id });
       return undefined;
     }
+
+    await publishRunQueueChangedForOrgSafely(committed.orgId);
+    signal.throwIfAborted();
 
     if (committed.previousStatus === "running" && committed.runnerGroup) {
       const cancellation = await settleIncludingAbort(

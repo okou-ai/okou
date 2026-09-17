@@ -2,12 +2,10 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { sshConnectionsRoutes } from "../ssh-connections";
 import { createRouteMocks } from "./helpers/route-test";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { createDeferredPromise } from "../../utils";
 
@@ -24,17 +22,12 @@ function connections() {
     sshConnectionsContract,
   );
 }
-async function owner(
-  overrides: Partial<{ orgId: string; userId: string }> = {},
-) {
+function owner(overrides: Partial<{ orgId: string; userId: string }> = {}) {
   const value = {
     orgId: `org_ssh_${randomUUID()}`,
     userId: `user_ssh_${randomUUID()}`,
     ...overrides,
   };
-  await updateFeatureSwitchesForUser(context, value, {
-    [FeatureSwitchKey.SshAccess]: true,
-  });
   mocks.clerk.session(value.userId, value.orgId);
   return value;
 }
@@ -48,29 +41,29 @@ const passwordBody = {
 } as const;
 
 describe("reusable SSH credential owner routes", () => {
-  it("requires a session and feature availability before parsing or encrypting secrets", async () => {
+  it("requires a session and rejects invalid input before encrypting secrets", async () => {
     const kms = useSecretKmsProbe();
     await accept(credentials().list({ headers: {} }), [401]);
     mocks.clerk.session(
-      `user_disabled_${randomUUID()}`,
-      `org_disabled_${randomUUID()}`,
+      `user_invalid_${randomUUID()}`,
+      `org_invalid_${randomUUID()}`,
     );
     const request = setupRawAppRequest({
       context,
       routes: sshConnectionsRoutes,
     });
-    const disabled = await request("/api/ssh/credentials", {
+    const invalid = await request("/api/ssh/credentials", {
       method: "POST",
       headers: { ...headers, "content-type": "application/json" },
       body: JSON.stringify({ authentication: "invalid" }),
     });
-    expect(disabled.status).toBe(404);
+    expect(invalid.status).toBe(400);
     expect(kms.generateDataKeyCalls).toBe(0);
   });
 
   it("shares named metadata, rejects referenced deletion, and preserves credentials after host deletion", async () => {
     useSecretKmsProbe();
-    await owner();
+    owner();
     const created = await accept(
       credentials().create({
         headers,
@@ -155,7 +148,7 @@ describe("reusable SSH credential owner routes", () => {
 
   it("hides other users and organizations before KMS work or binding", async () => {
     const kms = useSecretKmsProbe();
-    const first = await owner();
+    const first = owner();
     const created = await accept(
       credentials().create({
         headers,
@@ -164,7 +157,7 @@ describe("reusable SSH credential owner routes", () => {
       [201],
     );
     for (const other of [{ orgId: first.orgId }, { userId: first.userId }]) {
-      await owner(other);
+      owner(other);
       const params = { credentialId: created.body.id };
       expect(
         (await accept(credentials().list({ headers }), [200])).body.credentials,
@@ -213,7 +206,7 @@ describe("reusable SSH credential owner routes", () => {
 
   it("rejects malformed authentication without logging or echoing supplied secrets", async () => {
     const kms = useSecretKmsProbe();
-    await owner();
+    owner();
     const request = setupRawAppRequest({
       context,
       routes: sshConnectionsRoutes,
@@ -247,7 +240,7 @@ describe("reusable SSH credential owner routes", () => {
 
   it("rechecks credential revision after encryption and leaves a concurrent winner intact", async () => {
     useSecretKmsProbe();
-    await owner();
+    owner();
     const created = await accept(
       credentials().create({
         headers,
@@ -310,7 +303,7 @@ describe("reusable SSH credential owner routes", () => {
 
   it("serializes deletion against a new host reference", async () => {
     useSecretKmsProbe();
-    await owner();
+    owner();
     const created = await accept(
       credentials().create({
         headers,

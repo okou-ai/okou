@@ -43,6 +43,7 @@ import {
   RUN_THREAD_ID,
 } from "./chat-run-test-fixtures.ts";
 
+import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
 import { changeChatThreadList } from "../../../mocks/mock-helpers.ts";
 import { fillComposer } from "./chat-test-helpers.ts";
 import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
@@ -120,8 +121,25 @@ function installNewChat(
   context.mocks.data.userModelPreference(preference(selectedModel));
 }
 
+/**
+ * These cases read the Fast rows and the option list from the legacy select,
+ * which the switch's off lever still serves. Cases about the menu or the flyout
+ * call `setupPage` directly.
+ */
+async function setupLegacyPickerPage(
+  options: Parameters<typeof setupPage>[0],
+): Promise<void> {
+  await setupPage({
+    ...options,
+    featureSwitches: {
+      [FeatureSwitchKey.ModelPickerFlyout]: false,
+      ...options.featureSwitches,
+    },
+  });
+}
+
 async function modelPicker(name: string): Promise<HTMLElement> {
-  return await screen.findByRole("combobox", { name });
+  return await composerModelTrigger(name);
 }
 
 /**
@@ -215,7 +233,7 @@ function limitedFreeBillingStatus(): BillingStatusResponse {
 async function openCodexExecutionChat(): Promise<void> {
   installNewChat(["gpt-5.6-sol", "gpt-5.6-luna"], "gpt-5.6-sol");
 
-  await setupPage({
+  await setupLegacyPickerPage({
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
@@ -237,7 +255,7 @@ async function openMixedProviderFastMenu() {
     }),
     modelPolicy("gpt-5.6-sol", 2),
   ]);
-  await setupPage({
+  await setupLegacyPickerPage({
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
@@ -303,7 +321,7 @@ test.each([
     context.mocks.data.orgModelPolicies([
       modelPolicy(model, 1, { default: true, providerType }),
     ]);
-    await setupPage({
+    await setupLegacyPickerPage({
       context,
       path: NEW_CHAT_PATH,
       featureSwitches: {
@@ -330,7 +348,7 @@ test("Localize fractional Fast speed guidance on hover", async () => {
       providerType: "codex-oauth-token",
     }),
   ]);
-  await setupPage({
+  await setupLegacyPickerPage({
     locale: "de-DE",
     context,
     path: NEW_CHAT_PATH,
@@ -389,12 +407,14 @@ test("Make a temporary Codex speed the default", async () => {
     },
   );
 
-  await setupPage({
+  await setupLegacyPickerPage({
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
       [FeatureSwitchKey.CodexFastMode]: true,
       [FeatureSwitchKey.ChatPreference]: true,
+      // Speed is the subject here; effort would add its own preference patch.
+      [FeatureSwitchKey.Effort]: false,
     },
   });
 
@@ -439,7 +459,7 @@ test("Make a new-chat model choice the default immediately", async () => {
     return respond(200, nextPreference);
   });
 
-  await setupPage({
+  await setupLegacyPickerPage({
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
@@ -479,11 +499,13 @@ test("Temporarily choose a model for a new chat", async () => {
     },
   );
 
-  await setupPage({
+  await setupLegacyPickerPage({
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
       [FeatureSwitchKey.ChatPreference]: true,
+      // Scoping the choice is the subject; effort would add its own patch.
+      [FeatureSwitchKey.Effort]: false,
     },
   });
 
@@ -531,7 +553,7 @@ test("Keep the model picker stable while settings refresh", async () => {
     return respond(200, preference("claude-fable-5-1"));
   });
 
-  await setupPage({ context, path: NEW_CHAT_PATH });
+  await setupLegacyPickerPage({ context, path: NEW_CHAT_PATH });
 
   await readyComposer();
   await user.click(await modelPicker("Claude Fable 5.1"));
@@ -565,7 +587,7 @@ test("Keep the model picker stable while settings refresh", async () => {
 test("Follow model preference changes made in another session", async () => {
   installNewChat(["claude-fable-5-1", "claude-opus-4-8"], "claude-fable-5-1");
 
-  await setupPage({ context, path: NEW_CHAT_PATH });
+  await setupLegacyPickerPage({ context, path: NEW_CHAT_PATH });
 
   await readyComposer();
   await expect(modelPicker("Claude Fable 5.1")).resolves.toBeVisible();
@@ -600,7 +622,15 @@ test("Explain model availability by plan and provider", async () => {
     return respond(200, limitedFreeBillingStatus());
   });
 
-  await setupPage({ context, path: NEW_CHAT_PATH });
+  // One row per model: a Fast row would make the option names ambiguous.
+  await setupLegacyPickerPage({
+    context,
+    path: NEW_CHAT_PATH,
+    featureSwitches: {
+      [FeatureSwitchKey.Effort]: false,
+      [FeatureSwitchKey.CodexFastMode]: false,
+    },
+  });
 
   await readyComposer();
   await user.click(await modelPicker("DeepSeek V4 Flash"));
@@ -670,7 +700,16 @@ test("Let an existing thread send while model availability is reconciling", asyn
     });
   });
 
-  await setupPage({ context, path: RUN_PATH });
+  // Sending during reconciliation is the subject; the run controls would
+  // otherwise wait on the same policy list.
+  await setupLegacyPickerPage({
+    context,
+    path: RUN_PATH,
+    featureSwitches: {
+      [FeatureSwitchKey.Effort]: false,
+      [FeatureSwitchKey.CodexFastMode]: false,
+    },
+  });
 
   await readyChat();
   const composer = await screen.findByRole("textbox", { name: "Message" });

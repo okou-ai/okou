@@ -13,6 +13,20 @@ export const CHAT_THREAD_MESSAGE_LIST_CLASS = cn(
   CHAT_THREAD_MESSAGE_ROW_GAP_CLASS,
 );
 
+// The transcript ends where the composer begins, and a message cut on that line
+// reads as a rendering fault rather than as "the conversation continues". The
+// softening belongs to the transcript, not to the surface below it: a solid
+// gradient painted over the pane can only match a flat fill, and the workspace
+// canvas is not one under a gradient palette — a `--background` gradient over a
+// `--card` canvas ended in a visible band across the pane's full width. Fading
+// the content itself leaves whatever the canvas paints untouched, so every
+// theme keeps its own backdrop. The prefixed property is spelled beside the
+// standard one for the same reason `composer-rail.tsx` spells it.
+export const CHAT_THREAD_SCROLL_EDGE_FADE_CLASS = cn(
+  "[-webkit-mask-image:linear-gradient(to_bottom,#000_calc(100%_-_20px),transparent_100%)]",
+  "[mask-image:linear-gradient(to_bottom,#000_calc(100%_-_20px),transparent_100%)]",
+);
+
 // Turns use 24px, response sections use 8px, and related items within a section
 // use 4px. Section spacing must not become the density of a history/list row.
 export const CHAT_THREAD_RESPONSE_STACK_CLASS = "flex min-w-0 flex-col gap-2";

@@ -66,6 +66,38 @@ availability check.
   reader converts a dependency failure into "no brief", and nothing here
   writes.
 
+## Automatic enrollment retries
+
+Initialization, onboarding, membership events and the enrollment worker share
+the existing member advisory lock and durable enrollment retry fields. Intent
+is recorded before checking the feature switch, timezone, default Agent and
+accepted active workflow definition. Unknown eligibility is qualified once
+against Clerk so historical members keep their ineligible preference state.
+For a known eligible member, an unavailable local prerequisite does not repeat
+that read or consume the external failure budget; the worker revisits it after
+a minute, and an inline request can proceed as soon as the prerequisite arrives.
+
+A first qualification or locally ready attempt claims a five-minute recovery
+lease before reading current Clerk membership. Failed attempts retry after 1,
+2, 4, 8, then at most 15 minutes, and inline requests honor the same deadline as
+workers. Skipped requests do not extend an existing deadline. Explicit preference changes keep
+their own immediate behavior. Membership qualification preserves its lease;
+a new membership event or explicit choice invalidates an older retry writer.
+Worker notifications follow enrollment state or error changes; unchanged local
+deferrals do not repeatedly invalidate the preference shown in Settings.
+
+Deletion records the departed membership generation even when enrollment has
+not started or an earlier live lookup already marked the member departed.
+Replayed creation of that generation cannot revive enrollment.
+A different live generation can qualify on a later ready attempt, including
+when its creation webhook was missed. Installation still checks current
+membership; local prerequisites and retry state never grant authority.
+
+These changes reuse the existing schema and HTTP contracts. Old browser
+initialization requests remain supported, and mixed older API workers may
+retain the previous retry behavior until rollout completes. Rollback does not
+require a data migration.
+
 ## Reading it safely
 
 `loadMorningBriefMigrationState` is a composed read, not a transactional

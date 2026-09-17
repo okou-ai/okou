@@ -530,29 +530,8 @@
     {
       "idx": 1153,
       "version": "7",
-      "when": 1789629951457,
+      "when": 1789642535175,
       "tag": "1153_chat_thread_morning_brief_provenance",
-      "breakpoints": true
-    },
-    {
-      "idx": 1154,
-      "version": "7",
-      "when": 1789630188319,
-      "tag": "1154_morning_brief_deliveries",
-      "breakpoints": true
-    },
-    {
-      "idx": 1155,
-      "version": "7",
-      "when": 1789642574004,
-      "tag": "1155_morning_brief_schedule_claims",
-      "breakpoints": true
-    },
-    {
-      "idx": 1156,
-      "version": "7",
-      "when": 1789642577819,
-      "tag": "1156_morning_brief_native_schedules",
       "breakpoints": true
     }
   ]

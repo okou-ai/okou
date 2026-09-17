@@ -24,6 +24,7 @@ import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
 import { createRouteMocks } from "./helpers/route-test";
 import { acquisitionAttributionRoutes } from "../acquisition-attribution";
+import { ClerkUserNotFoundTestError } from "./helpers/clerk-users";
 import { testUsageStateRoutes } from "../test-usage-state";
 import {
   testUsagePackSubscriptionStateContract,
@@ -96,15 +97,11 @@ async function readGoogleAdsMilestones(
   actor: ApiTestUser,
 ): Promise<readonly GoogleAdsConversionMilestone[]> {
   mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-  context.mocks.clerk.users.getUserList.mockResolvedValue({
-    data: [
-      {
-        id: actor.userId,
-        privateMetadata: {
-          signup_attribution: { vm0_campaign_id: "24220469665" },
-        },
-      },
-    ],
+  context.mocks.clerk.users.getUser.mockResolvedValue({
+    id: actor.userId,
+    privateMetadata: {
+      signup_attribution: { vm0_campaign_id: "24220469665" },
+    },
   });
   const response = await accept(
     client().googleAdsMilestones({
@@ -117,14 +114,36 @@ async function readGoogleAdsMilestones(
 }
 
 describe("POST /api/attribution/signup", () => {
+  it("preserves the missing-user error without writing signup attribution", async () => {
+    const userId = `user_${randomUUID()}`;
+    mocks.clerk.session(userId, null);
+    context.mocks.clerk.users.getUser.mockRejectedValue(
+      new ClerkUserNotFoundTestError(),
+    );
+    const response = await accept(
+      client().recordSignup({
+        headers: { authorization: "Bearer clerk-session" },
+        body: { attribution: { utm_source: "google" } },
+      }),
+      [500],
+    );
+    expect(response.body).toStrictEqual({ error: "Internal server error" });
+    expect(context.mocks.clerk.users.getUser).toHaveBeenCalledExactlyOnceWith(
+      userId,
+    );
+    expect(context.mocks.clerk.users.getUserList).not.toHaveBeenCalled();
+    expect(context.mocks.clerk.users.updateUserMetadata).not.toHaveBeenCalled();
+  });
+
   it.each(["24220469665", "24239997272", "24240467199"])(
     "preserves canonical first-touch IDs for campaign %s",
     async (campaignId) => {
       mockNow(new Date(RECORDED_AT_ISO));
       const userId = `user_${randomUUID()}`;
       mocks.clerk.session(userId, null);
-      context.mocks.clerk.users.getUserList.mockResolvedValue({
-        data: [{ id: userId, privateMetadata: {} }],
+      context.mocks.clerk.users.getUser.mockResolvedValue({
+        id: userId,
+        privateMetadata: {},
       });
       const response = await accept(
         client().recordSignup({
@@ -199,7 +218,7 @@ describe("POST /api/attribution/signup", () => {
       expect(response.body).toStrictEqual({
         error: { message: "Not authenticated", code: "UNAUTHORIZED" },
       });
-      expect(context.mocks.clerk.users.getUserList).not.toHaveBeenCalled();
+      expect(context.mocks.clerk.users.getUser).not.toHaveBeenCalled();
       expect(
         context.mocks.clerk.users.updateUserMetadata,
       ).not.toHaveBeenCalled();
@@ -210,15 +229,11 @@ describe("POST /api/attribution/signup", () => {
     mockNow(new Date(RECORDED_AT_ISO));
     const userId = `user_${randomUUID()}`;
     mocks.clerk.session(userId, null);
-    context.mocks.clerk.users.getUserList.mockResolvedValue({
-      data: [
-        {
-          id: userId,
-          privateMetadata: {
-            existing: "value",
-          },
-        },
-      ],
+    context.mocks.clerk.users.getUser.mockResolvedValue({
+      id: userId,
+      privateMetadata: {
+        existing: "value",
+      },
     });
     context.mocks.clerk.users.updateUserMetadata.mockResolvedValue({});
 
@@ -271,11 +286,9 @@ describe("POST /api/attribution/signup", () => {
     const userId = `user_${randomUUID()}`;
     mocks.clerk.session(userId, null);
     context.mocks.signalTimers.delay.mockResolvedValue(undefined);
-    context.mocks.clerk.users.getUserList
+    context.mocks.clerk.users.getUser
       .mockRejectedValueOnce(new ClerkApiResponseTestError(2))
-      .mockResolvedValue({
-        data: [{ id: userId, privateMetadata: {} }],
-      });
+      .mockResolvedValue({ id: userId, privateMetadata: {} });
     context.mocks.clerk.users.updateUserMetadata.mockResolvedValue({});
 
     const response = await accept(
@@ -291,7 +304,7 @@ describe("POST /api/attribution/signup", () => {
     );
 
     expect(response.body).toStrictEqual({ error: "Internal server error" });
-    expect(context.mocks.clerk.users.getUserList).toHaveBeenCalledTimes(1);
+    expect(context.mocks.clerk.users.getUser).toHaveBeenCalledTimes(1);
     expect(context.mocks.signalTimers.delay).not.toHaveBeenCalled();
     expect(context.mocks.clerk.users.updateUserMetadata).not.toHaveBeenCalled();
   });
@@ -299,17 +312,13 @@ describe("POST /api/attribution/signup", () => {
   it("does not overwrite existing signup attribution", async () => {
     const userId = `user_${randomUUID()}`;
     mocks.clerk.session(userId, null);
-    context.mocks.clerk.users.getUserList.mockResolvedValue({
-      data: [
-        {
-          id: userId,
-          privateMetadata: {
-            signup_attribution: {
-              vm0_source: "existing",
-            },
-          },
+    context.mocks.clerk.users.getUser.mockResolvedValue({
+      id: userId,
+      privateMetadata: {
+        signup_attribution: {
+          vm0_source: "existing",
         },
-      ],
+      },
     });
 
     const response = await accept(
@@ -335,22 +344,16 @@ describe("POST /api/attribution/signup", () => {
     const fixture = await seedAcquisitionFixture();
     const actor = actorForFixture(fixture);
     mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-    context.mocks.clerk.users.getUserList
+    context.mocks.clerk.users.getUser
+      .mockResolvedValueOnce({ id: actor.userId, privateMetadata: {} })
       .mockResolvedValueOnce({
-        data: [{ id: actor.userId, privateMetadata: {} }],
-      })
-      .mockResolvedValueOnce({
-        data: [
-          {
-            id: actor.userId,
-            privateMetadata: {
-              signup_attribution: {
-                vm0_source: "presentation",
-                utm_source: "google",
-              },
-            },
+        id: actor.userId,
+        privateMetadata: {
+          signup_attribution: {
+            vm0_source: "presentation",
+            utm_source: "google",
           },
-        ],
+        },
       });
     context.mocks.clerk.users.updateUserMetadata.mockResolvedValue({});
 
@@ -407,6 +410,25 @@ describe("POST /api/attribution/signup", () => {
 });
 
 describe("GET /api/attribution/google-ads-milestones", () => {
+  it("preserves the missing-user error without inventing an ads account", async () => {
+    const userId = `user_${randomUUID()}`;
+    mocks.clerk.session(userId, null);
+    context.mocks.clerk.users.getUser.mockRejectedValue(
+      new ClerkUserNotFoundTestError(),
+    );
+    const response = await accept(
+      client().googleAdsMilestones({
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [500],
+    );
+    expect(response.body).toStrictEqual({ error: "Internal server error" });
+    expect(context.mocks.clerk.users.getUser).toHaveBeenCalledExactlyOnceWith(
+      userId,
+    );
+    expect(context.mocks.clerk.users.getUserList).not.toHaveBeenCalled();
+  });
+
   it("requires a Clerk session", async () => {
     const response = await client().googleAdsMilestones();
 
@@ -416,8 +438,9 @@ describe("GET /api/attribution/google-ads-milestones", () => {
   it("returns no milestones for a user without acquisition activity", async () => {
     const userId = `user_${randomUUID()}`;
     mocks.clerk.session(userId, null);
-    context.mocks.clerk.users.getUserList.mockResolvedValue({
-      data: [{ id: userId, privateMetadata: {} }],
+    context.mocks.clerk.users.getUser.mockResolvedValue({
+      id: userId,
+      privateMetadata: {},
     });
 
     const response = await accept(
@@ -431,6 +454,10 @@ describe("GET /api/attribution/google-ads-milestones", () => {
       milestones: [],
       googleAdsAccountId: null,
     });
+    expect(context.mocks.clerk.users.getUser).toHaveBeenCalledExactlyOnceWith(
+      userId,
+    );
+    expect(context.mocks.clerk.users.getUserList).not.toHaveBeenCalled();
   });
 
   it("returns stable run and connector milestones through the public route", async () => {
@@ -682,8 +709,9 @@ describe("POST /api/attribution/google-ads-account", () => {
     async ({ saved, supplied, expected }) => {
       const userId = `user_${randomUUID()}`;
       mocks.clerk.session(userId, null);
-      context.mocks.clerk.users.getUserList.mockResolvedValue({
-        data: [{ id: userId, privateMetadata: { signup_attribution: saved } }],
+      context.mocks.clerk.users.getUser.mockResolvedValue({
+        id: userId,
+        privateMetadata: { signup_attribution: saved },
       });
       const response = await accept(
         client().resolveGoogleAdsAccount({
@@ -712,8 +740,9 @@ describe("POST /api/attribution/google-ads-account", () => {
     async (key) => {
       const userId = `user_${randomUUID()}`;
       mocks.clerk.session(userId, null);
-      context.mocks.clerk.users.getUserList.mockResolvedValue({
-        data: [{ id: userId, privateMetadata: {} }],
+      context.mocks.clerk.users.getUser.mockResolvedValue({
+        id: userId,
+        privateMetadata: {},
       });
       const response = await accept(
         client().resolveGoogleAdsAccount({

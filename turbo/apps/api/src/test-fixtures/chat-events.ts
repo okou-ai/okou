@@ -512,6 +512,9 @@ function annotationProjectionSourcePart(
       tenantId: input.context.teamsContext.tenantId,
       channelId: input.context.teamsContext.channelId,
       activityId: input.context.teamsContext.activityId,
+      conversationId: input.context.teamsContext.conversationId,
+      conversationType: input.context.teamsContext.conversationType,
+      botId: null,
     });
   }
   if ("telegramContext" in input.context) {
@@ -520,6 +523,7 @@ function annotationProjectionSourcePart(
       chatId: input.context.telegramContext.chatId,
       messageId: input.context.telegramContext.messageId,
       isDm: input.context.telegramContext.chatType === "private",
+      botUsername: null,
     });
   }
   return createChatEventSourcePart({
@@ -607,6 +611,9 @@ export async function seedChatEventAnnotationProjectionFixture(
           tenantId: "tenant-2",
           channelId: "19:reject@thread.tacv2",
           activityId: "activity-rejected",
+          conversationId: null,
+          conversationType: "channel",
+          botId: null,
         }),
       }),
       runId: null,
@@ -642,6 +649,9 @@ export async function seedChatEventAnnotationProjectionFixture(
           tenantId: "tenant-2",
           channelId: "19:reject@thread.tacv2",
           activityId: "activity-rejected",
+          conversationId: null,
+          conversationType: "channel",
+          botId: null,
         }),
       }),
       runId: null,

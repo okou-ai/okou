@@ -13,8 +13,8 @@ const remainderReasonSchema = z.enum([
   "parse_fallback",
 ]);
 
-/** Prepared reader only. The webhook rejects v1 until #34713 supplies the
- * complete accounting, two-date admission and cleanup transaction. */
+/** Resource-aware billing input. The webhook requires a configured global
+ * start date and applies atomic accounting and two-date lifecycle admission. */
 export const xResourceUsageEventSchema = z
   .object({
     protocol: z.literal("x-resource-v1"),

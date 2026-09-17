@@ -13,19 +13,15 @@ const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 test("does not copy retired Impact fields while recording normal signup metadata", async () => {
   const userId = "user_signup";
   mocks.clerk.session(userId, null);
-  context.mocks.clerk.users.getUserList.mockResolvedValue({
-    data: [
-      {
-        id: userId,
-        privateMetadata: {
-          unrelated: "preserved",
-          impact_attribution: {
-            clickId: "old",
-            capturedAt: nowDate().toISOString(),
-          },
-        },
+  context.mocks.clerk.users.getUser.mockResolvedValue({
+    id: userId,
+    privateMetadata: {
+      unrelated: "preserved",
+      impact_attribution: {
+        clickId: "old",
+        capturedAt: nowDate().toISOString(),
       },
-    ],
+    },
   });
   const response = await accept(
     setupApp({ context, routes: acquisitionAttributionRoutes })(

@@ -57,20 +57,34 @@ function isMissingS3ObjectError(error: unknown): boolean {
 export function loadWorkflowVolumeFiles(args: {
   readonly orgId: string;
   readonly workflowId: string;
+  readonly version?: { readonly storageId: string; readonly versionId: string };
 }): Computed<Promise<readonly WorkflowVolumeFile[] | null>> {
   return computed(async (get) => {
-    const storageName = getCustomSkillStorageName(args.workflowId);
-    const [storage] = await get(db$)
-      .select({ id: storages.id, headVersionId: storages.headVersionId })
-      .from(storages)
-      .where(
-        and(
-          eq(storages.orgId, args.orgId),
-          eq(storages.userId, VOLUME_ORG_USER_ID),
-          eq(storages.name, storageName),
-        ),
-      )
-      .limit(1);
+    let storage:
+      | { readonly id: string; readonly headVersionId: string | null }
+      | undefined;
+    if (args.version) {
+      // Copy preparation pins the exact immutable version it will revalidate
+      // at publication, rather than independently rereading a moving HEAD.
+      storage = {
+        id: args.version.storageId,
+        headVersionId: args.version.versionId,
+      };
+    } else {
+      const storageName = getCustomSkillStorageName(args.workflowId);
+      const [current] = await get(db$)
+        .select({ id: storages.id, headVersionId: storages.headVersionId })
+        .from(storages)
+        .where(
+          and(
+            eq(storages.orgId, args.orgId),
+            eq(storages.userId, VOLUME_ORG_USER_ID),
+            eq(storages.name, storageName),
+          ),
+        )
+        .limit(1);
+      storage = current;
+    }
 
     if (!storage?.headVersionId) {
       return null;
