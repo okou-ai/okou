@@ -38,7 +38,7 @@ sees a credential, never chooses a host and never decides whether it may read.
 The reader performs GET only, against the source's fixed provider base; it is
 not an authenticated fetch proxy.
 
-`admitMorningBriefCollection({ db, clerk, orgId, userId, anchor }, signal)`
+`admitMorningBriefCollection({ db, clerk, orgId, userId, anchor, deadline }, signal)`
 derives the `MorningBriefCollectionScope` — owner, installation, Agent, bound
 thread, anchor, timezone and the immutable membership id — from
 `simpleMorningBrief`, the canonical
@@ -157,9 +157,34 @@ cancellation and never becomes a collected envelope — while deadline exhaustio
 surfaces as `budget-exhausted / deadline` per request and `deadline-exceeded`
 for the source, never as a healthy empty read.
 
-The deadline covers the admission's elapsed time, not its cancellation: the
-membership read inside `admitMorningBriefCollection` is bounded by the caller's
-signal, and the shared Clerk gateway's own bounding is
+The deadline is read from the **clock**, not from the timer.
+`AbortSignal.timeout` only reports `aborted` once its callback has been
+scheduled and run, so between the instant a budget expires and that callback the
+bit is still false. Every decision about whether the source may continue
+compares the absolute deadline; the timer is left to do the one thing a clock
+cannot, which is interrupt I/O already in flight.
+
+That includes the last decision of all. The release fence re-derives identity
+and every retained permission, which takes real time and can outlast the budget,
+so the clock is compared again **after** that fence and before any payload is
+handed back. A collection accepted after its absolute deadline is late content,
+not a healthy read. The boundary is inclusive: arriving exactly at it is already
+too late, and the millisecond before it is still inside.
+
+The preflight spends the same budget. `admitMorningBriefCollection` composes the
+caller's signal with the source deadline for its own reads and compares the
+clock before it returns a scope, so a membership answer or failure released
+after the budget expired stops there — no retry, no further admission read and
+no provider request. It reports that as its own `unavailable / deadline-exceeded`
+outcome, which the preview answers as `504`: a spent budget is not a refusal of
+authority a member could act on, and admission is the one phase with no
+collection envelope to answer with, because the installation and timezone that
+envelope names are exactly what it had not read yet. Caller cancellation
+released under an unspent budget still surfaces as cancellation.
+
+Passing that composed signal to a provider SDK is not a claim that an in-flight
+SDK request is physically cancelled; what is guaranteed is that nothing further
+runs once it returns. The shared Clerk gateway's own bounding remains
 [#34946](https://github.com/vm0-ai/okou/issues/34946).
 
 ### Limits this reader does not exceed
@@ -361,6 +386,22 @@ the reader a real consumed boundary, not to ship a feature:
   still admits is deterministic. Sixteen full 256 KiB allowances exhaust 4 MiB
   exactly; without the refund of what the two list responses did not use, their
   reservations alone would stop the same run a whole batch earlier.
+- **The last allowance is proven to be spent once, by allocation rather than by
+  labels.** The cumulative budget is filled until what remains is smaller than
+  one per-response ceiling, and exactly one concurrency-sized batch of ordinary
+  bodies is then parked _after_ each reader has taken its allowance and before
+  any of them reads. Exactly one of the three becomes content, because the
+  remainder belonged to whichever reader claimed it. Taking the allowance after
+  the body instead — the one-line reordering of the production reservation —
+  hands all three the same bytes and all three succeed, so the case fails. That
+  reordering is a test counterexample; the deployed reservation is already
+  before the await.
+- **Cleanup is observed, not inferred from arrival counts.** One socket is made
+  to finish tearing down after its siblings, and the number of settled bodies is
+  read at the instant the public operation completes. Joining every started
+  worker keeps that number at the full concurrency; propagating the first
+  rejection instead completes with the lagging body still unravelling, which
+  fails the case.
 
 ## Rollout, scale and compatibility
 

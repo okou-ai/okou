@@ -166,6 +166,31 @@ function emptyParts(count: number): readonly StubPart[] {
   });
 }
 
+/**
+ * A response whose headers arrive at once and whose bytes wait for a gate.
+ *
+ * Holding the handler parks a request before it has an allowance; holding the
+ * body parks the reader after one was taken. Only the second shape can show
+ * whether concurrent readers were each handed the same remaining allowance.
+ */
+function gatedBodyResponse(
+  payload: unknown,
+  gate: () => Promise<void>,
+  onOpen: () => void,
+): HttpResponse<ReadableStream<Uint8Array>> {
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      onOpen();
+      await gate();
+      controller.enqueue(new TextEncoder().encode(JSON.stringify(payload)));
+      controller.close();
+    },
+  });
+  return new HttpResponse(stream, {
+    headers: { "content-type": "application/json" },
+  });
+}
+
 interface StubMessage {
   readonly id: string;
   readonly threadId?: string;
@@ -232,6 +257,13 @@ function stubGmail(args: {
   readonly holdDetails?: Promise<void>;
   /** Gate every body individually, so batches can be released one at a time. */
   readonly gateDetails?: () => Promise<void>;
+  /**
+   * Message ids whose body waits on `bodyGate` instead of their handler, so
+   * they are parked after their byte allowance has already been taken.
+   */
+  readonly bodyGatedIds?: ReadonlySet<string>;
+  readonly bodyGate?: () => Promise<void>;
+  readonly onBodyOpen?: () => void;
   readonly detailStatus?: ReadonlyMap<string, number>;
 }): GmailStub {
   const calls: GmailCall[] = [];
@@ -287,8 +319,20 @@ function stubGmail(args: {
       if (args.holdDetails) {
         await args.holdDetails;
       }
-      if (args.gateDetails) {
+      const bodyGated = args.bodyGatedIds?.has(messageId) === true;
+      if (args.gateDetails && !bodyGated) {
         await args.gateDetails();
+      }
+      if (bodyGated && args.bodyGate) {
+        const gatedMessage = byId.get(messageId);
+        if (!gatedMessage) {
+          return HttpResponse.json({ error: { code: 404 } }, { status: 404 });
+        }
+        return gatedBodyResponse(
+          messagePayload(gatedMessage),
+          args.bodyGate,
+          args.onBodyOpen ?? (() => {}),
+        );
       }
       const status = args.detailStatus?.get(messageId);
       if (status !== undefined) {
@@ -604,6 +648,7 @@ async function waitForRefreshArrivals(
  */
 function holdNextMembershipRead(release: Promise<void>): {
   readonly arrived: Promise<void>;
+  readonly calls: () => number;
 } {
   const membershipList =
     context.mocks.clerk.organizations.getOrganizationMembershipList;
@@ -612,16 +657,21 @@ function holdNextMembershipRead(release: Promise<void>): {
     throw new Error("Expected a seeded membership implementation");
   }
   const arrival = createDeferredPromise<void>(context.signal);
-  let held = false;
+  let calls = 0;
   membershipList.mockImplementation(async (...callArgs: unknown[]) => {
-    if (!held) {
-      held = true;
+    calls += 1;
+    if (calls === 1) {
       arrival.resolve();
       await release;
     }
     return await seeded(...callArgs);
   });
-  return { arrived: arrival.promise };
+  return {
+    arrived: arrival.promise,
+    calls: () => {
+      return calls;
+    },
+  };
 }
 
 beforeEach(async () => {
@@ -1286,6 +1336,93 @@ describe("Morning Brief Gmail collection preview", () => {
     expect(response.body.status).toBe("unavailable");
   });
 
+  it("hands the last aggregate allowance to one concurrent body, not to each", async () => {
+    const fixture = await setupOwner();
+    const gate = createDetailGate();
+    const bodyGate = createDetailGate();
+    let openBodies = 0;
+    // Fill the cumulative budget with whole allowances until what remains is
+    // smaller than one per-response ceiling, then meet that remainder with
+    // exactly one concurrency-sized batch of ordinary bodies.
+    const fillerBatches = Math.ceil(
+      FULL_OVERSIZED_ALLOWANCES / READER_CONCURRENCY,
+    );
+    const fillers = Array.from(
+      { length: (fillerBatches - 1) * READER_CONCURRENCY },
+      (_unused, index) => {
+        return {
+          id: `filler-${String(index).padStart(2, "0")}`,
+          internalDate: ANCHOR_MS - (index + 1) * 1000,
+          oversized: true,
+        };
+      },
+    );
+    const boundaryIds = Array.from(
+      { length: READER_CONCURRENCY },
+      (_unused, index) => {
+        return `boundary-${index}`;
+      },
+    );
+    const stub = stubGmail({
+      recent: [
+        ...fillers,
+        ...boundaryIds.map((id, index) => {
+          return {
+            id,
+            internalDate: ANCHOR_MS - (fillers.length + index + 1) * 1000,
+          };
+        }),
+      ],
+      unread: [],
+      gateDetails: gate.wait,
+      bodyGatedIds: new Set(boundaryIds),
+      bodyGate: bodyGate.wait,
+      onBodyOpen: () => {
+        openBodies += 1;
+      },
+    });
+
+    const collection = collectOk(fixture);
+    for (
+      let arrived = READER_CONCURRENCY;
+      arrived <= fillers.length;
+      arrived += READER_CONCURRENCY
+    ) {
+      await waitForDetailArrivals(stub, arrived);
+      gate.release();
+    }
+    gate.openPermanently();
+    // Each boundary reader has been handed its own allowance and is parked on
+    // the body. Reading them is what would spend the same remainder twice.
+    await expect
+      .poll(
+        () => {
+          return openBodies;
+        },
+        { timeout: 10_000 },
+      )
+      .toBe(READER_CONCURRENCY);
+    bodyGate.openPermanently();
+
+    const response = await collection;
+    expect(detailCalls(stub)).toHaveLength(fillers.length + READER_CONCURRENCY);
+    // The allowance is taken before the body is read, so the remainder belongs
+    // to whichever reader claimed it and its two siblings are left with none.
+    // Taking it after the read instead would hand all three the same bytes and
+    // let all three succeed.
+    expect(
+      response.body.items.map((item) => {
+        return item.messageId;
+      }),
+    ).toHaveLength(1);
+    expect(boundaryIds).toContain(response.body.items[0]?.messageId);
+    // The siblings were bound by the cumulative budget, not by their own size.
+    expect(response.body.coverage.truncations).toContain(
+      "total-response-bytes",
+    );
+    expect(response.body.status).toBe("partial");
+  });
+
   it("admits no request after the source deadline has passed", async () => {
     const fixture = await setupOwner();
     const release = createDeferredPromise<void>(context.signal);
@@ -1311,8 +1448,16 @@ describe("Morning Brief Gmail collection preview", () => {
     release.resolve();
 
     const response = await collection;
+    // The two candidates that had not been requested never are, and what the
+    // three in-flight bodies did return is not released either: the budget the
+    // whole source was admitted under is gone, so this is an expired source
+    // rather than a partially collected one.
     expect(detailCalls(stub)).toHaveLength(READER_CONCURRENCY);
-    expect(response.body.coverage.truncations).toContain("deadline");
+    expect(response.body).toMatchObject({
+      status: "unavailable",
+      failure: "deadline-exceeded",
+      items: [],
+    });
   });
 
   it("gives a held source admission no fresh collection budget", async () => {
@@ -1332,7 +1477,7 @@ describe("Morning Brief Gmail collection preview", () => {
         headers: authHeaders(fixture.actor),
         body: { anchor: ANCHOR_ISO },
       }),
-      [200],
+      [504],
     );
     await admission.arrived;
     // The entire source budget is spent inside the public admission, before the
@@ -1341,18 +1486,78 @@ describe("Morning Brief Gmail collection preview", () => {
     release.resolve();
 
     const response = await collection;
-    if (response.status !== 200) {
-      throw new Error(`Expected a collection, received ${response.status}`);
-    }
     // A slow preflight shortens the source instead of earning it a second
-    // allowance, so nothing is requested and the late answer is reported as the
-    // deadline it is rather than as a healthy empty day.
+    // allowance. The late answer stops the preflight where it stands: no
+    // retry, no further admission read and no provider request.
+    expect(response.status).toBe(504);
     expect(stub.calls).toStrictEqual([]);
+    expect(admission.calls()).toBe(1);
+  });
+
+  it("withholds a payload whose release finished after the source deadline", async () => {
+    const fixture = await setupOwner();
+    const startedAt = now();
+    mockNow(startedAt);
+    const bodies = createDeferredPromise<void>(context.signal);
+    const stub = stubGmail({
+      recent: [{ id: "collected", internalDate: ANCHOR_MS - 1000 }],
+      unread: [],
+      holdDetails: bodies.promise,
+    });
+
+    const collection = collectOk(fixture);
+    // Every request has been authorized and issued, so the next membership read
+    // belongs to the release fence rather than to an admission.
+    await waitForDetailArrivals(stub, 1);
+    const releaseFence = createDeferredPromise<void>(context.signal);
+    const membership = holdNextMembershipRead(releaseFence.promise);
+    bodies.resolve();
+    await membership.arrived;
+    // The budget runs out while the final authorization is still answering, so
+    // the payload is already collected and the timer has not fired.
+    mockNow(startedAt + MORNING_BRIEF_SOURCE_BUDGET_MS);
+    releaseFence.resolve();
+
+    const response = await collection;
+    // Re-deriving authority takes real time, and a payload accepted after the
+    // absolute deadline is late content. The boundary is inclusive: arriving
+    // exactly at it is already too late.
     expect(response.body).toMatchObject({
       status: "unavailable",
       failure: "deadline-exceeded",
       items: [],
     });
+  });
+
+  it("releases a payload whose release finished just inside the source deadline", async () => {
+    const fixture = await setupOwner();
+    const startedAt = now();
+    mockNow(startedAt);
+    const bodies = createDeferredPromise<void>(context.signal);
+    const stub = stubGmail({
+      recent: [{ id: "collected", internalDate: ANCHOR_MS - 1000 }],
+      unread: [],
+      holdDetails: bodies.promise,
+    });
+
+    const collection = collectOk(fixture);
+    await waitForDetailArrivals(stub, 1);
+    const releaseFence = createDeferredPromise<void>(context.signal);
+    const membership = holdNextMembershipRead(releaseFence.promise);
+    bodies.resolve();
+    await membership.arrived;
+    // One millisecond of budget is still one millisecond: the positive control
+    // that keeps the case above from passing by refusing everything.
+    mockNow(startedAt + MORNING_BRIEF_SOURCE_BUDGET_MS - 1);
+    releaseFence.resolve();
+
+    const response = await collection;
+    expect(response.body.status).toBe("ok");
+    expect(
+      response.body.items.map((item) => {
+        return item.messageId;
+      }),
+    ).toStrictEqual(["collected"]);
   });
 
   it("separates an empty day from a rate-limited read", async () => {

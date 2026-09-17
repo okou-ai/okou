@@ -45,6 +45,27 @@ function forbidden(message: string) {
   };
 }
 
+/**
+ * The source budget ran out before an installation was resolved.
+ *
+ * Admission is the one phase with no collection envelope to answer with: the
+ * timezone and window that envelope names are exactly what it had not read yet.
+ * A spent budget is not a refusal of authority, so it is reported as its own
+ * outcome instead of borrowing the denial status.
+ */
+function sourceDeadlineExceeded() {
+  return {
+    status: 504 as const,
+    body: {
+      error: {
+        message:
+          "Morning Brief Gmail preview is unavailable: deadline-exceeded",
+        code: "GATEWAY_TIMEOUT" as const,
+      },
+    },
+  };
+}
+
 const body$ = bodyResultOf(morningBriefGmailCollectionPreviewContract.collect);
 
 const collectGmailInner$ = command(
@@ -73,10 +94,14 @@ const collectGmailInner$ = command(
         orgId: auth.orgId,
         userId: auth.userId,
         anchor: new Date(body.data.anchor),
+        deadline,
       },
       signal,
     );
     signal.throwIfAborted();
+    if (admission.kind === "unavailable") {
+      return sourceDeadlineExceeded();
+    }
     if (admission.kind === "denied") {
       return forbidden(
         `Morning Brief Gmail preview is unavailable: ${admission.reason}`,

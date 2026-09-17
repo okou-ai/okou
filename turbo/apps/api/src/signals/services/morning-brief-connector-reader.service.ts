@@ -117,6 +117,20 @@ export function startMorningBriefSourceDeadline(
 }
 
 /**
+ * Has this source's budget run out, by the clock rather than by the timer?
+ *
+ * `AbortSignal.timeout` only reports `aborted` once its callback has been
+ * scheduled and run, so between the instant a budget expires and that callback
+ * the bit is still false. Every decision about whether the source may keep
+ * going — and above all the final release of a collected payload — compares the
+ * absolute deadline, and the timer is left to do what a clock cannot: interrupt
+ * I/O that is already in flight.
+ */
+function deadlineHasPassed(at: number, timer: AbortSignal): boolean {
+  return timer.aborted || now() >= at;
+}
+
+/**
  * Why a whole source is unusable. These are terminal: the source is discarded,
  * no further request may be issued and no collected payload is released.
  */
@@ -1172,7 +1186,7 @@ export async function withMorningBriefConnectorReader<T>(
   // preflight that outlived the deadline leaves nothing to read with, so the
   // source is refused before any identity, credential or provider work rather
   // than restarting on a fresh allowance.
-  if (deadline.aborted || now() >= deadlineAt) {
+  if (deadlineHasPassed(args.deadline.at, args.deadline.signal)) {
     return unavailable("deadline-exceeded");
   }
 
@@ -1203,7 +1217,7 @@ export async function withMorningBriefConnectorReader<T>(
   if (state.revoked !== null) {
     return unavailable(state.revoked);
   }
-  if (deadline.aborted) {
+  if (deadlineHasPassed(args.deadline.at, args.deadline.signal)) {
     return unavailable("deadline-exceeded");
   }
 
@@ -1218,6 +1232,13 @@ export async function withMorningBriefConnectorReader<T>(
   }
   if (release.value !== null) {
     return unavailable(release.value);
+  }
+  // The release fence re-derives identity and every retained permission, which
+  // takes real time and can outlast the budget. A payload handed back after the
+  // source's absolute deadline is late content, so acceptance is the last thing
+  // the clock guards rather than the one step it is trusted to have covered.
+  if (deadlineHasPassed(args.deadline.at, args.deadline.signal)) {
+    return unavailable("deadline-exceeded");
   }
   return {
     kind: "ok",
@@ -1241,16 +1262,51 @@ type MorningBriefCollectionAdmission =
         | "not-installed"
         | "disabled"
         | "no-membership";
-    };
+    }
+  /**
+   * The source's own budget ran out inside this preflight. It is not a refusal
+   * of authority and not a cancellation: the caller asked for a source that can
+   * no longer be read in time.
+   */
+  | { readonly kind: "unavailable"; readonly reason: "deadline-exceeded" };
+
+interface MorningBriefAdmissionArgs {
+  readonly db: Db;
+  readonly clerk: ClerkClient;
+  readonly orgId: string;
+  readonly userId: string;
+  readonly anchor: Date;
+  /**
+   * The source deadline, started by this caller before admission. Composing it
+   * here is what lets the preflight observe the source timeout its own reads
+   * are spending, instead of only the caller's cancellation.
+   */
+  readonly deadline: MorningBriefSourceDeadline;
+}
 
 export async function admitMorningBriefCollection(
-  args: {
-    readonly db: Db;
-    readonly clerk: ClerkClient;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly anchor: Date;
-  },
+  args: MorningBriefAdmissionArgs,
+  signal: AbortSignal,
+): Promise<MorningBriefCollectionAdmission> {
+  // Both boundaries reach every await below. The provider SDK is not claimed to
+  // cancel a request already issued; what this guarantees is that a held answer
+  // or failure released after the budget expired stops here, with no retry, no
+  // further admission read and no collection.
+  const bounded = AbortSignal.any([signal, args.deadline.signal]);
+  const admitted = await settle(admitWithinDeadline(args, bounded), signal);
+  if (admitted.ok) {
+    return admitted.value;
+  }
+  if (deadlineHasPassed(args.deadline.at, args.deadline.signal)) {
+    return { kind: "unavailable", reason: "deadline-exceeded" };
+  }
+  // A genuine preflight failure stays a failure; it is not relabelled as a
+  // refusal this member could act on.
+  throw admitted.error;
+}
+
+async function admitWithinDeadline(
+  args: MorningBriefAdmissionArgs,
   signal: AbortSignal,
 ): Promise<MorningBriefCollectionAdmission> {
   const featureSwitchContext = await loadUserFeatureSwitchContext(
@@ -1286,6 +1342,9 @@ export async function admitMorningBriefCollection(
   }
   if (!(await subjectIsWritable(args.db, args))) {
     return { kind: "denied", reason: "no-membership" };
+  }
+  if (deadlineHasPassed(args.deadline.at, args.deadline.signal)) {
+    return { kind: "unavailable", reason: "deadline-exceeded" };
   }
   return {
     kind: "ok",
