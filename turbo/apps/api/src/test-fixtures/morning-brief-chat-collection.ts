@@ -11,13 +11,18 @@ import {
 } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
 import { and, eq, sql } from "drizzle-orm";
+import { onTestFinished } from "vitest";
+import { z } from "zod";
 
+import { getApiTestMocks } from "../__tests__/mocks";
 import { db } from "../lib/db";
+import { executeRawRows } from "../lib/db-raw-rows";
 import { nowDate } from "../lib/time";
 import { writeDb$ } from "../signals/external/db";
 import { createChatThreadInTransaction } from "../signals/services/chat-thread.service";
 import { insertChatEvent } from "../signals/services/chat-event.service";
 import { excludeMorningBriefChatThread } from "../signals/services/morning-brief-thread-provenance.service";
+import { createDeferredPromise } from "../signals/utils";
 import { seedInstalledMorningBrief } from "./morning-brief-collection";
 import { holdDeferredRow } from "./pi-deferred-lock";
 
@@ -77,6 +82,220 @@ export async function seedMorningBriefChatMemberFixture(
     automationId: installed.automationId,
   };
 }
+
+/**
+ * A second Agent the same member may read Chat under.
+ *
+ * Unread collection spans every Agent a member is authorized for, and the
+ * brief's own Agent is a separate question from the Agent a thread lives on.
+ * One Agent per member cannot tell those two apart.
+ */
+export async function seedMemberChatAgentFixture(args: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly visibility?: "public" | "private";
+  readonly owner?: string;
+}): Promise<string> {
+  const agentId = randomUUID();
+  await db()
+    .insert(agents)
+    .values({
+      id: agentId,
+      orgId: args.orgId,
+      owner: args.owner ?? args.userId,
+      name: `chat-${agentId.slice(0, 8)}`,
+      visibility: args.visibility ?? "public",
+    });
+  return agentId;
+}
+
+/**
+ * Take this member's access to an Agent away, the way a transfer does.
+ *
+ * A private Agent someone else owns is invisible to this member, which is what
+ * losing access to the Agent hosting their brief looks like.
+ */
+export async function restrictAgentAccessFixture(args: {
+  readonly agentId: string;
+  readonly owner: string;
+}): Promise<void> {
+  await db()
+    .update(agents)
+    .set({ owner: args.owner, visibility: "private" })
+    .where(eq(agents.id, args.agentId));
+}
+
+/**
+ * Replace the member's canonical Morning Brief with another enabled one.
+ *
+ * The new installation is a complete, working brief on its own Agent: it is
+ * exactly the "merely enabled replacement" that must not be able to authorize
+ * content the previous installation's collection had already gathered.
+ */
+export async function replaceMorningBriefInstallationFixture(member: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly workflowId: string;
+}): Promise<{ readonly workflowId: string; readonly agentId: string }> {
+  await uninstallMorningBriefFixture(member.workflowId);
+  const installed = await seedInstalledMorningBrief({
+    orgId: member.orgId,
+    userId: member.userId,
+  });
+  return { workflowId: installed.workflowId, agentId: installed.agentId };
+}
+
+/**
+ * Suspend one numbered live membership lookup after it has answered.
+ *
+ * A single attempt resolves the member's Clerk generation more than once — when
+ * it is admitted, and again at the fence that decides whether the envelope may
+ * be released — so a test that has to stall one specific boundary names it by
+ * ordinal rather than by "the next one". The answer is computed first and only
+ * then held, which is what makes the resumed caller a genuinely stale one
+ * instead of a lookup that already observed the change.
+ */
+export function holdMorningBriefChatMembershipLookupFixture(
+  args: {
+    readonly owner: MorningBriefChatMember;
+    /** Lookups to let through untouched before suspending one. */
+    readonly skip: number;
+  },
+  signal: AbortSignal,
+): {
+  readonly waitForArrival: () => Promise<void>;
+  readonly release: () => void;
+} {
+  const lookup =
+    getApiTestMocks().clerk.organizations.getOrganizationMembershipList;
+  const answer = lookup.getMockImplementation();
+  if (!answer) {
+    throw new Error("Expected seeded Clerk organization membership mocks");
+  }
+  const arrived = createDeferredPromise<void>(signal);
+  const released = createDeferredPromise<void>(signal);
+  let seen = 0;
+  let suspended = false;
+  const release = () => {
+    if (!released.settled()) {
+      released.resolve();
+    }
+  };
+  onTestFinished(release);
+  lookup.mockImplementation(async (...callArgs: unknown[]) => {
+    const membership: unknown = await answer(...callArgs);
+    if (!isOwnerMembershipLookup(callArgs, args.owner)) {
+      return membership;
+    }
+    if (suspended || seen++ < args.skip) {
+      return membership;
+    }
+    suspended = true;
+    arrived.resolve();
+    await released.promise;
+    return membership;
+  });
+  return {
+    waitForArrival: () => {
+      return arrived.promise;
+    },
+    release,
+  };
+}
+
+function isOwnerMembershipLookup(
+  args: readonly unknown[],
+  owner: { readonly orgId: string; readonly userId: string },
+): boolean {
+  const [query] = args;
+  if (typeof query !== "object" || query === null) {
+    return false;
+  }
+  const organizationId =
+    "organizationId" in query ? query.organizationId : undefined;
+  const userId = "userId" in query ? query.userId : undefined;
+  return (
+    organizationId === owner.orgId &&
+    Array.isArray(userId) &&
+    userId.includes(owner.userId)
+  );
+}
+
+/** The member's persisted read watermark, to prove collection never moves it. */
+export async function readChatThreadReadStateFixture(
+  chatThreadId: string,
+): Promise<{
+  readonly lastReadAt: Date | null;
+  readonly lastChatEventSeqId: number;
+}> {
+  const [thread] = await db()
+    .select({
+      lastReadAt: chatThreads.lastReadAt,
+      lastChatEventSeqId: chatThreads.lastChatEventSeqId,
+    })
+    .from(chatThreads)
+    .where(eq(chatThreads.id, chatThreadId))
+    .limit(1);
+  if (!thread) {
+    throw new Error("Expected the seeded chat thread to exist");
+  }
+  return thread;
+}
+
+/**
+ * Everything a collection must not create for this owner.
+ *
+ * Counted rather than sampled, so a Run, a Chat event, a usage event or a
+ * queued e-mail appearing anywhere under this owner fails the assertion.
+ */
+export async function countMorningBriefChatWritesFixture(owner: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly automationId: string;
+}): Promise<{
+  readonly chatEvents: number;
+  readonly runs: number;
+  readonly usageEvents: number;
+  readonly emails: number;
+}> {
+  // Every counter is scoped to this owner, so a suite running beside this one
+  // cannot move the numbers the assertion compares.
+  const [counts] = await executeRawRows(
+    db(),
+    sql`
+      SELECT
+        (
+          SELECT count(*) FROM chat_events e
+          JOIN chat_threads t ON t.id = e.chat_thread_id
+          WHERE t.user_id = ${owner.userId}
+        ) AS "chatEvents",
+        (
+          SELECT count(*) FROM agent_runs
+          WHERE org_id = ${owner.orgId} AND user_id = ${owner.userId}
+        ) AS "runs",
+        (
+          SELECT count(*) FROM usage_event
+          WHERE org_id = ${owner.orgId} AND user_id = ${owner.userId}
+        ) AS "usageEvents",
+        (
+          SELECT count(*) FROM email_outbox
+          WHERE source_workflow_automation_id = ${owner.automationId}::uuid
+        ) AS "emails"
+    `,
+    chatWriteCountsSchema,
+  );
+  if (!counts) {
+    throw new Error("Expected the write counters to return a row");
+  }
+  return counts;
+}
+
+const chatWriteCountsSchema = z.object({
+  chatEvents: z.coerce.number(),
+  runs: z.coerce.number(),
+  usageEvents: z.coerce.number(),
+  emails: z.coerce.number(),
+});
 
 /** Point the member's Morning Brief binding at a destination thread. */
 export async function bindMorningBriefThreadFixture(args: {
@@ -428,6 +647,28 @@ export async function holdChatThreadReadBarrierFixture(
       .from(chatThreads)
       .where(eq(chatThreads.id, chatThreadId))
       .for("no key update");
+  });
+}
+
+/**
+ * Hold the Agent row a collection has to take first, without changing anything.
+ *
+ * The per-thread read takes `FOR KEY SHARE` on the Agent before it can reach
+ * the thread row or any event body, and `FOR UPDATE` is the mode that conflicts
+ * with it. Holding it therefore suspends a real request in the window between
+ * candidate selection and the content read — the window where a deletion has to
+ * be observed rather than read around.
+ */
+export async function holdAgentRowFixture(
+  agentId: string,
+  signal: AbortSignal,
+) {
+  return await holdDeferredRow(signal, async (tx) => {
+    await tx
+      .select({ id: agents.id })
+      .from(agents)
+      .where(eq(agents.id, agentId))
+      .for("update");
   });
 }
 
