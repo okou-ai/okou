@@ -14,6 +14,7 @@ import {
   MORNING_BRIEF_COLLECTION_VERSION,
   type morningBriefCollectionOccurrences,
 } from "@okouai/db/schema/morning-brief-collection-occurrence";
+import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 
@@ -43,6 +44,7 @@ import {
 } from "./morning-brief-slack-collection.service";
 import {
   loadSlackUserBinding,
+  lockSlackUserBindingRows,
   slackUserInstallation,
 } from "./slack-data.service";
 
@@ -400,19 +402,98 @@ const admitMorningBriefCollection$ = command(
 );
 
 /**
+ * Take the rows this occurrence's local authority is actually decided by.
+ *
+ * The resolution below is a plain read, and a plain read in `READ COMMITTED`
+ * serializes with nothing: a Settings disable, a schedule mutation or a Slack
+ * rebinding may commit after it and before the caller's own COMMIT, and the
+ * caller would then act on an authority that no longer exists. Holding the
+ * rows those mutators write is what makes the resolution describe the instant
+ * the caller commits at rather than the instant it read at.
+ *
+ * The rows taken are exactly the ones the occurrence itself pinned, by primary
+ * key, in **parent-before-child order** — the installation, then its schedule,
+ * then the organization's Slack installation and this member's connection in
+ * it. `FOR SHARE` is the weakest mode that conflicts with the `FOR NO KEY
+ * UPDATE` an ordinary `UPDATE` takes, so a disable or a rebinding either
+ * commits before this statement and is read, or waits for this transaction and
+ * loses.
+ *
+ * `agents` is deliberately **not** taken here, and that is the whole reason
+ * this order is safe. Agent deletion takes the Agent row first and then
+ * cascades through `workflows` and `morning_brief_collection_occurrences` into
+ * the generation row a caller already holds `FOR UPDATE`; taking the Agent row
+ * afterwards would close that cycle. It does not need to be taken: the cascade
+ * has to acquire that same generation row, so Agent deletion already serializes
+ * against the caller through the foreign key. What is left unserialized is an
+ * Agent ownership transfer, which no production endpoint performs — the Agent
+ * request schemas expose visibility but never an owner.
+ *
+ * The caller must already hold the owner fence (`lockCollectionOwner`), which
+ * is what serializes membership, user and organization cleanup.
+ */
+async function lockMorningBriefLocalAuthorityRows(
+  tx: Tx,
+  occurrence: MorningBriefCollectionOccurrenceRow,
+): Promise<void> {
+  await tx
+    .select({ id: workflows.id })
+    .from(workflows)
+    .where(eq(workflows.id, occurrence.workflowId))
+    .limit(1)
+    .for("share");
+  await tx
+    .select({ id: workflowAutomations.id })
+    .from(workflowAutomations)
+    .where(eq(workflowAutomations.id, occurrence.automationId))
+    .limit(1)
+    .for("share");
+  await lockSlackUserBindingRows(tx, {
+    orgId: occurrence.orgId,
+    userId: occurrence.userId,
+  });
+}
+
+/**
+ * The final local admission point for anything acting on an occurrence.
+ *
+ * It is one function because acceptance and release need the same thing at the
+ * same moment: the local authority proved while the rows that could revoke it
+ * are held, inside the caller's own transaction. The caller resolves the remote
+ * Clerk half outside any transaction and then admits here, so no transaction is
+ * ever open across a network round trip.
+ *
+ * The authority answer stays true until the caller commits. What the caller
+ * still owes is the rest of its admission — cancellation and the decision clock
+ * — sampled after this returns and immediately before its mutation.
+ */
+export async function admitMorningBriefLocalAuthority(
+  tx: Tx,
+  occurrence: MorningBriefCollectionOccurrenceRow,
+): Promise<MorningBriefLocalAuthority> {
+  await lockMorningBriefLocalAuthorityRows(tx, occurrence);
+  return await morningBriefLocalAuthorityStillCurrent(tx, occurrence);
+}
+
+/**
  * Whether the local half of an occurrence's authority still holds, right now.
  *
  * It exists because remote evidence and local state expire differently. A
  * caller that already proved the Clerk membership outside a transaction still
- * has to survive a Settings disable, an Agent transfer or a Slack rebinding
+ * has to survive a Settings disable, an Agent deletion or a Slack rebinding
  * that committed while it waited for a lock, and those are all local rows. This
  * re-resolves exactly the installation resolution admission uses and compares
  * it against the occurrence with the shared binding comparator, so there is no
  * second adoption algorithm and no always-allow path. The membership generation
  * is carried over from the occurrence rather than re-resolved: holding a
  * transaction open across a Clerk round trip is never acceptable.
+ *
+ * On its own it is only a read. It describes the instant it ran at, and it is
+ * the lock above — not this comparison — that makes that instant last until the
+ * caller commits, so callers that act on the result go through
+ * `admitMorningBriefLocalAuthority`.
  */
-export async function morningBriefLocalAuthorityStillCurrent(
+async function morningBriefLocalAuthorityStillCurrent(
   db: Pick<ReadonlyDb, "select">,
   occurrence: MorningBriefCollectionOccurrenceRow,
 ): Promise<MorningBriefLocalAuthority> {

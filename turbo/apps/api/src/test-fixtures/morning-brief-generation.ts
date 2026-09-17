@@ -284,6 +284,37 @@ export async function holdMorningBriefOwnerRow(
   return { waitForArrival: held.waitForBlocked, release: held.release };
 }
 
+/**
+ * Hold the first row the final local admission takes, exclusively.
+ *
+ * Acceptance and release both take this occurrence's pinned installation row
+ * `FOR SHARE` before its schedule, its Slack binding and the local authority
+ * resolution, so this suspends a request *inside* its final admission — after
+ * the owner fence and after this attempt's own slot, and before the decision
+ * that turns an observed result into owner content. The owner-row hold above
+ * blocks at the first fence instead, which is the window a check made there
+ * already covers.
+ *
+ * Because it is the first row of that order, everything the admission still has
+ * to read — the schedule, the Slack binding — is free for a test to mutate
+ * while a request waits here.
+ */
+export async function holdMorningBriefAdmissionInstallation(
+  workflowId: string,
+  signal: AbortSignal,
+): Promise<{
+  readonly waitForArrival: (minimum?: number) => Promise<number>;
+  readonly release: () => Promise<void>;
+}> {
+  const held = await holdDeferredRow(signal, async (tx) => {
+    await tx.execute(
+      sql`SELECT 1 FROM workflows WHERE id = ${workflowId}::uuid FOR UPDATE`,
+    );
+  });
+  onTestFinished(held.release);
+  return { waitForArrival: held.waitForBlocked, release: held.release };
+}
+
 function ownerDigest(owner: MorningBriefGenerationOwner): string {
   return createHash("sha256")
     .update(`${owner.orgId}:${owner.userId}`, "utf8")

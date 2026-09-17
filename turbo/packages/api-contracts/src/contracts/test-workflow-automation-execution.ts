@@ -74,7 +74,18 @@ export const testWorkflowAutomationExecutionContract = c.router({
   retainMorningBriefGenerations: {
     method: "POST",
     path: "/api/test/workflow-automation-execution/retain-morning-brief-generations",
-    body: z.object({}).strict(),
+    // The maintenance tick purges every expired row. A test runs the same
+    // consumer against a moved clock, so it names the identities its own case
+    // created and never removes a concurrently running suite's rows.
+    body: z
+      .object({
+        owners: z
+          .array(
+            z.object({ orgId: z.string().min(1), userId: z.string().min(1) }),
+          )
+          .optional(),
+      })
+      .strict(),
     responses: {
       200: z.object({ purged: z.number().int().nonnegative() }),
       404: z.string(),
