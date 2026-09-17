@@ -179,7 +179,16 @@ async function enableEffort(fixture: SettingsFixture): Promise<void> {
   });
 }
 
-/** The organization's persisted policy rows, read without the repairing GET. */
+/**
+ * Documented external-behavior exception, shared with `model-policies.test.ts`.
+ * An uninitialized or default-less `org_model_policies` state cannot be built
+ * through the production interface: `PUT /api/model-policies` is a replace that
+ * always requires a default and cannot leave the organization with none, and
+ * `GET /api/model-policies` calls `ensureOrgModelPolicies` itself, so reading it
+ * repairs the very state under test. The case is still worth testing because
+ * this route's hidden policy bootstrap is exactly what a closed account must not
+ * be able to reach, and the seeded rows are its only durable evidence.
+ */
 async function policyDefaults(
   fixture: SettingsFixture,
 ): Promise<readonly string[]> {
