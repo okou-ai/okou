@@ -5,6 +5,7 @@ import { command } from "ccstate";
 import { and, eq, sql } from "drizzle-orm";
 
 import { logger } from "../../lib/log";
+import { nowDate } from "../../lib/time";
 import { writeDb$, type ReadonlyDb } from "../external/db";
 import { deliverMorningBriefResult$ } from "./morning-brief-delivery.service";
 import type { MorningBriefMemberIdentity } from "./morning-brief-enrollment-data.service";
@@ -21,6 +22,7 @@ import type {
   NativeTickDependencies,
 } from "./morning-brief-native-executor.service";
 import {
+  bindNativeGenerationAttempt,
   readMorningBriefNativeSchedule,
   type MorningBriefNativeOccurrenceRow,
   type MorningBriefNativeScheduleRow,
@@ -261,6 +263,30 @@ export const executeNativeMorningBriefSlot$ = command(
     const settlement = nativeSettlementOfGeneration(generation);
     if (settlement.kind !== "delivered") {
       return settlement;
+    }
+
+    // Bind the accepted attempt to this slot **before** any delivery effect, so
+    // a crash between the Chat receipt COMMIT and the native settlement still
+    // leaves a row the receipt-first recovery can find and associate.
+    const leaseToken = args.occurrence.leaseToken;
+    if (leaseToken === null) {
+      return { kind: "defer", reason: "native-claim-lost" };
+    }
+    const db = set(writeDb$);
+    const bound = await db.transaction(async (tx) => {
+      return await bindNativeGenerationAttempt(tx, args.owner, {
+        scheduledFor: args.occurrence.scheduledFor,
+        generationAttemptId: settlement.generationAttemptId,
+        expectedEpoch: args.occurrence.ownerEpoch,
+        leaseToken,
+        at: nowDate(),
+      });
+    });
+    if (!bound) {
+      // Reclaimed or revoked while the provider call was in flight. The
+      // invocation stays recorded on the generation row; this worker simply has
+      // no authority to deliver or settle.
+      return { kind: "defer", reason: "native-claim-reclaimed" };
     }
 
     // An accepted result's delivery work must be discoverable before the slot

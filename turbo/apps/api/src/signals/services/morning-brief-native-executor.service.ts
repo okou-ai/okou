@@ -305,6 +305,21 @@ async function runDeliveryRecoveryPass(args: {
         scheduledFor: occurrence.scheduledFor,
         at: nowDate(),
       });
+      // A slot that bound its attempt but crashed before its own settlement is
+      // settled here, once, from the durable receipt. Its stored lease is still
+      // the claimant's, so the same exact-claimant fence applies and a slot that
+      // was reclaimed in the meantime is left alone.
+      if (occurrence.settledAt === null && occurrence.leaseToken !== null) {
+        await settleMorningBriefNativeOccurrence(tx, owner, {
+          scheduledFor: occurrence.scheduledFor,
+          outcome:
+            resolution === "delivered" ? "delivered" : "generation-unknown",
+          deliveryPending: false,
+          expectedEpoch: occurrence.ownerEpoch,
+          leaseToken: occurrence.leaseToken,
+          at: nowDate(),
+        });
+      }
     });
     counters.deliveriesRecovered += 1;
     if (resolution === "terminal-failure") {

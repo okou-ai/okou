@@ -730,10 +730,11 @@ export async function advanceMorningBriefExecutionPhase(
     return await commitTransfer(settled, current, { ...args, tx }, "native");
   }
 
-  // A flip back to the phase's own steady target only records the intent.
-  if (current.target === target) {
-    return { kind: "unchanged", row: current };
-  }
+  // A row already at its target still records that this tick examined it. The
+  // transition scan orders by `updated_at`, so touching it here is what makes
+  // that scan rotate: without it, twenty-five steady rows would hold the oldest
+  // prefix forever and a later owner — including a native owner with no future
+  // due row — could never reach rollback.
   const [row] = await settled(phase, {});
   return row === undefined ? { kind: "absent" } : { kind: "unchanged", row };
 }
@@ -849,6 +850,49 @@ export async function claimMorningBriefNativeOccurrence(
     return { kind: "inadmissible", reason: "schedule-moved" };
   }
   return { kind: "claimed", occurrence, schedule: held };
+}
+
+/**
+ * Bind one reserved S5 attempt to this slot, before any delivery effect.
+ *
+ * The attempt id and the delivery obligation are written here rather than at
+ * settlement, so a crash between the Chat receipt COMMIT and the settlement
+ * leaves a row that the receipt-first recovery can still find and associate.
+ * Writing it after the effects would lose exactly that association.
+ *
+ * It is fenced to the exact claimant and epoch, so a stale worker returning
+ * from a reclaimed slot cannot rebind it.
+ */
+export async function bindNativeGenerationAttempt(
+  tx: MorningBriefNativeWriter,
+  owner: MorningBriefMemberIdentity,
+  args: {
+    readonly scheduledFor: Date;
+    readonly generationAttemptId: string;
+    readonly expectedEpoch: number;
+    readonly leaseToken: string;
+    readonly at: Date;
+  },
+): Promise<boolean> {
+  const rows = await tx
+    .update(morningBriefNativeOccurrences)
+    .set({
+      generationAttemptId: args.generationAttemptId,
+      deliveryPending: true,
+      updatedAt: args.at,
+    })
+    .where(
+      and(
+        eq(morningBriefNativeOccurrences.orgId, owner.orgId),
+        eq(morningBriefNativeOccurrences.userId, owner.userId),
+        eq(morningBriefNativeOccurrences.scheduledFor, args.scheduledFor),
+        eq(morningBriefNativeOccurrences.ownerEpoch, args.expectedEpoch),
+        eq(morningBriefNativeOccurrences.leaseToken, args.leaseToken),
+        sql`${morningBriefNativeOccurrences.settledAt} IS NULL`,
+      ),
+    )
+    .returning({ scheduledFor: morningBriefNativeOccurrences.scheduledFor });
+  return rows.length > 0;
 }
 
 /**
@@ -1301,7 +1345,18 @@ export async function loadPendingDeliveryOccurrences(
   return await db
     .select()
     .from(morningBriefNativeOccurrences)
-    .where(eq(morningBriefNativeOccurrences.deliveryPending, true))
+    .where(
+      // Both an accepted result that still owes recovery **and** an unsettled
+      // slot that already bound an attempt. The second case is the crash
+      // between the Chat receipt COMMIT and the settlement: without it the
+      // receipt-first pass would never read that receipt, and resuming the slot
+      // would go to S5 first and mistake a swept result for a healthy empty
+      // day.
+      and(
+        eq(morningBriefNativeOccurrences.deliveryPending, true),
+        isNotNull(morningBriefNativeOccurrences.generationAttemptId),
+      ),
+    )
     .orderBy(morningBriefNativeOccurrences.scheduledFor)
     .limit(args.limit);
 }

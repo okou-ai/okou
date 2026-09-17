@@ -418,6 +418,66 @@ describe("native Morning Brief cron", () => {
     expect(runs).toHaveLength(0);
   });
 
+  // The crash this covers is the one the durable receipt exists for: Chat and
+  // its receipt COMMIT, then the process dies before the native settlement.
+  // The row is put back into exactly that state — attempt bound, delivery
+  // pending, settlement absent — rather than seeding any synthetic result.
+  it("recovers a delivered brief whose settlement crashed after the chat receipt", async () => {
+    const f = await fixture();
+    scriptSlack();
+    const { calls } = scriptProviders();
+
+    await tickUntilNative(f);
+    const due = await makeNativeDue(f);
+    await accept(tick(), [200]);
+    expect(calls.generation).toHaveLength(1);
+    const beforeCrash = await readOccurrences(f);
+    expect(beforeCrash[0]?.generationAttemptId).not.toBeNull();
+
+    // Unwind only the settlement. Everything the delivery committed stays, and
+    // the claimant's lease is still held, which is exactly what a process that
+    // died between the Chat COMMIT and its own settlement leaves behind.
+    const crashedLease = randomUUID();
+    await db()
+      .update(morningBriefNativeOccurrences)
+      .set({
+        settledAt: null,
+        settledNextRunAt: null,
+        outcome: null,
+        state: "claimed",
+        deliveryPending: true,
+        leaseToken: crashedLease,
+        leaseExpiresAt: new Date(now() + 5 * 60 * 1000),
+      })
+      .where(
+        and(
+          eq(morningBriefNativeOccurrences.orgId, f.orgId),
+          eq(morningBriefNativeOccurrences.userId, f.userId),
+          eq(morningBriefNativeOccurrences.scheduledFor, due),
+        ),
+      );
+
+    const recovery = await accept(tick(), [200]);
+    expect(recovery.body.deliveriesRecovered).toBe(1);
+
+    // Recovered from the durable receipt: no second model request, no second
+    // Chat event, no second delivery, and the slot settles exactly once.
+    expect(calls.generation).toHaveLength(1);
+    await expect(readGenerations(f)).resolves.toHaveLength(1);
+    const deliveries = await readDeliveries(f);
+    expect(deliveries).toHaveLength(1);
+    const events = await db()
+      .select({ id: chatEvents.id })
+      .from(chatEvents)
+      .where(eq(chatEvents.chatThreadId, deliveries[0]?.chatThreadId ?? ""));
+    expect(events).toHaveLength(1);
+    const settled = await readOccurrences(f);
+    expect(settled).toHaveLength(1);
+    expect(settled[0]?.outcome).toBe("delivered");
+    expect(settled[0]?.settledAt).not.toBeNull();
+    expect(settled[0]?.deliveryPending).toBeFalsy();
+  });
+
   it("does not contact the provider twice for the same slot across ticks", async () => {
     const f = await fixture();
     scriptSlack();
