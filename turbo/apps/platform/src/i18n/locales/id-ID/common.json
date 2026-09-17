@@ -1460,6 +1460,7 @@
           },
           "later": "Nanti saja",
           "slack": {
+            "appBadge": "APP",
             "confirm": "Tambahkan ke Slack",
             "description": "Di Slack, {{assistantName}} jadi rekan kerja yang bisa di-@ siapa saja.",
             "sampleChannel": "# growth",

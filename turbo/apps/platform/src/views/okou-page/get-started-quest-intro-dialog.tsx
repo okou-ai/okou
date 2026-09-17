@@ -253,14 +253,11 @@ function SlackFigure({ assistantName }: { assistantName: string }) {
   return (
     <TileRow>
       <span
-        className={`w-[264px] overflow-hidden ${NODE_CLASS}`}
+        className={`w-[268px] overflow-hidden ${NODE_CLASS}`}
         style={{ borderColor: `${accent}${LINE_ALPHA}` }}
       >
-        {/* A hairline, not a filled bar: the channel name is the only thing
-            that has to carry this row, and text reads as a channel where a
-            grey band reads as something still loading. */}
         <span
-          className="flex items-center gap-[6px] border-b px-[12px] py-[9px]"
+          className="flex items-center gap-[6px] border-b px-[12px] py-[8px]"
           style={{ borderColor: `${accent}${LINE_ALPHA}` }}
         >
           <SlackMark size={13} />
@@ -273,13 +270,14 @@ function SlackFigure({ assistantName }: { assistantName: string }) {
             })}
           </span>
         </span>
-        <span className="flex items-start gap-[9px] px-[12px] py-[11px]">
-          <OkouAvatar size={30} />
-          <span className="flex flex-col gap-[6px] pt-[1px]">
-            <span className="flex items-center gap-[6px]">
-              <span className="text-[11px] font-semibold leading-none">
-                {assistantName}
-              </span>
+        {/* Someone asks and the assistant answers: the exchange is the point of
+            the quest, and an assistant talking to nobody is not a channel. The
+            mention sits inside the teammate's message where Slack puts it, and
+            the reply carries the app badge Slack gives every bot. */}
+        <span className="flex flex-col gap-[9px] px-[12px] py-[10px]">
+          <span className="flex items-start gap-[8px]">
+            <Person accent={accent} size={22} />
+            <span className="flex items-center gap-[5px] pt-[5px]">
               <span
                 className="rounded-[3px] px-[5px] py-[2px] text-[9px] font-semibold leading-none"
                 style={{
@@ -289,8 +287,33 @@ function SlackFigure({ assistantName }: { assistantName: string }) {
               >
                 {mention}
               </span>
+              <span
+                className="h-[4px] w-[96px] rounded-full"
+                style={{ backgroundColor: `${accent}${SOFT_ALPHA}` }}
+              />
             </span>
-            <Lines accent={accent} width={150} count={2} height={4} />
+          </span>
+          <span className="flex items-start gap-[8px]">
+            <OkouAvatar size={22} />
+            <span className="flex flex-col gap-[5px] pt-[1px]">
+              <span className="flex items-center gap-[5px]">
+                <span className="text-[10px] font-semibold leading-none">
+                  {assistantName}
+                </span>
+                <span
+                  className="rounded-[2px] px-[4px] py-[1px] text-[8px] font-semibold uppercase leading-none"
+                  style={{
+                    backgroundColor: `${accent}${BAND_ALPHA}`,
+                    color: accent,
+                  }}
+                >
+                  {t(($) => {
+                    return $.chat.agentPage.getStarted.intro.slack.appBadge;
+                  })}
+                </span>
+              </span>
+              <Lines accent={accent} width={150} count={2} height={4} />
+            </span>
           </span>
         </span>
       </span>

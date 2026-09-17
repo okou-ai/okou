@@ -1485,6 +1485,7 @@
           },
           "later": "Más tarde",
           "slack": {
+            "appBadge": "APP",
             "confirm": "Añadir a Slack",
             "description": "En Slack, {{assistantName}} es un compañero al que cualquiera puede mencionar con @.",
             "sampleChannel": "# growth",

@@ -1461,6 +1461,7 @@
           },
           "later": "बाद में",
           "slack": {
+            "appBadge": "APP",
             "confirm": "Slack में जोड़ें",
             "description": "Slack में {{assistantName}} एक ऐसा साथी है जिसे कोई भी @ कर सकता है।",
             "sampleChannel": "# growth",

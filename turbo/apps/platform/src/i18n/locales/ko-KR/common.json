@@ -1460,6 +1460,7 @@
           },
           "later": "나중에",
           "slack": {
+            "appBadge": "APP",
             "confirm": "Slack에 추가",
             "description": "Slack에서는 {{assistantName}}이(가) 누구나 @로 부를 수 있는 동료입니다.",
             "sampleChannel": "# growth",
