@@ -25,6 +25,14 @@ import {
 import { formatLocalizedNumber } from "../../i18n/format.ts";
 import { platformStaticAssetUrl } from "../../lib/static-assets.ts";
 import { WorkflowConnectorIcon } from "../onboarding/onboarding-workflow-diagram.tsx";
+import {
+  ILLUSTRATION_ACCENTS,
+  LINE_ALPHA,
+  NODE_CLASS,
+  SOFT_ALPHA,
+  THUMBNAIL_CLASS,
+  TILE_ALPHA,
+} from "./start-cards.tsx";
 
 /**
  * The quests that explain themselves before they hand the user off.
@@ -54,79 +62,48 @@ export function questHasIntro(key: GetStartedQuestKey): boolean {
 }
 
 /**
- * The illustration language the onboarding workflow diagram already uses for
- * exactly this kind of picture: card tiles on the illustration stroke with a
- * soft lift, real connector marks inside them, and nodes joined by a line with
- * a waypoint at each end. No arrowheads — the line is the relationship, and
- * the tiles on either side say which way it runs.
+ * The washed tile the start cards under the composer use: one accent from the
+ * avatar palette laid down at five strengths, art built from bordered card
+ * nodes, and space around a small object.
  */
-const FIGURE_SURFACE_CLASS =
-  "border-(length:--border-width-illustration) border-solid border-border bg-card shadow-[0_12px_30px_-18px_rgba(0,0,0,0.5)]";
-
-const FIGURE_TILE_CLASS = `inline-flex items-center justify-center overflow-hidden rounded-2xl ${FIGURE_SURFACE_CLASS}`;
-
-/* The artwork's own orange and ink, literal for the same reason the diagram
-   keeps them literal: they are artwork, and the theme tokens flip in Dark. */
-const FIGURE_LINE_COLOR = "#ed7a44";
-const FIGURE_DOT_CLASS =
-  "box-border size-[7px] shrink-0 rounded-full border-(length:--border-width-illustration-marker) border-solid border-[#ffffff] bg-[#29292e]";
-
-function FigureTile({ size, children }: { size: number; children: ReactNode }) {
+function Tile({ accent, children }: { accent: string; children: ReactNode }) {
   return (
-    <span className={FIGURE_TILE_CLASS} style={{ width: size, height: size }}>
+    <span
+      className={THUMBNAIL_CLASS}
+      style={{ backgroundColor: `${accent}${TILE_ALPHA}` }}
+    >
       {children}
     </span>
   );
 }
-
-/** The join: a run of line with a waypoint at each end, and no arrow. */
-function FigureJoin() {
-  return (
-    <span className="flex shrink-0 items-center" aria-hidden="true">
-      <span className={FIGURE_DOT_CLASS} />
-      <span
-        className="h-[2px] w-[22px] rounded-full"
-        style={{ backgroundColor: FIGURE_LINE_COLOR }}
-      />
-      <span className={FIGURE_DOT_CLASS} />
-    </span>
-  );
-}
-
-/** Three marks in one slot, the way the diagram shows several sources. */
-function FigureStack({ children }: { children: readonly ReactNode[] }) {
-  return (
-    <span className="relative block size-[42px]">
-      {children.map((child, index) => {
-        return (
-          <span
-            key={STACK_POSITIONS[index]}
-            className={`absolute size-[26px] rounded-[9px] ${FIGURE_TILE_CLASS} ${STACK_POSITIONS[index]}`}
-          >
-            {child}
-          </span>
-        );
-      })}
-    </span>
-  );
-}
-
-const STACK_POSITIONS = [
-  "top-0 left-0",
-  "top-0 right-0",
-  "bottom-0 left-[8px]",
-] as const;
 
 /**
  * The illustration gets its own ground rather than floating on the dialog's
- * paper: a washed band reads as one picture, and it separates the drawing from
- * the sentences under it without a rule.
+ * paper: a washed band reads as one picture and separates the drawing from the
+ * sentences under it without a rule.
  */
 function TileRow({ children }: { children: ReactNode }) {
   return (
-    <div className="flex items-center justify-center gap-[10px] rounded-xl bg-state-hover px-4 py-6">
+    <div className="flex items-center justify-center gap-[10px] rounded-xl bg-state-hover px-4 py-5">
       {children}
     </div>
+  );
+}
+
+/** The join: three quiet dots. Not an arrow — the tiles say which way it runs. */
+function Joint({ accent }: { accent: string }) {
+  return (
+    <span className="flex shrink-0 items-center gap-[4px]" aria-hidden="true">
+      {["a", "b", "c"].map((id) => {
+        return (
+          <span
+            key={id}
+            className="size-[3px] rounded-full"
+            style={{ backgroundColor: `${accent}${LINE_ALPHA}` }}
+          />
+        );
+      })}
+    </span>
   );
 }
 
@@ -150,65 +127,89 @@ function OkouAvatar({ size }: { size: number }) {
   );
 }
 
-function OkouNode() {
+/**
+ * A person, drawn as one glyph rather than assembled: a circle stacked over a
+ * dome leaves a head floating above a shoulder at this size.
+ */
+function Person({ accent, size }: { accent: string; size: number }) {
   return (
-    <FigureTile size={56}>
-      <OkouAvatar size={44} />
-    </FigureTile>
+    <span
+      className="grid shrink-0 place-items-center rounded-full border bg-card"
+      style={{
+        width: size,
+        height: size,
+        borderColor: `${accent}${LINE_ALPHA}`,
+        color: accent,
+      }}
+    >
+      <User size={Math.round(size * 0.56)} strokeWidth={2.2} />
+    </span>
   );
 }
 
-/** A person, one glyph, in the same tile the marks sit in. */
-function PersonMark({ size }: { size: number }) {
-  return <User size={size} strokeWidth={2} className="text-muted-foreground" />;
+/**
+ * The user's own material: a fanned stack of documents, drawn the way the start
+ * cards draw a deck, because depth is what keeps a small object from reading as
+ * a diagram.
+ */
+function ToolStackArt({ accent }: { accent: string }) {
+  const edge = { borderColor: `${accent}${LINE_ALPHA}` };
+  return (
+    <span className="relative block h-[32px] w-[44px]">
+      <span
+        className={`absolute inset-0 -translate-x-[3px] translate-y-[2px] -rotate-6 ${NODE_CLASS}`}
+        style={edge}
+      />
+      <span
+        className={`absolute inset-0 translate-x-[3px] translate-y-px rotate-6 ${NODE_CLASS}`}
+        style={edge}
+      />
+      <span className={`absolute inset-0 ${NODE_CLASS}`} style={edge}>
+        <span
+          className="absolute left-[8px] top-[9px] size-[7px] rounded-[2px]"
+          style={{ backgroundColor: accent }}
+        />
+        <span
+          className="absolute left-[19px] top-[10px] h-[3px] w-[17px] rounded-full"
+          style={{ backgroundColor: `${accent}${SOFT_ALPHA}` }}
+        />
+        <span
+          className="absolute left-[8px] top-[20px] h-[3px] w-[28px] rounded-full"
+          style={{ backgroundColor: `${accent}${SOFT_ALPHA}` }}
+        />
+      </span>
+    </span>
+  );
 }
 
-/** Okou joined to the accounts it will read: three of the user's own tools. */
 function ConnectorFigure() {
+  const accent = ILLUSTRATION_ACCENTS.website;
   return (
     <TileRow>
-      <OkouNode />
-      <FigureJoin />
-      <FigureTile size={56}>
-        <FigureStack>
-          {[
-            <WorkflowConnectorIcon
-              key="gmail"
-              connectorSlug="gmail"
-              size={18}
-            />,
-            <WorkflowConnectorIcon
-              key="notion"
-              connectorSlug="notion"
-              size={18}
-            />,
-            <WorkflowConnectorIcon
-              key="calendar"
-              connectorSlug="google-calendar"
-              size={18}
-            />,
-          ]}
-        </FigureStack>
-      </FigureTile>
+      <Tile accent={accent}>
+        <OkouAvatar size={44} />
+      </Tile>
+      <Joint accent={accent} />
+      <Tile accent={accent}>
+        <ToolStackArt accent={accent} />
+      </Tile>
     </TileRow>
   );
 }
 
 /**
- * The channel, drawn as a message card.
+ * The channel, drawn as the message card it produces.
  *
- * Tiles joined by a line say "these two are related", which is right for a
- * connector but says nothing about what happens once the assistant is in
- * Slack. A card of the thing itself does: a teammate mentions it, and it
- * answers with the app badge Slack gives every bot.
+ * Two tiles joined by dots are right for a connector, where the point is that
+ * two things are attached. They say nothing about what happens once the
+ * assistant is in Slack: a teammate mentions it, and it answers with the app
+ * badge Slack gives every bot.
  */
 function SlackFigure({ assistantName }: { assistantName: string }) {
   const { t } = useTranslation();
   return (
     <TileRow>
-      <span
-        className={`w-[272px] overflow-hidden rounded-xl ${FIGURE_SURFACE_CLASS}`}
-      >
+      <span className="w-[268px] overflow-hidden rounded-xl border border-border bg-card shadow-[0_10px_26px_-18px_rgba(0,0,0,0.45)]">
         <span className="flex items-center gap-[7px] border-b border-border px-[13px] py-[9px]">
           <WorkflowConnectorIcon connectorSlug="slack" size={14} />
           <span className="text-[11px] font-semibold leading-none text-foreground">
@@ -220,7 +221,7 @@ function SlackFigure({ assistantName }: { assistantName: string }) {
         <span className="flex flex-col gap-[11px] px-[13px] py-[12px]">
           <span className="flex items-center gap-[8px]">
             <span className="grid size-[20px] shrink-0 place-items-center rounded-full bg-state-hover text-muted-foreground">
-              <User size={11} strokeWidth={2} />
+              <User size={11} strokeWidth={2.2} />
             </span>
             <span className="rounded-[4px] bg-brand-subtle px-[5px] py-[2px] text-[10px] font-semibold leading-none text-brand-text">
               {`@${assistantName.toLowerCase()}`}
@@ -234,15 +235,15 @@ function SlackFigure({ assistantName }: { assistantName: string }) {
                 <span className="text-[11px] font-semibold leading-none text-foreground">
                   {assistantName}
                 </span>
-                <span className="rounded-[3px] bg-state-hover px-[4px] py-[2px] text-[8px] font-semibold uppercase leading-none tracking-wide text-muted-foreground">
+                <span className="rounded-[3px] bg-state-hover px-[4px] py-[2px] text-[8px] font-semibold uppercase leading-none text-muted-foreground">
                   {t(($) => {
                     return $.chat.agentPage.getStarted.intro.slack.appBadge;
                   })}
                 </span>
               </span>
               <span className="flex flex-col gap-[5px]">
-                <span className="h-[4px] w-[150px] rounded-full bg-divider" />
-                <span className="h-[4px] w-[104px] rounded-full bg-divider" />
+                <span className="h-[4px] w-[148px] rounded-full bg-divider" />
+                <span className="h-[4px] w-[102px] rounded-full bg-divider" />
               </span>
             </span>
           </span>
@@ -254,63 +255,85 @@ function SlackFigure({ assistantName }: { assistantName: string }) {
 
 /** One saved workflow, handed to everyone who joins. */
 function InviteFigure() {
+  // Terracotta, the avatar palette's colour for people.
+  const accent = ILLUSTRATION_ACCENTS.avatar;
   return (
     <TileRow>
-      <FigureTile size={56}>
-        <span className="flex w-[34px] flex-col gap-[5px]">
+      <Tile accent={accent}>
+        <span
+          className={`flex h-[32px] w-[44px] flex-col justify-center gap-[5px] px-[8px] ${NODE_CLASS}`}
+          style={{ borderColor: `${accent}${LINE_ALPHA}` }}
+        >
           <span
-            className="h-[3px] w-[22px] rounded-full"
-            style={{ backgroundColor: FIGURE_LINE_COLOR }}
+            className="h-[3px] w-[18px] rounded-full"
+            style={{ backgroundColor: accent }}
           />
-          <span className="h-[3px] w-full rounded-full bg-divider" />
-          <span className="h-[3px] w-[24px] rounded-full bg-divider" />
+          <span
+            className="h-[3px] w-[28px] rounded-full"
+            style={{ backgroundColor: `${accent}${SOFT_ALPHA}` }}
+          />
         </span>
-      </FigureTile>
-      <FigureJoin />
-      <FigureTile size={56}>
-        <FigureStack>
-          {[
-            <PersonMark key="a" size={15} />,
-            <PersonMark key="b" size={15} />,
-            <PersonMark key="c" size={15} />,
-          ]}
-        </FigureStack>
-      </FigureTile>
+      </Tile>
+      <Joint accent={accent} />
+      <Tile accent={accent}>
+        <span className="flex items-center gap-[4px]">
+          {["a", "b", "c"].map((id) => {
+            return <Person key={id} accent={accent} size={20} />;
+          })}
+        </span>
+      </Tile>
     </TileRow>
   );
 }
 
 /** Step 1: a list of ready-made workflows with one of them chosen. */
-function TemplateArt() {
+function TemplateArt({ accent }: { accent: string }) {
   return (
-    <span className="flex w-[30px] flex-col gap-[4px]">
-      <span className="h-[3px] w-full rounded-full bg-divider" />
+    <span
+      className={`flex h-[32px] w-[44px] flex-col justify-center gap-[4px] px-[8px] ${NODE_CLASS}`}
+      style={{ borderColor: `${accent}${LINE_ALPHA}` }}
+    >
       <span
-        className="h-[3px] w-full rounded-full"
-        style={{ backgroundColor: FIGURE_LINE_COLOR }}
+        className="h-[3px] w-[24px] rounded-full"
+        style={{ backgroundColor: `${accent}${SOFT_ALPHA}` }}
       />
-      <span className="h-[3px] w-[18px] rounded-full bg-divider" />
+      <span
+        className="h-[3px] w-[28px] rounded-full"
+        style={{ backgroundColor: accent }}
+      />
+      <span
+        className="h-[3px] w-[16px] rounded-full"
+        style={{ backgroundColor: `${accent}${SOFT_ALPHA}` }}
+      />
     </span>
   );
 }
 
 /** Step 2: it runs once, and the result is already there. */
-function RunArt() {
+function RunArt({ accent }: { accent: string }) {
   return (
     <span
-      className="grid size-[26px] place-items-center rounded-full border-(length:--border-width-illustration) border-solid"
-      style={{ borderColor: FIGURE_LINE_COLOR, color: FIGURE_LINE_COLOR }}
+      className={`grid h-[32px] w-[44px] place-items-center ${NODE_CLASS}`}
+      style={{ borderColor: `${accent}${LINE_ALPHA}` }}
     >
-      <Play size={11} fill="currentColor" />
+      <span
+        className="grid size-[18px] place-items-center rounded-full"
+        style={{ backgroundColor: `${accent}${SOFT_ALPHA}`, color: accent }}
+      >
+        <Play size={8} fill="currentColor" />
+      </span>
     </span>
   );
 }
 
 /** Step 3: saved, and from then on it keeps its own time. */
-function SaveArt() {
+function SaveArt({ accent }: { accent: string }) {
   return (
-    <span style={{ color: FIGURE_LINE_COLOR }}>
-      <Clock size={26} strokeWidth={1.8} />
+    <span
+      className={`grid h-[32px] w-[44px] place-items-center ${NODE_CLASS}`}
+      style={{ borderColor: `${accent}${LINE_ALPHA}`, color: accent }}
+    >
+      <Clock size={18} strokeWidth={2} />
     </span>
   );
 }
@@ -557,9 +580,9 @@ function WorkflowStepsIntro({ onConfirm, onClose }: IntroProps) {
       <div>
         <WorkflowStep
           art={
-            <FigureTile size={48}>
-              <TemplateArt />
-            </FigureTile>
+            <Tile accent={ILLUSTRATION_ACCENTS.illustration}>
+              <TemplateArt accent={ILLUSTRATION_ACCENTS.illustration} />
+            </Tile>
           }
           title={t(($) => {
             return $.chat.agentPage.getStarted.intro.workflow.stepTemplate;
@@ -571,9 +594,9 @@ function WorkflowStepsIntro({ onConfirm, onClose }: IntroProps) {
         />
         <WorkflowStep
           art={
-            <FigureTile size={48}>
-              <RunArt />
-            </FigureTile>
+            <Tile accent={ILLUSTRATION_ACCENTS.website}>
+              <RunArt accent={ILLUSTRATION_ACCENTS.website} />
+            </Tile>
           }
           title={t(($) => {
             return $.chat.agentPage.getStarted.intro.workflow.stepRun;
@@ -585,9 +608,9 @@ function WorkflowStepsIntro({ onConfirm, onClose }: IntroProps) {
         />
         <WorkflowStep
           art={
-            <FigureTile size={48}>
-              <SaveArt />
-            </FigureTile>
+            <Tile accent={ILLUSTRATION_ACCENTS.slides}>
+              <SaveArt accent={ILLUSTRATION_ACCENTS.slides} />
+            </Tile>
           }
           title={t(($) => {
             return $.chat.agentPage.getStarted.intro.workflow.stepSave;
