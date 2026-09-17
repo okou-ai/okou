@@ -17,7 +17,7 @@ import { onRef } from "../../utils.ts";
 export const CONNECTOR_CATEGORY_GRID_ROW_HEIGHT = 102;
 
 /** The `gap-3` between the grid's rows. */
-export const CONNECTOR_CATEGORY_GRID_ROW_GAP = 12;
+const CONNECTOR_CATEGORY_GRID_ROW_GAP = 12;
 
 const CONNECTOR_CATEGORY_GRID_OVERSCAN_ROWS = 2;
 
@@ -27,7 +27,7 @@ const CONNECTOR_CATEGORY_GRID_OVERSCAN_ROWS = 2;
  */
 const CONNECTOR_CATEGORY_GRID_FALLBACK_ROWS = 40;
 
-export interface ConnectorCategoryGridMetrics {
+interface ConnectorCategoryGridMetrics {
   /** How far the grid's top sits above the viewport's top, never negative. */
   readonly scrolledPast: number;
   readonly viewportHeight: number;
@@ -35,7 +35,7 @@ export interface ConnectorCategoryGridMetrics {
   readonly columns: number;
 }
 
-export interface ConnectorCategoryGridWindow {
+interface ConnectorCategoryGridWindow {
   readonly startIndex: number;
   readonly endIndex: number;
   readonly leadingRows: number;
