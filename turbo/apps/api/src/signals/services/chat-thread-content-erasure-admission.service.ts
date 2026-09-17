@@ -21,7 +21,7 @@ import { settle } from "../utils";
  * non-null Agent reference that does not resolve is a missing canonical parent,
  * never permission to admit the thread user alone.
  */
-export interface ChatThreadContentIdentity {
+interface ChatThreadContentIdentity {
   readonly chatThreadId: string;
   readonly userId: string;
   readonly agentId: string | null;
@@ -30,7 +30,7 @@ export interface ChatThreadContentIdentity {
 }
 
 /** The canonical parents moved between the unlocked resolution and the locks. */
-export class ChatThreadContentOwnershipChangedError extends Error {
+class ChatThreadContentOwnershipChangedError extends Error {
   constructor() {
     super("Chat thread content ownership changed while acquiring locks");
     this.name = "ChatThreadContentOwnershipChangedError";
@@ -49,7 +49,7 @@ const OWNERSHIP_ATTEMPTS = 3;
  * separate from every database failure and from cancellation, which keep their
  * original propagation, so a timeout can never surface as a fabricated 404.
  */
-export type ChatThreadContentWriteOutcome<T> =
+type ChatThreadContentWriteOutcome<T> =
   | { readonly outcome: "written"; readonly value: T }
   | { readonly outcome: "missing" }
   | { readonly outcome: "closed" };

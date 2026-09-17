@@ -11,6 +11,7 @@ import {
 } from "../../../test-fixtures/account-erasure-subject";
 import { holdChatThreadRowLockFixture } from "../../../test-fixtures/chat-events";
 import {
+  holdChatThreadEventIdFixture,
   setChatThreadAgentFixture,
   withChatThreadContentBarrierFixture,
 } from "../../../test-fixtures/chat-thread-content-erasure";
@@ -60,14 +61,18 @@ function closeSubject(
   return closing;
 }
 
-async function expectDraftText(
-  fixture: ContentFixture,
-  text: string | null,
-): Promise<void> {
+/** The stored draft text a production reader returns, or null when cleared. */
+async function readDraftText(fixture: ContentFixture): Promise<string | null> {
   const draft = await chat.readThreadDraft(fixture.actor, fixture.threadId);
-  expect(draft.draftUserMessage).toStrictEqual(
-    text === null ? null : { version: 1, parts: [{ type: "text", text }] },
-  );
+  const message = draft.draftUserMessage;
+  if (message === null) {
+    return null;
+  }
+  const [part] = message.parts;
+  if (part === undefined || part.type !== "text") {
+    throw new Error("Expected a single text draft part");
+  }
+  return part.text;
 }
 
 interface SidebarRename {
@@ -106,15 +111,14 @@ function actorOrgId(fixture: ContentFixture): string {
   return orgId;
 }
 
-async function expectThreadTitle(
+async function readThreadTitle(
   fixture: ContentFixture,
-  title: string,
-): Promise<void> {
+): Promise<string | null> {
   const metadata = await chat.readThreadMetadata(
     fixture.actor,
     fixture.threadId,
   );
-  expect(metadata.title).toBe(title);
+  return metadata.title;
 }
 
 describe("account erasure fences direct chat-thread content writes", () => {
@@ -137,7 +141,7 @@ describe("account erasure fences direct chat-thread content writes", () => {
       draftBody("erased draft"),
       [404],
     );
-    await expectDraftText(fixture, "kept draft");
+    await expect(readDraftText(fixture)).resolves.toBe("kept draft");
   });
 
   it("denies a draft write for a closed distinct Agent owner and for a closed organization", async () => {
@@ -155,7 +159,7 @@ describe("account erasure fences direct chat-thread content writes", () => {
       draftBody("shared owner draft"),
       [404],
     );
-    await expectDraftText(shared, null);
+    await expect(readDraftText(shared)).resolves.toBeNull();
 
     const organization = await createContentFixture();
     await closeSubject({
@@ -169,7 +173,7 @@ describe("account erasure fences direct chat-thread content writes", () => {
       draftBody("organization draft"),
       [404],
     );
-    await expectDraftText(organization, null);
+    await expect(readDraftText(organization)).resolves.toBeNull();
   });
 
   it("keeps an unrelated owner writable while another subject is closed", async () => {
@@ -188,7 +192,7 @@ describe("account erasure fences direct chat-thread content writes", () => {
       unrelated.threadId,
       draftBody("unrelated draft"),
     );
-    await expectDraftText(unrelated, "unrelated draft");
+    await expect(readDraftText(unrelated)).resolves.toBe("unrelated draft");
   });
 
   it("preserves a draft write on a thread without an Agent and still fences its user", async () => {
@@ -207,7 +211,7 @@ describe("account erasure fences direct chat-thread content writes", () => {
       chatThreadId: fixture.threadId,
       agentId: fixture.agentId,
     });
-    await expectDraftText(fixture, "null agent draft");
+    await expect(readDraftText(fixture)).resolves.toBe("null agent draft");
 
     await setChatThreadAgentFixture({
       chatThreadId: fixture.threadId,
@@ -228,7 +232,7 @@ describe("account erasure fences direct chat-thread content writes", () => {
       chatThreadId: fixture.threadId,
       agentId: fixture.agentId,
     });
-    await expectDraftText(fixture, "null agent draft");
+    await expect(readDraftText(fixture)).resolves.toBe("null agent draft");
   });
 
   it("denies a rename for a closed subject without consuming a sidebar sequence", async () => {
@@ -250,7 +254,7 @@ describe("account erasure fences direct chat-thread content writes", () => {
       [404],
     );
 
-    await expectThreadTitle(fixture, "First title");
+    await expect(readThreadTitle(fixture)).resolves.toBe("First title");
     await expect(sidebarRenames(fixture)).resolves.toStrictEqual(before);
 
     // The denied attempt left the durable sequence untouched, so the next
@@ -263,7 +267,7 @@ describe("account erasure fences direct chat-thread content writes", () => {
       "Second title",
     ]);
     expect(after.at(-1)?.seqId).toBe((lastSeqId ?? 0) + 1);
-    await expectThreadTitle(fixture, "Second title");
+    await expect(readThreadTitle(fixture)).resolves.toBe("Second title");
   });
 
   it("denies a rename for a closed organization while the Agent organization is the subject", async () => {
@@ -280,7 +284,7 @@ describe("account erasure fences direct chat-thread content writes", () => {
       "Closed org title",
       [404],
     );
-    await expectThreadTitle(fixture, "Org title");
+    await expect(readThreadTitle(fixture)).resolves.toBe("Org title");
   });
 
   it("makes a closure wait for an admitted writer and fences the next write", async () => {
@@ -321,14 +325,147 @@ describe("account erasure fences direct chat-thread content writes", () => {
       await removeErasureSubjectsFixture([closed.jobId]);
     });
 
-    await expectDraftText(fixture, "admitted draft");
+    await expect(readDraftText(fixture)).resolves.toBe("admitted draft");
     await chat.requestPatchThread(
       fixture.actor,
       fixture.threadId,
       draftBody("post closure draft"),
       [404],
     );
-    await expectDraftText(fixture, "admitted draft");
+    await expect(readDraftText(fixture)).resolves.toBe("admitted draft");
+  });
+
+  it("denies a rename for a closed distinct Agent owner", async () => {
+    const fixture = await createContentFixture();
+    await chat.renameThread(fixture.actor, fixture.threadId, "Shared title");
+    const sharedOwner = `user_${randomUUID()}`;
+    await transferAgentOwnerFixture({
+      agentId: fixture.agentId,
+      owner: sharedOwner,
+    });
+    await closeSubject({ subjectKind: "user", subjectId: sharedOwner });
+
+    await chat.requestRenameThread(
+      fixture.actor,
+      fixture.threadId,
+      "Closed shared owner title",
+      [404],
+    );
+    await expect(readThreadTitle(fixture)).resolves.toBe("Shared title");
+    await expect(sidebarRenames(fixture)).resolves.toStrictEqual([
+      { seqId: expect.any(Number), title: "Shared title" },
+    ]);
+  });
+
+  it("makes a closure wait for an admitted rename while an unrelated owner keeps writing", async () => {
+    const fixture = await createContentFixture();
+    const unrelated = await createContentFixture();
+    await chat.renameThread(fixture.actor, fixture.threadId, "Admitted title");
+    const before = await sidebarRenames(fixture);
+    const lastSeqId = before.at(-1)?.seqId ?? 0;
+
+    const closed = await withChatThreadContentBarrierFixture(
+      {
+        chatThreadId: fixture.threadId,
+        stopAt: "commit",
+        work: async (barrier) => {
+          const renaming = chat.renameThread(
+            fixture.actor,
+            fixture.threadId,
+            "Barrier title",
+          );
+          await barrier.entered;
+
+          const closing = closeErasureSubjectFixture({
+            subjectKind: "user",
+            subjectId: fixture.actor.userId,
+          });
+          // The admitted rename holds its shared subject barrier with the title,
+          // the durable sequence and the renamed event already written, so the
+          // exclusive closure cannot commit ahead of it.
+          await expect
+            .poll(barrier.blockedWaiterCount, BLOCKED)
+            .toBeGreaterThanOrEqual(1);
+
+          // An unrelated owner is not serialized behind that barrier.
+          await chat.patchThread(
+            unrelated.actor,
+            unrelated.threadId,
+            draftBody("concurrent unrelated draft"),
+          );
+          await expect(readDraftText(unrelated)).resolves.toBe(
+            "concurrent unrelated draft",
+          );
+
+          barrier.release();
+          await renaming;
+          return await closing;
+        },
+      },
+      context.signal,
+    );
+    onTestFinished(async () => {
+      await removeErasureSubjectsFixture([closed.jobId]);
+    });
+
+    await expect(readThreadTitle(fixture)).resolves.toBe("Barrier title");
+    const admitted = await sidebarRenames(fixture);
+    expect(admitted.map(renameTitle)).toStrictEqual([
+      "Admitted title",
+      "Barrier title",
+    ]);
+    expect(admitted.at(-1)?.seqId).toBe(lastSeqId + 1);
+
+    await chat.requestRenameThread(
+      fixture.actor,
+      fixture.threadId,
+      "Post closure title",
+      [404],
+    );
+    await expect(readThreadTitle(fixture)).resolves.toBe("Barrier title");
+  });
+
+  it("rolls the title, sidebar event and sequence back when the rename fails after writing them", async () => {
+    const fixture = await createContentFixture();
+    await chat.renameThread(fixture.actor, fixture.threadId, "Durable title");
+    const before = await sidebarRenames(fixture);
+    const lastSeqId = before.at(-1)?.seqId ?? 0;
+
+    const eventId = randomUUID();
+    const holder = await holdChatThreadEventIdFixture({
+      eventId,
+      userId: fixture.actor.userId,
+      orgId: actorOrgId(fixture),
+      chatThreadId: fixture.threadId,
+      signal: context.signal,
+    });
+    // The rename writes the title and reserves the durable sequence, then its
+    // last statement blocks on the held event id and fails on its own budget.
+    // A genuine transaction failure is neither a 204 nor the closure 404.
+    await expect(
+      chat.requestRenameThread(
+        fixture.actor,
+        fixture.threadId,
+        "Rolled back title",
+        [204, 404],
+        eventId,
+      ),
+    ).rejects.toThrow(/Unknown response status 500/);
+    holder.release();
+    await holder.done;
+
+    await expect(readThreadTitle(fixture)).resolves.toBe("Durable title");
+    await expect(sidebarRenames(fixture)).resolves.toStrictEqual(before);
+
+    // No sidebar sequence was consumed and no invalidation escaped: the next
+    // accepted rename still takes the very next sequence id.
+    await chat.renameThread(fixture.actor, fixture.threadId, "Recovered title");
+    const after = await sidebarRenames(fixture);
+    expect(after.map(renameTitle)).toStrictEqual([
+      "Durable title",
+      "Recovered title",
+    ]);
+    expect(after.at(-1)?.seqId).toBe(lastSeqId + 1);
   });
 
   it("re-resolves a transferred Agent owner under the locks instead of writing under a stale label", async () => {
@@ -359,7 +496,7 @@ describe("account erasure fences direct chat-thread content writes", () => {
       context.signal,
     );
 
-    await expectDraftText(fixture, null);
+    await expect(readDraftText(fixture)).resolves.toBeNull();
   });
 
   it("finds a thread deleted under the locks and recreates no content", async () => {
@@ -412,16 +549,16 @@ describe("account erasure fences direct chat-thread content writes", () => {
         draftBody("blocked draft"),
         [204, 404],
       ),
-    ).rejects.toThrow();
+    ).rejects.toThrow(/Unknown response status 500/);
     holder.release();
     await holder.done;
 
-    await expectDraftText(fixture, "locked draft");
+    await expect(readDraftText(fixture)).resolves.toBe("locked draft");
     await chat.patchThread(
       fixture.actor,
       fixture.threadId,
       draftBody("recovered draft"),
     );
-    await expectDraftText(fixture, "recovered draft");
+    await expect(readDraftText(fixture)).resolves.toBe("recovered draft");
   });
 });

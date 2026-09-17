@@ -1,13 +1,18 @@
+import { chatThreadEvents } from "@okouai/db/schema/chat-thread-event";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
 import { eq } from "drizzle-orm";
 
 import { db } from "../lib/db";
+import { createDeferredPromise } from "../signals/utils";
 import {
   barrierQueryBinds,
   barrierQueryText,
   withDatabaseTransactionBarrierFixture,
   type TransactionBarrier,
 } from "./account-erasure-subject";
+
+/** Outside the user/org sequence every production writer allocates. */
+const HELD_EVENT_SEQ_ID = 2_000_000_000;
 
 /**
  * Infrastructure exception: `chat_threads.agent_id` is nullable and the draft
@@ -29,6 +34,61 @@ export async function setChatThreadAgentFixture(args: {
     throw new Error("Expected one chat thread Agent reference to move");
   }
 }
+
+/**
+ * Holds one uncommitted `chat_thread_events` row carrying the id a rename will
+ * supply. `appendChatThreadEvent` inserts with `ON CONFLICT DO NOTHING`, whose
+ * speculative insertion must wait on this open transaction, so the rename fails
+ * on its own bounded budget at its **last** statement — after the title UPDATE
+ * and after the durable sequence reservation. That is the only place a real
+ * failure can prove those two earlier writes roll back with it.
+ *
+ * Infrastructure exception: a concurrent uncommitted insert of a specific event
+ * id cannot be produced through any API. It writes no title or draft and is
+ * always rolled back by `release`.
+ */
+export async function holdChatThreadEventIdFixture(args: {
+  readonly eventId: string;
+  readonly userId: string;
+  readonly orgId: string;
+  readonly chatThreadId: string;
+  readonly signal: AbortSignal;
+}): Promise<{ readonly release: () => void; readonly done: Promise<void> }> {
+  const started = createDeferredPromise<void>(args.signal);
+  const released = createDeferredPromise<void>(args.signal);
+  const done = db()
+    .transaction(async (tx) => {
+      await tx.insert(chatThreadEvents).values({
+        id: args.eventId,
+        userId: args.userId,
+        orgId: args.orgId,
+        seqId: HELD_EVENT_SEQ_ID,
+        chatThreadId: args.chatThreadId,
+        kind: "renamed",
+        title: "held rename event",
+      });
+      started.resolve();
+      await released.promise;
+      // Roll the holder back so the id never becomes a durable event.
+      throw new HeldChatThreadEventRollback();
+    })
+    .catch((error: unknown) => {
+      if (!(error instanceof HeldChatThreadEventRollback)) {
+        throw error;
+      }
+    });
+  await started.promise;
+  return {
+    release: () => {
+      if (!released.settled()) {
+        released.resolve();
+      }
+    },
+    done,
+  };
+}
+
+class HeldChatThreadEventRollback extends Error {}
 
 /** The fenced transaction's first statement: the unlocked, content-free
  * identity resolution. It is the only thread-bound read that left-joins Agents,

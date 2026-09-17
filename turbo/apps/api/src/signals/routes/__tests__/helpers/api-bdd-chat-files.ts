@@ -788,12 +788,13 @@ export function createChatFilesBddApi(context: TestContext) {
       threadId: string,
       title: string,
       statuses: readonly (204 | 400 | 401 | 404)[],
+      eventId?: string,
     ) {
       return await accept(
         threadRenameClient().rename({
           headers: authenticate(context, actor),
           params: { id: threadId },
-          body: { title },
+          body: { title, ...(eventId === undefined ? {} : { eventId }) },
         }),
         statuses,
       );

@@ -117,6 +117,38 @@ only after a successful commit. A denied or rolled-back rename consumes no
 sequence id and appends no event; the next accepted rename takes the very next
 sidebar sequence. This adds no permanent erasure exemption for sidebar records.
 
+## Measured local cost
+
+Local development PostgreSQL, real HTTP boundary. These are bounded local
+samples, not production throughput.
+
+Every statement the fence adds is a primary-key index scan over one row:
+
+| Added statement              | Plan                                | Rows | Buffers | Execution |
+| ---------------------------- | ----------------------------------- | ---: | ------: | --------: |
+| Identity read (left join)    | Nested Loop Left Join, two PK scans |    1 |  4 hits |  0.069 ms |
+| `agents` FOR KEY SHARE       | LockRows over `agents_pkey`         |    1 |  3 hits |  0.106 ms |
+| `chat_threads` FOR KEY SHARE | LockRows over `chat_threads_pkey`   |    1 |  3 hits |  0.025 ms |
+
+End to end, 40 sequential draft `PATCH` requests on one thread, three samples:
+
+| Build     | Samples            | Median | Per request |
+| --------- | ------------------ | -----: | ----------: |
+| Baseline  | 112 / 160 / 105 ms | 112 ms |     ~2.8 ms |
+| Candidate | 382 / 304 / 346 ms | 346 ms |     ~8.7 ms |
+
+The ~6 ms local difference is round-trip count, not lock contention: the draft
+path went from one autocommit `UPDATE` to a transaction that also runs two
+`SET LOCAL` calls, the identity read, up to three advisory locks, the closure
+lookup, two `FOR KEY SHARE` locks and the revalidating re-read. A transaction
+retained through `COMMIT` is exactly what the B1 barrier requires, so this cost
+is inherent to the contract rather than an avoidable regression, and the plans
+above show no scan, no serialization and no unbounded work was introduced.
+
+Unrelated owners keep making progress while one writer holds its barrier: the
+rename writer-first test completes an unrelated owner's draft write while the
+admitted rename is paused at `COMMIT` with a closure already blocked behind it.
+
 ## Residual work
 
 This is a producer fence only. It does not erase any existing draft, title,
