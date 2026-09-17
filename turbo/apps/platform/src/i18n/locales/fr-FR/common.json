@@ -1485,10 +1485,8 @@
           },
           "later": "Plus tard",
           "slack": {
-            "appBadge": "APP",
             "confirm": "Ajouter à Slack",
             "description": "Dans Slack, {{assistantName}} est un collègue que chacun peut mentionner avec @.",
-            "sampleChannel": "# growth",
             "scopeChannels": "Il ne voit que les canaux où vous l'invitez.",
             "scopeOrganization": "Votre compte devient celui de l'équipe, les workflows sont partagés.",
             "scopeReward": "La récompense va sur le solde de l'équipe.",

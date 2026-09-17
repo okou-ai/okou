@@ -1461,10 +1461,8 @@
           },
           "later": "Later",
           "slack": {
-            "appBadge": "APP",
             "confirm": "Add to Slack",
             "description": "In Slack, {{assistantName}} is a colleague anyone can @.",
-            "sampleChannel": "# growth",
             "scopeChannels": "It only sees channels you invite it into.",
             "scopeOrganization": "Your account becomes the team's, so workflows are shared.",
             "scopeReward": "The reward goes to the team balance.",

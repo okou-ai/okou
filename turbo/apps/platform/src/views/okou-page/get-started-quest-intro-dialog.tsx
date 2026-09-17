@@ -192,153 +192,151 @@ function Person({ accent, size }: { accent: string; size: number }) {
 }
 
 /**
- * What a connector adds: Okou on one side, the user's own mail, docs and
- * calendar on the other. Two shapes and a join — the sentence underneath does
- * the explaining, so the picture only has to be legible at a glance.
+ * The user's own material: a fanned stack of documents.
+ *
+ * Drawn the way the start cards draw a deck — two cards rotated behind a front
+ * one — because depth is what keeps a small object from reading as a diagram.
  */
+function ToolStackArt({ accent }: { accent: string }) {
+  const edge = { borderColor: `${accent}${LINE_ALPHA}` };
+  return (
+    <div className="relative h-[32px] w-[44px]">
+      <span
+        className={`absolute inset-0 -translate-x-[3px] translate-y-[2px] -rotate-6 ${NODE_CLASS}`}
+        style={edge}
+      />
+      <span
+        className={`absolute inset-0 translate-x-[3px] translate-y-px rotate-6 ${NODE_CLASS}`}
+        style={edge}
+      />
+      <span className={`absolute inset-0 ${NODE_CLASS}`} style={edge}>
+        <span
+          className="absolute left-[8px] top-[8px] size-[7px] rounded-[2px]"
+          style={{ backgroundColor: accent }}
+        />
+        <span
+          className="absolute left-[19px] top-[9px] h-[3px] w-[17px] rounded-full"
+          style={{ backgroundColor: `${accent}${SOFT_ALPHA}` }}
+        />
+        <span
+          className="absolute left-[8px] top-[20px] h-[3px] w-[28px] rounded-full"
+          style={{ backgroundColor: `${accent}${SOFT_ALPHA}` }}
+        />
+      </span>
+    </div>
+  );
+}
+
 function ConnectorFigure() {
   const accent = ILLUSTRATION_ACCENTS.website;
   return (
     <TileRow>
       <Tile accent={accent}>
-        <OkouAvatar size={46} />
+        <OkouAvatar size={44} />
       </Tile>
       <Link accent={accent} />
       <Tile accent={accent}>
-        <span className="flex flex-col gap-[5px]">
-          {["mail", "doc"].map((id) => {
-            return (
-              <span
-                key={id}
-                className={`flex h-[21px] w-[48px] items-center gap-[5px] px-[5px] ${NODE_CLASS}`}
-                style={{ borderColor: `${accent}${LINE_ALPHA}` }}
-              >
-                <span
-                  className="size-[9px] shrink-0 rounded-[2px]"
-                  style={{ backgroundColor: `${accent}${FILL_ALPHA}` }}
-                />
-                <Lines accent={accent} width={24} count={2} height={2} />
-              </span>
-            );
-          })}
-        </span>
+        <ToolStackArt accent={accent} />
       </Tile>
     </TileRow>
   );
 }
 
 /**
- * The channel, after the quest is done: Okou answering in it.
+ * A channel with the assistant in it, at the size everything else is drawn.
  *
- * One card, four elements. An earlier draft drew the whole Slack window —
- * rail, someone asking, the reply and its result — and at this size that read
- * as texture rather than as a picture. What has to be recognised is the
- * channel and who is talking in it.
+ * An earlier version was a 268px window with a rail and two messages, which
+ * broke the tile grammar every other figure keeps and read as texture. The
+ * header names the place and the row underneath says who is talking there.
  */
-function SlackFigure({ assistantName }: { assistantName: string }) {
-  const { t } = useTranslation();
-  // Slack's own aubergine, so the card is recognised before it is read.
-  const accent = "#4A154B";
-  const mention = `@${assistantName.toLowerCase()}`;
+function ChannelArt({ accent }: { accent: string }) {
   return (
-    <TileRow>
+    <span
+      className={`h-[34px] w-[46px] overflow-hidden ${NODE_CLASS}`}
+      style={{ borderColor: `${accent}${LINE_ALPHA}` }}
+    >
       <span
-        className={`w-[268px] overflow-hidden ${NODE_CLASS}`}
-        style={{ borderColor: `${accent}${LINE_ALPHA}` }}
+        className="flex h-[13px] items-center gap-[3px] border-b px-[4px]"
+        style={{
+          borderColor: `${accent}${LINE_ALPHA}`,
+          backgroundColor: `${accent}${BAND_ALPHA}`,
+        }}
       >
+        <SlackMark size={7} />
         <span
-          className="flex items-center gap-[6px] border-b px-[12px] py-[8px]"
-          style={{ borderColor: `${accent}${LINE_ALPHA}` }}
-        >
-          <SlackMark size={13} />
+          className="h-[3px] w-[20px] rounded-full"
+          style={{ backgroundColor: accent }}
+        />
+      </span>
+      <span className="flex items-center gap-[3px] px-[4px] pt-[4px]">
+        <OkouAvatar size={11} />
+        <span className="flex flex-col gap-[2px]">
           <span
-            className="text-[11px] font-semibold leading-none"
-            style={{ color: accent }}
-          >
-            {t(($) => {
-              return $.chat.agentPage.getStarted.intro.slack.sampleChannel;
-            })}
-          </span>
-        </span>
-        {/* Someone asks and the assistant answers: the exchange is the point of
-            the quest, and an assistant talking to nobody is not a channel. The
-            mention sits inside the teammate's message where Slack puts it, and
-            the reply carries the app badge Slack gives every bot. */}
-        <span className="flex flex-col gap-[9px] px-[12px] py-[10px]">
-          <span className="flex items-start gap-[8px]">
-            <Person accent={accent} size={22} />
-            <span className="flex items-center gap-[5px] pt-[5px]">
-              <span
-                className="rounded-[3px] px-[5px] py-[2px] text-[9px] font-semibold leading-none"
-                style={{
-                  backgroundColor: `${accent}${BAND_ALPHA}`,
-                  color: accent,
-                }}
-              >
-                {mention}
-              </span>
-              <span
-                className="h-[4px] w-[96px] rounded-full"
-                style={{ backgroundColor: `${accent}${SOFT_ALPHA}` }}
-              />
-            </span>
-          </span>
-          <span className="flex items-start gap-[8px]">
-            <OkouAvatar size={22} />
-            <span className="flex flex-col gap-[5px] pt-[1px]">
-              <span className="flex items-center gap-[5px]">
-                <span className="text-[10px] font-semibold leading-none">
-                  {assistantName}
-                </span>
-                <span
-                  className="rounded-[2px] px-[4px] py-[1px] text-[8px] font-semibold uppercase leading-none"
-                  style={{
-                    backgroundColor: `${accent}${BAND_ALPHA}`,
-                    color: accent,
-                  }}
-                >
-                  {t(($) => {
-                    return $.chat.agentPage.getStarted.intro.slack.appBadge;
-                  })}
-                </span>
-              </span>
-              <Lines accent={accent} width={150} count={2} height={4} />
-            </span>
-          </span>
+            className="h-[2px] w-[22px] rounded-full"
+            style={{ backgroundColor: `${accent}${SOFT_ALPHA}` }}
+          />
+          <span
+            className="h-[2px] w-[14px] rounded-full"
+            style={{ backgroundColor: `${accent}${SOFT_ALPHA}` }}
+          />
         </span>
       </span>
+    </span>
+  );
+}
+
+function SlackFigure() {
+  // Slack's own aubergine, so the channel is recognised before it is read.
+  const accent = "#4A154B";
+  return (
+    <TileRow>
+      <Tile accent={accent}>
+        <OkouAvatar size={44} />
+      </Tile>
+      <Link accent={accent} />
+      <Tile accent={accent}>
+        <ChannelArt accent={accent} />
+      </Tile>
     </TileRow>
   );
 }
 
 /** One saved workflow, handed to everyone who joins. */
 function InviteFigure() {
-  // Terracotta, not the yellow the workflow card uses: three small busts need
-  // more contrast against their own wash than a pale accent can give them.
+  // Terracotta, the avatar palette's colour for people.
   const accent = ILLUSTRATION_ACCENTS.avatar;
+  const edge = { borderColor: `${accent}${LINE_ALPHA}` };
   return (
     <TileRow>
       <Tile accent={accent}>
         <span
-          className={`flex h-[46px] w-[50px] flex-col gap-[6px] p-[7px] ${NODE_CLASS}`}
-          style={{ borderColor: `${accent}${LINE_ALPHA}` }}
+          className={`flex h-[32px] w-[44px] flex-col justify-center gap-[5px] px-[7px] ${NODE_CLASS}`}
+          style={edge}
         >
           <span
-            className="h-[5px] w-[24px] rounded-full"
-            style={{ backgroundColor: `${accent}${FILL_ALPHA}` }}
+            className="h-[3px] w-[20px] rounded-full"
+            style={{ backgroundColor: accent }}
           />
-          <Lines accent={accent} width={36} count={2} height={3} />
+          <span
+            className="h-[3px] w-[28px] rounded-full"
+            style={{ backgroundColor: `${accent}${SOFT_ALPHA}` }}
+          />
         </span>
       </Tile>
       <Link accent={accent} />
       <Tile accent={accent}>
-        {/* Three apart, not overlapped: at this size an overlap of white
-            busts on a white ring reads as one shape, not as a team. */}
-        {/* 3 x 20 + 2 x 4 = 68, inside the tile's 72 with a pixel to spare;
-            anything larger is clipped by the tile's own overflow. */}
-        <span className="flex items-center gap-[4px]">
-          {["a", "b", "c"].map((id) => {
-            return <Person key={id} accent={accent} size={20} />;
+        {/* A member list: overlapped, each with a ring of paper. */}
+        <span className="flex items-center">
+          {["a", "b", "c"].map((id, index) => {
+            return (
+              <span
+                key={id}
+                className="rounded-full bg-card p-[1.5px]"
+                style={{ marginLeft: index === 0 ? 0 : -6 }}
+              >
+                <Person accent={accent} size={22} />
+              </span>
+            );
           })}
         </span>
       </Tile>
@@ -596,7 +594,7 @@ function SlackIntro({ onConfirm, onClose }: IntroProps) {
         },
         { assistantName },
       )}
-      figure={<SlackFigure assistantName={assistantName} />}
+      figure={<SlackFigure />}
       secondaryLabel={useLaterLabel()}
       onSecondary={onClose}
       confirmLabel={t(($) => {
