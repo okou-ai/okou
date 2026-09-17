@@ -2160,7 +2160,10 @@
       "number": "numero"
     },
     "sidebar": {
+      "allArchived": "Tutte le chat sono archiviate",
+      "allCaughtUp": "Tutto fatto",
       "allChats": "Tutte le chat",
+      "archive": "Archivia chat",
       "chatsWith": "Chatta con {{agentName}}",
       "chatThreads": "Thread di chat",
       "delete": "Elimina la chat",
@@ -2179,7 +2182,10 @@
       "pinned": "In evidenza",
       "rename": "Rinomina la chat",
       "renameDescription": "Inserisci un nuovo nome per questo thread di chat.",
+      "showArchived": "Mostra archiviate",
+      "showArchivedChats": "Mostra chat archiviate",
       "titlePlaceholder": "Titolo della chat",
+      "unarchive": "Rimuovi dall'archivio",
       "unpin": "Rimuovi la chat",
       "unread": "Non letto",
       "unreadOnly": "Solo non letto"
@@ -2891,6 +2897,7 @@
       "ariaLabel": "Discussione della chat",
       "changeIcon": "Cambia icona",
       "emoji": {
+        "archive": "Archivia",
         "done": "Fatto",
         "idea": "Idea",
         "no": "No",

@@ -27,6 +27,7 @@ export interface SidebarChatThreadWindow {
 export interface SidebarChatThreadListSignals {
   readonly count$: Computed<number>;
   readonly currentThreadListed$: Computed<boolean>;
+  readonly hasHiddenArchivedThreads$: Computed<boolean>;
   readonly threadIds$: Computed<readonly string[]>;
   readonly window$: Computed<SidebarChatThreadWindow>;
 }
@@ -255,6 +256,7 @@ function createSidebarChatThreadListSignals(
   return {
     count$,
     currentThreadListed$,
+    hasHiddenArchivedThreads$: list.hasHiddenArchivedThreads$,
     threadIds$: list.threadIds$,
     window$,
   };

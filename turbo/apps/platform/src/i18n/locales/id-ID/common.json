@@ -2104,7 +2104,10 @@
       "number": "nomor"
     },
     "sidebar": {
+      "allArchived": "Semua chat Anda telah diarsipkan",
+      "allCaughtUp": "Semua sudah beres",
       "allChats": "Semua chat",
+      "archive": "Arsipkan chat",
       "chatsWith": "Chat dengan {{agentName}}",
       "chatThreads": "Thread chat",
       "delete": "Hapus chat",
@@ -2123,7 +2126,10 @@
       "pinned": "Disematkan",
       "rename": "Ganti nama chat",
       "renameDescription": "Masukkan nama baru untuk thread chat ini.",
+      "showArchived": "Tampilkan yang diarsipkan",
+      "showArchivedChats": "Tampilkan chat yang diarsipkan",
       "titlePlaceholder": "Judul chat",
+      "unarchive": "Batalkan pengarsipan",
       "unpin": "Lepas sematan chat",
       "unread": "Belum dibaca",
       "unreadOnly": "Hanya yang belum dibaca"
@@ -2835,6 +2841,7 @@
       "ariaLabel": "Thread chat",
       "changeIcon": "Ubah ikon",
       "emoji": {
+        "archive": "Arsipkan",
         "done": "Selesai",
         "idea": "Ide",
         "no": "Tidak",

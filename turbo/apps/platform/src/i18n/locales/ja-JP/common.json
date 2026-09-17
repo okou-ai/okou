@@ -2104,7 +2104,10 @@
       "number": "番号"
     },
     "sidebar": {
+      "allArchived": "すべてのチャットがアーカイブされています",
+      "allCaughtUp": "すべて完了しました",
       "allChats": "すべてのチャット",
+      "archive": "チャットをアーカイブ",
       "chatsWith": "{{agentName}} とのチャット",
       "chatThreads": "チャットスレッド",
       "delete": "チャットを削除する",
@@ -2123,7 +2126,10 @@
       "pinned": "ピン留め済み",
       "rename": "チャットの名前を変更する",
       "renameDescription": "このチャット スレッドの新しい名前を入力します。",
+      "showArchived": "アーカイブ済みを表示",
+      "showArchivedChats": "アーカイブ済みのチャットを表示",
       "titlePlaceholder": "チャットのタイトル",
+      "unarchive": "アーカイブを解除",
       "unpin": "チャットの固定を解除する",
       "unread": "未読",
       "unreadOnly": "未読のみ"
@@ -2835,6 +2841,7 @@
       "ariaLabel": "チャットスレッド",
       "changeIcon": "アイコンの変更",
       "emoji": {
+        "archive": "アーカイブ",
         "done": "完了",
         "idea": "アイデア",
         "no": "いいえ",

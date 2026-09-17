@@ -69,6 +69,7 @@ export enum FeatureSwitchKey {
   AvatarFraming = "avatarFraming",
   ConnectorDirectory = "connectorDirectory",
   ChatThreadHeaderActions = "chatThreadHeaderActions",
+  ChatThreadArchiving = "chatThreadArchiving",
   ComposerTemplateChipCover = "composerTemplateChipCover",
   ComposerSlashTemplatePanel = "composerSlashTemplatePanel",
   GetStartedQuests = "getStartedQuests",

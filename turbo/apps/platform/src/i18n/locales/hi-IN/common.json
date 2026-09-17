@@ -2113,7 +2113,10 @@
       "number": "संख्या"
     },
     "sidebar": {
+      "allArchived": "आपकी सभी चैट आर्काइव हो गई हैं",
+      "allCaughtUp": "सब पूरा हो गया",
       "allChats": "सभी चैट",
+      "archive": "चैट आर्काइव करें",
       "chatsWith": "{{agentName}} के साथ चैट",
       "chatThreads": "चैट थ्रेड",
       "delete": "चैट हटाएं",
@@ -2132,7 +2135,10 @@
       "pinned": "पिन की गई",
       "rename": "चैट का नाम बदलें",
       "renameDescription": "इस चैट थ्रेड के लिए एक नया नाम दर्ज करें।",
+      "showArchived": "आर्काइव की गई चैट दिखाएं",
+      "showArchivedChats": "आर्काइव की गई चैट दिखाएं",
       "titlePlaceholder": "चैट शीर्षक",
+      "unarchive": "आर्काइव से निकालें",
       "unpin": "चैट अनपिन करें",
       "unread": "अपठित",
       "unreadOnly": "केवल अपठित"
@@ -2844,6 +2850,7 @@
       "ariaLabel": "चैट थ्रेड",
       "changeIcon": "आइकन बदलें",
       "emoji": {
+        "archive": "आर्काइव करें",
         "done": "हो गया",
         "idea": "विचार",
         "no": "नहीं",

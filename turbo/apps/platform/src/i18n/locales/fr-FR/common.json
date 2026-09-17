@@ -2160,7 +2160,10 @@
       "number": "numéro"
     },
     "sidebar": {
+      "allArchived": "Toutes vos discussions sont archivées",
+      "allCaughtUp": "Tout est à jour",
       "allChats": "Toutes les discussions",
+      "archive": "Archiver la discussion",
       "chatsWith": "Discussions avec {{agentName}}",
       "chatThreads": "Fils de discussion",
       "delete": "Supprimer la discussion",
@@ -2179,7 +2182,10 @@
       "pinned": "Épinglé",
       "rename": "Renommer la discussion",
       "renameDescription": "Entrez un nouveau nom pour ce fil de discussion.",
+      "showArchived": "Afficher les archives",
+      "showArchivedChats": "Afficher les discussions archivées",
       "titlePlaceholder": "Titre de la discussion",
+      "unarchive": "Désarchiver la discussion",
       "unpin": "Détacher la discussion",
       "unread": "Non lu",
       "unreadOnly": "Seulement non lu"
@@ -2891,6 +2897,7 @@
       "ariaLabel": "Fil de discussion",
       "changeIcon": "Changer l'icône",
       "emoji": {
+        "archive": "Archiver",
         "done": "Terminé",
         "idea": "Idée",
         "no": "Non",

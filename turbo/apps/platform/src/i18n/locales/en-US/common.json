@@ -2113,7 +2113,10 @@
       "number": "number"
     },
     "sidebar": {
+      "allArchived": "All your chats are archived",
+      "allCaughtUp": "All caught up",
       "allChats": "All chats",
+      "archive": "Archive chat",
       "chatsWith": "Chats with {{agentName}}",
       "chatThreads": "Chat threads",
       "delete": "Delete chat",
@@ -2132,7 +2135,10 @@
       "pinned": "Pinned",
       "rename": "Rename chat",
       "renameDescription": "Enter a new name for this chat thread.",
+      "showArchived": "Show archived",
+      "showArchivedChats": "Show archived chats",
       "titlePlaceholder": "Chat title",
+      "unarchive": "Unarchive chat",
       "unpin": "Unpin chat",
       "unread": "Unread",
       "unreadOnly": "Unread only"
@@ -2844,6 +2850,7 @@
       "ariaLabel": "Chat thread",
       "changeIcon": "Change icon",
       "emoji": {
+        "archive": "Archive",
         "done": "Done",
         "idea": "Idea",
         "no": "No",

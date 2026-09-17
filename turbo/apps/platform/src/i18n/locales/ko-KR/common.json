@@ -2104,7 +2104,10 @@
       "number": "번호"
     },
     "sidebar": {
+      "allArchived": "모든 채팅이 보관되었습니다",
+      "allCaughtUp": "모두 정리했어요",
       "allChats": "모든 채팅",
+      "archive": "채팅 보관",
       "chatsWith": "{{agentName}}와의 채팅",
       "chatThreads": "채팅 스레드",
       "delete": "채팅 삭제",
@@ -2123,7 +2126,10 @@
       "pinned": "고정됨",
       "rename": "채팅 이름 바꾸기",
       "renameDescription": "이 채팅 스레드의 새 이름을 입력하세요.",
+      "showArchived": "보관된 채팅 표시",
+      "showArchivedChats": "보관된 채팅 표시",
       "titlePlaceholder": "채팅 제목",
+      "unarchive": "보관 해제",
       "unpin": "채팅 고정 해제",
       "unread": "읽지 않음",
       "unreadOnly": "읽지 않은 항목만"
@@ -2835,6 +2841,7 @@
       "ariaLabel": "채팅 스레드",
       "changeIcon": "아이콘 변경",
       "emoji": {
+        "archive": "보관",
         "done": "완료",
         "idea": "아이디어",
         "no": "아니요",

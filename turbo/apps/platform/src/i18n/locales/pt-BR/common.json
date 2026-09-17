@@ -2160,7 +2160,10 @@
       "number": "número"
     },
     "sidebar": {
+      "allArchived": "Todas as suas conversas estão arquivadas",
+      "allCaughtUp": "Tudo em dia",
       "allChats": "Todas as conversas",
+      "archive": "Arquivar conversa",
       "chatsWith": "Conversas com {{agentName}}",
       "chatThreads": "Conversas",
       "delete": "Excluir",
@@ -2179,7 +2182,10 @@
       "pinned": "Fixada",
       "rename": "Renomear conversa",
       "renameDescription": "Escolha um novo nome para esta conversa.",
+      "showArchived": "Mostrar arquivadas",
+      "showArchivedChats": "Mostrar conversas arquivadas",
       "titlePlaceholder": "Título da conversa",
+      "unarchive": "Desarquivar conversa",
       "unpin": "Desafixar conversa",
       "unread": "Não lida",
       "unreadOnly": "Somente não lidas"
@@ -2891,6 +2897,7 @@
       "ariaLabel": "Conversa",
       "changeIcon": "Alterar ícone",
       "emoji": {
+        "archive": "Arquivar",
         "done": "Concluído",
         "idea": "Ideia",
         "no": "Não",
