@@ -3936,6 +3936,7 @@ function createChatThreadComposerSignals(
     threadId: options.chatEvents.threadId,
     voiceDraftTarget: `thread:${options.chatEvents.threadId}`,
     singleLineOnMobile: true,
+    forwardComposer: options.forward !== undefined,
     modelSelection$: composerModelSelection$,
     selectedModelOauthAvailable$: modelSelection.selectedModelOauthAvailable$,
     setModelSelection$: modelSelection.setModelSelection$,

@@ -6564,7 +6564,23 @@ function equalFeedbackSources(
 
 function userMessageFeedbackHeading(
   parts: readonly UserMessageFeedbackRenderPart[],
+  agentRunSourceTitle: string | undefined,
 ): string {
+  if (agentRunSourceTitle) {
+    return parts.length === 1
+      ? i18n.t(
+          ($) => {
+            return $.chat.feedback.forwardPartHeading;
+          },
+          { title: agentRunSourceTitle },
+        )
+      : i18n.t(
+          ($) => {
+            return $.chat.feedback.forwardPartsHeading;
+          },
+          { count: parts.length, title: agentRunSourceTitle },
+        );
+  }
   const source = parts[0]?.part.source;
   if (!source) {
     return parts.length === 1
@@ -6582,32 +6598,12 @@ function userMessageFeedbackHeading(
   }
   const description =
     source.status === "draft"
-      ? i18n.t(
-          ($) => {
-            return $.chat.feedback.emailDraftDescription;
-          },
-          {
-            id: source.id,
-          },
-        )
-      : i18n.t(
-          ($) => {
-            return $.chat.feedback.sentEmailDescription;
-          },
-          {
-            id: source.id,
-            sentIdSuffix: source.sentId
-              ? i18n.t(
-                  ($) => {
-                    return $.chat.feedback.sentIdSuffix;
-                  },
-                  {
-                    sentId: source.sentId,
-                  },
-                )
-              : "",
-          },
-        );
+      ? i18n.t(($) => {
+          return $.chat.feedback.emailDraftDescription;
+        })
+      : i18n.t(($) => {
+          return $.chat.feedback.sentEmailDescription;
+        });
   return parts.length === 1
     ? i18n.t(
         ($) => {
@@ -6628,14 +6624,16 @@ function userMessageFeedbackHeading(
 
 function UserMessageFeedbackGroup({
   parts,
+  agentRunSourceTitle,
 }: {
   parts: readonly UserMessageFeedbackRenderPart[];
+  agentRunSourceTitle: string | undefined;
 }) {
   const partOccurrences = new Map<string, number>();
   let firstPart = true;
   return (
     <div data-structured-feedback-group="" className="space-y-3">
-      <div>{userMessageFeedbackHeading(parts)}</div>
+      <div>{userMessageFeedbackHeading(parts, agentRunSourceTitle)}</div>
       {parts.map((renderPart) => {
         const identity = JSON.stringify(renderPart.part);
         const occurrence = (partOccurrences.get(identity) ?? 0) + 1;
@@ -6723,6 +6721,9 @@ function UserMessageView({
   elevatedFileIds: ReadonlySet<string>;
 }) {
   const partOccurrences = new Map<string, number>();
+  const agentRunSourceTitle = document.parts.find((renderPart) => {
+    return renderPart.type === "source" && renderPart.kind === "agent";
+  })?.part.titleSnapshot;
   const bodyParts = document.parts.filter(
     (renderPart): renderPart is UserMessageContentRenderPart => {
       return (
@@ -6759,6 +6760,7 @@ function UserMessageView({
         <UserMessageFeedbackGroup
           key={`feedback:${String(index)}`}
           parts={feedbackParts}
+          agentRunSourceTitle={agentRunSourceTitle}
         />,
       );
       index = nextIndex;

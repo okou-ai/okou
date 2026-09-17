@@ -292,6 +292,7 @@ function formatFeedbackParts(
   serializeTemplate: (
     part: Extract<FeedbackNotePart, { type: "template" }>,
   ) => string,
+  agentRunSourceTitle: string | undefined,
 ): string {
   const firstMailSource = parts[0]?.source;
   const commonMailSource =
@@ -314,9 +315,6 @@ function formatFeedbackParts(
       part,
       note: serializeFeedbackNote(part.note, serializeTemplate).trim(),
     };
-  });
-  const hasQuoteOnlyPart = entries.some((entry) => {
-    return entry.note.length === 0;
   });
   const mailSourceLabel = (
     source: NonNullable<
@@ -342,17 +340,19 @@ function formatFeedbackParts(
       ? `${source}${quoted}`
       : `${source}${quoted}\n\n${note}`;
   });
-  const intro = hasQuoteOnlyPart
-    ? `The user referenced ${parts.length} parts of your reply:`
+  const intro = agentRunSourceTitle
+    ? parts.length === 1
+      ? `The user forwarded this from the chat "${agentRunSourceTitle}":`
+      : `The user forwarded ${parts.length} parts from the chat "${agentRunSourceTitle}":`
     : commonMailSource
       ? parts.length === 1
-        ? `Feedback on this part of ${mailSourceLabel(commonMailSource)}:`
-        : `Feedback on ${parts.length} parts of ${mailSourceLabel(commonMailSource)}:`
+        ? `The user quoted this part of ${mailSourceLabel(commonMailSource)}:`
+        : `The user quoted ${parts.length} parts of ${mailSourceLabel(commonMailSource)}:`
       : hasSourceContext
-        ? `Feedback on ${parts.length} selected ${parts.length === 1 ? "passage" : "passages"}:`
+        ? `The user quoted ${parts.length} selected ${parts.length === 1 ? "passage" : "passages"}:`
         : parts.length === 1
-          ? "Feedback on this part of your reply:"
-          : `Feedback on ${parts.length} parts of your reply:`;
+          ? "The user quoted this part of your reply:"
+          : `The user quoted ${parts.length} parts of your reply:`;
   return `${intro}\n\n${blocks.join("\n\n---\n\n")}`;
 }
 
@@ -374,6 +374,7 @@ export function projectUserMessage(
   let primaryTemplate: GenerationTemplateRequest | undefined;
   const templates: GenerationTemplateRequest[] = [];
   let hasTextContent = false;
+  const agentRunSourceTitle = agentRunSourceAnnotation(document)?.titleSnapshot;
 
   const registerInlineTemplate = (part: {
     readonly titleSnapshot: string;
@@ -400,6 +401,7 @@ export function projectUserMessage(
     const formatted = formatFeedbackParts(
       feedbackParts,
       registerInlineTemplate,
+      agentRunSourceTitle,
     );
     promptBlocks.push(formatted);
     displayBlocks.push(formatted);
@@ -481,7 +483,10 @@ export function projectUserMessageForPublicShare(
     version: 1,
     parts: document.parts
       .filter((part) => {
-        return part.type !== "file";
+        return (
+          part.type !== "file" &&
+          !(part.type === "source" && part.kind === "agent")
+        );
       })
       .map((part): UserMessagePart => {
         if (part.type !== "feedback") {

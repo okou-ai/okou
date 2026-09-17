@@ -122,6 +122,7 @@ export function createComposerFeedbackModel(): ComposerFeedbackModel {
 // carry a comment, but the reference itself remains meaningful without one.
 export function formatFeedbackPrompt(
   items: readonly Pick<FeedbackItem, "quote" | "note" | "source">[],
+  agentRunSourceTitle?: string,
 ): string {
   const firstMailSource = items[0]?.source;
   const commonMailSource =
@@ -138,9 +139,6 @@ export function formatFeedbackPrompt(
       : null;
   const hasSourceContext = items.some((item) => {
     return item.source !== undefined;
-  });
-  const hasQuoteOnlyItem = items.some((item) => {
-    return item.note.trim().length === 0;
   });
   const mailSourceLabel = (source: FeedbackSource) => {
     return source.status === "draft"
@@ -163,16 +161,18 @@ export function formatFeedbackPrompt(
       ? `${source}${quoted}`
       : `${source}${quoted}\n\n${note}`;
   });
-  const intro = hasQuoteOnlyItem
-    ? `The user referenced ${items.length} parts of your reply:`
+  const intro = agentRunSourceTitle
+    ? items.length === 1
+      ? `The user forwarded this from the chat "${agentRunSourceTitle}":`
+      : `The user forwarded ${items.length} parts from the chat "${agentRunSourceTitle}":`
     : commonMailSource
       ? items.length === 1
-        ? `Feedback on this part of ${mailSourceLabel(commonMailSource)}:`
-        : `Feedback on ${items.length} parts of ${mailSourceLabel(commonMailSource)}:`
+        ? `The user quoted this part of ${mailSourceLabel(commonMailSource)}:`
+        : `The user quoted ${items.length} parts of ${mailSourceLabel(commonMailSource)}:`
       : hasSourceContext
-        ? `Feedback on ${items.length} selected ${items.length === 1 ? "passage" : "passages"}:`
+        ? `The user quoted ${items.length} selected ${items.length === 1 ? "passage" : "passages"}:`
         : items.length === 1
-          ? "Feedback on this part of your reply:"
-          : `Feedback on ${items.length} parts of your reply:`;
+          ? "The user quoted this part of your reply:"
+          : `The user quoted ${items.length} parts of your reply:`;
   return `${intro}\n\n${blocks.join("\n\n---\n\n")}`;
 }

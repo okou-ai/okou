@@ -301,12 +301,12 @@ test("Keep mail feedback in the chat that owns the email", async () => {
   }
   expect(
     within(owningComposer).getByRole("textbox", {
-      name: "What should change about this?",
+      name: "Ask or comment on this quote",
     }),
   ).toBeVisible();
   expect(
     within(independentComposer).queryByRole("textbox", {
-      name: "What should change about this?",
+      name: "Ask or comment on this quote",
     }),
   ).not.toBeInTheDocument();
 });

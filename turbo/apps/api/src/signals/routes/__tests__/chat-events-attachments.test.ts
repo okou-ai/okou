@@ -256,7 +256,7 @@ describe("CHAT-02: generation templates and attachments", () => {
     const referencedThreadId = randomUUID();
     const mailDraftId = randomUUID();
     const feedbackPrompt =
-      `Feedback on 2 parts of an email draft (mail draft ID: ${mailDraftId}):\n\n` +
+      `The user quoted 2 parts of an email draft (mail draft ID: ${mailDraftId}):\n\n` +
       "> First quote\n\nClarify this point\n\n---\n\n" +
       `> Second quote\n\nAdd supporting evidence from [Roadmap](/chats/${referencedThreadId})`;
     const prompt =
@@ -385,7 +385,7 @@ describe("CHAT-02: generation templates and attachments", () => {
       ],
     };
     const prompt =
-      "The user referenced 2 parts of your reply:\n\n" +
+      "The user quoted 2 parts of your reply:\n\n" +
       "> First quote\n\nClarify the owner\n\n---\n\n" +
       "> Second quote";
 
@@ -417,6 +417,64 @@ describe("CHAT-02: generation templates and attachments", () => {
     );
 
     await cancelChatRun(actor, sent.runId);
+  }, 90_000);
+
+  it("projects forwarded passages from the authoritative source title", async () => {
+    const { actor, agentId } = await entitledChatActor();
+    chatCallbacks.failIfChatCallbackRouteIsFetched();
+
+    const source = await sendChatRun(actor, {
+      agentId,
+      prompt: "source content selected for forwarding",
+    });
+    await chat.renameThread(actor, source.threadId, "Source launch plan");
+    const targetThread = await chat.createThread(actor, { agentId });
+    const userMessage: UserMessageInputDocument = {
+      version: 1,
+      parts: [
+        {
+          type: "feedback",
+          quote: "The deployment window is fifteen minutes.",
+          note: [],
+        },
+      ],
+    };
+    const expectedPrompt =
+      'The user forwarded this from the chat "Source launch plan":\n\n' +
+      "> The deployment window is fifteen minutes.";
+    const forwarded = await chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        threadId: targetThread.id,
+        prompt: "legacy fallback",
+        userMessage,
+        sourceRunId: source.runId,
+      },
+      [201],
+    );
+    if (forwarded.status !== 201 || !forwarded.body.runId) {
+      throw new Error("Expected the forwarded passage to launch a run");
+    }
+
+    const run = await api.readRun(actor, forwarded.body.runId);
+    expect(run.prompt).toBe(expectedPrompt);
+    const messages = await chat.listThreadEvents(actor, targetThread.id);
+    const forwardedMessage = userMessages(messages.events).find((message) => {
+      return message.runId === forwarded.body.runId;
+    });
+    expect(forwardedMessage?.userMessage?.parts).toContainEqual({
+      type: "source",
+      kind: "agent",
+      runId: source.runId,
+      threadId: source.threadId,
+      agentId,
+      titleSnapshot: "Source launch plan",
+      href: `/chats/${source.threadId}#run-${source.runId}`,
+    });
+
+    await cancelChatRun(actor, forwarded.body.runId);
+    await cancelChatRun(actor, source.runId);
   }, 90_000);
 
   it("projects multiple inline templates into one ordered prompt and one shared context", async () => {
@@ -2121,7 +2179,7 @@ describe("CHAT-02: queued attachments on auto-send", () => {
     const queuedId = randomUUID();
     const queuedPrompt =
       "queued structured text\n\n" +
-      "Feedback on this part of your reply:\n\n" +
+      "The user quoted this part of your reply:\n\n" +
       "> Queued quote\n\nRevise after the anchor completes";
     const userMessage: UserMessageInputDocument = {
       version: 1,

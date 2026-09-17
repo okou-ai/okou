@@ -4994,7 +4994,7 @@ describe("CHAT-02: auto-send after failures", () => {
     };
     const templatePrompt = `[Template #1: ${style.title} (illustration)]`;
     const feedbackPrompt =
-      "Feedback on this part of your reply:\n\n" +
+      "The user quoted this part of your reply:\n\n" +
       "> The failed response omitted the owner\n\nName the responsible owner";
 
     const failedForNormal = await startChatRun(actor, {

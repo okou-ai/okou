@@ -176,6 +176,12 @@ function composerPlaceholder(): string {
   });
 }
 
+function feedbackPlaceholder(): string {
+  return i18n.t(($) => {
+    return $.chat.feedback.placeholder;
+  });
+}
+
 interface WorkflowHighlightStorage {
   workflowNames: readonly string[];
 }
@@ -600,7 +606,7 @@ function createFeedbackQuoteChip(): FeedbackQuoteChip {
  */
 function createFeedbackItemNodeView(
   node: ProseMirrorNode,
-  localizedUi: Set<() => void>,
+  runtime: WorkflowComposerRuntime,
 ): NodeView {
   const dom = document.createElement("div");
   dom.dataset.feedbackItem = "";
@@ -610,12 +616,7 @@ function createFeedbackItemNodeView(
 
   let currentNode = node;
   function localize(): void {
-    dom.setAttribute(
-      "aria-label",
-      i18n.t(($) => {
-        return $.chat.feedback.placeholder;
-      }),
-    );
+    dom.setAttribute("aria-label", runtime.feedbackPlaceholder());
   }
   function render(nextNode: ProseMirrorNode): void {
     const { showDivider, fill } = feedbackItemNodeAttributes(nextNode);
@@ -632,7 +633,7 @@ function createFeedbackItemNodeView(
       dom.className = className;
     }
   }
-  localizedUi.add(localize);
+  runtime.localizedUi.add(localize);
   localize();
   render(currentNode);
 
@@ -648,7 +649,7 @@ function createFeedbackItemNodeView(
       return true;
     },
     destroy() {
-      localizedUi.delete(localize);
+      runtime.localizedUi.delete(localize);
     },
   };
 }
@@ -721,9 +722,7 @@ function buildFeedbackChromeDecorations(
           childPosition + 1 + child.child(0).nodeSize,
           {
             class: FEEDBACK_PLACEHOLDER_PARAGRAPH_CLASS,
-            "data-placeholder": i18n.t(($) => {
-              return $.chat.feedback.placeholder;
-            }),
+            "data-placeholder": runtime.feedbackPlaceholder(),
           },
         ),
       );
@@ -1576,6 +1575,7 @@ interface WorkflowComposerRuntime {
   replaceFeedbackItems(items: readonly FeedbackItem[]): void;
   removeFeedback(id: number): void;
   localizedUi: Set<() => void>;
+  feedbackPlaceholder: () => string;
   /** Read on every chip render so Lab updates apply without remounting. */
   templateChipCover: () => boolean;
 }
@@ -1716,7 +1716,7 @@ function createFeedbackItemNode(
     },
     addNodeView() {
       return ({ node }) => {
-        return createFeedbackItemNodeView(node, runtime.localizedUi);
+        return createFeedbackItemNodeView(node, runtime);
       };
     },
     addProseMirrorPlugins() {
@@ -2018,6 +2018,7 @@ interface MountEditorOptions {
 
 interface WorkflowComposerOptions {
   readonly autoFocus?: boolean;
+  readonly feedbackPlaceholder?: () => string;
 }
 
 function focusMountedEditorAtEnd(editor: Editor): void {
@@ -2668,7 +2669,9 @@ function createInsertUserMessageCommand(editor: Editor) {
   });
 }
 
-function createWorkflowComposerRuntime(): WorkflowComposerRuntime {
+function createWorkflowComposerRuntime(
+  resolveFeedbackPlaceholder: () => string,
+): WorkflowComposerRuntime {
   return {
     update(_editor: Editor): void {},
     selectionUpdate(_editor: Editor): void {},
@@ -2679,6 +2682,7 @@ function createWorkflowComposerRuntime(): WorkflowComposerRuntime {
     replaceFeedbackItems(_items: readonly FeedbackItem[]): void {},
     removeFeedback(_id: number): void {},
     localizedUi: new Set(),
+    feedbackPlaceholder: resolveFeedbackPlaceholder,
     templateChipCover: () => {
       return false;
     },
@@ -2796,7 +2800,9 @@ export function createWorkflowComposerSignals<
   // A pointer preview is independent of keyboard selection. Null means the
   // preview follows the keyboard again, including when the menu reopens.
   const previewSuggestionIndexState$ = state<number | null>(null);
-  const runtime = createWorkflowComposerRuntime();
+  const runtime = createWorkflowComposerRuntime(
+    options.feedbackPlaceholder ?? feedbackPlaceholder,
+  );
   const agentMentionAvatarRuntime = createAgentMentionAvatarRuntime();
   const templatePreview = createTemplatePreviewRuntime();
   const compositionGate = createCompositionGate();

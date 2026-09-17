@@ -241,10 +241,38 @@ test("Email feedback keeps its source status", () => {
 
   expect(saveRestoredMessage(document)).toStrictEqual(document);
   expect(messageDocumentToPrompt(document)).toBe(
-    "Feedback on this part of a sent email (mail ID: draft-mail-931, sent ID: sent-mail-931):\n\n" +
+    "The user quoted this part of a sent email (mail ID: draft-mail-931, sent ID: sent-mail-931):\n\n" +
       "> The launch date is Thursday.\n\n" +
       "Rewrite this for the customer.",
   );
+});
+
+test("Forwarded feedback uses the document-level source title", () => {
+  const document: UserMessageDocument = {
+    version: 1,
+    parts: [
+      {
+        type: "feedback",
+        quote: "The deployment window is fifteen minutes.",
+        note: [],
+      },
+      {
+        type: "source",
+        kind: "agent",
+        runId: "d0000000-0000-4000-a000-000000000931",
+        threadId: CHAT_THREAD_ID,
+        agentId: AGENT_ID,
+        titleSnapshot: "Source launch plan",
+        href: `/chats/${CHAT_THREAD_ID}#run-d0000000-0000-4000-a000-000000000931`,
+      },
+    ],
+  };
+  const expected =
+    'The user forwarded this from the chat "Source launch plan":\n\n' +
+    "> The deployment window is fifteen minutes.";
+
+  expect(messageDocumentToPrompt(document)).toBe(expected);
+  expect(messageDocumentToDisplayText(document)).toBe(expected);
 });
 
 test("A file-only message keeps its attachment without invented text", () => {
@@ -492,7 +520,24 @@ test("Paragraphs, line breaks, and intentional spaces are preserved", () => {
   expect(saveRestoredMessage(saved)).toStrictEqual(saved);
 });
 
-test("Quoted passages can be sent without a note", () => {
+test("A single quoted passage without a note stays singular", () => {
+  const document: UserMessageDocument = {
+    version: 1,
+    parts: [
+      {
+        type: "feedback",
+        quote: "Reference only",
+        note: [],
+      },
+    ],
+  };
+
+  expect(messageDocumentToPrompt(document)).toBe(
+    "The user quoted this part of your reply:\n\n> Reference only",
+  );
+});
+
+test("Multiple quoted passages can mix notes and references", () => {
   const document: UserMessageDocument = {
     version: 1,
     parts: [
@@ -513,7 +558,7 @@ test("Quoted passages can be sent without a note", () => {
 
   expect(saveRestoredMessage(document)).toStrictEqual(document);
   expect(messageDocumentToPrompt(document)).toBe(
-    "The user referenced 2 parts of your reply:\n\n" +
+    "The user quoted 2 parts of your reply:\n\n" +
       "> First referenced passage\n\n" +
       "Keep the evidence concise.\n\n" +
       "---\n\n" +

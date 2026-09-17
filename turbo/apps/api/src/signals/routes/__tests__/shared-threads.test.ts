@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { UserMessageInputDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
 import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
@@ -292,6 +293,102 @@ describe("optional shared-thread titles", () => {
     await flushWaitUntilForTest();
     await expectSharedSnapshot(fixture, created.body.id, "Shared conversation");
     expect(requests).toStrictEqual([]);
+  });
+
+  it("removes forwarded chat provenance from the public snapshot", async () => {
+    const actor = bdd.user();
+    bdd.acceptAgentStorageWrites();
+    runs.acceptStorageDownloads();
+    runs.acceptTelemetryIngest();
+    runs.configureRunnerGroup();
+    await runs.grantProEntitlement(actor);
+    await runs.ensureOrgModelProvider(actor);
+    const agent = await bdd.createAgent(actor, {
+      displayName: "Forwarded share test",
+    });
+    const source = await accept(
+      chat.requestSendEvent(
+        actor,
+        {
+          agentId: agent.agentId,
+          prompt: "Source message",
+        },
+        [201],
+      ),
+      [201],
+    );
+    if (!source.body.runId) {
+      throw new Error("Expected a source run");
+    }
+    const sourceTitle = "Private source thread title";
+    await chat.renameThread(actor, source.body.threadId, sourceTitle);
+    const targetThread = await chat.createThread(actor, {
+      agentId: agent.agentId,
+    });
+    const quote = "The deployment window is fifteen minutes.";
+    const userMessage: UserMessageInputDocument = {
+      version: 1,
+      parts: [{ type: "feedback", quote, note: [] }],
+    };
+    const forwarded = await accept(
+      chat.requestSendEvent(
+        actor,
+        {
+          agentId: agent.agentId,
+          threadId: targetThread.id,
+          prompt: "legacy fallback",
+          userMessage,
+          sourceRunId: source.body.runId,
+        },
+        [201],
+      ),
+      [201],
+    );
+    if (!forwarded.body.runId) {
+      throw new Error("Expected a forwarded run");
+    }
+    await flushWaitUntilForTest();
+    const { events } = await chat.listThreadEvents(actor, targetThread.id);
+    const eventId = events.find((event) => {
+      return (
+        event.eventType === "input.prompt" &&
+        event.runId === forwarded.body.runId
+      );
+    })?.id;
+    if (!eventId) {
+      throw new Error("Expected the forwarded input event");
+    }
+
+    const created = await accept(
+      client().create({
+        params: { threadId: targetThread.id },
+        headers: authenticate(actor),
+        body: { eventIds: [eventId] },
+      }),
+      [201],
+    );
+    await flushWaitUntilForTest();
+    const shared = await accept(
+      client().get({ params: { id: created.body.id } }),
+      [200],
+    );
+    expect(shared.body.messages).toStrictEqual([
+      {
+        messageIndex: 0,
+        role: "user",
+        content: `The user quoted this part of your reply:\n\n> ${quote}`,
+        runIndex: 0,
+      },
+    ]);
+    const publicData = JSON.stringify(shared.body);
+    for (const privateValue of [
+      sourceTitle,
+      source.body.runId,
+      source.body.threadId,
+      agent.agentId,
+    ]) {
+      expect(publicData).not.toContain(privateValue);
+    }
   });
 
   it.each(["ingest", "flush", "phase-abort"] as const)(

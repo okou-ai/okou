@@ -71,6 +71,9 @@ async function openForwardComposer(name: string) {
   click(await findEnabledButton("Forward"));
   const dialog = await screen.findByRole("dialog");
   click(await within(dialog).findByRole("option", { name }));
+  await expect(
+    within(dialog).findByRole("textbox", { name: "Add a message" }),
+  ).resolves.toBeVisible();
   return dialog;
 }
 

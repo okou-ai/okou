@@ -135,7 +135,7 @@ test("Submit inline feedback once after IME composition finishes", async () => {
 
   fireEvent.compositionEnd(editor, { data: "確認済み" });
   editor = screen.getByRole("textbox", {
-    name: "What should change about this?",
+    name: "Ask or comment on this quote",
   });
   const completedComment = "承認内容を確認済みです";
   const user = userEvent.setup({ delay: null });
