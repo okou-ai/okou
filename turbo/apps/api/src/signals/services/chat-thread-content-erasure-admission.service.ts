@@ -224,6 +224,20 @@ async function lockChatThreadContentIdentity(
  * caller must revalidate the identity it captured here under
  * {@link withChatThreadContentWrite} before writing anything. Closure observed
  * here is a reason to stop early, never a licence to write later.
+ *
+ * Within the gate the identity is still revalidated. Admission and the caller's
+ * read are both awaits, and under `READ COMMITTED` without a lock a transfer can
+ * commit during either one, so the same content-free identity is read again
+ * after the read and compared field by field. Without that, the gate could admit
+ * one account's subjects and then hand the caller content belonging to another:
+ * the writer's own pin check rejects the later write, but it cannot recall
+ * content the caller has already sent somewhere else. A moved identity raises
+ * {@link ChatThreadContentOwnershipChangedError} rather than returning a value.
+ *
+ * This narrows the window to the gate's own transaction; it does not close it.
+ * Ownership can still move between this `COMMIT` and whatever the caller does
+ * next, which is why the writer revalidates under retained locks, and it is not
+ * a fence around anything the caller sends outside the database.
  */
 export async function withChatThreadContentAdmission<T>(
   db: Db,
@@ -249,7 +263,19 @@ export async function withChatThreadContentAdmission<T>(
         return { outcome: "closed" };
       }
       signal.throwIfAborted();
-      return { outcome: "written", value: await read(tx, selected) };
+      const value = await read(tx, selected);
+      const current = await loadChatThreadContentIdentity(
+        tx,
+        args.chatThreadId,
+      );
+      if (!current) {
+        return { outcome: "missing" };
+      }
+      if (!sameChatThreadContentIdentity(current, selected)) {
+        throw new ChatThreadContentOwnershipChangedError();
+      }
+      signal.throwIfAborted();
+      return { outcome: "written", value };
     },
     { isolationLevel: "read committed" },
   );

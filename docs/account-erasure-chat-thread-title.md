@@ -75,7 +75,9 @@ helper:
    real persisted parents, and the Agent must resolve.
 4. Sorted shared `assertErasureSubjectWritable` over the distinct subjects.
 5. Title eligibility (`title IS NULL AND renamed_at IS NULL`) and the bounded
-   prior-round context read, then `COMMIT`.
+   prior-round context read.
+6. The same content-free identity read again and compared field by field, then
+   `COMMIT`.
 
 A subject already known closed therefore never begins another title generation,
 and the identity is fixed before any account content is read. The transaction
@@ -90,12 +92,22 @@ that scheduled it and delay every eager title behind a bounded lock wait — lon
 enough for the next scheduler on that thread to still observe it untitled and
 start a second, wasted provider call.
 
-The consequence is stated rather than glossed: taking no lock means this gate
-carries **no authority**, and the pin it returns is a candidate, not a
-permission. A canonical parent can move the instant it commits, and the bounded
-context read can cross that move. Nothing is written on its word. Every
-guarantee is re-established at completion, where the whole pin is compared again
-under retained locks before any row changes.
+Taking no lock has a consequence that step 6 exists to bound. Admission and the
+context read are both awaits, and under `READ COMMITTED` without a lock an owner
+or organization transfer can commit during either one. The gate would then have
+admitted one account's subjects and be holding another account's prior rounds —
+and the completion's pin check, correct as it is, comes too late: it refuses the
+database write, but it cannot recall context the workflow has already put into a
+provider request. So the identity is read again after the context read and
+compared to the one that was admitted; a mismatch discards the operation before
+anything is generated.
+
+That narrows the window to the gate's own transaction. It does not close it.
+Ownership can still move between this `COMMIT` and the provider request, so the
+pin this gate returns remains a **candidate, not a permission**: nothing is
+written on its word, and every database guarantee is re-established at
+completion, where the whole pin is compared again under retained locks before
+any row changes. It is also not a fence around egress — see below.
 
 This is a local initiation boundary only. It is not external-provider fencing
 and it proves nothing about provider-side deletion.
@@ -136,9 +148,19 @@ not a cancellation channel this workflow claims to support. It does not fence
 the provider request, whose existing optional-generation semantics, telemetry
 and failure classification are unchanged.
 
-Because the inner per-statement budgets are an order of magnitude smaller, the
-outer deadline is not the barrier a test observes; the bounded budget the fenced
-transaction actually runs under is asserted directly instead.
+These are three different mechanisms and the tests check them separately:
+
+| Mechanism                   | What it bounds                                      | How it is verified                                                                                       |
+| --------------------------- | --------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `lock_timeout` `1s`         | How long one statement waits for a conflicting lock | Observed on the paused transaction, then a held parent row lock makes the writer block and give up on it |
+| `statement_timeout` `5s`    | How long one statement may run                      | Observed on the paused transaction                                                                       |
+| `AbortSignal.timeout` `30s` | How long the retry loop may keep starting attempts  | Not exercised: the inner budgets are an order of magnitude smaller, so they always fire first            |
+
+The signal is checked between attempts and around the transaction, so it stops
+the workflow from beginning further work. It does **not** cancel a statement
+PostgreSQL is already executing — only `statement_timeout` and `lock_timeout` do
+that, server side. Nothing here claims the background workflow is cancellable by
+a caller.
 
 ## Failure contract
 
@@ -170,43 +192,77 @@ and G2 obligations. The prompt truncation, the at most ten visible prior rounds
 and the existing auxiliary telemetry are unchanged: no prompt, title or owner
 copy was added, and no new retention exception was created.
 
-## Verification gap
+## Verified behavior
 
-The automated suite drives the production send route against real PostgreSQL
-with the provider response deferred, and covers closure of each of the three
-subjects, the initiation gate, same-organization Agent owner transfer,
-organization transfer, thread deletion, manual-rename precedence, two racing
-completions and a blocked parent lock.
+`chat-thread-title-erasure.test.ts` drives the production send route against
+real PostgreSQL with the title provider response held open, and reuses the
+accepted closure, owner-transfer, row-lock and transaction-barrier fixtures.
+**Fourteen cases**, all passing locally:
 
-Two scenarios are **not** covered by it, stated here rather than implied:
+| Case                                                                                       | What it establishes                                                                                                                                                                                 |
+| ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Closure of the thread user, of a distinct Agent owner, of the Agent organization (3 cases) | Each subject independently discards the late title: no title, no `renamed` event, no consumed sequence, and the provider request counted exactly once                                               |
+| A distinct Agent owner that stays open                                                     | Control for the case above: same shape, unrelated subject closed, and the title **is** written                                                                                                      |
+| Closure committed before admission                                                         | The gate refuses to start generation: **zero** provider requests for that thread                                                                                                                    |
+| Owner moves while the gate reads context                                                   | The gate's fresh pin check discards before generation: **zero** provider requests                                                                                                                   |
+| Writer-first commit ordering                                                               | The admitted completion commits one coherent title, event and sequence; the closure is a real blocked PostgreSQL waiter behind it; an unrelated owner writes through; the next write is then fenced |
+| Owner moves between identity selection and the retained locks                              | Discarded, not rebound to the survivor                                                                                                                                                              |
+| Blocked parent row lock                                                                    | The writer blocks, then gives up on its own `1s` budget; nothing written, nothing consumed, and the next accepted rename still takes the very next sequence id                                      |
+| Same-organization Agent owner transfer                                                     | `agents.owner` alone moving is caught                                                                                                                                                               |
+| Agent organization transfer                                                                | Caught                                                                                                                                                                                              |
+| Thread deleted during the provider request                                                 | Nothing recreated                                                                                                                                                                                   |
+| Manual rename during the provider request                                                  | The manual title wins                                                                                                                                                                               |
+| A further send once the thread is titled                                                   | Eligibility refuses it: the provider request count stays at **one** and exactly one `renamed` event exists                                                                                          |
 
-- **Writer-first commit order.** That an admitted completion commits one
-  coherent title, event and sequence while a closure projected behind its
-  retained barrier waits, instead of racing it.
-- **An ownership change landing between identity selection and the retained
-  locks**, as opposed to during the provider request, which is covered.
-- **The initiation gate refusing to start generation for a subject that closes
-  before admission.** It commits the closure inside the paused capture
-  transaction and passes locally, but the barrier does not reliably select that
-  transaction on CI runners, where another reader of the same thread can be
-  paused instead.
-- **A blocked parent lock failing the late transaction on its own `1s` budget**,
-  proving a real database failure rolls back completely instead of being
-  reported as a closure. This case passes locally against real PostgreSQL but
-  times out repeatedly on CI runners, so it is removed rather than left to flake
-  or handed a larger budget.
+Two details worth stating exactly, because both were previously asserted loosely:
 
-Both need a transaction paused mid-flight inside background `waitUntil` work.
-The existing barrier fixture suspends a transaction driven by a synchronous HTTP
-request; combining it with the global background drain did not produce a
-deterministic case here, and a flaky case protects nothing. The barrier is used
-where it is deterministic — the initiation gate commits its closure inside the
-paused capture transaction. Neither gap was papered over with a retry, a relaxed
-assertion or an extended budget.
+- Provider entry is **counted**, per owner prompt, not inferred from the number
+  of sends. A case that claims generation did not start asserts zero; a case
+  that claims it ran and was refused only at persistence asserts one.
+- The distinct-Agent-owner closure case is attributable. The Agent owner is
+  moved **before** the thread exists, so the pin already names that owner and
+  the identity never changes; a pin mismatch therefore cannot discard the title
+  on its own. Removing the Agent owner from the admitted subject set was run as
+  a mutation probe: that case fails and its open-owner control still passes.
 
-The underlying ordering is not unverified in the repository: both properties
-belong to `withChatThreadContentWrite`, which this slice reuses unchanged, and
-the accepted R3 suite exercises them there against the same helper.
+A genuine pair of concurrent in-flight generations is **not** reachable from the
+send route: a second send while the first run is active becomes a queued
+message, which schedules no second generation. The coupled single-event property
+is therefore established through the eligibility CAS with a counted provider
+attempt, not by claiming two attempts raced.
+
+## Measured cost
+
+Local development PostgreSQL, real HTTP boundary, same harness for both builds:
+20 sequential sends on 20 threads, each drained to its persisted title, three
+samples each. Baseline is this branch with `chat-title.service.ts` and the
+admission helper reverted to `main`. These are bounded local samples, not
+production throughput.
+
+| Build     | Samples (ms)       |  Median | Per send |
+| --------- | ------------------ | ------: | -------: |
+| Baseline  | 2127 / 2099 / 2150 | 2127 ms |  ~106 ms |
+| Candidate | 2093 / 2162 / 2173 | 2162 ms |  ~108 ms |
+
+The medians differ by 35 ms across 20 sends, about 1.8 ms per send, and the two
+ranges overlap. The honest reading is that these samples **bound** the added
+cost at roughly a couple of milliseconds per send rather than resolving it: the
+fence adds two bounded transactions whose statements are all single-row primary
+key work, and that is below this harness's own run-to-run spread.
+
+Every statement the fence adds is a primary-key scan. The gate's identity read
+and its revalidating re-read share one plan:
+
+```
+Limit  (actual time=0.013..0.013 rows=0 loops=1)
+  ->  Nested Loop Left Join  (actual time=0.011..0.012 rows=0 loops=1)
+        ->  Index Scan using chat_threads_pkey on chat_threads
+        ->  Index Scan using agents_pkey on agents
+  Buffers: shared hit=1
+```
+
+The writer's `FOR KEY SHARE` locks keep the plans the accepted R3 measurement
+recorded for the same two statements.
 
 ## Residual work
 
