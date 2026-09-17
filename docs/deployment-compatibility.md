@@ -2090,3 +2090,32 @@ only that no result of such a request is accepted, persisted or returned after
 the revoking transaction commits. See
 [the collection contract](morning-brief-collection.md) for the source contract,
 lease semantics, finite budgets and declared coverage limits.
+
+## Marketing browser funnel events
+
+The App posts onboarding entry to `/api/marketing/onboarding-start` and actual
+Stripe redirect actions to `/api/marketing/checkout-start` on the Marketing
+origin. Deploy the Marketing receiver before this App. Marketing must retain
+`/api/marketing/finish-onboarding` as an alias of the same onboarding handler
+while previously loaded App clients remain supported; remove it only in a later
+cleanup with an explicit supported-client boundary. Rolling back the App remains
+compatible with that receiver.
+
+Onboarding remains bodyless and preserves the existing
+`marketing_onboarding_attempts` user/org attempt marker. Changing the URL does
+not replay past attempts, including failed attempts. Checkout sends only a fresh
+UUID, its UTC occurrence time and the bounded source `onboarding_video` or
+`paywall`; Marketing derives identity from the bearer token and attribution from
+its own consented cookies. Both requests include credentials, run under the App
+root with a ten-second deadline and never delay navigation for their response.
+There is no periodic check or browser retry.
+
+The new receiver records Google Ads funnel shadows only. Marketing deduplicates
+onboarding by user/org and checkout by user/org/event UUID. These counts differ
+intentionally from the legacy gtag browser-session/account deduplication: another
+checkout action produces another event. A shadow acknowledgement is neither
+proof of eligible consent nor a Google Ads delivery receipt. Existing App gtag
+and PostHog reporting remain active; this change adds no GA4/PostHog sender,
+provider cutover, historical replay, App table or MaskDB scan. Checkout coverage
+matches the existing `RedirectToStripe` producers, excluding previews and other
+payment paths without that producer.
