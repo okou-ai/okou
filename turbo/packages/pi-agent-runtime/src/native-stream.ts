@@ -5,7 +5,7 @@ import { streamSimple as streamMessages } from "@earendil-works/pi-ai/api/anthro
 import { streamSimple as streamBedrock } from "@earendil-works/pi-ai/api/bedrock-converse-stream";
 import { resolveHttpProxyUrlForTarget } from "@earendil-works/pi-ai/utils/node-http-proxy";
 import type { Api, Context, Model } from "@earendil-works/pi-ai";
-import { NodeHttpHandler } from "@smithy/node-http-handler";
+import { observePiUsageFetch, PiUsageHttpHandler } from "./usage-transport";
 import { HttpProxyAgent } from "http-proxy-agent";
 import { HttpsProxyAgent } from "https-proxy-agent";
 
@@ -70,7 +70,11 @@ export function streamPiNative(
     ...options,
     maxRetries: 0,
     fetch: observePiResponseStatus(
-      options.fetch ?? nativePublicFetch,
+      observePiUsageFetch(
+        options.fetch ?? nativePublicFetch,
+        "messages",
+        options.usageObserver,
+      ),
       options.onObservedResponseStatus,
     ),
     // Neither ambient cache policy nor provider authentication is inherited.
@@ -126,7 +130,7 @@ export function streamPiNative(
   const auth = config.bedrockAuth;
   for (const value of Object.values(auth)) assertPiNativeCredential(value);
   const proxy = resolveHttpProxyUrlForTarget(model.baseUrl);
-  const requestHandler = new NodeHttpHandler(
+  const requestHandler = new PiUsageHttpHandler(
     proxy
       ? {
           httpAgent: new HttpProxyAgent(proxy),
@@ -136,6 +140,7 @@ export function streamPiNative(
           httpAgent: new HttpAgent({ lookup: nativePublicLookup }),
           httpsAgent: new HttpsAgent({ lookup: nativePublicLookup }),
         },
+    options.usageObserver,
   );
   return streamBedrock(
     { ...model, id: config.catalogModel, name: config.catalogModel },

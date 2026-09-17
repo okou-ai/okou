@@ -147,6 +147,7 @@ import { browserAuthorizationRoutes } from "./routes/browser-authorization";
 import { workflowsRoutes } from "./routes/workflows";
 import { officialWorkflowRoutes } from "./routes/official-workflows";
 import { emailSubscriptionRoutes } from "./routes/email-subscription";
+import { morningBriefCollectionPreviewRoutes } from "./routes/morning-brief-collection-preview";
 import { morningBriefPreferenceRoutes } from "./routes/morning-brief-preference";
 import { workflowAutomationsRoutes } from "./routes/workflow-automations";
 import { integrationsGithubRoutes } from "./routes/integrations-github";
@@ -368,6 +369,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...userPreferencesRoutes,
   ...userModelPreferenceRoutes,
   ...morningBriefPreferenceRoutes,
+  ...morningBriefCollectionPreviewRoutes,
   ...emailSubscriptionRoutes,
   ...workflowsRoutes,
   ...officialWorkflowRoutes,

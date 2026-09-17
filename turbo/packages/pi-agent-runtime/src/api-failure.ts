@@ -1,6 +1,7 @@
 import { classifyProviderFailure } from "@okouai/api-contracts/contracts/provider-failure";
 import type { KnownRunFailureReason } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import type { PiModelTransportFailure } from "./model-transport-diagnostics";
+import type { PiApiUsageObservation } from "./api-types";
 
 /** Content-free evidence; never infer an HTTP status from provider prose. */
 export interface PiApiModelFailureDiagnostic {
@@ -46,10 +47,17 @@ export function projectPiApiModelFailure(
 export class PiApiModelRequestError extends Error {
   readonly diagnostic: PiApiModelFailureDiagnostic;
   readonly failureReason: KnownRunFailureReason | undefined;
+  readonly usageObservation: PiApiUsageObservation | undefined;
 
-  constructor(error: unknown, provider: string, responseStatus?: number) {
+  constructor(
+    error: unknown,
+    provider: string,
+    responseStatus?: number,
+    usageObservation?: PiApiUsageObservation,
+  ) {
     super("Pi API model request failed");
     this.name = "PiApiModelRequestError";
+    this.usageObservation = usageObservation;
     this.diagnostic = projectPiApiModelFailure(error, responseStatus);
     const reason = classifyPiApiProviderFailure(error, responseStatus);
     this.failureReason =

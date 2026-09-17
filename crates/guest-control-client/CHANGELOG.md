@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.21.0](https://github.com/vm0-ai/okou/compare/guest-control-client-v0.20.21...guest-control-client-v0.21.0) (2026-09-17)
+
+
+### Features
+
+* **runner:** expose history transfer measurements ([#34805](https://github.com/vm0-ai/okou/issues/34805)) ([445a170](https://github.com/vm0-ai/okou/commit/445a170a81a2fac9b1d42f361866c2ea70cfb7e7))
+
+
+### Bug Fixes
+
+* **runner:** downgrade successful slow storage downloads ([#34799](https://github.com/vm0-ai/okou/issues/34799)) ([79e19b6](https://github.com/vm0-ai/okou/commit/79e19b689fbba9e18f8074bb4dd194dc4a99e832))
+
 ## [0.20.21](https://github.com/vm0-ai/okou/compare/guest-control-client-v0.20.20...guest-control-client-v0.20.21) (2026-09-17)
 
 ## [0.20.20](https://github.com/vm0-ai/okou/compare/guest-control-client-v0.20.19...guest-control-client-v0.20.20) (2026-09-16)

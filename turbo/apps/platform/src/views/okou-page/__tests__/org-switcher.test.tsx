@@ -147,7 +147,24 @@ test("Join an invited workspace from the workspace switcher", async () => {
   });
 });
 
-test("Create a workspace from the workspace switcher", async () => {
+test("Creating a workspace opens onboarding after refreshing its session", async () => {
+  const clerk = context.mocks.clerk();
+  const tokenRequested = context.mocks.deferred<void>();
+  const freshToken = context.mocks.deferred<string>();
+  mockedClerk.setActive.mockImplementation(() => {
+    clerk.organization({
+      activeOrg: { id: "new-org-id", name: "New workspace" },
+    });
+    clerk.stateChanged();
+    return Promise.resolve();
+  });
+  mockedClerk.sessionGetToken.mockImplementation((options) => {
+    if (options?.skipCache && mockedClerk.organization?.id === "new-org-id") {
+      tokenRequested.resolve();
+      return freshToken.promise;
+    }
+    return Promise.resolve("current-workspace-token");
+  });
   context.mocks.api(orgContract.createdCount, ({ respond }) => {
     return respond(200, { createdOrganizationsCount: 0 });
   });
@@ -160,7 +177,7 @@ test("Create a workspace from the workspace switcher", async () => {
 
   await setupPage({
     context,
-    path: "/",
+    path: "/agents",
     auth: {
       user: {
         id: "test-user-123",
@@ -200,14 +217,19 @@ test("Create a workspace from the workspace switcher", async () => {
 
   click(screen.getByText("Create workspace"));
 
+  await tokenRequested.promise;
+  expect(location.pathname).toBe("/agents");
+  freshToken.resolve("new-workspace-token");
+
   await waitFor(() => {
-    expect(mockedClerk.createOrganization).toHaveBeenCalledWith({
-      name: expect.stringMatching(/^workspace-/u),
-      slug: expect.stringMatching(/^workspace-/u),
-    });
-    expect(mockedClerk.setActive).toHaveBeenCalledWith({
-      organization: "new-org-id",
-    });
+    expect(location.pathname).toBe("/onboarding");
+  });
+  expect(mockedClerk.createOrganization).toHaveBeenCalledWith({
+    name: expect.stringMatching(/^workspace-/u),
+    slug: expect.stringMatching(/^workspace-/u),
+  });
+  expect(mockedClerk.setActive).toHaveBeenCalledWith({
+    organization: "new-org-id",
   });
 });
 

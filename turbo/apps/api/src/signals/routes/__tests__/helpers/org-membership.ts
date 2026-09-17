@@ -8,6 +8,11 @@ interface SeedOrgMembershipValues {
   readonly slug?: string;
   readonly name?: string;
   readonly role?: "admin" | "member";
+  /**
+   * The immutable Clerk membership id. Reseeding the same pair with a new id
+   * is how a test expresses a member leaving and rejoining.
+   */
+  readonly membershipId?: string;
 }
 
 export interface OrgMembershipFixture {
@@ -21,6 +26,7 @@ interface MockMembership {
   readonly slug: string;
   readonly name: string;
   readonly role: "admin" | "member";
+  readonly membershipId: string;
 }
 
 const orgMemberships$ = state<readonly MockMembership[]>([]);
@@ -31,6 +37,7 @@ function clerkRole(role: "admin" | "member"): "org:admin" | "org:member" {
 
 function clerkMembership(membership: MockMembership) {
   return {
+    id: membership.membershipId,
     role: clerkRole(membership.role),
     organization: {
       id: membership.orgId,
@@ -114,6 +121,9 @@ export const seedOrgMembership$ = command(
       slug: values.slug ?? `org-${values.orgId.slice(-8)}`,
       name: values.name ?? "",
       role: values.role ?? "member",
+      membershipId:
+        values.membershipId ??
+        `orgmem_${values.orgId.slice(-8)}_${values.userId.slice(-8)}`,
     };
     const memberships = [
       ...get(orgMemberships$).filter((candidate) => {

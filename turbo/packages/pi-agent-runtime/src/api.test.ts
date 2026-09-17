@@ -584,6 +584,7 @@ describe("Pi API facade", () => {
       sessionId: SESSION_ID,
       messageCount: 0,
       hasPendingToolCalls: false,
+      pendingToolIds: [],
       isSettledCheckpoint: false,
     });
     expect(JSON.parse(jsonl.split("\n")[0] ?? "{}")).toMatchObject({
@@ -1613,6 +1614,7 @@ describe("Pi API facade", () => {
       sessionId: SESSION_ID,
       messageCount: 1,
       hasPendingToolCalls: false,
+      pendingToolIds: [],
       isSettledCheckpoint: true,
     });
   });

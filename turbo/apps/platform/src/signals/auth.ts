@@ -520,6 +520,13 @@ export const setupClerk$ = command(
  */
 const ORG_ID_KEY = "clerk-active-org-id";
 const activeOrgIdStorage = sessionStorageSignals(ORG_ID_KEY);
+const createdOrgToOnboard$ = state<string | null>(null);
+
+export const prepareCreatedOrgOnboarding$ = command(
+  ({ set }, orgId: string) => {
+    set(createdOrgToOnboard$, orgId);
+  },
+);
 
 const persistOrgId$ = command(({ set }, orgId: string | undefined) => {
   if (orgId) {
@@ -563,13 +570,17 @@ export const watchOrgSwitch$ = command(
         if (!newOrgId || newOrgId === prevOrgId) {
           return;
         }
-        // The first organization a session activates is not a switch. Reloading
-        // there would discard the destination the sign-in flow navigates to.
+        const needsOnboarding = get(createdOrgToOnboard$) === newOrgId;
+        if (needsOnboarding) {
+          set(createdOrgToOnboard$, null);
+        }
+        // Preserve the sign-in destination on first activation unless workspace
+        // creation explicitly requested onboarding for this organization.
         const isFirstActivation = prevOrgId === undefined;
         prevOrgId = newOrgId;
         set(persistOrgId$, newOrgId);
         setPostHogOrganization(newOrgId);
-        if (isFirstActivation) {
+        if (isFirstActivation && !needsOnboarding) {
           return;
         }
 
@@ -584,7 +595,7 @@ export const watchOrgSwitch$ = command(
           })(),
         );
         if (!signal.aborted && !isDesktopAuthFlow()) {
-          location.href = "/";
+          location.href = needsOnboarding ? ONBOARDING_PATH : "/";
         }
       }),
     );

@@ -516,8 +516,15 @@
     {
       "idx": 1151,
       "version": "7",
-      "when": 1789622345915,
-      "tag": "1151_morning_brief_schedule_claims",
+      "when": 1789616656879,
+      "tag": "1151_morning_brief_collection_occurrences",
+      "breakpoints": true
+    },
+    {
+      "idx": 1152,
+      "version": "7",
+      "when": 1789623529946,
+      "tag": "1152_morning_brief_schedule_claims",
       "breakpoints": true
     }
   ]

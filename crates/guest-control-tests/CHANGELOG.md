@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/vm0-ai/okou/compare/guest-control-tests-v0.11.22...guest-control-tests-v0.12.0) (2026-09-17)
+
+
+### Features
+
+* **runner:** expose history transfer measurements ([#34805](https://github.com/vm0-ai/okou/issues/34805)) ([445a170](https://github.com/vm0-ai/okou/commit/445a170a81a2fac9b1d42f361866c2ea70cfb7e7))
+
 ## [0.11.22](https://github.com/vm0-ai/okou/compare/guest-control-tests-v0.11.21...guest-control-tests-v0.11.22) (2026-09-17)
 
 ## [0.11.21](https://github.com/vm0-ai/okou/compare/guest-control-tests-v0.11.20...guest-control-tests-v0.11.21) (2026-09-16)

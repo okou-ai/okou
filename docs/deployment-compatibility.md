@@ -790,6 +790,25 @@ final-file input is private to the bundled Runner/Guest storage operation;
 ordinary HTTP downloads, API manifests and generic exec-stdin limits do not
 change. No backend reader-first deployment is required for that bundled input.
 
+The Runner-wide owner admits at most 32 waiting identities and runs at most four
+workers. Missing-archive observations and maintenance (warming an observed archive
+hit or retiring its compressed source) each leave four waiting positions for the
+other class; the remaining 24 positions are shared. Pure-class bursts can therefore
+be rejected at 28 waiting entries. Admission never waits, evicts an accepted task,
+or retains rejected work for retry. Queued same-key archive demand supersedes
+retirement, and missing demand promotes warming without losing its decoded-cache
+consumer. Such promotions retain accepted ownership even above a class quota,
+while the total queue bound remains unchanged.
+
+Dispatch is FIFO within each class. While both classes wait, at most three missing
+fills start before one maintenance task; an empty class does not idle workers.
+This gives every accepted warming and retirement task finite dispatch progress
+provided active operations finish, not a wall-clock deadline or guaranteed
+admission at mixed saturation. Classification uses existing preparation outcomes
+only: workers still validate actual cache state under the original locks, so an
+evicted warm source can be downloaded and a newly filled miss can be reused. No
+new foreground lookup, network request or maintenance barrier is introduced.
+
 After a run actually selects extracted-file delivery and successfully spawns its
 Agent, that same bounded background owner may retire the corresponding compressed
 archive. Retirement never downloads data. It takes the old archive's exclusive
@@ -1998,3 +2017,56 @@ This slice transfers no execution ownership: it consumes no occurrence and adds
 no Run, Chat event, email, provider request or credit operation. See
 [the migration contract](morning-brief-migration-state.md) for the full
 invariants.
+
+## Morning Brief bounded Slack collection (#34727)
+
+Migration 1151 adds the empty `morning_brief_collection_occurrences` table, its
+two indexes, its check constraints, and its foreign keys to
+`org_members_metadata(org_id, user_id)` and `agents(id)`. It is purely additive
+and needs no backfill, `LOCK TABLE` or historical scan, so apply it before
+promoting API code. The production scale note below is automation inventory, not
+a cutover census, and nothing existing is materialized by this slice.
+
+Both schema directions are closed, but for different reasons, and the default-off
+switch is only half the story:
+
+- **Old code after migration** never names the new table. Its only readers and
+  writers ship with this change.
+- **New code before migration** reaches the table from two places. The collector
+  itself is registered in the deployed route table but is gated by the
+  development / protected-preview environment check and by the default-off
+  `FeatureSwitchKey.SimpleMorningBrief`, so it cannot run in production at all.
+  The cleanup revocation added to membership, user and organization deletion is
+  **unconditional** — it is a `DELETE` that runs whenever those webhooks fire,
+  with no feature check in front of it. A default-off switch does not protect
+  it. The repository's migration-before-promotion ordering is therefore the
+  actual requirement here, not a convenience: promoting the API artifact before
+  migration 1151 has shipped would make Clerk membership, user and organization
+  cleanup fail with `42P01`.
+- A rollback leaves the table in place holding only operational metadata. An
+  older API neither reads nor deletes it; its rows stay fenced by the two
+  foreign keys until a newer artifact returns.
+
+The row's lifetime is durable member ownership rather than an evictable cache.
+`org_members_metadata` is the source of truth for the member's own preferences,
+including the timezone an enabled brief requires; it is deleted by membership,
+user and organization cleanup and is not refilled by a background reader. This
+is deliberately stronger than the `org_members_cache` parent the installed
+preference projection uses, which a concurrent membership read can refill.
+Claiming and finalizing take erasure admission first and then lock and recheck
+that member row with `FOR KEY SHARE`, so a cleanup either waits for the writer
+and cascades its row away or has already committed and leaves nothing to write.
+
+This slice transfers no execution ownership. It starts no Run, makes no LLM,
+credit or usage operation, writes no Chat event, email or outbox row, and leaves
+`next_run_at` and `last_run_at` untouched. The existing Settings, legacy
+automation and native Slack read contracts are unchanged. Durable membership and
+materialization ownership, global deletion readiness, scheduling and cutover
+remain S7 gates; the Clerk erasure bridge is still unregistered, so this is a
+local fence rather than global deletion finality.
+
+Requests already in flight to Slack cannot be retracted. Revocation guarantees
+only that no result of such a request is accepted, persisted or returned after
+the revoking transaction commits. See
+[the collection contract](morning-brief-collection.md) for the source contract,
+lease semantics, finite budgets and declared coverage limits.
