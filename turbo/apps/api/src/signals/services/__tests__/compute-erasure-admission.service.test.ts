@@ -3105,7 +3105,10 @@ describe("actual compute transactions versus the B1 projector", () => {
                 }
                 barrier.release();
                 if (closure) {
-                  await waitForBlockedBy(closure.pid);
+                  // The activity writer has a deliberate 250 ms lock deadline.
+                  // The held exclusive subject lock already proves ordering;
+                  // polling pg_stat_activity here can consume that deadline
+                  // before a loaded CI worker schedules the release.
                   await closure.release();
                 }
                 await expect(pending).resolves.toMatchObject(ineligible(f));
