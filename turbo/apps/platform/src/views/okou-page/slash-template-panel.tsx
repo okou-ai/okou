@@ -48,7 +48,10 @@ interface SlashTemplatePanelProps {
   readonly previewIndex: number | null;
   readonly onPreview: (index: number | null) => void;
   readonly onSelectCategory: (category: SlashTemplateCategory) => void;
-  readonly onSelectTemplate: (preview: SlashTemplatePreview) => void;
+  readonly onSelectTemplate: (
+    preview: SlashTemplatePreview,
+    category: SlashTemplatePreviewCategory,
+  ) => void;
   readonly onImportDeck: (file: File) => void;
   readonly onSelectWorkflow: (workflow: ComposerSlashWorkflowMatch) => void;
   readonly onBrowseAll: () => void;
@@ -166,7 +169,7 @@ function SlashTemplateCover({
   onSelectTemplate,
 }: {
   readonly preview: SlashTemplatePreview;
-  readonly onSelectTemplate: (preview: SlashTemplatePreview) => void;
+  readonly onSelectTemplate: () => void;
 }) {
   const { t } = useTranslation();
   const aspect = preview.aspect;
@@ -186,7 +189,7 @@ function SlashTemplateCover({
       onMouseDown={(event) => {
         // Keep the editor focused; the panel never takes selection.
         event.preventDefault();
-        onSelectTemplate(preview);
+        onSelectTemplate();
       }}
     >
       <span
@@ -222,7 +225,10 @@ function SlashTemplateDetailPane({
   onImportDeck,
 }: {
   readonly category: SlashTemplatePreviewCategory;
-  readonly onSelectTemplate: (preview: SlashTemplatePreview) => void;
+  readonly onSelectTemplate: (
+    preview: SlashTemplatePreview,
+    category: SlashTemplatePreviewCategory,
+  ) => void;
   readonly onImportDeck: (file: File) => void;
 }) {
   const { t } = useTranslation();
@@ -298,7 +304,9 @@ function SlashTemplateDetailPane({
                 <SlashTemplateCover
                   key={preview.slug}
                   preview={preview}
-                  onSelectTemplate={onSelectTemplate}
+                  onSelectTemplate={() => {
+                    onSelectTemplate(preview, category);
+                  }}
                 />
               );
             })}

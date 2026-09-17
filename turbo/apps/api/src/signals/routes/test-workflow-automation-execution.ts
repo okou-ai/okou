@@ -12,6 +12,7 @@ import type { RouteEntry } from "../route-entry";
 import { dispatchRunCallbacks } from "../services/agent-run-callback.service";
 import { handleWorkflowAutomationResultEmailInternalCallback } from "../services/internal-workflow-automation-result-email-callback.service";
 import { executeMorningBriefEnrollmentForMember$ } from "../services/morning-brief-enrollment-worker.service";
+import { executeMorningBriefGenerationRetentionWork$ } from "../services/morning-brief-generation-retention-worker.service";
 import { executeDueNotionAutomationEventsForAutomation$ } from "../services/notion-automation-event.service";
 import { executeDueStripeAutomationEventsForAutomation$ } from "../services/stripe-automation-event.service";
 import { executeDueWorkflowAutomationsForAutomation$ } from "../services/workflow-automation-poller.service";
@@ -241,10 +242,38 @@ const enrollMorningBrief$ = command(
   },
 );
 
+/**
+ * The Morning Brief retention batch, driven the way the maintenance tick does.
+ *
+ * `/api/cron/execute-workflow-automations` runs this worker beside the global
+ * automation poller, which a test cannot invoke without executing every other
+ * owner's due automation. This exposes the same command on its own, exactly as
+ * the enrollment worker above is exposed, so retention behavior is testable
+ * through an endpoint without a second implementation of it.
+ */
+const retainMorningBriefGenerations$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    if (!isTestEndpointAllowed(get(request$))) {
+      return testEndpointNotFoundResponse();
+    }
+    const purged = await set(
+      executeMorningBriefGenerationRetentionWork$,
+      signal,
+    );
+    signal.throwIfAborted();
+    return { status: 200 as const, body: { purged } };
+  },
+);
+
 export const testWorkflowAutomationExecutionRoutes: readonly RouteEntry[] = [
   {
     route: testWorkflowAutomationExecutionContract.enrollMorningBrief,
     handler: enrollMorningBrief$,
+  },
+  {
+    route:
+      testWorkflowAutomationExecutionContract.retainMorningBriefGenerations,
+    handler: retainMorningBriefGenerations$,
   },
   {
     route: testWorkflowAutomationExecutionContract.execute,

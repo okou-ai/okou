@@ -6419,6 +6419,7 @@
     "pageCount_one": "{{count}} página",
     "pageCount_many": "{{count}} páginas",
     "pageCount_other": "{{count}} páginas",
+    "renameFailed": "No se pudo cambiar el nombre de la plantilla.",
     "retry": "Reintentar",
     "sharedBy": "Compartida por {{owner}}",
     "visibility": {

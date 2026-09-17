@@ -1,0 +1,1 @@
+ALTER TABLE "org_members_metadata" ADD COLUMN "morning_brief_collection_revoked_at" timestamp;

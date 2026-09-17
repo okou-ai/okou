@@ -999,10 +999,11 @@ export function createChatFilesBddApi(context: TestContext) {
     },
 
     /**
-     * Both read-cursor writers driven through an app whose operation signal the
-     * caller aborts, which is the signal those route commands actually receive.
-     * The requests are returned unnarrowed so a caller can assert the
-     * off-contract response a cancelled operation produces.
+     * The read-cursor writers driven through an app whose operation signal the
+     * caller aborts, which is the signal those route commands actually receive:
+     * the two single-thread writers and the bulk per-Agent one. The requests
+     * are returned unnarrowed so a caller can assert the off-contract response
+     * a cancelled operation produces.
      */
     readCursorWritesWithOperationSignal(signal: AbortSignal) {
       const operationApp = chatFilesOperationApp(context, signal);
@@ -1017,6 +1018,14 @@ export function createChatFilesBddApi(context: TestContext) {
           return await operationApp(chatThreadMarkUnreadContract).markUnread({
             headers: authenticate(context, actor),
             params: { id: threadId },
+          });
+        },
+        async markAgentRead(actor: ApiTestUser, agentId: string) {
+          return await operationApp(
+            chatThreadMarkAgentReadContract,
+          ).markAgentRead({
+            headers: authenticate(context, actor),
+            body: { agentId },
           });
         },
       };

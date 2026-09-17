@@ -71,6 +71,7 @@ import {
 } from "../../signals/okou-page/settings/connectors.ts";
 import {
   buildConnectorShelves,
+  emptyConnectorShelfLayout,
   type ConnectorShelfLayout,
 } from "../../signals/okou-page/settings/connector-shelves.ts";
 import {
@@ -83,6 +84,12 @@ import {
   type ConnectorCategoryGroup,
   type ConnectorCategorySection,
 } from "../../signals/okou-page/settings/connector-categories.ts";
+import {
+  bindConnectorCategoryGrid$,
+  connectorCategoryGridMetrics$,
+  connectorCategoryGridWindow,
+  CONNECTOR_CATEGORY_GRID_ROW_HEIGHT,
+} from "../../signals/okou-page/settings/connector-category-grid.ts";
 import { localizeConnectorCategoryMetadata } from "./components/settings/connector-category-labels.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { ConnectModal } from "./components/settings/add-connection-dialog.tsx";
@@ -1172,6 +1179,58 @@ function ConnectorCategoryGroupSection({
  * not repeated here -- it is the other scope, and a connected connector still
  * shows its account on its own card wherever it appears.
  */
+/**
+ * The open category, rendered a viewport at a time. The reserved rows are grid
+ * items spanning the tracks their cards would occupy, so the scrollbar, the
+ * column count and the row rhythm stay the browser's own -- the grid keeps its
+ * responsive template and only the cards near the viewport are mounted.
+ */
+function ConnectorCategoryGrid({
+  connectors,
+  renderCard,
+}: {
+  readonly connectors: readonly PlatformConnectorCatalogStatusItem[];
+  readonly renderCard: (
+    connector: PlatformConnectorCatalogStatusItem,
+  ) => ReactNode;
+}) {
+  const bindGrid = useSet(bindConnectorCategoryGrid$);
+  const metrics = useGet(connectorCategoryGridMetrics$);
+  const visible = connectorCategoryGridWindow(connectors.length, metrics);
+  return (
+    <div
+      ref={bindGrid}
+      data-testid="connector-category-grid"
+      className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"
+      style={{
+        gridAutoRows: `${CONNECTOR_CATEGORY_GRID_ROW_HEIGHT}px`,
+      }}
+    >
+      {visible.leadingRows > 0 && (
+        <div
+          aria-hidden="true"
+          data-testid="connector-category-reserved-rows"
+          style={{
+            gridColumn: "1 / -1",
+            gridRow: `span ${visible.leadingRows}`,
+          }}
+        />
+      )}
+      {connectors.slice(visible.startIndex, visible.endIndex).map(renderCard)}
+      {visible.trailingRows > 0 && (
+        <div
+          aria-hidden="true"
+          data-testid="connector-category-reserved-rows"
+          style={{
+            gridColumn: "1 / -1",
+            gridRow: `span ${visible.trailingRows}`,
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
 function ConnectorShelfBrowse({
   layout,
   renderCard,
@@ -1298,16 +1357,22 @@ function buildConnectorsBrowseModel({
       return group.sections;
     });
   };
-  const layout = buildConnectorShelves({
-    // Shelves cover the whole catalog, connected included: a connector this
-    // workspace already has is still the answer to "what talks to Slack", and
-    // its card says so by showing the account instead of an add button.
-    sections: sectionsOf(catalogItems),
-    categoryCounts,
-    headLabel,
-    // The page's card grid is three wide, so six is two whole rows.
-    previewSize: 6,
-  });
+  // Shelving is the unfiltered view's own work, and a filtered one throws the
+  // result away. Inside a category that discarded pass groups and shelves the
+  // whole category -- the largest holds over a thousand connectors -- on every
+  // render of the page.
+  const layout = filtered
+    ? emptyConnectorShelfLayout<PlatformConnectorCatalogStatusItem>()
+    : buildConnectorShelves({
+        // Shelves cover the whole catalog, connected included: a connector this
+        // workspace already has is still the answer to "what talks to Slack",
+        // and its card says so by showing the account instead of an add button.
+        sections: sectionsOf(catalogItems),
+        categoryCounts,
+        headLabel,
+        // The page's card grid is three wide, so six is two whole rows.
+        previewSize: 6,
+      });
   // The filter lists the catalog's categories, not the ones the current
   // response happens to contain: inside a category the response holds only
   // that category, and a filter that offers nothing else is a dead end.
@@ -1369,12 +1434,10 @@ function ConnectorsBuiltinPanel({
       {browse.showShelves ? (
         <ConnectorShelfBrowse layout={browse.layout} renderCard={renderCard} />
       ) : browse.categoryConnectors ? (
-        <div
-          data-testid="connector-category-grid"
-          className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"
-        >
-          {browse.categoryConnectors.map(renderCard)}
-        </div>
+        <ConnectorCategoryGrid
+          connectors={browse.categoryConnectors}
+          renderCard={renderCard}
+        />
       ) : (
         fallback
       )}

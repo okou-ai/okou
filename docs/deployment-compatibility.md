@@ -2222,3 +2222,43 @@ and PostHog reporting remain active; this change adds no GA4/PostHog sender,
 provider cutover, historical replay, App table or MaskDB scan. Checkout coverage
 matches the existing `RedirectToStripe` producers, excluding previews and other
 payment paths without that producer.
+
+## Morning Brief collection revocation stamp (#34860)
+
+Migration 1154 adds the nullable `org_members_metadata.morning_brief_collection_revoked_at`
+column. It is additive, has no default and needs no backfill, scan or
+`LOCK TABLE`, so it applies as an ordinary short transaction.
+
+`FOR KEY SHARE` on the member row only orders two transactions; it does not
+outlive either of them. The revocation decision now persists in this column, so
+a claim admitted against an external membership answer resolved before
+revocation still loses after that cleanup commits — including when the cleanup
+found no occurrence to delete, and long before the member row itself is removed.
+
+- **Old code after migration** never reads or writes the column. It stays `NULL`
+  for every member an old artifact touches, which is exactly the unrevoked
+  state, and the older collector keeps its previous behavior.
+- **New code before migration** must not be promoted. Membership, user and
+  organization cleanup write this column **unconditionally**, in the same
+  transaction that already revokes run authority, with no feature check in front
+  of it; the default-off `simpleMorningBrief` switch does not protect it.
+  Promoting the API artifact before migration 1154 has shipped would make those
+  Clerk cleanup webhooks fail with `42703`. Claiming and finalizing read the
+  column in the same unconditional statement that locks the member row.
+- **Rollback** leaves stamped rows behind. An older artifact ignores them, so a
+  member whose cleanup was interrupted after revocation simply keeps their
+  pre-existing behavior; the rows themselves are deleted with the member row at
+  the end of each cleanup path. There is no dual-write window and nothing to
+  contract later.
+
+The companion parent-generation check needs no schema of its own: the admission
+carries the member row's existing `created_at`, and the claim requires it to be
+unchanged. Ordinary preference upserts preserve that value, so no deployed
+writer has to change; only a deleted and recreated row reads differently, which
+is exactly the case it refuses. An older artifact simply does not compare it.
+
+This repair changes no route registration, environment gate, feature switch,
+schedule, Run, credit, Chat or email behavior, and it does not activate the
+still-unregistered Clerk erasure bridge. It is a local serialization boundary
+for one owner's collection authority; durable membership and materialization
+ownership and global deletion finality remain S7 gates.

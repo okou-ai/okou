@@ -5,6 +5,8 @@ import {
   getFrameworkForType,
   getBuiltInConcreteProviderType,
   isActiveRunModel,
+  getRunModelAccess,
+  RETIRED_RUN_MODEL_MESSAGE,
 } from "@okouai/api-contracts/contracts/model-providers";
 import type {
   CreateModelProviderConnectionRequest,
@@ -184,6 +186,9 @@ function validateMappings(
     const upstreamModel = upstream.trim();
     if (!upstreamModel) {
       return badRequestMessage(`Upstream model for "${model}" cannot be empty`);
+    }
+    if (getRunModelAccess(upstreamModel) === "retired") {
+      return badRequestMessage(RETIRED_RUN_MODEL_MESSAGE);
     }
     normalized[model] = upstreamModel;
   }

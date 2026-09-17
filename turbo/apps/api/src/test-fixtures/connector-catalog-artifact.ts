@@ -1158,7 +1158,19 @@ const connectors = [
       }),
     ],
     firewall: generatedFirewall([
-      bearerApi("https://www.googleapis.com/calendar", "GOOGLE_CALENDAR_TOKEN"),
+      bearerApi(
+        "https://www.googleapis.com/calendar",
+        "GOOGLE_CALENDAR_TOKEN",
+        [
+          {
+            name: "events.read",
+            rules: [
+              "GET /v3/users/me/calendarList",
+              "GET /v3/calendars/{calendarId}/events",
+            ],
+          },
+        ],
+      ),
     ]),
   }),
   connector({
