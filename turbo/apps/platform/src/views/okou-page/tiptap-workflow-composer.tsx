@@ -409,7 +409,9 @@ function useSlashTemplatePanelActions(
      *
      * It also names the same task its category row does, so it lands the
      * composer there too — it just brings the template along instead of opening
-     * the picker to choose one.
+     * the picker to choose one. The chip goes in before the task, because
+     * landing on one ends by focusing the caret at the end of the draft;
+     * inserting after that would move the chip off the token it replaces.
      */
     selectTemplate(
       preview: SlashTemplatePreview,
@@ -417,8 +419,8 @@ function useSlashTemplatePanelActions(
     ): void {
       clearSlashRange();
       close();
-      openTask(SLASH_TEMPLATE_CATEGORY_TASK[category]);
       insertTemplate(preview.template, preview.attachment);
+      openTask(SLASH_TEMPLATE_CATEGORY_TASK[category]);
     },
     /**
      * The import attaches the deck and sends, which navigates away from the
