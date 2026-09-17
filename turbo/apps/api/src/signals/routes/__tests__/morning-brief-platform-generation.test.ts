@@ -1634,13 +1634,26 @@ describe("Morning Brief platform receipt durability", () => {
     expect(row?.state).toBe("reserved");
     expect(row?.resultMarkdown).toBeNull();
     expect(row?.resultTitle).toBeNull();
-    // The transient failure was retried and committed exactly once.
-    const receipts = await readPlatformGenerationReceipts([
-      row?.attemptId ?? "",
-    ]);
-    expect(receipts).toHaveLength(1);
-    expect(receipts[0]?.costValue).toBe("0.000420000000");
-    expect(receipts[0]?.outcome).toBe("response_received");
+
+    // The charge an external caller can actually see: settling the lapsed
+    // reservation reports the exact amount the cancelled request observed.
+    await expireMorningBriefGenerationReservation(f, new Date(now() - 1000));
+    const settled = await accept(generate(f), [200]);
+    if (settled.body.result !== "already-generated") {
+      throw new Error(`Expected already-generated, got ${settled.body.result}`);
+    }
+    expect(settled.body.generation.state).toBe("invocation_outcome_unknown");
+    expect(settled.body.generation.result).toBeNull();
+    expect(settled.body.generation.receipt).toMatchObject({
+      recorded: "durable",
+      outcome: "response_received",
+      cost: { state: "reported", value: "0.000420000000" },
+    });
+    // Still one POST, and the transient failure produced exactly one record.
+    expect(traffic.bodies).toHaveLength(1);
+    await expect(
+      readPlatformGenerationReceipts([row?.attemptId ?? ""]),
+    ).resolves.toHaveLength(1);
   });
 
   it("records the charge when resolving the live authority fails afterwards", async () => {
@@ -1654,9 +1667,10 @@ describe("Morning Brief platform receipt durability", () => {
       context.signal,
     );
     const traffic = scriptProvider(() => {
-      // The membership read the post-response authority check depends on
-      // starts failing while the provider request is open.
-      context.mocks.clerk.organizations.getOrganizationMembershipList.mockRejectedValue(
+      // The next membership read is the post-response authority check, and it
+      // fails while the provider request is still open. Later reads recover,
+      // so this is a transient dependency failure rather than a lapse.
+      context.mocks.clerk.organizations.getOrganizationMembershipList.mockRejectedValueOnce(
         authorityFailure,
       );
       return completion({ cost: 0.00061 });
@@ -1676,12 +1690,22 @@ describe("Morning Brief platform receipt durability", () => {
 
     const [row] = await readMorningBriefGenerations(f);
     expect(row?.state).toBe("reserved");
-    // The resolution failure left the request, but not the charge.
-    const receipts = await readPlatformGenerationReceipts([
-      row?.attemptId ?? "",
-    ]);
-    expect(receipts).toHaveLength(1);
-    expect(receipts[0]?.costValue).toBe("0.000610000000");
+    // The resolution failure left the request, but not the charge: the amount
+    // is reported back through the endpoint once the reservation lapses.
+    await expireMorningBriefGenerationReservation(f, new Date(now() - 1000));
+    const settled = await accept(generate(f), [200]);
+    if (settled.body.result !== "already-generated") {
+      throw new Error(`Expected already-generated, got ${settled.body.result}`);
+    }
+    expect(settled.body.generation.state).toBe("invocation_outcome_unknown");
+    expect(settled.body.generation.receipt).toMatchObject({
+      recorded: "durable",
+      cost: { state: "reported", value: "0.000610000000" },
+    });
+    expect(traffic.bodies).toHaveLength(1);
+    await expect(
+      readPlatformGenerationReceipts([row?.attemptId ?? ""]),
+    ).resolves.toHaveLength(1);
   });
 
   it("reports an unresolved charge when every write attempt fails", async () => {
@@ -1710,8 +1734,15 @@ describe("Morning Brief platform receipt durability", () => {
     });
     // The owner-scoped write does not wait on accounting.
     expect(body.generation.state).toBe("succeeded");
-    // No receipt is claimed for a row that is not there, and no repeat POST
-    // was made to try to obtain one.
+
+    // A reread reports no receipt at all, because none was stored. Nothing
+    // invented a durable record, and no repeat POST tried to obtain one.
+    const reread = await accept(generate(f), [200]);
+    if (reread.body.result !== "already-generated") {
+      throw new Error(`Expected already-generated, got ${reread.body.result}`);
+    }
+    expect(reread.body.generation.receipt).toBeNull();
+    expect(reread.body.generation.state).toBe("succeeded");
     const [row] = await readMorningBriefGenerations(f);
     await expect(
       readPlatformGenerationReceipts([row?.attemptId ?? ""]),
