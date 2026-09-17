@@ -133,12 +133,11 @@ export function normalizeMorningBriefGmail(
  */
 export function morningBriefGmailDescriptor(args: {
   /**
-   * The mailbox the shared reader resolved, when the collector returns it.
+   * The exact mailbox the shared reader resolved, from the collection.
    *
-   * `collectMorningBriefGmail` does not currently surface the reader's
-   * `accountEmail`, so this is null until that collector returns it. Null means
-   * "not observed" — it never means "any mailbox", and a later check treats a
-   * descriptor without an account reference as unproven rather than allowed.
+   * Null means the reader never resolved one. It never means "any mailbox": a
+   * later check treats a descriptor without an account reference as unproven
+   * rather than allowed.
    */
   readonly accountEmail: string | null;
   readonly connectionId: string | null;

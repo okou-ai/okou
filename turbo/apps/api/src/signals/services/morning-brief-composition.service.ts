@@ -27,6 +27,7 @@
  * [the composition contract](../../../../../../docs/morning-brief-composition.md).
  */
 
+import type { MorningBriefChatCollection } from "@okouai/api-contracts/contracts/morning-brief-chat-collection-preview";
 import { MORNING_BRIEF_COLLECTION_VERSION } from "@okouai/db/schema/morning-brief-collection-occurrence";
 import { command } from "ccstate";
 
@@ -44,6 +45,21 @@ import {
   MORNING_BRIEF_COLLECTION_PHASE_MS,
   MORNING_BRIEF_REQUEST_MAX_BYTES,
 } from "./morning-brief-collection-plan";
+import { collectMorningBriefCalendar } from "./morning-brief-calendar-collection.service";
+import {
+  morningBriefCalendarDescriptor,
+  normalizeMorningBriefCalendar,
+} from "./morning-brief-calendar-source";
+import { collectMorningBriefChat$ } from "./morning-brief-chat-collection.service";
+import {
+  morningBriefChatDescriptor,
+  normalizeMorningBriefChat,
+} from "./morning-brief-chat-source";
+import { executeMorningBriefGithubCollection } from "./morning-brief-github-collection.service";
+import {
+  morningBriefGithubDescriptor,
+  normalizeMorningBriefGithub,
+} from "./morning-brief-github-source";
 import { collectMorningBriefGmail } from "./morning-brief-gmail-collection.service";
 import {
   morningBriefGmailDescriptor,
@@ -81,6 +97,17 @@ import {
   type MorningBriefSourceKind,
 } from "./morning-brief-source-item";
 import { slackUserInstallation } from "./slack-data.service";
+
+/**
+ * Chat's reader, bound by the caller.
+ *
+ * `collectMorningBriefChat$` is a ccstate command, so it can only be invoked
+ * from inside a command scope. Binding it once keeps the per-source readers
+ * plain functions instead of threading the accessor through every one of them.
+ */
+type ChatReader = (
+  signal: AbortSignal,
+) => Promise<MorningBriefChatCollection | null>;
 
 /** The native Slack installation this member reads through. */
 interface SlackBinding {
@@ -186,26 +213,20 @@ export const composeMorningBrief$ = command(
     }
     const { scope } = admitted;
 
-    // Which sources this owner actually has, frozen for the attempt. Gmail is
-    // always attempted: only the shared reader knows whether this member has a
-    // usable selected connection, and it reports an unconfigured source as an
-    // unavailable collection rather than throwing.
     const installation = await get(
       slackUserInstallation({ orgId: scope.orgId, userId: scope.userId }),
     );
     signal.throwIfAborted();
-    const slackBinding =
-      installation.kind === "connected"
-        ? {
-            botToken: installation.botToken,
-            workspaceId: installation.workspaceId,
-            slackUserId: installation.slackUserId,
-          }
-        : null;
-    const configured: MorningBriefSourceKind[] = ["gmail"];
-    if (slackBinding !== null) {
-      configured.push("slack");
-    }
+    const { configured, slackBinding } = configuredSources(installation);
+    // Bound once, inside the command scope Chat's collector requires.
+    const readChat: ChatReader = async (chatSignal) => {
+      const collected = await set(
+        collectMorningBriefChat$,
+        { owner: scope, scheduledFor: scope.anchor },
+        chatSignal,
+      );
+      return collected.kind === "collected" ? collected.collection : null;
+    };
     const waves = morningBriefSourceWaves(configured);
 
     const { collections, descriptors } = await collectMorningBriefWaves(
@@ -217,6 +238,7 @@ export const composeMorningBrief$ = command(
         slack: slackBinding,
         phaseStartedAt,
         phaseDeadlineAt,
+        readChat,
       },
       signal,
     );
@@ -312,7 +334,14 @@ function containerIds(
 /** One source's bounded read, normalized with the descriptor it proves. */
 type CollectedSource = {
   readonly normalized: MorningBriefSourceCollection;
-  readonly descriptor: MorningBriefRetainedSourceDescriptor;
+  /**
+   * Null when the source produced no authorized read at all.
+   *
+   * A descriptor is evidence that a specific input was authorized. A source
+   * that was never admitted has no such input, and fabricating one would give a
+   * later permission check something to pass against that nothing observed.
+   */
+  readonly descriptor: MorningBriefRetainedSourceDescriptor | null;
 } | null;
 
 /**
@@ -331,6 +360,7 @@ async function readMorningBriefSource(
     readonly phaseStartedAt: Date;
     readonly phaseDeadlineAt: Date;
     readonly capturedAt: Date;
+    readonly readChat: ChatReader;
   },
   signal: AbortSignal,
 ): Promise<CollectedSource> {
@@ -349,92 +379,37 @@ async function readMorningBriefSource(
     return null;
   }
   const sourceSignal = AbortSignal.any([signal, AbortSignal.timeout(budgetMs)]);
-  if (source === "gmail") {
-    const collection = await collectMorningBriefGmail(
-      { db, clerk, scope },
+  if (source === "calendar") {
+    return await readCalendarSource(
+      { db, clerk, scope, capturedAt },
       sourceSignal,
     );
-    // The item identity's account segment is the owning member: the
-    // collector does not currently return the mailbox the shared reader
-    // resolved, so inventing one here would be worse than naming the
-    // member the connection belongs to. The exact mailbox is requested
-    // from the Gmail collector as `accountEmail` on its collection;
-    // until it is returned, `accountRef` stays null rather than holding
-    // a value nothing observed.
-    const normalized = normalizeMorningBriefGmail(collection, scope.userId);
-    return {
-      normalized,
-      descriptor: morningBriefGmailDescriptor({
-        accountEmail: null,
-        connectionId: null,
-        membershipId: scope.membershipId,
-        agentId: scope.agentId,
-        capturedAt,
-        contributed: false,
-        containers: containerIds(normalized),
-      }),
-    };
   }
-  const slack = args.slack;
-  if (slack === null) {
+  if (source === "github") {
+    return await readGithubSource(
+      { db, clerk, scope, capturedAt },
+      sourceSignal,
+    );
+  }
+  if (source === "chat") {
+    return await readChatSource(
+      { scope, capturedAt, readChat: args.readChat },
+      sourceSignal,
+    );
+  }
+  if (source === "gmail") {
+    return await readGmailSource(
+      { db, clerk, scope, capturedAt },
+      sourceSignal,
+    );
+  }
+  if (args.slack === null) {
     return null;
   }
-  const collected = await collectMorningBriefSlackBundle(
-    {
-      botToken: slack.botToken,
-      slackUserId: slack.slackUserId,
-      workspaceId: slack.workspaceId,
-      windowStart: new Date(
-        scope.anchor.getTime() - MORNING_BRIEF_SLACK_WINDOW_MS,
-      ),
-      windowEnd: scope.anchor,
-      timezone: scope.timezone,
-      version: MORNING_BRIEF_COLLECTION_VERSION,
-    },
-    {
-      clock: () => {
-        return nowDate().getTime();
-      },
-      deadline: nowDate().getTime() + budgetMs,
-    },
+  return await readSlackSource(
+    { scope, capturedAt, slack: args.slack, budgetMs },
     sourceSignal,
   );
-  if (collected.kind !== "collected") {
-    return {
-      normalized: {
-        source: "slack" as const,
-        coverage: "failed" as const,
-        items: [],
-        requests: 0,
-        omittedBySource: 0,
-      },
-      descriptor: morningBriefSlackDescriptor({
-        workspaceId: slack.workspaceId,
-        slackUserId: slack.slackUserId,
-        membershipId: scope.membershipId,
-        agentId: scope.agentId,
-        capturedAt,
-        contributed: false,
-        containers: [],
-      }),
-    };
-  }
-  const normalized = normalizeMorningBriefSlack(collected.bundle, {
-    workspaceId: slack.workspaceId,
-    slackUserId: slack.slackUserId,
-  });
-  return {
-    normalized,
-    descriptor: morningBriefSlackDescriptor({
-      workspaceId: slack.workspaceId,
-      slackUserId: slack.slackUserId,
-      membershipId: scope.membershipId,
-      agentId: scope.agentId,
-      capturedAt,
-      contributed: false,
-      containers: containerIds(normalized),
-    }),
-  };
 }
 
 /**
@@ -611,6 +586,7 @@ async function collectMorningBriefWaves(
     readonly slack: SlackBinding | null;
     readonly phaseStartedAt: Date;
     readonly phaseDeadlineAt: Date;
+    readonly readChat: ChatReader;
   },
   signal: AbortSignal,
 ): Promise<{
@@ -638,6 +614,7 @@ async function collectMorningBriefWaves(
             phaseStartedAt,
             phaseDeadlineAt,
             capturedAt,
+            readChat: input.readChat,
           },
           signal,
         );
@@ -645,11 +622,252 @@ async function collectMorningBriefWaves(
     );
     signal.throwIfAborted();
     for (const entry of finished) {
-      if (entry !== null) {
-        collections.push(entry.normalized);
+      if (entry === null) {
+        continue;
+      }
+      collections.push(entry.normalized);
+      if (entry.descriptor !== null) {
         descriptors.push(entry.descriptor);
       }
     }
   }
   return { collections, descriptors };
+}
+
+/**
+ * Which sources this owner actually has, frozen for the attempt.
+ *
+ * Every connector-backed source is attempted: only its own reader knows whether
+ * this member has a usable selected connection, and each reports an
+ * unconfigured source as an unavailable or not-executed read rather than
+ * throwing. Chat is always eligible — zero connectors is not zero Chat. Only
+ * Slack is decided here, because its native installation is the organization's
+ * own bot rather than a per-member connector row.
+ */
+function configuredSources(installation: {
+  readonly kind: string;
+  readonly botToken?: string;
+  readonly workspaceId?: string;
+  readonly slackUserId?: string;
+}): {
+  readonly configured: readonly MorningBriefSourceKind[];
+  readonly slackBinding: SlackBinding | null;
+} {
+  const configured: MorningBriefSourceKind[] = [
+    "calendar",
+    "gmail",
+    "github",
+    "chat",
+  ];
+  if (
+    installation.kind !== "connected" ||
+    installation.botToken === undefined ||
+    installation.workspaceId === undefined ||
+    installation.slackUserId === undefined
+  ) {
+    return { configured, slackBinding: null };
+  }
+  configured.push("slack");
+  return {
+    configured,
+    slackBinding: {
+      botToken: installation.botToken,
+      workspaceId: installation.workspaceId,
+      slackUserId: installation.slackUserId,
+    },
+  };
+}
+
+/** Arguments every connector-backed reader shares. */
+interface SourceReadArgs {
+  readonly db: Db;
+  readonly clerk: ClerkClient;
+  readonly scope: MorningBriefCollectionScope;
+  readonly capturedAt: Date;
+}
+
+async function readCalendarSource(
+  args: SourceReadArgs,
+  signal: AbortSignal,
+): Promise<CollectedSource> {
+  const collection = await collectMorningBriefCalendar(
+    { db: args.db, clerk: args.clerk, scope: args.scope },
+    signal,
+  );
+  // Like Gmail before its collector returned one, Calendar does not surface the
+  // Google account the shared reader resolved. Null records "not observed".
+  const normalized = normalizeMorningBriefCalendar(
+    collection,
+    args.scope.userId,
+  );
+  return {
+    normalized,
+    descriptor: morningBriefCalendarDescriptor({
+      accountRef: null,
+      connectionId: null,
+      membershipId: args.scope.membershipId,
+      agentId: args.scope.agentId,
+      capturedAt: args.capturedAt,
+      contributed: false,
+      containers: containerIds(normalized),
+    }),
+  };
+}
+
+async function readGithubSource(
+  args: SourceReadArgs,
+  signal: AbortSignal,
+): Promise<CollectedSource> {
+  const execution = await executeMorningBriefGithubCollection(
+    {
+      db: args.db,
+      clerk: args.clerk,
+      owner: { orgId: args.scope.orgId, userId: args.scope.userId },
+      anchor: args.scope.anchor,
+    },
+    signal,
+  );
+  if (execution.kind !== "collected") {
+    // "Not executed" and "invalid anchor" both produce nothing, but neither is
+    // a healthy empty read, so neither may be reported as one — and neither
+    // authorized an input, so neither yields a descriptor.
+    return {
+      normalized: {
+        source: "github",
+        coverage: execution.kind === "not-executed" ? "unconfigured" : "failed",
+        items: [],
+        requests: 0,
+        omittedBySource: 0,
+      },
+      descriptor: null,
+    };
+  }
+  const normalized = normalizeMorningBriefGithub(execution.bundle);
+  return {
+    normalized,
+    descriptor: morningBriefGithubDescriptor({
+      // The exact login of the selected token, resolved by the collector.
+      login: execution.bundle.login,
+      connectionId: null,
+      membershipId: args.scope.membershipId,
+      agentId: args.scope.agentId,
+      capturedAt: args.capturedAt,
+      contributed: false,
+      containers: containerIds(normalized),
+    }),
+  };
+}
+
+async function readChatSource(
+  args: Pick<SourceReadArgs, "scope" | "capturedAt"> & {
+    readonly readChat: ChatReader;
+  },
+  signal: AbortSignal,
+): Promise<CollectedSource> {
+  const collection = await args.readChat(signal);
+  if (collection === null) {
+    // Not installed or owner unavailable: no authorized read happened.
+    return null;
+  }
+  const normalized = normalizeMorningBriefChat(collection, args.scope.userId);
+  return {
+    normalized,
+    descriptor: morningBriefChatDescriptor({
+      userId: args.scope.userId,
+      membershipId: args.scope.membershipId,
+      agentId: args.scope.agentId,
+      capturedAt: args.capturedAt,
+      contributed: false,
+      containers: containerIds(normalized),
+    }),
+  };
+}
+
+async function readGmailSource(
+  args: SourceReadArgs,
+  signal: AbortSignal,
+): Promise<CollectedSource> {
+  const collection = await collectMorningBriefGmail(
+    { db: args.db, clerk: args.clerk, scope: args.scope },
+    signal,
+  );
+  // The exact mailbox the shared reader resolved for this member's selected
+  // connection. Null means the reader never resolved one, which a later check
+  // treats as unproven rather than as any mailbox.
+  const normalized = normalizeMorningBriefGmail(
+    collection,
+    collection.accountEmail ?? args.scope.userId,
+  );
+  return {
+    normalized,
+    descriptor: morningBriefGmailDescriptor({
+      accountEmail: collection.accountEmail,
+      connectionId: null,
+      membershipId: args.scope.membershipId,
+      agentId: args.scope.agentId,
+      capturedAt: args.capturedAt,
+      contributed: false,
+      containers: containerIds(normalized),
+    }),
+  };
+}
+
+async function readSlackSource(
+  args: Pick<SourceReadArgs, "scope" | "capturedAt"> & {
+    readonly slack: SlackBinding;
+    readonly budgetMs: number;
+  },
+  signal: AbortSignal,
+): Promise<CollectedSource> {
+  const { slack, scope, capturedAt } = args;
+  const describe = (
+    containers: readonly string[],
+  ): MorningBriefRetainedSourceDescriptor => {
+    return morningBriefSlackDescriptor({
+      workspaceId: slack.workspaceId,
+      slackUserId: slack.slackUserId,
+      membershipId: scope.membershipId,
+      agentId: scope.agentId,
+      capturedAt,
+      contributed: false,
+      containers,
+    });
+  };
+  const collected = await collectMorningBriefSlackBundle(
+    {
+      botToken: slack.botToken,
+      slackUserId: slack.slackUserId,
+      workspaceId: slack.workspaceId,
+      windowStart: new Date(
+        scope.anchor.getTime() - MORNING_BRIEF_SLACK_WINDOW_MS,
+      ),
+      windowEnd: scope.anchor,
+      timezone: scope.timezone,
+      version: MORNING_BRIEF_COLLECTION_VERSION,
+    },
+    {
+      clock: () => {
+        return nowDate().getTime();
+      },
+      deadline: nowDate().getTime() + args.budgetMs,
+    },
+    signal,
+  );
+  if (collected.kind !== "collected") {
+    return {
+      normalized: {
+        source: "slack",
+        coverage: "failed",
+        items: [],
+        requests: 0,
+        omittedBySource: 0,
+      },
+      descriptor: describe([]),
+    };
+  }
+  const normalized = normalizeMorningBriefSlack(collected.bundle, {
+    workspaceId: slack.workspaceId,
+    slackUserId: slack.slackUserId,
+  });
+  return { normalized, descriptor: describe(containerIds(normalized)) };
 }

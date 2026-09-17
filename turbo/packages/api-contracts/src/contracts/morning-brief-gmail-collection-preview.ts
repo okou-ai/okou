@@ -102,6 +102,16 @@ export const morningBriefGmailCollectionSchema = z.object({
    * losing coverage, and `unavailable` produced none.
    */
   status: z.enum(["ok", "empty", "partial", "unavailable"]),
+  /**
+   * The exact mailbox the shared reader resolved for this member's selected
+   * connection, never a process account or an environment token's identity.
+   *
+   * `null` means the reader could not resolve one — an unconfigured connector
+   * or a failed profile read. A consumer treats null as "not observed", never
+   * as "any mailbox": it is the identity a later permission recheck is run
+   * against, so an absent value makes that input unproven rather than allowed.
+   */
+  accountEmail: z.string().nullable(),
   anchor: z.string().datetime(),
   collectedAt: z.string().datetime(),
   timezone: z.string(),

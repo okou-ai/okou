@@ -16,7 +16,7 @@ provider's own identity rather than a flattened string:
 
 | Source   | Identity and time semantics                                                                                                                                       |
 | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Gmail    | Exact selected account + message id; a recent half-open window and the current unread backlog stay distinguishable                                                |
+| Gmail    | Exact selected mailbox the shared reader resolved + message id; a recent half-open window and the current unread backlog stay distinguishable                     |
 | Calendar | Selected account + calendar id + event id and recurrence instance; frozen local-date window, timed overlap and exclusive-end all-day dates preserved              |
 | GitHub   | Selected account + repository + subject kind and number, with notification/outstanding/review/check provenance; stale but still outstanding work is not discarded |
 | Slack    | Workspace + channel + the exact fractional timestamp and thread identity; half-open source window and the declared old-root reply limit                           |
@@ -38,6 +38,18 @@ apart all the way through rendering and delivery. An owner who never connected
 GitHub has no GitHub evidence; a connected GitHub account with nothing
 outstanding is a healthy answer about their day. Only the second one may be
 described as empty.
+
+All five sources are attempted. Only a source's own reader knows whether the
+member has a usable selected connection, and each reports an unconfigured source
+as an unavailable or not-executed read rather than throwing — so an owner with
+no connectors still reaches the engine, and Chat still contributes. Slack is the
+one exception decided before the wave, because its native installation is the
+organization's own bot rather than a per-member connector row.
+
+A source that was never admitted produces **no descriptor**. A descriptor is
+evidence that a specific input was authorized; fabricating one for a source that
+read nothing would give a later permission check something to pass against that
+nothing observed.
 
 ## Bounded fan-out
 

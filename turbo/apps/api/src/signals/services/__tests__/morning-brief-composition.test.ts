@@ -26,6 +26,9 @@ import {
   MORNING_BRIEF_DEFAULT_LANGUAGE,
   MORNING_BRIEF_OUTPUT_LANGUAGES,
 } from "../morning-brief-language-policy";
+import { normalizeMorningBriefCalendar } from "../morning-brief-calendar-source";
+import { normalizeMorningBriefChat } from "../morning-brief-chat-source";
+import { normalizeMorningBriefGithub } from "../morning-brief-github-source";
 import {
   normalizeMorningBriefSlack,
   MORNING_BRIEF_SLACK_READ_SURFACE,
@@ -54,6 +57,7 @@ import {
   boundCombinedNormalizedItems,
   dedupeMorningBriefItems,
   morningBriefItemBytes,
+  MORNING_BRIEF_SOURCE_ORDER,
   morningBriefItemsBytes,
   MORNING_BRIEF_COMBINED_NORMALIZED_MAX_BYTES,
   type MorningBriefSourceCollection,
@@ -838,5 +842,270 @@ describe("envelope reservation against the final report", () => {
     expect(JSON.stringify(widest).length).toBeGreaterThanOrEqual(
       JSON.stringify(real).length,
     );
+  });
+});
+
+describe("five-source normalization", () => {
+  it("keeps an all-day calendar event as a date with an exclusive end", () => {
+    const normalized = normalizeMorningBriefCalendar(
+      {
+        source: "google-calendar",
+        status: "ok",
+        anchor: "2026-09-17T06:00:00.000Z",
+        collectedAt: "2026-09-17T06:00:00.000Z",
+        timezone: "Asia/Shanghai",
+        window: {
+          startAt: "2026-09-16T16:00:00.000Z",
+          endAt: "2026-09-17T16:00:00.000Z",
+          startDate: "2026-09-17",
+          endDateExclusive: "2026-09-18",
+        },
+        items: [
+          {
+            calendarId: "cal-1",
+            calendarSummary: "Work",
+            calendarTimezone: "Asia/Shanghai",
+            eventId: "evt-1",
+            iCalUID: null,
+            recurringEventId: null,
+            originalStartTime: null,
+            summary: "Offsite",
+            location: null,
+            descriptionExcerpt: null,
+            allDay: true,
+            start: "2026-09-17",
+            end: "2026-09-19",
+            eventTimezone: null,
+            localDayOffset: 0,
+            organizer: null,
+            selfResponseStatus: null,
+            attendees: [],
+            attendeesTruncated: false,
+            link: "https://calendar.google.com/event?eid=1",
+          },
+        ],
+        coverage: {
+          calendarList: "complete",
+          calendars: [],
+          truncations: [],
+          requests: 1,
+          retryAfterMs: null,
+        },
+        failure: null,
+      },
+      "member-1",
+    );
+
+    const [only] = normalized.items;
+    expect(only?.timeSemantics).toBe("date-only");
+    // The exclusive end survives; a two-day offsite is not reported as today.
+    expect(only?.endsAt?.toISOString()).toBe("2026-09-19T00:00:00.000Z");
+    expect(only?.identity.container).toBe("cal-1");
+  });
+
+  it("keeps two occurrences of one recurring series apart", () => {
+    const base = {
+      calendarId: "cal-1",
+      calendarSummary: null,
+      calendarTimezone: null,
+      eventId: "evt-series",
+      iCalUID: null,
+      recurringEventId: "evt-series",
+      summary: "Standup",
+      location: null,
+      descriptionExcerpt: null,
+      allDay: false,
+      eventTimezone: null,
+      localDayOffset: 0,
+      organizer: null,
+      selfResponseStatus: null,
+      attendees: [],
+      attendeesTruncated: false,
+      link: null,
+    };
+    const normalized = normalizeMorningBriefCalendar(
+      {
+        source: "google-calendar",
+        status: "ok",
+        anchor: "2026-09-17T06:00:00.000Z",
+        collectedAt: "2026-09-17T06:00:00.000Z",
+        timezone: "UTC",
+        window: {
+          startAt: "2026-09-16T16:00:00.000Z",
+          endAt: "2026-09-17T16:00:00.000Z",
+          startDate: "2026-09-17",
+          endDateExclusive: "2026-09-18",
+        },
+        items: [
+          {
+            ...base,
+            originalStartTime: "2026-09-17T01:00:00Z",
+            start: "2026-09-17T01:00:00Z",
+            end: "2026-09-17T01:15:00Z",
+          },
+          {
+            ...base,
+            originalStartTime: "2026-09-18T01:00:00Z",
+            start: "2026-09-18T01:00:00Z",
+            end: "2026-09-18T01:15:00Z",
+          },
+        ],
+        coverage: {
+          calendarList: "complete",
+          calendars: [],
+          truncations: [],
+          requests: 1,
+          retryAfterMs: null,
+        },
+        failure: null,
+      },
+      "member-1",
+    );
+
+    expect(dedupeMorningBriefItems(normalized.items)).toHaveLength(2);
+  });
+
+  it("reports outstanding GitHub work as backlog, not as window activity", () => {
+    const normalized = normalizeMorningBriefGithub({
+      source: "github",
+      login: "octocat",
+      anchor: "2026-09-17T06:00:00.000Z",
+      collectedAt: "2026-09-17T06:00:00.000Z",
+      observedAt: "2026-09-17T06:00:00.000Z",
+      timezone: "UTC",
+      coverage: "complete",
+      outcome: "complete",
+      items: [
+        {
+          repository: "vm0-ai/okou",
+          number: 12,
+          kind: "issue",
+          title: "Stale issue",
+          state: "open",
+          updatedAt: "2026-09-01T00:00:00.000Z",
+          reasons: [{ branch: "assigned" }],
+        },
+        {
+          repository: "vm0-ai/okou",
+          number: 12,
+          kind: "pull-request",
+          title: "Fresh notification",
+          state: "open",
+          updatedAt: "2026-09-17T05:00:00.000Z",
+          reasons: [{ branch: "notification" }],
+        },
+      ],
+      branches: {
+        notifications: {
+          status: "complete" as const,
+          pages: 1,
+          items: 1,
+          limits: [],
+        },
+        assigned: {
+          status: "complete" as const,
+          pages: 1,
+          items: 1,
+          limits: [],
+        },
+        reviewRequested: {
+          status: "complete" as const,
+          pages: 1,
+          items: 1,
+          limits: [],
+        },
+        checks: { status: "complete" as const, pages: 1, items: 1, limits: [] },
+      },
+      limits: [],
+      counts: { items: 2, requests: 4, textCharacters: 24 },
+    });
+
+    // Window activity leads, and a week-old assignment is not "this morning".
+    expect(normalized.items[0]?.timeSemantics).toBe("instant");
+    expect(normalized.items[1]?.timeSemantics).toBe("outstanding");
+    // Issue #12 and pull request #12 are two records, not one.
+    expect(dedupeMorningBriefItems(normalized.items)).toHaveLength(2);
+    expect(normalized.items[0]?.identity.account).toBe("octocat");
+  });
+
+  it("treats unread Chat as standing state and emits no invented link", () => {
+    const normalized = normalizeMorningBriefChat(
+      {
+        source: "chat",
+        anchor: "2026-09-17T06:00:00.000Z",
+        collectedAt: "2026-09-17T06:00:00.000Z",
+        result: "collected",
+        coverage: "complete",
+        scope: { unreadCandidates: 1, inspectedThreads: 1 },
+        items: [
+          {
+            threadId: "11111111-1111-4111-8111-111111111111",
+            agentId: "22222222-2222-4222-8222-222222222222",
+            provenance: "ordinary",
+            terminal: {
+              eventId: "33333333-3333-4333-8333-333333333333",
+              runId: "44444444-4444-4444-8444-444444444444",
+              seqId: 9,
+              at: "2026-09-16T10:00:00.000Z",
+            },
+            excerpts: [
+              {
+                eventId: "33333333-3333-4333-8333-333333333333",
+                seqId: 9,
+                role: "assistant",
+                at: "2026-09-16T10:00:00.000Z",
+                text: "the migration finished",
+              },
+            ],
+            truncations: [],
+          },
+        ],
+        skipped: [],
+        truncations: [],
+      },
+      "member-1",
+    );
+
+    const [only] = normalized.items;
+    expect(only?.timeSemantics).toBe("outstanding");
+    // The reader exposes no thread URL, so none is fabricated.
+    expect(only?.links).toStrictEqual([]);
+    expect(only?.body).toContain("the migration finished");
+  });
+
+  it("allocates fairly across all five sources in the fixed order", () => {
+    const collections = MORNING_BRIEF_SOURCE_ORDER.map((source) => {
+      return collection(source, [
+        item(source, `${source}-0`, { body: "x".repeat(400) }),
+        item(source, `${source}-1`, { body: "y".repeat(400), priority: 1 }),
+      ]);
+    });
+    const firstItems = collections.map((entry) => {
+      return morningBriefItemBytes(entry.items[0] as MorningBriefSourceItem);
+    });
+    // Exactly enough for one item from each source and nothing more.
+    const budget = firstItems.reduce((total, bytes) => {
+      return total + bytes;
+    }, 0);
+
+    const allocated = allocateMorningBriefRequest(collections, {
+      maxBytes: budget,
+    });
+
+    expect(
+      allocated.items.map((accepted) => {
+        return accepted.identity.source;
+      }),
+    ).toStrictEqual([...MORNING_BRIEF_SOURCE_ORDER]);
+    expect(allocated.omittedItems).toBe(5);
+  });
+
+  it("starts five configured sources in two joined waves of at most three", () => {
+    expect(
+      morningBriefSourceWaves([...MORNING_BRIEF_SOURCE_ORDER]),
+    ).toStrictEqual([
+      ["calendar", "gmail", "github"],
+      ["slack", "chat"],
+    ]);
   });
 });
