@@ -132,7 +132,7 @@ export async function validateGpt55Retirement(
     );
 
     const migration = await readFile(
-      new URL("../src/migrations/1155_retire_gpt_5_5.sql", import.meta.url),
+      new URL("../src/migrations/1156_retire_gpt_5_5.sql", import.meta.url),
       "utf8",
     );
     const before = await snapshot();

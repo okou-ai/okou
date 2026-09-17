@@ -21,9 +21,11 @@ for by Okou and accounted for separately from every user ledger.
 It starts no Run, sandbox or workflow automation, writes no Chat event, email or
 outbox row, sends nothing anywhere and touches no schedule. It reads no user
 model-provider account, checks no credit balance, reserves no allowance and
-writes no `usage_event`. There is no cron, recovery poller or background
-enqueue: a retry is another explicitly authorized invocation. **No result
-produced here is delivered, and none is a production candidate.**
+writes no `usage_event`. Nothing generates, collects, retries or recovers in the
+background: a retry is another explicitly authorized invocation. The single
+exception is deletion — a bounded retention batch on an existing maintenance
+tick removes expired content, and it only ever deletes. **No result produced
+here is delivered, and none is a production candidate.**
 
 ## The entrypoint
 
@@ -132,20 +134,52 @@ against that row field by field:
   current binding is a different authority and is refused rather than served the
   previous binding's work. Settling a lapsed reservation is exempt: it records
   an operational fact and releases nothing.
+- **At the moment of release, after every wait.** The read-back's last step is a
+  local fence under the owner lock: the slot is read again, its attempt must
+  still be the one that was validated, its retention deadline must still be in
+  the future, and the local binding must still match. It runs after the receipt
+  lookup, so a deletion, a disable, a rebinding or the deadline landing during
+  that final read cannot hand back the copy the request started with. It writes
+  nothing and never recreates an owner row.
 
 There is no second adoption algorithm and no always-allow path: this is the
 collection contract's own reader with the Slack credential withheld. It
 serializes local acceptance only — a request already in flight to the provider
 cannot be recalled, and this never claims otherwise.
 
+### The commit-admission fence
+
+Each of those checks describes an instant that has already passed by the time
+anything is written: the canonical resolution waits on Clerk, and the writes
+that follow it wait for the owner lock and the slot row. A Settings disable, an
+Agent transfer, a Slack rebinding or the caller going away can all land inside
+exactly that wait, which is why the decision is re-taken where the mutation is
+really admitted — after every wait, before any statement is issued, and on every
+persistence attempt:
+
+- **Cancellation.** A caller that has gone away commits nothing to the owner
+  slot. The whole transaction unwinds, so the slot keeps its original attempt,
+  reservation and retention, and a later explicit invocation settles it exactly
+  as any other unrecorded outcome. The anonymous receipt is already durable by
+  then and is kept.
+- **The local half of the authority.** The installation resolution — switch,
+  canonical installed-and-enabled brief, timezone, installation Agent, native
+  Slack binding — is re-resolved from the same readers admission uses, under the
+  locks those mutators really take, and compared against the occurrence with the
+  shared binding comparator. A lapse turns an acceptance into `result_discarded`.
+- **The remote half is not re-resolved.** A transaction is never held open
+  across a Clerk round trip. The membership generation proved before persistence
+  is carried in the fence the write is guarded by; a membership that changes
+  afterwards is caught by the next invocation's own resolution.
+
 ### The admission clock
 
-Every guarded write waits twice, once for the owner lock and once for the slot
-row. The clock is therefore sampled **after** those waits and on every
-persistence attempt, so the deadline comparison describes the instant the
-mutation is actually admitted rather than the instant the response arrived. A
-response observed before expiry that waits behind a lock until after it is
-refused, not accepted. Equality with the deadline is expired at both boundaries.
+The clock is sampled at that same point — after the owner lock and the slot row
+are really held, and on every persistence attempt — so the deadline comparison
+describes the instant the mutation is actually admitted rather than the instant
+the response arrived. A response observed before expiry that waits behind a lock
+until after it is refused, not accepted. Equality with the deadline is expired at
+every boundary.
 
 ### Finite phase ownership
 
@@ -158,7 +192,8 @@ refused, not accepted. Equality with the deadline is expired at both boundaries.
 | Streamed success response | 256 KiB                                             |
 | Error response            | 64 KiB                                              |
 | Accepted rendered result  | 32 KiB                                              |
-| Preview result retention  | 24 h                                                |
+| Preview result retention  | 24 h, then unreadable; purged on a maintenance tick |
+| Retention purge batch     | 200 rows per statement, 10 statements, 5 s per tick |
 
 The collection lease is **not** reused as generation ownership.
 
@@ -401,6 +436,13 @@ every owner attempt fails, the slot stays `reserved`, the response reports that
 honestly with `persistence_failed`, and a later invocation resolves it to
 `invocation_outcome_unknown`. No second request is ever made in either case.
 
+A cancelled caller reaches the same place by a different route. The retry
+reserve exists for real faults, so cancellation stops it immediately rather than
+spending it, and the slot is left exactly as its reservation left it. What is
+promised is that cancellation before the commit admission leaves **no accepted
+result**; what is not promised is retracting bytes already committed or a
+request already in flight to the provider.
+
 ## Stored values are validated, not defaulted
 
 `execution_purpose`, `state`, `language_source`, `source_coverage`,
@@ -424,11 +466,34 @@ and the collection's own explicit revocation therefore cascade to generation
 rows as well, with no detached result and no separate cleanup path to forget.
 
 Preview results are derived from source content, so they get a real bounded
-lifetime instead of a claim that they are ephemeral: 24 hours, enforced by an
-owner-scoped sweep the preview entrypoint itself consumes on every invocation.
-No scheduler or queue is introduced, and no other owner's rows are touched.
-Expired results are deleted; the anonymous platform receipt is not, because
-retention does not erase an incurred cost.
+lifetime instead of a claim that they are ephemeral: **24 hours**. Two distinct
+things enforce it, and conflating them would overstate the guarantee.
+
+**Accessibility ends at the deadline.** The release fence refuses a result whose
+`expires_at` has passed, equality included, so an expired result is unreadable
+from the instant it expires — whether or not its row is still there.
+
+**Physical removal is bounded by a maintenance interval.** An owner-scoped sweep
+still runs on every preview invocation, which keeps an owner who comes back from
+ever holding stale rows, but it bounds nothing on its own: an owner who invokes
+once and never again would keep title and Markdown forever. The real bound is
+`executeMorningBriefGenerationRetentionWork$`, a batch on the existing
+`/api/cron/execute-workflow-automations` tick — the same maintenance entrypoint
+the Morning Brief enrollment worker already runs on. It settles independently of
+the automations beside it, and it is deliberately finite: up to 200 rows per
+statement, 10 statements and 5 seconds per tick, selected in deadline order with
+`SKIP LOCKED` so it never queues behind a live attempt or takes a table-wide
+lock. That tick runs every minute, so purge latency after a deadline is
+**minutes under normal load, and longer only while a backlog drains** — never a
+reason a result stays readable.
+
+No scheduler, queue or recovery poller is introduced, and no other owner's rows
+are touched. Expired results are deleted; the anonymous platform receipt is not,
+because retention does not erase an incurred cost. What survives a purge instead
+is the completed collection occurrence: it holds no content, and it is what
+actually refuses a second invocation, so a purged slot reads as a completed
+collection that holds no generation rather than as an occurrence free to call the
+provider again.
 
 ## Rollout
 
@@ -437,6 +502,17 @@ tables and changes nothing existing, so it deploys before the code and rolls
 back with it: an older API simply never reads or writes them. No backfill
 exists or is needed. The feature stays default-off and the route stays
 unavailable in production.
+
+Migration `1155_morning_brief_generation_expiry_index` adds one index,
+`idx_morning_brief_generations_expiry` on `expires_at`, which the maintenance
+batch's ordered scan over already expired rows uses instead of a sequential
+scan; the existing owner-prefixed index cannot serve a scan that is not scoped to
+one owner. It is additive in both mixed-version directions: an older API never
+consults it and is unaffected if it ships first, and a newer API that reaches the
+database before it exists still runs the same bounded, `LIMIT`-ed statement —
+only its plan degrades. There is no backfill, no rewrite and no broad table lock:
+the table is new and empty in production, so the index build is immediate under
+the migration runner's `1s` lock timeout.
 
 ## Scale
 
@@ -478,17 +554,37 @@ it does not add a second request.
 **Durable state.** `morning-brief-generation-store.service.ts` exposes
 `reserveMorningBriefGeneration`, `recordMorningBriefGenerationSkip`,
 `readMorningBriefGeneration(db, key, purpose)`,
-`acceptMorningBriefGenerationResult`, `recordMorningBriefGenerationOutcome`,
+`holdMorningBriefGenerationSlot(tx, fence)`,
+`acceptMorningBriefGenerationResult(tx, fence, held, result)`,
+`recordMorningBriefGenerationOutcome(tx, fence, held, outcome)`,
 `resolveStaleMorningBriefGeneration`, `recordPlatformGenerationReceipt`,
-`readPlatformGenerationReceipt` and
-`sweepExpiredMorningBriefGenerations`. The guarded writers sample their own
-admission clock; callers pass no instant.
+`readPlatformGenerationReceipt`, `sweepExpiredMorningBriefGenerations` and
+`purgeExpiredMorningBriefGenerations(db, at, limit)`.
+
+The two guarded writers no longer take the slot themselves: a caller takes it
+with `holdMorningBriefGenerationSlot` and passes the returned hold — whose `at`
+is the admission clock, still sampled after every real wait — to the write. That is the point where a caller must
+honour cancellation and re-prove the owner's live local authority, and only the
+caller can do either, so the hold is a value rather than an implicit step.
+Callers still pass no instant of their own.
 
 **Live authority.** `currentMorningBriefCollectionAuthority$` resolves the
 canonical Morning Brief authority without the Slack credential, and
 `morningBriefCollectionBindingMatches(row, admission)` compares it against an
 occurrence. Any slice acting for an owner after a wait uses these rather than a
 second adoption algorithm.
+
+`morningBriefLocalAuthorityStillCurrent(db, occurrence)` is the transaction-safe
+half of the same resolution: it takes any `Pick<ReadonlyDb, "select">` — a `Tx`
+included — re-reads the switch, canonical installation and schedule, timezone,
+installation Agent and native Slack binding, and compares them against the
+occurrence with that same comparator, returning `current`, `not-executed` with a
+skip reason, or `binding-changed`. It makes no network call and carries the
+membership generation over from the occurrence, so it is the one to use inside a
+transaction; `currentMorningBriefCollectionAuthority$` remains the one to use
+outside it. `loadSlackUserBinding(db, { orgId, userId })` in
+`slack-data.service.ts` is the credential-free read both share, so a caller that
+only needs to know which Slack identity is bound never decrypts a bot token.
 
 **Delivery read.** Delivery reads one accepted result by owner, occurrence slot
 and purpose. The stable parts of that reference are the slot key

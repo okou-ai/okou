@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import { modelProvidersMainContract } from "@okouai/api-contracts/contracts/model-provider-routes";
 import { morningBriefCollectionPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-collection-preview";
+import { testWorkflowAutomationExecutionContract } from "@okouai/api-contracts/contracts/test-workflow-automation-execution";
 import {
   morningBriefGenerationPreviewContract,
   type MorningBriefGenerationView,
@@ -21,6 +22,7 @@ import {
   deleteMorningBriefAgent,
   pauseMorningBriefAutomation,
   readMorningBriefCollectionOccurrences,
+  restrictMorningBriefAgent,
   seedInstalledMorningBrief,
 } from "../../../test-fixtures/morning-brief-collection";
 import {
@@ -39,10 +41,11 @@ import {
 } from "../../../test-fixtures/morning-brief-generation";
 import { upsertOrgMetadataFixture } from "../../../test-fixtures/org-metadata";
 import { signSandboxJwtForTests } from "../../auth/tokens";
-import { createDeferredPromise } from "../../utils";
+import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { modelProvidersRoutes } from "../model-providers";
 import { morningBriefCollectionPreviewRoutes } from "../morning-brief-collection-preview";
 import { morningBriefGenerationPreviewRoutes } from "../morning-brief-generation-preview";
+import { testWorkflowAutomationExecutionRoutes } from "../test-workflow-automation-execution";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import {
   seedSlackOrgConnection$,
@@ -91,6 +94,23 @@ function collectOnlyClient() {
   return setupApp({ context, routes: morningBriefCollectionPreviewRoutes })(
     morningBriefCollectionPreviewContract,
   );
+}
+
+/**
+ * Run the retention batch the maintenance tick runs, through its endpoint.
+ *
+ * It takes no owner: this is the global, bounded consumer, and the point of the
+ * assertions around it is that an owner who never invokes the preview again
+ * still loses their expired content.
+ */
+async function runRetentionMaintenance(): Promise<number> {
+  const response = await accept(
+    setupApp({ context, routes: testWorkflowAutomationExecutionRoutes })(
+      testWorkflowAutomationExecutionContract,
+    ).retainMorningBriefGenerations({ body: {} }),
+    [200],
+  );
+  return response.body.purged;
 }
 
 function agentToken(
@@ -1845,5 +1865,442 @@ describe("Morning Brief platform-funded generation is platform-paid", () => {
     await expect(readOwnerBillingFootprint(scope)).resolves.toStrictEqual(
       before,
     );
+  });
+});
+
+/**
+ * A client whose requests carry a signal this test can cancel.
+ *
+ * The route handler is given exactly this signal, so aborting it is the real
+ * caller-went-away path rather than a stand-in for one.
+ */
+function cancellableGeneration(signal: AbortSignal) {
+  return setupApp({
+    context,
+    routes: morningBriefGenerationPreviewRoutes,
+    signal,
+  })(morningBriefGenerationPreviewContract);
+}
+
+describe("Morning Brief platform-funded generation commit admission", () => {
+  it("commits no owner content when the caller cancels while persistence waits", async () => {
+    const f = await fixture();
+    slackWithMessages();
+    const controller = new AbortController();
+    // The branch that cancels runs while the request is still open, so it is
+    // kept and joined rather than left floating.
+    let cancelled: Promise<void> | undefined;
+    const traffic = scriptProvider(async () => {
+      // Hold the row every guarded write locks first. The caller goes away only
+      // once persistence is really blocked on it, which is the exact window
+      // where a post-write cancellation check would arrive too late.
+      const held = await holdMorningBriefOwnerRow(f, context.signal);
+      cancelled = (async () => {
+        await held.waitForArrival();
+        controller.abort();
+        await held.release();
+      })();
+      return completion({ cost: 0.004 });
+    });
+
+    const outcome = await settleIncludingAbort(
+      cancellableGeneration(controller.signal).preview({
+        headers: f.headers,
+        body: { scheduledFor: ANCHOR },
+      }),
+    );
+    await cancelled;
+    // A cancelled request reports nothing; what matters is what it left behind.
+    expect(outcome.ok && outcome.value.status === 200).toBeFalsy();
+    expect(traffic.bodies).toHaveLength(1);
+
+    const [row, ...extraRows] = await readMorningBriefGenerations(f);
+    expect(extraRows).toStrictEqual([]);
+    expect(row?.state).toBe("reserved");
+    expect(row?.decision).toBeNull();
+    expect(row?.resultTitle).toBeNull();
+    expect(row?.resultMarkdown).toBeNull();
+    // The charge really happened before cancellation could reach the writer, so
+    // it is recorded independently of the owner-scoped write that unwound.
+    await expect(
+      readPlatformGenerationReceipts([row?.attemptId ?? ""]),
+    ).resolves.toHaveLength(1);
+
+    // The slot keeps its original identity and lifetime: a later invocation
+    // settles the ambiguity it was left in, and sends nothing.
+    await expireMorningBriefGenerationReservation(f, new Date(now() - 1000));
+    const settled = await accept(generate(f), [200]);
+    if (settled.body.result !== "already-generated") {
+      throw new Error(`Expected already-generated, got ${settled.body.result}`);
+    }
+    expect(settled.body.generation.attemptId).toBe(row?.attemptId);
+    expect(settled.body.generation.state).toBe("invocation_outcome_unknown");
+    expect(settled.body.generation.result).toBeNull();
+    expect(traffic.bodies).toHaveLength(1);
+  });
+
+  it.each([
+    [
+      "the brief is disabled",
+      async (f: Fixture) => {
+        await pauseMorningBriefAutomation(f.automationId);
+      },
+      "owner_revoked",
+    ],
+    [
+      "the installation Agent stops being reachable",
+      async (f: Fixture) => {
+        await restrictMorningBriefAgent(f.agentId);
+      },
+      "owner_revoked",
+    ],
+    [
+      "the connected Slack account is rebound",
+      async (f: Fixture) => {
+        await rebindMorningBriefSlackAccount(
+          f.userId,
+          `U${randomUUID().slice(0, 8)}`,
+        );
+      },
+      "binding_changed",
+    ],
+  ])(
+    "refuses stale content when %s commits while persistence waits",
+    async (_label, mutate, expectedReason) => {
+      const f = await fixture();
+      const other = await fixture();
+      slackWithMessages();
+      let lapsed: Promise<void> | undefined;
+      const traffic = scriptProvider(async () => {
+        if (lapsed !== undefined) {
+          return completion({ cost: 0.001 });
+        }
+        // The authority was already proved for this response; the change lands
+        // afterwards, while the owner-scoped write waits for its lock.
+        const held = await holdMorningBriefOwnerRow(f, context.signal);
+        lapsed = (async () => {
+          await held.waitForArrival();
+          await mutate(f);
+          await held.release();
+        })();
+        return completion({ cost: 0.007 });
+      });
+
+      const response = await accept(generate(f), [200]);
+      await lapsed;
+      const body = expectGenerated(response.body);
+      expect(body.generation.state).toBe("result_discarded");
+      expect(body.generation.failureReason).toBe(expectedReason);
+      expect(body.generation.result).toBeNull();
+      expect(traffic.bodies).toHaveLength(1);
+      // The incurred charge survives the refusal.
+      await expect(
+        readPlatformGenerationReceipts([body.generation.attemptId]),
+      ).resolves.toHaveLength(1);
+
+      const [row] = await readMorningBriefGenerations(f);
+      expect(row?.state).toBe("result_discarded");
+      expect(row?.resultMarkdown).toBeNull();
+
+      // Another owner's brief is untouched by this owner's lapsed authority.
+      const unrelated = await accept(generate(other), [200]);
+      expect(expectGenerated(unrelated.body).generation.state).toBe(
+        "succeeded",
+      );
+      const [unrelatedRow] = await readMorningBriefGenerations(other);
+      expect(unrelatedRow?.resultMarkdown).toContain("# Release readiness");
+      expect(traffic.bodies).toHaveLength(2);
+    },
+  );
+
+  it("admits one provider request when a second attempt overlaps the reservation commit", async () => {
+    const f = await fixture();
+    slackWithMessages();
+    const traffic = scriptProvider(() => {
+      return completion({ cost: 0.006 });
+    });
+    // The first attempt is suspended between its reservation INSERT and its
+    // COMMIT, so the second really overlaps it rather than following it.
+    const barrier = await holdMorningBriefGenerationReservation(
+      f,
+      context.signal,
+    );
+
+    const first = accept(generate(f), [200]);
+    await barrier.waitForArrival();
+    const second = accept(generate(f), [409]);
+    // The second attempt serializes on the occurrence row the first holds.
+    await barrier.waitForArrival();
+    await barrier.release();
+
+    const [firstResponse, secondResponse] = await Promise.all([first, second]);
+    expect(expectGenerated(firstResponse.body).generation.state).toBe(
+      "succeeded",
+    );
+    expect(secondResponse.body.error.code).toBe(
+      "MORNING_BRIEF_GENERATION_IN_PROGRESS",
+    );
+    expect(traffic.bodies).toHaveLength(1);
+
+    const [row, ...extraRows] = await readMorningBriefGenerations(f);
+    expect(extraRows).toStrictEqual([]);
+    expect(row?.state).toBe("succeeded");
+    await expect(
+      readPlatformGenerationReceipts([row?.attemptId ?? ""]),
+    ).resolves.toHaveLength(1);
+  });
+
+  it("admits one provider request when a second attempt overlaps the open response", async () => {
+    const f = await fixture();
+    slackWithMessages();
+    const arrived = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    const traffic = scriptProvider(async () => {
+      arrived.resolve();
+      await release.promise;
+      return completion({ cost: 0.005 });
+    });
+
+    const first = accept(generate(f), [200]);
+    await arrived.promise;
+    // The reservation is committed and the provider response is still open.
+    const conflict = await accept(generate(f), [409]);
+    expect(conflict.body.error.code).toBe(
+      "MORNING_BRIEF_GENERATION_IN_PROGRESS",
+    );
+    expect(traffic.bodies).toHaveLength(1);
+    release.resolve();
+
+    const response = await first;
+    expect(expectGenerated(response.body).generation.state).toBe("succeeded");
+    expect(traffic.bodies).toHaveLength(1);
+    await expect(readMorningBriefGenerations(f)).resolves.toHaveLength(1);
+  });
+});
+
+/**
+ * Suspend one Clerk membership resolution, counted from the request's first.
+ *
+ * A read-back resolves the canonical authority twice: once to claim the
+ * completed occurrence, and once to decide whether its stored result may be
+ * released. Suspending the second is what lets a test take the owner row *after*
+ * the claim released it, so the final release fence — and only it — is the
+ * thing that actually waits. The count is asserted by the caller, so a path that
+ * stops resolving twice fails loudly instead of silently holding elsewhere.
+ */
+function holdMembershipResolution(nth: number): {
+  readonly arrived: Promise<void>;
+  readonly release: () => void;
+  readonly calls: () => number;
+} {
+  const arrived = createDeferredPromise<void>(context.signal);
+  const released = createDeferredPromise<void>(context.signal);
+  const memberships =
+    context.mocks.clerk.organizations.getOrganizationMembershipList;
+  const resolveMemberships = memberships.getMockImplementation();
+  let seen = 0;
+  memberships.mockImplementation(async (...callArgs: unknown[]) => {
+    seen += 1;
+    if (seen === nth) {
+      arrived.resolve();
+      await released.promise;
+    }
+    return await resolveMemberships?.(...callArgs);
+  });
+  return {
+    arrived: arrived.promise,
+    release: released.resolve,
+    calls: () => {
+      return seen;
+    },
+  };
+}
+
+describe("Morning Brief platform-funded generation release fence", () => {
+  /**
+   * Read a stored result back with the final release fence really blocked.
+   *
+   * The membership hold only provides a foothold *after* the claim; the wait the
+   * mutation lands during is the release fence's own owner lock, observed with
+   * `pg_blocking_pids` rather than a sleep. Everything the fence has to survive
+   * — the authority resolution and the receipt read — has already happened by
+   * then, so a fence that ran any earlier would serve the cached content.
+   */
+  function readBackWhileFenced(f: Fixture, mutate: () => Promise<void>) {
+    const membership = holdMembershipResolution(2);
+    const pending = generate(f);
+    const fenced = (async () => {
+      await membership.arrived;
+      const held = await holdMorningBriefOwnerRow(f, context.signal);
+      membership.release();
+      await held.waitForArrival();
+      await mutate();
+      await held.release();
+    })();
+    return { pending, fenced, membership };
+  }
+
+  /** One accepted result, then a provider no read-back may ever contact. */
+  async function storedResult(f: Fixture): Promise<string> {
+    slackWithMessages();
+    scriptProvider(() => {
+      return completion({ cost: 0.002 });
+    });
+    const response = await accept(generate(f), [200]);
+    const { generation } = expectGenerated(response.body);
+    expect(generation.state).toBe("succeeded");
+    scriptProvider(() => {
+      throw new Error("a read-back must never reach the provider");
+    });
+    return generation.attemptId;
+  }
+
+  it("does not release content the maintenance purge removed during the final read", async () => {
+    const f = await fixture();
+    const attemptId = await storedResult(f);
+
+    const { pending, fenced, membership } = readBackWhileFenced(f, async () => {
+      mockNow(now() + 25 * 60 * 60 * 1000);
+      await expect(runRetentionMaintenance()).resolves.toBeGreaterThan(0);
+    });
+    const response = await accept(pending, [200]);
+    await fenced;
+
+    expect(membership.calls()).toBe(2);
+    expect(response.body.result).toBe(
+      "collection-completed-without-generation",
+    );
+    await expect(readMorningBriefGenerations(f)).resolves.toStrictEqual([]);
+    // The anonymous receipt outlives the content it paid for.
+    await expect(
+      readPlatformGenerationReceipts([attemptId]),
+    ).resolves.toHaveLength(1);
+  });
+
+  it("does not release content that reached its retention deadline exactly", async () => {
+    const f = await fixture();
+    await storedResult(f);
+
+    const { pending, fenced } = readBackWhileFenced(f, async () => {
+      // Equality with the deadline is already expired, and the content is
+      // unreadable there whether or not maintenance has purged it yet.
+      const deadline = new Date(now());
+      mockNow(deadline);
+      await expireMorningBriefGenerationRetention(f, deadline);
+    });
+    const response = await accept(pending, [200]);
+    await fenced;
+
+    expect(response.body.result).toBe(
+      "collection-completed-without-generation",
+    );
+    // Still physically present: the deadline made it unreadable, not absent.
+    const [row] = await readMorningBriefGenerations(f);
+    expect(row?.state).toBe("succeeded");
+  });
+
+  it("does not release a stored result the owner disabled during the final read", async () => {
+    const f = await fixture();
+    await storedResult(f);
+
+    const { pending, fenced } = readBackWhileFenced(f, async () => {
+      await pauseMorningBriefAutomation(f.automationId);
+    });
+    const response = await accept(pending, [200]);
+    await fenced;
+
+    if (response.body.result !== "not-executed") {
+      throw new Error(`Expected not-executed, got ${response.body.result}`);
+    }
+    expect(response.body.reason).toBe("brief-paused");
+    await expect(readMorningBriefGenerations(f)).resolves.toHaveLength(1);
+  });
+
+  it("does not release a stored result rebound to another Slack identity", async () => {
+    const f = await fixture();
+    await storedResult(f);
+
+    const { pending, fenced } = readBackWhileFenced(f, async () => {
+      await rebindMorningBriefSlackAccount(
+        f.userId,
+        `U${randomUUID().slice(0, 8)}`,
+      );
+    });
+    const conflict = await accept(pending, [409]);
+    await fenced;
+
+    expect(conflict.body.error.code).toBe(
+      "MORNING_BRIEF_COLLECTION_BINDING_CHANGED",
+    );
+    await expect(readMorningBriefGenerations(f)).resolves.toHaveLength(1);
+  });
+
+  it("releases an unchanged result with no recollection and no second request", async () => {
+    const f = await fixture();
+    const attemptId = await storedResult(f);
+    const traffic = scriptProvider(() => {
+      throw new Error("a healthy read-back must never reach the provider");
+    });
+    let slackCalls = 0;
+    server.use(
+      http.get(SLACK_USER_CONVERSATIONS_URL, () => {
+        slackCalls += 1;
+        return HttpResponse.json({ ok: true, channels: [] });
+      }),
+    );
+
+    const response = await accept(generate(f), [200]);
+    if (response.body.result !== "already-generated") {
+      throw new Error(
+        `Expected already-generated, got ${response.body.result}`,
+      );
+    }
+    expect(response.body.generation.attemptId).toBe(attemptId);
+    expect(response.body.generation.state).toBe("succeeded");
+    expect(
+      response.body.generation.result?.decision === "deliver" &&
+        response.body.generation.result.markdown,
+    ).toContain("# Release readiness");
+    expect(traffic.bodies).toStrictEqual([]);
+    expect(slackCalls).toBe(0);
+    await expect(readMorningBriefGenerations(f)).resolves.toHaveLength(1);
+  });
+});
+
+describe("Morning Brief platform-funded generation retention", () => {
+  it("purges an idle owner's expired content without that owner invoking again", async () => {
+    const f = await fixture();
+    const other = await fixture();
+    slackWithMessages();
+    const traffic = scriptProvider(() => {
+      return completion({ cost: 0.002 });
+    });
+    const expiring = expectGenerated(
+      (await accept(generate(f), [200])).body,
+    ).generation;
+    const live = expectGenerated(
+      (await accept(generate(other), [200])).body,
+    ).generation;
+    await expireMorningBriefGenerationRetention(f, new Date(now() - 1000));
+
+    // The owner never comes back: the bounded maintenance consumer is what
+    // removes the content, on an existing tick rather than a new scheduler.
+    await expect(runRetentionMaintenance()).resolves.toBeGreaterThan(0);
+
+    await expect(readMorningBriefGenerations(f)).resolves.toStrictEqual([]);
+    const [survivor] = await readMorningBriefGenerations(other);
+    expect(survivor?.state).toBe("succeeded");
+    expect(survivor?.resultMarkdown).toContain("# Release readiness");
+    // Incurred platform cost is never erased by content retention.
+    await expect(
+      readPlatformGenerationReceipts([expiring.attemptId, live.attemptId]),
+    ).resolves.toHaveLength(2);
+
+    // A purged slot is a completed collection that holds no generation, so the
+    // occurrence still refuses a second invocation for the same anchor.
+    const after = await accept(generate(f), [200]);
+    expect(after.body.result).toBe("collection-completed-without-generation");
+    expect(traffic.bodies).toHaveLength(2);
+    await expect(readMorningBriefGenerations(f)).resolves.toStrictEqual([]);
   });
 });

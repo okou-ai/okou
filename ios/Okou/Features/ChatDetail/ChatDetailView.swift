@@ -12,18 +12,19 @@ struct ChatDetailView: View {
   }
 
   var body: some View {
+    let displayedMessages = messages
     ScrollViewReader { proxy in
       ScrollView {
         VStack(alignment: .leading, spacing: 24) {
-          if messages.isEmpty {
-            ContentUnavailableView(
-              "Start a conversation", systemImage: "bubble.left.and.bubble.right",
-              description: Text("Ask your agent anything.")
-            )
-            .padding(.top, 70)
-          }
-          ForEach(messages) { message in
-            messageRow(message).id(message.id)
+          VStack(alignment: .leading, spacing: 8) {
+            ForEach(Array(displayedMessages.enumerated()), id: \.element.id) { index, message in
+              let continuesAssistantGroup =
+                message.role == .assistant && index > 0
+                && displayedMessages[index - 1].role == .assistant
+              messageRow(message, showsAvatar: !continuesAssistantGroup)
+                .padding(.top, index == 0 || continuesAssistantGroup ? 0 : 16)
+                .id(message.id)
+            }
           }
           if history.executionState.isActive {
             HStack(spacing: 10) {
@@ -34,7 +35,7 @@ struct ChatDetailView: View {
           } else if history.executionState == .cancelled {
             Label("Stopped", systemImage: "stop.circle").font(.caption).foregroundStyle(.secondary)
           }
-          if !messages.isEmpty {
+          if !displayedMessages.isEmpty {
             Link(
               "Open conversation on web",
               destination: store.webURL.appending(path: "chats/\(thread.id)")
@@ -48,7 +49,7 @@ struct ChatDetailView: View {
       .defaultScrollAnchor(.bottom, for: .initialOffset)
       .scrollDismissesKeyboard(.interactively)
       .refreshable { await store.loadHistory(thread.id) }
-      .onChange(of: messages.last?.id) {
+      .onChange(of: displayedMessages.last?.id) {
         withAnimation { proxy.scrollTo("conversation-bottom", anchor: .bottom) }
       }
     }
@@ -64,12 +65,23 @@ struct ChatDetailView: View {
     }
   }
 
-  private func messageRow(_ message: ChatMessage) -> some View {
-    VStack(alignment: .leading, spacing: 7) {
-      Text(message.role == .user ? "You" : message.role == .assistant ? "Okou" : "Notice")
-        .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+  private func messageRow(_ message: ChatMessage, showsAvatar: Bool) -> some View {
+    VStack(alignment: .leading, spacing: 8) {
+      if message.role == .assistant {
+        if showsAvatar {
+          Image("AssistantAvatar")
+            .resizable().scaledToFit()
+            .frame(width: 28, height: 28)
+            .accessibilityLabel("Okou")
+            .accessibilityIdentifier("assistant-avatar")
+        }
+      } else if message.role == .system {
+        Text("Notice")
+          .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+      }
       MessageBodyView(text: message.text, baseURL: store.webURL)
         .foregroundStyle(message.isError ? Color.red : Color.primary)
+        .padding(.leading, message.role == .assistant ? 6 : 0)
       if let pending = store.pending[thread.id]?.first(where: { $0.id == message.id }) {
         HStack {
           Text(pending.needsRetry ? "Delivery not confirmed" : "Sending…")
