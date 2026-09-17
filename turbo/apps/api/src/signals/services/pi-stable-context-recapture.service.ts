@@ -32,8 +32,10 @@ import { and, asc, eq, gt, inArray, isNull, or } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
+import { settle } from "../utils";
 import { loadAgentConnectorScopeSerial } from "./agent-connector-scope.service";
 import { buildAgentToolsPrompt } from "./agent-tools-prompt.service";
+import { ExternalConnectorCatalogUnavailableError } from "./connector-catalog-external-reader.service";
 import { loadConnectorRuntimeSelection } from "./connector-catalog-runtime.service";
 import { expandConnectorServerFirewallPolicies } from "./connector-server-firewall-catalog.service";
 import {
@@ -595,7 +597,16 @@ export async function recapturePiStableContextInput(
   if (!input.semantic) {
     return input;
   }
-  const snapshot = await loadStableContextSourceSnapshot(db, input, checkedAt);
+  const captured = await settle(
+    loadStableContextSourceSnapshot(db, input, checkedAt),
+  );
+  if (!captured.ok) {
+    if (captured.error instanceof ExternalConnectorCatalogUnavailableError) {
+      return null;
+    }
+    throw captured.error;
+  }
+  const snapshot = captured.value;
   const semantic: PiStableContextSemanticInput = {
     promptInputs: snapshot.promptInputs,
     feishuPlatform: input.semantic.feishuPlatform,

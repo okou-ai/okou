@@ -445,6 +445,13 @@ describe("durable Pi API producer", () => {
       catalogVersion: `stable-context-authority-${randomUUID()}`,
     });
     await invalidateApiTestConnectorCatalogCompatibility();
+    await expect(
+      updateFeatureSwitchesForUser(
+        context,
+        { ...actor, orgId },
+        { [FeatureSwitchKey.DeliveryFormatGuidance]: true },
+      ),
+    ).resolves.toBeUndefined();
     const callsBeforeCatalogRejection = providerCalls;
     await expect(
       sendChatRun(
@@ -479,11 +486,6 @@ describe("durable Pi API producer", () => {
       grants: [],
     });
     await api.enableAgentConnectors(actor, agentId, []);
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId },
-      { [FeatureSwitchKey.DeliveryFormatGuidance]: true },
-    );
     const instructions = `Worker-published instructions ${randomUUID()}`;
     const displayName = `Published identity ${randomUUID()}`;
     await bdd.updateAgentInstructions(actor, agentId, instructions);
