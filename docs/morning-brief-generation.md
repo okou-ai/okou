@@ -503,7 +503,7 @@ back with it: an older API simply never reads or writes them. No backfill
 exists or is needed. The feature stays default-off and the route stays
 unavailable in production.
 
-Migration `1154_morning_brief_generation_expiry_index` adds one index,
+Migration `1155_morning_brief_generation_expiry_index` adds one index,
 `idx_morning_brief_generations_expiry` on `expires_at`, which the maintenance
 batch's ordered scan over already expired rows uses instead of a sequential
 scan; the existing owner-prefixed index cannot serve a scan that is not scoped to

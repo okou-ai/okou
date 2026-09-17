@@ -1,5 +1,5 @@
 {
-  "id": "bab243df-dbb5-4239-8509-8d17c2c355cb",
+  "id": "42fbc651-d312-4c9a-b798-cef804d12b34",
   "prevId": "b8f353db-68d3-4cf9-bda4-53cfcd8ece6e",
   "version": "7",
   "dialect": "postgresql",
@@ -19141,21 +19141,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "idx_morning_brief_generations_expiry": {
-          "name": "idx_morning_brief_generations_expiry",
-          "columns": [
-            {
-              "expression": "expires_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
@@ -21410,6 +21395,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": false
+        },
+        "morning_brief_collection_revoked_at": {
+          "name": "morning_brief_collection_revoked_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
         },
         "capture_network_bodies_remaining": {
           "name": "capture_network_bodies_remaining",

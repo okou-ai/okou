@@ -1,0 +1,311 @@
+// !$*UTF8*$!
+{
+	"archiveVersion" = 1;
+	"classes" = {
+	};
+	"objectVersion" = 77;
+	"objects" = {
+		"000000000000000000000009" = {
+			"isa" = "PBXFileReference";
+			"explicitFileType" = "wrapper.application";
+			"includeInIndex" = 0;
+			"path" = "Okou.app";
+			"sourceTree" = "BUILT_PRODUCTS_DIR";
+		};
+		"00000000000000000000000A" = {
+			"isa" = "PBXFileReference";
+			"explicitFileType" = "wrapper.cfbundle";
+			"includeInIndex" = 0;
+			"path" = "OkouTests.xctest";
+			"sourceTree" = "BUILT_PRODUCTS_DIR";
+		};
+		"00000000000000000000000B" = {
+			"isa" = "PBXFileSystemSynchronizedBuildFileExceptionSet";
+			"membershipExceptions" = ("Resources/Info.plist",);
+			"target" = "000000000000000000000002";
+		};
+		"000000000000000000000005" = {
+			"isa" = "PBXFileSystemSynchronizedRootGroup";
+			"exceptions" = ("00000000000000000000000B",);
+			"path" = "Okou";
+			"sourceTree" = "<group>";
+		};
+		"000000000000000000000006" = {
+			"isa" = "PBXFileSystemSynchronizedRootGroup";
+			"path" = "OkouTests";
+			"sourceTree" = "<group>";
+		};
+		"000000000000000000000004" = {
+			"isa" = "PBXFileSystemSynchronizedRootGroup";
+			"path" = "Config";
+			"sourceTree" = "<group>";
+		};
+		"000000000000000000000007" = {
+			"isa" = "PBXGroup";
+			"children" = ("000000000000000000000009", "00000000000000000000000A",);
+			"name" = "Products";
+			"sourceTree" = "<group>";
+		};
+		"000000000000000000000008" = {
+			"isa" = "PBXGroup";
+			"children" = ("000000000000000000000005", "000000000000000000000006", "000000000000000000000004", "000000000000000000000007",);
+			"sourceTree" = "<group>";
+		};
+		"00000000000000000000000C" = {
+			"isa" = "XCRemoteSwiftPackageReference";
+			"repositoryURL" = "https://github.com/clerk/clerk-ios.git";
+			"requirement" = {
+				"kind" = "exactVersion";
+				"version" = "1.5.4";
+			};
+		};
+		"00000000000000000000000D" = {
+			"isa" = "XCRemoteSwiftPackageReference";
+			"repositoryURL" = "https://github.com/ably/ably-cocoa.git";
+			"requirement" = {
+				"kind" = "exactVersion";
+				"version" = "1.4.0";
+			};
+		};
+		"00000000000000000000000E" = {
+			"isa" = "XCSwiftPackageProductDependency";
+			"package" = "00000000000000000000000C";
+			"productName" = "ClerkKit";
+		};
+		"000000000000000000000025" = {
+			"isa" = "XCRemoteSwiftPackageReference";
+			"repositoryURL" = "https://github.com/gonzalezreal/textual.git";
+			"requirement" = {
+				"kind" = "exactVersion";
+				"version" = "0.5.0";
+			};
+		};
+		"000000000000000000000026" = {
+			"isa" = "XCSwiftPackageProductDependency";
+			"package" = "000000000000000000000025";
+			"productName" = "Textual";
+		};
+		"000000000000000000000027" = {
+			"isa" = "PBXBuildFile";
+			"productRef" = "000000000000000000000026";
+		};
+		"00000000000000000000000F" = {
+			"isa" = "PBXBuildFile";
+			"productRef" = "00000000000000000000000E";
+		};
+		"000000000000000000000010" = {
+			"isa" = "XCSwiftPackageProductDependency";
+			"package" = "00000000000000000000000C";
+			"productName" = "ClerkKitUI";
+		};
+		"000000000000000000000011" = {
+			"isa" = "PBXBuildFile";
+			"productRef" = "000000000000000000000010";
+		};
+		"000000000000000000000012" = {
+			"isa" = "XCSwiftPackageProductDependency";
+			"package" = "00000000000000000000000D";
+			"productName" = "Ably";
+		};
+		"000000000000000000000013" = {
+			"isa" = "PBXBuildFile";
+			"productRef" = "000000000000000000000012";
+		};
+		"000000000000000000000014" = {
+			"isa" = "PBXSourcesBuildPhase";
+			"buildActionMask" = 2147483647;
+			"files" = ();
+			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"000000000000000000000015" = {
+			"isa" = "PBXFrameworksBuildPhase";
+			"buildActionMask" = 2147483647;
+			"files" = ("00000000000000000000000F", "000000000000000000000011", "000000000000000000000013", "000000000000000000000027",);
+			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"000000000000000000000016" = {
+			"isa" = "PBXResourcesBuildPhase";
+			"buildActionMask" = 2147483647;
+			"files" = ();
+			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"000000000000000000000017" = {
+			"isa" = "PBXSourcesBuildPhase";
+			"buildActionMask" = 2147483647;
+			"files" = ();
+			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"000000000000000000000018" = {
+			"isa" = "PBXFrameworksBuildPhase";
+			"buildActionMask" = 2147483647;
+			"files" = ();
+			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"000000000000000000000019" = {
+			"isa" = "PBXResourcesBuildPhase";
+			"buildActionMask" = 2147483647;
+			"files" = ();
+			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"00000000000000000000001A" = {
+			"isa" = "PBXContainerItemProxy";
+			"containerPortal" = "000000000000000000000001";
+			"proxyType" = 1;
+			"remoteGlobalIDString" = "000000000000000000000002";
+			"remoteInfo" = "Okou";
+		};
+		"00000000000000000000001B" = {
+			"isa" = "PBXTargetDependency";
+			"target" = "000000000000000000000002";
+			"targetProxy" = "00000000000000000000001A";
+		};
+		"00000000000000000000001C" = {
+			"isa" = "XCBuildConfiguration";
+			"baseConfigurationReferenceAnchor" = "000000000000000000000004";
+			"baseConfigurationReferenceRelativePath" = "Debug.xcconfig";
+			"buildSettings" = {
+				"CLANG_ENABLE_MODULES" = "YES";
+				"CLANG_ENABLE_OBJC_ARC" = "YES";
+				"SDKROOT" = "iphoneos";
+			};
+			"name" = "Debug";
+		};
+		"00000000000000000000001D" = {
+			"isa" = "XCBuildConfiguration";
+			"baseConfigurationReferenceAnchor" = "000000000000000000000004";
+			"baseConfigurationReferenceRelativePath" = "Release.xcconfig";
+			"buildSettings" = {
+				"CLANG_ENABLE_MODULES" = "YES";
+				"CLANG_ENABLE_OBJC_ARC" = "YES";
+				"SDKROOT" = "iphoneos";
+			};
+			"name" = "Release";
+		};
+		"00000000000000000000001E" = {
+			"isa" = "XCConfigurationList";
+			"buildConfigurations" = ("00000000000000000000001C", "00000000000000000000001D",);
+			"defaultConfigurationIsVisible" = 0;
+			"defaultConfigurationName" = "Release";
+		};
+		"00000000000000000000001F" = {
+			"isa" = "XCBuildConfiguration";
+			"buildSettings" = {
+				"ASSETCATALOG_COMPILER_APPICON_NAME" = "AppIcon";
+				"ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME" = "AccentColor";
+				"GENERATE_INFOPLIST_FILE" = "NO";
+				"INFOPLIST_FILE" = "Okou/Resources/Info.plist";
+				"LD_RUNPATH_SEARCH_PATHS" = ("$(inherited)", "@executable_path/Frameworks",);
+				"PRODUCT_BUNDLE_IDENTIFIER" = "ai.okou.ios";
+				"PRODUCT_NAME" = "$(TARGET_NAME)";
+				"SWIFT_EMIT_LOC_STRINGS" = "YES";
+			};
+			"name" = "Debug";
+		};
+		"000000000000000000000020" = {
+			"isa" = "XCBuildConfiguration";
+			"buildSettings" = {
+				"ASSETCATALOG_COMPILER_APPICON_NAME" = "AppIcon";
+				"ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME" = "AccentColor";
+				"GENERATE_INFOPLIST_FILE" = "NO";
+				"INFOPLIST_FILE" = "Okou/Resources/Info.plist";
+				"LD_RUNPATH_SEARCH_PATHS" = ("$(inherited)", "@executable_path/Frameworks",);
+				"PRODUCT_BUNDLE_IDENTIFIER" = "ai.okou.ios";
+				"PRODUCT_NAME" = "$(TARGET_NAME)";
+				"SWIFT_EMIT_LOC_STRINGS" = "YES";
+			};
+			"name" = "Release";
+		};
+		"000000000000000000000021" = {
+			"isa" = "XCConfigurationList";
+			"buildConfigurations" = ("00000000000000000000001F", "000000000000000000000020",);
+			"defaultConfigurationIsVisible" = 0;
+			"defaultConfigurationName" = "Release";
+		};
+		"000000000000000000000022" = {
+			"isa" = "XCBuildConfiguration";
+			"buildSettings" = {
+				"BUNDLE_LOADER" = "$(TEST_HOST)";
+				"GENERATE_INFOPLIST_FILE" = "YES";
+				"LD_RUNPATH_SEARCH_PATHS" = ("$(inherited)", "@executable_path/Frameworks", "@loader_path/Frameworks",);
+				"PRODUCT_BUNDLE_IDENTIFIER" = "ai.okou.ios.tests";
+				"PRODUCT_NAME" = "$(TARGET_NAME)";
+				"TEST_HOST" = "$(BUILT_PRODUCTS_DIR)/Okou.app/Okou";
+			};
+			"name" = "Debug";
+		};
+		"000000000000000000000023" = {
+			"isa" = "XCBuildConfiguration";
+			"buildSettings" = {
+				"BUNDLE_LOADER" = "$(TEST_HOST)";
+				"GENERATE_INFOPLIST_FILE" = "YES";
+				"LD_RUNPATH_SEARCH_PATHS" = ("$(inherited)", "@executable_path/Frameworks", "@loader_path/Frameworks",);
+				"PRODUCT_BUNDLE_IDENTIFIER" = "ai.okou.ios.tests";
+				"PRODUCT_NAME" = "$(TARGET_NAME)";
+				"TEST_HOST" = "$(BUILT_PRODUCTS_DIR)/Okou.app/Okou";
+			};
+			"name" = "Release";
+		};
+		"000000000000000000000024" = {
+			"isa" = "XCConfigurationList";
+			"buildConfigurations" = ("000000000000000000000022", "000000000000000000000023",);
+			"defaultConfigurationIsVisible" = 0;
+			"defaultConfigurationName" = "Release";
+		};
+		"000000000000000000000002" = {
+			"isa" = "PBXNativeTarget";
+			"buildConfigurationList" = "000000000000000000000021";
+			"buildPhases" = ("000000000000000000000014", "000000000000000000000015", "000000000000000000000016",);
+			"buildRules" = ();
+			"dependencies" = ();
+			"fileSystemSynchronizedGroups" = ("000000000000000000000005",);
+			"name" = "Okou";
+			"packageProductDependencies" = ("00000000000000000000000E", "000000000000000000000010", "000000000000000000000012", "000000000000000000000026",);
+			"productName" = "Okou";
+			"productReference" = "000000000000000000000009";
+			"productType" = "com.apple.product-type.application";
+		};
+		"000000000000000000000003" = {
+			"isa" = "PBXNativeTarget";
+			"buildConfigurationList" = "000000000000000000000024";
+			"buildPhases" = ("000000000000000000000017", "000000000000000000000018", "000000000000000000000019",);
+			"buildRules" = ();
+			"dependencies" = ("00000000000000000000001B",);
+			"fileSystemSynchronizedGroups" = ("000000000000000000000006",);
+			"name" = "OkouTests";
+			"packageProductDependencies" = ();
+			"productName" = "OkouTests";
+			"productReference" = "00000000000000000000000A";
+			"productType" = "com.apple.product-type.bundle.unit-test";
+		};
+		"000000000000000000000001" = {
+			"isa" = "PBXProject";
+			"attributes" = {
+				"BuildIndependentTargetsInParallel" = "YES";
+				"LastSwiftUpdateCheck" = "2630";
+				"LastUpgradeCheck" = "2630";
+				"TargetAttributes" = {
+					"000000000000000000000002" = {
+						"CreatedOnToolsVersion" = "26.3";
+					};
+					"000000000000000000000003" = {
+						"CreatedOnToolsVersion" = "26.3";
+						"TestTargetID" = "000000000000000000000002";
+					};
+				};
+			};
+			"buildConfigurationList" = "00000000000000000000001E";
+			"developmentRegion" = "en";
+			"hasScannedForEncodings" = 0;
+			"knownRegions" = ("en", "Base",);
+			"mainGroup" = "000000000000000000000008";
+			"minimizedProjectReferenceProxies" = 1;
+			"packageReferences" = ("00000000000000000000000C", "00000000000000000000000D", "000000000000000000000025",);
+			"preferredProjectObjectVersion" = 77;
+			"productRefGroup" = "000000000000000000000007";
+			"projectDirPath" = "";
+			"projectRoot" = "";
+			"targets" = ("000000000000000000000002", "000000000000000000000003",);
+		};
+	};
+	"rootObject" = "000000000000000000000001";
+}

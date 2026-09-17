@@ -34,6 +34,11 @@ export interface ConnectorShelfLayout<T> {
   readonly connectors: readonly T[];
 }
 
+/** The layout of a view that shelves nothing, such as a filtered one. */
+export function emptyConnectorShelfLayout<T>(): ConnectorShelfLayout<T> {
+  return { shelves: [], chips: [], connectors: [] };
+}
+
 interface ShelfConnector {
   readonly slug: string;
   readonly label: string;

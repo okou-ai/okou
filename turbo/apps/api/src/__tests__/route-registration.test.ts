@@ -1,3 +1,4 @@
+import { morningBriefCalendarCollectionPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-calendar-collection-preview";
 import { morningBriefChatCollectionPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-chat-collection-preview";
 import { morningBriefCollectionPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-collection-preview";
 import { morningBriefGenerationPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-generation-preview";
@@ -6,6 +7,7 @@ import { morningBriefGmailCollectionPreviewContract } from "@okouai/api-contract
 
 import { ROUTES } from "../signals/route";
 import { assertUniqueRouteRegistrations } from "../signals/route-entry";
+import { morningBriefCalendarCollectionPreviewRoutes } from "../signals/routes/morning-brief-calendar-collection-preview";
 import { morningBriefChatCollectionPreviewRoutes } from "../signals/routes/morning-brief-chat-collection-preview";
 import { morningBriefCollectionPreviewRoutes } from "../signals/routes/morning-brief-collection-preview";
 import { morningBriefGenerationPreviewRoutes } from "../signals/routes/morning-brief-generation-preview";
@@ -47,6 +49,11 @@ describe("API route registrations", () => {
       name: "Morning Brief Chat collection preview",
       routes: morningBriefChatCollectionPreviewRoutes,
       route: morningBriefChatCollectionPreviewContract.collect,
+    },
+    {
+      name: "Morning Brief calendar collection preview",
+      routes: morningBriefCalendarCollectionPreviewRoutes,
+      route: morningBriefCalendarCollectionPreviewContract.collect,
     },
   ])("registers the $name an operator invokes", ({ routes, route }) => {
     const [entry, ...extra] = routes;
