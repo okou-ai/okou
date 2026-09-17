@@ -14,17 +14,19 @@ const blockedDeleteRowSchema = z.object({ blocked: z.boolean() });
  * cascade, after locking the parent. Product APIs cannot expose this database
  * scheduling boundary; assertions still use the public chat routes.
  */
-export async function holdChatThreadCascadeDeleteFixture(args: {
-  readonly threadId: string;
-  readonly eventId: string;
-  readonly signal: AbortSignal;
-}): Promise<{
+export async function holdChatThreadCascadeDeleteFixture(
+  args: {
+    readonly threadId: string;
+    readonly eventId: string;
+  },
+  signal: AbortSignal,
+): Promise<{
   readonly release: () => void;
   readonly done: Promise<void>;
   readonly deletionIsBlocked: () => Promise<boolean>;
 }> {
-  const started = createDeferredPromise<number>(args.signal);
-  const released = createDeferredPromise<void>(args.signal);
+  const started = createDeferredPromise<number>(signal);
+  const released = createDeferredPromise<void>(signal);
   const done = db().transaction(async (tx) => {
     const [event] = await tx
       .select({ id: chatEvents.id })
@@ -79,7 +81,10 @@ export async function holdChatThreadCascadeDeleteFixture(args: {
         `,
         blockedDeleteRowSchema,
       );
-      return result?.blocked ?? false;
+      if (!result) {
+        throw new Error("Expected the cascade deletion blocking result");
+      }
+      return result.blocked;
     },
   };
 }

@@ -50,11 +50,13 @@ describe("chat thread deletion lock isolation", () => {
       const { sandboxHeaders } = await claimChatRun(runnerGroup, run.runId);
       await flushWaitUntilForTest();
 
-      const held = await holdChatThreadCascadeDeleteFixture({
-        threadId: removedRun.threadId,
-        eventId: heldEvent.id,
-        signal: context.signal,
-      });
+      const held = await holdChatThreadCascadeDeleteFixture(
+        {
+          threadId: removedRun.threadId,
+          eventId: heldEvent.id,
+        },
+        context.signal,
+      );
       const heldDone = settleIncludingAbort(held.done);
       const deletion = settleIncludingAbort(
         chat.deleteThread(actor, removedRun.threadId),
