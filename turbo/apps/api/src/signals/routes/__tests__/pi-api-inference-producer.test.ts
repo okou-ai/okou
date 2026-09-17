@@ -364,7 +364,7 @@ describe("durable Pi API producer", () => {
         );
       }),
     ).toBeTruthy();
-    await billing.processOrgUsageEvents(actor);
+    await billing.processOrgUsageEvents(actor, usagePricingResolution);
     const usage = await billing.readUsageRecord(actor);
     expect(usage.body.totalCredits).toBeGreaterThan(0);
     expect(usage.body.pagination.total).toBeGreaterThan(0);
@@ -570,7 +570,7 @@ describe("durable Pi API producer", () => {
       releaseProvider.resolve(undefined);
       await expect
         .poll(async () => {
-          await billing.processOrgUsageEvents(actor);
+          await billing.processOrgUsageEvents(actor, usagePricingResolution);
           return (await billing.readUsageRecord(actor)).body.pagination.total;
         })
         .toBeGreaterThan(0);
@@ -598,7 +598,7 @@ describe("durable Pi API producer", () => {
     await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
       status: "cancelled",
     });
-    await billing.processOrgUsageEvents(actor);
+    await billing.processOrgUsageEvents(actor, usagePricingResolution);
     const usage = await billing.readUsageRecord(actor);
     expect(usage.body.pagination.total).toBeGreaterThan(0);
   }, 90_000);
@@ -1079,7 +1079,7 @@ describe("durable Pi API producer", () => {
         );
       }),
     ).toBeTruthy();
-    await billing.processOrgUsageEvents(actor);
+    await billing.processOrgUsageEvents(actor, usagePricingResolution);
     const recoveredUsage = await billing.readUsageRecord(actor);
     expect(recoveredUsage.body.totalCredits).toBeGreaterThan(0);
     expect(recoveredUsage.body.pagination.total).toBeGreaterThan(0);
@@ -1116,7 +1116,7 @@ describe("durable Pi API producer", () => {
     );
     await waitForRunStatus(actor, source.runId, "completed", 10_000);
     await flushWaitUntilForTest();
-    await billing.processOrgUsageEvents(actor);
+    await billing.processOrgUsageEvents(actor, usagePricingResolution);
     const before = await billing.readUsageRecord(actor);
     const recoveryRunId = await seedProducerRecoveryRun(
       source.runId,
@@ -1130,6 +1130,8 @@ describe("durable Pi API producer", () => {
       usagePricingResolution,
     );
     await waitForRunStatus(actor, recoveryRunId, "cancelled", 10_000);
+    // Finish cancellation's settlement before recovery creates fresh usage.
+    await flushWaitUntilForTest();
     await expirePiInference(recoveryRunId);
 
     await expect(cleanupRun(recoveryRunId, orgId)).resolves.toMatchObject({
@@ -1151,7 +1153,7 @@ describe("durable Pi API producer", () => {
         );
       }),
     ).toStrictEqual([]);
-    await billing.processOrgUsageEvents(actor);
+    await billing.processOrgUsageEvents(actor, usagePricingResolution);
     const after = await billing.readUsageRecord(actor);
     expect(after.body.totalCredits).toBeGreaterThan(before.body.totalCredits);
   }, 90_000);
@@ -1186,7 +1188,7 @@ describe("durable Pi API producer", () => {
     );
     await waitForRunStatus(actor, source.runId, "completed", 10_000);
     await flushWaitUntilForTest();
-    await billing.processOrgUsageEvents(actor);
+    await billing.processOrgUsageEvents(actor, usagePricingResolution);
     const before = await billing.readUsageRecord(actor);
     const recoveryRunId = await seedProducerRecoveryRun(
       source.runId,
@@ -1200,6 +1202,7 @@ describe("durable Pi API producer", () => {
       usagePricingResolution,
     );
     await waitForRunStatus(actor, recoveryRunId, "cancelled", 10_000);
+    await flushWaitUntilForTest();
     await expirePiInference(recoveryRunId);
 
     await expect(cleanupRun(recoveryRunId, orgId)).resolves.toMatchObject({
@@ -1211,7 +1214,7 @@ describe("durable Pi API producer", () => {
     await expect(api.readRun(actor, recoveryRunId)).resolves.toMatchObject({
       status: "cancelled",
     });
-    await billing.processOrgUsageEvents(actor);
+    await billing.processOrgUsageEvents(actor, usagePricingResolution);
     const after = await billing.readUsageRecord(actor);
     expect(after.body.totalCredits).toBe(before.body.totalCredits);
   }, 90_000);
@@ -1354,7 +1357,7 @@ describe("durable Pi API producer", () => {
         );
       }),
     ).toBeFalsy();
-    await billing.processOrgUsageEvents(actor);
+    await billing.processOrgUsageEvents(actor, usagePricingResolution);
     const lateUsage = await billing.readUsageRecord(actor);
     expect(lateUsage.body.pagination.total).toBeGreaterThan(0);
   }, 90_000);
