@@ -11603,6 +11603,41 @@ function bindStableAppendSystemPrompt(
     .join("\n\n");
 }
 
+function bindPublishedStableAppendSystemPrompt(args: {
+  readonly requestedPrompt: PiStableContextPromptProjection;
+  readonly publishedPrompt: PiStableContextPromptProjection;
+  readonly dynamicAppendSystemPrompt: string;
+  readonly finalAppendSystemPrompt: string | undefined;
+}): string {
+  const requested = bindStableAppendSystemPrompt(
+    args.requestedPrompt,
+    args.dynamicAppendSystemPrompt,
+  );
+  const finalPrompt = args.finalAppendSystemPrompt ?? "";
+  if (!finalPrompt.startsWith(requested)) {
+    throw new Error("Pi stable prompt lost its canonical final binding");
+  }
+  return `${bindStableAppendSystemPrompt(
+    args.publishedPrompt,
+    args.dynamicAppendSystemPrompt,
+  )}${finalPrompt.slice(requested.length)}`;
+}
+
+function bindDurablePiAppendSystemPrompt(
+  input: AtomicLaunchRunInput,
+  publishedPrompt: PiStableContextPromptProjection | undefined,
+): string | null {
+  const stableContext = input.args.piStableContext;
+  return publishedPrompt && stableContext
+    ? bindPublishedStableAppendSystemPrompt({
+        requestedPrompt: stableContext.prompt,
+        publishedPrompt,
+        dynamicAppendSystemPrompt: stableContext.dynamicAppendSystemPrompt,
+        finalAppendSystemPrompt: input.context.body.appendSystemPrompt,
+      })
+    : (input.context.body.appendSystemPrompt ?? null);
+}
+
 function prepareDurablePiResource(
   args: {
     readonly input: AtomicLaunchRunInput;
@@ -11778,14 +11813,10 @@ function captureDurablePiInference(
       ...(memoryRecall ? { memoryRecall } : {}),
       h0SessionHistory: h0.h0SessionHistory,
     });
-    const stableContext = input.args.piStableContext;
-    const appendSystemPrompt =
-      resource.prompt && stableContext
-        ? bindStableAppendSystemPrompt(
-            resource.prompt,
-            stableContext.dynamicAppendSystemPrompt,
-          )
-        : (input.context.body.appendSystemPrompt ?? null);
+    const appendSystemPrompt = bindDurablePiAppendSystemPrompt(
+      input,
+      resource.prompt,
+    );
     const boundConfiguration = piDeferredConfigurationSchema.parse({
       ...configuration,
       body:
@@ -12358,7 +12389,10 @@ async function persistDurablePiInference(
     identity: prepared.identity,
     status: "pending",
     resolved: input.context.resolved,
-    body: input.context.body,
+    body: {
+      ...input.context.body,
+      appendSystemPrompt: prepared.activation.appendSystemPrompt ?? undefined,
+    },
     runStorageMounts: prepared.persistedStorageMounts,
     sessionStorageMounts: prepared.sessionStorageMounts,
     modelProvider: input.context.modelProvider,

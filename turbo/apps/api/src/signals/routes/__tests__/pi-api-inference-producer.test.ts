@@ -543,6 +543,7 @@ describe("durable Pi API producer", () => {
     expect(providerBodies.at(-1)).toContain(
       "Pick the delivery format before authoring",
     );
+    expect(providerBodies.at(-1)).toContain("# Restricted Explicit Content");
   }, 45_000);
 
   it.each(
