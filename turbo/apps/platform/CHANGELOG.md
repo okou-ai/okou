@@ -11,6 +11,23 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.908.2](https://github.com/vm0-ai/okou/compare/app-v0.908.1...app-v0.908.2) (2026-09-17)
+
+
+### Bug Fixes
+
+* **app:** open onboarding after workspace creation ([#34836](https://github.com/vm0-ai/okou/issues/34836)) ([873ef60](https://github.com/vm0-ai/okou/commit/873ef60b227fd297181e986998edc6ab7a61d1dd))
+* **chat:** preserve mail ids in forwarded prompts ([#34853](https://github.com/vm0-ai/okou/issues/34853)) ([2432506](https://github.com/vm0-ai/okou/commit/2432506926029d55e3f0a36d7aaa95da7a582a22))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.455.1
+    * @okouai/core bumped to 8.674.2
+    * @okouai/ui bumped to 1.9.4
+
 ## [0.908.1](https://github.com/vm0-ai/okou/compare/app-v0.908.0...app-v0.908.1) (2026-09-17)
 
 

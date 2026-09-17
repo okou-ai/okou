@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.91.10](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.9...guest-agent-v0.91.10) (2026-09-17)
+
+
+### Bug Fixes
+
+* **pi:** authenticate deferred handoff in guest ([#34845](https://github.com/vm0-ai/okou/issues/34845)) ([2562612](https://github.com/vm0-ai/okou/commit/2562612020484e515569c2cb78d11f672b5bff5d))
+
 ## [0.91.9](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.8...guest-agent-v0.91.9) (2026-09-17)
 
 ## [0.91.8](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.7...guest-agent-v0.91.8) (2026-09-17)

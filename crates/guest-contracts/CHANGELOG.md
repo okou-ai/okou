@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.16](https://github.com/vm0-ai/okou/compare/guest-contracts-v0.14.15...guest-contracts-v0.14.16) (2026-09-17)
+
+
+### Bug Fixes
+
+* **pi:** authenticate deferred handoff in guest ([#34845](https://github.com/vm0-ai/okou/issues/34845)) ([2562612](https://github.com/vm0-ai/okou/commit/2562612020484e515569c2cb78d11f672b5bff5d))
+
 ## [0.14.15](https://github.com/vm0-ai/okou/compare/guest-contracts-v0.14.14...guest-contracts-v0.14.15) (2026-09-17)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.197.1](https://github.com/vm0-ai/okou/compare/runner-rs-v0.197.0...runner-rs-v0.197.1) (2026-09-17)
+
+
+### Performance Improvements
+
+* **runner:** preserve active guest memory capacity ([#34832](https://github.com/vm0-ai/okou/issues/34832)) ([4ad43f1](https://github.com/vm0-ai/okou/commit/4ad43f174745f327493b26104d44296aec1b7d49))
+
 ## [0.197.0](https://github.com/vm0-ai/okou/compare/runner-rs-v0.196.2...runner-rs-v0.197.0) (2026-09-17)
 
 
