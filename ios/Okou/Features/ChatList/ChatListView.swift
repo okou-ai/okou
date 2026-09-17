@@ -65,7 +65,7 @@ struct ChatListView: View {
     .overlay {
       if store.isLoading && store.threads.isEmpty { ProgressView("Loading chats…") }
     }
-    .navigationTitle("Chats")
+    .navigationTitle("Okou")
     .toolbar {
       ToolbarItem(placement: .primaryAction) {
         Button {
