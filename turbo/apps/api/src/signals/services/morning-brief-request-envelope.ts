@@ -126,6 +126,28 @@ export function morningBriefRequestBytes(
 }
 
 /**
+ * The widest the coverage report can serialize for these collections.
+ *
+ * The real report is only known after allocation, but the envelope has to be
+ * measured before it, and `"omitted":0` is narrower than `"omitted":137`. A few
+ * bytes is enough to push a request that was budgeted to exactly the ceiling
+ * over it, so the measurement uses each source's item count — the largest value
+ * either counter can take — and the real report can then only be narrower.
+ */
+export function morningBriefWidestCoverageReport(
+  collections: readonly MorningBriefSourceCollection[],
+): readonly MorningBriefCoverageReport[] {
+  return collections.map((collection) => {
+    return {
+      source: collection.source,
+      coverage: collection.coverage,
+      included: collection.items.length,
+      omitted: collection.items.length,
+    };
+  });
+}
+
+/**
  * What the envelope costs before a single item is added.
  *
  * Measured with an empty item array, so the difference between this and the

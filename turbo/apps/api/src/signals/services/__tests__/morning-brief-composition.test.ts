@@ -48,6 +48,7 @@ import {
   morningBriefRequestBytes,
   buildMorningBriefRequest,
   morningBriefCoverageReport,
+  morningBriefWidestCoverageReport,
 } from "../morning-brief-request-envelope";
 import {
   boundCombinedNormalizedItems,
@@ -784,5 +785,58 @@ describe("declared bounds", () => {
       "conversations.history",
       "conversations.replies",
     ]);
+  });
+});
+
+describe("envelope reservation against the final report", () => {
+  it("reserves enough for the coverage counts allocation will actually produce", () => {
+    const language = planMorningBriefLanguage({
+      instructions: null,
+      memberLocale: null,
+    });
+    // Many items so the real omitted count is three digits wide, where an
+    // envelope measured at "omitted":0 would under-reserve.
+    const items = Array.from({ length: 400 }, (_, index) => {
+      return item("gmail", `m${index.toString()}`, {
+        body: "e".repeat(400),
+        priority: index,
+      });
+    });
+    const collections = [collection("gmail", items)];
+
+    const envelopeBytes = morningBriefEnvelopeBytes({
+      language,
+      instructions: null,
+      coverage: morningBriefWidestCoverageReport(collections),
+    });
+    const allocated = allocateMorningBriefRequest(collections, {
+      overheadBytes: envelopeBytes,
+    });
+    const request = buildMorningBriefRequest({
+      language,
+      instructions: null,
+      coverage: morningBriefCoverageReport(
+        collections,
+        allocated.omittedBySource,
+      ),
+      items: allocated.items,
+    });
+
+    expect(allocated.omittedItems).toBeGreaterThan(99);
+    expect(morningBriefRequestBytes(request)).toBeLessThanOrEqual(
+      MORNING_BRIEF_REQUEST_MAX_BYTES,
+    );
+  });
+
+  it("never measures narrower than the report allocation can produce", () => {
+    const collections = [
+      collection("gmail", [item("gmail", "m0"), item("gmail", "m1")]),
+    ];
+    const widest = morningBriefWidestCoverageReport(collections);
+    const real = morningBriefCoverageReport(collections, { gmail: 1 });
+
+    expect(JSON.stringify(widest).length).toBeGreaterThanOrEqual(
+      JSON.stringify(real).length,
+    );
   });
 });

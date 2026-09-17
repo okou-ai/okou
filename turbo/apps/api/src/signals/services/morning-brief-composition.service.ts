@@ -63,6 +63,7 @@ import {
   morningBriefCoverageReport,
   morningBriefEnvelopeBytes,
   morningBriefRequestBytes,
+  morningBriefWidestCoverageReport,
 } from "./morning-brief-request-envelope";
 import { collectMorningBriefSlackBundle } from "./morning-brief-slack-collection.service";
 import {
@@ -504,11 +505,12 @@ const planMorningBriefRequest$ = command(
     // Only the version and digest are provenance worth freezing.
     const instructions = context.kind === "available" ? context.text : null;
 
-    const coverage = morningBriefCoverageReport(bounded.collections, {});
     const envelopeBytes = morningBriefEnvelopeBytes({
       language,
       instructions,
-      coverage,
+      // Measured at its widest, because the real counts are only known after
+      // allocation and a narrower measurement would under-reserve.
+      coverage: morningBriefWidestCoverageReport(bounded.collections),
     });
     const allocation = allocateMorningBriefRequest(bounded.collections, {
       maxBytes: MORNING_BRIEF_REQUEST_MAX_BYTES,
