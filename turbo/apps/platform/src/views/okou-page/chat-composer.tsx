@@ -174,12 +174,7 @@ import {
   TEMPLATE_TILE_USE,
   TEMPLATE_TILE_WRAPPER,
 } from "./template-tile.ts";
-import {
-  TEMPLATE_FILTER_PILL,
-  TEMPLATE_FILTER_PILL_ACTIVE,
-  TEMPLATE_FILTER_PILL_IDLE,
-  TEMPLATE_FILTER_PILL_ROW,
-} from "./template-filter-pill.ts";
+import { TemplateFilterPillRow } from "./template-filter-pill.tsx";
 import { AttachmentChips } from "./attachment-chips.tsx";
 import { ImageAnnotationEditor } from "./image-annotation-editor.tsx";
 import { TiptapWorkflowComposer } from "./tiptap-workflow-composer.tsx";
@@ -1378,7 +1373,8 @@ interface ResolvedWorkflowTemplateCatalog {
 }
 
 // Persona pill filter for the workflow template tab, styled like the in-app
-// Ideas & Use Cases gallery: an "All" pill plus one pill per persona.
+// Ideas & Use Cases gallery: an "All" pill plus one pill per persona. The pill
+// treatment itself belongs to the shared filter row.
 function WorkflowTemplatePillRow({
   pills,
   active,
@@ -1390,33 +1386,22 @@ function WorkflowTemplatePillRow({
 }) {
   const { t } = useTranslation();
   return (
-    <div className={cn(TEMPLATE_FILTER_PILL_ROW, "px-6")}>
-      {["all", ...pills].map((pill) => {
-        const isActive = active === pill;
-        return (
-          <button
-            key={pill}
-            type="button"
-            aria-pressed={isActive}
-            className={cn(
-              TEMPLATE_FILTER_PILL,
-              isActive
-                ? TEMPLATE_FILTER_PILL_ACTIVE
-                : TEMPLATE_FILTER_PILL_IDLE,
-            )}
-            onClick={() => {
-              onSelect(pill);
-            }}
-          >
-            {pill === "all"
-              ? t(($) => {
-                  return $.artifacts.templates.all;
-                })
-              : localizedWorkflowTemplateCategory(pill)}
-          </button>
-        );
-      })}
-    </div>
+    <TemplateFilterPillRow
+      className="px-6"
+      active={active}
+      pills={[
+        {
+          id: "all",
+          label: t(($) => {
+            return $.artifacts.templates.all;
+          }),
+        },
+        ...pills.map((pill) => {
+          return { id: pill, label: localizedWorkflowTemplateCategory(pill) };
+        }),
+      ]}
+      onSelect={onSelect}
+    />
   );
 }
 

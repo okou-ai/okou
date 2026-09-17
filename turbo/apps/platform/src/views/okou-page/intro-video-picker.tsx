@@ -29,12 +29,7 @@ import {
 } from "./intro-video-style-gallery.tsx";
 import { IntroVideoAvatarGroupCard } from "./intro-video-avatar-group-card.tsx";
 import { IntroVideoCatalogPagination } from "./intro-video-catalog-pagination.tsx";
-import {
-  TEMPLATE_FILTER_PILL,
-  TEMPLATE_FILTER_PILL_ACTIVE,
-  TEMPLATE_FILTER_PILL_IDLE,
-  TEMPLATE_FILTER_PILL_ROW,
-} from "./template-filter-pill.ts";
+import { TemplateFilterPillRow } from "./template-filter-pill.tsx";
 import {
   VOICE_PREVIEW_CARD_CLASS,
   VOICE_PREVIEW_CARD_PROPS,
@@ -255,46 +250,27 @@ function StyleTags({
   const labels = useIntroVideoStyleGroupLabels();
   const group = useGet(signals.group$);
   const setGroup = useSet(signals.setGroup$);
-  const tags = [
-    {
-      id: "all",
-      label: t(($) => {
-        return $.artifacts.templates.all;
-      }),
-    },
-    ...INTRO_VIDEO_STYLE_TAGS.map((id) => {
-      return { id, label: labels[id] };
-    }),
-    ...(hasOther ? [{ id: "other", label: labels.other }] : []),
-  ];
   return (
-    <div
-      role="group"
-      aria-label={t(($) => {
+    <TemplateFilterPillRow
+      className="shrink-0 px-4 sm:px-6"
+      label={t(($) => {
         return $.chat.introVideo.style.browseGroups;
       })}
-      className={cn(TEMPLATE_FILTER_PILL_ROW, "shrink-0 px-4 sm:px-6")}
-    >
-      {tags.map(({ id, label }) => {
-        const active = group === id;
-        return (
-          <button
-            key={id}
-            type="button"
-            aria-pressed={active}
-            onClick={() => {
-              setGroup(id);
-            }}
-            className={cn(
-              TEMPLATE_FILTER_PILL,
-              active ? TEMPLATE_FILTER_PILL_ACTIVE : TEMPLATE_FILTER_PILL_IDLE,
-            )}
-          >
-            {label}
-          </button>
-        );
-      })}
-    </div>
+      active={group}
+      pills={[
+        {
+          id: "all",
+          label: t(($) => {
+            return $.artifacts.templates.all;
+          }),
+        },
+        ...INTRO_VIDEO_STYLE_TAGS.map((id) => {
+          return { id, label: labels[id] };
+        }),
+        ...(hasOther ? [{ id: "other", label: labels.other }] : []),
+      ]}
+      onSelect={setGroup}
+    />
   );
 }
 
