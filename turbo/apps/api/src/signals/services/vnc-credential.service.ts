@@ -19,13 +19,8 @@ import {
 import {
   checkVncCreationId,
   inspectVncCreationId,
-  recordVncCreationReceipt,
 } from "./vnc-creation.service";
-import {
-  enterVncWrite,
-  type VncAdmission,
-  type VncOwner,
-} from "./vnc-owner-lifecycle.service";
+import { enterVncWrite, type VncOwner } from "./vnc-owner-lifecycle.service";
 
 const metadata = Object.freeze({
   id: vncCredentials.id,
@@ -163,20 +158,19 @@ export async function selectVncCredential(
   if (!row) {
     throw new Error("VNC credential insert returned no row");
   }
-  await recordVncCreationReceipt(tx, owner, vncCredentials, row.id);
   return { ok: true, value: row };
 }
 
 export async function createVncCredential(args: {
   readonly db: Db;
-  readonly admission: VncAdmission;
+  readonly owner: VncOwner;
   readonly body: CreateVncCredentialRequest;
   readonly id: string;
   readonly featureContext: FeatureSwitchContext;
 }): Promise<VncResult<VncCredentialResponse | undefined>> {
   const preflight = await inspectVncCreationId(
     args.db,
-    args.admission.owner,
+    args.owner,
     vncCredentials,
     args.id,
   );
@@ -188,10 +182,10 @@ export async function createVncCredential(args: {
   }
   const prepared = await prepareCredential(args.body, args.featureContext);
   return args.db.transaction(async (tx) => {
-    if (!(await enterVncWrite(tx, args.admission))) {
+    if (!(await enterVncWrite(tx, args.owner))) {
       return vncFailure("ownerChanged");
     }
-    const owner = args.admission.owner;
+    const owner = args.owner;
     const creation = await checkVncCreationId(
       tx,
       owner,
@@ -211,21 +205,20 @@ export async function createVncCredential(args: {
     if (!created) {
       throw new Error("VNC credential insert returned no row");
     }
-    await recordVncCreationReceipt(tx, owner, vncCredentials, created.id);
     return { ok: true as const, value: response(created, []) };
   });
 }
 
 export async function updateVncCredential(args: {
   readonly db: Db;
-  readonly admission: VncAdmission;
+  readonly owner: VncOwner;
   readonly credentialId: string;
   readonly body: UpdateVncCredentialRequest;
   readonly featureContext: FeatureSwitchContext;
 }): Promise<VncResult<VncCredentialResponse>> {
   const initial = await findVncCredential(
     args.db,
-    args.admission.owner,
+    args.owner,
     args.credentialId,
   );
   if (!initial) {
@@ -239,10 +232,10 @@ export async function updateVncCredential(args: {
       ? undefined
       : await encryptStoredSecretValue(args.body.password, args.featureContext);
   return args.db.transaction(async (tx) => {
-    if (!(await enterVncWrite(tx, args.admission))) {
+    if (!(await enterVncWrite(tx, args.owner))) {
       return vncFailure("ownerChanged");
     }
-    const owner = args.admission.owner;
+    const owner = args.owner;
     // Connections precede credentials in the global row-lock order, including
     // rotation, owner cleanup, and the later runtime authority consumer.
     const hosts = await tx
@@ -311,15 +304,15 @@ export async function updateVncCredential(args: {
 
 export function deleteVncCredential(args: {
   readonly db: Db;
-  readonly admission: VncAdmission;
+  readonly owner: VncOwner;
   readonly credentialId: string;
   readonly expectedRevision: number;
 }): Promise<VncResult<undefined>> {
   return args.db.transaction(async (tx) => {
-    if (!(await enterVncWrite(tx, args.admission))) {
+    if (!(await enterVncWrite(tx, args.owner))) {
       return vncFailure("ownerChanged");
     }
-    const owner = args.admission.owner;
+    const owner = args.owner;
     const current = await findVncCredential(tx, owner, args.credentialId);
     if (!current) {
       return vncFailure("credentialNotFound");

@@ -1,5 +1,5 @@
 {
-  "id": "e7c81465-05da-4913-9323-8a96f2474034",
+  "id": "8e24c5ac-4963-4264-9d50-cecae5e41862",
   "prevId": "186a8b37-6ae5-4530-9a9d-622d79fa9815",
   "version": "7",
   "dialect": "postgresql",
@@ -34453,46 +34453,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.vnc_authority_revisions": {
-      "name": "vnc_authority_revisions",
-      "schema": "",
-      "columns": {
-        "scope_key": {
-          "name": "scope_key",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "revision": {
-          "name": "revision",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "membership_id_hash": {
-          "name": "membership_id_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "chk_vnc_authority_revisions_scope_key": {
-          "name": "chk_vnc_authority_revisions_scope_key",
-          "value": "\"vnc_authority_revisions\".\"scope_key\" ~ '^[0-9a-f]{64}$'"
-        },
-        "chk_vnc_authority_revisions_membership_hash": {
-          "name": "chk_vnc_authority_revisions_membership_hash",
-          "value": "\"vnc_authority_revisions\".\"membership_id_hash\" IS NULL OR \"vnc_authority_revisions\".\"membership_id_hash\" ~ '^[0-9a-f]{64}$'"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.vnc_connections": {
       "name": "vnc_connections",
       "schema": "",
@@ -34693,6 +34653,7 @@
           "columns": [
             "org_id",
             "user_id",
+            "membership_id",
             "host",
             "port"
           ]
@@ -34719,54 +34680,6 @@
         "chk_vnc_connections_trust": {
           "name": "chk_vnc_connections_trust",
           "value": "(\"vnc_connections\".\"trust_mode\" = 'system' AND \"vnc_connections\".\"ca_bundle\" IS NULL) OR (\"vnc_connections\".\"trust_mode\" = 'custom_ca' AND \"vnc_connections\".\"ca_bundle\" IS NOT NULL AND octet_length(\"vnc_connections\".\"ca_bundle\") BETWEEN 1 AND 65536)"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.vnc_creation_receipts": {
-      "name": "vnc_creation_receipts",
-      "schema": "",
-      "columns": {
-        "resource_kind": {
-          "name": "resource_kind",
-          "type": "varchar(16)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "resource_id": {
-          "name": "resource_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "owner_key": {
-          "name": "owner_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {
-        "vnc_creation_receipts_pk": {
-          "name": "vnc_creation_receipts_pk",
-          "columns": [
-            "resource_kind",
-            "resource_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "chk_vnc_creation_receipts_kind": {
-          "name": "chk_vnc_creation_receipts_kind",
-          "value": "\"vnc_creation_receipts\".\"resource_kind\" IN ('vnc_credentials', 'vnc_connections')"
-        },
-        "chk_vnc_creation_receipts_owner_key": {
-          "name": "chk_vnc_creation_receipts_owner_key",
-          "value": "\"vnc_creation_receipts\".\"owner_key\" ~ '^[0-9a-f]{64}$'"
         }
       },
       "isRLSEnabled": false

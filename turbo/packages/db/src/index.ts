@@ -147,8 +147,6 @@ import * as sshConnectionSchema from "./schema/ssh-connection";
 import * as sshCredentialSchema from "./schema/ssh-credential";
 import * as vncCredentialSchema from "./schema/vnc-credential";
 import * as vncConnectionSchema from "./schema/vnc-connection";
-import * as vncAuthorityRevisionSchema from "./schema/vnc-authority-revision";
-import * as vncCreationReceiptSchema from "./schema/vnc-creation-receipt";
 import * as agentSshAccessSchema from "./schema/agent-ssh-access";
 import * as cloudflareAccessConfigSchema from "./schema/cloudflare-access-config";
 
@@ -302,8 +300,6 @@ export const schema = {
   ...sshCredentialSchema,
   ...vncCredentialSchema,
   ...vncConnectionSchema,
-  ...vncAuthorityRevisionSchema,
-  ...vncCreationReceiptSchema,
   ...agentSshAccessSchema,
   ...cloudflareAccessConfigSchema,
 };

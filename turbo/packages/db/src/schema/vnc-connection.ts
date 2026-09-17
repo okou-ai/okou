@@ -53,6 +53,7 @@ export const vncConnections = pgTable(
       unique("uq_vnc_connections_owner_endpoint").on(
         table.orgId,
         table.userId,
+        table.membershipId,
         table.host,
         table.port,
       ),

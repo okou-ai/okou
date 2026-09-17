@@ -16,10 +16,7 @@ import { clerk$ } from "../external/clerk";
 import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
-import {
-  loadCurrentVncMembershipId,
-  snapshotVncRevisions,
-} from "../services/vnc-owner-lifecycle.service";
+import { loadCurrentVncMembershipId } from "../services/vnc-owner-lifecycle.service";
 import {
   createVncCredential,
   deleteVncCredential,
@@ -54,8 +51,6 @@ const ownerAuth = {
   accept: ["session"],
 } as const;
 
-// Snapshot on the writer before external admission so cleanup can reject delayed
-// first writes even when no VNC configuration existed at request start.
 const vncAdmission$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "no-store");
   const auth = get(organizationAuthContext$);
@@ -66,9 +61,6 @@ const vncAdmission$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!isFeatureEnabled(FeatureSwitchKey.VncAccess, featureContext)) {
     return null;
   }
-  const db = set(writeDb$);
-  const revisions = await snapshotVncRevisions(db, auth);
-  signal.throwIfAborted();
   const membershipId = await loadCurrentVncMembershipId(
     get(clerk$),
     auth,
@@ -78,12 +70,9 @@ const vncAdmission$ = command(async ({ get, set }, signal: AbortSignal) => {
     return null;
   }
   return {
-    db,
+    db: set(writeDb$),
     featureContext,
-    admission: {
-      owner: { orgId: auth.orgId, userId: auth.userId, membershipId },
-      revisions,
-    },
+    owner: { orgId: auth.orgId, userId: auth.userId, membershipId },
   };
 });
 
@@ -110,10 +99,7 @@ const listCredentials$ = command(async ({ set }, signal: AbortSignal) => {
   if (!context) {
     return unavailable;
   }
-  const credentials = await listVncCredentials(
-    context.db,
-    context.admission.owner,
-  );
+  const credentials = await listVncCredentials(context.db, context.owner);
   signal.throwIfAborted();
   return { status: 200 as const, body: { credentials } };
 });
@@ -195,10 +181,7 @@ const listConnections$ = command(async ({ set }, signal: AbortSignal) => {
   if (!context) {
     return unavailable;
   }
-  const connections = await listVncConnections(
-    context.db,
-    context.admission.owner,
-  );
+  const connections = await listVncConnections(context.db, context.owner);
   signal.throwIfAborted();
   return { status: 200 as const, body: { connections } };
 });
@@ -208,10 +191,7 @@ const summary$ = command(async ({ set }, signal: AbortSignal) => {
   if (!context) {
     return unavailable;
   }
-  const summary = await summarizeVncConnections(
-    context.db,
-    context.admission.owner,
-  );
+  const summary = await summarizeVncConnections(context.db, context.owner);
   signal.throwIfAborted();
   return { status: 200 as const, body: summary };
 });

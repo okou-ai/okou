@@ -1,11 +1,3 @@
-CREATE TABLE "vnc_authority_revisions" (
-	"scope_key" text PRIMARY KEY NOT NULL,
-	"revision" uuid NOT NULL,
-	"membership_id_hash" text,
-	CONSTRAINT "chk_vnc_authority_revisions_scope_key" CHECK ("vnc_authority_revisions"."scope_key" ~ '^[0-9a-f]{64}$'),
-	CONSTRAINT "chk_vnc_authority_revisions_membership_hash" CHECK ("vnc_authority_revisions"."membership_id_hash" IS NULL OR "vnc_authority_revisions"."membership_id_hash" ~ '^[0-9a-f]{64}$')
-);
---> statement-breakpoint
 CREATE TABLE "vnc_connections" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"org_id" text NOT NULL,
@@ -20,21 +12,12 @@ CREATE TABLE "vnc_connections" (
 	"generation" integer DEFAULT 1 NOT NULL,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL,
-	CONSTRAINT "uq_vnc_connections_owner_endpoint" UNIQUE("org_id","user_id","host","port"),
+	CONSTRAINT "uq_vnc_connections_owner_endpoint" UNIQUE("org_id","user_id","membership_id","host","port"),
 	CONSTRAINT "chk_vnc_connections_display_name" CHECK (char_length("vnc_connections"."display_name") BETWEEN 1 AND 128),
 	CONSTRAINT "chk_vnc_connections_host" CHECK (char_length("vnc_connections"."host") BETWEEN 1 AND 253 AND "vnc_connections"."host" = lower("vnc_connections"."host") AND "vnc_connections"."host" !~ '[[:space:]/@?#]'),
 	CONSTRAINT "chk_vnc_connections_port" CHECK ("vnc_connections"."port" BETWEEN 1 AND 65535),
 	CONSTRAINT "chk_vnc_connections_generation" CHECK ("vnc_connections"."generation" > 0),
 	CONSTRAINT "chk_vnc_connections_trust" CHECK (("vnc_connections"."trust_mode" = 'system' AND "vnc_connections"."ca_bundle" IS NULL) OR ("vnc_connections"."trust_mode" = 'custom_ca' AND "vnc_connections"."ca_bundle" IS NOT NULL AND octet_length("vnc_connections"."ca_bundle") BETWEEN 1 AND 65536))
-);
---> statement-breakpoint
-CREATE TABLE "vnc_creation_receipts" (
-	"resource_kind" varchar(16) NOT NULL,
-	"resource_id" uuid NOT NULL,
-	"owner_key" text NOT NULL,
-	CONSTRAINT "vnc_creation_receipts_pk" PRIMARY KEY("resource_kind","resource_id"),
-	CONSTRAINT "chk_vnc_creation_receipts_kind" CHECK ("vnc_creation_receipts"."resource_kind" IN ('vnc_credentials', 'vnc_connections')),
-	CONSTRAINT "chk_vnc_creation_receipts_owner_key" CHECK ("vnc_creation_receipts"."owner_key" ~ '^[0-9a-f]{64}$')
 );
 --> statement-breakpoint
 CREATE TABLE "vnc_credentials" (

@@ -68,6 +68,13 @@ try {
   await client.query(
     "INSERT INTO vnc_connections (org_id,user_id,membership_id,display_name,host,credential_id,trust_mode) VALUES ('org','other','other-membership','Other desktop','desktop.example.com','00000000-0000-4000-8000-000000000002','system')",
   );
+  // A rejoined membership can save its own endpoint before old cleanup arrives.
+  await client.query(`
+    INSERT INTO vnc_credentials (id,org_id,user_id,membership_id,name,encrypted_password)
+      VALUES ('00000000-0000-4000-8000-000000000004','org','owner','rejoined','Rejoined','ciphertext');
+    INSERT INTO vnc_connections (org_id,user_id,membership_id,display_name,host,credential_id,trust_mode)
+      VALUES ('org','owner','rejoined','Rejoined desktop','desktop.example.com','00000000-0000-4000-8000-000000000004','system');
+  `);
 
   for (const [assignment, constraint] of [
     ["revision=0", "chk_vnc_credentials_revision"],
@@ -114,74 +121,13 @@ try {
   );
   await client.query("UPDATE vnc_credentials SET revision=2147483647");
 
-  await rejects(
-    "INSERT INTO vnc_authority_revisions (scope_key,revision) VALUES ('raw-owner-id','00000000-0000-4000-8000-000000000004')",
-    { code: "23514", constraint: "chk_vnc_authority_revisions_scope_key" },
-  );
-  await client.query(
-    "INSERT INTO vnc_authority_revisions (scope_key,revision) VALUES (repeat('a',64),'00000000-0000-4000-8000-000000000004')",
-  );
-  await rejects(
-    "UPDATE vnc_authority_revisions SET membership_id_hash='raw-membership-id'",
-    {
-      code: "23514",
-      constraint: "chk_vnc_authority_revisions_membership_hash",
-    },
-  );
-  await client.query(
-    "UPDATE vnc_authority_revisions SET membership_id_hash=repeat('b',64)",
-  );
-  await client.query(`
-    INSERT INTO vnc_creation_receipts (resource_kind,resource_id,owner_key)
-      VALUES ('vnc_credentials','00000000-0000-4000-8000-000000000001',repeat('a',64)),
-             ('vnc_connections','00000000-0000-4000-8000-000000000003',repeat('a',64));
-  `);
-  await rejects(
-    "INSERT INTO vnc_creation_receipts (resource_kind,resource_id,owner_key) VALUES ('vnc_credentials','00000000-0000-4000-8000-000000000001',repeat('b',64))",
-    { code: "23505", constraint: "vnc_creation_receipts_pk" },
-  );
-  // Creation identities are global within a kind, with separate namespaces.
-  await client.query(
-    "INSERT INTO vnc_creation_receipts (resource_kind,resource_id,owner_key) VALUES ('vnc_connections','00000000-0000-4000-8000-000000000001',repeat('b',64))",
-  );
-  await rejects("UPDATE vnc_creation_receipts SET resource_kind='unknown'", {
-    code: "23514",
-    constraint: "chk_vnc_creation_receipts_kind",
-  });
-  for (const ownerKey of ["raw-owner-id", "a".repeat(63), "A".repeat(64)]) {
-    await rejects(`UPDATE vnc_creation_receipts SET owner_key='${ownerKey}'`, {
-      code: "23514",
-      constraint: "chk_vnc_creation_receipts_owner_key",
-    });
-  }
   await client.query("DELETE FROM vnc_connections");
   assert.deepEqual(
     (await client.query("SELECT count(*)::int AS count FROM vnc_credentials"))
       .rows,
-    [{ count: 2 }],
+    [{ count: 3 }],
   );
   await client.query("DELETE FROM vnc_credentials");
-  assert.deepEqual(
-    (
-      await client.query(
-        "SELECT count(*)::int AS count FROM vnc_creation_receipts",
-      )
-    ).rows,
-    [{ count: 3 }],
-    "Creation receipts must survive business-row deletion",
-  );
-  await rejects(
-    "INSERT INTO vnc_creation_receipts (resource_kind,resource_id,owner_key) VALUES ('vnc_connections','00000000-0000-4000-8000-000000000003',repeat('a',64))",
-    { code: "23505", constraint: "vnc_creation_receipts_pk" },
-  );
-  assert.deepEqual(
-    (
-      await client.query(
-        "SELECT count(*)::int AS count FROM vnc_authority_revisions",
-      )
-    ).rows,
-    [{ count: 1 }],
-  );
   console.log("VNC additive migration and storage constraints passed");
 } finally {
   await client.query("ROLLBACK");

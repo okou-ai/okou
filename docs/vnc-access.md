@@ -37,13 +37,15 @@ trust modes are rejected. Saving configuration does not dial or verify the host.
 Connection creation accepts either `credential: { id }` or
 `credential: { create: { name, password } }`. Inline credential and host
 creation commit atomically. A conflicting endpoint cannot leave an orphaned
-inline credential. Canonical host and port are unique for one organization/user.
+inline credential. Canonical host and port are unique for one
+organization/user/membership.
 
-Repeating a creation UUID belonging to the current owner and membership returns
-204 without changing any metadata or secret, including after that resource was
-deleted. Consumed resource UUIDs are never reused: delayed creation requests
-cannot restore a deleted host or credential, or reset its version. A foreign
-UUID returns an opaque conflict. Updates and deletes reject stale versions;
+Like SSH configuration, repeating the UUID of an existing resource belonging to
+the current owner and membership returns 204 without changing metadata or secrets.
+A UUID occupied by another owner or membership returns an opaque conflict.
+Deletion physically removes the row, so a subsequent create with that UUID is a
+new resource starting at version 1. Clients should use a new UUID for each new
+resource and stop retrying its creation after deletion. Updates and deletes reject stale versions;
 the caller must refresh metadata before deciding whether to resubmit. Password
 rotation advances every referencing connection's generation. Referenced credentials cannot be deleted
 until their hosts are rebound or deleted. Deleting a host retains its reusable
@@ -63,18 +65,19 @@ unchanged; a future rotation must include VNC in its current inventory.
 
 ## Membership and deletion lifecycle
 
-Both business tables pin the immutable Clerk membership ID. A rejoined
-membership cannot read or mutate the earlier membership's configuration. Its
-first admitted write removes inaccessible older-generation hosts and
-credentials before saving new configuration.
+The only VNC tables are `vnc_credentials` and `vnc_connections`. Both pin the
+immutable Clerk membership ID. A rejoined membership cannot read or mutate the
+earlier membership's configuration and can save its own endpoint before the old
+membership's cleanup arrives. Saving configuration never deletes another
+membership's rows.
 
-VNC admission snapshots lifecycle revisions **before** fresh membership lookup
-and KMS encryption. At commit, it takes B1 erasure admission, shared scope locks,
-and the owner lock, then compares those revisions. Cleanup takes an exclusive
-scope lock and changes its revision even when no VNC rows exist. This rejects
-delayed first writes after deletion. Membership-generation changes also fence
-an older admission, including when the deletion webhook has not arrived yet.
-Changed authority is a conflict, never an automatic resnapshot-and-retry.
+Mutation transactions use the existing B1 erasure admission, shared cleanup-scope
+locks and an exclusive owner lock. Cleanup takes an exclusive scope lock and
+deletes hosts before credentials. These locks serialize overlapping transactions
+without retaining a VNC authority ledger or creation receipts. They do not cancel
+a request that passed membership admission before cleanup and only enters its
+write transaction afterward; such an in-flight request can finish under its
+original membership. A later membership remains isolated from that data.
 
 Current user, organization and member cleanup removes hosts before credentials.
 Known membership deletion events remove only their exact membership generation;
@@ -82,19 +85,6 @@ direct removal uses the membership ID returned by Clerk's delete operation.
 Clerk's membership webhook contract requires that ID. A malformed event without
 it does not trigger cleanup. Membership lookup and KMS calls run outside
 database locks; cleanup never guesses which membership generation to erase.
-
-`vnc_authority_revisions` retains domain-separated SHA256 scope identifiers,
-revision UUIDs and membership-generation hashes after business-data deletion.
-These are **pseudonymous fencing metadata**, not anonymous data. They contain
-no raw user, organization or membership identifiers, passwords or hostnames.
-Deleting these fences without an admission-drain protocol can reintroduce
-delayed-write races.
-
-`vnc_creation_receipts` retains each consumed resource kind/UUID and a
-domain-separated hash of its owner/membership tuple after resource or owner
-deletion. These pseudonymous receipts contain no passwords, hostnames or raw
-owner identifiers. They prevent delayed creation retries from resurrecting
-deleted configuration; deleting the receipts would break that guarantee.
 
 ## Deployment and rollback
 
@@ -107,18 +97,18 @@ explicitly enabled; merging this change does not enable it.
 Before enabling the feature, every serving API version must include VNC-aware
 deletion cleanup. Once any VNC configuration exists, that cleanup support is an
 API rollback floor: disabling the feature does not erase saved credentials.
-Rollback may disable `vncAccess`, but must retain VNC-aware cleanup, the additive
-schema, lifecycle fences and creation receipts. Rolling back below this floor
-requires a separately verified drain and erasure of all VNC configuration first.
+Rollback may disable `vncAccess`, but must retain VNC-aware cleanup and the additive
+schema. Rolling back below this floor requires a separately verified drain and
+erasure of all VNC configuration first.
 Do not drop the tables as an application rollback. Runtime/Runner compatibility and activation belong
 to #34980 and the remaining VNC delivery work.
 
 ## Verification
 
-Route integration tests exercise auth, fresh membership, owner isolation,
-secret-free output, validation, retries including after deletion, optimistic
-concurrency, rotation, inline rollback, and lifecycle races through production
-HTTP boundaries.
+Route integration tests exercise auth, fresh membership, owner and membership
+isolation, secret-free output, validation, live-resource retries, recreation
+after deletion, optimistic concurrency, rotation, inline rollback and scoped
+cleanup through production HTTP boundaries.
 The dedicated migration test validates database ownership and version/trust
 constraints on a disposable schema. Broader API tests and required checks run
 in the PR pipeline.

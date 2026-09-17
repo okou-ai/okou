@@ -69,7 +69,7 @@ const failures = {
   ownerChanged: {
     kind: "conflict",
     code: VNC_ERROR_CODES.OWNER_CHANGED,
-    message: "VNC owner membership changed during this request",
+    message: "VNC owner is no longer writable",
   },
   resourceIdConflict: {
     kind: "conflict",

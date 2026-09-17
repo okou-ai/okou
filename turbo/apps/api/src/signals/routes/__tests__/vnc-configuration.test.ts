@@ -12,7 +12,6 @@ import { vncConnectionsRoutes } from "../vnc-connections";
 import { createRouteMocks } from "./helpers/route-test";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
-import { holdSecretKms } from "./helpers/hold-secret-kms";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -416,12 +415,10 @@ describe("VNC owner configuration", () => {
     expect(corrected.body.id).toBe(conflicting.id);
   });
 
-  it("does not recreate a deleted credential when its earlier creation finishes", async () => {
+  it("allows a new credential creation to reuse a deleted credential ID", async () => {
+    useSecretKmsProbe();
     await owner();
-    const held = holdSecretKms(1, context.signal);
     const body = { id: randomUUID(), name: "Deleted", password: "original" };
-    const delayed = credentials().create({ headers, body });
-    await held.entered;
     const saved = await accept(credentials().create({ headers, body }), [201]);
     await accept(
       credentials().delete({
@@ -431,30 +428,31 @@ describe("VNC owner configuration", () => {
       }),
       [204],
     );
-    held.release();
-    await accept(delayed, [204]);
-    await accept(credentials().create({ headers, body }), [204]);
     expect(
       (await accept(credentials().list({ headers }), [200])).body.credentials,
     ).toStrictEqual([]);
-    await accept(
-      credentials().update({
+    const recreated = await accept(
+      credentials().create({
         headers,
-        params: { credentialId: body.id },
-        body: { expectedRevision: 1, name: "Stale edit" },
+        body: { ...body, name: "New credential", password: "new" },
       }),
-      [404],
+      [201],
     );
-    await owner();
-    await accept(credentials().create({ headers, body }), [409]);
+    expect(recreated.body).toMatchObject({
+      id: body.id,
+      name: "New credential",
+      revision: 1,
+      hosts: [],
+    });
+    expect(
+      (await accept(credentials().list({ headers }), [200])).body.credentials,
+    ).toStrictEqual([recreated.body]);
   });
 
-  it("does not recreate a deleted host or its inline credential from creation retries", async () => {
+  it("allows a new host creation to reuse a deleted host ID with a new inline credential", async () => {
+    useSecretKmsProbe();
     await owner();
-    const held = holdSecretKms(1, context.signal);
     const body = hostBody();
-    const delayed = connections().create({ headers, body });
-    await held.entered;
     const saved = await accept(connections().create({ headers, body }), [201]);
     await accept(
       connections().delete({
@@ -472,36 +470,36 @@ describe("VNC owner configuration", () => {
       }),
       [204],
     );
-    held.release();
-    await accept(delayed, [204]);
-    await accept(connections().create({ headers, body }), [204]);
-    await accept(
-      credentials().create({
-        headers,
-        body: {
-          id: saved.body.credentialId,
-          name: "Inline retry",
-          password: "retry",
-        },
-      }),
-      [204],
-    );
     expect(
       (await accept(connections().list({ headers }), [200])).body.connections,
     ).toStrictEqual([]);
     expect(
       (await accept(credentials().list({ headers }), [200])).body.credentials,
     ).toStrictEqual([]);
-    await accept(
-      connections().update({
+    const recreated = await accept(
+      connections().create({
         headers,
-        params: { connectionId: body.id },
-        body: { expectedGeneration: 1, displayName: "Stale edit" },
+        body: {
+          ...body,
+          displayName: "New desktop",
+          credential: { create: { name: "New login", password: "new" } },
+        },
       }),
-      [404],
+      [201],
     );
-    await owner();
-    await accept(connections().create({ headers, body }), [409]);
+    expect(recreated.body).toMatchObject({
+      id: body.id,
+      displayName: "New desktop",
+      generation: 1,
+    });
+    expect(recreated.body.credentialId).not.toBe(saved.body.credentialId);
+    expect(
+      (await accept(connections().list({ headers }), [200])).body.connections,
+    ).toStrictEqual([recreated.body]);
+    const logins = await accept(credentials().list({ headers }), [200]);
+    expect(logins.body.credentials).toMatchObject([
+      { id: recreated.body.credentialId, name: "New login", revision: 1 },
+    ]);
   });
 
   it("acknowledges completed creation retries during a KMS outage", async () => {
