@@ -60,7 +60,9 @@ import {
 import {
   admitMorningBriefCollection,
   morningBriefScopeIsCurrent,
+  startMorningBriefSourceDeadline,
   type MorningBriefCollectionScope,
+  type MorningBriefSourceDeadline,
 } from "./morning-brief-connector-reader.service";
 import {
   MORNING_BRIEF_CHAT_THREAD_PROVENANCE,
@@ -138,6 +140,11 @@ type MorningBriefChatCollectionResult =
  * authority check. Nothing here starts a second clock.
  */
 interface AttemptBudget {
+  /**
+   * The shared source deadline, handed to admission so the preflight spends
+   * this attempt's budget instead of starting a second one.
+   */
+  readonly deadline: MorningBriefSourceDeadline;
   /** The instant the whole attempt must have finished by. */
   readonly deadlineAt: number;
   /** Where candidate work stops, leaving the final fence its reserve. */
@@ -149,19 +156,21 @@ interface AttemptBudget {
   readonly exhausted: (limit: number) => boolean;
 }
 
-function attemptBudget(startedAt: Date, signal: AbortSignal): AttemptBudget {
-  const deadlineAt = startedAt.getTime() + COLLECTION_DEADLINE_MS;
-  const deadline = AbortSignal.timeout(COLLECTION_DEADLINE_MS);
+function attemptBudget(signal: AbortSignal): AttemptBudget {
+  const deadline = startMorningBriefSourceDeadline(COLLECTION_DEADLINE_MS);
   const remaining = (limit: number): number => {
     return Math.max(0, limit - nowDate().getTime());
   };
   return {
-    deadlineAt,
-    candidateDeadlineAt: deadlineAt - FINAL_AUTHORITY_RESERVE_MS,
-    signal: AbortSignal.any([signal, deadline]),
+    deadline,
+    deadlineAt: deadline.at,
+    candidateDeadlineAt: deadline.at - FINAL_AUTHORITY_RESERVE_MS,
+    signal: AbortSignal.any([signal, deadline.signal]),
     remaining,
+    // The timer bit only flips once its callback has run, so the clock decides
+    // and the timer is left to interrupt I/O already in flight.
     exhausted: (limit) => {
-      return deadline.aborted || remaining(limit) === 0;
+      return deadline.signal.aborted || remaining(limit) === 0;
     },
   };
 }
@@ -892,7 +901,7 @@ export const collectMorningBriefChat$ = command(
     }
     // Established before admission, because admission itself waits on the
     // network and that wait is part of this attempt.
-    const budget = attemptBudget(startedAt, signal);
+    const budget = attemptBudget(signal);
 
     const admitted = await withinBudget(
       admitMorningBriefCollection(
@@ -902,14 +911,17 @@ export const collectMorningBriefChat$ = command(
           orgId: args.owner.orgId,
           userId: args.owner.userId,
           anchor: args.scheduledFor,
+          deadline: budget.deadline,
         },
-        budget.signal,
+        signal,
       ),
       budget,
       budget.deadlineAt,
       signal,
     );
-    if (!admitted.ok) {
+    if (!admitted.ok || admitted.value.kind === "unavailable") {
+      // Admission spent the budget the collection would have needed; it is an
+      // unfinished attempt, not a member without a brief.
       return { kind: "deadline-exceeded" };
     }
     if (admitted.value.kind !== "ok") {

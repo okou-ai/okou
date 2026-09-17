@@ -175,7 +175,10 @@ a body comes from. The whole-owner fence is about the member and their brief.
 
 A single absolute 15-second budget starts **before** admission and is shared by
 admission's network membership read, candidate discovery, every thread read and
-the final authority check. Nothing in the attempt starts a second clock.
+the final authority check. Nothing in the attempt starts a second clock. It is
+the shared `MorningBriefSourceDeadline` every Morning Brief source spends, so
+the admission preflight observes this attempt's own budget rather than opening
+one of its own; the attempt adds the candidate reserve below on top of it.
 
 - The last 3 seconds are reserved for the final authority check. Candidate work
   stops there, because content that cannot be re-authorized may not be released
