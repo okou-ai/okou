@@ -1086,7 +1086,9 @@ describe("personal subscription run identity", () => {
           id:
             eventType === "organization.deleted"
               ? f.actor.orgId
-              : f.actor.userId,
+              : eventType === "organizationMembership.deleted"
+                ? `membership-${f.actor.userId}-${f.actor.orgId}`
+                : f.actor.userId,
           organization_id: f.actor.orgId,
           user_id: f.actor.userId,
         },
@@ -2078,7 +2080,11 @@ describe("historical writer consumer fences", () => {
         webhooks.configureClerkWebhookSecret();
         webhooks.verifyNextClerkWebhook({
           type: "organizationMembership.deleted",
-          data: { organization_id: f.actor.orgId, user_id: f.actor.userId },
+          data: {
+            id: `membership-${f.actor.userId}-${f.actor.orgId}`,
+            organization_id: f.actor.orgId,
+            user_id: f.actor.userId,
+          },
         });
         await webhooks.requestClerkWebhook("{}", {}, [200]);
         await flushWaitUntilForTest();
@@ -3648,7 +3654,7 @@ describe("subscription bundle decryption ownership", () => {
         webhooks.verifyNextClerkWebhook({
           type: "organizationMembership.deleted",
           data: {
-            id: f.actor.userId,
+            id: `membership-${f.actor.userId}-${orgId}`,
             organization_id: orgId,
             user_id: f.actor.userId,
           },

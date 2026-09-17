@@ -344,6 +344,25 @@ Backend changes must be safe with:
 - new runner -> old backend, if traffic propagation or non-production
   deployment order can expose that pairing
 
+### Membership deletion identity
+
+Membership-deletion webhooks must carry an organization, user and nonempty
+membership ID. Events without a valid membership ID are acknowledged without
+starting billing or resource cleanup. Explicit leave and member-removal APIs
+use the membership identity returned by Clerk's deletion operation, validate
+its owner, and retain that exact ID during local cleanup. A successful provider
+deletion with an invalid identity response fails before local cleanup; it does
+not cancel the billing reservation as though the provider rejected deletion.
+A later valid webhook can complete that cleanup.
+
+This changes no App or Runner request shape and needs no database migration.
+Older APIs can still accept generationless deletion events while they serve
+traffic. Exact identity is only the ingress contract: pair-scoped billing,
+Runs, credentials, Slack and metadata cleanup still need the generation
+storage and transactional writer fences tracked by
+[#34986](https://github.com/vm0-ai/okou/issues/34986). This change does not make
+valid stale membership deletions safe after a rejoin.
+
 ### Commit-addressed CLI artifacts
 
 The private CLI used inside supported runs is published as an immutable,

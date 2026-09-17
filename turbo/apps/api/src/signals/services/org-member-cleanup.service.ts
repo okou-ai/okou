@@ -23,7 +23,7 @@ export async function cleanupOrgMemberResources(
   args: {
     readonly orgId: string;
     readonly userId: string;
-    readonly membershipId?: string;
+    readonly membershipId: string;
   },
   signal: AbortSignal,
 ): Promise<void> {
@@ -47,16 +47,14 @@ export async function cleanupOrgMemberResources(
         state: "departed",
         // Deletion can arrive before enrollment or after a missing live lookup.
         // Retain its generation so a late created event cannot revive intent.
-        membershipId: args.membershipId ?? morningBriefEnrollments.membershipId,
+        membershipId: args.membershipId,
         updatedAt: currentTime,
       },
       setWhere: and(
-        args.membershipId
-          ? or(
-              isNull(morningBriefEnrollments.membershipId),
-              eq(morningBriefEnrollments.membershipId, args.membershipId),
-            )
-          : undefined,
+        or(
+          isNull(morningBriefEnrollments.membershipId),
+          eq(morningBriefEnrollments.membershipId, args.membershipId),
+        ),
         inArray(morningBriefEnrollments.state, [
           "checking",
           "pending",

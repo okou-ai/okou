@@ -723,16 +723,18 @@ const postClerkWebhook$ = command(
 
     if (event.type === "organizationMembership.deleted") {
       const identity = organizationMembershipIdentity(event.data);
-      if (!identity) {
-        L.error("organizationMembership.deleted event missing org/user ID", {
+      const membershipId = identity?.membershipId;
+      if (!identity || !membershipId || membershipId.trim() !== membershipId) {
+        L.error("organizationMembership.deleted event missing valid identity", {
           data: event.data,
         });
         return new Response("OK", { status: 200 });
       }
 
+      const deletedMembership = { ...identity, membershipId };
       waitUntil(
         tapError(
-          set(cleanupClerkDeletedOrgMembership$, identity, signal),
+          set(cleanupClerkDeletedOrgMembership$, deletedMembership, signal),
           (error) => {
             L.error("organizationMembership.deleted cleanup failed", {
               ...identity,

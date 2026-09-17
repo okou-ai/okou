@@ -12661,6 +12661,12 @@ describe("usage pack allocation management", () => {
       { userId: `user_${randomUUID()}`, usagePackUsd: 20 },
       { userId: targetUserId, usagePackUsd: 50 },
     ]);
+    const removedMembership = {
+      id: `mem_removed_${randomUUID()}`,
+      organization: { id: fixture.orgId },
+      publicUserData: { userId: targetUserId },
+      role: "org:member",
+    };
     await usagePackStateAction({
       action: "set-grant-remaining",
       orgId: fixture.orgId,
@@ -12680,10 +12686,7 @@ describe("usage pack allocation management", () => {
     });
     context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
       {
-        data: [
-          { publicUserData: { userId: adminUserId } },
-          { publicUserData: { userId: targetUserId } },
-        ],
+        data: [{ publicUserData: { userId: adminUserId } }, removedMembership],
       },
     );
     const deletionStarted = createDeferredPromise<void>(context.signal);
@@ -12692,7 +12695,7 @@ describe("usage pack allocation management", () => {
       async () => {
         deletionStarted.resolve(undefined);
         await deletionGate.promise;
-        return {};
+        return removedMembership;
       },
     );
     const currentSubscription = managedUsagePackSubscription(
@@ -12798,12 +12801,7 @@ describe("usage pack allocation management", () => {
 
     const duplicateEvent = {
       type: "organizationMembership.deleted",
-      data: {
-        id: `mem_removed_${randomUUID()}`,
-        organization: { id: fixture.orgId },
-        publicUserData: { userId: targetUserId },
-        role: "org:member",
-      },
+      data: removedMembership,
     };
     context.mocks.clerk.verifyWebhook.mockResolvedValueOnce(duplicateEvent);
     await accept(
@@ -12965,6 +12963,12 @@ describe("usage pack allocation management", () => {
     const fixture = await seedManagedUsagePack([
       { userId: targetUserId, usagePackUsd: 20 },
     ]);
+    const removedMembership = {
+      id: `mem_removed_${randomUUID()}`,
+      organization: { id: fixture.orgId },
+      publicUserData: { userId: targetUserId },
+      role: "org:member",
+    };
     await usagePackStateAction({
       action: "delete-refund-source",
       orgId: fixture.orgId,
@@ -12977,12 +12981,12 @@ describe("usage pack allocation management", () => {
       {
         data: [
           { publicUserData: { userId: fixture.userId } },
-          { publicUserData: { userId: targetUserId } },
+          removedMembership,
         ],
       },
     );
     context.mocks.clerk.organizations.deleteOrganizationMembership.mockResolvedValue(
-      {},
+      removedMembership,
     );
     const currentSubscription = managedUsagePackSubscription(
       fixture,
@@ -13118,6 +13122,12 @@ describe("usage pack allocation management", () => {
     const fixture = await seedManagedUsagePack([
       { userId: targetUserId, usagePackUsd: 20 },
     ]);
+    const removedMembership = {
+      id: `mem_removed_${randomUUID()}`,
+      organization: { id: fixture.orgId },
+      publicUserData: { userId: targetUserId },
+      role: "org:member",
+    };
     await usagePackStateAction({
       action: "delete-refund-source",
       orgId: fixture.orgId,
@@ -13130,12 +13140,12 @@ describe("usage pack allocation management", () => {
       {
         data: [
           { publicUserData: { userId: fixture.userId } },
-          { publicUserData: { userId: targetUserId } },
+          removedMembership,
         ],
       },
     );
     context.mocks.clerk.organizations.deleteOrganizationMembership.mockResolvedValue(
-      {},
+      removedMembership,
     );
     const currentSubscription = managedUsagePackSubscription(
       fixture,

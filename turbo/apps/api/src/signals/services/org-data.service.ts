@@ -23,6 +23,7 @@ import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import {
   clerk$,
   createClerkReadContext,
+  type ClerkOrganizationMembership,
   type ClerkReadContext,
   type ClerkUser,
 } from "../external/clerk";
@@ -320,20 +321,31 @@ async function commitOrgMemberRemoval(
   db: Db,
   args: { readonly orgId: string; readonly userId: string },
   reservationId: string | null,
-  deleteMembership: () => Promise<void>,
+  deleteMembership: () => Promise<ClerkOrganizationMembership>,
 ): Promise<void> {
   // Once Clerk accepts the deletion, billing and resource cleanup must finish
   // even if the originating request disconnects.
   const commitSignal = new AbortController().signal;
-  await onRejection(deleteMembership(), async () => {
+  const deleted = await onRejection(deleteMembership(), async () => {
     await cancelUsagePackMemberRemovalReservation(db, reservationId);
   });
+  // Only Clerk's deletion result identifies the generation actually removed.
+  // A prior membership lookup can become stale while the deletion is in flight.
+  if (
+    !deleted.id ||
+    deleted.id.trim() !== deleted.id ||
+    deleted.organization.id !== args.orgId ||
+    deleted.publicUserData?.userId !== args.userId
+  ) {
+    throw new Error("Clerk membership deletion returned an invalid identity");
+  }
+  const identity = { ...args, membershipId: deleted.id };
   commitSignal.throwIfAborted();
-  await removeUsagePackMemberAllocation(db, args, commitSignal);
+  await removeUsagePackMemberAllocation(db, identity, commitSignal);
   commitSignal.throwIfAborted();
-  await refundUsagePackMemberCredits(db, args, commitSignal);
+  await refundUsagePackMemberCredits(db, identity, commitSignal);
   commitSignal.throwIfAborted();
-  await cleanupOrgMemberResources(db, args, commitSignal);
+  await cleanupOrgMemberResources(db, identity, commitSignal);
   commitSignal.throwIfAborted();
 }
 
@@ -358,8 +370,8 @@ export const leaveOrg$ = command(
       signal,
     );
     signal.throwIfAborted();
-    await commitOrgMemberRemoval(writeDb, args, reservationId, async () => {
-      await client.organizations.deleteOrganizationMembership({
+    await commitOrgMemberRemoval(writeDb, args, reservationId, () => {
+      return client.organizations.deleteOrganizationMembership({
         organizationId: args.orgId,
         userId: args.userId,
       });
@@ -422,8 +434,8 @@ export const removeOrgMember$ = command(
       writeDb,
       { orgId: args.orgId, userId: target.id },
       reservationId,
-      async () => {
-        await client.organizations.deleteOrganizationMembership({
+      () => {
+        return client.organizations.deleteOrganizationMembership({
           organizationId: args.orgId,
           userId: target.id,
         });
