@@ -105,6 +105,7 @@ import { insertAssistantEvents } from "../chat-event-shared.service";
 import {
   readRunContentOwnership,
   withRunContentWrite,
+  RunContentOwnershipChangedError,
   RunOutputDiagnostics,
 } from "../run-content-erasure-admission.service";
 import { materializeRunOutputEvents$ } from "../agent-event-consumer-run-output.service";
@@ -113,7 +114,10 @@ import {
   handleChatInternalCallback$,
   handleChatInternalCallbackWithoutCcstate,
 } from "../internal-chat-run-callback.service";
-import { dispatchRunCallbacks$ } from "../agent-run-callback.service";
+import {
+  dispatchRunCallbacks,
+  dispatchRunCallbacks$,
+} from "../agent-run-callback.service";
 import {
   receiveAgentEvents$,
   dispatchOptionalAgentEventConsumers$,
@@ -3929,10 +3933,13 @@ describe("actual compute transactions versus the B1 projector", () => {
               }
             },
           );
-          const writing = invokeTerminal(f, "failed");
+          const writing = settle(invokeTerminal(f, "failed"));
           await waitForBlockedBy(held.pid);
           await held.release();
-          await writing;
+          await expect(writing).resolves.toMatchObject({
+            ok: false,
+            error: expect.any(RunContentOwnershipChangedError),
+          });
           const after = await terminalState(f);
           expect(after.callbacks).toStrictEqual(before.callbacks);
           expect(after.sidebar).toStrictEqual(before.sidebar);
@@ -3977,14 +3984,19 @@ describe("actual compute transactions versus the B1 projector", () => {
             };
           },
         );
-        const writing = invokeTerminal(f, "failed", { mode: "ccstate" });
+        const writing = settle(
+          invokeTerminal(f, "failed", { mode: "ccstate" }),
+        );
         await entered.promise;
         await db
           .update(agentRuns)
           .set({ userId: `synthetic-new-${randomUUID()}` })
           .where(eq(agentRuns.id, f.runId));
         release.resolve();
-        await writing;
+        await expect(writing).resolves.toMatchObject({
+          ok: false,
+          error: expect.any(RunContentOwnershipChangedError),
+        });
         await expect(terminalState(f)).resolves.toStrictEqual(before);
       });
 
@@ -3993,7 +4005,7 @@ describe("actual compute transactions versus the B1 projector", () => {
         { survives: true, duplicate: false },
         { survives: true, duplicate: true },
       ])(
-        "the ACK-owning scheduler: survivor=$survives, existing marker=$duplicate",
+        "the callback-owned scheduler: survivor=$survives, existing marker=$duplicate",
         async ({ survives, duplicate }) => {
           const f = await outputFixture();
           const candidate = survives ? await outputFixture(f.orgId) : f;
@@ -4024,7 +4036,7 @@ describe("actual compute transactions versus the B1 projector", () => {
             .where(inArray(agentRuns.id, [f.runId, candidate.runId]));
           const original = await terminalState(f);
           const held = await holdClosure(decision(f.userId));
-          const dispatch = await createStore().set(
+          const processing = createStore().set(
             dispatchRunCallbacks$,
             {
               db,
@@ -4033,10 +4045,6 @@ describe("actual compute transactions versus the B1 projector", () => {
             },
             context.signal,
           );
-          expect(dispatch).toContainEqual(
-            expect.objectContaining({ success: true }),
-          );
-          const processing = flushWaitUntilForTest();
           await waitForBlockedBy(held.pid);
           if (survives) {
             await db
@@ -4045,7 +4053,10 @@ describe("actual compute transactions versus the B1 projector", () => {
               .where(eq(agentRuns.id, f.runId));
           }
           await held.release();
-          await processing;
+          await expect(processing).resolves.toContainEqual(
+            expect.objectContaining({ success: true }),
+          );
+          await flushWaitUntilForTest();
           const page = await chat.listThreadEvents(
             candidate.actor,
             candidate.threadId,
@@ -4464,7 +4475,7 @@ describe("actual compute transactions versus the B1 projector", () => {
       }
 
       it.each(["completed", "failed", "cancelled"] as const)(
-        "early ACK capture failure recovers a transferred survivor: %s",
+        "capture failure is rejected after recovering a transferred survivor: %s",
         async (kind) => {
           const f = await outputFixture();
           const survivor = await outputFixture(f.orgId);
@@ -4474,7 +4485,7 @@ describe("actual compute transactions versus the B1 projector", () => {
             {
               agentId: survivor.agentId,
               threadId: survivor.threadId,
-              prompt: "Recover after early ownership capture fails",
+              prompt: "Recover after ownership capture fails",
               clientEventId: queuedId,
             },
             [201],
@@ -4510,7 +4521,7 @@ describe("actual compute transactions versus the B1 projector", () => {
           }
           const before = await terminalState(f);
           const capture = await holdTerminalCapture(f);
-          const result = await createStore().set(
+          const processing = createStore().set(
             dispatchRunCallbacks$,
             {
               db,
@@ -4521,17 +4532,16 @@ describe("actual compute transactions versus the B1 projector", () => {
             },
             context.signal,
           );
-          expect(result).toContainEqual(
-            expect.objectContaining({ success: true }),
-          );
-          const processing = flushWaitUntilForTest();
           const pid = await capture.captured();
           await db
             .update(agentRuns)
             .set({ chatThreadId: survivor.threadId })
             .where(eq(agentRuns.id, f.runId));
           await capture.cancel(pid);
-          await processing;
+          await expect(processing).resolves.toContainEqual(
+            expect.objectContaining({ success: false }),
+          );
+          await flushWaitUntilForTest();
           await expect(terminalState(f)).resolves.toStrictEqual(before);
           expect(
             context.mocks.slack.assistant.threads.setStatus,
@@ -4634,7 +4644,7 @@ describe("actual compute transactions versus the B1 projector", () => {
           }
           const before = await terminalState(f);
           const capture = await holdTerminalCapture(f);
-          await createStore().set(
+          const processing = createStore().set(
             dispatchRunCallbacks$,
             {
               db,
@@ -4643,7 +4653,6 @@ describe("actual compute transactions versus the B1 projector", () => {
             },
             context.signal,
           );
-          const processing = flushWaitUntilForTest();
           const pid = await capture.captured();
           if (change === "deleted-run" || change === "deleted-run-load-miss") {
             await db.delete(agentRuns).where(eq(agentRuns.id, f.runId));
@@ -4663,7 +4672,14 @@ describe("actual compute transactions versus the B1 projector", () => {
           } else {
             await capture.cancel(pid);
           }
-          await processing;
+          await expect(processing).resolves.toContainEqual(
+            expect.objectContaining({
+              // A missing run is a no-op; a still-present run referencing a
+              // missing thread rejects ownership capture and remains failed.
+              success: change === "deleted-run-load-miss",
+            }),
+          );
+          await flushWaitUntilForTest();
           if (decoy) {
             const decoyPage = await chat.listThreadEvents(
               decoy.actor,
@@ -4732,7 +4748,7 @@ describe("actual compute transactions versus the B1 projector", () => {
           context.mocks.ably.publish.mockClear();
           context.mocks.s3.send.mockClear();
           context.mocks.webpush.sendNotification.mockClear();
-          await expect(
+          const processing = settle(
             handleChatInternalCallbackWithoutCcstate(
               capture.plainDb,
               {
@@ -4748,11 +4764,14 @@ describe("actual compute transactions versus the B1 projector", () => {
               },
               context.signal,
             ),
-          ).resolves.toStrictEqual({ success: true });
-          const processing = flushWaitUntilForTest();
+          );
           const pid = await capture.captured();
           await capture.cancel(pid);
-          await processing;
+          await expect(processing).resolves.toMatchObject({
+            ok: false,
+            error: { cause: { code: "57014" } },
+          });
+          await flushWaitUntilForTest();
           await expect(terminalState(f)).resolves.toStrictEqual(before);
           expect(context.mocks.ably.publish).not.toHaveBeenCalled();
           expect(context.mocks.s3.send).not.toHaveBeenCalled();
@@ -4811,7 +4830,7 @@ describe("actual compute transactions versus the B1 projector", () => {
           })
           .where(eq(agentRunCallbacks.id, source.id));
         const held = await holdResource(f.agentId);
-        await createStore().set(
+        const processing = createStore().set(
           dispatchRunCallbacks$,
           {
             db,
@@ -4821,15 +4840,17 @@ describe("actual compute transactions versus the B1 projector", () => {
           },
           context.signal,
         );
-        const processing = flushWaitUntilForTest();
         await waitForBlockedBy(held.pid);
         // The missing mandatory source is an infrastructure-only bad state,
-        // introduced after the genuine dispatch ACK for this unique run.
+        // introduced while the genuine dispatch is processing this unique run.
         await db
           .delete(agentRunCallbacks)
           .where(eq(agentRunCallbacks.id, source.id));
         await held.release();
-        await processing;
+        await expect(processing).resolves.toContainEqual(
+          expect.objectContaining({ success: false }),
+        );
+        await flushWaitUntilForTest();
         const page = await chat.listThreadEvents(f.actor, f.threadId);
         const replacement = page.events.find((event) => {
           return (
@@ -4864,10 +4885,12 @@ describe("actual compute transactions versus the B1 projector", () => {
         const f = await terminalFixture("failed");
         const before = await terminalState(f);
         const payload = { slackDelivery: deliveries(f).slackDelivery };
-        await invokeTerminal(f, "failed", {
-          payload,
-          sourceCallbackId: randomUUID(),
-        });
+        await expect(
+          invokeTerminal(f, "failed", {
+            payload,
+            sourceCallbackId: randomUUID(),
+          }),
+        ).rejects.toThrow("Canonical Slack run is missing its chat callback");
         await expect(terminalState(f)).resolves.toStrictEqual(before);
         await invokeTerminal(f, "failed", { payload });
         const after = await terminalState(f);
@@ -4914,7 +4937,7 @@ describe("actual compute transactions versus the B1 projector", () => {
             });
           }
           const held = await holdResource(f.agentId);
-          const writing = invokeTerminal(f, "failed");
+          const writing = settle(invokeTerminal(f, "failed"));
           const writerPid = await waitForBlockedBy(held.pid);
           const rows = await executeRawRows(
             db,
@@ -4924,7 +4947,11 @@ describe("actual compute transactions versus the B1 projector", () => {
             z.object({ stopped: z.boolean() }),
           );
           expect(rows).toStrictEqual([{ stopped: true }]);
-          await writing;
+          const failure = await writing;
+          expect(failure.ok).toBeFalsy();
+          if (!failure.ok && fault === "cancel") {
+            expect(safeSqlStateCode(failure.error)).toBe("57014");
+          }
           if (disconnected) {
             await expect(disconnected.promise).resolves.toBeInstanceOf(Error);
           }
@@ -4990,7 +5017,9 @@ describe("actual compute transactions versus the B1 projector", () => {
           sql`CREATE TRIGGER ${sql.identifier(observer)} BEFORE INSERT ON chat_events FOR EACH ROW EXECUTE FUNCTION ${sql.identifier(observer)}()`,
         );
         pool.on("acquire", acquired);
-        await invokeTerminal(f, "failed");
+        await expect(invokeTerminal(f, "failed")).rejects.toMatchObject({
+          cause: { code: "57014" },
+        });
         await expect(timeout.promise).resolves.toBe(
           `${observer}: canceling statement due to statement timeout`,
         );
@@ -5035,12 +5064,12 @@ describe("actual compute transactions versus the B1 projector", () => {
             sql`SELECT pg_advisory_xact_lock(hashtextextended(${`run_output_projection:${first.runId}`}, 0))`,
           );
         });
-        await startTerminal(first, "failed");
-        await startTerminal(first, "failed");
+        const firstWriter = settle(startTerminal(first, "failed"));
+        const duplicateWriter = settle(startTerminal(first, "failed"));
         await waitForBlockedBy(held.pid);
         await startTerminal(independent, "failed");
-        // Do not drain all background work while intentionally holding one
-        // writer. Observe the independent run through its production API.
+        // Keep the two contended callbacks joined without blocking the
+        // independent run's observable result.
         await expect
           .poll(async () => {
             const result = await chat.listThreadEvents(
@@ -5062,6 +5091,12 @@ describe("actual compute transactions versus the B1 projector", () => {
           }),
         ).toHaveLength(0);
         await held.release();
+        await expect(
+          Promise.all([firstWriter, duplicateWriter]),
+        ).resolves.toStrictEqual([
+          { ok: true, value: undefined },
+          { ok: true, value: undefined },
+        ]);
         await flushWaitUntilForTest();
         const completed = await chat.listThreadEvents(
           first.actor,
@@ -5074,13 +5109,16 @@ describe("actual compute transactions versus the B1 projector", () => {
         ).toHaveLength(1);
       });
 
-      it("lock timeout rolls back rather than becoming closure denial, allowing an open retry", async () => {
+      it("exhausted lock timeouts reject rather than becoming closure denial, allowing an open retry", async () => {
         const f = await terminalFixture("failed");
         const before = await terminalState(f);
         const held = await holdResource(f.agentId);
-        const writing = invokeTerminal(f, "failed");
+        const writing = settle(invokeTerminal(f, "failed"));
         await waitForBlockedBy(held.pid);
-        await writing;
+        await expect(writing).resolves.toMatchObject({
+          ok: false,
+          error: { cause: { code: "55P03" } },
+        });
         await expect(terminalState(f)).resolves.toStrictEqual(before);
         await held.release();
         await invokeTerminal(f, "failed");
@@ -5089,7 +5127,124 @@ describe("actual compute transactions versus the B1 projector", () => {
             return event.eventType === "run.failed";
           }),
         ).toHaveLength(1);
-      });
+      }, 10_000);
+
+      it.each(["plain", "ccstate"] as const)(
+        "%s dispatch retains a failed callback until terminal projection commits on retry",
+        async (mode) => {
+          const f = await terminalFixture("cancelled");
+          const [source] = await db
+            .select({ id: agentRunCallbacks.id })
+            .from(agentRunCallbacks)
+            .where(
+              and(
+                eq(agentRunCallbacks.runId, f.runId),
+                eq(agentRunCallbacks.internalKind, "chat"),
+              ),
+            );
+          if (!source) {
+            throw new Error("Expected the real chat source callback");
+          }
+          const sourceCallbackId = source.id;
+          function sourceDeliveryState() {
+            return db
+              .select({
+                status: agentRunCallbacks.status,
+                deliveredAt: agentRunCallbacks.deliveredAt,
+              })
+              .from(agentRunCallbacks)
+              .where(eq(agentRunCallbacks.id, sourceCallbackId));
+          }
+          function dispatch() {
+            return mode === "plain"
+              ? dispatchRunCallbacks(
+                  db,
+                  f.runId,
+                  "failed",
+                  undefined,
+                  "Run cancelled",
+                )
+              : createStore().set(
+                  dispatchRunCallbacks$,
+                  {
+                    db,
+                    runId: f.runId,
+                    status: "failed",
+                    error: "Run cancelled",
+                  },
+                  context.signal,
+                );
+          }
+
+          // The source callback's durable delivery ledger and a transaction
+          // held beyond the lock budget have no public inspection/control API.
+          // Use the real dispatcher and PostgreSQL for this infrastructure
+          // contract, then verify the lifecycle result through public events.
+          const held = await holdBusinessRow((tx) => {
+            return tx
+              .select({ userId: chatThreadEventSequences.userId })
+              .from(chatThreadEventSequences)
+              .where(
+                and(
+                  eq(chatThreadEventSequences.userId, f.userId),
+                  eq(chatThreadEventSequences.orgId, f.orgId),
+                ),
+              )
+              .for("update");
+          });
+          const processing = dispatch();
+          await waitForBlockedBy(held.pid);
+          await expect(sourceDeliveryState()).resolves.toStrictEqual([
+            { status: "pending", deliveredAt: null },
+          ]);
+          await expect(processing).resolves.toContainEqual(
+            expect.objectContaining({
+              callbackId: sourceCallbackId,
+              success: false,
+            }),
+          );
+          await flushWaitUntilForTest();
+          await expect(sourceDeliveryState()).resolves.toStrictEqual([
+            { status: "failed", deliveredAt: null },
+          ]);
+          const failed = await chat.listThreadEvents(f.actor, f.threadId);
+          expect(
+            failed.events.filter((event) => {
+              return (
+                event.runId === f.runId && event.eventType === "run.cancelled"
+              );
+            }),
+          ).toHaveLength(0);
+
+          await held.release();
+          await expect(dispatch()).resolves.toStrictEqual([
+            { callbackId: sourceCallbackId, success: true },
+          ]);
+          await flushWaitUntilForTest();
+          await expect(sourceDeliveryState()).resolves.toStrictEqual([
+            { status: "delivered", deliveredAt: expect.any(Date) },
+          ]);
+          const recovered = await chat.listThreadEvents(f.actor, f.threadId);
+          const cancellationEvents = recovered.events.filter((event) => {
+            return (
+              event.runId === f.runId && event.eventType === "run.cancelled"
+            );
+          });
+          expect(cancellationEvents).toHaveLength(1);
+
+          await expect(dispatch()).resolves.toStrictEqual([]);
+          await flushWaitUntilForTest();
+          const duplicate = await chat.listThreadEvents(f.actor, f.threadId);
+          expect(
+            duplicate.events.filter((event) => {
+              return (
+                event.runId === f.runId && event.eventType === "run.cancelled"
+              );
+            }),
+          ).toStrictEqual(cancellationEvents);
+        },
+        10_000,
+      );
     });
 
     it("measures finite same-subject and independent-subject output pairs", async () => {

@@ -10,6 +10,7 @@ import { loadIntroVideoTemplateAccess } from "./intro-video-access.service";
 import { randomBytes } from "node:crypto";
 
 import { command, createStore } from "ccstate";
+import { delay } from "signal-timers";
 import {
   chatEventCompatibilityRole,
   type ChatEventType,
@@ -60,6 +61,7 @@ import { z } from "zod";
 import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
 import { AUTONOMY_BUDGET_EXHAUSTED_MESSAGE } from "../../lib/error";
 import { logger } from "../../lib/log";
+import { isLockNotAvailable } from "../../lib/pg-errors";
 import { now, nowDate } from "../../lib/time";
 import { waitUntil } from "../context/wait-until";
 import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
@@ -1568,6 +1570,25 @@ async function insertAssistantErrorEventTransaction(
   };
 }
 
+/** Retry only a rolled-back projection, before delivery or queue side effects. */
+async function retryTerminalChatProjection<T>(
+  write: () => Promise<T>,
+  signal: AbortSignal,
+): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    signal.throwIfAborted();
+    const result = await settle(write(), signal);
+    if (result.ok) {
+      return result.value;
+    }
+    if (!isLockNotAvailable(result.error) || attempt === 2) {
+      throw result.error;
+    }
+    // The transaction has rolled back; reacquire and revalidate every fence.
+    await delay(100 * 2 ** attempt, { signal });
+  }
+}
+
 async function insertAssistantErrorEvent(
   args: AssistantErrorEventArgs,
   signal: AbortSignal,
@@ -1579,27 +1600,29 @@ async function insertAssistantErrorEvent(
     undefined,
     signal,
   );
-  const projection = await withRunContentWrite(
-    args.db,
-    {
-      runId: args.runId,
-      ownership: args.ownership,
-      destination: {
-        threadId: args.threadId,
-        userId: args.userId,
-        orgId: args.orgId,
+  const projection = await retryTerminalChatProjection(() => {
+    return withRunContentWrite(
+      args.db,
+      {
+        runId: args.runId,
+        ownership: args.ownership,
+        destination: {
+          threadId: args.threadId,
+          userId: args.userId,
+          orgId: args.orgId,
+        },
       },
-    },
-    async (tx) => {
-      return await insertAssistantErrorEventTransaction(
-        tx,
-        args,
-        displayErrorMessage,
-        goalId,
-      );
-    },
-    signal,
-  );
+      async (tx) => {
+        return await insertAssistantErrorEventTransaction(
+          tx,
+          args,
+          displayErrorMessage,
+          goalId,
+        );
+      },
+      signal,
+    );
+  }, signal);
   if (projection.outcome === "closed") {
     return await closedTerminalProjectionOutcome(args.db, args.runId, signal);
   }
@@ -1906,27 +1929,29 @@ async function insertRunLifecycleMarker(
     undefined,
     signal,
   );
-  const projection = await withRunContentWrite(
-    args.db,
-    {
-      runId: args.runId,
-      ownership: args.ownership,
-      destination: {
-        threadId: args.threadId,
-        userId: args.userId,
-        orgId: args.orgId,
+  const projection = await retryTerminalChatProjection(() => {
+    return withRunContentWrite(
+      args.db,
+      {
+        runId: args.runId,
+        ownership: args.ownership,
+        destination: {
+          threadId: args.threadId,
+          userId: args.userId,
+          orgId: args.orgId,
+        },
       },
-    },
-    async (tx) => {
-      return await insertRunLifecycleMarkerTransaction({
-        tx,
-        input: args,
-        markerCreatedAt,
-        goalId,
-      });
-    },
-    signal,
-  );
+      async (tx) => {
+        return await insertRunLifecycleMarkerTransaction({
+          tx,
+          input: args,
+          markerCreatedAt,
+          goalId,
+        });
+      },
+      signal,
+    );
+  }, signal);
   if (projection.outcome === "closed") {
     return await closedTerminalProjectionOutcome(args.db, args.runId, signal);
   }
@@ -4387,7 +4412,7 @@ async function recoverTerminalChatCallback(
       signal.throwIfAborted();
       // A surviving run's current mapping wins, including an explicit unmap.
       // If the run disappeared after capture of the locator, its surviving
-      // thread still needs the ACK-owned wakeup. Neither locator is admission.
+      // thread still needs the callback-owned wakeup. Neither locator is admission.
       const threadId = current
         ? current.triggerSource === null
           ? null
@@ -4631,7 +4656,7 @@ async function drainAndClearTerminalChatThread(
 ): Promise<DrainOutcome> {
   const result = await settle(
     (async () => {
-      // Closure does not own a marker, but the early ACK still owns this wakeup.
+      // Closure does not own a marker, but the callback still owns this wakeup.
       // Resolve the current run/thread mapping; the scheduler reloads its own
       // candidates and uses B2b1 admission, independently of the closed old owner.
       const currentThread =
@@ -4784,13 +4809,17 @@ async function processTerminalChatCallback(
 
   const deferredSideEffects = work.deferredSideEffects;
   if (deferredSideEffects) {
-    await runTerminalChatCallbackSideEffects({
-      runId,
-      status: callbackStatus,
-      run: () => {
-        return deferredSideEffects();
-      },
-    });
+    // Durable projection and thread draining own callback acknowledgement.
+    // Optional LLM/push work must not delay the caller's org queue drain.
+    waitUntil(
+      runTerminalChatCallbackSideEffects({
+        runId,
+        status: callbackStatus,
+        run: () => {
+          return deferredSideEffects();
+        },
+      }),
+    );
   }
 
   if (!drainResult.ok) {
@@ -4975,16 +5004,17 @@ const createQueuedRunForChatCallback$ = command(
   },
 );
 
-function handleChatInternalCallback(
+async function handleChatInternalCallback(
   args: {
     readonly db: Db;
     readonly callback: InternalRunCallbackEnvelope;
     readonly dependencies: ChatCallbackDependencies;
   },
   signal: AbortSignal,
-):
+): Promise<
   | { readonly success: true }
-  | { readonly success: false; readonly error: string } {
+  | { readonly success: false; readonly error: string }
+> {
   const payload = chatCallbackPayloadSchema.safeParse(args.callback.payload);
   if (!payload.success) {
     return {
@@ -5024,34 +5054,17 @@ function handleChatInternalCallback(
   }
 
   signal.throwIfAborted();
-  // The webhook sender (dispatchRunCallbacks) awaits this response only to
-  // record delivery; it does not retry and nothing downstream reads the body.
-  // The frontend learns about new messages through Ably realtime signals, not
-  // this HTTP response. Acknowledge before
-  // running heavy terminal processing (message persistence, LLM generation,
-  // and push delivery) in the background, mirroring webhooks-agent-complete.
-  // Use a detached signal so request cancellation cannot interrupt the
-  // idempotency marker -> queued auto-send sequence after acknowledgement.
-  const backgroundSignal = new AbortController().signal;
-  waitUntil(
-    tapError(
-      processTerminalChatCallback(
-        {
-          db: args.db,
-          callback: args.callback,
-          payload: payload.data,
-          dependencies: args.dependencies,
-        },
-        backgroundSignal,
-      ),
-      (error) => {
-        log.error("Failed to process terminal chat callback", {
-          runId: args.callback.runId,
-          status: args.callback.status,
-          error,
-        });
-      },
-    ),
+  // Cancel and completion routes already own background dispatch. Only
+  // acknowledge delivery after terminal processing succeeds so failures stay
+  // eligible for the dispatcher's durable callback recovery.
+  await processTerminalChatCallback(
+    {
+      db: args.db,
+      callback: args.callback,
+      payload: payload.data,
+      dependencies: args.dependencies,
+    },
+    signal,
   );
 
   return { success: true };
