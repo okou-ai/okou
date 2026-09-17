@@ -426,9 +426,8 @@ describe("POST /api/welcome-chat-threads", () => {
       }
       // The deck and the quick start render their own previews, so the copy
       // carries no hand-made screenshots of them.
-      expect(content).toContain(
-        "![Okou quick start](<https://okou-quick-start-deck.okou.app>)",
-      );
+      // The alt text is localized, so assert the artifact reference itself.
+      expect(content).toContain("](<https://okou-quick-start-deck.okou.app>)");
       expect(content).not.toContain("quick-start/cover.png");
       expect(content).not.toContain("?prompt=");
       expect(content).toContain(
