@@ -1,4 +1,7 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+
+import { GetObjectCommand } from "@aws-sdk/client-s3";
+import { cronConnectorCatalogContract } from "@okouai/api-contracts/contracts/cron";
 
 import {
   CONNECTOR_ACCOUNT_INSPECTION_MAX_SELECTIONS,
@@ -20,7 +23,12 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { mockEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
+import {
+  API_TEST_CONNECTOR_CATALOG,
+  captureApiTestConnectorCatalogCleanup,
+} from "../../../test-fixtures/connector-catalog";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { connectorsRoutes } from "../connectors";
@@ -28,6 +36,7 @@ import { customConnectorsRoutes } from "../custom-connectors";
 import { customConnectorsDeleteRoutes } from "../custom-connectors-delete";
 import { customConnectorsValuesSetRoutes } from "../custom-connectors-values-set";
 import { featureSwitchesRoutes } from "../feature-switches";
+import { cronConnectorCatalogRoutes } from "../cron-connector-catalog";
 import {
   seedConnectorStorageRow,
   setBuiltinOAuthScopeFacts,
@@ -35,6 +44,7 @@ import {
 } from "./helpers/connector-credential-storage-state";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
+import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -853,9 +863,71 @@ describe("connector account lifecycle routes", () => {
     let createdAccountIds: string[];
 
     beforeEach(async () => {
+      // Own the source, not just its version, so other files cannot replace
+      // this case's catalog while its 101 accounts are created and queried.
+      const bucket = `test-connector-capacity-${randomUUID()}`;
+      mockEnv("R2_USER_STORAGES_BUCKET_NAME", bucket);
+      // Infrastructure cleanup has no production endpoint. Capture only this
+      // source before env reset; setup and assertions still use real APIs.
+      const catalog = createFixtureOperationOwner(
+        captureApiTestConnectorCatalogCleanup(),
+      );
+      const catalogBytes = Buffer.from(
+        JSON.stringify(API_TEST_CONNECTOR_CATALOG),
+      );
+      const catalogKey = `connectors/v3/releases/${API_TEST_CONNECTOR_CATALOG.catalogVersion}/catalog.json`;
+      const objects = new Map([
+        [catalogKey, catalogBytes],
+        [
+          "connectors/v3/active.json",
+          Buffer.from(
+            JSON.stringify({
+              catalogVersion: API_TEST_CONNECTOR_CATALOG.catalogVersion,
+              catalogKey,
+              catalogDigest: `sha256:${createHash("sha256").update(catalogBytes).digest("hex")}`,
+            }),
+          ),
+        ],
+      ]);
+      context.mocks.s3.send.mockImplementation((command: unknown) => {
+        if (
+          !(command instanceof GetObjectCommand) ||
+          command.input.Bucket !== bucket
+        ) {
+          throw new Error("Unexpected catalog object request");
+        }
+        const bytes = objects.get(command.input.Key ?? "");
+        if (!bytes) {
+          throw new Error("Catalog object unavailable");
+        }
+        return Promise.resolve({
+          ContentLength: bytes.length,
+          Body: {
+            async *[Symbol.asyncIterator]() {
+              yield bytes;
+            },
+          },
+        });
+      });
+      const cronSecret = `test-cron-${randomUUID()}`;
+      mockEnv("CRON_SECRET", cronSecret);
+      await catalog.run(async () => {
+        const cron = setupApp({ context, routes: cronConnectorCatalogRoutes })(
+          cronConnectorCatalogContract,
+        );
+        const synced = await accept(
+          cron.sync({ headers: { authorization: `Bearer ${cronSecret}` } }),
+          [200],
+        );
+        if (synced.body.outcome !== "accepted") {
+          throw new Error(
+            `Catalog fixture sync failed: ${synced.body.outcome}`,
+          );
+        }
+      });
       // Every case owns a complete API-created fixture before exercising its
       // query contract. The enclosing tracker cleans up that case's accounts.
-      createdAccountIds = await createBulkAccounts();
+      createdAccountIds = await catalog.run(createBulkAccounts);
     });
 
     it("paginates more than one hundred accounts", async () => {

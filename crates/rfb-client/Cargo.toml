@@ -1,0 +1,22 @@
+[package]
+name = "rfb-client"
+version = "0.1.0"
+edition.workspace = true
+publish = false
+description = "Owned, bounded RFB authentication for Okou remote desktop access"
+
+[dependencies]
+des = { workspace = true, features = ["zeroize"] }
+rustls = { workspace = true, features = ["aws_lc_rs", "std", "tls12"] }
+thiserror = { workspace = true, features = ["std"] }
+tokio = { workspace = true, features = ["io-util", "time"] }
+tokio-rustls = { workspace = true, features = ["aws_lc_rs", "tls12"] }
+webpki-roots = { workspace = true }
+zeroize = { workspace = true, features = ["alloc"] }
+
+[dev-dependencies]
+rcgen = { workspace = true, features = ["crypto", "ring"] }
+tokio = { workspace = true, features = ["macros", "net", "rt", "sync"] }
+
+[lints]
+workspace = true

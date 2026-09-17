@@ -11,6 +11,22 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.908.0](https://github.com/vm0-ai/okou/compare/app-v0.907.2...app-v0.908.0) (2026-09-17)
+
+
+### Features
+
+* add owner-aware artifact sharing controls ([#34682](https://github.com/vm0-ai/okou/issues/34682)) ([a2fcba9](https://github.com/vm0-ai/okou/commit/a2fcba980a4a92c72678d031d9c85e4154b0bc09))
+* **platform:** keep only oauth-connector workflow templates ([#34665](https://github.com/vm0-ai/okou/issues/34665)) ([558905e](https://github.com/vm0-ai/okou/commit/558905e519c9e6b2ae00cc5c03fac2769e66a3b4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.454.0
+    * @okouai/core bumped to 8.674.0
+
 ## [0.907.2](https://github.com/vm0-ai/okou/compare/app-v0.907.1...app-v0.907.2) (2026-09-17)
 
 

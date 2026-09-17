@@ -42,7 +42,15 @@ const PREVIEW_IMAGE_CONTENT_TYPE = "image/webp";
 const PREVIEW_IMAGE_EXTENSION = "webp";
 const PREVIEW_IMAGE_BASENAME = "preview-v3";
 const PREVIEW_WAF_COOKIE_NAME = "vm0_artifact_preview";
-const SNAPSHOT_ACTION_TIMEOUT_MS = 30_000;
+// Cloudflare starts this timer only once navigation has finished, and runs it
+// over the action itself: content extraction and the screenshot. Its own
+// ceiling is 5 minutes, but the render runs inside `waitUntil` on a Vercel
+// function budgeted at 300s, and a function killed mid-render loses the failure
+// record that #34591 exists to produce. The retry branch is the longest chain:
+// a 20s primary navigation timeout, then the retry's 15s navigation and 3s
+// settle window, then this budget, plus the surrounding storage and database
+// work. 120s puts that worst case near 175s and keeps the record.
+const SNAPSHOT_ACTION_TIMEOUT_MS = 120_000;
 const PRIMARY_NAVIGATION_OPTIONS = {
   gotoOptions: { waitUntil: "networkidle2", timeout: 20_000 },
 } as const;

@@ -8,6 +8,29 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.616.0](https://github.com/vm0-ai/okou/compare/api-v1.615.0...api-v1.616.0) (2026-09-17)
+
+
+### Features
+
+* add owner-aware artifact sharing controls ([#34682](https://github.com/vm0-ai/okou/issues/34682)) ([a2fcba9](https://github.com/vm0-ai/okou/commit/a2fcba980a4a92c72678d031d9c85e4154b0bc09))
+* **cli:** publish a custom template from a reverse run ([#34707](https://github.com/vm0-ai/okou/issues/34707)) ([9cf9d91](https://github.com/vm0-ai/okou/commit/9cf9d91452b2401e54ef6f8b84abdd4d378a10bb))
+
+
+### Bug Fixes
+
+* **api:** raise preview snapshot action budget to 120s ([#34772](https://github.com/vm0-ai/okou/issues/34772)) ([d120755](https://github.com/vm0-ai/okou/commit/d1207555c121fff1882a78c20d88c99a06482b97))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.454.0
+    * @okouai/core bumped to 8.674.0
+    * @okouai/db bumped to 1.269.3
+    * @okouai/pi-agent-runtime bumped to 1.32.7
+
 ## [1.615.0](https://github.com/vm0-ai/okou/compare/api-v1.614.1...api-v1.615.0) (2026-09-17)
 
 

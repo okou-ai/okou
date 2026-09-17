@@ -44,6 +44,8 @@ surface; the index does not replace their detailed rules.
   capabilities, live health normalization, freshness and rollout boundaries.
 - [Billing attribution foundation](./database/billing-attribution.md): immutable
   billing identity, writer inventory, bounded backfill and activation boundaries.
+- [X resource observation preparation](./x-resource-observations.md): dormant
+  resource protocol, shared claim storage, transient remainder and consumer gates.
 - [Database trigger retirement](./database-trigger-retirement.md): explicit API
   entitlement writers, repair paths, and the serving/rollback removal gate.
 - [Account telemetry and recovery erasure](./account-erasure-evidence.md):

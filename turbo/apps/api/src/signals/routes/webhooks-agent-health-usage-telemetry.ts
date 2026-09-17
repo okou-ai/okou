@@ -15,7 +15,7 @@ import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import type { z } from "zod";
 
-import { notFound } from "../../lib/error";
+import { badRequestMessage, notFound } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
@@ -297,6 +297,17 @@ const usageEvent$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = getSandboxAuthForRun(body.runId, get(authorization$));
   if (!auth) {
     return unauthorizedRunMismatch;
+  }
+
+  // Prepared reader only: #34713 must replace this guard with the complete
+  // source-ledger/resource transaction and two-date lifecycle admission.
+  // Never pass resource observations (including mixed batches) to count billing.
+  if (
+    body.events.some((event) => {
+      return "protocol" in event;
+    })
+  ) {
+    return badRequestMessage("X resource observations are not enabled");
   }
 
   const db = set(writeDb$);

@@ -505,6 +505,13 @@
       "when": 1789561628531,
       "tag": "1149_morning_brief_installed_preferences",
       "breakpoints": true
+    },
+    {
+      "idx": 1150,
+      "version": "7",
+      "when": 1789614304243,
+      "tag": "1150_x_resource_reads",
+      "breakpoints": true
     }
   ]
 }

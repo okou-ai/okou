@@ -45,6 +45,7 @@ import * as modelProviderAuthSessionSchema from "./schema/model-provider-auth-se
 import * as connectorOauthDeviceAuthorizationSessionSchema from "./schema/connector-oauth-device-authorization-session";
 import * as connectorOauthStateSchema from "./schema/connector-oauth-state";
 import * as usageEventSchema from "./schema/usage-event";
+import * as xResourceUsageSchema from "./schema/x-resource-usage";
 import * as usageEventHourlyRollupSchema from "./schema/usage-event-hourly-rollup";
 import * as usagePackCreditGrantSchema from "./schema/usage-pack-credit-grant";
 import * as usagePackCreditRefundSchema from "./schema/usage-pack-credit-refund";
@@ -210,6 +211,7 @@ export const schema = {
   ...connectorOauthStateSchema,
   ...billingRunAttributionSchema,
   ...usageEventSchema,
+  ...xResourceUsageSchema,
   ...usageEventHourlyRollupSchema,
   ...usagePackCreditGrantSchema,
   ...usagePackCreditRefundSchema,

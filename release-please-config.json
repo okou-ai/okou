@@ -93,6 +93,10 @@
         "crates/runner-rpc-proto": {
             "release-type": "rust"
         },
+        "crates/rfb-client": {
+            "release-type": "rust",
+            "skip-changelog": true
+        },
         "crates/guest-telemetry": {
             "release-type": "rust"
         },
