@@ -1,14 +1,16 @@
 const ASSET_BASE =
   "https://static.vm0.io/vm0/welcome-thread/2026-09-14-4128f97d2754";
 
-const GUIDE_BASE =
-  "https://static.vm0.io/vm0/welcome-thread/2026-09-14-286162fbf7a7/guide";
+const STEP_BASE =
+  "https://static.vm0.io/vm0/welcome-thread/2026-09-17-3f913309fe14";
+
+const QUICK_START_BASE = `${STEP_BASE}/quick-start`;
 
 export const WELCOME_THREAD_ASSETS = Object.freeze({
-  teamLearningDiagramUrl: `${ASSET_BASE}/team-learning-loop.png`,
-  sharedWorkflowDiagramUrl: `${ASSET_BASE}/shared-workflow.png`,
   slackConversationsDiagramUrl: `${ASSET_BASE}/slack-conversations.png`,
-  workflowGuideCoverUrl: `${GUIDE_BASE}/cover.png`,
-  workflowGuideUrl: `${GUIDE_BASE}/okou-team-workflow-guide.html`,
-  workflowGuideDownloadUrl: `${GUIDE_BASE}/assets/okou-team-workflow-guide.pptx`,
+  workflowTemplatePickerUrl: `${STEP_BASE}/workflow-template-picker.png`,
+  newAgentDialogUrl: `${STEP_BASE}/new-agent.png`,
+  quickStartCoverUrl: `${QUICK_START_BASE}/cover.png`,
+  quickStartUrl: `${QUICK_START_BASE}/okou-quick-start.html`,
+  quickStartDownloadUrl: `${QUICK_START_BASE}/assets/okou-quick-start.pptx`,
 });

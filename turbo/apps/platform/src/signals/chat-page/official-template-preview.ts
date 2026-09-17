@@ -15,11 +15,11 @@ const officialPreviewUrls = Object.freeze([
   ...VIDEO_TEMPLATE_ITEMS.map((item) => {
     return item.previewVideo;
   }),
-  WELCOME_THREAD_ASSETS.teamLearningDiagramUrl,
-  WELCOME_THREAD_ASSETS.sharedWorkflowDiagramUrl,
   WELCOME_THREAD_ASSETS.slackConversationsDiagramUrl,
-  WELCOME_THREAD_ASSETS.workflowGuideCoverUrl,
-  WELCOME_THREAD_ASSETS.workflowGuideUrl,
+  WELCOME_THREAD_ASSETS.workflowTemplatePickerUrl,
+  WELCOME_THREAD_ASSETS.newAgentDialogUrl,
+  WELCOME_THREAD_ASSETS.quickStartCoverUrl,
+  WELCOME_THREAD_ASSETS.quickStartUrl,
 ]);
 
 export function isOfficialTemplatePreviewUrl(url: string): boolean {

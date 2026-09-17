@@ -39,8 +39,8 @@ const runs = createRunsApi(context);
 const MODEL = "claude-sonnet-5";
 const WELCOME_ASSET_BASE =
   "https://static.vm0.io/vm0/welcome-thread/2026-09-14-4128f97d2754";
-const WELCOME_GUIDE_BASE =
-  "https://static.vm0.io/vm0/welcome-thread/2026-09-14-286162fbf7a7/guide";
+const WELCOME_STEP_BASE =
+  "https://static.vm0.io/vm0/welcome-thread/2026-09-17-3f913309fe14";
 
 function headers(actor: ApiTestUser) {
   createRouteMocks(context).clerk.session(
@@ -288,12 +288,14 @@ describe("POST /api/welcome-chat-threads", () => {
       "## Here is what I can deliver",
       "### Images",
       "### Presentations",
-      "### Videos",
-      "### Automation recommendations",
-      "## Why teams get more from Okou",
-      "## How to work with me as a team",
-      "## Talk to me in Slack",
-      "[Set up Slack]",
+      "### Websites",
+      "### Research and data",
+      "### Workflow examples",
+      "## Start from a workflow template",
+      "## Then give the job its own agent",
+      "## Talk to me in Slack and Telegram",
+      "## The steps, in one deck",
+      "[Set up Slack and Telegram]",
       "[Invite your teammates]",
       "[Read the docs]",
     ];
@@ -304,15 +306,14 @@ describe("POST /api/welcome-chat-threads", () => {
       previous = index;
     }
     for (const expected of [
-      "Qualify inbound leads",
-      "Turn meetings into follow-ups",
-      "Weekly growth review",
-      "**Run the task with me once.**",
-      "**Save it as a workflow.**",
-      "**Change its visibility to Public.**",
-      "**Run it by name.**",
-      "Only workspace admins can install",
-      "you can attach a file to a direct message",
+      "**[Social research]",
+      "**[Find people and creators]",
+      "**[Weekly growth report]",
+      "**[Recording to explainer video]",
+      "Open **Template** in the chat composer",
+      "**Share it with the team.**",
+      "Run it:",
+      "Try it:",
     ]) {
       expect(content).toContain(expected);
     }
@@ -402,7 +403,7 @@ describe("POST /api/welcome-chat-threads", () => {
       expect(content).not.toContain("Editable agent name");
       expect(content).toContain("`campaign-visual.jpg`");
       expect(content).toContain("`sproutpop-launch-deck.html`");
-      expect(content).toContain("`product-launch-film.mp4`");
+      expect(content).toContain("`coastal-hotel-example.html`");
       expect(content).toContain(
         "https://static.vm0.io/vm0/artifact-templates/illustration/assets/bb2f13d1-f849-4a5c-a493-524bc0eda5c2/ref-bookshop-interior.jpg",
       );
@@ -410,25 +411,29 @@ describe("POST /api/welcome-chat-threads", () => {
         "https://static.vm0.io/vm0/artifact-templates/presentation/daf7c2d1-5195-4c09-ad4b-8d85778fc104/playful-launch-presentation.html",
       );
       expect(content).toContain(
-        "https://static.vm0.io/vm0/artifact-templates/video/df99de74-8eea-420c-86d1-c104ba5ba6b6/video-df99de74.mp4",
+        "https://static.vm0.io/vm0/artifact-templates/website/website-studio-v2-20260727-ccff774/coastal-hotel-example.html",
       );
       expect(content).not.toContain("```mermaid");
+      expect(content).toContain(
+        `${WELCOME_ASSET_BASE}/slack-conversations.png`,
+      );
       for (const filename of [
-        "team-learning-loop.png",
-        "shared-workflow.png",
-        "slack-conversations.png",
+        "workflow-template-picker.png",
+        "new-agent.png",
+        "quick-start/cover.png",
+        "quick-start/okou-quick-start.html",
+        "quick-start/assets/okou-quick-start.pptx",
       ]) {
-        expect(content).toContain(`${WELCOME_ASSET_BASE}/${filename}`);
+        expect(content).toContain(`${WELCOME_STEP_BASE}/${filename}`);
       }
-      for (const filename of [
-        "cover.png",
-        "okou-team-workflow-guide.html",
-        "assets/okou-team-workflow-guide.pptx",
-      ]) {
-        expect(content).toContain(`${WELCOME_GUIDE_BASE}/${filename}`);
-      }
-      expect(content).toContain("`okou-team-workflow-guide.pptx`");
-      expect(content).toContain("`/okou`");
+      expect(content).toContain("`okou-quick-start.pptx`");
+      // Every example is runnable: the prompt deep link prefills the composer.
+      expect(content).toContain("https://pr-33252-app.omby.ai/?prompt=");
+      expect(content).toContain("https://pr-33252-app.omby.ai/agents");
+      expect(content).toContain(
+        "https://pr-33252-www.omby.ai/en/workflow-automation-examples",
+      );
+      expect(content).toContain("https://pr-33252-www.omby.ai/en/web-services");
       expect(content).toContain("https://pr-33252-app.omby.ai/works");
       expect(content).toContain(
         "https://pr-33252-app.omby.ai/?settings=people",

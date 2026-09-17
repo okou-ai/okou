@@ -21,9 +21,10 @@ const VIDEO =
 
 const WELCOME_ASSET_BASE =
   "https://static.vm0.io/vm0/welcome-thread/2026-09-14-4128f97d2754";
-const WELCOME_GUIDE_BASE =
-  "https://static.vm0.io/vm0/welcome-thread/2026-09-14-286162fbf7a7/guide";
-const WORKFLOW_GUIDE = `${WELCOME_GUIDE_BASE}/okou-team-workflow-guide.html`;
+const WELCOME_STEP_BASE =
+  "https://static.vm0.io/vm0/welcome-thread/2026-09-17-3f913309fe14";
+const QUICK_START_BASE = `${WELCOME_STEP_BASE}/quick-start`;
+const QUICK_START = `${QUICK_START_BASE}/okou-quick-start.html`;
 
 function link(name: string) {
   const element = queryAllByRoleFast("link").find((candidate) => {
@@ -98,24 +99,30 @@ test.each([true, false])(
   },
 );
 
-test("Welcome diagrams and the workflow guide open without uploaded artifacts", async () => {
-  context.mocks.http.get(WORKFLOW_GUIDE, () => {
+test("Welcome diagrams and the quick start open without uploaded artifacts", async () => {
+  context.mocks.http.get(QUICK_START, () => {
     return HttpResponse.html(
       '<!doctype html><html><body><main class="deck"><section class="slide">Share a workflow with your team</section></main></body></html>',
     );
   });
   const diagrams = [
-    ["Team learning", "team-learning-loop.png"],
-    ["Shared workflow", "shared-workflow.png"],
-    ["Slack conversations", "slack-conversations.png"],
+    [
+      "Slack conversations",
+      `${WELCOME_ASSET_BASE}/slack-conversations.png`,
+    ],
+    [
+      "Workflow templates",
+      `${WELCOME_STEP_BASE}/workflow-template-picker.png`,
+    ],
+    ["New agent", `${WELCOME_STEP_BASE}/new-agent.png`],
   ] as const;
   const chat = createMarkdownChatFixture(context);
   const content = [
-    ...diagrams.map(([name, filename]) => {
-      return `[${name}](${WELCOME_ASSET_BASE}/${filename})`;
+    ...diagrams.map(([name, url]) => {
+      return `[${name}](${url})`;
     }),
-    `[![Workflow guide cover](${WELCOME_GUIDE_BASE}/cover.png)](${WORKFLOW_GUIDE})`,
-    `[View workflow guide](${WORKFLOW_GUIDE})`,
+    `[![Quick start cover](${QUICK_START_BASE}/cover.png)](${QUICK_START})`,
+    `[View the quick start](${QUICK_START})`,
   ].join("\n\n");
   const row = chat.outputMessage(content, { seqId: 1 });
   chat.install({
@@ -134,27 +141,27 @@ test("Welcome diagrams and the workflow guide open without uploaded artifacts", 
     return respond(200, { runs: [] });
   });
   await setupPage({ context, path: chat.path });
-  await screen.findByText("View workflow guide");
-  click(await screen.findByRole("img", { name: "Workflow guide cover" }));
+  await screen.findByText("View the quick start");
+  click(await screen.findByRole("img", { name: "Quick start cover" }));
   expect(
     (await screen.findByTestId("artifact-dialog-site-frame")).querySelector(
       "iframe",
     ),
-  ).toHaveAttribute("src", WORKFLOW_GUIDE);
+  ).toHaveAttribute("src", QUICK_START);
   await closePreview();
-  for (const [name, filename] of diagrams) {
+  for (const [name, url] of diagrams) {
     click(link(name));
     await expect(
       screen.findByTestId("attachment-lightbox-image"),
-    ).resolves.toHaveAttribute("src", `${WELCOME_ASSET_BASE}/${filename}`);
+    ).resolves.toHaveAttribute("src", url);
     await closePreview();
   }
-  click(link("View workflow guide"));
+  click(link("View the quick start"));
   expect(
     (await screen.findByTestId("artifact-dialog-site-frame")).querySelector(
       "iframe",
     ),
-  ).toHaveAttribute("src", WORKFLOW_GUIDE);
+  ).toHaveAttribute("src", QUICK_START);
 });
 
 test("Unlisted external HTML and altered catalog URLs keep ordinary link behavior", async () => {
@@ -165,9 +172,9 @@ test("Unlisted external HTML and altered catalog URLs keep ordinary link behavio
     `${DECK}?redirect=https://example.com`,
     DECK.replace("https://", "http://"),
     DECK.replace("https://", "https://user@"),
-    `${WELCOME_GUIDE_BASE}/unlisted.html`,
-    `${WORKFLOW_GUIDE}?redirect=https://example.com`,
-    WORKFLOW_GUIDE.replace("static.vm0.io", "static.vm0.io.evil.example"),
+    `${QUICK_START_BASE}/unlisted.html`,
+    `${QUICK_START}?redirect=https://example.com`,
+    QUICK_START.replace("static.vm0.io", "static.vm0.io.evil.example"),
   ];
   const chat = createMarkdownChatFixture(context);
   chat.install({
