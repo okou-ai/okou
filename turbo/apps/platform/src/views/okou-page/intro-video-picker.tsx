@@ -273,7 +273,7 @@ function StyleTags({
       aria-label={t(($) => {
         return $.chat.introVideo.style.browseGroups;
       })}
-      className={cn(TEMPLATE_FILTER_PILL_ROW, "shrink-0 px-4 pb-3 sm:px-6")}
+      className={cn(TEMPLATE_FILTER_PILL_ROW, "shrink-0 px-4 sm:px-6")}
     >
       {tags.map(({ id, label }) => {
         const active = group === id;
@@ -322,14 +322,10 @@ function StyleGallery({ signals }: PickerProps) {
         })
       : [];
   return (
-    <div className="relative min-h-0 flex-1">
-      {/* The toolbar has no rule under it, so a card scrolled up to the pills
-          would otherwise be sliced by a hard edge. The wash is the surface's
-          own colour, which makes it invisible until content passes beneath. */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-4 bg-gradient-to-b from-card to-transparent" />
+    <div className="relative flex min-h-0 flex-1 flex-col">
       <div
         data-intro-video-catalog-scroll=""
-        className="h-full overflow-y-auto px-4 pb-5 sm:px-6"
+        className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pb-6 pt-4 sm:px-6"
       >
         {catalog.state === "hasError" ? (
           <PickerMessage error onRetry={reload} />
@@ -358,6 +354,9 @@ function StyleGallery({ signals }: PickerProps) {
           </div>
         )}
       </div>
+      {/* Soften the hard clip where cards scroll up under the filter row; the
+          workflow tab draws the same wash under its own pills. */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-6 bg-gradient-to-b from-card to-transparent" />
     </div>
   );
 }
@@ -376,9 +375,10 @@ function StylePicker({ signals }: PickerProps) {
     });
   return (
     <>
-      <div className="flex shrink-0 items-center gap-3 px-4 py-3 sm:px-6 sm:pr-14">
+      {/* 68px, the height the sibling tabs' toolbar row states, so the search
+          box does not move when the category changes. */}
+      <div className="flex h-[68px] shrink-0 items-center gap-3 px-4 sm:px-6 sm:pr-14">
         <StyleSearch signals={signals} />
-        <div className="min-w-0 flex-1" />
         <Button
           type="button"
           variant="outline"
@@ -386,7 +386,7 @@ function StylePicker({ signals }: PickerProps) {
           onClick={() => {
             setPanelOpen(!panelOpen);
           }}
-          className="shrink-0 gap-2"
+          className="ml-auto shrink-0 gap-2"
         >
           <SlidersHorizontal size={16} />
           {t(($) => {
