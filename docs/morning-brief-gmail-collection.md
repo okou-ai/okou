@@ -16,10 +16,14 @@ exposes one entry point:
 
 ```ts
 withMorningBriefConnectorReader<T>(
-  { scope, connectorSlug, apiBase, environmentName, budget, db, signal },
+  { scope, connectorSlug, apiBase, environmentName, budget, db },
   collect: (reader: MorningBriefConnectorReader) => Promise<T>,
+  signal: AbortSignal,
 ): Promise<MorningBriefAccessResult<T>>;
 ```
+
+The signal is a separate final parameter, as the repository's lint boundary
+requires.
 
 A collector supplies a `pathname`, an optional query and a Zod schema. It never
 sees a credential, never chooses a host and never decides whether it may read.
@@ -49,7 +53,10 @@ holding a credential is never permission. Each authorization pass re-derives:
    `matchFirewallRequestDecision`.
 
 That pass runs **before any credential is decrypted or refreshed**, **before
-every request**, and **again after `collect` returns** as a release fence.
+every request**, and **again after `collect` returns** as a release fence. The
+release fence re-evaluates the last URL the source was authorized for, so a
+permission revoked while the final request was still in flight withholds the
+payload rather than releasing it.
 
 ### Account selection fails closed
 
@@ -61,12 +68,14 @@ account materializer's invalid-selection fallback.
 
 ### Two failure altitudes
 
-- **Endpoint-specific denial** is a bounded coverage gap. Other branches keep
-  collecting and the envelope reports reduced coverage.
+- **Endpoint-specific denial** is a bounded coverage gap. A policy refusal and a
+  provider `403` both leave siblings this source is still entitled to
+  collectable, and the envelope reports the reduced coverage.
 - **Owner, membership, Agent, installation or selected-account invalidation** is
   terminal. The reader latches, issues no further request, and discards the
   collected payload rather than releasing it. A provider 401/403 latches the same
-  way as `reconnect-required`.
+  way as `reconnect-required`; a provider `401` does the same, because it
+  withdraws the credential itself rather than one endpoint.
 
 ### Limits this reader does not exceed
 
@@ -118,8 +127,12 @@ retrieved and no remote URL is fetched.
 | MIME depth / nodes             | 12 / 200 |
 
 Byte ceilings are enforced while streaming, never after an unbounded
-`response.text()`. Every attempted request is charged, so a failing provider
-cannot buy retries. Redirects are disabled, so a credential cannot follow a
+`response.text()`. A request slot and its byte allowance are **reserved before
+the first await**, so concurrent readers cannot each observe the same remaining
+budget; an unattempted request returns its slot, and an oversized body that was
+abandoned still consumes its allowance. The deadline is a real cancellation
+input composed into the provider request, so a body already in flight is bounded
+by it rather than only the decision to start one. Redirects are disabled, so a credential cannot follow a
 provider redirect off-host. `Retry-After` is surfaced as bounded metadata
 (≤ 60 s); the reader never sleeps or retries on it. The earliest cap wins and
 every truncation is named in `coverage.truncations`.
@@ -160,6 +173,17 @@ the reader a real consumed boundary, not to ship a feature:
 - The only request input is a validated anchor. There is no Settings UI.
 - The result is ephemeral. It claims no occurrence, no schedule and no delivery,
   and it creates no Run, Chat message, email, LLM call or credit operation.
+
+## Known limits still open
+
+`memberIsAdmitted` currently proves membership by the presence of the
+`org_members_cache` row it locks for erasure admission. That cache is a
+60-second read-through cache, not a tombstone or a membership generation, so it
+bounds this reader rather than proving live membership across a delete and
+rejoin. Erasure admission itself is real and is taken before any other row.
+Replacing the cache with durable membership authority is the same hard gate
+[the migration contract](./morning-brief-migration-state.md) records before
+native state becomes execution authority, and it is not claimed here.
 
 ## Rollout, scale and compatibility
 

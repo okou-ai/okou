@@ -64,11 +64,10 @@ const collectGmailInner$ = command(
         `Morning Brief Gmail preview is unavailable: ${admission.reason}`,
       );
     }
-    const collection = await collectMorningBriefGmail({
-      db,
-      scope: admission.scope,
+    const collection = await collectMorningBriefGmail(
+      { db, scope: admission.scope },
       signal,
-    });
+    );
     signal.throwIfAborted();
     return { status: 200 as const, body: collection };
   },

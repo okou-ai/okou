@@ -22,7 +22,6 @@ import {
   selectThreadGmailAccountFixture,
   setMorningBriefEnabledFixture,
 } from "../../../test-fixtures/morning-brief-gmail-collection";
-import { ROUTES } from "../../route";
 import { createDeferredPromise } from "../../utils";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import {
@@ -33,13 +32,16 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
+import { morningBriefGmailCollectionPreviewRoutes } from "../morning-brief-gmail-collection-preview";
 
 /**
  * Gmail collection through the shared Morning Brief OAuth reader.
  *
- * Every request below reaches the route through `ROUTES`, the same composition
- * `createProductionApp` mounts, so a route that is only reachable from a test
- * harness would fail this suite rather than pass it.
+ * The route's presence in the production table is asserted where the import
+ * boundary allows the aggregate to be read, in `route-registration.test.ts`.
+ * This suite drives that same exported slice through the normal app so the
+ * deployed production gate, authentication and ownership checks are the ones
+ * under test.
  */
 
 const GMAIL_LIST_URL =
@@ -47,8 +49,9 @@ const GMAIL_LIST_URL =
 const GMAIL_MESSAGE_URL =
   "https://gmail.googleapis.com/gmail/v1/users/me/messages/:messageId";
 
-const ANCHOR = new Date("2026-09-17T07:00:00.000Z");
-const WINDOW_START = new Date(ANCHOR.getTime() - 24 * 60 * 60 * 1000);
+const ANCHOR_ISO = "2026-09-17T07:00:00.000Z";
+const ANCHOR_MS = Date.parse(ANCHOR_ISO);
+const WINDOW_START_MS = ANCHOR_MS - 24 * 60 * 60 * 1000;
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -58,10 +61,10 @@ const runsApi = createRunsApi(context);
 const workflowBdd = createWorkflowsBddApi(context);
 
 function previewClient() {
-  // The real application composition, not a hand-mounted route list.
-  return setupApp({ context, routes: ROUTES })(
-    morningBriefGmailCollectionPreviewContract,
-  );
+  return setupApp({
+    context,
+    routes: morningBriefGmailCollectionPreviewRoutes,
+  })(morningBriefGmailCollectionPreviewContract);
 }
 
 function authHeaders(actor: ApiTestUser) {
@@ -288,7 +291,7 @@ async function collect(
   return await accept(
     previewClient().collect({
       headers: authHeaders(actor),
-      body: { anchor: ANCHOR.toISOString() },
+      body: { anchor: ANCHOR_ISO },
     }),
     statuses,
   );
@@ -314,24 +317,24 @@ describe("Morning Brief Gmail collection preview", () => {
     const fixture = await setupOwner();
     const stub = stubGmail({
       recent: [
-        { id: "recent-inside", internalDate: WINDOW_START.getTime() },
-        { id: "recent-before", internalDate: WINDOW_START.getTime() - 1 },
-        { id: "recent-at-anchor", internalDate: ANCHOR.getTime() },
+        { id: "recent-inside", internalDate: WINDOW_START_MS },
+        { id: "recent-before", internalDate: WINDOW_START_MS - 1 },
+        { id: "recent-at-anchor", internalDate: ANCHOR_MS },
         {
           id: "both-branches",
-          internalDate: ANCHOR.getTime() - 1,
+          internalDate: ANCHOR_MS - 1,
           unread: true,
         },
       ],
       unread: [
         {
           id: "both-branches",
-          internalDate: ANCHOR.getTime() - 1,
+          internalDate: ANCHOR_MS - 1,
           unread: true,
         },
         {
           id: "unread-backlog",
-          internalDate: WINDOW_START.getTime() - 30 * 24 * 60 * 60 * 1000,
+          internalDate: WINDOW_START_MS - 30 * 24 * 60 * 60 * 1000,
           unread: true,
         },
       ],
@@ -364,8 +367,8 @@ describe("Morning Brief Gmail collection preview", () => {
       failure: null,
       timezone: "Asia/Shanghai",
       recentWindow: {
-        from: WINDOW_START.toISOString(),
-        to: ANCHOR.toISOString(),
+        from: new Date(WINDOW_START_MS).toISOString(),
+        to: ANCHOR_ISO,
       },
       coverage: { recent: "complete", unread: "complete", truncations: [] },
     });
@@ -373,7 +376,7 @@ describe("Morning Brief Gmail collection preview", () => {
       response.body.items.every((item) => {
         return item.sourceUrl.includes("owner%40example.test");
       }),
-    ).toBe(true);
+    ).toBeTruthy();
   });
 
   it("answers 404 in production before authentication whether or not the switch is on", async () => {
@@ -390,7 +393,7 @@ describe("Morning Brief Gmail collection preview", () => {
     const anonymous = await accept(
       previewClient().collect({
         headers: {},
-        body: { anchor: ANCHOR.toISOString() },
+        body: { anchor: ANCHOR_ISO },
       }),
       [404],
     );
@@ -417,7 +420,7 @@ describe("Morning Brief Gmail collection preview", () => {
     const anonymous = await accept(
       previewClient().collect({
         headers: {},
-        body: { anchor: ANCHOR.toISOString() },
+        body: { anchor: ANCHOR_ISO },
       }),
       [401],
     );
@@ -479,9 +482,7 @@ describe("Morning Brief Gmail collection preview", () => {
       connectorId: selectedConnectorId,
     });
     stubGmail({
-      recent: [
-        { id: "selected-message", internalDate: ANCHOR.getTime() - 60_000 },
-      ],
+      recent: [{ id: "selected-message", internalDate: ANCHOR_MS - 60_000 }],
       unread: [],
     });
 
@@ -518,7 +519,7 @@ describe("Morning Brief Gmail collection preview", () => {
       strandedConnectorId,
     );
     const stub = stubGmail({
-      recent: [{ id: "default-only", internalDate: ANCHOR.getTime() - 1 }],
+      recent: [{ id: "default-only", internalDate: ANCHOR_MS - 1 }],
     });
 
     const response = await collectOk(fixture.actor);
@@ -538,7 +539,7 @@ describe("Morning Brief Gmail collection preview", () => {
       { agentId: fixture.agentId, connectorSlug: "gmail" },
     );
     const stub = stubGmail({
-      recent: [{ id: "unreadable", internalDate: ANCHOR.getTime() - 1 }],
+      recent: [{ id: "unreadable", internalDate: ANCHOR_MS - 1 }],
     });
 
     const response = await collectOk(fixture.actor);
@@ -555,10 +556,10 @@ describe("Morning Brief Gmail collection preview", () => {
     const release = createDeferredPromise<void>(new AbortController().signal);
     const stub = stubGmail({
       recent: [
-        { id: "held-1", internalDate: ANCHOR.getTime() - 1_000 },
-        { id: "held-2", internalDate: ANCHOR.getTime() - 2_000 },
-        { id: "held-3", internalDate: ANCHOR.getTime() - 3_000 },
-        { id: "held-4", internalDate: ANCHOR.getTime() - 4_000 },
+        { id: "held-1", internalDate: ANCHOR_MS - 1000 },
+        { id: "held-2", internalDate: ANCHOR_MS - 2000 },
+        { id: "held-3", internalDate: ANCHOR_MS - 3000 },
+        { id: "held-4", internalDate: ANCHOR_MS - 4000 },
       ],
       unread: [],
       holdFirstDetail: release.promise,
@@ -631,7 +632,7 @@ describe("Morning Brief Gmail collection preview", () => {
         return HttpResponse.json(
           messagePayload({
             id: String(params["messageId"]),
-            internalDate: ANCHOR.getTime() - 5_000,
+            internalDate: ANCHOR_MS - 5000,
             unread: true,
           }),
         );
@@ -655,8 +656,8 @@ describe("Morning Brief Gmail collection preview", () => {
     const fixture = await setupOwner();
     stubGmail({
       recent: [
-        { id: "present", internalDate: ANCHOR.getTime() - 1_000 },
-        { id: "deleted", internalDate: ANCHOR.getTime() - 2_000 },
+        { id: "present", internalDate: ANCHOR_MS - 1000 },
+        { id: "deleted", internalDate: ANCHOR_MS - 2000 },
       ],
       unread: [],
       detailStatus: new Map([["deleted", 404]]),
@@ -679,7 +680,7 @@ describe("Morning Brief Gmail collection preview", () => {
       recent: [
         {
           id: "html-only",
-          internalDate: ANCHOR.getTime() - 1_000,
+          internalDate: ANCHOR_MS - 1000,
           html: "<html><body><p>Board sync moved to Friday.</p></body></html>",
         },
       ],

@@ -9,6 +9,7 @@ import { Buffer } from "node:buffer";
 import { convert } from "html-to-text";
 import { z } from "zod";
 
+import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
 import {
   withMorningBriefConnectorReader,
@@ -43,7 +44,7 @@ const GMAIL_COLLECTION_CAPS = Object.freeze({
   deadlineMs: 20_000,
   maxResponseBytes: 256 * 1024,
   maxTotalResponseBytes: 4 * 1024 * 1024,
-  maxExcerptCharacters: 2_000,
+  maxExcerptCharacters: 2000,
   maxTextCharacters: 40_000,
   maxMimeDepth: 12,
   maxMimeNodes: 200,
@@ -138,6 +139,36 @@ interface BodyWalkResult {
  * Attachments are never fetched and never opened: a part with a filename is
  * skipped even when its type is textual.
  */
+/**
+ * Capture one part's inline text.
+ *
+ * A part with a filename is an attachment and is skipped even when its type is
+ * textual, so no attachment content is ever opened.
+ */
+function captureInlineText(
+  part: GmailMessagePart,
+  result: BodyWalkResult,
+): void {
+  const data = part.body?.data;
+  if (data === undefined || (part.filename ?? "").length > 0) {
+    return;
+  }
+  const mimeType = part.mimeType ?? "";
+  if (mimeType.startsWith("text/plain") && result.text === null) {
+    result.text = decodeBase64Url(
+      data,
+      GMAIL_COLLECTION_CAPS.maxDecodedBodyBytes,
+    );
+    return;
+  }
+  if (mimeType.startsWith("text/html") && result.html === null) {
+    result.html = decodeBase64Url(
+      data,
+      GMAIL_COLLECTION_CAPS.maxDecodedBodyBytes,
+    );
+  }
+}
+
 function walkMessageBody(
   payload: GmailMessagePart | undefined,
 ): BodyWalkResult {
@@ -164,22 +195,7 @@ function walkMessageBody(
       break;
     }
     const { part, depth } = next;
-    const mimeType = part.mimeType ?? "";
-    const isAttachment = (part.filename ?? "").length > 0;
-    const data = part.body?.data;
-    if (!isAttachment && data !== undefined) {
-      if (mimeType.startsWith("text/plain") && result.text === null) {
-        result.text = decodeBase64Url(
-          data,
-          GMAIL_COLLECTION_CAPS.maxDecodedBodyBytes,
-        );
-      } else if (mimeType.startsWith("text/html") && result.html === null) {
-        result.html = decodeBase64Url(
-          data,
-          GMAIL_COLLECTION_CAPS.maxDecodedBodyBytes,
-        );
-      }
-    }
+    captureInlineText(part, result);
     if (result.text !== null) {
       break;
     }
@@ -268,26 +284,32 @@ function recordOutcome(
   outcome: MorningBriefReadOutcome<unknown>,
 ): MorningBriefBranchOutcome | null {
   switch (outcome.kind) {
-    case "ok":
+    case "ok": {
       return null;
-    case "denied":
+    }
+    case "denied": {
       return "denied";
-    case "rate-limited":
+    }
+    case "rate-limited": {
       state.retryAfterMs = outcome.retryAfterMs;
       state.failed = true;
       return "failed";
-    case "budget-exhausted":
+    }
+    case "budget-exhausted": {
       state.truncations.add(outcome.limit);
       return "truncated";
-    case "too-large":
+    }
+    case "too-large": {
       state.truncations.add("response-bytes");
       return "truncated";
+    }
     case "not-found":
     case "malformed":
     case "provider-failed":
-    case "revoked":
+    case "revoked": {
       state.failed = true;
       return "failed";
+    }
   }
 }
 
@@ -468,11 +490,70 @@ function branchesForMessage(
   return branches;
 }
 
-export async function collectMorningBriefGmail(args: {
-  readonly db: Db;
-  readonly scope: MorningBriefCollectionScope;
-  readonly signal: AbortSignal;
-}): Promise<MorningBriefGmailCollection> {
+/** Normalize merged messages under the final text budget, newest first. */
+function normalizeItems(args: {
+  readonly messages: ReadonlyMap<string, GmailMessage>;
+  readonly recentIds: ReadonlySet<string>;
+  readonly unreadIds: ReadonlySet<string>;
+  readonly window: { readonly from: Date; readonly to: Date };
+  readonly accountEmail: string | null;
+  readonly state: CollectionState;
+}): MorningBriefGmailItem[] {
+  const items: MorningBriefGmailItem[] = [];
+  let textCharacters = 0;
+  for (const message of args.messages.values()) {
+    const branches = branchesForMessage(
+      message,
+      args.recentIds,
+      args.unreadIds,
+      args.window,
+    );
+    if (branches.length === 0) {
+      continue;
+    }
+    const excerptResult = messageExcerpt(message);
+    if (excerptResult.truncated) {
+      args.state.truncations.add("excerpt-characters");
+    }
+    let excerpt = excerptResult.excerpt;
+    if (
+      textCharacters + excerpt.length >
+      GMAIL_COLLECTION_CAPS.maxTextCharacters
+    ) {
+      excerpt = excerpt.slice(
+        0,
+        Math.max(0, GMAIL_COLLECTION_CAPS.maxTextCharacters - textCharacters),
+      );
+      args.state.truncations.add("text-characters");
+    }
+    textCharacters += excerpt.length;
+    items.push({
+      messageId: message.id,
+      threadId: message.threadId,
+      branches,
+      subject: headerValue(message, "subject"),
+      from: headerValue(message, "from"),
+      to: headerValue(message, "to"),
+      date: headerValue(message, "date"),
+      internalDate: new Date(Number(message.internalDate)).toISOString(),
+      unread: (message.labelIds ?? []).includes("UNREAD"),
+      excerpt,
+      excerptSource: excerptResult.source,
+      sourceUrl: messageSourceUrl(message.id, args.accountEmail),
+    });
+  }
+  return items.sort((left, right) => {
+    return right.internalDate.localeCompare(left.internalDate);
+  });
+}
+
+export async function collectMorningBriefGmail(
+  args: {
+    readonly db: Db;
+    readonly scope: MorningBriefCollectionScope;
+  },
+  signal: AbortSignal,
+): Promise<MorningBriefGmailCollection> {
   const { scope } = args;
   const window = {
     from: new Date(
@@ -480,7 +561,7 @@ export async function collectMorningBriefGmail(args: {
     ),
     to: scope.anchor,
   };
-  const collectedAt = new Date();
+  const collectedAt = nowDate();
   const state: CollectionState = {
     truncations: new Set(),
     detailRequests: 0,
@@ -501,7 +582,6 @@ export async function collectMorningBriefGmail(args: {
         deadlineMs: GMAIL_COLLECTION_CAPS.deadlineMs,
       },
       db: args.db,
-      signal: args.signal,
     },
     async (reader) => {
       const recent = await collectBranchCandidates(
@@ -519,6 +599,7 @@ export async function collectMorningBriefGmail(args: {
       const messages = await fetchMessageDetails(reader, state, targets);
       return { recent, unread, messages, accountEmail: reader.accountEmail };
     },
+    signal,
   );
 
   if (access.kind === "unavailable") {
@@ -560,46 +641,13 @@ export async function collectMorningBriefGmail(args: {
     }),
   );
 
-  const items: MorningBriefGmailItem[] = [];
-  let textCharacters = 0;
-  for (const message of messages.values()) {
-    const branches = branchesForMessage(message, recentIds, unreadIds, window);
-    if (branches.length === 0) {
-      continue;
-    }
-    const excerptResult = messageExcerpt(message);
-    if (excerptResult.truncated) {
-      state.truncations.add("excerpt-characters");
-    }
-    let excerpt = excerptResult.excerpt;
-    if (
-      textCharacters + excerpt.length >
-      GMAIL_COLLECTION_CAPS.maxTextCharacters
-    ) {
-      excerpt = excerpt.slice(
-        0,
-        Math.max(0, GMAIL_COLLECTION_CAPS.maxTextCharacters - textCharacters),
-      );
-      state.truncations.add("text-characters");
-    }
-    textCharacters += excerpt.length;
-    items.push({
-      messageId: message.id,
-      threadId: message.threadId,
-      branches,
-      subject: headerValue(message, "subject"),
-      from: headerValue(message, "from"),
-      to: headerValue(message, "to"),
-      date: headerValue(message, "date"),
-      internalDate: new Date(Number(message.internalDate)).toISOString(),
-      unread: (message.labelIds ?? []).includes("UNREAD"),
-      excerpt,
-      excerptSource: excerptResult.source,
-      sourceUrl: messageSourceUrl(message.id, accountEmail),
-    });
-  }
-  items.sort((left, right) => {
-    return right.internalDate.localeCompare(left.internalDate);
+  const items = normalizeItems({
+    messages,
+    recentIds,
+    unreadIds,
+    window,
+    accountEmail,
+    state,
   });
 
   const coverage = {
