@@ -1791,22 +1791,6 @@ async function deliverClerkOrganizationMembershipCreated(
   await flushWaitUntilForTest();
 }
 
-async function deliverClerkOrganizationMembershipDeleted(
-  actor: ApiTestUser,
-): Promise<void> {
-  webhooks.configureClerkWebhookSecret();
-  webhooks.verifyNextClerkWebhook({
-    type: "organizationMembership.deleted",
-    data: {
-      id: `membership-${actor.userId}-${actor.orgId}`,
-      organization: { id: actor.orgId },
-      public_user_data: { user_id: actor.userId },
-    },
-  });
-  await webhooks.requestClerkWebhook("{}", {}, [200]);
-  await flushWaitUntilForTest();
-}
-
 async function listMorningBriefInstallations(actor: ApiTestUser) {
   const response = await accept(
     workflowCollectionClient().list({

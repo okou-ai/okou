@@ -11,7 +11,6 @@ import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { and, eq, isNotNull, lte, sql } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
-import { nowDate } from "../../lib/time";
 import type { ReadonlyDb } from "../external/db";
 import type { MorningBriefMemberIdentity } from "./morning-brief-enrollment-data.service";
 import {
