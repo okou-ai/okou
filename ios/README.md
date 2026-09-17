@@ -198,7 +198,19 @@ The `ci-gate-ios` check succeeds only after the required build/tests pass, or
 after change detection confirms they are unnecessary. Detection failures,
 cancelled builds, and unexpectedly skipped builds fail the gate. Register this
 check alongside the existing required checks after the workflow is on main.
-Turbo and Desktop workflow behavior is unchanged.
+Pure `ios/` pull requests and merge groups skip Turbo TypeScript lint, types,
+formatting, Knip, App/API/CLI and other JavaScript tests, benchmarks, and App/CLI
+preview artifacts, along with the runtime API schema report. Existing crates-only TypeScript exemptions remain in place.
+Mixed changes, root files, and workflow changes do not receive this exemption;
+main still builds release artifacts and runs the normal checks. E2E selection
+continues to use Turbo package hashes and CI input detection.
+
+The repository Security workflow also skips its JavaScript/TypeScript CodeQL
+scan and pnpm audit for pure iOS changes. Semgrep, secret scanning, workflow
+validation, and PR-title checks remain enabled. GitHub-managed Code Quality is
+configured separately and is not controlled by these workflow conditions.
+Detection must succeed before skipped jobs can pass a required gate; failed or
+cancelled jobs remain failures. Desktop and Rust retain their own input filters.
 
 Tests use HTTP-boundary fixtures and a loopback server. The CI build also clears
 the Clerk key and overrides service origins with reserved `.invalid` domains.
