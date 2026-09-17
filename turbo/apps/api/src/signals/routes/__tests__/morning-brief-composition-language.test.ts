@@ -162,7 +162,8 @@ function installStorageBoundary(): StorageBoundary {
     if (typeof target !== "object" || target === null) {
       return;
     }
-    const listed = (target as { readonly Objects?: readonly unknown[] }).Objects;
+    const listed = (target as { readonly Objects?: readonly unknown[] })
+      .Objects;
     for (const object of listed ?? []) {
       const key =
         typeof object === "object" && object !== null && "Key" in object
