@@ -5303,6 +5303,186 @@ describe("Official Workflow installations", () => {
     ).resolves.toStrictEqual(beforeRunFamily);
   });
 
+  it.each(["pause", "reconfigure", "catalog revision", "uninstall"] as const)(
+    "releases Official copy locks during upload and rejects a concurrent %s",
+    async (mutation) => {
+      installCatalogStorageFixture();
+      const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
+      const definitionName = `api-test-copy-prepare-${suffix}`;
+      const blueprints = [loopBlueprint(), webhookBlueprint()];
+      await syncCatalog(
+        catalog([activeDefinition(definitionName, blueprints)]),
+      );
+
+      const { actor } = await workflowBdd.setupWorkflowOrg({
+        timezone: "Asia/Shanghai",
+        tier: "team",
+      });
+      await selectBuiltInDefaultModel(actor);
+      const { agentId: sourceAgentId } = await workflowBdd.createAgent(actor);
+      const { agentId: targetAgentId } = await workflowBdd.createAgent(actor);
+      const pending: {
+        copying?: Promise<unknown>;
+        releaseCopy?: () => void;
+        independentThreadId?: string;
+      } = {};
+      onTestFinished(async () => {
+        pending.releaseCopy?.();
+        await pending.copying;
+        if (pending.independentThreadId) {
+          await chat.deleteThread(actor, pending.independentThreadId);
+        }
+        installCatalogStorageFixture();
+        await bdd.deleteAgent(actor, targetAgentId);
+        await bdd.deleteAgent(actor, sourceAgentId);
+        await cleanupCatalog();
+      });
+      const headers = authHeaders(actor);
+      await setOfficialWorkflowsEnabled(actor, true);
+      const installed = await accept(
+        officialClient().install({
+          headers,
+          params: { definitionName },
+          body: {
+            agentId: sourceAgentId,
+            blueprints: [
+              {
+                blueprintKey: "pulse",
+                bindings: [{ key: "interval-seconds", value: 3600 }],
+              },
+              { blueprintKey: "webhook-trigger", bindings: [] },
+            ],
+          },
+        }),
+        [201],
+      );
+      const pulse = installed.body.workflow.automations.find((automation) => {
+        return automation.official?.blueprintKey === "pulse";
+      });
+      if (!pulse) {
+        throw new Error("Expected Official copy source schedule");
+      }
+
+      const storage = installCatalogStorageFixture();
+      const heldUpload = storage.holdNextWrite();
+      let released = false;
+      const releaseCopy = () => {
+        if (!released && !context.signal.aborted) {
+          released = true;
+          heldUpload.resolve();
+        }
+      };
+      pending.releaseCopy = releaseCopy;
+      const pendingCopy = settleIncludingAbort(
+        workflowClient().copy({
+          headers,
+          params: { workflowId: installed.body.workflow.id },
+          body: { toAgentId: targetAgentId },
+        }),
+      );
+      pending.copying = pendingCopy;
+      await heldUpload.started;
+
+      // Event automations require a shared user/org thread-event sequence.
+      // The copy's blocked object upload must leave that sequence available
+      // to a separate request from the same actor before publication resumes.
+      const independentThread = await chat.createThread(actor, {
+        agentId: sourceAgentId,
+        title: "Independent work during an Official copy upload",
+      });
+      pending.independentThreadId = independentThread.id;
+      await expect(
+        chat.readThreadMetadata(actor, independentThread.id),
+      ).resolves.toMatchObject({ id: independentThread.id });
+
+      switch (mutation) {
+        case "pause": {
+          await accept(
+            automationClient().disable({
+              headers,
+              params: { id: pulse.id },
+            }),
+            [200],
+          );
+          break;
+        }
+        case "reconfigure": {
+          await accept(
+            installationClient().reconfigure({
+              headers,
+              params: { workflowId: installed.body.workflow.id },
+              body: {
+                blueprints: [
+                  {
+                    blueprintKey: "pulse",
+                    bindings: [{ key: "interval-seconds", value: 7200 }],
+                  },
+                ],
+              },
+            }),
+            [200],
+          );
+          break;
+        }
+        case "catalog revision": {
+          await syncCatalog(
+            catalog([
+              activeDefinition(
+                definitionName,
+                blueprints,
+                "Accepted content changed during copy preparation.",
+              ),
+            ]),
+          );
+          break;
+        }
+        case "uninstall": {
+          await accept(
+            installationClient().uninstall({
+              headers,
+              params: { workflowId: installed.body.workflow.id },
+            }),
+            [204],
+          );
+          break;
+        }
+      }
+
+      const duringCopy = await accept(
+        workflowCollectionClient().list({
+          headers,
+          query: { agentId: targetAgentId },
+        }),
+        [200],
+      );
+      expect(duringCopy.body).toStrictEqual([]);
+      releaseCopy();
+      const copied = await pendingCopy;
+      if (!copied.ok) {
+        throw copied.error;
+      }
+      expect(copied.value.status).toBe(409);
+      const afterCopy = await accept(
+        workflowCollectionClient().list({
+          headers,
+          query: { agentId: targetAgentId },
+        }),
+        [200],
+      );
+      expect(afterCopy.body).toStrictEqual([]);
+      const automations = await accept(
+        automationClient().listWorkspace({ headers }),
+        [200],
+      );
+      expect(
+        automations.body.some((automation) => {
+          return automation.workflow.agentId === targetAgentId;
+        }),
+      ).toBeFalsy();
+    },
+    30_000,
+  );
+
   describe.each([
     "installation release",
     "instruction release",
