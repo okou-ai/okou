@@ -1347,7 +1347,7 @@ function WorkflowTemplateCard({
           className={cn(
             "ml-auto h-8 shrink-0 rounded-md border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
             selected
-              ? "border-primary/40 bg-primary/10 text-brand-text"
+              ? "border-primary/40 bg-primary/10 text-selected-foreground"
               : "border-border bg-background text-foreground hover:bg-state-hover",
           )}
         >
@@ -4243,7 +4243,7 @@ function IllustrationTemplateCard({
           className={cn(
             "h-8 shrink-0 rounded-md border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
             selected
-              ? "border-primary/40 bg-primary/10 text-brand-text"
+              ? "border-primary/40 bg-primary/10 text-selected-foreground"
               : "border-border bg-background text-foreground hover:bg-state-hover",
           )}
         >

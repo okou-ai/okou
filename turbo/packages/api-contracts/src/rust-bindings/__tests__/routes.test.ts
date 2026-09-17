@@ -45,6 +45,12 @@ const expectedBindings = [
     rustConstName: "CLAIM",
   },
   {
+    method: "GET",
+    path: "/api/runners/jobs/:id/pi-handoff/:offset",
+    rustModulePath: ["runners", "jobs", "by_id", "pi_handoff", "by_offset"],
+    rustConstName: "GET",
+  },
+  {
     method: "POST",
     path: "/api/runners/runs/:runId/active-inputs/reserve",
     rustModulePath: [

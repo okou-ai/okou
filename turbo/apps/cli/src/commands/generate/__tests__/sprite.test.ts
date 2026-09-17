@@ -79,7 +79,39 @@ describe("okou generate sprite command", () => {
     expect(stdout).toContain("- Sheet / grid: auto");
     expect(stdout).toContain("Use `gpt-image-2`");
     expect(stdout).toContain("--model gpt-image-2 --raw-prompt");
+    expect(stdout).toContain("okou web upload-file -f <file>`");
+    expect(stdout).toContain(
+      "With privateArtifacts enabled, new artifacts default to only-me.",
+    );
   });
+
+  it.each(["only-me", "org", "public"])(
+    "preserves %s visibility for delivered sprite files",
+    async (visibility) => {
+      await generateCommand.parseAsync([
+        "node",
+        "cli",
+        "sprite",
+        "--prompt",
+        "A fireball projectile",
+        "--visibility",
+        visibility,
+      ]);
+
+      const stdout = mockConsoleLog.mock.calls.flat().join("\n");
+      expect(stdout).toContain(
+        `okou web upload-file -f <file> --visibility ${visibility}`,
+      );
+      expect(stdout).toContain(
+        "Keep raw intermediate sheets at their default visibility.",
+      );
+      const rawGeneration = stdout.split("\n").find((line) => {
+        return line.includes("okou generate image --provider built-in");
+      });
+      expect(rawGeneration).toContain("--raw-prompt");
+      expect(rawGeneration).not.toContain("--visibility");
+    },
+  );
 
   it("should keep Sprite's implicit model inside a run with a default image model", async () => {
     vi.stubEnv(DEFAULT_IMAGE_MODEL_ENV, "qwen-image");
@@ -169,5 +201,6 @@ describe("okou generate sprite command", () => {
     expect(helpOutput).toContain("--sheet <grid>");
     expect(helpOutput).toContain("--bundle <preset>");
     expect(helpOutput).toContain("--art-style <style>");
+    expect(helpOutput).toContain("--visibility <visibility>");
   });
 });

@@ -98,13 +98,6 @@ const PROCESS_LOG_READER_DRAIN_TIMEOUT: Duration = Duration::from_millis(100);
 /// Timeout for guest lifecycle acknowledgements during same-session park/unpark.
 const GUEST_PARK_LIFECYCLE_TIMEOUT: Duration = Duration::from_secs(5);
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum UnparkPurpose {
-    Reuse,
-    BlankReuse,
-    TerminalOperations,
-}
-
 /// Independent deadline for terminal diagnostics on an already-severe park.
 const GUEST_MEMORY_SNAPSHOT_TIMEOUT: Duration = Duration::from_secs(1);
 
@@ -317,7 +310,6 @@ struct SandboxRuntimeHandles {
     // Retained even when kill_process's consuming monitor wait is cancelled.
     process_exit: Option<ProcessExitCompletion>,
     control: Option<control::ControlServerHandle>,
-    balloon: Option<balloon::ControllerHandle>,
 }
 
 impl SandboxRuntimeHandles {
@@ -330,10 +322,6 @@ impl SandboxRuntimeHandles {
         self.control = Some(control);
     }
 
-    fn set_balloon(&mut self, balloon: balloon::ControllerHandle) {
-        self.balloon = Some(balloon);
-    }
-
     fn process_termination_handle(
         &self,
         park_coordinator: ParkCoordinator,
@@ -343,16 +331,9 @@ impl SandboxRuntimeHandles {
             .map(|process| process.termination_handle(park_coordinator))
     }
 
-    fn balloon_mut(&mut self) -> &mut Option<balloon::ControllerHandle> {
-        &mut self.balloon
-    }
-
     async fn shutdown_services(&mut self) {
         if let Some(mut control) = self.control.take() {
             control.shutdown().await;
-        }
-        if let Some(balloon) = self.balloon.take() {
-            balloon.abort();
         }
     }
 
@@ -366,9 +347,6 @@ impl SandboxRuntimeHandles {
     fn abort_for_drop(&mut self) {
         if let Some(mut control) = self.control.take() {
             control.abort();
-        }
-        if let Some(balloon) = self.balloon.take() {
-            balloon.abort();
         }
         if let Some(process) = self.process.take() {
             // Ask the monitor to kill the process group before it reaps the
@@ -573,15 +551,13 @@ pub struct FirecrackerSandbox {
     /// sandbox can be parked but non-reusable after severe memory retention.
     /// Set by `park()` after the pause succeeds and cleared by a completed
     /// `unpark()`. Used to make both methods idempotent, to let `unpark()` know
-    /// whether it should touch the balloon controller, and to let `stop()`
+    /// whether it should request balloon deflation, and to let `stop()`
     /// skip vsock graceful shutdown (a paused guest cannot respond).
     is_parked: bool,
     /// Eligibility returned by the completed park that set `is_parked`.
     /// Retained so an idempotent repeated park cannot upgrade a non-reusable
     /// sandbox to reusable.
     park_outcome: Option<SandboxParkOutcome>,
-    /// Memory policy of the completed park; consumed by the next unpark.
-    park_memory_policy: ParkMemoryPolicy,
     /// Host-side normal-operation fence held while this sandbox is parked.
     park_fence: Option<NormalOperationFence>,
     guest_rpc_endpoint: Option<crate::guest_rpc::GuestRpcEndpoint>,
@@ -702,7 +678,6 @@ impl FirecrackerSandbox {
             destroyed: false,
             is_parked: false,
             park_outcome: None,
-            park_memory_policy: ParkMemoryPolicy::Reclaim,
             park_fence: None,
             guest_rpc_endpoint: None,
             runtime_cancel: CancellationToken::new(),
@@ -1724,13 +1699,6 @@ impl FirecrackerSandbox {
         self.runtime
             .set_control(control_server.spawn(runtime_cancel));
 
-        // Spawn balloon controller to reclaim unused guest memory.
-        self.runtime.set_balloon(balloon::spawn(
-            client,
-            self.config.resources.memory_mb,
-            self.state_tx.subscribe(),
-        ));
-
         self.guest_rpc_endpoint = Some(guest_rpc_endpoint);
 
         info!(id = %self.id, "sandbox started");
@@ -2220,7 +2188,6 @@ impl FirecrackerSandbox {
         let park_id = id.clone();
         let is_parked = &mut self.is_parked;
         let memory_mb = self.config.resources.memory_mb;
-        let balloon_controller = self.runtime.balloon_mut();
         let api_sock = self.sock_paths.api_sock();
         let final_exec_request = exec_capture_request(request, timeout_ms, diagnostic_label);
         let (normal_operations_fence, physical_outcome, exec_result) =
@@ -2269,7 +2236,6 @@ impl FirecrackerSandbox {
                     let (events, result) = park_inner_with_guest_and_handoff(
                         is_parked,
                         memory_mb,
-                        balloon_controller,
                         &api_sock,
                         &park_id,
                         PhysicalParkRequest {
@@ -2286,7 +2252,6 @@ impl FirecrackerSandbox {
             .await?;
         self.park_fence = Some(normal_operations_fence);
         drop(self.guest_rpc_endpoint.take());
-        self.park_memory_policy = ParkMemoryPolicy::Reclaim;
         match physical_outcome {
             PhysicalParkOutcome::Idle(park_outcome) => {
                 self.park_outcome = Some(park_outcome.clone());
@@ -2356,7 +2321,6 @@ impl FirecrackerSandbox {
                 let (_, result) = park_inner_with_guest(
                     &mut self.is_parked,
                     self.config.resources.memory_mb,
-                    self.runtime.balloon_mut(),
                     &api_sock,
                     &id,
                     PhysicalParkRequest {
@@ -2373,12 +2337,11 @@ impl FirecrackerSandbox {
         .await?;
         self.park_fence = Some(normal_operations_fence);
         self.park_outcome = Some(outcome.clone());
-        self.park_memory_policy = memory_policy;
         drop(self.guest_rpc_endpoint.take());
         Ok(outcome)
     }
 
-    async fn unpark_with_purpose(&mut self, purpose: UnparkPurpose) -> sandbox::Result<()> {
+    async fn unpark_ready_for_operations(&mut self) -> sandbox::Result<()> {
         if !self.is_parked {
             if self.park_fence.is_some() {
                 let message = "sandbox has a normal-operation fence while unpark is a no-op";
@@ -2420,29 +2383,11 @@ impl FirecrackerSandbox {
         let memory_mb = self.config.resources.memory_mb;
         let state_rx = self.state_tx.subscribe();
         let is_parked = &mut self.is_parked;
-        let balloon_controller = self.runtime.balloon_mut();
         let park_fence = &mut self.park_fence;
-        let purpose = if purpose == UnparkPurpose::Reuse
-            && self.park_memory_policy == ParkMemoryPolicy::Preserve
-        {
-            UnparkPurpose::BlankReuse
-        } else {
-            purpose
-        };
         unpark_with_ready_for_operations(
             &id,
             &coordinator,
-            || {
-                unpark_inner(
-                    is_parked,
-                    memory_mb,
-                    balloon_controller,
-                    &api_sock,
-                    state_rx,
-                    &id,
-                    purpose,
-                )
-            },
+            || unpark_inner(is_parked, memory_mb, &api_sock, state_rx, &id),
             || async move {
                 let guest = guest.lock().await.as_ref().cloned().ok_or_else(|| {
                     io::Error::new(
@@ -2458,7 +2403,6 @@ impl FirecrackerSandbox {
         )
         .await?;
         self.park_outcome = None;
-        self.park_memory_policy = ParkMemoryPolicy::Reclaim;
         self.guest_rpc_endpoint = Some(guest_rpc_endpoint);
         Ok(())
     }
@@ -2551,10 +2495,7 @@ impl Sandbox for FirecrackerSandbox {
 
         self.runtime.shutdown_services().await;
         // The control server is awaited so its socket path becomes
-        // undiscoverable before teardown continues. The balloon controller is
-        // only aborted: stop() is about to kill the FC process entirely, so
-        // any in-flight controller PATCH against the dying API socket is
-        // harmless.
+        // undiscoverable before teardown continues.
 
         // Skip vsock graceful shutdown for parked sandboxes — vCPUs are
         // paused and cannot process the message. No in-flight user work
@@ -2627,7 +2568,7 @@ impl Sandbox for FirecrackerSandbox {
     // -- idle transitions --
     //
     // `park()` is called by the runner when a sandbox is handed off to the
-    // idle pool. It stops the reactive balloon controller and, for large VMs,
+    // idle pool. For large VMs, it
     // requests balloon inflation to reclaim guest memory. It makes a bounded
     // settle attempt before pausing vCPUs to eliminate idle CPU overhead
     // (timer ticks, kernel scheduling). Settling may finish at the target,
@@ -2644,13 +2585,11 @@ impl Sandbox for FirecrackerSandbox {
     // aggressive idle inflation while its caller retains the full budget.
     //
     // `unpark()` is called when the runner pulls the sandbox back out of
-    // the idle pool. It resumes vCPUs, deflates the balloon, and respawns
-    // the reactive controller so active workload is served with full
-    // memory again. Ordering: resume before deflate — the guest needs
+    // the idle pool. It resumes vCPUs, requests target zero, and waits for
+    // physical deflation before reopening operations. Active workloads retain their
+    // full configured capacity. Ordering: resume before deflate — the guest needs
     // running vCPUs to process the deflate.
-    // `unpark_for_terminal_operations()` shares that readiness sequence but
-    // omits the reactive controller because the lifecycle owner must destroy
-    // the sandbox after its bounded preservation work.
+    // Terminal operations share the same readiness sequence.
     //
     // Park first closes the sandbox policy gate, then acquires a host-side
     // vsock normal-operation fence before guest lifecycle quiesce. Unpark
@@ -2666,7 +2605,7 @@ impl Sandbox for FirecrackerSandbox {
     // ticks waste CPU regardless of memory size.
     //
     // The `is_parked` flag handles healthy idempotent calls and lets unpark
-    // skip the abort+respawn dance when park was a no-op. The operation
+    // skip the physical transition when park was a no-op. The operation
     // coordinator is still checked on no-op paths so Dirty/desynchronised gates
     // cannot be silently reused.
 
@@ -2737,12 +2676,7 @@ impl Sandbox for FirecrackerSandbox {
     }
 
     async fn unpark(&mut self) -> sandbox::Result<()> {
-        self.unpark_with_purpose(UnparkPurpose::Reuse).await
-    }
-
-    async fn unpark_for_terminal_operations(&mut self) -> sandbox::Result<()> {
-        self.unpark_with_purpose(UnparkPurpose::TerminalOperations)
-            .await
+        self.unpark_ready_for_operations().await
     }
 
     // -- operations --
@@ -3077,9 +3011,6 @@ impl Sandbox for FirecrackerSandbox {
                 )),
             },
         )?;
-        if let Some(controller) = &self.runtime.balloon {
-            controller.notify_agent_ready();
-        }
         Ok(handle)
     }
 
@@ -4525,7 +4456,6 @@ struct PhysicalParkRequest<'handoff> {
 async fn park_inner_with_guest_and_handoff<'observer>(
     is_parked: &mut bool,
     memory_mb: u32,
-    balloon_controller: &mut Option<balloon::ControllerHandle>,
     api_sock: &std::path::Path,
     log_id: &str,
     request: PhysicalParkRequest<'_>,
@@ -4566,36 +4496,11 @@ async fn park_inner_with_guest_and_handoff<'observer>(
         }
     };
 
-    // Blank preparation retains its full budget and avoids an idle-only
-    // inflate/deflate cycle. Stop the writer before pausing even when its
-    // current target is retained; unpark still owns target-zero recovery.
-    if memory_policy == ParkMemoryPolicy::Preserve
-        && let Some(controller) = balloon_controller.take()
-    {
-        controller.abort_and_join().await;
-    }
-
     let reclaim_memory = target > 0 && memory_policy == ParkMemoryPolicy::Reclaim;
     let outcome = if reclaim_memory {
-        // Stop the reactive controller so we're the sole writer to /balloon.
-        // abort() + await ensures any in-flight PATCH from the controller
-        // completes (or is cancelled) before ours lands.
-        //
-        // Ordering note: we abort BEFORE the PATCH (rather than after) because
-        // the controller's reactive logic would otherwise see the post-inflate
-        // drop in `available_memory` as memory pressure and immediately deflate
-        // back, undoing our work.
-        //
-        // Failure-mode invariant: if patch_balloon or pause returns Err, the
-        // controller is gone and `is_parked` stays false. This is an
-        // intentional "transient inconsistent" state — the runner's only
-        // failure handling is `stop_and_destroy_sandbox`, so the sandbox is
-        // dropped (and Drop ensures any leftover handles are aborted) before
-        // any further operations can observe the missing controller.
+        // Lifecycle code is the sole balloon writer. A failed inflate/pause
+        // leaves is_parked false; the caller destroys the incomplete sandbox.
         let balloon_setup_started = Instant::now();
-        if let Some(controller) = balloon_controller.take() {
-            controller.abort_and_join().await;
-        }
 
         if handoff.is_some_and(SandboxFinalExecParkHandoff::accept_if_requested) {
             events.record(
@@ -4762,7 +4667,6 @@ fn physical_park_admission_action(outcome: &PhysicalParkOutcome) -> &'static str
 async fn park_inner_with_guest<'observer>(
     is_parked: &mut bool,
     memory_mb: u32,
-    balloon_controller: &mut Option<balloon::ControllerHandle>,
     api_sock: &std::path::Path,
     log_id: &str,
     request: PhysicalParkRequest<'_>,
@@ -4771,16 +4675,9 @@ async fn park_inner_with_guest<'observer>(
     SandboxFinalExecParkSubstageEvents<'observer>,
     sandbox::Result<SandboxParkOutcome>,
 ) {
-    let (events, result) = park_inner_with_guest_and_handoff(
-        is_parked,
-        memory_mb,
-        balloon_controller,
-        api_sock,
-        log_id,
-        request,
-        events,
-    )
-    .await;
+    let (events, result) =
+        park_inner_with_guest_and_handoff(is_parked, memory_mb, api_sock, log_id, request, events)
+            .await;
     let result = result.and_then(|outcome| match outcome {
         PhysicalParkOutcome::Idle(outcome) => Ok(outcome),
         PhysicalParkOutcome::Handoff(_) => Err(idle_transition_error(
@@ -4795,14 +4692,12 @@ async fn park_inner_with_guest<'observer>(
 async fn park_inner(
     is_parked: &mut bool,
     memory_mb: u32,
-    balloon_controller: &mut Option<balloon::ControllerHandle>,
     api_sock: &std::path::Path,
     log_id: &str,
 ) -> sandbox::Result<SandboxParkOutcome> {
     let (_, result) = park_inner_with_guest(
         is_parked,
         memory_mb,
-        balloon_controller,
         api_sock,
         log_id,
         PhysicalParkRequest {
@@ -4819,11 +4714,9 @@ async fn park_inner(
 async fn unpark_inner(
     is_parked: &mut bool,
     memory_mb: u32,
-    balloon_controller: &mut Option<balloon::ControllerHandle>,
     api_sock: &std::path::Path,
     state_rx: watch::Receiver<SandboxState>,
     log_id: &str,
-    purpose: UnparkPurpose,
 ) -> sandbox::Result<()> {
     if !*is_parked {
         return Ok(());
@@ -4843,28 +4736,13 @@ async fn unpark_inner(
             message: format!("vm resume: {e}"),
         })?;
 
-    let park_touched_controller = memory_mb > balloon::MIN_GUEST_MIB;
-
-    if park_touched_controller {
-        // By construction, park_inner left the slot None when it inflated
-        // (and the is_parked guard above ensures we entered exactly one
-        // park→unpark transition). Loudly catch invariant violations in
-        // debug, and defensively take+abort in release so a violated
-        // invariant doesn't leave an unexpected controller running.
-        debug_assert!(
-            balloon_controller.is_none(),
-            "controller slot must be None when entering unpark from a parked state",
-        );
-        if let Some(controller) = balloon_controller.take() {
-            controller.abort();
-        }
-
+    if memory_mb > balloon::MIN_GUEST_MIB {
         // Propagate deflate failure rather than swallow it. On a healthy
         // Firecracker, PATCH /balloon doesn't return transient errors —
         // any failure here (Connect / Http / Other) strongly suggests FC
         // is dead or unhealthy. Symmetric with park's failure mode: the
         // caller (runner take-site) destroys the sandbox and falls
-        // through to fresh-create. Leaving is_parked=true and controller=None
+        // through to fresh-create. Leaving is_parked=true
         // is safe: the sandbox is about to be dropped; a hypothetical retry
         // would re-enter this branch and attempt deflate again.
         client
@@ -4875,21 +4753,9 @@ async fn unpark_inner(
                 message: format!("balloon deflate: {e}"),
             })?;
 
-        *balloon_controller = match purpose {
-            UnparkPurpose::Reuse => Some(balloon::spawn_after_unpark_deflation(
-                client,
-                memory_mb,
-                state_rx,
-                log_id.to_owned(),
-            )),
-            UnparkPurpose::BlankReuse => Some(balloon::spawn_after_blank_unpark(
-                client,
-                memory_mb,
-                state_rx,
-                log_id.to_owned(),
-            )),
-            UnparkPurpose::TerminalOperations => None,
-        };
+        // A successful target PATCH alone does not return physical memory.
+        // Keep operations fenced until the Guest reports zero held pages.
+        balloon::wait_for_unpark_deflation(&client, state_rx, log_id).await?;
     }
 
     *is_parked = false;

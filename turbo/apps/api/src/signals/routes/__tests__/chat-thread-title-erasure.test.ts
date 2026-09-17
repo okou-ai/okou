@@ -130,7 +130,13 @@ async function pauseGeneratedTitle(options?: {
       released.resolve(undefined);
     }
   };
-  onTestFinished(release);
+  // Drain this owner's background title before the case ends. The barrier
+  // fixture closes the database pool when it arms, so work left in flight here
+  // would be broken by, and would break, whichever case arms it next.
+  onTestFinished(async () => {
+    release();
+    await flushWaitUntilForTest();
+  });
   createChatCallbacksApi(context).mockOpenRouterCompletions(async (body) => {
     const content = body.messages[1]?.content ?? "";
     if (
@@ -527,7 +533,10 @@ describe("account erasure fences generated chat titles", () => {
             await paused.send(paused.prompt);
             await paused.entered;
             paused.release();
-            const draining = flushWaitUntilForTest();
+            // The workflow continues on its own, so no drain runs inside the
+            // lock window below: `flushWaitUntilForTest` is process wide and
+            // would also await another file's background work, which must not
+            // be made to wait on a row lock this case holds.
             await barrier.entered;
             // Taken while the writer is paused, so only the writer's own
             // `chat_threads` KEY SHARE can block on it.
@@ -536,15 +545,19 @@ describe("account erasure fences generated chat titles", () => {
               signal: context.signal,
             });
             barrier.release();
-            // Observe the writer actually block, then observe it give up on its
-            // own `1s` budget. Neither step is a sleep standing in for timing.
+            // Observe this writer's own `FOR KEY SHARE` block, then observe it
+            // give up on its `1s` budget. Counting only KEY SHARE waiters keeps
+            // the second observation from waiting on an ordinary writer that
+            // has no lock timeout and is simply queued behind the holder.
             await expect
-              .poll(holder.blockedWaiterCount, BLOCKED)
+              .poll(holder.blockedKeyShareWaiterCount, BLOCKED)
               .toBeGreaterThanOrEqual(1);
-            await expect.poll(holder.blockedWaiterCount, BLOCKED).toBe(0);
+            await expect
+              .poll(holder.blockedKeyShareWaiterCount, BLOCKED)
+              .toBe(0);
             holder.release();
             await holder.done;
-            await draining;
+            await flushWaitUntilForTest();
           },
         },
         context.signal,

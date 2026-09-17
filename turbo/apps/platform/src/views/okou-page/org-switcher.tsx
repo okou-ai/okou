@@ -15,7 +15,11 @@ import {
 } from "@okouai/ui";
 import type { BrowserClerk as Clerk } from "@clerk/shared/types";
 import { ChevronDown, Plus, Mail } from "lucide-react";
-import { clerk$, currentOrgInfo$ } from "../../signals/auth.ts";
+import {
+  clerk$,
+  currentOrgInfo$,
+  prepareCreatedOrgOnboarding$,
+} from "../../signals/auth.ts";
 import {
   createdOrganizationsCount$,
   refreshCreatedOrganizationsCount$,
@@ -103,6 +107,7 @@ function InvitationRow({
 function CreateWorkspaceMenuItem({ clerk }: { clerk: Clerk }) {
   const creatingOrg = useGet(creatingOrg$);
   const setCreating = useSet(setCreatingOrg$);
+  const prepareCreatedOrgOnboarding = useSet(prepareCreatedOrgOnboarding$);
   const refreshCreatedOrganizationsCount = useSet(
     refreshCreatedOrganizationsCount$,
   );
@@ -114,6 +119,7 @@ function CreateWorkspaceMenuItem({ clerk }: { clerk: Clerk }) {
     await bestEffort(
       (async () => {
         const org = await clerk.createOrganization({ name: slug, slug });
+        prepareCreatedOrgOnboarding(org.id);
         await clerk.setActive({ organization: org.id }).finally(() => {
           refreshCreatedOrganizationsCount();
         });

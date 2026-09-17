@@ -28,7 +28,7 @@ interface PublishedBody {
   readonly title: string;
   readonly kind: string;
   readonly sourceFileId: string;
-  readonly pageFileIds: readonly string[];
+  readonly pageFileIds?: readonly string[];
   readonly packageFileId: string;
 }
 
@@ -159,7 +159,7 @@ describe("okou user-template publish", () => {
           sourceFilename: "brand-system.pptx",
           kind: "presentation",
           coverUrl: null,
-          pageCount: published.pageFileIds.length,
+          pageCount: published.pageFileIds?.length ?? null,
           visibility: "private",
           ownerUserId: "user_1",
           canManage: true,
@@ -185,7 +185,7 @@ describe("okou user-template publish", () => {
 
     expect(published?.kind).toBe("presentation");
     expect(
-      published?.pageFileIds.map((id) => {
+      published?.pageFileIds?.map((id) => {
         return uploads.filenameOf(id);
       }),
     ).toStrictEqual(["page-001.png", "page-002.png", "page-003.png"]);
@@ -195,6 +195,73 @@ describe("okou user-template publish", () => {
     expect(mockConsoleLog).toHaveBeenCalledWith(
       `Published Brand system (${TEMPLATE_ID}) with 3 pages`,
     );
+  });
+
+  it("publishes a document template without a pages directory", async () => {
+    installUploadRoutes();
+    const docxPath = join(tempDir, "brand-report.docx");
+    writeFileSync(docxPath, Buffer.from("docx bytes"));
+
+    let published: PublishedBody | undefined;
+    server.use(
+      http.post(PUBLISH_URL, async ({ request }) => {
+        published = (await request.json()) as PublishedBody;
+        return HttpResponse.json({
+          id: TEMPLATE_ID,
+          title: published.title,
+          sourceFilename: "brand-report.docx",
+          kind: "document",
+          coverUrl: null,
+          pageCount: null,
+          visibility: "private",
+          ownerUserId: "user_1",
+          canManage: true,
+          createdAt: "2026-09-17T00:00:00.000Z",
+          updatedAt: "2026-09-17T00:00:00.000Z",
+        });
+      }),
+    );
+
+    await userTemplateCommand.parseAsync([
+      "node",
+      "okou",
+      "publish",
+      "--kind",
+      "document",
+      "--title",
+      "Brand report",
+      "--source",
+      docxPath,
+      "--package",
+      packageDir,
+    ]);
+
+    // The document arm carries no page ids at all, rather than an empty array
+    // the endpoint would have to interpret.
+    expect(published?.kind).toBe("document");
+    expect(published?.pageFileIds).toBeUndefined();
+    expect(mockConsoleLog).toHaveBeenCalledWith(
+      `Published Brand report (${TEMPLATE_ID})`,
+    );
+  });
+
+  it("refuses a presentation with no pages directory", async () => {
+    installUploadRoutes();
+
+    await expect(
+      userTemplateCommand.parseAsync([
+        "node",
+        "okou",
+        "publish",
+        "--title",
+        "Brand system",
+        "--source",
+        sourcePath,
+        "--package",
+        packageDir,
+      ]),
+    ).rejects.toThrow("process.exit called");
+    expect(mockConsoleError).toHaveBeenCalled();
   });
 
   it("refuses a pages directory with no images", async () => {

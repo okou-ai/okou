@@ -196,6 +196,14 @@ pub fn pi_launch_payload_file(run_dir: impl AsRef<Path>) -> PathBuf {
         .join(crate::env::PI_LAUNCH_PAYLOAD_FILENAME)
 }
 
+/// Return the private authenticated deferred Pi handoff file.
+pub fn pi_deferred_handoff_file(run_dir: impl AsRef<Path>) -> PathBuf {
+    run_dir
+        .as_ref()
+        .join(crate::env::PI_DEFERRED_HANDOFF_PRIVATE_DIR_NAME)
+        .join(crate::env::PI_DEFERRED_HANDOFF_FILENAME)
+}
+
 /// Return the private Claude appended-system-prompt file.
 pub fn claude_append_system_prompt_file(run_dir: impl AsRef<Path>) -> PathBuf {
     file(run_dir, "claude-append-system-prompt")

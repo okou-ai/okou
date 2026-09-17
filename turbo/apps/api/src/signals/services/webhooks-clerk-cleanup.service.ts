@@ -84,6 +84,7 @@ import {
   deleteClerkAgentLifecycleData,
 } from "./agent-lifecycle.service";
 import { deleteConnectorOwnerState } from "./connector-owner-cleanup.service";
+import { revokeMorningBriefCollectionOwnership } from "./morning-brief-collection-occurrence.service";
 import { deleteStoragesWithPiMemoryCandidates } from "./pi-memory-stage1-candidate.service";
 import { transitionAgentRunsToTerminal } from "./agent-run-terminal-transition.service";
 
@@ -946,6 +947,11 @@ export const cleanupClerkDeletedOrg$ = command(
     const db = set(writeDb$);
     await cancelOrgRuns(db, orgId, true);
     signal.throwIfAborted();
+    await revokeMorningBriefCollectionOwnership(db, {
+      kind: "organization",
+      orgId,
+    });
+    signal.throwIfAborted();
     await assertPiInferenceScopeErasureReady(db, {
       kind: "organization",
       orgId,
@@ -977,6 +983,8 @@ export const cleanupClerkDeletedUser$ = command(
     const db = set(writeDb$);
     await cancelUserRuns(db, userId, true);
     signal.throwIfAborted();
+    await revokeMorningBriefCollectionOwnership(db, { kind: "user", userId });
+    signal.throwIfAborted();
     await assertPiInferenceScopeErasureReady(db, { kind: "user", userId });
     signal.throwIfAborted();
     await set(cleanupSharedThreadArtifacts$, { kind: "user", userId }, signal);
@@ -992,6 +1000,11 @@ export const cleanupClerkDeletedUser$ = command(
     signal.throwIfAborted();
     for (const orgId of emptyOrgIds) {
       await cancelOrgRuns(db, orgId, true);
+      signal.throwIfAborted();
+      await revokeMorningBriefCollectionOwnership(db, {
+        kind: "organization",
+        orgId,
+      });
       signal.throwIfAborted();
       await assertPiInferenceScopeErasureReady(db, {
         kind: "organization",

@@ -93,9 +93,11 @@ export async function transferAgentOwnerFixture(args: {
   }
 }
 
-/** Moves one Agent into another organization, the other half of the ownership
- * change its composite `(id, org_id, owner)` key exists to detect. No
- * production writer updates this column today either.
+/** Reassigns one Agent's organization, the other half of the same unique
+ * `(id, org_id, owner)` key. No production writer updates this column today,
+ * and it is the canonical parent a read-cursor publication targets, so moving
+ * it is the change a writer's retained KEY SHARE must turn into a reselection
+ * instead of a stale-organization notification.
  */
 export async function transferAgentOrganizationFixture(args: {
   readonly agentId: string;

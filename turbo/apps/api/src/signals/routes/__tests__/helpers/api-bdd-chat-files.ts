@@ -15,6 +15,7 @@ import {
   chatThreadMetadataContract,
   chatThreadModelSelectionContract,
   chatThreadPinContract,
+  chatThreadPinOrderContract,
   chatThreadRenameContract,
   chatThreadUnpinContract,
   chatThreadsContract,
@@ -89,6 +90,7 @@ import { chatThreadMarkReadRoutes } from "../../chat-threads-mark-read";
 import { chatThreadModelSelectionRoutes } from "../../chat-threads-model-selection";
 import { chatThreadPatchRoutes } from "../../chat-threads-patch";
 import { chatThreadPinRoutes } from "../../chat-threads-pin";
+import { chatThreadPinOrderRoutes } from "../../chat-threads-pin-order";
 import { chatThreadRenameRoutes } from "../../chat-threads-rename";
 import { chatThreadRoutes } from "../../chat-threads";
 import { chatThreadUnpinRoutes } from "../../chat-threads-unpin";
@@ -208,6 +210,7 @@ const chatFilesRoutes = [
   ...chatThreadPatchRoutes,
   ...chatThreadMarkReadRoutes,
   ...chatThreadPinRoutes,
+  ...chatThreadPinOrderRoutes,
   ...chatThreadUnpinRoutes,
   ...chatThreadRenameRoutes,
   ...chatThreadImageModelRoutes,
@@ -225,6 +228,27 @@ const chatFilesRoutes = [
 
 function chatFilesApp(context: TestContext) {
   return setupAppWithRoutes({ context, routes: chatFilesRoutes });
+}
+
+/** The optional pin query a client may send; omitted keys stay omitted. */
+interface PinQuery {
+  readonly eventId?: string;
+  readonly pinOrder?: string;
+}
+
+function pinQuery(query: PinQuery) {
+  return {
+    ...(query.eventId === undefined ? {} : { eventId: query.eventId }),
+    ...(query.pinOrder === undefined ? {} : { pinOrder: query.pinOrder }),
+  };
+}
+
+interface EventIdQuery {
+  readonly eventId?: string;
+}
+
+function unpinQuery(query: EventIdQuery) {
+  return query.eventId === undefined ? {} : { eventId: query.eventId };
 }
 
 export function persistedAttachment(
@@ -336,6 +360,10 @@ export function createChatFilesBddApi(context: TestContext) {
 
   function threadUnpinClient() {
     return chatFilesApp(context)(chatThreadUnpinContract);
+  }
+
+  function threadPinOrderClient() {
+    return chatFilesApp(context)(chatThreadPinOrderContract);
   }
 
   function threadRenameClient() {
@@ -800,11 +828,16 @@ export function createChatFilesBddApi(context: TestContext) {
       );
     },
 
-    async pinThread(actor: ApiTestUser, threadId: string): Promise<void> {
+    async pinThread(
+      actor: ApiTestUser,
+      threadId: string,
+      query: PinQuery = {},
+    ): Promise<void> {
       await accept(
         threadPinClient().pin({
           headers: authenticate(context, actor),
           params: { id: threadId },
+          query: pinQuery(query),
         }),
         [204],
       );
@@ -814,21 +847,28 @@ export function createChatFilesBddApi(context: TestContext) {
       actor: ApiTestUser | null,
       threadId: string,
       statuses: readonly (204 | 400 | 401 | 404)[],
+      query: PinQuery = {},
     ) {
       return await accept(
         threadPinClient().pin({
           headers: authenticate(context, actor),
           params: { id: threadId },
+          query: pinQuery(query),
         }),
         statuses,
       );
     },
 
-    async unpinThread(actor: ApiTestUser, threadId: string): Promise<void> {
+    async unpinThread(
+      actor: ApiTestUser,
+      threadId: string,
+      query: EventIdQuery = {},
+    ): Promise<void> {
       await accept(
         threadUnpinClient().unpin({
           headers: authenticate(context, actor),
           params: { id: threadId },
+          query: unpinQuery(query),
         }),
         [204],
       );
@@ -838,11 +878,44 @@ export function createChatFilesBddApi(context: TestContext) {
       actor: ApiTestUser | null,
       threadId: string,
       statuses: readonly (204 | 400 | 401 | 404)[],
+      query: EventIdQuery = {},
     ) {
       return await accept(
         threadUnpinClient().unpin({
           headers: authenticate(context, actor),
           params: { id: threadId },
+          query: unpinQuery(query),
+        }),
+        statuses,
+      );
+    },
+
+    async reorderPinnedThread(
+      actor: ApiTestUser,
+      threadId: string,
+      body: { readonly pinOrder: string; readonly eventId: string },
+    ): Promise<void> {
+      await accept(
+        threadPinOrderClient().reorder({
+          headers: authenticate(context, actor),
+          params: { id: threadId },
+          body: { pinOrder: body.pinOrder, eventId: body.eventId },
+        }),
+        [204],
+      );
+    },
+
+    async requestReorderPinnedThread(
+      actor: ApiTestUser | null,
+      threadId: string,
+      body: { readonly pinOrder: string; readonly eventId: string },
+      statuses: readonly (204 | 400 | 401 | 403 | 404)[],
+    ) {
+      return await accept(
+        threadPinOrderClient().reorder({
+          headers: authenticate(context, actor),
+          params: { id: threadId },
+          body: { pinOrder: body.pinOrder, eventId: body.eventId },
         }),
         statuses,
       );

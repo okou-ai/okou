@@ -1,6 +1,6 @@
 [package]
 name = "guest-tool-exec"
-version = "0.1.74"
+version = "0.1.75"
 edition.workspace = true
 description = "Explicit shell-tool cgroup launcher and runtime hook adapter for Okou guests"
 

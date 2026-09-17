@@ -205,12 +205,23 @@ async function enableVideoGeneration(fixture: Fixture) {
   );
 }
 
-async function queueImage(fixture: Fixture, imageUrls?: readonly string[]) {
+async function queueImage(
+  fixture: Fixture,
+  imageUrls?: readonly string[],
+  requirePrivateArtifact = false,
+) {
   mocks.clerk.session(fixture.actor.userId, fixture.actor.orgId);
+  const client = fixture.api(imageIoGenerateContract);
+  const create = requirePrivateArtifact ? client.postPrivate : client.post;
   const response = await accept(
-    fixture.api(imageIoGenerateContract).post({
+    create({
       headers,
-      body: { prompt: "A private landscape", model: "qwen-image", imageUrls },
+      body: {
+        prompt: "A private landscape",
+        model: "qwen-image",
+        imageUrls,
+        ...(requirePrivateArtifact ? { requirePrivateArtifact: true } : {}),
+      },
     }),
     [202],
   );
@@ -326,11 +337,15 @@ describe("managed artifact privacy", () => {
     await flushWaitUntilForTest();
   });
 
-  it.each([false, true])(
-    "uses the image submission policy after the switch changes (private=%s)",
-    async (enabled) => {
+  it.each([
+    { enabled: false, guarded: false },
+    { enabled: true, guarded: false },
+    { enabled: true, guarded: true },
+  ])(
+    "uses the image submission policy after rollback (private=$enabled, guarded=$guarded)",
+    async ({ enabled, guarded }) => {
       const fixture = await createFixture(enabled);
-      const generationId = await queueImage(fixture);
+      const generationId = await queueImage(fixture, undefined, guarded);
       await billing.updateFeatureSwitches(fixture.actor, {
         [FeatureSwitchKey.PrivateArtifacts]: !enabled,
       });
@@ -711,9 +726,14 @@ describe("managed artifact privacy", () => {
     );
     mocks.clerk.session(fixture.actor.userId, fixture.actor.orgId);
     const speech = await accept(
-      fixture
-        .api(voiceIoSpeechContract)
-        .post({ headers, body: { text: "Private speech", voice: "alloy" } }),
+      fixture.api(voiceIoSpeechContract).postPrivate({
+        headers,
+        body: {
+          text: "Private speech",
+          voice: "alloy",
+          requirePrivateArtifact: true,
+        },
+      }),
       [200],
     );
     expect(speech.body.url).toContain("/artifacts/");

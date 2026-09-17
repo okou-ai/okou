@@ -12,6 +12,20 @@ import {
 import { getPlatformOrigin } from "../../platform-url";
 import { getClientConfig, handleError } from "../core/client-factory";
 
+export async function getArtifactSharingAvailability(): Promise<{
+  enabled: boolean;
+}> {
+  const client = initClient(artifactSharesContract, await getClientConfig());
+  const response = await client.availability();
+  if (response.status !== 200) {
+    handleError(
+      response,
+      "--visibility requires privateArtifacts and an API that supports private creation. Start a new run after enabling the feature.",
+    );
+  }
+  return response.body;
+}
+
 export async function resolveArtifactShareTarget(
   artifact: string,
   kind: ArtifactShareTarget["kind"] | undefined,

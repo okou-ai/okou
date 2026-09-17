@@ -444,6 +444,8 @@
       "description": "비공개이거나 더 이상 사용할 수 없을 수 있습니다.",
       "help": "링크를 공유한 사람에게 접근 권한을 확인해 달라고 요청하세요.",
       "signedInAs": "{{email}} 계정으로 로그인됨",
+      "signIn": "로그인",
+      "signInFailed": "로그인 화면을 열 수 없습니다. 다시 시도해 주세요.",
       "switchAccount": "계정 전환",
       "switchAccountFailed": "계정 전환 화면을 열 수 없습니다. 다시 시도해 주세요.",
       "title": "이 아티팩트를 볼 수 없습니다",
@@ -641,6 +643,10 @@
       "importDeckHint": "(.pptx, .ppt, .pdf)",
       "importedSlides_one": "{{count}}장",
       "importedSlides_other": "{{count}}장",
+      "importFile": "내 파일 가져오기",
+      "importFileHint": "({{formats}})",
+      "importStarted": "{{filename}}을(를) 분석하고 있습니다. 준비되면 Custom에 표시됩니다.",
+      "importUnsupported": "템플릿을 만들려면 {{formats}} 파일을 선택하세요.",
       "introVideo": "인트로 영상",
       "introVideoUnavailable": "이 동영상 템플릿은 더 이상 사용할 수 없습니다. 메시지를 보내려면 삭제하세요.",
       "multiAccent": "다중 악센트",
@@ -1840,23 +1846,26 @@
       "runCancelled": "중간에 일시 중지됨 — 언제든 다시 시작하세요."
     },
     "feedback": {
-      "emailDraftDescription": "이메일 초안 (메일 초안 ID: {{id}})",
-      "partHeading": "답변 이 부분에 대한 피드백:",
-      "partsHeading_one": "답변 {{count}}개 부분에 대한 피드백:",
-      "partsHeading_other": "답변 {{count}}개 부분에 대한 피드백:",
-      "placeholder": "무엇을 변경해야 하나요?",
+      "emailDraftDescription": "이메일 초안",
+      "forwardPartHeading": "\"{{title}}\"에서 전달됨",
+      "forwardPartsHeading_one": "\"{{title}}\"에서 {{count}}개 부분 전달됨",
+      "forwardPartsHeading_other": "\"{{title}}\"에서 {{count}}개 부분 전달됨",
+      "partHeading": "답변에서 인용",
+      "partsHeading_one": "답변에서 {{count}}개 부분 인용",
+      "partsHeading_other": "답변에서 {{count}}개 부분 인용",
+      "placeholder": "이 인용문에 대해 질문하거나 의견을 남기세요",
       "quote": "인용",
       "remove": "피드백 제거",
-      "sentEmailDescription": "발송된 이메일 (메일 ID: {{id}}{{sentIdSuffix}})",
-      "sentIdSuffix": ", 발송 ID: {{sentId}}",
-      "sourcePartHeading": "{{description}} 이 부분에 대한 피드백:",
-      "sourcePartsHeading_one": "{{description}} {{count}}개 부분에 대한 피드백:",
-      "sourcePartsHeading_other": "{{description}} {{count}}개 부분에 대한 피드백:"
+      "sentEmailDescription": "보낸 이메일",
+      "sourcePartHeading": "{{description}}에서 인용",
+      "sourcePartsHeading_one": "{{description}}에서 {{count}}개 부분 인용",
+      "sourcePartsHeading_other": "{{description}}에서 {{count}}개 부분 인용"
     },
     "forward": {
       "action": "전달",
       "agents": "에이전트",
       "back": "뒤로",
+      "composerPlaceholder": "메시지 추가",
       "content": "내용",
       "description": "선택한 내용을 에이전트 또는 채팅으로 보내 계속 작업하세요.",
       "noResults": "에이전트 또는 채팅을 찾을 수 없습니다",
@@ -6284,7 +6293,8 @@
     "detail": {
       "back": "커스텀 템플릿",
       "page": "{{number}}페이지",
-      "source_other": "{{count}}페이지 · {{filename}}에서"
+      "source_other": "{{count}}페이지 · {{filename}}에서",
+      "sourceFile": "{{filename}}에서"
     },
     "empty": {
       "description": "업로드한 파일로 만든 템플릿이 여기에 표시됩니다.",
