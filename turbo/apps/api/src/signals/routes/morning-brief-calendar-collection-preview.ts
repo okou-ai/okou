@@ -8,8 +8,14 @@ import { bodyResultOf } from "../context/request";
 import { clerk$ } from "../external/clerk";
 import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
-import { collectMorningBriefCalendar } from "../services/morning-brief-calendar-collection.service";
-import { admitMorningBriefCollection } from "../services/morning-brief-connector-reader.service";
+import {
+  collectMorningBriefCalendar,
+  MORNING_BRIEF_CALENDAR_SOURCE_BUDGET_MS,
+} from "../services/morning-brief-calendar-collection.service";
+import {
+  admitMorningBriefCollection,
+  startMorningBriefSourceDeadline,
+} from "../services/morning-brief-connector-reader.service";
 import {
   isTestEndpointAllowed,
   testEndpointNotFoundResponse,
@@ -55,6 +61,12 @@ const collectCalendarInner$ = command(
     // both write, so this reader needs the writable handle even though it
     // only collects.
     const db = set(writeDb$);
+    // The source deadline starts before the admission that reads canonical
+    // state and this member's live membership, so a slow preflight shortens the
+    // collection rather than handing it a fresh budget.
+    const deadline = startMorningBriefSourceDeadline(
+      MORNING_BRIEF_CALENDAR_SOURCE_BUDGET_MS,
+    );
     // The anchor is the only caller input. Owner, Agent, installation,
     // timezone, account and every provider path come from canonical state.
     const admission = await admitMorningBriefCollection(
@@ -64,17 +76,32 @@ const collectCalendarInner$ = command(
         orgId: auth.orgId,
         userId: auth.userId,
         anchor: new Date(body.data.anchor),
+        deadline,
       },
       signal,
     );
     signal.throwIfAborted();
+    if (admission.kind === "unavailable") {
+      // A spent budget is not a refusal of authority, and admission is the one
+      // phase with no collection envelope to answer with.
+      return {
+        status: 504 as const,
+        body: {
+          error: {
+            message:
+              "Morning Brief calendar preview is unavailable: deadline-exceeded",
+            code: "GATEWAY_TIMEOUT" as const,
+          },
+        },
+      };
+    }
     if (admission.kind === "denied") {
       return forbidden(
         `Morning Brief calendar preview is unavailable: ${admission.reason}`,
       );
     }
     const collection = await collectMorningBriefCalendar(
-      { db, clerk: get(clerk$), scope: admission.scope },
+      { db, clerk: get(clerk$), scope: admission.scope, deadline },
       signal,
     );
     signal.throwIfAborted();

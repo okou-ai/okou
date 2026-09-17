@@ -155,6 +155,9 @@ export const morningBriefCalendarCollectionPreviewContract = c.router({
       401: apiErrorSchema,
       403: apiErrorSchema,
       404: z.string(),
+      // The source's single absolute deadline expired inside the preflight that
+      // admits it, before an installation and timezone were resolved.
+      504: apiErrorSchema,
       500: apiErrorSchema,
     },
     summary:
