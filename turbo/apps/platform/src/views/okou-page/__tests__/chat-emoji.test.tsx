@@ -22,7 +22,7 @@ const THREAD_ID = "b0000000-0000-4000-a000-000000000001";
 
 function setupEmojiPage(
   threadTitle = "Emoji planning",
-  archiveEnabled = false,
+  archiveEnabled?: boolean,
 ): Promise<void> {
   mockChatLifecycle(context, {
     threadId: THREAD_ID,
@@ -36,9 +36,10 @@ function setupEmojiPage(
   return setupPage({
     context,
     path: `/chats/${THREAD_ID}`,
-    featureSwitches: archiveEnabled
-      ? { [FeatureSwitchKey.ChatThreadArchiving]: true }
-      : undefined,
+    featureSwitches:
+      archiveEnabled === undefined
+        ? undefined
+        : { [FeatureSwitchKey.ChatThreadArchiving]: archiveEnabled },
   });
 }
 
@@ -112,6 +113,21 @@ function nextAnimationFrame(): Promise<void> {
   });
   return frame.promise;
 }
+
+test("Keep the check-mark thread icon Done when archiving is disabled", async () => {
+  await setupEmojiPage("Emoji planning", false);
+  await waitFor(() => {
+    expect(buttonByLabel("Change icon")).toBeInTheDocument();
+  });
+
+  click(buttonByLabel("Change icon"));
+  await screen.findByLabelText("Search emoji");
+
+  expect(emojiButton("Done")).toHaveTextContent("✅");
+  expect(
+    document.querySelector('[data-chat-thread-emoji][aria-label="Archive"]'),
+  ).not.toBeInTheDocument();
+});
 
 test("Name the check-mark thread icon Archive when archiving is enabled", async () => {
   await setupEmojiPage("Emoji planning", true);

@@ -1061,6 +1061,37 @@ test("Filter the chat list to unread conversations", async () => {
   });
 });
 
+test("Keep check-mark chats and archive controls unchanged when archiving is disabled", async () => {
+  prepareDefaultAgent();
+  const completedThread = createThread(
+    EXISTING_THREAD_ID,
+    "✅ Completed release",
+  );
+  mockSidebarThreadStory([completedThread]);
+
+  await setupSidebarPage({
+    context,
+    path: `/chats/${EXISTING_THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.ChatThreadArchiving]: false },
+  });
+
+  await waitFor(() => {
+    expect(
+      within(sidebar()).getByText("✅ Completed release"),
+    ).toBeInTheDocument();
+  });
+
+  openChatListMenu();
+  expect(menuItemByText("All chats")).toBeInTheDocument();
+  expect(queryMenuItemByText("Show archived")).not.toBeInTheDocument();
+  fireEvent.keyDown(document, { code: "Escape", key: "Escape" });
+
+  openThreadMenu("✅ Completed release");
+  expect(menuItemByText("Rename chat")).toBeInTheDocument();
+  expect(queryMenuItemByText("Archive chat")).not.toBeInTheDocument();
+  expect(queryMenuItemByText("Unarchive chat")).not.toBeInTheDocument();
+});
+
 test("Hide archived chats unless they are unread or explicitly shown", async () => {
   prepareDefaultAgent();
   const currentThread = createThread(EXISTING_THREAD_ID, "Release plan");
