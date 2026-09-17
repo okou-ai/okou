@@ -8,8 +8,14 @@ import { bodyResultOf } from "../context/request";
 import { clerk$ } from "../external/clerk";
 import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
-import { admitMorningBriefCollection } from "../services/morning-brief-connector-reader.service";
-import { collectMorningBriefGmail } from "../services/morning-brief-gmail-collection.service";
+import {
+  admitMorningBriefCollection,
+  startMorningBriefSourceDeadline,
+} from "../services/morning-brief-connector-reader.service";
+import {
+  collectMorningBriefGmail,
+  MORNING_BRIEF_GMAIL_SOURCE_BUDGET_MS,
+} from "../services/morning-brief-gmail-collection.service";
 import {
   isTestEndpointAllowed,
   testEndpointNotFoundResponse,
@@ -52,6 +58,12 @@ const collectGmailInner$ = command(
     // A legitimate credential refresh and the erasure-admission transaction both
     // write, so this reader needs the writable handle even though it collects.
     const db = set(writeDb$);
+    // The source deadline starts here, before the admission that reads the
+    // canonical installation and this member's live Clerk membership, so a slow
+    // preflight shortens the collection rather than handing it a fresh budget.
+    const deadline = startMorningBriefSourceDeadline(
+      MORNING_BRIEF_GMAIL_SOURCE_BUDGET_MS,
+    );
     // The anchor is the only caller input. Owner, Agent, installation, account
     // and every provider path are derived from canonical state.
     const admission = await admitMorningBriefCollection(
@@ -71,7 +83,7 @@ const collectGmailInner$ = command(
       );
     }
     const collection = await collectMorningBriefGmail(
-      { db, clerk: get(clerk$), scope: admission.scope },
+      { db, clerk: get(clerk$), scope: admission.scope, deadline },
       signal,
     );
     signal.throwIfAborted();

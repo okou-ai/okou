@@ -15,12 +15,19 @@ durable occurrence ownership.
 exposes one entry point:
 
 ```ts
+startMorningBriefSourceDeadline(budgetMs: number): MorningBriefSourceDeadline;
+
 withMorningBriefConnectorReader<T>(
-  { scope, connectorSlug, apiBase, environmentName, budget, db, clerk },
+  { scope, connectorSlug, apiBase, environmentName, budget, deadline, db, clerk },
   collect: (reader: MorningBriefConnectorReader) => Promise<T>,
   signal: AbortSignal,
 ): Promise<MorningBriefAccessResult<T>>;
 ```
+
+`budget` carries the request and byte caps only. The source deadline is a
+separate `MorningBriefSourceDeadline` — an absolute `at` and the `AbortSignal`
+that enforces it — because it is started by the composition that admits the
+source, not by the reader.
 
 The signal is a separate final parameter, as the repository's lint boundary
 requires. `clerk` is the mirrored `ClerkClient`, because membership is read from
@@ -119,16 +126,41 @@ before a single provider request. Gmail's expiring credential still refreshes
 inside its buffer, and a method that genuinely cannot refresh still fails closed
 at the next authorization.
 
+### Authority is re-derived after credential preparation
+
+The credential is resolved behind the first endpoint a live policy allowed, and
+resolving it can await a real OAuth refresh round trip and its persistence. That
+wait is long enough for the authority the decision was made under to be
+withdrawn, so the same live identity and policy implementation answers a second
+time — for the account preparation actually produced, and for that exact URL —
+immediately before the source's first provider request. A withdrawn grant,
+membership, installation or account choice refuses there: the source spends no
+request, never falls back to another mailbox and never refreshes again. An
+endpoint whose own permission was denied during the wait keeps the prepared
+credential, because a sibling endpoint that is still allowed must not pay for a
+second refresh. The deadline and cancellation are re-read at the same boundary.
+
 ### One absolute deadline
 
-`budget.deadlineMs` is established once, before admission, and covers admission,
-the membership and credential reads, every provider request and body, and the
-release fence. It is both an `AbortSignal` composed into the provider request and
+The deadline is started by the composition that admits the source, **before**
+the public admission runs, and is then carried unchanged: the preview starts it,
+`admitMorningBriefCollection` runs inside it, and the reader spends what is left
+rather than starting a second one. A slow preflight therefore shortens the
+collection instead of earning it a fresh allowance, and a source whose budget
+was already spent is refused before any identity, credential or provider work.
+
+It is both an `AbortSignal` composed into the provider request and its body, and
 a clock the reader re-reads **after authorization returns and before the request
 is admitted**, so authorization that takes real time cannot start a request past
-its own deadline. Caller cancellation keeps its own propagation; deadline
-exhaustion surfaces as `budget-exhausted / deadline` per request and
-`deadline-exceeded` for the source, never as a healthy empty read.
+its own deadline. Caller cancellation keeps its own propagation — it stays a
+cancellation and never becomes a collected envelope — while deadline exhaustion
+surfaces as `budget-exhausted / deadline` per request and `deadline-exceeded`
+for the source, never as a healthy empty read.
+
+The deadline covers the admission's elapsed time, not its cancellation: the
+membership read inside `admitMorningBriefCollection` is bounded by the caller's
+signal, and the shared Clerk gateway's own bounding is
+[#34946](https://github.com/vm0-ai/okou/issues/34946).
 
 ### Limits this reader does not exceed
 
@@ -179,16 +211,29 @@ retrieved and no remote URL is fetched.
 | MIME depth / nodes             | 12 / 200 |
 
 Byte ceilings are enforced while streaming, never after an unbounded
-`response.text()`. A request slot and its byte allowance are **reserved before
-the first await**, so concurrent readers cannot each observe the same remaining
-budget. An unattempted request returns its slot. The byte accounting is
-deliberately stated as an upper bound rather than an exact count: the bounded
-reader stops at the allowance and reports no consumed count for an oversized
-body, so an abandoned body keeps its whole reservation charged and only a
-completed body releases the difference. Redirects are disabled, so a credential
-cannot follow a provider redirect off-host. `Retry-After` is surfaced as bounded
-metadata (≤ 60 s); the reader never sleeps or retries on it. The earliest cap
-wins and every truncation is named in `coverage.truncations`.
+`response.text()`. A request slot is reserved before the first await and a
+response's whole byte allowance before it is streamed, so concurrent readers
+cannot each observe the same remaining budget. An unattempted request returns
+its slot.
+
+`reservedBytes` bounds **reserved** bytes, not consumed ones. The bounded reader
+stops at the allowance and reports no consumed count for an oversized body, so an
+abandoned body keeps its whole reservation charged and only a completed body
+releases the difference between its allowance and its actual size. It is an upper
+bound on what this source was permitted to consume, and the underlying streaming
+helper cannot establish a tighter one.
+
+Each refusal names the allowance that actually bound it. A response that overran
+the 256 KiB per-response ceiling while the cumulative budget still had a full
+ceiling left reports `response-bytes` alone; `total-response-bytes` is reported
+when the cumulative budget is what clipped a response's allowance, or when it
+refuses a request outright. Reporting every oversized body as cumulative
+exhaustion overstates how much of the source was skipped.
+
+Redirects are disabled, so a credential cannot follow a provider redirect
+off-host. `Retry-After` is surfaced as bounded metadata (≤ 60 s); the reader
+never sleeps or retries on it. The earliest cap wins and every truncation is
+named in `coverage.truncations`.
 
 ### The envelope
 
@@ -243,10 +288,25 @@ the reader a real consumed boundary, not to ship a feature:
   policy. What is proven instead is that an explicit selection that is still
   present but unusable fails closed, and that deleting the pinned account while
   its requests are in flight never substitutes another account.
-- **The in-flight body deadline is proven as admission, not as a timed abort.**
-  The clock re-read before provider admission is covered deterministically; the
-  `AbortSignal.timeout` that bounds a body already streaming is not exercised by
-  a test that would have to wait out the real 20-second budget.
+- **The in-flight body deadline is proven with a short real budget.** The
+  20-second production budget cannot be waited out in a test, and a production
+  parameter for shortening it would be a debug surface rather than a contract, so
+  the deadline case drives the deployed `admitMorningBriefCollection` →
+  `collectMorningBriefGmail` composition with the same budget argument the route
+  supplies and a value a test can spend. Bodies that never finish are left open,
+  and the invocation returning `deadline-exceeded` at all is the deadline
+  reaching work already in flight.
+- **The mocked transport does not break a delivered body by itself.** A real
+  socket fails an in-flight body when its request is aborted; the HTTP double
+  fails the stream with the request's own abort reason to match. The reason is
+  always the request's, so the reader still distinguishes its own timeout from
+  its caller's cancellation from what actually aborted.
+- **Cumulative byte exhaustion is proven by arithmetic, not by timing.** Message
+  bodies are released in exact concurrency-sized batches, so at each release
+  every earlier batch is already charged and the number of requests the budget
+  still admits is deterministic. Sixteen full 256 KiB allowances exhaust 4 MiB
+  exactly; without the refund of what the two list responses did not use, their
+  reservations alone would stop the same run a whole batch earlier.
 
 ## Rollout, scale and compatibility
 
