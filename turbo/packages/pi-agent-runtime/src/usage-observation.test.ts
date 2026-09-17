@@ -192,6 +192,59 @@ describe("API provider usage evidence", () => {
     },
   );
 
+  it("ignores thread event envelopes in Responses streams", async () => {
+    const ignored = JSON.stringify({
+      type: "response.completed",
+      response: {
+        id: "resp_usage",
+        status: "completed",
+        usage: { ...reportedUsage, input_tokens: 150 },
+      },
+    });
+    serveSse(
+      sse(responseEvents(reportedUsage)) +
+        `event: thread.message.delta\ndata: ${ignored}\n\n`,
+    );
+    const result = await run();
+    expect(result.assistantMessage).toMatchObject({
+      stopReason: "stop",
+      usage: { input: 25, cacheRead: 10, cacheWrite: 15, output: 20 },
+    });
+    expect(result.usageObservation).toEqual({
+      coverage: "complete",
+      tokens: reportedTokens,
+    });
+  });
+
+  it.each([
+    { type: "error", code: "server_error", message: "Provider stopped" },
+    {
+      type: "response.failed",
+      response: {
+        id: "resp_usage",
+        error: { code: "server_error", message: "Provider stopped" },
+      },
+    },
+    { error: { code: "server_error", message: "Provider stopped" } },
+  ])("stops Responses evidence after a provider error: %j", async (error) => {
+    serveSse(
+      sse([
+        {
+          type: "response.in_progress",
+          response: { id: "resp_usage", usage: reportedUsage },
+        },
+        error,
+        ...responseEvents({ ...reportedUsage, input_tokens: 150 }),
+      ]),
+    );
+    const result = await run();
+    expect(result.assistantMessage.stopReason).toBe("error");
+    expect(result.usageObservation).toEqual({
+      coverage: "partial",
+      tokens: reportedTokens,
+    });
+  });
+
   it("distinguishes reported zero from absent usage across separate invocations", async () => {
     serveSse(sse(responseEvents({ input_tokens: 0, output_tokens: 0 })));
     const zero = await run();

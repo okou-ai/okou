@@ -28,8 +28,9 @@ output evidence plus `message_stop` for complete coverage. Repeated cumulative
 snapshots replace quantities rather than adding them.
 
 Observation follows the pinned SDK's SSE consumption boundaries: Codex ends at
-its first terminal event, Responses at `[DONE]`, and Messages at an `error`
-event. Messages accepts only named message/content events; ping, extension and
+its first terminal event, Responses at `[DONE]` or a provider error, and Messages
+at an `error` event. Responses ignores wrapped `thread.*` event data. Messages
+accepts only named message/content events; ping, extension and
 unnamed events cannot contribute usage or parsing loss. Later bytes after a
 terminal boundary cannot replace that result or downgrade its coverage.
 Original transport bytes are still forwarded.

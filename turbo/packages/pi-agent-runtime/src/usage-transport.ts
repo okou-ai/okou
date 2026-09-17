@@ -40,6 +40,16 @@ function endsCodexStream(event: unknown): boolean {
   );
 }
 
+/** Responses errors stop either the OpenAI decoder or Pi's event adapter. */
+function endsResponsesStream(event: unknown): boolean {
+  if (typeof event !== "object" || event === null) return false;
+  return (
+    ("error" in event && Boolean(event.error)) ||
+    ("type" in event &&
+      (event.type === "error" || event.type === "response.failed"))
+  );
+}
+
 function observeJson(
   text: string,
   observe: (value: unknown) => void,
@@ -64,8 +74,8 @@ function sseReader(observer: PiUsageObserver, dialect: SseDialect) {
   const inspect = (): void => {
     if (dropped) return;
     const lines = frame.toString("utf8", 0, size).split(/\r\n|\r|\n/u);
+    const name = sseEventName(lines);
     if (dialect === "messages") {
-      const name = sseEventName(lines);
       // The pinned Messages decoder rejects errors before parsing their data.
       if (name === "error") {
         ended = true;
@@ -89,9 +99,14 @@ function sseReader(observer: PiUsageObserver, dialect: SseDialect) {
     observeJson(
       data,
       (event) => {
+        // OpenAI wraps thread events; Pi never sees their data as Responses.
+        if (dialect === "responses" && name?.startsWith("thread.")) return;
         if (dialect === "messages") observer.messages(event);
         else observer.responses(event);
-        if (dialect === "codex-responses" && endsCodexStream(event)) {
+        if (
+          (dialect === "codex-responses" && endsCodexStream(event)) ||
+          (dialect === "responses" && endsResponsesStream(event))
+        ) {
           ended = true;
         }
       },
