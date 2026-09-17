@@ -91,7 +91,6 @@ describe("Pi API-first transition precedence", () => {
     expect(failure.code).toBe("PI_API_MODEL_FAILED");
     expect(decideApiFirstTurnRecovery({ ...attempt, failure })).toMatchObject({
       outcome: "arbitrate-terminal",
-      suppressCompletionFailureLog: false,
     });
   });
 
@@ -166,7 +165,6 @@ describe("Pi API-first transition precedence", () => {
       expect(decideApiFirstTurnRecovery(facts)).toMatchObject({
         outcome: "sandbox-first",
         reason: "api_attempt_timed_out",
-        suppressCompletionFailureLog: true,
       });
       for (const boundary of [
         { commitStarted: true },
@@ -237,6 +235,11 @@ describe("Pi API-first transition precedence", () => {
     {
       status: 525,
       failureReason: "usage_limit" as const,
+      outcome: "arbitrate-terminal",
+    },
+    {
+      status: 200,
+      failureReason: "safety_policy_refusal" as const,
       outcome: "arbitrate-terminal",
     },
   ])(

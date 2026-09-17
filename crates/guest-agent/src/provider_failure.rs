@@ -51,10 +51,21 @@ fn text_failure_reason(message: &str) -> Option<FailureReason> {
     {
         return Some(FailureReason::ProviderQueueTimeout);
     }
-    if normalized == "our servers are currently overloaded. please try again later."
-        || normalized == "selected model is at capacity. please try a different model."
+    // Match the same exact phrases after generic Responses SDK request wrappers.
+    let semantic_message = normalized.strip_prefix("error code ").unwrap_or(normalized);
+    let semantic_message = semantic_message
+        .strip_prefix("unknown: ")
+        .or_else(|| semantic_message.strip_prefix("invalid_request_error: "))
+        .unwrap_or(normalized);
+    if semantic_message == "our servers are currently overloaded. please try again later."
+        || semantic_message == "selected model is at capacity. please try a different model."
     {
         return Some(FailureReason::ProviderOverloaded);
+    }
+    if semantic_message.starts_with(
+        "invalid prompt: your prompt was flagged as potentially violating our usage policy. please try again with a different prompt: ",
+    ) {
+        return Some(FailureReason::SafetyPolicyRefusal);
     }
     if normalized
         .strip_prefix("you've hit your ")

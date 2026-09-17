@@ -74,7 +74,6 @@ import {
   PiApiFirstTurnError,
   piApiFirstTurnError,
   PiApiFirstTurnModelFailureError,
-  type PiSandboxFallbackReason,
   type PiSandboxFirstReason,
 } from "../../lib/pi-api-first-turn-policy";
 import {
@@ -3341,36 +3340,6 @@ function modelFailureTelemetry(
     : {};
 }
 
-function logApiFirstTurnTerminalFailure(args: {
-  readonly activation: PiApiFirstTurnActivation;
-  readonly ownership: PiApiFirstTurnOwnership;
-  readonly failure: PiApiFirstTurnError;
-  readonly modelFailure: PiApiModelFailureDiagnostic | undefined;
-  readonly resourceFallbackReason: PiSandboxFallbackReason | null;
-  readonly sandboxFirstReason: PiSandboxFirstReason | null;
-}): void {
-  if (args.failure instanceof PiApiFirstTurnCodexReconnectRequiredError) {
-    return;
-  }
-  const recoveryReason =
-    args.sandboxFirstReason === "api_attempt_timed_out" ||
-    args.sandboxFirstReason === "api_model_failed"
-      ? args.sandboxFirstReason
-      : undefined;
-  L.warn("Pi API first-turn outcome", {
-    runId: args.activation.runId,
-    ...piApiFirstTurnOutcomeTelemetry(args.activation.executionContext),
-    outcome: "terminal_failure",
-    reason: args.failure.code,
-    ownershipStage: args.ownership.stage,
-    ...modelFailureTelemetry(args.modelFailure),
-    ...(args.resourceFallbackReason
-      ? { fallbackReason: args.resourceFallbackReason }
-      : {}),
-    ...(recoveryReason ? { recoveryReason } : {}),
-  });
-}
-
 async function durablePublicationAwaitsRecovery(
   args: ApiFirstTurnContext,
 ): Promise<boolean> {
@@ -3395,7 +3364,6 @@ const failApiFirstTurn$ = command(async function failApiFirstTurn(
   args: ApiFirstTurnContext,
   failure: PiApiFirstTurnError,
   ownership: PiApiFirstTurnOwnership,
-  suppressCompletionFailureLog: boolean,
 ): Promise<DispatchCompleteSideEffectsInput | undefined> {
   const failureSignal = AbortSignal.timeout(FAILURE_COMMIT_TIMEOUT_MS);
   return await withApiFirstTurnLifecycle(args, async (tx) => {
@@ -3423,7 +3391,6 @@ const failApiFirstTurn$ = command(async function failApiFirstTurn(
           runId: args.activation.runId,
         },
         executionOwner: "api-first",
-        suppressFailureLog: suppressCompletionFailureLog,
         body: {
           runId: args.activation.runId,
           exitCode: 1,
@@ -3550,24 +3517,7 @@ const runPiApiFirstTurnCore$ = command(
       });
       return undefined;
     }
-    logApiFirstTurnTerminalFailure({
-      activation,
-      ownership,
-      failure,
-      modelFailure: decision.modelFailure,
-      resourceFallbackReason: decision.resourceFallbackReason,
-      sandboxFirstReason:
-        decision.outcome === "sandbox-first" && !durableAttemptCannotReplay
-          ? decision.reason
-          : null,
-    });
-    return set(
-      failApiFirstTurn$,
-      context,
-      failure,
-      ownership,
-      decision.suppressCompletionFailureLog,
-    );
+    return set(failApiFirstTurn$, context, failure, ownership);
   },
 );
 

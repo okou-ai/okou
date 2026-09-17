@@ -852,34 +852,60 @@ mod tests {
     }
 
     #[test]
-    fn pi_rate_limit_logs_info_with_observed_request_and_retry_evidence() {
-        let mut diagnostic = FailureDiagnostic::new(
-            FailureClass::CliNonzero,
-            AgentFramework::Pi,
-            PromptMetadata::from_prompt("plain prompt"),
-        )
-        .with_failure_reason(FailureReason::ProviderRateLimited)
-        .with_failure_detail_source(FailureDetailSource::PiResult);
-        diagnostic.model_request = Some(guest_contracts::diagnostics::ModelRequestDiagnostic {
-            http_status: Some(429),
-            transport_attempts: 1,
-            retry_attempts: 3,
-            retry_limit: Some(3),
-            transport_failure: None,
-        });
-        let failure = executor::ExecutionFailure::new(
-            1,
-            r#"{"detail":"Rate limit exceeded"}"#,
-            Some(diagnostic),
-        );
-        let event = capture_job_failure_log(&failure);
-        assert_eq!(event.level, Level::INFO);
-        assert_field_eq(&event, "failure_reason", "provider_rate_limited");
-        assert_field_eq(&event, "failure_framework", "pi");
-        assert_field_eq(&event, "model_http_status", "429");
-        assert_field_eq(&event, "model_transport_attempts", "1");
-        assert_field_eq(&event, "model_retry_attempts", "3");
-        assert_field_eq(&event, "model_retry_limit", "3");
+    fn pi_provider_failures_log_info_with_observed_request_and_retry_evidence() {
+        for (reason, status, retries, retry_limit, message) in [
+            (
+                FailureReason::ProviderRateLimited,
+                429,
+                3,
+                Some(3),
+                r#"{"detail":"Rate limit exceeded"}"#,
+            ),
+            (
+                FailureReason::ProviderOverloaded,
+                200,
+                3,
+                Some(3),
+                "Codex error: Our servers are currently overloaded. Please try again later.",
+            ),
+            (
+                FailureReason::SafetyPolicyRefusal,
+                200,
+                0,
+                None,
+                "Codex error: Invalid prompt: your prompt was flagged as potentially violating our usage policy. Please try again with a different prompt: https://example.invalid/policy",
+            ),
+        ] {
+            let mut diagnostic = FailureDiagnostic::new(
+                FailureClass::CliNonzero,
+                AgentFramework::Pi,
+                PromptMetadata::from_prompt("plain prompt"),
+            )
+            .with_failure_reason(reason)
+            .with_failure_detail_source(FailureDetailSource::PiResult);
+            diagnostic.model_request = Some(guest_contracts::diagnostics::ModelRequestDiagnostic {
+                http_status: Some(status),
+                transport_attempts: 1,
+                retry_attempts: retries,
+                retry_limit,
+                transport_failure: None,
+            });
+            let failure = executor::ExecutionFailure::new(1, message, Some(diagnostic));
+            let event = capture_job_failure_log(&failure);
+            assert_eq!(event.level, Level::INFO);
+            assert_field_eq(&event, "failure_reason", reason.as_str());
+            assert_field_eq(&event, "failure_framework", "pi");
+            assert_field_eq(&event, "failure_class", "cli_nonzero");
+            assert_field_eq(&event, "failure_detail_source", "pi_result");
+            assert_field_eq(&event, "model_http_status", &status.to_string());
+            assert_field_eq(&event, "model_transport_attempts", "1");
+            assert_field_eq(&event, "model_retry_attempts", &retries.to_string());
+            if let Some(limit) = retry_limit {
+                assert_field_eq(&event, "model_retry_limit", &limit.to_string());
+            } else {
+                assert!(!event.fields.contains_key("model_retry_limit"));
+            }
+        }
     }
 
     #[test]

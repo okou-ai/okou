@@ -73,6 +73,29 @@ without changing these billing counters. Persisting and serving that evidence
 through the API is tracked separately by #34787; reconstructed historical
 results without evidence remain unavailable.
 
+## Shared failure completion
+
+API-first and Sandbox Pi, Codex and Claude Code use the same normalized provider
+failure reasons and `completeAgentRun$` terminal handling. Native adapters own
+provider evidence classification; the API does not infer a different reason
+from its wrapper message or an earlier attempt's HTTP status.
+
+Only canonical completion applies the credential-owner failure policy, after
+the lifecycle transition wins. Recognized personal-provider limits and account
+rejections retain failed state and the public reason without operator warnings.
+Safety refusals retain their existing guidance and provider-independent policy
+for personal and built-in credentials. An HTTP 200 response can still contain
+a failed model result, including overload or explicit safety refusal; native
+adapters preserve that semantic failure without replaying its content.
+Built-in capacity, unknown failures, missing checkpoints and preparation,
+commit or handoff faults retain the common actionable-failure policy. A failed
+handoff reports its own final failure rather than the preceding model rejection.
+
+API-first has no separate terminal warning or completion-log suppression based
+on recovery eligibility. Successful recovery, attempt timeout, cancellation and
+discarded late-result observations remain; a planned recovery alone does not
+prove that a Sandbox attempt occurred. The durable no-replay fence still applies.
+
 ## Durable producer mode
 
 `PiApiFirstTurnActivation` explicitly distinguishes `legacy-sandbox-race` from

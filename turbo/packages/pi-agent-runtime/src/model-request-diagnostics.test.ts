@@ -216,23 +216,53 @@ describe("Codex model request diagnostics", () => {
     },
   );
 
-  it("classifies the production overload after an HTTP 200 stream starts", async () => {
-    server.use(
-      http.post(endpoint, () => {
-        return new HttpResponse(
-          `data: ${JSON.stringify({ type: "error", message: "Our servers are currently overloaded. Please try again later." })}`,
-          { headers: { "content-type": "text/event-stream" } },
-        );
-      }),
-    );
-    const result = await stream().result();
-    expect(result.errorMessage).toBe(
-      "Codex error: Our servers are currently overloaded. Please try again later.",
-    );
-    expect(projectPiApiAssistantMessage(result, 200).failureReason).toBe(
-      "provider_overloaded",
-    );
-  });
+  it.each([
+    {
+      message: "Our servers are currently overloaded. Please try again later.",
+      reason: "provider_overloaded",
+    },
+    {
+      message:
+        "Invalid prompt: your prompt was flagged as potentially violating our usage policy. Please try again with a different prompt: https://example.invalid/policy",
+      reason: "safety_policy_refusal",
+    },
+    {
+      message: "Invalid prompt: messages must contain a user message",
+      reason: undefined,
+    },
+    { message: "Unrecognized provider error", reason: undefined },
+  ])(
+    "preserves HTTP-200 semantic failure: $message",
+    async ({ message, reason }) => {
+      let requests = 0;
+      server.use(
+        http.post(endpoint, () => {
+          requests++;
+          return new HttpResponse(
+            `data: ${JSON.stringify({ type: "error", message })}`,
+            { headers: { "content-type": "text/event-stream" } },
+          );
+        }),
+      );
+      const result = await stream().result();
+      expect(result.errorMessage).toBe(`Codex error: ${message}`);
+      expect(result.stopReason).toBe("error");
+      expect(result.diagnostics).toMatchObject([
+        {
+          type: "okou_model_request",
+          details: {
+            httpStatus: 200,
+            transportAttempts: 1,
+            ...(reason ? { failureReason: reason } : {}),
+          },
+        },
+      ]);
+      const projected = projectPiApiAssistantMessage(result, 200);
+      expect(projected.stopReason).toBe("error");
+      expect(projected.failureReason).toBe(reason);
+      expect(requests).toBe(1);
+    },
+  );
 
   it.each(["events", "result"])(
     "preserves the shared rate-limit fixture via %s",

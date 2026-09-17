@@ -1556,6 +1556,56 @@ mod tests {
     }
 
     #[test]
+    fn semantic_http_success_keeps_failed_reason_and_observed_retries() {
+        for (message, reason, retries) in [
+            (
+                "Codex error: Our servers are currently overloaded. Please try again later.",
+                "provider_overloaded",
+                3,
+            ),
+            (
+                "Codex error: Invalid prompt: your prompt was flagged as potentially violating our usage policy. Please try again with a different prompt: https://example.invalid/policy",
+                "safety_policy_refusal",
+                0,
+            ),
+        ] {
+            let failure = json!({"type": "message_end", "message": {
+                "role": "assistant", "api": "openai-codex-responses", "stopReason": "error",
+                "errorMessage": message,
+                "diagnostics": [{"type": "okou_model_request", "details": {
+                    "httpStatus": 200, "transportAttempts": 1, "failureReason": reason
+                }}]
+            }});
+            let (responses, _rx) = response_channel();
+            let mut projection = PiRpcProjection::new("run", "session");
+            projection.project(failure.clone(), &responses, 0).unwrap();
+            for attempt in 1..=retries {
+                projection
+                    .project(
+                        json!({"type": "auto_retry_start", "attempt": attempt, "maxAttempts": 3}),
+                        &responses,
+                        0,
+                    )
+                    .unwrap();
+                projection.project(failure.clone(), &responses, 0).unwrap();
+            }
+            let result = projection
+                .project(json!({"type": "agent_settled"}), &responses, 0)
+                .unwrap()
+                .unwrap();
+            assert_eq!(result["is_error"], true);
+            assert_eq!(result["failureReason"], reason);
+            assert_eq!(result["modelRequest"]["httpStatus"], 200);
+            assert_eq!(result["modelRequest"]["transportAttempts"], 1);
+            assert_eq!(result["modelRequest"]["retryAttempts"], retries);
+            assert_eq!(
+                result["modelRequest"]["retryLimit"],
+                if retries == 0 { Value::Null } else { json!(3) }
+            );
+        }
+    }
+
+    #[test]
     fn model_request_evidence_is_only_accepted_from_valid_failed_assistant_messages() {
         let failed: Value = serde_json::from_str(include_str!(
             "../../../../turbo/packages/pi-agent-runtime/src/test/fixtures/codex-rate-limit.json"
