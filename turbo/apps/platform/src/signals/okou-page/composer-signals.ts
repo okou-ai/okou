@@ -438,6 +438,7 @@ function createComputerUseUiSignals(): Pick<
 function createComposerWorkflowPromptSignals(
   options: CreateComposerSignalsOptions,
   workflowComposer: WorkflowComposerSignals,
+  taskChips: ComposerTaskChipsSignals,
 ): Pick<
   ComposerWorkflowSignals,
   | "createWorkflowPrompt$"
@@ -456,6 +457,11 @@ function createComposerWorkflowPromptSignals(
         set(draft.clear$);
       }
       set(draft.setInput$, CREATE_WORKFLOW_WITH_CHAT_PROMPT);
+      // The prompt and the Workflow chip start the same job, so the row leaves
+      // the composer where that chip would: the task selected and its ideas
+      // open. Where the chips are switched off there is nothing to select, and
+      // `openTask$` is a no-op.
+      set(taskChips.openTask$, "workflow");
       await set(options.draft.save$, signal);
       if (options.threadId !== undefined) {
         set(workflowComposer.focus$);
@@ -608,6 +614,7 @@ export function createComposerSignals(
   const workflowPrompt = createComposerWorkflowPromptSignals(
     options,
     workflowComposer,
+    taskChips,
   );
   const imageAnnotation = createImageAnnotationSignals();
   /**

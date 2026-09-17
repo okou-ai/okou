@@ -78,6 +78,17 @@ export function createComposerTaskChipsSignals(
       set(create.selectCommand$, next);
     }
   });
+  /**
+   * Opens a task without the chip's toggle. A caller outside the row states
+   * what the member has just started rather than pressing the chip, so
+   * repeating it has to leave the surface the last one opened standing.
+   */
+  const openTask$ = command(({ get, set }, task: ComposerTask) => {
+    if (get(task$) === task) {
+      return;
+    }
+    set(selectTask$, task);
+  });
   const internalIdeaPages$ = state({
     image: 0,
     workflow: 0,
@@ -134,6 +145,7 @@ export function createComposerTaskChipsSignals(
     enabled$,
     task$,
     selectTask$,
+    openTask$,
     ideaPages$,
     nextIdeas$,
     railTravel$,
