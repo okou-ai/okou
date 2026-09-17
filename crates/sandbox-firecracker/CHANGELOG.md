@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.43.0](https://github.com/vm0-ai/okou/compare/sandbox-firecracker-v0.42.15...sandbox-firecracker-v0.43.0) (2026-09-17)
+
+
+### Features
+
+* **runner:** expose history transfer measurements ([#34805](https://github.com/vm0-ai/okou/issues/34805)) ([445a170](https://github.com/vm0-ai/okou/commit/445a170a81a2fac9b1d42f361866c2ea70cfb7e7))
+
 ## [0.42.15](https://github.com/vm0-ai/okou/compare/sandbox-firecracker-v0.42.14...sandbox-firecracker-v0.42.15) (2026-09-17)
 
 ## [0.42.14](https://github.com/vm0-ai/okou/compare/sandbox-firecracker-v0.42.13...sandbox-firecracker-v0.42.14) (2026-09-16)

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.20](https://github.com/vm0-ai/okou/compare/guest-control-server-v0.21.19...guest-control-server-v0.21.20) (2026-09-17)
+
+
+### Bug Fixes
+
+* **runner:** downgrade successful slow storage downloads ([#34799](https://github.com/vm0-ai/okou/issues/34799)) ([79e19b6](https://github.com/vm0-ai/okou/commit/79e19b689fbba9e18f8074bb4dd194dc4a99e832))
+
 ## [0.21.19](https://github.com/vm0-ai/okou/compare/guest-control-server-v0.21.18...guest-control-server-v0.21.19) (2026-09-17)
 
 ## [0.21.18](https://github.com/vm0-ai/okou/compare/guest-control-server-v0.21.17...guest-control-server-v0.21.18) (2026-09-16)

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.0](https://github.com/vm0-ai/okou/compare/sandbox-v0.22.9...sandbox-v0.23.0) (2026-09-17)
+
+
+### Features
+
+* **runner:** expose history transfer measurements ([#34805](https://github.com/vm0-ai/okou/issues/34805)) ([445a170](https://github.com/vm0-ai/okou/commit/445a170a81a2fac9b1d42f361866c2ea70cfb7e7))
+
 ## [0.22.9](https://github.com/vm0-ai/okou/compare/sandbox-v0.22.8...sandbox-v0.22.9) (2026-09-16)
 
 
