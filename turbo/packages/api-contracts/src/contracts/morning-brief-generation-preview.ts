@@ -55,6 +55,7 @@ export const morningBriefGenerationFailureReasonSchema = z.enum([
   "result_too_large",
   "reservation_expired",
   "owner_revoked",
+  "binding_changed",
   "persistence_failed",
 ]);
 
@@ -83,7 +84,9 @@ export const morningBriefPlatformReceiptSchema = z.object({
     /** Absent unless `state` is `reported`. An explicit `"0"` is a known zero. */
     value: z.string().nullable(),
     unit: z.enum(["openrouter_credits"]).nullable(),
-    source: z.enum(["chat_completion_usage_cost"]).nullable(),
+    source: z
+      .enum(["chat_completion_usage_cost", "generation_total_cost"])
+      .nullable(),
   }),
   tokens: z.object({
     prompt: z.number().int().nonnegative().nullable(),

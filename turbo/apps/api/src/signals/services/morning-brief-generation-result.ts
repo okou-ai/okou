@@ -43,35 +43,50 @@ const proseSchema = (max: number) => {
     });
 };
 
+/**
+ * The declared contract, enforced strictly.
+ *
+ * Every object rejects unknown keys rather than stripping them: an answer that
+ * carries fields this pipeline never asked for is not the shape that was
+ * requested, and silently discarding them would accept output nobody reviewed.
+ */
 const modelResultSchema = z.discriminatedUnion("decision", [
-  z.object({
-    decision: z.literal("deliver"),
-    title: proseSchema(MAX_TITLE_LENGTH),
-    sections: z
-      .array(
-        z.object({
-          heading: proseSchema(MAX_HEADING_LENGTH),
-          items: z
-            .array(
-              z.object({
-                text: proseSchema(MAX_ITEM_LENGTH),
-                sourceIds: z
-                  .array(z.string().min(1).max(16))
-                  .min(1)
-                  .max(MAX_SOURCE_IDS),
-              }),
-            )
-            .min(1)
-            .max(MAX_ITEMS_PER_SECTION),
-        }),
-      )
-      .min(1)
-      .max(MAX_SECTIONS),
-  }),
-  z.object({
-    decision: z.literal("skip"),
-    reason: z.literal("nothing_actionable"),
-  }),
+  z
+    .object({
+      decision: z.literal("deliver"),
+      title: proseSchema(MAX_TITLE_LENGTH),
+      sections: z
+        .array(
+          z
+            .object({
+              heading: proseSchema(MAX_HEADING_LENGTH),
+              items: z
+                .array(
+                  z
+                    .object({
+                      text: proseSchema(MAX_ITEM_LENGTH),
+                      sourceIds: z
+                        .array(z.string().min(1).max(16))
+                        .min(1)
+                        .max(MAX_SOURCE_IDS),
+                    })
+                    .strict(),
+                )
+                .min(1)
+                .max(MAX_ITEMS_PER_SECTION),
+            })
+            .strict(),
+        )
+        .min(1)
+        .max(MAX_SECTIONS),
+    })
+    .strict(),
+  z
+    .object({
+      decision: z.literal("skip"),
+      reason: z.literal("nothing_actionable"),
+    })
+    .strict(),
 ]);
 
 type AcceptedGenerationResult =

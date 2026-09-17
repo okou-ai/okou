@@ -11,6 +11,7 @@ import {
 import { and, eq, gt, lte } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
+import { nowDate } from "../../lib/time";
 import type { Db, ReadonlyDb } from "../external/db";
 import {
   lockCollectionOwner,
@@ -98,7 +99,7 @@ export interface MorningBriefGenerationAdmission {
   readonly inputItems: number;
   readonly includedItems: number;
   readonly inputReduced: boolean;
-  readonly sourceCoverage: string;
+  readonly sourceCoverage: (typeof morningBriefGenerations.$inferInsert)["sourceCoverage"];
   readonly reservedAt: Date;
   readonly reservationExpiresAt: Date;
   readonly expiresAt: Date;
@@ -231,20 +232,51 @@ interface AcceptedResultValues {
 }
 
 /**
+ * Take this attempt's slot and read the clock only once it is really held.
+ *
+ * Both guarded writes below wait twice: once for the owner lock, and once for
+ * the slot row itself. A clock sampled before those waits can be arbitrarily
+ * stale by the time the write lands, which would let a reservation that expired
+ * *during* the wait still accept content. Sampling here — after every relevant
+ * wait and on every attempt — makes the deadline comparison describe the
+ * instant the mutation is actually admitted.
+ */
+async function holdGenerationSlot(
+  tx: Tx,
+  fence: MorningBriefGenerationFence,
+): Promise<{ readonly at: Date } | null> {
+  if (!(await lockCollectionOwner(tx, fence.key.owner))) {
+    return null;
+  }
+  const [locked] = await tx
+    .select({ attemptId: morningBriefGenerations.attemptId })
+    .from(morningBriefGenerations)
+    .where(generationKey(fence.key))
+    .for("update")
+    .limit(1);
+  if (!locked) {
+    return null;
+  }
+  return { at: nowDate() };
+}
+
+/**
  * Accept one validated result into the occurrence's single result slot.
  *
  * Content is accepted only while this attempt still holds an unexpired
- * reservation under an unchanged membership generation. Equality with the
- * reservation deadline is already expired, so a result that arrived too late is
- * not stored — the caller records the honest non-accepting outcome instead.
+ * reservation under an unchanged membership generation, measured against the
+ * clock sampled after the slot was actually locked. Equality with the
+ * reservation deadline is already expired, so a result that became late while
+ * persistence waited is not stored — the caller records the honest
+ * non-accepting outcome instead.
  */
 export async function acceptMorningBriefGenerationResult(
   tx: Tx,
   fence: MorningBriefGenerationFence,
   result: AcceptedResultValues,
-  at: Date,
 ): Promise<MorningBriefGenerationWriteResult> {
-  if (!(await lockCollectionOwner(tx, fence.key.owner))) {
+  const held = await holdGenerationSlot(tx, fence);
+  if (!held) {
     return { kind: "not-owned" };
   }
   const [written] = await tx
@@ -257,13 +289,13 @@ export async function acceptMorningBriefGenerationResult(
       resultMarkdown: result.markdown,
       resultBytes: result.bytes,
       failureReason: null,
-      finishedAt: at,
-      updatedAt: at,
+      finishedAt: held.at,
+      updatedAt: held.at,
     })
     .where(
       and(
         fenceCondition(fence),
-        gt(morningBriefGenerations.reservationExpiresAt, at),
+        gt(morningBriefGenerations.reservationExpiresAt, held.at),
       ),
     )
     .returning();
@@ -293,9 +325,9 @@ export async function recordMorningBriefGenerationOutcome(
     >;
     readonly failureReason: MorningBriefGenerationFailureReason;
   },
-  at: Date,
 ): Promise<MorningBriefGenerationWriteResult> {
-  if (!(await lockCollectionOwner(tx, fence.key.owner))) {
+  const held = await holdGenerationSlot(tx, fence);
+  if (!held) {
     return { kind: "not-owned" };
   }
   const [written] = await tx
@@ -303,8 +335,8 @@ export async function recordMorningBriefGenerationOutcome(
     .set({
       state: outcome.state,
       failureReason: outcome.failureReason,
-      finishedAt: at,
-      updatedAt: at,
+      finishedAt: held.at,
+      updatedAt: held.at,
     })
     .where(fenceCondition(fence))
     .returning();
@@ -324,8 +356,19 @@ export async function recordMorningBriefGenerationOutcome(
 export async function resolveStaleMorningBriefGeneration(
   tx: Tx,
   key: MorningBriefGenerationKey,
-  at: Date,
 ): Promise<MorningBriefGenerationRow | undefined> {
+  const [locked] = await tx
+    .select({ attemptId: morningBriefGenerations.attemptId })
+    .from(morningBriefGenerations)
+    .where(generationKey(key))
+    .for("update")
+    .limit(1);
+  if (!locked) {
+    return undefined;
+  }
+  // Sampled after the row is held, so a slot that expires during the wait is
+  // settled against the instant this statement really runs.
+  const at = nowDate();
   const [written] = await tx
     .update(morningBriefGenerations)
     .set({

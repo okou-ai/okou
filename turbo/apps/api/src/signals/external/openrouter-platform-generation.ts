@@ -42,15 +42,22 @@ import { OPENROUTER_CHAT_COMPLETIONS_URL } from "./openrouter";
  * for platform-managed requests — so it is deliberately never read here.
  */
 
+const OPENROUTER_GENERATION_URL = "https://openrouter.ai/api/v1/generation";
+
 /** Success bodies above this are unreadable rather than unbounded. */
 const PLATFORM_SUCCESS_RESPONSE_MAX_BYTES = 256 * 1024;
+
+/** The read-only cost lookup returns one small metadata record. */
+const PLATFORM_GENERATION_RESPONSE_MAX_BYTES = 64 * 1024;
 /** Error bodies are smaller still; only the status is retained from them. */
 const PLATFORM_ERROR_RESPONSE_MAX_BYTES = 64 * 1024;
 
 /** The only unit this adapter can report. Never Okou credits, never a currency. */
-export const OPENROUTER_COST_UNIT = "openrouter_credits";
+const OPENROUTER_COST_UNIT = "openrouter_credits";
 /** The exact field a reported cost was parsed from. */
-export const OPENROUTER_COST_SOURCE = "chat_completion_usage_cost";
+const OPENROUTER_COST_SOURCE = "chat_completion_usage_cost";
+/** The read-only lookup's own field, kept distinct from the inline one. */
+const OPENROUTER_GENERATION_COST_SOURCE = "generation_total_cost";
 
 export type PlatformGenerationFinishReason =
   | "stop"
@@ -68,13 +75,17 @@ export interface PlatformGenerationTokens {
   readonly total: number | null;
 }
 
+export type PlatformGenerationCostSource =
+  | typeof OPENROUTER_COST_SOURCE
+  | typeof OPENROUTER_GENERATION_COST_SOURCE;
+
 export type PlatformGenerationCost =
   | {
       readonly state: "reported";
       /** The provider's own value, serialized without conversion or rounding. */
       readonly value: string;
       readonly unit: typeof OPENROUTER_COST_UNIT;
-      readonly source: typeof OPENROUTER_COST_SOURCE;
+      readonly source: PlatformGenerationCostSource;
     }
   | { readonly state: "unavailable" };
 
@@ -87,6 +98,15 @@ export interface PlatformGenerationObservation {
   readonly content: string | null;
   /** True when the response reported a choice-level or top-level error. */
   readonly completionError: boolean;
+  /**
+   * True when the choice actually carries tool calls.
+   *
+   * Observed from the message rather than inferred from `finish_reason`: a
+   * provider can return `stop` alongside a populated tool-call field, and this
+   * pipeline sends no tools, so either signal alone is enough to refuse the
+   * output.
+   */
+  readonly toolCalls: boolean;
   readonly tokens: PlatformGenerationTokens;
   readonly cost: PlatformGenerationCost;
 }
@@ -113,13 +133,20 @@ function property(value: unknown, key: string): unknown {
   return value[key as keyof typeof value];
 }
 
-/** Provider counts are untrusted numbers; keep only bounded non-negative integers. */
+/**
+ * Provider counts are untrusted numbers; keep only bounded non-negative
+ * integers.
+ *
+ * A fractional or out-of-range count is *unavailable*, not something to round:
+ * truncating it would manufacture an exact-looking number the provider never
+ * reported.
+ */
 function tokenCount(value: unknown): number | null {
   return typeof value === "number" &&
-    Number.isFinite(value) &&
+    Number.isInteger(value) &&
     value >= 0 &&
     value <= Number.MAX_SAFE_INTEGER
-    ? Math.trunc(value)
+    ? value
     : null;
 }
 
@@ -193,8 +220,11 @@ function observe(data: unknown): PlatformGenerationObservation {
   const usage = property(data, "usage");
   const choices = property(data, "choices");
   const choice = Array.isArray(choices) ? (choices[0] as unknown) : undefined;
-  const content = property(property(choice, "message"), "content");
+  const message = property(choice, "message");
+  const content = property(message, "content");
+  const toolCalls = property(message, "tool_calls");
   return {
+    toolCalls: Array.isArray(toolCalls) && toolCalls.length > 0,
     generationId: boundedIdentifier(property(data, "id"), 256),
     returnedModel: boundedIdentifier(property(data, "model"), 256),
     finishReason: readFinishReason(property(choice, "finish_reason")),
@@ -266,6 +296,86 @@ export async function requestPlatformGeneration(
     return { kind: "response-unreadable" };
   }
   return { kind: "response", observation: observe(data) };
+}
+
+/**
+ * A bounded, read-only reconciliation of one already known generation id.
+ *
+ * Verified against the [official generation-metadata
+ * reference](https://openrouter.ai/docs/api/api-reference/generations/get-request-&-usage-metadata-for-a-generation)
+ * on 2026-09-17: `GET /api/v1/generation` takes a required `id` query
+ * parameter and answers `{ data: { id, is_byok, total_cost,
+ * upstream_inference_cost, native_tokens_* , ... } }`. `total_cost` is this
+ * endpoint's form of the amount charged to the OpenRouter account, which the
+ * usage-accounting page states in OpenRouter credits, and
+ * `upstream_inference_cost` is the separate upstream charge that page documents
+ * as BYOK-only. Those are different fields and only the first is ever read.
+ *
+ * Two guards keep an uncertain answer uncertain. A record whose `id` is not the
+ * one asked for is discarded rather than attributed, and a `is_byok: true`
+ * record is refused because a BYOK generation's charge is not this platform's
+ * spend. Everything else — a 404, a delay that exceeds the deadline, a
+ * transport failure, a malformed or missing amount — stays `unavailable`.
+ *
+ * This is reconciliation only. It sends no completion, cannot produce content,
+ * and can never be a reason to send the original request again.
+ */
+export async function lookupPlatformGenerationCost(
+  request: {
+    readonly apiKey: string;
+    readonly generationId: string;
+  },
+  signal: AbortSignal,
+): Promise<PlatformGenerationCost> {
+  const url = new URL(OPENROUTER_GENERATION_URL);
+  url.searchParams.set("id", request.generationId);
+  const responded = await settleIncludingAbort(
+    fetch(url, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${request.apiKey}` },
+      signal,
+    }),
+  );
+  if (!responded.ok || !responded.value.ok) {
+    if (responded.ok) {
+      await settleIncludingAbort(
+        readBoundedResponseText(
+          responded.value,
+          PLATFORM_GENERATION_RESPONSE_MAX_BYTES,
+        ),
+      );
+    }
+    return { state: "unavailable" };
+  }
+  const body = await settleIncludingAbort(
+    readBoundedResponseText(
+      responded.value,
+      PLATFORM_GENERATION_RESPONSE_MAX_BYTES,
+    ),
+  );
+  if (!body.ok || body.value.kind !== "text") {
+    return { state: "unavailable" };
+  }
+  const data = property(safeJsonParse(body.value.text), "data");
+  if (property(data, "id") !== request.generationId) {
+    // A record for a different generation says nothing about this one.
+    return { state: "unavailable" };
+  }
+  if (property(data, "is_byok") !== false) {
+    // A BYOK generation's upstream charge is not the platform's spend, and an
+    // absent flag is not evidence that it was platform-funded.
+    return { state: "unavailable" };
+  }
+  const total = property(data, "total_cost");
+  if (typeof total !== "number" || !Number.isFinite(total) || total < 0) {
+    return { state: "unavailable" };
+  }
+  return {
+    state: "reported",
+    value: String(total),
+    unit: OPENROUTER_COST_UNIT,
+    source: OPENROUTER_GENERATION_COST_SOURCE,
+  };
 }
 
 /** The token counts an outcome without a readable response can still record. */

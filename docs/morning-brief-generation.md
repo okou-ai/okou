@@ -80,17 +80,17 @@ a `preview` result that happens to share an owner and an anchor.
 
 ### States
 
-| State                        | Meaning                                                                                     |
-| ---------------------------- | ------------------------------------------------------------------------------------------- |
-| `reserved`                   | Committed **before** the request. Deliberately ambiguous; never a reason to send again.     |
-| `succeeded`                  | A validated deliver or model skip was accepted.                                             |
-| `output_rejected`            | The provider answered and was billed; the output failed validation.                         |
-| `provider_failed`            | The provider returned an error, or its response exceeded the response budget.               |
-| `not_invoked`                | A deterministic check stopped the request before any provider contact.                      |
-| `result_discarded`           | A result was observed, but this attempt no longer held the reservation.                     |
-| `invocation_outcome_unknown` | The request may have reached the provider and no outcome could be recorded.                 |
-| `skipped_empty`              | Every applicable read succeeded with zero candidates. **Zero model calls.**                 |
-| `skipped_incomplete`         | A bounded or partial read produced zero candidates. Zero model calls, and not an empty day. |
+| State                        | Meaning                                                                                        |
+| ---------------------------- | ---------------------------------------------------------------------------------------------- |
+| `reserved`                   | Committed **before** the request. Deliberately ambiguous; never a reason to send again.        |
+| `succeeded`                  | A validated deliver or model skip was accepted.                                                |
+| `output_rejected`            | The provider answered and was billed; the output failed validation.                            |
+| `provider_failed`            | The provider returned an error, or its response exceeded the response budget.                  |
+| `not_invoked`                | A deterministic check, or a lapsed authority, stopped the request before any provider contact. |
+| `result_discarded`           | A result was observed, but this attempt no longer held the reservation or the authority.       |
+| `invocation_outcome_unknown` | The request may have reached the provider and no outcome could be recorded.                    |
+| `skipped_empty`              | Every applicable read succeeded with zero candidates. **Zero model calls.**                    |
+| `skipped_incomplete`         | A bounded or partial read produced zero candidates. Zero model calls, and not an empty day.    |
 
 `not_invoked` is failure-before-contact and is deliberately distinct from
 `invocation_outcome_unknown`. Neither is a skip.
@@ -110,6 +110,42 @@ result**, not exactly-once provider inference. The current request may boundedly
 retry persistence of the **same already observed** receipt and result; once that
 in-memory result is gone it is not replayable, and the input digest does not
 reproduce it.
+
+### Live authority at both boundaries
+
+Owning the slot is not the same as being allowed to act for the owner. The
+occurrence row is the durable record of the authority a collection was admitted
+under, so the canonical resolution — implementation switch, canonical
+installed-and-enabled brief, member timezone, installation Agent, fresh
+exact-member Clerk membership and native Slack binding — is re-run and compared
+against that row field by field:
+
+- **Before any provider contact.** A brief disabled, an Agent deleted or
+  transferred, a membership removed and rejoined, or a Slack account rebound
+  between the reservation commit and the request produces `not_invoked` and
+  sends nothing.
+- **Before any of the answer becomes owner content.** The same check runs again
+  after the response. A lapsed authority yields `result_discarded`; the incurred
+  charge is still recorded, and no owner row is recreated to hold a result.
+- **Before an existing result is released.** Reading a stored result hands back
+  source-derived content, so it needs the same live authority. A different
+  current binding is a different authority and is refused rather than served the
+  previous binding's work. Settling a lapsed reservation is exempt: it records
+  an operational fact and releases nothing.
+
+There is no second adoption algorithm and no always-allow path: this is the
+collection contract's own reader with the Slack credential withheld. It
+serializes local acceptance only — a request already in flight to the provider
+cannot be recalled, and this never claims otherwise.
+
+### The admission clock
+
+Every guarded write waits twice, once for the owner lock and once for the slot
+row. The clock is therefore sampled **after** those waits and on every
+persistence attempt, so the deadline comparison describes the instant the
+mutation is actually admitted rather than the instant the response arrived. A
+response observed before expiry that waits behind a lock until after it is
+refused, not accepted. Equality with the deadline is expired at both boundaries.
 
 ### Finite phase ownership
 
@@ -182,10 +218,20 @@ resolved from the collected source map. A Slack citation resolves to its
 channel, because the bundle carries channel URLs rather than per-message
 permalinks.
 
+Every object rejects unknown keys rather than stripping them: an answer carrying
+fields this pipeline never asked for is not the requested shape.
+
 Failures are failures, never skips, and are never repaired by a second request:
 a truncated finish reason, a tool call, malformed JSON, a shape violation, a
 citation this request never supplied, an empty deliver and an oversized result
-each produce a named `failure_reason` and no accepted result.
+each produce a named `failure_reason` and no accepted result. **Tool calls are
+detected from the message itself**, not from `finish_reason`: this pipeline
+sends no tools, so a populated tool-call field is unexpected output even when
+the provider labelled the completion `stop`.
+
+Provider token counts are accepted only as non-negative integers. A fractional
+or out-of-range count is _unavailable_, never rounded into an exact-looking
+number the provider did not report.
 
 **A model-written link is invalid output.** The instructions say never to write
 one, so a link-shaped string is rejected rather than sanitized into a published
@@ -234,6 +280,32 @@ The receipt therefore stores `cost_source = chat_completion_usage_cost` and
 `cost_unit = openrouter_credits`. OpenRouter credits are **not** Okou user
 credits and are not converted into a currency.
 
+### Cost reconciliation
+
+When a completion response carries a generation id but no usable amount, one
+bounded read-only `GET /api/v1/generation?id=…` is attempted, once, with a
+5-second deadline. Verified against the [official generation-metadata
+reference](https://openrouter.ai/docs/api/api-reference/generations/get-request-&-usage-metadata-for-a-generation)
+(fetched 2026-09-17): the `id` query parameter is required and the response is
+`{ data: { id, is_byok, total_cost, upstream_inference_cost, native_tokens_*,
+… } }`. Only `data.total_cost` is read, recorded with
+`cost_source = generation_total_cost`.
+
+Two guards keep an uncertain answer uncertain: a record whose `id` is not the
+one asked for is discarded rather than attributed, and `is_byok: true` is
+refused because a BYOK generation's charge is not this platform's spend. A 404,
+a delayed answer past the deadline, a transport failure and a malformed amount
+all leave the cost exactly as unknown as it already was. This path sends no
+completion and can never be a reason to send the original request again.
+
+**Remaining evidence gap.** The generation reference renders its per-field
+descriptions behind a collapsed control, so that page does not itself restate
+`total_cost`'s unit. It is recorded as OpenRouter credits because the
+usage-accounting page states the account charge in credits, the two pages
+describe one accounting system, and the reference's own example shows
+`total_cost` equal to `usage` and distinct from `upstream_inference_cost`. No
+currency conversion is performed or implied.
+
 ### Cost states
 
 | State                | Meaning                                                                       |
@@ -278,6 +350,20 @@ When every persistence attempt fails, the slot stays `reserved`, the response
 reports that honestly with `persistence_failed`, and a later invocation resolves
 it to `invocation_outcome_unknown`. No second request is ever made.
 
+## Stored values are validated, not defaulted
+
+`execution_purpose`, `state`, `language_source`, `source_coverage`,
+`failure_reason`, the receipt outcome, the cost state and the cost source are
+each constrained by a database `CHECK`, and a delivered result must carry its
+title, its Markdown and its real UTF-8 byte size together. A TypeScript union is
+a claim about writers this process controls; the constraint is what the stored
+text is actually held to.
+
+Readers match that. An unrecognized coverage or an incomplete stored result
+fails loudly instead of being normalized — reporting a bounded read as a healthy
+empty day, or a UTF-16 string length as a byte count, would answer a different
+question than the one that was accepted.
+
 ## Ownership lifetime, retention and cleanup
 
 The generation row's durable parent is the collection occurrence, which is
@@ -307,6 +393,16 @@ Native occurrence, generation and receipt tables are not exposed by MaskDB, so
 no production row census is claimed for them. The Morning Brief installation
 census in the parent epic describes installations, not generations; the new
 tables start empty.
+
+## What direct delivery consumes
+
+Delivery reads one accepted result by owner, occurrence slot and purpose. The
+stable parts of that reference are the slot key
+`(org_id, user_id, scheduled_for, collection_kind, collection_version)`, the
+`execution_purpose` filter, the `succeeded` state with its `deliver`/`skip`
+decision, and the bounded preview `expires_at` lifetime. A `preview` result is
+not a production candidate and is refused by a consumer asking for another
+purpose. Any change to that reference is recorded here and on the issue.
 
 ## Gates that remain
 
