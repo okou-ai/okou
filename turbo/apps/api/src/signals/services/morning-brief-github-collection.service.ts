@@ -171,30 +171,72 @@ function safeSegment(segment: string): boolean {
 }
 
 /**
- * Read a repository out of a provider-supplied API URL without trusting it.
+ * The path segments a provider URL literally contains, or `null`.
  *
- * The URL is never fetched. It is parsed, required to be exactly the expected
- * HTTPS API origin with no userinfo, port, query or fragment, and reduced to
- * validated segments that this module rebuilds its own paths from.
+ * A general URL parser normalizes before anything can inspect it: it
+ * percent-decodes and then resolves dot segments, so
+ * `/repos/acme/old/%2e%2e/api/pulls/7` becomes `/repos/acme/api/pulls/7` and a
+ * check against the parsed pathname finds nothing wrong with a repository the
+ * provider never named. The raw text is therefore read first, and any percent
+ * escape, backslash or `.`/`..` segment is refused before a parser can
+ * normalize the evidence away.
  */
-function repositoryFromApiUrl(value: string): RepositoryRef | null {
-  const url = safeUrlParse(value);
-  if (
-    !url ||
-    url.protocol !== "https:" ||
-    url.host !== "api.github.com" ||
-    url.username !== "" ||
-    url.password !== "" ||
-    url.hash !== "" ||
-    url.search !== "" ||
-    url.pathname.includes("%")
-  ) {
+function literalPathSegments(value: string): readonly string[] | null {
+  const scheme = "https://";
+  if (!value.startsWith(scheme)) {
     return null;
   }
-  const segments = url.pathname.split("/").filter((segment) => {
+  const afterScheme = value.slice(scheme.length);
+  const pathStart = afterScheme.search(/[/?#]/);
+  if (pathStart < 0 || afterScheme[pathStart] !== "/") {
+    return null;
+  }
+  const rawPath = afterScheme.slice(pathStart).split(/[?#]/)[0] ?? "";
+  if (rawPath.includes("%") || rawPath.includes("\\")) {
+    return null;
+  }
+  const segments = rawPath.split("/").filter((segment) => {
     return segment.length > 0;
   });
-  if (segments.length !== 3 || segments[0] !== "repos") {
+  return segments.some((segment) => {
+    return segment === "." || segment === "..";
+  })
+    ? null
+    : segments;
+}
+
+/**
+ * Exactly the expected HTTPS API origin, with nothing a credential could ride
+ * on: no userinfo, no other host or port, no query and no fragment.
+ */
+function isGithubApiOrigin(value: string): boolean {
+  const url = safeUrlParse(value);
+  return (
+    url !== undefined &&
+    url.protocol === "https:" &&
+    url.host === "api.github.com" &&
+    url.username === "" &&
+    url.password === "" &&
+    url.hash === "" &&
+    url.search === ""
+  );
+}
+
+/** The literal segments of a provider URL that is also on the API origin. */
+function apiUrlSegments(value: string): readonly string[] | null {
+  return isGithubApiOrigin(value) ? literalPathSegments(value) : null;
+}
+
+/**
+ * Read a repository out of a provider-supplied API URL without trusting it.
+ *
+ * The URL is never fetched. It is required to be exactly the expected HTTPS API
+ * origin and to spell its path literally, then reduced to validated segments
+ * that this module rebuilds its own paths from.
+ */
+function repositoryFromApiUrl(value: string): RepositoryRef | null {
+  const segments = apiUrlSegments(value);
+  if (segments === null || segments.length !== 3 || segments[0] !== "repos") {
     return null;
   }
   const [, owner, repo] = segments;
@@ -208,23 +250,8 @@ function repositoryFromApiUrl(value: string): RepositoryRef | null {
 
 /** The same validation for a notification subject, which also names an item. */
 function subjectFromApiUrl(value: string): SubjectRef | null {
-  const url = safeUrlParse(value);
-  if (
-    !url ||
-    url.protocol !== "https:" ||
-    url.host !== "api.github.com" ||
-    url.username !== "" ||
-    url.password !== "" ||
-    url.hash !== "" ||
-    url.search !== "" ||
-    url.pathname.includes("%")
-  ) {
-    return null;
-  }
-  const segments = url.pathname.split("/").filter((segment) => {
-    return segment.length > 0;
-  });
-  if (segments.length !== 5 || segments[0] !== "repos") {
+  const segments = apiUrlSegments(value);
+  if (segments === null || segments.length !== 5 || segments[0] !== "repos") {
     return null;
   }
   const [, owner, repo, collection, rawNumber] = segments;
@@ -278,7 +305,47 @@ function repositoryName(ref: RepositoryRef): string {
 }
 
 function boundedText(value: string, max: number): string {
-  return value.length <= max ? value : `${value.slice(0, max - 1)}…`;
+  if (value.length <= max) {
+    return value;
+  }
+  const head = value.slice(0, max - 1);
+  // Never hand the summarization step half of an astral character: cutting
+  // between a surrogate pair leaves a lone code unit that is not text at all.
+  const kept = /[\uD800-\uDBFF]$/.test(head) ? head.slice(0, -1) : head;
+  return `${kept}…`;
+}
+
+/**
+ * The model-visible text this bundle retains for one item.
+ *
+ * The 40,000-character cap has to charge every provider-influenced string that
+ * reaches the summarization step, not only the title and excerpt. Fifty items
+ * carrying a 140-character repository name and a 39-character actor are already
+ * past the cap before a single title is counted, so a projection that ignores
+ * them reports a bound it is not enforcing. Fixed enum-like fields, numbers and
+ * timestamps are bounded by the item cap instead and are deliberately not
+ * charged here.
+ */
+function itemTextCharacters(item: MorningBriefGithubItem): number {
+  const reasons = item.reasons.reduce((total, reason) => {
+    return total + (reason.notificationReason?.length ?? 0);
+  }, 0);
+  const checks =
+    item.checks === undefined
+      ? 0
+      : item.checks.headSha.length +
+        item.checks.failingNames.reduce((total, name) => {
+          return total + name.length;
+        }, 0);
+  return (
+    item.repository.length +
+    item.title.length +
+    (item.excerpt?.length ?? 0) +
+    (item.actor?.length ?? 0) +
+    (item.url?.length ?? 0) +
+    reasons +
+    checks
+  );
 }
 
 function isoOrNull(value: string): string | null {
@@ -387,34 +454,79 @@ interface DraftItem {
   assigned: boolean;
 }
 
+/** The bundle entry one draft becomes, before the text cap decides on it. */
+function itemFromDraft(draft: DraftItem): MorningBriefGithubItem {
+  return {
+    repository: repositoryName(draft.ref),
+    number: draft.ref.number,
+    kind: draft.ref.kind,
+    title: draft.title.length > 0 ? draft.title : itemKey(draft.ref),
+    ...(draft.excerpt === undefined ? {} : { excerpt: draft.excerpt }),
+    state: draft.state,
+    ...(draft.draft === undefined ? {} : { draft: draft.draft }),
+    updatedAt: draft.updatedAt,
+    ...(draft.actor === undefined ? {} : { actor: draft.actor }),
+    reasons: draft.reasons,
+    url: displayUrl(draft.ref),
+    ...(draft.checks === undefined ? {} : { checks: draft.checks }),
+  };
+}
+
+/**
+ * What one refused read means to the bundle beyond its own branch.
+ *
+ * `throttled` is the fact that GitHub refused because a rate limit was reached.
+ * It is deliberately independent of `retryAfterMs`: `Retry-After` is an
+ * optional provider hint, and its absence cannot turn a rate limit into a
+ * permission refusal or a transport failure.
+ */
+interface ReadFailure {
+  readonly retryAfterMs?: number;
+  readonly revoked: boolean;
+  readonly throttled: boolean;
+  /** Present when the provider answered, so its allowlisted facts are kept. */
+  readonly meta?: MorningBriefResponseMetadata;
+}
+
+/** GitHub refuses a read for a reached limit in two different shapes. */
+function isProviderThrottling(meta: MorningBriefResponseMetadata): boolean {
+  // The secondary limit arrives as `403` with `Retry-After`; the primary limit
+  // arrives as `403` with an exhausted allowance and usually no hint at all.
+  return meta.retryAfterMs !== null || meta.rateLimitRemaining === 0;
+}
+
 /**
  * Turn a read refusal into the branch's own coverage record.
  *
  * Every outcome other than a parsed payload is recorded. A denial, a cap, a
- * malformed body and a rate limit are all distinguishable, and none of them
- * can leave the branch looking complete.
+ * malformed body, a transport failure and a rate limit are all distinguishable,
+ * and none of them can leave the branch looking complete.
  */
 function recordFailure(
   coverage: BranchCoverage,
   result: Exclude<MorningBriefReadOutcome<unknown>, { readonly kind: "ok" }>,
-): { readonly retryAfterMs?: number; readonly revoked: boolean } {
+): ReadFailure {
   if (result.kind === "denied") {
     // Both scopes are endpoint-local and leave this branch's siblings intact.
-    // A provider `403` carrying `Retry-After` is GitHub's secondary rate limit,
-    // not a lost credential, so it is recorded as throttling rather than as a
-    // permission refusal.
+    // A provider `403` that is GitHub's own rate limiter is throttling, not a
+    // lost credential and not a permission refusal.
     const retryAfterMs = result.meta.retryAfterMs;
-    if (result.scope === "provider" && retryAfterMs !== null) {
+    if (result.scope === "provider" && isProviderThrottling(result.meta)) {
       coverage.limit("rate-limited");
-      return { retryAfterMs, revoked: false };
+      return {
+        ...(retryAfterMs === null ? {} : { retryAfterMs }),
+        revoked: false,
+        throttled: true,
+        meta: result.meta,
+      };
     }
     coverage.deny(result.scope);
-    return { revoked: false };
+    return { revoked: false, throttled: false, meta: result.meta };
   }
   if (result.kind === "not-found") {
     // A deleted or moved item, which is not a permission refusal.
     coverage.limit("missing-item");
-    return { revoked: false };
+    return { revoked: false, throttled: false };
   }
   if (result.kind === "rate-limited") {
     coverage.fail("rate-limited");
@@ -423,6 +535,8 @@ function recordFailure(
         ? {}
         : { retryAfterMs: result.retryAfterMs }),
       revoked: false,
+      throttled: true,
+      meta: result.meta,
     };
   }
   if (result.kind === "budget-exhausted") {
@@ -433,18 +547,22 @@ function recordFailure(
           ? "response-bytes"
           : "requests",
     );
-    return { revoked: false };
+    return { revoked: false, throttled: false };
   }
   if (result.kind === "revoked") {
     // The shared reader latched a terminal loss of authority. Nothing this
     // attempt collected may be released.
     coverage.fail("denied-endpoint");
-    return { revoked: true };
+    return { revoked: true, throttled: false };
   }
   coverage.fail(
-    result.kind === "too-large" ? "oversized-response" : "malformed-response",
+    result.kind === "too-large"
+      ? "oversized-response"
+      : result.kind === "malformed"
+        ? "malformed-response"
+        : "provider-failed",
   );
-  return { revoked: false };
+  return { revoked: false, throttled: false };
 }
 
 /** The running check tally for one pull request head. */
@@ -510,8 +628,19 @@ class GithubPrioritiesCollector {
   private rateLimitResetAt: string | undefined;
   private requests = 0;
   private revoked = false;
+  private throttled = false;
   private login: string | null = null;
-  private userFailed = false;
+  /**
+   * How a refused `GET /user` classifies the whole source.
+   *
+   * The identity read happens before any branch exists, so the three provider
+   * branches are all skipped afterwards and cannot carry its cause.
+   */
+  private userOutcome:
+    | "rate_limited"
+    | "permission_denied"
+    | "provider_failed"
+    | null = null;
 
   constructor(
     private readonly reader: MorningBriefConnectorReader,
@@ -531,16 +660,19 @@ class GithubPrioritiesCollector {
     this.checks = new BranchCoverage({ observedAt });
   }
 
-  private note(outcome: {
-    readonly retryAfterMs?: number;
-    readonly revoked: boolean;
-  }): boolean {
+  private note(outcome: ReadFailure): boolean {
     if (outcome.retryAfterMs !== undefined) {
       this.retryAfterMs = Math.max(
         this.retryAfterMs ?? 0,
         outcome.retryAfterMs,
       );
     }
+    if (outcome.meta !== undefined) {
+      // A refusal still carries the provider's own allowlisted rate-limit
+      // facts, and an exhausted allowance is exactly when they matter.
+      this.observeRateLimit(outcome.meta);
+    }
+    this.throttled ||= outcome.throttled;
     this.revoked ||= outcome.revoked;
     return outcome.revoked;
   }
@@ -591,21 +723,41 @@ class GithubPrioritiesCollector {
       schema: githubUserSchema,
     });
     if (result.kind !== "ok") {
-      this.userFailed = true;
       const coverage = new BranchCoverage({});
-      this.note(recordFailure(coverage, result));
+      const failure = recordFailure(coverage, result);
+      this.note(failure);
       for (const limit of coverage.view().limits) {
         this.limits.add(limit);
       }
       if (coverage.denied) {
         this.limits.add("denied-endpoint");
       }
+      // Throttling is throttling with or without a `Retry-After` hint, and a
+      // refused identity read is a refusal rather than a provider failure.
+      this.userOutcome = failure.throttled
+        ? "rate_limited"
+        : coverage.denied
+          ? "permission_denied"
+          : "provider_failed";
       return;
     }
+    this.observeRateLimit(result.meta);
     this.login = result.value.login;
   }
 
-  private draft(ref: SubjectRef, updatedAt: string): DraftItem {
+  /**
+   * The merged draft for one identity, or `null` when the item cap dropped it.
+   *
+   * The cap is charged to the branch that found the identity as well as to the
+   * bundle: a dropped assignment is a known omission, so neither the branch nor
+   * the bundle may still describe itself as a complete read, and the branch
+   * must not count what it lost.
+   */
+  private draft(
+    ref: SubjectRef,
+    updatedAt: string,
+    coverage: BranchCoverage,
+  ): DraftItem | null {
     const key = itemKey(ref);
     const existing = this.drafts.get(key);
     if (existing) {
@@ -613,16 +765,8 @@ class GithubPrioritiesCollector {
     }
     if (this.drafts.size >= MORNING_BRIEF_GITHUB_BUDGET.maxItems) {
       this.limits.add("items");
-      const overflow: DraftItem = {
-        ref,
-        title: "",
-        state: "unknown",
-        updatedAt,
-        reasons: [],
-        reviewRequested: false,
-        assigned: false,
-      };
-      return overflow;
+      coverage.limit("items");
+      return null;
     }
     const created: DraftItem = {
       ref,
@@ -710,7 +854,10 @@ class GithubPrioritiesCollector {
           this.notifications.limit("malformed-response");
           continue;
         }
-        const draft = this.draft(ref, updatedAt);
+        const draft = this.draft(ref, updatedAt, this.notifications);
+        if (draft === null) {
+          continue;
+        }
         draft.title ||= boundedText(notification.subject.title, 200);
         if (new Date(draft.updatedAt).getTime() < updatedMs) {
           draft.updatedAt = updatedAt;
@@ -749,6 +896,7 @@ class GithubPrioritiesCollector {
     coverage: BranchCoverage,
     items: readonly z.infer<typeof searchItemSchema>[],
     branch: "assigned" | "review-requested",
+    observed: Set<string>,
   ): number {
     let accepted = 0;
     for (const item of items) {
@@ -763,7 +911,17 @@ class GithubPrioritiesCollector {
           ? "issue"
           : "pull-request";
       const ref: SubjectRef = { ...repository, kind, number: item.number };
-      const draft = this.draft(ref, updatedAt);
+      const key = itemKey(ref);
+      if (observed.has(key)) {
+        // The result set shifted between pages and re-served a row this branch
+        // already holds. Reading it twice is not coverage of two results.
+        continue;
+      }
+      observed.add(key);
+      const draft = this.draft(ref, updatedAt, coverage);
+      if (draft === null) {
+        continue;
+      }
       draft.title = boundedText(item.title, 200);
       draft.state = itemState(item.state);
       if (typeof item.draft === "boolean") {
@@ -805,6 +963,12 @@ class GithubPrioritiesCollector {
     query: string,
     branch: "assigned" | "review-requested",
   ): Promise<void> {
+    /**
+     * The distinct result identities this branch actually saw, including any
+     * the item cap later dropped. Requested page capacity is not evidence: a
+     * page can be short, empty, or repeat a row an earlier page returned.
+     */
+    const observed = new Set<string>();
     for (
       let page = 1;
       page <= MORNING_BRIEF_GITHUB_BUDGET.searchPages;
@@ -838,14 +1002,15 @@ class GithubPrioritiesCollector {
         coverage,
         result.value.items,
         branch,
+        observed,
       );
       coverage.counted(accepted);
       this.observeRateLimit(result.meta);
-      const readSoFar = page * MORNING_BRIEF_GITHUB_BUDGET.searchPerPage;
       if (!result.meta.hasNextPage) {
-        // Search reports its own total independently of `Link`, so an
-        // unconsumed remainder is still a gap even without a next page.
-        if (result.value.total_count > readSoFar) {
+        // Without a next page this branch is claiming it read the whole result
+        // set, so any disagreement between the reported total and what it
+        // actually observed is a gap — in either direction.
+        if (result.value.total_count !== observed.size) {
           coverage.limit("search-total-exceeded");
         }
         return;
@@ -853,7 +1018,7 @@ class GithubPrioritiesCollector {
       if (page === MORNING_BRIEF_GITHUB_BUDGET.searchPages) {
         coverage.limit("search-pages");
         coverage.limit("unread-pages");
-        if (result.value.total_count > readSoFar) {
+        if (result.value.total_count > observed.size) {
           coverage.limit("search-total-exceeded");
         }
       }
@@ -893,10 +1058,31 @@ class GithubPrioritiesCollector {
     return selected;
   }
 
+  /**
+   * Record that a check surface was read only in part.
+   *
+   * A provider-declared next page is a page this single-page budget will not
+   * read, and it stays a gap even when `total_count` claims the returned array
+   * is everything: conflicting pagination facts resolve to an explicit gap,
+   * never to green.
+   */
+  private incompleteChecks(
+    tally: CheckTally,
+    limit: "check-runs" | "commit-status",
+    unread: boolean,
+  ): void {
+    if (!unread) {
+      return;
+    }
+    tally.incomplete = true;
+    this.checks.limit(limit);
+  }
+
   /** Fold one bounded check-runs page into the running tally. */
   private tallyCheckRuns(
     tally: CheckTally,
     page: z.infer<typeof checkRunsSchema>,
+    meta: MorningBriefResponseMetadata,
   ): void {
     this.checks.page();
     for (const run of page.check_runs) {
@@ -914,16 +1100,18 @@ class GithubPrioritiesCollector {
       }
       recordFailingName(tally, run.name);
     }
-    if (page.total_count > page.check_runs.length) {
-      tally.incomplete = true;
-      this.checks.limit("check-runs");
-    }
+    this.incompleteChecks(
+      tally,
+      "check-runs",
+      meta.hasNextPage || page.total_count > page.check_runs.length,
+    );
   }
 
   /** Fold one bounded combined-status page into the running tally. */
   private tallyCommitStatus(
     tally: CheckTally,
     page: z.infer<typeof commitStatusSchema>,
+    meta: MorningBriefResponseMetadata,
   ): void {
     this.checks.page();
     for (const context of page.statuses) {
@@ -937,10 +1125,11 @@ class GithubPrioritiesCollector {
       }
       recordFailingName(tally, context.context);
     }
-    if (page.total_count > page.statuses.length) {
-      tally.incomplete = true;
-      this.checks.limit("commit-status");
-    }
+    this.incompleteChecks(
+      tally,
+      "commit-status",
+      meta.hasNextPage || page.total_count > page.statuses.length,
+    );
   }
 
   /** Detail, check runs and combined status for one pull request head. */
@@ -960,6 +1149,7 @@ class GithubPrioritiesCollector {
       return;
     }
     this.checks.page();
+    this.observeRateLimit(detail.meta);
     draft.state = itemState(detail.value.state);
     if (typeof detail.value.draft === "boolean") {
       draft.draft = detail.value.draft;
@@ -982,7 +1172,8 @@ class GithubPrioritiesCollector {
       schema: checkRunsSchema,
     });
     if (runs.kind === "ok") {
-      this.tallyCheckRuns(tally, runs.value);
+      this.observeRateLimit(runs.meta);
+      this.tallyCheckRuns(tally, runs.value, runs.meta);
     } else {
       tally.incomplete = true;
       this.checks.limit("check-runs");
@@ -997,7 +1188,8 @@ class GithubPrioritiesCollector {
       schema: commitStatusSchema,
     });
     if (status.kind === "ok") {
-      this.tallyCommitStatus(tally, status.value);
+      this.observeRateLimit(status.meta);
+      this.tallyCommitStatus(tally, status.value, status.meta);
     } else {
       tally.incomplete = true;
       this.checks.limit("commit-status");
@@ -1027,18 +1219,28 @@ class GithubPrioritiesCollector {
     };
   }
 
+  /**
+   * The terminal classification, read from the gaps this attempt recorded.
+   *
+   * `this.limits` is the single source of coverage truth by the time this runs:
+   * every value in it is an item the collector knows it did not read, whether a
+   * branch or the bundle itself recorded it, so none of them may be reported as
+   * a complete or healthy-empty read.
+   */
   private outcome(itemCount: number): MorningBriefGithubOutcome {
     if (this.signal.aborted || this.revoked) {
       return "cancelled";
     }
+    if (this.userOutcome !== null) {
+      return this.userOutcome;
+    }
     const branches = [this.notifications, this.assigned, this.reviewRequested];
     if (
-      this.userFailed ||
       branches.every((branch) => {
         return branch.denied || branch.failed;
       })
     ) {
-      if (this.retryAfterMs !== undefined) {
+      if (this.throttled) {
         return "rate_limited";
       }
       if (
@@ -1051,9 +1253,11 @@ class GithubPrioritiesCollector {
       return "provider_failed";
     }
     const complete =
+      this.limits.size === 0 &&
       branches.every((branch) => {
         return branch.healthy;
-      }) && this.checks.healthyOrEmpty;
+      }) &&
+      this.checks.healthyOrEmpty;
     if (!complete) {
       return "partial";
     }
@@ -1075,27 +1279,14 @@ class GithubPrioritiesCollector {
     const items: MorningBriefGithubItem[] = [];
     let characters = 0;
     for (const draft of ordered) {
-      const title = draft.title.length > 0 ? draft.title : itemKey(draft.ref);
-      const cost = title.length + (draft.excerpt?.length ?? 0);
+      const item = itemFromDraft(draft);
+      const cost = itemTextCharacters(item);
       if (characters + cost > MORNING_BRIEF_GITHUB_BUDGET.maxTextCharacters) {
         this.limits.add("text-characters");
         break;
       }
       characters += cost;
-      items.push({
-        repository: repositoryName(draft.ref),
-        number: draft.ref.number,
-        kind: draft.ref.kind,
-        title,
-        ...(draft.excerpt === undefined ? {} : { excerpt: draft.excerpt }),
-        state: draft.state,
-        ...(draft.draft === undefined ? {} : { draft: draft.draft }),
-        updatedAt: draft.updatedAt,
-        ...(draft.actor === undefined ? {} : { actor: draft.actor }),
-        reasons: draft.reasons,
-        url: displayUrl(draft.ref),
-        ...(draft.checks === undefined ? {} : { checks: draft.checks }),
-      });
+      items.push(item);
     }
     return items;
   }
@@ -1142,20 +1333,24 @@ class GithubPrioritiesCollector {
     }
 
     const items = this.items();
-    const outcome = this.outcome(items.length);
     const branches = {
       notifications: this.notifications.view(),
       assigned: this.assigned.view(),
       reviewRequested: this.reviewRequested.view(),
       checks: this.checks.view(),
     };
+    // Every branch gap joins the bundle's own before the outcome is decided, so
+    // one set answers whether anything at all was left unread.
     for (const branch of Object.values(branches)) {
       for (const limit of branch.limits) {
         this.limits.add(limit);
       }
     }
+    const outcome = this.outcome(items.length);
+    // Measured over the items actually emitted, so the counter can never
+    // describe a projection the bundle does not carry.
     const textCharacters = items.reduce((total, item) => {
-      return total + item.title.length + (item.excerpt?.length ?? 0);
+      return total + itemTextCharacters(item);
     }, 0);
     return {
       source: "github",

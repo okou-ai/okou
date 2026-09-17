@@ -154,6 +154,7 @@ import { morningBriefCalendarCollectionPreviewRoutes } from "./routes/morning-br
 import { morningBriefCollectionPreviewRoutes } from "./routes/morning-brief-collection-preview";
 import { morningBriefGenerationPreviewRoutes } from "./routes/morning-brief-generation-preview";
 import { morningBriefGmailCollectionPreviewRoutes } from "./routes/morning-brief-gmail-collection-preview";
+import { morningBriefCompositionPreviewRoutes } from "./routes/morning-brief-composition-preview";
 import { morningBriefPreferenceRoutes } from "./routes/morning-brief-preference";
 import { workflowAutomationsRoutes } from "./routes/workflow-automations";
 import { integrationsGithubRoutes } from "./routes/integrations-github";
@@ -384,6 +385,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...morningBriefGmailCollectionPreviewRoutes,
   ...morningBriefGenerationPreviewRoutes,
   ...morningBriefChatCollectionPreviewRoutes,
+  ...morningBriefCompositionPreviewRoutes,
   ...emailSubscriptionRoutes,
   ...workflowsRoutes,
   ...officialWorkflowRoutes,

@@ -8,10 +8,12 @@ import {
   morningBriefGenerations,
   morningBriefPlatformGenerationReceipts,
 } from "@okouai/db/schema/morning-brief-generation";
-import { and, eq, gt, lte } from "drizzle-orm";
+import { and, eq, gt, lte, sql } from "drizzle-orm";
+import { z } from "zod";
 
+import { executeRawRows } from "../../lib/db-raw-rows";
 import type { Tx } from "../../lib/db-types";
-import { nowDate } from "../../lib/time";
+import { nowDate, timestampWithoutTimeZone } from "../../lib/time";
 import type { Db, ReadonlyDb } from "../external/db";
 import {
   lockCollectionOwner,
@@ -232,6 +234,18 @@ interface AcceptedResultValues {
 }
 
 /**
+ * The admission this attempt actually holds, and the instant it holds it at.
+ *
+ * It is a value rather than an implicit step so the caller can do the two
+ * things only it can do — honour cancellation, and re-prove the owner's live
+ * authority — at the one instant that matters: after every real wait, and
+ * before any mutation has been issued.
+ */
+interface MorningBriefGenerationHold {
+  readonly at: Date;
+}
+
+/**
  * Take this attempt's slot and read the clock only once it is really held.
  *
  * Both guarded writes below wait twice: once for the owner lock, and once for
@@ -241,10 +255,10 @@ interface AcceptedResultValues {
  * wait and on every attempt — makes the deadline comparison describe the
  * instant the mutation is actually admitted.
  */
-async function holdGenerationSlot(
+export async function holdMorningBriefGenerationSlot(
   tx: Tx,
   fence: MorningBriefGenerationFence,
-): Promise<{ readonly at: Date } | null> {
+): Promise<MorningBriefGenerationHold | null> {
   if (!(await lockCollectionOwner(tx, fence.key.owner))) {
     return null;
   }
@@ -265,7 +279,7 @@ async function holdGenerationSlot(
  *
  * Content is accepted only while this attempt still holds an unexpired
  * reservation under an unchanged membership generation, measured against the
- * clock sampled after the slot was actually locked. Equality with the
+ * clock the caller sampled when it actually took the slot. Equality with the
  * reservation deadline is already expired, so a result that became late while
  * persistence waited is not stored — the caller records the honest
  * non-accepting outcome instead.
@@ -273,12 +287,9 @@ async function holdGenerationSlot(
 export async function acceptMorningBriefGenerationResult(
   tx: Tx,
   fence: MorningBriefGenerationFence,
+  held: MorningBriefGenerationHold,
   result: AcceptedResultValues,
 ): Promise<MorningBriefGenerationWriteResult> {
-  const held = await holdGenerationSlot(tx, fence);
-  if (!held) {
-    return { kind: "not-owned" };
-  }
   const [written] = await tx
     .update(morningBriefGenerations)
     .set({
@@ -314,6 +325,7 @@ export async function acceptMorningBriefGenerationResult(
 export async function recordMorningBriefGenerationOutcome(
   tx: Tx,
   fence: MorningBriefGenerationFence,
+  held: MorningBriefGenerationHold,
   outcome: {
     readonly state: Extract<
       MorningBriefGenerationState,
@@ -326,10 +338,6 @@ export async function recordMorningBriefGenerationOutcome(
     readonly failureReason: MorningBriefGenerationFailureReason;
   },
 ): Promise<MorningBriefGenerationWriteResult> {
-  const held = await holdGenerationSlot(tx, fence);
-  if (!held) {
-    return { kind: "not-owned" };
-  }
   const [written] = await tx
     .update(morningBriefGenerations)
     .set({
@@ -426,10 +434,13 @@ export async function readPlatformGenerationReceipt(
  * Drop this owner's expired preview results.
  *
  * Preview results are derived from source content, so they get a real, bounded
- * lifetime rather than a promise that they are ephemeral. The sweep is consumed
- * by the preview entrypoint itself and is scoped to the invoking owner, so it
- * needs no scheduler and can never touch another owner's rows. The anonymous
- * platform receipt is untouched: an incurred cost is not erased by retention.
+ * lifetime rather than a promise that they are ephemeral. This is the
+ * opportunistic half of that bound: the preview entrypoint consumes it for the
+ * invoking owner, so an owner who comes back never reads their own stale
+ * content. It is scoped to that owner and can never touch another's rows. The
+ * bound itself does not depend on it — see the maintenance purge below. The
+ * anonymous platform receipt is untouched: an incurred cost is not erased by
+ * retention.
  */
 export async function sweepExpiredMorningBriefGenerations(
   db: Pick<Db, "delete">,
@@ -447,4 +458,68 @@ export async function sweepExpiredMorningBriefGenerations(
     )
     .returning({ attemptId: morningBriefGenerations.attemptId });
   return deleted.length;
+}
+
+const purgedRowSchema = z.object({ purged: z.int().nonnegative() });
+
+/**
+ * Physically purge expired preview results, for owners who never came back.
+ *
+ * An owner-scoped sweep bounds nothing on its own: an owner who invokes once
+ * and never again would otherwise keep source-derived title and Markdown
+ * forever. This is the batch a bounded maintenance consumer runs instead, and
+ * it is deliberately small and interruptible — one ordered, limited selection
+ * under `SKIP LOCKED`, so it never queues behind an attempt that is mid-write
+ * and never takes a table-wide lock. `idx_morning_brief_generations_expiry`
+ * serves the ordered scan, so the plan stays an index range over already
+ * expired rows rather than a sequential scan of the table.
+ *
+ * Removing the row removes the content *and* the attempt's link to its cost
+ * record; the anonymous receipt itself is never touched, exactly as the
+ * owner-scoped sweep leaves it. What survives instead is the completed
+ * collection occurrence, which is content-free and is what actually refuses a
+ * second invocation — a purged slot is reported as a completed collection that
+ * holds no generation, never as an occurrence free to call the provider again.
+ */
+export async function purgeExpiredMorningBriefGenerations(
+  db: Pick<Db, "execute">,
+  at: Date,
+  limit: number,
+): Promise<number> {
+  const cutoff = timestampWithoutTimeZone(at);
+  const rows = await executeRawRows(
+    db,
+    sql`
+      WITH expired AS (
+        SELECT
+          generation.org_id,
+          generation.user_id,
+          generation.scheduled_for,
+          generation.collection_kind,
+          generation.collection_version
+        FROM ${morningBriefGenerations} generation
+        WHERE generation.expires_at <= ${cutoff}::timestamp
+        ORDER BY generation.expires_at ASC
+        LIMIT ${limit}
+        FOR UPDATE OF generation SKIP LOCKED
+      ),
+      purged AS (
+        DELETE FROM ${morningBriefGenerations} generation
+        USING expired
+        WHERE generation.org_id = expired.org_id
+          AND generation.user_id = expired.user_id
+          AND generation.scheduled_for = expired.scheduled_for
+          AND generation.collection_kind = expired.collection_kind
+          AND generation.collection_version = expired.collection_version
+        RETURNING generation.attempt_id
+      )
+      SELECT count(*)::int AS purged FROM purged
+    `,
+    purgedRowSchema,
+  );
+  const purged = rows[0]?.purged;
+  if (purged === undefined) {
+    throw new Error("Morning Brief generation purge returned no summary row");
+  }
+  return purged;
 }
