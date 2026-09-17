@@ -7,10 +7,14 @@ import { create as createTar } from "tar";
 import { ApiRequestError } from "../core/client-factory";
 
 /**
- * The two file-shaping steps every compiled template publish performs before it
- * touches an endpoint: putting page images into page order, and turning the
- * guidance directory into one archive. Both template families do this
- * identically, so neither owns a private copy.
+ * File shaping for a custom template publish: page images into page order, and
+ * the guidance directory into one archive.
+ *
+ * This deliberately duplicates the same two steps in `presentation-templates`
+ * rather than extracting them. That module is on the path every existing
+ * presentation import already takes, and keeping it untouched is worth more
+ * than removing this copy. Fold the two together only as a deliberate change
+ * to the presentation path, with its own verification.
  */
 /**
  * Page order is the order the files are published in, so it has to come from
