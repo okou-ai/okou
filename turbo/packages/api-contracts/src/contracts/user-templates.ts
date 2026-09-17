@@ -177,6 +177,24 @@ const publishUserTemplateBodySchema = z.discriminatedUnion("kind", [
   }),
 ]);
 
+/**
+ * Replace a template's compiled package, leaving everything else alone.
+ *
+ * Adjusting the package is not re-reversing the source: the file it was
+ * compiled from has not changed, so its rendered pages have not either, and
+ * the manifest keeps saying what it said. Only the guidance a later run reads
+ * is replaced.
+ *
+ * No kind here. The row already records what this template produces, and the
+ * required files follow from it; a body that restated the kind could disagree
+ * with the row, and a package swap is not the moment to relitigate what the
+ * reverse run concluded. A template that should be a different kind is a
+ * different template.
+ */
+const replaceUserTemplatePackageBodySchema = z.object({
+  packageFileId: z.uuid(),
+});
+
 export const userTemplatesContract = c.router({
   publish: {
     method: "POST",
@@ -233,6 +251,22 @@ export const userTemplatesContract = c.router({
     },
     summary: "Resolve accessible user template preview asset URLs",
   },
+  replacePackage: {
+    method: "PUT",
+    path: "/api/user-templates/:templateId/package",
+    pathParams: userTemplateIdParamsSchema,
+    headers: authHeadersSchema,
+    body: replaceUserTemplatePackageBodySchema,
+    responses: {
+      200: userTemplateSummarySchema,
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+      500: apiErrorSchema,
+    },
+    summary: "Replace a user template's compiled package",
+  },
   update: {
     method: "PATCH",
     path: "/api/user-templates/:templateId",
@@ -282,5 +316,8 @@ export type PublishUserTemplateBody = z.infer<
 >;
 export type UpdateUserTemplateBody = z.infer<
   typeof updateUserTemplateBodySchema
+>;
+export type ReplaceUserTemplatePackageBody = z.infer<
+  typeof replaceUserTemplatePackageBodySchema
 >;
 export type UserTemplatesContract = typeof userTemplatesContract;

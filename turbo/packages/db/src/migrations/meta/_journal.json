@@ -537,8 +537,22 @@
     {
       "idx": 1154,
       "version": "7",
-      "when": 1789650392639,
-      "tag": "1154_unknown_hellion",
+      "when": 1789652237949,
+      "tag": "1154_morning_brief_collection_revocation",
+      "breakpoints": true
+    },
+    {
+      "idx": 1155,
+      "version": "7",
+      "when": 1789654948741,
+      "tag": "1155_morning_brief_generation_expiry_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 1156,
+      "version": "7",
+      "when": 1789657918535,
+      "tag": "1156_slimy_valkyrie",
       "breakpoints": true
     }
   ]

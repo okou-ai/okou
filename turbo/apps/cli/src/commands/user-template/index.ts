@@ -7,6 +7,7 @@ import { Command, Option } from "commander";
 import { ApiRequestError } from "../../lib/api/core/client-factory";
 import {
   publishUserTemplate,
+  replaceUserTemplatePackage,
   type PublishUserTemplateArgs,
 } from "../../lib/api/domains/user-templates";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
@@ -101,7 +102,37 @@ A published template appears under Custom in the template picker, private to you
     }),
   );
 
+/**
+ * Rebuilding the package is not re-reversing the source, so this takes no
+ * source and no pages: the file the template was compiled from has not
+ * changed, and neither has what the catalog shows for it.
+ */
+const repackageCommand = new Command()
+  .name("repackage")
+  .description(
+    "Replace a published custom template's guidance package. The template keeps its title, visibility, source and pages; only what a later run reads changes.",
+  )
+  .argument("<template-id>", "The template to rebuild the package for")
+  .requiredOption(
+    "--package <dir>",
+    "Directory holding SKILL.md and whatever else its guidance names",
+  )
+  .action(
+    withErrorHandler(
+      async (templateId: string, options: { package: string }) => {
+        const template = await replaceUserTemplatePackage({
+          templateId,
+          packageDir: options.package,
+        });
+        console.log(
+          `Updated the package for ${template.title} (${template.id})`,
+        );
+      },
+    ),
+  );
+
 export const userTemplateCommand = new Command()
   .name("user-template")
   .description("Publish custom templates compiled from a file you uploaded")
-  .addCommand(publishCommand);
+  .addCommand(publishCommand)
+  .addCommand(repackageCommand);

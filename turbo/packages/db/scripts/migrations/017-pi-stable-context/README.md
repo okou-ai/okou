@@ -1,6 +1,6 @@
 # 017: Pi stable-context report and repair
 
-Migration 1153 creates empty additive stable-context tables. It intentionally
+Migration 1156 creates empty additive stable-context tables. It intentionally
 does not enumerate user x Agent x session combinations or materialize a
 production-wide cache. Normal authoritative source writes invalidate existing
 heads, and an exact request miss records bounded demand from captured immutable

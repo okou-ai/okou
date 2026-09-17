@@ -11,6 +11,7 @@ import { cronSnapshotChatEventsRoutes } from "./routes/cron-snapshot-chat-events
 import { cronRetainChatEventsRoutes } from "./routes/cron-retain-chat-events";
 import { cronCompactUsageEventsRoutes } from "./routes/cron-compact-usage-events";
 import { cronCleanupSandboxesRoutes } from "./routes/cron-cleanup-sandboxes";
+import { cronCleanupXResourceReadsRoutes } from "./routes/cron-cleanup-x-resource-reads";
 import { cronConnectorCatalogRoutes } from "./routes/cron-connector-catalog";
 import { cronOfficialWorkflowCatalogRoutes } from "./routes/cron-official-workflow-catalog";
 import { cronConnectorOauthStateCleanupRoutes } from "./routes/cron-connector-oauth-state-cleanup";
@@ -149,9 +150,11 @@ import { workflowsRoutes } from "./routes/workflows";
 import { officialWorkflowRoutes } from "./routes/official-workflows";
 import { emailSubscriptionRoutes } from "./routes/email-subscription";
 import { morningBriefChatCollectionPreviewRoutes } from "./routes/morning-brief-chat-collection-preview";
+import { morningBriefCalendarCollectionPreviewRoutes } from "./routes/morning-brief-calendar-collection-preview";
 import { morningBriefCollectionPreviewRoutes } from "./routes/morning-brief-collection-preview";
 import { morningBriefGenerationPreviewRoutes } from "./routes/morning-brief-generation-preview";
 import { morningBriefGmailCollectionPreviewRoutes } from "./routes/morning-brief-gmail-collection-preview";
+import { morningBriefCompositionPreviewRoutes } from "./routes/morning-brief-composition-preview";
 import { morningBriefPreferenceRoutes } from "./routes/morning-brief-preference";
 import { workflowAutomationsRoutes } from "./routes/workflow-automations";
 import { integrationsGithubRoutes } from "./routes/integrations-github";
@@ -251,6 +254,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...cronRetainChatEventsRoutes,
   ...cronCompactUsageEventsRoutes,
   ...cronCleanupSandboxesRoutes,
+  ...cronCleanupXResourceReadsRoutes,
   ...cronConnectorCatalogRoutes,
   ...cronOfficialWorkflowCatalogRoutes,
   ...cronConnectorOauthStateCleanupRoutes,
@@ -376,10 +380,12 @@ export const ROUTES: readonly RouteEntry[] = [
   ...userPreferencesRoutes,
   ...userModelPreferenceRoutes,
   ...morningBriefPreferenceRoutes,
+  ...morningBriefCalendarCollectionPreviewRoutes,
   ...morningBriefCollectionPreviewRoutes,
   ...morningBriefGmailCollectionPreviewRoutes,
   ...morningBriefGenerationPreviewRoutes,
   ...morningBriefChatCollectionPreviewRoutes,
+  ...morningBriefCompositionPreviewRoutes,
   ...emailSubscriptionRoutes,
   ...workflowsRoutes,
   ...officialWorkflowRoutes,

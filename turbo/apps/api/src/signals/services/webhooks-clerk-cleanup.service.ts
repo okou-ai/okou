@@ -72,16 +72,13 @@ import { cleanupOrgMemberResources } from "./org-member-cleanup.service";
 import { removeUsagePackMemberAllocation } from "./usage-pack-allocation-change.service";
 import { refundUsagePackMemberCredits } from "./usage-pack-credit-refund.service";
 import {
-  deleteOrgUsageData,
-  deleteUserUsageData,
-} from "./usage-event-cleanup.service";
-import {
   deleteConnectorLocalState$,
   loadStoredConnectorRuntimeSnapshot,
 } from "./connector-data.service";
 import {
   AGENT_LIFECYCLE_LOCK_TIMEOUT,
   deleteClerkAgentLifecycleData,
+  deleteStableContextLifecycleAfterAuthorityRemoval,
 } from "./agent-lifecycle.service";
 import { deleteConnectorOwnerState } from "./connector-owner-cleanup.service";
 import { revokeMorningBriefCollectionOwnership } from "./morning-brief-collection-occurrence.service";
@@ -110,11 +107,24 @@ async function publishCancelBestEffort(
   );
 }
 
+/**
+ * What a deletion's first committed transaction revokes beyond its own runs.
+ *
+ * `cascadeOwnedAgents` widens run cancellation to the erasure scope, and
+ * `revokeMorningBriefCollection` joins Morning Brief collection ownership to
+ * that same commit. A ban is neither, so it keeps the narrow default.
+ */
+interface RunCancellationScope {
+  readonly cascadeOwnedAgents?: boolean;
+  readonly revokeMorningBriefCollection?: boolean;
+}
+
 async function cancelOrgRuns(
   db: Db,
   orgId: string,
-  cascadeOwnedAgents = false,
+  scope: RunCancellationScope = {},
 ): Promise<void> {
+  const revokedAt = nowDate();
   const cancelled = await db.transaction(async (tx) => {
     const rows = await transitionAgentRunsToTerminal(tx, {
       values: {
@@ -123,7 +133,7 @@ async function cancelOrgRuns(
         runnerCancellationMode: "hard",
       },
       conditions: [
-        cascadeOwnedAgents
+        scope.cascadeOwnedAgents
           ? piInferenceErasureScopePredicate(tx, {
               kind: "organization",
               orgId,
@@ -133,6 +143,13 @@ async function cancelOrgRuns(
       ],
     });
     await tx.delete(agentRunQueue).where(eq(agentRunQueue.orgId, orgId));
+    if (scope.revokeMorningBriefCollection) {
+      await revokeMorningBriefCollectionOwnership(
+        tx,
+        { kind: "organization", orgId },
+        revokedAt,
+      );
+    }
     return rows;
   });
   await Promise.all(
@@ -188,8 +205,9 @@ async function cancelLastAdminOrgsStripeSubscriptions(
 async function cancelUserRuns(
   db: Db,
   userId: string,
-  cascadeOwnedAgents = false,
+  scope: RunCancellationScope = {},
 ): Promise<void> {
+  const revokedAt = nowDate();
   const cancelled = await db.transaction(async (tx) => {
     const rows = await transitionAgentRunsToTerminal(tx, {
       values: {
@@ -198,13 +216,20 @@ async function cancelUserRuns(
         runnerCancellationMode: "hard",
       },
       conditions: [
-        cascadeOwnedAgents
+        scope.cascadeOwnedAgents
           ? piInferenceErasureScopePredicate(tx, { kind: "user", userId })
           : eq(agentRuns.userId, userId),
         inArray(agentRuns.status, ["queued", "pending", "running"]),
       ],
     });
     await tx.delete(agentRunQueue).where(eq(agentRunQueue.userId, userId));
+    if (scope.revokeMorningBriefCollection) {
+      await revokeMorningBriefCollectionOwnership(
+        tx,
+        { kind: "user", userId },
+        revokedAt,
+      );
+    }
     return rows;
   });
   await Promise.all(
@@ -809,7 +834,6 @@ async function deleteOrgData(
     await cleanupWorkspaceInstallation(db, installation.slackWorkspaceId);
   }
 
-  await deleteOrgUsageData(db, orgId);
   await db.delete(sharedThreads).where(
     inArray(
       sharedThreads.id,
@@ -853,10 +877,13 @@ async function deleteOrgData(
     .delete(orgConcurrencySubscriptions)
     .where(eq(orgConcurrencySubscriptions.orgId, orgId));
   await db.delete(orgMembersCache).where(eq(orgMembersCache.orgId, orgId));
-  // Membership is the durable stable-context admission parent. Re-run the
-  // idempotent lifecycle cleanup after removing it so a request that raced the
-  // earlier pass cannot recreate generation/publication state.
-  await deleteClerkAgentLifecycleData(db, { kind: "organization", orgId });
+  // Membership is the durable stable-context admission parent. Re-run only
+  // stable-context cleanup after removing it so a request that raced the early
+  // pass cannot recreate state or repeat unrelated usage/billing lifecycle.
+  await deleteStableContextLifecycleAfterAuthorityRemoval(db, {
+    kind: "organization",
+    orgId,
+  });
   await db
     .delete(orgMembersMetadata)
     .where(eq(orgMembersMetadata.orgId, orgId));
@@ -891,7 +918,6 @@ async function deleteUserData(
   await db
     .delete(telegramInstallations)
     .where(eq(telegramInstallations.ownerUserId, userId));
-  await deleteUserUsageData(db, userId);
   await db
     .delete(artifacts)
     .where(
@@ -931,8 +957,11 @@ async function deleteUserData(
   await db.delete(orgMembersCache).where(eq(orgMembersCache.userId, userId));
   // Close the initialization interval between the early Agent cleanup and the
   // authoritative membership removal. Future initialization now fails its
-  // parent lock; this second pass removes any generation created before it.
-  await deleteClerkAgentLifecycleData(db, { kind: "user", userId });
+  // parent lock; this narrow second pass removes any state created before it.
+  await deleteStableContextLifecycleAfterAuthorityRemoval(db, {
+    kind: "user",
+    userId,
+  });
   await db
     .delete(morningBriefEnrollments)
     .where(eq(morningBriefEnrollments.userId, userId));
@@ -953,11 +982,9 @@ async function deleteUserData(
 export const cleanupClerkDeletedOrg$ = command(
   async ({ get, set }, orgId: string, signal: AbortSignal): Promise<void> => {
     const db = set(writeDb$);
-    await cancelOrgRuns(db, orgId, true);
-    signal.throwIfAborted();
-    await revokeMorningBriefCollectionOwnership(db, {
-      kind: "organization",
-      orgId,
+    await cancelOrgRuns(db, orgId, {
+      cascadeOwnedAgents: true,
+      revokeMorningBriefCollection: true,
     });
     signal.throwIfAborted();
     await assertPiInferenceScopeErasureReady(db, {
@@ -989,9 +1016,10 @@ export const cleanupClerkDeletedOrgBilling$ = command(
 export const cleanupClerkDeletedUser$ = command(
   async ({ get, set }, userId: string, signal: AbortSignal): Promise<void> => {
     const db = set(writeDb$);
-    await cancelUserRuns(db, userId, true);
-    signal.throwIfAborted();
-    await revokeMorningBriefCollectionOwnership(db, { kind: "user", userId });
+    await cancelUserRuns(db, userId, {
+      cascadeOwnedAgents: true,
+      revokeMorningBriefCollection: true,
+    });
     signal.throwIfAborted();
     await assertPiInferenceScopeErasureReady(db, { kind: "user", userId });
     signal.throwIfAborted();
@@ -1007,11 +1035,9 @@ export const cleanupClerkDeletedUser$ = command(
     await set(cleanupUserExternalServices$, db, userId, signal);
     signal.throwIfAborted();
     for (const orgId of emptyOrgIds) {
-      await cancelOrgRuns(db, orgId, true);
-      signal.throwIfAborted();
-      await revokeMorningBriefCollectionOwnership(db, {
-        kind: "organization",
-        orgId,
+      await cancelOrgRuns(db, orgId, {
+        cascadeOwnedAgents: true,
+        revokeMorningBriefCollection: true,
       });
       signal.throwIfAborted();
       await assertPiInferenceScopeErasureReady(db, {

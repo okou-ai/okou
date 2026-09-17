@@ -97,6 +97,15 @@ export interface GenerationRequestPlan {
   /** Candidates that actually travelled. */
   readonly includedItems: number;
   readonly inputReduced: boolean;
+  /** Candidates dropped so the body would fit its ceiling. */
+  readonly droppedItems: number;
+  /**
+   * The language this request was frozen to.
+   *
+   * It travels with the plan so the program-owned coverage note is written in
+   * the same language the brief was asked for, without resolving it twice.
+   */
+  readonly language: string;
   readonly sources: ReadonlyMap<string, GenerationSource>;
 }
 
@@ -290,6 +299,8 @@ export function planGenerationRequest(args: {
     inputItems: ranked.length,
     includedItems,
     inputReduced: includedItems < ranked.length,
+    droppedItems: Math.max(0, ranked.length - includedItems),
+    language: args.language,
     sources: new Map(sources),
   };
 }

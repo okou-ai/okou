@@ -4,7 +4,11 @@ import { setTimeout as delay } from "node:timers/promises";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { getCustomSkillStorageName } from "@okouai/core/storage-names";
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
-import { CHAT_RUN_CONTENT_POLICY_REJECTED_MESSAGE } from "@okouai/api-contracts/contracts/errors";
+import {
+  CHAT_RUN_CONTENT_POLICY_REJECTED_MESSAGE,
+  CHAT_RUN_USAGE_LIMIT_MESSAGE,
+  CHAT_RUN_UNSUPPORTED_MODEL_MESSAGE,
+} from "@okouai/api-contracts/contracts/errors";
 import { testPiResourceIndexWorkContract } from "@okouai/api-contracts/contracts/test-pi-resource-index-work";
 import {
   OFFICIAL_RUNNER_TOKEN_PREFIX,
@@ -70,6 +74,7 @@ const {
   entitledChatActor,
   configureBuiltInPiModel,
   configureUserOwnedGptPiModel,
+  upsertOrgModelProvider,
   sendChatRun,
   waitForRunStatus,
   mockPiCheckpointObjectStore,
@@ -804,6 +809,24 @@ describe("durable Pi API producer", () => {
         },
         {
           provider: "openai-api-key",
+          status: 400,
+          code: "model_not_found",
+          reason: "unsupported_model",
+        },
+        {
+          provider: "aws-bedrock",
+          status: 429,
+          code: "ThrottlingException",
+          reason: "provider_rate_limited",
+        },
+        {
+          provider: "aws-bedrock",
+          status: 503,
+          code: "ServiceUnavailableException",
+          reason: "provider_server_error",
+        },
+        {
+          provider: "openai-api-key",
           status: 429,
           code: "rate_limit_exceeded",
           reason: "provider_rate_limited",
@@ -857,10 +880,35 @@ describe("durable Pi API producer", () => {
       configureNativeCliArtifact();
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       const selectedModel =
-        scenario.provider === "built-in" ? SELECTED_MODEL : "gpt-5.6-terra";
+        scenario.provider === "built-in"
+          ? SELECTED_MODEL
+          : scenario.provider === "aws-bedrock"
+            ? "claude-sonnet-4-6"
+            : "gpt-5.6-terra";
       let providerUrl = PROVIDER_URL;
       if (scenario.provider === "built-in") {
         await configureBuiltInPiModel(actor, selectedModel);
+      } else if (scenario.provider === "aws-bedrock") {
+        const { providerId } = await upsertOrgModelProvider(actor, {
+          type: "aws-bedrock",
+          authMethod: "api-key",
+          selectedModel:
+            "arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/production",
+          secrets: {
+            AWS_BEARER_TOKEN_BEDROCK: "selected-bedrock-bearer",
+            AWS_REGION: "us-east-1",
+          },
+        });
+        await api.updateOrgModelPolicies(actor, [
+          {
+            model: selectedModel,
+            isDefault: true,
+            defaultProviderType: "aws-bedrock",
+            credentialScope: "org",
+            modelProviderId: providerId,
+          },
+        ]);
+        providerUrl = "https://bedrock-runtime.us-east-1.amazonaws.com/*";
       } else {
         const route = USER_OWNED_GPT_FAST_BDD_ROUTES.find((candidate) => {
           return (
@@ -896,6 +944,15 @@ describe("durable Pi API producer", () => {
               )}\n\n`,
             );
           }
+          if (scenario.provider === "aws-bedrock") {
+            return HttpResponse.json(
+              { __type: scenario.code, message: "Provider rejected request" },
+              {
+                status: scenario.status,
+                headers: { "x-amzn-errortype": scenario.code },
+              },
+            );
+          }
           return HttpResponse.json(
             {
               error: {
@@ -918,7 +975,8 @@ describe("durable Pi API producer", () => {
               ? "/native-command"
               : "preserve the provider failure without replaying this turn",
           model: selectedModel,
-          ...(scenario.provider === "built-in"
+          ...(scenario.provider === "built-in" ||
+          scenario.provider === "aws-bedrock"
             ? {}
             : { runOptions: { codexServiceTier: "fast" as const } }),
         },
@@ -969,6 +1027,12 @@ describe("durable Pi API producer", () => {
         expect(failureEvent?.error).toBe(
           CHAT_RUN_CONTENT_POLICY_REJECTED_MESSAGE,
         );
+      }
+      if (scenario.reason === "usage_limit") {
+        expect(failureEvent?.error).toBe(CHAT_RUN_USAGE_LIMIT_MESSAGE);
+      }
+      if (scenario.reason === "unsupported_model") {
+        expect(failureEvent?.error).toBe(CHAT_RUN_UNSUPPORTED_MODEL_MESSAGE);
       }
       await expectNoDeferredPiRun(run.runId, runnerGroup);
       expect(calls).toBe(scenario.execution === "sandbox" ? 0 : 1);
