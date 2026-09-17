@@ -26,20 +26,20 @@ const log = logger("MorningBriefScheduleClaim");
 /** Mirrors the legacy poller and callback policy; they share one constant. */
 const MAX_CONSECUTIVE_FAILURES = 3;
 
-export type MorningBriefScheduleClaimRow =
+type MorningBriefScheduleClaimRow =
   typeof morningBriefScheduleClaims.$inferSelect;
 
 /**
  * The owner identity a claim is written for, resolved before the claim
  * transaction and re-verified against the locked automation row inside it.
  */
-export interface MorningBriefScheduleClaimOwner {
+interface MorningBriefScheduleClaimOwner {
   readonly orgId: string;
   readonly ownerUserId: string;
   readonly workflowId: string;
 }
 
-export type MorningBriefScheduleClaimAttempt =
+type MorningBriefScheduleClaimAttempt =
   | { readonly kind: "claimed"; readonly claim: MorningBriefScheduleClaimRow }
   /** The locked row no longer matches the due occurrence this tick resolved. */
   | { readonly kind: "unavailable" };
@@ -247,11 +247,11 @@ export function morningBriefScheduleClaimIsNotSuperseded(
 }
 
 /** How the caller identifies the occurrence it is settling. */
-export type MorningBriefScheduleSettlementSubject =
+type MorningBriefScheduleSettlementSubject =
   | { readonly kind: "claim"; readonly claimId: string }
   | { readonly kind: "run"; readonly runId: string };
 
-export interface MorningBriefScheduleSettlementOutcome {
+interface MorningBriefScheduleSettlementOutcome {
   readonly settled: boolean;
   readonly nextRunAt?: Date | null;
 }
@@ -315,7 +315,7 @@ interface SettleMorningBriefScheduleArgs {
  * which makes a duplicate callback, a failed-Run callback racing the outer
  * error path, and a callback from a superseded claim all no-ops.
  */
-export async function settleMorningBriefSchedule(
+async function settleMorningBriefSchedule(
   tx: Tx,
   args: SettleMorningBriefScheduleArgs,
 ): Promise<MorningBriefScheduleSettlementOutcome> {

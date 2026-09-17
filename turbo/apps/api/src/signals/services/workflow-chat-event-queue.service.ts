@@ -85,7 +85,7 @@ async function pendingTickForAutomation(
   return tick?.id;
 }
 
-export type WorkflowQueueAdmission =
+type WorkflowQueueAdmission =
   | {
       readonly kind: "inserted";
       readonly eventId: string;
