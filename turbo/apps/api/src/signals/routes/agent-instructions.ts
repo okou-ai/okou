@@ -13,6 +13,7 @@ import { requireAgentPermission } from "../../lib/require-agent-permission";
 import { nowDate } from "../../lib/time";
 import { agentResponse } from "../services/agent-data.service";
 import { lockCanonicalAgentMutation } from "../services/agent-mutation-lock.service";
+import { beginPiStableContextPublication } from "../services/pi-stable-context-generation.service";
 import { writeAgentInstructionsStorage$ } from "../services/agent-instructions-storage.service";
 import { agentInstructions } from "../services/agent-instructions.service";
 import type { RouteEntry } from "../route-entry";
@@ -89,12 +90,21 @@ const updateAgentInstructionsInner$ = command(
         return { kind: "forbidden" as const, response: permissionError };
       }
 
+      const stableContextPublication = await beginPiStableContextPublication(
+        writeDb,
+        {
+          orgId: auth.orgId,
+          agentId: current.id,
+        },
+      );
+
       await set(
         writeAgentInstructionsStorage$,
         {
           orgId: auth.orgId,
           agentName: current.name,
           instructions: body.data.content,
+          stableContextPublication,
         },
         signal,
       );

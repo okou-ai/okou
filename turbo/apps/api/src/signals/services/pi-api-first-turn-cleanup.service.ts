@@ -1,6 +1,10 @@
 import { piResourceSnapshots } from "@okouai/db/schema/pi-resource-snapshot";
+import {
+  piStableContextArtifacts,
+  piStableContextHeads,
+} from "@okouai/db/schema/pi-stable-context";
 import { command } from "ccstate";
-import { lt } from "drizzle-orm";
+import { and, eq, lt, notExists } from "drizzle-orm";
 
 import { env } from "../../lib/env";
 import { now } from "../../lib/time";
@@ -20,6 +24,7 @@ const PI_RESOURCE_SNAPSHOT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 interface PiApiFirstTurnCleanupResult {
   readonly stagingObjectsDeleted: number;
   readonly resourceSnapshotsDeleted: number;
+  readonly stableContextArtifactsDeleted: number;
 }
 
 function expiredPiApiFirstTurnObjectKeys(
@@ -70,9 +75,34 @@ export const cleanupExpiredPiApiFirstTurnData$ = command(
       )
       .returning({ digest: piResourceSnapshots.digest });
     signal.throwIfAborted();
+    const writeDb = set(writeDb$);
+    const deletedStableArtifacts = await writeDb
+      .delete(piStableContextArtifacts)
+      .where(
+        and(
+          lt(
+            piStableContextArtifacts.createdAt,
+            piResourceSnapshotExpirationCutoff(currentTime),
+          ),
+          notExists(
+            writeDb
+              .select({ id: piStableContextHeads.id })
+              .from(piStableContextHeads)
+              .where(
+                eq(
+                  piStableContextHeads.artifactDigest,
+                  piStableContextArtifacts.digest,
+                ),
+              ),
+          ),
+        ),
+      )
+      .returning({ digest: piStableContextArtifacts.digest });
+    signal.throwIfAborted();
     return {
       stagingObjectsDeleted: expiredKeys.length,
       resourceSnapshotsDeleted: deletedSnapshots.length,
+      stableContextArtifactsDeleted: deletedStableArtifacts.length,
     };
   },
 );

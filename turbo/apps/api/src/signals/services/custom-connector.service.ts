@@ -94,6 +94,7 @@ import {
 } from "./connector-connection-write.service";
 import type { Tx } from "../../lib/db-types";
 import { writeCustomConnectorOAuthState } from "./custom-connector-oauth-write.service";
+import { invalidatePiStableContextsForOrg } from "./pi-stable-context-generation.service";
 
 const L = logger("CustomConnectorService");
 
@@ -1874,6 +1875,7 @@ async function persistCustomConnectorCreate(
           }
           oauthConfig = insertedOAuthConfig;
         }
+        await invalidatePiStableContextsForOrg(tx, args.orgId);
         return { row, oauthConfig };
       },
     );
@@ -2230,6 +2232,7 @@ async function persistCustomConnectorUpdate(
           tx,
           args,
         );
+        await invalidatePiStableContextsForOrg(tx, args.orgId);
         return { row: updated, oauthConfig: storedOAuthConfig };
       },
     );
@@ -2584,6 +2587,7 @@ export const deleteCustomConnector$ = command(
             eq(orgCustomConnectors.orgId, args.orgId),
           ),
         );
+      await invalidatePiStableContextsForOrg(tx, args.orgId);
       return true;
     });
     let postCommitAbort: CapturedConnectorClientInvalidationAbort | undefined;

@@ -113,6 +113,7 @@ import {
   prepareVolumeServerSide$,
   type PreparedServerSideVolume,
 } from "../services/storage-volume-publication.service";
+import { invalidatePiStableContext } from "../services/pi-stable-context-generation.service";
 
 const workflowReadAuth = {
   requireOrganization: true,
@@ -488,6 +489,11 @@ async function createPreparedWorkflow(
       { db: tx, volume: args.volume },
       signal,
     );
+    await invalidatePiStableContext(tx, {
+      orgId: args.orgId,
+      agentId: body.agentId,
+      ...(visibility === "private" ? { userId: member.userId } : {}),
+    });
     return { kind: "created" as const, workflow, chatThreadId };
   });
 }

@@ -86,6 +86,7 @@ interface BootstrapMetadataQueryRow {
   readonly action: FirewallPermissionGrantAction | null;
   readonly permissionNames: readonly string[] | null;
   readonly permissionBundleRef: string | null;
+  readonly expiresAt: Date | null;
 }
 
 export interface UserInfo {
@@ -112,6 +113,7 @@ export interface RunBootstrapContext extends AgentConnectorScope {
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly workflows: readonly RunWorkflowRef[];
   readonly permissionGrants: readonly FirewallPermissionGrant[];
+  readonly permissionValidityHorizon: string | null;
   readonly connectorCatalogMetadataSlugs: readonly ConnectorSlug[];
 }
 
@@ -149,6 +151,7 @@ function emptyBootstrapMetadataFields() {
     permissionBundleRef: sql`NULL::text`
       .mapWith(nullableTextDecoder)
       .as("permission_bundle_ref"),
+    expiresAt: sql<Date | null>`NULL::timestamp`.as("expires_at"),
   };
 }
 
@@ -270,6 +273,7 @@ async function queryRunBootstrapMetadataSnapshot(
       action: sql`${userPermissionGrants.action}`
         .mapWith(nullablePermissionGrantActionDecoder)
         .as("action"),
+      expiresAt: userPermissionGrants.expiresAt,
     })
     .from(userPermissionGrants)
     .where(
@@ -347,6 +351,7 @@ export function materializeRunBootstrapContext(
   const customConnectorRows: AgentCustomConnectorRow[] = [];
   const connectorCatalogMetadataSlugs = new Set<ConnectorSlug>();
   const permissionGrants: FirewallPermissionGrant[] = [];
+  let permissionValidityHorizon: Date | null = null;
 
   for (const row of rows.metadataRows) {
     switch (row.kind) {
@@ -402,6 +407,13 @@ export function materializeRunBootstrapContext(
           permission: row.detail,
           action: row.action,
         });
+        if (
+          row.expiresAt &&
+          (!permissionValidityHorizon ||
+            row.expiresAt.getTime() < permissionValidityHorizon.getTime())
+        ) {
+          permissionValidityHorizon = row.expiresAt;
+        }
         break;
       }
     }
@@ -433,6 +445,7 @@ export function materializeRunBootstrapContext(
     ...connectorScope,
     workflows: workflowsForRunFromRows(rows.workflowRows, args.userId),
     permissionGrants,
+    permissionValidityHorizon: permissionValidityHorizon?.toISOString() ?? null,
     connectorCatalogMetadataSlugs: [...connectorCatalogMetadataSlugs].sort(),
   };
 }

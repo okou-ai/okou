@@ -37,6 +37,7 @@ import {
   lockCanonicalAgentMutation,
   lockCanonicalAgentPublicLimit,
 } from "../services/agent-mutation-lock.service";
+import { invalidatePiStableContext } from "../services/pi-stable-context-generation.service";
 import {
   deleteAgentInstructionsStorage$,
   writeAgentInstructionsStorage$,
@@ -555,6 +556,10 @@ const updateAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       .update(agents)
       .set(buildAgentUpsertConflictSet(updateBody, nowDate()))
       .where(and(eq(agents.orgId, auth.orgId), eq(agents.id, params.id)));
+    await invalidatePiStableContext(tx, {
+      orgId: auth.orgId,
+      agentId: params.id,
+    });
 
     const agent = await readAgentForResponse(tx, auth.orgId, params.id);
     if (!agent) {
@@ -653,6 +658,10 @@ const updateAgentMetadataInner$ = command(
         .update(agents)
         .set(buildAgentUpsertConflictSet(updateBody, nowDate()))
         .where(and(eq(agents.orgId, auth.orgId), eq(agents.id, params.id)));
+      await invalidatePiStableContext(tx, {
+        orgId: auth.orgId,
+        agentId: params.id,
+      });
 
       const agent = await readAgentForResponse(tx, auth.orgId, params.id);
       if (!agent) {

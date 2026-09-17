@@ -28,6 +28,7 @@ import {
 import { lockConnectorAccountTarget } from "./auth-state-lock.service";
 import { listConnectorAccountsByIds } from "./connector-account-lifecycle.service";
 import { reprojectWorkflowAutomationsForOwner } from "./workflow-automation-account-projection.service";
+import { invalidatePiStableContext } from "./pi-stable-context-generation.service";
 
 interface OwnedChatThread {
   readonly agentId: string;
@@ -500,6 +501,11 @@ export async function updateChatThreadConnectorSelection(
       { ...args, target: selection.target },
       signal,
     );
+    await invalidatePiStableContext(tx, {
+      orgId: args.orgId,
+      userId: args.userId,
+      agentId: thread.agentId,
+    });
     return {
       kind: "updated",
       selection: updated,
@@ -540,6 +546,11 @@ export async function clearChatThreadConnectorSelection(
         ),
       );
     await reprojectWorkflowAutomationsForOwner(tx, args, signal);
+    await invalidatePiStableContext(tx, {
+      orgId: args.orgId,
+      userId: args.userId,
+      agentId: thread.agentId,
+    });
     return { kind: "cleared" };
   });
 }

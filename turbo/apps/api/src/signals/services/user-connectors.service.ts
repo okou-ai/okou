@@ -25,6 +25,7 @@ import {
 } from "./feishu-custom-connector-permissions";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import type { Tx } from "../../lib/db-types";
+import { invalidatePiStableContext } from "./pi-stable-context-generation.service";
 
 type UpdateUserConnectorsResult =
   | {
@@ -293,6 +294,11 @@ export async function updateUserConnectors(
     }
 
     if (operation === "replace") {
+      await invalidatePiStableContext(tx, {
+        orgId: args.orgId,
+        userId: args.userId,
+        agentId: args.agentId,
+      });
       return { status: "updated", enabledConnectorSlugs };
     }
 
@@ -300,12 +306,18 @@ export async function updateUserConnectors(
       .select({ connectorSlug: userConnectors.connectorSlug })
       .from(userConnectors)
       .where(connectorScope);
-    return {
+    const result = {
       status: "updated",
       enabledConnectorSlugs: rows.map((row) => {
         return row.connectorSlug;
       }),
-    };
+    } as const;
+    await invalidatePiStableContext(tx, {
+      orgId: args.orgId,
+      userId: args.userId,
+      agentId: args.agentId,
+    });
+    return result;
   });
 }
 
@@ -723,7 +735,7 @@ export async function updateUserCustomConnectors(
       : null;
 
   const committed = await db.transaction(async (tx) => {
-    return await persistUserCustomConnectorTransaction({
+    const persisted = await persistUserCustomConnectorTransaction({
       tx,
       request: args,
       grants,
@@ -731,6 +743,14 @@ export async function updateUserCustomConnectors(
       operation,
       connectorCatalogSnapshot,
     });
+    if (persisted.result.status === "updated") {
+      await invalidatePiStableContext(tx, {
+        orgId: args.orgId,
+        userId: args.userId,
+        agentId: args.agentId,
+      });
+    }
+    return persisted;
   });
   if (
     committed.result.status === "updated" &&

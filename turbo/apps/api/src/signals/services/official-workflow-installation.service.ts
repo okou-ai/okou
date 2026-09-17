@@ -43,6 +43,7 @@ import {
 } from "./workflow-automation.service";
 import type { WorkflowMember } from "./workflow-data.service";
 import { calculateNextRun } from "./time-automation";
+import { invalidatePiStableContext } from "./pi-stable-context-generation.service";
 
 const STALE_INSTALLATION_AGE_MS = 5 * 60 * 1000;
 
@@ -941,8 +942,19 @@ async function completeInstallation(
           eq(workflows.officialInstallationState, "installing"),
         ),
       )
-      .returning({ id: workflows.id });
+      .returning({
+        id: workflows.id,
+        agentId: workflows.agentId,
+        ownerUserId: workflows.ownerUserId,
+      });
     signal.throwIfAborted();
+    if (installed) {
+      await invalidatePiStableContext(tx, {
+        orgId: args.installation.orgId,
+        userId: installed.ownerUserId,
+        agentId: installed.agentId,
+      });
+    }
     return installed ? ("installed" as const) : ("lost" as const);
   });
   signal.throwIfAborted();

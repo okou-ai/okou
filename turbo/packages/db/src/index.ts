@@ -138,6 +138,7 @@ import * as presentationTemplateSchema from "./schema/presentation-template";
 import * as userTemplateSchema from "./schema/user-template";
 import * as piResourceSnapshotSchema from "./schema/pi-resource-snapshot";
 import * as piResourceVersionIndexSchema from "./schema/pi-resource-version-index";
+import * as piStableContextSchema from "./schema/pi-stable-context";
 import * as memorySummaryProjectionSchema from "./schema/memory-summary-projection";
 import * as piMemoryStage1CandidateSchema from "./schema/pi-memory-stage1-candidate";
 import * as piMemoryPhase2JobSchema from "./schema/pi-memory-phase2-job";
@@ -289,6 +290,7 @@ export const schema = {
   ...userTemplateSchema,
   ...piResourceSnapshotSchema,
   ...piResourceVersionIndexSchema,
+  ...piStableContextSchema,
   ...memorySummaryProjectionSchema,
   ...piMemoryStage1CandidateSchema,
   ...piMemoryPhase2JobSchema,

@@ -74,6 +74,11 @@ import {
   type StoredExecutionContext,
 } from "@okouai/api-contracts/contracts/runners";
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
+import type {
+  PiStableContextOwner,
+  PiStableContextPromptProjection,
+  PiStableContextSourceVector,
+} from "@okouai/db/jsonb-contracts/pi-stable-context";
 import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import { customConnectorSlugSchema } from "@okouai/api-contracts/contracts/custom-connectors";
@@ -312,6 +317,7 @@ import {
   PiResourceSnapshotPreparationError,
   UnsupportedPiResourceError,
 } from "./pi-resource-snapshot.service";
+import { preparePiStableContext } from "./pi-stable-context.service";
 import { readMemorySummaryProjection } from "./memory-summary-projection.service";
 import {
   PI_API_FIRST_TURN_COORDINATION_TIMEOUT_MS,
@@ -1108,6 +1114,16 @@ export interface CreateAgentRunArgs {
   readonly orgId: string;
   readonly body: CreateRunBody;
   readonly apiStartTime: number;
+  /** Stable, nonsecret source bindings captured by the product entry point. */
+  readonly piStableContext?: {
+    readonly owner: PiStableContextOwner;
+    readonly variantDigest: string;
+    readonly prompt: PiStableContextPromptProjection;
+    readonly source: Omit<
+      PiStableContextSourceVector,
+      "agentGeneration" | "userGeneration" | "extractorVersion"
+    >;
+  };
   readonly modelProviderId?: string;
   readonly modelProviderCredentialScope?: ModelProviderCredentialScope;
   readonly modelProviderType?: string;
@@ -11650,18 +11666,46 @@ function captureDurablePiInference(
       storagePlan.metadata.persistedStorageMounts,
       memoryRecall,
     );
+    const stableContext = input.args.piStableContext;
+    const stableContextEligible =
+      stableContext !== undefined &&
+      (input.context.body.additionalVolumes?.length ?? 0) === 0 &&
+      !piResourceDiscoveryMounts(storagePlan.metadata.storageMounts).some(
+        (mount) => {
+          return mount.writeback === true;
+        },
+      );
     const resource = await captureDurablePiResource(
-      get(
-        preparePiResourceSnapshot(
-          {
-            db: input.db,
-            mounts: storagePlan.metadata.storageMounts,
-            ...(memoryRecall ? { memoryRecall } : {}),
-            runId: identity.runId,
-          },
-          signal,
-        ),
-      ),
+      stableContext
+        ? get(
+            preparePiStableContext(
+              {
+                db: input.db,
+                owner: stableContext.owner,
+                variantDigest: stableContext.variantDigest,
+                prompt: stableContext.prompt,
+                source: stableContext.source,
+                mounts: storagePlan.metadata.storageMounts,
+                persistedStorageMounts,
+                ...(memoryRecall ? { memoryRecall } : {}),
+                eligible: stableContextEligible,
+                checkedAt: new Date(input.args.apiStartTime),
+                runId: identity.runId,
+              },
+              signal,
+            ),
+          )
+        : get(
+            preparePiResourceSnapshot(
+              {
+                db: input.db,
+                mounts: storagePlan.metadata.storageMounts,
+                ...(memoryRecall ? { memoryRecall } : {}),
+                runId: identity.runId,
+              },
+              signal,
+            ),
+          ),
       signal,
     );
     if (!resource) {

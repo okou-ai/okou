@@ -4,6 +4,7 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { agentDeletionError } from "@okouai/core/agent-protection";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
+import { piStableContextGenerations } from "@okouai/db/schema/pi-stable-context";
 import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 
@@ -176,6 +177,12 @@ async function deleteAgentInTransaction(tx: Tx, args: DeleteAgentArgs) {
 
   const removed = await deleteRunConversations(tx, lifecycle.runIds);
 
+  // Generation fences intentionally have no agent FK: metadata-first Storage
+  // publication can run in a separate transaction while the canonical agent
+  // row is locked. Erasure therefore owns this explicit edge.
+  await tx
+    .delete(piStableContextGenerations)
+    .where(eq(piStableContextGenerations.agentId, args.agentId));
   await tx
     .delete(agents)
     .where(and(eq(agents.id, args.agentId), eq(agents.orgId, args.orgId)));

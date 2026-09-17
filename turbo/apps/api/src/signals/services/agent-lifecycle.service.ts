@@ -1,5 +1,6 @@
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { piStableContextGenerations } from "@okouai/db/schema/pi-stable-context";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
@@ -111,6 +112,14 @@ export async function deleteClerkAgentLifecycleData(
       }
     }
     if (agentIds.length > 0) {
+      await tx
+        .delete(piStableContextGenerations)
+        .where(
+          eq(
+            piStableContextGenerations.agentId,
+            sql`ANY(${sql.param(agentIds)}::uuid[])`,
+          ),
+        );
       await tx
         .delete(agents)
         .where(

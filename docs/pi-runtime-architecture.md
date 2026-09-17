@@ -73,6 +73,82 @@ destination/DNS/redirect checks, explicit headers, firewall placeholders,
 subscription account binding, and dialect-specific tier policy remain at their
 existing trust boundaries.
 
+## Stable model-visible context publication
+
+Pi resource preparation has a versioned API-owned projection in
+[`pi-stable-context.service.ts`](../turbo/apps/api/src/signals/services/pi-stable-context.service.ts).
+It reuses the canonical resource-index composer and the existing resource
+snapshot wire contract; it is not a second prompt or discovery format. The
+projection is owner-bound by organization, executing user, Agent, and resource
+owner. Its variant and semantic vector also bind ordered effective mounts and
+exact Storage versions, mount/remapping/overlay/writeback behavior, Agent
+identity and instructions, selected skills and capability metadata, catalog,
+feature, permission and connector-scope identities, plus prompt, runtime and
+extractor schema versions. Mount order is retained, including canonical
+last-wins behavior. Artifact digests include owner bindings, so an equal body
+in another owner scope is not reusable authority.
+
+The persisted lifecycle consists of four additive tables:
+
+- `pi_stable_context_generations` is the authoritative Agent- or user-scoped
+  source fence. A source writer advances it in the same transaction as a
+  single-stage write, or changes it to `pending` before a multi-stage Storage
+  publication.
+- `pi_stable_context_heads` is one current owner/variant generation and carries
+  `missing`, `pending`, `running`, `ready`, `unindexable`, or `failed` state.
+  Lease ID, generation and input digest fence every worker completion.
+- `pi_stable_context_artifacts` is immutable and content addressed. A stale
+  builder may leave an orphan artifact, but compare-and-swap cannot replace a
+  newer head or resurrect a revoked/deleted source.
+- `pi_stable_context_artifact_resources` retains every exact Storage/version
+  dependency. Live heads therefore do not rely on run-only inference-object
+  retention. Weekly cleanup removes only old artifacts with no head; erasure
+  removes owner artifacts and the deliberately non-FK generation fence.
+
+Workflow metadata and synthesized volume publication, and Agent instruction
+metadata and volume publication, are real two-stage boundaries. Metadata first
+publishes a pending token. The Storage HEAD transaction locks that exact token,
+commits the prepared volume, and changes only that generation to ready. A
+superseded publisher may retain immutable Storage history but cannot publish a
+ready mixed metadata/volume generation. Agent/workflow create, update, delete,
+installation, custom connector, connector catalog, official workflow catalog,
+feature and grant writers invalidate known heads in their authoritative
+transactions. Storage encoding repair under the same logical version also
+invalidates every retained dependent head.
+
+| Prompt/runtime input                                                                                                                                                        | Classification and authority                                                                                                                                             |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Agent identity/instructions, execution/tool text, effective resource mounts, skills and capability metadata                                                                 | Stable artifact. Constructed from the existing canonical composers and immutable resource-version indexes.                                                               |
+| Frozen memory summary, explicit no-content epoch                                                                                                                            | Frozen session layer. Bound after the stable artifact; changing memory does not rebuild the resource layer, and memory-off never reads a prior memory-bearing selection. |
+| Canonical input/history, source-thread and trigger/user profile metadata, request time, per-run volume/session overlays, selected model/account/effort/tier and credentials | Dynamic authoritative input. Captured and checked by their existing owners; credential bytes, signed URLs and mutable SDK sessions never enter the artifact.             |
+
+A ready resource projection is one bounded head/artifact/generation read. It
+does not fetch one index or archive per resource and does not run the stable
+resource composer. Request-specific Storage/session overlays and memory remain
+separately resolved and are never borrowed from another session. A legitimate
+missing, pending, unindexable, failed, old-writer or exact-version repair case
+uses canonical discovery with the same eligibility, archive limits,
+cancellation and error policy; it is recorded separately and may publish a
+fenced read repair. No stale-ready substitution, reduced prompt/tool set or
+indefinite in-request worker wait is permitted.
+
+Permission expiry needs no writer. Each artifact records the earliest grant
+validity horizon and is rejected at or after that instant; the bootstrap query
+still evaluates grants at the request's checked time. This optimization never
+replaces the final catalog/definition, permission, credential/account, provider
+ownership, organization, thread, session, subscription, claim or admission-lock
+checks. The official-workflow catalog lock and provider-after-durable-commit
+ordering remain unchanged.
+
+The bounded worker coalesces demand, claims at most 16 heads per pass, leases
+for five minutes and caps one generation at five attempts. Cron reports claimed,
+ready, pending, unindexable, failed and stale counts; request telemetry reports
+ready, repaired miss, stale repair, source pending and dynamic paths with wall
+time. These local phase observations are not evidence that the epic's original
+API-start-to-correlated-provider-HTTP target is achieved. Cold process, cache
+state, resource cardinality, index/archive work and provider interception must
+be identified by any later measurement.
+
 ## Launch through settlement
 
 1. The API admits and freezes the run's route, source, session, resources, and

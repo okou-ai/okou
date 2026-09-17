@@ -48,6 +48,7 @@ import {
   currentConnectorCatalogValidatorIdentity,
 } from "./connector-catalog-validator-authority";
 import { commitConnectorRuntimeMutation } from "./connector-runtime-wakeup.service";
+import { invalidatePiStableContext } from "./pi-stable-context-generation.service";
 
 const userPermissionGrantSelection = Object.freeze({
   id: userPermissionGrants.id,
@@ -743,6 +744,11 @@ async function applyVisibleAgentGrantRows(
     }
 
     if (args.apply.grants.length === 0) {
+      await invalidatePiStableContext(tx, {
+        orgId: args.orgId,
+        userId: args.userId,
+        agentId,
+      });
       return [];
     }
 
@@ -808,6 +814,11 @@ async function applyVisibleAgentGrantRows(
       }
       rows.push(row);
     }
+    await invalidatePiStableContext(tx, {
+      orgId: args.orgId,
+      userId: args.userId,
+      agentId,
+    });
     return rows;
   });
 }

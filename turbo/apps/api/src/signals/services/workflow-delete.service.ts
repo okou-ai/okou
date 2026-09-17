@@ -12,6 +12,7 @@ import { writeDb$ } from "../external/db";
 import { reconcileAutomationEventWatches } from "./automation-event-watch-lifecycle.service";
 import { OFFICIAL_WORKFLOW_CATALOG_ACTIVATION_LOCK } from "./official-workflow-constants";
 import { purgeDeletedStoragePrefix$ } from "./storage-prefix-purge.service";
+import { invalidatePiStableContext } from "./pi-stable-context-generation.service";
 
 interface DeleteWorkflowInput {
   readonly orgId: string;
@@ -117,6 +118,9 @@ export const deleteWorkflow$ = command(
       const [workflow] = await tx
         .select({
           id: workflows.id,
+          agentId: workflows.agentId,
+          ownerUserId: workflows.ownerUserId,
+          visibility: workflows.visibility,
           officialDefinitionName: workflows.officialDefinitionName,
           officialInstallationState: workflows.officialInstallationState,
         })
@@ -161,6 +165,13 @@ export const deleteWorkflow$ = command(
         .where(eq(workflowAutomations.workflowId, workflow.id));
 
       await tx.delete(workflows).where(eq(workflows.id, workflow.id));
+      await invalidatePiStableContext(tx, {
+        orgId: args.orgId,
+        agentId: workflow.agentId,
+        ...(workflow.visibility === "private"
+          ? { userId: workflow.ownerUserId }
+          : {}),
+      });
 
       const storageName = getCustomSkillStorageName(workflow.id);
       const [storage] = await tx

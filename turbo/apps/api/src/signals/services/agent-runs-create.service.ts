@@ -29,6 +29,7 @@ import { agentDisplayName } from "@okouai/core/public-brand";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import type { PiStableContextPromptProjection } from "@okouai/db/jsonb-contracts/pi-stable-context";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import type { z } from "zod";
@@ -87,6 +88,7 @@ import {
   captureActivePersonalModelProviderAccount,
   isPersonalSubscriptionProviderType,
 } from "./model-provider-account.service";
+import { piStableContextVariantDigest } from "./pi-stable-context.service";
 
 type AgentRunCreateBody = z.infer<typeof runCreateBodySchema>;
 // Emitted as the agent_run_origin observability dimension. The values name what
@@ -590,24 +592,39 @@ function buildCurrentUserPrompt(userInfo: UserInfo): string {
 }
 
 function buildAppendSystemPrompt(args: {
+  readonly stable: PiStableContextPromptProjection;
+  readonly userInfo: UserInfo;
+}): string {
+  return [
+    args.stable.agentIdentity,
+    args.stable.executionLimit,
+    args.stable.tools,
+    buildCurrentUserPrompt(args.userInfo),
+  ]
+    .filter((part): part is string => {
+      return Boolean(part);
+    })
+    .join("\n\n");
+}
+
+function buildStableAgentPrompt(args: {
   readonly privateArtifactsEnabled: boolean;
   readonly sshEnabled: boolean;
   readonly agent: AgentRunRecord;
-  readonly userInfo: UserInfo;
+  readonly feishuPlatform: FeishuPlatform | undefined;
   readonly triggerSource: TriggerSource;
   readonly cloudBrowserEnabled: boolean | undefined;
   readonly bankingEnabled: boolean;
   readonly larkEnabled: boolean;
   readonly introVideoEnabled: boolean;
   readonly deliveryFormatGuidanceEnabled: boolean;
-}): string {
-  const identity = buildAgentIdentityPrompt(args.agent);
-  return [
-    identity,
-    buildExecutionTimeLimitPrompt(),
-    buildAgentToolsPrompt({
+}): PiStableContextPromptProjection {
+  return {
+    agentIdentity: buildAgentIdentityPrompt(args.agent) ?? "",
+    executionLimit: buildExecutionTimeLimitPrompt(),
+    tools: buildAgentToolsPrompt({
       privateArtifactsEnabled: args.privateArtifactsEnabled,
-      feishuPlatform: args.userInfo.feishuPlatform,
+      feishuPlatform: args.feishuPlatform,
       sshEnabled: args.sshEnabled,
       triggerSource: args.triggerSource,
       cloudBrowserEnabled: args.cloudBrowserEnabled,
@@ -616,12 +633,7 @@ function buildAppendSystemPrompt(args: {
       introVideoEnabled: args.introVideoEnabled,
       deliveryFormatGuidanceEnabled: args.deliveryFormatGuidanceEnabled,
     }),
-    buildCurrentUserPrompt(args.userInfo),
-  ]
-    .filter((part): part is string => {
-      return Boolean(part);
-    })
-    .join("\n\n");
+  };
 }
 
 async function inferAgentIdFromSession(
@@ -779,32 +791,18 @@ function agentRunOrigin(args: {
 }
 
 function createRunBody(args: {
-  readonly privateArtifactsEnabled: boolean;
-  readonly sshEnabled: boolean;
   readonly body: AgentRunCreateBody;
   readonly agent: AgentRunRecord;
   readonly userInfo: UserInfo;
+  readonly stablePrompt: PiStableContextPromptProjection;
   readonly permissionPolicies: FirewallPolicies | null | undefined;
   readonly triggerSource: TriggerSource | undefined;
   readonly appendSystemPrompt: string | undefined;
-  readonly cloudBrowserEnabled: boolean | undefined;
-  readonly bankingEnabled: boolean;
-  readonly larkEnabled: boolean;
-  readonly introVideoEnabled: boolean;
-  readonly deliveryFormatGuidanceEnabled: boolean;
 }) {
   const triggerSource = args.triggerSource ?? "web";
   const baseAppendSystemPrompt = buildAppendSystemPrompt({
-    privateArtifactsEnabled: args.privateArtifactsEnabled,
-    sshEnabled: args.sshEnabled,
-    agent: args.agent,
+    stable: args.stablePrompt,
     userInfo: args.userInfo,
-    triggerSource,
-    cloudBrowserEnabled: args.cloudBrowserEnabled,
-    bankingEnabled: args.bankingEnabled,
-    larkEnabled: args.larkEnabled,
-    introVideoEnabled: args.introVideoEnabled,
-    deliveryFormatGuidanceEnabled: args.deliveryFormatGuidanceEnabled,
   });
   return {
     prompt: args.body.prompt,
@@ -972,6 +970,8 @@ function buildCreateAgentRunArgs(args: {
   readonly agent: AgentRunRecord;
   readonly userInfo: UserInfo;
   readonly runPermissionPolicies: FirewallPolicies | null | undefined;
+  readonly permissionValidityHorizon: string | null;
+  readonly connectorCatalogSelection: RunConnectorCatalogSelection;
   readonly workflows: readonly RunWorkflowRef[];
   readonly allowedConnectorSlugs: readonly ConnectorSlug[];
   readonly allowedCustomConnectorIds: readonly string[];
@@ -988,6 +988,37 @@ function buildCreateAgentRunArgs(args: {
     FeatureSwitchKey.IntroVideo,
     args.featureSwitchContext,
   );
+  const promptInputs = {
+    privateArtifactsEnabled: isFeatureEnabled(
+      FeatureSwitchKey.PrivateArtifacts,
+      args.featureSwitchContext,
+    ),
+    sshEnabled: isFeatureEnabled(
+      FeatureSwitchKey.SshAccess,
+      args.featureSwitchContext,
+    ),
+    bankingEnabled: isFeatureEnabled(
+      FeatureSwitchKey.Banking,
+      args.featureSwitchContext,
+    ),
+    larkEnabled: isFeatureEnabled(
+      FeatureSwitchKey.LarkIntegration,
+      args.featureSwitchContext,
+    ),
+    deliveryFormatGuidanceEnabled: isFeatureEnabled(
+      FeatureSwitchKey.DeliveryFormatGuidance,
+      args.featureSwitchContext,
+    ),
+    introVideoEnabled,
+    triggerSource: command.triggerSource ?? "web",
+    cloudBrowserEnabled: args.cloudBrowserEnabled,
+  };
+  const userInfo = { ...args.userInfo, ...command.userInfoExtras };
+  const stablePrompt = buildStableAgentPrompt({
+    ...promptInputs,
+    agent: args.agent,
+    feishuPlatform: userInfo.feishuPlatform,
+  });
   const productAgentExecutionPlan = {
     identity: "agent" as const,
     content: buildAgentExecutionConfig(args.agent.name),
@@ -996,36 +1027,53 @@ function buildCreateAgentRunArgs(args: {
     userId: command.auth.userId,
     orgId: command.auth.orgId,
     body: createRunBody({
-      privateArtifactsEnabled: isFeatureEnabled(
-        FeatureSwitchKey.PrivateArtifacts,
-        args.featureSwitchContext,
-      ),
-      sshEnabled: isFeatureEnabled(
-        FeatureSwitchKey.SshAccess,
-        args.featureSwitchContext,
-      ),
       body: command.body,
       agent: args.agent,
-      userInfo: { ...args.userInfo, ...command.userInfoExtras },
+      userInfo,
+      stablePrompt,
       permissionPolicies: args.runPermissionPolicies,
       triggerSource: command.triggerSource,
       appendSystemPrompt: command.appendSystemPrompt,
-      cloudBrowserEnabled: args.cloudBrowserEnabled,
-      bankingEnabled: isFeatureEnabled(
-        FeatureSwitchKey.Banking,
-        args.featureSwitchContext,
-      ),
-      larkEnabled: isFeatureEnabled(
-        FeatureSwitchKey.LarkIntegration,
-        args.featureSwitchContext,
-      ),
-      deliveryFormatGuidanceEnabled: isFeatureEnabled(
-        FeatureSwitchKey.DeliveryFormatGuidance,
-        args.featureSwitchContext,
-      ),
-      introVideoEnabled,
     }),
     apiStartTime: command.apiStartTime,
+    piStableContext: {
+      owner: {
+        orgId: command.auth.orgId,
+        userId: command.auth.userId,
+        agentId: args.agent.id,
+        resourceOwner: {
+          orgId: args.agent.orgId,
+          userId: args.agent.owner,
+        },
+      },
+      variantDigest: piStableContextVariantDigest({
+        promptInputs,
+        feishuPlatform: userInfo.feishuPlatform ?? null,
+        connectorSource: "stored_agent",
+      }),
+      prompt: stablePrompt,
+      source: {
+        catalogIdentity:
+          args.connectorCatalogSelection.kind === "scoped"
+            ? piStableContextVariantDigest(
+                args.connectorCatalogSelection.selection.catalogIdentity,
+              )
+            : null,
+        featurePromptDigest: piStableContextVariantDigest(promptInputs),
+        permissionDigest: piStableContextVariantDigest(
+          args.runPermissionPolicies ?? null,
+        ),
+        connectorScopeDigest: piStableContextVariantDigest({
+          allowedConnectorSlugs: args.allowedConnectorSlugs,
+          allowedCustomConnectorIds: args.allowedCustomConnectorIds,
+          customConnectorGrants: args.customConnectorGrants,
+          workflows: args.workflows,
+        }),
+        validityHorizon: args.permissionValidityHorizon,
+        promptSchemaVersion: 1,
+        runtimeSchemaVersion: 1,
+      },
+    },
     modelProviderId: command.modelProviderId ?? agentModelProviderId,
     modelProviderCredentialScope: command.modelProviderCredentialScope,
     modelProviderType: command.body.modelProvider,
@@ -1095,6 +1143,7 @@ interface AgentRunAfterPreCreate {
   readonly userInfo: UserInfo;
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly runPermissionPolicies: FirewallPolicies | null | undefined;
+  readonly permissionValidityHorizon: string | null;
   readonly connectorCatalogSelection: RunConnectorCatalogSelection;
   readonly workflows: readonly RunWorkflowRef[];
   readonly allowedConnectorSlugs: readonly ConnectorSlug[];
@@ -1360,6 +1409,7 @@ const createAgentRunInternal$ = command(
       customConnectorGrants,
       workflows,
       runPermissionPolicies,
+      permissionValidityHorizon,
       connectorCatalogSelection,
     } = await loadAgentRunPostAuthorizationContext(
       db,
@@ -1381,6 +1431,7 @@ const createAgentRunInternal$ = command(
         userInfo,
         featureSwitchContext,
         runPermissionPolicies,
+        permissionValidityHorizon,
         connectorCatalogSelection,
         workflows,
         allowedConnectorSlugs,

@@ -17,6 +17,43 @@ New versions are normally deployed together, but they do not become active at
 the same instant. Code and tests must account for periods where different
 surfaces are on different versions.
 
+## Pi stable-context schema rollout and rollback
+
+Migration 1151 adds `pi_stable_context_generations`,
+`pi_stable_context_heads`, `pi_stable_context_artifacts`, and
+`pi_stable_context_artifact_resources`. It creates empty tables only: it does
+not enumerate users, Agents, sessions or Storage and performs no materialization
+or production backfill. Deploy the additive migration before an API that writes
+these rows. Existing Runner, Sandbox, CLI and persisted Pi resource-snapshot
+wire readers are unchanged.
+
+Mixed-version API operation is safe by construction. A new reader with no
+generation/head treats the exact variant as missing and uses canonical
+exact-version discovery. An old writer that does not publish demand likewise
+causes a later read-time repair; this is compatibility and recovery, not the
+normal invalidation path. A pending multi-stage source generation is never read
+as ready. Old API code ignores the additive tables and continues the canonical
+path. Rollback therefore consists of rolling API code back while retaining the
+tables; do not drop them until all new writers/workers and rollback binaries
+have drained.
+
+The optional repair/backfill command is bounded by a cursor and limit, is dry-run
+by default, and reports missing/pending/ready/unindexable/failed cardinality. A
+mutating pass only records demand for currently known owner/variant heads; it
+does not synthesize credentials, sessions or a production-wide cross product.
+Establish real cardinality and receive separate production authority before
+running it. No release, activation, feature-switch write or backfill is part of
+the schema migration.
+
+Ready heads own immutable artifacts, and artifact-resource edges retain exact
+Storage/version rows. Cleanup can remove only an artifact older than seven days
+that no head references. Agent/account erasure removes heads/artifacts through
+owner edges and explicitly removes generation fences. A failed or rolled-back
+source transaction cannot advance its generation; a stale builder cannot attach
+to a newer head. These rules keep rollback and erasure safe without treating
+the seven-day legacy snapshot cache or run-only inference objects as live
+configuration retention.
+
 ## Deployment Model
 
 ### Frontend

@@ -16,12 +16,14 @@ import {
 } from "./storage-volume-publication.service";
 import { uploadVolumeServerSide$ } from "./storage-volume-upload.service";
 import { removeAgentInstructionsStorageInTransaction } from "./agent-instructions-storage-transaction.service";
+import type { PiStableContextPublicationFence } from "./pi-stable-context-generation.service";
 
 interface WriteAgentInstructionsStorageArgs {
   readonly orgId: string;
   readonly agentName: string;
   readonly instructions: string;
   readonly framework?: string;
+  readonly stableContextPublication?: PiStableContextPublicationFence;
 }
 
 function instructionFilesForFramework(args: {
@@ -47,6 +49,9 @@ function instructionVolumeInput(args: WriteAgentInstructionsStorageArgs) {
     orgId: args.orgId,
     storageName: getInstructionsStorageName(args.agentName.toLowerCase()),
     piResourceIndex: true as const,
+    ...(args.stableContextPublication
+      ? { stableContextPublication: args.stableContextPublication }
+      : {}),
     files: instructionFilesForFramework({
       content: args.instructions,
       framework: args.framework,

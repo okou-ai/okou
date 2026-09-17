@@ -33,6 +33,7 @@ import {
 } from "@okouai/connectors/connector-catalog/runtime-projection";
 import { connectorCatalogExecutableCapabilityState } from "./connector-catalog-compatibility.service";
 import { connectorCatalogSource } from "./connector-catalog-source";
+import { invalidateAllPiStableContexts } from "./pi-stable-context-generation.service";
 import {
   connectorCatalogValidationAuthorityIsCurrent,
   connectorCatalogValidationAuthorityIsCurrentOrNewer,
@@ -497,6 +498,7 @@ export const reconcileConnectorCatalogRuntimeProjection$ = command(
         artifact: decoded.artifact,
         validator,
       });
+      await invalidateAllPiStableContexts(tx);
     });
     signal.throwIfAborted();
   },

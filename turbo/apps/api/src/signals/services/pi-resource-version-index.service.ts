@@ -3,9 +3,13 @@ import { randomUUID } from "node:crypto";
 
 import type { PiResourceVersionIndex } from "@okouai/db/jsonb-contracts/pi-resource-version-index";
 import { piResourceVersionIndexes } from "@okouai/db/schema/pi-resource-version-index";
+import {
+  piStableContextArtifactResources,
+  piStableContextHeads,
+} from "@okouai/db/schema/pi-stable-context";
 import { storageVersions } from "@okouai/db/schema/storage";
 import { command } from "ccstate";
-import { and, asc, eq, inArray, lte, or, sql } from "drizzle-orm";
+import { and, asc, eq, exists, inArray, lte, or, sql } from "drizzle-orm";
 
 import { env } from "../../lib/env";
 import {
@@ -26,7 +30,7 @@ const WORK_BATCH_SIZE = 32;
 const WORK_LEASE_MS = 5 * 60 * 1000;
 
 export async function enqueuePiResourceVersionIndexes(
-  db: Pick<Db, "insert" | "select">,
+  db: Pick<Db, "insert" | "select" | "update">,
   versionIds: readonly string[],
   signal?: AbortSignal,
 ): Promise<void> {
@@ -47,7 +51,7 @@ export async function enqueuePiResourceVersionIndexes(
       return [version.id, version.archiveSize] as const;
     }),
   );
-  await db
+  const changed = await db
     .insert(piResourceVersionIndexes)
     .values(
       unique.map((storageVersionId) => {
@@ -80,7 +84,50 @@ export async function enqueuePiResourceVersionIndexes(
         updatedAt: nowDate(),
       },
       setWhere: sql`${piResourceVersionIndexes.sourceArchiveSize} IS DISTINCT FROM excluded.source_archive_size`,
+    })
+    .returning({
+      storageVersionId: piResourceVersionIndexes.storageVersionId,
     });
+  const changedVersionIds = changed.map((row) => {
+    return row.storageVersionId;
+  });
+  if (changedVersionIds.length > 0) {
+    await db
+      .update(piStableContextHeads)
+      .set({
+        generation: sql`${piStableContextHeads.generation} + 1`,
+        status: "missing",
+        input: null,
+        inputDigest: null,
+        artifactDigest: null,
+        validityHorizon: null,
+        leaseId: null,
+        leaseExpiresAt: null,
+        availableAt: nowDate(),
+        attemptCount: 0,
+        lastErrorClass: null,
+        updatedAt: nowDate(),
+      })
+      .where(
+        exists(
+          db
+            .select({ ordinal: piStableContextArtifactResources.ordinal })
+            .from(piStableContextArtifactResources)
+            .where(
+              and(
+                eq(
+                  piStableContextArtifactResources.artifactDigest,
+                  piStableContextHeads.artifactDigest,
+                ),
+                inArray(
+                  piStableContextArtifactResources.storageVersionId,
+                  changedVersionIds,
+                ),
+              ),
+            ),
+        ),
+      );
+  }
   signal?.throwIfAborted();
 }
 

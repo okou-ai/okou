@@ -9,6 +9,10 @@ import { and, eq, inArray } from "drizzle-orm";
 
 import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { nowDate } from "../../lib/time";
+import {
+  invalidatePiStableContextsForOrg,
+  invalidatePiStableContextsForUser,
+} from "./pi-stable-context-generation.service";
 
 export const ORG_SENTINEL_USER_ID = "__org__";
 
@@ -164,25 +168,31 @@ export const updateUserFeatureSwitches$ = command(
       args.switches,
     );
 
-    if (hasSwitches(userSwitches)) {
-      await upsertFeatureSwitches(
-        writeDb,
-        args.orgId,
-        args.userId,
-        userSwitches,
-        signal,
-      );
-    }
+    await writeDb.transaction(async (tx) => {
+      if (hasSwitches(userSwitches)) {
+        await upsertFeatureSwitches(
+          tx,
+          args.orgId,
+          args.userId,
+          userSwitches,
+          signal,
+        );
+      }
 
-    if (hasSwitches(orgSwitches)) {
-      await upsertFeatureSwitches(
-        writeDb,
-        args.orgId,
-        ORG_SENTINEL_USER_ID,
-        orgSwitches,
-        signal,
-      );
-    }
+      if (hasSwitches(orgSwitches)) {
+        await upsertFeatureSwitches(
+          tx,
+          args.orgId,
+          ORG_SENTINEL_USER_ID,
+          orgSwitches,
+          signal,
+        );
+        await invalidatePiStableContextsForOrg(tx, args.orgId);
+      } else if (hasSwitches(userSwitches)) {
+        await invalidatePiStableContextsForUser(tx, args);
+      }
+    });
+    signal.throwIfAborted();
 
     return await loadUserFeatureSwitchOverrides(
       writeDb,
@@ -241,17 +251,20 @@ export const deleteUserFeatureSwitches$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     const writeDb = set(writeDb$);
-    await writeDb
-      .delete(userFeatureSwitches)
-      .where(
-        and(
-          eq(userFeatureSwitches.orgId, args.orgId),
-          eq(userFeatureSwitches.userId, args.userId),
-        ),
-      );
-    signal.throwIfAborted();
+    await writeDb.transaction(async (tx) => {
+      await tx
+        .delete(userFeatureSwitches)
+        .where(
+          and(
+            eq(userFeatureSwitches.orgId, args.orgId),
+            eq(userFeatureSwitches.userId, args.userId),
+          ),
+        );
+      signal.throwIfAborted();
 
-    await removeOrgScopedFeatureSwitches(writeDb, args.orgId, signal);
+      await removeOrgScopedFeatureSwitches(tx, args.orgId, signal);
+      await invalidatePiStableContextsForOrg(tx, args.orgId);
+    });
   },
 );
 
