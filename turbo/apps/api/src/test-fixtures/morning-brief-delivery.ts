@@ -1,8 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { createStore } from "ccstate";
-import { sql } from "drizzle-orm";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
 import { emailOutbox } from "@okouai/db/schema/email-outbox";

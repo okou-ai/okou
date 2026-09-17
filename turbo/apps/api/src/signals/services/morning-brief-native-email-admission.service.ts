@@ -5,17 +5,7 @@ import { morningBriefCollectionOccurrences } from "@okouai/db/schema/morning-bri
 import { morningBriefDeliveries } from "@okouai/db/schema/morning-brief-delivery";
 import { users } from "@okouai/db/schema/user";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
-import {
-  and,
-  asc,
-  eq,
-  gt,
-  inArray,
-  isNull,
-  lte,
-  notInArray,
-  or,
-} from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, lte, or } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 import type { ClerkClient } from "../external/clerk";

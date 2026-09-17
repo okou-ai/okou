@@ -845,12 +845,14 @@ async function drainEmailOutboxBatch(
     // Live-owner evidence for the next due native intent is resolved here,
     // outside the claim transaction, because it reaches Clerk.
     const nativeOwner = await resolveNativeOwnerPreflight(
-      db,
-      clerk,
-      new Date(context.currentTimeMs),
-      deferredIds,
+      {
+        db,
+        clerk,
+        currentTime: new Date(context.currentTimeMs),
+        deferredIds,
+        ...(itemIds === undefined ? {} : { itemIds }),
+      },
       signal,
-      itemIds,
     );
     signal.throwIfAborted();
     const hadItem = await drainNextOutboxItem(
@@ -888,24 +890,26 @@ async function drainEmailOutboxBatch(
  * sent on somebody else's evidence.
  */
 async function resolveNativeOwnerPreflight(
-  db: Db,
-  clerk: ClerkClient,
-  currentTime: Date,
-  deferredIds: ReadonlySet<string>,
+  args: {
+    readonly db: Db;
+    readonly clerk: ClerkClient;
+    readonly currentTime: Date;
+    readonly deferredIds: ReadonlySet<string>;
+    readonly itemIds?: readonly string[];
+  },
   signal: AbortSignal,
-  itemIds?: readonly string[],
 ): Promise<NativeMorningBriefOwnerPreflight | null> {
   const candidate = await peekNativeMorningBriefEmailOwner(
-    db,
-    currentTime,
+    args.db,
+    args.currentTime,
     OUTBOX_TTL_MS,
-    deferredIds,
-    itemIds,
+    args.deferredIds,
+    args.itemIds,
   );
   signal.throwIfAborted();
   return candidate === null
     ? null
-    : await currentNativeMorningBriefMembership(clerk, candidate, signal);
+    : await currentNativeMorningBriefMembership(args.clerk, candidate, signal);
 }
 
 export const drainEmailOutboxBatch$ = command(

@@ -523,7 +523,7 @@ describe("Morning Brief native delivery", () => {
   it("still delivers to Chat when the recipient has opted out", async () => {
     const f = await fixture();
     scriptSlack();
-    const { calls } = scriptProviders();
+    scriptProviders();
     const attemptId = await generateAcceptedResult(f);
     await unsubscribeMember(f.userId);
 
@@ -559,7 +559,7 @@ describe("Morning Brief native delivery", () => {
 
     const response = await accept(deliver(f, attemptId), [200]);
     expect(response.body.delivery.emailResolution).toBe("no_email");
-    await expect(memberEmailAddressIsAbsent(f.userId)).resolves.toBe(true);
+    await expect(memberEmailAddressIsAbsent(f.userId)).resolves.toBeTruthy();
   });
 
   it("removes the unsent intent and its delivery when the owner is deleted", async () => {
@@ -594,7 +594,7 @@ describe("Morning Brief native delivery", () => {
   it("fails a native intent closed once its delivery provenance is gone", async () => {
     const f = await fixture();
     scriptSlack();
-    const { calls } = scriptProviders();
+    scriptProviders();
     const attemptId = await generateAcceptedResult(f);
     await accept(deliver(f, attemptId), [200]);
     const [queued] = await readOutbox(f);
@@ -989,7 +989,7 @@ describe("Morning Brief native delivery", () => {
     // this template must still survive is raw HTML, entity expansion and
     // Markdown metacharacters at full accepted size.
     const adversarial = [
-      "<script>alert(\'x\')</script>",
+      "<script>alert(1)</script>",
       "<img src=x onerror=alert(1)>",
       "&".repeat(200),
       '"><b>bold</b>',
@@ -1006,7 +1006,7 @@ describe("Morning Brief native delivery", () => {
       return event.id === response.body.delivery.chatEventId;
     });
     const body = delivered?.content ?? "";
-    expect(Buffer.byteLength(body, "utf8")).toBeGreaterThan(3_000);
+    expect(Buffer.byteLength(body, "utf8")).toBeGreaterThan(3000);
 
     const [queued] = await readOutbox(f);
     const template = queued?.template as {
@@ -1025,7 +1025,7 @@ describe("Morning Brief native delivery", () => {
     expect(html).not.toContain("javascript:");
     // The long ampersand run is escaped rather than interpreted as entities.
     expect(html.split("&amp;").length - 1).toBeGreaterThan(100);
-    expect(text).toContain("alert('x')");
+    expect(text).toContain("alert(1)");
     // Neither part is shortened: the whole accepted body reaches both.
     expect(text).toContain("*".repeat(40));
   });
