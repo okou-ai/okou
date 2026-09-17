@@ -113,6 +113,75 @@ export async function stageUnrepairedOrgModelPolicyFixture(args: {
   }
 }
 
+/**
+ * Holds the production `model-policy:<orgId>` advisory key and reports its
+ * waiter count, so a test can drive the seeding/repair slow path into its own
+ * bounded lock budget instead of guessing at timing.
+ *
+ * Infrastructure exception: no product API holds a transaction open, and no
+ * endpoint exposes lock waits. The fixture takes only the advisory key, writes
+ * no policy row and always rolls back.
+ */
+export async function holdOrgModelPolicyWriteLockFixture(args: {
+  readonly orgId: string;
+  readonly signal: AbortSignal;
+}): Promise<{
+  readonly release: () => void;
+  readonly done: Promise<void>;
+  readonly waiterCount: () => Promise<number>;
+}> {
+  const started = createDeferredPromise<number>(args.signal);
+  const released = createDeferredPromise<void>(args.signal);
+  const done = db().transaction(async (tx) => {
+    const rows = await executeRawRows(
+      tx,
+      sql`
+        SELECT
+          pg_backend_pid() AS "pid",
+          pg_advisory_xact_lock(
+            hashtextextended(${`model-policy:${args.orgId}`}, 0)
+          )
+      `,
+      z.object({ pid: z.int() }),
+    );
+    const holderPid = rows[0]?.pid;
+    if (!holderPid) {
+      throw new Error("Expected the model-policy lock holder pid");
+    }
+    started.resolve(holderPid);
+    await released.promise;
+  });
+  const holderPid = await started.promise;
+  return {
+    release: () => {
+      if (!released.settled()) {
+        released.resolve(undefined);
+      }
+    },
+    done,
+    waiterCount: async () => {
+      const rows = await executeRawRows(
+        db(),
+        sql`
+          SELECT ${count()}::int AS "waiterCount"
+          FROM pg_locks AS waiting
+          WHERE waiting.locktype = 'advisory'
+            AND NOT waiting.granted
+            AND (waiting.classid, waiting.objid, waiting.objsubid) IN (
+              SELECT held.classid, held.objid, held.objsubid
+              FROM pg_locks AS held
+              WHERE held.locktype = 'advisory'
+                AND held.pid = ${holderPid}
+                AND held.granted
+            )
+        `,
+        z.object({ waiterCount: z.int() }),
+      );
+      return rows[0]?.waiterCount ?? 0;
+    },
+  };
+}
+
 /** The public GET cannot observe these states without repairing them first. */
 export async function readUnrepairedOrgModelPolicyFixture(orgId: string) {
   const policies = await db()

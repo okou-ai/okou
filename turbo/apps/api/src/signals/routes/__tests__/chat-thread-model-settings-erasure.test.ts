@@ -9,18 +9,23 @@ import { testContext } from "../../../__tests__/test-context";
 import {
   closeErasureSubjectFixture,
   removeErasureSubjectsFixture,
+  transferAgentOrganizationFixture,
   transferAgentOwnerFixture,
 } from "../../../test-fixtures/account-erasure-subject";
 import { holdChatThreadRowLockFixture } from "../../../test-fixtures/chat-events";
 import {
   holdChatThreadEventIdFixture,
+  probeChatThreadRowLockModesFixture,
   setChatThreadAgentFixture,
   withChatThreadContentBarrierFixture,
+  withChatThreadContentBarriersFixture,
 } from "../../../test-fixtures/chat-thread-content-erasure";
 import {
+  holdOrgModelPolicyWriteLockFixture,
   readUnrepairedOrgModelPolicyFixture,
   stageUnrepairedOrgModelPolicyFixture,
 } from "../../../test-fixtures/org-model-policies";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -211,6 +216,27 @@ async function policyModels(
   });
 }
 
+/** The `threadListChanged` invalidations published since the mock was last
+ * cleared, read through the repository's existing Ably integration mock. The
+ * route's only outbound effect is this notification, so counting it is how a
+ * test distinguishes "committed and announced" from "rolled back silently". */
+function countThreadListInvalidations(): number {
+  return context.mocks.ably.publish.mock.calls.filter((call) => {
+    return call[0] === "threadListChanged";
+  }).length;
+}
+
+/** Clears the setup noise every fixture write produces, then settles the
+ * best-effort publication `waitUntil` registers before counting. */
+async function observedInvalidations(
+  request: () => Promise<unknown>,
+): Promise<number> {
+  context.mocks.ably.publish.mockClear();
+  await request();
+  await flushWaitUntilForTest();
+  return countThreadListInvalidations();
+}
+
 describe("account erasure fences chat-thread model settings writes", () => {
   it("denies a model-selection update for a closed thread user and keeps the pin, effort and sidebar sequence", async () => {
     const fixture = await createSettingsFixture("Closed user settings");
@@ -235,13 +261,19 @@ describe("account erasure fences chat-thread model settings writes", () => {
       subjectId: fixture.userId,
     });
 
-    await chat.requestUpdateThreadModelSelection(
-      fixture.actor,
-      fixture.threadId,
-      "claude-opus-4-8",
-      [404],
-      { reasoningEffort: "extra" },
-    );
+    // The denial is silent: no tab is told to reload a thread list that did
+    // not change.
+    await expect(
+      observedInvalidations(() => {
+        return chat.requestUpdateThreadModelSelection(
+          fixture.actor,
+          fixture.threadId,
+          "claude-opus-4-8",
+          [404],
+          { reasoningEffort: "extra" },
+        );
+      }),
+    ).resolves.toBe(0);
 
     await expect(readSettings(fixture)).resolves.toStrictEqual(settings);
     await expect(settingsEvents(fixture)).resolves.toStrictEqual(before);
@@ -451,6 +483,7 @@ describe("account erasure fences chat-thread model settings writes", () => {
       chatThreadId: fixture.threadId,
       signal: context.signal,
     });
+    context.mocks.ably.publish.mockClear();
     // Holding the **second** event id is what makes this decisive: the update
     // has already written the pin columns and the merged `model_settings`,
     // appended the `model_selection_updated` event and reserved **both**
@@ -477,6 +510,10 @@ describe("account erasure fences chat-thread model settings writes", () => {
     await expect(settingsEvents(fixture)).resolves.toStrictEqual(before);
     // The first event rolled back with the second: its client id is absent.
     await expect(eventIds(fixture)).resolves.not.toContain(modelEventId);
+    // A real transaction failure announces nothing: the publication is only
+    // reachable after a successful COMMIT.
+    await flushWaitUntilForTest();
+    expect(countThreadListInvalidations()).toBe(0);
 
     // Neither reserved sequence was consumed, so the next accepted update
     // still takes the very next two sidebar sequence ids.
@@ -523,6 +560,171 @@ describe("account erasure fences chat-thread model settings writes", () => {
     await expect(readSettings(fixture)).resolves.toMatchObject({
       selectedModel: "claude-opus-4-8",
     });
+  });
+
+  it("publishes nothing until the transaction commits, then exactly one invalidation", async () => {
+    const fixture = await createSettingsFixture("Published settings");
+    await enableEffort(fixture);
+    await chat.updateThreadModelSelection(
+      fixture.actor,
+      fixture.threadId,
+      "claude-sonnet-5",
+      { reasoningEffort: "high" },
+    );
+    const before = await settingsEvents(fixture);
+    const settings = await readSettings(fixture);
+    context.mocks.ably.publish.mockClear();
+
+    await withChatThreadContentBarrierFixture(
+      {
+        chatThreadId: fixture.threadId,
+        stopAt: "commit",
+        work: async (barrier) => {
+          const updating = chat.updateThreadModelSelection(
+            fixture.actor,
+            fixture.threadId,
+            "claude-opus-4-8",
+            { reasoningEffort: "extra" },
+          );
+          await barrier.entered;
+
+          // Everything this request writes is still uncommitted. A concurrent
+          // reader keeps seeing the old pin, the old sparse map and the old
+          // sidebar page, and no tab has been told to reload anything.
+          await expect(readSettings(fixture)).resolves.toStrictEqual(settings);
+          await expect(settingsEvents(fixture)).resolves.toStrictEqual(before);
+          await flushWaitUntilForTest();
+          expect(countThreadListInvalidations()).toBe(0);
+
+          barrier.release();
+          await updating;
+        },
+      },
+      context.signal,
+    );
+
+    await flushWaitUntilForTest();
+    expect(countThreadListInvalidations()).toBe(1);
+    expect(context.mocks.ably.channelGet.mock.calls).toContainEqual([
+      `user-org:${fixture.userId}:${fixture.orgId}`,
+    ]);
+    await expect(readSettings(fixture)).resolves.toMatchObject({
+      selectedModel: "claude-opus-4-8",
+      modelSettings: {
+        "claude-sonnet-5": { effort: "high" },
+        "claude-opus-4-8": { effort: "extra" },
+      },
+    });
+  });
+
+  it("rolls the thread update, both events and the policy repair back when the request is cancelled after the write", async () => {
+    const fixture = await createSettingsFixture("Cancelled settings");
+    await stageUnrepairedOrgModelPolicyFixture({
+      orgId: fixture.orgId,
+      state: "missing_default",
+    });
+    await expect(policyDefaults(fixture)).resolves.toStrictEqual([]);
+    const settings = await readSettings(fixture);
+    const cancelled = new AbortController();
+    context.mocks.ably.publish.mockClear();
+
+    await withChatThreadContentBarrierFixture(
+      {
+        chatThreadId: fixture.threadId,
+        stopAt: "content-update",
+        work: async (barrier) => {
+          const updating = chat.requestUpdateThreadModelSelection(
+            fixture.actor,
+            fixture.threadId,
+            "claude-opus-4-8",
+            [204, 404],
+            { signal: cancelled.signal },
+          );
+          // Paused on the thread `UPDATE` itself: admission has passed, both
+          // identity locks are retained and the resolver has already repaired
+          // the organization's default inside its savepoint.
+          await barrier.entered;
+          cancelled.abort();
+          barrier.release();
+          // The cancellation is observed by the route's own `throwIfAborted`
+          // after the `UPDATE` and both sidebar events have run, while COMMIT
+          // has not been sent, so the rollback is guaranteed rather than a race
+          // against a commit that may already have succeeded. A cancelled
+          // request keeps its own failure: neither the accepted 204 nor the
+          // closure 404.
+          await expect(updating).rejects.toThrow(/Unknown response status 500/);
+        },
+      },
+      context.signal,
+    );
+
+    await flushWaitUntilForTest();
+    expect(countThreadListInvalidations()).toBe(0);
+    await expect(readSettings(fixture)).resolves.toStrictEqual(settings);
+    await expect(settingsEvents(fixture)).resolves.toStrictEqual([]);
+    await expect(policyDefaults(fixture)).resolves.toStrictEqual([]);
+
+    // A later legitimate request still repairs the default and commits.
+    await chat.updateThreadModelSelection(
+      fixture.actor,
+      fixture.threadId,
+      "claude-opus-4-8",
+    );
+    await expect(policyDefaults(fixture)).resolves.toHaveLength(1);
+    await expect(readSettings(fixture)).resolves.toMatchObject({
+      selectedModel: "claude-opus-4-8",
+    });
+  });
+
+  it("re-resolves a transferred Agent organization under the locks instead of writing under a stale one", async () => {
+    const fixture = await createSettingsFixture("Transferred org settings");
+    const destination = await createSettingsFixture("Destination org");
+    const before = await readSettings(fixture);
+    context.mocks.ably.publish.mockClear();
+
+    await withChatThreadContentBarrierFixture(
+      {
+        chatThreadId: fixture.threadId,
+        stopAt: "agent-lock",
+        work: async (barrier) => {
+          const updating = chat.requestUpdateThreadModelSelection(
+            fixture.actor,
+            fixture.threadId,
+            "claude-opus-4-8",
+            [404],
+          );
+          await barrier.entered;
+          await transferAgentOrganizationFixture({
+            agentId: fixture.agentId,
+            orgId: destination.orgId,
+          });
+          barrier.release();
+          await updating;
+        },
+      },
+      context.signal,
+    );
+
+    await flushWaitUntilForTest();
+    expect(countThreadListInvalidations()).toBe(0);
+    await expect(readSettings(fixture)).resolves.toStrictEqual(before);
+    await expect(settingsEvents(fixture)).resolves.toStrictEqual([]);
+  });
+
+  it("keeps the existing 404 after the canonical Agent parent is deleted", async () => {
+    const fixture = await createSettingsFixture("Deleted parent settings");
+    await bdd.deleteAgent(fixture.actor, fixture.agentId);
+
+    await expect(
+      observedInvalidations(() => {
+        return chat.requestUpdateThreadModelSelection(
+          fixture.actor,
+          fixture.threadId,
+          "claude-opus-4-8",
+          [404],
+        );
+      }),
+    ).resolves.toBe(0);
   });
 
   it("keeps the existing 404 for a wrong user, a missing thread and a null Agent", async () => {
@@ -673,6 +875,58 @@ describe("account erasure fences the model-policy bootstrap this route performs"
     });
   });
 
+  it("propagates a held model-policy lock on the slow path instead of a fabricated response", async () => {
+    const fixture = await createSettingsFixture("Held policy lock");
+    await stageUnrepairedOrgModelPolicyFixture({
+      orgId: fixture.orgId,
+      state: "missing_default",
+    });
+    const models = await policyModels(fixture);
+    const settings = await readSettings(fixture);
+    await expect(policyDefaults(fixture)).resolves.toStrictEqual([]);
+
+    const holder = await holdOrgModelPolicyWriteLockFixture({
+      orgId: fixture.orgId,
+      signal: context.signal,
+    });
+    context.mocks.ably.publish.mockClear();
+    const updating = chat.requestUpdateThreadModelSelection(
+      fixture.actor,
+      fixture.threadId,
+      "claude-opus-4-8",
+      [204, 404],
+    );
+    // The missing default forces the resolver's seeding/repair path, which
+    // takes the organization's `model-policy:<orgId>` key inside the admitted
+    // transaction. Observing the waiter proves the request reached that exact
+    // boundary rather than failing earlier.
+    await expect.poll(holder.waiterCount, BLOCKED).toBeGreaterThanOrEqual(1);
+    // It then fails on the route's own unchanged 1s lock budget. A bounded lock
+    // failure at the newly nested policy boundary is neither the accepted 204
+    // nor the closure 404.
+    await expect(updating).rejects.toThrow(/Unknown response status 500/);
+    holder.release();
+    await holder.done;
+
+    await flushWaitUntilForTest();
+    expect(countThreadListInvalidations()).toBe(0);
+    await expect(policyDefaults(fixture)).resolves.toStrictEqual([]);
+    await expect(policyModels(fixture)).resolves.toStrictEqual(models);
+    await expect(readSettings(fixture)).resolves.toStrictEqual(settings);
+    await expect(settingsEvents(fixture)).resolves.toStrictEqual([]);
+
+    // Once the key is free the same request succeeds and repairs the default.
+    await chat.updateThreadModelSelection(
+      fixture.actor,
+      fixture.threadId,
+      "claude-opus-4-8",
+    );
+    await expect(policyDefaults(fixture)).resolves.toHaveLength(1);
+    await expect(readSettings(fixture)).resolves.toMatchObject({
+      selectedModel: "claude-opus-4-8",
+    });
+  });
+
   it("rolls the default repair back with the thread mutation when the write fails", async () => {
     const fixture = await createSettingsFixture("Rolled back policy");
     await stageUnrepairedOrgModelPolicyFixture({
@@ -722,26 +976,53 @@ describe("the fenced model-selection route keeps its own write semantics", () =>
     const fixture = await createSettingsFixture("Concurrent efforts");
     await enableEffort(fixture);
     const lastSeqId = await lastStreamSeqId(fixture);
+    context.mocks.ably.publish.mockClear();
 
-    // Both writers hold the helper's retained `FOR KEY SHARE` on this thread.
-    // `FOR NO KEY UPDATE` is compatible with that, so they serialize on the
-    // settings row instead of deadlocking on a `FOR UPDATE` upgrade, and the
-    // second read/modify/write sees the first one's committed sparse map.
-    await Promise.all([
-      chat.updateThreadModelSelection(
-        fixture.actor,
-        fixture.threadId,
-        "claude-sonnet-5",
-        { reasoningEffort: "high" },
-      ),
-      chat.updateThreadModelSelection(
-        fixture.actor,
-        fixture.threadId,
-        "claude-opus-4-8",
-        { reasoningEffort: "extra" },
-      ),
-    ]);
+    // The overlap is constructed, not hoped for. Each writer is paused on its
+    // own connection at the exact statement that asks for the settings row --
+    // after the helper's `FOR KEY SHARE` on the Agent and the thread is already
+    // retained, and before any lock or statement timer is running. The second
+    // request is only started once the first has reported that state, so each
+    // barrier is bound to one exact HTTP request's transaction.
+    await withChatThreadContentBarriersFixture(
+      {
+        chatThreadId: fixture.threadId,
+        stopAt: ["content-lock", "content-lock"],
+        work: async ([first, second]) => {
+          if (!first || !second) {
+            throw new Error("Expected both settings barriers");
+          }
+          const sonnet = chat.updateThreadModelSelection(
+            fixture.actor,
+            fixture.threadId,
+            "claude-sonnet-5",
+            { reasoningEffort: "high" },
+          );
+          const held = await first.entered;
+          expect(held.lockTimeout).toBe("1s");
+          const opus = chat.updateThreadModelSelection(
+            fixture.actor,
+            fixture.threadId,
+            "claude-opus-4-8",
+            { reasoningEffort: "extra" },
+          );
+          await second.entered;
 
+          // Both retained KEY SHARE locks now exist at once. Release promptly:
+          // the loser's wait runs against the unchanged production 1s budget,
+          // never against a barrier held open on purpose.
+          first.release();
+          second.release();
+          await sonnet;
+          await opus;
+        },
+      },
+      context.signal,
+    );
+
+    // `FOR NO KEY UPDATE` is compatible with the retained `FOR KEY SHARE`, so
+    // the loser waited on the winner's settings lock instead of deadlocking,
+    // and its read/modify/write saw the winner's committed sparse map.
     await expect(readSettings(fixture)).resolves.toMatchObject({
       modelSettings: {
         "claude-sonnet-5": { effort: "high" },
@@ -759,19 +1040,100 @@ describe("the fenced model-selection route keeps its own write semantics", () =>
       lastSeqId + 3,
       lastSeqId + 4,
     ]);
+    await flushWaitUntilForTest();
+    expect(countThreadListInvalidations()).toBe(2);
+  });
+
+  it("rejects the incompatible FOR UPDATE mode against a live writer's retained KEY SHARE", async () => {
+    const fixture = await createSettingsFixture("Lock mode");
+
+    await withChatThreadContentBarrierFixture(
+      {
+        chatThreadId: fixture.threadId,
+        stopAt: "content-lock",
+        work: async (barrier) => {
+          const updating = chat.updateThreadModelSelection(
+            fixture.actor,
+            fixture.threadId,
+            "claude-opus-4-8",
+          );
+          await barrier.entered;
+
+          // A second settings writer reaches this point holding the same
+          // retained `FOR KEY SHARE`. `FOR UPDATE` -- the mode this route used
+          // before the fence -- conflicts with the live writer's retained lock,
+          // so two such writers would each wait on the other. The shipped
+          // `FOR NO KEY UPDATE` does not, which is what makes the overlap above
+          // finish instead of deadlock.
+          await expect(
+            probeChatThreadRowLockModesFixture({
+              chatThreadId: fixture.threadId,
+            }),
+          ).resolves.toStrictEqual({
+            forUpdate: "conflicted",
+            forNoKeyUpdate: "granted",
+          });
+
+          barrier.release();
+          await updating;
+        },
+      },
+      context.signal,
+    );
+
+    await expect(readSettings(fixture)).resolves.toMatchObject({
+      selectedModel: "claude-opus-4-8",
+    });
   });
 
   it("overlaps a settings write with a rename under the shared helper", async () => {
     const fixture = await createSettingsFixture("Concurrent rename");
+    const unrelated = await createSettingsFixture("Unrelated rename peer");
+    context.mocks.ably.publish.mockClear();
 
-    await Promise.all([
-      chat.updateThreadModelSelection(
-        fixture.actor,
-        fixture.threadId,
-        "claude-opus-4-8",
-      ),
-      chat.renameThread(fixture.actor, fixture.threadId, "Concurrent title"),
-    ]);
+    await withChatThreadContentBarriersFixture(
+      {
+        chatThreadId: fixture.threadId,
+        stopAt: ["content-lock", "content-update"],
+        work: async ([settings, rename]) => {
+          if (!settings || !rename) {
+            throw new Error("Expected the settings and rename barriers");
+          }
+          const updating = chat.updateThreadModelSelection(
+            fixture.actor,
+            fixture.threadId,
+            "claude-opus-4-8",
+          );
+          await settings.entered;
+          const renaming = chat.renameThread(
+            fixture.actor,
+            fixture.threadId,
+            "Concurrent title",
+          );
+          // The rename is paused on its own `UPDATE`, holding the same retained
+          // identity locks: the two writers really do overlap at the row the
+          // settings lock is about to take.
+          await rename.entered;
+
+          // The helper serializes this thread, not the product. Another owner's
+          // thread still completes while both writers are paused.
+          await chat.updateThreadModelSelection(
+            unrelated.actor,
+            unrelated.threadId,
+            "claude-opus-4-8",
+          );
+          await expect(readSettings(unrelated)).resolves.toMatchObject({
+            selectedModel: "claude-opus-4-8",
+          });
+
+          settings.release();
+          rename.release();
+          await updating;
+          await renaming;
+        },
+      },
+      context.signal,
+    );
 
     await expect(
       chat.readThreadMetadata(fixture.actor, fixture.threadId),
@@ -779,6 +1141,9 @@ describe("the fenced model-selection route keeps its own write semantics", () =>
       selectedModel: "claude-opus-4-8",
       title: "Concurrent title",
     });
+    await flushWaitUntilForTest();
+    // Two settings writes and one rename, each announced after its own commit.
+    expect(countThreadListInvalidations()).toBe(3);
   });
 
   it("clears the pin on a null model and keeps both client event ids", async () => {

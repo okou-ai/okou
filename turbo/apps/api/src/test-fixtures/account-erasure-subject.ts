@@ -144,6 +144,34 @@ export interface TransactionBarrier {
   readonly release: () => void;
 }
 
+interface BarrierSlot {
+  receiver: unknown;
+  paused: boolean;
+  readonly entered: ReturnType<
+    typeof createDeferredPromise<{
+      readonly pid: number;
+      readonly lockTimeout: string;
+      readonly statementTimeout: string;
+    }>
+  >;
+  readonly released: ReturnType<typeof createDeferredPromise<void>>;
+}
+
+const BARRIER_SETTINGS_QUERY =
+  "SELECT pg_backend_pid() AS pid, current_setting('lock_timeout') AS lock_timeout, current_setting('statement_timeout') AS statement_timeout";
+
+const barrierSettingsSchema = z.object({
+  rows: z
+    .array(
+      z.object({
+        pid: z.number(),
+        lock_timeout: z.string(),
+        statement_timeout: z.string(),
+      }),
+    )
+    .length(1),
+});
+
 /**
  * Infrastructure exception: no API can suspend a real transaction between its
  * statements, and a fenced writer's own transaction is the only place its
@@ -171,77 +199,133 @@ export async function withDatabaseTransactionBarrierFixture<T>(
   },
   signal: AbortSignal,
 ): Promise<T> {
+  return await withDatabaseTransactionBarriersFixture(
+    {
+      transactions: 1,
+      select: args.select,
+      stopAt: (queryArgs, selectingStatement) => {
+        return args.stopAt(queryArgs, selectingStatement);
+      },
+      work: async ([barrier]) => {
+        if (!barrier) {
+          throw new Error("Expected one transaction barrier");
+        }
+        return await args.work(barrier);
+      },
+    },
+    signal,
+  );
+}
+
+/**
+ * The same infrastructure exception for more than one transaction at a time.
+ * Each selected transaction is bound to its own pooled connection, which is the
+ * transaction's identity: a statement is attributed to a barrier only when it
+ * runs on that exact connection, never by matching a thread id that several
+ * readers and writers share. A caller that starts one request, awaits its
+ * barrier and only then starts the next therefore binds each barrier to an
+ * exact HTTP request.
+ *
+ * Slots are claimed in arrival order and a claimed connection keeps its slot,
+ * so `stopAt` receives the slot index and can pause two writers of the same row
+ * at two different statements. Every barrier pauses at most once.
+ */
+export async function withDatabaseTransactionBarriersFixture<T>(
+  args: {
+    readonly transactions: number;
+    readonly select: (queryArgs: unknown[]) => boolean;
+    readonly stopAt: (
+      queryArgs: unknown[],
+      selectingStatement: boolean,
+      index: number,
+    ) => boolean;
+    readonly work: (barriers: readonly TransactionBarrier[]) => Promise<T>;
+  },
+  signal: AbortSignal,
+): Promise<T> {
   await closeDbPool();
   signal.throwIfAborted();
-  const entered = createDeferredPromise<{
-    readonly pid: number;
-    readonly lockTimeout: string;
-    readonly statementTimeout: string;
-  }>(signal);
-  const blocked = async () => {
-    return await blockedWaiterCount((await entered.promise).pid);
-  };
-  const released = createDeferredPromise<void>(signal);
-  const release = () => {
-    if (!released.settled()) {
-      released.resolve();
+  const slots: BarrierSlot[] = Array.from(
+    { length: args.transactions },
+    (): BarrierSlot => {
+      return {
+        receiver: undefined,
+        paused: false,
+        entered: createDeferredPromise<{
+          readonly pid: number;
+          readonly lockTimeout: string;
+          readonly statementTimeout: string;
+        }>(signal),
+        released: createDeferredPromise<void>(signal),
+      };
+    },
+  );
+  const releaseSlot = (slot: BarrierSlot) => {
+    if (!slot.released.settled()) {
+      slot.released.resolve();
     }
   };
   const original = Client.prototype.query;
-  let selected: unknown;
-  let paused = false;
   Client.prototype.query = new Proxy(original, {
     apply(target, receiver: unknown, queryArgs: unknown[]): unknown {
       const selectingStatement = args.select(queryArgs);
-      if (!paused && selectingStatement) {
-        selected = receiver;
+      let index = slots.findIndex((slot) => {
+        return slot.receiver === receiver;
+      });
+      if (index === -1 && selectingStatement) {
+        index = slots.findIndex((slot) => {
+          return slot.receiver === undefined;
+        });
+        const claimed = slots[index];
+        if (claimed) {
+          claimed.receiver = receiver;
+        }
       }
+      const slot = index === -1 ? undefined : slots[index];
       if (
-        paused ||
-        receiver !== selected ||
-        !args.stopAt(queryArgs, selectingStatement)
+        !slot ||
+        slot.paused ||
+        !args.stopAt(queryArgs, selectingStatement, index)
       ) {
         return Reflect.apply(target, receiver, queryArgs);
       }
-      paused = true;
+      slot.paused = true;
       return (async () => {
         const settings: unknown = await Reflect.apply(target, receiver, [
-          "SELECT pg_backend_pid() AS pid, current_setting('lock_timeout') AS lock_timeout, current_setting('statement_timeout') AS statement_timeout",
+          BARRIER_SETTINGS_QUERY,
         ]);
-        const row = z
-          .object({
-            rows: z
-              .array(
-                z.object({
-                  pid: z.number(),
-                  lock_timeout: z.string(),
-                  statement_timeout: z.string(),
-                }),
-              )
-              .length(1),
-          })
-          .parse(settings).rows[0];
+        const row = barrierSettingsSchema.parse(settings).rows[0];
         if (!row) {
           throw new Error("Expected the transaction barrier settings row");
         }
-        entered.resolve({
+        slot.entered.resolve({
           pid: row.pid,
           lockTimeout: row.lock_timeout,
           statementTimeout: row.statement_timeout,
         });
-        await released.promise;
+        await slot.released.promise;
         return await Reflect.apply(target, receiver, queryArgs);
       })();
     },
   });
   const result = await settleIncludingAbort(
-    args.work({
-      entered: entered.promise,
-      blockedWaiterCount: blocked,
-      release,
-    }),
+    args.work(
+      slots.map((slot): TransactionBarrier => {
+        return {
+          entered: slot.entered.promise,
+          blockedWaiterCount: async () => {
+            return await blockedWaiterCount((await slot.entered.promise).pid);
+          },
+          release: () => {
+            releaseSlot(slot);
+          },
+        };
+      }),
+    ),
   );
-  release();
+  for (const slot of slots) {
+    releaseSlot(slot);
+  }
   const closed = await settleIncludingAbort(closeDbPool());
   Client.prototype.query = original;
   if (!result.ok) {

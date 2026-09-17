@@ -1,13 +1,15 @@
 import { chatThreadEvents } from "@okouai/db/schema/chat-thread-event";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
-import { eq } from "drizzle-orm";
+import { eq, sql, type SQL } from "drizzle-orm";
 
+import type { Tx } from "../lib/db-types";
 import { db } from "../lib/db";
+import { isLockNotAvailable } from "../lib/pg-errors";
 import { createDeferredPromise, settleIncludingAbort } from "../signals/utils";
 import {
   barrierQueryBinds,
   barrierQueryText,
-  withDatabaseTransactionBarrierFixture,
+  withDatabaseTransactionBarriersFixture,
   type TransactionBarrier,
 } from "./account-erasure-subject";
 
@@ -117,16 +119,40 @@ function isContentLock(queryArgs: unknown[], table: string): boolean {
   );
 }
 
+/** The route's own business-row lock, taken after the retained identity locks.
+ * `FOR NO KEY UPDATE` is the mode the settings writer takes on the thread row;
+ * pausing before it leaves the transaction holding both retained `FOR KEY
+ * SHARE` locks with no lock or statement timer running. */
+function isContentRowLock(queryArgs: unknown[]): boolean {
+  const text = barrierQueryText(queryArgs);
+  return (
+    text.startsWith("select") &&
+    text.includes('from "chat_threads"') &&
+    text.includes("for no key update")
+  );
+}
+
+/** The route's own thread mutation, the last statement before its sidebar
+ * events. Pausing here keeps every earlier write, including a savepointed
+ * model-policy repair, inside the still-open transaction. */
+function isContentRowUpdate(queryArgs: unknown[]): boolean {
+  return barrierQueryText(queryArgs).startsWith('update "chat_threads"');
+}
+
 /**
  * Where the paused transaction stops. `identity` precedes subject admission,
  * `agent-lock` and `thread-lock` sit between the unlocked identity read and the
- * matching identity lock, and `commit` retains every barrier with the title or
- * draft already written. A thread without an Agent issues no `agent-lock`.
+ * matching identity lock, `content-lock` and `content-update` are the route's
+ * own row lock and row write under the retained identity locks, and `commit`
+ * retains every barrier with the title or draft already written. A thread
+ * without an Agent issues no `agent-lock`.
  */
 type ChatThreadContentBarrierStop =
   | "identity"
   | "agent-lock"
   | "thread-lock"
+  | "content-lock"
+  | "content-update"
   | "commit";
 
 function reachedBarrierStop(
@@ -143,11 +169,17 @@ function reachedBarrierStop(
   if (stop === "thread-lock") {
     return isContentLock(queryArgs, "chat_threads");
   }
+  if (stop === "content-lock") {
+    return isContentRowLock(queryArgs);
+  }
+  if (stop === "content-update") {
+    return isContentRowUpdate(queryArgs);
+  }
   return barrierQueryText(queryArgs) === "commit";
 }
 
 /** Pauses the draft or rename transaction opened for one thread. See
- * {@link withDatabaseTransactionBarrierFixture} for the mechanism and the
+ * {@link withDatabaseTransactionBarriersFixture} for the mechanism and the
  * infrastructure exception it documents.
  */
 export async function withChatThreadContentBarrierFixture<T>(
@@ -158,16 +190,124 @@ export async function withChatThreadContentBarrierFixture<T>(
   },
   signal: AbortSignal,
 ): Promise<T> {
-  return await withDatabaseTransactionBarrierFixture(
+  return await withChatThreadContentBarriersFixture(
     {
+      chatThreadId: args.chatThreadId,
+      stopAt: [args.stopAt],
+      work: async ([barrier]) => {
+        if (!barrier) {
+          throw new Error("Expected one chat-thread content barrier");
+        }
+        return await args.work(barrier);
+      },
+    },
+    signal,
+  );
+}
+
+/**
+ * Pauses several fenced content transactions on the **same** thread, one per
+ * entry in `stopAt` and in the order they open. Every content route opens its
+ * transaction with the same identity read, so the thread id alone cannot tell
+ * two writers apart; the shared barrier binds each stop to the connection that
+ * issued that read. Start one request, await its barrier, then start the next,
+ * and each index is that exact HTTP request's transaction.
+ */
+export async function withChatThreadContentBarriersFixture<T>(
+  args: {
+    readonly chatThreadId: string;
+    readonly stopAt: readonly ChatThreadContentBarrierStop[];
+    readonly work: (barriers: readonly TransactionBarrier[]) => Promise<T>;
+  },
+  signal: AbortSignal,
+): Promise<T> {
+  return await withDatabaseTransactionBarriersFixture(
+    {
+      transactions: args.stopAt.length,
       select: (queryArgs) => {
         return isContentIdentityRead(queryArgs, args.chatThreadId);
       },
-      stopAt: (queryArgs, selectingStatement) => {
-        return reachedBarrierStop(args.stopAt, queryArgs, selectingStatement);
+      stopAt: (queryArgs, selectingStatement, index) => {
+        const stop = args.stopAt[index];
+        return (
+          stop !== undefined &&
+          reachedBarrierStop(stop, queryArgs, selectingStatement)
+        );
       },
       work: args.work,
     },
     signal,
   );
+}
+
+/**
+ * Probes the two candidate modes for the settings writer's own row lock from a
+ * separate transaction that already holds the same retained `FOR KEY SHARE` the
+ * admission helper takes, using `NOWAIT` so a conflict is reported immediately
+ * instead of waiting out a production budget.
+ *
+ * Infrastructure exception: no API exposes row-lock modes, and a retained
+ * `FOR KEY SHARE` held by another live writer is exactly the state the shipped
+ * `FOR NO KEY UPDATE` was chosen for. The probe only takes locks, writes
+ * nothing and always rolls back.
+ */
+export async function probeChatThreadRowLockModesFixture(args: {
+  readonly chatThreadId: string;
+}): Promise<{
+  readonly forUpdate: "granted" | "conflicted";
+  readonly forNoKeyUpdate: "granted" | "conflicted";
+}> {
+  const probe = async (
+    tx: Tx,
+    lock: SQL,
+  ): Promise<"granted" | "conflicted"> => {
+    const attempt = await settleIncludingAbort(
+      tx.transaction(async (nested) => {
+        await nested.execute(lock);
+      }),
+    );
+    if (attempt.ok) {
+      return "granted";
+    }
+    if (isLockNotAvailable(attempt.error)) {
+      return "conflicted";
+    }
+    throw attempt.error;
+  };
+  const result = await settleIncludingAbort(
+    db().transaction(async (tx) => {
+      await tx
+        .select({ id: chatThreads.id })
+        .from(chatThreads)
+        .where(eq(chatThreads.id, args.chatThreadId))
+        .for("key share");
+      const forUpdate = await probe(
+        tx,
+        sql`SELECT id FROM chat_threads WHERE id = ${args.chatThreadId} FOR UPDATE NOWAIT`,
+      );
+      const forNoKeyUpdate = await probe(
+        tx,
+        sql`SELECT id FROM chat_threads WHERE id = ${args.chatThreadId} FOR NO KEY UPDATE NOWAIT`,
+      );
+      throw new ChatThreadRowLockProbeRollback(forUpdate, forNoKeyUpdate);
+    }),
+  );
+  if (result.ok || !(result.error instanceof ChatThreadRowLockProbeRollback)) {
+    throw result.ok
+      ? new Error("Expected the row-lock probe to roll back")
+      : result.error;
+  }
+  return {
+    forUpdate: result.error.forUpdate,
+    forNoKeyUpdate: result.error.forNoKeyUpdate,
+  };
+}
+
+class ChatThreadRowLockProbeRollback extends Error {
+  constructor(
+    readonly forUpdate: "granted" | "conflicted",
+    readonly forNoKeyUpdate: "granted" | "conflicted",
+  ) {
+    super("Chat thread row lock probe rolled back");
+  }
 }

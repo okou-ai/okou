@@ -300,6 +300,9 @@ interface ModelSelectionRequestOptions {
   readonly reasoningEffort?: ReasoningEffort;
   readonly eventId?: string;
   readonly serviceTierEventId?: string;
+  /** The app-lifetime signal the production entry points pass to every route,
+   * so a test can cancel this request the way a terminated instance does. */
+  readonly signal?: AbortSignal;
 }
 
 function modelSelectionBody(
@@ -419,8 +422,8 @@ export function createChatFilesBddApi(context: TestContext) {
     return chatFilesApp(context)(chatThreadRenameContract);
   }
 
-  function threadModelSelectionClient() {
-    return chatFilesApp(context)(chatThreadModelSelectionContract);
+  function threadModelSelectionClient(signal?: AbortSignal) {
+    return chatFilesApp(context, signal)(chatThreadModelSelectionContract);
   }
 
   function threadImageModelClient() {
@@ -1039,7 +1042,7 @@ export function createChatFilesBddApi(context: TestContext) {
       options?: ModelSelectionRequestOptions,
     ): Promise<void> {
       await accept(
-        threadModelSelectionClient().update({
+        threadModelSelectionClient(options?.signal).update({
           headers: authenticate(context, actor),
           params: { id: threadId },
           body: modelSelectionBody(model, options),
@@ -1106,7 +1109,7 @@ export function createChatFilesBddApi(context: TestContext) {
       options?: ModelSelectionRequestOptions,
     ) {
       return await accept(
-        threadModelSelectionClient().update({
+        threadModelSelectionClient(options?.signal).update({
           headers: authenticate(context, actor),
           params: { id: threadId },
           body: modelSelectionBody(model, options),
