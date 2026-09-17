@@ -374,7 +374,6 @@ const failRecoveredInference$ = command(
           orgId: claim.run.orgId,
         },
         executionOwner: "api-first",
-        suppressFailureLog: false,
         body: { runId: claim.run.id, exitCode: 1, error: message },
       },
       signal,

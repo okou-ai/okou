@@ -1399,6 +1399,16 @@ details > summary {
      Amber ramp: the brand mark is not palette-driven. */
   --primary-400: var(--okou-color-theme-primary);
 
+  /* The label of a selected control, on the palette's own hue. The brand stops
+     above stay Amber because the brand mark is not palette-driven, but this one
+     is not the brand: it is painted on the `primary/10` selection wash, which
+     the preset already repaints, so an Amber label there reads as a second
+     colour system instead of as the selected state. A preset supplies one
+     anchor and no ramp, so the text stop is built the way `--nav-copy` is —
+     the preset's hue at a fixed saturation and a lightness dark enough to clear
+     4.5:1 on that near-white wash across all eight palettes. */
+  --selected-foreground: var(--okou-color-theme-hue) 55% 28%;
+
   --gray-0: var(--okou-color-theme-hue) 24% 98.3%;
   --gray-50: var(--okou-color-theme-hue) 22% 97.7%;
   --gray-100: var(--okou-color-theme-hue) 20% 96.7%;
@@ -1472,6 +1482,9 @@ details > summary {
   --nav-border: hsl(var(--border) / 0.5);
   --nav-copy: hsl(var(--okou-color-theme-hue) 22% 90%);
   --nav-copy-muted: hsl(var(--okou-color-theme-hue) 16% 64%);
+  /* See the light note. Dark takes the opposite end of the same idea: the stop
+     rises above the wash instead of sinking below it. */
+  --selected-foreground: var(--okou-color-theme-hue) 72% 80%;
   --background-50: var(--gray-50);
   --state-layer: var(--okou-color-theme-hue) 35% 82%;
   --segment-selected: var(--gray-400);

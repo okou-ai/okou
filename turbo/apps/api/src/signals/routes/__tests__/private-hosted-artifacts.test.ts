@@ -1,15 +1,20 @@
 import { mockNow } from "../../../lib/time";
 import { randomUUID } from "node:crypto";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { testContext } from "../../../__tests__/test-context";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { hostContract } from "@okouai/api-contracts/contracts/host";
+import { hostRoutes } from "../host";
 import { mockEnv } from "../../../lib/env";
 import { createBddApi } from "./helpers/api-bdd";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createHostMapsBddApi } from "./helpers/api-bdd-host-maps";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
+const mocks = createRouteMocks(context);
 const bdd = createBddApi(context);
 const api = createHostMapsBddApi(context);
 const billing = createBillingMediaApi(context);
@@ -41,7 +46,15 @@ async function fixture(enabled = true) {
 
 test("keeps runless deployments private across switch rollback and only issues owner previews", async () => {
   const { actor, capture, body } = await fixture();
-  const draft = await api.prepareHostedSite(actor, body);
+  mocks.clerk.session(actor.userId, actor.orgId);
+  const prepared = await accept(
+    setupApp({ context, routes: hostRoutes })(hostContract).preparePrivate({
+      headers: { authorization: "Bearer clerk-session" },
+      body: { ...body, requirePrivateArtifact: true },
+    }),
+    [200],
+  );
+  const draft = prepared.body;
   const canonical = draft.url;
   expect(canonical).toMatch(/^\/artifacts\/[a-z0-9]{10}\.html$/u);
   expect(draft).toMatchObject({ url: canonical, artifactUrl: canonical });

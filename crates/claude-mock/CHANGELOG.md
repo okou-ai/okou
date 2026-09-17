@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.21.159](https://github.com/vm0-ai/okou/compare/claude-mock-v0.21.158...claude-mock-v0.21.159) (2026-09-17)
+
 ## [0.21.158](https://github.com/vm0-ai/okou/compare/claude-mock-v0.21.157...claude-mock-v0.21.158) (2026-09-17)
 
 ## [0.21.157](https://github.com/vm0-ai/okou/compare/claude-mock-v0.21.156...claude-mock-v0.21.157) (2026-09-16)

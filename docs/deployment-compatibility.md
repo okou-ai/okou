@@ -121,13 +121,19 @@ without writing a grant. Existing share responses and public delivery URLs
 remain supported for older Apps.
 
 The additive, unauthenticated `GET /api/artifact-references/:reference/public`
-returns only a currently published delivery URL. Private, organization-only,
-revoked, missing, and unselected version references return 404. Public copies
-use the same App reference as organization copies. Deploy the new API before
-relying on anonymous opening of these references; a new App against an older
-API retains the sign-in fallback on 404. Previously copied URLs remain valid
-under their existing policy. Owner resolution of an old organization alias
-continues after switching it to Only me; recipients lose access.
+returns a currently published delivery URL and `preview: { filename, contentType }`.
+Private, organization-only, revoked, missing, and unselected version references
+return 404 without metadata. Public copies use the same App reference as
+organization copies. The App renders public previews inside that address and
+shows its access page on 404; sign-in is an explicit action on that page.
+
+Deploy the API with preview metadata before the App that consumes it. The
+existing `url` field remains unchanged for older Apps. This is an iteration of
+the non-GA `privateArtifacts` feature, so the new App does not carry a tolerant
+reader for an API lacking the preview metadata. No database or host Worker
+protocol change is required. Previously copied URLs remain valid under their
+existing policy. Owner resolution of an old organization alias continues after
+switching it to Only me; recipients lose access.
 
 #### Private attachment uploads
 
@@ -743,6 +749,15 @@ Unsupported-archive admission records use separate
 Only background fill reads these records; foreground lookup probes positive
 file entries only, so unsupported archives do not pay a rejection-record lock
 and read on every startup. Each reader validates its expected entry kind.
+
+For an ordinary archive hit, optional decoded warming is omitted when this
+plan's existing foreground lookup already validated positive decoded contents,
+even if mount or payload admission did not select them for delivery. This
+observation belongs only to that prepared plan and adds no lookup or retained
+file contents. A missing compressed archive still selects its required fill;
+later plans perform their own positive lookup, so GC eviction cannot become a
+permanent warming exclusion. Unobserved positive entries and rejection records
+retain the existing background checks.
 
 Readers hold that lock while validating the bounded index, identity, file types,
 sizes and content digests, then pin owned bytes through Guest apply. GC can evict
@@ -1895,10 +1910,15 @@ Its optional Runner header is ignored by older APIs; older Runners remain
 excluded from v4 jobs. The release endpoint and Runner use one strict explicit
 outcome contract: a missing, malformed or unknown outcome retains the receipt
 instead of fabricating a stale acknowledgement. No mixed-response bridge is
-required while the feature is non-GA: no production publisher exists and
+required while the feature is non-GA: no production publisher is enabled and
 `piDeferredSandbox` is off, so an older API cannot produce a v4 job for a newer
-Runner. The outer Pi launch-config v2 contains a new versioned continuation slot,
-so enablement requires the capable API, Runner and commit-addressed co-built CLI.
+Runner. The outer Pi launch-config v2 contains a new versioned continuation slot.
+The co-built Guest uses its private Sandbox control token to assemble the handoff
+in a 0600 run-scoped file and passes only an additive path variable to the CLI.
+An older CLI fails its legacy ordinary-token read; a newer CLI under an older
+Guest fails because the authenticated file is absent. Both combinations stop
+before the RPC boundary. Enablement therefore requires the capable API,
+Runner/Guest and newly captured commit-addressed CLI.
 Drain existing v4 intents, leases and release receipts before rolling any of
 those readers back below that floor. No switch is enabled by the consumer
 implementation.

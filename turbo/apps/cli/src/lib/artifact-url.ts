@@ -1,6 +1,14 @@
 import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
 import { getPlatformOrigin } from "./platform-url";
 
+export async function assertPrivateArtifactUrl(url: string): Promise<void> {
+  if (!parseArtifactReference(url, await getPlatformOrigin())) {
+    throw new Error(
+      "The API did not return a private artifact. --visibility requires privateArtifacts and an API that supports private creation.",
+    );
+  }
+}
+
 /** Keep durable references usable outside an app page, including CI output. */
 export async function absoluteArtifactUrl(url: string): Promise<string> {
   if (!parseArtifactReference(url)) {

@@ -5,8 +5,28 @@ import {
   projectPiApiModelFailure,
 } from "./api-failure";
 import { projectPiApiAssistantMessage } from "./api-turn";
+import providerFailures from "./test/fixtures/provider-failures.json";
 
 describe("Pi API model failure diagnostics", () => {
+  it.each(providerFailures)(
+    "preserves the sandbox Pi/Codex/Claude reason for $message",
+    ({ message, reason }) => {
+      const requestError = new PiApiModelRequestError(
+        new Error(message),
+        "openai-codex",
+      );
+      const assistant = projectPiApiAssistantMessage({
+        ...fauxAssistantMessage(""),
+        provider: "openai-codex",
+        stopReason: "error",
+        errorMessage: message,
+      });
+      expect(requestError.failureReason).toBe(reason ?? undefined);
+      expect(assistant.failureReason).toBe(reason ?? undefined);
+      expect(assistant.stopReason).toBe("error");
+    },
+  );
+
   it.each([undefined, 200, 503])(
     "preserves queue expiry at the thrown request boundary with status %s",
     (status) => {
@@ -29,14 +49,18 @@ describe("Pi API model failure diagnostics", () => {
         .failureReason,
     ).toBe("output_token_limit");
     for (const stopReason of ["stop", "aborted"] as const) {
-      expect(
-        projectPiApiAssistantMessage({
-          ...message,
-          stopReason,
-          errorMessage:
-            "Our servers are currently overloaded. Please try again later.",
-        }).failureReason,
-      ).toBeUndefined();
+      for (const errorMessage of [
+        "Our servers are currently overloaded. Please try again later.",
+        "Codex error: Invalid prompt: your prompt was flagged as potentially violating our usage policy. Please try again with a different prompt: https://example.invalid/policy",
+      ]) {
+        expect(
+          projectPiApiAssistantMessage({
+            ...message,
+            stopReason,
+            errorMessage,
+          }).failureReason,
+        ).toBeUndefined();
+      }
     }
   });
   it.each([522, 525, 401, 403])(

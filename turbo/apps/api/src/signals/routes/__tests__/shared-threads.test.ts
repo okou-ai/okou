@@ -326,9 +326,18 @@ describe("optional shared-thread titles", () => {
       agentId: agent.agentId,
     });
     const quote = "The deployment window is fifteen minutes.";
+    const mailId = randomUUID();
+    const sentId = `gmail-${randomUUID()}`;
     const userMessage: UserMessageInputDocument = {
       version: 1,
-      parts: [{ type: "feedback", quote, note: [] }],
+      parts: [
+        {
+          type: "feedback",
+          quote,
+          note: [],
+          source: { type: "mail", id: mailId, status: "sent", sentId },
+        },
+      ],
     };
     const forwarded = await accept(
       chat.requestSendEvent(
@@ -386,6 +395,8 @@ describe("optional shared-thread titles", () => {
       source.body.runId,
       source.body.threadId,
       agent.agentId,
+      mailId,
+      sentId,
     ]) {
       expect(publicData).not.toContain(privateValue);
     }

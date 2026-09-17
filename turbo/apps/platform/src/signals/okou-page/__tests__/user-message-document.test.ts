@@ -275,6 +275,110 @@ test("Forwarded feedback uses the document-level source title", () => {
   expect(messageDocumentToDisplayText(document)).toBe(expected);
 });
 
+test("Forwarded mail feedback keeps common source identifiers", () => {
+  const sourcePart = {
+    type: "source",
+    kind: "agent",
+    runId: "d0000000-0000-4000-a000-000000000932",
+    threadId: CHAT_THREAD_ID,
+    agentId: AGENT_ID,
+    titleSnapshot: "Source launch plan",
+    href: `/chats/${CHAT_THREAD_ID}#run-d0000000-0000-4000-a000-000000000932`,
+  } as const satisfies UserMessagePart;
+  const cases: readonly {
+    readonly document: UserMessageDocument;
+    readonly expected: string;
+  }[] = [
+    {
+      document: {
+        version: 1,
+        parts: [
+          {
+            type: "feedback",
+            quote: "The draft launch date is Thursday.",
+            note: [{ type: "text", text: "Please update this email draft." }],
+            source: {
+              type: "mail",
+              id: "draft-mail-932",
+              status: "draft",
+            },
+          },
+          sourcePart,
+        ],
+      },
+      expected:
+        'The user forwarded this from the chat "Source launch plan":\n\n' +
+        "Source: an email draft (mail draft ID: draft-mail-932)\n\n" +
+        "> The draft launch date is Thursday.\n\n" +
+        "Please update this email draft.",
+    },
+    {
+      document: {
+        version: 1,
+        parts: [
+          {
+            type: "feedback",
+            quote: "The sent launch date is Friday.",
+            note: [],
+            source: {
+              type: "mail",
+              id: "sent-mail-932",
+              status: "sent",
+              sentId: "gmail-sent-932",
+            },
+          },
+          sourcePart,
+        ],
+      },
+      expected:
+        'The user forwarded this from the chat "Source launch plan":\n\n' +
+        "Source: a sent email (mail ID: sent-mail-932, sent ID: gmail-sent-932)\n\n" +
+        "> The sent launch date is Friday.",
+    },
+    {
+      document: {
+        version: 1,
+        parts: [
+          {
+            type: "feedback",
+            quote: "The first draft passage.",
+            note: [],
+            source: {
+              type: "mail",
+              id: "multi-mail-932",
+              status: "draft",
+            },
+          },
+          {
+            type: "feedback",
+            quote: "The second draft passage.",
+            note: [{ type: "text", text: "Keep these passages together." }],
+            source: {
+              type: "mail",
+              id: "multi-mail-932",
+              status: "draft",
+            },
+          },
+          sourcePart,
+        ],
+      },
+      expected:
+        'The user forwarded 2 parts from the chat "Source launch plan":\n\n' +
+        "Source: an email draft (mail draft ID: multi-mail-932)\n\n" +
+        "> The first draft passage.\n\n---\n\n" +
+        "> The second draft passage.\n\n" +
+        "Keep these passages together.",
+    },
+  ];
+
+  for (const scenario of cases) {
+    expect(messageDocumentToPrompt(scenario.document)).toBe(scenario.expected);
+    expect(messageDocumentToDisplayText(scenario.document)).toBe(
+      scenario.expected,
+    );
+  }
+});
+
 test("A file-only message keeps its attachment without invented text", () => {
   const attachment: PersistedAttachment = {
     id: "f0000000-0000-4000-a000-000000000933",

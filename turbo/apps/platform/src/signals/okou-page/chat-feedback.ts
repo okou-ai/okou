@@ -174,5 +174,9 @@ export function formatFeedbackPrompt(
         : items.length === 1
           ? "The user quoted this part of your reply:"
           : `The user quoted ${items.length} parts of your reply:`;
-  return `${intro}\n\n${blocks.join("\n\n---\n\n")}`;
+  const commonMailContext =
+    agentRunSourceTitle && commonMailSource
+      ? `Source: ${mailSourceLabel(commonMailSource)}\n\n`
+      : "";
+  return `${intro}\n\n${commonMailContext}${blocks.join("\n\n---\n\n")}`;
 }

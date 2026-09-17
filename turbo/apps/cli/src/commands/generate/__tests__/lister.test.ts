@@ -658,7 +658,7 @@ describe("okou generate lister", () => {
     expect(text).toContain("Use: okou generate website -h");
     expect(text).toContain("Context:");
     expect(text).toContain(
-      "Standalone static website artifacts can be authored locally and published with okou host for a public URL.",
+      "Standalone static website artifacts can be authored locally and published with okou host for a hosted URL.",
     );
     expect(text).toContain(
       "okou host is for static directories with index.html; it is not a general deploy system for apps that need a backend, database, worker, or long-running process.",

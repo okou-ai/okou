@@ -8,6 +8,52 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.619.0](https://github.com/vm0-ai/okou/compare/api-v1.618.0...api-v1.619.0) (2026-09-17)
+
+
+### Features
+
+* **cli:** support artifact visibility during creation ([#34862](https://github.com/vm0-ai/okou/issues/34862)) ([f1c2168](https://github.com/vm0-ai/okou/commit/f1c216821b6942fc83533abef752089d3cd925d2))
+
+
+### Bug Fixes
+
+* unify agent failure classification and completion handling ([#34802](https://github.com/vm0-ai/okou/issues/34802)) ([8cf6c83](https://github.com/vm0-ai/okou/commit/8cf6c836cda07808f7536fc9ee35dcf36e71036b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.456.0
+    * @okouai/core bumped to 8.675.0
+    * @okouai/db bumped to 1.269.6
+    * @okouai/pi-agent-runtime bumped to 1.33.1
+
+## [1.618.0](https://github.com/vm0-ai/okou/compare/api-v1.617.0...api-v1.618.0) (2026-09-17)
+
+
+### Features
+
+* **pi:** expose provider usage evidence for api turns ([#34804](https://github.com/vm0-ai/okou/issues/34804)) ([1da5bf4](https://github.com/vm0-ai/okou/commit/1da5bf4a66169f44261a3198b35b7b06d25d8811))
+
+
+### Bug Fixes
+
+* **api:** fence thread pin, unpin and reorder writes during account erasure ([#34850](https://github.com/vm0-ai/okou/issues/34850)) ([e26403e](https://github.com/vm0-ai/okou/commit/e26403e552da504581a879c44d45b51e6fccdb66))
+* **chat:** preserve mail ids in forwarded prompts ([#34853](https://github.com/vm0-ai/okou/issues/34853)) ([2432506](https://github.com/vm0-ai/okou/commit/2432506926029d55e3f0a36d7aaa95da7a582a22))
+* **pi:** authenticate deferred handoff in guest ([#34845](https://github.com/vm0-ai/okou/issues/34845)) ([2562612](https://github.com/vm0-ai/okou/commit/2562612020484e515569c2cb78d11f672b5bff5d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.455.1
+    * @okouai/core bumped to 8.674.2
+    * @okouai/db bumped to 1.269.5
+    * @okouai/pi-agent-runtime bumped to 1.33.0
+
 ## [1.617.0](https://github.com/vm0-ai/okou/compare/api-v1.616.0...api-v1.617.0) (2026-09-17)
 
 

@@ -6,6 +6,8 @@ import {
   ArrowRightLeft,
   ArrowUpRight,
   LockKeyhole,
+  LogIn,
+  Share2,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { currentUserInfo$ } from "../../signals/auth.ts";
@@ -13,9 +15,10 @@ import { openClerkAddAccount$ } from "../../signals/clerk-add-account.ts";
 import { BRAND_NAME } from "../../signals/branding.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { shellDocumentAttributesRef$ } from "../../signals/theme.ts";
-import type {
-  SharedArtifactPreview,
-  SharedArtifactViewerSignals,
+import {
+  signInToSharedArtifact$,
+  type SharedArtifactPreview,
+  type SharedArtifactViewerSignals,
 } from "../../signals/shared-artifact-page.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ProductBrandMark } from "../components/product-brand-mark.tsx";
@@ -26,6 +29,7 @@ import {
 } from "../okou-page/artifact-actions.tsx";
 import { ArtifactShareMenu } from "../okou-page/artifact-share-menu.tsx";
 import { artifactFallbackSubtitle } from "../okou-page/artifact-display.ts";
+import { copyAttachmentLinkToClipboard } from "../okou-page/attachment-url.ts";
 
 function ArtifactViewerActions({
   artifact,
@@ -33,6 +37,7 @@ function ArtifactViewerActions({
   artifact: SharedArtifactPreview;
 }) {
   const { t } = useTranslation();
+  const pageSignal = useGet(pageSignal$);
   const continueUrl = new URL("/", window.location.origin);
   continueUrl.searchParams.set(
     "prompt",
@@ -51,15 +56,38 @@ function ArtifactViewerActions({
   );
   return (
     <div className="flex shrink-0 items-center gap-1">
-      <ArtifactShareMenu
-        surface="viewer"
-        url={artifact.preview.url}
-        copyUrl={window.location.href}
-        iconSize={18}
-      />
+      {artifact.publicUrl === null ? (
+        <ArtifactShareMenu
+          surface="viewer"
+          url={artifact.preview.url}
+          copyUrl={window.location.href}
+          iconSize={18}
+        />
+      ) : (
+        <Button
+          variant="quiet"
+          size="icon-sm"
+          showTooltip
+          aria-label={t(($) => {
+            return $.artifacts.actions.share;
+          })}
+          onClick={() => {
+            detach(
+              copyAttachmentLinkToClipboard(
+                window.location.href,
+                undefined,
+                pageSignal,
+              ),
+              Reason.DomCallback,
+            );
+          }}
+        >
+          <Share2 size={18} />
+        </Button>
+      )}
       <ArtifactDownloadMenu
         filename={artifact.filename}
-        url={artifact.preview.url}
+        url={artifact.publicUrl ?? artifact.preview.url}
         iconSize={18}
         showGoogleDriveAction={false}
       />
@@ -85,7 +113,9 @@ function ArtifactAccessPage() {
   const user = useLastResolved(currentUserInfo$);
   const email = user?.primaryEmailAddress?.emailAddress;
   const pageSignal = useGet(pageSignal$);
-  const [switchLoadable, switchAccount] = useLoadableSet(openClerkAddAccount$);
+  const [accessLoadable, openAccess] = useLoadableSet(
+    user ? openClerkAddAccount$ : signInToSharedArtifact$,
+  );
   return (
     <div className="flex min-h-full items-center justify-center bg-gray-50 px-5 py-10 sm:px-8">
       <Card className="w-full max-w-[480px] rounded-3xl">
@@ -110,19 +140,23 @@ function ArtifactAccessPage() {
           <div className="mt-7 flex flex-wrap items-center justify-center gap-2">
             <Button
               type="button"
-              disabled={switchLoadable.state === "loading"}
-              aria-busy={switchLoadable.state === "loading"}
+              disabled={accessLoadable.state === "loading"}
+              aria-busy={accessLoadable.state === "loading"}
               onClick={() => {
                 detach(
-                  switchAccount(window.location.href, pageSignal),
+                  openAccess(window.location.href, pageSignal),
                   Reason.DomCallback,
                 );
               }}
             >
-              <ArrowRightLeft aria-hidden />
-              {t(($) => {
-                return $.artifacts.access.switchAccount;
-              })}
+              {user ? <ArrowRightLeft aria-hidden /> : <LogIn aria-hidden />}
+              {user
+                ? t(($) => {
+                    return $.artifacts.access.switchAccount;
+                  })
+                : t(($) => {
+                    return $.artifacts.access.signIn;
+                  })}
             </Button>
             <Button
               type="button"
@@ -136,11 +170,15 @@ function ArtifactAccessPage() {
               })}
             </Button>
           </div>
-          {switchLoadable.state === "hasError" && (
+          {accessLoadable.state === "hasError" && (
             <p role="alert" className="mt-4 text-sm text-destructive">
-              {t(($) => {
-                return $.artifacts.access.switchAccountFailed;
-              })}
+              {user
+                ? t(($) => {
+                    return $.artifacts.access.switchAccountFailed;
+                  })
+                : t(($) => {
+                    return $.artifacts.access.signInFailed;
+                  })}
             </p>
           )}
         </div>

@@ -232,9 +232,13 @@ function createAgentSubmitMessage(
         access.kind === "computerUse"
           ? selectedComputerUseHostId(hosts, access.hostId)
           : null;
-      const send = options.forward
-        ? sendNewThreadWithoutNavigation$
-        : sendNewThread$;
+      // A forward stays on this page by construction; a submission may also
+      // ask to, when it was made on behalf of a surface the member is still
+      // using rather than typed by them.
+      const send =
+        options.forward || submission.stayOnPage
+          ? sendNewThreadWithoutNavigation$
+          : sendNewThread$;
       let connectorSelections: readonly ConnectorAccountSelection[] = [];
       if (connectorPreference.selections.length > 0) {
         const connectorAuthorization = await get(

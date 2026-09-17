@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use api_contracts::generated::types::{
     runners::{
+        jobs::pi_handoff,
         runs::{
             CodexRuntimeConfig, PiLaunchConfig, PiLaunchConfigApiFirstTurn,
             PiLaunchConfigApiFirstTurnBaseSession, PiLaunchConfigMemoryRecall, PiModelConfig,
@@ -17,6 +18,25 @@ use api_contracts::generated::types::{
     },
 };
 use serde_json::json;
+
+#[test]
+fn deferred_handoff_response_is_strict_and_deserialize_only() {
+    let response: pi_handoff::Response = serde_json::from_value(json!({
+        "chunk": "YWJj",
+        "nextOffset": 3,
+    }))
+    .unwrap();
+    assert_eq!(response.chunk, "YWJj");
+    assert_eq!(response.next_offset, Some(3));
+    assert!(
+        serde_json::from_value::<pi_handoff::Response>(json!({
+            "chunk": "YWJj",
+            "nextOffset": null,
+            "unexpected": true,
+        }))
+        .is_err()
+    );
+}
 
 #[test]
 fn generated_run_cancellation_response_preserves_absence_and_nullable_intent() {

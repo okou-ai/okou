@@ -14,7 +14,10 @@ import {
   type GenerationTemplateRequest,
   type UserMessageInputDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { CHAT_RUN_EXECUTION_TIMEOUT_MESSAGE } from "@okouai/api-contracts/contracts/errors";
+import {
+  CHAT_RUN_CONTENT_POLICY_REJECTED_MESSAGE,
+  CHAT_RUN_EXECUTION_TIMEOUT_MESSAGE,
+} from "@okouai/api-contracts/contracts/errors";
 import type { SupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import { CANCELLATION_RECOVERY_STALE_AFTER_MS } from "@okouai/api-contracts/contracts/runners";
@@ -4522,6 +4525,13 @@ describe("CHAT-02: failed chat callbacks", () => {
         error: "Contradictory runner failure",
         expectedError: CHAT_RUN_EXECUTION_TIMEOUT_MESSAGE,
         failureReason: "execution_timeout",
+      },
+      {
+        prompt: "safety refusal",
+        error:
+          "Codex error: Invalid prompt: your prompt was flagged as potentially violating our usage policy. Please try again with a different prompt: https://example.invalid/policy",
+        expectedError: CHAT_RUN_CONTENT_POLICY_REJECTED_MESSAGE,
+        failureReason: "safety_policy_refusal",
       },
     ];
 

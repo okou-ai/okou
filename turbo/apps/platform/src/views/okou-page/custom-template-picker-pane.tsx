@@ -49,7 +49,7 @@ import {
 } from "../../signals/okou-page/custom-template-library.ts";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import {
-  PRESENTATION_TEMPLATE_IMPORT_ACCEPT,
+  CUSTOM_TEMPLATE_IMPORT_ACCEPT,
   importPresentationTemplateDeck$,
 } from "../../signals/okou-page/presentation-template-import.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -351,11 +351,14 @@ function CustomTemplateCard({
 /**
  * The upload entry for this catalog.
  *
- * It sends the same message the Presentation tab's tile sends, so the reverse
- * run is the same run; only the prompt differs, and that difference is what
- * decides which catalog the result lands in. Rendering its own tile rather
- * than reusing the composer's is deliberate: the composer already imports this
- * pane, so importing the tile back would close a cycle.
+ * One entry for every kind of template, not one per kind: the file the user
+ * picked decides what it becomes, so the prompt that is sent — and with it the
+ * command that publishes the result — follows the file rather than a choice
+ * made before the analysis has read it.
+ *
+ * Rendering its own tile rather than reusing the composer's is deliberate: the
+ * composer already imports this pane, so importing the tile back would close a
+ * cycle.
  */
 function CustomTemplateUploadCard({
   signals,
@@ -366,7 +369,7 @@ function CustomTemplateUploadCard({
   const rootSignal = useGet(rootSignal$);
   const importDeck = useSet(importPresentationTemplateDeck$);
   const label = t(($) => {
-    return $.artifacts.templates.importDeck;
+    return $.artifacts.templates.importFile;
   });
   return (
     <label className="group/tile flex cursor-pointer flex-col gap-2">
@@ -384,7 +387,7 @@ function CustomTemplateUploadCard({
         <input
           type="file"
           className="sr-only"
-          accept={PRESENTATION_TEMPLATE_IMPORT_ACCEPT}
+          accept={CUSTOM_TEMPLATE_IMPORT_ACCEPT}
           aria-label={label}
           onChange={(event) => {
             const file = event.currentTarget.files?.[0];
@@ -405,9 +408,12 @@ function CustomTemplateUploadCard({
           {label}
         </span>
         <span className="truncate text-xs text-muted-foreground">
-          {t(($) => {
-            return $.artifacts.templates.importDeckHint;
-          })}
+          {t(
+            ($) => {
+              return $.artifacts.templates.importFileHint;
+            },
+            { formats: CUSTOM_TEMPLATE_IMPORT_ACCEPT.split(",").join(", ") },
+          )}
         </span>
       </span>
     </label>

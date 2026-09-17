@@ -40,7 +40,15 @@ export const morningBriefCollectionOutcomeSchema = z.enum([
   "provider_failed",
 ]);
 
-/** Which documented budget, if any, bounded the read. */
+/**
+ * Which documented budget or authorization boundary bounded the read.
+ *
+ * `text-bytes` is the total projection ceiling that stops collection, while
+ * `entry-text-bytes` records that at least one message's own text was clipped.
+ * `scope-lost` is a proven loss of the connected member's shared access, and
+ * `scope-unproven` is a bounded authorization lookup that established neither
+ * access nor its absence — never an allow.
+ */
 const morningBriefCollectionLimitSchema = z.enum([
   "channel-pages",
   "channels",
@@ -48,10 +56,13 @@ const morningBriefCollectionLimitSchema = z.enum([
   "requests",
   "messages",
   "text-bytes",
+  "entry-text-bytes",
   "deadline",
   "history-pages",
   "reply-pages",
   "cursor-anomaly",
+  "scope-lost",
+  "scope-unproven",
 ]);
 
 const morningBriefCollectionOccurrenceSchema = z.object({
@@ -81,6 +92,12 @@ const morningBriefSlackEntrySchema = z.object({
   threadTs: z.string().nullable(),
   authorId: z.string().nullable(),
   text: z.string(),
+  /**
+   * True when `text` was clipped at the per-message ceiling. The clip lands on
+   * a UTF-8 code point boundary, so the projection stays valid and within the
+   * ceiling instead of growing replacement characters past it.
+   */
+  textTruncated: z.boolean(),
   /** True when this message came from an expanded thread rather than history. */
   fromThread: z.boolean(),
 });
@@ -101,7 +118,9 @@ export const morningBriefSlackBundleSchema = z.object({
   timezone: z.string(),
   /**
    * `complete` covers the declared scope — bounded channels and the threads
-   * discovered inside the window — not the whole Slack workspace or day.
+   * discovered inside the window — not the whole Slack workspace or day. Any
+   * budget, continuation anomaly or authorization boundary that removed content
+   * or skipped discovered work makes this `partial` and names its limit below.
    */
   coverage: z.enum(["complete", "partial", "empty"]),
   limits: z.array(morningBriefCollectionLimitSchema),

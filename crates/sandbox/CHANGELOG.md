@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.1](https://github.com/vm0-ai/okou/compare/sandbox-v0.23.0...sandbox-v0.23.1) (2026-09-17)
+
+
+### Performance Improvements
+
+* **runner:** preserve active guest memory capacity ([#34832](https://github.com/vm0-ai/okou/issues/34832)) ([4ad43f1](https://github.com/vm0-ai/okou/commit/4ad43f174745f327493b26104d44296aec1b7d49))
+
 ## [0.23.0](https://github.com/vm0-ai/okou/compare/sandbox-v0.22.9...sandbox-v0.23.0) (2026-09-17)
 
 

@@ -1,5 +1,53 @@
 [
   {
+    "message": "unknown: Our servers are currently overloaded. Please try again later.",
+    "reason": "provider_overloaded"
+  },
+  {
+    "message": "unknown: Invalid prompt: your prompt was flagged as potentially violating our usage policy. Please try again with a different prompt: https://example.invalid/policy",
+    "reason": "safety_policy_refusal"
+  },
+  {
+    "message": "Error Code invalid_request_error: Invalid prompt: your prompt was flagged as potentially violating our usage policy. Please try again with a different prompt: https://example.invalid/policy",
+    "reason": "safety_policy_refusal"
+  },
+  {
+    "message": "unknown: Invalid prompt: messages must contain a user message",
+    "reason": null
+  },
+  {
+    "message": "Error Code invalid_request_error: Invalid tool schema",
+    "reason": null
+  },
+  {
+    "message": "Codex error: Invalid prompt: your prompt was flagged as potentially violating our usage policy. Please try again with a different prompt: https://example.invalid/policy",
+    "reason": "safety_policy_refusal"
+  },
+  {
+    "message": "Invalid prompt: your prompt was flagged as potentially violating our usage policy. Please try again with a different prompt: <redacted:url>",
+    "reason": "safety_policy_refusal"
+  },
+  {
+    "message": "{\"error\":{\"type\":\"invalid_request_error\",\"message\":\"Invalid prompt: your prompt was flagged as potentially violating our usage policy. Please try again with a different prompt: https://example.invalid/policy\"}}",
+    "reason": "safety_policy_refusal"
+  },
+  {
+    "message": "Codex error: Invalid prompt: messages must contain a user message",
+    "reason": null
+  },
+  {
+    "message": "Codex error: Invalid prompt: your prompt mentions our usage policy. Please try again with a different prompt: https://example.invalid/policy",
+    "reason": null
+  },
+  {
+    "message": "The tool printed: Invalid prompt: your prompt was flagged as potentially violating our usage policy. Please try again with a different prompt: https://example.invalid/policy",
+    "reason": null
+  },
+  {
+    "message": "{\"debug\":{\"error\":{\"message\":\"Invalid prompt: your prompt was flagged as potentially violating our usage policy. Please try again with a different prompt: https://example.invalid/policy\"}}}",
+    "reason": null
+  },
+  {
     "message": "We were unable to start processing your request within the 900-second timeout limit. Please try again later.",
     "reason": "provider_queue_timeout"
   },
