@@ -91,9 +91,11 @@ export async function verifyClerkOAuthAccessToken(
     !scopes ||
     (scopes &&
       scp &&
-      (scopes.length !== scp.length ||
-        scopes.some((item) => {
-          return !scp.includes(item);
+      (scopes.some((item) => {
+        return !scp.includes(item);
+      }) ||
+        scp.some((item) => {
+          return !scopes.includes(item);
         })))
   ) {
     return undefined;
