@@ -92,6 +92,6 @@ The verified first complete publication is source commit
 [publish run 35209618715](https://github.com/vm0-ai/vm0-connectors/actions/runs/35209618715).
 It contains 4,595 HTTP connectors and Plaud. The full catalog digest is
 `sha256:caa97a427cda78f72840a1279da97a607c6d8aea7eb6b5c3277f203de923b987`.
-Tests retain six complete descriptors in an explicitly filtered fixture with provenance;
+Tests retain seven complete descriptors in an explicitly filtered fixture with provenance;
 the full downloaded catalog and all 13,705 immutable resource digests are checked
 separately without committing the 30 MB catalog to this repository.

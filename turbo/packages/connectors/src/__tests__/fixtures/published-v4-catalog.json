@@ -471,6 +471,186 @@
       "authMethods": [
         {
           "access": {
+            "envBindings": {
+              "NINTENDO_STORE_LOCALE": "$vars.NINTENDO_STORE_LOCALE",
+              "NINTENDO_STORE_TOKEN": "$secrets.NINTENDO_STORE_ACCESS_TOKEN"
+            },
+            "inputs": {
+              "sessionToken": "$secrets.NINTENDO_STORE_SESSION_TOKEN"
+            },
+            "kind": "refresh-token",
+            "outputs": {
+              "accessToken": "$secrets.NINTENDO_STORE_ACCESS_TOKEN",
+              "idToken": "$secrets.NINTENDO_STORE_ID_TOKEN",
+              "locale": "$vars.NINTENDO_STORE_LOCALE"
+            },
+            "refreshableSecrets": ["NINTENDO_STORE_ACCESS_TOKEN"]
+          },
+          "client": {
+            "clientId": "5c38e31cd085304b",
+            "clientRegistration": "static",
+            "clientType": "public"
+          },
+          "description": "Sign in with Nintendo. After signing in, right-click the redirect button and copy its link address, then paste the full `npf...://auth` redirect URL or the `session_token_code` value.",
+          "grant": {
+            "kind": "external-code",
+            "outputs": {
+              "accessToken": "$secrets.NINTENDO_STORE_ACCESS_TOKEN",
+              "accountId": "$vars.NINTENDO_STORE_ACCOUNT_ID",
+              "idToken": "$secrets.NINTENDO_STORE_ID_TOKEN",
+              "locale": "$vars.NINTENDO_STORE_LOCALE",
+              "sessionToken": "$secrets.NINTENDO_STORE_SESSION_TOKEN"
+            },
+            "scopes": [
+              "openid",
+              "user",
+              "user.mii",
+              "user.email",
+              "user.links[].id"
+            ]
+          },
+          "id": "api",
+          "label": "Nintendo sign-in",
+          "revoke": {
+            "kind": "none"
+          },
+          "storage": {
+            "secrets": [
+              "NINTENDO_STORE_SESSION_TOKEN",
+              "NINTENDO_STORE_ACCESS_TOKEN",
+              "NINTENDO_STORE_ID_TOKEN"
+            ],
+            "variables": ["NINTENDO_STORE_ACCOUNT_ID", "NINTENDO_STORE_LOCALE"],
+            "version": 1
+          },
+          "visible": true
+        }
+      ],
+      "category": "data-automation-infrastructure",
+      "description": "Connect your Nintendo Account to access Nintendo Store catalog, wishlist, points, and play activity data.",
+      "firewall": {
+        "billable": false,
+        "categories": null,
+        "config": {
+          "apis": [
+            {
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.NINTENDO_STORE_TOKEN }}",
+                  "User-Agent": "com.nintendo.znej/1.13.0 (Android/7.1.2)"
+                }
+              },
+              "base": "https://api.accounts.nintendo.com",
+              "permissions": [
+                {
+                  "description": "Read Nintendo Account profile for the connected account",
+                  "name": "nintendo-account-profile-read",
+                  "rules": ["GET /2.0.0/users/me"]
+                }
+              ]
+            },
+            {
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.NINTENDO_STORE_TOKEN }}",
+                  "User-Agent": "com.nintendo.znej/1.13.0 (Android/7.1.2)",
+                  "gentry-locale": "${{ vars.NINTENDO_STORE_LOCALE }}"
+                }
+              },
+              "base": "https://app-api.znej.nintendo.com",
+              "permissions": [
+                {
+                  "description": "Read Nintendo Store app public catalog, search, shelves, news, and product metadata",
+                  "name": "nintendo-store-catalog-read",
+                  "rules": [
+                    "GET /api/v2.0/check_in_events",
+                    "GET /api/v2.0/check_in_events/{eventId}/check_in_points",
+                    "GET /api/v2.0/maintenance_check",
+                    "GET /api/v2.0/news",
+                    "GET /api/v2.0/news/app_news/{appNewsId}",
+                    "GET /api/v2.0/news_tab_config",
+                    "GET /api/v2.0/notifications",
+                    "GET /api/v2.0/now",
+                    "GET /api/v2.0/point_goods_shelves",
+                    "GET /api/v2.0/search_shelves",
+                    "GET /api/v2.0/search_shelves/{shelfId}",
+                    "GET /api/v2.0/shelves/summary",
+                    "POST /api/v2.0/product_details",
+                    "POST /api/v2.0/products/-/images:batch_get",
+                    "POST /api/v2.0/products/-/meta:batch_get",
+                    "GET /api/v2.0/products:search"
+                  ]
+                },
+                {
+                  "description": "Read Nintendo Store app account age, family, points, rights, and notification settings",
+                  "name": "nintendo-store-account-read",
+                  "rules": [
+                    "GET /api/v2.0/users/me/age",
+                    "GET /api/v2.0/users/me/family/children",
+                    "GET /api/v2.0/users/me/points",
+                    "GET /api/v2.0/users/me/push_notification_config",
+                    "GET /api/v2.0/users/me/rights",
+                    "GET /api/v2.0/users/{naid}/qrcode_param"
+                  ]
+                },
+                {
+                  "description": "Read Nintendo Store app play activity history",
+                  "name": "nintendo-store-play-activity-read",
+                  "rules": [
+                    "GET /api/v2.0/users/me/play_histories",
+                    "GET /api/v2.0/users/me/play_histories/game_titles/{titleId}"
+                  ]
+                },
+                {
+                  "description": "Read Nintendo Store app wishlist",
+                  "name": "nintendo-store-wishlist-read",
+                  "rules": [
+                    "GET /api/v2.0/users/me/wishlist",
+                    "GET /api/v2.0/users/me/wishlist/{productId}"
+                  ]
+                },
+                {
+                  "description": "Read Nintendo Store app check-in and prize receipt history",
+                  "name": "nintendo-store-check-in-history-read",
+                  "rules": [
+                    "GET /api/v2.0/users/me/check_in_histories",
+                    "GET /api/v2.0/users/me/received_prize_histories"
+                  ]
+                }
+              ]
+            }
+          ],
+          "description": "Nintendo Store API",
+          "placeholders": {
+            "NINTENDO_STORE_TOKEN": "nintendo_store_access_token_placeholder"
+          }
+        },
+        "defaultAllowed": null,
+        "defaultUnknownPolicy": "deny",
+        "kind": "generated"
+      },
+      "generation": [],
+      "icon": {
+        "invertInDarkMode": false,
+        "key": "platform/views/zero-page/components/settings/icons/nintendo-store-d945a3ab02b4.svg"
+      },
+      "label": "Nintendo Store",
+      "skill": {
+        "archiveSize": 4831,
+        "fileCount": 1,
+        "kind": "bundled",
+        "size": 16075,
+        "storageName": "connector-skill@nintendo-store",
+        "storageVersionPrefix": "__system__/volume/connector-skill@nintendo-store/b6f08ed4d96f0b79e55a1d6a934b59c96336e439062e4f9f0c3270eac6e064e5",
+        "versionId": "b6f08ed4d96f0b79e55a1d6a934b59c96336e439062e4f9f0c3270eac6e064e5"
+      },
+      "slug": "nintendo-store",
+      "tags": ["gaming", "player", "nintendo", "store", "catalog", "playtime"]
+    },
+    {
+      "authMethods": [
+        {
+          "access": {
             "inputs": {
               "accessToken": "$secrets.PLAUD_MCP_ACCESS_TOKEN",
               "refreshToken": "$secrets.PLAUD_MCP_REFRESH_TOKEN"

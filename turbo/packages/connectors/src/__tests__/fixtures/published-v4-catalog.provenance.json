@@ -9,12 +9,13 @@
   "connectorCount": 4596,
   "publicationDigest": "sha256:0f46e80440add287ed92a64e31df2ee96966e0470a9a25c1522f528ba2800390",
   "publicationResourceCount": 13705,
-  "excerpt": "The catalog header, category metadata, and six complete connector descriptors retain their published JSON values. The connectors array is filtered and JSON is reserialized; the published catalog digest applies to the complete original artifact, not this excerpt.",
+  "excerpt": "The catalog header, category metadata, and seven complete connector descriptors retain their published JSON values. The connectors array is filtered and JSON is reserialized; the published catalog digest applies to the complete original artifact, not this excerpt.",
   "connectorSlugs": [
     "019sms",
     "ahrefs",
     "archer",
     "base44",
+    "nintendo-store",
     "plaud-mcp",
     "steam"
   ]
