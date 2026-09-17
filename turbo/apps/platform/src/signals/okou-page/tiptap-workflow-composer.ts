@@ -216,6 +216,8 @@ export interface WorkflowComposerSignals {
   readonly previewSuggestionIndex$: Computed<number | null>;
   readonly previewSuggestion$: Command<void, [number | null]>;
   readonly closeSuggestionMenu$: Command<void, []>;
+  /** Drops the typed `/token` for a row that does not insert one itself. */
+  readonly clearSlashRange$: Command<void, []>;
   readonly insertWorkflow$: Command<void, [ComposerSlashWorkflow]>;
   readonly insertAgent$: Command<void, [ComposerAgentSuggestion]>;
   readonly insertChatThread$: Command<void, [ComposerChatThreadSuggestion]>;
@@ -2223,6 +2225,31 @@ function createInsertWorkflowCommand(
   });
 }
 
+/**
+ * Removes the `/token` that opened the suggestion menu.
+ *
+ * The insert commands above consume it by writing over it, so only the rows
+ * that put something other than text in its place — a template chip, a create
+ * mode — need this. Without it the token stays behind as prose, and the
+ * message asks for a workflow nobody named.
+ */
+function createClearSlashRangeCommand(
+  editor: Editor,
+  activeSlashRange$: Computed<SlashWorkflowRange | null>,
+) {
+  return command(({ get }) => {
+    const slashRange = get(activeSlashRange$);
+    if (!slashRange) {
+      return;
+    }
+    const head = editor.state.selection.head;
+    editor.commands.deleteRange({
+      from: head - (slashRange.end - slashRange.start),
+      to: head,
+    });
+  });
+}
+
 function createInsertAgentCommand(
   editor: Editor,
   activeRange$: Computed<ChatThreadSuggestionRange | null>,
@@ -2301,6 +2328,7 @@ function createSuggestionInsertionCommands(
   activeMentionRange$: Computed<ChatThreadSuggestionRange | null>,
 ) {
   return {
+    clearSlashRange$: createClearSlashRangeCommand(editor, activeSlashRange$),
     insertWorkflow$: createInsertWorkflowCommand(editor, activeSlashRange$),
     insertAgent$: createInsertAgentCommand(editor, activeMentionRange$),
     insertChatThread$: createInsertChatThreadCommand(

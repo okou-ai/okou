@@ -511,6 +511,23 @@ test("Choosing a cover in the pane attaches that template without opening the pi
   expect(screen.queryByRole("dialog")).toBeNull();
 });
 
+test("Choosing a cover consumes the slash token that opened the panel", async () => {
+  const user = userEvent.setup();
+  await openSlashMenu("pre");
+  const editor = await findComposerEditor();
+  const [first] = PRESENTATION_TEMPLATE_PICKER_ITEMS;
+  if (!first) {
+    throw new Error("Expected a presentation template");
+  }
+
+  await user.click(slashButton(first.title));
+
+  await expectInlineTemplateInComposer(first.title);
+  // The whole token goes, not only its slash, and the prose before it stays.
+  expect(editor).not.toHaveTextContent("/");
+  expect(editor).toHaveTextContent("Draft");
+});
+
 const IMPORT_PROMPT =
   "Analyse this deck and save its visual language as a reusable presentation template.";
 
