@@ -735,13 +735,11 @@ function RouteChoiceButton({
       aria-checked={active}
       disabled={disabled}
       onClick={onClick}
-      style={{
-        border: active
-          ? "var(--border-width-surface) solid hsl(var(--primary))"
-          : "var(--border-width-surface) solid hsl(var(--gray-400))",
-      }}
       className={cn(
-        "flex flex-col gap-0.5 rounded-xl bg-card px-5 py-4 text-left transition-colors",
+        "flex flex-col gap-0.5 rounded-xl border bg-card px-5 py-4 text-left transition-colors",
+        // A text card, so selection recolours the shared hairline rather than
+        // thickening it.
+        active ? "border-primary" : "border-surface-border",
         active && "bg-primary/5",
         !active && !disabled && "hover:bg-state-hover",
         disabled && "cursor-not-allowed opacity-50",

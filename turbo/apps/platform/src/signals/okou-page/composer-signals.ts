@@ -302,6 +302,7 @@ interface CreateComposerSignalsOptions {
   readonly voiceDraftTarget: string;
   readonly connector?: ComposerConnectorSignals;
   readonly singleLineOnMobile: boolean;
+  readonly forwardComposer?: boolean;
   readonly modelSelection$: ComposerModelSignals["modelSelection$"];
   readonly selectedModelOauthAvailable$: ComposerModelSignals["selectedModelOauthAvailable$"];
   readonly setModelSelection$: ComposerModelSignals["setModelSelection$"];
@@ -320,6 +321,12 @@ interface CreateComposerSignalsOptions {
   readonly cancellationRecoveryPending$: ComposerQueueSignals["cancellationRecoveryPending$"];
   readonly removeQueuedMessage$: ComposerQueueSignals["removeQueuedMessage$"];
   readonly removeAutomationEvent$: ComposerQueueSignals["removeAutomationEvent$"];
+}
+
+function forwardFeedbackPlaceholder(): string {
+  return i18n.t(($) => {
+    return $.chat.forward.composerPlaceholder;
+  });
 }
 
 function createComposerFileInputSignals() {
@@ -553,6 +560,9 @@ export function createComposerSignals(
     agentId$,
     {
       autoFocus: true,
+      ...(options.forwardComposer
+        ? { feedbackPlaceholder: forwardFeedbackPlaceholder }
+        : {}),
     },
     feedback,
   );

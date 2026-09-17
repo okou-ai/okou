@@ -1,5 +1,32 @@
 # Changelog
 
+## [9.338.2](https://github.com/vm0-ai/okou/compare/cli-v9.338.1...cli-v9.338.2) (2026-09-17)
+
+
+### Bug Fixes
+
+* **pi:** authenticate deferred handoff in guest ([#34845](https://github.com/vm0-ai/okou/issues/34845)) ([2562612](https://github.com/vm0-ai/okou/commit/2562612020484e515569c2cb78d11f672b5bff5d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.455.1
+    * @okouai/core bumped to 8.674.2
+    * @okouai/pi-agent-runtime bumped to 1.33.0
+
+## [9.338.1](https://github.com/vm0-ai/okou/compare/cli-v9.338.0...cli-v9.338.1) (2026-09-17)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.455.0
+    * @okouai/core bumped to 8.674.1
+    * @okouai/pi-agent-runtime bumped to 1.32.8
+
 ## [9.338.0](https://github.com/vm0-ai/okou/compare/cli-v9.337.3...cli-v9.338.0) (2026-09-17)
 
 

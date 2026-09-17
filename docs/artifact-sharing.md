@@ -49,8 +49,9 @@ snapshots under its own grant; see [shared-thread snapshots](shared-thread-artif
 Recipients cannot edit or reshare the original artifact.
 
 - Organization: `https://app.okou.ai/artifacts/<10-character-reference>.<extension>` (the configured
-  `APP_URL` in other environments). The app uses existing login with a same-origin
-  return path, then calls the API with its session. The API checks the grant and
+  `APP_URL` in other environments). Signed-out visitors see the access page and
+  can choose **Sign in**, returning to the same artifact URL. The app then calls
+  the API with its session. The API checks the grant and
   current membership of the **original organization**, even when another org is
   active. With `privateArtifacts` enabled, success opens the standalone Okou
   viewer; otherwise it navigates directly to the signed file or isolated HTML.
@@ -144,8 +145,20 @@ new run. No storage migration or host Worker protocol change is required.
 
 The shared `privateArtifacts` switch applies to
 `/artifacts/<compact-reference>[.<extension>]` and the legacy
-`/share/artifacts/<shareId>` route. Both retain the existing login and resolver
-authorization. The viewer reuses the lightbox's media and document previews,
+`/share/artifacts/<shareId>` route. Both use page-local access checks rather than
+the authenticated route guard. Signed-out visitors resolve the public share's
+delivery URL and preview metadata without a session, and see its content inside
+the standalone viewer at the original App URL. Signed-in visitors use the
+authenticated resolver first and can also preview an explicitly public version
+when they lack owner or organization access.
+
+Private, organization-only, revoked, missing and unselected versions show the
+existing access page without disclosing artifact metadata. Its primary action
+is **Sign in** for signed-out visitors and **Switch account** for signed-in
+visitors. Signing in is an explicit action and preserves the complete current
+artifact URL, including query and fragment, as a same-origin return destination.
+
+The viewer reuses the lightbox's media and document previews,
 image zoom controls, and download action in a full-page canvas with the shared
 thread page's brand header. There is no fullscreen action. The header restores
 the app's theme preferences and **Continue with Okou** uses the shared primary
@@ -154,7 +167,9 @@ button colors.
 The viewer's **Share** button directly copies the current app URL and reports
 clipboard success or failure. It never creates a grant, changes an audience,
 publishes content, or copies the temporary preview credential. Download resolves
-the canonical reference again and saves the original filename. HTML remains in
+the canonical reference again for authenticated previews and uses the published
+delivery URL for public previews, saving the original filename. Public viewers
+copy the App link directly without loading owner permission controls. HTML remains in
 the isolated preview origin inside a sandboxed iframe; URL fragments, including
 slide and PDF page positions, are retained. **Continue with Okou** opens a new
 chat with the canonical artifact link as its prompt, without importing the

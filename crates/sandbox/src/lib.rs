@@ -49,12 +49,12 @@ pub use factory::{
 pub use guest_rpc::{AcceptedGuestRpc, GuestRpcAcceptor, GuestRpcStream};
 pub use runtime::{RuntimeProvider, SandboxRuntime};
 pub use sandbox::{
-    FileCompression, GuestMemorySnapshot, Sandbox, SandboxFinalExecParkHandoff,
-    SandboxFinalExecParkHandoffOutcome, SandboxFinalExecParkHandoffPoint,
-    SandboxFinalExecParkObserver, SandboxFinalExecParkOutcome, SandboxFinalExecParkStage,
-    SandboxFinalExecParkSubstage, SandboxFinalExecParkSubstageOutcome, SandboxGuestConnectionPhase,
-    SandboxParkNonReusableReason, SandboxParkOutcome, SandboxStartObserver, SandboxStartStage,
-    SevereMemoryRetentionDiagnostics,
+    FileCompression, FileWriteMeasurements, GuestMemorySnapshot, Sandbox,
+    SandboxFinalExecParkHandoff, SandboxFinalExecParkHandoffOutcome,
+    SandboxFinalExecParkHandoffPoint, SandboxFinalExecParkObserver, SandboxFinalExecParkOutcome,
+    SandboxFinalExecParkStage, SandboxFinalExecParkSubstage, SandboxFinalExecParkSubstageOutcome,
+    SandboxGuestConnectionPhase, SandboxParkNonReusableReason, SandboxParkOutcome,
+    SandboxStartObserver, SandboxStartStage, SevereMemoryRetentionDiagnostics,
 };
 pub use snapshot::{
     PendingSnapshotPublish, SnapshotCreateConfig, SnapshotError, SnapshotOutput, SnapshotProvider,

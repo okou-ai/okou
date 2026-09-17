@@ -58,6 +58,12 @@ interface SharedWorkerFailureTelemetry {
   readonly script_path: string;
 }
 
+interface SkeletonTimeoutTelemetry {
+  readonly event_name: "app.skeleton.timeout";
+  readonly threshold_ms: number;
+  readonly visibility_state: DocumentVisibilityState;
+}
+
 interface HttpRequestTelemetry {
   readonly event_name: "http.request";
   readonly method: HttpMethod;
@@ -92,6 +98,7 @@ export type ClientTelemetryOperation =
   | IndexedDbTransactionTelemetry
   | SharedDatabaseQueryTelemetry
   | SharedWorkerFailureTelemetry
+  | SkeletonTimeoutTelemetry
   | HttpRequestTelemetry
   | MarketingOnboardingTelemetry;
 
@@ -102,6 +109,9 @@ function runtimeName(): "shared_worker" | "window" {
 function scopeName(operation: ClientTelemetryOperation): string {
   if (operation.event_name === "marketing.onboarding") {
     return "okou-app/marketing-onboarding";
+  }
+  if (operation.event_name === "app.skeleton.timeout") {
+    return "okou-app/startup";
   }
   if (operation.event_name === "shared_worker.failure") {
     return "okou-app/shared-worker";
@@ -137,7 +147,8 @@ function statusCode(
 function operationName(operation: ClientTelemetryOperation): string {
   if (
     operation.event_name === "shared_worker.failure" ||
-    operation.event_name === "marketing.onboarding"
+    operation.event_name === "marketing.onboarding" ||
+    operation.event_name === "app.skeleton.timeout"
   ) {
     return operation.event_name;
   }
@@ -168,6 +179,12 @@ function operationAttributes(
             "okou.marketing.onboarding.request_id":
               operation.marketing_request_id,
           }),
+    };
+  }
+  if (operation.event_name === "app.skeleton.timeout") {
+    return {
+      "okou.skeleton.threshold_ms": operation.threshold_ms,
+      "okou.document.visibility_state": operation.visibility_state,
     };
   }
   if (operation.event_name === "shared_worker.failure") {

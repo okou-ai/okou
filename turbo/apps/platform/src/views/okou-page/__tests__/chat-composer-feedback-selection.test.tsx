@@ -167,7 +167,7 @@ test("Undo and redo quote edits after boundary navigation", async () => {
   await user.keyboard("{Control>}{Shift>}z{/Shift}{/Control}");
   expect(composer).toHaveTextContent(`${NOTE}!`);
   expect(
-    screen.getByRole("textbox", { name: "What should change about this?" }),
+    screen.getByRole("textbox", { name: "Ask or comment on this quote" }),
   ).toHaveTextContent(`${NOTE}!`);
 });
 
@@ -193,7 +193,7 @@ test.each(["before", "after"] as const)(
     );
     await user.paste(clipboard);
     const note = screen.getByRole("textbox", {
-      name: "What should change about this?",
+      name: "Ask or comment on this quote",
     });
     expect(note).toHaveTextContent(NOTE);
     placeNoteCaret(note, position === "before" ? 0 : NOTE.length);

@@ -499,7 +499,7 @@ impl Sandbox for ObservedStartSandbox {
         path: &str,
         content: &[u8],
         compression: sandbox::FileCompression,
-    ) -> sandbox::Result<()> {
+    ) -> sandbox::Result<Option<sandbox::FileWriteMeasurements>> {
         self.inner
             .write_file_with_compression(path, content, compression)
             .await

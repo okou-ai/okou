@@ -267,9 +267,27 @@ fn capture_terminal_log_events_with_context(
     stream_overflowed: bool,
     host_cancel_requested: bool,
 ) -> Vec<CapturedEvent> {
+    capture_terminal_log_events_with_label(
+        "terminal-log",
+        lifecycle,
+        slow,
+        result,
+        stream_overflowed,
+        host_cancel_requested,
+    )
+}
+
+fn capture_terminal_log_events_with_label(
+    label: &str,
+    lifecycle: ExecTerminalLogLifecycle,
+    slow: bool,
+    result: &guest_control_proto::DecodedExecResult<'_>,
+    stream_overflowed: bool,
+    host_cancel_requested: bool,
+) -> Vec<CapturedEvent> {
     let mut diagnostic = ExecOperationDiagnostic::new(
         7,
-        "terminal-log",
+        label,
         guest_control_proto::ExecProcessRole::Workload,
         false,
         false,
@@ -350,6 +368,181 @@ fn exec_operation_diagnostic_logs_terminal_result_at_classified_level() {
         capture_terminal_log_levels(ExecTerminalLogLifecycle::Supervised, true, &nonzero_exit),
         vec![Level::INFO]
     );
+}
+
+#[tokio::test]
+async fn slow_storage_download_preserves_latency_without_warning() {
+    let (events, result) = capture_dispatch_terminal_log_events_with_lifecycle(
+        ExecOperationLifecycle::OneShot,
+        "storage-download",
+    );
+    assert_eq!(result.termination, ExecTermination::Exited { exit_code: 0 });
+    assert_eq!(events.len(), 1);
+    let event = &events[0];
+    assert_eq!(event.level, Level::INFO);
+    for (field, value) in [
+        ("message", "exec operation terminal result"),
+        ("label", "storage-download"),
+        ("lifecycle", "one_shot"),
+        ("slow", "true"),
+        ("terminal_reason", "slow"),
+        ("storage_download_latency", "true"),
+        ("termination", "Exited { exit_code: 0 }"),
+    ] {
+        assert_terminal_log_field(event, field, value);
+    }
+    assert!(terminal_log_field_u128(event, "elapsed_ms") >= 5000);
+    assert!(event.fields.contains_key("guest_duration_ms"));
+
+    assert!(
+        capture_terminal_log_events_with_label(
+            "storage-download",
+            ExecTerminalLogLifecycle::OneShot,
+            false,
+            &clean_terminal_result(),
+            false,
+            false,
+        )
+        .is_empty()
+    );
+    let supervised = capture_terminal_log_events_with_label(
+        "storage-download",
+        ExecTerminalLogLifecycle::Supervised,
+        true,
+        &clean_terminal_result(),
+        false,
+        false,
+    );
+    assert_eq!(supervised[0].level, Level::INFO);
+    assert!(
+        !supervised[0]
+            .fields
+            .contains_key("storage_download_latency")
+    );
+}
+
+#[test]
+fn slow_storage_download_keeps_anomalies_and_other_helpers_warning() {
+    let clean = clean_terminal_result();
+    let proof = oom_evidence_diagnostic(true);
+    let malformed = format!("{}bad", guest_contracts::oom_evidence::EVIDENCE_PREFIX);
+    let truncated = ExecCapturedOutput::Captured {
+        bytes: b"output",
+        truncated: true,
+    };
+    for (label, result, overflow, cancel) in [
+        ("storage-download-extra", clean, false, false),
+        ("workspace-unmount", clean, false, false),
+        ("storage-download", clean, true, false),
+        ("storage-download", clean, false, true),
+        (
+            "storage-download",
+            guest_control_proto::DecodedExecResult {
+                stdout: truncated,
+                ..clean
+            },
+            false,
+            false,
+        ),
+        (
+            "storage-download",
+            guest_control_proto::DecodedExecResult {
+                stderr: truncated,
+                ..clean
+            },
+            false,
+            false,
+        ),
+        (
+            "storage-download",
+            guest_control_proto::DecodedExecResult {
+                diagnostic: "cleanup failed",
+                ..clean
+            },
+            false,
+            false,
+        ),
+        (
+            "storage-download",
+            guest_control_proto::DecodedExecResult {
+                diagnostic: &proof,
+                ..clean
+            },
+            false,
+            false,
+        ),
+        (
+            "storage-download",
+            guest_control_proto::DecodedExecResult {
+                diagnostic: &malformed,
+                ..clean
+            },
+            false,
+            false,
+        ),
+        (
+            "storage-download",
+            guest_control_proto::DecodedExecResult {
+                termination: ExecTermination::Exited { exit_code: 1 },
+                ..clean
+            },
+            false,
+            false,
+        ),
+        (
+            "storage-download",
+            guest_control_proto::DecodedExecResult {
+                termination: ExecTermination::TimedOut,
+                ..clean
+            },
+            false,
+            false,
+        ),
+        (
+            "storage-download",
+            guest_control_proto::DecodedExecResult {
+                termination: ExecTermination::Cancelled,
+                ..clean
+            },
+            false,
+            false,
+        ),
+        (
+            "storage-download",
+            guest_control_proto::DecodedExecResult {
+                termination: ExecTermination::StartFailed,
+                ..clean
+            },
+            false,
+            false,
+        ),
+        (
+            "storage-download",
+            guest_control_proto::DecodedExecResult {
+                termination: ExecTermination::WaitFailed,
+                ..clean
+            },
+            false,
+            false,
+        ),
+    ] {
+        let events = capture_terminal_log_events_with_label(
+            label,
+            ExecTerminalLogLifecycle::OneShot,
+            true,
+            &result,
+            overflow,
+            cancel,
+        );
+        assert_eq!(events.len(), 1);
+        assert_eq!(
+            events[0].level,
+            Level::WARN,
+            "fields={:?}",
+            events[0].fields
+        );
+        assert!(!events[0].fields.contains_key("storage_download_latency"));
+    }
 }
 
 #[test]
@@ -870,8 +1063,9 @@ fn clean_terminal_log_context(
     lifecycle: ExecTerminalLogLifecycle,
     slow: bool,
     termination: ExecTermination,
-) -> ExecTerminalLogContext {
+) -> ExecTerminalLogContext<'static> {
     ExecTerminalLogContext {
+        label: "terminal-log",
         lifecycle,
         timeout_is_expected: false,
         slow,

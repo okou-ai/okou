@@ -1753,7 +1753,7 @@ test("a delayed writer cannot resurrect a public grant after a newer revocation"
   );
 });
 
-test("canonical file links disclose a public URL only while explicitly public, without authentication", async () => {
+test("canonical file links disclose public previews only while explicitly public, without authentication", async () => {
   const { members, session } = await fixture();
   const target = await file();
   const reference = artifactReferencePath(target.id, "report.pdf")
@@ -1764,7 +1764,19 @@ test("canonical file links disclose a public URL only while explicitly public, w
       params: { reference },
     });
   };
-  await accept(publicUrl(), [404]);
+  const privateResult = await accept(publicUrl(), [404]);
+  expect(privateResult.body).toStrictEqual({
+    error: { code: "NOT_FOUND", message: "Artifact unavailable" },
+  });
+  const missingResult = await accept(
+    api()(artifactReferencesContract).publicUrl({
+      params: {
+        reference: artifactReferencePath(randomUUID()).split("/").at(-1)!,
+      },
+    }),
+    [404],
+  );
+  expect(missingResult.body).toStrictEqual(privateResult.body);
   const shared = await accept(
     api()(artifactSharesContract).update({
       headers,
@@ -1775,7 +1787,15 @@ test("canonical file links disclose a public URL only while explicitly public, w
   const shortReference = new URL(shared.body.shortUrl!).pathname
     .split("/")
     .at(-1)!;
-  await accept(publicUrl(), [404]);
+  for (const value of [reference, shortReference]) {
+    const organizationResult = await accept(
+      api()(artifactReferencesContract).publicUrl({
+        params: { reference: value },
+      }),
+      [404],
+    );
+    expect(organizationResult.body).toStrictEqual(privateResult.body);
+  }
   const published = await accept(
     api()(artifactSharesContract).update({
       headers,
@@ -1783,16 +1803,28 @@ test("canonical file links disclose a public URL only while explicitly public, w
     }),
     [200],
   );
-  for (const value of [reference, shortReference]) {
+  context.mocks.clerk.authenticateRequest.mockResolvedValue({
+    isAuthenticated: false,
+  });
+  for (const value of [
+    reference,
+    shortReference,
+    reference.replace(".pdf", ".html"),
+  ]) {
     const result = await accept(
       api()(artifactReferencesContract).publicUrl({
         params: { reference: value },
       }),
       [200],
     );
-    expect(result.body.url).toBe(published.body.url);
+    expect(result.body).toStrictEqual({
+      url: published.body.url,
+      preview: { filename: "report.pdf", contentType: "application/pdf" },
+    });
     expect(result.headers.get("cache-control")).toBe("private, no-store");
+    expect(result.headers.get("referrer-policy")).toBe("no-referrer");
   }
+  session();
   await accept(
     api()(artifactSharesContract).update({
       headers,
@@ -1800,13 +1832,19 @@ test("canonical file links disclose a public URL only while explicitly public, w
     }),
     [200],
   );
-  await accept(publicUrl(), [404]);
-  await accept(
-    api()(artifactReferencesContract).publicUrl({
-      params: { reference: shortReference },
-    }),
-    [404],
-  );
+  for (const value of [reference, shortReference]) {
+    const revokedResult = await accept(
+      api()(artifactReferencesContract).publicUrl({
+        params: { reference: value },
+      }),
+      [404],
+    );
+    expect(revokedResult.body).toStrictEqual(privateResult.body);
+    expect(revokedResult.headers.get("cache-control")).toBe(
+      "private, no-store",
+    );
+    expect(revokedResult.headers.get("referrer-policy")).toBe("no-referrer");
+  }
   await accept(
     api()(artifactReferencesContract).resolve({
       headers,
@@ -1834,8 +1872,8 @@ test("canonical file links disclose a public URL only while explicitly public, w
   );
 });
 
-test("public HTML reference resolution preserves the selected version", async () => {
-  const { owner, org } = await fixture();
+test("public HTML preview metadata follows only the explicitly selected version", async () => {
+  const { owner, org, session } = await fixture();
   const memberships =
     context.mocks.clerk.organizations.getOrganizationMembershipList.getMockImplementation()!;
   const actor = createBddApi(context).user({ userId: owner, orgId: org });
@@ -1867,17 +1905,59 @@ test("public HTML reference resolution preserves the selected version", async ()
     }),
     [200],
   );
+  context.mocks.clerk.authenticateRequest.mockResolvedValue({
+    isAuthenticated: false,
+  });
   const result = await accept(
     api()(artifactReferencesContract).publicUrl({
       params: { reference: first.url.split("/").at(-1)! },
     }),
     [200],
   );
-  expect(result.body.url).toBe(published.body.url);
-  await accept(
+  expect(result.body).toStrictEqual({
+    url: published.body.url,
+    preview: { filename: "index.html", contentType: "text/html" },
+  });
+  expect(result.headers.get("cache-control")).toBe("private, no-store");
+  expect(result.headers.get("referrer-policy")).toBe("no-referrer");
+  const unselected = await accept(
     api()(artifactReferencesContract).publicUrl({
       params: { reference: second.url.split("/").at(-1)! },
     }),
     [404],
   );
+  expect(unselected.body).toStrictEqual({
+    error: { code: "NOT_FOUND", message: "Artifact unavailable" },
+  });
+  session();
+  const updated = await accept(
+    api()(artifactSharesContract).update({
+      headers,
+      body: {
+        target: { kind: "html", id: second.deploymentId },
+        audience: "public",
+      },
+    }),
+    [200],
+  );
+  context.mocks.clerk.authenticateRequest.mockResolvedValue({
+    isAuthenticated: false,
+  });
+  const previous = await accept(
+    api()(artifactReferencesContract).publicUrl({
+      params: { reference: first.url.split("/").at(-1)! },
+    }),
+    [404],
+  );
+  expect(previous.body).toStrictEqual(unselected.body);
+  const selected = await accept(
+    api()(artifactReferencesContract).publicUrl({
+      params: { reference: second.url.split("/").at(-1)! },
+    }),
+    [200],
+  );
+  expect(selected.body).toStrictEqual({
+    url: updated.body.url,
+    preview: { filename: "index.html", contentType: "text/html" },
+  });
 });

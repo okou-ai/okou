@@ -75,6 +75,17 @@ interface SandboxOperationDimensionInput {
   readonly session_history_source_representation?: string;
   readonly session_history_restore_representation?: string;
   readonly session_history_restore_reason?: string;
+  readonly session_history_transfer_source?: string;
+  readonly session_history_wire_codec?: string;
+  readonly session_history_codec_reason?: string;
+  readonly session_history_transfer_bytes?: number;
+  readonly session_history_wire_bytes?: number;
+  readonly session_history_write_requests?: number;
+  readonly session_history_selection_ms?: number;
+  readonly session_history_file_gate_wait_ms?: number;
+  readonly session_history_requests_ms?: number;
+  readonly session_history_encoder_pipeline_ms?: number;
+  readonly session_history_publication_ms?: number;
 }
 
 interface SandboxRunnerDimensionInput {
@@ -157,6 +168,7 @@ function sandboxOperationDimensions(
       : {}),
     ...runnerResourceBudgetDimensions(op),
     ...workspaceHistoryRestoreDimensions(op),
+    ...historyTransferDimensions(op),
     ...(op.encoding ? { encoding: op.encoding } : {}),
     ...(op.session_history_raw_size_bucket
       ? {
@@ -209,6 +221,31 @@ function sandboxOperationDimensions(
       ? { session_history_download_source: op.session_history_download_source }
       : {}),
   };
+}
+
+function historyTransferDimensions(
+  op: SandboxOperationDimensionInput,
+): Record<string, string | number> {
+  const dimensions: Record<string, string | number> = {};
+  for (const key of [
+    "session_history_transfer_source",
+    "session_history_wire_codec",
+    "session_history_codec_reason",
+    "session_history_transfer_bytes",
+    "session_history_wire_bytes",
+    "session_history_write_requests",
+    "session_history_selection_ms",
+    "session_history_file_gate_wait_ms",
+    "session_history_requests_ms",
+    "session_history_encoder_pipeline_ms",
+    "session_history_publication_ms",
+  ] as const) {
+    const value = op[key];
+    if (value !== undefined) {
+      dimensions[key] = value;
+    }
+  }
+  return dimensions;
 }
 
 function workspaceHistoryRestoreDimensions(

@@ -444,6 +444,8 @@
       "description": "यह निजी हो सकता है या अब उपलब्ध नहीं है।",
       "help": "जिस व्यक्ति ने यह लिंक शेयर किया है, उससे ऐक्सेस जाँचने के लिए कहें।",
       "signedInAs": "{{email}} के रूप में साइन इन हैं",
+      "signIn": "साइन इन करें",
+      "signInFailed": "साइन इन नहीं खुल सका। कृपया फिर से कोशिश करें।",
       "switchAccount": "खाता बदलें",
       "switchAccountFailed": "खाता बदलने की विंडो नहीं खुल सकी। कृपया फिर से कोशिश करें।",
       "title": "आप यह आर्टिफ़ैक्ट नहीं देख सकते",
@@ -1848,23 +1850,26 @@
       "runCancelled": "विचार के बीच में रुका हुआ - जब भी हो, इसे वापस उठा लें।"
     },
     "feedback": {
-      "emailDraftDescription": "एक ईमेल ड्राफ्ट (मेल ड्राफ्ट ID: {{id}})",
-      "partHeading": "आपके उत्तर के इस भाग पर प्रतिक्रिया:",
-      "partsHeading_one": "{{count}} पर प्रतिक्रिया आपके उत्तर का हिस्सा:",
-      "partsHeading_other": "आपके उत्तर के {{count}} भागों पर प्रतिक्रिया:",
-      "placeholder": "इसमें क्या बदलाव होना चाहिए?",
+      "emailDraftDescription": "एक ईमेल ड्राफ्ट",
+      "forwardPartHeading": "“{{title}}” से फ़ॉरवर्ड किया गया",
+      "forwardPartsHeading_one": "“{{title}}” से {{count}} भाग फ़ॉरवर्ड किया गया",
+      "forwardPartsHeading_other": "“{{title}}” से {{count}} भाग फ़ॉरवर्ड किए गए",
+      "partHeading": "आपके उत्तर से उद्धृत",
+      "partsHeading_one": "आपके उत्तर से {{count}} भाग उद्धृत",
+      "partsHeading_other": "आपके उत्तर से {{count}} भाग उद्धृत",
+      "placeholder": "इस उद्धरण पर सवाल पूछें या टिप्पणी करें",
       "quote": "उद्धृत करें",
       "remove": "प्रतिक्रिया हटाएँ",
-      "sentEmailDescription": "भेजा गया ईमेल (मेल ID: {{id}}{{sentIdSuffix}})",
-      "sentIdSuffix": ", भेजा गया ID: {{sentId}}",
-      "sourcePartHeading": "{{description}} के इस भाग पर प्रतिक्रिया:",
-      "sourcePartsHeading_one": "{{description}} के {{count}} भाग पर प्रतिक्रिया:",
-      "sourcePartsHeading_other": "{{description}} के {{count}} भागों पर प्रतिक्रिया:"
+      "sentEmailDescription": "एक भेजा गया ईमेल",
+      "sourcePartHeading": "{{description}} से उद्धृत",
+      "sourcePartsHeading_one": "{{description}} से {{count}} भाग उद्धृत",
+      "sourcePartsHeading_other": "{{description}} से {{count}} भाग उद्धृत"
     },
     "forward": {
       "action": "फ़ॉरवर्ड करें",
       "agents": "एजेंट",
       "back": "वापस",
+      "composerPlaceholder": "संदेश जोड़ें",
       "content": "सामग्री",
       "description": "चुनी गई सामग्री पर काम जारी रखने के लिए उसे किसी एजेंट या चैट में भेजें।",
       "noResults": "कोई एजेंट या चैट नहीं मिली",
@@ -6304,7 +6309,8 @@
       "back": "कस्टम टेम्पलेट",
       "page": "पृष्ठ {{number}}",
       "source_one": "{{count}} पृष्ठ · {{filename}} से",
-      "source_other": "{{count}} पृष्ठ · {{filename}} से"
+      "source_other": "{{count}} पृष्ठ · {{filename}} से",
+      "sourceFile": "{{filename}} से"
     },
     "empty": {
       "description": "आपके द्वारा अपलोड की गई फ़ाइल से बने टेम्पलेट यहाँ दिखाई देंगे।",

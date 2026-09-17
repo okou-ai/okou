@@ -1,13 +1,63 @@
-import { Command } from "commander";
+import {
+  USER_TEMPLATE_KINDS,
+  type UserTemplateKind,
+} from "@okouai/api-contracts/contracts/user-templates";
+import { Command, Option } from "commander";
 
-import { publishUserTemplate } from "../../lib/api/domains/user-templates";
+import { ApiRequestError } from "../../lib/api/core/client-factory";
+import {
+  publishUserTemplate,
+  type PublishUserTemplateArgs,
+} from "../../lib/api/domains/user-templates";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 
 interface PublishOptions {
   readonly title: string;
+  readonly kind: UserTemplateKind;
   readonly source: string;
-  readonly pages: string;
+  readonly pages?: string;
   readonly package: string;
+}
+
+function requirePages(options: PublishOptions): string {
+  if (options.pages === undefined) {
+    throw new ApiRequestError(
+      "--pages is required for a presentation template",
+      "MISSING_PAGES",
+      400,
+    );
+  }
+  return options.pages;
+}
+
+/**
+ * What each kind needs from the command line.
+ *
+ * Page images are a presentation's requirement, not a template's: a deck is
+ * recognised by its first slide, a document by its styles. Every kind names
+ * its own needs here rather than one of them being what the others fall
+ * through to, so a kind added to `USER_TEMPLATE_KINDS` fails this switch until
+ * someone says what it takes — instead of silently inheriting a demand for
+ * pages it has no use for.
+ */
+function publishArguments(options: PublishOptions): PublishUserTemplateArgs {
+  const common = {
+    title: options.title,
+    sourcePath: options.source,
+    packageDir: options.package,
+  };
+  switch (options.kind) {
+    case "presentation": {
+      return {
+        ...common,
+        kind: "presentation",
+        pagesDir: requirePages(options),
+      };
+    }
+    case "document": {
+      return { ...common, kind: "document" };
+    }
+  }
 }
 
 const publishCommand = new Command()
@@ -16,10 +66,18 @@ const publishCommand = new Command()
     "Publish an analysed file as a reusable custom template. Uploads the source file, the ordered page images, and the guidance package, then commits them together.",
   )
   .requiredOption("--title <title>", "Template name shown to the user")
-  .requiredOption("--source <path>", "The original .ppt, .pptx, or .pdf")
+  .addOption(
+    new Option("--kind <kind>", "What the template produces")
+      .choices([...USER_TEMPLATE_KINDS])
+      .default("presentation" satisfies UserTemplateKind),
+  )
   .requiredOption(
+    "--source <path>",
+    "The original .ppt, .pptx, .pdf, .doc, or .docx",
+  )
+  .option(
     "--pages <dir>",
-    "Directory of rendered page PNGs, in filename order",
+    "Directory of rendered page PNGs, in filename order. Presentations only",
   )
   .requiredOption(
     "--package <dir>",
@@ -34,17 +92,11 @@ A published template appears under Custom in the template picker, private to you
   )
   .action(
     withErrorHandler(async (options: PublishOptions) => {
-      const template = await publishUserTemplate({
-        title: options.title,
-        // The only kind a reverse run compiles today. It travels explicitly so
-        // a second kind does not silently inherit this one's meaning.
-        kind: "presentation",
-        sourcePath: options.source,
-        pagesDir: options.pages,
-        packageDir: options.package,
-      });
+      const template = await publishUserTemplate(publishArguments(options));
       console.log(
-        `Published ${template.title} (${template.id}) with ${template.pageCount.toString()} pages`,
+        template.pageCount === null
+          ? `Published ${template.title} (${template.id})`
+          : `Published ${template.title} (${template.id}) with ${template.pageCount.toString()} pages`,
       );
     }),
   );

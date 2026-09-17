@@ -111,6 +111,18 @@ describe("workspace history restore telemetry", () => {
       { session_history_source_representation: "gzip" },
       { session_history_restore_representation: "json" },
       { session_history_restore_reason: "arbitrary" },
+      { session_history_wire_codec: "gzip" },
+      { session_history_codec_reason: "arbitrary" },
+      { session_history_transfer_source: "arbitrary-path" },
+      { session_history_wire_bytes: Number.MAX_SAFE_INTEGER + 1 },
+      { session_history_transfer_bytes: -1 },
+      { session_history_write_requests: 0 },
+      { session_history_write_requests: Number.MAX_SAFE_INTEGER + 1 },
+      { session_history_selection_ms: -1 },
+      { session_history_file_gate_wait_ms: 0.5 },
+      { session_history_requests_ms: -1 },
+      { session_history_encoder_pipeline_ms: -1 },
+      { session_history_publication_ms: -1 },
     ]) {
       expect(
         webhookTelemetryContract.send.body.safeParse({
@@ -119,6 +131,54 @@ describe("workspace history restore telemetry", () => {
         }).success,
       ).toBe(false);
     }
+  });
+
+  it("preserves measured wire costs separately from logical history representation", () => {
+    const transfer = {
+      ...operation,
+      action_type: "session_history_transfer",
+      session_history_framework: "codex",
+      session_history_restore_representation: "raw",
+      session_history_transfer_source: "workspace_cache",
+      session_history_wire_codec: "zstd",
+      session_history_codec_reason: "sample_accepted",
+      session_history_transfer_bytes: RESUME_SESSION_HISTORY_MAX_BYTES,
+      session_history_wire_bytes: 144 * 1024 * 1024,
+      session_history_write_requests: 9,
+      session_history_selection_ms: 0,
+      session_history_file_gate_wait_ms: 0,
+      session_history_requests_ms: 20,
+      session_history_encoder_pipeline_ms: 15,
+      session_history_publication_ms: 0,
+    };
+    const failed = {
+      ...operation,
+      action_type: "session_history_transfer",
+      success: false,
+      session_history_transfer_source: "downloaded",
+    };
+    const empty = {
+      ...transfer,
+      session_history_transfer_source: "inline",
+      session_history_transfer_bytes: 0,
+      session_history_wire_bytes: 0,
+      session_history_write_requests: 1,
+      session_history_wire_codec: "none",
+      session_history_codec_reason: "below_threshold",
+    };
+    const largeInline = {
+      ...transfer,
+      session_history_transfer_source: "inline",
+      session_history_transfer_bytes: 256 * 1024 * 1024,
+      session_history_wire_bytes: 288 * 1024 * 1024,
+      session_history_write_requests: 18,
+    };
+    expect(
+      webhookTelemetryContract.send.body.parse({
+        runId: "run",
+        sandboxOperations: [transfer, failed, empty, largeInline, operation],
+      }).sandboxOperations,
+    ).toStrictEqual([transfer, failed, empty, largeInline, operation]);
   });
 });
 

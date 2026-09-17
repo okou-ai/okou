@@ -124,16 +124,20 @@ async fn send_event_captures_session_metadata_before_masking() {
     let _system_log_guard = SystemLogOverrideGuard::set(&system_log_path);
 
     let sid_file = session_id_file();
+    let session_id = "ses-session-id-123";
 
     let mock = server.mock(|when, then| {
         when.method(POST)
             .path("/api/webhooks/agent/events")
-            .body_includes(r#""session_id":"ses-session-id-123""#);
+            .body_includes(r#""session_id":"***""#)
+            .body_excludes(session_id);
         then.status(200);
     });
 
-    let session_id = "ses-session-id-123";
-    let masker = SecretMasker::from_raw("");
+    // Mask the session ID so capturing after masking cannot preserve the metadata.
+    let encoded_secret = base64::engine::general_purpose::STANDARD.encode(session_id);
+    let masker = SecretMasker::from_raw(&encoded_secret);
+    assert_eq!(masker.mask_string(session_id), "***");
     let event = json!({
         "type": "system",
         "subtype": "init",

@@ -24,17 +24,15 @@ const MAX_CUSTOM_USD = 10_000;
 
 type Preset = (typeof PRESETS)[number];
 
-const settingsCardBorder = {
-  border: "var(--border-width-surface) solid hsl(var(--gray-400))",
-} as const;
-
 const tileBaseClass =
   "flex flex-col rounded-xl bg-background px-4 py-3 text-left transition-colors";
 
 function tileBorderClass(selected: boolean): string {
-  return selected
-    ? "border border-primary ring-2 ring-primary/20"
-    : "border border-surface-border";
+  // A text tile keeps the shared hairline in both states and only recolours it.
+  // Selection is the border alone: the ring belongs to the focus indicator, and
+  // a selected tile that also draws one gives a keyboard user two rings on the
+  // same element.
+  return selected ? "border border-primary" : "border border-surface-border";
 }
 
 function PresetTile({
@@ -261,10 +259,7 @@ export function BuyCreditsSection() {
           return $.billing.credits.title;
         })}
       </h3>
-      <div
-        className="overflow-hidden rounded-xl bg-card"
-        style={settingsCardBorder}
-      >
+      <div className="overflow-hidden rounded-xl border border-surface-border bg-card">
         <div className="flex flex-col gap-3 px-5 py-4">
           <div className="min-w-0">
             <p className="text-sm font-medium text-foreground">

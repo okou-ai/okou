@@ -90,6 +90,11 @@ function VisibilityLabel({
 /**
  * One meta line: who can see it — or, for a colleague's template, whose it is,
  * because a visibility the reader cannot change is not worth the row.
+ *
+ * The page count is dropped when there is none. A document template is its
+ * styles, so the API reports `null` rather than a zero; printing "0 pages"
+ * would describe it as an empty deck instead of a kind that never had pages.
+ * The row still names the file it was compiled from.
  */
 function CustomTemplateMeta({
   template,
@@ -112,14 +117,16 @@ function CustomTemplateMeta({
           )}
         </span>
       )}
-      <span>
-        {t(
-          ($) => {
-            return $.templates.pageCount;
-          },
-          { count: template.pageCount },
-        )}
-      </span>
+      {template.pageCount === null ? null : (
+        <span>
+          {t(
+            ($) => {
+              return $.templates.pageCount;
+            },
+            { count: template.pageCount },
+          )}
+        </span>
+      )}
       <span className="truncate">{template.sourceFilename}</span>
     </div>
   );
@@ -499,13 +506,25 @@ function CustomTemplateDetailSidebar({
             {detail.title}
           </h3>
         )}
+        {/*
+         * The source line drops the page count for a kind that has none, so a
+         * document is described by the file it came from rather than by an
+         * emptiness it does not have.
+         */}
         <p className="mt-2 text-xs text-muted-foreground">
-          {t(
-            ($) => {
-              return $.templates.detail.source;
-            },
-            { count: detail.pageCount, filename: detail.sourceFilename },
-          )}
+          {detail.pageCount === null
+            ? t(
+                ($) => {
+                  return $.templates.detail.sourceFile;
+                },
+                { filename: detail.sourceFilename },
+              )
+            : t(
+                ($) => {
+                  return $.templates.detail.source;
+                },
+                { count: detail.pageCount, filename: detail.sourceFilename },
+              )}
         </p>
         <div className="my-4 border-t border-t-gray-400" />
         {detail.canManage ? (

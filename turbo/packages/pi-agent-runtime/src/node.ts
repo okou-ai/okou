@@ -38,6 +38,7 @@ export {
 } from "./errors";
 export type {
   PiApiFirstTurnResult,
+  PiApiUsageObservation,
   PiObservedServiceTier,
   PiMemoryRecallOutcome,
   PiMemoryRecallOutcomeStatus,

@@ -59,7 +59,8 @@ pub(in crate::exec_operation) struct ExecTerminalLogDecision {
 }
 
 #[derive(Clone, Copy)]
-pub(in crate::exec_operation) struct ExecTerminalLogContext {
+pub(in crate::exec_operation) struct ExecTerminalLogContext<'a> {
+    pub(in crate::exec_operation) label: &'a str,
     pub(in crate::exec_operation) lifecycle: ExecTerminalLogLifecycle,
     pub(in crate::exec_operation) timeout_is_expected: bool,
     pub(in crate::exec_operation) slow: bool,
@@ -237,6 +238,7 @@ impl ExecOperationDiagnostic {
             .as_ref()
             .map_or(0, |evidence| evidence.dropped_incidents);
         let Some(decision) = exec_terminal_log_decision(ExecTerminalLogContext {
+            label: &self.label_log,
             lifecycle,
             timeout_is_expected: self.timeout_is_expected,
             slow,
@@ -252,18 +254,18 @@ impl ExecOperationDiagnostic {
         }) else {
             return;
         };
-        let lifecycle = lifecycle.as_str();
         let terminal_reason = decision.reason.as_str();
 
         macro_rules! emit_terminal_result_log {
-            ($level:expr) => {
+            ($level:expr $(, $field:ident = $value:expr)*) => {
                 tracing::event!(
                     $level,
+                    $($field = $value,)*
                     seq = self.seq,
                     label = %self.label_log,
                     elapsed_ms,
                     slow,
-                    lifecycle,
+                    lifecycle = lifecycle.as_str(),
                     terminal_reason,
                     guest_duration_ms = result.duration_ms,
                     termination = ?result.termination,
@@ -288,6 +290,14 @@ impl ExecOperationDiagnostic {
         }
 
         match decision.severity {
+            ExecTerminalLogSeverity::Info
+                if decision.reason == ExecTerminalLogReason::Slow
+                    && lifecycle == ExecTerminalLogLifecycle::OneShot =>
+            {
+                // Preserve this bounded latency observation in Axiom without
+                // admitting unrelated informational terminal events.
+                emit_terminal_result_log!(tracing::Level::INFO, storage_download_latency = true)
+            }
             ExecTerminalLogSeverity::Info => emit_terminal_result_log!(tracing::Level::INFO),
             ExecTerminalLogSeverity::Warn => emit_terminal_result_log!(tracing::Level::WARN),
         }
@@ -319,7 +329,7 @@ pub(in crate::exec_operation) fn exec_termination_requires_low_level_warning(
 }
 
 pub(in crate::exec_operation) fn exec_terminal_cancel_is_expected(
-    context: ExecTerminalLogContext,
+    context: ExecTerminalLogContext<'_>,
 ) -> bool {
     matches!(context.termination, ExecTermination::Cancelled)
         && context.host_cancel_requested
@@ -344,13 +354,13 @@ pub(in crate::exec_operation) fn exec_terminal_log_lifecycle(
 
 #[cfg(test)]
 pub(in crate::exec_operation) fn exec_terminal_log_severity(
-    context: ExecTerminalLogContext,
+    context: ExecTerminalLogContext<'_>,
 ) -> Option<ExecTerminalLogSeverity> {
     exec_terminal_log_decision(context).map(|decision| decision.severity)
 }
 
 pub(in crate::exec_operation) fn exec_terminal_log_decision(
-    context: ExecTerminalLogContext,
+    context: ExecTerminalLogContext<'_>,
 ) -> Option<ExecTerminalLogDecision> {
     if exec_terminal_cancel_is_expected(context) {
         return Some(ExecTerminalLogDecision {
@@ -411,6 +421,16 @@ pub(in crate::exec_operation) fn exec_terminal_log_decision(
         return None;
     }
     let severity = match context.lifecycle {
+        ExecTerminalLogLifecycle::OneShot
+            if context.label == "storage-download"
+                && matches!(
+                    context.termination,
+                    ExecTermination::Exited { exit_code: 0 }
+                )
+                && !context.host_cancel_requested =>
+        {
+            ExecTerminalLogSeverity::Info
+        }
         ExecTerminalLogLifecycle::OneShot => ExecTerminalLogSeverity::Warn,
         ExecTerminalLogLifecycle::Supervised => ExecTerminalLogSeverity::Info,
     };

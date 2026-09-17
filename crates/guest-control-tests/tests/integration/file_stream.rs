@@ -6,7 +6,7 @@ use guest_control_client::{FileCompression, FrameWriteObserver, WriteFileEntry};
 use guest_control_proto::*;
 use std::fs;
 use std::io::{self, Write};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 #[tokio::test]
 async fn zstd_streams_large_files_through_existing_publication() {
@@ -25,11 +25,38 @@ async fn zstd_streams_large_files_through_existing_publication() {
             (state >> 32) as u8
         })
         .collect::<Vec<_>>();
-    h.host()
+    let started = Instant::now();
+    let measurements = h
+        .host()
         .write_file_with_compression(target.to_str().unwrap(), &bytes, false, options)
         .await
         .unwrap();
     assert_eq!(fs::read(&target).unwrap(), bytes);
+    assert_eq!(measurements.requests, 2);
+    assert!(measurements.wire_payload_bytes > bytes.len() as u64);
+    assert!(measurements.wire_payload_bytes <= 32 * 1024 * 1024);
+    assert!(measurements.encoder_pipeline_elapsed <= measurements.requests_elapsed);
+    assert!(
+        measurements.file_gate_wait
+            + measurements.requests_elapsed
+            + measurements.publication_elapsed
+            <= started.elapsed()
+    );
+    let raw_target = h.dir.join("raw-history.jsonl");
+    let raw = h
+        .host()
+        .write_file_with_compression(
+            raw_target.to_str().unwrap(),
+            &bytes,
+            false,
+            FileCompression::None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(fs::read(raw_target).unwrap(), bytes);
+    assert_eq!(raw.wire_payload_bytes, bytes.len() as u64);
+    assert_eq!(raw.requests, 2);
+    assert_eq!(raw.encoder_pipeline_elapsed, Duration::ZERO);
     assert!(fs::read_dir(&h.dir).unwrap().all(|p| {
         !p.unwrap()
             .file_name()
@@ -53,11 +80,30 @@ async fn stream_preserves_small_empty_private_and_batch_writes() {
     let options = FileCompression::Zstd;
     for bytes in [b"".as_slice(), b"small"] {
         let target = h.dir.join("small");
-        h.host()
+        let measurements = h
+            .host()
             .write_file_with_compression(target.to_str().unwrap(), bytes, false, options)
             .await
             .unwrap();
         assert_eq!(fs::read(target).unwrap(), bytes);
+        assert!(measurements.wire_payload_bytes > 0);
+        assert_eq!(measurements.requests, 1);
+        assert_eq!(measurements.publication_elapsed, Duration::ZERO);
+        let raw_target = h.dir.join("small-raw");
+        let raw = h
+            .host()
+            .write_file_with_compression(
+                raw_target.to_str().unwrap(),
+                bytes,
+                false,
+                FileCompression::None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(fs::read(raw_target).unwrap(), bytes);
+        assert_eq!(raw.wire_payload_bytes, bytes.len() as u64);
+        assert_eq!(raw.requests, 1);
+        assert_eq!(raw.encoder_pipeline_elapsed, Duration::ZERO);
     }
     let private = h.dir.join("private/data");
     h.host()
@@ -103,7 +149,10 @@ async fn blocked_stream_keeps_status_live_and_finishes_after_busy_quiesce() {
         release_blocking_write(&path);
     };
     let (written, ()) = tokio::join!(write, control);
-    written.unwrap();
+    let measurements = written.unwrap();
+    assert!(measurements.wire_payload_bytes > 0);
+    assert!(measurements.wire_payload_bytes < bytes.len() as u64);
+    assert_eq!(measurements.requests, 1);
     assert_eq!(fs::read(&path).unwrap(), bytes);
     h.host()
         .quiesce_operations(Duration::from_secs(2))

@@ -1741,7 +1741,7 @@ function ComposerImagePreviewButton({
         <span
           data-testid="composer-attachment-mark-count"
           style={{ background: DEFAULT_ANNOTATION_INK }}
-          className="absolute -bottom-0.5 -left-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full border-[1.5px] border-background px-1 text-[9px] font-bold leading-none text-white"
+          className="absolute -bottom-0.5 -left-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full border-(length:--border-width-emphasis) border-background px-1 text-[9px] font-bold leading-none text-white"
         >
           {markCount}
         </span>

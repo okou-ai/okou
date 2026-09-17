@@ -101,7 +101,7 @@ test("Offer passage actions only for a valid assistant selection", async () => {
   fireEvent.keyDown(document, { key: "q" });
 
   const comment = await screen.findByRole("textbox", {
-    name: "What should change about this?",
+    name: "Ask or comment on this quote",
   });
   expect(comment).toBeVisible();
   expect(screen.getByRole("textbox", { name: "Message" })).toHaveFocus();
@@ -296,13 +296,13 @@ test("Edit or remove a quoted feedback item", async () => {
   await selectPassage("launch plan has three careful stages");
   let comment = await quoteSelectedPassage();
 
-  expect(comment).toHaveAccessibleName("What should change about this?");
+  expect(comment).toHaveAccessibleName("Ask or comment on this quote");
   await user.type(comment, "Make the stages shorter.");
   expect(comment).toHaveTextContent("Make the stages shorter.");
 
   await user.keyboard("{Backspace}".repeat("Make the stages shorter.".length));
   comment = screen.getByRole("textbox", {
-    name: "What should change about this?",
+    name: "Ask or comment on this quote",
   });
   expect(comment).not.toHaveTextContent("Make the stages shorter.");
   expect(feedbackItems()[0]).toHaveTextContent(

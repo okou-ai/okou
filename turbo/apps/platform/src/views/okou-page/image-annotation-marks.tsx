@@ -175,7 +175,7 @@ function boxedFill(
     return { background: HIGHLIGHT_FILL };
   }
   return {
-    border: `2.5px solid ${mark.ink}`,
+    border: `var(--border-width-annotation-box) solid ${mark.ink}`,
     background: `${mark.ink}1A`,
     boxShadow: `inset 0 0 0 1px ${STROKE_HALO_INNER}`,
   };
@@ -273,7 +273,7 @@ export function MarkShape({
             height: PIN_RADIUS_PX * 2,
             width: PIN_RADIUS_PX * 2,
           }}
-          className="absolute flex items-center justify-center rounded-full border-[1.5px] border-on-filled text-[11px] font-bold text-on-filled"
+          className="absolute flex items-center justify-center rounded-full border-(length:--border-width-emphasis) border-on-filled text-[11px] font-bold text-on-filled"
         >
           {ordinal}
         </span>

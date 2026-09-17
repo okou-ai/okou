@@ -18,4 +18,16 @@ export interface UserTemplatePresentationManifest {
   readonly pageKeys: readonly string[];
 }
 
-export type UserTemplateManifest = UserTemplatePresentationManifest;
+/**
+ * A document template is the styles the reverse run extracted into its
+ * package. It renders no pages, so it stores none: the arm carries the
+ * discriminant alone rather than an empty array that would read as a template
+ * whose pages went missing.
+ */
+export interface UserTemplateDocumentManifest {
+  readonly kind: "document";
+}
+
+export type UserTemplateManifest =
+  | UserTemplatePresentationManifest
+  | UserTemplateDocumentManifest;

@@ -329,6 +329,10 @@ describe("native Pi execution edges", () => {
         cacheRead: 7,
         cacheWrite: 5,
       });
+      expect(result.usageObservation).toEqual({
+        coverage: "complete",
+        tokens: { input: 11, output: 3, cacheRead: 7, cacheCreation: 5 },
+      });
       expect(requests).toHaveLength(1);
       const request = requests[0];
       if (!request) throw new Error("Missing native request");

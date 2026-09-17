@@ -336,6 +336,7 @@ function createAgentComposerSignalsWithDraft(
     chatEvents$,
     voiceDraftTarget: `agent:${agentId}`,
     singleLineOnMobile: false,
+    forwardComposer: options.forward !== undefined,
     modelSelection$: chatPageModelSelection$,
     selectedModelOauthAvailable$: chatPageSelectedModelOauthAvailable$,
     setModelSelection$,

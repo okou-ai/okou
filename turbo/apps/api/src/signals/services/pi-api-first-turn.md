@@ -66,6 +66,13 @@ observers may record actual usage with the original response/category
 idempotency, but never output, checkpoint or another terminal event. The captured
 `PiExecutionRoute`, exact account and one edge materializer remain authoritative.
 
+The runtime also returns independent, content-free
+[provider usage evidence](../../../../../packages/pi-agent-runtime/src/usage-observation.md).
+It distinguishes explicit zero, missing categories and partial/failed results
+without changing these billing counters. Persisting and serving that evidence
+through the API is tracked separately by #34787; reconstructed historical
+results without evidence remain unavailable.
+
 ## Durable producer mode
 
 `PiApiFirstTurnActivation` explicitly distinguishes `legacy-sandbox-race` from

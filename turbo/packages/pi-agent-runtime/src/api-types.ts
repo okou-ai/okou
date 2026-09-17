@@ -201,7 +201,20 @@ export interface PiApiFirstTurnResult {
   readonly assistantMessage: PiApiAssistantMessage;
   readonly handoffRequired: boolean;
   readonly observedServiceTier: PiObservedServiceTier;
+  /** Missing on reconstructed historical results; never infer it from SDK zeros. */
+  readonly usageObservation?: PiApiUsageObservation;
   readonly sessionJsonl: string;
+}
+
+/** Disjoint provider quantities; null means the provider did not establish a value. */
+export interface PiApiUsageObservation {
+  readonly tokens: {
+    readonly input: number | null;
+    readonly cacheRead: number | null;
+    readonly cacheCreation: number | null;
+    readonly output: number | null;
+  };
+  readonly coverage: "complete" | "partial" | "unavailable";
 }
 
 export interface PiSessionInspection {

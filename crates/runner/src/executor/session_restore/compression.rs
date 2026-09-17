@@ -8,15 +8,21 @@ use sandbox::FileCompression;
 
 use super::MaterializedResumeSession;
 use crate::error::{RunnerError, RunnerResult};
+use crate::telemetry::HistoryCodecReason;
 
 const MIN_BYTES: usize = 16 * 1024 * 1024;
 const SAMPLE_BYTES: usize = 64 * 1024;
 const SAMPLE_COUNT: usize = 8;
 
-pub(super) async fn select(session: &MaterializedResumeSession) -> RunnerResult<FileCompression> {
+pub(super) async fn select(
+    session: &MaterializedResumeSession,
+) -> RunnerResult<(FileCompression, HistoryCodecReason)> {
     let bytes = session.history_bytes();
-    if session.codex_zstd_history().is_some() || bytes.len() < MIN_BYTES {
-        return Ok(FileCompression::None);
+    if session.codex_zstd_history().is_some() {
+        return Ok((FileCompression::None, HistoryCodecReason::NativeZstd));
+    }
+    if bytes.len() < MIN_BYTES {
+        return Ok((FileCompression::None, HistoryCodecReason::BelowThreshold));
     }
 
     // Copy only bounded samples, not the whole resident history, into owned work.
@@ -45,7 +51,12 @@ pub(super) async fn select(session: &MaterializedResumeSession) -> RunnerResult<
     };
     let result = receiver.await.map_err(selection_error);
     worker.join().map_err(selection_error)?;
-    result?.map_err(selection_error)
+    let codec = result?.map_err(selection_error)?;
+    let reason = match codec {
+        FileCompression::None => HistoryCodecReason::SampleRejected,
+        FileCompression::Zstd => HistoryCodecReason::SampleAccepted,
+    };
+    Ok((codec, reason))
 }
 
 fn sample(samples: Vec<Vec<u8>>, cancel: &AtomicBool) -> io::Result<FileCompression> {

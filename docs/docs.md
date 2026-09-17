@@ -59,6 +59,9 @@ surface; the index does not replace their detailed rules.
 - [Morning Brief migration state](./morning-brief-migration-state.md): the
   canonical reader for a member's existing brief, its ownership and thread
   invariants, and the boundary the `simple-morning-brief` cutover must respect.
+- [Morning Brief source collection](./morning-brief-collection.md): the bounded
+  Slack source contract, occurrence/attempt/lease ownership, owner revocation
+  boundary, and the coverage limits this first collector declares.
 - [Marketing privacy rollback](./marketing-privacy-choices.md): withdrawn runtime
   behavior, storage retirement, and rollout boundaries.
 - [Google Cloud LLM voice routing](./google-llm-voice.md): shared Vercel workload
@@ -97,6 +100,8 @@ surface; the index does not replace their detailed rules.
   control/runtime reclaim protection, and tool OOM trade-offs.
 - [Workspace history restore telemetry](./workspace-history-restore-telemetry.md):
   local source and restored payload sizes, representation and timing semantics.
+- [Host archive phase diagnostics](./host-archive-phase-diagnostics.md): bounded
+  early download, apply-gate and publication timing with cancellation semantics.
 - [Guest file compression](./guest-file-compression.md): caller-owned history
   selection, bounded streaming, failure semantics and bundled compatibility.
 - [Runner multi-architecture rollout](./runner-multi-architecture.md): build,

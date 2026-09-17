@@ -25,11 +25,11 @@ import {
   holdChatThreadRowLockFixture,
 } from "../../../test-fixtures/chat-events";
 import {
-  closeChatSearchErasureSubjectFixture,
-  removeChatSearchErasureSubjectsFixture,
-  transferChatSearchAgentOwnerFixture,
-  withChatSearchProjectionBarrierFixture,
-} from "../../../test-fixtures/chat-search-erasure";
+  closeErasureSubjectFixture,
+  removeErasureSubjectsFixture,
+  transferAgentOwnerFixture,
+} from "../../../test-fixtures/account-erasure-subject";
+import { withChatSearchProjectionBarrierFixture } from "../../../test-fixtures/chat-search-erasure";
 import { cronProjectChatEventSearchRoutes } from "../cron-project-chat-event-search";
 import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-projection";
 import { createBddApi } from "./helpers/api-bdd";
@@ -104,10 +104,10 @@ function closeSubject(subject: {
   readonly subjectKind: "user" | "organization";
   readonly subjectId: string;
 }): Promise<{ readonly jobId: string }> {
-  const closing = closeChatSearchErasureSubjectFixture(subject);
+  const closing = closeErasureSubjectFixture(subject);
   onTestFinished(async () => {
     const { jobId } = await closing;
-    await removeChatSearchErasureSubjectsFixture([jobId]);
+    await removeErasureSubjectsFixture([jobId]);
   });
   return closing;
 }
@@ -541,7 +541,7 @@ describe("GET /api/cron/project-chat-event-search", () => {
     expect(unchanged.messages).toHaveLength(2);
 
     // Closing the previous owner instead must not stop the current one.
-    await removeChatSearchErasureSubjectsFixture([closedNext.jobId]);
+    await removeErasureSubjectsFixture([closedNext.jobId]);
     await closeSubject({
       subjectKind: "user",
       subjectId: previous.actor.userId,
@@ -582,7 +582,7 @@ describe("GET /api/cron/project-chat-event-search", () => {
         work: async ({ entered, release }) => {
           const tick = projectOwnedChatEventSearch([current.threadId]);
           await entered;
-          await transferChatSearchAgentOwnerFixture({
+          await transferAgentOwnerFixture({
             agentId: current.agentId,
             owner: nextOwner.userId,
           });

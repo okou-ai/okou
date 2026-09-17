@@ -168,7 +168,7 @@ impl Sandbox for PostCopyGateSandbox {
         path: &str,
         content: &[u8],
         compression: sandbox::FileCompression,
-    ) -> sandbox::Result<()> {
+    ) -> sandbox::Result<Option<sandbox::FileWriteMeasurements>> {
         self.inner
             .write_file_with_compression(path, content, compression)
             .await
@@ -281,8 +281,8 @@ impl Sandbox for PanicExecSandbox {
         path: &str,
         content: &[u8],
         _compression: sandbox::FileCompression,
-    ) -> sandbox::Result<()> {
-        self.write_file(path, content).await
+    ) -> sandbox::Result<Option<sandbox::FileWriteMeasurements>> {
+        self.write_file(path, content).await.map(|()| None)
     }
 
     async fn write_private_file(&self, _path: &str, _content: &[u8]) -> sandbox::Result<()> {

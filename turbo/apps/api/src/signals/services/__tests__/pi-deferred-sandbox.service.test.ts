@@ -62,7 +62,10 @@ import {
 } from "@okouai/db/schema/agent-run-inference";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { agentRunQueue } from "@okouai/db/schema/agent-run-queue";
-import { piInferenceObjects } from "@okouai/db/schema/pi-inference-object";
+import {
+  agentRunInferenceObjects,
+  piInferenceObjects,
+} from "@okouai/db/schema/pi-inference-object";
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import {
   runnersPollContract,
@@ -85,8 +88,10 @@ import {
   readPiInferenceObject,
   reclaimPiInferenceObjects,
   retainPiInferenceObject,
+  retainPiInferenceObjects,
 } from "../pi-inference-object.service";
 import { runnersRoutes } from "../../routes/runners";
+import { generateSandboxToken } from "../../auth/tokens";
 import { createRouteMocks } from "../../routes/__tests__/helpers/route-test";
 import { recordPiMemoryPhase2Checkpoint } from "../pi-memory-phase2-checkpoint.service";
 import {
@@ -449,6 +454,61 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
       1_500_000,
     );
     const handoffApp = setupApp({ context, routes: runnersRoutes });
+    const readHandoff = (token: string) => {
+      return handoffApp(runnersJobClaimContract).handoff({
+        params: { id: f.runId, offset: "0" },
+        headers: { authorization: `Bearer ${token}` },
+      });
+    };
+    await accept(
+      readHandoff(
+        generateSandboxToken(f.userId, randomUUID(), f.orgId, {
+          ownerEpoch: 2,
+          generation: 1,
+        }),
+      ),
+      [401],
+    );
+    await accept(
+      readHandoff(generateSandboxToken(f.userId, f.runId, f.orgId)),
+      [404],
+    );
+    await accept(
+      readHandoff(
+        generateSandboxToken(f.userId, f.runId, `other-${f.orgId}`, {
+          ownerEpoch: 2,
+          generation: 1,
+        }),
+      ),
+      [404],
+    );
+    await accept(
+      readHandoff(
+        generateSandboxToken(`other-${f.userId}`, f.runId, f.orgId, {
+          ownerEpoch: 2,
+          generation: 1,
+        }),
+      ),
+      [404],
+    );
+    await accept(
+      readHandoff(
+        generateSandboxToken(f.userId, f.runId, f.orgId, {
+          ownerEpoch: 1,
+          generation: 1,
+        }),
+      ),
+      [404],
+    );
+    await accept(
+      readHandoff(
+        generateSandboxToken(f.userId, f.runId, f.orgId, {
+          ownerEpoch: 2,
+          generation: 2,
+        }),
+      ),
+      [404],
+    );
     const chunks: Buffer[] = [];
     let offset: number | null = 0;
     while (offset !== null) {
@@ -1700,6 +1760,99 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
     );
     expect(duplicate.body).toStrictEqual({ outcome: "released" });
   }, 60_000);
+
+  it("retains the exact immutable input batch and deduplicates references", async () => {
+    const f = await fixture();
+    const state = await readRequiredPiFixture(f);
+    const references = [
+      {
+        kind: "configuration" as const,
+        hash: state.inference.input.configurationHash,
+      },
+      { kind: "context" as const, hash: state.inference.input.contextHash },
+    ] as const;
+    await db()
+      .delete(agentRunInferenceObjects)
+      .where(eq(agentRunInferenceObjects.runId, f.runId));
+
+    await db().transaction(async (tx) => {
+      await retainPiInferenceObjects(tx, {
+        runId: f.runId,
+        orgId: f.orgId,
+        userId: f.userId,
+        references: [...references, references[0]],
+      });
+    });
+
+    await expect(
+      db()
+        .select({
+          kind: agentRunInferenceObjects.kind,
+          hash: agentRunInferenceObjects.hash,
+        })
+        .from(agentRunInferenceObjects)
+        .where(eq(agentRunInferenceObjects.runId, f.runId))
+        .orderBy(agentRunInferenceObjects.kind),
+    ).resolves.toStrictEqual(references);
+  }, 45_000);
+
+  it("rejects wrong-kind, missing and wrong-owner object batches atomically", async () => {
+    const f = await fixture();
+    const foreign = await fixture();
+    const state = await readRequiredPiFixture(f);
+    const foreignState = await readRequiredPiFixture(foreign);
+    await db()
+      .delete(agentRunInferenceObjects)
+      .where(eq(agentRunInferenceObjects.runId, f.runId));
+    const invalidBatches = [
+      [
+        {
+          kind: "configuration" as const,
+          hash: state.inference.input.contextHash,
+        },
+        {
+          kind: "context" as const,
+          hash: state.inference.input.configurationHash,
+        },
+      ],
+      [
+        {
+          kind: "configuration" as const,
+          hash: state.inference.input.configurationHash,
+        },
+        { kind: "h1" as const, hash: "f".repeat(64) },
+      ],
+      [
+        {
+          kind: "configuration" as const,
+          hash: state.inference.input.configurationHash,
+        },
+        {
+          kind: "configuration" as const,
+          hash: foreignState.inference.input.configurationHash,
+        },
+      ],
+    ] as const;
+
+    for (const references of invalidBatches) {
+      await expect(
+        db().transaction(async (tx) => {
+          await retainPiInferenceObjects(tx, {
+            runId: f.runId,
+            orgId: f.orgId,
+            userId: f.userId,
+            references,
+          });
+        }),
+      ).rejects.toThrow("Pi inference object is unavailable for this owner");
+      await expect(
+        db()
+          .select()
+          .from(agentRunInferenceObjects)
+          .where(eq(agentRunInferenceObjects.runId, f.runId)),
+      ).resolves.toStrictEqual([]);
+    }
+  }, 45_000);
 
   it("keeps an object a concurrent retain is still committing out of the sweep", async () => {
     const f = await fixture();

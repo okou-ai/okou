@@ -444,6 +444,8 @@
       "description": "It may be private or no longer available.",
       "help": "Ask the person who shared this link to check access.",
       "signedInAs": "Signed in as {{email}}",
+      "signIn": "Sign in",
+      "signInFailed": "Could not open sign-in. Please try again.",
       "switchAccount": "Switch account",
       "switchAccountFailed": "Could not open the account switcher. Please try again.",
       "title": "You can’t view this artifact",
@@ -1848,23 +1850,26 @@
       "runCancelled": "Paused mid-thought — pick it back up whenever."
     },
     "feedback": {
-      "emailDraftDescription": "an email draft (mail draft ID: {{id}})",
-      "partHeading": "Feedback on this part of your reply:",
-      "partsHeading_one": "Feedback on {{count}} part of your reply:",
-      "partsHeading_other": "Feedback on {{count}} parts of your reply:",
-      "placeholder": "What should change about this?",
+      "emailDraftDescription": "an email draft",
+      "forwardPartHeading": "Forwarded from \"{{title}}\"",
+      "forwardPartsHeading_one": "Forwarded {{count}} part from \"{{title}}\"",
+      "forwardPartsHeading_other": "Forwarded {{count}} parts from \"{{title}}\"",
+      "partHeading": "Quoted from your reply",
+      "partsHeading_one": "Quoted {{count}} part of your reply",
+      "partsHeading_other": "Quoted {{count}} parts of your reply",
+      "placeholder": "Ask or comment on this quote",
       "quote": "Quote",
       "remove": "Remove feedback",
-      "sentEmailDescription": "a sent email (mail ID: {{id}}{{sentIdSuffix}})",
-      "sentIdSuffix": ", sent ID: {{sentId}}",
-      "sourcePartHeading": "Feedback on this part of {{description}}:",
-      "sourcePartsHeading_one": "Feedback on {{count}} part of {{description}}:",
-      "sourcePartsHeading_other": "Feedback on {{count}} parts of {{description}}:"
+      "sentEmailDescription": "a sent email",
+      "sourcePartHeading": "Quoted from {{description}}",
+      "sourcePartsHeading_one": "Quoted {{count}} part from {{description}}",
+      "sourcePartsHeading_other": "Quoted {{count}} parts from {{description}}"
     },
     "forward": {
       "action": "Forward",
       "agents": "Agents",
       "back": "Back",
+      "composerPlaceholder": "Add a message",
       "content": "Content",
       "description": "Send selected content to an agent or chat to continue working on it.",
       "noResults": "No agents or chats found",
@@ -6296,7 +6301,8 @@
       "back": "Custom templates",
       "page": "Page {{number}}",
       "source_one": "{{count}} page · from {{filename}}",
-      "source_other": "{{count}} pages · from {{filename}}"
+      "source_other": "{{count}} pages · from {{filename}}",
+      "sourceFile": "From {{filename}}"
     },
     "empty": {
       "description": "Templates built from a file you upload will appear here.",
