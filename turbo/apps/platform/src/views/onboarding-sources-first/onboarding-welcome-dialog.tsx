@@ -165,7 +165,7 @@ function OnboardingWelcomeDialog() {
   );
 }
 
-export interface WelcomeHandoff {
+interface WelcomeHandoff {
   readonly openWelcome: () => void;
   readonly welcomeDialog: ReactNode;
 }

@@ -23,11 +23,7 @@ const STEP_ROUTES: Readonly<Record<SourcesFirstStep, RoutePath>> = {
   slack: ROUTES.onboardingSlack,
 };
 
-export function sourcesFirstStepRoute(step: SourcesFirstStep): RoutePath {
-  return STEP_ROUTES[step];
-}
-
-export interface SourcesFirstFlowState {
+interface SourcesFirstFlowState {
   readonly flow: SourcesFirstFlow;
   readonly draft: SourcesFirstDraft;
   /** 1-based index for the progress bar. */

@@ -69,33 +69,8 @@ const FAMILY_PROMPT_KEYS = [
 ] as const;
 type FamilyPromptKey = (typeof FAMILY_PROMPT_KEYS)[number];
 
-const FEATURED_SOURCE_COPY_KEYS = [
-  "github",
-  "gmail",
-  "google_calendar",
-  "google_docs",
-  "google_drive",
-  "google_sheets",
-  "hubspot",
-  "linear",
-  "notion",
-  "quickbooks",
-] as const;
-type FeaturedSourceCopyKey = (typeof FEATURED_SOURCE_COPY_KEYS)[number];
-
 function resourceKey(value: string): string {
   return value.replaceAll("-", "_");
-}
-
-export function featuredSourceCopyKey(
-  slug: ConnectorSlug,
-): FeaturedSourceCopyKey | null {
-  const candidate = resourceKey(slug);
-  return (
-    FEATURED_SOURCE_COPY_KEYS.find((key) => {
-      return key === candidate;
-    }) ?? null
-  );
 }
 
 function exactPromptKey(
@@ -122,7 +97,7 @@ function familyPromptKey(
   );
 }
 
-export function sourceFamilyOf(slug: ConnectorSlug): SourceFamily | null {
+function sourceFamilyOf(slug: ConnectorSlug): SourceFamily | null {
   for (const [family, slugs] of Object.entries(SOURCE_FAMILIES)) {
     if ((slugs as readonly string[]).includes(slug)) {
       return family as SourceFamily;
@@ -158,7 +133,7 @@ export function pickStartingPromptSource(
   return family ?? connectedSlugs[0] ?? null;
 }
 
-export interface StartingPrompt {
+interface StartingPrompt {
   /** Editable first request shown in the welcome dialog. */
   readonly text: string;
   /** The question Okou asks back once the prompt is sent. */

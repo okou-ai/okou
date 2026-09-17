@@ -62,7 +62,7 @@ const internalDraft$ = state<SourcesFirstDraft>(emptyDraft());
 const internalFlow$ = state<SourcesFirstFlow>("owner");
 
 /** Transient screen state: this flow has no React-local state by convention. */
-export interface SourcesFirstUi {
+interface SourcesFirstUi {
   readonly searchOpen: boolean;
   readonly inviteEmail: string;
   /** File name waiting for import confirmation, null when no file is chosen. */
@@ -115,10 +115,6 @@ export const updateSourcesFirstDraft$ = command(
     });
   },
 );
-
-export const resetSourcesFirstDraft$ = command(({ set }) => {
-  set(internalDraft$, emptyDraft());
-});
 
 const OWNER_BASE_STEPS = [
   "sources",
