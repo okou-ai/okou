@@ -140,13 +140,18 @@ lookup, so old tokens cannot recreate erased billing records. Ordinary thread
 deletion retains run/billing history under the existing lifecycle; cancelling
 that run does not reset the shared resource set.
 
-With the activation setting configured, Clerk user/organization cleanup takes
-exclusive X admission, then exclusive compaction admission, before deleting
-the scoped ledger and organization allowance entitlements. It then deletes the
-live runs in the same transaction. The existing usage helper uses a savepoint
-on that connection, so no second pooled connection is needed. All locks survive
-until the common commit. Admitted uploads and settlements finish first; later
-uploads cannot reinsert personal usage between ledger cleanup and Run deletion.
+With the activation setting configured, Clerk user/organization cleanup first
+takes the scoped account-erasure subject lock exclusively. This drains Run
+creation and queue promotion before retaining allowance locks; those compute
+transactions lock Agent rows before accessing allowances. It only borrows the
+existing admission lock and does not create an erasure job or close the account.
+Cleanup then takes exclusive X admission and exclusive compaction admission
+before deleting the scoped ledger and organization allowance entitlements.
+It then deletes the live runs in the same transaction. The existing usage helper
+uses a savepoint on that connection, so no second pooled connection is needed.
+All locks survive until the common commit. Admitted uploads and settlements
+finish first; later uploads cannot reinsert personal usage between ledger
+cleanup and Run deletion.
 This also protects deployments without the separate erasure-decision bridge.
 
 The Pi erasure preflight likewise drains usage admission before locking Runs,
@@ -156,7 +161,7 @@ deletion locks retain that policy. Shared resource records remain untouched.
 While the setting is unset, Clerk retains separately committed ledger cleanup
 before Run deletion, and the Pi preflight retains its existing behavior.
 
-These maintenance admissions are global: account cleanup briefly pauses all
+X and compaction admission locks are global: account cleanup briefly pauses all
 webhook usage writes and settlement, and a slow settlement delays compaction or
 account cleanup. No network cleanup runs while those admission locks are held.
 Do not configure the setting while any serving or rollback API can settle

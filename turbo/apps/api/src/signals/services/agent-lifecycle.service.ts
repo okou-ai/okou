@@ -1,3 +1,4 @@
+import { lockErasureSubjects } from "@okouai/db/operations/account-erasure";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
@@ -49,7 +50,15 @@ export async function deleteClerkAgentLifecycleData(
   }
   const receipt = await db.transaction(async (tx) => {
     if (resourceBillingEnabled) {
-      // Admission -> compaction -> ledger/entitlements -> parents/Run.
+      // Drain compute admission before retaining entitlement locks: creators
+      // and queue promotion hold Agent locks before accessing allowances.
+      await lockErasureSubjects(tx, [
+        {
+          subjectKind: scope.kind,
+          subjectId: scope.kind === "organization" ? scope.orgId : scope.userId,
+        },
+      ]);
+      // Subjects -> X admission -> compaction -> ledger/entitlements -> parents/Run.
       // The helper uses a savepoint on this same connection; both deletion
       // stages commit atomically and retain their locks through that commit.
       await lockXResourceAdmission(tx, "exclusive");

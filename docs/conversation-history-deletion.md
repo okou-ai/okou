@@ -87,7 +87,9 @@ Candidate cleanup takes storage ownership before releasing candidate references.
 
 Agent deletion retains canonical mutation advisory -> agent -> sessions -> runs,
 with existing NOWAIT and 100 ms behavior. With X resource billing configured,
-Clerk takes exclusive usage admission, then the usage-compaction advisory lock,
+Clerk first takes the scoped account-erasure subject lock exclusively to drain
+Run creation and queue promotion, which lock Agent rows before allowances.
+It then takes exclusive usage admission and the usage-compaction advisory lock,
 and deletes scoped ledger/entitlement rows before applying the 100 ms timeout
 or taking parent/run locks. Settlement takes shared compaction admission before
 its organization credit lock, so cleanup drains both compaction and settlement.
