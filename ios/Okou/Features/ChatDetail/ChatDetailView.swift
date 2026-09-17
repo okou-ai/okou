@@ -4,8 +4,10 @@ struct ChatDetailView: View {
   @Bindable var store: WorkspaceStore
   let thread: ChatThread
   @FocusState private var isComposing: Bool
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var hasPositionedHistory = false
   @State private var followsLatestMessage = true
+  @State private var isAwayFromBottom = false
 
   private var history: ChatHistory { store.histories[thread.id] ?? .empty }
   private var messages: [ChatMessage] { store.messages(for: thread.id) }
@@ -62,6 +64,32 @@ struct ChatDetailView: View {
       .refreshable { await store.loadHistory(thread.id) }
       .onScrollPhaseChange { _, phase in
         if phase == .tracking || phase == .interacting { followsLatestMessage = false }
+      }
+      .onScrollGeometryChange(for: Bool.self) { geometry in
+        geometry.contentSize.height + geometry.contentInsets.bottom - geometry.visibleRect.maxY > 20
+      } action: { _, awayFromBottom in
+        isAwayFromBottom = awayFromBottom
+      }
+      .overlay(alignment: .bottom) {
+        if isAwayFromBottom && hasPositionedHistory && !displayedMessages.isEmpty {
+          Button {
+            followsLatestMessage = true
+            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) {
+              proxy.scrollTo("conversation-bottom", anchor: .bottom)
+            }
+          } label: {
+            Image(systemName: "arrow.down")
+              .font(.system(size: 18, weight: .medium))
+              .frame(width: 44, height: 44)
+              .background(.regularMaterial, in: Circle())
+              .overlay(Circle().strokeBorder(.quaternary, lineWidth: 0.5))
+              .shadow(color: .black.opacity(0.12), radius: 4, y: 2)
+          }
+          .buttonStyle(.plain)
+          .accessibilityLabel("Scroll to bottom")
+          .accessibilityIdentifier("scroll-to-bottom")
+          .padding(.bottom, 16)
+        }
       }
       .onScrollGeometryChange(for: CGSize.self) { geometry in
         geometry.contentSize
