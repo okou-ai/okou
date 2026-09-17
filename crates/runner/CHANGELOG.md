@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.196.2](https://github.com/vm0-ai/okou/compare/runner-rs-v0.196.1...runner-rs-v0.196.2) (2026-09-17)
+
+
+### Performance Improvements
+
+* **runner:** retain decoded cache hits in large storage plans ([#34747](https://github.com/vm0-ai/okou/issues/34747)) ([d170bf9](https://github.com/vm0-ai/okou/commit/d170bf9b7b92f028bf6803e4912d2176798dab42))
+
 ## [0.196.1](https://github.com/vm0-ai/okou/compare/runner-rs-v0.196.0...runner-rs-v0.196.1) (2026-09-16)
 
 
