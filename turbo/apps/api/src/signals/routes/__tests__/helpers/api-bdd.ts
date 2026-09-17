@@ -44,6 +44,7 @@ interface AuthHeaders {
 
 interface ClerkUserProfile {
   readonly id: string;
+  readonly privateMetadata: Readonly<Record<string, unknown>>;
   readonly emailAddresses: readonly {
     readonly id: string;
     readonly emailAddress: string;
@@ -99,6 +100,7 @@ function clerkUserProfile(user: ApiTestUser): ClerkUserProfile {
   const emailId = `email_${user.userId}`;
   return {
     id: user.userId,
+    privateMetadata: {},
     emailAddresses: [{ id: emailId, emailAddress: user.email }],
     primaryEmailAddressId: emailId,
     firstName: "BDD",
