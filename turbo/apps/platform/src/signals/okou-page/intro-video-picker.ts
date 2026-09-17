@@ -15,12 +15,14 @@ type IntroVideoPickerPanelView = "root" | "voice" | "avatar";
  * `{ kind: "default" }` — the system picks one that fits — so the picker can
  * state the default instead of holding the primary action hostage to it.
  */
-const DEFAULT_VOICE: IntroVideoOptions["voice"] = { kind: "default" };
+function defaultVoice(): IntroVideoOptions["voice"] {
+  return { kind: "default" };
+}
 
 export function createIntroVideoPickerSignals() {
   const style$ = state<IntroVideoOptions["style"] | null>(null);
   const avatar$ = state<IntroVideoOptions["avatar"]>({ kind: "none" });
-  const voice$ = state<IntroVideoOptions["voice"]>(DEFAULT_VOICE);
+  const voice$ = state<IntroVideoOptions["voice"]>(defaultVoice());
   const group$ = state("all");
   const query$ = state("");
   const panelOpen$ = state(false);
@@ -95,7 +97,7 @@ export function createIntroVideoPickerSignals() {
       // rather than a per-field default.
       set(style$, options ? options.style : null);
       set(avatar$, options ? options.avatar : { kind: "none" });
-      set(voice$, options ? options.voice : DEFAULT_VOICE);
+      set(voice$, options ? options.voice : defaultVoice());
     }),
   };
 }
