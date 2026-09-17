@@ -847,8 +847,12 @@ describe("Morning Brief native delivery", () => {
       // earlier attempt at this barrier time out.
       const cancellation = new AbortController();
       const attempt = deliver(f, attemptId, cancellation.signal).then(
-        () => {return undefined},
-        () => {return undefined},
+        () => {
+          return undefined;
+        },
+        () => {
+          return undefined;
+        },
       );
       await held.waitForBlocked();
 
