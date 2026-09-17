@@ -215,6 +215,19 @@ export async function bindMorningBriefScheduleClaimRun(
     );
 }
 
+/** Whether this Run belongs to a recorded occurrence at all. */
+export async function morningBriefScheduleClaimBound(
+  db: Pick<Db, "select">,
+  runId: string,
+): Promise<boolean> {
+  const [bound] = await db
+    .select({ id: morningBriefScheduleClaims.id })
+    .from(morningBriefScheduleClaims)
+    .where(eq(morningBriefScheduleClaims.runId, runId))
+    .limit(1);
+  return bound !== undefined;
+}
+
 /**
  * Whether a newer journaled claim already superseded the occurrence this Run
  * belongs to.

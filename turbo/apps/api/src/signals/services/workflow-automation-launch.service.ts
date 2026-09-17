@@ -35,6 +35,7 @@ import {
 import { createQueueFirstAgentRun$ } from "./agent-runs-create.service";
 import {
   bindMorningBriefScheduleClaimRun,
+  morningBriefScheduleClaimBound,
   morningBriefScheduleClaimSuperseded,
 } from "./morning-brief-schedule-claim.service";
 import { workflowAutomationCanFire } from "./workflow-automation-access.service";
@@ -600,6 +601,28 @@ export async function recordWorkflowAutomationLastRun(
     readonly disableClaimedOnceSchedule: boolean;
   },
 ): Promise<void> {
+  const lastRunFields = () => {
+    return {
+      ...(args.recordLastRunId ? { lastRunId: args.runId } : {}),
+      ...(args.recordLastRunAt ? { lastRunAt: nowDate() } : {}),
+      ...(args.disableClaimedOnceSchedule ? { enabled: false } : {}),
+      updatedAt: nowDate(),
+    };
+  };
+
+  // Only a journaled occurrence needs the serialized path. The binding is
+  // written in the launch transaction that created this Run and has already
+  // committed, so a Run without one can never acquire one later and keeps the
+  // original single-statement write, adding no row-lock contention to every
+  // other automation.
+  if (!(await morningBriefScheduleClaimBound(db, args.runId))) {
+    await db
+      .update(workflowAutomations)
+      .set(lastRunFields())
+      .where(eq(workflowAutomations.id, args.automationId));
+    return;
+  }
+
   await db.transaction(async (tx) => {
     const [locked] = await tx
       .select({ id: workflowAutomations.id })
@@ -615,12 +638,7 @@ export async function recordWorkflowAutomationLastRun(
     }
     await tx
       .update(workflowAutomations)
-      .set({
-        ...(args.recordLastRunId ? { lastRunId: args.runId } : {}),
-        ...(args.recordLastRunAt ? { lastRunAt: nowDate() } : {}),
-        ...(args.disableClaimedOnceSchedule ? { enabled: false } : {}),
-        updatedAt: nowDate(),
-      })
+      .set(lastRunFields())
       .where(eq(workflowAutomations.id, args.automationId));
   });
 }
