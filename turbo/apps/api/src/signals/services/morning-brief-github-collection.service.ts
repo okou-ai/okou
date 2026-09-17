@@ -6,20 +6,19 @@ import type {
   MorningBriefGithubLimit,
   MorningBriefGithubOutcome,
   MorningBriefGithubReason,
+  MorningBriefGithubSkipReason,
 } from "@okouai/api-contracts/contracts/morning-brief-github-collection";
 import { z } from "zod";
 
-import { command } from "ccstate";
-
 import { nowDate } from "../../lib/time";
+import type { Db } from "../external/db";
+import { safeUrlParse } from "../utils";
 import {
-  admitMorningBriefCollectionScope$,
-  withMorningBriefConnectorReader$,
-  type MorningBriefAccessDenial,
+  admitMorningBriefCollection,
+  withMorningBriefConnectorReader,
   type MorningBriefCollectionScope,
   type MorningBriefConnectorReader,
-  type MorningBriefReadResult,
-  type MorningBriefScopeDenial,
+  type MorningBriefReadOutcome,
 } from "./morning-brief-connector-reader.service";
 
 /**
@@ -36,11 +35,19 @@ import {
  * See [the collection contract](../../../../../../docs/morning-brief-github-collection.md).
  */
 
-/** The GitHub connector's runtime token bindings, in preference order. */
-const MORNING_BRIEF_GITHUB_TOKEN_ENVIRONMENT_NAMES = [
-  "GITHUB_TOKEN",
-  "GH_TOKEN",
-] as const;
+const GITHUB_CONNECTOR_SLUG = "github";
+
+/** The GitHub connector's fixed API host, owned by the accepted catalog. */
+const GITHUB_API_BASE = "https://api.github.com";
+
+/**
+ * The runtime environment name that carries the selected account's token.
+ *
+ * This is the connector's own per-account binding, resolved from encrypted
+ * account storage by the shared reader. It is unrelated to any `GH_TOKEN`
+ * process credential, which this path must never use.
+ */
+const GITHUB_ACCESS_TOKEN_ENVIRONMENT_NAME = "GITHUB_TOKEN";
 
 /** Notifications cover the 24 hours ending at the anchor. */
 const MORNING_BRIEF_GITHUB_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -169,13 +176,9 @@ function safeSegment(segment: string): boolean {
  * validated segments that this module rebuilds its own paths from.
  */
 function repositoryFromApiUrl(value: string): RepositoryRef | null {
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
-    return null;
-  }
+  const url = safeUrlParse(value);
   if (
+    !url ||
     url.protocol !== "https:" ||
     url.host !== "api.github.com" ||
     url.username !== "" ||
@@ -203,13 +206,9 @@ function repositoryFromApiUrl(value: string): RepositoryRef | null {
 
 /** The same validation for a notification subject, which also names an item. */
 function subjectFromApiUrl(value: string): SubjectRef | null {
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
-    return null;
-  }
+  const url = safeUrlParse(value);
   if (
+    !url ||
     url.protocol !== "https:" ||
     url.host !== "api.github.com" ||
     url.username !== "" ||
@@ -381,35 +380,44 @@ interface DraftItem {
  */
 function recordFailure(
   coverage: BranchCoverage,
-  result: Exclude<MorningBriefReadResult<unknown>, { readonly kind: "ok" }>,
-): { readonly retryAfterSeconds?: number; readonly revoked: boolean } {
-  if (result.kind === "denied" || result.kind === "forbidden") {
+  result: Exclude<MorningBriefReadOutcome<unknown>, { readonly kind: "ok" }>,
+): { readonly retryAfterMs?: number; readonly revoked: boolean } {
+  if (result.kind === "denied") {
     coverage.deny();
     return { revoked: false };
   }
   if (result.kind === "not-found") {
-    coverage.limit("denied-endpoint");
+    // A deleted or moved item, which is not a permission refusal.
+    coverage.limit("missing-item");
     return { revoked: false };
   }
   if (result.kind === "rate-limited") {
     coverage.fail("rate-limited");
     return {
-      ...(result.retryAfterSeconds === undefined
+      ...(result.retryAfterMs === null
         ? {}
-        : { retryAfterSeconds: result.retryAfterSeconds }),
+        : { retryAfterMs: result.retryAfterMs }),
       revoked: false,
     };
   }
   if (result.kind === "budget-exhausted") {
-    coverage.limit("requests");
+    coverage.limit(
+      result.limit === "deadline"
+        ? "deadline"
+        : result.limit === "total-response-bytes"
+          ? "response-bytes"
+          : "requests",
+    );
     return { revoked: false };
   }
   if (result.kind === "revoked") {
-    coverage.fail("deadline");
+    // The shared reader latched a terminal loss of authority. Nothing this
+    // attempt collected may be released.
+    coverage.fail("denied-endpoint");
     return { revoked: true };
   }
   coverage.fail(
-    result.kind === "oversized" ? "oversized-response" : "malformed-response",
+    result.kind === "too-large" ? "oversized-response" : "malformed-response",
   );
   return { revoked: false };
 }
@@ -472,7 +480,8 @@ class GithubPrioritiesCollector {
   private readonly reviewRequested: BranchCoverage;
   private readonly checks: BranchCoverage;
   private readonly windowStart: Date;
-  private retryAfterSeconds: number | undefined;
+  private retryAfterMs: number | undefined;
+  private requests = 0;
   private revoked = false;
   private login: string | null = null;
   private userFailed = false;
@@ -496,17 +505,33 @@ class GithubPrioritiesCollector {
   }
 
   private note(outcome: {
-    readonly retryAfterSeconds?: number;
+    readonly retryAfterMs?: number;
     readonly revoked: boolean;
   }): boolean {
-    if (outcome.retryAfterSeconds !== undefined) {
-      this.retryAfterSeconds = Math.max(
-        this.retryAfterSeconds ?? 0,
-        outcome.retryAfterSeconds,
+    if (outcome.retryAfterMs !== undefined) {
+      this.retryAfterMs = Math.max(
+        this.retryAfterMs ?? 0,
+        outcome.retryAfterMs,
       );
     }
     this.revoked ||= outcome.revoked;
     return outcome.revoked;
+  }
+
+  /**
+   * One bounded read through the shared reader, counted for the envelope.
+   *
+   * The reader owns the host, credential and authorization; this only owns the
+   * path and its query, and keeps its own attempt count so the bundle can
+   * report what it actually asked for.
+   */
+  private async read<T>(request: {
+    readonly pathname: string;
+    readonly query?: Readonly<Record<string, string>>;
+    readonly schema: z.ZodType<T>;
+  }): Promise<MorningBriefReadOutcome<T>> {
+    this.requests += 1;
+    return await this.reader.getJson(request);
   }
 
   private outOfTime(): boolean {
@@ -515,10 +540,9 @@ class GithubPrioritiesCollector {
 
   /** The exact login of the selected token. Nothing else identifies it. */
   private async resolveLogin(): Promise<void> {
-    const result = await this.reader.getJson({
+    const result = await this.read({
       pathname: "/user",
       schema: githubUserSchema,
-      signal: this.signal,
     });
     if (result.kind !== "ok") {
       this.userFailed = true;
@@ -532,7 +556,7 @@ class GithubPrioritiesCollector {
       }
       return;
     }
-    this.login = result.data.login;
+    this.login = result.value.login;
   }
 
   private draft(ref: SubjectRef, updatedAt: string): DraftItem {
@@ -585,7 +609,7 @@ class GithubPrioritiesCollector {
         this.notifications.limit("deadline");
         return;
       }
-      const result = await this.reader.getJson({
+      const result = await this.read({
         pathname: "/notifications",
         query: {
           all: "true",
@@ -595,7 +619,6 @@ class GithubPrioritiesCollector {
           page: String(page),
         },
         schema: notificationsSchema,
-        signal: this.signal,
       });
       if (result.kind !== "ok") {
         if (this.note(recordFailure(this.notifications, result))) {
@@ -605,7 +628,7 @@ class GithubPrioritiesCollector {
       }
       this.notifications.page();
       let accepted = 0;
-      for (const notification of result.data) {
+      for (const notification of result.value) {
         const updatedAt = isoOrNull(notification.updated_at);
         if (updatedAt === null) {
           this.notifications.limit("malformed-response");
@@ -655,7 +678,7 @@ class GithubPrioritiesCollector {
       }
       this.notifications.counted(accepted);
       if (
-        result.data.length < MORNING_BRIEF_GITHUB_BUDGET.notificationPerPage
+        result.value.length < MORNING_BRIEF_GITHUB_BUDGET.notificationPerPage
       ) {
         return;
       }
@@ -689,7 +712,7 @@ class GithubPrioritiesCollector {
         coverage.limit("deadline");
         return;
       }
-      const result = await this.reader.getJson({
+      const result = await this.read({
         pathname: "/search/issues",
         query: {
           q: query,
@@ -700,18 +723,17 @@ class GithubPrioritiesCollector {
           advanced_search: "true",
         },
         schema: searchResultSchema,
-        signal: this.signal,
       });
       if (result.kind !== "ok") {
         this.note(recordFailure(coverage, result));
         return;
       }
       coverage.page();
-      if (result.data.incomplete_results) {
+      if (result.value.incomplete_results) {
         coverage.limit("search-incomplete");
       }
       let accepted = 0;
-      for (const item of result.data.items) {
+      for (const item of result.value.items) {
         const repository = repositoryFromApiUrl(item.repository_url);
         const updatedAt = isoOrNull(item.updated_at);
         if (repository === null || updatedAt === null || item.number <= 0) {
@@ -754,13 +776,13 @@ class GithubPrioritiesCollector {
       coverage.counted(accepted);
       const readSoFar = page * MORNING_BRIEF_GITHUB_BUDGET.searchPerPage;
       if (
-        result.data.items.length < MORNING_BRIEF_GITHUB_BUDGET.searchPerPage
+        result.value.items.length < MORNING_BRIEF_GITHUB_BUDGET.searchPerPage
       ) {
         return;
       }
       if (page === MORNING_BRIEF_GITHUB_BUDGET.searchPages) {
         coverage.limit("search-pages");
-        if (result.data.total_count > readSoFar) {
+        if (result.value.total_count > readSoFar) {
           coverage.limit("search-total-exceeded");
         }
       }
@@ -857,10 +879,9 @@ class GithubPrioritiesCollector {
       return;
     }
     const repoPath = `/repos/${draft.ref.owner}/${draft.ref.repo}`;
-    const detail = await this.reader.getJson({
+    const detail = await this.read({
       pathname: `${repoPath}/pulls/${draft.ref.number}`,
       schema: pullDetailSchema,
-      signal: this.signal,
     });
     if (detail.kind !== "ok") {
       this.note(recordFailure(this.checks, detail));
@@ -868,11 +889,11 @@ class GithubPrioritiesCollector {
       return;
     }
     this.checks.page();
-    draft.state = itemState(detail.data.state);
-    if (typeof detail.data.draft === "boolean") {
-      draft.draft = detail.data.draft;
+    draft.state = itemState(detail.value.state);
+    if (typeof detail.value.draft === "boolean") {
+      draft.draft = detail.value.draft;
     }
-    const headSha = detail.data.head.sha;
+    const headSha = detail.value.head.sha;
     const tally: CheckTally = {
       failing: 0,
       pending: 0,
@@ -881,17 +902,16 @@ class GithubPrioritiesCollector {
       incomplete: false,
     };
 
-    const runs = await this.reader.getJson({
+    const runs = await this.read({
       pathname: `${repoPath}/commits/${headSha}/check-runs`,
       query: {
         per_page: String(MORNING_BRIEF_GITHUB_BUDGET.checkRunsPerPage),
         page: "1",
       },
       schema: checkRunsSchema,
-      signal: this.signal,
     });
     if (runs.kind === "ok") {
-      this.tallyCheckRuns(tally, runs.data);
+      this.tallyCheckRuns(tally, runs.value);
     } else {
       tally.incomplete = true;
       this.checks.limit("check-runs");
@@ -900,14 +920,13 @@ class GithubPrioritiesCollector {
       }
     }
 
-    const status = await this.reader.getJson({
+    const status = await this.read({
       pathname: `${repoPath}/commits/${headSha}/status`,
       query: { per_page: String(MORNING_BRIEF_GITHUB_BUDGET.checkRunsPerPage) },
       schema: commitStatusSchema,
-      signal: this.signal,
     });
     if (status.kind === "ok") {
-      this.tallyCommitStatus(tally, status.data);
+      this.tallyCommitStatus(tally, status.value);
     } else {
       tally.incomplete = true;
       this.checks.limit("commit-status");
@@ -948,7 +967,7 @@ class GithubPrioritiesCollector {
         return branch.denied || branch.failed;
       })
     ) {
-      if (this.retryAfterSeconds !== undefined) {
+      if (this.retryAfterMs !== undefined) {
         return "rate_limited";
       }
       if (
@@ -1082,13 +1101,12 @@ class GithubPrioritiesCollector {
       items,
       counts: {
         items: items.length,
-        requests: this.reader.attempted(),
-        responseBytes: this.reader.streamedBytes(),
+        requests: this.requests,
         textCharacters,
       },
-      ...(this.retryAfterSeconds === undefined
+      ...(this.retryAfterMs === undefined
         ? {}
-        : { retryAfterSeconds: this.retryAfterSeconds }),
+        : { retryAfterMs: this.retryAfterMs }),
     };
   }
 }
@@ -1118,10 +1136,7 @@ type MorningBriefGithubExecution =
   | { readonly kind: "invalid-anchor"; readonly message: string }
   | {
       readonly kind: "not-executed";
-      readonly reason:
-        | MorningBriefScopeDenial
-        | MorningBriefAccessDenial
-        | "context-revoked";
+      readonly reason: MorningBriefGithubSkipReason;
     }
   | {
       readonly kind: "collected";
@@ -1157,80 +1172,74 @@ function validateAnchor(
 /**
  * Run one explicitly authorized GitHub priorities collection.
  *
- * The bundle only ever exists in memory and is returned only when the reader's
- * release gate confirms the admitted authority is unchanged. A revoked context
- * produces the same answer as a missing account: nothing is released.
+ * Admission and the authorization boundary belong to the shared reader owned
+ * by [#34809](https://github.com/vm0-ai/okou/issues/34809); this only supplies
+ * the GitHub path vocabulary and its budget. The bundle exists in memory only
+ * and is released only when that reader's own fence still agrees the admitted
+ * authority is current.
  */
-export const executeMorningBriefGithubCollection$ = command(
-  async (
-    { set },
-    args: {
-      readonly owner: { readonly orgId: string; readonly userId: string };
-      readonly anchor: Date;
-    },
-    signal: AbortSignal,
-  ): Promise<MorningBriefGithubExecution> => {
-    const startedAt = nowDate();
-    const invalid = validateAnchor(args.anchor, startedAt);
-    if (invalid) {
-      return invalid;
-    }
-
-    const admitted = await set(
-      admitMorningBriefCollectionScope$,
-      args.owner,
-      signal,
-    );
-    signal.throwIfAborted();
-    if (admitted.kind !== "admitted") {
-      return { kind: "not-executed", reason: admitted.reason };
-    }
-
-    const deadlineAt =
-      startedAt.getTime() + MORNING_BRIEF_GITHUB_BUDGET.deadlineMs;
-    const collectionSignal = AbortSignal.any([
-      signal,
-      AbortSignal.timeout(MORNING_BRIEF_GITHUB_BUDGET.deadlineMs),
-    ]);
-    let bundle: MorningBriefGithubBundle | null = null;
-    const access = await set(
-      withMorningBriefConnectorReader$,
-      {
-        scope: admitted.scope,
-        connectorSlug: "github",
-        budget: {
-          maxRequests: MORNING_BRIEF_GITHUB_BUDGET.maxRequests,
-          maxResponseBytes: MORNING_BRIEF_GITHUB_BUDGET.maxResponseBytes,
-          maxTotalResponseBytes:
-            MORNING_BRIEF_GITHUB_BUDGET.maxTotalResponseBytes,
-          deadlineAt,
-          tokenEnvironmentNames: MORNING_BRIEF_GITHUB_TOKEN_ENVIRONMENT_NAMES,
-        },
-        signal: collectionSignal,
-      },
-      async (reader) => {
-        bundle = await collectMorningBriefGithubPriorities(
-          reader,
-          {
-            scope: admitted.scope,
-            anchor: args.anchor,
-            collectedAt: startedAt,
-            clock: () => {
-              return nowDate().getTime();
-            },
-          },
-          collectionSignal,
-        );
-      },
-    );
-    if (access.kind === "denied") {
-      return { kind: "not-executed", reason: access.reason };
-    }
-    if (access.kind === "revoked" || bundle === null) {
-      // The context moved while this ran. The collected bundle is discarded
-      // rather than released under an authority that no longer exists.
-      return { kind: "not-executed", reason: "context-revoked" };
-    }
-    return { kind: "collected", bundle };
+export async function executeMorningBriefGithubCollection(
+  args: {
+    readonly db: Db;
+    readonly owner: { readonly orgId: string; readonly userId: string };
+    readonly anchor: Date;
   },
-);
+  signal: AbortSignal,
+): Promise<MorningBriefGithubExecution> {
+  const startedAt = nowDate();
+  const invalid = validateAnchor(args.anchor, startedAt);
+  if (invalid) {
+    return invalid;
+  }
+
+  const admitted = await admitMorningBriefCollection(args.db, {
+    orgId: args.owner.orgId,
+    userId: args.owner.userId,
+    anchor: args.anchor,
+  });
+  signal.throwIfAborted();
+  if (admitted.kind !== "ok") {
+    return { kind: "not-executed", reason: admitted.reason };
+  }
+
+  const collectionSignal = AbortSignal.any([
+    signal,
+    AbortSignal.timeout(MORNING_BRIEF_GITHUB_BUDGET.deadlineMs),
+  ]);
+  const access = await withMorningBriefConnectorReader(
+    {
+      scope: admitted.scope,
+      connectorSlug: GITHUB_CONNECTOR_SLUG,
+      apiBase: GITHUB_API_BASE,
+      environmentName: GITHUB_ACCESS_TOKEN_ENVIRONMENT_NAME,
+      budget: {
+        maxRequests: MORNING_BRIEF_GITHUB_BUDGET.maxRequests,
+        maxResponseBytes: MORNING_BRIEF_GITHUB_BUDGET.maxResponseBytes,
+        maxTotalResponseBytes:
+          MORNING_BRIEF_GITHUB_BUDGET.maxTotalResponseBytes,
+        deadlineMs: MORNING_BRIEF_GITHUB_BUDGET.deadlineMs,
+      },
+      db: args.db,
+      signal: collectionSignal,
+    },
+    async (reader) => {
+      return await collectMorningBriefGithubPriorities(
+        reader,
+        {
+          scope: admitted.scope,
+          anchor: args.anchor,
+          collectedAt: startedAt,
+          clock: () => {
+            return nowDate().getTime();
+          },
+        },
+        collectionSignal,
+      );
+    },
+  );
+  if (access.kind === "unavailable") {
+    // Terminal loss of a whole source. Nothing collected under it is released.
+    return { kind: "not-executed", reason: access.reason };
+  }
+  return { kind: "collected", bundle: access.value };
+}

@@ -1,20 +1,27 @@
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { connectorRuntimeTargetKey } from "@okouai/api-contracts/contracts/runners";
+import { matchFirewallRequestDecision } from "@okouai/connectors/firewall-rule-matcher";
+import type { NetworkPolicies } from "@okouai/connectors/firewall-types";
 import {
-  getAllFeatureStates,
   isFeatureEnabled,
+  getAllFeatureStates,
 } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isValidTimeZone } from "@okouai/core/timezone";
-import { matchFirewallRequestDecision } from "@okouai/connectors/firewall-rule-matcher";
+import { assertErasureSubjectWritable } from "@okouai/db/operations/account-erasure";
 import { agents } from "@okouai/db/schema/agent";
-import { command } from "ccstate";
-import { and, eq } from "drizzle-orm";
+import { connectors } from "@okouai/db/schema/connector";
+import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
+import { and, eq, or } from "drizzle-orm";
 import type { z } from "zod";
 
-import { nowDate } from "../../lib/time";
-import { clerk$ } from "../external/clerk";
-import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
+import { logger } from "../../lib/log";
+import type { Db, ReadonlyDb } from "../external/db";
+import { readBoundedResponseText, safeJsonParse, settle } from "../utils";
+import { loadAgentConnectorScope } from "./agent-connector-scope.service";
+import {
+  buildConnectorDiagnosticBaseCandidates,
+  loadConnectorDiagnosticCatalogView,
+} from "./connector-diagnostic-runtime.service";
 import {
   listConnectorRuntimeVisibleSlugs,
   loadConnectorRuntimeSnapshot,
@@ -25,387 +32,475 @@ import {
   loadConnectorCredentialConnection,
   loadConnectorCredentialValues,
   refreshConnectorCredentialAccess,
-  type ConnectorCredentialConnection,
 } from "./connector-credential-runtime.service";
-import {
-  buildConnectorDiagnosticBaseCandidates,
-  loadConnectorDiagnosticCatalogView,
-} from "./connector-diagnostic-runtime.service";
-import { loadAgentConnectorScope } from "./agent-connector-scope.service";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import { loadMorningBriefMigrationState } from "./morning-brief-migration-state.service";
-import { loadOfficialWorkflowUserTimezone } from "./official-workflow-installation.service";
-import { resolveWorkflowAutomationConnectorId } from "./workflow-automation-account.service";
 import { resolveActiveNetworkPolicyRefreshes } from "./user-permission-grants.service";
+import { resolveWorkflowAutomationConnectorId } from "./workflow-automation-account.service";
 
 /**
- * The live authorization boundary every Morning Brief connector read goes
- * through.
+ * The shared authorization boundary every Simple Morning Brief OAuth source
+ * reads through.
  *
- * Direct API collection does not inherit the Runner firewall, so this composes
- * the platform's existing authorities itself rather than inventing a second
- * permission algorithm: canonical Morning Brief ownership, live Clerk
- * membership, the installation's Agent and its connector grants, the accepted
- * catalog's routing metadata, the member's active permission grants, and the
- * exact connector account the destination thread selected. The only decision
- * function is the shared firewall rule matcher.
+ * A collector never holds a credential, never builds its own request and never
+ * decides whether it may read. It receives a `MorningBriefConnectorReader` that
+ * re-derives live authority — canonical ownership, membership and erasure
+ * admission, the pinned connector account, the Agent's grants, accepted catalog
+ * visibility and effective URL policy — before credential access, before every
+ * request, and again before the collected payload is released.
  *
- * Shared-reader ownership belongs to
- * [#34809](https://github.com/vm0-ai/okou/issues/34809). Its Gmail slice and
- * this GitHub slice were implemented concurrently against the same published
- * semantics; whichever lands on `main` first is canonical and the later one
- * converges onto it. See
- * [the GitHub collection contract](../../../../../../docs/morning-brief-github-collection.md).
+ * Holding a credential is not permission. Every gate must produce an
+ * unambiguous `allow`; missing metadata, no route match, `deny`, `ask` and
+ * expired grants are all refusals.
+ *
+ * The contract, its caps and its explicit limits are documented in
+ * [Morning Brief source collection](../../../../../../docs/morning-brief-gmail-collection.md).
  */
 
-/** Frozen identity a collection runs under. Never caller-supplied. */
+const L = logger("morning-brief-connector-reader.service");
+
+/** Derived from live state and canonical ownership, never from a caller. */
 export interface MorningBriefCollectionScope {
   readonly orgId: string;
   readonly userId: string;
-  /** The canonical Morning Brief installation (workflow) id. */
   readonly installationId: string;
-  readonly automationId: string;
-  /** The Agent the installation pinned, revalidated as still usable. */
   readonly agentId: string;
-  /** The canonical workflow/user thread, absent before the first delivery. */
   readonly chatThreadId: string | null;
-  /** Clerk's immutable membership id; a rejoin issues a new one. */
-  readonly membershipId: string;
+  readonly anchor: Date;
   readonly timezone: string;
 }
 
-/** Why a collection never reached the provider. */
-export type MorningBriefScopeDenial =
-  | "feature-disabled"
-  | "brief-absent"
-  | "brief-pending"
-  | "brief-inconsistent"
-  | "brief-paused"
-  | "missing-timezone"
-  | "missing-agent"
-  | "membership-revoked";
-
-type MorningBriefScopeResult =
-  | { readonly kind: "admitted"; readonly scope: MorningBriefCollectionScope }
-  | { readonly kind: "denied"; readonly reason: MorningBriefScopeDenial };
-
-/** Why an admitted scope still cannot read one connector. */
-export type MorningBriefAccessDenial =
-  | "connector-not-visible"
-  | "connector-not-granted"
-  | "account-missing"
-  | "account-unavailable"
-  | "account-needs-reconnect"
-  | "endpoint-not-authorized";
-
 interface MorningBriefReaderBudget {
-  /** Attempted requests, including denials and failures. */
+  /** Every attempted request counts, including the ones that fail. */
   readonly maxRequests: number;
-  /** Cap per response body, enforced while streaming. */
   readonly maxResponseBytes: number;
-  /** Cumulative streamed bytes across the whole source. */
   readonly maxTotalResponseBytes: number;
-  /** Absolute wall-clock deadline, as an epoch millisecond instant. */
-  readonly deadlineAt: number;
-  /** Runtime environment names that may carry this connector's token. */
-  readonly tokenEnvironmentNames: readonly string[];
+  readonly deadlineMs: number;
 }
 
-/** Bounded response headers a provider module may look at. */
-export interface MorningBriefResponseHeaders {
-  readonly retryAfterSeconds?: number;
-  readonly link?: string;
-}
+/**
+ * Why a whole source is unusable. These are terminal: the source is discarded,
+ * no further request may be issued and no collected payload is released.
+ */
+type MorningBriefSourceUnavailable =
+  | "not-connected"
+  | "not-authorized"
+  | "reconnect-required"
+  | "source-revoked"
+  | "provider-failed";
 
-export type MorningBriefReadResult<T> =
-  /** Parsed payload. `bytes` is what this response actually streamed. */
+type MorningBriefAccessResult<T> =
   | {
       readonly kind: "ok";
-      readonly data: T;
-      readonly headers: MorningBriefResponseHeaders;
-      readonly bytes: number;
+      readonly value: T;
+      readonly requests: number;
+      readonly truncatedTotalBytes: boolean;
     }
-  /** Current policy refuses this exact endpoint: a branch coverage gap. */
-  | { readonly kind: "denied" }
-  /** The provider refused: 401/403/404 are distinct from a policy denial. */
-  | { readonly kind: "forbidden" }
+  | {
+      readonly kind: "unavailable";
+      readonly reason: MorningBriefSourceUnavailable;
+    };
+
+/**
+ * One bounded GET. `denied` is endpoint-specific and leaves a coverage gap;
+ * `revoked` discards the entire source through the wrapper's latch.
+ */
+export type MorningBriefReadOutcome<T> =
+  | { readonly kind: "ok"; readonly value: T }
   | { readonly kind: "not-found" }
+  | { readonly kind: "denied" }
   | {
       readonly kind: "rate-limited";
-      readonly retryAfterSeconds?: number;
+      readonly retryAfterMs: number | null;
     }
-  | { readonly kind: "oversized" }
+  | { readonly kind: "too-large" }
   | { readonly kind: "malformed" }
-  | { readonly kind: "failed" }
-  /** A documented budget stopped this request before it was attempted. */
-  | { readonly kind: "budget-exhausted" }
-  /** The owner's authority moved: the whole source must be discarded. */
+  | {
+      readonly kind: "budget-exhausted";
+      readonly limit: MorningBriefReaderLimit;
+    }
+  | { readonly kind: "provider-failed" }
   | { readonly kind: "revoked" };
 
+export type MorningBriefReaderLimit =
+  | "total-requests"
+  | "deadline"
+  | "total-response-bytes";
+
 export interface MorningBriefConnectorReader {
-  /** One authorized fixed-host GET. Paths and query come from the caller. */
-  getJson<T>(request: {
+  /**
+   * GET one allowlisted path on the source's fixed provider host. The reader
+   * owns the host, the credential and the authorization; the provider module
+   * owns only the path and its query.
+   */
+  getJson<T>(args: {
     readonly pathname: string;
     readonly query?: Readonly<Record<string, string>>;
     readonly schema: z.ZodType<T>;
-    readonly signal: AbortSignal;
-  }): Promise<MorningBriefReadResult<T>>;
-  /** Attempted requests so far, so a collector can report its own budget. */
-  readonly attempted: () => number;
-  /** Cumulative streamed response bytes. */
-  readonly streamedBytes: () => number;
+  }): Promise<MorningBriefReadOutcome<T>>;
+  /** The account this source is pinned to, for safe provider deep links. */
+  readonly accountEmail: string | null;
 }
 
-/**
- * Whether the collector's result may be released.
- *
- * The collector writes its own bundle; this says whether the authority that
- * produced it is still the authority that was admitted. Anything other than
- * `collected` means the caller must discard what it captured.
- */
-type MorningBriefAccessResult =
-  | { readonly kind: "collected" }
-  | { readonly kind: "denied"; readonly reason: MorningBriefAccessDenial }
-  | { readonly kind: "revoked" };
-
-/** Refresh a token this far ahead of its expiry, when it has one. */
-const TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
-
-/**
- * The Agent the canonical installation pinned, when it is still usable.
- *
- * A deleted Agent, or a private Agent owned by somebody else, is a missing
- * Agent. It is never a reason to substitute the org default.
- */
-async function loadInstallationAgentId(
-  db: Pick<ReadonlyDb, "select">,
-  scope: { readonly orgId: string; readonly userId: string },
-  agentId: string,
-): Promise<string | null> {
-  const [agent] = await db
-    .select({
-      id: agents.id,
-      owner: agents.owner,
-      visibility: agents.visibility,
-    })
-    .from(agents)
-    .where(and(eq(agents.id, agentId), eq(agents.orgId, scope.orgId)))
-    .limit(1);
-  if (
-    !agent ||
-    (agent.visibility === "private" && agent.owner !== scope.userId)
-  ) {
-    return null;
-  }
-  return agent.id;
-}
-
-/**
- * The member's current Clerk membership generation.
- *
- * Request authentication may answer from the short-lived role cache, so
- * admission repeats the exact-member lookup and pins the immutable membership
- * id. Removing the member — including as part of account erasure — makes this
- * null, and a rejoin issues a different id.
- */
-const currentMembershipId$ = command(
-  async (
-    { get },
-    scope: { readonly orgId: string; readonly userId: string },
-    signal: AbortSignal,
-  ): Promise<string | null> => {
-    const memberships = await get(
-      clerk$,
-    ).organizations.getOrganizationMembershipList(
-      { organizationId: scope.orgId, userId: [scope.userId], limit: 1 },
-      undefined,
-      signal,
-    );
-    signal.throwIfAborted();
-    const membership = memberships.data.find((entry) => {
-      return (
-        entry.publicUserData?.userId === scope.userId &&
-        entry.organization.id === scope.orgId
-      );
-    });
-    return membership?.id ?? null;
-  },
-);
-
-/**
- * Resolve the frozen collection identity from live canonical state only.
- *
- * Nothing here reads the disposable installed-preference projection, and
- * nothing is taken from the request body beyond the anchor the caller passes
- * separately. Each failure is an explicit non-executing reason returned before
- * any provider work exists.
- */
-export const admitMorningBriefCollectionScope$ = command(
-  async (
-    { set },
-    owner: { readonly orgId: string; readonly userId: string },
-    signal: AbortSignal,
-  ): Promise<MorningBriefScopeResult> => {
-    const db = set(writeDb$);
-    const featureSwitchContext = await loadUserFeatureSwitchContext(
-      db,
-      owner.orgId,
-      owner.userId,
-    );
-    signal.throwIfAborted();
-    if (
-      !isFeatureEnabled(
-        FeatureSwitchKey.SimpleMorningBrief,
-        featureSwitchContext,
-      )
-    ) {
-      return { kind: "denied", reason: "feature-disabled" };
-    }
-
-    const state = await loadMorningBriefMigrationState(db, owner);
-    signal.throwIfAborted();
-    if (state.kind !== "installed") {
-      return {
-        kind: "denied",
-        reason:
-          state.kind === "absent"
-            ? "brief-absent"
-            : state.kind === "pending"
-              ? "brief-pending"
-              : "brief-inconsistent",
-      };
-    }
-    if (!state.automation.enabled) {
-      return { kind: "denied", reason: "brief-paused" };
-    }
-
-    const timezone = await loadOfficialWorkflowUserTimezone(db, owner);
-    signal.throwIfAborted();
-    if (timezone === null || !isValidTimeZone(timezone)) {
-      return { kind: "denied", reason: "missing-timezone" };
-    }
-
-    const agentId = await loadInstallationAgentId(
-      db,
-      owner,
-      state.installation.agentId,
-    );
-    signal.throwIfAborted();
-    if (agentId === null) {
-      return { kind: "denied", reason: "missing-agent" };
-    }
-
-    const membershipId = await set(currentMembershipId$, owner, signal);
-    signal.throwIfAborted();
-    if (membershipId === null) {
-      return { kind: "denied", reason: "membership-revoked" };
-    }
-
-    return {
-      kind: "admitted",
-      scope: {
-        orgId: owner.orgId,
-        userId: owner.userId,
-        installationId: state.installation.id,
-        automationId: state.automation.id,
-        agentId,
-        chatThreadId: state.chatThreadId,
-        membershipId,
-        timezone,
-      },
-    };
-  },
-);
-
-/** Everything a single authorized request depends on, resolved live. */
-interface MorningBriefConnectorAuthority {
+interface MorningBriefReaderRequest {
   readonly scope: MorningBriefCollectionScope;
+  readonly connectorSlug: ConnectorSlug;
+  readonly apiBase: string;
+  readonly environmentName: string;
+  readonly budget: MorningBriefReaderBudget;
+  readonly db: Db;
+  readonly signal: AbortSignal;
+}
+
+/** The exact account this source is pinned to for its whole lifetime. */
+interface PinnedAccount {
   readonly connectorId: string;
-  /** Credential row revision; a reconnect or refresh changes it. */
-  readonly stateRevision: string;
-  readonly storageVersion: number;
+  readonly externalEmail: string | null;
 }
 
-function sameAuthority(
-  left: MorningBriefConnectorAuthority,
-  right: MorningBriefConnectorAuthority,
-): boolean {
-  return (
-    left.scope.orgId === right.scope.orgId &&
-    left.scope.userId === right.scope.userId &&
-    left.scope.installationId === right.scope.installationId &&
-    left.scope.automationId === right.scope.automationId &&
-    left.scope.agentId === right.scope.agentId &&
-    left.scope.membershipId === right.scope.membershipId &&
-    left.scope.timezone === right.scope.timezone &&
-    left.connectorId === right.connectorId &&
-    left.storageVersion === right.storageVersion
-  );
-}
-
-type ConnectorAccessResolution =
+type AuthorizationOutcome =
+  | { readonly kind: "allow" }
+  | { readonly kind: "denied" }
   | {
-      readonly kind: "ok";
-      readonly authority: MorningBriefConnectorAuthority;
-      readonly connection: ConnectorCredentialConnection;
-    }
-  | { readonly kind: "denied"; readonly reason: MorningBriefAccessDenial }
-  | { readonly kind: "revoked" };
+      readonly kind: "revoked";
+      readonly reason: MorningBriefSourceUnavailable;
+    };
+
+function unavailable<T>(
+  reason: MorningBriefSourceUnavailable,
+): MorningBriefAccessResult<T> {
+  return { kind: "unavailable", reason };
+}
 
 /**
- * Accepted-catalog visibility, the Agent's grant and the exact account.
- *
- * Holding a connector is not authorization: the connector must be visible in
- * the accepted catalog for this member, granted to the installation's Agent,
- * and resolved to the account the canonical thread actually selected. An
- * explicit selection that no longer names a usable account fails closed; only
- * the absence of a selection may use the member's default account.
+ * The Agent must still exist in this org and still be visible to this member.
+ * A private Agent someone else owns grants nothing.
  */
-async function resolveConnectorAccess(
+async function agentIsVisible(
+  db: ReadonlyDb,
+  scope: MorningBriefCollectionScope,
+): Promise<boolean> {
+  const [agent] = await db
+    .select({ id: agents.id })
+    .from(agents)
+    .where(
+      and(
+        eq(agents.id, scope.agentId),
+        eq(agents.orgId, scope.orgId),
+        or(eq(agents.visibility, "public"), eq(agents.owner, scope.userId)),
+      ),
+    )
+    .limit(1);
+  return agent !== undefined;
+}
+
+/**
+ * Membership and erasure admission in one short transaction.
+ *
+ * Admission takes the subject locks before any other row and holds them through
+ * commit, so a closure committed while this waited is visible here. The
+ * transaction deliberately contains no network call.
+ */
+async function memberIsAdmitted(
   db: Db,
   scope: MorningBriefCollectionScope,
-  connectorSlug: ConnectorSlug,
-  snapshot: ConnectorRuntimeSnapshot,
-  signal: AbortSignal,
-): Promise<ConnectorAccessResolution> {
-  const featureSwitchContext = await loadUserFeatureSwitchContext(
-    db,
-    scope.orgId,
-    scope.userId,
+): Promise<boolean> {
+  const settled = await settle(
+    db.transaction(async (tx) => {
+      await assertErasureSubjectWritable(tx, [
+        { subjectKind: "organization", subjectId: scope.orgId },
+        { subjectKind: "user", subjectId: scope.userId },
+      ]);
+      const [member] = await tx
+        .select({ orgId: orgMembersCache.orgId })
+        .from(orgMembersCache)
+        .where(
+          and(
+            eq(orgMembersCache.orgId, scope.orgId),
+            eq(orgMembersCache.userId, scope.userId),
+          ),
+        )
+        .limit(1);
+      return member !== undefined;
+    }),
   );
-  signal.throwIfAborted();
-  const visibleSlugs = listConnectorRuntimeVisibleSlugs({
-    snapshot,
-    featureStates: getAllFeatureStates(featureSwitchContext),
-  });
-  if (
-    !visibleSlugs.includes(connectorSlug) ||
-    !snapshot.serverFirewalls.has(connectorSlug)
-  ) {
-    return { kind: "denied", reason: "connector-not-visible" };
-  }
+  // A closed subject aborts the transaction; that is a refusal, not an outage.
+  return settled.ok && settled.value;
+}
 
-  const agentScope = await loadAgentConnectorScope(db, {
+/**
+ * The canonical brief must still be installed, enabled and the same
+ * installation on the same Agent that this collection was scoped to.
+ */
+async function ownershipIsUnchanged(
+  db: ReadonlyDb,
+  scope: MorningBriefCollectionScope,
+): Promise<boolean> {
+  const state = await loadMorningBriefMigrationState(db, {
     orgId: scope.orgId,
     userId: scope.userId,
-    agentId: scope.agentId,
   });
-  signal.throwIfAborted();
-  if (!agentScope.allowedConnectorSlugs.includes(connectorSlug)) {
-    return { kind: "denied", reason: "connector-not-granted" };
-  }
+  return (
+    state.kind === "installed" &&
+    state.automation.enabled &&
+    state.installation.id === scope.installationId &&
+    state.installation.agentId === scope.agentId
+  );
+}
 
-  const connectorId = await resolveWorkflowAutomationConnectorId(db, {
+/**
+ * The raw explicit account choice, failing closed.
+ *
+ * `resolveWorkflowAutomationConnectorId` uses the org default only when the
+ * canonical thread holds no selection at all. An explicit selection that no
+ * longer resolves to a live account of this owner is a refusal, never a reason
+ * to read somebody else's mailbox: this path must not adopt the Run account
+ * materializer's invalid-selection fallback.
+ */
+async function resolveSelectedConnectorId(
+  db: ReadonlyDb,
+  scope: MorningBriefCollectionScope,
+  connectorSlug: ConnectorSlug,
+): Promise<string | null> {
+  return await resolveWorkflowAutomationConnectorId(db, {
     orgId: scope.orgId,
     userId: scope.userId,
     workflowId: scope.installationId,
     connectorSlug,
   });
-  signal.throwIfAborted();
-  if (connectorId === null) {
-    return { kind: "denied", reason: "account-missing" };
-  }
+}
 
+/**
+ * The pinned account must still be this owner's live account for this source.
+ *
+ * A deleted account or one the owner has been asked to reconnect withdraws the
+ * access this read was admitted under, even though its ID has not changed.
+ */
+async function pinnedAccountIsLive(
+  db: ReadonlyDb,
+  scope: MorningBriefCollectionScope,
+  pinned: PinnedAccount,
+  connectorSlug: ConnectorSlug,
+): Promise<boolean> {
+  const [account] = await db
+    .select({ needsReconnect: connectors.needsReconnect })
+    .from(connectors)
+    .where(
+      and(
+        eq(connectors.id, pinned.connectorId),
+        eq(connectors.orgId, scope.orgId),
+        eq(connectors.userId, scope.userId),
+        eq(connectors.connectorSlug, connectorSlug),
+      ),
+    )
+    .limit(1);
+  return account !== undefined && !account.needsReconnect;
+}
+
+/** Accepted catalog visibility for this member. Availability is not policy. */
+async function connectorIsVisible(
+  db: ReadonlyDb,
+  snapshot: ConnectorRuntimeSnapshot,
+  scope: MorningBriefCollectionScope,
+  connectorSlug: ConnectorSlug,
+): Promise<boolean> {
+  const featureSwitchContext = await loadUserFeatureSwitchContext(
+    db,
+    scope.orgId,
+    scope.userId,
+  );
+  return listConnectorRuntimeVisibleSlugs({
+    snapshot,
+    featureStates: getAllFeatureStates(featureSwitchContext),
+  }).includes(connectorSlug);
+}
+
+/**
+ * The effective, current URL-level decision for this exact request.
+ *
+ * Routing metadata comes from the accepted catalog and the policy from the
+ * Agent's active grants, so an expired or revoked grant collapses to the
+ * connector's default policy rather than to a stale allow.
+ */
+async function requestIsAllowed(args: {
+  readonly db: ReadonlyDb;
+  readonly snapshot: ConnectorRuntimeSnapshot;
+  readonly scope: MorningBriefCollectionScope;
+  readonly connectorSlug: ConnectorSlug;
+  readonly url: string;
+}): Promise<boolean> {
+  const view = await loadConnectorDiagnosticCatalogView(
+    args.snapshot.serverFirewalls,
+    args.connectorSlug,
+  );
+  if (!view) {
+    return false;
+  }
+  const { candidates } = buildConnectorDiagnosticBaseCandidates(view, null, {
+    allowStructuralDynamic: false,
+  });
+  const refreshes = await resolveActiveNetworkPolicyRefreshes(
+    args.db,
+    {
+      orgId: args.scope.orgId,
+      userId: args.scope.userId,
+      agentId: args.scope.agentId,
+    },
+    [args.connectorSlug],
+    args.snapshot,
+  );
+  const policies: NetworkPolicies = Object.fromEntries(
+    refreshes.map((refresh) => {
+      return [refresh.connectorSlug, refresh.networkPolicy];
+    }),
+  );
+  const target = {
+    kind: "builtin" as const,
+    connectorSlug: args.connectorSlug,
+  };
+  const decision = matchFirewallRequestDecision(
+    [
+      {
+        name: connectorRuntimeTargetKey(target),
+        apis: candidates.map((candidate) => {
+          return {
+            base: candidate.decisionBase,
+            auth: {},
+            permissions: decisionPermissions(candidate.routes),
+          };
+        }),
+      },
+    ],
+    "GET",
+    args.url,
+    policies,
+    { status: "present", value: connectorRuntimeTargetKey(target) },
+  );
+  // Only an unambiguous allow passes. `no_match`, every block reason and an
+  // ambiguous route are refusals.
+  return decision.kind === "allow";
+}
+
+function decisionPermissions(
+  routes: readonly { readonly permissionName: string; readonly rule: string }[],
+) {
+  const rulesByPermission = new Map<string, string[]>();
+  for (const route of routes) {
+    const rules = rulesByPermission.get(route.permissionName);
+    if (rules) {
+      rules.push(route.rule);
+      continue;
+    }
+    rulesByPermission.set(route.permissionName, [route.rule]);
+  }
+  return [...rulesByPermission].map(([name, rules]) => {
+    return { name, rules };
+  });
+}
+
+/**
+ * Every live gate, in the order that keeps a credential behind authority.
+ *
+ * `url` is absent for the admission run that precedes credential access, and
+ * present for each request. An endpoint-specific policy refusal is `denied`;
+ * everything that invalidates the source itself is `revoked`.
+ */
+async function authorize(
+  request: MorningBriefReaderRequest,
+  pinned: PinnedAccount | null,
+  url: string | null,
+): Promise<AuthorizationOutcome> {
+  const { db, scope, connectorSlug } = request;
+  if (!(await memberIsAdmitted(db, scope))) {
+    return { kind: "revoked", reason: "source-revoked" };
+  }
+  request.signal.throwIfAborted();
+  if (!(await ownershipIsUnchanged(db, scope))) {
+    return { kind: "revoked", reason: "source-revoked" };
+  }
+  request.signal.throwIfAborted();
+  if (!(await agentIsVisible(db, scope))) {
+    return { kind: "revoked", reason: "source-revoked" };
+  }
+  request.signal.throwIfAborted();
+
+  const selectedConnectorId = await resolveSelectedConnectorId(
+    db,
+    scope,
+    connectorSlug,
+  );
+  if (selectedConnectorId === null) {
+    return { kind: "revoked", reason: "not-connected" };
+  }
+  if (pinned && pinned.connectorId !== selectedConnectorId) {
+    // The owner chose a different account while this source was reading. The
+    // payload gathered from the previous account may not be released.
+    return { kind: "revoked", reason: "source-revoked" };
+  }
+  if (
+    pinned &&
+    !(await pinnedAccountIsLive(db, scope, pinned, connectorSlug))
+  ) {
+    return { kind: "revoked", reason: "reconnect-required" };
+  }
+  request.signal.throwIfAborted();
+
+  const scopeGrants = await loadAgentConnectorScope(db, {
+    orgId: scope.orgId,
+    userId: scope.userId,
+    agentId: scope.agentId,
+  });
+  if (!scopeGrants.allowedConnectorSlugs.includes(connectorSlug)) {
+    return { kind: "revoked", reason: "not-authorized" };
+  }
+  request.signal.throwIfAborted();
+
+  const snapshot = await loadConnectorRuntimeSnapshot(db);
+  request.signal.throwIfAborted();
+  if (!(await connectorIsVisible(db, snapshot, scope, connectorSlug))) {
+    return { kind: "revoked", reason: "not-authorized" };
+  }
+  request.signal.throwIfAborted();
+
+  if (url === null) {
+    return { kind: "allow" };
+  }
+  const allowed = await requestIsAllowed({
+    db,
+    snapshot,
+    scope,
+    connectorSlug,
+    url,
+  });
+  return allowed ? { kind: "allow" } : { kind: "denied" };
+}
+
+type CredentialResult =
+  | {
+      readonly kind: "ok";
+      readonly accessToken: string;
+      readonly pinned: PinnedAccount;
+    }
+  | {
+      readonly kind: "unavailable";
+      readonly reason: MorningBriefSourceUnavailable;
+    };
+
+/**
+ * Load the pinned account's credential, refreshing it when it is expiring.
+ *
+ * A refresh this reader performs legitimately advances the account's own
+ * credential revision, so the pin is taken after the refresh. A revision that
+ * moves for any other reason is detected as a selection change on the next
+ * authorization.
+ */
+async function loadCredential(
+  request: MorningBriefReaderRequest,
+  connectorId: string,
+): Promise<CredentialResult> {
+  const { db, scope, connectorSlug, signal } = request;
+  const snapshot = await loadConnectorRuntimeSnapshot(db);
+  signal.throwIfAborted();
   const loaded = await loadConnectorCredentialConnection({
     db,
     snapshot,
@@ -416,551 +511,336 @@ async function resolveConnectorAccess(
   });
   signal.throwIfAborted();
   if (loaded.kind === "missing") {
-    // An explicit selection naming a deleted or foreign account lands here.
-    // Falling back to the default account would read the wrong mailbox.
-    return { kind: "denied", reason: "account-missing" };
+    return { kind: "unavailable", reason: "not-connected" };
   }
-  if (loaded.kind === "unavailable") {
-    return { kind: "denied", reason: "account-unavailable" };
+  if (loaded.kind === "unavailable" || loaded.connection.needsReconnect) {
+    return { kind: "unavailable", reason: "reconnect-required" };
   }
-  if (loaded.connection.needsReconnect) {
-    return { kind: "denied", reason: "account-needs-reconnect" };
-  }
-  return {
-    kind: "ok",
-    connection: loaded.connection,
-    authority: {
-      scope,
-      connectorId: loaded.connection.connectorId,
-      stateRevision: loaded.connection.stateRevision,
-      storageVersion: loaded.connection.storageVersion,
-    },
-  };
-}
-
-/** The accepted catalog's routing metadata, shaped for the shared matcher. */
-interface DecisionFirewall {
-  readonly name: string;
-  readonly apis: readonly {
-    readonly base: string;
-    readonly auth: Record<string, never>;
-    readonly permissions: readonly {
-      readonly name: string;
-      readonly rules: readonly string[];
-    }[];
-  }[];
-}
-
-/** The decision firewall for one connector, from accepted catalog metadata. */
-async function loadDecisionFirewall(
-  snapshot: ConnectorRuntimeSnapshot,
-  connectorSlug: ConnectorSlug,
-): Promise<DecisionFirewall | null> {
-  const view = await loadConnectorDiagnosticCatalogView(
-    snapshot.serverFirewalls,
-    connectorSlug,
+  const connection = loaded.connection;
+  const valueRef = connectorCredentialRuntimeValueRef(
+    connection,
+    request.environmentName,
   );
-  if (!view) {
-    return null;
+  if (valueRef === null) {
+    return { kind: "unavailable", reason: "reconnect-required" };
   }
-  // Fixed provider hosts only: a base that still needs an account-supplied
-  // variable is not a host this reader may call.
-  const { candidates } = buildConnectorDiagnosticBaseCandidates(view, null, {
-    allowStructuralDynamic: false,
-  });
-  if (candidates.length === 0) {
-    return null;
-  }
-  return {
-    name: connectorRuntimeTargetKey({ kind: "builtin", connectorSlug }),
-    apis: candidates.map((candidate) => {
-      const rulesByPermission = new Map<string, string[]>();
-      for (const route of candidate.routes) {
-        const rules = rulesByPermission.get(route.permissionName);
-        if (rules) {
-          rules.push(route.rule);
-        } else {
-          rulesByPermission.set(route.permissionName, [route.rule]);
-        }
-      }
-      return {
-        base: candidate.decisionBase,
-        auth: {},
-        permissions: [...rulesByPermission].map(([name, rules]) => {
-          return { name, rules };
-        }),
-      };
-    }),
-  };
-}
-
-/** The member's active grants for this connector, expanded to a policy map. */
-async function loadNetworkPolicies(
-  db: Db,
-  scope: MorningBriefCollectionScope,
-  connectorSlug: ConnectorSlug,
-  snapshot: ConnectorRuntimeSnapshot,
-  firewallName: string,
-): Promise<Record<string, unknown>> {
-  // The grant scope is Agent-scoped on purpose: policy belongs to the exact
-  // Agent the canonical installation pinned, not to the member at large.
-  const refreshes = await resolveActiveNetworkPolicyRefreshes(
-    db,
-    {
-      orgId: scope.orgId,
-      userId: scope.userId,
-      agentId: scope.agentId,
-    },
-    [connectorSlug],
-    snapshot,
-  );
-  const refresh = refreshes.find((entry) => {
-    return entry.connectorSlug === connectorSlug;
-  });
-  return refresh ? { [firewallName]: refresh.networkPolicy } : {};
-}
-
-/** Decode the token for the exact pinned account, refreshing only if needed. */
-async function resolveAccessToken(
-  db: Db,
-  scope: MorningBriefCollectionScope,
-  connection: ConnectorCredentialConnection,
-  tokenEnvironmentNames: readonly string[],
-  signal: AbortSignal,
-): Promise<
-  | { readonly kind: "ok"; readonly accessToken: string }
-  | { readonly kind: "denied"; readonly reason: MorningBriefAccessDenial }
-> {
-  const resolved = tokenEnvironmentNames.flatMap((environmentName) => {
-    const valueRef = connectorCredentialRuntimeValueRef(
-      connection,
-      environmentName,
-    );
-    return valueRef === null ? [] : [{ environmentName, valueRef }];
-  })[0];
-  if (!resolved) {
-    return { kind: "denied", reason: "account-unavailable" };
-  }
-
   const values = await loadConnectorCredentialValues({
     connection,
     db,
-    valueRefs: [resolved.valueRef],
+    valueRefs: [valueRef],
   });
   signal.throwIfAborted();
-  const accessToken = values.get(resolved.valueRef);
-  if (!accessToken) {
-    return { kind: "denied", reason: "account-needs-reconnect" };
+  const storedToken = values.get(valueRef);
+  if (storedToken === undefined) {
+    return { kind: "unavailable", reason: "reconnect-required" };
   }
-
-  const expiresAt = connection.tokenExpiresAt;
-  if (
-    expiresAt === null ||
-    expiresAt.getTime() - nowDate().getTime() > TOKEN_REFRESH_BUFFER_MS
-  ) {
-    return { kind: "ok", accessToken };
+  const pinned = {
+    connectorId: connection.connectorId,
+    externalEmail: connection.externalEmail,
+  };
+  if (!credentialNeedsRefresh(connection.tokenExpiresAt)) {
+    return { kind: "ok", accessToken: storedToken, pinned };
   }
-  // A refresh may write this account's credential revision. That is a
-  // legitimate write by the selected account's own reader, and the revision
-  // change it produces is not treated as somebody else's reselection.
   const refreshed = await refreshConnectorCredentialAccess(
     {
       connection,
       db,
       orgId: scope.orgId,
       userId: scope.userId,
-      runtimeEnvironmentName: resolved.environmentName,
+      runtimeEnvironmentName: request.environmentName,
       persist: { db, markNeedsReconnectOnFailure: true },
     },
     signal,
   );
   signal.throwIfAborted();
-  if (refreshed.kind !== "ok") {
-    return { kind: "denied", reason: "account-needs-reconnect" };
+  if (refreshed.kind === "configuration-unavailable") {
+    return { kind: "unavailable", reason: "provider-failed" };
   }
-  return { kind: "ok", accessToken: refreshed.accessToken };
+  if (refreshed.kind !== "ok") {
+    return { kind: "unavailable", reason: "reconnect-required" };
+  }
+  return { kind: "ok", accessToken: refreshed.accessToken, pinned };
 }
 
-function retryAfterSeconds(response: Response): number | undefined {
+const CREDENTIAL_REFRESH_BUFFER_MS = 60_000;
+
+function credentialNeedsRefresh(tokenExpiresAt: Date | null): boolean {
+  return (
+    tokenExpiresAt === null ||
+    tokenExpiresAt.getTime() <= Date.now() + CREDENTIAL_REFRESH_BUFFER_MS
+  );
+}
+
+const MAX_RETRY_AFTER_MS = 60_000;
+
+/** Bounded metadata only. The reader never sleeps on a provider's advice. */
+function retryAfterMs(response: Response): number | null {
   const header = response.headers.get("retry-after");
   if (header === null) {
-    return undefined;
+    return null;
   }
-  const seconds = Number.parseInt(header, 10);
-  // Bounded metadata for the caller. This reader never sleeps on it.
-  return Number.isSafeInteger(seconds) && seconds >= 0
-    ? Math.min(seconds, 3600)
-    : undefined;
+  const seconds = Number(header.trim());
+  if (!Number.isFinite(seconds) || seconds < 0) {
+    return null;
+  }
+  return Math.min(MAX_RETRY_AFTER_MS, Math.round(seconds * 1000));
 }
 
-/** Stream a bounded body. Returns null once the per-response cap is passed. */
-async function readCappedText(
-  response: Response,
-  maxBytes: number,
-): Promise<{ readonly text: string; readonly bytes: number } | null> {
-  if (!response.body) {
-    return { text: "", bytes: 0 };
-  }
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let bytes = 0;
-  let text = "";
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) {
-      return { text: text + decoder.decode(), bytes };
-    }
-    bytes += value.byteLength;
-    if (bytes > maxBytes) {
-      await reader.cancel();
-      return null;
-    }
-    text += decoder.decode(value, { stream: true });
-  }
+interface ReaderState {
+  requests: number;
+  totalBytes: number;
+  revoked: MorningBriefSourceUnavailable | null;
+  truncatedTotalBytes: boolean;
 }
 
-/**
- * Classify a provider response that must not have its body read.
- *
- * Returns `null` when the response is a success whose bounded body may be
- * streamed. Every other status becomes its own honest outcome: a policy
- * denial, a provider refusal, a missing item, a rate limit, or a failure.
- */
-async function classifyProviderResponse(
-  response: Response,
-): Promise<Exclude<
-  MorningBriefReadResult<never>,
-  { readonly kind: "ok" }
-> | null> {
-  const seconds = retryAfterSeconds(response);
-  if (response.status === 429) {
-    await response.body?.cancel();
-    return {
-      kind: "rate-limited",
-      ...(seconds === undefined ? {} : { retryAfterSeconds: seconds }),
-    };
+function budgetLimit(
+  state: ReaderState,
+  request: MorningBriefReaderRequest,
+  deadlineAt: number,
+): MorningBriefReaderLimit | null {
+  if (state.requests >= request.budget.maxRequests) {
+    return "total-requests";
   }
-  if (response.status === 403) {
-    // Secondary rate limits also arrive as 403 with `Retry-After`.
-    await response.body?.cancel();
-    return seconds === undefined
-      ? { kind: "forbidden" }
-      : { kind: "rate-limited", retryAfterSeconds: seconds };
+  if (Date.now() >= deadlineAt) {
+    return "deadline";
   }
-  if (response.status === 404 || response.status === 410) {
-    await response.body?.cancel();
-    return { kind: "not-found" };
-  }
-  if (response.status === 401) {
-    await response.body?.cancel();
-    return { kind: "forbidden" };
-  }
-  if (!response.ok) {
-    await response.body?.cancel();
-    return { kind: "failed" };
+  if (state.totalBytes >= request.budget.maxTotalResponseBytes) {
+    return "total-response-bytes";
   }
   return null;
 }
 
-/** Stream, bound and validate a success body. */
-async function parseBoundedJson<T>(
-  response: Response,
-  schema: z.ZodType<T>,
-  maxBytes: number,
-): Promise<MorningBriefReadResult<T>> {
-  const capped = await readCappedText(response, maxBytes);
-  if (capped === null) {
-    return { kind: "oversized" };
-  }
-  let parsedJson: unknown;
-  try {
-    parsedJson = JSON.parse(capped.text);
-  } catch {
-    return { kind: "malformed" };
-  }
-  const parsed = schema.safeParse(parsedJson);
-  if (!parsed.success) {
-    return { kind: "malformed" };
-  }
-  const link = response.headers.get("link");
-  const seconds = retryAfterSeconds(response);
-  return {
-    kind: "ok",
-    data: parsed.data,
-    bytes: capped.bytes,
-    headers: {
-      ...(link === null ? {} : { link }),
-      ...(seconds === undefined ? {} : { retryAfterSeconds: seconds }),
-    },
-  };
-}
-
-/** Deps one authorized reader closure needs; all resolved before any request. */
-interface ConnectorReaderRuntime {
-  readonly db: Db;
-  readonly scope: MorningBriefCollectionScope;
-  readonly connectorSlug: ConnectorSlug;
-  readonly snapshot: ConnectorRuntimeSnapshot;
-  readonly firewall: DecisionFirewall;
-  readonly base: string;
-  readonly accessToken: string;
-  readonly budget: MorningBriefReaderBudget;
-  readonly signal: AbortSignal;
-  readonly stillAuthorized: () => Promise<boolean>;
-}
-
-/** Mutable per-source counters and the terminal revocation flag. */
-interface ConnectorReaderState {
-  attempted: number;
-  streamedBytes: number;
-  revoked: boolean;
-}
-
-function connectorReaderUrl(
-  runtime: ConnectorReaderRuntime,
+function readerUrl(
+  request: MorningBriefReaderRequest,
   pathname: string,
   query: Readonly<Record<string, string>> | undefined,
-): URL {
-  // Paths and parameters are built by the provider module from validated
-  // segments; nothing provider-supplied reaches this URL.
-  const url = new URL(`${runtime.base}${pathname}`);
-  for (const [key, value] of Object.entries(query ?? {})) {
-    url.searchParams.set(key, value);
+): string {
+  const url = new URL(pathname.replace(/^\/+/, ""), request.apiBase);
+  for (const [name, value] of Object.entries(query ?? {})) {
+    url.searchParams.set(name, value);
   }
-  return url;
+  return url.toString();
 }
 
 /**
- * Re-authorize this exact URL against live policy, then allow or refuse it.
+ * Run `collect` against an authorized, bounded reader for one source.
  *
- * `no_match`, `ambiguous`, `block` and every missing-metadata case stay
- * refusals. Only an unambiguous allow reaches the provider, and a context that
- * moved since admission terminates the whole source instead.
+ * The final payload is fenced: the same authority is re-derived after `collect`
+ * returns, so work that was already in flight when access was withdrawn is
+ * discarded rather than released. In-flight provider work cannot be retracted;
+ * this promises admission and release fencing, not instantaneous revocation.
  */
-async function authorizeConnectorRequest(
-  runtime: ConnectorReaderRuntime,
-  state: ConnectorReaderState,
-  url: URL,
-): Promise<"allow" | "denied" | "revoked"> {
-  const policies = await loadNetworkPolicies(
-    runtime.db,
-    runtime.scope,
-    runtime.connectorSlug,
-    runtime.snapshot,
-    runtime.firewall.name,
-  );
-  if (!(await runtime.stillAuthorized())) {
-    state.revoked = true;
-    return "revoked";
+export async function withMorningBriefConnectorReader<T>(
+  args: {
+    readonly scope: MorningBriefCollectionScope;
+    readonly connectorSlug: ConnectorSlug;
+    readonly apiBase: string;
+    readonly environmentName: string;
+    readonly budget: MorningBriefReaderBudget;
+    readonly db: Db;
+    readonly signal: AbortSignal;
+  },
+  collect: (reader: MorningBriefConnectorReader) => Promise<T>,
+): Promise<MorningBriefAccessResult<T>> {
+  const request: MorningBriefReaderRequest = args;
+  const deadlineAt = Date.now() + args.budget.deadlineMs;
+  const state: ReaderState = {
+    requests: 0,
+    totalBytes: 0,
+    revoked: null,
+    truncatedTotalBytes: false,
+  };
+
+  // Authorize before any credential is decrypted or refreshed.
+  const admission = await authorize(request, null, null);
+  if (admission.kind !== "allow") {
+    return unavailable(
+      admission.kind === "revoked" ? admission.reason : "not-authorized",
+    );
   }
-  const decision = matchFirewallRequestDecision(
-    [runtime.firewall],
-    "GET",
-    url.toString(),
-    policies,
-    { status: "present", value: runtime.firewall.name },
-  );
-  return decision.kind === "allow" ? "allow" : "denied";
-}
+  args.signal.throwIfAborted();
 
-function budgetExhausted(
-  runtime: ConnectorReaderRuntime,
-  state: ConnectorReaderState,
-): boolean {
-  return (
-    state.attempted >= runtime.budget.maxRequests ||
-    state.streamedBytes >= runtime.budget.maxTotalResponseBytes ||
-    nowDate().getTime() >= runtime.budget.deadlineAt
+  const selectedConnectorId = await resolveSelectedConnectorId(
+    args.db,
+    args.scope,
+    args.connectorSlug,
   );
-}
+  if (selectedConnectorId === null) {
+    return unavailable("not-connected");
+  }
+  const credential = await loadCredential(request, selectedConnectorId);
+  if (credential.kind === "unavailable") {
+    return unavailable(credential.reason);
+  }
+  args.signal.throwIfAborted();
+  const pinned = credential.pinned;
 
-/**
- * One authorized fixed-host GET reader over an already-resolved authority.
- *
- * It is not an arbitrary authenticated fetch proxy: the host comes from the
- * accepted catalog, the method is always GET, credential-bearing redirects are
- * refused, and each request is authorized again immediately before it is sent.
- */
-function createConnectorReader(
-  runtime: ConnectorReaderRuntime,
-  state: ConnectorReaderState,
-): MorningBriefConnectorReader {
-  return {
-    attempted: () => {
-      return state.attempted;
-    },
-    streamedBytes: () => {
-      return state.streamedBytes;
-    },
-    getJson: async <T>(request: {
-      readonly pathname: string;
-      readonly query?: Readonly<Record<string, string>>;
-      readonly schema: z.ZodType<T>;
-      readonly signal: AbortSignal;
-    }): Promise<MorningBriefReadResult<T>> => {
-      if (state.revoked || request.signal.aborted || runtime.signal.aborted) {
+  const reader: MorningBriefConnectorReader = {
+    accountEmail: pinned.externalEmail,
+    async getJson({ pathname, query, schema }) {
+      if (state.revoked !== null) {
         return { kind: "revoked" };
       }
-      if (budgetExhausted(runtime, state)) {
-        return { kind: "budget-exhausted" };
+      const limit = budgetLimit(state, request, deadlineAt);
+      if (limit !== null) {
+        return { kind: "budget-exhausted", limit };
       }
-
-      const url = connectorReaderUrl(runtime, request.pathname, request.query);
-      const authorized = await authorizeConnectorRequest(runtime, state, url);
-      if (authorized !== "allow") {
-        return { kind: authorized === "revoked" ? "revoked" : "denied" };
+      const url = readerUrl(request, pathname, query);
+      const decision = await authorize(request, pinned, url);
+      if (decision.kind === "revoked") {
+        state.revoked = decision.reason;
+        return { kind: "revoked" };
       }
+      if (decision.kind === "denied") {
+        return { kind: "denied" };
+      }
+      // A revocation observed while this request waited for authorization must
+      // stop it, even though the gate itself passed.
+      if (state.revoked !== null) {
+        return { kind: "revoked" };
+      }
+      args.signal.throwIfAborted();
 
-      state.attempted += 1;
-      let response: Response;
-      try {
-        response = await fetch(url, {
+      // Every attempt is charged, so a failing provider cannot buy retries.
+      state.requests += 1;
+      const settled = await settle(
+        fetch(url, {
           method: "GET",
+          // A redirect would carry this credential to an unauthorized host.
           redirect: "error",
-          signal: request.signal,
+          signal: args.signal,
           headers: {
-            Authorization: `Bearer ${runtime.accessToken}`,
-            Accept: "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-            "User-Agent": "okou-morning-brief",
+            Authorization: `Bearer ${credential.accessToken}`,
+            Accept: "application/json",
           },
-        });
-      } catch {
-        // Provider errors are never stored or logged verbatim.
-        return request.signal.aborted || runtime.signal.aborted
-          ? { kind: "revoked" }
-          : { kind: "failed" };
+        }),
+        args.signal,
+      );
+      if (!settled.ok) {
+        return { kind: "provider-failed" };
+      }
+      const response = settled.value;
+      if (response.status === 404) {
+        void response.body?.cancel();
+        return { kind: "not-found" };
+      }
+      if (response.status === 429) {
+        const retryAfter = retryAfterMs(response);
+        void response.body?.cancel();
+        return { kind: "rate-limited", retryAfterMs: retryAfter };
+      }
+      if (!response.ok) {
+        void response.body?.cancel();
+        // 401 and 403 mean this credential lost the access it was granted;
+        // never a healthy empty read.
+        if (response.status === 401 || response.status === 403) {
+          state.revoked = "reconnect-required";
+          return { kind: "revoked" };
+        }
+        return { kind: "provider-failed" };
       }
 
-      const refusal = await classifyProviderResponse(response);
-      if (refusal) {
-        return refusal;
-      }
-      const result = await parseBoundedJson(
+      const body = await readBoundedResponseText(
         response,
-        request.schema,
         Math.min(
-          runtime.budget.maxResponseBytes,
-          runtime.budget.maxTotalResponseBytes - state.streamedBytes,
+          request.budget.maxResponseBytes,
+          Math.max(0, request.budget.maxTotalResponseBytes - state.totalBytes),
         ),
       );
-      if (result.kind === "ok") {
-        state.streamedBytes += result.bytes;
+      args.signal.throwIfAborted();
+      if (body.kind === "too_large") {
+        state.truncatedTotalBytes = true;
+        return { kind: "too-large" };
       }
-      return result;
+      state.totalBytes += Buffer.byteLength(body.text, "utf8");
+      const parsed = schema.safeParse(safeJsonParse(body.text));
+      if (!parsed.success) {
+        // Provider payloads never reach a log; only the shape failed.
+        L.warn("Morning Brief source returned an unusable payload", {
+          connectorSlug: args.connectorSlug,
+          orgId: args.scope.orgId,
+        });
+        return { kind: "malformed" };
+      }
+      return { kind: "ok", value: parsed.data };
     },
+  };
+
+  const value = await collect(reader);
+  args.signal.throwIfAborted();
+  if (state.revoked !== null) {
+    return unavailable(state.revoked);
+  }
+  // Release fence: the payload only leaves this wrapper while the same
+  // authority that admitted the read is still current.
+  const release = await authorize(request, pinned, null);
+  if (release.kind !== "allow") {
+    return unavailable(
+      release.kind === "revoked" ? release.reason : "not-authorized",
+    );
+  }
+  return {
+    kind: "ok",
+    value,
+    requests: state.requests,
+    truncatedTotalBytes: state.truncatedTotalBytes,
   };
 }
 
 /**
- * Run one collector under a live-authorized, fixed-host GET reader.
- *
- * Authorization happens before the credential is decrypted, again before every
- * single request, and once more before the collected value is released. A
- * denied endpoint is a per-request outcome the collector turns into a coverage
- * gap; a changed owner, membership, Agent, installation or account selection
- * discards the entire source. Work already in flight at the provider cannot be
- * retracted — what is promised is that no further request is issued and no
- * payload from a revoked context is ever returned.
+ * The preview entrypoint's gate: the implementation switch plus a canonical,
+ * installed and enabled Morning Brief the authenticated member actually owns.
  */
-export const withMorningBriefConnectorReader$ = command(
-  async (
-    { set },
-    args: {
-      readonly scope: MorningBriefCollectionScope;
-      readonly connectorSlug: ConnectorSlug;
-      readonly budget: MorningBriefReaderBudget;
-      readonly signal: AbortSignal;
-    },
-    collect: (reader: MorningBriefConnectorReader) => Promise<void>,
-  ): Promise<MorningBriefAccessResult> => {
-    const db = set(writeDb$);
-    const { scope, connectorSlug, budget, signal } = args;
-
-    const snapshot = await loadConnectorRuntimeSnapshot(db);
-    signal.throwIfAborted();
-    const firewall = await loadDecisionFirewall(snapshot, connectorSlug);
-    if (!firewall) {
-      return { kind: "denied", reason: "connector-not-visible" };
-    }
-    const base = firewall.apis[0]?.base;
-    if (base === undefined) {
-      return { kind: "denied", reason: "connector-not-visible" };
-    }
-
-    const access = await resolveConnectorAccess(
-      db,
-      scope,
-      connectorSlug,
-      snapshot,
-      signal,
-    );
-    if (access.kind !== "ok") {
-      return access;
-    }
-    const pinned = access.authority;
-
-    const token = await resolveAccessToken(
-      db,
-      scope,
-      access.connection,
-      budget.tokenEnvironmentNames,
-      signal,
-    );
-    if (token.kind !== "ok") {
-      return token;
-    }
-
-    const state: ConnectorReaderState = {
-      attempted: 0,
-      streamedBytes: 0,
-      revoked: false,
+type MorningBriefCollectionAdmission =
+  | { readonly kind: "ok"; readonly scope: MorningBriefCollectionScope }
+  | {
+      readonly kind: "denied";
+      readonly reason:
+        | "feature-disabled"
+        | "not-installed"
+        | "disabled"
+        | "no-membership";
     };
 
-    const stillAuthorized = async (): Promise<boolean> => {
-      const rescoped = await set(
-        admitMorningBriefCollectionScope$,
-        { orgId: scope.orgId, userId: scope.userId },
-        signal,
-      );
-      if (rescoped.kind !== "admitted") {
-        return false;
-      }
-      const current = await resolveConnectorAccess(
-        db,
-        rescoped.scope,
-        connectorSlug,
-        snapshot,
-        signal,
-      );
-      return current.kind === "ok" && sameAuthority(current.authority, pinned);
-    };
-
-    const reader = createConnectorReader(
-      {
-        db,
-        scope,
-        connectorSlug,
-        snapshot,
-        firewall,
-        base,
-        accessToken: token.accessToken,
-        budget,
-        signal,
-        stillAuthorized,
-      },
-      state,
-    );
-
-    await collect(reader);
-    if (state.revoked || signal.aborted) {
-      return { kind: "revoked" };
-    }
-    // Final release gate: a payload collected under an authority that has
-    // since moved is discarded rather than returned.
-    if (!(await stillAuthorized())) {
-      return { kind: "revoked" };
-    }
-    return { kind: "collected" };
+export async function admitMorningBriefCollection(
+  db: Db,
+  args: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly anchor: Date;
   },
-);
+): Promise<MorningBriefCollectionAdmission> {
+  const featureSwitchContext = await loadUserFeatureSwitchContext(
+    db,
+    args.orgId,
+    args.userId,
+  );
+  if (
+    !isFeatureEnabled(FeatureSwitchKey.SimpleMorningBrief, featureSwitchContext)
+  ) {
+    return { kind: "denied", reason: "feature-disabled" };
+  }
+  const state = await loadMorningBriefMigrationState(db, {
+    orgId: args.orgId,
+    userId: args.userId,
+  });
+  if (state.kind !== "installed") {
+    return { kind: "denied", reason: "not-installed" };
+  }
+  if (!state.automation.enabled) {
+    return { kind: "denied", reason: "disabled" };
+  }
+  const scope: MorningBriefCollectionScope = {
+    orgId: args.orgId,
+    userId: args.userId,
+    installationId: state.installation.id,
+    agentId: state.installation.agentId,
+    chatThreadId: state.chatThreadId,
+    anchor: args.anchor,
+    timezone: state.automation.timezone,
+  };
+  if (!(await memberIsAdmitted(db, scope))) {
+    return { kind: "denied", reason: "no-membership" };
+  }
+  return { kind: "ok", scope };
+}

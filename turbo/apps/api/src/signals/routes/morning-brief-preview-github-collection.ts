@@ -6,8 +6,9 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { request$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
+import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
-import { executeMorningBriefGithubCollection$ } from "../services/morning-brief-github-collection.service";
+import { executeMorningBriefGithubCollection } from "../services/morning-brief-github-collection.service";
 import {
   isTestEndpointAllowed,
   testEndpointNotFoundResponse,
@@ -38,9 +39,9 @@ const collect$ = command(async ({ get, set }, signal: AbortSignal) => {
     return body.response;
   }
   const auth = get(organizationAuthContext$);
-  const execution = await set(
-    executeMorningBriefGithubCollection$,
+  const execution = await executeMorningBriefGithubCollection(
     {
+      db: set(writeDb$),
       owner: { orgId: auth.orgId, userId: auth.userId },
       anchor: new Date(body.data.scheduledFor),
     },

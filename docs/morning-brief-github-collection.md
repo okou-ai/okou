@@ -30,51 +30,46 @@ migration, no occurrence row and no rollback data to clean up.
 
 ## Authorization
 
-Direct API collection does not inherit the Runner firewall, so
-`morning-brief-connector-reader.service.ts` composes the platform's existing
-authorities rather than inventing a second permission algorithm:
+Direct API collection does not inherit the Runner firewall, so authorization is
+owned by the **shared** Morning Brief connector reader
+(`morning-brief-connector-reader.service.ts`), implemented and owned by
+[#34809](https://github.com/vm0-ai/okou/issues/34809). This slice consumes that
+exact implementation and adds no second authorization engine:
 
-1. Canonical Morning Brief ownership and its enabled schedule
-   (`morning-brief-migration-state.service.ts`).
-2. The live Clerk membership generation. A removed member — including through
-   account erasure — is not admitted, and a rejoin issues a different
-   membership id.
-3. The installation's pinned Agent, revalidated as still usable. A deleted
-   Agent, or a private Agent owned by somebody else, is a missing Agent and
-   never falls back to the organization default.
-4. Accepted catalog visibility for the member, plus the Agent's connector grant.
-   Owning a connector is not authorization.
-5. The exact account the canonical destination thread selected
-   (`workflow-automation-account.service.ts`). An explicit selection that no
-   longer names a usable account **fails closed**; only the absence of a
-   selection may use the member's default account.
-6. Live URL-level policy: the member's active permission grants expanded against
-   the accepted catalog's routing metadata, decided by the shared
-   `matchFirewallRequestDecision`. Only an unambiguous `allow` reaches GitHub —
-   `deny`, `ask`, expired, no match, ambiguous and missing metadata are all
-   refusals.
+- `admitMorningBriefCollection` is the preview gate: the default-off
+  `simpleMorningBrief` switch, a canonical installed and enabled Morning Brief,
+  and live membership/erasure admission. It returns the frozen
+  `MorningBriefCollectionScope` — owner, installation, pinned Agent, canonical
+  thread, anchor and timezone — none of which a caller can supply.
+- `withMorningBriefConnectorReader` re-derives live authority before the
+  credential is accessed, before every request, and again before the collected
+  payload is released: canonical ownership, membership, the pinned connector
+  account, the Agent's grants, accepted catalog visibility and effective URL
+  policy. Holding a credential is not permission; every gate must produce an
+  unambiguous `allow`.
+- An explicit account selection that no longer resolves fails closed
+  (`not-connected`); it never falls back to the member's default account.
+- A URL the effective policy refuses is an endpoint-local `denied`, which this
+  adapter records as a branch coverage gap. A terminal loss of authority
+  latches and discards the whole source.
 
-Authorization runs before the credential is decrypted, again before **every**
-request, and once more before the collected bundle is released. An
-endpoint-specific refusal is a bounded branch coverage gap. A change of owner,
-membership, Agent, installation or selected account discards the entire source.
-
-Work already in flight at the provider cannot be retracted. What is promised is
-narrower and testable: no further request is issued, and no payload collected
-under a revoked authority is ever returned.
-
-Only fixed-host `GET`s are performed. There is no `GH_TOKEN` process
+This adapter supplies only the GitHub path vocabulary, its budget, its fixed
+API host and its token environment name. It never holds the credential, builds
+its own request, or decides whether it may read. There is no `GH_TOKEN` process
 credential, controller credential, organization admin account, GitHub App or
 installation token, and no Run materialization anywhere on this path.
-Credential-bearing redirects are disabled (`redirect: "error"`).
 
-### Shared-reader ownership
+### Known shared-reader limitation
 
-The shared Morning Brief connector reader is owned by
-[#34809](https://github.com/vm0-ai/okou/issues/34809). Its Gmail slice and this
-GitHub slice were implemented concurrently against the same published
-semantics. Whichever lands on `main` first is canonical, and the later one
-converges onto it rather than keeping a second authorizer.
+The shared reader currently latches **every** provider `401`/`403` as
+`reconnect-required` and discards the whole source. GitHub's secondary rate
+limit is delivered as a `403` carrying `Retry-After`, and a single repository
+can legitimately refuse one read while the rest remain authorized, so that
+classification is recorded here as present behaviour rather than the desired
+contract. The concrete capability is requested in #34809; until it lands, this
+adapter's endpoint-local denial coverage is exercised through the effective
+permission policy, which is the authorization path that actually decides
+access. No second engine is maintained to work around it.
 
 ## GitHub semantics
 
@@ -147,11 +142,13 @@ branch windows, normalized items with provenance, coverage, and sanitized
 failure and truncation codes. It distinguishes:
 
 - healthy `empty` from `partial`
-- no account, unavailable account and reconnect-required
-- endpoint policy denial from provider `401`/`403`
-- primary and secondary rate limits (a `403` carrying `Retry-After`)
+- endpoint policy denial (`denied`) from a missing item (`not-found`)
+- rate limiting, with the provider's bounded `Retry-After` as metadata
 - malformed, oversized and other provider failures
-- cancellation
+- request, byte and deadline budget exhaustion
+- the shared reader's terminal source-unavailable reasons: `not-connected`,
+  `not-authorized`, `reconnect-required`, `source-revoked` and
+  `provider-failed`, none of which release a bundle
 
 An unread next page, `incomplete_results`, a `total_count` beyond what was
 read, an unprocessed relevant pull request, an unsupported notification

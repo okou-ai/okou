@@ -16,24 +16,24 @@ const c = initContract();
  * the authenticated caller's live canonical Morning Brief ownership.
  */
 
-/** Why an invocation never reached GitHub at all. */
+/**
+ * Why no bundle was released.
+ *
+ * The first four are the shared admission gate: the implementation switch and
+ * a canonical, installed, enabled Morning Brief the authenticated member still
+ * owns. The rest are the shared reader's terminal source-unavailable reasons,
+ * which discard the whole source rather than leaving a coverage gap.
+ */
 export const morningBriefGithubSkipReasonSchema = z.enum([
   "feature-disabled",
-  "brief-absent",
-  "brief-pending",
-  "brief-inconsistent",
-  "brief-paused",
-  "missing-timezone",
-  "missing-agent",
-  "membership-revoked",
-  "connector-not-visible",
-  "connector-not-granted",
-  "account-missing",
-  "account-unavailable",
-  "account-needs-reconnect",
-  "endpoint-not-authorized",
-  /** The owner's authority moved mid-collection; the bundle was discarded. */
-  "context-revoked",
+  "not-installed",
+  "disabled",
+  "no-membership",
+  "not-connected",
+  "not-authorized",
+  "reconnect-required",
+  "source-revoked",
+  "provider-failed",
 ]);
 
 /** The terminal classification of one collection. */
@@ -65,6 +65,7 @@ export const morningBriefGithubLimitSchema = z.enum([
   "commit-status",
   "unsupported-subject",
   "unsafe-link",
+  "missing-item",
   "items",
   "requests",
   "response-bytes",
@@ -153,12 +154,12 @@ export const morningBriefGithubBundleSchema = z.object({
   items: z.array(morningBriefGithubItemSchema),
   counts: z.object({
     items: z.number().int().nonnegative(),
+    /** Requests this adapter asked the shared reader for, including refusals. */
     requests: z.number().int().nonnegative(),
-    responseBytes: z.number().int().nonnegative(),
     textCharacters: z.number().int().nonnegative(),
   }),
   /** Bounded provider hint; metadata only, never a sleep or retry budget. */
-  retryAfterSeconds: z.number().int().nonnegative().optional(),
+  retryAfterMs: z.number().int().nonnegative().optional(),
 });
 
 const collectResponseSchema = z.discriminatedUnion("result", [
