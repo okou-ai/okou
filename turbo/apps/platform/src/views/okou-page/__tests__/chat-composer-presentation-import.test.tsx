@@ -160,3 +160,22 @@ test("Import a presentation deck from a new chat", async () => {
   );
   expect(capture.runPrompts).toStrictEqual([IMPORT_PROMPT]);
 });
+
+test("The Presentation tile still offers exactly the decks it always has", async () => {
+  mockTemplateChat();
+  const user = userEvent.setup();
+
+  await setupPage({
+    context,
+    path: `/chats/${THREAD_ID}`,
+    host: "app.okou.ai",
+  });
+
+  await openTemplatePicker(user, "Presentation");
+  // This tile publishes to the presentation catalog, which has no notion of a
+  // document. Widening it because a second catalog learned to take one would
+  // accept a file this path cannot compile.
+  expect(
+    screen.getByLabelText("Import your own deck").getAttribute("accept"),
+  ).toBe(".pptx,.ppt,.pdf");
+});
