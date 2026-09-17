@@ -20,7 +20,7 @@ const toggleButtonVariants = cva(
         tile: "block w-full min-w-0 px-3 py-2.5",
       },
       selected: {
-        true: "border-primary/40 bg-primary/10 text-brand-text dark:border-primary/50 dark:bg-primary/15",
+        true: "border-primary/40 bg-primary/10 text-selected-foreground dark:border-primary/50 dark:bg-primary/15",
         // Preserve the opaque fill and the legacy hover layer on touch devices.
         false:
           "border-control-border bg-control-surface text-muted-foreground [&:hover]:bg-state-hover-overlay hover:text-foreground",

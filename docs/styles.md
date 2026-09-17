@@ -229,6 +229,21 @@ tokens.
 
 The preset also supplies `--primary-400`, because one filled control reads that ramp stop rather than `--primary`. The checked `Switch` track takes 400 so it sits one step darker than the brand stop, which is what keeps a 44x24 fill reading as a fill on a near-white card; `Checkbox` and `Radio` are small enough to take `--primary` directly. A preset has a single anchor and no ramp, so pointing the stop at that anchor puts the checked toggle on the same fill as every other filled control instead of leaving it Amber under every palette. This is the same move the presets already make on the gray ramp, and it is confined to the one stop with a consumer: `--brand-subtle`, `--brand-text`, and `--brand-text-hover` keep reading the Amber ramp, because the brand mark is not palette-driven.
 
+The label of a selected or pressed control is the one piece of brand-coloured
+text that is palette-driven, so it has its own token, `--selected-foreground`.
+It defaults to `--brand-text` in both themes, which leaves the product's own
+palette byte-identical, and a preset repoints it at that preset's hue. The
+reason it cannot stay on the brand stop is the surface it sits on: that label is
+painted on the `primary/10` wash inside a `primary/40` border, both of which the
+preset already repaints, so an Amber label on a blue wash read as a second
+colour system rather than as the selected state. A preset has a single anchor
+and no ramp, so the stop is built the way `--nav-copy` is — the preset's hue at
+a fixed saturation, and a lightness chosen to clear 4.5:1 on that wash in Light
+and on the dark card in Dark. Reach for `text-selected-foreground` for the label
+of a control that carries `aria-pressed` or a selected state on the primary
+wash; keep `text-brand-text` for accent text that is the brand speaking, such as
+link and ghost button labels.
+
 Auxiliary controls and previews revealed by hover or keyboard focus change
 opacity immediately. Do not add opacity transitions to message actions, sidebar
 controls, card overlays, or similar contextual affordances; temporary

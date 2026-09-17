@@ -142,6 +142,18 @@
   --color-brand-text-hover: hsl(var(--brand-text-hover));
 
   /* ===================================
+   * Selected label
+   *
+   * The label of a control that is selected or pressed, painted on the
+   * `primary/10` selection wash. It defaults to the brand text stop, so the
+   * product's own palette is unchanged, but unlike `--brand-text` it follows
+   * the active colour theme: the wash and the border already take the theme's
+   * primary, and a label that stayed Amber on top of them read as a different
+   * colour system rather than as the selected state.
+   * =================================== */
+  --color-selected-foreground: hsl(var(--selected-foreground));
+
+  /* ===================================
    * Stroke weight
    *
    * The product draws lines at two weights, and a component picks between them
@@ -490,6 +502,10 @@
     --brand-text: var(--primary-700); /* #885600 */
     --brand-text-hover: var(--primary-800); /* #6C4300 */
 
+    /* The selected label sits on the brand stop while the product's own
+       palette is active; a colour theme repoints it at that theme's hue. */
+    --selected-foreground: var(--brand-text);
+
     /* Text on filled/colored backgrounds (buttons, tooltips, badges) */
     --on-filled: 0 0% 100%; /* Pure white for text on colored backgrounds */
 
@@ -649,6 +665,9 @@
     --brand-subtle: var(--primary-950); /* #31200B */
     --brand-text: var(--primary-300); /* #FFA500 */
     --brand-text-hover: var(--primary-200); /* #FFC580 */
+
+    /* See the light note: the same default, on this theme's brand stop. */
+    --selected-foreground: var(--brand-text);
 
     /* Text on filled/colored backgrounds (buttons, tooltips, badges) */
     --on-filled: 0 0% 100%; /* Pure white for text on colored backgrounds */

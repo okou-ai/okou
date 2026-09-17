@@ -535,7 +535,8 @@ function ChatThreadHeaderIconButton({
             iconSize="md"
             className={cn(
               "shrink-0 duration-150",
-              open && "bg-primary/10 text-brand-text hover:text-brand-text",
+              open &&
+                "bg-primary/10 text-selected-foreground hover:text-selected-foreground",
             )}
             aria-label={label}
             aria-pressed={open}
