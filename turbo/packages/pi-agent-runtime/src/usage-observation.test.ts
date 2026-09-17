@@ -120,9 +120,13 @@ function responseEvents(
   ];
 }
 
-function serveSse(body: string, fragment = false): void {
+function serveSse(
+  body: string,
+  fragment = false,
+  url = "https://usage-provider.example/*",
+): void {
   server.use(
-    http.post("https://usage-provider.example/*", () => {
+    http.post(url, () => {
       const bytes = new TextEncoder().encode(body);
       let offset = 0;
       const stream = new ReadableStream<Uint8Array>({
@@ -159,6 +163,22 @@ const reportedTokens = {
 };
 
 describe("API provider usage evidence", () => {
+  it("accepts a case-insensitive SSE media type", async () => {
+    server.use(
+      http.post("https://usage-provider.example/*", () => {
+        return new HttpResponse(sse(responseEvents(reportedUsage)), {
+          headers: { "content-type": "Text/Event-Stream; Charset=UTF-8" },
+        });
+      }),
+    );
+    const result = await run();
+    expect(result.assistantMessage.stopReason).toBe("stop");
+    expect(result.usageObservation).toEqual({
+      coverage: "complete",
+      tokens: reportedTokens,
+    });
+  });
+
   it.each([false, true])(
     "normalizes and replaces fragmented Responses usage (Codex %s)",
     async (codex) => {
@@ -510,61 +530,63 @@ async function nativeModel(dialect: string) {
 }
 
 describe("native provider usage evidence", () => {
-  it("ignores Messages frames outside the SDK's named message events", async () => {
-    const { config, materialized } = await nativeModel("anthropic-messages");
-    const start = sse([
-      {
-        type: "message_start",
-        message: {
-          id: "messages_usage",
-          type: "message",
-          role: "assistant",
-          model: config.model,
-          content: [],
-          usage: {
-            input_tokens: 11,
-            cache_read_input_tokens: 7,
-            cache_creation_input_tokens: 5,
-            output_tokens: 0,
+  it.each(["plain", "bom", "fragmented-bom"])(
+    "ignores unrelated Messages frames (%s)",
+    async (encoding) => {
+      const { config, materialized } = await nativeModel("anthropic-messages");
+      const start = sse([
+        {
+          type: "message_start",
+          message: {
+            id: "messages_usage",
+            type: "message",
+            role: "assistant",
+            model: config.model,
+            content: [],
+            usage: {
+              input_tokens: 11,
+              cache_read_input_tokens: 7,
+              cache_creation_input_tokens: 5,
+              output_tokens: 0,
+            },
           },
         },
-      },
-    ]);
-    const unrelated = JSON.stringify({
-      type: "message_delta",
-      usage: { input_tokens: 999, output_tokens: 999 },
-    });
-    const ignored = [
-      "event: ping\ndata: keepalive\n\n",
-      `event: message_delta\nevent: ping\ndata: ${unrelated}\n\n`,
-      `event: extension\ndata: ${unrelated}\n\n`,
-      `data: ${unrelated}\n\n`,
-    ].join("");
-    const end = sse([
-      {
+      ]);
+      const unrelated = JSON.stringify({
         type: "message_delta",
-        delta: { stop_reason: "end_turn" },
-        usage: { output_tokens: 3 },
-      },
-      { type: "message_stop" },
-    ]);
-    server.use(
-      http.post(piNativeInferenceUrl(config), () => {
-        return new HttpResponse(start + ignored + end, {
-          headers: { "content-type": "text/event-stream" },
-        });
-      }),
-    );
-    const result = await run(materialized);
-    expect(result.assistantMessage).toMatchObject({
-      stopReason: "stop",
-      usage: { input: 11, cacheRead: 7, cacheWrite: 5, output: 3 },
-    });
-    expect(result.usageObservation).toEqual({
-      coverage: "complete",
-      tokens: { input: 11, cacheRead: 7, cacheCreation: 5, output: 3 },
-    });
-  });
+        usage: { input_tokens: 999, output_tokens: 999 },
+      });
+      const ignored = [
+        "event: ping\ndata: keepalive\n\n",
+        `event: message_delta\nevent: ping\ndata: ${unrelated}\n\n`,
+        `event: extension\ndata: ${unrelated}\n\n`,
+        `data: ${unrelated}\n\n`,
+        `\uFEFFevent: message_delta\ndata: ${unrelated}\n\n`,
+      ].join("");
+      const end = sse([
+        {
+          type: "message_delta",
+          delta: { stop_reason: "end_turn" },
+          usage: { output_tokens: 3 },
+        },
+        { type: "message_stop" },
+      ]);
+      serveSse(
+        (encoding === "plain" ? "" : "\uFEFF") + start + ignored + end,
+        encoding === "fragmented-bom",
+        piNativeInferenceUrl(config),
+      );
+      const result = await run(materialized);
+      expect(result.assistantMessage).toMatchObject({
+        stopReason: "stop",
+        usage: { input: 11, cacheRead: 7, cacheWrite: 5, output: 3 },
+      });
+      expect(result.usageObservation).toEqual({
+        coverage: "complete",
+        tokens: { input: 11, cacheRead: 7, cacheCreation: 5, output: 3 },
+      });
+    },
+  );
 
   it.each(["zero", "absent", "partial", "failed"])(
     "observes Messages BYOK %s",
@@ -644,7 +666,7 @@ describe("native provider usage evidence", () => {
     },
   );
 
-  it.each(["zero", "absent", "partial", "bad-crc", "oversized"])(
+  it.each(["zero", "absent", "partial", "bad-crc", "oversized", "mixed-case"])(
     "observes fragmented Bedrock BYOK %s",
     async (kind) => {
       const { config, materialized } = await nativeModel(
@@ -684,20 +706,25 @@ describe("native provider usage evidence", () => {
             },
           });
           return new HttpResponse(stream, {
-            headers: { "content-type": "application/vnd.amazon.eventstream" },
+            headers: {
+              "content-type":
+                kind === "mixed-case"
+                  ? "Application/Vnd.Amazon.EventStream"
+                  : "application/vnd.amazon.eventstream",
+            },
           });
         }),
       );
       const result = await run(materialized);
       expect(result.usageObservation).toEqual({
         coverage:
-          kind === "zero"
+          kind === "zero" || kind === "mixed-case"
             ? "complete"
             : kind === "partial"
               ? "partial"
               : "unavailable",
         tokens:
-          kind === "zero" || kind === "partial"
+          kind === "zero" || kind === "partial" || kind === "mixed-case"
             ? {
                 input: kind === "zero" ? 0 : 11,
                 output: 0,

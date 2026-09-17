@@ -71,9 +71,16 @@ function sseReader(observer: PiUsageObserver, dialect: SseDialect) {
   let lineHasContent = false;
   let previousCr = false;
   let ended = false;
+  let firstFrame = true;
   const inspect = (): void => {
+    const stripBom = firstFrame;
+    firstFrame = false;
     if (dropped) return;
-    const lines = frame.toString("utf8", 0, size).split(/\r\n|\r|\n/u);
+    // SSE permits one UTF-8 BOM at the start of the stream, not every frame.
+    const text = frame.toString("utf8", 0, size);
+    const lines = (stripBom ? text.replace(/^\uFEFF/u, "") : text).split(
+      /\r\n|\r|\n/u,
+    );
     const name = sseEventName(lines);
     if (dialect === "messages") {
       // The pinned Messages decoder rejects errors before parsing their data.
@@ -163,7 +170,10 @@ export function observePiUsageFetch(
     observer.beginResponse();
     if (
       !response.body ||
-      !response.headers.get("content-type")?.includes("text/event-stream")
+      !response.headers
+        .get("content-type")
+        ?.toLowerCase()
+        .includes("text/event-stream")
     ) {
       return response;
     }
@@ -269,9 +279,9 @@ export class PiUsageHttpHandler extends NodeHttpHandler {
     const source: unknown = result.response.body;
     if (
       !(source instanceof Readable) ||
-      !result.response.headers["content-type"]?.includes(
-        "application/vnd.amazon.eventstream",
-      )
+      !result.response.headers["content-type"]
+        ?.toLowerCase()
+        .includes("application/vnd.amazon.eventstream")
     ) {
       return result;
     }

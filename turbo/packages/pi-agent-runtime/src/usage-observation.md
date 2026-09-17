@@ -35,6 +35,12 @@ unnamed events cannot contribute usage or parsing loss. Later bytes after a
 terminal boundary cannot replace that result or downgrade its coverage.
 Original transport bytes are still forwarded.
 
+The SSE observer removes an optional UTF-8 BOM only at the beginning of each
+response stream, preserving first-frame usage even with fragmented delivery.
+It does not treat a BOM in a later frame as a stream prefix.
+SSE and Bedrock media types are recognized without regard to case, as required
+by HTTP; their original headers are forwarded unchanged.
+
 Each execution owns its observer. Responses/Codex and Messages use a passive
 fetch stream transform. Bedrock decorates the existing Smithy HTTP handler,
 preserving its proxy, DNS, credentials and cancellation policy. Smithy's event
