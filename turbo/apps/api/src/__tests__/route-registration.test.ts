@@ -1,10 +1,16 @@
+import { morningBriefChatCollectionPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-chat-collection-preview";
 import { morningBriefCollectionPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-collection-preview";
+import { morningBriefGenerationPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-generation-preview";
+import { morningBriefGithubCollectionContract } from "@okouai/api-contracts/contracts/morning-brief-github-collection";
 import { morningBriefGmailCollectionPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-gmail-collection-preview";
 
 import { ROUTES } from "../signals/route";
 import { assertUniqueRouteRegistrations } from "../signals/route-entry";
+import { morningBriefChatCollectionPreviewRoutes } from "../signals/routes/morning-brief-chat-collection-preview";
 import { morningBriefCollectionPreviewRoutes } from "../signals/routes/morning-brief-collection-preview";
+import { morningBriefGenerationPreviewRoutes } from "../signals/routes/morning-brief-generation-preview";
 import { morningBriefGmailCollectionPreviewRoutes } from "../signals/routes/morning-brief-gmail-collection-preview";
+import { morningBriefPreviewGithubCollectionRoutes } from "../signals/routes/morning-brief-preview-github-collection";
 
 describe("API route registrations", () => {
   // Hono keeps both registrations for a duplicated path and answers with the
@@ -18,44 +24,81 @@ describe("API route registrations", () => {
     }).not.toThrow();
   });
 
-  // The Morning Brief collection preview only means anything if an operator can
-  // actually reach it on a development server or a protected preview
-  // deployment, and its own suite may not compose an app from this
-  // production-global table. Asserting the exact entry object keeps that suite's
-  // results statements about the deployed endpoint rather than about a
-  // look-alike slice: the handler it exercises is the handler `ROUTES` holds.
-  it("registers the Morning Brief collection preview an operator invokes", () => {
-    const [entry, ...extra] = morningBriefCollectionPreviewRoutes;
+  // A collection preview only means anything if an operator can actually reach
+  // it on a development server or a protected preview deployment, and its own
+  // suite composes an app from a route slice rather than from this
+  // production-global table. A route reachable only from a test harness would
+  // pass its own suite and still be absent from the deployed table. Asserting
+  // the exact entry object keeps those suites' results statements about the
+  // deployed endpoint rather than about a look-alike slice: the handler they
+  // exercise is the handler `ROUTES` holds.
+  it.each([
+    {
+      name: "Morning Brief collection preview",
+      routes: morningBriefCollectionPreviewRoutes,
+      route: morningBriefCollectionPreviewContract.collect,
+    },
+    {
+      name: "Morning Brief Gmail collection preview",
+      routes: morningBriefGmailCollectionPreviewRoutes,
+      route: morningBriefGmailCollectionPreviewContract.collect,
+    },
+    {
+      name: "Morning Brief Chat collection preview",
+      routes: morningBriefChatCollectionPreviewRoutes,
+      route: morningBriefChatCollectionPreviewContract.collect,
+    },
+  ])("registers the $name an operator invokes", ({ routes, route }) => {
+    const [entry, ...extra] = routes;
     expect(extra).toHaveLength(0);
-    expect(entry?.route).toBe(morningBriefCollectionPreviewContract.collect);
+    expect(entry?.route).toBe(route);
+    expect(ROUTES).toContain(entry);
+    expect(
+      ROUTES.filter((registered) => {
+        return registered.route.path === route.path;
+      }),
+    ).toStrictEqual([entry]);
+  });
+
+  // The platform-funded generation preview has the same requirement: its own
+  // suite may not compose an app from this production-global table, so the
+  // exact entry object is asserted here. Registration is what makes that
+  // suite's results statements about the deployed endpoint, and what makes the
+  // production 404 a statement about a route that really exists.
+  it("registers the Morning Brief generation preview an operator invokes", () => {
+    const [entry, ...extra] = morningBriefGenerationPreviewRoutes;
+    expect(extra).toHaveLength(0);
+    expect(entry?.route).toBe(morningBriefGenerationPreviewContract.preview);
     expect(ROUTES).toContain(entry);
     expect(
       ROUTES.filter((registered) => {
         return (
           registered.route.path ===
-          morningBriefCollectionPreviewContract.collect.path
+          morningBriefGenerationPreviewContract.preview.path
         );
       }),
     ).toStrictEqual([entry]);
   });
 
-  // Same requirement for the Gmail preview, which is the first real consumer of
-  // the shared connector reader. A route reachable only from a test harness
-  // would pass its own suite and still be absent from the deployed table.
-  it("registers the Morning Brief Gmail collection preview an operator invokes", () => {
-    const [entry, ...extra] = morningBriefGmailCollectionPreviewRoutes;
+  // And for the GitHub priorities preview, the reader's second collection
+  // consumer: the deployed table must hold this module's own entry object, so
+  // the behaviour suite that drives that handler through the exported slice is
+  // talking about the endpoint an operator actually reaches.
+  it("registers the Morning Brief GitHub collection preview an operator invokes", () => {
+    const [entry, ...extra] = morningBriefPreviewGithubCollectionRoutes;
     expect(extra).toHaveLength(0);
-    expect(entry?.route).toBe(
-      morningBriefGmailCollectionPreviewContract.collect,
-    );
+    expect(entry?.route).toBe(morningBriefGithubCollectionContract.collect);
     expect(ROUTES).toContain(entry);
     expect(
       ROUTES.filter((registered) => {
         return (
           registered.route.path ===
-          morningBriefGmailCollectionPreviewContract.collect.path
+          morningBriefGithubCollectionContract.collect.path
         );
       }),
     ).toStrictEqual([entry]);
+    expect(morningBriefGithubCollectionContract.collect.path).toBe(
+      "/api/morning-brief/preview/github-collection",
+    );
   });
 });

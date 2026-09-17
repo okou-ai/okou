@@ -178,6 +178,24 @@ test("Return to the conversation that started a chat message", async () => {
       label: "Open original message in Telegram",
       href: "https://t.me/example/123",
     },
+    {
+      id: "source-telegram-dm",
+      kind: "telegram" as const,
+      label: "Open chat in Telegram",
+      href: "https://t.me/okou_bot",
+    },
+    {
+      id: "source-teams-personal",
+      kind: "teams" as const,
+      label: "Open chat in Microsoft Teams",
+      href: "https://teams.microsoft.com/l/chat/0/0?tenantId=tenant-1&users=28%3Abot-1",
+    },
+    {
+      id: "source-agentphone-dm",
+      kind: "agentphone" as const,
+      label: "Open Messages",
+      href: "sms:+15551234567",
+    },
   ];
   const events: MockChatEventInput[] = sources.map((source, index) => {
     return {
@@ -204,8 +222,8 @@ test("Return to the conversation that started a chat message", async () => {
       role: "user",
       content: null,
       runId: RUN_A,
-      seqId: 6,
-      createdAt: "2026-08-01T10:00:06.000Z",
+      seqId: sources.length + 1,
+      createdAt: "2026-08-01T10:00:08.000Z",
       userMessage: {
         version: 1,
         parts: [
@@ -217,10 +235,14 @@ test("Return to the conversation that started a chat message", async () => {
     assistantEvent({
       id: "source-answer",
       runId: RUN_A,
-      seqId: 7,
+      seqId: sources.length + 2,
       text: "All imported requests were reviewed.",
     }),
-    completedEvent({ id: "source-complete", runId: RUN_A, seqId: 8 }),
+    completedEvent({
+      id: "source-complete",
+      runId: RUN_A,
+      seqId: sources.length + 3,
+    }),
   );
   installRunChat({ chatEvents: events });
 
@@ -241,9 +263,19 @@ test("Return to the conversation that started a chat message", async () => {
     "https://slack.com/archives/C123/p456",
   );
 
-  const iMessageLabel = screen.getByText("iMessage");
-  expect(iMessageLabel).toBeInTheDocument();
-  expect(iMessageLabel.closest("a")).toBeNull();
+  await expect(findLink("Open chat in Telegram")).resolves.toHaveTextContent(
+    "Open chat",
+  );
+  await expect(
+    findLink("Open chat in Microsoft Teams"),
+  ).resolves.toHaveTextContent("Open chat");
+  await expect(
+    findLink("Open original message in Telegram"),
+  ).resolves.toHaveTextContent("Open message");
+  const unlinkedPhoneLabel = screen.getAllByText("iMessage").find((label) => {
+    return label.closest("a") === null;
+  });
+  expect(unlinkedPhoneLabel).toBeInTheDocument();
 });
 
 test("Show the current usage settlement on the correct run", async () => {

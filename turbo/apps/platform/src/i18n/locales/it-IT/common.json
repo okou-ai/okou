@@ -665,7 +665,6 @@
       "importedSlides_other": "{{count}} diapositive",
       "importFile": "Importa il tuo file",
       "importFileHint": "({{formats}})",
-      "importStarted": "Analisi di {{filename}} in corso. Comparirà in Custom quando sarà pronto.",
       "importUnsupported": "Scegli un file {{formats}} per creare un modello.",
       "introVideo": "Video introduttivo",
       "introVideoUnavailable": "Questo modello video non è più disponibile. Rimuovilo per inviare il messaggio.",
@@ -2014,10 +2013,12 @@
       "github": "GitHub",
       "lark": "Lark",
       "openChat": "Apri la chat",
+      "openChatIn": "Apri chat in {{integration}}",
       "openFeishuChat": "Apri la chat originale in Feishu",
       "openGithubMessage": "Apri il problema o la pull request originale in GitHub",
       "openLarkChat": "Apri la chat originale in Lark",
       "openMessage": "Apri il messaggio",
+      "openMessages": "Apri Messaggi",
       "openSlackMessage": "Apri il messaggio originale in Slack",
       "openTeamsMessage": "Apri il messaggio originale in Microsoft Teams",
       "openTelegramMessage": "Apri il messaggio originale in Telegram",
@@ -4271,6 +4272,8 @@
         "tiny-wanderer": "Piccolo vagabondo"
       },
       "presentation": {
+        "bloom-pitch": "Presentazione a petali",
+        "blueprint-academy": "Campus del disegno tecnico",
         "botane-organic-deck": "Giardino color malva",
         "business-data-presentation": "Cruscotto Berry",
         "crayon-learning-deck": "Scarabocchio a pastello",
@@ -4279,9 +4282,19 @@
         "editorial-magazine-deck": "Rivista cartacea",
         "landing-consulting-deck": "Browser al neon",
         "lumina-creative-studio": "Adesivi per pennelli",
+        "meridian": "Blocchi cobalto",
         "mosaic-geometric-pitch": "Piastrelle Bauhaus",
+        "neo-brutalism": "Negozio d'ombra",
+        "nocturne": "Palco di mezzanotte",
+        "pixel-glitch": "Pixel arcade",
         "playful-launch-presentation": "Sala giochi Sunburst",
-        "playful-pop-deck": "Caramelle al neon"
+        "playful-pop-deck": "Caramelle al neon",
+        "prospectus": "Presentazione homepage",
+        "schoolhouse": "Poster kraft",
+        "sticker-scrapbook": "Quaderno di adesivi",
+        "strata": "Scala rossa",
+        "taped-consulting": "Parete di polaroid",
+        "vantage": "Sala riunioni numerata"
       },
       "video": {
         "chinese-ink-art": "Pittura a inchiostro cinese",
@@ -5381,7 +5394,8 @@
       "availableNow": "Disponibili ora",
       "inUse_one": "{{active}} di {{limit}} slot in uso",
       "inUse_many": "{{active}} di {{limit}} slot in uso",
-      "inUse_other": "{{active}} di {{limit}} slot in uso"
+      "inUse_other": "{{active}} di {{limit}} slot in uso",
+      "waitingForSandbox": "In attesa di Sandbox"
     },
     "tiers": {
       "custom": "Personalizzato",

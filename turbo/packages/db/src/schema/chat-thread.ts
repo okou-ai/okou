@@ -27,6 +27,17 @@ import {
 } from "./agent-run-reference";
 
 /**
+ * Server-private origin classification for a whole chat thread.
+ *
+ * `ordinary` is only written by a successful new ordinary-Chat insert.
+ * `morning_brief` marks a thread that has hosted official Morning Brief
+ * content; it is sticky for the life of the thread. A NULL value means the
+ * origin is unknown, which is the only honest answer for rows created before
+ * this column existed or by a creation path that does not classify itself.
+ */
+export type ChatThreadProvenance = "ordinary" | "morning_brief";
+
+/**
  * Chat Threads table
  * User-facing conversation thread identity, created before any run starts.
  * Provides instant sidebar entries and stable URL routing.
@@ -168,6 +179,16 @@ export const chatThreads = pgTable(
     })
       .default(0)
       .notNull(),
+    /**
+     * Server-private thread origin. Never exposed in a Chat or Settings
+     * response and never supplied by a client. Nullable on purpose and
+     * deliberately without a column default: an older API version that does not
+     * know this column keeps creating unknown rows, which must not be read as
+     * ordinary. See {@link ChatThreadProvenance}.
+     */
+    provenance: varchar("provenance", {
+      length: 32,
+    }).$type<ChatThreadProvenance>(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },

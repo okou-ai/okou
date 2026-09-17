@@ -37,7 +37,10 @@ export function decideWindowOpen(
     return { action: "allow-in-app" };
   }
 
-  if (EXTERNAL_PROTOCOLS.has(url.protocol)) {
+  if (
+    EXTERNAL_PROTOCOLS.has(url.protocol) ||
+    /^sms:\+[1-9]\d{7,14}$/u.test(url.href)
+  ) {
     return { action: "open-external", url: url.toString() };
   }
 

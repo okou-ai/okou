@@ -97,14 +97,65 @@ interface GmailStub {
   readonly calls: GmailCall[];
 }
 
+/** A MIME part exactly as Gmail nests it inside `payload`. */
+interface StubPart {
+  readonly mimeType?: string;
+  readonly filename?: string;
+  readonly body?: { readonly data: string };
+  readonly parts?: readonly StubPart[];
+}
+
+function inlineTextPart(text: string): StubPart {
+  return {
+    mimeType: "text/plain",
+    body: { data: Buffer.from(text).toString("base64url") },
+  };
+}
+
+function inlineHtmlPart(html: string): StubPart {
+  return {
+    mimeType: "text/html",
+    body: { data: Buffer.from(html).toString("base64url") },
+  };
+}
+
+/**
+ * Place `leaf` at an exact MIME depth.
+ *
+ * `payload` itself is depth 0 and the parts handed to `stubGmail` are its
+ * children, so `nestedPart(12, leaf)` puts the leaf at depth 12 — the deepest
+ * level the collector's cap still visits.
+ */
+function nestedPart(depth: number, leaf: StubPart): StubPart {
+  let part = leaf;
+  for (let level = 1; level < depth; level += 1) {
+    part = { mimeType: "multipart/mixed", parts: [part] };
+  }
+  return part;
+}
+
+/** Structural parts that carry nothing, used to spend the node budget. */
+function emptyParts(count: number): readonly StubPart[] {
+  return Array.from({ length: count }, () => {
+    return { mimeType: "multipart/mixed" };
+  });
+}
+
 interface StubMessage {
   readonly id: string;
   readonly threadId?: string;
   readonly internalDate: number;
+  /** Send `internalDate` verbatim, including values Gmail should never send. */
+  readonly rawInternalDate?: string;
   readonly unread?: boolean;
   readonly subject?: string;
+  readonly from?: string;
+  readonly to?: string;
+  readonly date?: string;
   readonly text?: string;
   readonly html?: string;
+  /** Replace the generated body with a MIME tree the defaults cannot express. */
+  readonly parts?: readonly StubPart[];
   /** Pad the response past the reader's 256 KiB per-response ceiling. */
   readonly oversized?: boolean;
 }
@@ -112,9 +163,12 @@ interface StubMessage {
 function messagePayload(message: StubMessage) {
   const headers = [
     { name: "Subject", value: message.subject ?? `Subject ${message.id}` },
-    { name: "From", value: "sender@example.test" },
-    { name: "To", value: "owner@example.test" },
-    { name: "Date", value: new Date(message.internalDate).toUTCString() },
+    { name: "From", value: message.from ?? "sender@example.test" },
+    { name: "To", value: message.to ?? "owner@example.test" },
+    {
+      name: "Date",
+      value: message.date ?? new Date(message.internalDate).toUTCString(),
+    },
   ];
   const text =
     message.oversized === true
@@ -122,20 +176,18 @@ function messagePayload(message: StubMessage) {
       : (message.text ?? `Body ${message.id}`);
   const body =
     message.html === undefined
-      ? {
-          mimeType: "text/plain",
-          body: { data: Buffer.from(text).toString("base64url") },
-        }
-      : {
-          mimeType: "text/html",
-          body: { data: Buffer.from(message.html).toString("base64url") },
-        };
+      ? inlineTextPart(text)
+      : inlineHtmlPart(message.html);
   return {
     id: message.id,
     threadId: message.threadId ?? `thread-${message.id}`,
-    internalDate: String(message.internalDate),
+    internalDate: message.rawInternalDate ?? String(message.internalDate),
     labelIds: message.unread === true ? ["INBOX", "UNREAD"] : ["INBOX"],
-    payload: { mimeType: "multipart/alternative", headers, parts: [body] },
+    payload: {
+      mimeType: "multipart/alternative",
+      headers,
+      parts: message.parts ?? [body],
+    },
   };
 }
 
@@ -362,6 +414,31 @@ async function collectOk(
     throw new Error(`Expected a Gmail collection, received ${response.status}`);
   }
   return { body: response.body };
+}
+
+function itemById(collection: MorningBriefGmailCollection, messageId: string) {
+  return collection.items.find((item) => {
+    return item.messageId === messageId;
+  });
+}
+
+/**
+ * Every character this collection retained, in the budget's own unit.
+ *
+ * The promised 40,000-character bound covers the whole normalized result, so a
+ * header that escapes it is as much an overrun as an oversized excerpt.
+ */
+function retainedCharacters(collection: MorningBriefGmailCollection): number {
+  return collection.items.reduce((total, item) => {
+    return (
+      total +
+      (item.subject?.length ?? 0) +
+      (item.from?.length ?? 0) +
+      (item.to?.length ?? 0) +
+      (item.date?.length ?? 0) +
+      item.excerpt.length
+    );
+  }, 0);
 }
 
 /** Wait for a known number of provider arrivals, never for a duration. */
@@ -1018,5 +1095,288 @@ describe("Morning Brief Gmail collection preview", () => {
     expect(response.body).toMatchObject({ status: "unavailable", items: [] });
     expect(response.body.coverage.recent).toBe("failed");
     expect(response.body.failure).toBe("provider-failed");
+  });
+
+  it("bounds every retained header and keeps its authorized sibling", async () => {
+    const fixture = await setupOwner();
+    const stub = stubGmail({
+      recent: [
+        {
+          id: "oversized-headers",
+          internalDate: ANCHOR_MS - 1000,
+          // Every one of these is transport-valid: the whole response stays far
+          // below the reader's 256 KiB ceiling, so nothing upstream rejects it
+          // and normalization is the only thing that can bound it.
+          subject: "S".repeat(50_000),
+          from: `${"f".repeat(4000)}@example.test`,
+          to: Array.from({ length: 200 }, (_unused, index) => {
+            return `recipient-${index}@example.test`;
+          }).join(", "),
+          date: `Wed, 16 Sep 2026 07:00:00 +0000 ${"(padding)".repeat(200)}`,
+          text: "Short body.",
+        },
+        {
+          id: "normal-headers",
+          internalDate: ANCHOR_MS - 2000,
+          subject: "Weekly sync",
+          text: "Agenda attached.",
+        },
+      ],
+      unread: [],
+    });
+
+    const response = await collectOk(fixture);
+    const oversized = itemById(response.body, "oversized-headers");
+    expect(oversized?.subject).toHaveLength(300);
+    expect(oversized?.from).toHaveLength(320);
+    expect(oversized?.to).toHaveLength(1000);
+    expect(oversized?.date).toHaveLength(64);
+    expect(oversized?.excerpt).toBe("Short body.");
+    // The sibling keeps everything it legitimately had.
+    expect(itemById(response.body, "normal-headers")).toMatchObject({
+      subject: "Weekly sync",
+      excerpt: "Agenda attached.",
+    });
+    expect(retainedCharacters(response.body)).toBeLessThanOrEqual(40_000);
+    expect(response.body.coverage.truncations).toContain("header-characters");
+    // Shortened content is reduced coverage, never a clean read.
+    expect(response.body.status).toBe("partial");
+    // Bounding is normalization only: the provider budget is untouched.
+    expect(listCalls(stub)).toHaveLength(2);
+    expect(detailCalls(stub)).toHaveLength(2);
+  });
+
+  it("charges every retained field to the final text budget under high volume", async () => {
+    const fixture = await setupOwner();
+    const bulk = (branch: "recent" | "unread") => {
+      return Array.from({ length: 25 }, (_unused, index) => {
+        return {
+          id: `${branch}-${String(index).padStart(2, "0")}`,
+          internalDate: ANCHOR_MS - 1000 * (index + 1),
+          unread: branch === "unread",
+          subject: `${branch} ${"S".repeat(400)}`,
+          text: "B".repeat(2000),
+        };
+      });
+    };
+    const stub = stubGmail({ recent: bulk("recent"), unread: bulk("unread") });
+
+    const response = await collectOk(fixture);
+    // The detail cap, not the budget, decides how many messages are read.
+    expect(detailCalls(stub)).toHaveLength(40);
+    expect(response.body.coverage.truncations).toContain("detail-requests");
+    // Interleaving keeps the unread backlog from starving behind the window.
+    expect(
+      new Set(
+        response.body.items.flatMap((item) => {
+          return item.branches;
+        }),
+      ),
+    ).toStrictEqual(new Set(["recent", "unread"]));
+    expect(retainedCharacters(response.body)).toBeLessThanOrEqual(40_000);
+    expect(response.body.coverage.truncations).toContain("text-characters");
+    expect(response.body.status).toBe("partial");
+  });
+
+  it("names the MIME cap instead of calling a deep message HTML-only", async () => {
+    const fixture = await setupOwner();
+    const stub = stubGmail({
+      recent: [
+        {
+          id: "depth-at-limit",
+          internalDate: ANCHOR_MS - 1000,
+          parts: [nestedPart(12, inlineTextPart("Deep but still reachable."))],
+        },
+        {
+          id: "depth-past-limit",
+          internalDate: ANCHOR_MS - 2000,
+          parts: [nestedPart(13, inlineTextPart("Below the depth cap."))],
+        },
+      ],
+      unread: [],
+    });
+
+    const response = await collectOk(fixture);
+    expect(itemById(response.body, "depth-at-limit")).toMatchObject({
+      excerptSource: "text-plain",
+      excerpt: "Deep but still reachable.",
+    });
+    // A part the walk never reached is not evidence of an HTML-only message.
+    expect(itemById(response.body, "depth-past-limit")).toMatchObject({
+      excerptSource: "mime-truncated",
+      excerpt: "",
+    });
+    expect(response.body.coverage.truncations).toContain("mime-nodes");
+    expect(response.body.status).toBe("partial");
+    expect(detailCalls(stub)).toHaveLength(2);
+  });
+
+  it("names the MIME cap when the node budget runs out", async () => {
+    const fixture = await setupOwner();
+    stubGmail({
+      recent: [
+        {
+          id: "nodes-at-limit",
+          internalDate: ANCHOR_MS - 1000,
+          // `payload` plus 199 children is exactly the 200-node budget.
+          parts: [
+            ...emptyParts(198),
+            inlineTextPart("The last node inside the budget."),
+          ],
+        },
+      ],
+      unread: [],
+    });
+    const atLimit = await collectOk(fixture);
+    expect(itemById(atLimit.body, "nodes-at-limit")).toMatchObject({
+      excerptSource: "text-plain",
+      excerpt: "The last node inside the budget.",
+    });
+    expect(atLimit.body.coverage.truncations).toStrictEqual([]);
+    expect(atLimit.body.status).toBe("ok");
+
+    stubGmail({
+      recent: [
+        {
+          id: "nodes-past-limit",
+          internalDate: ANCHOR_MS - 1000,
+          parts: [
+            ...emptyParts(199),
+            inlineTextPart("One node past the budget."),
+          ],
+        },
+      ],
+      unread: [],
+    });
+    const pastLimit = await collectOk(fixture);
+    expect(itemById(pastLimit.body, "nodes-past-limit")).toMatchObject({
+      excerptSource: "mime-truncated",
+      excerpt: "",
+    });
+    expect(pastLimit.body.coverage.truncations).toContain("mime-nodes");
+    expect(pastLimit.body.status).toBe("partial");
+  });
+
+  it("never lets a filename-bearing attachment subtree become the excerpt", async () => {
+    const fixture = await setupOwner();
+    const forwarded: StubPart = {
+      mimeType: "message/rfc822",
+      filename: "forwarded.eml",
+      parts: [inlineTextPart("Attached plaintext that must never surface.")],
+    };
+    const stub = stubGmail({
+      recent: [
+        {
+          id: "attachment-and-inline",
+          internalDate: ANCHOR_MS - 1000,
+          parts: [forwarded, inlineHtmlPart("<p>Visible inline body.</p>")],
+        },
+        {
+          id: "attachment-only",
+          internalDate: ANCHOR_MS - 2000,
+          parts: [forwarded],
+        },
+      ],
+      unread: [],
+    });
+
+    const response = await collectOk(fixture);
+    const inline = itemById(response.body, "attachment-and-inline");
+    expect(inline?.excerptSource).toBe("html-normalized");
+    expect(inline?.excerpt).toContain("Visible inline body.");
+    // With nothing inline left, the message declares the gap rather than
+    // reaching into the attachment already sitting in this response.
+    expect(itemById(response.body, "attachment-only")).toMatchObject({
+      excerptSource: "none",
+      excerpt: "",
+    });
+    expect(
+      response.body.items.every((item) => {
+        return !item.excerpt.includes("Attached plaintext");
+      }),
+    ).toBeTruthy();
+    // Pruning content this response already carried is not a cap, and the two
+    // message reads are the only provider requests it takes. An attachment
+    // endpoint would arrive unhandled and fail this suite outright.
+    expect(response.body.coverage.truncations).toStrictEqual([]);
+    expect(response.body.status).toBe("ok");
+    expect(detailCalls(stub)).toHaveLength(2);
+  });
+
+  it("reports a malformed recent timestamp as provider data, not an empty day", async () => {
+    const fixture = await setupOwner();
+    stubGmail({
+      recent: [
+        {
+          id: "malformed-recent",
+          internalDate: ANCHOR_MS - 1000,
+          // Numeric and transport-valid, but no instant a `Date` can hold.
+          rawInternalDate: "1000000000000000000000",
+        },
+        { id: "valid-recent", internalDate: ANCHOR_MS - 2000 },
+      ],
+      unread: [],
+    });
+
+    const response = await collectOk(fixture);
+    // Filtering the unusable message out of the window silently reported a
+    // healthy read of whatever was left.
+    expect(response.body.coverage.recent).toBe("failed");
+    expect(response.body.status).toBe("partial");
+    expect(
+      response.body.items.map((item) => {
+        return item.messageId;
+      }),
+    ).toStrictEqual(["valid-recent"]);
+  });
+
+  it("answers a malformed unread timestamp without an unhandled exception", async () => {
+    const fixture = await setupOwner();
+    stubGmail({
+      recent: [],
+      unread: [
+        {
+          id: "malformed-unread",
+          internalDate: ANCHOR_MS - 1000,
+          unread: true,
+          rawInternalDate: "not-a-timestamp",
+        },
+        { id: "valid-unread", internalDate: ANCHOR_MS - 2000, unread: true },
+      ],
+    });
+
+    const response = await collectOk(fixture);
+    expect(response.body.coverage.unread).toBe("failed");
+    expect(response.body.status).toBe("partial");
+    expect(
+      response.body.items.map((item) => {
+        return item.messageId;
+      }),
+    ).toStrictEqual(["valid-unread"]);
+    // No timestamp is invented for the message that could not be normalized.
+    expect(
+      response.body.items.every((item) => {
+        return !Number.isNaN(Date.parse(item.internalDate));
+      }),
+    ).toBeTruthy();
+  });
+
+  it("keeps a 429 that carries no Retry-After classified as rate-limited", async () => {
+    const fixture = await setupOwner();
+    stubGmail({ recent: [], unread: [] });
+    server.use(
+      http.get(GMAIL_LIST_URL, () => {
+        return HttpResponse.json({ error: { code: 429 } }, { status: 429 });
+      }),
+    );
+
+    const response = await collectOk(fixture);
+    // The limit is the fact; the advisory header is optional metadata.
+    expect(response.body).toMatchObject({
+      status: "unavailable",
+      failure: "rate-limited",
+      items: [],
+    });
+    expect(response.body.coverage.retryAfterMs).toBeNull();
   });
 });

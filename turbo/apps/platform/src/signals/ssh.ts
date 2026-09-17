@@ -9,7 +9,6 @@ import {
   updateSshCredentialRequestSchema,
   type SshCredentialResponse,
 } from "@okouai/api-contracts/contracts/ssh-credentials";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { SSH_ERROR_CODES } from "@okouai/api-contracts/contracts/ssh-errors";
 import {
   cloudflareAccessContract,
@@ -29,7 +28,6 @@ import {
 } from "@okouai/api-contracts/contracts/ssh-connections";
 import { clerk$, currentOrgInfo$, user$ } from "./auth.ts";
 import { runtimeAuthenticatedIdentity$ } from "./auth-context.ts";
-import { featureSwitch$ } from "./external/feature-switch.ts";
 import { apiClient$ } from "./api-client.ts";
 import { currentAgent$, agents$ } from "./agent.ts";
 import { accept } from "../lib/accept.ts";
@@ -143,10 +141,6 @@ export const importSshPrivateKeyFile$ = command(
 );
 
 export const sshIdentity$ = computed(async (get) => {
-  const enabled = get(sshEnabled$);
-  if (!enabled) {
-    return null;
-  }
   // User changes invalidate SSH state; global org switching reloads the page.
   // Background token/profile updates must not reset credential forms.
   const [user, identity] = await Promise.all([
@@ -284,20 +278,12 @@ const finishSshSave$ = command(
   },
 );
 
-export const sshEnabled$ = computed((get) => {
-  return get(featureSwitch$)[FeatureSwitchKey.SshAccess];
-});
 const view$ = state<"hosts" | "credentials" | "access">("hosts");
 export const sshView$ = computed((get) => {
-  const view = get(view$);
-  return view === "access" && !get(sshEnabled$) ? "hosts" : view;
+  return get(view$);
 });
-export const changeSshView$ = command(({ get, set }, value: string) => {
-  if (
-    value === "hosts" ||
-    value === "credentials" ||
-    (value === "access" && get(sshEnabled$))
-  ) {
+export const changeSshView$ = command(({ set }, value: string) => {
+  if (value === "hosts" || value === "credentials" || value === "access") {
     set(view$, value);
   }
 });
@@ -309,7 +295,7 @@ export const sshTransportEditor$ = computed((get) => {
   return get(transportEditor$);
 });
 export const chooseSshTransport$ = command(({ get, set }, mode: string) => {
-  if (mode === "direct" || (mode === "cloudflare_access" && get(sshEnabled$))) {
+  if (mode === "direct" || mode === "cloudflare_access") {
     set(transportEditor$, (current) => {
       return { ...current, mode };
     });
@@ -343,7 +329,7 @@ export const replaceSshAccessToken$ = command(({ set }, replace: boolean) => {
 });
 export const sshCloudflareConfigs$ = computed(async (get) => {
   get(reload$);
-  if (!get(sshEnabled$) || !(await get(sshIdentity$))) {
+  if (!(await get(sshIdentity$))) {
     return null;
   }
   const result = await accept(
@@ -417,9 +403,6 @@ export const sshConflict$ = computed((get) => {
 });
 export const sshDialog$ = computed(async (get) => {
   const dialog = get(dialog$);
-  if (dialog?.kind.endsWith("-access") && !get(sshEnabled$)) {
-    return null;
-  }
   return dialog?.identity === (await get(sshIdentity$)) ? dialog : null;
 });
 export const sshConnections$ = computed(async (get) => {
@@ -670,7 +653,7 @@ export const openSshCloudflareDialog$ = command(
   ) => {
     const identity = await get(sshIdentity$);
     signal.throwIfAborted();
-    if (!identity || !get(sshEnabled$)) {
+    if (!identity) {
       return;
     }
     set(conflict$, null);
@@ -748,7 +731,7 @@ export const saveSshCloudflare$ = command(
     const signal = set(resetAccessFormSave$, parentSignal);
     const dialog = await get(sshDialog$);
     signal.throwIfAborted();
-    if (!dialog || !get(sshEnabled$)) {
+    if (!dialog) {
       return;
     }
     const clients = await get(sshClients$);
@@ -795,7 +778,7 @@ export const saveSshCloudflare$ = command(
     }
     signal.throwIfAborted();
     set(invalidateSsh$);
-    if (get(dialog$) !== dialog || !get(sshEnabled$)) {
+    if (get(dialog$) !== dialog) {
       return;
     }
     if (conflict) {

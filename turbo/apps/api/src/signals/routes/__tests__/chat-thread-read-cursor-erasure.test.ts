@@ -520,6 +520,239 @@ describe("account erasure fences direct chat-thread read-cursor writes", () => {
     );
   });
 
+  it("keeps the old cursor readable and unpublished between the mark-read UPDATE and its COMMIT", async () => {
+    const fixture = await createUnreadCursorFixture();
+    const before = await readCursor(fixture);
+    context.mocks.ably.publish.mockClear();
+
+    const marked = await withChatThreadContentBarrierFixture(
+      {
+        chatThreadId: fixture.threadId,
+        stopAt: "commit",
+        work: async (barrier) => {
+          const marking = chat.markThreadRead(fixture.actor, fixture.threadId);
+          await barrier.entered;
+
+          // Paused with the advancing UPDATE already applied and the whole
+          // transaction still open: separate real requests keep reading the old
+          // cursor and the unread indicator, and nothing has been published.
+          await expect(readCursor(fixture)).resolves.toBe(before);
+          await expect(unreadThreadIds(fixture)).resolves.toContain(
+            fixture.threadId,
+          );
+          expect(context.mocks.ably.publish).not.toHaveBeenCalled();
+
+          barrier.release();
+          return await marking;
+        },
+      },
+      context.signal,
+    );
+
+    expect(marked.lastReadAt).not.toBe(before);
+    await expect(readCursor(fixture)).resolves.toBe(marked.lastReadAt);
+    await expect(unreadThreadIds(fixture)).resolves.not.toContain(
+      fixture.threadId,
+    );
+    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+      "chatThreadReadCursorUpdated",
+      {
+        threadId: fixture.threadId,
+        agentId: fixture.agentId,
+        lastReadAt: marked.lastReadAt,
+      },
+    );
+  });
+
+  it("keeps the old cursor readable and unpublished between the mark-unread UPDATE and its COMMIT", async () => {
+    const fixture = await createCursorFixture();
+    const before = await readCursor(fixture);
+    expect(before).not.toBeNull();
+    context.mocks.ably.publish.mockClear();
+
+    await withChatThreadContentBarrierFixture(
+      {
+        chatThreadId: fixture.threadId,
+        stopAt: "commit",
+        work: async (barrier) => {
+          const clearing = chat.markThreadUnread(
+            fixture.actor,
+            fixture.threadId,
+          );
+          await barrier.entered;
+
+          await expect(readCursor(fixture)).resolves.toBe(before);
+          expect(context.mocks.ably.publish).not.toHaveBeenCalled();
+
+          barrier.release();
+          await clearing;
+        },
+      },
+      context.signal,
+    );
+
+    await expect(readCursor(fixture)).resolves.toBeNull();
+    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+      "chatThreadReadCursorUpdated",
+      {
+        threadId: fixture.threadId,
+        agentId: fixture.agentId,
+        lastReadAt: null,
+      },
+    );
+  });
+
+  it("rolls the advanced mark-read cursor back when its operation is cancelled after the UPDATE", async () => {
+    const fixture = await createUnreadCursorFixture();
+    const before = await readCursor(fixture);
+    const controller = new AbortController();
+    const cancellable = chat.readCursorWritesWithOperationSignal(
+      controller.signal,
+    );
+    context.mocks.ably.publish.mockClear();
+
+    await withChatThreadContentBarrierFixture(
+      {
+        chatThreadId: fixture.threadId,
+        stopAt: "cursor-update",
+        work: async (barrier) => {
+          const marking = cancellable.markRead(fixture.actor, fixture.threadId);
+          const entered = await barrier.entered;
+          // The advancing UPDATE already changed its row, so this is not a
+          // pre-write lock timeout, and the old cursor is still what any other
+          // caller reads.
+          expect(entered.rowCount).toBe(1);
+          await expect(readCursor(fixture)).resolves.toBe(before);
+
+          controller.abort(new DOMException("Operation ended", "AbortError"));
+          barrier.release();
+          await expect(marking).rejects.toThrow(/Unknown response status 500/);
+        },
+      },
+      context.signal,
+    );
+
+    expect(context.mocks.ably.publish).not.toHaveBeenCalled();
+    await expect(readCursor(fixture)).resolves.toBe(before);
+    await expect(unreadThreadIds(fixture)).resolves.toContain(fixture.threadId);
+
+    // A rolled back attempt is not a durable denial: the same request advances
+    // the cursor once its operation is no longer cancelled.
+    const marked = await chat.markThreadRead(fixture.actor, fixture.threadId);
+    expect(marked.lastReadAt).not.toBe(before);
+    await expect(readCursor(fixture)).resolves.toBe(marked.lastReadAt);
+  });
+
+  it("rolls the cleared mark-unread cursor back when its operation is cancelled after the UPDATE", async () => {
+    const fixture = await createCursorFixture();
+    const before = await readCursor(fixture);
+    expect(before).not.toBeNull();
+    const controller = new AbortController();
+    const cancellable = chat.readCursorWritesWithOperationSignal(
+      controller.signal,
+    );
+    context.mocks.ably.publish.mockClear();
+
+    await withChatThreadContentBarrierFixture(
+      {
+        chatThreadId: fixture.threadId,
+        stopAt: "cursor-update",
+        work: async (barrier) => {
+          const clearing = cancellable.markUnread(
+            fixture.actor,
+            fixture.threadId,
+          );
+          const entered = await barrier.entered;
+          expect(entered.rowCount).toBe(1);
+          await expect(readCursor(fixture)).resolves.toBe(before);
+
+          controller.abort(new DOMException("Operation ended", "AbortError"));
+          barrier.release();
+          await expect(clearing).rejects.toThrow(/Unknown response status 500/);
+        },
+      },
+      context.signal,
+    );
+
+    expect(context.mocks.ably.publish).not.toHaveBeenCalled();
+    await expect(readCursor(fixture)).resolves.toBe(before);
+
+    await expect(
+      chat.markThreadUnread(fixture.actor, fixture.threadId),
+    ).resolves.toMatchObject({ lastReadAt: null });
+  });
+
+  it("keeps a committed mark-read cursor when the operation is cancelled after COMMIT, publishing nothing", async () => {
+    const fixture = await createUnreadCursorFixture();
+    const before = await readCursor(fixture);
+    const controller = new AbortController();
+    const cancellable = chat.readCursorWritesWithOperationSignal(
+      controller.signal,
+    );
+    context.mocks.ably.publish.mockClear();
+
+    await withChatThreadContentBarrierFixture(
+      {
+        chatThreadId: fixture.threadId,
+        stopAt: "commit",
+        work: async (barrier) => {
+          const marking = cancellable.markRead(fixture.actor, fixture.threadId);
+          await barrier.entered;
+          // Cancelling here is already past the transaction's post-write abort
+          // check, so releasing sends a COMMIT that succeeds. This is a race
+          // the caller loses, not a rollback.
+          controller.abort(new DOMException("Operation ended", "AbortError"));
+          barrier.release();
+          await expect(marking).rejects.toThrow(/Unknown response status 500/);
+        },
+      },
+      context.signal,
+    );
+
+    // Publication runs after the awaited transaction, so the cancelled response
+    // carries no invalidation even though the advance is durable.
+    expect(context.mocks.ably.publish).not.toHaveBeenCalled();
+    const advanced = await readCursor(fixture);
+    expect(advanced).not.toBe(before);
+    await expect(unreadThreadIds(fixture)).resolves.not.toContain(
+      fixture.threadId,
+    );
+    await expect(
+      chat.markThreadRead(fixture.actor, fixture.threadId),
+    ).resolves.toMatchObject({ lastReadAt: advanced });
+  });
+
+  it("keeps a committed mark-unread cursor when the operation is cancelled after COMMIT, publishing nothing", async () => {
+    const fixture = await createCursorFixture();
+    await expect(readCursor(fixture)).resolves.not.toBeNull();
+    const controller = new AbortController();
+    const cancellable = chat.readCursorWritesWithOperationSignal(
+      controller.signal,
+    );
+    context.mocks.ably.publish.mockClear();
+
+    await withChatThreadContentBarrierFixture(
+      {
+        chatThreadId: fixture.threadId,
+        stopAt: "commit",
+        work: async (barrier) => {
+          const clearing = cancellable.markUnread(
+            fixture.actor,
+            fixture.threadId,
+          );
+          await barrier.entered;
+          controller.abort(new DOMException("Operation ended", "AbortError"));
+          barrier.release();
+          await expect(clearing).rejects.toThrow(/Unknown response status 500/);
+        },
+      },
+      context.signal,
+    );
+
+    expect(context.mocks.ably.publish).not.toHaveBeenCalled();
+    await expect(readCursor(fixture)).resolves.toBeNull();
+  });
+
   it("propagates a held parent lock as a failure rather than a closure 404", async () => {
     const fixture = await createCursorFixture();
     const before = await readCursor(fixture);

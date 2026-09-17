@@ -646,7 +646,6 @@
       "importedSlides_other": "{{count}} slides",
       "importFile": "Import your own file",
       "importFileHint": "({{formats}})",
-      "importStarted": "Analysing {{filename}}. It will appear under Custom when it is ready.",
       "importUnsupported": "Choose a {{formats}} file to make a template.",
       "introVideo": "Intro video",
       "introVideoUnavailable": "This video template is no longer available. Remove it to send your message.",
@@ -1976,10 +1975,12 @@
       "github": "GitHub",
       "lark": "Lark",
       "openChat": "Open chat",
+      "openChatIn": "Open chat in {{integration}}",
       "openFeishuChat": "Open original chat in Feishu",
       "openGithubMessage": "Open original issue or pull request in GitHub",
       "openLarkChat": "Open original chat in Lark",
       "openMessage": "Open message",
+      "openMessages": "Open Messages",
       "openSlackMessage": "Open original message in Slack",
       "openTeamsMessage": "Open original message in Microsoft Teams",
       "openTelegramMessage": "Open original message in Telegram",
@@ -4208,6 +4209,8 @@
         "tiny-wanderer": "Tiny Wanderer"
       },
       "presentation": {
+        "bloom-pitch": "Petal pitch",
+        "blueprint-academy": "Drafting campus",
         "botane-organic-deck": "Mauve garden",
         "business-data-presentation": "Berry dashboard",
         "crayon-learning-deck": "Crayon doodle",
@@ -4216,9 +4219,19 @@
         "editorial-magazine-deck": "Paper magazine",
         "landing-consulting-deck": "Neon browser",
         "lumina-creative-studio": "Brush stickers",
+        "meridian": "Cobalt blocks",
         "mosaic-geometric-pitch": "Bauhaus tiles",
+        "neo-brutalism": "Shadow shop",
+        "nocturne": "Midnight stage",
+        "pixel-glitch": "Arcade pixels",
         "playful-launch-presentation": "Sunburst playroom",
-        "playful-pop-deck": "Neon candy"
+        "playful-pop-deck": "Neon candy",
+        "prospectus": "Homepage pitch",
+        "schoolhouse": "Kraft poster",
+        "sticker-scrapbook": "Sticker notebook",
+        "strata": "Red staircase",
+        "taped-consulting": "Polaroid wall",
+        "vantage": "Numbered boardroom"
       },
       "video": {
         "chinese-ink-art": "Chinese Ink Painting",
@@ -5315,7 +5328,8 @@
     "status": {
       "availableNow": "Available now",
       "inUse_one": "{{active}} of {{limit}} slot in use",
-      "inUse_other": "{{active}} of {{limit}} slots in use"
+      "inUse_other": "{{active}} of {{limit}} slots in use",
+      "waitingForSandbox": "Waiting for Sandbox"
     },
     "tiers": {
       "custom": "Custom",

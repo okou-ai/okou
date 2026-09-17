@@ -1635,7 +1635,11 @@ const persistAgentPhoneChatMessage$ = command(
           userMessage: createUserMessageDocument({
             text: canonicalAsset ? args.event.body.trim() : args.prompt,
             files: integrationInputMessageFiles(assets),
-            nonContentPart: createChatEventSourcePart({ kind: "agentphone" }),
+            nonContentPart: createChatEventSourcePart({
+              kind: "agentphone",
+              toNumber: normalizeAgentPhoneHandle(args.event.toNumber, "sms"),
+              isGroup: args.event.isGroup,
+            }),
           }),
           runId: null,
           agentphoneContext: {

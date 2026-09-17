@@ -1396,9 +1396,9 @@ test("Keep OAuth startup safe across repeated actions and navigation", async () 
   click(connect);
 
   await expect(
-    screen.findByRole("status", { name: "Connecting..." }),
+    screen.findByRole("dialog", { name: "Connecting your account" }),
   ).resolves.toBeVisible();
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
   await waitFor(() => {
     expect(starts).toBe(1);
     expect(browserOpen.calls).toHaveLength(1);

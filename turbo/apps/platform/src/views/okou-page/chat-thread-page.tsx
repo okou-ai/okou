@@ -6081,6 +6081,14 @@ function generationTemplateTypeLabel(
         return $.chat.templates.categories.website;
       });
     }
+    case "custom": {
+      // The catalog's own name, the same word the picker tab uses. What a
+      // custom template produces lives on its row, which this label cannot
+      // read, so naming the catalog is the honest answer here.
+      return i18n.t(($) => {
+        return $.templates.custom;
+      });
+    }
     case "presentation": {
       return i18n.t(($) => {
         return $.chat.templates.categories.presentation;
@@ -6176,6 +6184,34 @@ function MessageAnnotation({
   );
 }
 
+function sourceMessageLinkText(
+  t: TFunction<"common">,
+  part: Extract<
+    UserMessageAnnotationRenderPart,
+    { type: "source"; kind: "external" }
+  >["part"],
+) {
+  const opensChat =
+    part.kind === "feishu" ||
+    (part.kind === "telegram" &&
+      /^https:\/\/t\.me\/[a-z\d_]+$/iu.test(part.href ?? "")) ||
+    (part.kind === "teams" &&
+      part.href?.startsWith("https://teams.microsoft.com/l/chat/") === true);
+  const openLabel =
+    part.kind === "agentphone"
+      ? t(($) => {
+          return $.chat.origins.openMessages;
+        })
+      : opensChat
+        ? t(($) => {
+            return $.chat.origins.openChat;
+          })
+        : t(($) => {
+            return $.chat.origins.openMessage;
+          });
+  return { opensChat, openLabel };
+}
+
 function SourceMessageAnnotation({
   renderPart,
   className,
@@ -6221,36 +6257,36 @@ function SourceMessageAnnotation({
               : t(($) => {
                   return $.chat.origins.agentphone;
                 });
-  const openLabel =
-    part.kind === "feishu"
-      ? t(($) => {
-          return $.chat.origins.openChat;
-        })
-      : t(($) => {
-          return $.chat.origins.openMessage;
-        });
+  const { opensChat, openLabel } = sourceMessageLinkText(t, part);
   const ariaLabel =
-    part.kind === "slack"
-      ? t(($) => {
-          return $.chat.origins.openSlackMessage;
-        })
-      : part.kind === "feishu"
+    opensChat && part.kind !== "feishu"
+      ? t(
+          ($) => {
+            return $.chat.origins.openChatIn;
+          },
+          { integration: sourceLabel },
+        )
+      : part.kind === "slack"
         ? t(($) => {
-            return $.chat.origins[isLark ? "openLarkChat" : "openFeishuChat"];
+            return $.chat.origins.openSlackMessage;
           })
-        : part.kind === "teams"
+        : part.kind === "feishu"
           ? t(($) => {
-              return $.chat.origins.openTeamsMessage;
+              return $.chat.origins[isLark ? "openLarkChat" : "openFeishuChat"];
             })
-          : part.kind === "telegram"
+          : part.kind === "teams"
             ? t(($) => {
-                return $.chat.origins.openTelegramMessage;
+                return $.chat.origins.openTeamsMessage;
               })
-            : part.kind === "github"
+            : part.kind === "telegram"
               ? t(($) => {
-                  return $.chat.origins.openGithubMessage;
+                  return $.chat.origins.openTelegramMessage;
                 })
-              : sourceLabel;
+              : part.kind === "github"
+                ? t(($) => {
+                    return $.chat.origins.openGithubMessage;
+                  })
+                : openLabel;
   const content = (
     <>
       {part.kind === "slack" ? (

@@ -18,7 +18,6 @@ import {
 import { SSH_ERROR_CODES } from "@okouai/api-contracts/contracts/ssh-errors";
 import {
   sshCloudflareConfigs$,
-  sshEnabled$,
   sshTransportEditor$,
   chooseSshAccessConfig$,
   openSshCloudflareDialog$,
@@ -281,11 +280,10 @@ export function AccessFields({
 
 export function AccessSelection({ disabled }: { readonly disabled: boolean }) {
   const { t } = useTranslation();
-  const enabled = useGet(sshEnabled$);
   const configs = useLoadable(sshCloudflareConfigs$);
   const editor = useGet(sshTransportEditor$);
   const choose = useSet(chooseSshAccessConfig$);
-  if (!enabled || (configs.state === "hasData" && configs.data === null)) {
+  if (configs.state === "hasData" && configs.data === null) {
     return (
       <p role="alert" className="text-sm text-muted-foreground">
         {t(($) => {

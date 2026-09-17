@@ -1,3 +1,4 @@
+import { mockClerkUsers } from "./clerk-users";
 import { randomUUID } from "node:crypto";
 
 import { authContract } from "@okouai/api-contracts/contracts/auth";
@@ -185,9 +186,7 @@ export function createBddApi(context: TestContext) {
     }
 
     mocks.clerk.session(nextUser.userId, nextUser.orgId, nextUser.orgRole);
-    context.mocks.clerk.users.getUserList.mockResolvedValue({
-      data: [clerkUserProfile(nextUser)],
-    });
+    mockClerkUsers(context, [clerkUserProfile(nextUser)]);
     context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
       data: nextUser.orgId
         ? [

@@ -55,8 +55,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "lancy@okou.ai",
     description:
       "Generate short public activity summaries for active thread subscriptions.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   [FeatureSwitchKey.CustomTemplates]: {
     maintainer: "bingjie@okou.ai",
@@ -372,6 +371,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Use private artifact storage, the Okou viewer, and organization and public sharing.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ComposerImageAnnotation]: {
     maintainer: "tongx@okou.ai",
@@ -422,13 +422,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "liangyou@okou.ai",
     description:
       "Enable remote Streamable HTTP MCP definitions for organization Custom Connectors.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.SshAccess]: {
-    maintainer: "liangyou@okou.ai",
-    description:
-      "Enable Runner-mediated SSH with Direct and Cloudflare Access transports",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

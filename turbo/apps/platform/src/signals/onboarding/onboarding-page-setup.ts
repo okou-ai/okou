@@ -46,7 +46,7 @@ import {
 } from "../bootstrap/paid-funnel-telemetry.ts";
 import { onboardingStatus$ } from "../okou-page/onboarding.ts";
 import { authenticatedIdentity$ } from "../auth.ts";
-import { enterFinishOnboarding$ } from "./finish-onboarding.ts";
+import { enterMarketingOnboardingStart$ } from "../marketing/onboarding-start.ts";
 
 interface OnboardingPageConfig {
   readonly step: OnboardingRouteStep;
@@ -150,7 +150,7 @@ function createOnboardingPageSetup(
 
     const identity = await get(authenticatedIdentity$);
     signal.throwIfAborted();
-    set(enterFinishOnboarding$, identity);
+    set(enterMarketingOnboardingStart$, identity);
     set(hydrateOnboardingRoute$, config.step, searchParams);
     const draft = get(onboardingDraft$);
     if (config.fallbackPath && !hasRequiredSelection(config.step, draft)) {
