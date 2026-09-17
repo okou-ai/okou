@@ -6328,6 +6328,7 @@
     },
     "loadFailed": "템플릿을 불러오지 못했습니다.",
     "pageCount_other": "{{count}}페이지",
+    "renameFailed": "템플릿의 이름을 바꾸지 못했습니다.",
     "retry": "다시 시도",
     "sharedBy": "{{owner}} 님이 공유함",
     "visibility": {

@@ -6419,6 +6419,7 @@
     "pageCount_one": "{{count}} page",
     "pageCount_many": "{{count}} pages",
     "pageCount_other": "{{count}} pages",
+    "renameFailed": "Impossible de renommer le modèle.",
     "retry": "Réessayer",
     "sharedBy": "Partagé par {{owner}}",
     "visibility": {
