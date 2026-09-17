@@ -26,6 +26,7 @@ import { logger } from "../../lib/log";
 import type { Tx } from "../../lib/db-types";
 import { writeDb$, type Db } from "../external/db";
 import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
+import { safeSync, settle } from "../utils";
 import { insertChatEvent } from "./chat-event.service";
 import { touchChatThreadLastMessageAt } from "./chat-event-shared.service";
 import {
@@ -35,8 +36,10 @@ import {
   EMAIL_PUBLIC_BRAND,
 } from "./email-common.service";
 import { currentMorningBriefCollectionAuthority$ } from "./morning-brief-collection-executor.service";
-import type { MorningBriefCollectionAdmission } from "./morning-brief-collection-occurrence.service";
-import { lockCollectionOwner } from "./morning-brief-collection-occurrence.service";
+import {
+  lockCollectionOwner,
+  type MorningBriefCollectionAdmission,
+} from "./morning-brief-collection-occurrence.service";
 import { MORNING_BRIEF_RESULT_EMAIL_TEMPLATE } from "./morning-brief-native-email-admission.service";
 import {
   MORNING_BRIEF_RESULT_EMAIL_SUBJECT_MAX_CHARACTERS,
@@ -222,17 +225,18 @@ async function resolveEmailIntent(
     threadUrl: args.threadUrl,
     manageUrl: args.manageUrl,
   };
-  try {
-    // Rendered here only to prove the accepted body survives this template.
-    // The outbox still stores template plus props, so the first delivery
-    // attempt renders under the then-current template version.
-    renderMorningBriefResultEmail(props, unsubscribeUrl);
-  } catch (error) {
-    if (!(error instanceof MorningBriefResultEmailRenderError)) {
-      throw error;
+  // Rendered here only to prove the accepted body survives this template. The
+  // outbox still stores template plus props, so the first delivery attempt
+  // renders under the then-current template version.
+  const rendered = safeSync(() => {
+    return renderMorningBriefResultEmail(props, unsubscribeUrl);
+  });
+  if ("error" in rendered) {
+    if (!(rendered.error instanceof MorningBriefResultEmailRenderError)) {
+      throw rendered.error;
     }
     log.warn("Morning Brief result cannot be carried by email", {
-      reason: error.message,
+      reason: rendered.error.message,
     });
     return { resolution: "render_rejected", outboxId: null };
   }
@@ -663,7 +667,13 @@ async function lockSubscription(
   return { unsubscribed: preference?.emailUnsubscribed ?? false };
 }
 
-async function deliverInTransaction(
+/**
+ * Everything a delivery must hold and prove before it may write anything.
+ *
+ * Returns the committed delivery when this occurrence already has one, so the
+ * caller can answer a repeat request without preparing a destination.
+ */
+async function admitDelivery(
   tx: Tx,
   args: {
     readonly request: MorningBriefDeliveryRequest;
@@ -671,7 +681,7 @@ async function deliverInTransaction(
     readonly current: MorningBriefCollectionAdmission;
   },
   signal: AbortSignal,
-): Promise<CommittedDelivery> {
+): Promise<CommittedDelivery | null> {
   const { request, anchor, current } = args;
   const owner = { orgId: request.orgId, userId: request.userId };
 
@@ -720,20 +730,76 @@ async function deliverInTransaction(
 
   await lockUsableAgent(tx, owner, current.agentId);
   throwIfCancelled(signal);
+  return null;
+}
 
+/** The installation name the canonical thread binding is created under. */
+async function loadInstallationName(
+  tx: Tx,
+  args: { readonly orgId: string; readonly workflowId: string },
+): Promise<string> {
   const [installation] = await tx
     .select({ name: workflows.name })
     .from(workflows)
     .where(
-      and(
-        eq(workflows.id, current.workflowId),
-        eq(workflows.orgId, request.orgId),
-      ),
+      and(eq(workflows.id, args.workflowId), eq(workflows.orgId, args.orgId)),
     )
     .limit(1);
   if (!installation) {
     throw new DeliveryRejected("destination-unavailable");
   }
+  return installation.name;
+}
+
+/** Require the member's schedule to still be enabled, under its own row lock. */
+async function lockEnabledAutomation(
+  tx: Tx,
+  args: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly workflowId: string;
+    readonly automationId: string;
+  },
+): Promise<void> {
+  const [automation] = await tx
+    .select({ enabled: workflowAutomations.enabled })
+    .from(workflowAutomations)
+    .where(
+      and(
+        eq(workflowAutomations.id, args.automationId),
+        eq(workflowAutomations.orgId, args.orgId),
+        eq(workflowAutomations.ownerUserId, args.userId),
+        eq(workflowAutomations.workflowId, args.workflowId),
+      ),
+    )
+    .limit(1)
+    .for("update");
+  if (!automation?.enabled) {
+    throw new DeliveryRejected("morning-brief-unavailable");
+  }
+}
+
+async function deliverInTransaction(
+  tx: Tx,
+  args: {
+    readonly request: MorningBriefDeliveryRequest;
+    readonly anchor: ResultAnchor;
+    readonly current: MorningBriefCollectionAdmission;
+  },
+  signal: AbortSignal,
+): Promise<CommittedDelivery> {
+  const { request, anchor, current } = args;
+  const owner = { orgId: request.orgId, userId: request.userId };
+
+  const admitted = await admitDelivery(tx, args, signal);
+  if (admitted) {
+    return admitted;
+  }
+
+  const workflowName = await loadInstallationName(tx, {
+    orgId: request.orgId,
+    workflowId: current.workflowId,
+  });
 
   // Thread, then binding, then automation: the exact order thread deletion
   // takes across the same rows. Delivery must never hold the automation while
@@ -743,37 +809,27 @@ async function deliverInTransaction(
     userId: request.userId,
     workflowId: current.workflowId,
     agentId: current.agentId,
-    workflowName: installation.name,
+    workflowName,
     at: nowDate(),
   });
 
-  const [automation] = await tx
-    .select({ enabled: workflowAutomations.enabled })
-    .from(workflowAutomations)
-    .where(
-      and(
-        eq(workflowAutomations.id, current.automationId),
-        eq(workflowAutomations.orgId, request.orgId),
-        eq(workflowAutomations.ownerUserId, request.userId),
-        eq(workflowAutomations.workflowId, current.workflowId),
-      ),
-    )
-    .limit(1)
-    .for("update");
-  if (!automation?.enabled) {
-    throw new DeliveryRejected("morning-brief-unavailable");
-  }
+  await lockEnabledAutomation(tx, {
+    orgId: request.orgId,
+    userId: request.userId,
+    workflowId: current.workflowId,
+    automationId: current.automationId,
+  });
   throwIfCancelled(signal);
 
+  // The last admission wait. Everything after it is local work only.
   const subscription = await lockSubscription(tx, request.userId);
   throwIfCancelled(signal);
 
   // The admission waits this transaction can predict are held now. The
   // result's own deadline is evaluated against a fresh clock, so a result that
-  // expired while this transaction waited behind the occurrence, the Agent,
-  // the thread, the automation or a concurrent unsubscribe is refused, and the
-  // destination preparation above unwinds with it. One more wait still follows
-  // the message write, and it is re-checked there.
+  // expired while this transaction waited is refused and the destination
+  // preparation above unwinds with it. One more wait still follows the message
+  // write, and it is re-checked there.
   const acceptedAt = nowDate();
   const result = await loadDeliverableResult(tx, {
     ...owner,
@@ -784,10 +840,9 @@ async function deliverInTransaction(
     throw new DeliveryRejected("owner-revoked");
   }
 
-  // The displayed instant may have to move forward past a marker that
-  // committed while this transaction waited, so that the delivery cannot land
-  // behind the thread's own read cursor. It is deliberately not the acceptance
-  // deadline, which stays the real clock above.
+  // The displayed instant may have to move past a marker that committed while
+  // this transaction waited, so the delivery cannot land behind the thread's
+  // own read cursor. It is deliberately not the acceptance deadline.
   const at = await monotonicDeliveryInstant(tx, chatThreadId, acceptedAt);
 
   // Exactly the operation #34815 owns. The exclusion and the content it
@@ -806,6 +861,7 @@ async function deliverInTransaction(
   if (!appended) {
     throw new Error("Morning Brief delivery event was not appended");
   }
+
   // This UPSERTs the owner's sidebar sequence row, which is shared across all
   // of their threads, so another thread's mutation can hold it. It is the last
   // wait in the transaction, and the acceptance deadline is therefore checked
@@ -911,29 +967,30 @@ export const deliverMorningBriefResult$ = command(
       return { kind: "rejected", reason: rejectionOf(authority.reason) };
     }
 
-    let committed: CommittedDelivery;
-    try {
-      committed = await db.transaction(async (tx) => {
+    // A rejection after the destination was prepared unwinds the whole
+    // transaction, so nothing partial is committed for a delivery that did not
+    // happen.
+    const settled = await settle(
+      db.transaction(async (tx) => {
         return await deliverInTransaction(
           tx,
           { request, anchor, current: authority.admission },
           signal,
         );
-      });
-    } catch (error) {
-      // A rejection after the destination was prepared unwinds the whole
-      // transaction, so nothing partial is committed for a delivery that did
-      // not happen.
-      if (error instanceof DeliveryRejected) {
-        return { kind: "rejected", reason: error.reason };
+      }),
+    );
+    signal.throwIfAborted();
+    // A cancelled attempt reports cancellation rather than an outcome. When it
+    // was cancelled before acceptance nothing was committed; when a delivery
+    // had already committed, the receipt-first lookup above recovers it on the
+    // next request rather than replaying it here.
+    if (!settled.ok) {
+      if (settled.error instanceof DeliveryRejected) {
+        return { kind: "rejected", reason: settled.error.reason };
       }
-      if (error instanceof DeliveryCancelled) {
-        // Nothing was committed: no thread, binding, provenance, message,
-        // receipt or email intent survives this attempt.
-        signal.throwIfAborted();
-      }
-      throw error;
+      throw settled.error;
     }
+    const committed = settled.value;
     signal.throwIfAborted();
 
     if (committed.kind === "delivered") {
@@ -946,6 +1003,7 @@ export const deliverMorningBriefResult$ = command(
         threadId: committed.chatThreadId,
         syncThroughSeqId: committed.seqId,
       });
+      signal.throwIfAborted();
     }
     return {
       kind: committed.kind,

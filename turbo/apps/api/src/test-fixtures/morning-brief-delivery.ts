@@ -1,5 +1,5 @@
 import { createStore } from "ccstate";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
 import { emailOutbox } from "@okouai/db/schema/email-outbox";
@@ -75,7 +75,7 @@ export async function unsubscribeMember(userId: string): Promise<void> {
     });
 }
 
-export interface MorningBriefDeliveryRow {
+interface MorningBriefDeliveryRow {
   readonly chatThreadId: string;
   readonly chatEventId: string;
   readonly emailResolution: string;
@@ -109,7 +109,7 @@ export async function readMorningBriefDeliveries(
     .orderBy(asc(morningBriefDeliveries.createdAt));
 }
 
-export interface EmailOutboxRow {
+interface EmailOutboxRow {
   readonly id: string;
   readonly status: string;
   readonly attempts: number;
@@ -157,7 +157,7 @@ export async function readMorningBriefDeliveryOutbox(
   return rows;
 }
 
-export interface ChatThreadMessage {
+interface ChatThreadMessage {
   readonly id: string;
   readonly eventType: string;
   readonly runId: string | null;
@@ -192,7 +192,7 @@ export async function readChatThreadEvents(
   });
 }
 
-export interface ChatThreadState {
+interface ChatThreadState {
   readonly userId: string;
   readonly agentId: string | null;
   readonly provenance: string | null;
@@ -304,17 +304,4 @@ export async function drainEmailOutbox(
     { currentTimeMs: nowDate().getTime(), itemIds },
     signal,
   );
-}
-
-/** The newest delivery instant recorded for one thread. */
-export async function readLatestDeliveredAt(
-  chatThreadId: string,
-): Promise<Date | undefined> {
-  const [row] = await db()
-    .select({ deliveredAt: morningBriefDeliveries.deliveredAt })
-    .from(morningBriefDeliveries)
-    .where(eq(morningBriefDeliveries.chatThreadId, chatThreadId))
-    .orderBy(desc(morningBriefDeliveries.deliveredAt))
-    .limit(1);
-  return row?.deliveredAt;
 }

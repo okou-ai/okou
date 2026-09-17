@@ -407,7 +407,7 @@ describe("Morning Brief native delivery", () => {
 
     const drained = await readEmailOutboxRow(queued!.id);
     expect(drained?.status).toBe("sent");
-    expect(drained?.resendId).toBeTruthy();
+    expect(drained?.resendId).not.toBeNull();
     expect(drained?.providerIdempotencyKey).toBe(sent.options.idempotencyKey);
   });
 
