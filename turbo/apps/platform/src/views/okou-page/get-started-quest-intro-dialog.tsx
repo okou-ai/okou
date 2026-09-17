@@ -185,7 +185,7 @@ function Person({ accent, size }: { accent: string; size: number }) {
           width: size * 0.28,
           height: size * 0.28,
           marginLeft: -size * 0.14,
-          backgroundColor: `${accent}${FILL_ALPHA}`,
+          backgroundColor: accent,
         }}
       />
       <span
@@ -194,7 +194,7 @@ function Person({ accent, size }: { accent: string; size: number }) {
           width: size * 0.58,
           height: size * 0.32,
           marginLeft: -size * 0.29,
-          backgroundColor: `${accent}${FILL_ALPHA}`,
+          backgroundColor: accent,
         }}
       />
     </span>
@@ -300,7 +300,9 @@ function SlackFigure({ assistantName }: { assistantName: string }) {
 
 /** One saved workflow, handed to everyone who joins. */
 function InviteFigure() {
-  const accent = ILLUSTRATION_ACCENTS.illustration;
+  // Terracotta, not the yellow the workflow card uses: three small busts need
+  // more contrast against their own wash than a pale accent can give them.
+  const accent = ILLUSTRATION_ACCENTS.avatar;
   return (
     <TileRow>
       <Tile accent={accent}>
@@ -317,20 +319,11 @@ function InviteFigure() {
       </Tile>
       <Link accent={accent} />
       <Tile accent={accent}>
-        {/* Overlapped, the way a team reads in every product's member list. */}
-        <span className="flex items-center">
-          {["a", "b", "c"].map((id, index) => {
-            return (
-              <span
-                key={id}
-                // A ring of paper between the busts; overlapped without it,
-                // three of them read as one shape.
-                style={{ marginLeft: index === 0 ? 0 : -7 }}
-                className="rounded-full bg-card p-[2px]"
-              >
-                <Person accent={accent} size={24} />
-              </span>
-            );
+        {/* Three apart, not overlapped: at this size an overlap of white
+            busts on a white ring reads as one shape, not as a team. */}
+        <span className="flex items-center gap-[6px]">
+          {["a", "b", "c"].map((id) => {
+            return <Person key={id} accent={accent} size={22} />;
           })}
         </span>
       </Tile>
