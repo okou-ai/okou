@@ -134,7 +134,7 @@ discards the entire payload rather than part of it.
 
 ## Migration and rollout
 
-`1152_chat_thread_morning_brief_provenance` adds one nullable `varchar(32)`
+`1153_chat_thread_morning_brief_provenance` adds one nullable `varchar(32)`
 column with no default. Live production metadata at 2026-09-17 04:04:51 UTC
 counted 158,927 `chat_threads` rows, including internal owners; that is total
 table scale, not eligible coverage. `ADD COLUMN` without a default is a

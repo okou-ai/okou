@@ -9,6 +9,7 @@ import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { createRouteMocks } from "./helpers/route-test";
 import { billingRedeemCodeRoutes } from "../billing-redeem-code";
+import { ClerkUserNotFoundTestError } from "./helpers/clerk-users";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -47,17 +48,13 @@ function setAdminSession(): SessionFixture {
     email: `${userId}@example.test`,
   };
   mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
-  context.mocks.clerk.users.getUserList.mockResolvedValue({
-    data: [
+  context.mocks.clerk.users.getUser.mockResolvedValue({
+    id: fixture.userId,
+    primaryEmailAddressId: `email_${fixture.userId}`,
+    emailAddresses: [
       {
-        id: fixture.userId,
-        primaryEmailAddressId: `email_${fixture.userId}`,
-        emailAddresses: [
-          {
-            id: `email_${fixture.userId}`,
-            emailAddress: fixture.email,
-          },
-        ],
+        id: `email_${fixture.userId}`,
+        emailAddress: fixture.email,
       },
     ],
   });
@@ -350,49 +347,105 @@ describe("POST /api/billing/redeem-code", () => {
     });
   });
 
-  it("redeems a code with the canonical machine secret configuration", async () => {
+  it.each([
+    ["missing user", new ClerkUserNotFoundTestError()],
+    ["provider failure", new Error("Clerk unavailable")],
+  ])("preserves the unavailable response for %s", async (_label, error) => {
     const fixture = setAdminSession();
-    let requestedBody: unknown = null;
-    let requestedAuthorization: string | null = null;
+    context.mocks.clerk.users.getUser.mockRejectedValue(error);
+    let calledAtom = false;
     server.use(
-      http.post(`${ATOM_URL}/api/redeem-codes/consume`, async ({ request }) => {
-        requestedAuthorization = request.headers.get("authorization");
-        requestedBody = await request.json();
+      http.post(`${ATOM_URL}/api/redeem-codes/consume`, () => {
+        calledAtom = true;
         return HttpResponse.json({ ok: true });
       }),
     );
-
-    const client = setupApp({ context, routes: billingRedeemCodeRoutes })(
-      billingRedeemCodeContract,
-    );
     const response = await accept(
-      client.create({
-        body: { code: " YUMA-123 " },
+      setupApp({ context, routes: billingRedeemCodeRoutes })(
+        billingRedeemCodeContract,
+      ).create({
+        body: { code: "YUMA-123" },
         headers: { authorization: "Bearer clerk-session" },
       }),
-      [200],
+      [503],
     );
-
-    expect(response.body).toStrictEqual({ redeemed: true });
-    expect(context.mocks.clerk.m2m.createToken).toHaveBeenCalledWith({
-      machineSecretKey: ATOM_MACHINE_SECRET_KEY,
-      secondsUntilExpiration: 3600,
-      minRemainingTtlSeconds: 300,
+    expect(response.body).toStrictEqual({
+      error: {
+        code: "PROVIDER_UNAVAILABLE",
+        message: "Redeem service user unavailable",
+      },
     });
-    expect(requestedAuthorization).toBe(`Bearer ${ATOM_M2M_TOKEN}`);
-    expect(requestedBody).toStrictEqual({
-      code: "YUMA-123",
-      email: fixture.email,
-      org_id: fixture.orgId,
-      user_id: fixture.userId,
-    });
-    expectValueFree(
-      JSON.stringify({
-        response: response.body,
-        upstreamAuthorization: requestedAuthorization,
-        upstreamBody: requestedBody,
-      }),
-      [ATOM_MACHINE_SECRET_KEY],
+    expect(context.mocks.clerk.users.getUser).toHaveBeenCalledExactlyOnceWith(
+      fixture.userId,
     );
+    expect(context.mocks.clerk.users.getUserList).not.toHaveBeenCalled();
+    expect(context.mocks.clerk.m2m.createToken).not.toHaveBeenCalled();
+    expect(calledAtom).toBeFalsy();
   });
+
+  it.each([true, false])(
+    "redeems a code with a primary-email match of %s",
+    async (hasPrimary) => {
+      const fixture = setAdminSession();
+      context.mocks.clerk.users.getUser.mockResolvedValue({
+        id: fixture.userId,
+        primaryEmailAddressId: hasPrimary ? "primary" : "deleted-primary",
+        emailAddresses: hasPrimary
+          ? [
+              { id: "secondary", emailAddress: `secondary-${fixture.email}` },
+              { id: "primary", emailAddress: fixture.email },
+            ]
+          : [{ id: "secondary", emailAddress: fixture.email }],
+      });
+      let requestedBody: unknown = null;
+      let requestedAuthorization: string | null = null;
+      server.use(
+        http.post(
+          `${ATOM_URL}/api/redeem-codes/consume`,
+          async ({ request }) => {
+            requestedAuthorization = request.headers.get("authorization");
+            requestedBody = await request.json();
+            return HttpResponse.json({ ok: true });
+          },
+        ),
+      );
+
+      const client = setupApp({ context, routes: billingRedeemCodeRoutes })(
+        billingRedeemCodeContract,
+      );
+      const response = await accept(
+        client.create({
+          body: { code: " YUMA-123 " },
+          headers: { authorization: "Bearer clerk-session" },
+        }),
+        [200],
+      );
+
+      expect(response.body).toStrictEqual({ redeemed: true });
+      expect(context.mocks.clerk.users.getUser).toHaveBeenCalledExactlyOnceWith(
+        fixture.userId,
+      );
+      expect(context.mocks.clerk.users.getUserList).not.toHaveBeenCalled();
+      expect(context.mocks.clerk.m2m.createToken).toHaveBeenCalledWith({
+        machineSecretKey: ATOM_MACHINE_SECRET_KEY,
+        secondsUntilExpiration: 3600,
+        minRemainingTtlSeconds: 300,
+      });
+      expect(requestedAuthorization).toBe(`Bearer ${ATOM_M2M_TOKEN}`);
+      expect(requestedBody).toStrictEqual({
+        code: "YUMA-123",
+        email: fixture.email,
+        org_id: fixture.orgId,
+        user_id: fixture.userId,
+      });
+      expectValueFree(
+        JSON.stringify({
+          response: response.body,
+          upstreamAuthorization: requestedAuthorization,
+          upstreamBody: requestedBody,
+        }),
+        [ATOM_MACHINE_SECRET_KEY],
+      );
+    },
+  );
 });

@@ -337,7 +337,6 @@ test("Keep SSH and Custom in separate sections and scope Remote access", async (
     path: "/connectors",
     featureSwitches: {
       [FeatureSwitchKey.ConnectorDirectory]: true,
-      [FeatureSwitchKey.SshAccess]: true,
     },
   });
   const remote = await screen.findByTestId("connector-category-remote-access");

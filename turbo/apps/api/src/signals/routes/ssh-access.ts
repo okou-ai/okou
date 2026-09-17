@@ -13,7 +13,6 @@ import { db$, writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import {
   getAgentSshAccess,
-  isSshAccessAvailable,
   listRunSshHosts,
   updateAgentSshAccess,
 } from "../services/ssh-access.service";
@@ -40,9 +39,6 @@ const ownerAuth = {
 
 const getAccess$ = command(async ({ get }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
-  if (!(await isSshAccessAvailable(get(db$), auth, signal))) {
-    return unavailable;
-  }
   const params = get(pathParamsOf(agentSshAccessContract.get));
   const result = await getAgentSshAccess(get(db$), {
     orgId: auth.orgId,
@@ -55,9 +51,6 @@ const getAccess$ = command(async ({ get }, signal: AbortSignal) => {
 
 const updateAccess$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
-  if (!(await isSshAccessAvailable(get(db$), auth, signal))) {
-    return unavailable;
-  }
   const params = get(pathParamsOf(agentSshAccessContract.update));
   const body = await get(bodyResultOf(agentSshAccessContract.update));
   signal.throwIfAborted();
@@ -81,9 +74,6 @@ const listHosts$ = command(async ({ get }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   if (auth.tokenType !== "agent") {
     throw new Error("SSH inventory requires Agent authentication");
-  }
-  if (!(await isSshAccessAvailable(get(db$), auth, signal))) {
-    return unavailable;
   }
   const result = await listRunSshHosts(get(db$), auth, signal);
   signal.throwIfAborted();

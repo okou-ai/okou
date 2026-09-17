@@ -56,7 +56,6 @@ export enum FeatureSwitchKey {
   FeishuIntegration = "_feishuIntegration",
   LarkIntegration = "_larkIntegration",
   CustomConnectorMcp = "customConnectorMcp",
-  SshAccess = "sshAccess",
   PiDeferredSandbox = "piDeferredSandbox",
   PiLoop = "piLoop",
   PiMemory = "piMemory",

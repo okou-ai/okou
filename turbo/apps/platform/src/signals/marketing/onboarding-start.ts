@@ -30,7 +30,7 @@ const attempts = localStorageSignals("marketing_onboarding_attempts");
 const REQUEST_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
-export const enterFinishOnboarding$ = command(
+export const enterMarketingOnboardingStart$ = command(
   ({ get }, identity: OnboardingIdentity) => {
     const entry = get(entry$);
     if (entry && !entry.settled()) {
@@ -39,7 +39,7 @@ export const enterFinishOnboarding$ = command(
   },
 );
 
-const sendFinishOnboarding$ = command(
+const sendMarketingOnboardingStart$ = command(
   async ({ get, set }, identity: OnboardingIdentity, signal: AbortSignal) => {
     const measurement = startClientTelemetryMeasurement();
     let phase: "attempt" | "token" | "request" = "attempt";
@@ -162,7 +162,7 @@ const sendFinishOnboarding$ = command(
 );
 
 /** The root owns the request so onboarding navigation never waits for it. */
-export const setupFinishOnboarding$ = command(
+export const setupMarketingOnboardingStart$ = command(
   ({ set }, signal: AbortSignal): void => {
     const entry = createDeferredPromise<OnboardingIdentity>(signal);
     set(entry$, entry);
@@ -174,7 +174,7 @@ export const setupFinishOnboarding$ = command(
         AbortSignal.timeout(10_000),
       ]);
       await bestEffort(
-        set(sendFinishOnboarding$, identity, requestSignal),
+        set(sendMarketingOnboardingStart$, identity, requestSignal),
         ownerSignal,
       );
     }, signal);

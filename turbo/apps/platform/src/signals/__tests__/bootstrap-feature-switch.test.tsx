@@ -50,7 +50,9 @@ test("A signed-in workspace receives its enabled features", async () => {
   });
 });
 
-async function setupEffortRolloutPage(args: {
+// The workspace response cannot evaluate an email allowlist, so the email
+// defaults are reapplied on top of it. Custom templates own that allowlist.
+async function setupEmailRolloutPage(args: {
   readonly email: string;
   readonly fullName: string;
   readonly userId: string;
@@ -61,7 +63,7 @@ async function setupEffortRolloutPage(args: {
     return respond(200, {
       switches: {},
       effectiveSwitches: {
-        [FeatureSwitchKey.Effort]: false,
+        [FeatureSwitchKey.CustomTemplates]: false,
         [FeatureSwitchKey.IntroVideo]: true,
       },
     });
@@ -87,49 +89,34 @@ async function setupEffortRolloutPage(args: {
   await waitFor(() => {
     expect(introVideoTab()).toBeVisible();
   });
-  await user.keyboard("{Escape}");
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+}
+
+function customTemplatesTab(): HTMLElement | undefined {
+  return queryAllByRoleFast("tab").find((tab) => {
+    return tab.textContent?.trim() === "Custom";
   });
 }
 
-// The effort control names itself after the level it carries, and it renders
-// only for a user the switch reaches.
-function effortTrigger(): HTMLElement | undefined {
-  return queryAllByRoleFast("button").find((button) => {
-    return button.getAttribute("aria-label")?.startsWith("Effort, ");
-  });
-}
-
-test("Bingjie retains the chat effort rollout after feature loading", async () => {
-  await setupEffortRolloutPage({
+test("Bingjie retains the custom template rollout after feature loading", async () => {
+  await setupEmailRolloutPage({
     email: "BINGJIE@OKOU.AI",
     fullName: "Bingjie",
     userId: "user_bingjie",
   });
 
-  const trigger = await waitFor(() => {
-    const button = effortTrigger();
-    if (!button) {
-      throw new Error("Expected the chat effort control");
-    }
-    return button;
+  await waitFor(() => {
+    expect(customTemplatesTab()).toBeVisible();
   });
-  click(trigger);
-  await expect(
-    screen.findByRole("slider", { name: "Effort" }),
-  ).resolves.toBeVisible();
 });
 
-test("another member does not receive the chat effort rollout", async () => {
-  await setupEffortRolloutPage({
+test("another member does not receive the custom template rollout", async () => {
+  await setupEmailRolloutPage({
     email: "ethan@okou.ai",
     fullName: "Another member",
     userId: "user_other_member",
   });
 
-  await expectComposerModel("Claude Sonnet 4.6");
-  expect(effortTrigger()).toBeUndefined();
+  expect(customTemplatesTab()).toBeUndefined();
 });
 
 test("Image recognition remains available by default", async () => {

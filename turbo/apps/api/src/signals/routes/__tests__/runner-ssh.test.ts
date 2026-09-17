@@ -13,7 +13,6 @@ import {
   testSshConnectionStateContract,
   type TestSshConnectionStateActionBody,
 } from "@okouai/api-contracts/contracts/test-ssh-connection-state";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -24,7 +23,6 @@ import { createDeferredPromise, onRejection } from "../../utils";
 import { runnerSshRoutes } from "../runner-ssh";
 import { sshConnectionsRoutes } from "../ssh-connections";
 import { testSshConnectionStateRoutes } from "../test-ssh-connection-state";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { createRouteMocks } from "./helpers/route-test";
@@ -113,9 +111,6 @@ async function fixture(runtimeOverrides: Partial<RuntimeBody> = {}) {
     orgId: `org_ssh_jit_${randomUUID()}`,
     userId: `user_ssh_jit_${randomUUID()}`,
   };
-  await updateFeatureSwitchesForUser(context, owner, {
-    [FeatureSwitchKey.SshAccess]: true,
-  });
   authenticate(owner);
   const connection = await accept(
     config().create({
@@ -863,14 +858,11 @@ describe("SSH connection observations", () => {
     await access(f, false);
     await expect(observe(f)).resolves.toStrictEqual({ outcome: "unavailable" });
     await access(f, true);
-    await updateFeatureSwitchesForUser(context, f, {
-      [FeatureSwitchKey.SshAccess]: false,
-    });
-    await expect(observe(f)).resolves.toStrictEqual({ outcome: "unavailable" });
+    await expect(observe(f)).resolves.toStrictEqual({ outcome: "recorded" });
     authenticate(f);
     expect(
       (await config().observations({ headers: sessionHeaders })).status,
-    ).toBe(404);
+    ).toBe(200);
   });
 
   it("rejects diagnostic text and command outcomes instead of storing them as connection failures", async () => {
@@ -906,14 +898,12 @@ describe("SSH connection observations", () => {
 });
 
 describe("official Runner SSH authority", () => {
-  it("allows an enabled ordinary owner and rechecks the switch on resolve and pin", async () => {
+  it("allows an ordinary owner without feature overrides and enforces grant revocation", async () => {
     const f = await fixture();
     await expect(resolve(f)).resolves.toMatchObject({ outcome: "resolved" });
     await expect(pin(f)).resolves.toMatchObject({ outcome: "pinned" });
     expect((await list(f))[0]?.learnedHostKey).toStrictEqual(hostKey);
-    await updateFeatureSwitchesForUser(context, f, {
-      [FeatureSwitchKey.SshAccess]: false,
-    });
+    await access(f, false);
     const kms = useSecretKmsProbe();
     await expect(resolve(f)).resolves.toStrictEqual({
       outcome: "unavailable",
@@ -925,65 +915,54 @@ describe("official Runner SSH authority", () => {
   });
 
   it("rechecks authority after waiting for an owner connection lock", async () => {
-    for (const change of ["revoke", "disable"] as const) {
-      const f = await fixture({
-        triggerSource: "automation-schedule",
-        chat: false,
-      });
-      const scope = {
-        orgId: f.orgId,
-        userId: f.userId,
-        connectionId: f.connectionId,
-      };
-      const lock = (
-        action:
-          | "hold-connection-lock"
-          | "read-connection-lock"
-          | "release-connection-lock",
-      ) => {
-        return accept(
-          stateClient().action({ body: { action, ...scope } }),
-          [200],
-        );
-      };
-      const held = lock("hold-connection-lock");
-      await expect
-        .poll(async () => {
-          return (await lock("read-connection-lock")).body.held;
-        })
-        .toBe(true);
-      const pending = pin(f);
-      const releaseLock = async () => {
-        await lock("release-connection-lock");
-        await Promise.all([held, pending]);
-      };
-      await onRejection(
-        (async () => {
-          await expect
-            .poll(async () => {
-              return (await lock("read-connection-lock")).body.waiting;
-            })
-            .toBe(true);
-          if (change === "revoke") {
-            await access(f, false);
-          } else {
-            await updateFeatureSwitchesForUser(context, f, {
-              [FeatureSwitchKey.SshAccess]: false,
-            });
-          }
-        })(),
-        releaseLock,
+    const f = await fixture({
+      triggerSource: "automation-schedule",
+      chat: false,
+    });
+    const scope = {
+      orgId: f.orgId,
+      userId: f.userId,
+      connectionId: f.connectionId,
+    };
+    const lock = (
+      action:
+        | "hold-connection-lock"
+        | "read-connection-lock"
+        | "release-connection-lock",
+    ) => {
+      return accept(
+        stateClient().action({ body: { action, ...scope } }),
+        [200],
       );
-      await releaseLock();
-      await expect(pending).resolves.toStrictEqual({ outcome: "unavailable" });
-      await updateFeatureSwitchesForUser(context, f, {
-        [FeatureSwitchKey.SshAccess]: true,
-      });
-      expect((await list(f))[0]).toMatchObject({
-        generation: 1,
-        learnedHostKey: null,
-      });
-    }
+    };
+    const held = lock("hold-connection-lock");
+    await expect
+      .poll(async () => {
+        return (await lock("read-connection-lock")).body.held;
+      })
+      .toBe(true);
+    const pending = pin(f);
+    const releaseLock = async () => {
+      await lock("release-connection-lock");
+      await Promise.all([held, pending]);
+    };
+    await onRejection(
+      (async () => {
+        await expect
+          .poll(async () => {
+            return (await lock("read-connection-lock")).body.waiting;
+          })
+          .toBe(true);
+        await access(f, false);
+      })(),
+      releaseLock,
+    );
+    await releaseLock();
+    await expect(pending).resolves.toStrictEqual({ outcome: "unavailable" });
+    expect((await list(f))[0]).toMatchObject({
+      generation: 1,
+      learnedHostKey: null,
+    });
   });
 
   it("does not turn a malformed stored host identity into unavailable or decrypt credentials", async () => {
@@ -1097,9 +1076,6 @@ describe("official Runner SSH authority", () => {
     expect((await list(foreign))[0]?.learnedHostKey).toBeNull();
     // Same user, different organization must not grant access.
     const hiddenOwner = { ...f, orgId: `org_hidden_${randomUUID()}` };
-    await updateFeatureSwitchesForUser(context, hiddenOwner, {
-      [FeatureSwitchKey.SshAccess]: true,
-    });
     authenticate(hiddenOwner);
     const hidden = await accept(
       config().create({
@@ -1190,21 +1166,13 @@ describe("official Runner SSH authority", () => {
     expect(kms.decryptCalls).toBe(0);
   });
 
-  it("checks current access, feature state and credential existence on every call", async () => {
+  it("checks current access and credential existence on every call", async () => {
     const f = await fixture({ triggerSource: "automation-event", chat: false });
     const kms = useSecretKmsProbe();
     await access(f, false);
     await expect(resolve(f)).resolves.toStrictEqual({ outcome: "unavailable" });
     await expect(pin(f)).resolves.toStrictEqual({ outcome: "unavailable" });
     await access(f, true);
-    await updateFeatureSwitchesForUser(context, f, {
-      [FeatureSwitchKey.SshAccess]: false,
-    });
-    await expect(resolve(f)).resolves.toStrictEqual({ outcome: "unavailable" });
-    await expect(pin(f)).resolves.toStrictEqual({ outcome: "unavailable" });
-    await updateFeatureSwitchesForUser(context, f, {
-      [FeatureSwitchKey.SshAccess]: true,
-    });
     authenticate(f);
     await accept(
       config().delete({

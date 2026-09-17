@@ -9,6 +9,85 @@ fn files() -> Vec<StorageFile> {
     }]
 }
 
+#[test]
+fn rejection_classification_requires_current_locked_source_and_valid_record() {
+    let root = tempfile::tempdir().unwrap();
+    let home = HomePaths::with_root(root.path().to_owned());
+    let cancel = CancellationToken::new();
+    let source = home.storage_cache_dir("name", "v1");
+    fs::create_dir_all(&source).unwrap();
+    fs::write(source.join("archive.tar.gz"), b"source").unwrap();
+    publish(&home, "name", "v1", 6, None, &cancel).unwrap();
+    assert!(!rejected_archive(&home, "name", "v1", &cancel).unwrap());
+    let lock_path = home.storage_lock("name", "v1");
+    let source_lock = lock::try_acquire_or_busy_blocking(&lock_path).unwrap();
+    assert!(matches!(source_lock, TryLock::Acquired(_)));
+    assert!(!rejected_archive(&home, "name", "v1", &cancel).unwrap());
+    drop(source_lock);
+    assert!(rejected_archive(&home, "name", "v1", &cancel).unwrap());
+
+    let (record, record_lock) = persisted_paths(&home, "name", "v1", true);
+    let writer = lock::try_acquire_or_busy_blocking(&record_lock).unwrap();
+    assert!(!rejected_archive(&home, "name", "v1", &cancel).unwrap());
+    drop(writer);
+    fs::remove_file(&record_lock).unwrap();
+    assert!(rejected_archive(&home, "name", "v1", &cancel).unwrap());
+    assert!(record_lock.exists());
+    fs::write(record.join("index.json"), b"{}").unwrap();
+    assert!(rejected_archive(&home, "name", "v1", &cancel).is_err());
+    fs::remove_dir_all(&record).unwrap();
+    assert!(!rejected_archive(&home, "name", "v1", &cancel).unwrap());
+    publish(&home, "name", "v1", 6, None, &cancel).unwrap();
+    assert!(rejected_archive(&home, "name", "v1", &cancel).unwrap());
+    fs::remove_file(source.join("archive.tar.gz")).unwrap();
+    assert!(!rejected_archive(&home, "name", "v1", &cancel).unwrap());
+}
+
+#[test]
+fn rejection_classification_never_accepts_invalid_or_linked_archive_sources() {
+    #[derive(Debug)]
+    enum Source {
+        Empty,
+        Oversized,
+        Symlink,
+        Hardlink,
+        Directory,
+    }
+    for case in [
+        Source::Empty,
+        Source::Oversized,
+        Source::Symlink,
+        Source::Hardlink,
+        Source::Directory,
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let home = HomePaths::with_root(root.path().to_owned());
+        let cancel = CancellationToken::new();
+        let directory = home.storage_cache_dir("name", "v1");
+        fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("archive.tar.gz");
+        let outside = root.path().join("outside");
+        fs::write(&outside, b"contents").unwrap();
+        match case {
+            Source::Empty => fs::write(&path, []).unwrap(),
+            Source::Oversized => File::create(&path)
+                .unwrap()
+                .set_len(crate::storage_cache::CACHE_MAX_SIZE + 1)
+                .unwrap(),
+            Source::Symlink => std::os::unix::fs::symlink(&outside, &path).unwrap(),
+            Source::Hardlink => fs::hard_link(&outside, &path).unwrap(),
+            Source::Directory => fs::create_dir(&path).unwrap(),
+        }
+        drop(lock::try_acquire_or_busy_blocking(&home.storage_lock("name", "v1")).unwrap());
+        publish(&home, "name", "v1", 8, None, &cancel).unwrap();
+        assert!(
+            !matches!(rejected_archive(&home, "name", "v1", &cancel), Ok(true)),
+            "{case:?}"
+        );
+        assert_eq!(fs::read(outside).unwrap(), b"contents");
+    }
+}
+
 // Model the persisted format and external GC/writer lock without using the
 // decoded reader's key helpers, so changing both reader and writer cannot
 // silently move existing entries into a different namespace.

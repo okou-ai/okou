@@ -35,6 +35,7 @@ import {
   mockBillingCapabilities,
   mockOrgModelRoutes,
   selectTemplate,
+  composerModelTrigger,
 } from "./chat-composer-test-helpers.ts";
 
 function setupModels(): void {
@@ -78,6 +79,7 @@ async function setupComposer(enabled = true): Promise<HTMLElement> {
 /** The panel's rows act on mousedown, which only a full pointer sequence fires. */
 async function clickPanelRow(label: string, menu: HTMLElement): Promise<void> {
   await userEvent.setup({ delay: null }).click(button(label, menu));
+  await closeTemplatePicker();
 }
 
 /** The panel row that enters a create mode, and the mode it lands in. */
@@ -86,6 +88,18 @@ const CREATE_MODE_ROWS = {
   image: { row: "Illustration", mode: "Create image" },
   video: { row: "Video", mode: "Create video" },
 } as const;
+
+/**
+ * A panel row opens the template picker as well as entering the mode, and the
+ * open dialog covers the composer. Close it to go on reading the composer.
+ */
+async function closeTemplatePicker(): Promise<void> {
+  const dialog = await screen.findByRole("dialog");
+  await userEvent.setup({ delay: null }).click(button("Close", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+}
 
 async function chooseCommand(
   editor: HTMLElement,
@@ -145,6 +159,7 @@ test("Choose a video from the slash panel with the keyboard and submit its setti
   expect(button("Video", menu)).toBeInTheDocument();
   // Presentation leads the panel's Make rows, so Video is the third.
   await user.keyboard("{ArrowDown}{ArrowDown}{Enter}");
+  await closeTemplatePicker();
   await waitFor(() => {
     expect(screen.getByTestId("composer-create-mode")).toHaveTextContent(
       "Create video",
@@ -363,7 +378,7 @@ test("Image mode combines styles and image models while preserving the prompt", 
     expect(picker).toHaveTextContent(IMAGE_MODEL_CONFIGS[model].label);
   });
   click(button("Exit create mode"));
-  await screen.findByRole("combobox", { name: "Claude Fable 5.1" });
+  await composerModelTrigger("Claude Fable 5.1");
   expect(screen.queryByTestId("composer-create-mode")).toBeNull();
   expect(editor).toHaveTextContent("A quiet garden");
 });

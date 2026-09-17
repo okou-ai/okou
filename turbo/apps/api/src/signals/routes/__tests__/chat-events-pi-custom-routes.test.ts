@@ -1509,6 +1509,7 @@ describe("CHAT-02: model-first provider policies", () => {
       await configureCustomPiModel(actor, selectedModel);
       await authDeviceSupport.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.CodexFastMode]: false,
+        [FeatureSwitchKey.Effort]: false,
       });
       const clientThreadId = randomUUID();
       const rejected = await chat.requestSendEvent(

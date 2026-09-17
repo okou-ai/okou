@@ -1,3 +1,4 @@
+import { mockClerkUsers } from "./clerk-users";
 import { userExportContract } from "@okouai/api-contracts/contracts/user-export";
 
 import { accept, type TestContext } from "../../../../__tests__/test-context";
@@ -47,9 +48,7 @@ function authenticate(
     nextActor.orgId,
     nextActor.orgRole,
   );
-  context.mocks.clerk.users.getUserList.mockResolvedValue({
-    data: [clerkUserProfile(nextActor)],
-  });
+  mockClerkUsers(context, [clerkUserProfile(nextActor)]);
   return { authorization: "Bearer clerk-session" };
 }
 

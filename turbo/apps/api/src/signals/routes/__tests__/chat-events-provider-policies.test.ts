@@ -1551,6 +1551,10 @@ describe("CHAT-02: model-first provider policies", () => {
       },
     ]);
 
+    await updateFeatureSwitchesForUser(context, actorWithOrg, {
+      [FeatureSwitchKey.CodexFastMode]: false,
+      [FeatureSwitchKey.Effort]: false,
+    });
     const switchOffThreadId = randomUUID();
     const switchOff = await chat.requestSendEvent(
       actor,

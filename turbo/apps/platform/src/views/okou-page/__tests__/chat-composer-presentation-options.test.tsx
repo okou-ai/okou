@@ -69,8 +69,14 @@ async function setupComposer(): Promise<HTMLElement> {
 async function enterPresentation(editor: HTMLElement): Promise<HTMLElement> {
   await fill(editor, "Our launch /");
   const menu = await screen.findByTestId("slash-workflow-menu");
+  const user = userEvent.setup({ delay: null });
   // The panel's rows act on mousedown, which only a full pointer sequence fires.
-  await userEvent.setup({ delay: null }).click(button("Presentation", menu));
+  await user.click(button("Presentation", menu));
+  // The row opens the template picker as well, and it covers the composer.
+  await user.click(button("Close", await screen.findByRole("dialog")));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
   return await screen.findByRole("combobox", { name: "Slide count" });
 }
 

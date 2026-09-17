@@ -309,47 +309,71 @@ a delayed answer past the deadline, a transport failure and a malformed amount
 all leave the cost exactly as unknown as it already was. This path sends no
 completion and can never be a reason to send the original request again.
 
-**Remaining evidence gap.** The generation reference renders its per-field
-descriptions behind a collapsed control, so that page does not itself restate
-`total_cost`'s unit. It is recorded as OpenRouter credits because the
-usage-accounting page states the account charge in credits, the two pages
-describe one accounting system, and the reference's own example shows
-`total_cost` equal to `usage` and distinct from `upstream_inference_cost`. No
-currency conversion is performed or implied.
+A reconciled amount is held to the same durable domain as an inline one: a
+delayed answer is not a reason to accept a value the receipt cannot store
+exactly.
+
+**Remaining evidence gap**, re-checked 2026-09-17. The generation reference
+renders its per-field descriptions behind a collapsed control, so that page
+still does not itself state `total_cost`'s unit; its rendered example shows
+`"total_cost": 0.0015` beside `"usage": 0.0015` and a distinct
+`"upstream_inference_cost": 0.0012`. The unit is recorded as OpenRouter credits
+on the strength of the usage-accounting page, which the same re-check confirms
+lists "Cost in credits", documents `cost` as "The total amount charged to your
+account", and states that `upstream_inference_cost` "is only available for BYOK
+… requests. For all other requests it will be 0 or null". That is one accounting
+system described across two pages, not a field-level statement on the reference
+itself. No currency conversion is performed or implied, and the gap is recorded
+rather than closed by inference.
 
 ### Cost states
 
-| State                | Meaning                                                                       |
-| -------------------- | ----------------------------------------------------------------------------- |
-| `reported`           | A finite, non-negative `usage.cost`. An explicit `0` is a **known** zero.     |
-| `unavailable`        | A response was read but carried no usable cost. The generation id is kept.    |
-| `invocation_unknown` | No usage payload was read at all, so whether anything was charged is unknown. |
+| State                | Meaning                                                                          |
+| -------------------- | -------------------------------------------------------------------------------- |
+| `reported`           | A finite, non-negative amount the column holds exactly. `0` is a **known** zero. |
+| `unavailable`        | A response was read but carried no usable cost. The generation id is kept.       |
+| `invocation_unknown` | No usage payload was read at all, so whether anything was charged is unknown.    |
 
 A string, a negative number, `NaN`, a missing field and a missing `usage` object
 are all `unavailable`. Token counts never imply a known cost and are never
 converted into one.
 
-**Deliberate omission.** A delayed receipt lookup through the read-only
-`/generation` endpoint is _not_ implemented. The usage-accounting page confirms
-that endpoint exists and that its `upstream_inference_cost` is BYOK-only, but it
-does not state which field carries the platform's own total there, and the
-linked API reference did not expose that schema when it was fetched. Inventing a
-field name would produce a confidently wrong amount, which is worse than an
-explicit unknown. What is implemented instead is the state machine that lookup
-would feed: the generation id is retained on the receipt, an unavailable cost
-stays unavailable rather than becoming zero, and nothing about a delayed or
-failed reconciliation can ever trigger another POST. Implementing the lookup
-against a verified schema is a follow-up.
+### The durable domain
+
+Validation and storage share one domain, because a value the column cannot hold
+is not recorded more widely — it is recorded wrongly, or not at all.
+
+- **Token counts** are `integer`. A count above `2147483647` is `unavailable`
+  for that field alone. It previously passed validation and then failed the
+  whole INSERT with `integer out of range`, discarding the observed cost, the
+  sibling counts and the invocation record with it.
+- **The amount** is `numeric(24, 12)`: at most twelve integral digits and
+  exactly twelve fractional digits. An amount needing finer digits — `1e-13` —
+  or more integral digits — `1e12` — is `unavailable`, never rounded. Rounding
+  into the scale would publish a durable **reported zero** for a real nonzero
+  charge, and an over-range amount would fail the INSERT with
+  `numeric field overflow`.
+- An accepted amount is normalised to the exact decimal the column returns, so
+  the initial response, the stored row and every later reread carry one
+  identical value rather than two spellings of it.
+
+`MORNING_BRIEF_PLATFORM_RECEIPT_MAX_TOKENS`,
+`MORNING_BRIEF_PLATFORM_RECEIPT_COST_PRECISION` and
+`MORNING_BRIEF_PLATFORM_RECEIPT_COST_SCALE` in the schema are the single source
+of both the column definition and the parser bound, so the two cannot drift.
+An unavailable amount keeps `provider_generation_id`, so a charge whose amount
+this system cannot represent is still traceable out of band.
 
 ## Ordering, fences and revocation
 
-Persistence is two writes, in this order and with bounded retries of the _same_
-observed values:
+Persistence is two independent writes, in this order and with bounded retries of
+the _same_ observed values:
 
 1. **The receipt**, keyed by the opaque attempt id with a conflict-free insert.
    It takes no erasure admission and no owner lock, so it still records a real
-   charge when the owner is already gone, and a retry writes exactly one cost
-   record.
+   charge when the owner is already gone, and a retry — including one that races
+   an earlier attempt that actually committed — leaves exactly one cost record
+   and never replaces a committed observation with a weaker one.
 2. **The owner-scoped outcome**, under the same fence the reservation was
    admitted with: the exact occurrence, attempt id, membership generation and
    `reserved` state. Accepting content additionally requires an unexpired
@@ -357,9 +381,25 @@ observed values:
    stored. A revoked owner matches nothing, and nothing recreates an owner row
    to hold a result.
 
-When every persistence attempt fails, the slot stays `reserved`, the response
-reports that honestly with `persistence_failed`, and a later invocation resolves
-it to `invocation_outcome_unknown`. No second request is ever made.
+The receipt's own bounded attempts finish **before** the caller's cancellation
+check and before the live-authority resolution that decides the owner write.
+Both of those can end the request — cancellation propagates, and resolving the
+authority can itself fail — and the charge was incurred at the provider either
+way. Those attempts are joined to this request and finite: nothing is detached
+to complete later, no queue is created, and nothing about them accepts or
+releases owner content. A cancelled request still cancels; it simply no longer
+discards an observation it already made.
+
+If the owner write then fails, the committed receipt is unaffected; if the
+receipt is still outstanding, the owner write does not wait on it.
+
+When the receipt's attempts are exhausted, the response says so: the receipt is
+reported with `recorded: "unresolved"` and its exact observed amount. That is an
+outstanding accounting record, not a durable one and never a cost of zero, and
+it is not a guarantee of durability during a permanent database failure. When
+every owner attempt fails, the slot stays `reserved`, the response reports that
+honestly with `persistence_failed`, and a later invocation resolves it to
+`invocation_outcome_unknown`. No second request is ever made in either case.
 
 ## Stored values are validated, not defaulted
 
@@ -401,9 +441,14 @@ unavailable in production.
 ## Scale
 
 Native occurrence, generation and receipt tables are not exposed by MaskDB, so
-no production row census is claimed for them. The Morning Brief installation
-census in the parent epic describes installations, not generations; the new
-tables start empty.
+no production row census is claimed for them — an unexposed table is an unknown
+count, not a zero one. The Morning Brief installation census in the parent epic
+describes installations, not generations, and cannot size these tables. The
+feature being default-off is likewise not evidence that the receipt table is
+empty. A change that needs a row count must refresh that exposure evidence
+first; the current repairs deliberately need none, because they align validation
+with the existing column domains instead of rewriting them, so `1152` stands
+unchanged and no migration, backfill or table lock is involved.
 
 ## The callable interface later slices consume
 

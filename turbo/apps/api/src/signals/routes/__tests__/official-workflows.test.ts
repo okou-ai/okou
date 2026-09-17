@@ -1,3 +1,4 @@
+import { mockClerkUsers } from "./helpers/clerk-users";
 import { createHash, randomUUID } from "node:crypto";
 import { gunzipSync } from "node:zlib";
 
@@ -1741,6 +1742,7 @@ async function deliverClerkOrganizationCreated(
 async function deliverClerkOrganizationMembershipCreated(
   actor: ApiTestUser,
   createdAt: Date,
+  membershipId = `membership-${actor.userId}-${actor.orgId}`,
 ): Promise<void> {
   if (!actor.orgId || !actor.orgRole) {
     throw new Error("Expected organization-scoped Clerk member");
@@ -1749,11 +1751,27 @@ async function deliverClerkOrganizationMembershipCreated(
   webhooks.verifyNextClerkWebhook({
     type: "organizationMembership.created",
     data: {
-      id: `membership-${actor.userId}-${actor.orgId}`,
+      id: membershipId,
       organization: { id: actor.orgId },
       public_user_data: { user_id: actor.userId },
       role: actor.orgRole,
       created_at: createdAt.getTime(),
+    },
+  });
+  await webhooks.requestClerkWebhook("{}", {}, [200]);
+  await flushWaitUntilForTest();
+}
+
+async function deliverClerkOrganizationMembershipDeleted(
+  actor: ApiTestUser,
+): Promise<void> {
+  webhooks.configureClerkWebhookSecret();
+  webhooks.verifyNextClerkWebhook({
+    type: "organizationMembership.deleted",
+    data: {
+      id: `membership-${actor.userId}-${actor.orgId}`,
+      organization: { id: actor.orgId },
+      public_user_data: { user_id: actor.userId },
     },
   });
   await webhooks.requestClerkWebhook("{}", {}, [200]);
@@ -1827,18 +1845,16 @@ function configureResultEmailRecipient(actor: ApiTestUser): void {
   mockEnv("APP_URL", "https://app.okou.ai");
   mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
   mockEnv("RESEND_FROM_DOMAIN", "mail.example.com");
-  context.mocks.clerk.users.getUserList.mockResolvedValue({
-    data: [
-      {
-        id: actor.userId,
-        emailAddresses: [{ id: emailId, emailAddress: actor.email }],
-        primaryEmailAddressId: emailId,
-        firstName: "Official",
-        lastName: "Automation",
-        imageUrl: null,
-      },
-    ],
-  });
+  mockClerkUsers(context, [
+    {
+      id: actor.userId,
+      emailAddresses: [{ id: emailId, emailAddress: actor.email }],
+      primaryEmailAddressId: emailId,
+      firstName: "Official",
+      lastName: "Automation",
+      imageUrl: null,
+    },
+  ]);
 }
 
 async function completeSuccessfulRun(
@@ -3346,13 +3362,17 @@ async function readMorningBriefAutomations(
 }
 
 function mockBriefMemberships(
-  entries: readonly { readonly actor: ApiTestUser; readonly createdAt: Date }[],
+  entries: readonly {
+    readonly actor: ApiTestUser;
+    readonly createdAt: Date;
+    readonly membershipId?: string;
+  }[],
 ): void {
   context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
     {
-      data: entries.map(({ actor, createdAt }) => {
+      data: entries.map(({ actor, createdAt, membershipId }) => {
         return {
-          id: `membership-${actor.userId}-${actor.orgId}`,
+          id: membershipId ?? `membership-${actor.userId}-${actor.orgId}`,
           role: actor.orgRole ?? "org:member",
           createdAt: createdAt.getTime(),
           organization: { id: actor.orgId },
@@ -3430,10 +3450,12 @@ async function prepareBriefMember({
   actor = bdd.user(),
   createdAt = new Date("2030-01-01T00:00:00.000Z"),
   catalogAvailable = true,
+  bootstrap = true,
 }: {
   readonly actor?: ApiTestUser;
   readonly createdAt?: Date;
   readonly catalogAvailable?: boolean;
+  readonly bootstrap?: boolean;
 } = {}) {
   installCatalogStorageFixture();
   if (catalogAvailable) {
@@ -3442,7 +3464,9 @@ async function prepareBriefMember({
   mockBriefMemberships([{ actor, createdAt }]);
   await setOfficialWorkflowsEnabled(actor, false);
   await setMorningBriefEnabled(actor, true);
-  await deliverClerkOrganizationCreated(actor, createdAt);
+  if (bootstrap) {
+    await deliverClerkOrganizationCreated(actor, createdAt);
+  }
   onTestFinished(async () => {
     installCatalogStorageFixture();
     await cleanupCatalog();
@@ -3451,6 +3475,83 @@ async function prepareBriefMember({
 }
 
 describe("Morning Brief default onboarding", () => {
+  it("waits locally for a known member's timezone and installs as soon as initialization supplies it", async () => {
+    const { actor, createdAt } = await prepareBriefMember();
+    await deliverClerkOrganizationMembershipCreated(actor, createdAt);
+    const membershipReads =
+      context.mocks.clerk.organizations.getOrganizationMembershipList;
+    membershipReads.mockClear();
+    const startedAt = now();
+    await withMockNowForTest(startedAt, async () => {
+      await initializeBriefMember(actor);
+      await Promise.all([
+        initializeBriefMember(actor),
+        initializeBriefMember(actor),
+        tickBriefEnrollment(actor),
+      ]);
+    });
+    await withMockNowForTest(startedAt + 60_000, async () => {
+      await tickBriefEnrollment(actor);
+      expect(membershipReads).not.toHaveBeenCalled();
+      expect((await readBriefPreference(actor)).body).toMatchObject({
+        enabled: true,
+        status: "preparing",
+        unavailableReason: "missing-timezone",
+      });
+      await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(
+        0,
+      );
+
+      await initializeBriefMember(actor, "Asia/Shanghai");
+      expect(membershipReads).toHaveBeenCalledTimes(1);
+      expect((await readBriefPreference(actor)).body).toMatchObject({
+        enabled: true,
+        status: "enabled",
+        timezone: "Asia/Shanghai",
+      });
+      await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(
+        1,
+      );
+    });
+  });
+
+  it("waits locally for the default Agent and recovers after the organization bootstrap arrives", async () => {
+    const { actor, createdAt } = await prepareBriefMember({ bootstrap: false });
+    const membershipReads =
+      context.mocks.clerk.organizations.getOrganizationMembershipList;
+    membershipReads.mockClear();
+    const startedAt = now();
+    await withMockNowForTest(startedAt, async () => {
+      await initializeBriefMember(actor, "Asia/Shanghai");
+      expect(membershipReads).toHaveBeenCalledTimes(1);
+      await initializeBriefMember(actor);
+      await tickBriefEnrollment(actor);
+    });
+    await withMockNowForTest(startedAt + 60_000, async () => {
+      await tickBriefEnrollment(actor);
+      expect(membershipReads).toHaveBeenCalledTimes(1);
+      expect((await readBriefPreference(actor)).body).toMatchObject({
+        enabled: true,
+        status: "preparing",
+        unavailableReason: "missing-default-agent",
+      });
+      await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(
+        0,
+      );
+
+      await deliverClerkOrganizationCreated(actor, createdAt);
+      await initializeBriefMember(actor);
+      expect(membershipReads).toHaveBeenCalledTimes(2);
+      expect((await readBriefPreference(actor)).body).toMatchObject({
+        enabled: true,
+        status: "enabled",
+      });
+      await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(
+        1,
+      );
+    });
+  });
+
   it("installs without any connected source and stays single across concurrent cron ticks", async () => {
     const { actor } = await prepareBriefMember();
     await initializeBriefMember(actor, "Asia/Shanghai");
@@ -3550,46 +3651,259 @@ describe("Morning Brief default onboarding", () => {
     await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(1);
   });
 
-  it("recovers a transient installation failure without repeating onboarding", async () => {
-    const { actor } = await prepareBriefMember({ catalogAvailable: false });
-    await connectBriefSource(actor);
-    await initializeBriefMember(actor, "Asia/Shanghai");
-    await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(0);
-    await syncDeployedCatalog();
-    await tickBriefEnrollment(actor);
-    expect((await readBriefPreference(actor)).body).toMatchObject({
-      status: "enabled",
-      enabled: true,
+  it("waits locally for a known member's catalog and recovers on the next worker revisit", async () => {
+    const { actor, createdAt } = await prepareBriefMember({
+      catalogAvailable: false,
     });
-    await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(1);
+    await deliverClerkOrganizationMembershipCreated(actor, createdAt);
+    const membershipReads =
+      context.mocks.clerk.organizations.getOrganizationMembershipList;
+    membershipReads.mockClear();
+    const startedAt = now();
+    await withMockNowForTest(startedAt, async () => {
+      await initializeBriefMember(actor, "Asia/Shanghai");
+      await Promise.all([
+        initializeBriefMember(actor),
+        tickBriefEnrollment(actor),
+      ]);
+      expect(membershipReads).not.toHaveBeenCalled();
+      await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(
+        0,
+      );
+    });
+    await flushWaitUntilForTest();
+    for (const elapsed of [60_000, 120_000, 180_000]) {
+      await withMockNowForTest(startedAt + elapsed, async () => {
+        context.mocks.ably.publish.mockClear();
+        await tickBriefEnrollment(actor);
+        await flushWaitUntilForTest();
+        if (elapsed === 60_000) {
+          expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+            "morningBriefChanged",
+            null,
+          );
+        } else {
+          expect(context.mocks.ably.publish).not.toHaveBeenCalledWith(
+            "morningBriefChanged",
+            null,
+          );
+        }
+        expect(membershipReads).not.toHaveBeenCalled();
+        expect((await readBriefPreference(actor)).body).toMatchObject({
+          enabled: true,
+          status: "error",
+        });
+      });
+    }
+    await syncDeployedCatalog();
+    await withMockNowForTest(startedAt + 240_000, async () => {
+      await tickBriefEnrollment(actor);
+      await flushWaitUntilForTest();
+      expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+        "morningBriefChanged",
+        null,
+      );
+      expect(membershipReads).toHaveBeenCalledTimes(1);
+      expect((await readBriefPreference(actor)).body).toMatchObject({
+        status: "enabled",
+        enabled: true,
+      });
+      await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(
+        1,
+      );
+    });
   });
 
-  describe("membership verification after a transient Clerk outage", () => {
-    let prepared: Awaited<ReturnType<typeof prepareBriefMember>>;
-    beforeEach(async () => {
-      prepared = await prepareBriefMember();
-      await connectBriefSource(prepared.actor);
-    });
-
-    it("keeps membership verification retryable when Clerk is temporarily unavailable", async () => {
-      const { actor, createdAt } = prepared;
-      context.mocks.clerk.organizations.getOrganizationMembershipList.mockRejectedValueOnce(
-        new Error("Temporary Clerk outage"),
-      );
-      const failed = await setupApp({ context, routes: userPreferencesRoutes })(
-        userPreferencesContract,
-      ).initialize({
-        headers: authHeaders(actor),
-        body: { timezone: "Asia/Shanghai" },
+  it("shares an inline Clerk failure cooldown with repeated initialization and worker ticks", async () => {
+    const { actor, createdAt } = await prepareBriefMember();
+    const membershipReads =
+      context.mocks.clerk.organizations.getOrganizationMembershipList;
+    membershipReads.mockClear();
+    membershipReads.mockRejectedValue(new Error("Temporary Clerk outage"));
+    const startedAt = now();
+    await withMockNowForTest(startedAt, async () => {
+      const initialized = await initializeBriefMember(actor, "Asia/Shanghai");
+      expect(initialized.body).toMatchObject({ timezone: "Asia/Shanghai" });
+      await Promise.all([
+        initializeBriefMember(actor),
+        initializeBriefMember(actor),
+        tickBriefEnrollment(actor),
+      ]);
+      expect(membershipReads).toHaveBeenCalledTimes(1);
+      expect((await readBriefPreference(actor)).body).toMatchObject({
+        enabled: true,
+        status: "error",
       });
-      expect(failed.status).toBe(200);
-      expect(failed.body).toMatchObject({ timezone: "Asia/Shanghai" });
-      mockBriefMemberships([{ actor, createdAt }]);
-      await tickBriefEnrollment(actor);
+      await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(
+        0,
+      );
+    });
+    mockBriefMemberships([{ actor, createdAt }]);
+    await withMockNowForTest(startedAt + 59_999, async () => {
+      await Promise.all([
+        initializeBriefMember(actor),
+        tickBriefEnrollment(actor),
+      ]);
+      expect(membershipReads).toHaveBeenCalledTimes(1);
+    });
+    await withMockNowForTest(startedAt + 60_000, async () => {
+      await Promise.all([
+        tickBriefEnrollment(actor),
+        tickBriefEnrollment(actor),
+      ]);
+      expect(membershipReads).toHaveBeenCalledTimes(2);
       expect((await readBriefPreference(actor)).body).toMatchObject({
         enabled: true,
         status: "enabled",
       });
+      await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(
+        1,
+      );
+    });
+  });
+
+  it.each([
+    { timezone: "Asia/Shanghai", status: "enabled", installations: 1 },
+    { timezone: undefined, status: "preparing", installations: 0 },
+  ])(
+    "recovers an interrupted membership check to $status after its five-minute claim expires",
+    async ({ timezone, status, installations }) => {
+      const { actor, createdAt } = await prepareBriefMember();
+      const membershipReads =
+        context.mocks.clerk.organizations.getOrganizationMembershipList;
+      membershipReads.mockClear();
+      const interrupted = new DOMException(
+        "Clerk request interrupted",
+        "AbortError",
+      );
+      membershipReads.mockRejectedValueOnce(interrupted);
+      const startedAt = now();
+      await withMockNowForTest(startedAt, async () => {
+        await expect(
+          setupApp({
+            context,
+            routes: userPreferencesRoutes,
+            rethrowErrors: true,
+          })(userPreferencesContract).initialize({
+            headers: authHeaders(actor),
+            body: { timezone },
+          }),
+        ).rejects.toBe(interrupted);
+        expect(membershipReads).toHaveBeenCalledTimes(1);
+        expect((await readBriefPreference(actor)).body).toMatchObject({
+          enabled: true,
+          status: "preparing",
+          timezone: timezone ?? null,
+        });
+      });
+      mockBriefMemberships([{ actor, createdAt }]);
+      await withMockNowForTest(startedAt + 299_999, async () => {
+        await initializeBriefMember(actor);
+        await tickBriefEnrollment(actor);
+        expect(membershipReads).toHaveBeenCalledTimes(1);
+        await expect(
+          listMorningBriefInstallations(actor),
+        ).resolves.toHaveLength(0);
+      });
+      await withMockNowForTest(startedAt + 300_000, async () => {
+        await flushWaitUntilForTest();
+        context.mocks.ably.publish.mockClear();
+        await tickBriefEnrollment(actor);
+        await flushWaitUntilForTest();
+        expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+          "morningBriefChanged",
+          null,
+        );
+        expect(membershipReads).toHaveBeenCalledTimes(2);
+        expect((await readBriefPreference(actor)).body).toMatchObject({
+          enabled: true,
+          status,
+        });
+        await expect(
+          listMorningBriefInstallations(actor),
+        ).resolves.toHaveLength(installations);
+      });
+      await withMockNowForTest(startedAt + 360_000, async () => {
+        context.mocks.ably.publish.mockClear();
+        await tickBriefEnrollment(actor);
+        await flushWaitUntilForTest();
+        expect(context.mocks.ably.publish).not.toHaveBeenCalledWith(
+          "morningBriefChanged",
+          null,
+        );
+        expect(membershipReads).toHaveBeenCalledTimes(2);
+        expect((await readBriefPreference(actor)).body).toMatchObject({
+          enabled: true,
+          status,
+        });
+      });
+    },
+  );
+
+  it("shares worker failures with inline retries and caps the growing cooldown at fifteen minutes", async () => {
+    const { actor, createdAt } = await prepareBriefMember({
+      catalogAvailable: false,
+    });
+    const membershipReads =
+      context.mocks.clerk.organizations.getOrganizationMembershipList;
+    membershipReads.mockClear();
+    const startedAt = now();
+    await withMockNowForTest(startedAt, async () => {
+      await initializeBriefMember(actor, "Asia/Shanghai");
+      expect(membershipReads).toHaveBeenCalledTimes(1);
+      await syncDeployedCatalog();
+    });
+    membershipReads.mockClear();
+    membershipReads.mockRejectedValue(new Error("Temporary Clerk outage"));
+    let attemptedAt = startedAt + 60_000;
+    let attempts = 1;
+    await withMockNowForTest(attemptedAt, async () => {
+      await tickBriefEnrollment(actor);
+      await initializeBriefMember(actor);
+      expect(membershipReads).toHaveBeenCalledTimes(attempts);
+      expect((await readBriefPreference(actor)).body).toMatchObject({
+        enabled: true,
+        status: "error",
+      });
+    });
+    for (const retryDelay of [60_000, 120_000, 240_000, 480_000, 900_000]) {
+      await withMockNowForTest(attemptedAt + retryDelay - 1, async () => {
+        await Promise.all([
+          initializeBriefMember(actor),
+          tickBriefEnrollment(actor),
+        ]);
+        expect(membershipReads).toHaveBeenCalledTimes(attempts);
+      });
+      attemptedAt += retryDelay;
+      attempts++;
+      await withMockNowForTest(attemptedAt, async () => {
+        await Promise.all([
+          initializeBriefMember(actor),
+          tickBriefEnrollment(actor),
+          tickBriefEnrollment(actor),
+        ]);
+        expect(membershipReads).toHaveBeenCalledTimes(attempts);
+      });
+    }
+    mockBriefMemberships([{ actor, createdAt }]);
+    await withMockNowForTest(attemptedAt + 899_999, async () => {
+      await initializeBriefMember(actor);
+      await tickBriefEnrollment(actor);
+      expect(membershipReads).toHaveBeenCalledTimes(attempts);
+      await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(
+        0,
+      );
+    });
+    await withMockNowForTest(attemptedAt + 900_000, async () => {
+      await tickBriefEnrollment(actor);
+      expect(membershipReads).toHaveBeenCalledTimes(attempts + 1);
+      expect((await readBriefPreference(actor)).body).toMatchObject({
+        enabled: true,
+        status: "enabled",
+      });
+      await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(
+        1,
+      );
     });
   });
 
@@ -3702,23 +4016,91 @@ describe("Morning Brief default onboarding", () => {
     ).resolves.toHaveLength(0);
   });
 
-  it("cancels pending enrollment when membership is removed, including a late created event", async () => {
+  it.each(["unstarted", "unavailable", "interrupted"] as const)(
+    "keeps a removed membership paused after a late created event when qualification was %s",
+    async (qualification) => {
+      const { actor, createdAt } = await prepareBriefMember();
+      const membershipReads =
+        context.mocks.clerk.organizations.getOrganizationMembershipList;
+      membershipReads.mockClear();
+      if (qualification === "interrupted") {
+        membershipReads.mockRejectedValueOnce(
+          new Error("Temporary Clerk outage"),
+        );
+      } else {
+        mockBriefMemberships([]);
+      }
+      if (qualification !== "unstarted") {
+        await initializeBriefMember(actor);
+        expect(membershipReads).toHaveBeenCalledTimes(1);
+      }
+      await deliverClerkOrganizationMembershipDeleted(actor);
+      mockBriefMemberships([]);
+      membershipReads.mockClear();
+      await deliverClerkOrganizationMembershipCreated(actor, createdAt);
+      await tickBriefEnrollment(actor);
+      expect(membershipReads).not.toHaveBeenCalled();
+      expect((await readBriefPreference(actor)).body).toMatchObject({
+        enabled: false,
+        status: "paused",
+      });
+      await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(
+        0,
+      );
+    },
+  );
+
+  it.each([
+    { label: "with its creation webhook", deliverCreatedEvent: true },
+    { label: "before its creation webhook", deliverCreatedEvent: false },
+  ])(
+    "enrolls a new membership generation $label after removal",
+    async ({ deliverCreatedEvent }) => {
+      const { actor, createdAt } = await prepareBriefMember();
+      await deliverClerkOrganizationMembershipCreated(actor, createdAt);
+      await deliverClerkOrganizationMembershipDeleted(actor);
+      const membershipReads =
+        context.mocks.clerk.organizations.getOrganizationMembershipList;
+      membershipReads.mockClear();
+      const newMembershipId = `rejoined-${actor.userId}-${actor.orgId}`;
+      const rejoinedAt = new Date(createdAt.getTime() + 1000);
+      mockBriefMemberships([
+        { actor, createdAt: rejoinedAt, membershipId: newMembershipId },
+      ]);
+      if (deliverCreatedEvent) {
+        await deliverClerkOrganizationMembershipCreated(
+          actor,
+          rejoinedAt,
+          newMembershipId,
+        );
+      }
+      await initializeBriefMember(actor, "Asia/Shanghai");
+      expect(membershipReads).toHaveBeenCalledTimes(1);
+      expect((await readBriefPreference(actor)).body).toMatchObject({
+        enabled: true,
+        status: "enabled",
+      });
+      await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(
+        1,
+      );
+    },
+  );
+
+  it("refuses to install pending work for a different live membership generation", async () => {
     const { actor, createdAt } = await prepareBriefMember();
-    await initializeBriefMember(actor);
-    webhooks.configureClerkWebhookSecret();
-    webhooks.verifyNextClerkWebhook({
-      type: "organizationMembership.deleted",
-      data: {
-        id: `membership-${actor.userId}-${actor.orgId}`,
-        organization: { id: actor.orgId },
-        public_user_data: { user_id: actor.userId },
-      },
-    });
-    await webhooks.requestClerkWebhook("{}", {}, [200]);
-    await flushWaitUntilForTest();
-    mockBriefMemberships([]);
     await deliverClerkOrganizationMembershipCreated(actor, createdAt);
-    await tickBriefEnrollment(actor);
+    mockBriefMemberships([
+      {
+        actor,
+        createdAt: new Date(createdAt.getTime() + 1000),
+        membershipId: `replacement-${actor.userId}-${actor.orgId}`,
+      },
+    ]);
+    const membershipReads =
+      context.mocks.clerk.organizations.getOrganizationMembershipList;
+    membershipReads.mockClear();
+    await initializeBriefMember(actor, "Asia/Shanghai");
+    expect(membershipReads).toHaveBeenCalledTimes(1);
     expect((await readBriefPreference(actor)).body).toMatchObject({
       enabled: false,
       status: "paused",
@@ -3757,10 +4139,18 @@ describe("Morning Brief default onboarding", () => {
     const { actor } = await prepareBriefMember();
     await connectBriefSource(actor);
     await setMorningBriefEnabled(actor, false);
+    const membershipReads =
+      context.mocks.clerk.organizations.getOrganizationMembershipList;
+    membershipReads.mockClear();
     await initializeBriefMember(actor, "Asia/Shanghai");
+    expect(membershipReads).toHaveBeenCalledTimes(1);
+    await initializeBriefMember(actor);
+    await tickBriefEnrollment(actor);
+    expect(membershipReads).toHaveBeenCalledTimes(1);
     await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(0);
     await setMorningBriefEnabled(actor, true);
     await initializeBriefMember(actor);
+    expect(membershipReads).toHaveBeenCalledTimes(2);
     const [installed] = await listMorningBriefInstallations(actor);
     if (!installed) {
       throw new Error("Expected installed brief");
@@ -5302,6 +5692,186 @@ describe("Official Workflow installations", () => {
       readAgentRunFamilyCountsFixture(context, targetAgentId),
     ).resolves.toStrictEqual(beforeRunFamily);
   });
+
+  it.each(["pause", "reconfigure", "catalog revision", "uninstall"] as const)(
+    "releases Official copy locks during upload and rejects a concurrent %s",
+    async (mutation) => {
+      installCatalogStorageFixture();
+      const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
+      const definitionName = `api-test-copy-prepare-${suffix}`;
+      const blueprints = [loopBlueprint(), webhookBlueprint()];
+      await syncCatalog(
+        catalog([activeDefinition(definitionName, blueprints)]),
+      );
+
+      const { actor } = await workflowBdd.setupWorkflowOrg({
+        timezone: "Asia/Shanghai",
+        tier: "team",
+      });
+      await selectBuiltInDefaultModel(actor);
+      const { agentId: sourceAgentId } = await workflowBdd.createAgent(actor);
+      const { agentId: targetAgentId } = await workflowBdd.createAgent(actor);
+      const pending: {
+        copying?: Promise<unknown>;
+        releaseCopy?: () => void;
+        independentThreadId?: string;
+      } = {};
+      onTestFinished(async () => {
+        pending.releaseCopy?.();
+        await pending.copying;
+        if (pending.independentThreadId) {
+          await chat.deleteThread(actor, pending.independentThreadId);
+        }
+        installCatalogStorageFixture();
+        await bdd.deleteAgent(actor, targetAgentId);
+        await bdd.deleteAgent(actor, sourceAgentId);
+        await cleanupCatalog();
+      });
+      const headers = authHeaders(actor);
+      await setOfficialWorkflowsEnabled(actor, true);
+      const installed = await accept(
+        officialClient().install({
+          headers,
+          params: { definitionName },
+          body: {
+            agentId: sourceAgentId,
+            blueprints: [
+              {
+                blueprintKey: "pulse",
+                bindings: [{ key: "interval-seconds", value: 3600 }],
+              },
+              { blueprintKey: "webhook-trigger", bindings: [] },
+            ],
+          },
+        }),
+        [201],
+      );
+      const pulse = installed.body.workflow.automations.find((automation) => {
+        return automation.official?.blueprintKey === "pulse";
+      });
+      if (!pulse) {
+        throw new Error("Expected Official copy source schedule");
+      }
+
+      const storage = installCatalogStorageFixture();
+      const heldUpload = storage.holdNextWrite();
+      let released = false;
+      const releaseCopy = () => {
+        if (!released && !context.signal.aborted) {
+          released = true;
+          heldUpload.resolve();
+        }
+      };
+      pending.releaseCopy = releaseCopy;
+      const pendingCopy = settleIncludingAbort(
+        workflowClient().copy({
+          headers,
+          params: { workflowId: installed.body.workflow.id },
+          body: { toAgentId: targetAgentId },
+        }),
+      );
+      pending.copying = pendingCopy;
+      await heldUpload.started;
+
+      // Event automations require a shared user/org thread-event sequence.
+      // The copy's blocked object upload must leave that sequence available
+      // to a separate request from the same actor before publication resumes.
+      const independentThread = await chat.createThread(actor, {
+        agentId: sourceAgentId,
+        title: "Independent work during an Official copy upload",
+      });
+      pending.independentThreadId = independentThread.id;
+      await expect(
+        chat.readThreadMetadata(actor, independentThread.id),
+      ).resolves.toMatchObject({ id: independentThread.id });
+
+      switch (mutation) {
+        case "pause": {
+          await accept(
+            automationClient().disable({
+              headers,
+              params: { id: pulse.id },
+            }),
+            [200],
+          );
+          break;
+        }
+        case "reconfigure": {
+          await accept(
+            installationClient().reconfigure({
+              headers,
+              params: { workflowId: installed.body.workflow.id },
+              body: {
+                blueprints: [
+                  {
+                    blueprintKey: "pulse",
+                    bindings: [{ key: "interval-seconds", value: 7200 }],
+                  },
+                ],
+              },
+            }),
+            [200],
+          );
+          break;
+        }
+        case "catalog revision": {
+          await syncCatalog(
+            catalog([
+              activeDefinition(
+                definitionName,
+                blueprints,
+                "Accepted content changed during copy preparation.",
+              ),
+            ]),
+          );
+          break;
+        }
+        case "uninstall": {
+          await accept(
+            installationClient().uninstall({
+              headers,
+              params: { workflowId: installed.body.workflow.id },
+            }),
+            [204],
+          );
+          break;
+        }
+      }
+
+      const duringCopy = await accept(
+        workflowCollectionClient().list({
+          headers,
+          query: { agentId: targetAgentId },
+        }),
+        [200],
+      );
+      expect(duringCopy.body).toStrictEqual([]);
+      releaseCopy();
+      const copied = await pendingCopy;
+      if (!copied.ok) {
+        throw copied.error;
+      }
+      expect(copied.value.status).toBe(409);
+      const afterCopy = await accept(
+        workflowCollectionClient().list({
+          headers,
+          query: { agentId: targetAgentId },
+        }),
+        [200],
+      );
+      expect(afterCopy.body).toStrictEqual([]);
+      const automations = await accept(
+        automationClient().listWorkspace({ headers }),
+        [200],
+      );
+      expect(
+        automations.body.some((automation) => {
+          return automation.workflow.agentId === targetAgentId;
+        }),
+      ).toBeFalsy();
+    },
+    30_000,
+  );
 
   describe.each([
     "installation release",

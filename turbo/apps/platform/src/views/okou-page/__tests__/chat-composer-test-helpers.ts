@@ -486,11 +486,54 @@ export function mockUrlObjectMethods(
   return { createObjectURL, revokeObjectURL };
 }
 
+/**
+ * The composer's model control names the selected model either way: the legacy
+ * select renders it as a combobox, and the menu and the flyout both open from a
+ * button. Tests that only need the control should not care which one is on.
+ */
+export function queryComposerModelTrigger(label: string): HTMLElement | null {
+  return (
+    screen.queryByRole("combobox", { name: label }) ??
+    queryAllByRoleFast("button").find((button) => {
+      return (
+        button.getAttribute("aria-label") === label ||
+        button.textContent?.replace(/\s+/gu, " ").trim() === label
+      );
+    }) ??
+    null
+  );
+}
+
+/**
+ * The same control located by structure instead of by the model it names, for
+ * tests that scope the search to one composer rather than to one label.
+ */
+export function composerModelTriggerIn(
+  container: ParentNode,
+): HTMLElement | null {
+  const combobox = container.querySelector('[role="combobox"]');
+  if (combobox instanceof HTMLElement) {
+    return combobox;
+  }
+  const button = container
+    .querySelector('[data-slot="select-value"]')
+    ?.closest("button");
+  return button instanceof HTMLElement ? button : null;
+}
+
+export async function composerModelTrigger(
+  label: string,
+): Promise<HTMLElement> {
+  return await findComposerModel(label);
+}
+
 async function findComposerModel(label: string): Promise<HTMLElement> {
   return await waitFor(() => {
-    const combobox = screen.getByRole("combobox", { name: label });
-    expect(combobox).toBeInTheDocument();
-    return combobox;
+    const trigger = queryComposerModelTrigger(label);
+    if (!trigger) {
+      throw new Error(`The composer model trigger for ${label} is not visible`);
+    }
+    return trigger;
   });
 }
 

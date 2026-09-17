@@ -4,21 +4,12 @@ import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import { morningBriefDeliveryPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-delivery-preview";
 import { morningBriefGenerationPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-generation-preview";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { chatEvents } from "@okouai/db/schema/chat-event";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
-import { emailOutbox } from "@okouai/db/schema/email-outbox";
-import { emailSuppressions } from "@okouai/db/schema/email-suppression";
-import { morningBriefDeliveries } from "@okouai/db/schema/morning-brief-delivery";
-import { userCache } from "@okouai/db/schema/user-cache";
-import { users } from "@okouai/db/schema/user";
 import { createStore } from "ccstate";
-import { and, asc, eq } from "drizzle-orm";
 import { http, HttpResponse } from "msw";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { db } from "../../../lib/db";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { clearMockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
@@ -28,10 +19,24 @@ import {
 } from "../../../test-fixtures/morning-brief-collection";
 import { expireMorningBriefGenerationRetention } from "../../../test-fixtures/morning-brief-generation";
 import { rejectEmailOutboxCompletion } from "../../../test-fixtures/email-outbox";
+import {
+  deleteOwnedChatThread,
+  discardMorningBriefDeliveries,
+  drainEmailOutbox,
+  elapseEmailOutboxRecoveryLease,
+  memberEmailAddressIsAbsent,
+  readChatThreadEvents,
+  readChatThreadState,
+  readEmailOutboxRow,
+  readMorningBriefDeliveries,
+  readMorningBriefDeliveryOutbox,
+  revokeMemberMorningBriefDeliveries,
+  seedMemberEmailAddress,
+  seedUnrelatedEmailIntent,
+  suppressEmailAddress,
+  unsubscribeMember,
+} from "../../../test-fixtures/morning-brief-delivery";
 import { signSandboxJwtForTests } from "../../auth/tokens";
-import { deleteChatThread$ } from "../../services/chat-thread.service";
-import { drainEmailOutboxItems$ } from "../../services/email-common.service";
-import { revokeMorningBriefDeliveryOwnership } from "../../services/morning-brief-delivery.service";
 import { morningBriefDeliveryPreviewRoutes } from "../morning-brief-delivery-preview";
 import { morningBriefGenerationPreviewRoutes } from "../morning-brief-generation-preview";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
@@ -156,15 +161,10 @@ async function fixture(
   // template reuses the same policy the legacy one enforces.
   mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.test");
   if (options.email !== null) {
-    await db()
-      .insert(userCache)
-      .values({
-        userId,
-        email: options.email ?? `${userId}@example.test`,
-        name: "Test Member",
-        cachedAt: new Date(now()),
-      })
-      .onConflictDoNothing();
+    await seedMemberEmailAddress(
+      userId,
+      options.email ?? `${userId}@example.test`,
+    );
   }
   return {
     orgId,
@@ -304,47 +304,18 @@ function deliver(f: Fixture, resultAttemptId: string, signal?: AbortSignal) {
 }
 
 async function readDeliveries(f: Fixture) {
-  return await db()
-    .select()
-    .from(morningBriefDeliveries)
-    .where(
-      and(
-        eq(morningBriefDeliveries.orgId, f.orgId),
-        eq(morningBriefDeliveries.userId, f.userId),
-      ),
-    );
+  return await readMorningBriefDeliveries({ orgId: f.orgId, userId: f.userId });
 }
 
 async function readThreadEvents(threadId: string) {
-  const rows = await db()
-    .select({
-      id: chatEvents.id,
-      eventType: chatEvents.eventType,
-      runId: chatEvents.runId,
-      payload: chatEvents.payload,
-      createdAt: chatEvents.createdAt,
-    })
-    .from(chatEvents)
-    .where(eq(chatEvents.chatThreadId, threadId))
-    .orderBy(asc(chatEvents.seqId));
-  return rows.map((row) => {
-    const payload = row.payload as { content?: string } | null;
-    return { ...row, content: payload?.content ?? null };
-  });
+  return await readChatThreadEvents(threadId);
 }
 
 async function readOutbox(f: Fixture) {
-  const deliveries = await readDeliveries(f);
-  const ids = deliveries.flatMap((row) => {
-    return row.emailOutboxId === null ? [] : [row.emailOutboxId];
+  return await readMorningBriefDeliveryOutbox({
+    orgId: f.orgId,
+    userId: f.userId,
   });
-  if (ids.length === 0) {
-    return [];
-  }
-  return await db()
-    .select()
-    .from(emailOutbox)
-    .where(eq(emailOutbox.id, ids[0]!));
 }
 
 describe("Morning Brief native delivery", () => {
@@ -386,15 +357,9 @@ describe("Morning Brief native delivery", () => {
 
     // The thread is the member's own Morning Brief thread, and it carries the
     // sticky exclusion so tomorrow's brief cannot summarise this one.
-    const [thread] = await db()
-      .select({
-        userId: chatThreads.userId,
-        agentId: chatThreads.agentId,
-        provenance: chatThreads.provenance,
-        lastMessageAt: chatThreads.lastMessageAt,
-      })
-      .from(chatThreads)
-      .where(eq(chatThreads.id, response.body.delivery.chatThreadId));
+    const thread = await readChatThreadState(
+      response.body.delivery.chatThreadId,
+    );
     expect(thread?.userId).toBe(f.userId);
     expect(thread?.agentId).toBe(f.agentId);
     expect(thread?.provenance).toBe("morning_brief");
@@ -420,11 +385,7 @@ describe("Morning Brief native delivery", () => {
 
     // The shared drain renders and sends that same intent through the real
     // provider boundary, and records the delivered state.
-    await store.set(
-      drainEmailOutboxItems$,
-      { currentTimeMs: now(), itemIds: [queued!.id] },
-      context.signal,
-    );
+    await drainEmailOutbox([queued!.id], context.signal);
     const sends = emailSends();
     expect(sends).toHaveLength(1);
     const sent = sends[0]!;
@@ -444,14 +405,7 @@ describe("Morning Brief native delivery", () => {
       /^okou-email-outbox\/v1\/[0-9a-f-]{36}$/,
     );
 
-    const [drained] = await db()
-      .select({
-        status: emailOutbox.status,
-        resendId: emailOutbox.resendId,
-        providerIdempotencyKey: emailOutbox.providerIdempotencyKey,
-      })
-      .from(emailOutbox)
-      .where(eq(emailOutbox.id, queued!.id));
+    const drained = await readEmailOutboxRow(queued!.id);
     expect(drained?.status).toBe("sent");
     expect(drained?.resendId).toBeTruthy();
     expect(drained?.providerIdempotencyKey).toBe(sent.options.idempotencyKey);
@@ -548,13 +502,7 @@ describe("Morning Brief native delivery", () => {
     scriptSlack();
     const { calls } = scriptProviders();
     const attemptId = await generateAcceptedResult(f);
-    await db()
-      .insert(users)
-      .values({ id: f.userId, emailUnsubscribed: true })
-      .onConflictDoUpdate({
-        target: users.id,
-        set: { emailUnsubscribed: true },
-      });
+    await unsubscribeMember(f.userId);
 
     const response = await accept(deliver(f, attemptId), [200]);
     expect(response.body.delivery.emailResolution).toBe("unsubscribed");
@@ -572,13 +520,7 @@ describe("Morning Brief native delivery", () => {
     const f = await fixture();
     scriptSlack();
     scriptProviders();
-    await db()
-      .insert(emailSuppressions)
-      .values({
-        emailAddress: `${f.userId}@example.test`,
-        reason: "bounce",
-      })
-      .onConflictDoNothing();
+    await suppressEmailAddress(`${f.userId}@example.test`);
     const attemptId = await generateAcceptedResult(f);
 
     const response = await accept(deliver(f, attemptId), [200]);
@@ -594,11 +536,7 @@ describe("Morning Brief native delivery", () => {
 
     const response = await accept(deliver(f, attemptId), [200]);
     expect(response.body.delivery.emailResolution).toBe("no_email");
-    const cached = await db()
-      .select({ userId: userCache.userId })
-      .from(userCache)
-      .where(eq(userCache.userId, f.userId));
-    expect(cached).toHaveLength(0);
+    await expect(memberEmailAddressIsAbsent(f.userId)).resolves.toBe(true);
   });
 
   it("removes the unsent intent and its delivery when the owner is deleted", async () => {
@@ -610,45 +548,17 @@ describe("Morning Brief native delivery", () => {
     const [queued] = await readOutbox(f);
     expect(queued).toBeDefined();
 
-    const untouched = await db()
-      .insert(emailOutbox)
-      .values({
-        fromAddress: "Okou <okou@mail.okou.test>",
-        toAddresses: "other@example.test",
-        subject: "unrelated",
-        template: {
-          template: "data-export-ready",
-          props: {
-            downloadUrl: "https://x.test",
-            expiresAt: "",
-            artifactCount: 0,
-          },
-        },
-        status: "pending",
-        attempts: 0,
-      })
-      .returning({ id: emailOutbox.id });
+    const untouchedId = await seedUnrelatedEmailIntent("other@example.test");
 
-    await db().transaction(async (tx) => {
-      await revokeMorningBriefDeliveryOwnership(tx, {
-        kind: "membership",
-        orgId: f.orgId,
-        userId: f.userId,
-      });
+    await revokeMemberMorningBriefDeliveries({
+      orgId: f.orgId,
+      userId: f.userId,
     });
 
     await expect(readDeliveries(f)).resolves.toHaveLength(0);
-    const remaining = await db()
-      .select({ id: emailOutbox.id })
-      .from(emailOutbox)
-      .where(eq(emailOutbox.id, queued!.id));
-    expect(remaining).toHaveLength(0);
+    await expect(readEmailOutboxRow(queued!.id)).resolves.toBeUndefined();
     // Another producer's queued mail is untouched.
-    const other = await db()
-      .select({ id: emailOutbox.id })
-      .from(emailOutbox)
-      .where(eq(emailOutbox.id, untouched[0]!.id));
-    expect(other).toHaveLength(1);
+    await expect(readEmailOutboxRow(untouchedId)).resolves.toBeDefined();
     // The Chat message the owner already received is not rewritten by cleanup.
     const events = await readThreadEvents(delivered.body.delivery.chatThreadId);
     expect(
@@ -668,20 +578,11 @@ describe("Morning Brief native delivery", () => {
 
     // The provenance disappears without the mail being cleaned up — the case
     // the drain must never turn into a generic send.
-    await db()
-      .delete(morningBriefDeliveries)
-      .where(eq(morningBriefDeliveries.orgId, f.orgId));
+    await discardMorningBriefDeliveries({ orgId: f.orgId, userId: f.userId });
 
-    await store.set(
-      drainEmailOutboxItems$,
-      { currentTimeMs: now(), itemIds: [queued!.id] },
-      context.signal,
-    );
+    await drainEmailOutbox([queued!.id], context.signal);
     expect(emailSends()).toHaveLength(0);
-    const [resolved] = await db()
-      .select({ status: emailOutbox.status, lastError: emailOutbox.lastError })
-      .from(emailOutbox)
-      .where(eq(emailOutbox.id, queued!.id));
+    const resolved = await readEmailOutboxRow(queued!.id);
     expect(resolved?.status).toBe("failed");
     expect(resolved?.lastError).toContain("native delivery provenance");
   });
@@ -738,50 +639,23 @@ describe("Morning Brief native delivery", () => {
     const [queued] = await readOutbox(f);
 
     // A generic producer's item, unrelated to Morning Brief.
-    const [sibling] = await db()
-      .insert(emailOutbox)
-      .values({
-        fromAddress: "Okou <okou@mail.okou.test>",
-        toAddresses: "sibling@example.test",
-        subject: "unrelated",
-        template: {
-          template: "data-export-ready",
-          props: {
-            downloadUrl: "https://x.test",
-            expiresAt: "",
-            artifactCount: 0,
-          },
-        },
-        status: "pending",
-        attempts: 0,
-      })
-      .returning({ id: emailOutbox.id });
+    const siblingId = await seedUnrelatedEmailIntent("sibling@example.test");
 
     // The remote membership lookup fails for the native owner only.
     context.mocks.clerk.organizations.getOrganizationMembershipList.mockRejectedValue(
       new Error("clerk unavailable"),
     );
 
-    await store.set(
-      drainEmailOutboxItems$,
-      { currentTimeMs: now(), itemIds: [queued!.id, sibling!.id] },
-      context.signal,
-    );
+    await drainEmailOutbox([queued!.id, siblingId], context.signal);
 
     // The native intent is neither sent nor failed: it keeps its state and its
     // attempt count for a later pass.
-    const [held] = await db()
-      .select({ status: emailOutbox.status, attempts: emailOutbox.attempts })
-      .from(emailOutbox)
-      .where(eq(emailOutbox.id, queued!.id));
+    const held = await readEmailOutboxRow(queued!.id);
     expect(held?.status).toBe("pending");
     expect(held?.attempts).toBe(0);
 
     // The unrelated producer still went out.
-    const [drainedSibling] = await db()
-      .select({ status: emailOutbox.status })
-      .from(emailOutbox)
-      .where(eq(emailOutbox.id, sibling!.id));
+    const drainedSibling = await readEmailOutboxRow(siblingId);
     expect(drainedSibling?.status).toBe("sent");
     const sends = emailSends();
     expect(sends).toHaveLength(1);
@@ -811,17 +685,10 @@ describe("Morning Brief native delivery", () => {
       } as never,
     );
 
-    await store.set(
-      drainEmailOutboxItems$,
-      { currentTimeMs: now(), itemIds: [queued!.id] },
-      context.signal,
-    );
+    await drainEmailOutbox([queued!.id], context.signal);
 
     expect(emailSends()).toHaveLength(0);
-    const [resolved] = await db()
-      .select({ status: emailOutbox.status, lastError: emailOutbox.lastError })
-      .from(emailOutbox)
-      .where(eq(emailOutbox.id, queued!.id));
+    const resolved = await readEmailOutboxRow(queued!.id);
     expect(resolved?.status).toBe("failed");
     expect(resolved?.lastError).toContain("new membership generation");
   });
@@ -835,8 +702,7 @@ describe("Morning Brief native delivery", () => {
     const [queued] = await readOutbox(f);
     expect(queued).toBeDefined();
 
-    await store.set(
-      deleteChatThread$,
+    await deleteOwnedChatThread(
       {
         threadId: delivered.body.delivery.chatThreadId,
         userId: f.userId,
@@ -848,11 +714,7 @@ describe("Morning Brief native delivery", () => {
     // The cascade removed the delivery; the deletion transaction removed the
     // content-bearing mail with it rather than leaving it to expire.
     await expect(readDeliveries(f)).resolves.toHaveLength(0);
-    const remaining = await db()
-      .select({ id: emailOutbox.id })
-      .from(emailOutbox)
-      .where(eq(emailOutbox.id, queued!.id));
-    expect(remaining).toHaveLength(0);
+    await expect(readEmailOutboxRow(queued!.id)).resolves.toBeUndefined();
   });
 
   it("converges concurrent deliveries of one result on a single message", async () => {
@@ -895,25 +757,31 @@ describe("Morning Brief native delivery", () => {
       queued!.id,
       context.signal,
     );
-    await expect(
-      store.set(
-        drainEmailOutboxItems$,
-        { currentTimeMs: now(), itemIds: [queued!.id] },
-        context.signal,
-      ),
-    ).rejects.toThrow("Test email outbox completion write failed");
+    // Drizzle wraps the driver error, so the injected failure is asserted at
+    // its own boundary: the outer error names the failed statement and its
+    // cause carries the trigger's message.
+    const completionFailure = await drainEmailOutbox(
+      [queued!.id],
+      context.signal,
+    ).then(
+      () => {
+        throw new Error("Expected the completion write to fail");
+      },
+      (error: unknown) => {
+        return error;
+      },
+    );
+    expect(completionFailure).toBeInstanceOf(Error);
+    const failure = completionFailure as Error & { readonly cause?: unknown };
+    expect(failure.message).toContain('update "email_outbox"');
+    expect(String(failure.cause)).toContain(
+      "Test email outbox completion write failed",
+    );
     await restore();
 
     const firstSends = emailSends();
     expect(firstSends).toHaveLength(1);
-    const [afterLoss] = await db()
-      .select({
-        status: emailOutbox.status,
-        providerIdempotencyKey: emailOutbox.providerIdempotencyKey,
-        providerRequest: emailOutbox.providerRequest,
-      })
-      .from(emailOutbox)
-      .where(eq(emailOutbox.id, queued!.id));
+    const afterLoss = await readEmailOutboxRow(queued!.id);
     // The row is still `sending` with its committed payload and key intact.
     expect(afterLoss?.status).toBe("sending");
     expect(afterLoss?.providerIdempotencyKey).toBe(
@@ -921,15 +789,8 @@ describe("Morning Brief native delivery", () => {
     );
 
     // Its recovery lease elapses and another drain replays the same request.
-    await db()
-      .update(emailOutbox)
-      .set({ nextRetryAt: new Date(now() - 1000) })
-      .where(eq(emailOutbox.id, queued!.id));
-    await store.set(
-      drainEmailOutboxItems$,
-      { currentTimeMs: now(), itemIds: [queued!.id] },
-      context.signal,
-    );
+    await elapseEmailOutboxRecoveryLease(queued!.id);
+    await drainEmailOutbox([queued!.id], context.signal);
 
     const sends = emailSends();
     expect(sends).toHaveLength(2);
@@ -938,10 +799,7 @@ describe("Morning Brief native delivery", () => {
     expect(sends[1]?.options.idempotencyKey).toBe(
       sends[0]?.options.idempotencyKey,
     );
-    const [settled] = await db()
-      .select({ status: emailOutbox.status })
-      .from(emailOutbox)
-      .where(eq(emailOutbox.id, queued!.id));
+    const settled = await readEmailOutboxRow(queued!.id);
     expect(settled?.status).toBe("sent");
     // No second Chat message and no second generation followed the replay.
     await expect(readDeliveries(f)).resolves.toHaveLength(1);

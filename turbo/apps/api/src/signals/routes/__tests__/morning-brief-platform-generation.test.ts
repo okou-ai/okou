@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
+import { modelProvidersMainContract } from "@okouai/api-contracts/contracts/model-provider-routes";
 import { morningBriefCollectionPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-collection-preview";
 import {
   morningBriefGenerationPreviewContract,
@@ -28,6 +29,7 @@ import {
   failMorningBriefGenerationUpdates,
   holdMorningBriefGenerationReservation,
   holdMorningBriefOwnerRow,
+  interceptPlatformGenerationReceiptWrites,
   readMorningBriefGenerations,
   readOwnerBillingFootprint,
   readPlatformGenerationReceipts,
@@ -35,8 +37,10 @@ import {
   removeMorningBriefMember,
   setMorningBriefMemberLocale,
 } from "../../../test-fixtures/morning-brief-generation";
+import { upsertOrgMetadataFixture } from "../../../test-fixtures/org-metadata";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { createDeferredPromise } from "../../utils";
+import { modelProvidersRoutes } from "../model-providers";
 import { morningBriefCollectionPreviewRoutes } from "../morning-brief-collection-preview";
 import { morningBriefGenerationPreviewRoutes } from "../morning-brief-generation-preview";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
@@ -45,6 +49,7 @@ import {
   seedSlackOrgInstallation$,
 } from "./helpers/integrations-slack";
 import { seedOrgMembership$ } from "./helpers/org-membership";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 const store = createStore();
@@ -360,6 +365,7 @@ describe("Morning Brief platform-funded generation", () => {
       generation.result?.decision === "deliver" && generation.result.markdown,
     ).toContain("[#general](");
     expect(generation.receipt).toMatchObject({
+      recorded: "durable",
       provider: "openrouter",
       requestedModel: "google/gemini-3.8-flash",
       returnedModel: "google/gemini-3.8-flash",
@@ -367,7 +373,9 @@ describe("Morning Brief platform-funded generation", () => {
       outcome: "response_received",
       cost: {
         state: "reported",
-        value: "0.00421",
+        // Reported in the exact decimal the receipt column holds, so the
+        // answer and the stored row below carry one identical amount.
+        value: "0.004210000000",
         unit: "openrouter_credits",
         source: "chat_completion_usage_cost",
       },
@@ -509,7 +517,7 @@ describe("Morning Brief platform-funded generation", () => {
     // An explicitly reported zero is a known zero, never an unknown cost.
     expect(body.generation.receipt?.cost).toStrictEqual({
       state: "reported",
-      value: "0",
+      value: "0.000000000000",
       unit: "openrouter_credits",
       source: "chat_completion_usage_cost",
     });
@@ -1118,7 +1126,7 @@ describe("Morning Brief platform-funded generation cost reconciliation", () => {
     expect(lookups).toStrictEqual(["gen-01H0PLATFORM"]);
     expect(body.generation.receipt?.cost).toStrictEqual({
       state: "reported",
-      value: "0.0015",
+      value: "0.001500000000",
       unit: "openrouter_credits",
       source: "generation_total_cost",
     });
@@ -1126,6 +1134,8 @@ describe("Morning Brief platform-funded generation cost reconciliation", () => {
     const receipts = await readPlatformGenerationReceipts([
       row?.attemptId ?? "",
     ]);
+    // The reconciled amount the answer reported and the amount the column
+    // holds are one value, not two representations of it.
     expect(receipts[0]?.costValue).toBe("0.001500000000");
   });
 
@@ -1369,5 +1379,471 @@ describe("Morning Brief platform-funded generation admission", () => {
     );
     expect(traffic.bodies).toStrictEqual([]);
     await expect(readMorningBriefGenerations(f)).resolves.toStrictEqual([]);
+  });
+});
+
+/**
+ * The receipt's durable domain.
+ *
+ * These cover the boundary between what the adapter accepts and what the
+ * receipt columns actually hold. Each case runs through the real route and real
+ * PostgreSQL, because the failures they protect against are storage failures:
+ * an `integer out of range` that aborts the whole INSERT, and a `numeric(24,12)`
+ * that silently rounds a real charge to a durable zero.
+ */
+describe("Morning Brief platform receipt data domain", () => {
+  it("keeps an out-of-domain token count from discarding the charge", async () => {
+    const f = await fixture();
+    slackWithMessages();
+    const traffic = scriptProvider(() => {
+      return completion({
+        cost: 0.000125,
+        // One above the receipt column's `integer` ceiling. PostgreSQL rejects
+        // the value, so accepting it here used to fail the whole receipt.
+        usage: { prompt_tokens: 2_147_483_648 },
+      });
+    });
+
+    const response = await accept(generate(f), [200]);
+    const body = expectGenerated(response.body);
+    expect(body.generation.state).toBe("succeeded");
+    // The unusable count is the only thing lost.
+    expect(body.generation.receipt?.tokens).toStrictEqual({
+      prompt: null,
+      completion: 240,
+      reasoning: 90,
+      cached: 64,
+      total: 1440,
+    });
+    expect(body.generation.receipt?.cost).toStrictEqual({
+      state: "reported",
+      value: "0.000125000000",
+      unit: "openrouter_credits",
+      source: "chat_completion_usage_cost",
+    });
+    expect(body.generation.receipt?.recorded).toBe("durable");
+    expect(traffic.bodies).toHaveLength(1);
+
+    const [row, ...extraRows] = await readMorningBriefGenerations(f);
+    expect(extraRows).toStrictEqual([]);
+    // The slot resolves instead of staying reserved for a request that is over.
+    expect(row?.state).toBe("succeeded");
+    const receipts = await readPlatformGenerationReceipts([
+      row?.attemptId ?? "",
+    ]);
+    expect(receipts).toHaveLength(1);
+    expect(receipts[0]?.costValue).toBe("0.000125000000");
+    expect(receipts[0]?.promptTokens).toBeNull();
+    expect(receipts[0]?.totalTokens).toBe(1440);
+  });
+
+  it.each([
+    ["the column ceiling", 2_147_483_647, 2_147_483_647],
+    ["one above the column ceiling", 2_147_483_648, null],
+    ["a safe integer past the column", Number.MAX_SAFE_INTEGER, null],
+  ])("records %s as %s", async (_label, reported, stored) => {
+    const f = await fixture();
+    slackWithMessages();
+    scriptProvider(() => {
+      return completion({ cost: 0.001, usage: { prompt_tokens: reported } });
+    });
+
+    const response = await accept(generate(f), [200]);
+    const body = expectGenerated(response.body);
+    expect(body.generation.receipt?.tokens.prompt).toBe(stored);
+    const [row] = await readMorningBriefGenerations(f);
+    const receipts = await readPlatformGenerationReceipts([
+      row?.attemptId ?? "",
+    ]);
+    expect(receipts[0]?.promptTokens).toBe(stored);
+  });
+
+  it.each([
+    ["a reported zero", 0, "0.000000000000"],
+    ["an ordinary amount", 0.00125, "0.001250000000"],
+    ["the smallest storable amount", 1e-12, "0.000000000001"],
+    [
+      "the largest storable amount",
+      999_999_999_999.999,
+      "999999999999.999000000000",
+    ],
+  ])(
+    "preserves %s exactly through storage and reread",
+    async (_l, cost, value) => {
+      const f = await fixture();
+      slackWithMessages();
+      scriptProvider(() => {
+        return completion({ cost });
+      });
+
+      const response = await accept(generate(f), [200]);
+      const first = expectGenerated(response.body);
+      expect(first.generation.receipt?.cost).toStrictEqual({
+        state: "reported",
+        value,
+        unit: "openrouter_credits",
+        source: "chat_completion_usage_cost",
+      });
+      const [row] = await readMorningBriefGenerations(f);
+      const receipts = await readPlatformGenerationReceipts([
+        row?.attemptId ?? "",
+      ]);
+      expect(receipts[0]?.costValue).toBe(value);
+
+      // The reread an external caller can make reports the same amount, so the
+      // initial answer and the durable record never disagree.
+      const second = await accept(generate(f), [200]);
+      if (second.body.result !== "already-generated") {
+        throw new Error(
+          `Expected already-generated, got ${second.body.result}`,
+        );
+      }
+      expect(second.body.generation.receipt?.cost.value).toBe(value);
+      expect(second.body.generation.receipt?.recorded).toBe("durable");
+    },
+  );
+
+  it.each([
+    ["an amount finer than the stored scale", 1e-13],
+    ["an amount wider than the stored precision", 1e12],
+  ])("reports %s as unavailable rather than rounding it", async (_l, cost) => {
+    const f = await fixture();
+    slackWithMessages();
+    let lookups = 0;
+    server.use(
+      http.get(OPENROUTER_GENERATION_URL, () => {
+        lookups += 1;
+        return HttpResponse.json({ data: {} });
+      }),
+    );
+    const traffic = scriptProvider(() => {
+      return completion({ cost });
+    });
+
+    const response = await accept(generate(f), [200]);
+    const body = expectGenerated(response.body);
+    expect(body.generation.state).toBe("succeeded");
+    // Explicitly not a known zero: the charge is real and its amount is not
+    // representable, so it stays unknown with the generation id retained.
+    expect(body.generation.receipt?.cost).toStrictEqual({
+      state: "unavailable",
+      value: null,
+      unit: null,
+      source: null,
+    });
+    expect(body.generation.receipt?.providerGenerationId).toBe(
+      "gen-01H0PLATFORM",
+    );
+    const [row] = await readMorningBriefGenerations(f);
+    const receipts = await readPlatformGenerationReceipts([
+      row?.attemptId ?? "",
+    ]);
+    expect(receipts).toHaveLength(1);
+    expect(receipts[0]?.costValue).toBeNull();
+    expect(receipts[0]?.costState).toBe("unavailable");
+    // An unrepresentable inline amount is still reconciled once, and never by
+    // a second completion.
+    expect(lookups).toBe(1);
+    expect(traffic.bodies).toHaveLength(1);
+  });
+
+  it.each([
+    ["an amount the column holds", 1e-12, "0.000000000001", "reported"],
+    ["an amount finer than its scale", 1e-13, null, "unavailable"],
+  ])(
+    "applies the same durable contract to %s from the lookup",
+    async (_l, total, value, state) => {
+      const f = await fixture();
+      slackWithMessages();
+      server.use(
+        http.get(OPENROUTER_GENERATION_URL, ({ request }) => {
+          return HttpResponse.json({
+            data: {
+              id: new URL(request.url).searchParams.get("id") ?? "",
+              is_byok: false,
+              total_cost: total,
+            },
+          });
+        }),
+      );
+      scriptProvider(() => {
+        return completion({});
+      });
+
+      const response = await accept(generate(f), [200]);
+      const body = expectGenerated(response.body);
+      expect(body.generation.receipt?.cost.state).toBe(state);
+      expect(body.generation.receipt?.cost.value).toBe(value);
+      const [row] = await readMorningBriefGenerations(f);
+      const receipts = await readPlatformGenerationReceipts([
+        row?.attemptId ?? "",
+      ]);
+      expect(receipts[0]?.costValue).toBe(value);
+    },
+  );
+});
+
+/**
+ * The receipt outlives what happens to the owner's request.
+ *
+ * The charge is incurred at the provider, so the record of it is owed before
+ * cancellation or a failed authority resolution can end this request. These
+ * suspend and fail the real INSERT rather than a stub, so "the retry finished"
+ * is observed rather than assumed.
+ */
+describe("Morning Brief platform receipt durability", () => {
+  it("records the charge when the caller cancels while the write waits", async () => {
+    const f = await fixture();
+    slackWithMessages();
+    const cancellation = new Error(`cancelled ${randomUUID()}`);
+    const controller = new AbortController();
+    // The first write fails, and every write for this invocation blocks until
+    // released — so cancellation lands while the INSERT is genuinely waiting.
+    const { barrier } = await interceptPlatformGenerationReceiptWrites(
+      { generationId: "gen-01H0PLATFORM", failures: 1, suspend: true },
+      context.signal,
+    );
+    if (!barrier) {
+      throw new Error("Expected a suspended receipt write");
+    }
+    const traffic = scriptProvider(() => {
+      return completion({ cost: 0.00042 });
+    });
+
+    const pending = setupApp({
+      context,
+      routes: morningBriefGenerationPreviewRoutes,
+      signal: controller.signal,
+      rethrowErrors: true,
+    })(morningBriefGenerationPreviewContract).preview({
+      headers: f.headers,
+      body: { scheduledFor: ANCHOR },
+    });
+    await barrier.waitForArrival();
+    controller.abort(cancellation);
+    await barrier.release();
+
+    // Cancellation still reaches the caller: recording a charge is not
+    // permission to accept anything.
+    await expect(pending).rejects.toThrow(cancellation.message);
+    expect(traffic.bodies).toHaveLength(1);
+
+    const [row, ...extraRows] = await readMorningBriefGenerations(f);
+    expect(extraRows).toStrictEqual([]);
+    // No owner content was accepted or released by the cancelled request.
+    expect(row?.state).toBe("reserved");
+    expect(row?.resultMarkdown).toBeNull();
+    expect(row?.resultTitle).toBeNull();
+
+    // The charge an external caller can actually see: settling the lapsed
+    // reservation reports the exact amount the cancelled request observed.
+    await expireMorningBriefGenerationReservation(f, new Date(now() - 1000));
+    const settled = await accept(generate(f), [200]);
+    if (settled.body.result !== "already-generated") {
+      throw new Error(`Expected already-generated, got ${settled.body.result}`);
+    }
+    expect(settled.body.generation.state).toBe("invocation_outcome_unknown");
+    expect(settled.body.generation.result).toBeNull();
+    expect(settled.body.generation.receipt).toMatchObject({
+      recorded: "durable",
+      outcome: "response_received",
+      cost: { state: "reported", value: "0.000420000000" },
+    });
+    // Still one POST, and the transient failure produced exactly one record.
+    expect(traffic.bodies).toHaveLength(1);
+    await expect(
+      readPlatformGenerationReceipts([row?.attemptId ?? ""]),
+    ).resolves.toHaveLength(1);
+  });
+
+  it("records the charge when resolving the live authority fails afterwards", async () => {
+    const f = await fixture();
+    slackWithMessages();
+    const authorityFailure = new Error(
+      `membership unavailable ${randomUUID()}`,
+    );
+    await interceptPlatformGenerationReceiptWrites(
+      { generationId: "gen-01H0PLATFORM", failures: 1 },
+      context.signal,
+    );
+    const traffic = scriptProvider(() => {
+      // The next membership read is the post-response authority check, and it
+      // fails while the provider request is still open. Later reads recover,
+      // so this is a transient dependency failure rather than a lapse.
+      context.mocks.clerk.organizations.getOrganizationMembershipList.mockRejectedValueOnce(
+        authorityFailure,
+      );
+      return completion({ cost: 0.00061 });
+    });
+
+    await expect(
+      setupApp({
+        context,
+        routes: morningBriefGenerationPreviewRoutes,
+        rethrowErrors: true,
+      })(morningBriefGenerationPreviewContract).preview({
+        headers: f.headers,
+        body: { scheduledFor: ANCHOR },
+      }),
+    ).rejects.toThrow(authorityFailure.message);
+    expect(traffic.bodies).toHaveLength(1);
+
+    const [row] = await readMorningBriefGenerations(f);
+    expect(row?.state).toBe("reserved");
+    // The resolution failure left the request, but not the charge: the amount
+    // is reported back through the endpoint once the reservation lapses.
+    await expireMorningBriefGenerationReservation(f, new Date(now() - 1000));
+    const settled = await accept(generate(f), [200]);
+    if (settled.body.result !== "already-generated") {
+      throw new Error(`Expected already-generated, got ${settled.body.result}`);
+    }
+    expect(settled.body.generation.state).toBe("invocation_outcome_unknown");
+    expect(settled.body.generation.receipt).toMatchObject({
+      recorded: "durable",
+      cost: { state: "reported", value: "0.000610000000" },
+    });
+    expect(traffic.bodies).toHaveLength(1);
+    await expect(
+      readPlatformGenerationReceipts([row?.attemptId ?? ""]),
+    ).resolves.toHaveLength(1);
+  });
+
+  it("reports an unresolved charge when every write attempt fails", async () => {
+    const f = await fixture();
+    slackWithMessages();
+    // Storage never recovers for this invocation: the bound below is well
+    // above every attempt the executor is permitted to make.
+    await interceptPlatformGenerationReceiptWrites(
+      { generationId: "gen-01H0PLATFORM", failures: 99 },
+      context.signal,
+    );
+    const traffic = scriptProvider(() => {
+      return completion({ cost: 0.00073 });
+    });
+
+    const response = await accept(generate(f), [200]);
+    const body = expectGenerated(response.body);
+    // Finite exhaustion is stated, not hidden behind a durable-looking receipt
+    // and never behind a cost of zero.
+    expect(body.generation.receipt?.recorded).toBe("unresolved");
+    expect(body.generation.receipt?.cost).toStrictEqual({
+      state: "reported",
+      value: "0.000730000000",
+      unit: "openrouter_credits",
+      source: "chat_completion_usage_cost",
+    });
+    // The owner-scoped write does not wait on accounting.
+    expect(body.generation.state).toBe("succeeded");
+
+    // A reread reports no receipt at all, because none was stored. Nothing
+    // invented a durable record, and no repeat POST tried to obtain one.
+    const reread = await accept(generate(f), [200]);
+    if (reread.body.result !== "already-generated") {
+      throw new Error(`Expected already-generated, got ${reread.body.result}`);
+    }
+    expect(reread.body.generation.receipt).toBeNull();
+    expect(reread.body.generation.state).toBe("succeeded");
+    const [row] = await readMorningBriefGenerations(f);
+    await expect(
+      readPlatformGenerationReceipts([row?.attemptId ?? ""]),
+    ).resolves.toStrictEqual([]);
+    expect(traffic.bodies).toHaveLength(1);
+  });
+
+  it("keeps one receipt across repeated reads and invalid model output", async () => {
+    const f = await fixture();
+    slackWithMessages();
+    const traffic = scriptProvider(() => {
+      return completion({ content: "not json at all", cost: 0.00019 });
+    });
+
+    const first = await accept(generate(f), [200]);
+    const firstBody = expectGenerated(first.body);
+    expect(firstBody.generation.state).toBe("output_rejected");
+    // A refused answer was still paid for.
+    expect(firstBody.generation.receipt?.cost.value).toBe("0.000190000000");
+    expect(firstBody.generation.receipt?.recorded).toBe("durable");
+
+    const second = await accept(generate(f), [200]);
+    if (second.body.result !== "already-generated") {
+      throw new Error(`Expected already-generated, got ${second.body.result}`);
+    }
+    expect(second.body.generation.receipt).toStrictEqual(
+      firstBody.generation.receipt,
+    );
+    expect(traffic.bodies).toHaveLength(1);
+    await expect(
+      readPlatformGenerationReceipts([firstBody.generation.attemptId]),
+    ).resolves.toHaveLength(1);
+  });
+});
+
+/**
+ * Okou pays, and only Okou's credential is used.
+ *
+ * The organization below is persisted with an explicit zero balance and the
+ * member configures their own OpenRouter key, so a path that consulted either
+ * one would either refuse the request or send it somewhere else.
+ */
+describe("Morning Brief platform-funded generation is platform-paid", () => {
+  it("generates for a zero-credit org without using the member's own key", async () => {
+    const f = await fixture();
+    await upsertOrgMetadataFixture({
+      orgId: f.orgId,
+      tier: "free",
+      credits: 0,
+    });
+    // A real, member-owned OpenRouter credential for the same organization.
+    // The provider API is a Settings surface, so it is configured through a
+    // session the way the member really would.
+    createRouteMocks(context).clerk.session(f.userId, f.orgId);
+    const configured = await accept(
+      setupApp({ context, routes: modelProvidersRoutes })(
+        modelProvidersMainContract,
+      ).upsert({
+        headers: { authorization: "Bearer clerk-session" },
+        body: { type: "openrouter-api-key", secret: "member-openrouter-key" },
+      }),
+      [200, 201],
+    );
+    expect(configured.body.provider.type).toBe("openrouter-api-key");
+    slackWithMessages();
+    const credentials: (string | null)[] = [];
+    server.use(
+      http.post(OPENROUTER_URL, ({ request }) => {
+        credentials.push(request.headers.get("authorization"));
+        return HttpResponse.json(completion({ cost: 0.00052 }));
+      }),
+    );
+
+    const scope = {
+      orgId: f.orgId,
+      workflowId: f.workflowId,
+      automationId: f.automationId,
+    };
+    const before = await readOwnerBillingFootprint(scope);
+    expect(before).toStrictEqual({
+      usageEvents: 0,
+      allowanceWindows: 0,
+      runs: 0,
+      emails: 0,
+      automationThreads: 0,
+      // Established as an exact zero rather than accepted as whatever the
+      // fixture happened to hold or left absent.
+      credits: 0,
+    });
+
+    const response = await accept(generate(f), [200]);
+    const body = expectGenerated(response.body);
+    expect(body.generation.state).toBe("succeeded");
+    // The platform credential, never the member's, and exactly once.
+    expect(credentials).toStrictEqual(["Bearer platform-openrouter-key"]);
+    expect(body.generation.receipt?.cost.value).toBe("0.000520000000");
+    expect(body.generation.receipt?.recorded).toBe("durable");
+
+    // No debit, reservation, usage row, Run, Chat thread or email followed.
+    await expect(readOwnerBillingFootprint(scope)).resolves.toStrictEqual(
+      before,
+    );
   });
 });

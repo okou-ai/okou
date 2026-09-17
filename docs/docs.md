@@ -44,8 +44,8 @@ surface; the index does not replace their detailed rules.
   capabilities, live health normalization, freshness and rollout boundaries.
 - [Billing attribution foundation](./database/billing-attribution.md): immutable
   billing identity, writer inventory, bounded backfill and activation boundaries.
-- [X resource observation preparation](./x-resource-observations.md): dormant
-  resource protocol, shared claim storage, transient remainder and consumer gates.
+- [X resource observations](./x-resource-observations.md): atomic daily
+  deduplication, two-date cleanup, transient remainder and activation gates.
 - [Database trigger retirement](./database-trigger-retirement.md): explicit API
   entitlement writers, repair paths, and the serving/rollback removal gate.
 - [Account telemetry and recovery erasure](./account-erasure-evidence.md):
@@ -59,6 +59,9 @@ surface; the index does not replace their detailed rules.
 - [Morning Brief migration state](./morning-brief-migration-state.md): the
   canonical reader for a member's existing brief, its ownership and thread
   invariants, and the boundary the `simple-morning-brief` cutover must respect.
+- [Morning Brief GitHub collection](./morning-brief-github-collection.md): the
+  protected preview entrypoint, live connector authorization, GitHub branch
+  semantics, budgets, and coverage/failure classification.
 - [Morning Brief source collection](./morning-brief-collection.md): the bounded
   Slack source contract, occurrence/attempt/lease ownership, owner revocation
   boundary, live shared-scope revalidation, and the coverage limits this first

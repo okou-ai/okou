@@ -107,6 +107,14 @@ const GENERATION_PERSISTENCE_RESERVE_MS = 10_000;
 const GENERATION_RESULT_RETENTION_MS = 24 * 60 * 60 * 1000;
 /** Persistence attempts for one already observed receipt and result. */
 const GENERATION_PERSISTENCE_ATTEMPTS = 3;
+/**
+ * Attempts the anonymous receipt gets before anything else can leave.
+ *
+ * They run while the request is still here, joined and finite. Nothing is
+ * detached to finish later: this is the accounting an already incurred charge
+ * is owed, not a background job.
+ */
+const GENERATION_RECEIPT_ATTEMPTS = 3;
 /** The read-only cost reconciliation is short and attempted at most once. */
 const GENERATION_COST_LOOKUP_MS = 5000;
 
@@ -274,10 +282,22 @@ async function admitGeneration(
   return { kind: "reserved", admission, plan };
 }
 
+/**
+ * Whether this invocation's charge actually reached durable storage.
+ *
+ * `unresolved` is the honest terminal state of a finite, exhausted attempt at
+ * recording a charge that was really incurred. It is deliberately not reported
+ * as a durable receipt and never as a cost of zero: the amount is known, the
+ * record of it is not.
+ */
+type ReceiptRecord = MorningBriefPlatformReceiptView["recorded"];
+
 function receiptView(
   values: MorningBriefPlatformReceiptValues,
+  recorded: ReceiptRecord,
 ): MorningBriefPlatformReceiptView {
   return {
+    recorded,
     attemptId: values.attemptId,
     provider: "openrouter",
     requestedModel: values.requestedModel,
@@ -601,6 +621,8 @@ function viewOfUncommittedAttempt(
 interface PersistenceArgs {
   readonly fence: MorningBriefGenerationFence;
   readonly receipt: MorningBriefPlatformReceiptValues;
+  /** What the receipt's own bounded attempts already achieved. */
+  readonly recorded: ReceiptRecord;
   readonly interpreted: InterpretedOutcome;
 }
 
@@ -714,35 +736,76 @@ type PersistOutcome =
   | { readonly kind: "uncommitted" };
 
 /**
- * Commit the observed receipt and then the owner-scoped outcome.
+ * Record the anonymous charge, with bounded attempts of the same observation.
  *
- * They are separate writes on purpose. The receipt is anonymous platform spend
- * and must survive an owner who was revoked or erased while the request was in
- * flight, so it is written first and keyed by the opaque attempt id — a bounded
- * retry of the same observation therefore writes exactly one cost record. When
- * every attempt fails the slot stays reserved: a later explicit invocation
- * resolves it to `invocation_outcome_unknown`, and nothing sends again.
+ * Every attempt is awaited here, so an exhausted one is a finished fact rather
+ * than a promise still running somewhere. The insert is keyed by the opaque
+ * attempt id and conflict-free, so retrying — and a later attempt racing an
+ * earlier one that actually committed — leaves exactly one cost record, and
+ * never replaces a committed observation with this one.
+ *
+ * It takes no owner lock and no erasure admission: the charge belongs to the
+ * platform, so it is still recorded for an owner who was revoked or erased
+ * while the request was in flight.
+ *
+ * Aborts are settled rather than propagated. A caller who cancelled still
+ * cancels, but only after the request that may already have been billed has
+ * been given its finite chance to be written down.
+ */
+async function persistReceipt(
+  db: Db,
+  receipt: MorningBriefPlatformReceiptValues,
+): Promise<ReceiptRecord> {
+  let attempt = 0;
+  while (attempt < GENERATION_RECEIPT_ATTEMPTS) {
+    attempt += 1;
+    const settled = await settleIncludingAbort(
+      recordPlatformGenerationReceipt(db, receipt),
+    );
+    if (settled.ok) {
+      return "durable";
+    }
+  }
+  return "unresolved";
+}
+
+/**
+ * Commit the owner-scoped outcome, retrying the receipt only if it still owes.
+ *
+ * The two writes are separate on purpose. The receipt is anonymous platform
+ * spend and was already given its own bounded attempts before anything could
+ * refuse the owner-scoped write, so a storage fault that has since cleared gets
+ * one more finite chance here rather than making the owner write wait on
+ * accounting — and an owner write that fails can never undo a committed charge.
+ *
+ * When every owner attempt fails the slot stays reserved: a later explicit
+ * invocation resolves it to `invocation_outcome_unknown`, and nothing sends
+ * again.
  */
 async function persistObservation(
   db: Db,
   args: PersistenceArgs,
-): Promise<PersistOutcome> {
+): Promise<{
+  readonly outcome: PersistOutcome;
+  readonly recorded: ReceiptRecord;
+}> {
+  const recorded =
+    args.recorded === "durable"
+      ? "durable"
+      : await persistReceipt(db, args.receipt);
   let attempt = 0;
   while (attempt < GENERATION_PERSISTENCE_ATTEMPTS) {
     attempt += 1;
     const settled = await settleIncludingAbort(
-      (async (): Promise<OwnerWriteResult> => {
-        await recordPlatformGenerationReceipt(db, args.receipt);
-        return await db.transaction(async (tx) => {
-          return await commitOwnerOutcome(tx, args);
-        });
-      })(),
+      db.transaction(async (tx) => {
+        return await commitOwnerOutcome(tx, args);
+      }),
     );
     if (settled.ok) {
-      return { kind: "committed", write: settled.value };
+      return { outcome: { kind: "committed", write: settled.value }, recorded };
     }
   }
-  return { kind: "uncommitted" };
+  return { outcome: { kind: "uncommitted" }, recorded };
 }
 
 async function loadReceiptView(
@@ -754,6 +817,8 @@ async function loadReceiptView(
     return null;
   }
   return {
+    // Read back out of the table, so the record is durable by construction.
+    recorded: "durable",
     attemptId: row.attemptId,
     provider: "openrouter",
     requestedModel: row.requestedModel,
@@ -904,10 +969,12 @@ async function reconcileCost(
 /**
  * The irreversible step, and the one place cancellation must not short-circuit.
  *
- * Both awaits deliberately settle rather than propagate: once the request may
- * have reached the provider, the caller still has to record what it observed.
- * Cancellation is applied by the caller, after the anonymous charge is durable
- * and before any of the answer can become owner content.
+ * Every await here deliberately settles rather than propagates: once the
+ * request may have reached the provider, the caller still has to record what it
+ * observed. Cancellation is applied by the caller, after the anonymous charge
+ * has had its bounded joined attempts at becoming durable and before any of the
+ * answer can become owner content. Recording a charge is not permission to
+ * accept content, and nothing here writes or releases owner content.
  */
 async function requestAndRecordCharge(
   args: {
@@ -920,6 +987,7 @@ async function requestAndRecordCharge(
   providerSignal: AbortSignal,
 ): Promise<{
   readonly receipt: MorningBriefPlatformReceiptValues;
+  readonly recorded: ReceiptRecord;
   readonly interpreted: InterpretedOutcome;
 }> {
   const startedAt = nowDate();
@@ -951,11 +1019,46 @@ async function requestAndRecordCharge(
     startedAt,
     finishedAt,
   });
-  // The charge is already incurred, so it is recorded before anything can
-  // refuse the owner-scoped write. This write is joined to this request and
-  // bounded; nothing is detached to finish after it.
-  await settleIncludingAbort(recordPlatformGenerationReceipt(args.db, receipt));
-  return { receipt, interpreted: classified.interpreted };
+  // The charge is already incurred, so it is recorded here — before the
+  // caller's cancellation check and before the authority resolution that
+  // decides the owner-scoped write, either of which can leave this request
+  // entirely. A transient storage fault at this point used to discard an
+  // observed charge; these attempts are bounded, joined and finite instead.
+  const recorded = await persistReceipt(args.db, receipt);
+  return { receipt, recorded, interpreted: classified.interpreted };
+}
+
+/**
+ * Report what persistence actually achieved, for the owner and the charge.
+ *
+ * The receipt is reported at whatever its own bounded attempts reached, so an
+ * owner-scoped write that failed never downgrades a committed charge and an
+ * unresolved charge is never dressed up as a durable one.
+ */
+function generationOfPersistence(args: {
+  readonly admission: MorningBriefGenerationAdmission;
+  readonly coverage: MorningBriefSlackBundle["coverage"];
+  readonly receipt: MorningBriefPlatformReceiptValues;
+  readonly persisted: {
+    readonly outcome: PersistOutcome;
+    readonly recorded: ReceiptRecord;
+  };
+}): MorningBriefGenerationView {
+  const { admission, coverage, persisted } = args;
+  const view = receiptView(args.receipt, persisted.recorded);
+  if (persisted.outcome.kind === "uncommitted") {
+    return viewOfUncommittedAttempt(
+      admission,
+      coverage,
+      view,
+      "persistence_failed",
+    );
+  }
+  if (persisted.outcome.write.kind === "owner-revoked") {
+    // The incurred cost stays recorded; no owner row is recreated to hold it.
+    return viewOfUncommittedAttempt(admission, coverage, view, "owner_revoked");
+  }
+  return viewOfRow(persisted.outcome.write.row, view);
 }
 
 /**
@@ -1071,22 +1174,28 @@ const invokeAndPersist$ = command(
       return await uninvoked("reservation_expired");
     }
 
-    const { receipt, interpreted: observedOutcome } =
-      await requestAndRecordCharge(
-        {
-          db,
-          apiKey: args.apiKey,
-          attemptId: admission.attemptId,
-          body: args.plan.body,
-          sources: args.sources,
-        },
-        AbortSignal.any([signal, AbortSignal.timeout(budgetMs)]),
-      );
-    // Cancellation never accepts owner content, and the charge above is
-    // already durable when it propagates.
+    const {
+      receipt,
+      recorded,
+      interpreted: observedOutcome,
+    } = await requestAndRecordCharge(
+      {
+        db,
+        apiKey: args.apiKey,
+        attemptId: admission.attemptId,
+        body: args.plan.body,
+        sources: args.sources,
+      },
+      AbortSignal.any([signal, AbortSignal.timeout(budgetMs)]),
+    );
+    // Cancellation never accepts owner content. The charge above has already
+    // finished its own bounded attempts, so propagating here cannot discard an
+    // observation this request made — and cannot make one durable that is not.
     signal.throwIfAborted();
-    const view = receiptView(receipt);
 
+    // Resolving the live authority can itself fail and leave this request; the
+    // receipt above is settled either way, so an incurred charge no longer
+    // depends on that resolution succeeding.
     const stillAdmitted = await set(
       generationAuthorityStillCurrent$,
       args.occurrenceRow,
@@ -1101,38 +1210,19 @@ const invokeAndPersist$ = command(
     const persisted = await persistObservation(db, {
       fence,
       receipt,
+      recorded,
       interpreted,
     });
     signal.throwIfAborted();
-    if (persisted.kind === "uncommitted") {
-      return {
-        kind: "generated",
-        occurrence: args.occurrence,
-        generation: viewOfUncommittedAttempt(
-          admission,
-          args.coverage,
-          view,
-          "persistence_failed",
-        ),
-      };
-    }
-    if (persisted.write.kind === "owner-revoked") {
-      // The incurred cost stays recorded; no owner row is recreated to hold it.
-      return {
-        kind: "generated",
-        occurrence: args.occurrence,
-        generation: viewOfUncommittedAttempt(
-          admission,
-          args.coverage,
-          view,
-          "owner_revoked",
-        ),
-      };
-    }
     return {
       kind: "generated",
       occurrence: args.occurrence,
-      generation: viewOfRow(persisted.write.row, view),
+      generation: generationOfPersistence({
+        admission,
+        coverage: args.coverage,
+        receipt,
+        persisted,
+      }),
     };
   },
 );
