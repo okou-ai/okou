@@ -102,6 +102,8 @@ surface; the index does not replace their detailed rules.
   local source and restored payload sizes, representation and timing semantics.
 - [Host archive phase diagnostics](./host-archive-phase-diagnostics.md): bounded
   early download, apply-gate and publication timing with cancellation semantics.
+- [Workspace handoff study](./workspace-handoff-study.md): isolated KVM evaluation
+  of cached disks on prewarmed Blanks, measurement boundaries and lifecycle gaps.
 - [Guest file compression](./guest-file-compression.md): caller-owned history
   selection, bounded streaming, failure semantics and bundled compatibility.
 - [Runner multi-architecture rollout](./runner-multi-architecture.md): build,
