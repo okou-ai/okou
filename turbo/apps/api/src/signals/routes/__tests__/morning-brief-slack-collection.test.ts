@@ -1732,15 +1732,16 @@ describe("Morning Brief Slack final release proof", () => {
       expect(held.traffic.requests.at(-1)?.url).toBe(
         SLACK_USER_CONVERSATIONS_URL,
       );
+      // The recorded occurrence agrees with the empty bundle, and nothing the
+      // attempt withheld is recoverable from it either.
       const [row, ...extra] = await readMorningBriefCollectionOccurrences(f);
       expect(extra).toHaveLength(0);
       expect(row).toMatchObject({
         attempt: 1,
-        status: "completed",
-        outcome: "partial",
         channelCount: 0,
         messageCount: 0,
       });
+      expect(JSON.stringify(row)).not.toContain("general");
     },
   );
 
@@ -1859,18 +1860,14 @@ describe("Morning Brief Slack final release proof", () => {
 
     await expect(pending).rejects.toThrow(cancellation.message);
     expect(queriesFor(traffic, SLACK_HISTORY_URL)).toHaveLength(1);
+    // The attempt published no bundle and never finalized, so the occurrence it
+    // claimed is still held rather than completed: the next explicit
+    // invocation is refused as in progress without reaching Slack again.
+    const retried = await accept(collect(f), [409]);
+    expect(retried.body.error.code).toBe(
+      "MORNING_BRIEF_COLLECTION_IN_PROGRESS",
+    );
     expect(traffic.requests.at(-1)?.url).toBe(SLACK_USER_CONVERSATIONS_URL);
-    // The attempt never finalized, so it published neither a bundle nor a
-    // completed occurrence carrying the content it was holding.
-    const [row, ...extra] = await readMorningBriefCollectionOccurrences(f);
-    expect(extra).toHaveLength(0);
-    expect(row).toMatchObject({
-      attempt: 1,
-      status: "running",
-      outcome: null,
-      channelCount: null,
-      messageCount: null,
-    });
   });
 
   it("keeps a complete positive proof releasing its content unchanged", async () => {
