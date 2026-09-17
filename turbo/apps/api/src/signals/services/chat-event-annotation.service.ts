@@ -50,20 +50,16 @@ function storedHref(value: string | null): string | undefined {
 function teamsSourceUrl(
   context: Extract<ChatEventSourceContext, { readonly kind: "teams" }>,
 ): string | undefined {
-  if (!context.tenantId) {
+  if (!context.tenantId || !context.activityId) {
     return undefined;
   }
   const tenantQuery = `tenantId=${encodeURIComponent(context.tenantId)}`;
   if (context.channelId) {
-    return context.activityId
-      ? `https://teams.microsoft.com/l/message/${encodeURIComponent(context.channelId)}/${encodeURIComponent(context.activityId)}?${tenantQuery}`
-      : undefined;
+    return `https://teams.microsoft.com/l/message/${encodeURIComponent(context.channelId)}/${encodeURIComponent(context.activityId)}?${tenantQuery}`;
   }
   if (context.conversationId?.startsWith("19:")) {
     const chatId = encodeURIComponent(context.conversationId);
-    return context.activityId
-      ? `https://teams.microsoft.com/l/message/${chatId}/${encodeURIComponent(context.activityId)}?${tenantQuery}&context=${encodeURIComponent(JSON.stringify({ contextType: "chat" }))}`
-      : `https://teams.microsoft.com/l/chat/${chatId}/conversations?${tenantQuery}`;
+    return `https://teams.microsoft.com/l/message/${chatId}/${encodeURIComponent(context.activityId)}?${tenantQuery}&context=${encodeURIComponent(JSON.stringify({ contextType: "chat" }))}`;
   }
   // Bot Framework personal conversation IDs (a:...) are not Graph chat IDs.
   if (

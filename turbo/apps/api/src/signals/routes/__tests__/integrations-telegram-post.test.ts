@@ -1680,7 +1680,11 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
           version: 1,
           parts: [
             { type: "text", text: firstPrompt },
-            { type: "source", kind: "telegram" },
+            {
+              type: "source",
+              kind: "telegram",
+              href: `https://t.me/bot_${fixture.telegramBotId}`,
+            },
           ],
         },
       }),

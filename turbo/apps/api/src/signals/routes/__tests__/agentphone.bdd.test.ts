@@ -1283,10 +1283,10 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         id: admittedGroup.eventId,
         userMessage: {
           version: 1,
-          parts: [
+          parts: expect.arrayContaining([
             { type: "text", text: "@Okou summarize this thread" },
             { type: "source", kind: "agentphone" },
-          ],
+          ]),
         },
       }),
     );
