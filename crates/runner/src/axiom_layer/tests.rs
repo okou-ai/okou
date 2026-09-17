@@ -524,6 +524,48 @@ async fn helper_failure_keeps_a_bounded_redacted_causal_tail_at_ingest() {
 }
 
 #[tokio::test]
+async fn axiom_ingests_only_scoped_storage_latency_info() {
+    let server = MockServer::start_async().await;
+    let (ingest, captured) = capture_axiom_ingest(&server).await;
+    let (layer, guard) = init_with_base_url(&server.base_url(), "t", "test").unwrap();
+    let subscriber = tracing_subscriber::registry().with(with_ingest_filter(layer));
+    {
+        let _sub = tracing::subscriber::set_default(subscriber);
+        tracing::info!(
+            target: "guest_control_client::exec_operation::diagnostics",
+            storage_download_latency = true,
+            label = "storage-download",
+            terminal_reason = "slow",
+            elapsed_ms = 5227_u64,
+            guest_duration_ms = 5226_u64,
+            "exec operation terminal result",
+        );
+        tracing::info!(target: "guest_control_client::exec_operation::diagnostics", "other terminal info");
+        tracing::info!(storage_download_latency = true, "unrelated target");
+        tracing::debug!(target: "guest_control_client::exec_operation::diagnostics", storage_download_latency = true, "debug latency");
+        tracing::warn!(target: "guest_control_client::exec_operation::diagnostics", label = "storage-download", terminal_reason = "notable", "storage failure");
+    }
+    guard.shutdown().await;
+    ingest.assert_calls_async(1).await;
+    let events = captured.events();
+    assert_eq!(events.len(), 2, "events={events:#?}");
+    let latency = event_with_message(&events, "exec operation terminal result");
+    assert_eq!(latency["level"], "info");
+    assert_eq!(
+        latency["context"],
+        "guest_control_client::exec_operation::diagnostics"
+    );
+    assert_eq!(latency["label"], "storage-download");
+    assert_eq!(latency["terminal_reason"], "slow");
+    assert_eq!(latency["elapsed_ms"], 5227);
+    assert_eq!(latency["guest_duration_ms"], 5226);
+    assert_eq!(
+        event_with_message(&events, "storage failure")["level"],
+        "warn"
+    );
+}
+
+#[tokio::test]
 async fn axiom_filter_does_not_suppress_sibling_local_layers() {
     let server = MockServer::start_async().await;
 
