@@ -212,10 +212,6 @@ export const deleteWorkflow$ = command(
         .where(eq(workflowAutomations.workflowId, workflow.id));
 
       await tx.delete(workflows).where(eq(workflows.id, workflow.id));
-      await retireDeletedWorkflowStableContext(tx, {
-        orgId: args.orgId,
-        workflow,
-      });
 
       const storageName = getCustomSkillStorageName(workflow.id);
       const [storage] = await tx
@@ -231,8 +227,16 @@ export const deleteWorkflow$ = command(
         .limit(1);
 
       if (storage) {
+        // Stable-context publishers lock resource parents before the head.
+        // Delete in the same parent-before-head order so a publisher holding a
+        // Storage key-share lock cannot deadlock with Workflow invalidation.
         await tx.delete(storages).where(eq(storages.id, storage.id));
       }
+
+      await retireDeletedWorkflowStableContext(tx, {
+        orgId: args.orgId,
+        workflow,
+      });
 
       return {
         deleted: true as const,

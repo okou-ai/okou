@@ -601,6 +601,7 @@ async function publishProjection(
     "headId" | "generation" | "input" | "inputDigest"
   > & { readonly leaseId?: string },
   projection: PiStableContextProjection,
+  afterResourceLock?: () => Promise<void>,
 ): Promise<boolean> {
   const artifactDigest = piStableContextArtifactDigest(projection);
   const condition = and(
@@ -661,6 +662,7 @@ async function publishProjection(
         .orderBy(asc(storageVersions.id))
         .for("key share");
     }
+    await afterResourceLock?.();
     const [head] = await tx
       .select({ id: piStableContextHeads.id })
       .from(piStableContextHeads)
@@ -981,11 +983,16 @@ function errorClass(error: unknown): string {
     : "unknown";
 }
 
+interface StableContextWorkHooks {
+  readonly beforePublish?: () => Promise<void>;
+  readonly afterResourceLock?: () => Promise<void>;
+}
+
 async function buildStableContextWorkItem(
   db: Db,
   work: ClaimedStableContextWork,
   signal: AbortSignal,
-  beforePublish?: () => Promise<void>,
+  hooks?: StableContextWorkHooks,
 ): Promise<keyof Omit<StableContextWorkResult, "claimed" | "failed">> {
   const mounts = piResourceDiscoveryMounts(
     work.input.storageMounts.map(storageMountForComposer),
@@ -1012,19 +1019,26 @@ async function buildStableContextWorkItem(
       : "stale";
   }
   const projection = indexedProjection(work.input, indexed.indexes);
-  await beforePublish?.();
+  await hooks?.beforePublish?.();
   signal.throwIfAborted();
-  return (await publishProjection(db, work, projection)) ? "ready" : "stale";
+  return (await publishProjection(
+    db,
+    work,
+    projection,
+    hooks?.afterResourceLock,
+  ))
+    ? "ready"
+    : "stale";
 }
 
 async function executeStableContextWorkItem(
   db: Db,
   work: ClaimedStableContextWork,
   signal: AbortSignal,
-  beforePublish?: () => Promise<void>,
+  hooks?: StableContextWorkHooks,
 ): Promise<keyof Omit<StableContextWorkResult, "claimed">> {
   const built = await settle(
-    buildStableContextWorkItem(db, work, signal, beforePublish),
+    buildStableContextWorkItem(db, work, signal, hooks),
   );
   signal.throwIfAborted();
   if (built.ok) {
@@ -1043,8 +1057,7 @@ async function executeStableContextWorkItem(
 export async function executePiStableContextWork(
   db: Db,
   signal: AbortSignal,
-  hooks?: {
-    readonly beforePublish?: () => Promise<void>;
+  hooks?: StableContextWorkHooks & {
     readonly scope?: PiStableContextWorkScope;
   },
 ): Promise<StableContextWorkResult> {
@@ -1059,12 +1072,7 @@ export async function executePiStableContextWork(
   };
   for (const item of work) {
     signal.throwIfAborted();
-    const outcome = await executeStableContextWorkItem(
-      db,
-      item,
-      signal,
-      hooks?.beforePublish,
-    );
+    const outcome = await executeStableContextWorkItem(db, item, signal, hooks);
     result[outcome]++;
   }
   return result;

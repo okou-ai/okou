@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto";
 
+import {
+  getCustomSkillStorageName,
+  VOLUME_ORG_USER_ID,
+} from "@okouai/core/storage-names";
 import type { PiStableContextBuildInput } from "@okouai/db/jsonb-contracts/pi-stable-context";
 import { agents } from "@okouai/db/schema/agent";
 import {
@@ -11,6 +15,7 @@ import {
 } from "@okouai/db/schema/pi-stable-context";
 import { piResourceVersionIndexes } from "@okouai/db/schema/pi-resource-version-index";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
+import { workflows } from "@okouai/db/schema/workflow";
 import { and, eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
@@ -35,6 +40,7 @@ import {
   executePiStableContextWork,
   preparePiStableContext,
 } from "../pi-stable-context.service";
+import { deleteWorkflow$ } from "../workflow-delete.service";
 
 describe("Pi stable context generation fences", () => {
   const pool = new Pool({ connectionString: env("DATABASE_URL"), max: 4 });
@@ -148,14 +154,17 @@ describe("Pi stable context generation fences", () => {
   async function executeFixtureWork(
     agentId: string,
     signal: AbortSignal,
-    beforePublish?: () => Promise<void>,
+    hooks?: {
+      readonly beforePublish?: () => Promise<void>;
+      readonly afterResourceLock?: () => Promise<void>;
+    },
   ) {
     const heads = await db
       .select({ id: piStableContextHeads.id })
       .from(piStableContextHeads)
       .where(eq(piStableContextHeads.agentId, agentId));
     return await executePiStableContextWork(db, signal, {
-      ...(beforePublish ? { beforePublish } : {}),
+      ...hooks,
       scope: {
         headIds: heads.map((head) => {
           return head.id;
@@ -727,6 +736,129 @@ describe("Pi stable context generation fences", () => {
     await expect(publication).resolves.toMatchObject({ claimed: 1, stale: 1 });
   });
 
+  it("deletes Workflow Storage before invalidating a publication head", async () => {
+    const fixture = await seed();
+    const workflowId = randomUUID();
+    const storageId = randomUUID();
+    const versionId = randomUUID().replaceAll("-", "").repeat(2);
+    const storageName = getCustomSkillStorageName(workflowId);
+    storageIds.push(storageId);
+    await db.insert(workflows).values({
+      id: workflowId,
+      orgId: fixture.orgId,
+      agentId: fixture.agentId,
+      name: `workflow-${workflowId.slice(0, 8)}`,
+      visibility: "private",
+      ownerUserId: fixture.userId,
+      createdBy: fixture.userId,
+      updatedBy: fixture.userId,
+    });
+    await db.insert(storages).values({
+      id: storageId,
+      orgId: fixture.orgId,
+      userId: VOLUME_ORG_USER_ID,
+      name: storageName,
+      s3Prefix: `test/pi-stable-context/${storageId}`,
+    });
+    await db.insert(storageVersions).values({
+      id: versionId,
+      storageId,
+      s3Key: `test/pi-stable-context/${storageId}/${versionId}`,
+      archiveSize: 1,
+      fileCount: 0,
+      createdBy: fixture.userId,
+    });
+    await db
+      .update(storages)
+      .set({ headVersionId: versionId })
+      .where(eq(storages.id, storageId));
+    const [head] = await db
+      .select({ input: piStableContextHeads.input })
+      .from(piStableContextHeads)
+      .where(eq(piStableContextHeads.id, fixture.headId));
+    if (!head?.input) {
+      throw new Error("Expected stable-context input fixture");
+    }
+    const mount = {
+      orgId: fixture.orgId,
+      userId: VOLUME_ORG_USER_ID,
+      name: storageName,
+      storageId,
+      versionId,
+      mountPath: `/home/user/.pi/agent/skills/workflow-${workflowId}`,
+      archiveSize: 1,
+      empty: true as const,
+    };
+    await db
+      .update(piStableContextHeads)
+      .set({
+        input: {
+          ...head.input,
+          storageMounts: [mount],
+          persistedStorageMounts: [
+            {
+              orgId: mount.orgId,
+              userId: mount.userId,
+              name: mount.name,
+              storageId: mount.storageId,
+              version: mount.versionId,
+              mountPath: mount.mountPath,
+            },
+          ],
+        },
+      })
+      .where(eq(piStableContextHeads.id, fixture.headId));
+
+    const barrierSignal = AbortSignal.timeout(10_000);
+    const resourceLocked = createDeferredPromise<void>(barrierSignal);
+    const releasePublisher = createDeferredPromise<void>(barrierSignal);
+    const publication = executeFixtureWork(fixture.agentId, barrierSignal, {
+      async afterResourceLock() {
+        resourceLocked.resolve();
+        await releasePublisher.promise;
+      },
+    });
+    await resourceLocked.promise;
+    const deletion = createStore().set(
+      deleteWorkflow$,
+      {
+        orgId: fixture.orgId,
+        workflowId,
+      },
+      barrierSignal,
+    );
+    await expect
+      .poll(
+        async () => {
+          const result = await pool.query<{ count: number }>(
+            `SELECT count(*)::int AS count
+             FROM pg_stat_activity
+             WHERE wait_event_type = 'Lock'
+               AND query LIKE 'delete from "storages"%'`,
+          );
+          return result.rows[0]?.count ?? 0;
+        },
+        { timeout: 5000 },
+      )
+      .toBeGreaterThan(0);
+    releasePublisher.resolve();
+
+    await expect(publication).resolves.toMatchObject({ claimed: 1, ready: 1 });
+    await expect(deletion).resolves.toBeTruthy();
+    await expect(
+      db
+        .select({ status: piStableContextHeads.status })
+        .from(piStableContextHeads)
+        .where(eq(piStableContextHeads.id, fixture.headId)),
+    ).resolves.toStrictEqual([{ status: "missing" }]);
+    await expect(
+      db
+        .select({ id: storages.id })
+        .from(storages)
+        .where(eq(storages.id, storageId)),
+    ).resolves.toHaveLength(0);
+  });
+
   it("does not register first demand after user erasure removed its authority", async () => {
     const fixture = await seed({ ownedByOtherUser: true });
     const barrierSignal = AbortSignal.timeout(5000);
@@ -844,9 +976,11 @@ describe("Pi stable context generation fences", () => {
     const work = executeFixtureWork(
       fixture.agentId,
       AbortSignal.timeout(5000),
-      async () => {
-        buildEntered.resolve();
-        await buildReleased.promise;
+      {
+        async beforePublish() {
+          buildEntered.resolve();
+          await buildReleased.promise;
+        },
       },
     );
     await buildEntered.promise;
