@@ -4154,10 +4154,13 @@
         "team": ""
       },
       "experience": {
+        "choose": "",
         "copy": "",
         "no": "",
+        "noCopy": "",
         "title": "",
-        "yes": ""
+        "yes": "",
+        "yesCopy": ""
       },
       "industries": {
         "coaching": {
@@ -4231,6 +4234,7 @@
         "previewAsk": "",
         "previewChannel": "",
         "previewReply": "",
+        "rowTitle": "",
         "title": ""
       },
       "sources": {
@@ -4568,6 +4572,7 @@
       "team": {
         "copy": "",
         "invite": "",
+        "invited": "",
         "label": "",
         "note": "",
         "placeholder": "",

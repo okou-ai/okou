@@ -4146,10 +4146,13 @@
         "team": "Invite a teammate"
       },
       "experience": {
+        "choose": "Choose",
         "copy": "You can connect your subscription and import skills you already use.",
         "no": "No, I’m new to this",
+        "noCopy": "Skip the setup. Okou picks a first task for you instead.",
         "title": "Have you used Codex or Claude Code?",
-        "yes": "Yes, I have"
+        "yes": "Yes, I have",
+        "yesCopy": "Connect your plan and bring your SKILL.md files over as workflows."
       },
       "industries": {
         "coaching": {
@@ -4223,6 +4226,7 @@
         "previewAsk": "@Okou recap the decisions and next steps.",
         "previewChannel": "# team-work",
         "previewReply": "The launch plan is approved. Alex will share the draft today.",
+        "rowTitle": "Slack",
         "title": "Add Okou to Slack"
       },
       "sources": {
@@ -4570,6 +4574,7 @@
       "team": {
         "copy": "Enter their email to invite them to your Okou workspace.",
         "invite": "Send invite",
+        "invited": "Invited",
         "label": "Teammate’s email",
         "note": "Inviting a teammate does not share your inbox or personal accounts.",
         "placeholder": "teammate@company.com",
