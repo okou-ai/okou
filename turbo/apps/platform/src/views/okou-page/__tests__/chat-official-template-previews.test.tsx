@@ -106,14 +106,8 @@ test("Welcome diagrams and the quick start open without uploaded artifacts", asy
     );
   });
   const diagrams = [
-    [
-      "Slack conversations",
-      `${WELCOME_ASSET_BASE}/slack-conversations.png`,
-    ],
-    [
-      "Workflow templates",
-      `${WELCOME_STEP_BASE}/workflow-template-picker.png`,
-    ],
+    ["Slack conversations", `${WELCOME_ASSET_BASE}/slack-conversations.png`],
+    ["Workflow templates", `${WELCOME_STEP_BASE}/workflow-template-picker.png`],
     ["New agent", `${WELCOME_STEP_BASE}/new-agent.png`],
   ] as const;
   const chat = createMarkdownChatFixture(context);
