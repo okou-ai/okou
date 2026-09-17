@@ -190,6 +190,7 @@ final class AuthenticationService {
     else {
       throw AuthenticationError.workspaceUnavailable
     }
+    if activeWorkspaceID == workspaceID { return }
     isSwitchingWorkspace = true
     defer { isSwitchingWorkspace = false }
     try await clerk.auth.setActive(sessionId: session.id, organizationId: workspaceID)

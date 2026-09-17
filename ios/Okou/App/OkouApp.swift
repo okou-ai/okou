@@ -38,6 +38,7 @@ struct OkouApp: App {
 private struct AppRootView: View {
   let authentication: AuthenticationService
   let configuration: AppConfiguration
+  @State private var accountError: String?
   @Environment(\.scenePhase) private var scenePhase
 
   var body: some View {
@@ -50,7 +51,8 @@ private struct AppRootView: View {
       {
         WorkspaceRootView(
           authentication: authentication, configuration: configuration,
-          workspaceID: workspaceID, userID: userID, scopeID: scopeID
+          workspaceID: workspaceID, userID: userID, scopeID: scopeID,
+          accountError: $accountError
         )
         .id(scopeID)
       } else {
@@ -60,6 +62,16 @@ private struct AppRootView: View {
     .onChange(of: scenePhase) { _, phase in
       if phase == .active { Task { await authentication.refresh() } }
     }
+    .alert(
+      "Unable to update account",
+      isPresented: Binding(
+        get: { accountError != nil }, set: { if !$0 { accountError = nil } }
+      )
+    ) {
+      Button("OK") { accountError = nil }
+    } message: {
+      Text(accountError ?? "")
+    }
   }
 }
 
@@ -68,16 +80,18 @@ private struct WorkspaceRootView: View {
   let workspaceID: String
   let userID: String
   @State private var store: WorkspaceStore
-  @State private var accountError: String?
+  @Binding private var accountError: String?
   @Environment(\.scenePhase) private var scenePhase
 
   init(
     authentication: AuthenticationService, configuration: AppConfiguration,
-    workspaceID: String, userID: String, scopeID: String
+    workspaceID: String, userID: String, scopeID: String,
+    accountError: Binding<String?>
   ) {
     self.authentication = authentication
     self.workspaceID = workspaceID
     self.userID = userID
+    _accountError = accountError
     let client = APIClient(baseURL: configuration.apiURL) {
       try await authentication.accessToken(workspaceID: workspaceID, scopeID: scopeID)
     }
@@ -108,16 +122,6 @@ private struct WorkspaceRootView: View {
     .onChange(of: scenePhase) { _, phase in
       store.setForeground(phase == .active)
       if phase == .active { store.requestRefresh() }
-    }
-    .alert(
-      "Unable to update account",
-      isPresented: Binding(
-        get: { accountError != nil }, set: { if !$0 { accountError = nil } }
-      )
-    ) {
-      Button("OK") { accountError = nil }
-    } message: {
-      Text(accountError ?? "")
     }
     .fullScreenCover(isPresented: Binding(get: { store.needsUpgrade }, set: { _ in })) {
       ContentUnavailableView {
