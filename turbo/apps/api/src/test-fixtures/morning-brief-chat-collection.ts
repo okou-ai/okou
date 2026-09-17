@@ -9,14 +9,15 @@ import {
   workflowUserAutomationThreads,
   workflows,
 } from "@okouai/db/schema/workflow";
+import { chatEvents } from "@okouai/db/schema/chat-event";
+import { emailOutbox } from "@okouai/db/schema/email-outbox";
+import { usageEvent } from "@okouai/db/schema/usage-event";
 import { command } from "ccstate";
-import { and, eq, sql } from "drizzle-orm";
+import { and, count, eq, sql } from "drizzle-orm";
 import { onTestFinished } from "vitest";
-import { z } from "zod";
 
 import { getApiTestMocks } from "../__tests__/mocks";
 import { db } from "../lib/db";
-import { executeRawRows } from "../lib/db-raw-rows";
 import { nowDate } from "../lib/time";
 import { writeDb$ } from "../signals/external/db";
 import { createChatThreadInTransaction } from "../signals/services/chat-thread.service";
@@ -234,42 +235,37 @@ export async function countMorningBriefChatWritesFixture(owner: {
 }> {
   // Every counter is scoped to this owner, so a suite running beside this one
   // cannot move the numbers the assertion compares.
-  const [counts] = await executeRawRows(
-    db(),
-    sql`
-      SELECT
-        (
-          SELECT count(*) FROM chat_events e
-          JOIN chat_threads t ON t.id = e.chat_thread_id
-          WHERE t.user_id = ${owner.userId}
-        ) AS "chatEvents",
-        (
-          SELECT count(*) FROM agent_runs
-          WHERE org_id = ${owner.orgId} AND user_id = ${owner.userId}
-        ) AS "runs",
-        (
-          SELECT count(*) FROM usage_event
-          WHERE org_id = ${owner.orgId} AND user_id = ${owner.userId}
-        ) AS "usageEvents",
-        (
-          SELECT count(*) FROM email_outbox
-          WHERE source_workflow_automation_id = ${owner.automationId}::uuid
-        ) AS "emails"
-    `,
-    chatWriteCountsSchema,
-  );
-  if (!counts) {
-    throw new Error("Expected the write counters to return a row");
-  }
-  return counts;
+  const [events] = await db()
+    .select({ total: count() })
+    .from(chatEvents)
+    .innerJoin(chatThreads, eq(chatThreads.id, chatEvents.chatThreadId))
+    .where(eq(chatThreads.userId, owner.userId));
+  const [runs] = await db()
+    .select({ total: count() })
+    .from(agentRuns)
+    .where(
+      and(eq(agentRuns.orgId, owner.orgId), eq(agentRuns.userId, owner.userId)),
+    );
+  const [usageEvents] = await db()
+    .select({ total: count() })
+    .from(usageEvent)
+    .where(
+      and(
+        eq(usageEvent.orgId, owner.orgId),
+        eq(usageEvent.userId, owner.userId),
+      ),
+    );
+  const [emails] = await db()
+    .select({ total: count() })
+    .from(emailOutbox)
+    .where(eq(emailOutbox.sourceWorkflowAutomationId, owner.automationId));
+  return {
+    chatEvents: events?.total ?? 0,
+    runs: runs?.total ?? 0,
+    usageEvents: usageEvents?.total ?? 0,
+    emails: emails?.total ?? 0,
+  };
 }
-
-const chatWriteCountsSchema = z.object({
-  chatEvents: z.coerce.number(),
-  runs: z.coerce.number(),
-  usageEvents: z.coerce.number(),
-  emails: z.coerce.number(),
-});
 
 /** Point the member's Morning Brief binding at a destination thread. */
 export async function bindMorningBriefThreadFixture(args: {
