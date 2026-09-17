@@ -17,7 +17,6 @@ import {
   readChatThreadProvenanceFixture,
   readMorningBriefBindingThreadFixture,
   seedFinishedChatRunFixture$,
-  seedInstalledMorningBriefFixture,
   seedMorningBriefChatMemberFixture,
   seedOrdinaryChatThreadFixture$,
   startActiveChatRunFixture$,
@@ -67,8 +66,7 @@ describe("Morning Brief unread Chat collection boundaries", () => {
     readonly automationId: string;
     readonly threadId: string;
   }> {
-    const member = await seedMorningBriefChatMemberFixture({});
-    const installation = await seedInstalledMorningBriefFixture({ member });
+    const member = await seedMorningBriefChatMemberFixture();
     const threadId = await store.set(
       seedOrdinaryChatThreadFixture$,
       { member },
@@ -85,8 +83,8 @@ describe("Morning Brief unread Chat collection boundaries", () => {
     );
     return {
       member,
-      workflowId: installation.workflowId,
-      automationId: installation.automationId,
+      workflowId: member.workflowId,
+      automationId: member.automationId,
       threadId,
     };
   }
@@ -230,13 +228,12 @@ describe("Morning Brief unread Chat collection boundaries", () => {
   }, 60_000);
 
   it("keeps the Morning Brief exclusion through uninstall and later conversation", async () => {
-    const member = await seedMorningBriefChatMemberFixture({});
-    const installation = await seedInstalledMorningBriefFixture({ member });
+    const member = await seedMorningBriefChatMemberFixture();
     const destination = await store.set(writeDb$).transaction(async (tx) => {
       return await ensureWorkflowUserAutomationThread(tx, {
         orgId: member.orgId,
         userId: member.userId,
-        workflowId: installation.workflowId,
+        workflowId: member.workflowId,
         agentId: member.agentId,
         workflowTitle: "Okou Morning Brief",
         currentTime: nowDate(),
@@ -252,19 +249,19 @@ describe("Morning Brief unread Chat collection boundaries", () => {
       return await ensureWorkflowUserAutomationThread(tx, {
         orgId: member.orgId,
         userId: member.userId,
-        workflowId: installation.workflowId,
+        workflowId: member.workflowId,
         agentId: member.agentId,
         workflowTitle: "Renamed brief",
         currentTime: nowDate(),
       });
     });
     expect(reused).toBe(destination);
-    await uninstallMorningBriefFixture(installation.workflowId);
+    await uninstallMorningBriefFixture(member.workflowId);
     await expect(
       readMorningBriefBindingThreadFixture({
         orgId: member.orgId,
         userId: member.userId,
-        workflowId: installation.workflowId,
+        workflowId: member.workflowId,
       }),
     ).resolves.toBeNull();
     await store.set(
@@ -283,8 +280,7 @@ describe("Morning Brief unread Chat collection boundaries", () => {
   }, 60_000);
 
   it("adopts an already excluded thread rather than upgrading it on replay", async () => {
-    const member = await seedMorningBriefChatMemberFixture({});
-    const installation = await seedInstalledMorningBriefFixture({ member });
+    const member = await seedMorningBriefChatMemberFixture();
     const threadId = await store.set(
       seedOrdinaryChatThreadFixture$,
       { member },
@@ -297,10 +293,10 @@ describe("Morning Brief unread Chat collection boundaries", () => {
     await db().execute(sql`
       UPDATE workflow_user_automation_threads
       SET chat_thread_id = ${threadId}
-      WHERE workflow_id = ${installation.workflowId}
+      WHERE workflow_id = ${member.workflowId}
     `);
     await admitWorkflowAutomationEventFixture({
-      automationId: installation.automationId,
+      automationId: member.automationId,
       chatThreadId: threadId,
       triggerBrief: "poller-bypass",
     });
@@ -311,8 +307,7 @@ describe("Morning Brief unread Chat collection boundaries", () => {
   }, 60_000);
 
   it("never classifies another member's thread from a replayed admission", async () => {
-    const member = await seedMorningBriefChatMemberFixture({});
-    const installation = await seedInstalledMorningBriefFixture({ member });
+    const member = await seedMorningBriefChatMemberFixture();
     const neighbour = await seedMorningBriefChatMemberFixture({
       orgId: member.orgId,
     });
@@ -323,7 +318,7 @@ describe("Morning Brief unread Chat collection boundaries", () => {
     );
 
     await admitWorkflowAutomationEventFixture({
-      automationId: installation.automationId,
+      automationId: member.automationId,
       chatThreadId: neighbourThread,
       triggerBrief: "foreign-thread",
     });

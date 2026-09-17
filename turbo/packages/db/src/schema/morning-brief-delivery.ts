@@ -22,10 +22,7 @@ import { orgMembersMetadata } from "./org-members-metadata";
  * never be delivered by a later production occurrence that happens to share an
  * owner and an anchor.
  */
-export const MORNING_BRIEF_DELIVERY_PURPOSES = [
-  "preview",
-  "production",
-] as const;
+export const MORNING_BRIEF_DELIVERY_PURPOSES = ["preview"] as const;
 export type MorningBriefDeliveryPurpose =
   (typeof MORNING_BRIEF_DELIVERY_PURPOSES)[number];
 
@@ -99,6 +96,15 @@ export const morningBriefDeliveries = pgTable(
     executionPurpose: text("execution_purpose", {
       enum: MORNING_BRIEF_DELIVERY_PURPOSES,
     }).notNull(),
+    /**
+     * The accepted result reference this delivery consumed.
+     *
+     * The generation row itself is swept when its bounded retention elapses,
+     * so this is the only durable mapping from the reference a caller still
+     * holds to the delivery it already produced. It is an opaque identifier,
+     * not content, and it is resolved only inside the owner's own scope.
+     */
+    resultAttemptId: uuid("result_attempt_id").notNull(),
     /** The membership generation this delivery was committed under. */
     membershipId: text("membership_id").notNull(),
     /**
@@ -158,6 +164,13 @@ export const morningBriefDeliveries = pgTable(
         columns: [table.orgId, table.userId],
         foreignColumns: [orgMembersMetadata.orgId, orgMembersMetadata.userId],
       }).onDelete("cascade"),
+      // Replay after the source result is swept resolves the delivery through
+      // the reference the caller still holds, inside their own scope.
+      uniqueIndex("morning_brief_deliveries_attempt_unique").on(
+        table.orgId,
+        table.userId,
+        table.resultAttemptId,
+      ),
       // The read watermark resolves a native delivery through this event.
       uniqueIndex("morning_brief_deliveries_chat_event_unique").on(
         table.chatEventId,

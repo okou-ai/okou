@@ -9,13 +9,13 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { now, nowDate } from "../../../lib/time";
 import {
+  bindMorningBriefThreadFixture,
   clearChatThreadProvenanceFixture,
   deleteSeededChatThreadFixture,
   excludeMorningBriefChatThreadFixture,
   markChatThreadReadFixture,
   renameChatThreadFixture,
   seedFinishedChatRunFixture$,
-  seedInstalledMorningBriefFixture,
   seedMorningBriefChatMemberFixture,
   seedOrdinaryChatThreadFixture$,
   setUnsupportedChatThreadProvenanceFixture,
@@ -93,17 +93,9 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
   }
 
   /** A member with an enabled Morning Brief and the implementation switch on. */
-  async function briefMember(
-    options: { readonly destinationThreadId?: string } = {},
-  ): Promise<MorningBriefChatMember> {
-    const member = await seedMorningBriefChatMemberFixture({});
+  async function briefMember() {
+    const member = await seedMorningBriefChatMemberFixture();
     await enableSimpleMorningBrief(member);
-    await seedInstalledMorningBriefFixture({
-      member,
-      ...(options.destinationThreadId === undefined
-        ? {}
-        : { destinationThreadId: options.destinationThreadId }),
-    });
     return member;
   }
 
@@ -160,8 +152,7 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
   });
 
   it("refuses a member whose implementation switch is off", async () => {
-    const member = await seedMorningBriefChatMemberFixture({});
-    await seedInstalledMorningBriefFixture({ member });
+    const member = await seedMorningBriefChatMemberFixture();
 
     await expect(refuseCollection(member)).resolves.toMatchObject({
       error: { code: "FORBIDDEN" },
@@ -169,9 +160,8 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
   });
 
   it("refuses a member with no enabled Morning Brief", async () => {
-    const member = await seedMorningBriefChatMemberFixture({});
+    const member = await seedMorningBriefChatMemberFixture({ enabled: false });
     await enableSimpleMorningBrief(member);
-    await seedInstalledMorningBriefFixture({ member, enabled: false });
 
     await expect(refuseCollection(member)).resolves.toMatchObject({
       error: { code: "FORBIDDEN" },
@@ -300,15 +290,17 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
   });
 
   it("releases nothing from the destination thread or any excluded thread", async () => {
-    const member = await seedMorningBriefChatMemberFixture({});
+    const member = await seedMorningBriefChatMemberFixture();
     await enableSimpleMorningBrief(member);
     const destination = await seedUnreadThread(member, {
       prompt: "yesterday's brief request",
       reply: "Yesterday's Morning Brief.",
     });
-    await seedInstalledMorningBriefFixture({
-      member,
-      destinationThreadId: destination.threadId,
+    await bindMorningBriefThreadFixture({
+      orgId: member.orgId,
+      userId: member.userId,
+      workflowId: member.workflowId,
+      chatThreadId: destination.threadId,
     });
     const excluded = await seedUnreadThread(member, {
       prompt: "an older brief thread",

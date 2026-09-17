@@ -61,24 +61,28 @@ describe("API route registrations", () => {
     );
   });
 
-  // Same requirement for the Gmail preview, which is the first real consumer of
-  // the shared connector reader. A route reachable only from a test harness
-  // would pass its own suite and still be absent from the deployed table.
-  it("registers the Morning Brief Gmail collection preview an operator invokes", () => {
-    const [entry, ...extra] = morningBriefGmailCollectionPreviewRoutes;
-    expect(extra).toHaveLength(0);
-    expect(entry?.route).toBe(
-      morningBriefGmailCollectionPreviewContract.collect,
+  it("registers the Morning Brief Chat collection preview an operator invokes", () => {
+    expectOnlyRegistration(
+      morningBriefChatCollectionPreviewRoutes,
+      morningBriefChatCollectionPreviewContract.collect,
     );
-    expect(ROUTES).toContain(entry);
-    expect(
-      ROUTES.filter((registered) => {
-        return (
-          registered.route.path ===
-          morningBriefGmailCollectionPreviewContract.collect.path
-        );
-      }),
-    ).toStrictEqual([entry]);
+  });
+
+  it("registers the Morning Brief generation preview an operator invokes", () => {
+    expectOnlyRegistration(
+      morningBriefGenerationPreviewRoutes,
+      morningBriefGenerationPreviewContract.preview,
+    );
+  });
+
+  // Delivery has the same requirement, and one more reason: its production 404
+  // is only a statement about a route that really exists if the deployed table
+  // is the table that holds it.
+  it("registers the Morning Brief delivery preview an operator invokes", () => {
+    expectOnlyRegistration(
+      morningBriefDeliveryPreviewRoutes,
+      morningBriefDeliveryPreviewContract.preview,
+    );
   });
 
   // The platform-funded generation preview has the same requirement: its own

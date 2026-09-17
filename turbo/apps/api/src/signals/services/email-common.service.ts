@@ -24,7 +24,10 @@ import type { Tx } from "../../lib/db-types";
 import { renderOfficialAutomationResultEmail } from "./official-automation-result-email-renderer";
 import {
   admitNativeMorningBriefEmail,
+  currentNativeMorningBriefMembership$,
   MORNING_BRIEF_RESULT_EMAIL_TEMPLATE,
+  peekNativeMorningBriefEmailOwner,
+  type NativeMorningBriefOwnerPreflight,
 } from "./morning-brief-native-email-admission.service";
 import {
   MORNING_BRIEF_RESULT_EMAIL_BODY_MAX_BYTES,
@@ -531,6 +534,8 @@ interface PreparedOutboxItem {
 
 type PrepareOutcome =
   | { readonly kind: "empty" }
+  // Left untouched this pass because its live-owner evidence was not resolved.
+  | { readonly kind: "deferred" }
   // Resolved without contacting the provider: expired, out of attempts, or
   // suppressed.
   | { readonly kind: "resolved" }
@@ -556,6 +561,7 @@ async function resolveWithoutSending(
 async function prepareNextOutboxItem(
   db: Db,
   currentTimeMs: number,
+  nativeOwnerPreflight: NativeMorningBriefOwnerPreflight | null,
   itemIds?: readonly string[],
 ): Promise<PrepareOutcome> {
   return await db.transaction(async (tx) => {
@@ -617,13 +623,22 @@ async function prepareNextOutboxItem(
     }
 
     // A native Morning Brief intent is admitted only while its own delivery
-    // receipt and the owner's current policy still authorise it. Missing
+    // row and the owner's current policy still authorise it. Missing
     // provenance fails closed here; it never falls through to the generic
     // sender.
     if (row.template.template === MORNING_BRIEF_RESULT_EMAIL_TEMPLATE) {
-      const admission = await admitNativeMorningBriefEmail(tx, itemId);
+      const admission = await admitNativeMorningBriefEmail(
+        tx,
+        itemId,
+        nativeOwnerPreflight,
+      );
       if (admission.kind === "rejected") {
         return await resolveWithoutSending(tx, itemId, admission.reason);
+      }
+      if (admission.kind === "deferred") {
+        // Neither sent nor failed: the row keeps its state and its attempt
+        // count, and the next pass resolves live evidence for it.
+        return { kind: "deferred" };
       }
     }
 
@@ -755,13 +770,19 @@ async function completeOutboxItem(
 async function drainNextOutboxItem(
   db: Db,
   currentTimeMs: number,
+  nativeOwnerPreflight: NativeMorningBriefOwnerPreflight | null,
   itemIds?: readonly string[],
 ): Promise<boolean> {
-  const prepared = await prepareNextOutboxItem(db, currentTimeMs, itemIds);
+  const prepared = await prepareNextOutboxItem(
+    db,
+    currentTimeMs,
+    nativeOwnerPreflight,
+    itemIds,
+  );
   if (prepared.kind === "empty") {
     return false;
   }
-  if (prepared.kind === "resolved") {
+  if (prepared.kind === "resolved" || prepared.kind === "deferred") {
     return true;
   }
 
@@ -785,6 +806,7 @@ async function drainNextOutboxItem(
 async function drainEmailOutboxBatch(
   db: Db,
   context: EmailOutboxDrainContext,
+  resolveNativeOwner: NativeOwnerResolver,
   signal: AbortSignal,
   itemIds?: readonly string[],
 ): Promise<number> {
@@ -792,9 +814,18 @@ async function drainEmailOutboxBatch(
 
   for (let index = 0; index < MAX_OUTBOX_BATCH_SIZE; index++) {
     signal.throwIfAborted();
+    // Live-owner evidence for the next due native intent is resolved here,
+    // outside the claim transaction, because it reaches Clerk.
+    const nativeOwner = await resolveNativeOwner(
+      new Date(context.currentTimeMs),
+      itemIds,
+      signal,
+    );
+    signal.throwIfAborted();
     const hadItem = await drainNextOutboxItem(
       db,
       context.currentTimeMs,
+      nativeOwner,
       itemIds,
     );
     signal.throwIfAborted();
@@ -817,13 +848,39 @@ async function drainEmailOutboxBatch(
   return processed;
 }
 
+type NativeOwnerResolver = (
+  currentTime: Date,
+  itemIds: readonly string[] | undefined,
+  signal: AbortSignal,
+) => Promise<NativeMorningBriefOwnerPreflight | null>;
+
+const nativeOwnerResolver$ = command(({ set }): NativeOwnerResolver => {
+  const db = set(writeDb$);
+  return async (currentTime, itemIds, signal) => {
+    const owner = await peekNativeMorningBriefEmailOwner(
+      db,
+      currentTime,
+      itemIds,
+    );
+    signal.throwIfAborted();
+    return owner === null
+      ? null
+      : await set(currentNativeMorningBriefMembership$, owner, signal);
+  };
+});
+
 export const drainEmailOutboxBatch$ = command(
   async (
     { set },
     context: EmailOutboxDrainContext,
     signal: AbortSignal,
   ): Promise<number> => {
-    return await drainEmailOutboxBatch(set(writeDb$), context, signal);
+    return await drainEmailOutboxBatch(
+      set(writeDb$),
+      context,
+      set(nativeOwnerResolver$),
+      signal,
+    );
   },
 );
 
@@ -836,6 +893,7 @@ export const drainEmailOutboxItems$ = command(
     return await drainEmailOutboxBatch(
       set(writeDb$),
       context,
+      set(nativeOwnerResolver$),
       signal,
       context.itemIds,
     );

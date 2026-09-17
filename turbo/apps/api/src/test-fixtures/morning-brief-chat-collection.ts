@@ -4,7 +4,6 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
-import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import {
   workflowAutomations,
   workflowUserAutomationThreads,
@@ -19,6 +18,7 @@ import { writeDb$ } from "../signals/external/db";
 import { createChatThreadInTransaction } from "../signals/services/chat-thread.service";
 import { insertChatEvent } from "../signals/services/chat-event.service";
 import { excludeMorningBriefChatThread } from "../signals/services/morning-brief-thread-provenance.service";
+import { seedInstalledMorningBrief } from "./morning-brief-collection";
 import { holdDeferredRow } from "./pi-deferred-lock";
 
 /**
@@ -31,35 +31,76 @@ import { holdDeferredRow } from "./pi-deferred-lock";
  * so the `ordinary` classification under test is the one production writes.
  */
 
+/** The owner identity the Chat collection fixtures are scoped to. */
 export interface MorningBriefChatMember {
   readonly orgId: string;
   readonly userId: string;
   readonly agentId: string;
 }
 
-export async function seedMorningBriefChatMemberFixture(args: {
-  readonly orgId?: string;
-  readonly userId?: string;
-  readonly agentVisibility?: "public" | "private";
-  readonly agentOwner?: string;
-}): Promise<MorningBriefChatMember> {
-  const orgId = args.orgId ?? `org_${randomUUID()}`;
-  const userId = args.userId ?? `user_${randomUUID()}`;
-  const agentId = randomUUID();
+/**
+ * A member who owns an installed, enabled Morning Brief.
+ *
+ * The installation itself comes from the shared Morning Brief collection
+ * fixture so both collectors seed the same canonical legacy state; only the
+ * workflow/user thread binding, which the Chat collector reads to find the
+ * destination thread, is added here.
+ */
+export async function seedMorningBriefChatMemberFixture(
+  options: {
+    readonly orgId?: string;
+    readonly enabled?: boolean;
+    readonly agentVisibility?: "public" | "private";
+    readonly agentOwner?: string;
+  } = {},
+): Promise<
+  MorningBriefChatMember & {
+    readonly workflowId: string;
+    readonly automationId: string;
+  }
+> {
+  const installed = await seedInstalledMorningBrief({
+    orgId: options.orgId ?? `org_${randomUUID()}`,
+    userId: `user_${randomUUID()}`,
+    ...(options.enabled === undefined ? {} : { enabled: options.enabled }),
+    ...(options.agentVisibility === undefined
+      ? {}
+      : { agentVisibility: options.agentVisibility }),
+    ...(options.agentOwner === undefined
+      ? {}
+      : { agentOwner: options.agentOwner }),
+  });
+  return {
+    ...installed.owner,
+    agentId: installed.agentId,
+    workflowId: installed.workflowId,
+    automationId: installed.automationId,
+  };
+}
+
+/** Point the member's Morning Brief binding at a destination thread. */
+export async function bindMorningBriefThreadFixture(args: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly workflowId: string;
+  readonly chatThreadId: string | null;
+}): Promise<void> {
   await db()
-    .insert(orgMembersCache)
-    .values({ orgId, userId, role: "member" })
-    .onConflictDoNothing();
-  await db()
-    .insert(agents)
+    .insert(workflowUserAutomationThreads)
     .values({
-      id: agentId,
-      orgId,
-      owner: args.agentOwner ?? userId,
-      name: `brief-chat-${agentId.slice(0, 8)}`,
-      visibility: args.agentVisibility ?? "private",
+      orgId: args.orgId,
+      userId: args.userId,
+      workflowId: args.workflowId,
+      chatThreadId: args.chatThreadId,
+    })
+    .onConflictDoUpdate({
+      target: [
+        workflowUserAutomationThreads.orgId,
+        workflowUserAutomationThreads.userId,
+        workflowUserAutomationThreads.workflowId,
+      ],
+      set: { chatThreadId: args.chatThreadId },
     });
-  return { orgId, userId, agentId };
 }
 
 /** Create a thread through the production ordinary-Chat creator. */
@@ -322,79 +363,6 @@ export async function renameChatThreadFixture(args: {
     .update(chatThreads)
     .set({ title: args.title, renamedAt: nowDate() })
     .where(eq(chatThreads.id, args.chatThreadId));
-}
-
-interface SeededMorningBriefInstallation {
-  readonly workflowId: string;
-  readonly automationId: string;
-  readonly destinationThreadId: string | null;
-}
-
-/**
- * An installed, enabled, reconciliation-current Morning Brief for one member.
- *
- * The canonical state reader accepts nothing less, and the preview route reads
- * it rather than trusting the caller.
- */
-export async function seedInstalledMorningBriefFixture(args: {
-  readonly member: MorningBriefChatMember;
-  readonly destinationThreadId?: string | null;
-  readonly enabled?: boolean;
-  readonly officialDefinitionName?: string;
-}): Promise<SeededMorningBriefInstallation> {
-  const [workflow] = await db()
-    .insert(workflows)
-    .values({
-      orgId: args.member.orgId,
-      agentId: args.member.agentId,
-      // The installation check requires the slug to equal the definition name.
-      name: args.officialDefinitionName ?? "morning-brief",
-      visibility: "private",
-      ownerUserId: args.member.userId,
-      officialDefinitionName: args.officialDefinitionName ?? "morning-brief",
-      officialInstallationState: "installed",
-      createdBy: args.member.userId,
-      updatedBy: args.member.userId,
-    })
-    .returning({ id: workflows.id });
-  if (!workflow) {
-    throw new Error("Expected a seeded Morning Brief installation");
-  }
-  const [automation] = await db()
-    .insert(workflowAutomations)
-    .values({
-      orgId: args.member.orgId,
-      workflowId: workflow.id,
-      ownerUserId: args.member.userId,
-      kind: "schedule",
-      scheduleType: "cron",
-      cronExpression: "0 7 * * *",
-      timezone: "Asia/Shanghai",
-      enabled: args.enabled ?? true,
-      nextRunAt: new Date(nowDate().getTime() + 60_000),
-      officialBlueprintKey: "daily-delivery",
-      officialAppliedFingerprint: "f".repeat(64),
-      officialReconciliationStatus: "current",
-      officialParameterBindings: [],
-      officialIntendedEnabled: true,
-      officialResultEmailEnabled: true,
-    })
-    .returning({ id: workflowAutomations.id });
-  if (!automation) {
-    throw new Error("Expected a seeded Morning Brief automation");
-  }
-  const destinationThreadId = args.destinationThreadId ?? null;
-  await db().insert(workflowUserAutomationThreads).values({
-    orgId: args.member.orgId,
-    userId: args.member.userId,
-    workflowId: workflow.id,
-    chatThreadId: destinationThreadId,
-  });
-  return {
-    workflowId: workflow.id,
-    automationId: automation.id,
-    destinationThreadId,
-  };
 }
 
 /** Remove the installation the way an uninstall does, binding included. */

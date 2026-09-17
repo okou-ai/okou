@@ -1,12 +1,16 @@
 import { agents } from "@okouai/db/schema/agent";
+import { emailOutbox } from "@okouai/db/schema/email-outbox";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
 import { morningBriefCollectionOccurrences } from "@okouai/db/schema/morning-brief-collection-occurrence";
 import { morningBriefDeliveries } from "@okouai/db/schema/morning-brief-delivery";
 import { users } from "@okouai/db/schema/user";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, lte, or } from "drizzle-orm";
+import { command } from "ccstate";
 
 import type { Tx } from "../../lib/db-types";
+import { clerk$ } from "../external/clerk";
+import type { Db } from "../external/db";
 import { lockCollectionOwner } from "./morning-brief-collection-occurrence.service";
 import { loadMorningBriefMigrationState } from "./morning-brief-migration-state.service";
 
@@ -22,7 +26,91 @@ export const MORNING_BRIEF_RESULT_EMAIL_TEMPLATE = "morning-brief-result";
 
 export type NativeMorningBriefEmailAdmission =
   | { readonly kind: "admitted" }
-  | { readonly kind: "rejected"; readonly reason: string };
+  | { readonly kind: "rejected"; readonly reason: string }
+  /** No usable live-owner evidence this pass. Nothing is sent or failed. */
+  | { readonly kind: "deferred"; readonly reason: string };
+
+/** Live-owner evidence resolved outside the claim transaction. */
+export interface NativeMorningBriefOwnerPreflight {
+  readonly orgId: string;
+  readonly userId: string;
+  /** The member's current Clerk membership, or null when they are not one. */
+  readonly membershipId: string | null;
+}
+
+/**
+ * The owner of the next due native intent, without claiming or locking it.
+ *
+ * The drain has to reach Clerk for that owner before it opens the claim
+ * transaction, and the outbox row itself carries no owner. This read uses the
+ * same due-item ordering the claim uses, so it normally names the row the claim
+ * will take. When a concurrent worker takes a different one, the mismatch is
+ * detected inside the transaction and that row is simply left for the next
+ * pass rather than sent on stale evidence.
+ */
+export async function peekNativeMorningBriefEmailOwner(
+  db: Pick<Db, "select">,
+  currentTime: Date,
+  itemIds?: readonly string[],
+): Promise<NativeMorningBriefOwnerPreflight | null> {
+  const [row] = await db
+    .select({
+      orgId: morningBriefDeliveries.orgId,
+      userId: morningBriefDeliveries.userId,
+    })
+    .from(emailOutbox)
+    .innerJoin(
+      morningBriefDeliveries,
+      eq(morningBriefDeliveries.emailOutboxId, emailOutbox.id),
+    )
+    .where(
+      and(
+        itemIds === undefined
+          ? undefined
+          : inArray(emailOutbox.id, [...itemIds]),
+        inArray(emailOutbox.status, ["pending", "sending"]),
+        or(
+          isNull(emailOutbox.nextRetryAt),
+          lte(emailOutbox.nextRetryAt, currentTime),
+        ),
+      ),
+    )
+    .orderBy(asc(emailOutbox.createdAt))
+    .limit(1);
+  return row ? { ...row, membershipId: null } : null;
+}
+
+/**
+ * The member's current Clerk membership generation.
+ *
+ * A remove and rejoin issues a new id, and local rows can lag that by a long
+ * time, so comparing two stored historical ids proves nothing about the owner
+ * who exists now. This is a bounded remote read and is deliberately performed
+ * before the claim transaction opens.
+ */
+export const currentNativeMorningBriefMembership$ = command(
+  async (
+    { get },
+    owner: { readonly orgId: string; readonly userId: string },
+    signal: AbortSignal,
+  ): Promise<NativeMorningBriefOwnerPreflight> => {
+    const memberships = await get(
+      clerk$,
+    ).organizations.getOrganizationMembershipList(
+      { organizationId: owner.orgId, userId: [owner.userId], limit: 1 },
+      undefined,
+      signal,
+    );
+    signal.throwIfAborted();
+    const membership = memberships.data.find((entry) => {
+      return (
+        entry.publicUserData?.userId === owner.userId &&
+        entry.organization.id === owner.orgId
+      );
+    });
+    return { ...owner, membershipId: membership?.id ?? null };
+  },
+);
 
 function rejected(reason: string): NativeMorningBriefEmailAdmission {
   return { kind: "rejected", reason };
@@ -58,6 +146,7 @@ function rejected(reason: string): NativeMorningBriefEmailAdmission {
 export async function admitNativeMorningBriefEmail(
   tx: Tx,
   outboxId: string,
+  preflight: NativeMorningBriefOwnerPreflight | null,
 ): Promise<NativeMorningBriefEmailAdmission> {
   const [delivery] = await tx
     .select({
@@ -80,6 +169,29 @@ export async function admitNativeMorningBriefEmail(
   }
 
   const owner = { orgId: delivery.orgId, userId: delivery.userId };
+  if (
+    !preflight ||
+    preflight.orgId !== owner.orgId ||
+    preflight.userId !== owner.userId
+  ) {
+    // The claim took a different row than the one this pass resolved live
+    // evidence for. Leave it untouched for the next pass rather than send on
+    // evidence that belongs to somebody else.
+    return {
+      kind: "deferred",
+      reason: "Morning Brief email has no live-owner evidence for this pass",
+    };
+  }
+  if (preflight.membershipId === null) {
+    return rejected(
+      "Morning Brief recipient is no longer an organization member",
+    );
+  }
+  if (preflight.membershipId !== delivery.membershipId) {
+    return rejected(
+      "Morning Brief recipient rejoined under a new membership generation",
+    );
+  }
   if (!(await lockCollectionOwner(tx, owner))) {
     return rejected("Morning Brief delivery owner was revoked or erased");
   }
@@ -195,6 +307,25 @@ export async function admitNativeMorningBriefEmail(
     .limit(1);
   if (preference?.emailUnsubscribed ?? false) {
     return rejected("Recipient unsubscribed from optional email");
+  }
+
+  // The subscription lock above can wait, and the Agent writers take this row
+  // when they change visibility or owner. Re-reading it under a conflicting
+  // lock after that wait is what stops an Agent that became private while this
+  // claim was held from still authorising the send.
+  const [held] = await tx
+    .select({ owner: agents.owner, visibility: agents.visibility })
+    .from(agents)
+    .where(
+      and(eq(agents.id, delivery.agentId), eq(agents.orgId, delivery.orgId)),
+    )
+    .limit(1)
+    .for("update");
+  if (
+    !held ||
+    (held.visibility === "private" && held.owner !== delivery.userId)
+  ) {
+    return rejected("Morning Brief installation Agent is no longer usable");
   }
 
   return { kind: "admitted" };

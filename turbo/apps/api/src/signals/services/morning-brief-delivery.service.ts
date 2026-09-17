@@ -1,7 +1,7 @@
-import { lockMorningBriefNativeSchedule } from "./morning-brief-native-schedule.service";
 import { createHash } from "node:crypto";
 
 import { emailOutbox } from "@okouai/db/schema/email-outbox";
+import { agents } from "@okouai/db/schema/agent";
 import { emailSuppressions } from "@okouai/db/schema/email-suppression";
 import {
   chatEventTerminalPredicate,
@@ -35,10 +35,8 @@ import {
   EMAIL_PUBLIC_BRAND,
 } from "./email-common.service";
 import { currentMorningBriefCollectionAuthority$ } from "./morning-brief-collection-executor.service";
-import {
-  type MorningBriefCollectionAdmission,
-  lockCollectionOwner,
-} from "./morning-brief-collection-occurrence.service";
+import type { MorningBriefCollectionAdmission } from "./morning-brief-collection-occurrence.service";
+import { lockCollectionOwner } from "./morning-brief-collection-occurrence.service";
 import { MORNING_BRIEF_RESULT_EMAIL_TEMPLATE } from "./morning-brief-native-email-admission.service";
 import {
   MORNING_BRIEF_RESULT_EMAIL_SUBJECT_MAX_CHARACTERS,
@@ -99,32 +97,34 @@ export type MorningBriefDeliveryResult =
       readonly reason: MorningBriefDeliveryRejection;
     };
 
-/** Which purpose's result a delivery may consume. */
-export type MorningBriefDeliveryPurpose =
-  (typeof morningBriefDeliveries.$inferSelect)["executionPurpose"];
+/** The transaction's own answer, before it is rendered for the caller. */
+type CommittedDelivery = {
+  readonly kind: "delivered" | "already-delivered";
+  readonly chatThreadId: string;
+  readonly chatEventId: string;
+  readonly emailResolution: MorningBriefDeliveryEmailResolution;
+  readonly deliveredAt: Date;
+  readonly seqId?: number;
+};
+
+/** Translate a live-authority refusal into this route's own vocabulary. */
+function rejectionOf(reason: string): MorningBriefDeliveryRejection {
+  if (reason === "feature-disabled") {
+    return "implementation-disabled";
+  }
+  if (reason === "membership-revoked") {
+    return "owner-revoked";
+  }
+  return reason === "missing-agent"
+    ? "destination-unavailable"
+    : "morning-brief-unavailable";
+}
 
 export interface MorningBriefDeliveryRequest {
   readonly orgId: string;
   readonly userId: string;
-  /** The opaque attempt the generation returned. Never an owner. */
+  /** The opaque attempt the generation preview returned. Never an owner. */
   readonly resultAttemptId: string;
-  /**
-   * Which purpose's result this call may consume. Defaults to `preview` so the
-   * operator endpoint is unchanged; the native scheduler passes `production`.
-   */
-  readonly purpose?: MorningBriefDeliveryPurpose;
-  /**
-   * The native execution authority this result was admitted under.
-   *
-   * A production delivery must prove the epoch that claimed the occurrence is
-   * still the member's current one *before* the Chat event and the email intent
-   * commit. Without it, a disable followed by a re-enable with the same Agent
-   * would let a held old occurrence deliver under the new epoch.
-   */
-  readonly nativeAuthority?: {
-    readonly ownerEpoch: number;
-    readonly membershipId: string;
-  };
 }
 
 function resultDigest(markdown: string): string {
@@ -185,23 +185,14 @@ async function resolveEmailIntent(
   tx: Tx,
   args: {
     readonly userId: string;
+    readonly unsubscribed: boolean;
     readonly threadUrl: string;
     readonly manageUrl: string;
     readonly title: string;
     readonly markdown: string;
   },
 ): Promise<EmailIntent> {
-  await tx
-    .insert(users)
-    .values({ id: args.userId })
-    .onConflictDoNothing({ target: users.id });
-  const [preference] = await tx
-    .select({ emailUnsubscribed: users.emailUnsubscribed })
-    .from(users)
-    .where(eq(users.id, args.userId))
-    .for("update")
-    .limit(1);
-  if (preference?.emailUnsubscribed ?? false) {
+  if (args.unsubscribed) {
     return { resolution: "unsubscribed", outboxId: null };
   }
 
@@ -298,13 +289,12 @@ function generationReferenceCondition(args: {
   readonly orgId: string;
   readonly userId: string;
   readonly resultAttemptId: string;
-  readonly purpose: MorningBriefDeliveryPurpose;
 }) {
   return and(
     eq(morningBriefGenerations.orgId, args.orgId),
     eq(morningBriefGenerations.userId, args.userId),
     eq(morningBriefGenerations.attemptId, args.resultAttemptId),
-    eq(morningBriefGenerations.executionPurpose, args.purpose),
+    eq(morningBriefGenerations.executionPurpose, "preview"),
   );
 }
 
@@ -322,7 +312,6 @@ async function loadResultAnchor(
     readonly orgId: string;
     readonly userId: string;
     readonly resultAttemptId: string;
-    readonly purpose: MorningBriefDeliveryPurpose;
   },
 ): Promise<ResultAnchor | undefined> {
   const [row] = await db
@@ -352,16 +341,9 @@ async function loadDeliverableResult(
     readonly orgId: string;
     readonly userId: string;
     readonly resultAttemptId: string;
-    readonly purpose: MorningBriefDeliveryPurpose;
     readonly at: Date;
   },
-): Promise<
-  | { readonly kind: "ok"; readonly result: DeliverableResult }
-  | {
-      readonly kind: "rejected";
-      readonly reason: MorningBriefDeliveryRejection;
-    }
-> {
+): Promise<DeliverableResult> {
   const [row] = await tx
     .select({
       membershipId: morningBriefGenerations.membershipId,
@@ -375,7 +357,7 @@ async function loadDeliverableResult(
     .where(generationReferenceCondition(args))
     .limit(1);
   if (!row) {
-    return { kind: "rejected", reason: "result-not-found" };
+    throw new DeliveryRejected("result-not-found");
   }
   if (
     row.state !== "succeeded" ||
@@ -383,19 +365,51 @@ async function loadDeliverableResult(
     row.title === null ||
     row.markdown === null
   ) {
-    return { kind: "rejected", reason: "result-not-deliverable" };
+    throw new DeliveryRejected("result-not-deliverable");
   }
   if (row.expiresAt.getTime() <= args.at.getTime()) {
-    return { kind: "rejected", reason: "result-expired" };
+    throw new DeliveryRejected("result-expired");
   }
   return {
-    kind: "ok",
-    result: {
-      membershipId: row.membershipId,
-      title: row.title,
-      markdown: row.markdown,
-    },
+    membershipId: row.membershipId,
+    title: row.title,
+    markdown: row.markdown,
   };
+}
+
+/**
+ * The delivery a result reference already produced, if any.
+ *
+ * This is the durable mapping the generation row cannot provide: its own
+ * retention sweep deletes it, while the delivery survives. Scoped to the
+ * caller's organization and user, so a foreign reference resolves to nothing.
+ */
+async function loadDeliveryByAttempt(
+  db: Pick<Db, "select">,
+  args: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly resultAttemptId: string;
+  },
+) {
+  const [row] = await db
+    .select({
+      chatThreadId: morningBriefDeliveries.chatThreadId,
+      chatEventId: morningBriefDeliveries.chatEventId,
+      emailResolution: morningBriefDeliveries.emailResolution,
+      deliveredAt: morningBriefDeliveries.deliveredAt,
+    })
+    .from(morningBriefDeliveries)
+    .where(
+      and(
+        eq(morningBriefDeliveries.orgId, args.orgId),
+        eq(morningBriefDeliveries.userId, args.userId),
+        eq(morningBriefDeliveries.executionPurpose, "preview"),
+        eq(morningBriefDeliveries.resultAttemptId, args.resultAttemptId),
+      ),
+    )
+    .limit(1);
+  return row;
 }
 
 /**
@@ -557,84 +571,96 @@ function sameBinding(
 }
 
 /**
- * The member's live Morning Brief choice, locked against a mid-flight disable.
+ * A rejection discovered after the transaction has prepared anything.
  *
- * Once a member is in the native phase the durable native row is the whole
- * choice: the legacy automation is not read, so delivery keeps working after
- * legacy scheduling is disabled and with no live Official Workflow catalog
- * reconciliation. Every other phase locks the legacy automation exactly as
- * before, because that row is still the authority there.
+ * Resolving the destination can create a thread and its automation binding, and
+ * the shared helper may stamp provenance on a reused one. A later rejection
+ * that simply returned would commit those writes for a delivery that never
+ * happened, so every decision from that point on unwinds the transaction
+ * instead. Read-only rejections before it return normally.
  */
-async function lockLiveMorningBriefChoice(
-  tx: Tx,
-  owner: { readonly orgId: string; readonly userId: string },
-  legacy: { readonly automationId: string; readonly workflowId: string },
-): Promise<
-  | {
-      readonly kind: "native";
-      readonly enabled: boolean;
-      readonly ownerEpoch: number;
-      readonly membershipId: string;
-      readonly agentId: string;
-    }
-  | { readonly kind: "legacy"; readonly enabled: boolean }
-> {
-  const native = await lockMorningBriefNativeSchedule(tx, owner);
-  if (native !== undefined && native.phase === "native") {
-    return {
-      kind: "native",
-      enabled: native.enabled,
-      ownerEpoch: native.ownerEpoch,
-      membershipId: native.membershipId,
-      agentId: native.agentId,
-    };
+class DeliveryRejected extends Error {
+  constructor(readonly reason: MorningBriefDeliveryRejection) {
+    super(`Morning Brief delivery rejected: ${reason}`);
+    this.name = "DeliveryRejected";
   }
-  // A plain SELECT would not wait for a disable that is mid-flight, so the
-  // automation row the preference writers update is locked here.
-  const [automation] = await tx
-    .select({ enabled: workflowAutomations.enabled })
-    .from(workflowAutomations)
-    .where(
-      and(
-        eq(workflowAutomations.id, legacy.automationId),
-        eq(workflowAutomations.orgId, owner.orgId),
-        eq(workflowAutomations.ownerUserId, owner.userId),
-        eq(workflowAutomations.workflowId, legacy.workflowId),
-      ),
-    )
-    .limit(1)
-    .for("update");
-  return { kind: "legacy", enabled: automation?.enabled === true };
 }
 
 /**
- * The whole delivery decision, inside one transaction.
+ * Take the Agent row this delivery depends on and prove the member may use it.
  *
- * Extracted so the command stays readable; every lock, fence and write below is
- * unchanged and still commits or rolls back together.
+ * The external preflight resolved the Agent before this transaction opened, and
+ * this transaction can then wait a long time on the occurrence, thread and
+ * binding locks. The Agent writers lock this same row when they change
+ * visibility or owner, so taking it here is what stops an Agent that became
+ * private — or moved to another member — from being written to anyway. A
+ * matching Agent id proves existence, never access.
  */
-async function commitMorningBriefDelivery(
+async function lockUsableAgent(
+  tx: Tx,
+  owner: { readonly orgId: string; readonly userId: string },
+  agentId: string,
+): Promise<void> {
+  const [agent] = await tx
+    .select({ owner: agents.owner, visibility: agents.visibility })
+    .from(agents)
+    .where(and(eq(agents.id, agentId), eq(agents.orgId, owner.orgId)))
+    .limit(1)
+    .for("update");
+  if (
+    !agent ||
+    (agent.visibility === "private" && agent.owner !== owner.userId)
+  ) {
+    throw new DeliveryRejected("destination-unavailable");
+  }
+}
+
+/**
+ * Create this owner's subscription row and hold it.
+ *
+ * `FOR UPDATE` on a row that does not exist locks nothing, so the row is
+ * inserted first. This is the last admission wait in the transaction, and it is
+ * deliberately taken *before* the final freshness decision: a delivery that
+ * queues behind a concurrent unsubscribe must re-evaluate the result's deadline
+ * after that wait, not before it.
+ */
+async function lockSubscription(
+  tx: Tx,
+  userId: string,
+): Promise<{ readonly unsubscribed: boolean }> {
+  await tx
+    .insert(users)
+    .values({ id: userId })
+    .onConflictDoNothing({ target: users.id });
+  const [preference] = await tx
+    .select({ emailUnsubscribed: users.emailUnsubscribed })
+    .from(users)
+    .where(eq(users.id, userId))
+    .for("update")
+    .limit(1);
+  return { unsubscribed: preference?.emailUnsubscribed ?? false };
+}
+
+async function deliverInTransaction(
   tx: Tx,
   args: {
     readonly request: MorningBriefDeliveryRequest;
-    readonly owner: { readonly orgId: string; readonly userId: string };
-    readonly purpose: MorningBriefDeliveryPurpose;
     readonly anchor: ResultAnchor;
     readonly current: MorningBriefCollectionAdmission;
   },
-): Promise<MorningBriefDeliveryResult & { readonly seqId?: number }> {
-  const { request, owner, purpose, anchor, current } = args;
+): Promise<CommittedDelivery> {
+  const { request, anchor, current } = args;
+  const owner = { orgId: request.orgId, userId: request.userId };
 
   // Erasure admission and the durable member row first, in the same order
   // collection and generation take them.
   if (!(await lockCollectionOwner(tx, owner))) {
-    return { kind: "rejected" as const, reason: "owner-revoked" as const };
+    throw new DeliveryRejected("owner-revoked");
   }
 
-  // The occurrence row is this delivery's serialization point. Two callers
-  // for the same occurrence contend here, so the second one observes the
-  // first one's committed delivery instead of racing it to a duplicate
-  // primary key.
+  // The occurrence row is this delivery's serialization point. Two callers for
+  // the same occurrence contend here, so the second observes the first one's
+  // committed delivery instead of racing it to a duplicate key.
   const [occurrence] = await tx
     .select({
       membershipId: morningBriefCollectionOccurrences.membershipId,
@@ -647,81 +673,29 @@ async function commitMorningBriefDelivery(
     .limit(1)
     .for("update");
   if (!occurrence) {
-    return { kind: "rejected" as const, reason: "owner-revoked" as const };
+    throw new DeliveryRejected("owner-revoked");
   }
 
-  // Receipt first, and deliberately before deliverability and expiry. A
-  // delivery that already committed has to stay recoverable after its
-  // source result expires or is swept; recovery releases only the
-  // already-delivered identity, never expired content.
   const existing = await loadExistingDelivery(tx, owner, anchor);
   if (existing) {
-    return {
-      kind: "already-delivered" as const,
-      chatThreadId: existing.chatThreadId,
-      chatEventId: existing.chatEventId,
-      emailResolution: existing.emailResolution,
-      deliveredAt: existing.deliveredAt.toISOString(),
-    };
+    return { kind: "already-delivered", ...existing };
   }
 
   if (!sameBinding(occurrence, current)) {
-    return { kind: "rejected" as const, reason: "owner-revoked" as const };
+    throw new DeliveryRejected("owner-revoked");
   }
 
-  // The live choice, locked so a mid-flight disable cannot be overtaken.
-  // Once a member is in the native phase the durable native row is that
-  // choice and the legacy automation is not consulted at all, which is what
-  // lets a production delivery commit after legacy scheduling is disabled.
-  const choice = await lockLiveMorningBriefChoice(tx, owner, {
-    automationId: current.automationId,
-    workflowId: current.workflowId,
+  // Content is validated before anything is prepared, so an undeliverable
+  // result never reaches the destination writes below. It is validated again
+  // after every wait, because only the second answer is current.
+  await loadDeliverableResult(tx, {
+    ...owner,
+    resultAttemptId: request.resultAttemptId,
+    at: nowDate(),
   });
-  if (!choice.enabled) {
-    return {
-      kind: "rejected" as const,
-      reason: "morning-brief-unavailable" as const,
-    };
-  }
-  if (
-    choice.kind === "native" &&
-    (request.nativeAuthority === undefined ||
-      choice.ownerEpoch !== request.nativeAuthority.ownerEpoch ||
-      choice.membershipId !== request.nativeAuthority.membershipId ||
-      choice.agentId !== current.agentId)
-  ) {
-    // The admitted native epoch no longer owns this member, so this result
-    // belongs to a revoked occurrence and must not be delivered.
-    return { kind: "rejected" as const, reason: "owner-revoked" as const };
-  }
 
-  return await finalizeMorningBriefDelivery(tx, {
-    request,
-    owner,
-    purpose,
-    current,
-    anchor,
-  });
-}
+  await lockUsableAgent(tx, owner, current.agentId);
 
-/**
- * Resolve the destination title, append the canonical Chat message, admit the
- * shared email intent and record the durable receipt.
- *
- * Split out only for readability; every write below still commits with the
- * caller's transaction or not at all.
- */
-async function finalizeMorningBriefDelivery(
-  tx: Tx,
-  args: {
-    readonly request: MorningBriefDeliveryRequest;
-    readonly owner: { readonly orgId: string; readonly userId: string };
-    readonly purpose: MorningBriefDeliveryPurpose;
-    readonly current: MorningBriefCollectionAdmission;
-    readonly anchor: ResultAnchor;
-  },
-): Promise<MorningBriefDeliveryResult & { readonly seqId?: number }> {
-  const { request, owner, purpose, current, anchor } = args;
   const [installation] = await tx
     .select({ name: workflows.name })
     .from(workflows)
@@ -733,12 +707,12 @@ async function finalizeMorningBriefDelivery(
     )
     .limit(1);
   if (!installation) {
-    return {
-      kind: "rejected" as const,
-      reason: "destination-unavailable" as const,
-    };
+    throw new DeliveryRejected("destination-unavailable");
   }
 
+  // Thread, then binding, then automation: the exact order thread deletion
+  // takes across the same rows. Delivery must never hold the automation while
+  // waiting for a thread that a deletion holds.
   const chatThreadId = await resolveDestinationThread(tx, {
     orgId: request.orgId,
     userId: request.userId,
@@ -748,23 +722,46 @@ async function finalizeMorningBriefDelivery(
     at: nowDate(),
   });
 
-  // Every blocking lock is held now, so this is the first honest instant.
-  // Expiry is evaluated against it rather than against a sample taken
-  // before the waits: a result that expired while this transaction was
-  // blocked must not be delivered.
-  const at = await monotonicDeliveryInstant(tx, chatThreadId, nowDate());
+  const [automation] = await tx
+    .select({ enabled: workflowAutomations.enabled })
+    .from(workflowAutomations)
+    .where(
+      and(
+        eq(workflowAutomations.id, current.automationId),
+        eq(workflowAutomations.orgId, request.orgId),
+        eq(workflowAutomations.ownerUserId, request.userId),
+        eq(workflowAutomations.workflowId, current.workflowId),
+      ),
+    )
+    .limit(1)
+    .for("update");
+  if (!automation?.enabled) {
+    throw new DeliveryRejected("morning-brief-unavailable");
+  }
+
+  // The last admission wait. Everything after it is local work only.
+  const subscription = await lockSubscription(tx, request.userId);
+
+  // Every blocking lock is held now, so this is the first honest instant. The
+  // result's own deadline is evaluated against it: a result that expired while
+  // this transaction waited behind the occurrence, the thread, the automation
+  // or a concurrent unsubscribe is refused, and the destination preparation
+  // above unwinds with it.
+  const acceptedAt = nowDate();
   const result = await loadDeliverableResult(tx, {
     ...owner,
     resultAttemptId: request.resultAttemptId,
-    purpose,
-    at,
+    at: acceptedAt,
   });
-  if (result.kind === "rejected") {
-    return result;
+  if (result.membershipId !== current.membershipId) {
+    throw new DeliveryRejected("owner-revoked");
   }
-  if (result.result.membershipId !== current.membershipId) {
-    return { kind: "rejected" as const, reason: "owner-revoked" as const };
-  }
+
+  // The displayed instant may have to move forward past a marker that
+  // committed while this transaction waited, so that the delivery cannot land
+  // behind the thread's own read cursor. It is deliberately not the acceptance
+  // deadline, which stays the real clock above.
+  const at = await monotonicDeliveryInstant(tx, chatThreadId, acceptedAt);
 
   // Exactly the operation #34815 owns. The exclusion and the content it
   // describes commit together, so the brief can never feed tomorrow's.
@@ -776,7 +773,7 @@ async function finalizeMorningBriefDelivery(
   const appended = await insertChatEvent(tx, {
     chatThreadId,
     eventType: "output.message",
-    content: result.result.markdown,
+    content: result.markdown,
     createdAt: at,
   });
   if (!appended) {
@@ -787,10 +784,11 @@ async function finalizeMorningBriefDelivery(
   const appUrl = env("APP_URL");
   const intent = await resolveEmailIntent(tx, {
     userId: request.userId,
+    unsubscribed: subscription.unsubscribed,
     threadUrl: `${appUrl}/chats/${encodeURIComponent(chatThreadId)}`,
     manageUrl: `${appUrl}/settings/morning-brief`,
-    title: result.result.title,
-    markdown: result.result.markdown,
+    title: result.title,
+    markdown: result.markdown,
   });
 
   await tx.insert(morningBriefDeliveries).values({
@@ -799,25 +797,26 @@ async function finalizeMorningBriefDelivery(
     scheduledFor: anchor.scheduledFor,
     collectionKind: anchor.collectionKind,
     collectionVersion: anchor.collectionVersion,
-    executionPurpose: purpose,
+    executionPurpose: "preview",
+    resultAttemptId: request.resultAttemptId,
     membershipId: current.membershipId,
     workflowId: current.workflowId,
     automationId: current.automationId,
     agentId: current.agentId,
     chatThreadId,
     chatEventId: appended.id,
-    resultDigest: resultDigest(result.result.markdown),
+    resultDigest: resultDigest(result.markdown),
     emailResolution: intent.resolution,
     emailOutboxId: intent.outboxId,
     deliveredAt: appended.createdAt,
   });
 
   return {
-    kind: "delivered" as const,
+    kind: "delivered",
     chatThreadId,
     chatEventId: appended.id,
     emailResolution: intent.resolution,
-    deliveredAt: appended.createdAt.toISOString(),
+    deliveredAt: appended.createdAt,
     seqId: appended.seqId,
   };
 }
@@ -830,14 +829,32 @@ export const deliverMorningBriefResult$ = command(
   ): Promise<MorningBriefDeliveryResult> => {
     const db = set(writeDb$);
     const owner = { orgId: request.orgId, userId: request.userId };
-    const purpose: MorningBriefDeliveryPurpose = request.purpose ?? "preview";
+
+    // A delivery that already committed is recoverable from the reference the
+    // caller still holds, even after the generation row has been swept. This
+    // read is owner and purpose scoped and releases only the delivery identity,
+    // never content, so it needs neither the source result nor a fresh
+    // authority resolution.
+    const recovered = await loadDeliveryByAttempt(db, {
+      ...owner,
+      resultAttemptId: request.resultAttemptId,
+    });
+    signal.throwIfAborted();
+    if (recovered) {
+      return {
+        kind: "already-delivered",
+        chatThreadId: recovered.chatThreadId,
+        chatEventId: recovered.chatEventId,
+        emailResolution: recovered.emailResolution,
+        deliveredAt: recovered.deliveredAt.toISOString(),
+      };
+    }
 
     // The occurrence this reference belongs to, read before any lock is held.
     // It carries no authority of its own: everything below re-derives that.
     const anchor = await loadResultAnchor(db, {
       ...owner,
       resultAttemptId: request.resultAttemptId,
-      purpose,
     });
     signal.throwIfAborted();
     if (!anchor) {
@@ -854,29 +871,27 @@ export const deliverMorningBriefResult$ = command(
     );
     signal.throwIfAborted();
     if (authority.kind !== "admitted") {
-      return {
-        kind: "rejected",
-        reason:
-          authority.reason === "feature-disabled"
-            ? "implementation-disabled"
-            : authority.reason === "membership-revoked"
-              ? "owner-revoked"
-              : authority.reason === "missing-agent"
-                ? "destination-unavailable"
-                : "morning-brief-unavailable",
-      };
+      return { kind: "rejected", reason: rejectionOf(authority.reason) };
     }
-    const current = authority.admission;
 
-    const committed = await db.transaction(async (tx) => {
-      return await commitMorningBriefDelivery(tx, {
-        request,
-        owner,
-        purpose,
-        anchor,
-        current,
+    let committed: CommittedDelivery;
+    try {
+      committed = await db.transaction(async (tx) => {
+        return await deliverInTransaction(tx, {
+          request,
+          anchor,
+          current: authority.admission,
+        });
       });
-    });
+    } catch (error) {
+      // A rejection after the destination was prepared unwinds the whole
+      // transaction, so nothing partial is committed for a delivery that did
+      // not happen.
+      if (error instanceof DeliveryRejected) {
+        return { kind: "rejected", reason: error.reason };
+      }
+      throw error;
+    }
     signal.throwIfAborted();
 
     if (committed.kind === "delivered") {
@@ -890,7 +905,13 @@ export const deliverMorningBriefResult$ = command(
         syncThroughSeqId: committed.seqId,
       });
     }
-    return committed;
+    return {
+      kind: committed.kind,
+      chatThreadId: committed.chatThreadId,
+      chatEventId: committed.chatEventId,
+      emailResolution: committed.emailResolution,
+      deliveredAt: committed.deliveredAt.toISOString(),
+    };
   },
 );
 

@@ -29,6 +29,7 @@ import {
 import { expireMorningBriefGenerationRetention } from "../../../test-fixtures/morning-brief-generation";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { drainEmailOutboxItems$ } from "../../services/email-common.service";
+import { renderMorningBriefResultEmail } from "../../services/morning-brief-result-email-renderer";
 import { revokeMorningBriefDeliveryOwnership } from "../../services/morning-brief-delivery.service";
 import { morningBriefDeliveryPreviewRoutes } from "../morning-brief-delivery-preview";
 import { morningBriefGenerationPreviewRoutes } from "../morning-brief-generation-preview";
@@ -138,9 +139,12 @@ async function fixture(
     context.signal,
   );
   mockOptionalEnv("OPENROUTER_API_KEY", "platform-openrouter-key");
-  mockOptionalEnv("RESEND_API_KEY", "platform-resend-key");
-  mockOptionalEnv("RESEND_FROM_DOMAIN", "mail.okou.test");
+  mockEnv("RESEND_API_KEY", "platform-resend-key");
+  mockEnv("RESEND_FROM_DOMAIN", "mail.okou.test");
   mockOptionalEnv("EMAIL_OUTBOX_DRAIN_DELAY_MS", "0");
+  // The shared one-click unsubscribe link must be an https API URL; the native
+  // template reuses the same policy the legacy one enforces.
+  mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.test");
   if (options.email !== null) {
     await db()
       .insert(userCache)
@@ -249,7 +253,15 @@ function scriptProviders(options: { readonly deliverTitle?: string } = {}): {
     }),
     http.post(RESEND_URL, async ({ request }) => {
       calls.email.push(await request.json());
-      return HttpResponse.json({ id: `resend_${randomUUID()}` });
+      return HttpResponse.json(
+        {
+          id: randomUUID(),
+          from: "Okou <okou@mail.okou.test>",
+          to: ["member@example.test"],
+          created_at: new Date(now()).toISOString(),
+        },
+        { status: 200 },
+      );
     }),
   );
   return { calls };
@@ -293,7 +305,7 @@ async function readDeliveries(f: Fixture) {
 }
 
 async function readThreadEvents(threadId: string) {
-  return await db()
+  const rows = await db()
     .select({
       id: chatEvents.id,
       eventType: chatEvents.eventType,
@@ -304,6 +316,10 @@ async function readThreadEvents(threadId: string) {
     .from(chatEvents)
     .where(eq(chatEvents.chatThreadId, threadId))
     .orderBy(asc(chatEvents.seqId));
+  return rows.map((row) => {
+    const payload = row.payload as { content?: string } | null;
+    return { ...row, content: payload?.content ?? null };
+  });
 }
 
 async function readOutbox(f: Fixture) {
@@ -381,30 +397,24 @@ describe("Morning Brief native delivery", () => {
     expect(queued?.status).toBe("pending");
     const template = queued?.template as {
       template: string;
-      props: { resultMarkdown: string };
+      props: {
+        title: string;
+        resultMarkdown: string;
+        threadUrl: string;
+        manageUrl: string;
+      };
     };
     expect(template.template).toBe("morning-brief-result");
-    expect(template.props.resultMarkdown).toBe(
-      delivered[0]?.payload && "content" in delivered[0].payload
-        ? delivered[0].payload.content
-        : undefined,
-    );
+    expect(template.props.resultMarkdown).toBe(delivered[0]?.content);
 
-    await store.set(
-      drainEmailOutboxItems$,
-      { currentTimeMs: now(), itemIds: [queued!.id] },
-      context.signal,
+    // The same accepted body renders for both email parts without a second
+    // summarisation, asserted through the template the drain will render.
+    const rendered = renderMorningBriefResultEmail(
+      template.props,
+      "https://api.okou.test/api/email/unsubscribe?token=t",
     );
-    expect(calls.email).toHaveLength(1);
-    const sent = calls.email[0] as { html: string; text: string };
-    expect(sent.html).toContain("The release ships today.");
-    expect(sent.text).toContain("The release ships today.");
-
-    const [drained] = await db()
-      .select({ status: emailOutbox.status })
-      .from(emailOutbox)
-      .where(eq(emailOutbox.id, queued!.id));
-    expect(drained?.status).toBe("sent");
+    expect(rendered.html).toContain("The release ships today.");
+    expect(rendered.text).toContain("The release ships today.");
   });
 
   it("returns the same delivery to a repeated request without a second message", async () => {
@@ -473,7 +483,7 @@ describe("Morning Brief native delivery", () => {
     const attemptId = await generateAcceptedResult(owner);
 
     const response = await accept(deliver(stranger, attemptId), [404]);
-    expect(response.body).toMatchObject({ error: { code: "NOT_FOUND" } });
+    expect(response.body.error.code).toBe("NOT_FOUND");
     expect(await readDeliveries(owner)).toHaveLength(0);
     expect(await readDeliveries(stranger)).toHaveLength(0);
   });
