@@ -2095,11 +2095,23 @@ lease semantics, finite budgets and declared coverage limits.
 
 The App posts onboarding entry to `/api/marketing/onboarding-start` and actual
 Stripe redirect actions to `/api/marketing/checkout-start` on the Marketing
-origin. Deploy the Marketing receiver before this App. Marketing must retain
-`/api/marketing/finish-onboarding` as an alias of the same onboarding handler
-while previously loaded App clients remain supported; remove it only in a later
-cleanup with an explicit supported-client boundary. Rolling back the App remains
-compatible with that receiver.
+origin. The owner confirmed this feature has not launched and requested removal
+of `/api/marketing/finish-onboarding` without an alias, with a client force
+upgrade as the supported-client boundary.
+
+Deploy the Marketing receiver before this App. Verify the production App version
+and commit contain the new callers, then raise `minimumSupportedVersion` in
+`turbo/apps/api/src/lib/web-client-compatibility.json` to that verified version
+in a separate release. Do not guess a version from this PR or raise the floor
+with the first replacement App deployment: production promotes the API first,
+so a refresh could still load an unsupported build. This PR does not activate
+the floor increase before the replacement App is live.
+
+The existing App API check prompts old clients to refresh on their next handled
+API request. Direct Marketing requests do not pass through that middleware;
+cached old callers before the floor takes effect are outside this prelaunch
+support boundary. Do not roll the App back below the floor or Marketing back
+behind the new receivers while those App builds are supported.
 
 Onboarding remains bodyless and preserves the existing
 `marketing_onboarding_attempts` user/org attempt marker. Changing the URL does
