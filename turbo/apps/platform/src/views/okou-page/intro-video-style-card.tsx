@@ -23,9 +23,10 @@ import {
 /**
  * The cover's only chrome is a chip in the bottom-left corner: the middle of
  * the artwork is what the user is reading, so nothing is drawn over it. The
- * chip says "this is a video" and toggles the preview. Everything else — the hover scrim, the Use pill, the selected
- * ring and badge — comes from the shared tile chrome, so this wall matches the
- * presentation, illustration and creative video walls.
+ * chip says "this is a video" and toggles the preview. Everything else — the
+ * hover scrim, the Use pill, the selected ring and badge — comes from the
+ * shared tile chrome, so this wall matches the presentation, illustration and
+ * creative video walls.
  */
 function StylePreviewMedia({ style }: { readonly style: IntroVideoStyle }) {
   const { t } = useTranslation();
