@@ -340,11 +340,11 @@ function publishedChannelTopics(): readonly {
   return publishes.calls.map((call, index) => {
     const publishedAt = publishes.invocationCallOrder[index] ?? 0;
     let channel = "";
-    gets.invocationCallOrder.forEach((order, getIndex) => {
+    for (const [getIndex, order] of gets.invocationCallOrder.entries()) {
       if (order < publishedAt) {
         channel = String(gets.calls[getIndex]?.[0] ?? "");
       }
-    });
+    }
     return { channel, topic: call[0] };
   });
 }
