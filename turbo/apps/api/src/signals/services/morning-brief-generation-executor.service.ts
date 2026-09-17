@@ -24,6 +24,7 @@ import { and, eq } from "drizzle-orm";
 import type { Tx } from "../../lib/db-types";
 import { optionalEnv } from "../../lib/env";
 import { nowDate } from "../../lib/time";
+import { bindNativeGenerationAttempt } from "./morning-brief-native-schedule.service";
 import { writeDb$, type Db } from "../external/db";
 import {
   lookupPlatformGenerationCost,
@@ -34,7 +35,7 @@ import {
   type PlatformGenerationOutcome,
   type PlatformGenerationTokens,
 } from "../external/openrouter-platform-generation";
-import { settleIncludingAbort } from "../utils";
+import { settle, settleIncludingAbort } from "../utils";
 import {
   currentMorningBriefCollectionAuthority$,
   executeMorningBriefSlackCollection$,
@@ -268,10 +269,41 @@ function admissionOf(args: {
  * and a bounded read that happened to find nothing are recorded under distinct
  * terminal states, so an incomplete read can never be reported as an empty day.
  */
+/**
+ * The native execution authority a production generation is admitted under.
+ *
+ * It is supplied by the scheduler that claimed the occurrence and is bound to
+ * the reserved attempt inside this same transaction, before the sole platform
+ * request. Binding it afterwards would leave a window in which a possibly
+ * invoked attempt has no durable association with the slot that paid for it.
+ */
+/**
+ * The claim that admitted this generation is no longer the member's.
+ *
+ * Thrown inside the reservation transaction so the reservation, the collection
+ * finalization and the native binding all roll back together, and no platform
+ * request is ever made under a claim that moved.
+ */
+class NativeGenerationAuthorityLost extends Error {
+  constructor() {
+    super(
+      "Morning Brief native generation authority was lost before the request",
+    );
+    this.name = "NativeGenerationAuthorityLost";
+  }
+}
+
+export interface MorningBriefNativeGenerationAuthority {
+  readonly ownerEpoch: number;
+  readonly membershipId: string;
+  readonly leaseToken: string;
+}
+
 async function admitGeneration(
   tx: Tx,
   purpose: MorningBriefExecutionPurpose,
   context: MorningBriefCollectionHandoffContext,
+  nativeAuthority: MorningBriefNativeGenerationAuthority | undefined,
 ): Promise<AdmittedGeneration> {
   const { bundle } = context;
   const locale = await loadMemberLocale(tx, context.admission.owner);
@@ -296,6 +328,26 @@ async function admitGeneration(
     // never be re-claimed, so reaching this means an invariant is broken rather
     // than that a second caller legitimately arrived.
     throw new Error("Morning Brief generation slot was already taken");
+  }
+  if (nativeAuthority !== undefined) {
+    // The reserved attempt and the native slot become durable together, in the
+    // reservation's own transaction and before the sole platform request. A
+    // claimant whose epoch or lease moved while collection ran fails here, the
+    // reservation rolls back with it, and no request is made at all.
+    const bound = await bindNativeGenerationAttempt(
+      tx,
+      context.admission.owner,
+      {
+        scheduledFor: context.admission.scheduledFor,
+        generationAttemptId: admission.attemptId,
+        expectedEpoch: nativeAuthority.ownerEpoch,
+        leaseToken: nativeAuthority.leaseToken,
+        at: context.at,
+      },
+    );
+    if (!bound) {
+      throw new NativeGenerationAuthorityLost();
+    }
   }
   return { kind: "reserved", admission, plan };
 }
@@ -1442,6 +1494,28 @@ const invokeAndPersist$ = command(
 );
 
 /**
+ * Run the collection that a generation reservation joins, turning a lost native
+ * claim into an outcome rather than a thrown tick failure.
+ *
+ * The reservation refuses inside its own transaction, which is what rolls the
+ * collection finalization back with it. Reporting that as a non-executing
+ * outcome keeps one member's moved claim from failing the whole cron tick.
+ */
+async function collectForGeneration<T>(
+  run: Promise<T>,
+  signal: AbortSignal,
+): Promise<T | { readonly kind: "native-authority-lost" }> {
+  const settled = await settle(run, signal);
+  if (settled.ok) {
+    return settled.value;
+  }
+  if (settled.error instanceof NativeGenerationAuthorityLost) {
+    return { kind: "native-authority-lost" };
+  }
+  throw settled.error;
+}
+
+/**
  * The one generation engine, executed for an explicit purpose.
  *
  * `preview` is the operator endpoint's. `production` is the native scheduler's
@@ -1457,6 +1531,8 @@ export const executeMorningBriefGeneration$ = command(
       readonly owner: MorningBriefCollectionOwner;
       readonly scheduledFor: Date;
       readonly purpose: MorningBriefExecutionPurpose;
+      /** Required for `production`; bound to the reservation before any POST. */
+      readonly nativeAuthority?: MorningBriefNativeGenerationAuthority;
     },
     signal: AbortSignal,
   ): Promise<MorningBriefGenerationExecution> => {
@@ -1478,26 +1554,37 @@ export const executeMorningBriefGeneration$ = command(
     let occurrenceRow: MorningBriefCollectionOccurrenceRow | undefined;
     let bundleCoverage: MorningBriefSlackBundle["coverage"] = "empty";
     let sources: ReadonlyMap<string, GenerationSource> = new Map();
-    const execution = await set(
-      executeMorningBriefSlackCollection$,
-      {
-        owner: args.owner,
-        scheduledFor: args.scheduledFor,
-        handoff: {
-          onCollected: async (tx, context) => {
-            bundleCoverage = context.bundle.coverage;
-            occurrenceRow = context.occurrence;
-            admitted = await admitGeneration(tx, args.purpose, context);
-            if (admitted.kind === "reserved") {
-              sources = admitted.plan.sources;
-            }
+    const execution = await collectForGeneration(
+      set(
+        executeMorningBriefSlackCollection$,
+        {
+          owner: args.owner,
+          scheduledFor: args.scheduledFor,
+          handoff: {
+            onCollected: async (tx, context) => {
+              bundleCoverage = context.bundle.coverage;
+              occurrenceRow = context.occurrence;
+              admitted = await admitGeneration(
+                tx,
+                args.purpose,
+                context,
+                args.nativeAuthority,
+              );
+              if (admitted.kind === "reserved") {
+                sources = admitted.plan.sources;
+              }
+            },
           },
         },
-      },
+        signal,
+      ),
       signal,
     );
     signal.throwIfAborted();
 
+    if (execution.kind === "native-authority-lost") {
+      return { kind: "not-executed", reason: "native-authority-lost" };
+    }
     if (
       execution.kind === "not-executed" ||
       execution.kind === "invalid-anchor" ||

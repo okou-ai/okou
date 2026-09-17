@@ -9,7 +9,7 @@ import {
 import { agentRuns } from "@okouai/db/schema/agent-run";
 import { userCache } from "@okouai/db/schema/user-cache";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 import { db } from "../lib/db";
 import { now } from "../lib/time";
@@ -194,14 +194,44 @@ export async function interruptNativeSettlement(
  *
  * The receipt-first invariant is a statement about which rows are resumable at
  * all, which no HTTP response exposes; the suite asserts it directly so the
- * property holds independently of how many rows one recovery batch fits.
+ * property holds independently of how many rows one recovery batch fits. The
+ * scan itself is global, so the result is narrowed to the owner under test —
+ * other suites share this database.
  */
-export async function resumableOccurrenceAnchors(): Promise<readonly Date[]> {
+export async function resumableOccurrenceAnchors(
+  owner: MorningBriefNativeOwner,
+): Promise<readonly Date[]> {
   const rows = await loadResumableOccurrences(db(), {
     now: new Date(now()),
-    limit: 50,
+    limit: 200,
   });
-  return rows.map((row) => {
-    return row.scheduledFor;
-  });
+  return rows
+    .filter((row) => {
+      return row.orgId === owner.orgId && row.userId === owner.userId;
+    })
+    .map((row) => {
+      return row.scheduledFor;
+    });
+}
+
+/**
+ * Revoke the member's native authority the way a Settings disable does.
+ *
+ * Bumping the epoch is exactly what `applyMorningBriefLogicalChoice` commits
+ * for a disable, so a test can land that revocation at an observed barrier —
+ * mid-collection, before the reservation — without sleeping or reaching into
+ * the scheduler.
+ */
+export async function revokeNativeAuthorityForTest(
+  owner: MorningBriefNativeOwner,
+): Promise<void> {
+  await db()
+    .update(morningBriefNativeSchedules)
+    .set({ ownerEpoch: sql`${morningBriefNativeSchedules.ownerEpoch} + 1` })
+    .where(
+      and(
+        eq(morningBriefNativeSchedules.orgId, owner.orgId),
+        eq(morningBriefNativeSchedules.userId, owner.userId),
+      ),
+    );
 }

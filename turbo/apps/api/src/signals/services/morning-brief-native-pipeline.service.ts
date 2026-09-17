@@ -6,7 +6,6 @@ import { command } from "ccstate";
 import { and, count, eq, isNotNull, isNull, sql } from "drizzle-orm";
 
 import { logger } from "../../lib/log";
-import { nowDate } from "../../lib/time";
 import { writeDb$, type ReadonlyDb } from "../external/db";
 import { deliverMorningBriefResult$ } from "./morning-brief-delivery.service";
 import type { MorningBriefMemberIdentity } from "./morning-brief-enrollment-data.service";
@@ -23,7 +22,6 @@ import type {
   NativeTickDependencies,
 } from "./morning-brief-native-executor.service";
 import {
-  bindNativeGenerationAttempt,
   readMorningBriefNativeSchedule,
   type MorningBriefNativeOccurrenceRow,
   type MorningBriefNativeScheduleRow,
@@ -265,12 +263,28 @@ export const executeNativeMorningBriefSlot$ = command(
     },
     signal: AbortSignal,
   ): Promise<NativeSlotExecution> => {
+    const leaseToken = args.occurrence.leaseToken;
+    if (leaseToken === null) {
+      // The claim this slot was handed is gone, so there is nothing to execute
+      // under. No collection, no reservation and no request happen.
+      return { kind: "defer", reason: "native-claim-lost" };
+    }
+
+    // The native authority travels **into** S5, so its reservation transaction
+    // binds the reserved attempt to this slot before the sole platform request.
+    // A claim that moved while collection ran fails inside that transaction and
+    // rolls the reservation back with it.
     const generation = await set(
       executeMorningBriefGeneration$,
       {
         owner: args.owner,
         scheduledFor: args.occurrence.scheduledFor,
         purpose: "production",
+        nativeAuthority: {
+          ownerEpoch: args.occurrence.ownerEpoch,
+          membershipId: args.occurrence.membershipId,
+          leaseToken,
+        },
       },
       signal,
     );
@@ -279,31 +293,6 @@ export const executeNativeMorningBriefSlot$ = command(
     const settlement = nativeSettlementOfGeneration(generation);
     if (settlement.kind !== "delivered") {
       return settlement;
-    }
-
-    // Bind the accepted attempt to this slot **before** any delivery effect, so
-    // a crash between the Chat receipt COMMIT and the native settlement still
-    // leaves a row the receipt-first recovery can find and associate.
-    const leaseToken = args.occurrence.leaseToken;
-    if (leaseToken === null) {
-      return { kind: "defer", reason: "native-claim-lost" };
-    }
-    const db = set(writeDb$);
-    const bound = await db.transaction(async (tx) => {
-      return await bindNativeGenerationAttempt(tx, args.owner, {
-        scheduledFor: args.occurrence.scheduledFor,
-        generationAttemptId: settlement.generationAttemptId,
-        expectedEpoch: args.occurrence.ownerEpoch,
-        leaseToken,
-        at: nowDate(),
-      });
-    });
-    signal.throwIfAborted();
-    if (!bound) {
-      // Reclaimed or revoked while the provider call was in flight. The
-      // invocation stays recorded on the generation row; this worker simply has
-      // no authority to deliver or settle.
-      return { kind: "defer", reason: "native-claim-reclaimed" };
     }
 
     // An accepted result's delivery work must be discoverable before the slot

@@ -873,6 +873,22 @@ export async function bindNativeGenerationAttempt(
     readonly at: Date;
   },
 ): Promise<boolean> {
+  // The member's *current* authority, not just the claimant's own record. The
+  // occurrence keeps the epoch it was admitted under for its whole life, so
+  // comparing only that would prove the claimant is the same worker while
+  // saying nothing about whether the member still owns the claim. A disable, a
+  // re-enable, a destination replacement or a transfer moves the schedule's
+  // epoch, and a slot admitted before that must not reach the provider.
+  const schedule = await lockMorningBriefNativeSchedule(tx, owner);
+  if (
+    schedule === undefined ||
+    schedule.ownerEpoch !== args.expectedEpoch ||
+    !schedule.enabled ||
+    schedule.phase !== "native"
+  ) {
+    return false;
+  }
+
   const rows = await tx
     .update(morningBriefNativeOccurrences)
     .set({

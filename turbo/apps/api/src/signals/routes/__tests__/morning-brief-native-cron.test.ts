@@ -24,6 +24,7 @@ import {
   readNativeOccurrences,
   readNativeSchedule,
   readThreadEventTypes,
+  revokeNativeAuthorityForTest,
   resumableOccurrenceAnchors,
   seedRecipientAddress,
 } from "../../../test-fixtures/morning-brief-native-schedule";
@@ -413,7 +414,7 @@ describe("native Morning Brief cron", () => {
 
     // The occurrence is not reachable by resume at all, whether or not the
     // receipt pass handled it this tick.
-    await expect(resumableOccurrenceAnchors()).resolves.toStrictEqual([]);
+    await expect(resumableOccurrenceAnchors(f)).resolves.toStrictEqual([]);
 
     await accept(tick(), [200]);
 
@@ -442,6 +443,60 @@ describe("native Morning Brief cron", () => {
     expect(calls.generation).toHaveLength(1);
     await expect(readNativeGenerations(f)).resolves.toHaveLength(1);
     await expect(readNativeDeliveries(f)).resolves.toHaveLength(1);
+  });
+
+  // The pre-POST fence. The revocation lands at an observed barrier — the first
+  // Slack read, which happens during collection and before the reservation —
+  // so the claim this slot was admitted under is already stale by the time S5
+  // would reserve. Nothing here sleeps and nothing seeds a result.
+  it("makes no platform request when the claim is revoked before the reservation", async () => {
+    const f = await fixture();
+    const { calls } = scriptProviders();
+    let revoked = false;
+    server.use(
+      http.get(SLACK_CONVERSATIONS_URL, async () => {
+        if (!revoked) {
+          revoked = true;
+          await revokeNativeAuthorityForTest(f);
+        }
+        return HttpResponse.json({
+          ok: true,
+          channels: [{ id: "C100", name: "general", is_private: false }],
+          response_metadata: { next_cursor: "" },
+        });
+      }),
+      http.get("https://slack.com/api/conversations.replies", () => {
+        return HttpResponse.json({ ok: true, messages: [] });
+      }),
+      http.get(SLACK_HISTORY_URL, () => {
+        const anchorSeconds = Math.floor(now() / 1000) - 3600;
+        return HttpResponse.json({
+          ok: true,
+          messages: [
+            {
+              type: "message",
+              ts: `${anchorSeconds}.000100`,
+              user: "U1",
+              text: "ship the release",
+            },
+          ],
+        });
+      }),
+    );
+
+    await tickUntilNative(f);
+    await makeNativeOccurrenceDue(f);
+    expect(revoked).toBeFalsy();
+
+    await accept(tick(), [200]);
+
+    // Collection ran, the revocation landed inside it, and the reservation
+    // refused: no request crossed the provider boundary and no generation row
+    // was left behind for a later replay to reconcile.
+    expect(revoked).toBeTruthy();
+    expect(calls.generation).toHaveLength(0);
+    await expect(readNativeGenerations(f)).resolves.toHaveLength(0);
+    await expect(readNativeDeliveries(f)).resolves.toHaveLength(0);
   });
 
   it("admits no native occurrence while the implementation switch is off", async () => {

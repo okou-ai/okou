@@ -27,6 +27,12 @@ export const morningBriefGenerationSkipReasonSchema = z.union([
   morningBriefCollectionSkipReasonSchema,
   /** The platform generation credential is not configured for this deployment. */
   z.literal("generation-not-configured"),
+  /**
+   * The native claim this invocation was admitted under stopped being the
+   * member's current authority before the reservation committed, so the
+   * reservation rolled back and no provider request was made.
+   */
+  z.literal("native-authority-lost"),
 ]);
 
 export const morningBriefGenerationStateSchema = z.enum([
