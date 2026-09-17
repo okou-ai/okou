@@ -114,26 +114,43 @@ artifacts can remain in the study directory for evidence and reproduction.
 - After timed verification, the harness reads back the VMM machine profile and
   both drive/network limiters, and verifies the guest workspace device size.
 
-The predefined backend screen requires no content/metadata/leakage/cleanup
-failure, repeated paired median benefit of at least 20 ms and 10%, and no
-repeatable p90 regression or disproportionate resource growth. A pass supports
-further integrated validation only. A failed or incomplete screen leaves the
-production policy unchanged. Keep cohorts separate, use nearest-rank
-percentiles, preserve outliers, and do not add independently ranked stage
-percentiles.
+The primary performance target is `api_to_spawn`, ending at Agent shell spawn.
+Runner computes it from `ExecutionContext.api_start_time` and the recorded
+`shell_started_at` in `record_api_startup_boundaries`; see
+[Agent Start Timing](./runner-guest-process-lifecycle.md#agent-start-timing).
+It excludes the team run-concurrency queue but includes the post-admission
+durable Runner queue. Required work must remain before its existing spawn
+boundary. `api_to_agent_ready` and workload completion are separate metrics.
+
+The original study applied its 20-ms/10% benefit and tail screen to activation
+through verifier completion. That was the wrong endpoint for the startup
+decision. Following the user's metric clarification, that interpretation is
+superseded: `ready_ms` is a promising component measurement; neither it nor
+`activation_verified_ms` measures `api_to_spawn`. The verifier remains a content
+correctness check and a separate post-spawn workload diagnostic. Its runtime
+must not be included in startup latency or used to conclude that startup is
+slower. Keep cohorts separate, use nearest-rank percentiles, preserve outliers,
+and do not add independently ranked stage percentiles.
 
 ## Evidence
 
-### Decision: retain the current production policy
+### Decision: proceed to api_to_spawn validation
 
 The backing-drive replacement primitive worked on the tested artifact. Every
 formal trial preserved the synthetic manifest, and all eight control scenarios
-reached their expected outcomes with terminal cleanup. However, the predefined
-performance screen failed: the shorter mount/state-restore boundary did not
-produce a repeated improvement through the completed guest workload. Both
-single-VM cohorts regressed, and all four cohorts had a worse observed p90 for
-that complete interval. This result does not justify enabling Workspace hits on
-Blanks. #34729 remains open for the unproven lifecycle and admission criteria.
+reached their expected outcomes with terminal cleanup. The measured startup
+preparation component improved by a paired median 85–112 ms, with lower observed
+p90 in all four final cohorts. This supports continuing the candidate's startup
+evaluation. It does not establish the magnitude or sign of a full
+`api_to_spawn` change, which the standalone harness did not measure.
+
+Both single-VM cohorts took longer through the completed verifier workload,
+and all four cohorts had a worse observed p90 for that separate endpoint.
+Those observations remain in the report but do not reject the startup candidate.
+The previous "performance screen failed" conclusion confused these endpoints
+and is withdrawn. Production admission remains unchanged because integrated
+startup evidence and lifecycle correctness are still incomplete; #34729 remains
+open. This is an evidence gap, not a measured `api_to_spawn` regression.
 
 ### Fixed artifacts and conditions
 
@@ -170,7 +187,7 @@ inventories are retained on the authorized host under
 | Expected manifest                                     | `a03063b67a36a15b09769c6d1d40c677c78f1ce341bf00c3236d24b054ef2615` |
 | Complete evidence archive, including earlier attempts | `f18f5207effa55f784e884b2bf0363a0a529d945caf735afba57a52b159fe74d` |
 
-### Performance results
+### Component startup and separate workload results
 
 [All 128 measured samples](./workspace-handoff-results.csv) retain complete
 intervals, individual stages and VMM CPU/RSS. The tables below use only the
@@ -253,7 +270,8 @@ Earlier attempts are retained separately: the initial backend preflight and
 controls passed, while a later configuration-readback preflight failed because
 the checker omitted Firecracker's explicit null limiter fields. Correcting that
 comparison produced the first fixed harness. Its 03:43:35–03:44:44 UTC matrix
-also failed the performance screen. Its paired workload gains were -186.1 and
+also showed faster startup preparation and mixed workload completion results.
+Its paired workload gains were -186.1 and
 -99.7 ms for single-VM cohorts, and +80.2 and -2.6 ms for concurrent cohorts;
 all four observed p90s regressed. The executable hash was
 `763cf6fa9caadc41b01e0c5ac4766f334de897eba9b102a9d89877b554145d69` and source hash
@@ -278,6 +296,21 @@ integrated cancellation proof. The dirty-image control is not arbitrary
 in-flight-I/O proof. The configured guest identity/profile was fixed throughout;
 cross-tenant safety remains unproven.
 
-Any production proposal must first explain the observed workload regression,
-then establish those ownership/readiness boundaries and measure actual
-`api_to_spawn` plus failure/tail behavior under the existing admission budgets.
+The next startup experiment must run matched baseline and candidate requests
+through an isolated API/Runner path on an authorized host such as local-11.
+Capture the genuine API start and Agent shell-spawn boundary for each run; do
+not substitute a synthetic API timestamp or generic verifier process completion.
+Use the existing `record_api_startup_boundaries` telemetry and join by `run_id`,
+with fixed API/Runner/Guest artifacts, matched workspace manifests and resource
+limits. Record complete, missing and failed-run counts and compare per-run
+`api_to_spawn` distributions. Include the candidate's real unmount, replacement,
+remount, required state/identity/device validation, DNS/proxy readiness and
+required private-file writes before shell spawn. Preserve Exact precedence and
+capacity/admission budgets; do not move required work past the timing boundary.
+
+The current production executor has no cached-drive handoff branch, so this
+measurement requires an isolated experimental Runner integration and cannot be
+reconstructed from the existing CSV. Keep content equality and ownership,
+cancellation/drain and cleanup checks as correctness gates. Report post-spawn
+I/O, Agent readiness and Blank pool opportunity cost separately, without
+renaming any of them `api_to_spawn` or using verifier completion as its proxy.
