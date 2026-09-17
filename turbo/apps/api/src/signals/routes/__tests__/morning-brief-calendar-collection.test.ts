@@ -8,8 +8,9 @@ import {
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createStore } from "ccstate";
 import { HttpResponse, http } from "msw";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 
+import { stubTestTimezone } from "../../../__tests__/env-stub";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
@@ -1051,6 +1052,288 @@ describe("Morning Brief calendar collection preview", () => {
       "unreadable-event-time",
     );
     expect(response.body.coverage.calendars[0]?.outcome).toBe("truncated");
+  });
+
+  describe("event time normalization", () => {
+    /** One readable calendar holding exactly these events. */
+    function stubOwnerEvents(events: readonly StubEvent[]): CalendarStub {
+      return stubCalendar({
+        calendars: [{ id: OWNER_CALENDAR, accessRole: "owner", primary: true }],
+        events: new Map([[OWNER_CALENDAR, events]]),
+      });
+    }
+
+    function idsOf(body: MorningBriefCalendarCollection): readonly string[] {
+      return body.items.map((item) => {
+        return item.eventId;
+      });
+    }
+
+    /** The calendar kept usable content but declared the events it lost. */
+    function expectDeclaredTimeGap(
+      body: MorningBriefCalendarCollection,
+    ): void {
+      expect(body.coverage.truncations).toContain("unreadable-event-time");
+      expect(body.coverage.calendars[0]?.outcome).toBe("truncated");
+      expect(body.status).toBe("partial");
+    }
+
+    it("never rolls an impossible date into a real meeting", async () => {
+      const fixture = await setupOwner();
+      stubOwnerEvents([
+        // February 2026 ends on the 28th. Lenient parsing turns this into
+        // 2026-03-02T01:00Z, which lands inside this anchor's window.
+        {
+          id: "impossible",
+          status: "confirmed",
+          summary: "Never happened",
+          start: { dateTime: "2026-02-30T01:00:00Z" },
+          end: { dateTime: "2026-02-30T02:00:00Z" },
+        },
+        timed("sibling", "2026-03-02T03:00:00.000Z", "2026-03-02T04:00:00.000Z"),
+      ]);
+
+      const body = await collectAt(fixture, "2026-03-01T02:30:00.000Z");
+      expect(idsOf(body)).toStrictEqual(["sibling"]);
+      expectDeclaredTimeGap(body);
+    });
+
+    it("resolves an offsetless time by its declared zone, not the server's", async () => {
+      // The suite runs in UTC, so the server timezone is moved for this case:
+      // the expected instants are the declared zones' own, under a process
+      // clock that agrees with neither.
+      onTestFinished(() => {
+        stubTestTimezone("UTC");
+      });
+      stubTestTimezone("Asia/Shanghai");
+      const fixture = await setupOwner();
+      stubTestTimezone("America/New_York");
+      // The same wall time in two zones also cannot collapse onto one instant,
+      // so no single server timezone can produce this pair.
+      stubOwnerEvents([
+        {
+          id: "shanghai",
+          status: "confirmed",
+          summary: "Shanghai standup",
+          start: { dateTime: "2026-03-10T09:00:00", timeZone: "Asia/Shanghai" },
+          end: { dateTime: "2026-03-10T10:00:00", timeZone: "Asia/Shanghai" },
+        },
+        {
+          id: "new-york",
+          status: "confirmed",
+          summary: "New York standup",
+          start: {
+            dateTime: "2026-03-10T09:00:00",
+            timeZone: "America/New_York",
+          },
+          end: { dateTime: "2026-03-10T10:00:00", timeZone: "America/New_York" },
+        },
+      ]);
+
+      const response = await collectOk(fixture);
+      expect(response.body.items).toMatchObject([
+        {
+          eventId: "shanghai",
+          start: "2026-03-10T01:00:00.000Z",
+          end: "2026-03-10T02:00:00.000Z",
+          eventTimezone: "Asia/Shanghai",
+        },
+        {
+          eventId: "new-york",
+          start: "2026-03-10T13:00:00.000Z",
+          end: "2026-03-10T14:00:00.000Z",
+          eventTimezone: "America/New_York",
+        },
+      ]);
+      expect(response.body.coverage.truncations).not.toContain(
+        "unreadable-event-time",
+      );
+    });
+
+    it("declares an offsetless time with no usable zone instead of guessing one", async () => {
+      const fixture = await setupOwner();
+      stubOwnerEvents([
+        {
+          id: "no-zone",
+          status: "confirmed",
+          summary: "Context-free",
+          start: { dateTime: "2026-03-10T09:00:00" },
+          end: { dateTime: "2026-03-10T10:00:00" },
+        },
+        {
+          id: "unknown-zone",
+          status: "confirmed",
+          summary: "Unknown zone",
+          start: { dateTime: "2026-03-10T09:00:00", timeZone: "Mars/Olympus" },
+          end: { dateTime: "2026-03-10T10:00:00", timeZone: "Mars/Olympus" },
+        },
+        timed("kept", "2026-03-10T01:00:00.000Z", "2026-03-10T01:30:00.000Z"),
+      ]);
+
+      const response = await collectOk(fixture);
+      expect(idsOf(response.body)).toStrictEqual(["kept"]);
+      expectDeclaredTimeGap(response.body);
+    });
+
+    it("keeps an explicit offset exactly, even against a conflicting zone", async () => {
+      const fixture = await setupOwner();
+      stubOwnerEvents([
+        {
+          id: "offset",
+          status: "confirmed",
+          summary: "Offset",
+          // An explicit offset already identifies the instant; a `timeZone`
+          // alongside it is provenance, not a second interpretation.
+          start: {
+            dateTime: "2026-03-10T09:00:00.250+08:00",
+            timeZone: "America/New_York",
+          },
+          end: {
+            dateTime: "2026-03-10T10:00:00-05:00",
+            timeZone: "America/New_York",
+          },
+        },
+        timed("utc", "2026-03-11T02:00:00.000Z", "2026-03-11T03:00:00.000Z"),
+      ]);
+
+      const response = await collectOk(fixture);
+      expect(response.body.items).toMatchObject([
+        {
+          eventId: "offset",
+          start: "2026-03-10T01:00:00.250Z",
+          end: "2026-03-10T15:00:00.000Z",
+        },
+        {
+          eventId: "utc",
+          start: "2026-03-11T02:00:00.000Z",
+          end: "2026-03-11T03:00:00.000Z",
+        },
+      ]);
+      expect(response.body.coverage.truncations).not.toContain(
+        "unreadable-event-time",
+      );
+    });
+
+    it("declares a wall time its zone never had, or had twice", async () => {
+      const fixture = await setupOwner();
+      stubOwnerEvents([
+        {
+          id: "skipped",
+          status: "confirmed",
+          summary: "Spring forward",
+          // America/New_York jumps 02:00 to 03:00 on 2026-03-08.
+          start: {
+            dateTime: "2026-03-08T02:30:00",
+            timeZone: "America/New_York",
+          },
+          end: { dateTime: "2026-03-08T03:30:00", timeZone: "America/New_York" },
+        },
+        {
+          id: "repeated",
+          status: "confirmed",
+          summary: "Fall back",
+          // 2026-11-01T01:30 happens twice in America/New_York.
+          start: {
+            dateTime: "2026-11-01T01:30:00",
+            timeZone: "America/New_York",
+          },
+          end: { dateTime: "2026-11-01T02:30:00", timeZone: "America/New_York" },
+        },
+        timed("kept", "2026-03-10T01:00:00.000Z", "2026-03-10T01:30:00.000Z"),
+      ]);
+
+      const response = await collectOk(fixture);
+      expect(idsOf(response.body)).toStrictEqual(["kept"]);
+      expectDeclaredTimeGap(response.body);
+    });
+
+    it("rejects a backwards timed range while keeping a zero-length one", async () => {
+      const fixture = await setupOwner();
+      stubOwnerEvents([
+        // An end before its start describes no interval at all.
+        timed(
+          "backwards",
+          "2026-03-10T02:00:00.000Z",
+          "2026-03-10T01:00:00.000Z",
+        ),
+        timed("point", "2026-03-10T05:00:00.000Z", "2026-03-10T05:00:00.000Z"),
+      ]);
+
+      const response = await collectOk(fixture);
+      expect(idsOf(response.body)).toStrictEqual(["point"]);
+      expectDeclaredTimeGap(response.body);
+    });
+
+    it("rejects backwards and empty all-day ranges", async () => {
+      const fixture = await setupOwner();
+      stubOwnerEvents([
+        {
+          id: "backwards-all-day",
+          status: "confirmed",
+          summary: "Backwards",
+          start: { date: "2026-03-11" },
+          end: { date: "2026-03-10" },
+        },
+        {
+          id: "empty-all-day",
+          status: "confirmed",
+          summary: "Empty",
+          // The end date is exclusive, so this covers no day at all.
+          start: { date: "2026-03-10" },
+          end: { date: "2026-03-10" },
+        },
+        {
+          id: "conference",
+          status: "confirmed",
+          summary: "Conference",
+          start: { date: "2026-03-10" },
+          end: { date: "2026-03-12" },
+        },
+      ]);
+
+      const response = await collectOk(fixture);
+      expect(idsOf(response.body)).toStrictEqual(["conference"]);
+      expect(response.body.items[0]).toMatchObject({
+        allDay: true,
+        start: "2026-03-10",
+        end: "2026-03-12",
+        localDayOffset: 0,
+      });
+      expectDeclaredTimeGap(response.body);
+    });
+
+    it("rejects an event that states two different representations", async () => {
+      const fixture = await setupOwner();
+      stubOwnerEvents([
+        {
+          id: "both",
+          status: "confirmed",
+          summary: "Both",
+          // Claiming a date and a time states two different moments.
+          start: { date: "2026-03-10", dateTime: "2026-03-10T09:00:00Z" },
+          end: { date: "2026-03-11" },
+        },
+        {
+          id: "mixed",
+          status: "confirmed",
+          summary: "Mixed",
+          start: { date: "2026-03-10" },
+          end: { dateTime: "2026-03-10T10:00:00Z" },
+        },
+        {
+          id: "empty-endpoint",
+          status: "confirmed",
+          summary: "Empty endpoint",
+          start: { timeZone: "Asia/Shanghai" },
+          end: { dateTime: "2026-03-10T10:00:00Z" },
+        },
+        timed("kept", "2026-03-10T01:00:00.000Z", "2026-03-10T01:30:00.000Z"),
+      ]);
+
+      const response = await collectOk(fixture);
+      expect(idsOf(response.body)).toStrictEqual(["kept"]);
+      expectDeclaredTimeGap(response.body);
+    });
   });
 
   it("deduplicates one event repeated across two pages of a calendar", async () => {

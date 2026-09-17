@@ -30,18 +30,60 @@ is never taken from the request.
   over absolute time.
 - An unusable timezone or anchor fails closed. The collector never guesses one.
 
+Known limitation: that bisection assumes the local date never moves backwards.
+A historical rule that turns the clock back across midnight breaks it —
+`America/Goose_Bay` fell back at 00:01 on 2009-11-01, where the computed start
+is `04:00Z` and the day really begins at `03:00Z`. Morning Brief anchors on the
+current day, where no such rule is in force, so this is recorded rather than
+repaired here. No claim is made that every IANA history resolves exactly.
+
 ## Time semantics
+
+A provider timestamp is only useful if it names one instant. Everything below
+exists so that a value which does not name one becomes declared coverage
+instead of a meeting the recipient never had.
+
+### Reading a timestamp
+
+- `dateTime` is parsed as strict RFC3339 and its calendar components are
+  validated before any instant is constructed. `2026-02-30T01:00:00Z` is not a
+  date, so it is unreadable; it never rolls forward into March.
+- An explicit offset, including `Z`, identifies the instant by itself and is
+  honoured exactly. An accompanying `timeZone` is provenance and never
+  reinterprets it. Sub-millisecond digits are dropped, never rounded.
+- Google's documented offsetless shape — a wall time plus an IANA `timeZone` —
+  is resolved in that zone, per endpoint, so an event that starts and ends in
+  different zones stays correct. A wall time a daylight-saving jump skipped, or
+  one a fall-back makes true twice, names no single instant and is unreadable.
+- A value with no offset and no usable zone is unreadable. The machine
+  timezone of the process running the collection is never consulted, and that
+  behaviour is covered under a non-UTC server timezone.
+- Anything outside these shapes is unreadable. The response schema stays
+  permissive on purpose: rejecting the value at the page level would cost the
+  whole calendar, while rejecting it per event keeps valid siblings.
+
+### Placing an interval
 
 - **Timed events** overlap the half-open window `[startAt, endAt)`. An event
   ending exactly at the window start, or starting exactly at the window end, is
-  outside it. An event crossing local midnight stays whole.
+  outside it. An event crossing local midnight stays whole. A zero-length
+  `start === end` event is a real Google shape and keeps its point semantics.
+- An end **before** its start describes no interval and is unreadable.
 - **All-day events** are calendar dates with an exclusive end date, not
   instants. They are compared as dates, and their original date range and
   calendar timezone are preserved. They are grouped under the owner's local
   days. They are never converted through a fabricated UTC midnight.
-- An event whose start or end cannot be interpreted marks its calendar
-  `truncated` and records an `unreadable-event-time` truncation, rather than
-  being dropped silently.
+- An all-day exclusive end at or before its start covers no day at all and is
+  unreadable. Unlike the timed case, there is no point in time to fall back to.
+- An endpoint stating both a `date` and a `dateTime`, or neither, and a pair
+  mixing the two representations, are unreadable rather than silently resolved
+  in favour of one of them.
+
+An event whose time is unreadable for any reason above marks its calendar
+`truncated` and records an `unreadable-event-time` truncation, rather than
+being dropped silently. Its valid siblings on the same calendar survive, and
+recurrence identity (`recurringEventId`, `originalStartTime`) on those siblings
+is preserved as the provider stated it.
 
 ## Calendar selection
 

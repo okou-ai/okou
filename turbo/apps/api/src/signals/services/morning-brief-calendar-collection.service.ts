@@ -17,12 +17,13 @@ import {
   type MorningBriefResponseMetadata,
 } from "./morning-brief-connector-reader.service";
 import {
-  allDayRangeOverlapsWindow,
+  checkAllDayRange,
+  checkTimedRange,
   formatCalendarDate,
   localDayOffsetOf,
   parseCalendarDate,
+  parseCalendarDateTime,
   resolveMorningBriefCalendarWindow,
-  timedRangeOverlapsWindow,
   type MorningBriefCalendarWindow,
 } from "./morning-brief-calendar-window";
 
@@ -434,6 +435,107 @@ function localDateOf(
   );
 }
 
+type EventTime = z.infer<typeof eventDateTimeSchema>;
+
+/**
+ * Which representation one endpoint actually states.
+ *
+ * Google states exactly one of `date` or `dateTime` per endpoint. Carrying
+ * both, or neither, describes two different moments or none, so it is not a
+ * value this collector is willing to pick a winner from.
+ */
+function endpointKind(time: EventTime): "date" | "dateTime" | null {
+  const hasDate = time.date !== undefined;
+  const hasDateTime = time.dateTime !== undefined;
+  if (hasDate === hasDateTime) {
+    return null;
+  }
+  return hasDate ? "date" : "dateTime";
+}
+
+/** The zone an event declares for itself, used only as reported provenance. */
+function declaredTimezone(start: EventTime, end: EventTime): string | null {
+  return start.timeZone ?? end.timeZone ?? null;
+}
+
+/** An all-day pair: calendar dates with an exclusive end, never instants. */
+function normalizeAllDay(
+  start: EventTime,
+  end: EventTime,
+  window: MorningBriefCalendarWindow,
+): NormalizedTime | null {
+  const startDate =
+    start.date === undefined ? null : parseCalendarDate(start.date);
+  const endDate = end.date === undefined ? null : parseCalendarDate(end.date);
+  if (startDate === null || endDate === null) {
+    return null;
+  }
+  const placement = checkAllDayRange({
+    start: startDate,
+    endExclusive: endDate,
+    window,
+  });
+  if (placement === "invalid-range") {
+    return null;
+  }
+  return {
+    allDay: true,
+    start: formatCalendarDate(startDate),
+    end: formatCalendarDate(endDate),
+    timezone: declaredTimezone(start, end),
+    localDayOffset: localDayOffsetOf(window, startDate),
+    inWindow: placement === "in-window",
+  };
+}
+
+/** A timed pair, resolved to instants without consulting the machine clock. */
+function normalizeTimed(
+  start: EventTime,
+  end: EventTime,
+  window: MorningBriefCalendarWindow,
+): NormalizedTime | null {
+  if (start.dateTime === undefined || end.dateTime === undefined) {
+    return null;
+  }
+  // Each endpoint is resolved against its own declared zone: a flight may
+  // legitimately start and end in different ones, and neither borrows context
+  // from the other.
+  const startParsed = parseCalendarDateTime({
+    value: start.dateTime,
+    timeZone: start.timeZone,
+  });
+  const endParsed = parseCalendarDateTime({
+    value: end.dateTime,
+    timeZone: end.timeZone,
+  });
+  if (!startParsed.ok || !endParsed.ok) {
+    return null;
+  }
+  const startAt = startParsed.instant;
+  const endAt = endParsed.instant;
+  const placement = checkTimedRange({ startAt, endAt, window });
+  if (placement === "invalid-range") {
+    return null;
+  }
+  const localDate = localDateOf(startAt, window.timezone);
+  return {
+    allDay: false,
+    start: startAt.toISOString(),
+    end: endAt.toISOString(),
+    timezone: declaredTimezone(start, end),
+    localDayOffset:
+      localDate === null ? null : localDayOffsetOf(window, localDate),
+    inWindow: placement === "in-window",
+  };
+}
+
+/**
+ * The window placement of one event, or `null` when its time is unreadable.
+ *
+ * Every `null` here is an explicit coverage gap at the call site, never a
+ * silent drop. The alternative — letting a lenient parse or a reversed interval
+ * through — turns an impossible date into a meeting the recipient never had.
+ */
 function normalizeTime(
   event: z.infer<typeof eventSchema>,
   window: MorningBriefCalendarWindow,
@@ -443,46 +545,14 @@ function normalizeTime(
   if (start === undefined || end === undefined) {
     return null;
   }
-
-  if (start.date !== undefined || end.date !== undefined) {
-    const startDate =
-      start.date === undefined ? null : parseCalendarDate(start.date);
-    const endDate = end.date === undefined ? null : parseCalendarDate(end.date);
-    if (startDate === null || endDate === null) {
-      return null;
-    }
-    return {
-      allDay: true,
-      start: formatCalendarDate(startDate),
-      end: formatCalendarDate(endDate),
-      timezone: start.timeZone ?? end.timeZone ?? null,
-      localDayOffset: localDayOffsetOf(window, startDate),
-      inWindow: allDayRangeOverlapsWindow({
-        start: startDate,
-        endExclusive: endDate,
-        window,
-      }),
-    };
-  }
-
-  if (start.dateTime === undefined || end.dateTime === undefined) {
+  const kind = endpointKind(start);
+  // A mixed event claims to be all-day at one end and timed at the other.
+  if (kind === null || kind !== endpointKind(end)) {
     return null;
   }
-  const startAt = new Date(start.dateTime);
-  const endAt = new Date(end.dateTime);
-  if (Number.isNaN(startAt.getTime()) || Number.isNaN(endAt.getTime())) {
-    return null;
-  }
-  const localDate = localDateOf(startAt, window.timezone);
-  return {
-    allDay: false,
-    start: startAt.toISOString(),
-    end: endAt.toISOString(),
-    timezone: start.timeZone ?? end.timeZone ?? null,
-    localDayOffset:
-      localDate === null ? null : localDayOffsetOf(window, localDate),
-    inWindow: timedRangeOverlapsWindow({ startAt, endAt, window }),
-  };
+  return kind === "date"
+    ? normalizeAllDay(start, end, window)
+    : normalizeTimed(start, end, window);
 }
 
 function normalizeEvent(
