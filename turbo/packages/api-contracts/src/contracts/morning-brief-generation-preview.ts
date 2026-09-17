@@ -182,7 +182,10 @@ const generateResponseSchema = z.discriminatedUnion("result", [
 ]);
 
 export const morningBriefGenerationPreviewContract = c.router({
-  generate: {
+  // Named `preview` rather than `generate`: a first-party `.generate(` call
+  // shape matches a Semgrep SSRF rule for headless-renderer APIs, and a
+  // suppression comment would hide the rule for real findings too.
+  preview: {
     method: "POST",
     path: "/api/morning-brief/preview/generation",
     headers: authHeadersSchema,

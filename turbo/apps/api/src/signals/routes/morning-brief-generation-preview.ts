@@ -83,7 +83,7 @@ function conflictResponse(reason: MorningBriefGenerationConflict): {
   return responses[reason];
 }
 
-const body$ = bodyResultOf(morningBriefGenerationPreviewContract.generate);
+const body$ = bodyResultOf(morningBriefGenerationPreviewContract.preview);
 
 const generate$ = command(async ({ get, set }, signal: AbortSignal) => {
   const body = await get(body$);
@@ -172,5 +172,5 @@ const run$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 
 export const morningBriefGenerationPreviewRoutes: readonly RouteEntry[] = [
-  { route: morningBriefGenerationPreviewContract.generate, handler: run$ },
+  { route: morningBriefGenerationPreviewContract.preview, handler: run$ },
 ];

@@ -47,13 +47,13 @@ describe("API route registrations", () => {
   it("registers the Morning Brief generation preview an operator invokes", () => {
     const [entry, ...extra] = morningBriefGenerationPreviewRoutes;
     expect(extra).toHaveLength(0);
-    expect(entry?.route).toBe(morningBriefGenerationPreviewContract.generate);
+    expect(entry?.route).toBe(morningBriefGenerationPreviewContract.preview);
     expect(ROUTES).toContain(entry);
     expect(
       ROUTES.filter((registered) => {
         return (
           registered.route.path ===
-          morningBriefGenerationPreviewContract.generate.path
+          morningBriefGenerationPreviewContract.preview.path
         );
       }),
     ).toStrictEqual([entry]);
