@@ -790,6 +790,25 @@ final-file input is private to the bundled Runner/Guest storage operation;
 ordinary HTTP downloads, API manifests and generic exec-stdin limits do not
 change. No backend reader-first deployment is required for that bundled input.
 
+The Runner-wide owner admits at most 32 waiting identities and runs at most four
+workers. Missing-archive observations and maintenance (warming an observed archive
+hit or retiring its compressed source) each leave four waiting positions for the
+other class; the remaining 24 positions are shared. Pure-class bursts can therefore
+be rejected at 28 waiting entries. Admission never waits, evicts an accepted task,
+or retains rejected work for retry. Queued same-key archive demand supersedes
+retirement, and missing demand promotes warming without losing its decoded-cache
+consumer. Such promotions retain accepted ownership even above a class quota,
+while the total queue bound remains unchanged.
+
+Dispatch is FIFO within each class. While both classes wait, at most three missing
+fills start before one maintenance task; an empty class does not idle workers.
+This gives every accepted warming and retirement task finite dispatch progress
+provided active operations finish, not a wall-clock deadline or guaranteed
+admission at mixed saturation. Classification uses existing preparation outcomes
+only: workers still validate actual cache state under the original locks, so an
+evicted warm source can be downloaded and a newly filled miss can be reused. No
+new foreground lookup, network request or maintenance barrier is introduced.
+
 After a run actually selects extracted-file delivery and successfully spawns its
 Agent, that same bounded background owner may retire the corresponding compressed
 archive. Retirement never downloads data. It takes the old archive's exclusive
