@@ -285,6 +285,20 @@ request-log query ending 2026-09-15 at 07:14:20 UTC contained one POST: App
 `0.893.2`, response `202`. It found no non-App or unidentified POST; this is
 bounded caller evidence, not a guarantee about every external client.
 
+#### Organization member display queries
+
+`GET /api/org/members?view=members` retains the existing organization summary
+and current-member profile shape while omitting invitation and membership-request
+data and their provider reads. The Agents page uses this view; organization
+management keeps the full default response. Membership authorization, profile
+cache lifetime, batching, and missing-creator presentation are unchanged.
+
+Old Apps omit `view` and receive the full response from a new API. New Apps can
+also consume an old API: its query-less route ignores `view` and returns the
+same member shape, with the previous management-read cost until the API updates.
+No temporary fallback, App version-floor increase, migration, or Runner protocol
+change is required.
+
 ### Backend
 
 The backend is the compatibility boundary for both frontend and runner traffic.

@@ -25,6 +25,17 @@ export const orgMembers$ = computed(async (get) => {
   return response.members ?? [];
 });
 
+export const orgMemberProfiles$ = computed(async (get) => {
+  get(orgMembersVersion$);
+  const createClient = get(apiClient$);
+  const client = createClient(orgMembersContract);
+  const result = await accept(
+    client.members({ query: { view: "members" } }),
+    [200],
+  );
+  return result.body.members;
+});
+
 export const orgPendingInvitations$ = computed(async (get) => {
   const response = await get(orgMembersResponse$);
   return response.pendingInvitations ?? [];
