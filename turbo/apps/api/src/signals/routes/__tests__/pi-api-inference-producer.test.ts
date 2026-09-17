@@ -38,6 +38,7 @@ import {
   nativeCodexSseResponse,
 } from "./helpers/pi-responses";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
+import { removePiInferenceFixture } from "../../../test-fixtures/pi-inference-lifecycle";
 
 const context = testContext();
 const billing = createBillingMediaApi(context);
@@ -441,6 +442,10 @@ describe("durable Pi API producer", () => {
         },
         await createPiApiFirstTurnUsagePricingResolution(selectedModel),
       );
+      onTestFinished(async () => {
+        await flushWaitUntilForTest();
+        await removePiInferenceFixture({ runId: run.runId, agentId, orgId });
+      });
       if (scenario.execution === "sandbox" && "message" in scenario) {
         await flushWaitUntilForTest();
         await expect(cleanupRun(run.runId, orgId)).resolves.toMatchObject({
