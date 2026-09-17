@@ -882,6 +882,56 @@ test("Recover from a personal model account limit", async () => {
   await expect(findButton("Stop")).resolves.toBeVisible();
 });
 
+// The transcript's scroll result when this card resolves is a layout contract:
+// jsdom reports the scroller as zero-height, so `isAtBottom` is trivially true
+// here. `e2e/playwright/regressions/chat-card-scroll.ts` owns that result for
+// the recovery card in Chromium and WebKit. This case covers what the page
+// shows: the generic failure copy while the run detail is held, then the
+// resolved recovery copy in its place.
+test("Replace the failure card copy when recovery resolves", async () => {
+  configureModelPolicies(["gpt-5.6-luna"]);
+  installRunChat({
+    selectedModel: "gpt-5.6-luna",
+    chatEvents: failedRunEvents(
+      "Selected model is at capacity. Please try a different model.",
+      "gpt-5.6-luna",
+    ),
+  });
+  const detailRequested = context.mocks.deferred<void>();
+  const releaseDetail = context.mocks.deferred<void>();
+  context.mocks.api(runsByIdContract.getById, async ({ params, respond }) => {
+    detailRequested.resolve();
+    await releaseDetail.promise;
+    return respond(200, {
+      runId: params.id,
+      status: "failed",
+      prompt: "Continue the analysis",
+      appendSystemPrompt: null,
+      createdAt: "2026-08-01T10:00:02.000Z",
+    });
+  });
+
+  await setupPage({ context, path: RUN_PATH });
+
+  await readyChat();
+  await detailRequested.promise;
+  await expect(
+    within(await screen.findByTestId("assistant-error-card-shell")).findByText(
+      "This run couldn't finish",
+    ),
+  ).resolves.toBeInTheDocument();
+  expect(screen.queryByTestId("assistant-error-recovery")).toBeNull();
+
+  releaseDetail.resolve();
+
+  await expect(
+    within(await screen.findByTestId("assistant-error-card-shell")).findByText(
+      "This model is busy right now",
+    ),
+  ).resolves.toBeInTheDocument();
+  expect(screen.queryByText("This run couldn't finish")).toBeNull();
+});
+
 test("Recover when a model is at capacity", async () => {
   const user = userEvent.setup({ delay: null });
   configureModelPolicies(["gpt-5.6-luna", "deepseek-v4-flash", "gpt-5.6-sol"]);

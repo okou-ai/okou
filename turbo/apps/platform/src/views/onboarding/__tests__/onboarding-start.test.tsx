@@ -187,3 +187,19 @@ test("A different user's previous attempt does not suppress onboarding attributi
   await received.promise;
   expect(document.querySelector("iframe")).toBeNull();
 });
+
+test("Changing the session cancels the pending onboarding request", async () => {
+  onboardingNeeded();
+  const received = context.mocks.deferred<Request>();
+  context.mocks.http.post(ENDPOINT, ({ request, never }) => {
+    received.resolve(request);
+    return never();
+  });
+
+  await openOnboarding();
+  const request = await received.promise;
+  expect(request.signal.aborted).toBeFalsy();
+  const switched = window._okou?.switchClerkSession("another-test-session");
+  expect(request.signal.aborted).toBeTruthy();
+  await switched;
+});
