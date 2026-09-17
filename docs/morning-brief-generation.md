@@ -76,8 +76,9 @@ after its guarded update matched. That placement is the contract:
   commits, the collection contract's
   [acceptance boundary](morning-brief-collection.md) owns what can no longer be
   retracted.
-- The collect-only entrypoint passes no handoff and keeps exactly its previous
-  behavior.
+- The collect-only entrypoint passes no handoff, so nothing is reserved for it
+  and its collected facts are the only thing the transaction commits. The final
+  admission itself is not optional: it guards that entrypoint too.
 
 A same-anchor occurrence that already completed **without** a generation is
 reported as `collection-completed-without-generation`. It is not recollected,
