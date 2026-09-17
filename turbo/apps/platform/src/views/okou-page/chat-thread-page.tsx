@@ -5220,14 +5220,11 @@ interface AssistantErrorCardContent {
   readonly testId?: string;
 }
 
-function useAssistantErrorRecoveryContent(
-  recovery: AssistantErrorRecovery | null,
+function assistantErrorRecoveryContent(
+  recovery: AssistantErrorRecovery,
   thread: ChatPanelSignals,
-): AssistantErrorCardContent | null {
-  const { t } = useTranslation();
-  if (recovery === null) {
-    return null;
-  }
+  t: TFunction<"common">,
+): AssistantErrorCardContent {
   const resetText = assistantRecoveryResetText(recovery);
   const title = (() => {
     if (recovery.kind === "subscription-error") {
@@ -5340,11 +5337,30 @@ function useAssistantErrorRecoveryContent(
   };
 }
 
-function useNoModelProviderErrorContent(): AssistantErrorCardContent {
+/** Owns the settings command so the card's contents stay hook-free. */
+function ModelSettingsButton() {
   const { t } = useTranslation();
   const openSettings = useSet(openSettingsDialogAt$);
   const pageSignal = useGet(pageSignal$);
 
+  return (
+    <button
+      type="button"
+      className="inline-flex items-center gap-1 text-amber-500 underline underline-offset-2 hover:text-amber-400"
+      onClick={() => {
+        detach(openSettings("model", pageSignal), Reason.DomCallback);
+      }}
+    >
+      {t(($) => {
+        return $.chat.errors.noModelProviderAction;
+      })}
+    </button>
+  );
+}
+
+function noModelProviderErrorContent(
+  t: TFunction<"common">,
+): AssistantErrorCardContent {
   return {
     icon: AlertCircle,
     title: t(($) => {
@@ -5358,17 +5374,7 @@ function useNoModelProviderErrorContent(): AssistantErrorCardContent {
         {t(($) => {
           return $.chat.errors.noModelProviderPrefix;
         })}{" "}
-        <button
-          type="button"
-          className="inline-flex items-center gap-1 text-amber-500 underline underline-offset-2 hover:text-amber-400"
-          onClick={() => {
-            detach(openSettings("model", pageSignal), Reason.DomCallback);
-          }}
-        >
-          {t(($) => {
-            return $.chat.errors.noModelProviderAction;
-          })}
-        </button>{" "}
+        <ModelSettingsButton />{" "}
         {t(($) => {
           return $.chat.errors.noModelProviderSuffix;
         })}
@@ -5383,12 +5389,10 @@ function useNoModelProviderErrorContent(): AssistantErrorCardContent {
  * card is on screen: the recovery classification never claims
  * `insufficient_credits` or `pro_required`.
  */
-function useAssistantErrorFallbackContent(
+function assistantErrorFallbackContent(
   error: string,
+  t: TFunction<"common">,
 ): AssistantErrorCardContent | null {
-  const { t } = useTranslation();
-  const noModelProviderContent = useNoModelProviderErrorContent();
-
   if (isBillingRecoveryError(error)) {
     return null;
   }
@@ -5409,7 +5413,7 @@ function useAssistantErrorFallbackContent(
     error.toLowerCase().includes(noProviderGuidance.title.toLowerCase());
 
   if (isNoModelProvider) {
-    return noModelProviderContent;
+    return noModelProviderErrorContent(t);
   }
 
   const incompatibleGuidance = RUN_ERROR_GUIDANCE.PROVIDER_INCOMPATIBLE;
@@ -5522,14 +5526,15 @@ function AssistantErrorState({
   eventId: string;
   thread: ChatPanelSignals;
 }) {
+  const { t } = useTranslation();
   const resolved = useLastResolved(thread.assistantErrorRecovery$);
   const recovery = resolved?.sourceEventId === eventId ? resolved : null;
-  // Both readings feed one element. The recovery classification resolves after
-  // the first paint, so choosing between two card components here would remove
+  // The classification resolves after the first paint and selects contents,
+  // not a component: choosing between two card components here would remove
   // the mounted card and move the transcript by its height.
-  const recoveryContent = useAssistantErrorRecoveryContent(recovery, thread);
-  const fallbackContent = useAssistantErrorFallbackContent(error);
-  const content = recoveryContent ?? fallbackContent;
+  const content = recovery
+    ? assistantErrorRecoveryContent(recovery, thread, t)
+    : assistantErrorFallbackContent(error, t);
   if (content === null) {
     return <InsufficientCreditsCard />;
   }
