@@ -342,7 +342,10 @@ describe("account erasure fences cloud browser authorization apply", () => {
     async () => {
       const fixture = await createAuthorizationFixture();
       const before = await readApplyState(fixture);
-      expect(before.selection.cloudBrowserEnabled).toBe(false);
+      expect(before.selection).toStrictEqual({
+        computerUseHostId: null,
+        cloudBrowserEnabled: false,
+      });
       expect(before.authorization.completedAt).toBeNull();
 
       const closed = await closeSubject({
@@ -403,10 +406,12 @@ describe("account erasure fences cloud browser authorization apply", () => {
         subjectId: closed.actor.userId,
       });
 
-      await applyAuthorization(closed, [404]);
+      const denied = await applyAuthorization(closed, [404]);
+      expect(denied.status).toBe(404);
       await expectUnchanged(closed, closedBefore);
 
-      await applyAuthorization(unrelated, [200]);
+      const accepted = await applyAuthorization(unrelated, [200]);
+      expect(accepted.status).toBe(200);
       await expectApplied(unrelated, unrelatedBefore);
     },
   );
@@ -428,7 +433,8 @@ describe("account erasure fences cloud browser authorization apply", () => {
         subjectKind: "user",
         subjectId: fixture.actor.userId,
       });
-      await applyAuthorization(fixture, [404]);
+      const denied = await applyAuthorization(fixture, [404]);
+      expect(denied.status).toBe(404);
       await expectUnchanged(fixture, completed);
     },
   );
@@ -508,7 +514,7 @@ describe("account erasure fences cloud browser authorization apply", () => {
       const newOwner = `user_${randomUUID()}`;
       await closeSubject({ subjectKind: "user", subjectId: newOwner });
 
-      await withChatThreadContentBarrierFixture(
+      const denied = await withChatThreadContentBarrierFixture(
         {
           chatThreadId: fixture.threadId,
           stopAt: "agent-lock",
@@ -520,12 +526,13 @@ describe("account erasure fences cloud browser authorization apply", () => {
               owner: newOwner,
             });
             barrier.release();
-            await applying;
+            return await applying;
           },
         },
         context.signal,
       );
 
+      expect(denied.status).toBe(404);
       await expectUnchanged(fixture, before);
     },
   );
