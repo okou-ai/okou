@@ -1,6 +1,6 @@
 [package]
 name = "rfb-client"
-version = "0.2.0"
+version = "0.3.0"
 edition.workspace = true
 publish = false
 description = "Verified RFB authentication and bounded framebuffer decoding"

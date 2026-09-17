@@ -149,6 +149,7 @@ import { workflowsRoutes } from "./routes/workflows";
 import { officialWorkflowRoutes } from "./routes/official-workflows";
 import { emailSubscriptionRoutes } from "./routes/email-subscription";
 import { morningBriefCollectionPreviewRoutes } from "./routes/morning-brief-collection-preview";
+import { morningBriefGenerationPreviewRoutes } from "./routes/morning-brief-generation-preview";
 import { morningBriefGmailCollectionPreviewRoutes } from "./routes/morning-brief-gmail-collection-preview";
 import { morningBriefDeliveryPreviewRoutes } from "./routes/morning-brief-delivery-preview";
 import { morningBriefGenerationPreviewRoutes } from "./routes/morning-brief-generation-preview";

@@ -114,14 +114,7 @@ const morningBriefGenerationResultSchema = z.discriminatedUnion("decision", [
 ]);
 
 export const morningBriefGenerationViewSchema = z.object({
-  /**
-   * Who may consume this result.
-   *
-   * The preview endpoint only ever returns `preview`; `production` exists so
-   * the one generation view can also describe a natively scheduled occurrence
-   * internally, and a consumer can never mistake one for the other.
-   */
-  purpose: z.enum(["preview", "production"]),
+  purpose: z.literal("preview"),
   state: morningBriefGenerationStateSchema,
   attemptId: z.string().uuid(),
   model: z.string(),

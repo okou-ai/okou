@@ -4,6 +4,7 @@ use crate::env::Framework;
 use crate::events;
 use crate::http::HttpClient;
 use crate::masker::SecretMasker;
+use base64::Engine as _;
 use httpmock::prelude::*;
 use serde_json::{Value, json};
 use std::time::Duration;
@@ -145,7 +146,7 @@ async fn sender_preserves_normal_bytes_and_accounts_for_exact_citation_envelopes
                 let runtime = EventDeliveryRuntime::start(http, RUN_ID, 19, transport).unwrap();
                 runtime
                     .sender()
-                    .try_send_for_framework(19, event, framework)
+                    .try_send_for_framework(19, event, framework, &SecretMasker::from_raw(""))
                     .unwrap();
                 let report = runtime.finish().await.unwrap();
                 assert_eq!(report.last_acknowledged_sequence, Some(19));
@@ -153,6 +154,97 @@ async fn sender_preserves_normal_bytes_and_accounts_for_exact_citation_envelopes
                 request.assert_calls_async(1).await;
             }
         }
+    }
+}
+
+#[tokio::test]
+async fn result_citations_are_private_and_masked_before_bounded_delivery() {
+    let secrets = [
+        "memoryCitation",
+        "entries",
+        "rolloutIds",
+        "lineStart",
+        "lineEnd",
+        "sequenceNumber",
+        "private-token",
+    ];
+    let encoded = secrets
+        .map(|secret| base64::engine::general_purpose::STANDARD.encode(secret))
+        .join(",");
+    let masker = SecretMasker::from_raw(&encoded);
+    for text_bytes in [32, LIMIT] {
+        let expected_citations = json!([{
+            "sequenceNumber": 19,
+            "citation": {
+                "entries": [{
+                    "path": "private-source-***.md", "lineStart": 12,
+                    "lineEnd": 34, "note": "private-note ***"
+                }],
+                "rolloutIds": ["11111111-1111-4111-8111-111111111111"]
+            }
+        }]);
+        let server = MockServer::start_async().await;
+        let request = server.mock(|when, then| {
+            when.method(POST)
+                .path("/api/webhooks/agent/events")
+                .is_true(move |request| {
+                    let payload: Value = serde_json::from_slice(request.body_ref()).unwrap();
+                    let public = payload["events"].to_string();
+                    let event = &payload["events"][0];
+                    request.body_ref().len() <= LIMIT
+                        && payload["piMemoryCitationTransport"]["schemaVersion"] == 1
+                        && payload["piMemoryCitationTransport"]["citations"] == expected_citations
+                        && payload["events"].as_array().map(Vec::len) == Some(1)
+                        && event["type"] == "result"
+                        && event["sequenceNumber"] == 19
+                        && event["***-key"] == "***"
+                        && event["result"]
+                            .as_str()
+                            .is_some_and(|text| text.starts_with("visible-***-"))
+                        && (text_bytes != LIMIT || public.contains("truncated for delivery"))
+                        && ![
+                            "memoryCitation",
+                            "private-source",
+                            "private-note",
+                            "private-token",
+                            "11111111-1111-4111-8111-111111111111",
+                        ]
+                        .iter()
+                        .any(|value| public.contains(value))
+                });
+            then.status(200);
+        });
+        let http = HttpClient::with_api_config(
+            server.base_url(),
+            "test-token",
+            "",
+            "test-session",
+            Duration::ZERO,
+        )
+        .unwrap();
+        let runtime = EventDeliveryRuntime::start(http, RUN_ID, 19, true).unwrap();
+        runtime
+            .sender()
+            .try_send_for_framework(
+                19,
+                json!({
+                    "type": "result", "is_error": false, "sequenceNumber": 123,
+                    "result": format!("visible-private-token-{}", "x".repeat(text_bytes)),
+                    "private-token-key": "private-token",
+                    "memoryCitation": {
+                        "entries": [{"path": "private-source-private-token.md", "lineStart": 12,
+                            "lineEnd": 34, "note": "private-note private-token"}],
+                        "rolloutIds": ["11111111-1111-4111-8111-111111111111"]
+                    }
+                }),
+                Framework::Pi,
+                &masker,
+            )
+            .unwrap();
+        let report = runtime.finish().await.unwrap();
+        assert_eq!(report.last_acknowledged_sequence, Some(19));
+        assert!(report.diagnostic.is_none());
+        request.assert_calls_async(1).await;
     }
 }
 
@@ -243,7 +335,7 @@ async fn collaboration_fallback_preserves_structure_beyond_content_discovery_lim
         let runtime = EventDeliveryRuntime::start(http, RUN_ID, 19, false).unwrap();
         runtime
             .sender()
-            .try_send_for_framework(19, event, Framework::Codex)
+            .try_send_for_framework(19, event, Framework::Codex, &SecretMasker::from_raw(""))
             .unwrap();
         let report = runtime.finish().await.unwrap();
         assert_eq!(report.last_acknowledged_sequence, Some(19));
@@ -306,7 +398,7 @@ async fn impossible_citation_and_protected_core_fail_before_http() {
         let runtime = EventDeliveryRuntime::start(http, RUN_ID, 19, true).unwrap();
         let error = runtime
             .sender()
-            .try_send_for_framework(19, event.take(), framework)
+            .try_send_for_framework(19, event.take(), framework, &SecretMasker::from_raw(""))
             .unwrap_err();
         assert!(error.to_string().contains("serialized event budget"));
         assert!(runtime.finish().await.unwrap().last_acknowledged_sequence == Some(18));
@@ -346,6 +438,7 @@ async fn reduced_http_failure_still_breaks_acknowledgement_and_retries_identical
             19,
             text_event(Framework::Pi, &"x".repeat(LIMIT)),
             Framework::Pi,
+            &SecretMasker::from_raw(""),
         )
         .unwrap();
     let report = runtime.finish().await.unwrap();

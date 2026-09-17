@@ -89,15 +89,6 @@ function generationKey(key: MorningBriefGenerationKey) {
 
 export interface MorningBriefGenerationAdmission {
   readonly key: MorningBriefGenerationKey;
-  /**
-   * Who may consume the result this admission reserves.
-   *
-   * It is carried on the admission rather than fixed per module so the native
-   * scheduler's production occurrences and the operator preview share one
-   * reservation, accounting and validation engine while remaining unable to
-   * read each other's results.
-   */
-  readonly executionPurpose: (typeof morningBriefGenerations.$inferSelect)["executionPurpose"];
   readonly attemptId: string;
   readonly membershipId: string;
   readonly agentId: string;
@@ -121,7 +112,7 @@ function admissionValues(admission: MorningBriefGenerationAdmission) {
     scheduledFor: admission.key.scheduledFor,
     collectionKind: admission.key.collectionKind,
     collectionVersion: admission.key.collectionVersion,
-    executionPurpose: admission.executionPurpose,
+    executionPurpose: "preview" as const,
     attemptId: admission.attemptId,
     membershipId: admission.membershipId,
     agentId: admission.agentId,

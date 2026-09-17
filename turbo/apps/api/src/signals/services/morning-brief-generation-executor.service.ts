@@ -15,7 +15,6 @@ import {
   MORNING_BRIEF_GENERATION_PROMPT_VERSION,
   MORNING_BRIEF_GENERATION_RESULT_SCHEMA_VERSION,
   MORNING_BRIEF_GENERATION_SOURCE_COVERAGES,
-  morningBriefGenerations,
 } from "@okouai/db/schema/morning-brief-generation";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { command } from "ccstate";
@@ -113,21 +112,13 @@ const GENERATION_COST_LOOKUP_MS = 5000;
 
 const GENERATION_OPERATION = "morning_brief_generation";
 const GENERATION_PROVIDER = "openrouter";
-/**
- * The purposes this engine can execute for.
- *
- * `preview` is the operator endpoint. `production` is the native scheduler's,
- * reached only through a validated native occurrence authority. They share the
- * reservation, single-POST, cost and validation engine and can never read each
- * other's results.
- */
-export type MorningBriefExecutionPurpose =
-  (typeof morningBriefGenerations.$inferSelect)["executionPurpose"];
+const GENERATION_PURPOSE = "preview" as const;
 
 export type MorningBriefGenerationConflict =
-  MorningBriefCollectionConflict | "generation-in-progress";
+  | MorningBriefCollectionConflict
+  | "generation-in-progress";
 
-export type MorningBriefGenerationExecution =
+type MorningBriefGenerationExecution =
   | {
       readonly kind: "not-executed";
       readonly reason: MorningBriefGenerationSkipReason;
@@ -220,13 +211,11 @@ function admissionOf(args: {
   readonly plan: GenerationRequestPlan;
   readonly locale: string | null;
   readonly bundle: MorningBriefSlackBundle;
-  readonly purpose: MorningBriefExecutionPurpose;
 }): MorningBriefGenerationAdmission {
   const { context, plan } = args;
   const language = resolveGenerationLanguage(args.locale);
   return {
     key: generationKeyOf(context),
-    executionPurpose: args.purpose,
     attemptId: randomUUID(),
     membershipId: context.admission.membershipId,
     agentId: context.admission.agentId,
@@ -257,7 +246,6 @@ function admissionOf(args: {
 async function admitGeneration(
   tx: Tx,
   context: MorningBriefCollectionHandoffContext,
-  purpose: MorningBriefExecutionPurpose,
 ): Promise<AdmittedGeneration> {
   const { bundle } = context;
   const locale = await loadMemberLocale(tx, context.admission.owner);
@@ -265,7 +253,7 @@ async function admitGeneration(
     bundle,
     language: resolveGenerationLanguage(locale).language,
   });
-  const admission = admissionOf({ context, plan, locale, bundle, purpose });
+  const admission = admissionOf({ context, plan, locale, bundle });
 
   if (bundle.entries.length === 0) {
     const state: Extract<
@@ -537,7 +525,7 @@ function viewOfRow(
     throw new Error("Morning Brief generation stores an incomplete result");
   }
   return {
-    purpose: row.executionPurpose,
+    purpose: GENERATION_PURPOSE,
     state: row.state,
     attemptId: row.attemptId,
     model: row.model,
@@ -587,7 +575,7 @@ function viewOfUncommittedAttempt(
   failureReason: MorningBriefGenerationFailureReason,
 ): MorningBriefGenerationView {
   return {
-    purpose: admission.executionPurpose,
+    purpose: GENERATION_PURPOSE,
     state: "reserved",
     attemptId: admission.attemptId,
     model: admission.model,
@@ -805,12 +793,11 @@ const resolveExistingGeneration$ = command(
       readonly db: Db;
       readonly key: MorningBriefGenerationKey;
       readonly occurrence: MorningBriefCollectionOccurrenceView;
-      readonly purpose: MorningBriefExecutionPurpose;
     },
     signal: AbortSignal,
   ): Promise<MorningBriefGenerationExecution> => {
     const { db, key, occurrence } = args;
-    const row = await readMorningBriefGeneration(db, key, args.purpose);
+    const row = await readMorningBriefGeneration(db, key, GENERATION_PURPOSE);
     signal.throwIfAborted();
     if (!row) {
       return { kind: "collection-completed-without-generation", occurrence };
@@ -972,6 +959,24 @@ async function requestAndRecordCharge(
 }
 
 /**
+ * What this attempt may still spend at `at`, after the persistence reserve.
+ *
+ * Zero or negative means the reservation is exhausted: whatever is left is
+ * owed to recording the outcome, so nothing may be sent.
+ */
+function remainingProviderBudgetMs(
+  reservationExpiresAt: Date,
+  at: Date,
+): number {
+  return Math.min(
+    GENERATION_PROVIDER_DEADLINE_MS,
+    reservationExpiresAt.getTime() -
+      at.getTime() -
+      GENERATION_PERSISTENCE_RESERVE_MS,
+  );
+}
+
+/**
  * Make the single provider request this reservation admitted, then record it.
  *
  * Everything before this point is reversible; this is not, so the live
@@ -1017,14 +1022,16 @@ const invokeAndPersist$ = command(
       };
     };
 
-    const startedAt = nowDate();
-    const budgetMs = Math.min(
-      GENERATION_PROVIDER_DEADLINE_MS,
-      admission.reservationExpiresAt.getTime() -
-        startedAt.getTime() -
-        GENERATION_PERSISTENCE_RESERVE_MS,
+    // The preflight below is a real membership and authorization resolution
+    // that can block, so it spends the same reservation the request does. It
+    // gets a finite slice of what remains, and the allowance for the request
+    // itself is recomputed from the clock afterwards — a budget measured before
+    // a wait describes time this attempt may no longer own.
+    const preflightBudgetMs = remainingProviderBudgetMs(
+      admission.reservationExpiresAt,
+      nowDate(),
     );
-    if (budgetMs <= 0) {
+    if (preflightBudgetMs <= 0) {
       // Deterministically uninvoked: no request was made, so this is a
       // failure-before-contact and never an unknown outcome.
       return await uninvoked("reservation_expired");
@@ -1032,18 +1039,36 @@ const invokeAndPersist$ = command(
 
     // The reservation proved this attempt owns the slot; it does not prove the
     // owner still wants a brief or that the source is still theirs to read.
-    const admitted = await set(
-      generationAuthorityStillCurrent$,
-      args.occurrenceRow,
-      signal,
+    const admitted = await settleIncludingAbort(
+      set(
+        generationAuthorityStillCurrent$,
+        args.occurrenceRow,
+        AbortSignal.any([signal, AbortSignal.timeout(preflightBudgetMs)]),
+      ),
     );
+    // A caller that cancelled still cancels; a preflight the reservation
+    // deadline cut off is a proven pre-contact failure, not an unknown one.
     signal.throwIfAborted();
-    if (admitted.kind !== "current") {
+    if (!admitted.ok) {
+      return await uninvoked("reservation_expired");
+    }
+    if (admitted.value.kind !== "current") {
       return await uninvoked(
-        admitted.kind === "binding-changed"
+        admitted.value.kind === "binding-changed"
           ? "binding_changed"
           : "owner_revoked",
       );
+    }
+
+    // Resampled immediately before contact, so a preflight that consumed the
+    // allowance cannot still admit the one request this reservation permits.
+    // Equality with the deadline is exhausted.
+    const budgetMs = remainingProviderBudgetMs(
+      admission.reservationExpiresAt,
+      nowDate(),
+    );
+    if (budgetMs <= 0) {
+      return await uninvoked("reservation_expired");
     }
 
     const { receipt, interpreted: observedOutcome } =
@@ -1112,22 +1137,12 @@ const invokeAndPersist$ = command(
   },
 );
 
-/**
- * The one generation engine, executed for an explicit purpose.
- *
- * `preview` is the operator endpoint's. `production` is the native scheduler's
- * and is reached only after that scheduler validated its own occurrence
- * authority. Both share this reservation-before-single-POST protocol, the same
- * platform cost accounting and the same output validation; neither can read the
- * other's results, because every read filters on the purpose it asked for.
- */
-export const executeMorningBriefGeneration$ = command(
+export const executeMorningBriefPreviewGeneration$ = command(
   async (
     { set },
     args: {
       readonly owner: MorningBriefCollectionOwner;
       readonly scheduledFor: Date;
-      readonly purpose: MorningBriefExecutionPurpose;
     },
     signal: AbortSignal,
   ): Promise<MorningBriefGenerationExecution> => {
@@ -1158,7 +1173,7 @@ export const executeMorningBriefGeneration$ = command(
           onCollected: async (tx, context) => {
             bundleCoverage = context.bundle.coverage;
             occurrenceRow = context.occurrence;
-            admitted = await admitGeneration(tx, context, args.purpose);
+            admitted = await admitGeneration(tx, context);
             if (admitted.kind === "reserved") {
               sources = admitted.plan.sources;
             }
@@ -1196,7 +1211,7 @@ export const executeMorningBriefGeneration$ = command(
     if (execution.kind === "already-completed") {
       return await set(
         resolveExistingGeneration$,
-        { db, key, occurrence: execution.occurrence, purpose: args.purpose },
+        { db, key, occurrence: execution.occurrence },
         signal,
       );
     }
@@ -1205,7 +1220,7 @@ export const executeMorningBriefGeneration$ = command(
       throw new Error("Morning Brief collection finalized without a handoff");
     }
     if (admitted.kind === "skipped") {
-      const row = await readMorningBriefGeneration(db, key, args.purpose);
+      const row = await readMorningBriefGeneration(db, key, GENERATION_PURPOSE);
       signal.throwIfAborted();
       if (!row) {
         throw new Error("Morning Brief generation skip was not recorded");
@@ -1229,24 +1244,6 @@ export const executeMorningBriefGeneration$ = command(
         occurrence: execution.occurrence,
         occurrenceRow,
       },
-      signal,
-    );
-  },
-);
-
-/** The operator preview entry point. */
-export const executeMorningBriefPreviewGeneration$ = command(
-  async (
-    { set },
-    args: {
-      readonly owner: MorningBriefCollectionOwner;
-      readonly scheduledFor: Date;
-    },
-    signal: AbortSignal,
-  ): Promise<MorningBriefGenerationExecution> => {
-    return await set(
-      executeMorningBriefGeneration$,
-      { ...args, purpose: "preview" },
       signal,
     );
   },
