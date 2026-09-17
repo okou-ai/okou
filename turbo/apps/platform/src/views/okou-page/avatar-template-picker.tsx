@@ -1344,9 +1344,12 @@ function IntroVideoVoiceFilters() {
 
 function IntroVideoVoiceCatalog({
   selectedVoiceId,
+  query,
   onSelect,
 }: {
   readonly selectedVoiceId: string | undefined;
+  /** Narrows the pages already loaded; the provider has no name search. */
+  readonly query?: string;
   readonly onSelect: (voice: IntroVideoVoice) => void;
 }) {
   const { t } = useTranslation();
@@ -1369,6 +1372,10 @@ function IntroVideoVoiceCatalog({
   const handleLoadMore = () => {
     detach(loadMore(pageSignal), Reason.DomCallback, "HeyGen voice paging");
   };
+  const needle = query?.trim().toLowerCase() ?? "";
+  const visibleItems = (visibleCatalog?.items ?? []).filter((voice) => {
+    return needle === "" || voice.name.toLowerCase().includes(needle);
+  });
 
   return (
     <section className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -1388,9 +1395,9 @@ function IntroVideoVoiceCatalog({
           </div>
         ) : visibleCatalog === undefined ? (
           <AvatarVoiceSkeletonGrid />
-        ) : visibleCatalog.items.length > 0 ? (
+        ) : visibleItems.length > 0 ? (
           <div className="grid grid-cols-1 gap-2.5">
-            {visibleCatalog.items.map((voice) => {
+            {visibleItems.map((voice) => {
               return (
                 <AvatarVoiceCard
                   key={voice.id}
@@ -1426,11 +1433,13 @@ export function VoiceLibraryToolbar() {
 export function VoiceLibraryContent({
   header,
   selectedVoiceId,
+  query,
   onSelect,
 }: {
   /** Rendered inside the picker so its own previews stop when a card plays. */
   readonly header?: ReactNode;
   readonly selectedVoiceId: string | undefined;
+  readonly query?: string;
   readonly onSelect: (voice: IntroVideoVoice) => void;
 }) {
   return (
@@ -1442,6 +1451,7 @@ export function VoiceLibraryContent({
       {header}
       <IntroVideoVoiceCatalog
         selectedVoiceId={selectedVoiceId}
+        query={query}
         onSelect={onSelect}
       />
     </div>

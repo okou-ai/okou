@@ -660,12 +660,12 @@
       "illustrationPreview": "{{title}} anteprima dell'illustrazione",
       "importDeck": "Importa la tua presentazione",
       "importDeckHint": "(.pptx, .ppt, .pdf)",
-      "importedSlides_one": "{{count}} diapositiva",
-      "importedSlides_many": "{{count}} diapositive",
-      "importedSlides_other": "{{count}} diapositive",
       "importFile": "Importa il tuo file",
       "importFileHint": "({{formats}})",
       "importUnsupported": "Scegli un file {{formats}} per creare un modello.",
+      "importedSlides_many": "{{count}} diapositive",
+      "importedSlides_one": "{{count}} diapositiva",
+      "importedSlides_other": "{{count}} diapositive",
       "introVideo": "Video introduttivo",
       "introVideoUnavailable": "Questo modello video non è più disponibile. Rimuovilo per inviare il messaggio.",
       "multiAccent": "Multiaccento",
@@ -691,6 +691,7 @@
       "selectVoice": "Seleziona la voce {{title}}",
       "selectWebsite": "Seleziona il modello di sito web {{title}}",
       "selectWorkflow": "Seleziona il modello di flusso di lavoro {{title}}",
+      "selected": "Selezionato",
       "showVariant": "Mostra variante {{variantNumber}}",
       "singleAccent": "Singolo accento",
       "slidePreview": "{{title}} anteprima diapositiva",
@@ -1924,6 +1925,7 @@
         "heading": "Scegli un avatar",
         "label": "Avatar",
         "none": "Nessun avatar",
+        "noneDetail": "Solo stile",
         "previewLook": "Anteprima dell’aspetto {{name}}"
       },
       "catalog": {
@@ -1936,17 +1938,28 @@
         "cancel": "Annulla"
       },
       "picker": {
-        "autoVoiceDescription": "Trova una voce adatta ai tuoi contenuti.",
+        "allPresenters": "Tutti i presentatori",
+        "allPresentersCount": "Tutti i presentatori ({{count}})",
+        "allVoices": "Tutte le voci",
+        "allVoicesCount": "Tutte le voci ({{count}})",
+        "autoVoiceDescription": "Una voce adatta al tuo stile",
         "avatarVoice": "Voce dell’avatar",
         "back": "Indietro",
-        "chooseStyle": "Scegli uno stile",
         "closeOptions": "Chiudi opzioni",
+        "done": "Fatto",
         "moreOptions": "Altre opzioni",
         "noMatches": "Nessun risultato.",
+        "optionsNote": "Puoi cambiarle in qualsiasi momento dal chip nella chat.",
+        "pickStyle": "Scegli uno stile",
+        "reset": "Reimposta",
+        "searchPresenters": "Cerca presentatori",
         "searchStyles": "Cerca stili",
-        "selectionSummary": "Voce: {{voice}} · Avatar: {{avatar}}",
+        "searchVoices": "Cerca voci",
+        "selectedStyle": "Selezionato: {{name}}",
         "settings": "Impostazioni del video introduttivo",
-        "useSelection": "Usa selezione"
+        "styleCount": "{{count}} stili",
+        "styleCountOf": "{{shown}} di {{total}}",
+        "useStyle": "Usa {{name}}"
       },
       "style": {
         "auto": "Lascia scegliere a Okou",
@@ -1965,10 +1978,9 @@
       "voice": {
         "auto": "Lascia scegliere a Okou",
         "defaultDescription": "Usa la voce predefinita dell’avatar scelto",
-        "heading": "Scegli una voce",
         "label": "Voce",
         "none": "Nessuna voce fuori campo",
-        "noneDescription": "Non aggiungere narrazione; mantieni l’audio originale salvo richiesta di disattivarlo."
+        "noneShortDescription": "Mantieni l’audio originale"
       }
     },
     "mail": {

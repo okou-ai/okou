@@ -642,11 +642,11 @@
       "illustrationPreview": "{{title}} चित्रण पूर्वावलोकन",
       "importDeck": "अपना डेक इंपोर्ट करें",
       "importDeckHint": "(.pptx, .ppt, .pdf)",
-      "importedSlides_one": "{{count}} स्लाइड",
-      "importedSlides_other": "{{count}} स्लाइड",
       "importFile": "अपनी फ़ाइल इंपोर्ट करें",
       "importFileHint": "({{formats}})",
       "importUnsupported": "टेम्पलेट बनाने के लिए {{formats}} फ़ाइल चुनें।",
+      "importedSlides_one": "{{count}} स्लाइड",
+      "importedSlides_other": "{{count}} स्लाइड",
       "introVideo": "इंट्रो वीडियो",
       "introVideoUnavailable": "यह वीडियो टेम्पलेट अब उपलब्ध नहीं है। अपना संदेश भेजने के लिए इसे हटाएँ।",
       "multiAccent": "बहु-उच्चारण",
@@ -672,6 +672,7 @@
       "selectVoice": "आवाज़ {{title}} चुनें",
       "selectWebsite": "वेबसाइट टेम्पलेट {{title}} चुनें",
       "selectWorkflow": "वर्कफ़्लो टेम्पलेट {{title}} चुनें",
+      "selected": "चयनित",
       "showVariant": "वैरिएंट {{variantNumber}} दिखाएँ",
       "singleAccent": "एकल-उच्चारण",
       "slidePreview": "{{title}} स्लाइड पूर्वावलोकन",
@@ -1886,6 +1887,7 @@
         "heading": "अवतार चुनें",
         "label": "अवतार",
         "none": "कोई अवतार नहीं",
+        "noneDetail": "केवल शैली",
         "previewLook": "{{name}} रूप का पूर्वावलोकन"
       },
       "catalog": {
@@ -1898,17 +1900,28 @@
         "cancel": "रद्द करें"
       },
       "picker": {
-        "autoVoiceDescription": "अपने कंटेंट के अनुकूल आवाज़ खोजें।",
+        "allPresenters": "सभी प्रेज़ेंटर",
+        "allPresentersCount": "सभी प्रेज़ेंटर ({{count}})",
+        "allVoices": "सभी आवाज़ें",
+        "allVoicesCount": "सभी आवाज़ें ({{count}})",
+        "autoVoiceDescription": "आपकी शैली से मेल खाती आवाज़",
         "avatarVoice": "अवतार की आवाज़",
         "back": "वापस",
-        "chooseStyle": "शैली चुनें",
         "closeOptions": "विकल्प बंद करें",
+        "done": "हो गया",
         "moreOptions": "अधिक विकल्प",
         "noMatches": "कोई परिणाम नहीं मिला।",
+        "optionsNote": "इन्हें चैट के चिप से कभी भी बदला जा सकता है।",
+        "pickStyle": "शैली चुनें",
+        "reset": "रीसेट करें",
+        "searchPresenters": "प्रेज़ेंटर खोजें",
         "searchStyles": "शैलियाँ खोजें",
-        "selectionSummary": "आवाज़: {{voice}} · अवतार: {{avatar}}",
+        "searchVoices": "आवाज़ें खोजें",
+        "selectedStyle": "चयनित: {{name}}",
         "settings": "इंट्रो वीडियो की सेटिंग",
-        "useSelection": "चयन इस्तेमाल करें"
+        "styleCount": "{{count}} शैलियाँ",
+        "styleCountOf": "{{total}} में से {{shown}}",
+        "useStyle": "{{name}} इस्तेमाल करें"
       },
       "style": {
         "auto": "Okou को चुनने दें",
@@ -1927,10 +1940,9 @@
       "voice": {
         "auto": "Okou को चुनने दें",
         "defaultDescription": "चुने गए अवतार की डिफ़ॉल्ट आवाज़ इस्तेमाल करें",
-        "heading": "आवाज़ चुनें",
         "label": "आवाज़",
         "none": "बिना वॉइसओवर",
-        "noneDescription": "नरेशन न जोड़ें; म्यूट करने को न कहने पर मूल ऑडियो बनाए रखें।"
+        "noneShortDescription": "मूल ऑडियो रखें"
       }
     },
     "mail": {

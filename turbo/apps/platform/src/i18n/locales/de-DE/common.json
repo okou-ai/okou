@@ -642,11 +642,11 @@
       "illustrationPreview": "{{title}} Illustrationsvorschau",
       "importDeck": "Eigenes Deck importieren",
       "importDeckHint": "(.pptx, .ppt, .pdf)",
-      "importedSlides_one": "{{count}} Folie",
-      "importedSlides_other": "{{count}} Folien",
       "importFile": "Eigene Datei importieren",
       "importFileHint": "({{formats}})",
       "importUnsupported": "Wählen Sie eine {{formats}}-Datei, um eine Vorlage zu erstellen.",
+      "importedSlides_one": "{{count}} Folie",
+      "importedSlides_other": "{{count}} Folien",
       "introVideo": "Intro-Video",
       "introVideoUnavailable": "Diese Videovorlage ist nicht mehr verfügbar. Entferne sie, um deine Nachricht zu senden.",
       "multiAccent": "Multi-Akzent",
@@ -672,6 +672,7 @@
       "selectVoice": "Stimme {{title}} auswählen",
       "selectWebsite": "Wählen Sie die Website-Vorlage {{title}} aus.",
       "selectWorkflow": "Wählen Sie die Workflow-Vorlage {{title}} aus.",
+      "selected": "Ausgewählt",
       "showVariant": "Variante {{variantNumber}} anzeigen",
       "singleAccent": "Einzelakzent",
       "slidePreview": "{{title}} Folienvorschau",
@@ -1886,6 +1887,7 @@
         "heading": "Avatar auswählen",
         "label": "Avatar",
         "none": "Kein Avatar",
+        "noneDetail": "Nur Stil",
         "previewLook": "Look {{name}} ansehen"
       },
       "catalog": {
@@ -1898,17 +1900,28 @@
         "cancel": "Abbrechen"
       },
       "picker": {
-        "autoVoiceDescription": "Finde eine Stimme, die zu deinem Inhalt passt.",
+        "allPresenters": "Alle Moderatoren",
+        "allPresentersCount": "Alle Moderatoren ({{count}})",
+        "allVoices": "Alle Stimmen",
+        "allVoicesCount": "Alle Stimmen ({{count}})",
+        "autoVoiceDescription": "Eine Stimme, die zu deinem Stil passt",
         "avatarVoice": "Stimme des Avatars",
         "back": "Zurück",
-        "chooseStyle": "Stil auswählen",
         "closeOptions": "Optionen schließen",
+        "done": "Fertig",
         "moreOptions": "Weitere Optionen",
         "noMatches": "Keine Treffer.",
+        "optionsNote": "Du kannst das jederzeit über den Chip im Chat ändern.",
+        "pickStyle": "Stil wählen",
+        "reset": "Zurücksetzen",
+        "searchPresenters": "Moderatoren suchen",
         "searchStyles": "Stile suchen",
-        "selectionSummary": "Stimme: {{voice}} · Avatar: {{avatar}}",
+        "searchVoices": "Stimmen suchen",
+        "selectedStyle": "Ausgewählt: {{name}}",
         "settings": "Einstellungen für Intro-Videos",
-        "useSelection": "Auswahl verwenden"
+        "styleCount": "{{count}} Stile",
+        "styleCountOf": "{{shown}} von {{total}}",
+        "useStyle": "{{name}} verwenden"
       },
       "style": {
         "auto": "Okou wählen lassen",
@@ -1927,10 +1940,9 @@
       "voice": {
         "auto": "Okou wählen lassen",
         "defaultDescription": "Die Standardstimme des gewählten Avatars verwenden",
-        "heading": "Stimme auswählen",
         "label": "Stimme",
         "none": "Kein Voiceover",
-        "noneDescription": "Keine Erzählstimme hinzufügen; Originalton behalten, sofern du ihn nicht stummschalten möchtest."
+        "noneShortDescription": "Originalton beibehalten"
       }
     },
     "mail": {

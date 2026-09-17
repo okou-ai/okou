@@ -641,11 +641,11 @@
       "illustrationPreview": "pratinjau ilustrasi {{title}}",
       "importDeck": "Impor dek Anda sendiri",
       "importDeckHint": "(.pptx, .ppt, .pdf)",
-      "importedSlides_one": "{{count}} slide",
-      "importedSlides_other": "{{count}} slide",
       "importFile": "Impor file Anda sendiri",
       "importFileHint": "({{formats}})",
       "importUnsupported": "Pilih file {{formats}} untuk membuat templat.",
+      "importedSlides_one": "{{count}} slide",
+      "importedSlides_other": "{{count}} slide",
       "introVideo": "Video intro",
       "introVideoUnavailable": "Template video ini tidak lagi tersedia. Hapus untuk mengirim pesan Anda.",
       "multiAccent": "Multi-aksen",
@@ -671,6 +671,7 @@
       "selectVoice": "Pilih suara {{title}}",
       "selectWebsite": "Pilih template website {{title}}",
       "selectWorkflow": "Pilih template alur kerja {{title}}",
+      "selected": "Dipilih",
       "showVariant": "Tampilkan varian {{variantNumber}}",
       "singleAccent": "Satu aksen",
       "slidePreview": "pratinjau slide {{title}}",
@@ -1878,6 +1879,7 @@
         "heading": "Pilih avatar",
         "label": "Avatar",
         "none": "Tanpa avatar",
+        "noneDetail": "Hanya gaya",
         "previewLook": "Pratinjau tampilan {{name}}"
       },
       "catalog": {
@@ -1890,17 +1892,28 @@
         "cancel": "Batal"
       },
       "picker": {
-        "autoVoiceDescription": "Temukan suara yang cocok dengan konten Anda.",
+        "allPresenters": "Semua presenter",
+        "allPresentersCount": "Semua presenter ({{count}})",
+        "allVoices": "Semua suara",
+        "allVoicesCount": "Semua suara ({{count}})",
+        "autoVoiceDescription": "Suara yang cocok dengan gaya Anda",
         "avatarVoice": "Suara avatar",
         "back": "Kembali",
-        "chooseStyle": "Pilih gaya",
         "closeOptions": "Tutup opsi",
+        "done": "Selesai",
         "moreOptions": "Opsi lainnya",
         "noMatches": "Tidak ada hasil.",
+        "optionsNote": "Anda bisa mengubahnya kapan saja lewat chip di chat.",
+        "pickStyle": "Pilih gaya",
+        "reset": "Atur ulang",
+        "searchPresenters": "Cari presenter",
         "searchStyles": "Cari gaya",
-        "selectionSummary": "Suara: {{voice}} · Avatar: {{avatar}}",
+        "searchVoices": "Cari suara",
+        "selectedStyle": "Dipilih: {{name}}",
         "settings": "Pengaturan video intro",
-        "useSelection": "Gunakan pilihan"
+        "styleCount": "{{count}} gaya",
+        "styleCountOf": "{{shown}} dari {{total}}",
+        "useStyle": "Gunakan {{name}}"
       },
       "style": {
         "auto": "Biarkan Okou memilih",
@@ -1919,10 +1932,9 @@
       "voice": {
         "auto": "Biarkan Okou memilih",
         "defaultDescription": "Gunakan suara default avatar yang dipilih",
-        "heading": "Pilih suara",
         "label": "Suara",
         "none": "Tanpa narasi",
-        "noneDescription": "Jangan tambahkan narasi; pertahankan audio sumber kecuali Anda meminta untuk membisukannya."
+        "noneShortDescription": "Pertahankan audio asli"
       }
     },
     "mail": {

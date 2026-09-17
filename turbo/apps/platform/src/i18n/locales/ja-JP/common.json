@@ -641,11 +641,11 @@
       "illustrationPreview": "{{title}} イラストのプレビュー",
       "importDeck": "自分のデッキをインポート",
       "importDeckHint": "(.pptx, .ppt, .pdf)",
-      "importedSlides_one": "{{count}} 枚",
-      "importedSlides_other": "{{count}} 枚",
       "importFile": "自分のファイルをインポート",
       "importFileHint": "({{formats}})",
       "importUnsupported": "テンプレートを作成するには {{formats}} のファイルを選択してください。",
+      "importedSlides_one": "{{count}} 枚",
+      "importedSlides_other": "{{count}} 枚",
       "introVideo": "イントロ動画",
       "introVideoUnavailable": "この動画テンプレートは現在利用できません。削除してメッセージを送信してください。",
       "multiAccent": "マルチアクセント",
@@ -671,6 +671,7 @@
       "selectVoice": "音声{{title}}を選択",
       "selectWebsite": "Web サイト テンプレート {{title}} を選択してください",
       "selectWorkflow": "ワークフロー テンプレート {{title}} を選択します",
+      "selected": "選択中",
       "showVariant": "バリアント {{variantNumber}} を表示",
       "singleAccent": "シングルアクセント",
       "slidePreview": "{{title}} スライド プレビュー",
@@ -1878,6 +1879,7 @@
         "heading": "アバターを選択",
         "label": "アバター",
         "none": "アバターなし",
+        "noneDetail": "スタイルのみ",
         "previewLook": "{{name}} の外見をプレビュー"
       },
       "catalog": {
@@ -1890,17 +1892,28 @@
         "cancel": "キャンセル"
       },
       "picker": {
-        "autoVoiceDescription": "コンテンツに合う音声を選びます。",
+        "allPresenters": "すべてのプレゼンター",
+        "allPresentersCount": "すべてのプレゼンター ({{count}})",
+        "allVoices": "すべての音声",
+        "allVoicesCount": "すべての音声 ({{count}})",
+        "autoVoiceDescription": "スタイルに合う音声",
         "avatarVoice": "アバターの音声",
         "back": "戻る",
-        "chooseStyle": "スタイルを選択",
         "closeOptions": "オプションを閉じる",
+        "done": "完了",
         "moreOptions": "その他のオプション",
         "noMatches": "見つかりませんでした。",
+        "optionsNote": "チャットのチップからいつでも変更できます。",
+        "pickStyle": "スタイルを選択",
+        "reset": "リセット",
+        "searchPresenters": "プレゼンターを検索",
         "searchStyles": "スタイルを検索",
-        "selectionSummary": "音声: {{voice}} · アバター: {{avatar}}",
+        "searchVoices": "音声を検索",
+        "selectedStyle": "選択中: {{name}}",
         "settings": "イントロ動画の設定",
-        "useSelection": "この設定を使用"
+        "styleCount": "{{count}} 件のスタイル",
+        "styleCountOf": "{{total}} 件中 {{shown}} 件",
+        "useStyle": "{{name}} を使用"
       },
       "style": {
         "auto": "Okou におまかせ",
@@ -1919,10 +1932,9 @@
       "voice": {
         "auto": "Okou におまかせ",
         "defaultDescription": "選択したアバターのデフォルト音声を使用",
-        "heading": "音声を選択",
         "label": "音声",
         "none": "ナレーションなし",
-        "noneDescription": "ナレーションは追加せず、消音の指定がない限り元の音声を保持します。"
+        "noneShortDescription": "元の音声を残す"
       }
     },
     "mail": {

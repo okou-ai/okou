@@ -642,11 +642,11 @@
       "illustrationPreview": "{{title}} illustration preview",
       "importDeck": "Import your own deck",
       "importDeckHint": "(.pptx, .ppt, .pdf)",
-      "importedSlides_one": "{{count}} slide",
-      "importedSlides_other": "{{count}} slides",
       "importFile": "Import your own file",
       "importFileHint": "({{formats}})",
       "importUnsupported": "Choose a {{formats}} file to make a template.",
+      "importedSlides_one": "{{count}} slide",
+      "importedSlides_other": "{{count}} slides",
       "introVideo": "Intro video",
       "introVideoUnavailable": "This video template is no longer available. Remove it to send your message.",
       "multiAccent": "Multi-accent",
@@ -672,6 +672,7 @@
       "selectVoice": "Select voice {{title}}",
       "selectWebsite": "Select website template {{title}}",
       "selectWorkflow": "Select workflow template {{title}}",
+      "selected": "Selected",
       "showVariant": "Show variant {{variantNumber}}",
       "singleAccent": "Single-accent",
       "slidePreview": "{{title}} slide preview",
@@ -1886,6 +1887,7 @@
         "heading": "Choose an avatar",
         "label": "Avatar",
         "none": "No avatar",
+        "noneDetail": "Style only",
         "previewLook": "Preview look {{name}}"
       },
       "catalog": {
@@ -1898,17 +1900,28 @@
         "cancel": "Cancel"
       },
       "picker": {
-        "autoVoiceDescription": "Find a voice that fits your content.",
+        "allPresenters": "All presenters",
+        "allPresentersCount": "All presenters ({{count}})",
+        "allVoices": "All voices",
+        "allVoicesCount": "All voices ({{count}})",
+        "autoVoiceDescription": "A voice that fits your style",
         "avatarVoice": "Avatar’s voice",
         "back": "Back",
-        "chooseStyle": "Choose a style",
         "closeOptions": "Close options",
+        "done": "Done",
         "moreOptions": "More options",
         "noMatches": "No matches found.",
+        "optionsNote": "Change these any time from the chip in the chat.",
+        "pickStyle": "Pick a style",
+        "reset": "Reset",
+        "searchPresenters": "Search presenters",
         "searchStyles": "Search styles",
-        "selectionSummary": "Voice: {{voice}} · Avatar: {{avatar}}",
+        "searchVoices": "Search voices",
+        "selectedStyle": "Selected: {{name}}",
         "settings": "Intro video settings",
-        "useSelection": "Use selection"
+        "styleCount": "{{count}} styles",
+        "styleCountOf": "{{shown}} of {{total}}",
+        "useStyle": "Use {{name}}"
       },
       "style": {
         "auto": "Let Okou choose",
@@ -1927,10 +1940,9 @@
       "voice": {
         "auto": "Let Okou choose",
         "defaultDescription": "Use the chosen avatar's default voice",
-        "heading": "Choose a voice",
         "label": "Voice",
         "none": "No voiceover",
-        "noneDescription": "Do not add narration; keep source audio unless you ask to mute it."
+        "noneShortDescription": "Keep the source audio"
       }
     },
     "mail": {
