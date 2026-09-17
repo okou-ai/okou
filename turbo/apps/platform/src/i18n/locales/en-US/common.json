@@ -646,7 +646,6 @@
       "importedSlides_other": "{{count}} slides",
       "importFile": "Import your own file",
       "importFileHint": "({{formats}})",
-      "importStarted": "Analysing {{filename}}. It will appear under Custom when it is ready.",
       "importUnsupported": "Choose a {{formats}} file to make a template.",
       "introVideo": "Intro video",
       "introVideoUnavailable": "This video template is no longer available. Remove it to send your message.",

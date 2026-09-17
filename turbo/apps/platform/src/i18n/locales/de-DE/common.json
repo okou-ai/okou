@@ -646,7 +646,6 @@
       "importedSlides_other": "{{count}} Folien",
       "importFile": "Eigene Datei importieren",
       "importFileHint": "({{formats}})",
-      "importStarted": "{{filename}} wird analysiert. Die Vorlage erscheint unter „Custom“, sobald sie fertig ist.",
       "importUnsupported": "Wählen Sie eine {{formats}}-Datei, um eine Vorlage zu erstellen.",
       "introVideo": "Intro-Video",
       "introVideoUnavailable": "Diese Videovorlage ist nicht mehr verfügbar. Entferne sie, um deine Nachricht zu senden.",

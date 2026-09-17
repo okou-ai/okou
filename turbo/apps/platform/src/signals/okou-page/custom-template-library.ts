@@ -18,7 +18,7 @@ const catalogVersion$ = state(0);
  * recency order, so nothing is re-sorted here — ownership is read from each
  * row rather than expressed as position.
  */
-const customTemplateCatalog$ = computed(
+export const customTemplateCatalog$ = computed(
   async (get): Promise<readonly UserTemplateCatalogEntry[]> => {
     get(catalogVersion$);
     const client = get(apiClient$)(userTemplatesContract);

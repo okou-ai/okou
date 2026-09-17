@@ -45,7 +45,11 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { IntroVideoPicker } from "./intro-video-picker.tsx";
 import { TemplateEmptyPanel } from "./template-empty-panel.tsx";
 import { CustomTemplatePickerPane } from "./custom-template-picker-pane.tsx";
-import { resetCustomTemplatePicker$ } from "../../signals/okou-page/custom-template-library.ts";
+import type { UserTemplateCatalogEntry } from "@okouai/api-contracts/contracts/user-templates";
+import {
+  customTemplateCatalog$,
+  resetCustomTemplatePicker$,
+} from "../../signals/okou-page/custom-template-library.ts";
 import {
   avatarSelectionLabel,
   styleSelectionLabel,
@@ -5838,6 +5842,12 @@ function ImportedPresentationTemplateLibraryStatus({
   );
 }
 
+/** The catalog behind a `custom` selection's chip. Empty until it loads. */
+function useCustomTemplateCatalog(): readonly UserTemplateCatalogEntry[] {
+  const loadable = useLoadable(customTemplateCatalog$);
+  return loadable.state === "hasData" ? loadable.data : [];
+}
+
 function useImportedPresentationTemplates(
   signals: ComposerSignals,
 ): readonly PresentationTemplateSummary[] {
@@ -6255,6 +6265,16 @@ function TemplatePickerDialog({
     closeTemplatePicker();
   };
 
+  const handleSelectCustom = (template: UserTemplateCatalogEntry) => {
+    // The row id alone. What this template produces lives on the row, so the
+    // selection does not restate it and cannot disagree with it.
+    onChange({
+      type: "custom",
+      selection: { userTemplateId: template.id },
+    });
+    closeTemplatePicker();
+  };
+
   const handleSelectVideo = (item: VideoTemplateItem) => {
     if (!videoGenerationAllowed) {
       closeTemplatePicker();
@@ -6535,6 +6555,7 @@ function TemplatePickerDialog({
                       onSelectImportedPresentation={
                         handleSelectImportedPresentation
                       }
+                      onSelectCustom={handleSelectCustom}
                       onPreviewPresentation={handlePreview}
                       onPreviewImportedPresentation={handlePreviewImported}
                       onImportedPresentation={closeTemplatePicker}
@@ -6595,6 +6616,7 @@ function TemplatePickerCategoryContent({
   onRestorePresentationScroll,
   onSelectPresentation,
   onSelectImportedPresentation,
+  onSelectCustom,
   onPreviewPresentation,
   onPreviewImportedPresentation,
   onImportedPresentation,
@@ -6626,6 +6648,7 @@ function TemplatePickerCategoryContent({
     colorSystemId?: string,
   ) => void;
   onSelectImportedPresentation: (template: PresentationTemplateSummary) => void;
+  onSelectCustom: (template: UserTemplateCatalogEntry) => void;
   onPreviewPresentation: (
     item: PresentationTemplateItem,
     slideIndex?: number,
@@ -6652,7 +6675,7 @@ function TemplatePickerCategoryContent({
   if (selectedCategory === "custom") {
     return (
       <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-6 pt-0.5">
-        <CustomTemplatePickerPane signals={signals} />
+        <CustomTemplatePickerPane signals={signals} onSelect={onSelectCustom} />
       </div>
     );
   }
@@ -6788,10 +6811,43 @@ function TemplatePickerCategoryContent({
   return null;
 }
 
+/**
+ * The chip for a custom template.
+ *
+ * The catalog is the only place its title and cover exist, so a selection
+ * whose row has not loaded produces no chip rather than an unnamed one.
+ */
+function customTemplateAttachment(
+  userTemplateId: string,
+  customTemplates: readonly UserTemplateCatalogEntry[],
+): ComposerTemplateAttachment | undefined {
+  const template = customTemplates.find((candidate) => {
+    return candidate.id === userTemplateId;
+  });
+  if (!template) {
+    return undefined;
+  }
+  return {
+    type: "custom",
+    title: template.title,
+    category: "custom",
+    ...(template.coverUrl === null
+      ? {}
+      : { previewImageUrl: template.coverUrl }),
+  };
+}
+
 function selectedComposerTemplateAttachment(
   value: GenerationTemplateRequest | undefined,
   importedTemplates: readonly PresentationTemplateSummary[] = [],
+  customTemplates: readonly UserTemplateCatalogEntry[] = [],
 ): ComposerTemplateAttachment | undefined {
+  if (value?.type === "custom") {
+    return customTemplateAttachment(
+      value.selection.userTemplateId,
+      customTemplates,
+    );
+  }
   const introVideo = introVideoTemplateOptions(value);
   if (introVideo) {
     return {
@@ -9337,6 +9393,7 @@ function useComposerTemplatePicker(
 ): ComposerTemplatePicker {
   const insertTemplate = useSet(signals.template.insertTemplate$);
   const importedTemplates = useImportedPresentationTemplates(signals);
+  const customTemplates = useCustomTemplateCatalog();
   const notifyDraftChanged = useComposerDraftChange(signals);
   return {
     onChange(value) {
@@ -9346,6 +9403,7 @@ function useComposerTemplatePicker(
       const attachment = selectedComposerTemplateAttachment(
         value,
         importedTemplates,
+        customTemplates,
       );
       if (!attachment) {
         return;

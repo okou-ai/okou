@@ -645,7 +645,6 @@
       "importedSlides_other": "{{count}} slide",
       "importFile": "Impor file Anda sendiri",
       "importFileHint": "({{formats}})",
-      "importStarted": "Menganalisis {{filename}}. Templat akan muncul di Custom setelah siap.",
       "importUnsupported": "Pilih file {{formats}} untuk membuat templat.",
       "introVideo": "Video intro",
       "introVideoUnavailable": "Template video ini tidak lagi tersedia. Hapus untuk mengirim pesan Anda.",

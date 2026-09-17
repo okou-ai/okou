@@ -251,6 +251,7 @@ export type OpenComposerTemplatePickerIntent =
   | { readonly kind: "edit-legacy"; readonly category: string };
 
 export type ComposerTemplateAttachmentType =
+  | "custom"
   | "presentation"
   | "illustration"
   | "video"
@@ -794,6 +795,7 @@ function templateAttachmentNodeAttributes(
   const previewImageUrl: unknown = node.attrs.previewImageUrl;
   if (
     (type !== "presentation" &&
+      type !== "custom" &&
       type !== "illustration" &&
       type !== "video" &&
       type !== "avatar" &&
@@ -926,6 +928,14 @@ function templateAttachmentTypeLabel(
   if (type === "website") {
     return i18n.t(($) => {
       return $.chat.templates.categories.website;
+    });
+  }
+  if (type === "custom") {
+    // One chip type for the whole catalog, the same word the picker tab uses.
+    // What a custom template produces lives on its row, and the chip is built
+    // from the selection alone.
+    return i18n.t(($) => {
+      return $.templates.custom;
     });
   }
   return i18n.t(($) => {

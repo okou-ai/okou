@@ -646,7 +646,6 @@
       "importedSlides_other": "{{count}} स्लाइड",
       "importFile": "अपनी फ़ाइल इंपोर्ट करें",
       "importFileHint": "({{formats}})",
-      "importStarted": "{{filename}} का विश्लेषण हो रहा है। तैयार होने पर यह Custom में दिखाई देगा।",
       "importUnsupported": "टेम्पलेट बनाने के लिए {{formats}} फ़ाइल चुनें।",
       "introVideo": "इंट्रो वीडियो",
       "introVideoUnavailable": "यह वीडियो टेम्पलेट अब उपलब्ध नहीं है। अपना संदेश भेजने के लिए इसे हटाएँ।",

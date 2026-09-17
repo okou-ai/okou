@@ -275,10 +275,28 @@ test("Opening a custom template shows its pages and management controls", async 
     within(dialog).findByText("18 pages · from q3-board-final-v4.pptx"),
   ).resolves.toBeInTheDocument();
   expect(within(dialog).getByLabelText("Rename template")).toBeInTheDocument();
-  // Selection is deliberately absent until the `user-template:` path is
-  // repointed at this table.
-  expect(buttonByName("Use", dialog)).toBeUndefined();
-  expect(buttonByName("Use this template", dialog)).toBeUndefined();
+  expect(buttonByName("Use this template", dialog)).toBeTruthy();
+});
+
+test("Using a custom template sends the row id and nothing about its kind", async () => {
+  mockCustomTemplateStore([customTemplate()]);
+
+  const { dialog } = await openCustomPanel();
+
+  click(tabByText("Custom"));
+  await within(dialog).findByText("Q3 board review");
+  click(buttonByName("Use", dialog)!);
+
+  // The picker closes and the composer carries the template. The chip is the
+  // whole observable effect: without a `custom` branch in the attachment
+  // resolver, Use resolves to nothing and the click is silently swallowed.
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  // The chip carries the template's own title. Before the attachment resolver
+  // knew `custom`, Use resolved to nothing and this never appeared; before the
+  // node guard knew it, rendering the chip threw.
+  await expect(screen.findByText("Q3 board review")).resolves.toBeVisible();
 });
 
 test("A document template is described by its file, not by a page count", async () => {
@@ -489,43 +507,6 @@ test("A document is sent with the command that publishes a document", async () =
   expect(capture.runPrompts[0]).toBe(
     "Analyse this document and save its styles as a reusable template. Publish it with `okou user-template publish --kind document` so it appears under Custom.",
   );
-});
-
-test("Uploading leaves the member in the picker they started from", async () => {
-  mockCustomTemplates([]);
-  context.mocks.upload.success({
-    id: "81000000-0000-4000-a000-000000000013",
-    filename: "brand-report.docx",
-    contentType:
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    size: 5,
-    url: "https://cdn.example.test/brand-report.docx",
-  });
-
-  const { user, dialog, capture } = await openCustomPanel();
-
-  click(tabByText("Custom"));
-  await user.upload(
-    await within(dialog).findByLabelText("Import your own file"),
-    new File(["docx"], "brand-report.docx", {
-      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    }),
-  );
-
-  await waitFor(() => {
-    expect(capture.runPrompts).toHaveLength(1);
-  });
-  // The upload was started from inside the picker, so the member is mid-task.
-  // Opening the analysis thread would discard what they were doing to answer a
-  // question they did not ask.
-  expect(window.location.pathname).toBe(`/agents/${AGENT_ID}/chat`);
-  // A tile that swallows a click and changes nothing visible reads as broken,
-  // so the send has to say it happened.
-  await expect(
-    screen.findByText(
-      "Analysing brand-report.docx. It will appear under Custom when it is ready.",
-    ),
-  ).resolves.toBeVisible();
 });
 
 test("A deck uploaded from the same entry keeps the presentation command", async () => {

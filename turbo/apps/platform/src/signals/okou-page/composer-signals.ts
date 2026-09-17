@@ -130,21 +130,6 @@ export interface ComposerSubmission {
    * send that creates one hands it to the thread it opens.
    */
   readonly taskSelection: ComposerTaskSelection;
-  /**
-   * Leave the member where they are rather than opening the thread this
-   * submission creates.
-   *
-   * A submission the member typed is the thing they want to watch, so the
-   * default is to follow it. One made on their behalf by a surface they are
-   * still using — a template upload started from the picker — is not, and
-   * pulling them out of that surface takes away the work they were doing.
-   */
-  readonly stayOnPage: boolean;
-}
-
-/** How a submission is delivered, as distinct from what it contains. */
-interface ComposerSubmissionOptions {
-  readonly stayOnPage: boolean;
 }
 
 export type ComposerSubmissionAction = "send" | "queue";
@@ -252,7 +237,7 @@ interface ComposerSubmissionSignals {
   readonly hasCurrentInvocation$: Computed<boolean>;
   readonly submitCurrentInput$: Command<
     Promise<boolean>,
-    [ComposerPrimaryAction, ComposerSubmissionOptions, AbortSignal]
+    [ComposerPrimaryAction, AbortSignal]
   >;
   readonly activatePrimaryAction$: Command<
     Promise<boolean>,
@@ -877,7 +862,6 @@ function createSubmitCurrentInput({
     async (
       { get, set },
       action: ComposerPrimaryAction,
-      submissionOptions: ComposerSubmissionOptions,
       signal: AbortSignal,
     ): Promise<boolean> => {
       signal.throwIfAborted();
@@ -961,7 +945,6 @@ function createSubmitCurrentInput({
             presentationSlideCount: get(create.presentationSlideCount$),
             visualization: get(taskChips.visualization.preferences$),
           },
-          stayOnPage: submissionOptions.stayOnPage,
         },
         signal,
       );
@@ -1027,14 +1010,7 @@ function createComposerSubmissionSignals(
         await set(options.cancelRun$, signal);
         return true;
       }
-      // The member pressed the button, so the thread this opens is the thing
-      // they are waiting for.
-      return await set(
-        submitCurrentInput$,
-        action,
-        { stayOnPage: false },
-        signal,
-      );
+      return await set(submitCurrentInput$, action, signal);
     },
   );
 

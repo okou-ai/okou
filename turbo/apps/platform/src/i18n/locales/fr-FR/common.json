@@ -665,7 +665,6 @@
       "importedSlides_other": "{{count}} diapositives",
       "importFile": "Importer votre propre fichier",
       "importFileHint": "({{formats}})",
-      "importStarted": "Analyse de {{filename}} en cours. Le modèle apparaîtra dans Custom une fois prêt.",
       "importUnsupported": "Choisissez un fichier {{formats}} pour créer un modèle.",
       "introVideo": "Vidéo d’intro",
       "introVideoUnavailable": "Ce modèle vidéo n’est plus disponible. Retirez-le pour envoyer votre message.",

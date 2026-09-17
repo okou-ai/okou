@@ -135,13 +135,9 @@ function templateImportPrompt(args: {
  * message is sent, so the analysis is a thread the member can open, interrupt
  * and follow up on, which a background job could not offer.
  *
- * Where it leaves them differs by catalog. The Presentation tile opens the
- * thread, as it always has. The Custom entry does not: it is reached from
- * inside the picker, so the member is mid-task, and taking them out of the
- * picker discards the work they were doing to answer a question they did not
- * ask. The thread is still theirs to open from the sidebar, and the toast says
- * the analysis started, because a tile that swallows a click and changes
- * nothing visible reads as broken.
+ * Both entries open the thread the send creates. The analysis is the thing
+ * the member just asked for, and watching it is where its progress is
+ * reported, so neither catalog leaves them behind.
  */
 export const importPresentationTemplateDeck$ = command(
   async (
@@ -189,22 +185,6 @@ export const importPresentationTemplateDeck$ = command(
 
     const action = await get(signals.submission.primaryAction$);
     signal.throwIfAborted();
-    const sent = await set(
-      signals.submission.submitCurrentInput$,
-      action,
-      { stayOnPage: customTemplates },
-      signal,
-    );
-    if (sent && customTemplates) {
-      toast.success(
-        i18n.t(
-          ($) => {
-            return $.artifacts.templates.importStarted;
-          },
-          { filename: file.name },
-        ),
-      );
-    }
-    return sent;
+    return await set(signals.submission.submitCurrentInput$, action, signal);
   },
 );

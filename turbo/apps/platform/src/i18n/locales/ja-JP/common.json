@@ -645,7 +645,6 @@
       "importedSlides_other": "{{count}} 枚",
       "importFile": "自分のファイルをインポート",
       "importFileHint": "({{formats}})",
-      "importStarted": "{{filename}} を解析しています。完成すると Custom に表示されます。",
       "importUnsupported": "テンプレートを作成するには {{formats}} のファイルを選択してください。",
       "introVideo": "イントロ動画",
       "introVideoUnavailable": "この動画テンプレートは現在利用できません。削除してメッセージを送信してください。",
