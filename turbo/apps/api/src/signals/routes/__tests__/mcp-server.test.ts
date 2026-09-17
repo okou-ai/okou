@@ -31,7 +31,7 @@ const readScope = "okou:chat:read";
 const orgScope = "user:org:read";
 const requiredScopes = `${orgScope} ${readScope}`;
 const defaultScopes =
-  "email profile user:org:read okou:chat:read okou:chat:send okou:chat:manage okou:run:cancel offline_access";
+  "openid email profile user:org:read okou:chat:read okou:chat:send okou:chat:manage okou:run:cancel offline_access";
 const modernVersion = "2026-07-28";
 
 function client() {
