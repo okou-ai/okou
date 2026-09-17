@@ -135,8 +135,11 @@ with the run-authority revocation and the occurrence delete it already performs:
 
 That transaction takes `FOR UPDATE` on the member rows in scope before stamping
 them, which conflicts with the claimant's `FOR KEY SHARE`, so the two can never
-decide at the same time. Both orders are therefore closed, and neither depends
-on the foreign-key cascade:
+decide at the same time. The separate lock is required, not stylistic: an
+`UPDATE` of a non-key column only acquires `FOR NO KEY UPDATE`, which does _not_
+conflict with `FOR KEY SHARE`, so collapsing the two statements would let a
+claim read an unstamped row and commit alongside the revocation. Both orders are
+otherwise closed, and neither depends on the foreign-key cascade:
 
 - A claim that commits first is seen by the revoking transaction, which deletes
   its occurrence. Cleanup's later member-row removal is the final backstop.

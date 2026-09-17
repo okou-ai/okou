@@ -1198,6 +1198,15 @@ describe("Morning Brief collection ownership lifetime", () => {
         readMorningBriefCollectionOwnerRow(f),
       ).resolves.toMatchObject({ revokedAt: expect.any(Date) });
 
+      // What a caller actually observes: the owner is refused and no source is
+      // read, while the rest of the deletion has still not run.
+      const traffic = scriptSlack({});
+      const refused = await accept(collect(f), [409]);
+      expect(refused.body.error.code).toBe(
+        "MORNING_BRIEF_COLLECTION_OWNER_REVOKED",
+      );
+      expect(traffic.requests).toStrictEqual([]);
+
       await remainder.release();
       await flushWaitUntilForTest();
       await expect(

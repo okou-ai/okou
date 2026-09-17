@@ -457,6 +457,12 @@ function revokedMemberWhere(
  * Deleting the occurrences is only half of it. Taking `FOR UPDATE` on the owner
  * rows first serializes this against the `FOR KEY SHARE` a claim or
  * finalization holds, and stamping those rows records the revocation durably.
+ * That explicit lock is load-bearing and must not be folded into the `UPDATE`:
+ * an `UPDATE` of a non-key column acquires `FOR NO KEY UPDATE`, which does not
+ * conflict with `FOR KEY SHARE`, so a single statement would let a claim read
+ * an unstamped row and commit its insert alongside this delete. No test would
+ * catch that, because the regressions depend on the blocking order rather than
+ * on the number of statements.
  * A claim that commits first is therefore seen and deleted here; a claim that
  * arrives later reads the stamp and refuses, even though this transaction found
  * no occurrence to delete and even though the member row itself is removed only
