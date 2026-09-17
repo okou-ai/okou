@@ -1876,10 +1876,15 @@ Its optional Runner header is ignored by older APIs; older Runners remain
 excluded from v4 jobs. The release endpoint and Runner use one strict explicit
 outcome contract: a missing, malformed or unknown outcome retains the receipt
 instead of fabricating a stale acknowledgement. No mixed-response bridge is
-required while the feature is non-GA: no production publisher exists and
+required while the feature is non-GA: no production publisher is enabled and
 `piDeferredSandbox` is off, so an older API cannot produce a v4 job for a newer
-Runner. The outer Pi launch-config v2 contains a new versioned continuation slot,
-so enablement requires the capable API, Runner and commit-addressed co-built CLI.
+Runner. The outer Pi launch-config v2 contains a new versioned continuation slot.
+The co-built Guest uses its private Sandbox control token to assemble the handoff
+in a 0600 run-scoped file and passes only an additive path variable to the CLI.
+An older CLI fails its legacy ordinary-token read; a newer CLI under an older
+Guest fails because the authenticated file is absent. Both combinations stop
+before the RPC boundary. Enablement therefore requires the capable API,
+Runner/Guest and newly captured commit-addressed CLI.
 Drain existing v4 intents, leases and release receipts before rolling any of
 those readers back below that floor. No switch is enabled by the consumer
 implementation.

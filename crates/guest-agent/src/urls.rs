@@ -43,3 +43,14 @@ pub(crate) fn active_input_receipt_url(base_url: &str, run_id: &str, delivery_id
     )
     .url(base_url)
 }
+
+pub(crate) fn deferred_pi_handoff_url(base_url: &str, run_id: &str, offset: u64) -> String {
+    let offset = offset.to_string();
+    routes::runners::jobs::by_id::pi_handoff::by_offset::route(
+        routes::runners::jobs::by_id::pi_handoff::by_offset::Params {
+            id: run_id,
+            offset: &offset,
+        },
+    )
+    .url(base_url)
+}

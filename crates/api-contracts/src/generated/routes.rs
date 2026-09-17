@@ -68,6 +68,45 @@ pub mod runners {
                 }
             }
 
+            /// Generated route bindings under `runners::jobs::by_id::pi_handoff`.
+            pub mod pi_handoff {
+                /// Generated route bindings under `runners::jobs::by_id::pi_handoff::by_offset`.
+                pub mod by_offset {
+                    /// Read bounded immutable continuation bytes for the current Sandbox owner.
+                    /// Route contract: `GET /api/runners/jobs/:id/pi-handoff/:offset`.
+                    pub const GET: crate::RouteTemplate = crate::RouteTemplate {
+                        method: crate::Method::Get,
+                        path: "/api/runners/jobs/:id/pi-handoff/:offset",
+                    };
+
+                    /// Path parameters for `GET /api/runners/jobs/:id/pi-handoff/:offset`.
+                    #[derive(Debug, Clone, Copy)]
+                    pub struct Params<'a> {
+                        /// Value for the `:id` path parameter.
+                        pub id: &'a str,
+                        /// Value for the `:offset` path parameter.
+                        pub offset: &'a str,
+                    }
+
+                    /// Build the concrete path for `GET /api/runners/jobs/:id/pi-handoff/:offset`.
+                    /// Percent-encodes each path parameter as a URL path segment.
+                    #[must_use]
+                    pub fn path(params: Params<'_>) -> String {
+                        format!(
+                            "/api/runners/jobs/{}/pi-handoff/{}",
+                            crate::route::encode_path_segment(params.id),
+                            crate::route::encode_path_segment(params.offset),
+                        )
+                    }
+
+                    /// Build a resolved route for `GET /api/runners/jobs/:id/pi-handoff/:offset`.
+                    #[must_use]
+                    pub fn route(params: Params<'_>) -> crate::ResolvedRoute {
+                        crate::ResolvedRoute::new(GET.method, path(params))
+                    }
+                }
+            }
+
             /// Generated route bindings under `runners::jobs::by_id::release`.
             pub mod release {
                 /// Record a physically destroyed deferred Pi Sandbox.

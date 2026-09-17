@@ -58,6 +58,7 @@ import {
   isPiInferenceRun,
   readPiInferenceLifecycle,
 } from "./pi-inference-lifecycle.service";
+import { hasDeferredPiHandoffAuthority } from "./pi-deferred-handoff-authorization";
 import {
   cappedBaseConcurrencyLimit,
   loadOrgConcurrencyState,
@@ -1397,7 +1398,6 @@ export async function readDeferredPiHandoffChunk(
   ) {
     return undefined;
   }
-  const fence = auth.piSandbox;
   return await withDeferredAdmission(db, auth.runId, async (tx, run) => {
     const lifecycle = await readPiInferenceLifecycle(
       tx,
@@ -1405,13 +1405,16 @@ export async function readDeferredPiHandoffChunk(
       run.launchSnapshot,
     );
     if (
-      run.userId !== auth.userId ||
-      run.orgId !== auth.orgId ||
-      run.status !== "running" ||
-      lifecycle?.inference.phase !== "sandbox_running" ||
-      lifecycle.inference.ownerEpoch !== fence.ownerEpoch ||
-      lifecycle.intent?.generation !== fence.generation ||
-      lifecycle.lease?.state !== "claimed"
+      !hasDeferredPiHandoffAuthority(auth, {
+        runId: run.id,
+        userId: run.userId,
+        orgId: run.orgId,
+        runStatus: run.status,
+        phase: lifecycle?.inference.phase,
+        ownerEpoch: lifecycle?.inference.ownerEpoch,
+        generation: lifecycle?.intent?.generation,
+        leaseState: lifecycle?.lease?.state,
+      })
     ) {
       return undefined;
     }

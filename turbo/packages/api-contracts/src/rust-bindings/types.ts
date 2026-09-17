@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   piApiFirstTurnConfigSchema,
+  piDeferredHandoffChunkSchema,
   piDeferredSandboxConfigSchema,
   activeInputDeliveryReserveResponseSchema,
   activeInputDeliveryReceiptResponseSchema,
@@ -81,6 +82,14 @@ export const rustTypeModuleDocs = [
     rustDoc: [
       "Run-scoped DTOs exchanged between runners, guests, and the API.",
     ],
+  },
+  {
+    rustModulePath: ["runners", "jobs"],
+    rustDoc: ["Authenticated Runner job DTOs."],
+  },
+  {
+    rustModulePath: ["runners", "jobs", "pi_handoff"],
+    rustDoc: ["Authenticated deferred Pi handoff DTOs."],
   },
   {
     rustModulePath: ["runners", "runs", "active_inputs"],
@@ -273,6 +282,27 @@ export const rustTypeBindings = [
         fields: {
           sessionId: ["Canonical Pi session identifier."],
           sha256: ["Original H0 history digest, or null for an empty session."],
+        },
+      },
+    ],
+  },
+  {
+    schema: piDeferredHandoffChunkSchema,
+    rustModulePath: ["runners", "jobs", "pi_handoff"],
+    rustTypeName: "Response",
+    direction: "response",
+    sensitive: true,
+    declarations: [
+      {
+        rustTypeName: "Response",
+        rustDoc: [
+          "One bounded chunk of authenticated deferred Pi handoff data.",
+        ],
+        fields: {
+          chunk: ["Base64-encoded handoff bytes."],
+          nextOffset: [
+            "Next exact byte offset, or null after the final chunk.",
+          ],
         },
       },
     ],

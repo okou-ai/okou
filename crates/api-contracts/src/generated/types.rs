@@ -8,6 +8,22 @@
 
 /// Runner-facing DTOs generated from TypeScript API contracts.
 pub mod runners {
+    /// Authenticated Runner job DTOs.
+    pub mod jobs {
+        /// Authenticated deferred Pi handoff DTOs.
+        pub mod pi_handoff {
+            /// One bounded chunk of authenticated deferred Pi handoff data.
+            #[derive(serde::Deserialize)]
+            #[serde(rename_all = "camelCase", deny_unknown_fields)]
+            pub struct Response {
+                /// Base64-encoded handoff bytes.
+                pub chunk: String,
+                /// Next exact byte offset, or null after the final chunk.
+                pub next_offset: Option<u64>,
+            }
+        }
+    }
+
     /// Run-scoped DTOs exchanged between runners, guests, and the API.
     pub mod runs {
         /// API-owned provider configuration forwarded to Codex in the sandbox.

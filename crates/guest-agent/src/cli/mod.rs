@@ -41,6 +41,7 @@ mod event_delivery_budget_tests;
 mod exec_boundary;
 mod jsonl_result;
 mod line_reader;
+mod pi_deferred_handoff;
 mod pi_event_delivery;
 mod pi_memory_citation;
 mod pi_rpc;
@@ -371,6 +372,7 @@ pub(super) struct CliRuntimeConfig<'a> {
     pi_session_id: Cow<'a, str>,
     pi_launch_config: Cow<'a, str>,
     pi_launch_payload_file: Cow<'a, str>,
+    pi_deferred_handoff_file: Cow<'a, str>,
     pi_model_config: Cow<'a, str>,
     user_env: &'a HashMap<String, String>,
 }
@@ -454,6 +456,7 @@ impl<'a> CliRuntimeConfig<'a> {
             pi_session_id: Cow::Borrowed(&config.pi_session_id),
             pi_launch_config: Cow::Borrowed(&config.pi_launch_config),
             pi_launch_payload_file: Cow::Borrowed(paths.pi_launch_payload_file()),
+            pi_deferred_handoff_file: Cow::Borrowed(paths.pi_deferred_handoff_file()),
             pi_model_config: Cow::Borrowed(&config.pi_model_config),
             user_env: &config.user_env,
         })
@@ -605,7 +608,7 @@ fn write_claude_append_system_prompt_file(
     Ok(())
 }
 
-fn pi_child_env_values(runtime: &CliRuntimeConfig<'_>) -> [(String, String); 4] {
+fn pi_child_env_values(runtime: &CliRuntimeConfig<'_>) -> [(String, String); 5] {
     [
         (
             guest_contracts::env::RUN_ID_ENV.to_string(),
@@ -618,6 +621,10 @@ fn pi_child_env_values(runtime: &CliRuntimeConfig<'_>) -> [(String, String); 4] 
         (
             guest_contracts::env::PI_LAUNCH_PAYLOAD_FILE_ENV.to_string(),
             runtime.pi_launch_payload_file.to_string(),
+        ),
+        (
+            guest_contracts::env::PI_DEFERRED_HANDOFF_FILE_ENV.to_string(),
+            runtime.pi_deferred_handoff_file.to_string(),
         ),
         (
             guest_contracts::env::PI_MODEL_CONFIG_ENV.to_string(),
@@ -1042,6 +1049,7 @@ async fn execute_cli_inner(
         .kill_on_drop(true);
 
     if matches!(runtime.framework, env::Framework::Pi) {
+        pi_deferred_handoff::prepare_for_cli(runtime, &http).await?;
         write_pi_launch_payload_file(runtime)?;
     }
     let mut child_env_values = child_env::values_for_runtime(runtime);
@@ -2436,6 +2444,7 @@ mod tests {
             pi_session_id: Cow::Borrowed(""),
             pi_launch_config: Cow::Borrowed(""),
             pi_launch_payload_file: Cow::Borrowed("/tmp/pi-launch-payload/payload.json"),
+            pi_deferred_handoff_file: Cow::Borrowed("/tmp/pi-deferred-handoff/payload.json"),
             pi_model_config: Cow::Borrowed(""),
             user_env,
         }
@@ -2586,6 +2595,10 @@ mod tests {
             (
                 guest_contracts::env::PI_LAUNCH_PAYLOAD_FILE_ENV,
                 runtime.pi_launch_payload_file.as_ref(),
+            ),
+            (
+                guest_contracts::env::PI_DEFERRED_HANDOFF_FILE_ENV,
+                runtime.pi_deferred_handoff_file.as_ref(),
             ),
             (
                 guest_contracts::env::PI_MODEL_CONFIG_ENV,

@@ -30,46 +30,50 @@ afterEach(async () => {
   );
 });
 
-async function fixture(settled = false) {
-  vi.stubEnv("OKOU_TOKEN", "sandbox-fixture-token");
-  vi.stubEnv("OKOU_API_BACKEND_URL", "https://durable-pi.test");
+type ContinuationFixture = "pending" | "settled" | "untouched";
+
+async function fixture(mode: ContinuationFixture = "pending") {
+  vi.stubEnv("OKOU_TOKEN", "ordinary-agent-token");
   const sessionId = randomUUID();
   const runId = randomUUID();
   const session = MemoryPiSession.create({
     cwd: "/home/user/workspace",
     id: sessionId,
   });
-  session.appendMessage({
-    role: "user",
-    content: "x".repeat(6 * 1024 * 1024),
-    timestamp: 1,
-  });
-  session.appendMessage({
-    role: "assistant",
-    content: settled
-      ? [{ type: "text", text: "Completed in API" }]
-      : [
-          {
-            type: "toolCall",
-            id: "retained-tool-id",
-            name: "read",
-            arguments: { path: "README.md" },
-          },
-        ],
-    api: "openai-completions",
-    provider: "deepseek",
-    model: "deepseek-v4-flash",
-    usage: {
-      input: 1,
-      output: 1,
-      cacheRead: 0,
-      cacheWrite: 0,
-      totalTokens: 2,
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-    },
-    stopReason: settled ? "stop" : "toolUse",
-    timestamp: 2,
-  });
+  if (mode !== "untouched") {
+    session.appendMessage({
+      role: "user",
+      content: "x".repeat(6 * 1024 * 1024),
+      timestamp: 1,
+    });
+    session.appendMessage({
+      role: "assistant",
+      content:
+        mode === "settled"
+          ? [{ type: "text", text: "Completed in API" }]
+          : [
+              {
+                type: "toolCall",
+                id: "retained-tool-id",
+                name: "read",
+                arguments: { path: "README.md" },
+              },
+            ],
+      api: "openai-completions",
+      provider: "deepseek",
+      model: "deepseek-v4-flash",
+      usage: {
+        input: 1,
+        output: 1,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 2,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
+      stopReason: mode === "settled" ? "stop" : "toolUse",
+      timestamp: 2,
+    });
+  }
   const sessionHistory = session.toJsonl();
   const resourceSnapshot = { schemaVersion: 1, agentsFiles: [], skills: [] };
   const wire = Buffer.from(
@@ -84,65 +88,61 @@ async function fixture(settled = false) {
     deadlineAt: Date.now() + 60_000,
     historyHash: digest(sessionHistory),
     resourceSnapshotDigest: digest(JSON.stringify(resourceSnapshot)),
-    baseSession: { sessionId, sha256: "b".repeat(64) },
-    sandboxEventSequenceStart: 12,
-    continuation: {
-      mode: settled ? "settled-session" : "pending-tools",
-      h1Hash: "c".repeat(64),
-      manifestGeneration: 4,
-      lastEventSequence: 11,
-      ...(settled ? {} : { pendingToolIds: ["retained-tool-id"] }),
+    baseSession: {
+      sessionId,
+      sha256: mode === "untouched" ? null : "b".repeat(64),
     },
+    sandboxEventSequenceStart: 12,
+    continuation:
+      mode === "untouched"
+        ? { mode: "untouched-h0" }
+        : {
+            mode: mode === "settled" ? "settled-session" : "pending-tools",
+            h1Hash: "c".repeat(64),
+            manifestGeneration: 4,
+            lastEventSequence: 11,
+            ...(mode === "pending"
+              ? { pendingToolIds: ["retained-tool-id"] }
+              : {}),
+          },
   });
-  let reads = 0;
-  server.use(
-    http.get(
-      `https://durable-pi.test/api/runners/jobs/${runId}/pi-handoff/:offset`,
-      ({ request, params }) => {
-        expect(request.headers.get("authorization")).toBe(
-          "Bearer sandbox-fixture-token",
-        );
-        const offset = Number(params.offset);
-        expect(offset).toBe(reads * 1024 * 1024);
-        reads++;
-        const end = Math.min(offset + 1024 * 1024, wire.length);
-        return HttpResponse.json({
-          chunk: wire.subarray(offset, end).toString("base64"),
-          nextOffset: end === wire.length ? null : end,
-        });
-      },
-    ),
-  );
   const sessionDir = await mkdtemp(join(tmpdir(), "pi-durable-consumer-"));
   directories.push(sessionDir);
+  const deferredHandoffFile = join(sessionDir, "authenticated-handoff.json");
+  await writeFile(deferredHandoffFile, wire, { mode: 0o600 });
+  const fetch = vi.fn(() => {
+    throw new Error("deferred CLI must not select or use an HTTP credential");
+  }) as unknown as typeof globalThis.fetch;
   return {
     config,
     sessionId,
     sessionDir,
+    deferredHandoffFile,
     sessionHistory,
     resourceSnapshot,
-    runtime: { fetch: globalThis.fetch, now: Date.now, sleep: async () => {} },
-    reads: () => {
-      return reads;
-    },
+    runtime: { fetch, now: Date.now, sleep: async () => {} },
+    fetch,
   };
 }
 
 describe("deferred Pi CLI transport reader", () => {
-  it.each([false, true])(
-    "restores exact large H1 bytes through the authenticated continuation reader, settled=%s",
-    async (settled) => {
-      const f = await fixture(settled);
+  it.each(["pending", "settled", "untouched"] as const)(
+    "restores exact authenticated handoff bytes without selecting the ordinary agent token, mode=%s",
+    async (mode) => {
+      const f = await fixture(mode);
       const result = await resolvePiApiFirstTurnHandoff(f);
       expect(await readFile(result.sessionFile, "utf8")).toBe(f.sessionHistory);
-      expect(f.reads()).toBeGreaterThan(6);
+      expect(f.fetch).not.toHaveBeenCalled();
       expect(result.resourceSnapshot).toEqual(f.resourceSnapshot);
       expect(result.boundaryControl).toEqual({
         schemaVersion: 2,
         sandboxEventSequenceStart: 12,
-        ownershipTransferMode: settled
-          ? "settled-session-continuation"
-          : "pending-tool-continuation",
+        ownershipTransferMode:
+          mode === "pending"
+            ? "pending-tool-continuation"
+            : mode === "settled"
+              ? "settled-session-continuation"
+              : "sandbox-first",
       });
     },
   );
@@ -161,6 +161,19 @@ describe("deferred Pi CLI transport reader", () => {
     ).rejects.toThrow("pending tool identities mismatch");
   });
 
+  it("fails closed when the Guest did not provide authenticated handoff bytes", async () => {
+    const f = await fixture();
+    await expect(
+      resolvePiApiFirstTurnHandoff({
+        config: f.config,
+        sessionDir: f.sessionDir,
+        sessionId: f.sessionId,
+        runtime: f.runtime,
+      }),
+    ).rejects.toThrow("requires its authenticated handoff file");
+    expect(f.fetch).not.toHaveBeenCalled();
+  });
+
   it("rejects an expired owner before requesting any continuation bytes", async () => {
     const f = await fixture();
     await expect(
@@ -168,8 +181,8 @@ describe("deferred Pi CLI transport reader", () => {
         ...f,
         config: { ...f.config, deadlineAt: 1 },
       }),
-    ).rejects.toThrow("deadline expired");
-    expect(f.reads()).toBe(0);
+    ).rejects.toThrow("integrity or deadline check");
+    expect(f.fetch).not.toHaveBeenCalled();
   });
   it("executes the restored pending tool once before the next actual provider HTTP request", async () => {
     const f = await fixture();

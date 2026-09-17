@@ -8,6 +8,7 @@ use api_contracts::generated::constants::client::headers::{
     CLIENT_REQUEST_ID_HEADER, CLIENT_SESSION_ID_HEADER, CLIENT_TYPE_HEADER, CLIENT_VERSION_HEADER,
 };
 use api_contracts::generated::constants::client::types::CLIENT_TYPE_GUEST_AGENT;
+use api_contracts::generated::types::runners::jobs::pi_handoff::Response as DeferredPiHandoffResponse;
 use api_contracts::generated::types::runners::runs::active_inputs::receipt::Response as ActiveInputReceiptResponse;
 use bytes::{Bytes, BytesMut};
 use guest_contracts::diagnostics::{HttpAttemptFailureKind, HttpCompletedAttemptDiagnostic};
@@ -39,6 +40,7 @@ const API_RESPONSE_BODY_TOO_LARGE_DIAGNOSTIC: &str =
     "API response body exceeds the configured limit";
 const API_ERROR_RESPONSE_BODY_TOO_LARGE_DIAGNOSTIC: &str =
     "API error response body exceeds the configured limit";
+const PI_DEFERRED_HANDOFF_RESPONSE_MAX_BYTES: usize = 1_500_000;
 
 enum ResponseBodyCollectionError {
     TooLarge,
@@ -417,6 +419,14 @@ impl HttpClient {
             delivery_id,
         ))
     }
+
+    fn deferred_pi_handoff_url(&self, run_id: &str, offset: u64) -> Result<String, AgentError> {
+        Ok(urls::deferred_pi_handoff_url(
+            &self.api_config()?.base_url,
+            run_id,
+            offset,
+        ))
+    }
 }
 
 impl ApiHttpConfig {
@@ -731,6 +741,76 @@ impl HttpClient {
         let body = collect_api_success_body(response).await?;
         serde_json::from_slice::<ActiveInputReceiptResponse>(&body)
             .map_err(|error| AgentError::Http(error.to_string()))
+    }
+
+    /// Read one authenticated deferred Pi handoff chunk exactly once.
+    ///
+    /// The guest owns the private Sandbox control token. It never forwards
+    /// that credential to the CLI child; only the validated response bytes
+    /// cross the child boundary through a private runtime file.
+    pub(crate) async fn get_deferred_pi_handoff_chunk(
+        &self,
+        run_id: &str,
+        offset: u64,
+        request_timeout: Duration,
+    ) -> Result<DeferredPiHandoffResponse, AgentError> {
+        let url = self.deferred_pi_handoff_url(run_id, offset)?;
+        let client = self.inner()?;
+        let api = self.api_config()?;
+        let response = send_with_retry(
+            "deferred Pi handoff GET",
+            1,
+            Duration::ZERO,
+            |failure| match failure {
+                Some(RetryableFailure::HttpStatus(status)) => AgentError::HttpStatus {
+                    status,
+                    message: format!("Deferred Pi handoff read failed: HTTP {status}"),
+                },
+                Some(RetryableFailure::Timeout { .. }) => {
+                    AgentError::Http("Deferred Pi handoff read timed out".to_string())
+                }
+                Some(RetryableFailure::Connect | RetryableFailure::Transport) | None => {
+                    AgentError::Http("Deferred Pi handoff transport failed".to_string())
+                }
+            },
+            || {
+                let request_id = Uuid::new_v4().to_string();
+                let mut request = client
+                    .get(&url)
+                    .timeout(request_timeout)
+                    .header("Authorization", format!("Bearer {}", api.token));
+                if !api.vercel_bypass.is_empty() {
+                    request = request.header("x-vercel-protection-bypass", &api.vercel_bypass);
+                }
+                request = request
+                    .header(CLIENT_VERSION_HEADER, GUEST_AGENT_CLIENT_VERSION)
+                    .header(CLIENT_TYPE_HEADER, CLIENT_TYPE_GUEST_AGENT)
+                    .header(CLIENT_SESSION_ID_HEADER, api.client_session_id.as_str())
+                    .header(CLIENT_REQUEST_ID_HEADER, &request_id);
+                std::future::ready(Ok(RetryRequest::observed(request, request_id)))
+            },
+            |response, _, _| async move {
+                let status = response.status().as_u16();
+                AgentError::HttpStatus {
+                    status,
+                    message: format!("Deferred Pi handoff read failed: HTTP {status}"),
+                }
+            },
+            None,
+        )
+        .await?;
+        let body = collect_response_body(response, PI_DEFERRED_HANDOFF_RESPONSE_MAX_BYTES)
+            .await
+            .map_err(|error| match error {
+                ResponseBodyCollectionError::TooLarge => {
+                    AgentError::Http("Deferred Pi handoff response exceeds its size limit".into())
+                }
+                ResponseBodyCollectionError::Transport(_) => {
+                    AgentError::Http("Deferred Pi handoff response body could not be read".into())
+                }
+            })?;
+        serde_json::from_slice(&body)
+            .map_err(|_| AgentError::Http("Deferred Pi handoff response is malformed".into()))
     }
 
     async fn post_json_response(

@@ -71,6 +71,11 @@ export const rustRouteBindings = [
     rustConstName: "CLAIM",
   },
   {
+    route: runnersJobClaimContract.handoff,
+    rustModulePath: ["runners", "jobs", "by_id", "pi_handoff", "by_offset"],
+    rustConstName: "GET",
+  },
+  {
     route: runnersActiveInputsContract.reserve,
     rustModulePath: [
       "runners",

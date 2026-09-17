@@ -973,6 +973,16 @@ describe("sandbox Pi agent loop", () => {
     ).resolves.toEqual(CONFIG);
   });
 
+  it("captures the authenticated deferred handoff file without treating it as a credential", async () => {
+    const env = piEnv({ OKOU_RUN_ID: RUN_ID });
+    env.OKOU_PI_DEFERRED_HANDOFF_FILE =
+      "/private/pi-deferred-handoff/payload.json";
+
+    await expect(piSandboxAgentConfigFromEnv(env)).resolves.toMatchObject({
+      deferredHandoffFile: "/private/pi-deferred-handoff/payload.json",
+    });
+  });
+
   it("uses run authentication and the first-party relay without Langfuse keys", async () => {
     const env = piEnv({ OKOU_RUN_ID: RUN_ID });
     Object.assign(env, {

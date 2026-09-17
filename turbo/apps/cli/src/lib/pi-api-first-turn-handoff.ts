@@ -1,13 +1,12 @@
-import { getApiUrl, getToken } from "./api/config.js";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, rename, writeFile } from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
+import { mkdir, open, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { gunzip, zstdDecompress } from "node:zlib";
 
 import {
   PI_API_FIRST_TURN_SESSION_MAX_BYTES,
-  piDeferredHandoffChunkSchema,
   piDeferredHandoffDataSchema,
   piApiFirstTurnManifestSchema,
   type PiApiFirstTurnConfig,
@@ -23,6 +22,7 @@ import {
 const MANIFEST_MAX_BYTES = 16 * 1024;
 const INITIAL_POLL_DELAY_MS = 100;
 const MAX_POLL_DELAY_MS = 500;
+const DEFERRED_HANDOFF_MAX_BYTES = 32 * 1024 * 1024;
 const gunzipHistory = promisify(gunzip);
 const unzstdHistory = promisify(zstdDecompress);
 
@@ -449,6 +449,7 @@ export async function resolvePiApiFirstTurnHandoff(args: {
   readonly config: PiApiFirstTurnConfig | PiDeferredSandboxConfig;
   readonly sessionDir: string;
   readonly sessionId: string;
+  readonly deferredHandoffFile?: string;
   readonly runtime?: HandoffRuntime;
 }): Promise<PiApiFirstTurnHandoff> {
   const runtime = args.runtime ?? defaultRuntime;
@@ -482,62 +483,36 @@ export async function resolvePiApiFirstTurnHandoff(args: {
   };
 }
 
-async function readDeferredHandoffData(
-  config: PiDeferredSandboxConfig,
-  runtime: HandoffRuntime,
-) {
-  const token = await getToken();
-  if (!token) {
-    throw new Error("Deferred Pi requires its Sandbox token");
+async function readDeferredHandoffData(path: string | undefined) {
+  if (!path) {
+    throw new Error("Deferred Pi requires its authenticated handoff file");
   }
-  const apiUrl = await getApiUrl();
-  const chunks: Buffer[] = [];
-  let size = 0;
-  for (let offset: number | null = 0; offset !== null; ) {
-    if (runtime.now() >= config.deadlineAt) {
-      throw new Error("Pi durable handoff deadline expired");
-    }
-    const response = await runtime.fetch(
-      `${apiUrl}/api/runners/jobs/${config.runId}/pi-handoff/${offset}`,
-      {
-        headers: { authorization: `Bearer ${token}` },
-        signal: AbortSignal.timeout(
-          Math.min(30_000, config.deadlineAt - runtime.now()),
-        ),
-        redirect: "error",
-      },
-    );
-    if (!response.ok) {
-      throw new Error(`Pi durable handoff read failed: ${response.status}`);
-    }
-    const encoded = await responseBufferWithMaxBytes({
-      response,
-      maxBytes: 1_500_000,
-      code: "PI_HANDOFF_H1_TOO_LARGE",
-      readErrorCode: "PI_HANDOFF_H1_DOWNLOAD_FAILED",
-      label: "Pi durable handoff chunk",
-    });
-    const chunk = piDeferredHandoffChunkSchema.parse(
-      JSON.parse(encoded.toString("utf8")),
-    );
-    const decoded = Buffer.from(chunk.chunk, "base64");
-    size += decoded.length;
-    if (
-      !decoded.length ||
-      decoded.length > 1024 * 1024 ||
-      size > 32 * 1024 * 1024 ||
-      (chunk.nextOffset !== null &&
-        (decoded.length !== 1024 * 1024 ||
-          chunk.nextOffset !== offset + decoded.length))
-    ) {
-      throw new Error("Pi durable handoff chunk bounds mismatch");
-    }
-    chunks.push(decoded);
-    offset = chunk.nextOffset;
-  }
-  return piDeferredHandoffDataSchema.parse(
-    JSON.parse(Buffer.concat(chunks, size).toString("utf8")),
+  const file = await open(
+    path,
+    fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW | fsConstants.O_NONBLOCK,
   );
+  try {
+    const stat = await file.stat();
+    if (
+      !stat.isFile() ||
+      stat.size <= 0 ||
+      stat.size > DEFERRED_HANDOFF_MAX_BYTES
+    ) {
+      throw new Error("Pi durable handoff file bounds mismatch");
+    }
+    const bytes = await file.readFile();
+    if (
+      bytes.length !== stat.size ||
+      bytes.length > DEFERRED_HANDOFF_MAX_BYTES
+    ) {
+      throw new Error("Pi durable handoff file changed while being read");
+    }
+    return piDeferredHandoffDataSchema.parse(
+      JSON.parse(bytes.toString("utf8")) as unknown,
+    );
+  } finally {
+    await file.close();
+  }
 }
 
 /** The durable payload has already won Runner claim. Validate its exact native
@@ -546,10 +521,11 @@ async function restoreDeferredSandboxHandoff(args: {
   readonly config: PiDeferredSandboxConfig;
   readonly sessionDir: string;
   readonly sessionId: string;
+  readonly deferredHandoffFile?: string;
   readonly runtime: HandoffRuntime;
 }): Promise<PiApiFirstTurnHandoff> {
   const { config } = args;
-  const data = await readDeferredHandoffData(config, args.runtime);
+  const data = await readDeferredHandoffData(args.deferredHandoffFile);
   const bytes = Buffer.from(data.sessionHistory, "utf8");
   if (
     bytes.length > PI_API_FIRST_TURN_SESSION_MAX_BYTES ||
