@@ -1034,8 +1034,18 @@ describe("GET /api/chat-threads/:id/metadata B1 closure fence", () => {
     CASE_TIMEOUT_MS,
   );
 
-  it("propagates a real scoped thread-lock timeout instead of fabricating 404", async () => {
+  it("propagates holder setup and scoped thread-lock failures without fabricating 404", async () => {
     const fixture = await createMetadataFixture();
+    await expect(
+      holdChatThreadRowLockFixture({
+        threadId: randomUUID(),
+        signal: context.signal,
+      }),
+    ).rejects.toThrow("Expected the chat thread row");
+    await expect(
+      chat.requestReadThreadMetadata(fixture.actor, fixture.threadId, [200]),
+    ).resolves.toMatchObject({ status: 200 });
+
     const holder = await holdChatThreadRowLockFixture({
       threadId: fixture.threadId,
       signal: context.signal,
@@ -1222,6 +1232,30 @@ describe("GET /api/chat-threads/:id/metadata B1 closure fence", () => {
                   message: expect.stringMatching(/received 401/),
                 }),
               );
+            });
+            expect(barrier.enteredYet()).toBeFalsy();
+
+            const completedBeforeEntry = owner.start(
+              chat.requestReadThreadMetadata(
+                fixture.actor,
+                randomUUID(),
+                [404],
+              ),
+            );
+            const missedEntry = await settleIncludingAbort(
+              waitForBarrierEntry(barrier.entered, completedBeforeEntry),
+            );
+            expect(missedEntry.ok).toBeFalsy();
+            if (missedEntry.ok) {
+              throw new Error("Expected successful completion before entry");
+            }
+            expect(missedEntry.error).toStrictEqual(
+              expect.objectContaining({
+                message: "Metadata operation completed before barrier entry",
+              }),
+            );
+            expect(valueOf(await completedBeforeEntry.settled)).toMatchObject({
+              status: 404,
             });
             expect(barrier.enteredYet()).toBeFalsy();
 

@@ -67,7 +67,11 @@ import {
 } from "../signals/services/chat-event.service";
 import { createUserMessageDocument } from "../signals/services/chat-user-message.service";
 import { buildFeishuChatOpenUrl } from "../signals/services/feishu-config";
-import { createDeferredPromise, onRejection } from "../signals/utils";
+import {
+  createDeferredPromise,
+  onRejection,
+  settleIncludingAbort,
+} from "../signals/utils";
 
 /**
  * BDD-scoped built-in model key prefixes. Fixture acquisition below only
@@ -1610,7 +1614,33 @@ export async function holdChatThreadRowLockFixture(args: {
     started.resolve(holderPid);
     await released.promise;
   });
-  const holderPid = await started.promise;
+  const settledStarted = settleIncludingAbort(started.promise);
+  const settledDone = settleIncludingAbort(done);
+  const first = await Promise.race([
+    (async () => {
+      return { kind: "started" as const, result: await settledStarted };
+    })(),
+    (async () => {
+      return { kind: "done" as const, result: await settledDone };
+    })(),
+  ]);
+  if (first.kind === "done") {
+    if (!first.result.ok) {
+      throw first.result.error;
+    }
+    throw new Error("Chat thread row lock holder completed before readiness");
+  }
+  if (!first.result.ok) {
+    const result = await settledDone;
+    if (!result.ok && !Object.is(result.error, first.result.error)) {
+      throw new AggregateError(
+        [first.result.error, result.error],
+        "Chat thread row lock holder setup and transaction failed",
+      );
+    }
+    throw first.result.error;
+  }
+  const holderPid = first.result.value;
 
   return {
     release: () => {
