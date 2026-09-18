@@ -307,8 +307,17 @@ function getSeedDefaultModelForPlan(
     : DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL;
 }
 
-function shouldReplaceExistingDefaultForPlan(
-  existingDefault: OrgModelPolicyRow | undefined,
+export function shouldReplaceExistingDefaultForPlan(
+  existingDefault:
+    | Pick<
+        OrgModelPolicyRow,
+        | "model"
+        | "defaultProviderType"
+        | "credentialScope"
+        | "modelProviderId"
+        | "modelProviderSurfaceId"
+      >
+    | undefined,
   capabilities: Pick<
     OrgPlanCapabilities,
     "restrictedBuiltInModels" | "supportByok"

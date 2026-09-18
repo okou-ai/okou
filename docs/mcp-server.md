@@ -38,9 +38,10 @@ the configuration; a selectable model can still require a connection or plan
 change before execution. `available` is a metadata observation, not a credential
 probe or admission guarantee. `defaultModel` chooses a valid member preference,
 then the organization default, or returns null model/source. Provider account
-identifiers, credentials and configuration are excluded. Missing policies return
-a setup error rather than inventing defaults. Discovery reads enforce a
-15-second deadline, three-second SQL limits and a 16 KiB data budget.
+identifiers, credentials and configuration are excluded. Missing policies or
+defaults awaiting canonical repair after a plan change return a setup error.
+Open model settings to synchronize the policies, then retry discovery. Discovery
+reads enforce a 15-second deadline, three-second SQL limits and a 16 KiB data budget.
 
 For example:
 

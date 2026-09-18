@@ -356,7 +356,7 @@ function registerDiscoveryTools(
     "list_models",
     {
       description:
-        "Discover the current model catalog and your member/workspace default. selectable means the model can be configured; availability separately reports known plan, connection or reconnection requirements. available is metadata only: quota, credentials and admission are checked when sending. This read does not create or repair configuration. Use a selectable model id with create_chat_thread.",
+        "Discover the current model catalog and your member/workspace default. selectable means the model can be configured; availability separately reports known plan, connection or reconnection requirements. available is metadata only: quota, credentials and admission are checked when sending. This read does not create or repair configuration. If setup is required after a plan change, open model settings and retry. Use a selectable model id with create_chat_thread.",
       inputSchema: mcpListModelsInputSchema,
       outputSchema: mcpListModelsOutputSchema,
       annotations: readAnnotations,

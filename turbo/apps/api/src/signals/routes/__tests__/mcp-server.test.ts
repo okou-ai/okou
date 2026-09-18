@@ -19,6 +19,7 @@ import {
 } from "@okouai/api-contracts/contracts/mcp-chat-discovery";
 import { mcpCreateChatThreadOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-creation";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
+import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
 import {
   mcpSendChatMessageOutputSchema,
   mcpRevokeQueuedMessageOutputSchema,
@@ -49,6 +50,7 @@ import { testChatEventSnapshotRoutes } from "../test-chat-event-snapshot";
 import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-projection";
 import { testChatEventRetentionRoutes } from "../test-chat-event-retention";
 import { userModelPreferenceRoutes } from "../user-model-preference";
+import { modelPoliciesRoutes } from "../model-policies";
 import {
   closeErasureSubjectFixture,
   removeErasureSubjectsFixture,
@@ -70,6 +72,7 @@ import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { updateChatEventSnapshotHead } from "./helpers/runtime-state";
@@ -508,6 +511,86 @@ describe("MCP chat discovery and creation", () => {
       first,
     );
   });
+
+  it.each([false, true])(
+    "reports pending model setup after a plan downgrade with personal priority %s",
+    async (personalSubscriptionPriority) => {
+      const f = await threadFixture();
+      const runs = createRunsApi(context);
+      const { subscriptionId } = await runs.grantProEntitlement(f.actor);
+      await runs.updateOrgModelPolicies(f.actor, [
+        {
+          model: "gpt-5.6-luna",
+          isDefault: true,
+          defaultProviderType: "codex-oauth-token",
+          credentialScope: "member",
+          modelProviderId: null,
+        },
+      ]);
+      await updateFeatureSwitchesForUser(
+        context,
+        { userId: f.auth.userId, orgId: f.auth.orgId },
+        {
+          [FeatureSwitchKey.PersonalSubscriptionPriority]:
+            personalSubscriptionPriority,
+        },
+      );
+      const token = f.auth.token({ scope: defaultScopes });
+      expect((await listModels(token)).models).toContainEqual(
+        expect.objectContaining({
+          id: "gpt-5.6-luna",
+          selectable: true,
+          availability: "connection_required",
+        }),
+      );
+      await createWebhookCallbackApi(context).postStripeEvent(
+        {
+          id: `evt_${randomUUID()}`,
+          type: "customer.subscription.deleted",
+          data: { object: { id: subscriptionId, metadata: {} } },
+        },
+        [200],
+      );
+
+      const pending = await callTool(token, "list_models");
+      expect(pending.isError).toBeTruthy();
+      expect(pending.structuredContent).toBeUndefined();
+      expect(pending.content).toContainEqual({
+        type: "text",
+        text: "Model policies need to be synchronized with the current organization plan. Open model settings, then retry discovery.",
+      });
+      await expect(callTool(token, "list_models")).resolves.toStrictEqual(
+        pending,
+      );
+
+      createRouteMocks(context).clerk.session(f.auth.userId, f.auth.orgId);
+      const settings = await accept(
+        setupApp({ context, routes: modelPoliciesRoutes })(
+          modelPoliciesMainContract,
+        ).list({ headers: { authorization: "Bearer clerk-session" } }),
+        [200],
+      );
+      expect(settings.body.workspaceDefaultModel).toBe("gpt-5.6-luna");
+      const models = await listModels(token);
+      expect(models.defaultModel).toStrictEqual({
+        model: "gpt-5.6-luna",
+        source: "org_default",
+      });
+      expect(models.models).toContainEqual(
+        expect.objectContaining({ id: "gpt-5.6-luna", selectable: true }),
+      );
+      const created = await createThread(token, {
+        requestId: randomUUID(),
+        agentId: f.agent.agentId,
+        title: "After plan synchronization",
+        model: "gpt-5.6-luna",
+      });
+      expect(created.model.selectedModel).toBe("gpt-5.6-luna");
+      expect(
+        (await getMessages(token, { threadId: created.threadId })).messages,
+      ).toStrictEqual([]);
+    },
+  );
 
   it("distinguishes configured models, missing member credentials and the member default", async () => {
     const f = await creationFixture();

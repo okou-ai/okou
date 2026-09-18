@@ -39,6 +39,7 @@ import {
   type ResolvedModelFirstPolicyRoute,
 } from "./effective-model-route.service";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
+import { shouldReplaceExistingDefaultForPlan } from "./model-policy.service";
 import {
   loadOrgPlanCapabilities,
   type OrgPlanCapabilities,
@@ -361,7 +362,14 @@ function describeModelAvailability(params: {
   return entry;
 }
 
-async function loadDiscoveryModelPolicies(tx: Tx, orgId: string) {
+async function loadDiscoveryModelPolicies(
+  tx: Tx,
+  orgId: string,
+  capabilities: Pick<
+    OrgPlanCapabilities,
+    "restrictedBuiltInModels" | "supportByok"
+  >,
+) {
   const policies = await tx
     .select({
       model: orgModelPolicies.model,
@@ -384,6 +392,20 @@ async function loadDiscoveryModelPolicies(tx: Tx, orgId: string) {
       "No active model policies are configured for this organization. Open model settings before creating a conversation.",
     );
   }
+  // Selection repairs defaults after plan changes. A read must not describe
+  // the pre-repair routes as if they were the configuration selection uses.
+  if (
+    shouldReplaceExistingDefaultForPlan(
+      policies.find((policy) => {
+        return policy.isDefault;
+      }),
+      capabilities,
+    )
+  ) {
+    throw new DiscoveryUnavailable(
+      "Model policies need to be synchronized with the current organization plan. Open model settings, then retry discovery.",
+    );
+  }
   return policies;
 }
 
@@ -396,7 +418,19 @@ export async function listMcpModels(
     db,
     signal,
     async (tx, budget): Promise<McpListModelsOutput> => {
-      const policies = await loadDiscoveryModelPolicies(tx, principal.orgId);
+      const capabilities = await loadOrgPlanCapabilities(tx, principal.orgId);
+      // Match canonical pin selection: a suspended plan may retain configurable
+      // pins. Availability separately reports the current execution restriction.
+      const routeCapabilities =
+        capabilities?.status === "active"
+          ? capabilities
+          : { restrictedBuiltInModels: false, supportByok: true };
+      await budget.beforeQuery(tx);
+      const policies = await loadDiscoveryModelPolicies(
+        tx,
+        principal.orgId,
+        routeCapabilities,
+      );
       await budget.beforeQuery(tx);
       const [preference] = await tx
         .select({ model: orgMembersMetadata.selectedModel })
@@ -408,8 +442,6 @@ export async function listMcpModels(
           ),
         )
         .limit(1);
-      await budget.beforeQuery(tx);
-      const capabilities = await loadOrgPlanCapabilities(tx, principal.orgId);
       await budget.beforeQuery(tx);
       const member = await loadMemberModelRouteContext(
         tx,
@@ -440,12 +472,6 @@ export async function listMcpModels(
         principal.userId,
       );
       budget.check();
-      // Match canonical pin selection: a suspended plan may retain configurable
-      // pins. Availability separately reports the current execution restriction.
-      const routeCapabilities =
-        capabilities?.status === "active"
-          ? capabilities
-          : { restrictedBuiltInModels: false, supportByok: true };
       const models: McpListModelsOutput["models"] = [];
       const policiesByModel = new Map(
         policies.map((policy) => {
