@@ -624,6 +624,13 @@
       "when": 1789725646020,
       "tag": "1166_feishu_platform_agent_preferences",
       "breakpoints": true
+    },
+    {
+      "idx": 1167,
+      "version": "7",
+      "when": 1789730728316,
+      "tag": "1167_private_artifact_absolute_urls",
+      "breakpoints": true
     }
   ]
 }

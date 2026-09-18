@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { command } from "ccstate";
 import { PUBLIC_BRAND } from "@okouai/core/public-brand";
-import { artifactShareReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
 import type {
   HostedArtifactKind,
   HostedSiteFilesResponse,
@@ -29,7 +28,10 @@ import {
   putHostedSitesS3Object,
 } from "../external/s3";
 import { nowDate } from "../../lib/time";
-import { privateArtifactCreationEnabled } from "./private-artifact-storage.service";
+import {
+  privateArtifactCreationEnabled,
+  privateArtifactReferenceUrl,
+} from "./private-artifact-storage.service";
 import { registerLegacyHostedSite$ } from "./artifact-delivery.service";
 import { allocateArtifactReference$ } from "./artifact-reference.service";
 import {
@@ -609,7 +611,7 @@ async function insertHostedDeployment(
   const artifactUrl =
     context.privateReference === null
       ? deploymentUrl(site.publicBrand, deploymentId)
-      : artifactShareReferencePath(context.privateReference, "index.html");
+      : privateArtifactReferenceUrl(context.privateReference, "index.html");
   const aliasUrl = args.privateArtifacts
     ? artifactUrl
     : publicUrl(site.publicBrand, site.publicSlug);

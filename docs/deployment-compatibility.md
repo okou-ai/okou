@@ -278,23 +278,30 @@ command. Existing pinned CLIs ignore the key.
 
 #### Private attachment uploads
 
-CLI artifact output qualifies hostless references with its configured app origin
-(`OKOU_APP_URL`, or the existing API-to-App origin mapping). Production output is
-`https://app.okou.ai/artifacts/<reference>`. Generation, upload, hosting and media
-download results use the same complete URL in text, JSON and Markdown. Integration
-upload completion (Teams, Telegram, Feishu/Lark, AgentPhone and GitHub) and Slack
-canonical publication apply the same CLI normalization before printing. Image
-batch waits also qualify stored artifact and owner references in JSON output,
-including the generated Markdown, without rewriting the batch files. Public
-URLs keep their original bytes, including query strings. API responses and stored
-references retain their existing shapes, so older pinned CLIs retain their prior
-output and the new CLI can consume an older API. Downloading or cloning newly
-qualified URLs requires the updated CLI; previously captured contexts retain
-their own CLI package. No database rewrite or API rollout ordering is required.
-CLI download, generation-input and clone readers accept both
-hostless references and absolute references from that same app origin. Existing
-App thread readers already accept same-origin absolute references and resolve
-them through the authenticated artifact endpoint.
+Private artifact URL fields and API creation responses use the configured
+`APP_URL` origin. Production stores and returns
+`https://app.okou.ai/artifacts/<reference>` for generation, upload, hosting,
+media-download and preview-image records. Integration upload completion (Teams,
+Telegram, Feishu/Lark, AgentPhone and GitHub), Slack canonical publication and
+the Artifact Catalog therefore carry that same complete URL. Public CDN,
+hosted-site and external URLs retain their original bytes, including query
+strings.
+
+Migration `1167_private_artifact_absolute_urls` prefixes the production App
+origin onto hostless private URLs in the canonical file, hosted deployment,
+generation, Social and catalog projections, including catalog logical keys and
+thumbnail URLs. It changes only values beginning with `/artifacts/`; public and
+external URLs are unchanged. `privateArtifacts` remains staff-only, so this is a
+direct data cutover rather than a dual-write or rollback bridge.
+
+The CLI retains its idempotent normalization at the presentation boundary for
+older APIs: complete URLs pass through unchanged, while a hostless response is
+qualified with `OKOU_APP_URL` (or the existing API-to-App origin mapping). Image
+batch waits apply the same presentation rule without rewriting batch files.
+CLI download, generation-input and clone readers continue to accept hostless
+references and absolute references from the same App origin. Existing App thread
+readers likewise resolve both forms through the authenticated artifact endpoint;
+new stored and emitted values use only the complete form.
 
 New private artifact creation allocates a ten-character version-2 R2 reference
 index and stores the reference in file metadata or the hosted deployment URL.

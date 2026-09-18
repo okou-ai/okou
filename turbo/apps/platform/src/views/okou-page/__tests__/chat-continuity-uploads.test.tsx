@@ -159,6 +159,57 @@ test("Attach supported files by picker or drag and drop", async () => {
   expect(contentTypes.has("archive.iso")).toBeFalsy();
 });
 
+test("Complete uploads returned as absolute private Artifact URLs", async () => {
+  const thread = continuityThread(14, 1, "Absolute private upload");
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 14,
+    threads: [thread],
+  });
+  const id = uploadId(14, 1);
+  const artifactUrl = "http://localhost/artifacts/abc123def4.txt";
+  const completedIds: string[] = [];
+  context.mocks.api(uploadsContract.prepare, ({ body, respond }) => {
+    return respond(200, {
+      id,
+      filename: body.filename,
+      contentType: body.contentType,
+      size: body.size,
+      url: artifactUrl,
+      uploadUrl: uploadUrl(14, body.filename),
+      uploadHeaders: {},
+    });
+  });
+  context.mocks.api(uploadsContract.complete, ({ body, respond }) => {
+    completedIds.push(body.id);
+    return respond(200, {
+      id,
+      filename: "private.txt",
+      contentType: "text/plain",
+      size: 7,
+      url: artifactUrl,
+    });
+  });
+  context.mocks.http.put(uploadUrl(14, "private.txt"), () => {
+    return new HttpResponse(null, { status: 200 });
+  });
+
+  await setupPage({
+    context,
+    path: `/chats/${thread.id}`,
+    ...workspace.pageOptions,
+  });
+
+  await messageComposer();
+  await userEvent.upload(
+    composerFileInput(),
+    new File(["private"], "private.txt", { type: "text/plain" }),
+  );
+  await waitFor(() => {
+    expect(fastButton("Remove private.txt")).toBeVisible();
+  });
+  expect(completedIds).toStrictEqual([id]);
+});
+
 test("Keep a pending upload with the conversation that started it", async () => {
   const owner = continuityThread(10, 1, "Upload owner");
   const neighbor = continuityThread(10, 2, "Upload neighbor");

@@ -3111,7 +3111,7 @@ describe("managed SocialKit route", () => {
       });
       if (privateFiles) {
         expect(completed.body.artifact?.url).toMatch(
-          /^\/artifacts\/[a-z0-9]{10}\.mp4$/u,
+          /^https?:\/\/[^/]+\/artifacts\/[a-z0-9]{10}\.mp4$/u,
         );
         context.mocks.s3.send.mockImplementation((command) => {
           expect(command).toBeInstanceOf(HeadObjectCommand);

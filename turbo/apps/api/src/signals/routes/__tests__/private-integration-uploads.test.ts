@@ -95,7 +95,9 @@ test.each(
         : "/test-user-artifacts/artifacts/",
     );
     if (privateFiles) {
-      expect(fileUrl).toMatch(/^\/artifacts\/[a-z0-9]{10}\.txt$/u);
+      expect(fileUrl).toMatch(
+        /^https?:\/\/[^/]+\/artifacts\/[a-z0-9]{10}\.txt$/u,
+      );
     }
     expect(
       (await fetch(uploadUrl, { method: "PUT", body: "upload bytes" })).status,

@@ -88,6 +88,7 @@ import type { ModelProviderSelection } from "../../views/okou-page/components/mo
 import { runOptionsFromModelProviderSelection } from "./model-selection-request.ts";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
+import { artifactReferenceLookupKey } from "../attachment-resource-url.ts";
 import { debounceCommand } from "../command-scheduling.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { orgModelPolicies$ } from "../external/org-model-policies.ts";
@@ -1695,13 +1696,19 @@ function createArtifactPreviewImageUrls(
         if (!file.previewImageUrl) {
           continue;
         }
-        previewImageUrlsByUrl.set(file.url, file.previewImageUrl);
         previewImageUrlsByUrl.set(
-          canonicalUserMessageFileUrl(file.id),
+          artifactReferenceLookupKey(file.url),
+          file.previewImageUrl,
+        );
+        previewImageUrlsByUrl.set(
+          artifactReferenceLookupKey(canonicalUserMessageFileUrl(file.id)),
           file.previewImageUrl,
         );
         if (file.aliasUrl) {
-          previewImageUrlsByUrl.set(file.aliasUrl, file.previewImageUrl);
+          previewImageUrlsByUrl.set(
+            artifactReferenceLookupKey(file.aliasUrl),
+            file.previewImageUrl,
+          );
         }
       }
     }

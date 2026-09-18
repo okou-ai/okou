@@ -131,7 +131,9 @@ describe("private artifact uploads", () => {
     if (!("uploadUrl" in prepared.body)) {
       throw new Error("Expected single upload");
     }
-    expect(prepared.body.url).toMatch(/^\/artifacts\/[a-z0-9]{10}\.html$/u);
+    expect(prepared.body.url).toMatch(
+      /^http:\/\/localhost:3002\/artifacts\/[a-z0-9]{10}\.html$/u,
+    );
     await setPrivateArtifacts(false);
     await fetch(prepared.body.uploadUrl, {
       method: "PUT",
@@ -212,7 +214,11 @@ describe("private artifact uploads", () => {
     const preview = await accept(
       api()(artifactReferencesContract).resolve({
         headers,
-        params: { reference: prepared.body.url.slice("/artifacts/".length) },
+        params: {
+          reference: new URL(prepared.body.url).pathname.slice(
+            "/artifacts/".length,
+          ),
+        },
       }),
       [200],
     );
@@ -248,7 +254,9 @@ describe("private artifact uploads", () => {
       }),
       [200],
     );
-    expect(input.body.url).toMatch(/^\/artifacts\/[a-z0-9]{10}\.png$/u);
+    expect(input.body.url).toMatch(
+      /^http:\/\/localhost:3002\/artifacts\/[a-z0-9]{10}\.png$/u,
+    );
     const artifact = await accept(
       api()(uploadsContract).prepare({
         headers,
@@ -257,7 +265,9 @@ describe("private artifact uploads", () => {
       }),
       [200],
     );
-    expect(artifact.body.url).toMatch(/^\/artifacts\/[a-z0-9]{10}\.html$/u);
+    expect(artifact.body.url).toMatch(
+      /^http:\/\/localhost:3002\/artifacts\/[a-z0-9]{10}\.html$/u,
+    );
   });
 
   it("returns a stable owner URL, signs only the private bucket, and downloads safely from the API origin", async () => {

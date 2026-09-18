@@ -15,6 +15,11 @@ import { apiClient$ } from "./api-client.ts";
 
 const AUTHENTICATED_FILE_PATH = "/api/web/download-file";
 
+export function artifactReferenceLookupKey(url: string): string {
+  const reference = parseArtifactReference(url, location.origin);
+  return reference ? `artifact:${reference.hash}${reference.extension}` : url;
+}
+
 export function isAuthenticatedAttachmentUrl(url: string): boolean {
   if (!URL.canParse(url)) {
     return false;
