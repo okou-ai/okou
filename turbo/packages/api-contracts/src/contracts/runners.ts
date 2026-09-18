@@ -345,10 +345,11 @@ export const connectorRuntimeBuiltinAvailableResultSchema =
     state: z.literal("available"),
     networkPolicy: networkPolicySchema,
     firewall: executionFirewallInlineEntrySchema
+      .omit({ customConnectorId: true })
       .extend({
-        customConnectorId: z.never().optional(),
         sourceId: z.uuid(),
       })
+      .strict()
       .optional(),
   });
 

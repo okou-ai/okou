@@ -1009,6 +1009,45 @@ describe("connector runtime synchronization contract", () => {
     expect(execution.connectorRuntimeTargets).toEqual([target]);
   });
 
+  it("keeps builtin inline firewalls bound to a builtin account source", () => {
+    const result = {
+      target: { kind: "builtin", connectorSlug: "plaud-mcp" },
+      state: "available",
+      firewall: {
+        kind: "inline",
+        sourceId: "10000000-0000-4000-8000-000000000001",
+        firewall: {
+          name: "plaud-mcp",
+          apis: [
+            {
+              id: "plaud-mcp:0",
+              base: "https://mcp.example.com",
+              auth: {},
+            },
+          ],
+        },
+      },
+      networkPolicy: { allow: [], deny: [], ask: [], unknownPolicy: "deny" },
+    };
+
+    expect(connectorRuntimeSyncResultSchema.parse(result)).toEqual(result);
+    expect(
+      connectorRuntimeSyncResultSchema.safeParse({
+        ...result,
+        firewall: undefined,
+      }).success,
+    ).toBe(true);
+    for (const firewall of [
+      { ...result.firewall, sourceId: undefined },
+      { ...result.firewall, customConnectorId },
+    ]) {
+      expect(
+        connectorRuntimeSyncResultSchema.safeParse({ ...result, firewall })
+          .success,
+      ).toBe(false);
+    }
+  });
+
   it("requires stable API identities on available custom firewalls", () => {
     const result = {
       target: { kind: "custom" as const, customConnectorId },
