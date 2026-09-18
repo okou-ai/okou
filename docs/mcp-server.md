@@ -110,9 +110,11 @@ starting positions; `textComplete` and `filesComplete` identify its completion.
 Whenever either is false, follow `nextContentCursor` through the same tool and
 concatenate text and files in offset order. Content continuation returns one
 message segment and no history-page cursors; retain the original page's cursors
-separately. Oversized indivisible metadata fails explicitly. Complete structured
-responses are capped at 160 KiB, reserving space for the SDK's duplicate text
-representation and JSON escaping within a 512 KiB tool result.
+separately. A large attachment can occupy a segment on its own; its text resumes
+from the unchanged text offset in later segments. Oversized indivisible metadata
+fails explicitly. Complete structured responses are capped at 160 KiB,
+reserving space for the SDK's duplicate text representation and JSON escaping
+within a 512 KiB tool result.
 
 Signed cursors bind the user, selected organization, thread, run filter, page
 size and operation, and expire 24 hours after the initial page. History cursors
@@ -142,9 +144,12 @@ request; it does not offer indexed random access. Limits are cumulative:
 Histories exceeding these limits return an explicit resource error, never an
 apparently complete prefix. Lowering `limit` or adding `runId` does not avoid full
 reconstruction and cannot make an oversized history fit. Missing/corrupt archive
-storage returns an unavailable error, not an empty conversation. Empty accessible
-threads return an empty successful page. Invalid/expired cursors, changed views,
-unavailable references and inaccessible threads have separate recovery messages.
+storage returns an unavailable error, not an empty conversation. Repeated event
+IDs in the combined archive and tail also return an unavailable error until the
+canonical snapshot writer repairs the identities; reads never deduplicate or
+rewrite them. Empty accessible threads return an empty successful page.
+Invalid/expired cursors, changed views, unavailable references and inaccessible
+threads have separate recovery messages.
 
 Synthetic measurements on Node 24.21 used the actual bounded reader, semantic
 projection and cursor generation with local PostgreSQL and simulated R2: 25,000

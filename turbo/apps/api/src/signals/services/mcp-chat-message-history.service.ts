@@ -405,8 +405,20 @@ export function readMcpChatMessageHistory(
               budget,
             );
             const tail = await readHistoryTail(tx, threadId, pages, budget);
+            const history = [...archive, ...tail];
+            const eventIds = new Set<string>();
+            for (const event of history) {
+              budget.check();
+              if (eventIds.has(event.id)) {
+                // Historical archives can contain IDs that the canonical
+                // snapshot writer has not normalized yet. Their revoke and
+                // content references are ambiguous until that repair lands.
+                throw new Error("Chat history event identity is ambiguous");
+              }
+              eventIds.add(event.id);
+            }
             budget.check();
-            return [...archive, ...tail];
+            return history;
           },
           { isolationLevel: "repeatable read", accessMode: "read only" },
         ),

@@ -204,9 +204,9 @@ function segment(
     end -= 1;
   }
   const files = message.files.slice(fileOffset, fileOffset + FILES_PER_SEGMENT);
-  const textComplete = end === message.text.length;
   const messageDigest = digest(message);
   for (;;) {
+    const textComplete = end === message.text.length;
     const filesComplete = fileOffset + files.length === message.files.length;
     const result: McpChatMessage = {
       ...message,
@@ -233,6 +233,12 @@ function segment(
     }
     if (files.length > 1) {
       files.pop();
+      continue;
+    }
+    if (files.length > 0 && end > textOffset) {
+      // A file can fit by itself even when its metadata and this text segment
+      // cannot. Deliver the file now and keep the text offset for continuation.
+      end = textOffset;
       continue;
     }
     throw new McpMessageHistoryError(

@@ -1,5 +1,5 @@
 import { createHash, generateKeyPairSync, randomUUID, sign } from "node:crypto";
-import { gzipSync } from "node:zlib";
+import { gunzipSync, gzipSync } from "node:zlib";
 import {
   Client,
   StreamableHTTPClientTransport,
@@ -11,6 +11,7 @@ import {
   mcpListChatThreadsOutputSchema,
 } from "@okouai/api-contracts/contracts/mcp-chat-threads";
 import { mcpGetChatMessagesOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-messages";
+import { chatEventRowSchema } from "@okouai/api-contracts/contracts/chat-event-rows";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { testChatEventSnapshotContract } from "@okouai/api-contracts/contracts/test-chat-event-snapshot";
 import { testChatEventSearchProjectionContract } from "@okouai/api-contracts/contracts/test-chat-event-search-projection";
@@ -946,6 +947,61 @@ describe("MCP canonical message reads", () => {
     ).toBe(3);
   });
 
+  it("continues text and individually bounded file metadata when their combined segment is oversized", async () => {
+    const f = await messageFixture();
+    const fileId = randomUUID();
+    const filename = "f".repeat(60_000);
+    const text = "Read this file. ".repeat(600);
+    f.chat.mockCompletedUploadObject(f.actor, fileId, "source.png", 42);
+    const sent = await f.send(text, undefined, {
+      version: 1,
+      parts: [
+        { type: "text", text },
+        {
+          type: "file",
+          fileId,
+          filenameSnapshot: filename,
+          contentType: "image/png",
+        },
+      ],
+    });
+    const args = { threadId: sent.threadId, limit: 1 };
+    const token = f.auth.token();
+    let page = await getMessages(token, args);
+    let collectedText = "";
+    const collectedFiles: { fileId: string; filename: string }[] = [];
+    let segments = 0;
+    for (;;) {
+      expect(segments++).toBeLessThan(20);
+      const message = page.messages[0];
+      if (!message) {
+        throw new Error("Expected a recoverable text/file segment");
+      }
+      expect(Buffer.byteLength(JSON.stringify(message))).toBeLessThanOrEqual(
+        64 * 1024,
+      );
+      expect(message.textOffset).toBe(collectedText.length);
+      expect(message.fileOffset).toBe(collectedFiles.length);
+      expect(message.text.length + message.files.length).toBeGreaterThan(0);
+      collectedText += message.text;
+      collectedFiles.push(...message.files);
+      if (message.nextContentCursor === null) {
+        expect(message.textComplete).toBeTruthy();
+        expect(message.filesComplete).toBeTruthy();
+        break;
+      }
+      page = await getMessages(token, {
+        ...args,
+        cursor: message.nextContentCursor,
+      });
+    }
+    expect(segments).toBeGreaterThan(1);
+    expect(collectedText).toBe(`${text}\n\n[File: ${filename}]`);
+    expect(collectedFiles).toStrictEqual([
+      { fileId, filename, contentType: "image/png" },
+    ]);
+  });
+
   it("reports oversized file metadata explicitly without losing content behind a missing continuation", async () => {
     const f = await messageFixture();
     const fileId = randomUUID();
@@ -1005,6 +1061,96 @@ describe("MCP canonical message reads", () => {
       },
     ]);
   });
+
+  it.each(["archive", "archive and tail"] as const)(
+    "rejects ambiguous duplicate message identities across %s until the canonical snapshot is repaired",
+    async (source) => {
+      const f = await messageFixture();
+      const puts: RecordedChatEventPut[] = [];
+      installFakeChatEventR2(context, puts);
+      const sent = await f.send("First archived message");
+      onTestFinished(async () => {
+        await f.chat.deleteThread(f.actor, sent.threadId);
+      });
+      await f.send("Second archived message", sent.threadId);
+      await snapshotMessages(sent.threadId);
+      const archive = puts.at(-1);
+      if (!archive) {
+        throw new Error("Expected an archive for duplicate identity coverage");
+      }
+      if (source === "archive and tail") {
+        await f.send("Current database tail", sent.threadId);
+      }
+      const token = f.auth.token();
+      const args = { threadId: sent.threadId };
+      const before = await getMessages(token, args);
+      const firstId = before.messages[0]?.ref.eventId;
+      const duplicateId = before.messages.at(-1)?.ref.eventId;
+      if (!firstId || !duplicateId || firstId === duplicateId) {
+        throw new Error("Expected distinct canonical visible message IDs");
+      }
+      // Infrastructure exception: legacy persisted archives can contain IDs
+      // that the canonical snapshot writer must normalize. Public writes do
+      // not produce duplicate live primary keys, so install that historical
+      // storage state using the shared fake R2 and snapshot-head fixture.
+      const rows = gunzipSync(archive.body)
+        .toString("utf8")
+        .trimEnd()
+        .split("\n")
+        .map((line) => {
+          return chatEventRowSchema.parse(JSON.parse(line));
+        });
+      const body = gzipSync(
+        Buffer.from(
+          rows
+            .map((row) => {
+              return `${JSON.stringify({
+                ...row,
+                id: row.id === firstId ? duplicateId : row.id,
+              })}\n`;
+            })
+            .join(""),
+        ),
+      );
+      const last = rows.at(-1);
+      if (!last) {
+        throw new Error("Expected a nonempty historical archive");
+      }
+      const key = `chat-events/${sent.threadId}/${last.seqId.toString()}-${createHash("sha256").update(body).digest("hex")}.ndjson.gz`;
+      writeFakeChatEventObject(key, body);
+      onTestFinished(async () => {
+        await deleteFakeChatEventObject(key);
+      });
+      await updateChatEventSnapshotHead(context, sent.threadId, key);
+
+      const failed = await callTool(token, "get_chat_messages", args);
+      expect(failed.isError).toBeTruthy();
+      expect(failed.structuredContent).toBeUndefined();
+      expect(failed.content[0]?.text).toContain("could not be read completely");
+      for (const message of before.messages) {
+        expect(JSON.stringify(failed)).not.toContain(message.text);
+      }
+
+      await snapshotMessages(sent.threadId);
+      const repaired = await getMessages(token, args);
+      expect(
+        repaired.messages.map((message) => {
+          return message.text;
+        }),
+      ).toStrictEqual(
+        before.messages.map((message) => {
+          return message.text;
+        }),
+      );
+      expect(
+        new Set(
+          repaired.messages.map((message) => {
+            return message.ref.eventId;
+          }),
+        ).size,
+      ).toBe(repaired.messages.length);
+    },
+  );
 
   it("reports missing, corrupt or oversized archives instead of returning an apparently complete tail", async () => {
     const f = await messageFixture();
