@@ -31,13 +31,7 @@ import chalk from "chalk";
 import { Command, InvalidArgumentError } from "commander";
 
 import { withErrorHandler } from "../../lib/command/with-error-handler";
-import {
-  browser,
-  childPath,
-  operatorPath,
-  SETTLE,
-  TIMEOUT_MS,
-} from "./shared";
+import { browser, childPath, operatorPath, SETTLE, TIMEOUT_MS } from "./shared";
 
 const RENDERER_PACKAGE = "dom-to-pptx@2.1.2";
 const RENDERER_BUNDLE = "dom-to-pptx.bundle.js";
@@ -121,7 +115,6 @@ const NORMALIZE = `(() => {
   }
   return 1;
 })()`;
-
 
 /**
  * Prepares the live deck for export, carrying over the fixes the retired in-app
@@ -315,7 +308,12 @@ function rendererRoot(): string {
     configured === undefined || configured === ""
       ? join(homedir(), ".cache")
       : configured;
-  return join(cacheHome, "okou", "presentation-convert", RENDERER_CACHE_VERSION);
+  return join(
+    cacheHome,
+    "okou",
+    "presentation-convert",
+    RENDERER_CACHE_VERSION,
+  );
 }
 
 /**
@@ -339,7 +337,9 @@ function ensureRenderer(): string {
       stdio: ["ignore", "ignore", process.stderr],
       timeout: TIMEOUT_MS,
     });
-    const tarball = readdirSync(staging).find((name) => name.endsWith(".tgz"));
+    const tarball = readdirSync(staging).find((name) => {
+      return name.endsWith(".tgz");
+    });
     if (tarball === undefined) {
       throw new Error(`npm pack produced no tarball in ${staging}`);
     }
@@ -653,8 +653,12 @@ function normalizeForCompare(value: string): string {
 function deckText(deck: Buffer): { slides: number; text: string } {
   const entries = zipEntries(deck);
   const slideNames = [...entries.keys()]
-    .filter((name) => /^ppt\/slides\/slide\d+\.xml$/u.test(name))
-    .sort((left, right) => left.localeCompare(right, "en", { numeric: true }));
+    .filter((name) => {
+      return /^ppt\/slides\/slide\d+\.xml$/u.test(name);
+    })
+    .sort((left, right) => {
+      return left.localeCompare(right, "en", { numeric: true });
+    });
   const parts: string[] = [];
   for (const name of slideNames) {
     const xml = entries.get(name)?.toString("utf8") ?? "";
@@ -667,7 +671,6 @@ function deckText(deck: Buffer): { slides: number; text: string } {
     text: normalizeForCompare(parts.join("")),
   };
 }
-
 
 /**
  * Finds a family in the deck's own font stacks that can draw Chinese, Japanese,
@@ -709,7 +712,8 @@ const RESOLVE_EAST_ASIAN = `(() => {
   return JSON.stringify("");
 })()`;
 
-const CJK = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af\uf900-\ufaff]/u;
+const CJK =
+  /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af\uf900-\ufaff]/u;
 
 /** Rebuilds a ZIP from its entries; a .pptx has no directory or stream entries. */
 function packZip(entries: ReadonlyMap<string, Buffer>): Buffer {
@@ -763,7 +767,11 @@ function postProcess(deck: Buffer, eastAsianFont: string): Buffer {
   const entries = zipEntries(deck);
   let touched = false;
   for (const [name, content] of entries) {
-    if (!/^ppt\/(slides|slideLayouts|slideMasters|notesSlides)\/[^/]+\.xml$/u.test(name)) {
+    if (
+      !/^ppt\/(slides|slideLayouts|slideMasters|notesSlides)\/[^/]+\.xml$/u.test(
+        name,
+      )
+    ) {
       continue;
     }
     const xml = content.toString("utf8");
@@ -823,19 +831,17 @@ function verifyDeck(rendered: Rendered): VerifyReport {
 
 // --- command ----------------------------------------------------------------
 
-function convert(options: Options): void {
+async function convert(options: Options): Promise<void> {
   const bundle = ensureRenderer();
   const rendered = render(options, bundle);
 
   const target =
-    options.out ??
-    `${basename(options.input, extname(options.input))}.pptx`;
+    options.out ?? `${basename(options.input, extname(options.input))}.pptx`;
   const out = operatorPath(target);
   writeFileSync(out, rendered.deck);
 
   const report = options.verify ? verifyDeck(rendered) : undefined;
-  const failed =
-    report !== undefined && report.coverage < TEXT_COVERAGE_FLOOR;
+  const failed = report !== undefined && report.coverage < TEXT_COVERAGE_FLOOR;
 
   if (options.json === true) {
     console.log(
@@ -871,7 +877,12 @@ function convert(options: Options): void {
   console.log(chalk.dim(`  Output:   ${out}`));
   console.log(chalk.dim(`  Slides:   ${rendered.slides.toString()}`));
   console.log(chalk.dim(`  Selector: ${rendered.selector}`));
-  if (rendered.eastAsianFont !== "" && rendered.texts.some((entry) => CJK.test(entry))) {
+  if (
+    rendered.eastAsianFont !== "" &&
+    rendered.texts.some((entry) => {
+      return CJK.test(entry);
+    })
+  ) {
     console.log(chalk.dim(`  CJK font: ${rendered.eastAsianFont}`));
   }
   if (report !== undefined) {
