@@ -2480,7 +2480,7 @@ ownership and global deletion finality remain S7 gates.
 
 ## Morning Brief retained generation authority (#35054)
 
-Migration 1164 generalizes collection occurrences from Slack-only to an exact
+Migration 1165 generalizes collection occurrences from Slack-only to an exact
 kind-specific binding and adds the all-source generation provenance:
 instruction version/digest, reported language, retained source descriptors and
 deadline, complete installation/automation/destination ids, and
@@ -2501,7 +2501,7 @@ The API and migration therefore have these mixed-version rules:
   newer API.
 - **New code before migration** must not be promoted. Reservation, stored-result
   revalidation, and expiry sanitation name the new columns directly; without
-  migration 1164 they fail with `42703`. The default-off feature switch and
+  migration 1165 they fail with `42703`. The default-off feature switch and
   protected preview route contain provider use, but they are not a substitute
   for the repository's migration-before-API ordering.
 - **New readers of old rows** preserve only the Slack-only contract. A row whose
