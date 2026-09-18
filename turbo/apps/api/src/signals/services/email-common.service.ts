@@ -38,6 +38,7 @@ import { renderOfficialAutomationResultEmail } from "./official-automation-resul
 import {
   admitNativeMorningBriefEmail,
   currentNativeMorningBriefMembership,
+  lockNativeMorningBriefEmailAdmission,
   MORNING_BRIEF_RESULT_EMAIL_TEMPLATE,
   peekNativeMorningBriefEmailOwner,
   type NativeMorningBriefOwnerPreflight,
@@ -580,7 +581,14 @@ async function prepareNextOutboxItem(
   itemIds?: readonly string[],
 ): Promise<PrepareOutcome> {
   return await db.transaction(async (tx) => {
-    const currentTime = new Date(currentTimeMs);
+    // Native cleanup locks its member, Agent or thread/automation authority
+    // before deleting delivery and outbox. Take those same authority and policy
+    // locks before touching the outbox, then revalidate the exact relationship
+    // after the claim wait. Generic producers keep their direct outbox claim.
+    const nativeAdmission = await lockNativeMorningBriefEmailAdmission(
+      tx,
+      nativeOwnerPreflight,
+    );
     const [selectedRow] = await tx
       .select(outboxRowSelection())
       .from(emailOutbox)
@@ -602,7 +610,7 @@ async function prepareNextOutboxItem(
             isNull(emailOutbox.nextRetryAt),
             // Keep the Date schema-bound so Drizzle encodes its UTC wall-clock
             // value instead of letting node-postgres apply the process timezone.
-            lte(emailOutbox.nextRetryAt, currentTime),
+            lte(emailOutbox.nextRetryAt, new Date(currentTimeMs)),
           ),
         ),
       )
@@ -651,7 +659,7 @@ async function prepareNextOutboxItem(
       const admission = await admitNativeMorningBriefEmail(
         tx,
         itemId,
-        nativeOwnerPreflight,
+        nativeAdmission,
       );
       if (admission.kind === "rejected") {
         return await resolveWithoutSending(tx, itemId, admission.reason);

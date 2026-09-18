@@ -30,13 +30,15 @@ function printCleanupWarning(cleanupWarning: boolean): void {
 
 const listCommand = new Command()
   .name("list")
-  .description("List MCP Custom Connectors authorized for this Agent")
+  .description("List MCP connectors authorized for this Agent")
   .option("--json", "Print compact JSON")
   .action(
     withErrorHandler(async (options: JsonOptions) => {
       const connectors = (await listRunMcpConnectors()).map((connector) => {
         return {
           slug: connector.slug,
+          target: connector.target,
+          connectionId: connector.connectionId,
           displayName: connector.displayName,
           transport: connector.transport,
           endpoint: connector.endpoint,
@@ -91,7 +93,7 @@ const listToolsCommand = new Command()
   .description("List tools exposed by an authorized MCP connector")
   .argument(
     "<selector>",
-    "MCP custom connector slug, UUID, or unique display name; custom: prefix accepted",
+    "MCP connector slug, custom UUID, or unique display name; builtin: and custom: prefixes accepted",
   )
   .option("--json", "Print compact JSON")
   .action(
@@ -147,7 +149,7 @@ const callCommand = new Command()
   .description("Call one tool on an authorized MCP connector")
   .argument(
     "<selector>",
-    "MCP custom connector slug, UUID, or unique display name; custom: prefix accepted",
+    "MCP connector slug, custom UUID, or unique display name; builtin: and custom: prefixes accepted",
   )
   .argument("<tool-name>", "Exact MCP tool name")
   .addOption(inputOption)
@@ -180,7 +182,7 @@ const callCommand = new Command()
 
 export const mcpCommand = new Command()
   .name("mcp")
-  .description("Use MCP Custom Connectors authorized for this Agent")
+  .description("Use MCP connectors authorized for this Agent")
   .addCommand(listCommand)
   .addCommand(listToolsCommand)
   .addCommand(callCommand)
@@ -195,7 +197,7 @@ Examples:
   Pipe tool input:               printf '{"query":"okou"}' | okou mcp call _acme-mcp search
 
 Notes:
-  - Select by full slug, UUID, custom:<selector>, or an exact unique display name
+  - Select by full slug, custom UUID, builtin:<selector>, custom:<selector>, or an exact unique display name
   - Available only inside an Agent Run and scoped to its Agent's current authorization
   - Runner remains execution authority; authorization changes may require a new Run
   - Runner applies endpoint policy and injects connector credentials

@@ -69,10 +69,10 @@ const IMPORT_FORMATS = CUSTOM_TEMPLATE_IMPORT_ACCEPT.split(",").join(", ");
  * One meta line: who can see it — or, for a colleague's template, whose it is,
  * because a visibility the reader cannot change is not worth the row.
  *
- * The page count is dropped when there is none. A document template is its
- * styles, so the API reports `null` rather than a zero; printing "0 pages"
- * would describe it as an empty deck instead of a kind that never had pages.
- * The row still names the file it was compiled from.
+ * It carries nothing else. Which file the template was compiled from and how
+ * many pages it has describe the template rather than distinguish it, and a
+ * grid is read by what tells its tiles apart; both are still answered by the
+ * detail column, which is where they are asked for.
  */
 function CustomTemplateMeta({
   template,
@@ -81,7 +81,7 @@ function CustomTemplateMeta({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted-foreground">
+    <div className="min-w-0 text-xs text-muted-foreground">
       {template.canManage ? (
         <VisibilityLabel visibility={template.visibility} />
       ) : (
@@ -95,17 +95,6 @@ function CustomTemplateMeta({
           )}
         </span>
       )}
-      {template.pageCount === null ? null : (
-        <span>
-          {t(
-            ($) => {
-              return $.templates.pageCount;
-            },
-            { count: template.pageCount },
-          )}
-        </span>
-      )}
-      <span className="truncate">{template.sourceFilename}</span>
     </div>
   );
 }

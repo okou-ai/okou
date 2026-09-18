@@ -6363,8 +6363,6 @@
       "description": "Okou turns your file's design into a template you can reuse."
     },
     "loadFailed": "Couldn't load templates.",
-    "pageCount_one": "{{count}} page",
-    "pageCount_other": "{{count}} pages",
     "renameFailed": "Couldn't rename the template.",
     "retry": "Retry",
     "sharedBy": "Shared by {{owner}}",

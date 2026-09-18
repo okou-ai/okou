@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import {
   check,
+  index,
   integer,
   pgTable,
   text,
@@ -16,8 +17,10 @@ import { slackChatThreadRoutes } from "./slack-chat-thread-route";
 export type SlackChatIngressStatus =
   | "pending"
   | "processing"
+  | "retryable"
   | "processed"
-  | "failed";
+  | "failed"
+  | "terminal";
 
 /**
  * Durable admission record for canonical Slack events. Slack retries reuse the
@@ -44,6 +47,11 @@ export const slackChatIngress = pgTable(
       .default("pending")
       .notNull(),
     retryCount: integer("retry_count").default(0).notNull(),
+    processingAttemptCount: integer("processing_attempt_count")
+      .default(0)
+      .notNull(),
+    retryAt: timestamp("retry_at"),
+    lastErrorClass: varchar("last_error_class", { length: 128 }),
     lastError: text("last_error"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -51,13 +59,22 @@ export const slackChatIngress = pgTable(
   (table) => {
     return [
       uniqueIndex("idx_slack_chat_ingress_event_id").on(table.eventId),
+      index("idx_slack_chat_ingress_retry_sweep").on(
+        table.status,
+        table.retryAt,
+        table.updatedAt,
+      ),
       check(
         "chk_slack_chat_ingress_status",
-        sql`${table.status} IN ('pending', 'processing', 'processed', 'failed')`,
+        sql`${table.status} IN ('pending', 'processing', 'retryable', 'processed', 'failed', 'terminal')`,
       ),
       check(
         "chk_slack_chat_ingress_retry_count",
         sql`${table.retryCount} >= 0`,
+      ),
+      check(
+        "chk_slack_chat_ingress_processing_attempt_count",
+        sql`${table.processingAttemptCount} >= 0`,
       ),
     ];
   },

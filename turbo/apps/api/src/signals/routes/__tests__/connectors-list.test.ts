@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
   connectorManualGrantContract,
+  connectorScopeDiffContract,
   connectorsBySlugContract,
   connectorsMainContract,
 } from "@okouai/api-contracts/contracts/connectors";
@@ -68,7 +69,7 @@ async function connectGitlab(fixture: AuthenticatedFixture): Promise<void> {
 
 async function deleteConnector(
   fixture: AuthenticatedFixture,
-  connectorSlug: "gitlab" | "openai",
+  connectorSlug: "gitlab" | "openai" | "manual-mcp",
 ): Promise<void> {
   mocks.clerk.session(fixture.userId, fixture.orgId);
   const client = setupApp({ context, routes: connectorAccountRoutes })(
@@ -105,6 +106,7 @@ describe("GET /api/connectors", () => {
       if (fixture) {
         await deleteConnector(fixture, "gitlab");
         await deleteConnector(fixture, "openai");
+        await deleteConnector(fixture, "manual-mcp");
       }
     }
   });
@@ -153,6 +155,47 @@ describe("GET /api/connectors", () => {
         name: "GITLAB_TOKEN",
       }),
     );
+  });
+
+  it("lists HTTP and MCP accounts but exposes sandbox bindings only for HTTP connectors", async () => {
+    const fixture = seedAuthenticatedFixture();
+    seededFixtures.push(fixture);
+    await connectGitlab(fixture);
+    await accept(
+      setupApp({ context, routes: connectorsRoutes })(
+        connectorManualGrantContract,
+      ).connect({
+        headers: authHeaders(),
+        params: { connectorSlug: "manual-mcp" },
+        body: {
+          authMethod: "api-token",
+          account: { intent: "add" },
+          values: { apiKey: "test-mcp-token" },
+        },
+      }),
+      [200],
+    );
+    const client = setupApp({ context, routes: connectorsRoutes })(
+      connectorsMainContract,
+    );
+    const listed = await accept(client.list({ headers: authHeaders() }), [200]);
+    expect(
+      listed.body.connectors.map((connector) => {
+        return connector.slug;
+      }),
+    ).toStrictEqual(expect.arrayContaining(["gitlab", "manual-mcp"]));
+    expect(listed.body.connectorProvidedBindings).toStrictEqual([
+      expect.objectContaining({
+        connectorSlug: "gitlab",
+        namespace: "secrets",
+        name: "GITLAB_TOKEN",
+      }),
+      expect.objectContaining({
+        connectorSlug: "gitlab",
+        namespace: "vars",
+        name: "GITLAB_HOST",
+      }),
+    ]);
   });
 
   it("projects only the default account for each connector target", async () => {
@@ -227,10 +270,23 @@ describe("GET /api/connectors", () => {
     );
   });
 
-  it("skips stored connectors when the external catalog is unavailable", async () => {
+  it("keeps stored connector reads empty or unavailable when the external catalog is unavailable", async () => {
     const fixture = seedAuthenticatedFixture();
     seededFixtures.push(fixture);
     await connectGitlab(fixture);
+    const accountClient = setupApp({
+      context,
+      routes: connectorAccountRoutes,
+    })(connectorAccountsContract);
+    const target = { kind: "builtin" as const, connectorSlug: "gitlab" };
+    const connected = await accept(
+      accountClient.connections({ headers: authHeaders(), query: target }),
+      [200],
+    );
+    const [account] = connected.body.connections;
+    if (!account) {
+      throw new Error("Expected the connected GitLab account");
+    }
     mockOptionalEnv("BOX_OAUTH_CLIENT_ID", undefined);
     await installApiTestConnectorCatalog();
     await invalidateApiTestConnectorCatalogCompatibility();
@@ -248,6 +304,67 @@ describe("GET /api/connectors", () => {
       connectors: [],
       connectorProvidedBindings: [],
     });
+    const unavailableReads = await Promise.all([
+      accept(
+        accountClient.oauthCompletion({
+          headers: authHeaders(),
+          query: target,
+          params: { attemptId: randomUUID() },
+        }),
+        [404],
+      ),
+      accept(
+        accountClient.connections({ headers: authHeaders(), query: target }),
+        [404],
+      ),
+      accept(
+        accountClient.connection({
+          headers: authHeaders(),
+          query: target,
+          params: { connectionId: account.id },
+        }),
+        [404],
+      ),
+      accept(
+        accountClient.scopeDiff({
+          headers: authHeaders(),
+          query: { connectorSlug: "gitlab" },
+          params: { connectionId: account.id },
+        }),
+        [404],
+      ),
+      accept(
+        accountClient.deletionImpact({
+          headers: authHeaders(),
+          query: target,
+          params: { connectionId: account.id },
+        }),
+        [404],
+      ),
+      accept(
+        setupApp({ context, routes: connectorsRoutes })(
+          connectorScopeDiffContract,
+        ).getScopeDiff({
+          headers: authHeaders(),
+          params: { connectorSlug: "gitlab" },
+        }),
+        [404],
+      ),
+    ]);
+    for (const result of unavailableReads) {
+      expect(result.body.error.code).toBe("NOT_FOUND");
+    }
+    const selection = { target, connectionId: account.id };
+    const inspected = await accept(
+      accountClient.inspect({
+        headers: authHeaders(),
+        body: { selections: [selection] },
+      }),
+      [200],
+    );
+    expect(inspected.body.results).toStrictEqual([
+      { kind: "unavailable", ...selection },
+    ]);
   });
 
   it("returns 401 when not authenticated", async () => {

@@ -1567,6 +1567,11 @@ async fn finalizing_immediate_handoff_reuses_matching_sandbox_past_preference_de
     assert_eq!(env.idle_pool.lock().await.len(), 0);
     assert_eq!(overrides.unpark_call_count(), 1);
     assert_eq!(
+        overrides.park_call_count(),
+        0,
+        "the immediate successor takes over the running sandbox before physical park"
+    );
+    assert_eq!(
         overrides.completed_final_exec_park_handoff_points(),
         vec![sandbox::SandboxFinalExecParkHandoffPoint::BeforeBalloon],
         "runner integration must exercise the typed immediate-handoff path"
@@ -1593,6 +1598,108 @@ async fn finalizing_immediate_handoff_reuses_matching_sandbox_past_preference_de
     );
 
     destroy_gate.release_one();
+    shutdown(&env, run_handle).await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn late_finalizing_successor_can_take_over_the_running_predecessor() {
+    let wait_gate = sandbox_mock::MockLifecycleGate::new();
+    let exec_gate = sandbox_mock::MockLifecycleGate::new();
+    let park_gate = sandbox_mock::MockLifecycleGate::new();
+    let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+    overrides.set_wait_process_lifecycle_gate(wait_gate.clone());
+    overrides.set_park_lifecycle_gate(park_gate.clone());
+    overrides.push_final_exec_park_handoff_point(
+        sandbox::SandboxFinalExecParkHandoffPoint::DuringDeflation,
+    );
+    let (config, env) =
+        mock_run_config_with_overrides(test_profiles(), 2, 4096, 1, Arc::clone(&overrides));
+    let run_handle = tokio::spawn(run(config));
+    wait_discover_entered(&env, Duration::from_secs(2)).await;
+
+    let reuse_key = "thread:late-finalizing-handoff";
+    let predecessor_run_id = RunId::new_v4();
+    push_job(
+        &env,
+        predecessor_run_id,
+        "vm0/default",
+        Some(context_with_reuse_key(predecessor_run_id, reuse_key)),
+    );
+    wait_gate
+        .wait_entered(1, Duration::from_secs(5))
+        .await
+        .expect("predecessor should consume the only sandbox capacity");
+
+    // Hold the Guest's final reuse-preparation response through the real Runner
+    // finalization path. No successor exists yet and physical park remains gated.
+    overrides.set_exec_lifecycle_gate(exec_gate.clone());
+    wait_gate.release_one();
+    exec_gate
+        .wait_entered(1, Duration::from_secs(5))
+        .await
+        .expect("predecessor should enter final reuse preparation");
+    assert!(
+        overrides
+            .exec_calls()
+            .last()
+            .is_some_and(|call| call.cmd.contains("prepare-for-reuse"))
+    );
+    tokio::time::advance(Duration::from_secs(2)).await;
+
+    let successor_run_id = RunId::new_v4();
+    env.provider.set_claim_result(
+        successor_run_id,
+        Some(context_with_reuse_key(successor_run_id, reuse_key)),
+    );
+    env.handle
+        .discover_tx
+        .send(finalizing_candidate(
+            successor_run_id,
+            reuse_key,
+            predecessor_run_id,
+            TEST_RUNNER_ID,
+            TEST_HEARTBEAT_GENERATION,
+        ))
+        .unwrap();
+    wait_discover_entered(&env, Duration::from_secs(5)).await;
+    // Give the newly claimed request time to observe its acceptance deadline
+    // while the producer cannot accept it. Its own grace must still be open.
+    tokio::time::advance(Duration::from_millis(100)).await;
+    tokio::task::yield_now().await;
+    exec_gate.release_one();
+
+    wait_gate
+        .wait_entered(2, Duration::from_secs(5))
+        .await
+        .expect("late successor should start without releasing physical park");
+    wait_gate.release_one();
+    exec_gate
+        .wait_entered(2, Duration::from_secs(5))
+        .await
+        .expect("successor should finish and enter reuse preparation");
+    exec_gate.release_one();
+    park_gate.release_one();
+
+    let predecessor_completion = env
+        .handle
+        .wait_completion(predecessor_run_id, Duration::from_secs(5))
+        .await
+        .expect("predecessor should complete after its running handoff");
+    let successor_completion = env
+        .handle
+        .wait_completion(successor_run_id, Duration::from_secs(5))
+        .await
+        .expect("successor should complete with the transferred sandbox");
+    assert_eq!(successor_completion.exit_code, 0);
+    assert_eq!(
+        successor_completion.reuse_result,
+        Some(SandboxReuseResult::Reused)
+    );
+    assert_eq!(
+        successor_completion.sandbox_id, predecessor_completion.sandbox_id,
+        "late demand must reuse the predecessor instead of waiting for fresh capacity"
+    );
+
     shutdown(&env, run_handle).await;
 }
 
@@ -1673,9 +1780,6 @@ async fn finalizing_handoff_grace_starts_when_predecessor_enters_finalization() 
         "vm0/default".into(),
     );
     let predecessor_reuse = predecessor_guard.reuse_publisher();
-    let finalization_started = tokio::time::Instant::now().into_std();
-    assert!(predecessor_reuse.mark_finalizing(finalization_started));
-    tokio::time::advance(Duration::from_millis(500)).await;
     let run_handle = tokio::spawn(run(config));
     wait_discover_entered(&env, Duration::from_secs(2)).await;
 
@@ -1701,6 +1805,11 @@ async fn finalizing_handoff_grace_starts_when_predecessor_enters_finalization() 
             .any(|candidate| candidate.run_id() == run_id)
     );
 
+    // The request already exists when finalization begins. Its acceptance grace
+    // starts at that transition, independently of the earlier wait start.
+    tokio::time::advance(Duration::from_millis(500)).await;
+    let finalization_started = tokio::time::Instant::now().into_std();
+    assert!(predecessor_reuse.mark_finalizing(finalization_started));
     let finalization_deadline = finalization_started
         + super::super::super::finalizing_claim::FINALIZING_HANDOFF_ACCEPTANCE_GRACE;
     let remaining =

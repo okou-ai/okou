@@ -95,6 +95,7 @@ export interface ConnectorServerFirewallHostOwner {
 
 export interface ConnectorServerFirewallMetadataCatalog {
   has(connectorSlug: string): boolean;
+  isMcp(connectorSlug: string): boolean;
   loadPermissionIndex(
     connectorSlug: string,
   ): Promise<ConnectorServerFirewallPermissionIndex | null>;
@@ -418,9 +419,7 @@ function acceptedEntries(args: {
     AcceptedConnectorServerFirewallEntry
   >();
   for (const connector of args.connectors) {
-    // MCP transport metadata cannot supply HTTP execution rules or reusable
-    // HTTP permission bundles before the protocol-aware runtime in #34910.
-    if (connector.mcp !== undefined || connector.firewall.kind === "none") {
+    if (connector.firewall.kind === "none") {
       continue;
     }
     if (entries.has(connector.slug)) {
@@ -597,6 +596,9 @@ export function createAcceptedConnectorServerFirewallCatalogFromConnectors(args:
     has: (connectorSlug) => {
       return entries.has(connectorSlug);
     },
+    isMcp: (connectorSlug) => {
+      return entries.get(connectorSlug)?.connector.mcp !== undefined;
+    },
     getExecutionMetadata: (connectorSlug) => {
       const entry = entries.get(connectorSlug);
       return entry ? acceptedEntryExecutionMetadata(entry) : null;
@@ -641,6 +643,11 @@ export function selectConnectorServerFirewalls(args: {
   };
   return {
     has: selectedEntryExists,
+    isMcp: (connectorSlug) => {
+      return (
+        selectedEntryExists(connectorSlug) && args.catalog.isMcp(connectorSlug)
+      );
+    },
     getExecutionMetadata: (connectorSlug) => {
       return selectedEntryExists(connectorSlug)
         ? args.catalog.getExecutionMetadata(connectorSlug)

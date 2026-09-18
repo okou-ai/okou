@@ -1130,19 +1130,34 @@ function noMatchDiagnostic(
   };
 }
 
-function ambiguousDiagnostic(
+function unresolvedOwnerDiagnostic(
   decision: Extract<FirewallRequestDecision, { readonly kind: "ambiguous" }>,
   configs: readonly ConnectorCheckRoutingConfig[],
+  catalogContext: ConnectorCheckCatalogContext,
 ): ConnectorCheckTargetAwareDiagnosticResult {
+  const candidates = decision.candidates.map((candidate) => {
+    const config = configs.find((entry) => {
+      return connectorRuntimeTargetKey(entry.target) === candidate;
+    });
+    if (!config) {
+      throw new Error(`Matched an unknown connector target: ${candidate}`);
+    }
+    return config;
+  });
+  const [soleCandidate] = candidates;
+  if (
+    decision.reason === "connector_intent_not_candidate" &&
+    candidates.length === 1 &&
+    soleCandidate
+  ) {
+    return {
+      outcome: "connector-mismatch",
+      connector: targetIdentity(soleCandidate, catalogContext),
+    };
+  }
   return {
     outcome: "ambiguous",
-    candidates: decision.candidates.map((candidate) => {
-      const config = configs.find((entry) => {
-        return connectorRuntimeTargetKey(entry.target) === candidate;
-      });
-      if (!config) {
-        throw new Error(`Matched an unknown connector target: ${candidate}`);
-      }
+    candidates: candidates.map((config) => {
       return {
         target: config.target,
         label: config.label,
@@ -1385,7 +1400,7 @@ async function resolveUrlMode(
     );
   }
   if (decision.kind === "ambiguous") {
-    return ambiguousDiagnostic(decision, configs);
+    return unresolvedOwnerDiagnostic(decision, configs, catalogContext);
   }
   return resolvedUrlDiagnostic({
     request,

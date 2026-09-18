@@ -75,7 +75,11 @@ export function runMcpConnector(
   overrides: Partial<McpConnector> = {},
 ): McpConnector {
   return {
-    id: "44444444-4444-4444-8444-444444444444",
+    target: {
+      kind: "custom",
+      customConnectorId: "44444444-4444-4444-8444-444444444444",
+    },
+    connectionId: "77777777-7777-4777-8777-777777777777",
     slug: "_acme-mcp",
     displayName: "Acme MCP",
     transport: "streamable-http",

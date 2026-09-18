@@ -104,6 +104,7 @@ function actionRowFor(text: string): HTMLElement {
 }
 
 test("Share selected message groups as a public conversation snapshot", async () => {
+  const clipboard = context.mocks.browser.clipboardWriteText();
   const createRequests: string[][] = [];
   mockConversation();
   context.mocks.api(sharedThreadsContract.create, ({ body, respond }) => {
@@ -167,6 +168,10 @@ test("Share selected message groups as a public conversation snapshot", async ()
   expect(shareLink).toHaveValue(
     `https://app.okou.ai/share/threads/${SHARED_THREAD_ID}`,
   );
+  await expect(screen.findByText("Link copied")).resolves.toBeInTheDocument();
+  expect(clipboard.writes).toStrictEqual([
+    `https://app.okou.ai/share/threads/${SHARED_THREAD_ID}`,
+  ]);
   expect(within(answerGroup).getByRole("checkbox")).toBeChecked();
   expect(screen.queryByTestId("chat-event-actions")).toBeNull();
 });

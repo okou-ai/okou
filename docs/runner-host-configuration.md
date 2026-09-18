@@ -68,13 +68,30 @@ resource budget. Firecracker pauses vCPUs without requesting aggressive idle
 balloon inflation. Guest quiesce and operation fencing still complete before pause. This avoids a
 large idle-only inflate/deflate cycle when a prepared sandbox is claimed.
 
-Unpark resumes vCPUs, requests target zero, and confirms exact target/actual
-page counts are zero before reopening Guest operations. This returns real
-memory rather than correcting displayed counters. The convergence wait,
-including in-flight statistics requests, is bounded at five seconds; failures
-keep operations fenced and use the existing destroy/fresh-create recovery.
-Physical deflation adds latency to reuse. No background balloon controller or
-Agent-readiness reclamation gate remains. The full profile budget stays reserved
+Reusable exact/session park inflates the balloon under the existing bounded
+reclamation policy, then requests target zero and completes deflation before
+pausing vCPUs. Deflation returns capacity to the Guest allocator without eagerly
+repopulating backing discarded by Firecracker; subsequent Guest accesses can
+fault that backing in again. Reclamation diagnostics and severe-retention
+rejection are decided against the original positive target before deflation.
+Background park allows up to 30 seconds for deflation convergence, including
+in-flight statistics requests, to tolerate slow deflation without discarding a
+reusable sandbox at the foreground deadline. This wait remains interruptible by
+an exact-successor handoff. The deadline starts after the target-zero PATCH
+completes; it does not bound the whole park operation. A stalled sandbox retains
+its full resource budget until recovery destroys it. A longer park can delay
+hard-cancellation cleanup and local-provider completion, which wait for finalization.
+
+Unpark of a completed reusable park resumes vCPUs and Guest operations without
+another balloon request or statistics query. Park already completed deflation,
+and no other owner changes the target while idle; blank preparation never
+inflated. Running handoffs and non-reusable cleanup still request target zero
+and wait for exact target/actual page counts to reach zero before reopening Guest
+operations. Their convergence wait, including in-flight statistics requests, is
+bounded at five seconds; failures keep operations fenced and use the existing
+destroy/fresh-create recovery. An accepted handoff starts this foreground wait
+instead of inheriting the remaining background deadline. No background balloon
+controller or Agent-readiness reclamation gate remains. The full profile budget stays reserved
 throughout. Minimum profiles never inflate and skip this balloon recovery.
 
 Zero page counts describe the currently reported state, not a target-generation
@@ -83,11 +100,19 @@ after an earlier zero sample. Reporting itself also temporarily isolates free
 pages. This policy prevents sustained active inflation; it does not promise
 literally invariant `MemFree`/`MemAvailable` at every instant.
 
-Exact/session idle sandboxes continue requesting ordinary balloon reclamation
-before vCPU pause, retaining at least the supported minimum profile capacity.
-This also applies after a claimed blank completes its first run. Direct
-handoff may still interrupt idle settling; the successor confirms physical
-deflation through the same readiness boundary before starting work.
+An exact successor can take over the still-running sandbox before inflation,
+during reclamation or deflation, or before pause commits. The park owner reverses
+the target to zero, retires the predecessor assignment and transfers the fenced
+resource without pausing it. The successor completes deflation and Guest lifecycle
+resume before opening operations; it does not issue a vCPU resume for this running
+handoff. A request after pause has started receives the completed parked resource.
+Running handoffs remain bound to the exact successor and cannot enter ordinary
+idle inventory. Cancelled or rejected transfers retain their full resource lease
+through destruction. This policy also applies after a claimed blank completes its
+first run; the initial tenant-free blank preparation still skips reclamation.
+The handoff acceptance grace remains 1.5 seconds, starting from the later of
+predecessor finalization and successor wait initiation so late demand gets an
+acceptance window. An already accepted handoff does not expire at that boundary.
 
 Pool sizing, full-profile admission, exact-first reuse and blank-first pressure
 eviction are unchanged. Preserving blank memory can increase physical idle

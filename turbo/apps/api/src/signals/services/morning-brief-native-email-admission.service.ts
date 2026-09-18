@@ -4,7 +4,11 @@ import { chatThreads } from "@okouai/db/schema/chat-thread";
 import { morningBriefCollectionOccurrences } from "@okouai/db/schema/morning-brief-collection-occurrence";
 import { morningBriefDeliveries } from "@okouai/db/schema/morning-brief-delivery";
 import { users } from "@okouai/db/schema/user";
-import { workflowAutomations } from "@okouai/db/schema/workflow";
+import {
+  workflows,
+  workflowAutomations,
+  workflowUserAutomationThreads,
+} from "@okouai/db/schema/workflow";
 import {
   and,
   asc,
@@ -42,6 +46,35 @@ type NativeMorningBriefEmailAdmission =
   | { readonly kind: "rejected"; readonly reason: string }
   /** No usable live-owner evidence this pass. Nothing is sent or failed. */
   | { readonly kind: "deferred"; readonly reason: string };
+
+type NativeMorningBriefDelivery = Pick<
+  typeof morningBriefDeliveries.$inferSelect,
+  | "orgId"
+  | "userId"
+  | "scheduledFor"
+  | "collectionKind"
+  | "collectionVersion"
+  | "membershipId"
+  | "nativeOwnerEpoch"
+  | "executionPurpose"
+  | "workflowId"
+  | "automationId"
+  | "agentId"
+  | "chatThreadId"
+>;
+
+/**
+ * Authority locks taken before the shared worker touches the outbox row.
+ *
+ * The delivery is deliberately carried as a snapshot: after the worker obtains
+ * the outbox lock it re-reads this relationship and refuses any changed or
+ * missing provenance instead of accepting across the unlocked discovery gap.
+ */
+interface LockedNativeMorningBriefEmailAdmission {
+  readonly outboxId: string;
+  readonly admission: NativeMorningBriefEmailAdmission;
+  readonly delivery: NativeMorningBriefDelivery | null;
+}
 
 /** Live-owner evidence resolved outside the claim transaction. */
 export interface NativeMorningBriefOwnerPreflight {
@@ -245,121 +278,58 @@ function checkPreflight(
   return null;
 }
 
-/**
- * The exact installation, schedule and Agent this delivery acted under, all
- * still current and still enabled.
- *
- * Comparing the Agent alone would let a reinstalled brief on the same Agent
- * authorize the previous installation's mail. The Agent row is locked before
- * the automation, because Chat delivery takes those two rows in that order;
- * the opposite order here would let a delivery holding the Agent and a drain
- * holding the automation wait on each other.
- */
-async function checkOwnerBinding(
-  tx: Tx,
-  delivery: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly executionPurpose: "preview" | "production";
-    readonly workflowId: string;
-    readonly automationId: string;
-    readonly agentId: string;
-  },
-): Promise<NativeMorningBriefEmailAdmission | null> {
-  const [agent] = await tx
-    .select({
-      owner: agents.owner,
-      visibility: agents.visibility,
-    })
-    .from(agents)
-    .where(
-      and(eq(agents.id, delivery.agentId), eq(agents.orgId, delivery.orgId)),
-    )
-    .limit(1)
-    .for("update");
-  if (
-    !agent ||
-    (agent.visibility === "private" && agent.owner !== delivery.userId)
-  ) {
-    return rejected("Morning Brief installation Agent is no longer usable");
-  }
-
-  if (delivery.executionPurpose === "production") {
-    return null;
-  }
-
-  const state = await loadMorningBriefMigrationState(tx, {
-    orgId: delivery.orgId,
-    userId: delivery.userId,
-  });
-  if (
-    state.kind !== "installed" ||
-    state.installation.id !== delivery.workflowId ||
-    state.installation.agentId !== delivery.agentId ||
-    state.automation.id !== delivery.automationId
-  ) {
-    return rejected(
-      "Morning Brief is no longer installed on the binding this delivery used",
-    );
-  }
-
-  const [automation] = await tx
-    .select({ enabled: workflowAutomations.enabled })
-    .from(workflowAutomations)
-    .where(
-      and(
-        eq(workflowAutomations.id, delivery.automationId),
-        eq(workflowAutomations.orgId, delivery.orgId),
-        eq(workflowAutomations.ownerUserId, delivery.userId),
-        eq(workflowAutomations.workflowId, delivery.workflowId),
-      ),
-    )
-    .limit(1)
-    .for("update");
-  return automation?.enabled
-    ? null
-    : rejected("Morning Brief is no longer enabled for this owner");
+function nativeDeliverySelection() {
+  return {
+    orgId: morningBriefDeliveries.orgId,
+    userId: morningBriefDeliveries.userId,
+    scheduledFor: morningBriefDeliveries.scheduledFor,
+    collectionKind: morningBriefDeliveries.collectionKind,
+    collectionVersion: morningBriefDeliveries.collectionVersion,
+    membershipId: morningBriefDeliveries.membershipId,
+    nativeOwnerEpoch: morningBriefDeliveries.nativeOwnerEpoch,
+    executionPurpose: morningBriefDeliveries.executionPurpose,
+    workflowId: morningBriefDeliveries.workflowId,
+    automationId: morningBriefDeliveries.automationId,
+    agentId: morningBriefDeliveries.agentId,
+    chatThreadId: morningBriefDeliveries.chatThreadId,
+  };
 }
 
-/** The destination thread this delivery wrote to, still owned by that Agent. */
-async function checkDestination(
+async function loadNativeDelivery(
   tx: Tx,
-  delivery: {
-    readonly userId: string;
-    readonly agentId: string;
-    readonly chatThreadId: string;
-  },
-): Promise<NativeMorningBriefEmailAdmission | null> {
-  const [destination] = await tx
-    .select({ threadId: chatThreads.id })
-    .from(chatThreads)
-    .innerJoin(
-      agents,
-      and(eq(agents.id, chatThreads.agentId), eq(agents.id, delivery.agentId)),
-    )
-    .where(
-      and(
-        eq(chatThreads.id, delivery.chatThreadId),
-        eq(chatThreads.userId, delivery.userId),
-      ),
-    )
+  outboxId: string,
+): Promise<NativeMorningBriefDelivery | undefined> {
+  const [delivery] = await tx
+    .select(nativeDeliverySelection())
+    .from(morningBriefDeliveries)
+    .where(eq(morningBriefDeliveries.emailOutboxId, outboxId))
     .limit(1);
-  return destination
-    ? null
-    : rejected("Morning Brief delivery destination is no longer owned");
+  return delivery;
 }
 
-async function checkNativeAuthority(
+function sameNativeDelivery(
+  left: NativeMorningBriefDelivery,
+  right: NativeMorningBriefDelivery,
+): boolean {
+  return (
+    left.orgId === right.orgId &&
+    left.userId === right.userId &&
+    left.scheduledFor.getTime() === right.scheduledFor.getTime() &&
+    left.collectionKind === right.collectionKind &&
+    left.collectionVersion === right.collectionVersion &&
+    left.membershipId === right.membershipId &&
+    left.nativeOwnerEpoch === right.nativeOwnerEpoch &&
+    left.executionPurpose === right.executionPurpose &&
+    left.workflowId === right.workflowId &&
+    left.automationId === right.automationId &&
+    left.agentId === right.agentId &&
+    left.chatThreadId === right.chatThreadId
+  );
+}
+
+async function lockNativeAuthority(
   tx: Tx,
-  delivery: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly membershipId: string;
-    readonly nativeOwnerEpoch: number | null;
-    readonly executionPurpose: string;
-    readonly agentId: string;
-    readonly chatThreadId: string;
-  },
+  delivery: NativeMorningBriefDelivery,
 ): Promise<NativeMorningBriefEmailAdmission | null> {
   if (delivery.executionPurpose !== "production") {
     return null;
@@ -377,63 +347,10 @@ async function checkNativeAuthority(
     : null;
 }
 
-/**
- * Decide whether one native Morning Brief outbox row may still be sent.
- *
- * This runs inside the drain's own claim transaction, immediately before the
- * provider request is committed, so it observes the owner's state as of the
- * send rather than as of enqueue. Every failure is closed, and no path here
- * can downgrade a native intent to a generic email. An admission that has
- * already handed a request to the provider cannot be retracted; this gate only
- * decides whether a request is made at all.
- */
-export async function admitNativeMorningBriefEmail(
+async function lockOccurrence(
   tx: Tx,
-  outboxId: string,
-  preflight: NativeMorningBriefOwnerPreflight | null,
-): Promise<NativeMorningBriefEmailAdmission> {
-  const [delivery] = await tx
-    .select({
-      orgId: morningBriefDeliveries.orgId,
-      userId: morningBriefDeliveries.userId,
-      scheduledFor: morningBriefDeliveries.scheduledFor,
-      collectionKind: morningBriefDeliveries.collectionKind,
-      collectionVersion: morningBriefDeliveries.collectionVersion,
-      membershipId: morningBriefDeliveries.membershipId,
-      nativeOwnerEpoch: morningBriefDeliveries.nativeOwnerEpoch,
-      executionPurpose: morningBriefDeliveries.executionPurpose,
-      workflowId: morningBriefDeliveries.workflowId,
-      automationId: morningBriefDeliveries.automationId,
-      agentId: morningBriefDeliveries.agentId,
-      chatThreadId: morningBriefDeliveries.chatThreadId,
-    })
-    .from(morningBriefDeliveries)
-    .where(eq(morningBriefDeliveries.emailOutboxId, outboxId))
-    .limit(1);
-  if (!delivery) {
-    return rejected("Morning Brief email has no native delivery provenance");
-  }
-
-  const owner = { orgId: delivery.orgId, userId: delivery.userId };
-  const preflightRefusal = checkPreflight(
-    outboxId,
-    owner,
-    delivery.membershipId,
-    preflight,
-  );
-  if (preflightRefusal) {
-    return preflightRefusal;
-  }
-
-  if (!(await lockCollectionOwner(tx, owner))) {
-    return rejected("Morning Brief delivery owner was revoked or erased");
-  }
-
-  const nativeRefusal = await checkNativeAuthority(tx, delivery);
-  if (nativeRefusal) {
-    return nativeRefusal;
-  }
-
+  delivery: NativeMorningBriefDelivery,
+): Promise<NativeMorningBriefEmailAdmission | null> {
   const [occurrence] = await tx
     .select({ membershipId: morningBriefCollectionOccurrences.membershipId })
     .from(morningBriefCollectionOccurrences)
@@ -455,35 +372,258 @@ export async function admitNativeMorningBriefEmail(
         ),
       ),
     )
-    .limit(1);
-  if (!occurrence || occurrence.membershipId !== delivery.membershipId) {
+    .limit(1)
+    .for("key share");
+  return occurrence?.membershipId === delivery.membershipId
+    ? null
+    : rejected(
+        "Morning Brief delivery no longer matches its frozen membership generation",
+      );
+}
+
+async function lockInstallationAgent(
+  tx: Tx,
+  delivery: NativeMorningBriefDelivery,
+): Promise<NativeMorningBriefEmailAdmission | null> {
+  const [agent] = await tx
+    .select({ owner: agents.owner, visibility: agents.visibility })
+    .from(agents)
+    .where(
+      and(eq(agents.id, delivery.agentId), eq(agents.orgId, delivery.orgId)),
+    )
+    .limit(1)
+    .for("update");
+  return agent &&
+    (agent.visibility !== "private" || agent.owner === delivery.userId)
+    ? null
+    : rejected("Morning Brief installation Agent is no longer usable");
+}
+
+function stateMatchesDelivery(
+  state: Awaited<ReturnType<typeof loadMorningBriefMigrationState>>,
+  delivery: NativeMorningBriefDelivery,
+): boolean {
+  return (
+    state.kind === "installed" &&
+    state.installation.id === delivery.workflowId &&
+    state.installation.agentId === delivery.agentId &&
+    state.automation.id === delivery.automationId &&
+    state.chatThreadId === delivery.chatThreadId
+  );
+}
+
+/**
+ * Lock the destination and canonical installation in thread-deletion order.
+ *
+ * Discovery is intentionally unlocked. The exact thread, workflow/thread
+ * binding, installation and automation are then locked and the canonical state
+ * is resolved again after the last wait. A thread deletion that won first is
+ * therefore observed; one that arrived later waits before it can detach the
+ * outbox relationship.
+ */
+async function lockOwnerBinding(
+  tx: Tx,
+  delivery: NativeMorningBriefDelivery,
+): Promise<NativeMorningBriefEmailAdmission | null> {
+  if (delivery.executionPurpose !== "production") {
+    const discovered = await loadMorningBriefMigrationState(tx, {
+      orgId: delivery.orgId,
+      userId: delivery.userId,
+    });
+    if (!stateMatchesDelivery(discovered, delivery)) {
+      return rejected(
+        "Morning Brief is no longer installed on the binding this delivery used",
+      );
+    }
+  }
+
+  const [destination] = await tx
+    .select({ id: chatThreads.id })
+    .from(chatThreads)
+    .where(
+      and(
+        eq(chatThreads.id, delivery.chatThreadId),
+        eq(chatThreads.userId, delivery.userId),
+        eq(chatThreads.agentId, delivery.agentId),
+      ),
+    )
+    .limit(1)
+    .for("update");
+  if (!destination) {
+    return rejected("Morning Brief delivery destination is no longer owned");
+  }
+  if (delivery.executionPurpose === "production") {
+    // Native authority was locked first. Once the canonical destination is
+    // pinned too, a deleted legacy Workflow is no longer part of delivery
+    // authority and cannot suppress an already-admitted native obligation.
+    return null;
+  }
+
+  const [binding] = await tx
+    .select({ workflowId: workflowUserAutomationThreads.workflowId })
+    .from(workflowUserAutomationThreads)
+    .where(
+      and(
+        eq(workflowUserAutomationThreads.orgId, delivery.orgId),
+        eq(workflowUserAutomationThreads.userId, delivery.userId),
+        eq(workflowUserAutomationThreads.workflowId, delivery.workflowId),
+        eq(workflowUserAutomationThreads.chatThreadId, delivery.chatThreadId),
+      ),
+    )
+    .limit(1)
+    .for("update");
+  if (!binding) {
     return rejected(
-      "Morning Brief delivery no longer matches its frozen membership generation",
+      "Morning Brief is no longer installed on the binding this delivery used",
     );
   }
 
-  const bindingRefusal = await checkOwnerBinding(tx, delivery);
-  if (bindingRefusal) {
-    return bindingRefusal;
+  const [installation] = await tx
+    .select({ agentId: workflows.agentId })
+    .from(workflows)
+    .where(
+      and(
+        eq(workflows.id, delivery.workflowId),
+        eq(workflows.orgId, delivery.orgId),
+        eq(workflows.ownerUserId, delivery.userId),
+      ),
+    )
+    .limit(1)
+    .for("update");
+  if (installation?.agentId !== delivery.agentId) {
+    return rejected(
+      "Morning Brief is no longer installed on the binding this delivery used",
+    );
   }
 
-  const destinationRefusal = await checkDestination(tx, delivery);
-  if (destinationRefusal) {
-    return destinationRefusal;
+  const [automation] = await tx
+    .select({ enabled: workflowAutomations.enabled })
+    .from(workflowAutomations)
+    .where(
+      and(
+        eq(workflowAutomations.id, delivery.automationId),
+        eq(workflowAutomations.orgId, delivery.orgId),
+        eq(workflowAutomations.ownerUserId, delivery.userId),
+        eq(workflowAutomations.workflowId, delivery.workflowId),
+      ),
+    )
+    .limit(1)
+    .for("update");
+  if (!automation?.enabled) {
+    return rejected("Morning Brief is no longer enabled for this owner");
   }
 
-  // The delivery transaction created this row before deciding, so the lock has
-  // something to take. Explicit unsubscribe and complaint handling upsert the
-  // same row, which is what serializes them with this decision.
+  const current = await loadMorningBriefMigrationState(tx, {
+    orgId: delivery.orgId,
+    userId: delivery.userId,
+  });
+  return stateMatchesDelivery(current, delivery)
+    ? null
+    : rejected(
+        "Morning Brief is no longer installed on the binding this delivery used",
+      );
+}
+
+async function lockSubscription(
+  tx: Tx,
+  userId: string,
+): Promise<NativeMorningBriefEmailAdmission | null> {
+  // Delivery creates this row before enqueueing, so FOR UPDATE always has a
+  // row to retain. Every opt-out writer upserts the same row.
   const [preference] = await tx
     .select({ emailUnsubscribed: users.emailUnsubscribed })
     .from(users)
-    .where(eq(users.id, delivery.userId))
+    .where(eq(users.id, userId))
     .for("update")
     .limit(1);
-  if (preference?.emailUnsubscribed ?? false) {
-    return rejected("Recipient unsubscribed from optional email");
+  return preference?.emailUnsubscribed
+    ? rejected("Recipient unsubscribed from optional email")
+    : null;
+}
+
+/**
+ * Acquire native authority and policy locks before the shared worker claims an
+ * outbox row.
+ *
+ * Cleanup paths acquire member, thread/automation or Agent first and outbox
+ * last. Mirroring that protocol here removes the old outbox → authority edge.
+ * Remote membership evidence has already been resolved before this transaction.
+ */
+export async function lockNativeMorningBriefEmailAdmission(
+  tx: Tx,
+  preflight: NativeMorningBriefOwnerPreflight | null,
+): Promise<LockedNativeMorningBriefEmailAdmission | null> {
+  if (!preflight) {
+    return null;
+  }
+  const delivery = await loadNativeDelivery(tx, preflight.outboxId);
+  if (!delivery) {
+    return {
+      outboxId: preflight.outboxId,
+      admission: rejected(
+        "Morning Brief email has no native delivery provenance",
+      ),
+      delivery: null,
+    };
   }
 
-  return { kind: "admitted" };
+  const owner = { orgId: delivery.orgId, userId: delivery.userId };
+  let admission = checkPreflight(
+    preflight.outboxId,
+    owner,
+    delivery.membershipId,
+    preflight,
+  );
+  if (!admission && !(await lockCollectionOwner(tx, owner))) {
+    admission = rejected("Morning Brief delivery owner was revoked or erased");
+  }
+  admission ??= await lockNativeAuthority(tx, delivery);
+  admission ??= await lockOccurrence(tx, delivery);
+  admission ??= await lockInstallationAgent(tx, delivery);
+  admission ??= await lockOwnerBinding(tx, delivery);
+  admission ??= await lockSubscription(tx, delivery.userId);
+
+  return {
+    outboxId: preflight.outboxId,
+    admission: admission ?? { kind: "admitted" },
+    delivery,
+  };
+}
+
+/**
+ * Revalidate the exact delivery relationship after the outbox row is locked.
+ *
+ * The authority locks above keep valid policy stable while this transaction
+ * waits. This final read closes the earlier unlocked discovery window itself:
+ * missing or changed provenance is rejected, never sent as generic email.
+ */
+export async function admitNativeMorningBriefEmail(
+  tx: Tx,
+  outboxId: string,
+  locked: LockedNativeMorningBriefEmailAdmission | null,
+): Promise<NativeMorningBriefEmailAdmission> {
+  if (!locked || locked.outboxId !== outboxId) {
+    // A provenance-free native template can appear here without a preflight,
+    // because candidate discovery joins through the delivery row. Resolve that
+    // corrupt state instead of deferring it forever; a valid delivery selected
+    // by a different concurrent claim still waits for its own live evidence.
+    const delivery = await loadNativeDelivery(tx, outboxId);
+    return delivery
+      ? {
+          kind: "deferred",
+          reason:
+            "Morning Brief email has no live-owner evidence for this pass",
+        }
+      : rejected("Morning Brief email has no native delivery provenance");
+  }
+  if (locked.admission.kind !== "admitted") {
+    return locked.admission;
+  }
+  if (!locked.delivery) {
+    return rejected("Morning Brief email has no native delivery provenance");
+  }
+  const current = await loadNativeDelivery(tx, outboxId);
+  return current && sameNativeDelivery(current, locked.delivery)
+    ? { kind: "admitted" }
+    : rejected("Morning Brief email native delivery provenance changed");
 }

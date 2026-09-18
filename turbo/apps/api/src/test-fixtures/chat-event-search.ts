@@ -7,7 +7,7 @@ import {
   chatEventSearchMessageWatermarks,
 } from "@okouai/db/schema/chat-event-search";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
-import { asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 
 import { db } from "../lib/db";
 import { chatSearchIndexText } from "../lib/chat-search-bigram";
@@ -282,6 +282,46 @@ export async function renameChatSearchAgentFixture(args: {
   if (updated.length !== 1) {
     throw new Error("Expected one chat search agent to rename");
   }
+}
+
+/**
+ * Timestamp precision infrastructure: public event writes use server time and
+ * cannot choose PostgreSQL microseconds, and the live JS projector normalizes
+ * dates to milliseconds. Historical SQL-produced projection rows can retain six
+ * digits. Set one already-projected event's stored timestamps to prove MCP reads
+ * and paginates that database precision without depending on a specific writer.
+ */
+export async function setChatSearchEventTimestampPrecisionFixture(args: {
+  readonly eventId: string;
+  readonly createdAt: string;
+}): Promise<void> {
+  await db().transaction(async (tx) => {
+    await tx.execute(sql`SET LOCAL session_replication_role = replica`);
+    const [event] = await tx
+      .update(chatEvents)
+      .set({ createdAt: sql`${args.createdAt}::timestamp` })
+      .where(eq(chatEvents.id, args.eventId))
+      .returning({
+        threadId: chatEvents.chatThreadId,
+        seqId: chatEvents.seqId,
+      });
+    if (!event) {
+      throw new Error("Expected one owned event timestamp to change");
+    }
+    const changed = await tx
+      .update(chatEventSearchMessages)
+      .set({ createdAt: sql`${args.createdAt}::timestamp` })
+      .where(
+        and(
+          eq(chatEventSearchMessages.chatThreadId, event.threadId),
+          eq(chatEventSearchMessages.seqId, event.seqId),
+        ),
+      )
+      .returning({ seqId: chatEventSearchMessages.seqId });
+    if (changed.length !== 1) {
+      throw new Error("Expected one owned projection timestamp to change");
+    }
+  });
 }
 
 export async function insertSearchablePromptFixture(args: {

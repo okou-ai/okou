@@ -7,7 +7,6 @@ import {
   type CreateCustomConnectorBody,
 } from "@okouai/api-contracts/contracts/custom-connectors";
 import { mcpConnectorsContract } from "@okouai/api-contracts/contracts/mcp-connectors";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -145,9 +144,6 @@ describe("GET /api/mcp-connectors", () => {
     const agent = await bdd.createAgent(actor, {
       displayName: "MCP Discovery Agent",
     });
-    await connectors.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
-    });
     const selected = await connectors.createCustomConnector(
       actor,
       manualMcpConnectorBody({
@@ -246,7 +242,8 @@ describe("GET /api/mcp-connectors", () => {
     expect(staleSelected.body).toStrictEqual({
       connectors: [
         {
-          id: selected.id,
+          target: { kind: "custom", customConnectorId: selected.id },
+          connectionId: selectedAccountId,
           slug: "_selected-mcp",
           displayName: "Selected MCP",
           transport: "streamable-http",
@@ -283,7 +280,10 @@ describe("GET /api/mcp-connectors", () => {
       [200],
     );
     expect(currentSelected.body.connectors).toStrictEqual([
-      expect.objectContaining({ id: selected.id, connected: true }),
+      expect.objectContaining({
+        target: { kind: "custom", customConnectorId: selected.id },
+        connected: true,
+      }),
     ]);
 
     const peer = bdd.user({ orgId: actor.orgId });
@@ -318,6 +318,67 @@ describe("GET /api/mcp-connectors", () => {
     expect(foreignResponse.body).toStrictEqual({ connectors: [] });
   });
 
+  it("keeps an admitted no-auth MCP available without checking its account", async () => {
+    const actor = bdd.user();
+    bdd.acceptAgentStorageWrites();
+    runs.acceptStorageDownloads();
+    runs.acceptTelemetryIngest();
+    runs.configureRunnerGroup();
+    await runs.grantProEntitlement(actor);
+    await runs.ensureOrgModelProvider(actor);
+    const agent = await bdd.createAgent(actor, {
+      displayName: "Public MCP Agent",
+    });
+    const body = {
+      kind: "mcp",
+      slug: "_public-mcp",
+      displayName: "Public MCP",
+      endpoint: "https://public-mcp.example.test/server",
+      transport: "streamable-http",
+      fields: [],
+      headerInjections: [],
+      queryInjections: [],
+      authMode: "none",
+    } satisfies McpCreateBody;
+    const connector = await connectors.createCustomConnector(actor, body);
+    const connectionId = requireConnectedAccountId(
+      await connectors.setCustomConnectorValues(actor, connector.id, []),
+    );
+    await connectors.updateAgentCustomConnectors(actor, agent.agentId, [
+      connector.id,
+    ]);
+    const run = await createRunForAgent(actor, agent.agentId);
+    const token = exactConnectorRunToken({
+      actor,
+      runId: run.runId,
+      customConnectorSourceIds: { [connector.id]: connectionId },
+    });
+    await connectors.updateCustomConnector(actor, connector.id, {
+      ...body,
+      storageVersion: 2,
+    });
+    await connectors.deleteCustomConnectorAccount(
+      actor,
+      connector.id,
+      connectionId,
+    );
+    const response = await accept(
+      client().list({ headers: headers(token) }),
+      [200],
+    );
+    expect(response.body.connectors).toStrictEqual([
+      {
+        target: { kind: "custom", customConnectorId: connector.id },
+        connectionId,
+        slug: body.slug,
+        displayName: body.displayName,
+        transport: body.transport,
+        endpoint: body.endpoint,
+        connected: true,
+      },
+    ]);
+  });
+
   it("does not fall back when the exact run account is deleted or mismatched", async () => {
     const actor = bdd.user();
     bdd.acceptAgentStorageWrites();
@@ -326,9 +387,6 @@ describe("GET /api/mcp-connectors", () => {
     runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
     await runs.ensureOrgModelProvider(actor);
-    await connectors.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
-    });
     const agent = await bdd.createAgent(actor, {
       displayName: "MCP exact identity Agent",
     });
@@ -394,7 +452,10 @@ describe("GET /api/mcp-connectors", () => {
       [200],
     );
     expect(deleted.body.connectors).toStrictEqual([
-      expect.objectContaining({ id: selected.id, connected: false }),
+      expect.objectContaining({
+        target: { kind: "custom", customConnectorId: selected.id },
+        connected: false,
+      }),
     ]);
 
     const mismatched = await accept(
@@ -410,7 +471,10 @@ describe("GET /api/mcp-connectors", () => {
       [200],
     );
     expect(mismatched.body.connectors).toStrictEqual([
-      expect.objectContaining({ id: selected.id, connected: false }),
+      expect.objectContaining({
+        target: { kind: "custom", customConnectorId: selected.id },
+        connected: false,
+      }),
     ]);
   });
 
@@ -422,9 +486,6 @@ describe("GET /api/mcp-connectors", () => {
     runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
     await runs.ensureOrgModelProvider(actor);
-    await connectors.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
-    });
     const agent = await bdd.createAgent(actor, {
       displayName: "Legacy MCP discovery Agent",
     });
@@ -503,7 +564,7 @@ describe("GET /api/mcp-connectors", () => {
   });
 });
 
-describe("POST /api/mcp-connectors/:id/oauth2/reauthorize", () => {
+describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
   it.each(["cimd", "dcr"] as const)(
     "reauthorizes the exact Automatic OAuth account pinned to the run with %s",
     async (registration) => {
@@ -524,9 +585,6 @@ describe("POST /api/mcp-connectors/:id/oauth2/reauthorize", () => {
       await runs.ensureOrgModelProvider(actor);
       const agent = await bdd.createAgent(actor, {
         displayName: "MCP scope reauthorization Agent",
-      });
-      await connectors.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.CustomConnectorMcp]: true,
       });
       const connector = await connectors.createCustomConnector(actor, {
         kind: "mcp",
@@ -606,15 +664,20 @@ describe("POST /api/mcp-connectors/:id/oauth2/reauthorize", () => {
       const response = await accept(
         client().reauthorizeOAuth({
           headers: headers(okouToken),
-          params: { id: connector.id },
-          body: { scopes: ["admin"] },
+          body: {
+            target: { kind: "custom", customConnectorId: connector.id },
+            scopes: ["admin"],
+          },
         }),
         [200],
       );
 
       const authorizationUrl = new URL(response.body.authorizationUrl);
       expect(authorizationUrl.searchParams.get("scope")).toBe("read admin");
-      expect(response.body.expiresAt).toStrictEqual(expect.any(String));
+      expect(response.body).toMatchObject({
+        kind: "oauth",
+        expiresAt: expect.any(String),
+      });
       expect(provider.registrationBodies).toHaveLength(registrationCount);
       const reauthorizationState = stateFromAuthorizationUrl(
         response.body.authorizationUrl,
@@ -652,8 +715,10 @@ describe("POST /api/mcp-connectors/:id/oauth2/reauthorize", () => {
       const removedIssuer = await accept(
         client().reauthorizeOAuth({
           headers: headers(okouToken),
-          params: { id: connector.id },
-          body: { scopes: ["owner"] },
+          body: {
+            target: { kind: "custom", customConnectorId: connector.id },
+            scopes: ["owner"],
+          },
         }),
         [409],
       );
@@ -666,7 +731,7 @@ describe("POST /api/mcp-connectors/:id/oauth2/reauthorize", () => {
     },
   );
 
-  it("rejects Automatic accounts resolved to no authentication", async () => {
+  it("discovers Automatic no-auth accounts without offering OAuth reauthorization", async () => {
     bdd.acceptAgentStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
@@ -683,9 +748,6 @@ describe("POST /api/mcp-connectors/:id/oauth2/reauthorize", () => {
     await runs.ensureOrgModelProvider(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "MCP no-auth reauthorization Agent",
-    });
-    await connectors.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
     });
     const connector = await connectors.createCustomConnector(actor, {
       kind: "mcp",
@@ -722,11 +784,24 @@ describe("POST /api/mcp-connectors/:id/oauth2/reauthorize", () => {
       throw new Error("Expected the claimed run to include an Okou token");
     }
 
+    const discovery = await accept(
+      client().list({ headers: headers(okouToken) }),
+      [200],
+    );
+    expect(discovery.body.connectors).toStrictEqual([
+      expect.objectContaining({
+        target: { kind: "custom", customConnectorId: connector.id },
+        connected: true,
+      }),
+    ]);
+
     const response = await accept(
       client().reauthorizeOAuth({
         headers: headers(okouToken),
-        params: { id: connector.id },
-        body: { scopes: ["admin"] },
+        body: {
+          target: { kind: "custom", customConnectorId: connector.id },
+          scopes: ["admin"],
+        },
       }),
       [409],
     );
@@ -744,8 +819,10 @@ describe("POST /api/mcp-connectors/:id/oauth2/reauthorize", () => {
     const unauthenticated = await accept(
       client().reauthorizeOAuth({
         headers: {},
-        params: { id: connectorId },
-        body: { scopes: ["admin"] },
+        body: {
+          target: { kind: "custom", customConnectorId: connectorId },
+          scopes: ["admin"],
+        },
       }),
       [401],
     );
@@ -754,8 +831,10 @@ describe("POST /api/mcp-connectors/:id/oauth2/reauthorize", () => {
         headers: headers(
           runs.okouTokenForRunWithCapabilities(actor, runId, []),
         ),
-        params: { id: connectorId },
-        body: { scopes: ["admin"] },
+        body: {
+          target: { kind: "custom", customConnectorId: connectorId },
+          scopes: ["admin"],
+        },
       }),
       [403],
     );
@@ -763,8 +842,10 @@ describe("POST /api/mcp-connectors/:id/oauth2/reauthorize", () => {
     const session = await accept(
       client().reauthorizeOAuth({
         headers: headers("clerk-session"),
-        params: { id: connectorId },
-        body: { scopes: ["admin"] },
+        body: {
+          target: { kind: "custom", customConnectorId: connectorId },
+          scopes: ["admin"],
+        },
       }),
       [403],
     );
@@ -775,8 +856,10 @@ describe("POST /api/mcp-connectors/:id/oauth2/reauthorize", () => {
             "connector:write",
           ]),
         ),
-        params: { id: connectorId },
-        body: { scopes: ["admin"] },
+        body: {
+          target: { kind: "custom", customConnectorId: connectorId },
+          scopes: ["admin"],
+        },
       }),
       [409],
     );
@@ -787,8 +870,10 @@ describe("POST /api/mcp-connectors/:id/oauth2/reauthorize", () => {
             "connector:write",
           ]),
         ),
-        params: { id: connectorId },
-        body: { scopes: ["invalid scope"] },
+        body: {
+          target: { kind: "custom", customConnectorId: connectorId },
+          scopes: ["invalid scope"],
+        },
       }),
       [400],
     );

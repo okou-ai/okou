@@ -97,7 +97,7 @@ binaries are not re-uploaded as a combined GitHub artifact.
 Targets without an available cache reference use the normal compile job, which
 uploads the binary directly to the existing content-addressed R2 cache. Only
 after verifying that object does it publish a small R2 manifest scoped to the
-repository, workflow run, target, and input digest. Image-build and cache-index
+workflow run and input digest. Image-build and cache-index
 jobs download the fresh binary from R2; neither transfers binary payloads through
 GitHub artifacts or uploads the binary again. The cache-index job retains the
 existing shadow comparison and optional small GitHub manifest publication.
@@ -105,7 +105,26 @@ existing shadow comparison and optional small GitHub manifest publication.
 Fresh publication and download are required: missing configuration, storage
 failures, invalid manifests, or binary hash/size mismatches fail the job. Cache-hit
 downloads remain required as well. Compilation stays in the existing compile
-job; only its transfer step receives R2 credentials.
+job. Its transfer step and compiler-cache startup step receive R2 credentials;
+credentials are not exported through `GITHUB_ENV` or added to the build step.
+
+The compile job uses sccache's S3 backend against the existing R2 bucket, under
+`runner-sccache/arm64/` or `runner-sccache/x86_64/`. Within each prefix, sccache
+derives keys from the compiler and compilation inputs. Crate names and CI job
+names are not extra namespace layers, so compatible compilations in other jobs
+can reuse the same cache when configured with the same prefix.
+These compiler outputs are separate from runner binary objects and manifests.
+PR, merge-group, and main builds with
+the existing R2 access share this cache; forks without those secrets cannot
+populate it. The sccache server retains the startup step's credentials for its
+job-local lifetime. Missing R2 configuration fails cache startup explicitly.
+
+This avoids GitHub's branch-scoped compiler cache and shared storage quota.
+The additional Cargo dependency cache still uses GitHub and saves only on main;
+main often reuses the complete runner binary and skips compilation, so that
+cache alone cannot reliably warm later builds. The first build of new compiler
+inputs remains cold. Cache backend statistics in the compile job report actual
+hits, misses, and write errors; binary and image validation remain required.
 
 Required consumer GETs use `runner-binary-download.sh`: at most three complete
 download attempts, with 1s/2s backoff and a new partial file each time. Cached
@@ -141,8 +160,12 @@ and [Botocore transport exceptions](https://github.com/boto/botocore/blob/develo
 
 Fresh reference keys omit the attempt number so a consumer-only rerun can read
 an earlier successful producer. The manifest retains the producer attempt.
-References live under `runner-binaries/transports/` and contain only metadata;
-binary objects keep their existing keys and cache schema. This workflow does not
+References use `runner-binaries/transports/<run_id>/<binary_input_digest>.json`
+and contain only metadata. This prefix serves this repository, and the input
+digest already includes the target. The manifest still validates the repository,
+run ID, target, and input digest. Producer and consumer jobs use the same checked-out
+scripts, so older runs and their reruns keep using their original key format.
+Binary objects keep their existing keys and cache schema. This workflow does not
 delete the small run references or configure bucket expiration. Cache-Control is
 not an object-retention policy. Small image manifests also continue to use GitHub
 artifacts; this is a binary-transport change, not complete artifact-service removal.

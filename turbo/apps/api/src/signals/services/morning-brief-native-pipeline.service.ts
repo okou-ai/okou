@@ -1,14 +1,27 @@
+import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
+import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
+import { chatEvents } from "@okouai/db/schema/chat-event";
+import { emailOutbox } from "@okouai/db/schema/email-outbox";
 import { morningBriefDeliveries } from "@okouai/db/schema/morning-brief-delivery";
 import { morningBriefNativeOccurrences } from "@okouai/db/schema/morning-brief-native-schedule";
 import { morningBriefScheduleClaims } from "@okouai/db/schema/morning-brief-schedule-claim";
-import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { emailOutbox } from "@okouai/db/schema/email-outbox";
-import { and, count, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import {
+  and,
+  count,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  notExists,
+  sql,
+} from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 
 import { logger } from "../../lib/log";
 import { writeDb$, type ReadonlyDb } from "../external/db";
+import { chatEventTypeIn } from "./chat-event-type.service";
 import { deliverMorningBriefResult$ } from "./morning-brief-delivery.service";
 import type { MorningBriefMemberIdentity } from "./morning-brief-enrollment-data.service";
 import type { MorningBriefGenerationView } from "@okouai/api-contracts/contracts/morning-brief-generation-preview";
@@ -36,6 +49,11 @@ const ACTIVE_LEGACY_RUN_STATUSES = ["queued", "pending", "running"] as const;
 
 /** An outbox row in any of these states still owes a provider request. */
 const UNSENT_OUTBOX_STATUSES = ["pending", "sending", "failed"] as const;
+
+/** A callback in either state can still enter the legacy result writer. */
+const REACHABLE_CALLBACK_STATUSES = ["pending", "failed"] as const;
+
+const legacyEventRevoker = alias(chatEvents, "legacy_event_revoker");
 
 /**
  * The production wiring of the native Morning Brief tick.
@@ -70,14 +88,15 @@ type MorningBriefDrainVerdict =
  * - An **unsent legacy email intent** produced by this automation is reachable
  *   mail work. The shared outbox owns its own retries, so a row that is not yet
  *   `sent` keeps the drain unresolved regardless of what the journal says.
- * - A member with **no journal rows at all** has unknown history: the journal
- *   only starts recording at S7a's deployment, so earlier work has no
- *   recoverable scheduled identity. It must not be reconstructed from
- *   `firedAt`, a Run's context or an automation title, so this reports
- *   `legacy-history-unjournalled` and holds.
+ * - A member with **no journal rows at all** has unknown historical anchor:
+ *   the journal only starts recording at S7a's deployment. The drain therefore
+ *   checks the actual automation queue events, Runs, callback rows and mail
+ *   intents. It holds while any is reachable and transfers only after those
+ *   producers are terminal; it never reconstructs identity from `firedAt`, a
+ *   Run context, title or TTL.
  *
  * It deliberately does not accept `automation.enabled = false`, an empty
- * outbox, a completed agent status or one expired TTL as proof.
+ * outbox, a completed agent status by itself or one expired TTL as proof.
  */
 async function proveLegacyMorningBriefDrain(
   db: ReadonlyDb,
@@ -112,25 +131,77 @@ async function proveLegacyMorningBriefDrain(
       ),
     );
 
-  // Reachable work the journal cannot describe on its own: a Run that can still
-  // deliver a result callback, and an email intent the shared outbox has not
-  // sent yet. Both are read from the rows that own them.
-  const [liveRun] = await db
-    .select({ id: agentRuns.id })
-    .from(morningBriefScheduleClaims)
-    .innerJoin(agentRuns, eq(agentRuns.id, morningBriefScheduleClaims.runId))
+  // Reachable work the journal cannot describe on its own is read through the
+  // canonical automation event relationship, not guessed from a title or Run
+  // timestamp. This includes mixed-version queue events with no S7a claim.
+  const [pendingEvent] = await db
+    .select({ id: chatEvents.id })
+    .from(chatAutomationContext)
+    .innerJoin(
+      chatEvents,
+      and(
+        eq(chatEvents.contextType, "automation"),
+        eq(chatEvents.contextId, chatAutomationContext.id),
+      ),
+    )
     .where(
       and(
-        eq(
-          morningBriefScheduleClaims.automationId,
-          schedule.legacyAutomationId,
+        eq(chatAutomationContext.automationId, schedule.legacyAutomationId),
+        chatEventTypeIn(["input.automation"]),
+        isNull(chatEvents.runId),
+        notExists(
+          db
+            .select({ id: legacyEventRevoker.id })
+            .from(legacyEventRevoker)
+            .where(eq(legacyEventRevoker.revokesEventId, chatEvents.id)),
         ),
-        inArray(agentRuns.status, ACTIVE_LEGACY_RUN_STATUSES),
       ),
     )
     .limit(1);
+  if (pendingEvent !== undefined) {
+    return { kind: "unresolved", reason: "legacy-queue-event-pending" };
+  }
+
+  const automationEvents = db
+    .select({ runId: chatEvents.runId })
+    .from(chatAutomationContext)
+    .innerJoin(
+      chatEvents,
+      and(
+        eq(chatEvents.contextType, "automation"),
+        eq(chatEvents.contextId, chatAutomationContext.id),
+      ),
+    )
+    .where(
+      and(
+        eq(chatAutomationContext.automationId, schedule.legacyAutomationId),
+        chatEventTypeIn(["input.automation"]),
+        isNotNull(chatEvents.runId),
+      ),
+    )
+    .as("legacy_automation_events");
+
+  const [liveRun] = await db
+    .select({ id: agentRuns.id })
+    .from(automationEvents)
+    .innerJoin(agentRuns, eq(agentRuns.id, automationEvents.runId))
+    .where(inArray(agentRuns.status, ACTIVE_LEGACY_RUN_STATUSES))
+    .limit(1);
   if (liveRun !== undefined) {
     return { kind: "unresolved", reason: "legacy-run-callback-reachable" };
+  }
+
+  const [pendingCallback] = await db
+    .select({ id: agentRunCallbacks.id })
+    .from(automationEvents)
+    .innerJoin(
+      agentRunCallbacks,
+      eq(agentRunCallbacks.runId, automationEvents.runId),
+    )
+    .where(inArray(agentRunCallbacks.status, REACHABLE_CALLBACK_STATUSES))
+    .limit(1);
+  if (pendingCallback !== undefined) {
+    return { kind: "unresolved", reason: "legacy-result-callback-pending" };
   }
 
   const [unsentMail] = await db
@@ -148,20 +219,12 @@ async function proveLegacyMorningBriefDrain(
   }
 
   if (counts === undefined || counts.total === 0) {
-    // No journalled claim exists. The journal only starts recording at S7a's
-    // deployment, so earlier work has no recoverable scheduled identity. With
-    // no reachable Run and no unsent mail above, the remaining unknown is an
-    // anchor this deployment never saw, and it must not be reconstructed from
-    // `firedAt`, a Run's context or an automation title. An automation that has
-    // never launched a Run produced none of that work at all.
-    const [legacy] = await db
-      .select({ lastRunId: workflowAutomations.lastRunId })
-      .from(workflowAutomations)
-      .where(eq(workflowAutomations.id, schedule.legacyAutomationId))
-      .limit(1);
-    return legacy !== undefined && legacy.lastRunId === null
-      ? { kind: "proven" }
-      : { kind: "unresolved", reason: "legacy-history-unjournalled" };
+    // The exact historical anchor remains unknowable, but all rows that can
+    // still produce, callback or send have now been checked directly and are
+    // terminal. That concrete fence — never age, title, firedAt or a missing
+    // body — permits a future-only transfer while this documented identity
+    // limit remains part of the protocol.
+    return { kind: "proven" };
   }
   if (counts.unsettled > 0) {
     return { kind: "unresolved", reason: "legacy-claim-unsettled" };

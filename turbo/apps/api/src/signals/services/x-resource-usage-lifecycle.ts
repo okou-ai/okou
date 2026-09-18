@@ -11,6 +11,18 @@ const scopedClock = singleton(() => {
   return new AsyncLocalStorage<() => Date>();
 });
 
+const scopedAdmission = singleton(() => {
+  return new AsyncLocalStorage<string | undefined>();
+});
+
+/** Preserve real contention within one test without blocking other tests. */
+export async function withXResourceAdmissionScopeForTest<T>(
+  scope: string | undefined,
+  work: () => Promise<T>,
+): Promise<T> {
+  return await scopedAdmission().run(scope, work);
+}
+
 /** Infrastructure-only clock control, scoped to one test request/operation. */
 export async function withXResourceClockForTest<T>(
   clock: () => Date,
@@ -31,10 +43,15 @@ export async function lockXResourceAdmission(
   tx: Tx,
   mode: "shared" | "exclusive",
 ): Promise<void> {
+  const scope = scopedAdmission.peek()?.getStore();
+  const lockKey =
+    scope === undefined
+      ? "x_resource_reads_admission"
+      : `x_resource_reads_admission:test:${scope}`;
   await tx.execute(
     mode === "shared"
-      ? sql`SELECT pg_advisory_xact_lock_shared(hashtext('vm0'), hashtext('x_resource_reads_admission'))`
-      : sql`SELECT pg_advisory_xact_lock(hashtext('vm0'), hashtext('x_resource_reads_admission'))`,
+      ? sql`SELECT pg_advisory_xact_lock_shared(hashtext('vm0'), hashtext(${lockKey}))`
+      : sql`SELECT pg_advisory_xact_lock(hashtext('vm0'), hashtext(${lockKey}))`,
   );
 }
 

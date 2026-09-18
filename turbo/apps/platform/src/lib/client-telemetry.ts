@@ -13,7 +13,7 @@ const CLIENT_TELEMETRY_SERVICE_NAME = "Okou-app";
 const NANOSECONDS_PER_MILLISECOND = 1_000_000;
 const L = logger("ClientTelemetry");
 
-type ClientTelemetryOutcome = "aborted" | "error" | "success";
+type ClientTelemetryOutcome = "aborted" | "error" | "started" | "success";
 type ClientTelemetryStatusCode = "ERROR" | "OK";
 type ClientTelemetryAttributeValue = number | string;
 type ClientTelemetryAttributes = Readonly<
@@ -71,6 +71,13 @@ interface HttpRequestTelemetry {
   readonly response_status_code?: number;
 }
 
+interface MarketingEventSendTelemetry {
+  readonly event_name: "marketing.event.send";
+  readonly tag: "onboarding-start" | "checkout-start";
+  readonly user_id: string;
+  readonly org_id: string;
+}
+
 export type ClientTelemetryOperation =
   | IndexedDbOpenTelemetry
   | IndexedDbTransactionCreateTelemetry
@@ -78,13 +85,17 @@ export type ClientTelemetryOperation =
   | SharedDatabaseQueryTelemetry
   | SharedWorkerFailureTelemetry
   | SkeletonTimeoutTelemetry
-  | HttpRequestTelemetry;
+  | HttpRequestTelemetry
+  | MarketingEventSendTelemetry;
 
 function runtimeName(): "shared_worker" | "window" {
   return typeof window === "undefined" ? "shared_worker" : "window";
 }
 
 function scopeName(operation: ClientTelemetryOperation): string {
+  if (operation.event_name === "marketing.event.send") {
+    return "okou-app/marketing";
+  }
   if (operation.event_name === "app.skeleton.timeout") {
     return "okou-app/startup";
   }
@@ -109,6 +120,7 @@ function statusCode(
 ): ClientTelemetryStatusCode | undefined {
   if (
     outcome === "aborted" ||
+    outcome === "started" ||
     (operation.event_name === "http.request" &&
       operation.response_status_code !== undefined &&
       operation.response_status_code >= 400 &&
@@ -122,7 +134,8 @@ function statusCode(
 function operationName(operation: ClientTelemetryOperation): string {
   if (
     operation.event_name === "shared_worker.failure" ||
-    operation.event_name === "app.skeleton.timeout"
+    operation.event_name === "app.skeleton.timeout" ||
+    operation.event_name === "marketing.event.send"
   ) {
     return operation.event_name;
   }
@@ -141,6 +154,13 @@ function operationName(operation: ClientTelemetryOperation): string {
 function operationAttributes(
   operation: ClientTelemetryOperation,
 ): ClientTelemetryAttributes {
+  if (operation.event_name === "marketing.event.send") {
+    return {
+      "okou.marketing.event.tag": operation.tag,
+      "okou.marketing.event.user_id": operation.user_id,
+      "okou.marketing.event.org_id": operation.org_id,
+    };
+  }
   if (operation.event_name === "app.skeleton.timeout") {
     return {
       "okou.skeleton.threshold_ms": operation.threshold_ms,

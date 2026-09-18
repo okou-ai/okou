@@ -1,1 +1,0 @@
-ALTER TABLE "morning_brief_deliveries" ADD COLUMN "native_owner_epoch" integer;

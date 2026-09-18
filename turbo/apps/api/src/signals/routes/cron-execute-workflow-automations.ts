@@ -36,7 +36,7 @@ const executeWorkflowAutomationsRoute$: RouteEntry["handler"] = command(
     // nothing, delivers nothing and settles independently, so a failure here
     // cannot stop the automations below from running.
     const retention = await settle(
-      set(executeMorningBriefGenerationRetentionWork$, signal),
+      set(executeMorningBriefGenerationRetentionWork$, undefined, signal),
       signal,
     );
     if (!retention.ok) {

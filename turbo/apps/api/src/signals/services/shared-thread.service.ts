@@ -489,7 +489,7 @@ const prepareAndPersistSharedThread$ = command(
             ),
             signal,
           )
-        : { ok: true as const, value: null };
+        : { ok: true as const, value: { messages, plan: null } };
     recordSharedThreadPhase({
       shareId: id,
       phase: "prepare",
@@ -502,11 +502,10 @@ const prepareAndPersistSharedThread$ = command(
       }
       throw preparation.error;
     }
-    const plan = preparation.value;
+    const { plan, messages: preparedMessages } = preparation.value;
     if (
-      plan &&
-      Buffer.byteLength(JSON.stringify(plan.messages)) >
-        SHARED_THREAD_MAX_SERIALIZED_BYTES
+      Buffer.byteLength(JSON.stringify(preparedMessages)) >
+      SHARED_THREAD_MAX_SERIALIZED_BYTES
     ) {
       return { kind: "too-large" } as const;
     }
@@ -523,7 +522,7 @@ const prepareAndPersistSharedThread$ = command(
           id,
           title,
           createdAt: nowDate(),
-          messages,
+          messages: preparedMessages,
           plan,
         },
         signal,

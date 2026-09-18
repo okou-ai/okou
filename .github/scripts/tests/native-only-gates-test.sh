@@ -18,7 +18,7 @@ def workflow(name):
 turbo, security = workflow('turbo'), workflow('security')
 ts_jobs = ['lint-eslint', 'lint-style', 'lint-types', 'lint-type-app', 'lint-type-api',
            'lint-format', 'lint-knip', 'test-cli', 'test-app', 'test-api',
-           'test-pi-memory-boundary', 'test-other']
+           'test-other']
 artifacts = ['deploy-app', 'deploy-cli']
 
 def context(ios=True, ts=False, event='pull_request', release=False):

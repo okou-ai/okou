@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 
 import { webhookUsageEventContract } from "@okouai/api-contracts/contracts/webhooks";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { z } from "zod";
 
@@ -18,13 +19,13 @@ import { webhooksAgentHealthUsageTelemetryRoutes } from "../webhooks-agent-healt
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const examples = z
   .object({
     cases: z.array(
       z.object({
         name: z.string(),
-        capability: z.object({ startDate: z.string() }),
         chunks: z.array(z.object({ observedAt: z.iso.datetime() })).min(1),
         expectedPayloads: z.array(webhookUsageEventContract.send.body).min(1),
         expectedFirstUnits: z.number(),
@@ -63,6 +64,16 @@ beforeEach(() => {
 
 async function createRun() {
   const actor = bdd.user();
+  if (!actor.orgId) {
+    throw new Error("X resource test requires an organization");
+  }
+  await updateFeatureSwitchesForUser(
+    context,
+    { ...actor, orgId: actor.orgId },
+    {
+      [FeatureSwitchKey.XResourceDeduplication]: true,
+    },
+  );
   await runs.grantProEntitlement(actor);
   await runs.ensureOrgModelProvider(actor);
   const agent = await bdd.createAgent(actor, {
@@ -117,16 +128,10 @@ describe("X producer payload billing contract", () => {
     const fixtureDay = Date.parse(
       `${firstObservation.observedAt.slice(0, 10)}T00:00:00.000Z`,
     );
-    // Keep the fixture's UTC boundaries and relative activation date, while
+    // Keep the fixture's UTC boundaries while
     // placing every observation after the real test Runs are created.
     const testDay = Math.floor(now() / DAY_MS) * DAY_MS + DAY_MS;
     const offset = testDay - fixtureDay;
-    mockEnv(
-      "X_RESOURCE_BILLING_START_DATE",
-      new Date(Date.parse(example.capability.startDate) + offset)
-        .toISOString()
-        .slice(0, 10),
-    );
     const first = await createRun();
     const anotherOrg = await createRun();
     const resourcePrefix = BigInt(

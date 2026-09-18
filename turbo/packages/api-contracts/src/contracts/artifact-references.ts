@@ -98,6 +98,8 @@ export const artifactReferencesContract = c.router({
     responses: {
       200: z.object({
         url: z.url(),
+        expiresAt: z.string().optional(),
+        sharedThreadSnapshot: z.literal(true).optional(),
         preview: z.object({ filename: z.string(), contentType: z.string() }),
       }),
       400: apiErrorSchema,
@@ -105,7 +107,7 @@ export const artifactReferencesContract = c.router({
       500: apiErrorSchema,
     },
     summary:
-      "Resolve an explicitly public artifact to its delivery URL and preview metadata",
+      "Resolve a public artifact or active conversation snapshot to its content URL and preview metadata",
   },
   resolve: {
     method: "GET",
@@ -123,6 +125,7 @@ export const artifactReferencesContract = c.router({
       200: z.object({
         url: z.url(),
         expiresAt: z.string(),
+        sharedThreadSnapshot: z.literal(true).optional(),
         filename: z.string(),
         contentType: z.string(),
         target: z.object({ kind: z.enum(["file", "html"]), id: z.uuid() }),
@@ -134,6 +137,6 @@ export const artifactReferencesContract = c.router({
       500: apiErrorSchema,
     },
     summary:
-      "Authorize an owner or organization artifact reference and resolve temporary content",
+      "Authorize an owner, organization, or active conversation snapshot reference and resolve temporary content",
   },
 });

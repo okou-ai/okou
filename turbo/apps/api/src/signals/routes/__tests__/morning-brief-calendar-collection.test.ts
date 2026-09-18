@@ -18,6 +18,7 @@ import { server } from "../../../mocks/server";
 import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
 import {
   bindMorningBriefThreadFixture,
+  holdMorningBriefAuthorizerFixture,
   installMorningBriefFixture,
   requireConnectorReconnectFixture,
   revokeAgentConnectorGrantFixture,
@@ -144,6 +145,7 @@ interface StubEvent {
   readonly start: Record<string, string>;
   readonly end: Record<string, string>;
   readonly recurringEventId?: string;
+  readonly originalStartTime?: Record<string, string>;
   readonly iCalUID?: string;
   readonly htmlLink?: string;
   readonly organizer?: {
@@ -163,27 +165,55 @@ interface StubEvent {
  * fields the collector believes it charged: the promise is about the text a
  * composed brief would have to carry, not about an internal counter.
  */
-function retainedTextLength(items: readonly unknown[]): number {
+function retainedTextLength(value: unknown): number {
   let total = 0;
-  const visit = (value: unknown): void => {
-    if (typeof value === "string") {
-      total += value.length;
+  const visit = (entry: unknown): void => {
+    if (typeof entry === "string") {
+      total += entry.length;
       return;
     }
-    if (Array.isArray(value)) {
-      for (const entry of value) {
-        visit(entry);
+    if (Array.isArray(entry)) {
+      for (const child of entry) {
+        visit(child);
       }
       return;
     }
-    if (value !== null && typeof value === "object") {
-      for (const entry of Object.values(value)) {
-        visit(entry);
+    if (entry !== null && typeof entry === "object") {
+      for (const child of Object.values(entry)) {
+        visit(child);
       }
     }
   };
-  visit(items);
+  visit(value);
   return total;
+}
+
+/** Every provider-derived string released in items and per-calendar coverage. */
+function retainedProviderTextLength(
+  body: MorningBriefCalendarCollection,
+): number {
+  return (
+    retainedTextLength(body.items) +
+    body.coverage.calendars.reduce((total, entry) => {
+      return (
+        total +
+        entry.calendarId.length +
+        (entry.summary?.length ?? 0) +
+        (entry.accessRole?.length ?? 0)
+      );
+    }, 0)
+  );
+}
+
+/** An exact, unique provider identity of the requested retained length. */
+function calendarIdOfLength(index: number, length: number): string {
+  const prefix = String(index).padStart(3, "0");
+  if (length < prefix.length) {
+    throw new Error(
+      "Calendar identity length is shorter than its unique prefix",
+    );
+  }
+  return `${prefix}${"c".repeat(length - prefix.length)}`;
 }
 
 /**
@@ -1555,6 +1585,141 @@ describe("Morning Brief calendar collection preview", () => {
     expect(response.body.items).toHaveLength(1);
   });
 
+  it("admits each exact calendar identity once across list pages", async () => {
+    const fixture = await setupOwner();
+    const calendarIds = Array.from({ length: 9 }, (_, index) => {
+      return `distinct-${index}@example.test`;
+    });
+    const repeated = calendarIds[0];
+    const sameEventSibling = calendarIds[1];
+    if (repeated === undefined || sameEventSibling === undefined) {
+      throw new Error("Expected duplicate-admission fixtures");
+    }
+    const calendars = calendarIds.map((id) => {
+      return { id, accessRole: "reader" } as const;
+    });
+    const events = new Map<string, readonly StubEvent[]>(
+      calendarIds.map((calendarId, index) => {
+        return [
+          calendarId,
+          index === 0
+            ? [
+                timed(
+                  "same-event",
+                  "2026-03-10T01:00:00.000Z",
+                  "2026-03-10T01:30:00.000Z",
+                ),
+                {
+                  ...timed(
+                    "shared-instance-id",
+                    "2026-03-10T02:00:00.000Z",
+                    "2026-03-10T02:30:00.000Z",
+                  ),
+                  recurringEventId: "series",
+                  originalStartTime: {
+                    dateTime: "2026-03-10T02:00:00.000Z",
+                  },
+                },
+                {
+                  ...timed(
+                    "shared-instance-id",
+                    "2026-03-11T02:00:00.000Z",
+                    "2026-03-11T02:30:00.000Z",
+                  ),
+                  recurringEventId: "series",
+                  originalStartTime: {
+                    dateTime: "2026-03-11T02:00:00.000Z",
+                  },
+                },
+              ]
+            : index === 1
+              ? [
+                  timed(
+                    "same-event",
+                    "2026-03-10T03:00:00.000Z",
+                    "2026-03-10T03:30:00.000Z",
+                  ),
+                ]
+              : [],
+        ];
+      }),
+    );
+    const stub = stubCalendar({
+      calendarPages: [calendars.slice(0, 8), [calendars[0]!, calendars[8]!]],
+      events,
+    });
+
+    const response = await collectOk(fixture);
+    const identities = response.body.items.map((item) => {
+      return `${item.calendarId}:${item.eventId}:${item.originalStartTime ?? "ordinary"}`;
+    });
+    expect(identities).toStrictEqual([
+      `${repeated}:same-event:ordinary`,
+      `${repeated}:shared-instance-id:2026-03-10T02:00:00.000Z`,
+      `${repeated}:shared-instance-id:2026-03-11T02:00:00.000Z`,
+      `${sameEventSibling}:same-event:ordinary`,
+    ]);
+    expect(new Set(identities).size).toBe(identities.length);
+    // The repeated calendar consumes one of eight distinct slots, not two, and
+    // the ninth distinct identity is the only calendar left unread.
+    const requestedCalendars = eventCalls(stub).map((call) => {
+      return decodeURIComponent(call.pathname.split("/").at(-2) ?? "");
+    });
+    expect(new Set(requestedCalendars).size).toBe(8);
+    expect(requestedCalendars).toHaveLength(8);
+    expect(
+      response.body.coverage.calendars.filter((entry) => {
+        return entry.calendarId === repeated;
+      }),
+    ).toHaveLength(1);
+    expect(
+      response.body.coverage.calendars.filter((entry) => {
+        return entry.outcome === "not-read";
+      }),
+    ).toHaveLength(1);
+  });
+
+  it("treats contradictory repeated metadata identically in either page order", async () => {
+    async function collectOrder(
+      first: StubCalendar,
+      second: StubCalendar,
+    ): Promise<MorningBriefCalendarCollection> {
+      const fixture = await setupOwner();
+      stubCalendar({ calendarPages: [[first], [second]] });
+      return (await collectOk(fixture)).body;
+    }
+    const owner = {
+      id: OWNER_CALENDAR,
+      summary: "Owner version",
+      accessRole: "owner",
+      primary: true,
+    } as const;
+    const reader = {
+      id: OWNER_CALENDAR,
+      summary: "Reader version",
+      accessRole: "reader",
+      primary: false,
+    } as const;
+
+    const ownerFirst = await collectOrder(owner, reader);
+    const readerFirst = await collectOrder(reader, owner);
+    expect(readerFirst.items).toStrictEqual(ownerFirst.items);
+    expect(readerFirst.coverage).toStrictEqual(ownerFirst.coverage);
+    expect(readerFirst.status).toBe(ownerFirst.status);
+    expect(readerFirst.failure).toBe(ownerFirst.failure);
+    expect(ownerFirst.items).toStrictEqual([]);
+    expect(ownerFirst.coverage.calendars).toStrictEqual([
+      {
+        calendarId: OWNER_CALENDAR,
+        summary: null,
+        accessRole: null,
+        primary: false,
+        outcome: "unknown-access",
+        retryAfterMs: null,
+      },
+    ]);
+  });
+
   it("reads at most eight calendars and reports the rest as unread", async () => {
     const fixture = await setupOwner();
     const many = Array.from({ length: 10 }, (_, index) => {
@@ -1694,7 +1859,7 @@ describe("Morning Brief calendar collection preview", () => {
       // ordinary displayed text. The shared byte ceilings never see it: five
       // small responses stay far inside them.
       expect(eventCalls(stub)).toHaveLength(4);
-      expect(retainedTextLength(response.body.items)).toBeLessThanOrEqual(
+      expect(retainedProviderTextLength(response.body)).toBeLessThanOrEqual(
         MAX_TEXT_CHARACTERS,
       );
       expect(response.body.items.length).toBeLessThan(MAX_EVENTS);
@@ -1776,7 +1941,7 @@ describe("Morning Brief calendar collection preview", () => {
       // Both calendars want more than the budget can hold, so the order their
       // responses arrive in decides nothing: the owner's day is allocated in
       // the stable calendar order either way.
-      expect(retainedTextLength(aFirst.items)).toBeLessThanOrEqual(
+      expect(retainedProviderTextLength(aFirst)).toBeLessThanOrEqual(
         MAX_TEXT_CHARACTERS,
       );
       expect(aFirst.items).not.toStrictEqual([]);
@@ -1786,6 +1951,84 @@ describe("Morning Brief calendar collection preview", () => {
         aFirst.coverage.truncations,
       );
       expect(bFirst.status).toBe(aFirst.status);
+    });
+
+    it("bounds the 70,600-character coverage example inside the same budget", async () => {
+      const fixture = await setupOwner();
+      const summary = "s".repeat(200);
+      const calendars = Array.from({ length: 100 }, (_, index) => {
+        return {
+          id: calendarIdOfLength(index, 500),
+          summary,
+          accessRole: "reader",
+        } as const;
+      });
+      const stub = stubCalendar({
+        calendarPages: [calendars.slice(0, 50), calendars.slice(50)],
+        events: new Map(),
+      });
+
+      const response = await collectOk(fixture);
+      expect(response.body.items).toStrictEqual([]);
+      expect(retainedProviderTextLength(response.body)).toBeLessThanOrEqual(
+        MAX_TEXT_CHARACTERS,
+      );
+      expect(response.body.coverage.calendars.length).toBeLessThan(100);
+      expect(response.body.coverage.truncations).toContain("text-characters");
+      expect(response.body.coverage.requests).toBe(10);
+      expect(eventCalls(stub)).toHaveLength(8);
+      const exactIds = new Set(
+        calendars.map((calendar) => {
+          return calendar.id;
+        }),
+      );
+      expect(
+        response.body.coverage.calendars.every((entry) => {
+          return exactIds.has(entry.calendarId);
+        }),
+      ).toBeTruthy();
+      expect(response.body.status).toBe("unavailable");
+    });
+
+    it("retains exact-fit coverage and drops an overflowing identity whole", async () => {
+      async function collectCoverage(identityLength: number) {
+        const fixture = await setupOwner();
+        const summary = "s".repeat(200);
+        const calendars = Array.from({ length: 100 }, (_, index) => {
+          return {
+            id: calendarIdOfLength(index, identityLength),
+            summary,
+            accessRole: "reader",
+          } as const;
+        });
+        stubCalendar({
+          calendarPages: [calendars.slice(0, 50), calendars.slice(50)],
+          events: new Map(),
+        });
+        return { body: (await collectOk(fixture)).body, calendars };
+      }
+
+      const exact = await collectCoverage(194);
+      expect(retainedProviderTextLength(exact.body)).toBe(MAX_TEXT_CHARACTERS);
+      expect(exact.body.coverage.calendars).toHaveLength(100);
+      expect(exact.body.coverage.truncations).not.toContain("text-characters");
+
+      const overflow = await collectCoverage(195);
+      expect(retainedProviderTextLength(overflow.body)).toBeLessThanOrEqual(
+        MAX_TEXT_CHARACTERS,
+      );
+      expect(overflow.body.coverage.calendars.length).toBeLessThan(100);
+      expect(overflow.body.coverage.truncations).toContain("text-characters");
+      const completeIds = new Set(
+        overflow.calendars.map((calendar) => {
+          return calendar.id;
+        }),
+      );
+      expect(
+        overflow.body.coverage.calendars.every((entry) => {
+          return completeIds.has(entry.calendarId);
+        }),
+      ).toBeTruthy();
     });
 
     it("keeps at most two hundred events and says so", async () => {
@@ -2195,6 +2438,100 @@ describe("Morning Brief calendar collection preview", () => {
       // remaining two are never requested after the cancellation boundary.
       expect(startedRequests).toStrictEqual([...started].sort());
       expect([...eventRequests].sort()).toStrictEqual(startedRequests);
+    });
+
+    it("keeps public cancellation pending until a blocked authorized sibling settles", async () => {
+      const fixture = await setupOwner();
+      const cancellation = new Error(`cancelled ${randomUUID()}`);
+      const controller = new AbortController();
+      const calendars = JOIN_CALENDARS.slice(0, 2);
+      const bothArrived = createDeferredPromise<void>(context.signal);
+      const releaseContinuation = createDeferredPromise<void>(context.signal);
+      const cancelled = createDeferredPromise<void>(context.signal);
+      let arrivals = 0;
+      const eventRequests: string[] = [];
+
+      server.use(
+        http.get(CALENDAR_LIST_URL, () => {
+          return HttpResponse.json({ items: calendars });
+        }),
+        http.get(CALENDAR_EVENTS_URL, async ({ request, params }) => {
+          const calendarId = decodeURIComponent(String(params["calendarId"]));
+          const pageToken = new URL(request.url).searchParams.get("pageToken");
+          eventRequests.push(`${calendarId}:${pageToken ?? "first"}`);
+          if (pageToken !== null) {
+            throw new Error("No provider request may pass the held authorizer");
+          }
+          arrivals += 1;
+          if (arrivals === 2) {
+            bothArrived.resolve();
+          }
+          if (calendarId === calendars[0]?.id) {
+            await releaseContinuation.promise;
+            return HttpResponse.json({ items: [], nextPageToken: "next" });
+          }
+          request.signal.addEventListener(
+            "abort",
+            () => {
+              cancelled.resolve();
+            },
+            { once: true },
+          );
+          await cancelled.promise;
+          return HttpResponse.error();
+        }),
+      );
+
+      await seedMembership(fixture.actor, fixture.membershipId);
+      const request = setupApp({
+        context,
+        routes: morningBriefCalendarCollectionPreviewRoutes,
+        signal: controller.signal,
+        rethrowErrors: true,
+      })(morningBriefCalendarCollectionPreviewContract).collect({
+        headers: authHeaders(fixture.actor),
+        body: { anchor: ANCHOR_ISO },
+      });
+      const publicOutcome = createDeferredPromise<
+        | { readonly ok: true; readonly value: unknown }
+        | { readonly ok: false; readonly error: unknown }
+      >(context.signal);
+      const outcomeObservation = settleIncludingAbort(request).then(
+        (outcome) => {
+          publicOutcome.resolve(outcome);
+        },
+      );
+
+      // Both first-page HTTP requests are real and in flight before the
+      // canonical installation relation is locked. Releasing only one page
+      // drives that worker into the shared authorizer for its continuation.
+      await bothArrived.promise;
+      const barrier = await holdMorningBriefAuthorizerFixture(context.signal);
+      releaseContinuation.resolve();
+      await barrier.waitForBlocked();
+
+      controller.abort(cancellation);
+      await cancelled.promise;
+      const callsAtCancellation = [...eventRequests];
+      // Let the rejected worker and the route promise run their microtasks. A
+      // plain Promise.all settles here; joinAll must still be waiting for the
+      // sibling whose real authorization query remains blocked.
+      const nextTurn = createDeferredPromise<void>(context.signal);
+      setImmediate(() => {
+        nextTurn.resolve();
+      });
+      await nextTurn.promise;
+      expect(publicOutcome.settled()).toBeFalsy();
+
+      await barrier.release();
+      const outcome = await publicOutcome.promise;
+      await outcomeObservation;
+      expect(outcome.ok).toBeFalsy();
+      if (outcome.ok) {
+        throw new Error("Expected caller cancellation");
+      }
+      expect(outcome.error).toBe(cancellation);
+      expect(eventRequests).toStrictEqual(callsAtCancellation);
     });
 
     it("declares a calendar whose id cannot address a request and keeps its sibling", async () => {

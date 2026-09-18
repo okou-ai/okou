@@ -12,6 +12,10 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { clearMockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
+import {
+  bindMorningBriefThreadFixture,
+  seedOrdinaryChatThreadFixture$,
+} from "../../../test-fixtures/morning-brief-chat-collection";
 import { seedInstalledMorningBrief } from "../../../test-fixtures/morning-brief-collection";
 import { expireMorningBriefGenerationRetention } from "../../../test-fixtures/morning-brief-generation";
 import { drainEmailOutbox } from "../../../test-fixtures/morning-brief-delivery";
@@ -34,6 +38,7 @@ import {
   resumableOccurrenceAnchors,
   seedRecipientAddress,
 } from "../../../test-fixtures/morning-brief-native-schedule";
+import { admitWorkflowAutomationEventFixture } from "../../../test-fixtures/workflow-queue";
 import { createScopedMorningBriefCronRoutesForTest } from "../cron-execute-morning-briefs";
 import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
@@ -323,6 +328,39 @@ describe("native Morning Brief cron", () => {
     // The user's own choice is untouched by the cutover.
     expect((await readLegacyAutomation(f.automationId))?.enabled).toBeTruthy();
     expect(cutover?.enabled).toBeTruthy();
+  });
+
+  it("holds cutover for an unjournaled legacy queue event instead of guessing its anchor", async () => {
+    const f = await fixture();
+    const chatThreadId = await store.set(
+      seedOrdinaryChatThreadFixture$,
+      { member: f, title: "Legacy Morning Brief queue" },
+      context.signal,
+    );
+    await bindMorningBriefThreadFixture({
+      orgId: f.orgId,
+      userId: f.userId,
+      workflowId: f.workflowId,
+      chatThreadId,
+    });
+    await admitWorkflowAutomationEventFixture({
+      automationId: f.automationId,
+      chatThreadId,
+      triggerBrief: "unjournaled-legacy-queue-event",
+    });
+
+    // The first tick closes legacy admission; the next bounded transition pass
+    // resolves the actual queue relationship and records why ownership stays.
+    await accept(tick(f), [200]);
+    await accept(tick(f), [200]);
+
+    await expect(readNativeSchedule(f)).resolves.toMatchObject({
+      phase: "draining",
+      scheduleOwner: "legacy",
+      drainUnresolvedReason: "legacy-queue-event-pending",
+    });
+    await expect(readNativeOccurrences(f)).resolves.toHaveLength(0);
+    expect((await readLegacyAutomation(f.automationId))?.nextRunAt).toBeNull();
   });
 
   it("runs collection, one platform generation, Chat and shared email with the legacy scheduler disabled", async () => {

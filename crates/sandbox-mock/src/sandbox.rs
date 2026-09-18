@@ -162,7 +162,8 @@ impl MockSandbox {
                 Some(SandboxFinalExecParkHandoffPoint::BeforeBalloon) => {
                     Some(SandboxFinalExecParkSubstageOutcome::HandoffRequested)
                 }
-                Some(SandboxFinalExecParkHandoffPoint::DuringBalloonSettle) => None,
+                Some(SandboxFinalExecParkHandoffPoint::DuringBalloonSettle)
+                | Some(SandboxFinalExecParkHandoffPoint::DuringDeflation) => None,
                 None => Some(SandboxFinalExecParkSubstageOutcome::Skipped),
             },
         );
@@ -174,11 +175,46 @@ impl MockSandbox {
                 Some(SandboxFinalExecParkHandoffPoint::DuringBalloonSettle) => {
                     SandboxFinalExecParkSubstageOutcome::HandoffRequested
                 }
-                Some(SandboxFinalExecParkHandoffPoint::BeforeBalloon) | None => {
-                    SandboxFinalExecParkSubstageOutcome::Skipped
-                }
+                Some(SandboxFinalExecParkHandoffPoint::BeforeBalloon)
+                | Some(SandboxFinalExecParkHandoffPoint::DuringDeflation)
+                | None => SandboxFinalExecParkSubstageOutcome::Skipped,
             }),
         );
+        observer.record_substage(
+            SandboxFinalExecParkSubstage::BalloonDeflate,
+            Duration::ZERO,
+            true,
+            Some(
+                if handoff_point == Some(SandboxFinalExecParkHandoffPoint::DuringDeflation) {
+                    SandboxFinalExecParkSubstageOutcome::HandoffRequested
+                } else {
+                    SandboxFinalExecParkSubstageOutcome::Skipped
+                },
+            ),
+        );
+        if let Some(point) = handoff_point {
+            // The handoff retires the old assignment without physical park.
+            self.run_control_id = None;
+            if let Some(overrides) = &self.overrides {
+                overrides
+                    .lifecycle
+                    .completed_final_exec_park_handoff_points
+                    .lock_ignoring_poison()
+                    .push(point);
+            }
+            observer.record_substage(
+                SandboxFinalExecParkSubstage::VcpuPause,
+                Duration::ZERO,
+                true,
+                Some(SandboxFinalExecParkSubstageOutcome::Skipped),
+            );
+            observer.record_stage(
+                SandboxFinalExecParkStage::PhysicalPark,
+                physical_park_started.elapsed(),
+                true,
+            );
+            return Ok(SandboxFinalExecParkHandoffOutcome::Handoff { exec_result, point });
+        }
         let park_outcome = match self.park().await {
             Ok(park_outcome) => {
                 observer.record_substage(
@@ -209,23 +245,12 @@ impl MockSandbox {
                 return Err(error);
             }
         };
-        if let Some(point) = handoff_point {
-            if let Some(overrides) = &self.overrides {
-                overrides
-                    .lifecycle
-                    .completed_final_exec_park_handoff_points
-                    .lock_ignoring_poison()
-                    .push(point);
-            }
-            Ok(SandboxFinalExecParkHandoffOutcome::Handoff { exec_result, point })
-        } else {
-            Ok(SandboxFinalExecParkHandoffOutcome::Parked(
-                SandboxFinalExecParkOutcome {
-                    exec_result,
-                    park_outcome,
-                },
-            ))
-        }
+        Ok(SandboxFinalExecParkHandoffOutcome::Parked(
+            SandboxFinalExecParkOutcome {
+                exec_result,
+                park_outcome,
+            },
+        ))
     }
 
     /// Queue an exec result. Results are consumed in FIFO order.

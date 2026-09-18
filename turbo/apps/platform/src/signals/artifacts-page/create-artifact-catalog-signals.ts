@@ -1,4 +1,7 @@
-import { createAttachmentResourceUrl$ } from "../attachment-resource-url.ts";
+import {
+  createAttachmentPreviewSignals,
+  createAttachmentResourceUrl$,
+} from "../attachment-resource-url.ts";
 import {
   command,
   computed,
@@ -26,6 +29,7 @@ import {
 // orders by `(createdAt, id)` and never reorders on update, so a cursor stays
 // valid for the whole scroll session.
 const ARTIFACT_CATALOG_PAGE_SIZE = 60;
+const ARTIFACT_CARD_THUMBNAIL_WIDTH_PX = 640;
 
 export type CatalogArtifact = ArtifactSummary & {
   /**
@@ -54,7 +58,11 @@ function withThumbnailLoad(page: {
         thumbnailLoad: createImageLoadSignals(),
         thumbnailUrl$: computed(async (get) => {
           return artifact.thumbnail
-            ? await get(createAttachmentResourceUrl$(artifact.thumbnail.url))
+            ? await get(
+                createAttachmentPreviewSignals(artifact.thumbnail.url, {
+                  thumbnailSize: { width: ARTIFACT_CARD_THUMBNAIL_WIDTH_PX },
+                }).thumbnailUrl$,
+              )
             : null;
         }),
         videoUrl$: computed(async (get) => {
