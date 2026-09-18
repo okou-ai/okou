@@ -517,6 +517,61 @@ describe.each(["browser", "computer-use"] as const)(
     );
 
     it(
+      "retries a non-null thread Agent rebind against the newly admitted closed owner",
+      { timeout: CASE_TIMEOUT_MS },
+      async () => {
+        const fixture = await createAuthorizationReadFixture({ kind });
+        const nextOwner = orgScoped(bdd.user({ orgId: fixture.actor.orgId }));
+        const rebound = await bdd.createAgent(nextOwner, {
+          displayName: `Closed read rebind ${randomUUID().slice(0, 8)}`,
+          visibility: "public",
+        });
+        await closeSubject({
+          subjectKind: "user",
+          subjectId: nextOwner.userId,
+        });
+        const run = async (barrier: {
+          readonly entered: Promise<unknown>;
+          readonly release: () => void;
+        }) => {
+          const reading = settleIncludingAbort(
+            readAuthorization(fixture, [404]),
+          );
+          await barrier.entered;
+          await setChatThreadAgentFixture({
+            chatThreadId: fixture.threadId,
+            agentId: rebound.agentId,
+          });
+          barrier.release();
+          const denied = valueOf(await reading);
+          expect(denied.status).toBe(404);
+          expectDeniedBody(denied.body, fixture);
+        };
+        if (kind === "browser") {
+          await withBrowserAuthorizationReadBarrierFixture(
+            {
+              chatThreadId: fixture.threadId,
+              requestToken: fixture.requestToken,
+              stopAt: "before-thread-pin",
+              work: run,
+            },
+            context.signal,
+          );
+        } else {
+          await withComputerUseAuthorizationReadBarrierFixture(
+            {
+              chatThreadId: fixture.threadId,
+              requestToken: fixture.requestToken,
+              stopAt: "before-thread-pin",
+              work: run,
+            },
+            context.signal,
+          );
+        }
+      },
+    );
+
+    it(
       "retries a thread identity change before the local pin and denies the moved scope",
       { timeout: CASE_TIMEOUT_MS },
       async () => {
