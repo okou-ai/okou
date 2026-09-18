@@ -1001,13 +1001,13 @@ function buildCreateAgentRunArgs(args: {
   readonly cloudBrowserEnabled: boolean | undefined;
   readonly featureSwitchContext: FeatureSwitchContext;
 }): CreateAgentRunArgs {
-  const command = args.command;
+  const { command, featureSwitchContext: featureContext } = args;
   const userInfo = { ...args.userInfo, ...command.userInfoExtras };
   const agentModelProviderId = optionalAgentSetting(args.agent.modelProviderId);
   const agentSelectedModel = optionalAgentSetting(args.agent.selectedModel);
   const introVideoEnabled = isFeatureEnabled(
     FeatureSwitchKey.IntroVideo,
-    args.featureSwitchContext,
+    featureContext,
   );
   const productAgentExecutionPlan = {
     identity: "agent" as const,
@@ -1019,7 +1019,7 @@ function buildCreateAgentRunArgs(args: {
     body: createRunBody({
       privateArtifactsEnabled: isFeatureEnabled(
         FeatureSwitchKey.PrivateArtifacts,
-        args.featureSwitchContext,
+        featureContext,
       ),
       body: command.body,
       agent: args.agent,
@@ -1030,19 +1030,16 @@ function buildCreateAgentRunArgs(args: {
       cloudBrowserEnabled: args.cloudBrowserEnabled,
       bankingEnabled: isFeatureEnabled(
         FeatureSwitchKey.Banking,
-        args.featureSwitchContext,
+        featureContext,
       ),
-      vncEnabled: isFeatureEnabled(
-        FeatureSwitchKey.VncAccess,
-        args.featureSwitchContext,
-      ),
+      vncEnabled: isFeatureEnabled(FeatureSwitchKey.VncAccess, featureContext),
       larkEnabled: isFeatureEnabled(
         FeatureSwitchKey.LarkIntegration,
-        args.featureSwitchContext,
+        featureContext,
       ),
       deliveryFormatGuidanceEnabled: isFeatureEnabled(
         FeatureSwitchKey.DeliveryFormatGuidance,
-        args.featureSwitchContext,
+        featureContext,
       ),
       introVideoEnabled,
     }),
