@@ -70,7 +70,7 @@ export const rustTypeModuleDocs = [
   },
   {
     rustModulePath: ["runners", "vnc"],
-    rustDoc: ["Private Runner VNC credentials and fenced control lease DTOs."],
+    rustDoc: ["Private Runner VNC credentials and current authorization DTOs."],
   },
   {
     rustModulePath: ["runners"],

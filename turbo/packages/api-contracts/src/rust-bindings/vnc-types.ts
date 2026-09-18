@@ -16,90 +16,14 @@ function identityDocs(name: string): RustTypeDeclarationDoc {
 function authorityDocs(name: string): RustTypeDeclarationDoc {
   return {
     rustTypeName: name,
-    rustDoc: ["Exact saved connection incarnation, policy and Agent grant."],
+    rustDoc: ["Exact saved connection incarnation and configuration."],
     fields: {
       instanceId: [
         "Connection incarnation; changes after delete and recreate.",
       ],
       generation: ["Current configuration generation."],
-      grantId: ["Current grant identity; changes after revoke and regrant."],
     },
   };
-}
-
-function leaseRequestDocs(
-  name: string,
-  acquire: boolean,
-): RustTypeDeclarationDoc[] {
-  return [
-    {
-      rustTypeName: name,
-      rustDoc: [
-        "Operate only under exact current Run and connection authority.",
-      ],
-      fields: {
-        connectionId: ["Exact saved connection UUID, not endpoint identity."],
-        runnerIdentity: ["Winning process identity."],
-        authority: ["Authority returned by credential resolution."],
-        ...(acquire
-          ? {
-              holderId: [
-                "Fresh acquisition intent UUID; preserve on ambiguous retry.",
-              ],
-            }
-          : {
-              leaseToken: [
-                "Exact random lease token; never adopt another holder.",
-              ],
-            }),
-      },
-    },
-    identityDocs(`${name}RunnerIdentity`),
-    authorityDocs(`${name}Authority`),
-  ];
-}
-
-function leaseResponseDocs(
-  name: string,
-  acquire: boolean,
-): RustTypeDeclarationDoc[] {
-  return [
-    {
-      rustTypeName: name,
-      rustDoc: [
-        "Bounded authority snapshot; stop on failure or the conservative monotonic deadline.",
-        "Derive the deadline from request start plus validForMs, never response arrival.",
-      ],
-      fields: {
-        leaseToken: ["Exact holder token for check, renew and release."],
-        serverTime: ["Database clock after authority and lease lock waits."],
-        expiresAt: [
-          "Database expiry; diagnostic, not a local wall-clock deadline.",
-        ],
-        validForMs: ["Remaining validity, at most 30000 milliseconds."],
-        renewAfterMs: ["Renew conservatively every 10000 milliseconds."],
-      },
-      variants: {
-        ...(acquire
-          ? {
-              acquired: [
-                "Acquired or replayed the same unextended live acquisition.",
-              ],
-              busy: ["Another holder remains within its accepted lifetime."],
-            }
-          : {
-              valid: [
-                "Exact lease is still authorized; only renew extends expiry.",
-              ],
-            }),
-        unavailable: ["Current Run, owner or grant authority is unavailable."],
-        configuration_changed: [
-          "Saved connection incarnation or policy changed.",
-        ],
-        expired: ["Lease expired, was released or belongs to another holder."],
-      },
-    },
-  ];
 }
 
 export const vncTypeBindings = [
@@ -151,7 +75,7 @@ export const vncTypeBindings = [
         fields: {
           host: ["Current private destination."],
           port: ["Current destination port."],
-          authority: ["Exact authority for subsequent lease operations."],
+          authority: ["Saved configuration identity for subsequent checks."],
           authentication: ["Credential for the explicitly saved method."],
           security: [
             "Explicit saved transport and trust policy; never downgrade.",
@@ -165,7 +89,7 @@ export const vncTypeBindings = [
             "Runner does not support the exact saved profile.",
           ],
           resolved: [
-            "Current credential and policy; control still requires a lease.",
+            "Current credential and policy; the VNC server controls connection admission.",
           ],
         },
       },
@@ -205,52 +129,44 @@ export const vncTypeBindings = [
       },
     ],
   },
-  ...(["acquire", "check", "renew"] as const).flatMap((action) => {
-    const name =
-      action === "acquire" ? "Acquire" : action === "check" ? "Check" : "Renew";
-    return [
-      {
-        schema: runnerVncContract[action].body,
-        rustModulePath: ["runners", "vnc"],
-        rustTypeName: `${name}Request`,
-        direction: "request" as const,
-        declarations: leaseRequestDocs(`${name}Request`, action === "acquire"),
-      },
-      {
-        schema: runnerVncContract[action].responses[200],
-        rustModulePath: ["runners", "vnc"],
-        rustTypeName: `${name}Response`,
-        direction: "response" as const,
-        declarations: leaseResponseDocs(
-          `${name}Response`,
-          action === "acquire",
-        ),
-      },
-    ];
-  }),
   {
-    schema: runnerVncContract.release.body,
+    schema: runnerVncContract.check.body,
     rustModulePath: ["runners", "vnc"],
-    rustTypeName: "ReleaseRequest",
+    rustTypeName: "CheckRequest",
     direction: "request",
-    declarations: leaseRequestDocs("ReleaseRequest", false),
+    declarations: [
+      {
+        rustTypeName: "CheckRequest",
+        rustDoc: ["Recheck current Run authorization and saved configuration."],
+        fields: {
+          connectionId: ["Exact saved VNC connection UUID."],
+          runnerIdentity: ["Winning process identity."],
+          authority: [
+            "Configuration identity returned by credential resolution.",
+          ],
+        },
+      },
+      identityDocs("CheckRequestRunnerIdentity"),
+      authorityDocs("CheckRequestAuthority"),
+    ],
   },
   {
-    schema: runnerVncContract.release.responses[200],
+    schema: runnerVncContract.check.responses[200],
     rustModulePath: ["runners", "vnc"],
-    rustTypeName: "ReleaseResponse",
+    rustTypeName: "CheckResponse",
     direction: "response",
     declarations: [
       {
-        rustTypeName: "ReleaseResponse",
+        rustTypeName: "CheckResponse",
         rustDoc: [
-          "Release outcome; a lost response never restores control authority.",
+          "Current authorization snapshot, not a reservation or guarantee of exclusive control.",
+          "Check before operations and stop on denial, changed configuration or API failure.",
         ],
         variants: {
-          released: ["Exact lease was released."],
+          valid: ["Current Run remains authorized for the same configuration."],
           unavailable: ["Current authority is unavailable."],
-          expired: [
-            "Lease is expired or superseded; another holder is untouched.",
+          configuration_changed: [
+            "Saved connection incarnation or configuration changed.",
           ],
         },
       },

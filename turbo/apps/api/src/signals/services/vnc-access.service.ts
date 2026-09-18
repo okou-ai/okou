@@ -39,11 +39,11 @@ export async function getAgentVncAccess(
   owner: AgentAccessScope,
 ) {
   const [row] = await db
-    .select({ grantId: agentVncAccess.id })
+    .select({ grant: agentVncAccess.agentId })
     .from(agents)
     .leftJoin(agentVncAccess, ownedGrant(owner))
     .where(visibleAgent(owner));
-  return row ? { enabled: row.grantId !== null } : null;
+  return row ? { enabled: row.grant !== null } : null;
 }
 
 export async function updateAgentVncAccess(
@@ -74,7 +74,6 @@ export async function updateAgentVncAccess(
       return null;
     }
     if (enabled) {
-      // Repeated enable preserves this grant incarnation; revoke/regrant does not.
       await tx.insert(agentVncAccess).values(owner).onConflictDoNothing();
     } else {
       await tx.delete(agentVncAccess).where(ownedGrant(owner));

@@ -11,7 +11,6 @@ export const runnerVncAuthoritySchema = z
   .object({
     instanceId: z.uuid(),
     generation: z.int().positive().max(2_147_483_647),
-    grantId: z.uuid(),
   })
   .strict();
 
@@ -42,7 +41,6 @@ const resolveRequestSchema = commonRequestSchema.extend({
 const unavailableSchema = z
   .object({ outcome: z.literal("unavailable") })
   .strict();
-const expiredSchema = z.object({ outcome: z.literal("expired") }).strict();
 const configurationChangedSchema = z
   .object({ outcome: z.literal("configuration_changed") })
   .strict();
@@ -62,38 +60,13 @@ const resolveResponseSchema = z.discriminatedUnion("outcome", [
     .strict(),
 ]);
 
-const acquireRequestSchema = commonRequestSchema.extend({
+const checkRequestSchema = commonRequestSchema.extend({
   authority: runnerVncAuthoritySchema,
-  holderId: z.uuid(),
 });
-const leaseRequestSchema = commonRequestSchema.extend({
-  authority: runnerVncAuthoritySchema,
-  leaseToken: z.uuid(),
-});
-const leaseFields = {
-  leaseToken: z.uuid(),
-  serverTime: z.string().datetime(),
-  expiresAt: z.string().datetime(),
-  validForMs: z.int().min(0).max(30_000),
-  renewAfterMs: z.literal(10_000),
-};
-const acquireResponseSchema = z.discriminatedUnion("outcome", [
-  z.object({ outcome: z.literal("acquired"), ...leaseFields }).strict(),
-  z.object({ outcome: z.literal("busy") }).strict(),
+const checkResponseSchema = z.discriminatedUnion("outcome", [
+  z.object({ outcome: z.literal("valid") }).strict(),
   unavailableSchema,
   configurationChangedSchema,
-  expiredSchema,
-]);
-const leaseResponseSchema = z.discriminatedUnion("outcome", [
-  z.object({ outcome: z.literal("valid"), ...leaseFields }).strict(),
-  unavailableSchema,
-  configurationChangedSchema,
-  expiredSchema,
-]);
-const releaseResponseSchema = z.discriminatedUnion("outcome", [
-  z.object({ outcome: z.literal("released") }).strict(),
-  unavailableSchema,
-  expiredSchema,
 ]);
 
 const pathParams = z.object({ runId: z.uuid() }).strict();
@@ -115,52 +88,19 @@ export const runnerVncContract = c.router({
     summary:
       "Resolve supported VNC credentials for the winning official Runner",
   },
-  acquire: {
-    method: "POST",
-    path: "/api/runners/runs/:runId/vnc/acquire",
-    pathParams,
-    headers: authHeadersSchema,
-    body: acquireRequestSchema,
-    responses: { 200: acquireResponseSchema, ...errors },
-    summary: "Acquire bounded exclusive control of one saved VNC connection",
-  },
   check: {
     method: "POST",
     path: "/api/runners/runs/:runId/vnc/check",
     pathParams,
     headers: authHeadersSchema,
-    body: leaseRequestSchema,
-    responses: { 200: leaseResponseSchema, ...errors },
-    summary: "Check current VNC authority without extending its lease",
-  },
-  renew: {
-    method: "POST",
-    path: "/api/runners/runs/:runId/vnc/renew",
-    pathParams,
-    headers: authHeadersSchema,
-    body: leaseRequestSchema,
-    responses: { 200: leaseResponseSchema, ...errors },
-    summary: "Renew an unexpired VNC lease under current authority",
-  },
-  release: {
-    method: "POST",
-    path: "/api/runners/runs/:runId/vnc/release",
-    pathParams,
-    headers: authHeadersSchema,
-    body: leaseRequestSchema,
-    responses: { 200: releaseResponseSchema, ...errors },
-    summary: "Release only the exact current VNC lease holder",
+    body: checkRequestSchema,
+    responses: { 200: checkResponseSchema, ...errors },
+    summary: "Check current VNC authorization and configuration",
   },
 });
 
 export type RunnerVncAuthority = z.infer<typeof runnerVncAuthoritySchema>;
 export type RunnerVncResolveRequest = z.infer<typeof resolveRequestSchema>;
 export type RunnerVncResolveResponse = z.infer<typeof resolveResponseSchema>;
-export type RunnerVncAcquireRequest = z.infer<typeof acquireRequestSchema>;
-export type RunnerVncAcquireResponse = z.infer<typeof acquireResponseSchema>;
-export type RunnerVncCheckRequest = z.infer<typeof leaseRequestSchema>;
-export type RunnerVncCheckResponse = z.infer<typeof leaseResponseSchema>;
-export type RunnerVncRenewRequest = z.infer<typeof leaseRequestSchema>;
-export type RunnerVncRenewResponse = z.infer<typeof leaseResponseSchema>;
-export type RunnerVncReleaseRequest = z.infer<typeof leaseRequestSchema>;
-export type RunnerVncReleaseResponse = z.infer<typeof releaseResponseSchema>;
+export type RunnerVncCheckRequest = z.infer<typeof checkRequestSchema>;
+export type RunnerVncCheckResponse = z.infer<typeof checkResponseSchema>;

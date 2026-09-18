@@ -1,4 +1,6 @@
 import type {
+  RunnerVncCheckRequest,
+  RunnerVncCheckResponse,
   RunnerVncResolveRequest,
   RunnerVncResolveResponse,
 } from "@okouai/api-contracts/contracts/runner-vnc";
@@ -14,6 +16,23 @@ import {
   matchesRunnerVncAuthority,
   runnerVncAuthorityStamp,
 } from "./runner-vnc-authority.service";
+
+export async function checkRunnerVnc(
+  db: Db,
+  clerk: ClerkClient,
+  input: RunnerVncCheckRequest & { readonly runId: string },
+  signal: AbortSignal,
+): Promise<RunnerVncCheckResponse> {
+  const row = await currentRunnerVncAuthority(db, input, signal);
+  if (!row || !(await hasCurrentVncMembership(clerk, row, signal))) {
+    return { outcome: "unavailable" };
+  }
+  return {
+    outcome: matchesRunnerVncAuthority(row, input.authority)
+      ? "valid"
+      : "configuration_changed",
+  };
+}
 
 export async function resolveRunnerVnc(
   db: Db,

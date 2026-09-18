@@ -73,10 +73,9 @@ unchanged; a future rotation must include VNC in its current inventory.
 ## Membership and deletion lifecycle
 
 The configuration tables are `vnc_credentials` and `vnc_connections`. Both use the
-organization/user pair as their owner, matching SSH configuration. The business
-tables `agent_vnc_access` and `vnc_control_leases` store explicit grants and one
-bounded reservation per connection. There are no membership-history, authority
-revision or creation receipt tables. Current
+organization/user pair as their owner, matching SSH configuration. The
+`agent_vnc_access` table stores explicit grants with the same composite
+organization/user/Agent key as SSH. Current
 membership authorizes access to that owner's configuration. If the user leaves
 and rejoins before cleanup removes the configuration, it remains the same
 owner's data and is accessible again. Each saved connection retains its own
@@ -90,7 +89,7 @@ a request that passed membership admission before cleanup and only enters its
 write transaction afterward; such an in-flight request can still finish.
 
 Current user, organization and member cleanup removes hosts before credentials,
-cascades their leases and removes owner grants, including grants with no hosts.
+and removes owner grants, including grants with no hosts.
 Member cleanup removes the organization's configuration for that user. It follows
 the existing organization/user cleanup path, including when a deletion event
 arrives after the user has rejoined. Membership checks and KMS calls run outside
@@ -123,9 +122,9 @@ identity verification and full-session encryption.
 The present Rust engine independently supports only RFB 3.8 / VeNCrypt 0.2 /
 X509Vnc. Its TLS-owned authenticated stream must be generalized as part of any
 future non-TLS or RSA-AES implementation. SSH authentication belongs to an outer
-transport and does not become a VNC password method. Separate saved connection IDs
-can address the same physical desktop; per-connection control leases do not
-provide global exclusion against aliases, other viewers or a local user.
+transport and does not become a VNC password method. Shared/exclusive mode is a
+per-session Agent choice, independent of authentication. The VNC server decides
+how to admit clients; shared sessions can interact with the same desktop.
 
 ## Deployment and rollback
 
@@ -138,7 +137,7 @@ unchanged. The configuration API stays unavailable until the feature is
 explicitly enabled; merging this change does not enable it.
 
 Before enabling the feature, every serving API version must include VNC-aware
-configuration, grant and lease deletion cleanup. Once any VNC configuration or grant exists, that cleanup support is an
+configuration and grant deletion cleanup. Once any VNC configuration or grant exists, that cleanup support is an
 API rollback floor: disabling the feature does not erase saved credentials.
 Rollback may disable `vncAccess`, but must retain VNC-aware cleanup and the additive
 schema. Rolling back below this floor requires a separately verified drain and

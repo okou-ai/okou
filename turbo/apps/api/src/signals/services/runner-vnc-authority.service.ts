@@ -12,15 +12,14 @@ import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { vncCredentials } from "@okouai/db/schema/vnc-credential";
 import { and, eq, or } from "drizzle-orm";
 import type { Db } from "../external/db";
-import type { VncTransaction } from "./vnc-configuration.utils";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 
-export type RunnerVncInput = Pick<
+type RunnerVncInput = Pick<
   RunnerVncResolveRequest,
   "connectionId" | "runnerIdentity"
 > & { readonly runId: string };
 
-/** Always use the primary database, including after transaction lock waits. */
+/** Always read current authorization from the primary database. */
 export async function currentRunnerVncAuthority(
   db: Pick<Db, "select">,
   input: RunnerVncInput,
@@ -28,15 +27,10 @@ export async function currentRunnerVncAuthority(
 ) {
   const [row] = await db
     .select({
-      id: vncConnections.id,
       instanceId: vncConnections.instanceId,
       generation: vncConnections.generation,
-      grantId: agentVncAccess.id,
-      agentId: agents.id,
-      sessionId: agentSessions.id,
       orgId: agentRuns.orgId,
       userId: agentRuns.userId,
-      credentialId: vncCredentials.id,
       host: vncConnections.host,
       port: vncConnections.port,
       securityType: vncConnections.securityType,
@@ -116,17 +110,12 @@ export async function currentRunnerVncAuthority(
   return row;
 }
 
-export type CurrentRunnerVncAuthority = NonNullable<
-  Awaited<ReturnType<typeof currentRunnerVncAuthority>>
->;
-
 export function runnerVncAuthorityStamp(
-  row: CurrentRunnerVncAuthority,
+  row: RunnerVncAuthority,
 ): RunnerVncAuthority {
   return {
     instanceId: row.instanceId,
     generation: row.generation,
-    grantId: row.grantId,
   };
 }
 
@@ -136,65 +125,6 @@ export function matchesRunnerVncAuthority(
 ): boolean {
   return (
     row.instanceId === expected.instanceId &&
-    row.generation === expected.generation &&
-    row.grantId === expected.grantId
+    row.generation === expected.generation
   );
-}
-
-/** Match Agent lifecycle's parent lock order; joined rowmarks do not promise it. */
-export async function lockRunnerVncAuthority(
-  tx: VncTransaction,
-  initial: CurrentRunnerVncAuthority,
-  input: RunnerVncInput,
-  signal: AbortSignal,
-) {
-  const [connection] = await tx
-    .select({ id: vncConnections.id })
-    .from(vncConnections)
-    .where(
-      and(
-        eq(vncConnections.id, initial.id),
-        eq(vncConnections.instanceId, initial.instanceId),
-        eq(vncConnections.orgId, initial.orgId),
-        eq(vncConnections.userId, initial.userId),
-      ),
-    )
-    .for("update");
-  if (!connection) {
-    return null;
-  }
-  await tx
-    .select({ id: agents.id })
-    .from(agents)
-    .where(eq(agents.id, initial.agentId))
-    .for("share");
-  await tx
-    .select({ id: agentSessions.id })
-    .from(agentSessions)
-    .where(eq(agentSessions.id, initial.sessionId))
-    .for("share");
-  await tx
-    .select({ id: agentRuns.id })
-    .from(agentRuns)
-    .where(eq(agentRuns.id, input.runId))
-    .for("share");
-  await tx
-    .select({ id: agentVncAccess.id })
-    .from(agentVncAccess)
-    .where(eq(agentVncAccess.id, initial.grantId))
-    .for("share");
-  await tx
-    .select({ id: vncCredentials.id })
-    .from(vncCredentials)
-    .where(eq(vncCredentials.id, initial.credentialId))
-    .for("share");
-  const current = await currentRunnerVncAuthority(tx, input, signal);
-  // References may have changed before the locks. Never authorize unlocked parents.
-  return current &&
-    current.agentId === initial.agentId &&
-    current.sessionId === initial.sessionId &&
-    current.credentialId === initial.credentialId &&
-    current.grantId === initial.grantId
-    ? current
-    : null;
 }

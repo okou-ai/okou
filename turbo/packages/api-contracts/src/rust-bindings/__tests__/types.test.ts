@@ -29,7 +29,7 @@ import {
 } from "../../contracts/webhooks";
 
 const expectedBindings = [
-  ...["Resolve", "Acquire", "Check", "Renew", "Release"].flatMap((name) => {
+  ...["Resolve", "Check"].flatMap((name) => {
     return [
       {
         rustModulePath: ["runners", "vnc"],

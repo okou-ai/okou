@@ -3,7 +3,7 @@ import {
   pgTable,
   text,
   timestamp,
-  unique,
+  primaryKey,
   uuid,
 } from "drizzle-orm/pg-core";
 
@@ -12,7 +12,6 @@ import { agents } from "./agent";
 export const agentVncAccess = pgTable(
   "agent_vnc_access",
   {
-    id: uuid("id").primaryKey().defaultRandom(),
     orgId: text("org_id").notNull(),
     userId: text("user_id").notNull(),
     agentId: uuid("agent_id")
@@ -27,13 +26,12 @@ export const agentVncAccess = pgTable(
   },
   (table) => {
     return [
-      unique("uq_agent_vnc_access_owner_agent").on(
-        table.orgId,
-        table.userId,
-        table.agentId,
-      ),
+      primaryKey({
+        name: "agent_vnc_access_pkey",
+        columns: [table.orgId, table.userId, table.agentId],
+      }),
       index("idx_agent_vnc_access_agent").on(table.agentId),
-      index("idx_agent_vnc_access_user").on(table.userId, table.id),
+      index("idx_agent_vnc_access_user").on(table.userId),
     ];
   },
 );

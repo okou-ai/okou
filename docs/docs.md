@@ -42,7 +42,7 @@ surface; the index does not replace their detailed rules.
 - [VNC configuration and authority](./vnc-access.md): encrypted credentials, saved
   hosts, TLS trust, membership fences, and the disabled rollout boundary.
 - [Runner VNC authority](./runner-vnc-authority.md): explicit Agent grants,
-  private typed handoff, fenced control leases and bounded revocation.
+  private typed handoff, current authorization and native sharing modes.
 - [Social download discovery](./social-download-discovery.md): bounded task
   listing, scoped recovery hints, pagination, and CLI/API compatibility.
 - [Social errors and download recovery](./social-errors.md): stable error

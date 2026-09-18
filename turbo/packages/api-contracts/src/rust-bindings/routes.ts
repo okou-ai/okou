@@ -36,15 +36,13 @@ export interface RustRouteBinding {
 }
 
 export const rustRouteBindings = [
-  ...(["resolve", "acquire", "check", "renew", "release"] as const).map(
-    (action) => {
-      return {
-        route: runnerVncContract[action],
-        rustModulePath: ["runners", "runs", "by_run_id", "vnc", action],
-        rustConstName: action.toUpperCase(),
-      };
-    },
-  ),
+  ...(["resolve", "check"] as const).map((action) => {
+    return {
+      route: runnerVncContract[action],
+      rustModulePath: ["runners", "runs", "by_run_id", "vnc", action],
+      rustConstName: action.toUpperCase(),
+    };
+  }),
   {
     route: runnersCancellationContract.get,
     rustModulePath: ["runners", "runs", "by_run_id", "cancellation"],

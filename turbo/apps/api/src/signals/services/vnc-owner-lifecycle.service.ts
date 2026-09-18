@@ -110,14 +110,18 @@ async function deleteVncRows(
     .orderBy(asc(vncCredentials.id))
     .for("update");
   await tx
-    .select({ id: agentVncAccess.id })
+    .select({ agentId: agentVncAccess.agentId })
     .from(agentVncAccess)
     .where(grantCondition)
-    .orderBy(asc(agentVncAccess.id))
+    .orderBy(
+      asc(agentVncAccess.orgId),
+      asc(agentVncAccess.userId),
+      asc(agentVncAccess.agentId),
+    )
     .for("update");
   await tx.delete(vncConnections).where(connectionCondition);
   await tx.delete(vncCredentials).where(credentialCondition);
-  // Connection deletion cascades leases. Grants may exist with no connections.
+  // Grants may exist with no connections.
   await tx.delete(agentVncAccess).where(grantCondition);
 }
 

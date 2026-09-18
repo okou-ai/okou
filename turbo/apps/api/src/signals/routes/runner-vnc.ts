@@ -6,12 +6,10 @@ import { bodyResultOf, pathParamsOf } from "../context/request";
 import { clerk$ } from "../external/clerk";
 import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
-import { resolveRunnerVnc } from "../services/runner-vnc.service";
 import {
-  acquireRunnerVnc,
   checkRunnerVnc,
-  releaseRunnerVnc,
-} from "../services/runner-vnc-lease.service";
+  resolveRunnerVnc,
+} from "../services/runner-vnc.service";
 
 const authorizeVncRunner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -62,26 +60,6 @@ const resolve$ = command(async ({ get, set }, signal: AbortSignal) => {
   return { status: 200 as const, body: result };
 });
 
-const acquire$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const error = await set(authorizeVncRunner$, signal);
-  if (error) {
-    return error;
-  }
-  const body = await get(bodyResultOf(runnerVncContract.acquire));
-  signal.throwIfAborted();
-  if (!body.ok) {
-    return body.response;
-  }
-  const { runId } = get(pathParamsOf(runnerVncContract.acquire));
-  const result = await acquireRunnerVnc(
-    set(writeDb$),
-    get(clerk$),
-    { runId, ...body.data },
-    signal,
-  );
-  return { status: 200 as const, body: result };
-});
-
 const check$ = command(async ({ get, set }, signal: AbortSignal) => {
   const error = await set(authorizeVncRunner$, signal);
   if (error) {
@@ -97,48 +75,6 @@ const check$ = command(async ({ get, set }, signal: AbortSignal) => {
     set(writeDb$),
     get(clerk$),
     { runId, ...body.data },
-    false,
-    signal,
-  );
-  return { status: 200 as const, body: result };
-});
-
-const renew$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const error = await set(authorizeVncRunner$, signal);
-  if (error) {
-    return error;
-  }
-  const body = await get(bodyResultOf(runnerVncContract.renew));
-  signal.throwIfAborted();
-  if (!body.ok) {
-    return body.response;
-  }
-  const { runId } = get(pathParamsOf(runnerVncContract.renew));
-  const result = await checkRunnerVnc(
-    set(writeDb$),
-    get(clerk$),
-    { runId, ...body.data },
-    true,
-    signal,
-  );
-  return { status: 200 as const, body: result };
-});
-
-const release$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const error = await set(authorizeVncRunner$, signal);
-  if (error) {
-    return error;
-  }
-  const body = await get(bodyResultOf(runnerVncContract.release));
-  signal.throwIfAborted();
-  if (!body.ok) {
-    return body.response;
-  }
-  const { runId } = get(pathParamsOf(runnerVncContract.release));
-  const result = await releaseRunnerVnc(
-    set(writeDb$),
-    get(clerk$),
-    { runId, ...body.data },
     signal,
   );
   return { status: 200 as const, body: result };
@@ -146,8 +82,5 @@ const release$ = command(async ({ get, set }, signal: AbortSignal) => {
 
 export const runnerVncRoutes: readonly RouteEntry[] = [
   { route: runnerVncContract.resolve, handler: resolve$ },
-  { route: runnerVncContract.acquire, handler: acquire$ },
   { route: runnerVncContract.check, handler: check$ },
-  { route: runnerVncContract.renew, handler: renew$ },
-  { route: runnerVncContract.release, handler: release$ },
 ];

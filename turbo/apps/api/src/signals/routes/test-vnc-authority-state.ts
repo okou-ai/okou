@@ -3,9 +3,8 @@ import {
   type TestVncAuthorityStateAction,
 } from "@okouai/api-contracts/contracts/test-vnc-authority-state";
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
-import { vncControlLeases } from "@okouai/db/schema/vnc-control-lease";
 import { command } from "ccstate";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { executeRawRows } from "../../lib/db-raw-rows";
@@ -120,33 +119,7 @@ const action$ = command(async ({ get, set }, signal: AbortSignal) => {
     return body.response;
   }
   const db = set(writeDb$);
-  if (body.data.action !== "expire-lease") {
-    return await connectionLock(db, body.data, signal);
-  }
-  const [updated] = await db
-    .update(vncControlLeases)
-    .set({ expiresAt: sql`date_trunc('milliseconds', clock_timestamp())` })
-    .where(
-      and(
-        eq(vncControlLeases.leaseToken, body.data.leaseToken),
-        inArray(
-          vncControlLeases.connectionId,
-          db
-            .select({ id: vncConnections.id })
-            .from(vncConnections)
-            .where(ownerCondition(body.data)),
-        ),
-      ),
-    )
-    .returning({ id: vncControlLeases.connectionId });
-  signal.throwIfAborted();
-  if (!updated) {
-    return {
-      status: 400 as const,
-      body: { error: "Owned VNC lease not found" },
-    };
-  }
-  return { status: 200 as const, body: { ok: true as const } };
+  return await connectionLock(db, body.data, signal);
 });
 
 export const testVncAuthorityStateRoutes: readonly RouteEntry[] = [

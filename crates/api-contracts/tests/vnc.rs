@@ -1,7 +1,6 @@
 use api_contracts::generated::types::runners::vnc::{
-    AcquireResponse, CheckResponse, ReleaseResponse, RenewResponse, ResolveResponse,
-    ResolveResponseResolvedAuthentication, ResolveResponseResolvedSecurity,
-    ResolveResponseResolvedSecurityX509VncTrust,
+    CheckResponse, ResolveResponse, ResolveResponseResolvedAuthentication,
+    ResolveResponseResolvedSecurity, ResolveResponseResolvedSecurityX509VncTrust,
 };
 use serde_json::{Value, json};
 
@@ -10,8 +9,7 @@ fn resolved() -> Value {
         "outcome": "resolved", "host": "vnc.example.com", "port": 5900,
         "authority": {
             "instanceId": "00000000-0000-4000-8000-000000000001",
-            "generation": 5,
-            "grantId": "00000000-0000-4000-8000-000000000002"
+            "generation": 5
         },
         "authentication": {"method": "vnc_password", "password": " pass  "},
         "security": {"type": "x509_vnc", "trust": {"mode": "system"}}
@@ -117,31 +115,14 @@ fn malformed_credentials_and_duplicate_fields_do_not_expose_passwords() {
 }
 
 #[test]
-fn lease_responses_preserve_fencing_and_route_specific_outcomes() {
-    let body = json!({
-        "outcome": "acquired", "leaseToken": "00000000-0000-4000-8000-000000000003",
-        "serverTime": "2026-09-18T00:00:00.000Z", "expiresAt": "2026-09-18T00:00:30.000Z",
-        "validForMs": 30000, "renewAfterMs": 10000
-    });
-    let response: AcquireResponse = serde_json::from_value(body.clone()).unwrap();
-    let AcquireResponse::Acquired {
-        lease_token,
-        valid_for_ms,
-        renew_after_ms,
-        ..
-    } = response
-    else {
-        panic!("expected lease");
-    };
-    assert_eq!(lease_token, "00000000-0000-4000-8000-000000000003");
-    assert_eq!(valid_for_ms, 30000);
-    assert_eq!(renew_after_ms, 10000);
-    assert!(serde_json::from_value::<CheckResponse>(body.clone()).is_err());
-    assert!(serde_json::from_value::<RenewResponse>(body.clone()).is_err());
-    assert!(serde_json::from_value::<ReleaseResponse>(body.clone()).is_err());
-    let mut valid = body;
-    valid["outcome"] = json!("valid");
-    assert!(serde_json::from_value::<CheckResponse>(valid.clone()).is_ok());
-    assert!(serde_json::from_value::<RenewResponse>(valid.clone()).is_ok());
-    assert!(serde_json::from_value::<AcquireResponse>(valid).is_err());
+fn authorization_check_preserves_closed_outcomes() {
+    for (outcome, expected) in [
+        ("valid", CheckResponse::Valid),
+        ("configuration_changed", CheckResponse::ConfigurationChanged),
+        ("unavailable", CheckResponse::Unavailable),
+    ] {
+        let response: CheckResponse = serde_json::from_value(json!({"outcome": outcome})).unwrap();
+        assert_eq!(response, expected);
+    }
+    assert!(serde_json::from_value::<CheckResponse>(json!({"outcome": "future"})).is_err());
 }

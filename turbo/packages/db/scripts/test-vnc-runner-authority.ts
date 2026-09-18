@@ -31,13 +31,6 @@ const legacyConnectionInsert = `
   INSERT INTO vnc_connections (id,org_id,user_id,display_name,host,credential_id,security_type,trust_mode)
     VALUES ('00000000-0000-4000-8000-000000000002','org','owner','Desktop','desktop.example.com','00000000-0000-4000-8000-000000000001','x509_vnc','system')
 `;
-const leaseInsert = `
-  INSERT INTO vnc_control_leases (connection_id,instance_id,generation,grant_id,holder_id,lease_token,run_id,runner_id,heartbeat_generation,expires_at)
-    SELECT id,instance_id,generation,'00000000-0000-4000-8000-000000000004',
-      '00000000-0000-4000-8000-000000000006','00000000-0000-4000-8000-000000000007',
-      '00000000-0000-4000-8000-000000000008','00000000-0000-4000-8000-000000000009',1,clock_timestamp()+interval '30 seconds'
-    FROM vnc_connections WHERE id='00000000-0000-4000-8000-000000000002'
-`;
 
 try {
   await client.query("BEGIN");
@@ -82,74 +75,28 @@ try {
   });
 
   await client.query(`
-    INSERT INTO agent_vnc_access (id,org_id,user_id,agent_id)
-      VALUES ('00000000-0000-4000-8000-000000000004','org','owner','00000000-0000-4000-8000-000000000003');
+    INSERT INTO agent_vnc_access (org_id,user_id,agent_id)
+      VALUES ('org','owner','00000000-0000-4000-8000-000000000003');
   `);
   await rejects(
     "INSERT INTO agent_vnc_access (org_id,user_id,agent_id) VALUES ('org','owner','00000000-0000-4000-8000-000000000003')",
-    { code: "23505", constraint: "uq_agent_vnc_access_owner_agent" },
+    { code: "23505", constraint: "agent_vnc_access_pkey" },
   );
   await client.query(
     "INSERT INTO agent_vnc_access (org_id,user_id,agent_id) VALUES ('org','other','00000000-0000-4000-8000-000000000003')",
   );
-  await client.query(leaseInsert);
-  await rejects(leaseInsert, {
-    code: "23505",
-    constraint: "vnc_control_leases_pkey",
-  });
-
-  for (const assignment of ["generation=0", "generation=-1"]) {
-    await rejects(`UPDATE vnc_control_leases SET ${assignment}`, {
-      code: "23514",
-      constraint: "chk_vnc_control_leases_generation",
-    });
-  }
-  await rejects("UPDATE vnc_control_leases SET generation=2147483648", {
-    code: "22003",
-  });
-  for (const value of ["0", "-1", "9007199254740992"]) {
-    await rejects(
-      `UPDATE vnc_control_leases SET heartbeat_generation=${value}`,
-      {
-        code: "23514",
-        constraint: "chk_vnc_control_leases_runner_generation",
-      },
-    );
-  }
   await client.query(
-    "UPDATE vnc_control_leases SET generation=2147483647,heartbeat_generation=9007199254740991",
+    "INSERT INTO agent_vnc_access (org_id,user_id,agent_id) VALUES ('other-org','owner','00000000-0000-4000-8000-000000000003')",
   );
-
-  // Revoking a grant cannot erase the old holder's accepted lease lifetime.
-  await client.query(
-    "DELETE FROM agent_vnc_access WHERE id='00000000-0000-4000-8000-000000000004'",
+  await rejects(
+    "INSERT INTO agent_vnc_access (org_id,user_id,agent_id) VALUES ('org','owner','00000000-0000-4000-8000-000000000099')",
+    { code: "23503", constraint: "agent_vnc_access_agent_id_agents_id_fk" },
   );
-  assert.deepEqual(
-    (
-      await client.query(
-        "SELECT count(*)::int AS count FROM vnc_control_leases",
-      )
-    ).rows,
-    [{ count: 1 }],
-  );
-  await client.query(`
-    INSERT INTO agent_vnc_access (org_id,user_id,agent_id)
-      VALUES ('org','owner','00000000-0000-4000-8000-000000000003');
-    UPDATE vnc_control_leases SET grant_id=(SELECT id FROM agent_vnc_access WHERE user_id='owner');
-  `);
   await client.query("DELETE FROM agents");
   assert.deepEqual(
     (await client.query("SELECT count(*)::int AS count FROM agent_vnc_access"))
       .rows,
     [{ count: 0 }],
-  );
-  assert.deepEqual(
-    (
-      await client.query(
-        "SELECT count(*)::int AS count FROM vnc_control_leases",
-      )
-    ).rows,
-    [{ count: 1 }],
   );
 
   await client.query(`
@@ -157,14 +104,6 @@ try {
       SELECT instance_id FROM vnc_connections WHERE id='00000000-0000-4000-8000-000000000002';
     DELETE FROM vnc_connections WHERE id='00000000-0000-4000-8000-000000000002';
   `);
-  assert.deepEqual(
-    (
-      await client.query(
-        "SELECT count(*)::int AS count FROM vnc_control_leases",
-      )
-    ).rows,
-    [{ count: 0 }],
-  );
   await client.query(legacyConnectionInsert);
   assert.deepEqual(
     (
@@ -177,7 +116,7 @@ try {
     [{ generation: 1, fresh: true }],
   );
   console.log(
-    "VNC Runner authority migration and lease storage constraints passed",
+    "VNC Runner authority migration and grant ownership constraints passed",
   );
 } finally {
   await client.query("ROLLBACK");

@@ -12,25 +12,16 @@ export const testVncAuthorityStateContract = c.router({
   action: {
     method: "POST",
     path: "/api/test/vnc-authority-state/action",
-    body: z.discriminatedUnion("action", [
-      z
-        .object({
-          action: z.literal("expire-lease"),
-          ...ownerConnection,
-          leaseToken: z.uuid(),
-        })
-        .strict(),
-      z
-        .object({
-          action: z.enum([
-            "hold-connection-lock",
-            "read-connection-lock",
-            "release-connection-lock",
-          ]),
-          ...ownerConnection,
-        })
-        .strict(),
-    ]),
+    body: z
+      .object({
+        action: z.enum([
+          "hold-connection-lock",
+          "read-connection-lock",
+          "release-connection-lock",
+        ]),
+        ...ownerConnection,
+      })
+      .strict(),
     responses: {
       200: z
         .object({
@@ -42,8 +33,7 @@ export const testVncAuthorityStateContract = c.router({
       400: z.object({ error: z.string() }),
       404: z.string(),
     },
-    summary:
-      "Construct owned database expiry and contention for VNC authority tests",
+    summary: "Construct owned database contention for VNC lifecycle tests",
   },
 });
 

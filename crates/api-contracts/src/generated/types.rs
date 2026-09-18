@@ -1969,77 +1969,8 @@ pub mod runners {
         }
     }
 
-    /// Private Runner VNC credentials and fenced control lease DTOs.
+    /// Private Runner VNC credentials and current authorization DTOs.
     pub mod vnc {
-        /// Immutable winning official Runner process.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        pub struct AcquireRequestRunnerIdentity {
-            /// Runner UUID.
-            pub runner_id: String,
-            /// Winning process generation.
-            pub heartbeat_generation: i64,
-        }
-
-        /// Exact saved connection incarnation, policy and Agent grant.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        pub struct AcquireRequestAuthority {
-            /// Connection incarnation; changes after delete and recreate.
-            pub instance_id: String,
-            /// Current configuration generation.
-            pub generation: i64,
-            /// Current grant identity; changes after revoke and regrant.
-            pub grant_id: String,
-        }
-
-        /// Operate only under exact current Run and connection authority.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        pub struct AcquireRequest {
-            /// Exact saved connection UUID, not endpoint identity.
-            pub connection_id: String,
-            /// Winning process identity.
-            pub runner_identity: AcquireRequestRunnerIdentity,
-            /// Authority returned by credential resolution.
-            pub authority: AcquireRequestAuthority,
-            /// Fresh acquisition intent UUID; preserve on ambiguous retry.
-            pub holder_id: String,
-        }
-
-        /// Bounded authority snapshot; stop on failure or the conservative monotonic deadline.
-        /// Derive the deadline from request start plus validForMs, never response arrival.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(tag = "outcome", rename_all_fields = "camelCase")]
-        pub enum AcquireResponse {
-            /// Acquired or replayed the same unextended live acquisition.
-            #[serde(rename = "acquired")]
-            Acquired {
-                /// Exact holder token for check, renew and release.
-                lease_token: String,
-                /// Database clock after authority and lease lock waits.
-                server_time: String,
-                /// Database expiry; diagnostic, not a local wall-clock deadline.
-                expires_at: String,
-                /// Remaining validity, at most 30000 milliseconds.
-                valid_for_ms: u64,
-                /// Renew conservatively every 10000 milliseconds.
-                renew_after_ms: i64,
-            },
-            /// Another holder remains within its accepted lifetime.
-            #[serde(rename = "busy")]
-            Busy,
-            /// Current Run, owner or grant authority is unavailable.
-            #[serde(rename = "unavailable")]
-            Unavailable,
-            /// Saved connection incarnation or policy changed.
-            #[serde(rename = "configuration_changed")]
-            ConfigurationChanged,
-            /// Lease expired, was released or belongs to another holder.
-            #[serde(rename = "expired")]
-            Expired,
-        }
-
         /// Immutable winning official Runner process.
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         #[serde(rename_all = "camelCase")]
@@ -2050,7 +1981,7 @@ pub mod runners {
             pub heartbeat_generation: i64,
         }
 
-        /// Exact saved connection incarnation, policy and Agent grant.
+        /// Exact saved connection incarnation and configuration.
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         #[serde(rename_all = "camelCase")]
         pub struct CheckRequestAuthority {
@@ -2058,169 +1989,34 @@ pub mod runners {
             pub instance_id: String,
             /// Current configuration generation.
             pub generation: i64,
-            /// Current grant identity; changes after revoke and regrant.
-            pub grant_id: String,
         }
 
-        /// Operate only under exact current Run and connection authority.
+        /// Recheck current Run authorization and saved configuration.
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         #[serde(rename_all = "camelCase")]
         pub struct CheckRequest {
-            /// Exact saved connection UUID, not endpoint identity.
+            /// Exact saved VNC connection UUID.
             pub connection_id: String,
             /// Winning process identity.
             pub runner_identity: CheckRequestRunnerIdentity,
-            /// Authority returned by credential resolution.
+            /// Configuration identity returned by credential resolution.
             pub authority: CheckRequestAuthority,
-            /// Exact random lease token; never adopt another holder.
-            pub lease_token: String,
         }
 
-        /// Bounded authority snapshot; stop on failure or the conservative monotonic deadline.
-        /// Derive the deadline from request start plus validForMs, never response arrival.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(tag = "outcome", rename_all_fields = "camelCase")]
-        pub enum CheckResponse {
-            /// Exact lease is still authorized; only renew extends expiry.
-            #[serde(rename = "valid")]
-            Valid {
-                /// Exact holder token for check, renew and release.
-                lease_token: String,
-                /// Database clock after authority and lease lock waits.
-                server_time: String,
-                /// Database expiry; diagnostic, not a local wall-clock deadline.
-                expires_at: String,
-                /// Remaining validity, at most 30000 milliseconds.
-                valid_for_ms: u64,
-                /// Renew conservatively every 10000 milliseconds.
-                renew_after_ms: i64,
-            },
-            /// Current Run, owner or grant authority is unavailable.
-            #[serde(rename = "unavailable")]
-            Unavailable,
-            /// Saved connection incarnation or policy changed.
-            #[serde(rename = "configuration_changed")]
-            ConfigurationChanged,
-            /// Lease expired, was released or belongs to another holder.
-            #[serde(rename = "expired")]
-            Expired,
-        }
-
-        /// Immutable winning official Runner process.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        pub struct ReleaseRequestRunnerIdentity {
-            /// Runner UUID.
-            pub runner_id: String,
-            /// Winning process generation.
-            pub heartbeat_generation: i64,
-        }
-
-        /// Exact saved connection incarnation, policy and Agent grant.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        pub struct ReleaseRequestAuthority {
-            /// Connection incarnation; changes after delete and recreate.
-            pub instance_id: String,
-            /// Current configuration generation.
-            pub generation: i64,
-            /// Current grant identity; changes after revoke and regrant.
-            pub grant_id: String,
-        }
-
-        /// Operate only under exact current Run and connection authority.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        pub struct ReleaseRequest {
-            /// Exact saved connection UUID, not endpoint identity.
-            pub connection_id: String,
-            /// Winning process identity.
-            pub runner_identity: ReleaseRequestRunnerIdentity,
-            /// Authority returned by credential resolution.
-            pub authority: ReleaseRequestAuthority,
-            /// Exact random lease token; never adopt another holder.
-            pub lease_token: String,
-        }
-
-        /// Release outcome; a lost response never restores control authority.
+        /// Current authorization snapshot, not a reservation or guarantee of exclusive control.
+        /// Check before operations and stop on denial, changed configuration or API failure.
         #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
         #[serde(tag = "outcome")]
-        pub enum ReleaseResponse {
-            /// Exact lease was released.
-            #[serde(rename = "released")]
-            Released,
+        pub enum CheckResponse {
+            /// Current Run remains authorized for the same configuration.
+            #[serde(rename = "valid")]
+            Valid,
             /// Current authority is unavailable.
             #[serde(rename = "unavailable")]
             Unavailable,
-            /// Lease is expired or superseded; another holder is untouched.
-            #[serde(rename = "expired")]
-            Expired,
-        }
-
-        /// Immutable winning official Runner process.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        pub struct RenewRequestRunnerIdentity {
-            /// Runner UUID.
-            pub runner_id: String,
-            /// Winning process generation.
-            pub heartbeat_generation: i64,
-        }
-
-        /// Exact saved connection incarnation, policy and Agent grant.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        pub struct RenewRequestAuthority {
-            /// Connection incarnation; changes after delete and recreate.
-            pub instance_id: String,
-            /// Current configuration generation.
-            pub generation: i64,
-            /// Current grant identity; changes after revoke and regrant.
-            pub grant_id: String,
-        }
-
-        /// Operate only under exact current Run and connection authority.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        pub struct RenewRequest {
-            /// Exact saved connection UUID, not endpoint identity.
-            pub connection_id: String,
-            /// Winning process identity.
-            pub runner_identity: RenewRequestRunnerIdentity,
-            /// Authority returned by credential resolution.
-            pub authority: RenewRequestAuthority,
-            /// Exact random lease token; never adopt another holder.
-            pub lease_token: String,
-        }
-
-        /// Bounded authority snapshot; stop on failure or the conservative monotonic deadline.
-        /// Derive the deadline from request start plus validForMs, never response arrival.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(tag = "outcome", rename_all_fields = "camelCase")]
-        pub enum RenewResponse {
-            /// Exact lease is still authorized; only renew extends expiry.
-            #[serde(rename = "valid")]
-            Valid {
-                /// Exact holder token for check, renew and release.
-                lease_token: String,
-                /// Database clock after authority and lease lock waits.
-                server_time: String,
-                /// Database expiry; diagnostic, not a local wall-clock deadline.
-                expires_at: String,
-                /// Remaining validity, at most 30000 milliseconds.
-                valid_for_ms: u64,
-                /// Renew conservatively every 10000 milliseconds.
-                renew_after_ms: i64,
-            },
-            /// Current Run, owner or grant authority is unavailable.
-            #[serde(rename = "unavailable")]
-            Unavailable,
-            /// Saved connection incarnation or policy changed.
+            /// Saved connection incarnation or configuration changed.
             #[serde(rename = "configuration_changed")]
             ConfigurationChanged,
-            /// Lease expired, was released or belongs to another holder.
-            #[serde(rename = "expired")]
-            Expired,
         }
 
         /// Immutable winning official Runner process.
@@ -2255,7 +2051,7 @@ pub mod runners {
             pub supported_profiles: Vec<ResolveRequestSupportedProfile>,
         }
 
-        /// Exact saved connection incarnation, policy and Agent grant.
+        /// Exact saved connection incarnation and configuration.
         #[derive(serde::Deserialize)]
         #[serde(rename_all = "camelCase", deny_unknown_fields)]
         pub struct ResolveResponseResolvedAuthority {
@@ -2263,8 +2059,6 @@ pub mod runners {
             pub instance_id: String,
             /// Current configuration generation.
             pub generation: i64,
-            /// Current grant identity; changes after revoke and regrant.
-            pub grant_id: String,
         }
 
         /// Typed private VNC credential.
@@ -2498,13 +2292,13 @@ pub mod runners {
             Unavailable,
             /// Runner does not support the exact saved profile.
             UnsupportedProfile,
-            /// Current credential and policy; control still requires a lease.
+            /// Current credential and policy; the VNC server controls connection admission.
             Resolved {
                 /// Current private destination.
                 host: String,
                 /// Current destination port.
                 port: u64,
-                /// Exact authority for subsequent lease operations.
+                /// Saved configuration identity for subsequent checks.
                 authority: ResolveResponseResolvedAuthority,
                 /// Credential for the explicitly saved method.
                 authentication: ResolveResponseResolvedAuthentication,

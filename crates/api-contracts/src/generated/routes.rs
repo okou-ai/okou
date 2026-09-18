@@ -453,42 +453,9 @@ pub mod runners {
 
             /// Generated route bindings under `runners::runs::by_run_id::vnc`.
             pub mod vnc {
-                /// Generated route bindings under `runners::runs::by_run_id::vnc::acquire`.
-                pub mod acquire {
-                    /// Acquire bounded exclusive control of one saved VNC connection.
-                    /// Route contract: `POST /api/runners/runs/:runId/vnc/acquire`.
-                    pub const ACQUIRE: crate::RouteTemplate = crate::RouteTemplate {
-                        method: crate::Method::Post,
-                        path: "/api/runners/runs/:runId/vnc/acquire",
-                    };
-
-                    /// Path parameters for `POST /api/runners/runs/:runId/vnc/acquire`.
-                    #[derive(Debug, Clone, Copy)]
-                    pub struct Params<'a> {
-                        /// Value for the `:runId` path parameter.
-                        pub run_id: &'a str,
-                    }
-
-                    /// Build the concrete path for `POST /api/runners/runs/:runId/vnc/acquire`.
-                    /// Percent-encodes each path parameter as a URL path segment.
-                    #[must_use]
-                    pub fn path(params: Params<'_>) -> String {
-                        format!(
-                            "/api/runners/runs/{}/vnc/acquire",
-                            crate::route::encode_path_segment(params.run_id),
-                        )
-                    }
-
-                    /// Build a resolved route for `POST /api/runners/runs/:runId/vnc/acquire`.
-                    #[must_use]
-                    pub fn route(params: Params<'_>) -> crate::ResolvedRoute {
-                        crate::ResolvedRoute::new(ACQUIRE.method, path(params))
-                    }
-                }
-
                 /// Generated route bindings under `runners::runs::by_run_id::vnc::check`.
                 pub mod check {
-                    /// Check current VNC authority without extending its lease.
+                    /// Check current VNC authorization and configuration.
                     /// Route contract: `POST /api/runners/runs/:runId/vnc/check`.
                     pub const CHECK: crate::RouteTemplate = crate::RouteTemplate {
                         method: crate::Method::Post,
@@ -516,72 +483,6 @@ pub mod runners {
                     #[must_use]
                     pub fn route(params: Params<'_>) -> crate::ResolvedRoute {
                         crate::ResolvedRoute::new(CHECK.method, path(params))
-                    }
-                }
-
-                /// Generated route bindings under `runners::runs::by_run_id::vnc::release`.
-                pub mod release {
-                    /// Release only the exact current VNC lease holder.
-                    /// Route contract: `POST /api/runners/runs/:runId/vnc/release`.
-                    pub const RELEASE: crate::RouteTemplate = crate::RouteTemplate {
-                        method: crate::Method::Post,
-                        path: "/api/runners/runs/:runId/vnc/release",
-                    };
-
-                    /// Path parameters for `POST /api/runners/runs/:runId/vnc/release`.
-                    #[derive(Debug, Clone, Copy)]
-                    pub struct Params<'a> {
-                        /// Value for the `:runId` path parameter.
-                        pub run_id: &'a str,
-                    }
-
-                    /// Build the concrete path for `POST /api/runners/runs/:runId/vnc/release`.
-                    /// Percent-encodes each path parameter as a URL path segment.
-                    #[must_use]
-                    pub fn path(params: Params<'_>) -> String {
-                        format!(
-                            "/api/runners/runs/{}/vnc/release",
-                            crate::route::encode_path_segment(params.run_id),
-                        )
-                    }
-
-                    /// Build a resolved route for `POST /api/runners/runs/:runId/vnc/release`.
-                    #[must_use]
-                    pub fn route(params: Params<'_>) -> crate::ResolvedRoute {
-                        crate::ResolvedRoute::new(RELEASE.method, path(params))
-                    }
-                }
-
-                /// Generated route bindings under `runners::runs::by_run_id::vnc::renew`.
-                pub mod renew {
-                    /// Renew an unexpired VNC lease under current authority.
-                    /// Route contract: `POST /api/runners/runs/:runId/vnc/renew`.
-                    pub const RENEW: crate::RouteTemplate = crate::RouteTemplate {
-                        method: crate::Method::Post,
-                        path: "/api/runners/runs/:runId/vnc/renew",
-                    };
-
-                    /// Path parameters for `POST /api/runners/runs/:runId/vnc/renew`.
-                    #[derive(Debug, Clone, Copy)]
-                    pub struct Params<'a> {
-                        /// Value for the `:runId` path parameter.
-                        pub run_id: &'a str,
-                    }
-
-                    /// Build the concrete path for `POST /api/runners/runs/:runId/vnc/renew`.
-                    /// Percent-encodes each path parameter as a URL path segment.
-                    #[must_use]
-                    pub fn path(params: Params<'_>) -> String {
-                        format!(
-                            "/api/runners/runs/{}/vnc/renew",
-                            crate::route::encode_path_segment(params.run_id),
-                        )
-                    }
-
-                    /// Build a resolved route for `POST /api/runners/runs/:runId/vnc/renew`.
-                    #[must_use]
-                    pub fn route(params: Params<'_>) -> crate::ResolvedRoute {
-                        crate::ResolvedRoute::new(RENEW.method, path(params))
                     }
                 }
 
