@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Button, cn } from "@okouai/ui";
 import { useSet } from "ccstate-react";
-import { ChevronLeft, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { AccountDropdown } from "../okou-page/sidebar-account";
 import { OrgSwitcherCompact } from "../okou-page/org-switcher.tsx";
@@ -142,61 +142,58 @@ export function OnboardingStepLayout({
                 CONTENT_WIDTHS[contentWidth],
               )}
             >
-              {/* The answers sit straight on the canvas; the band keeps their
-                  height constant so the action line never moves. */}
-              <div className="flex flex-col justify-center lg:min-h-[430px]">
-                {children}
+              {/* One card holds the step: its answers above the rule, the way
+                  back and the way on below it. */}
+              <div className="flex flex-col overflow-hidden rounded-3xl border border-border/60 bg-background shadow-surface">
+                <div className="flex flex-col justify-center p-6 lg:min-h-[430px]">
+                  {children}
+                </div>
+                <div className="flex items-center justify-between gap-3 border-t border-border/60 px-6 py-4">
+                  {onBack ? (
+                    <Button
+                      type="button"
+                      size="lg"
+                      variant="ghost"
+                      onClick={onBack}
+                    >
+                      {t(($) => {
+                        return $.onboarding.sourcesFirst.common.back;
+                      })}
+                    </Button>
+                  ) : (
+                    <span />
+                  )}
+                  <div className="flex items-center gap-2">
+                    {secondaryLabel && onSecondary ? (
+                      <Button
+                        type="button"
+                        size="lg"
+                        variant="ghost"
+                        onClick={onSecondary}
+                      >
+                        {secondaryLabel}
+                      </Button>
+                    ) : null}
+                    <Button
+                      type="button"
+                      size="lg"
+                      onClick={onPrimary}
+                      disabled={primaryDisabled || primaryBusy}
+                      aria-busy={primaryBusy}
+                      className="min-w-[132px] gap-2 disabled:bg-[hsl(var(--primary-100))]"
+                    >
+                      {primaryBusy ? (
+                        <Loader2
+                          size={16}
+                          className="animate-spin"
+                          aria-hidden="true"
+                        />
+                      ) : null}
+                      {primaryLabel}
+                    </Button>
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
-          {/* One action line under the step: the way back on the left, the way
-              on at the right, the same on every page. */}
-          <div className="mx-auto mt-8 flex w-full max-w-[1180px] items-center justify-between gap-3 border-t border-border/60 pt-8">
-            {onBack ? (
-              <Button
-                type="button"
-                size="icon-lg"
-                variant="quiet"
-                showTooltip
-                onClick={onBack}
-                className="-ml-2.5"
-                aria-label={t(($) => {
-                  return $.onboarding.sourcesFirst.common.back;
-                })}
-              >
-                <ChevronLeft size={18} aria-hidden="true" />
-              </Button>
-            ) : (
-              <span />
-            )}
-            <div className="flex items-center gap-2">
-              {secondaryLabel && onSecondary ? (
-                <Button
-                  type="button"
-                  size="lg"
-                  variant="ghost"
-                  onClick={onSecondary}
-                >
-                  {secondaryLabel}
-                </Button>
-              ) : null}
-              <Button
-                type="button"
-                size="lg"
-                onClick={onPrimary}
-                disabled={primaryDisabled || primaryBusy}
-                aria-busy={primaryBusy}
-                className="min-w-[132px] gap-2 disabled:bg-[hsl(var(--primary-100))]"
-              >
-                {primaryBusy ? (
-                  <Loader2
-                    size={16}
-                    className="animate-spin"
-                    aria-hidden="true"
-                  />
-                ) : null}
-                {primaryLabel}
-              </Button>
             </div>
           </div>
         </div>
