@@ -127,7 +127,7 @@ function decodeCursor(
     : null;
 }
 
-function projectMessages(
+export function projectMcpChatMessages(
   rows: readonly ChatEventRow[],
   checkBudget: () => void,
 ): CompleteMessage[] {
@@ -486,7 +486,7 @@ export function getMcpChatMessages(
         if (rows === null) {
           return { kind: "not_found", message: "Conversation not found." };
         }
-        const messages = projectMessages(rows, checkBudget).filter(
+        const messages = projectMcpChatMessages(rows, checkBudget).filter(
           (message) => {
             return input.runId === undefined || message.runId === input.runId;
           },

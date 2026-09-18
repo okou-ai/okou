@@ -51,7 +51,8 @@ interface HistoryBudget {
   rows: number;
 }
 
-function createHistoryBudget(signal: AbortSignal): HistoryBudget {
+/** A caller may share this envelope across several canonical thread reads. */
+export function createMcpChatHistoryBudget(signal: AbortSignal): HistoryBudget {
   const deadline = performance.now() + HISTORY_TIMEOUT_MS;
   const check = () => {
     signal.throwIfAborted();
@@ -185,7 +186,7 @@ function historyArchive(
       throw new Error("Chat history archive checksum is invalid");
     }
     const body = await gunzipAsync(compressed, {
-      maxOutputLength: MAX_HISTORY_BYTES,
+      maxOutputLength: Math.max(1, MAX_HISTORY_BYTES - budget.bytes),
     });
     budget.check();
     return decodeHistoryArchive(body, head, threadId, budget);
@@ -329,13 +330,17 @@ function historyReadFailure(error: unknown): McpMessageHistoryError {
 
 /** Authorized, complete history within an explicit resource envelope. */
 export function readMcpChatMessageHistory(
-  runtime: { readonly db: Db; readonly bucket: string },
+  runtime: {
+    readonly db: Db;
+    readonly bucket: string;
+    readonly historyBudget?: HistoryBudget;
+  },
   principal: { readonly userId: string; readonly orgId: string },
   threadId: string,
   signal: AbortSignal,
 ): Computed<Promise<readonly ChatEventRow[] | null>> {
   return computed(async (get) => {
-    const budget = createHistoryBudget(signal);
+    const budget = runtime.historyBudget ?? createMcpChatHistoryBudget(signal);
     budget.check();
     const historySignal = AbortSignal.any([
       signal,
