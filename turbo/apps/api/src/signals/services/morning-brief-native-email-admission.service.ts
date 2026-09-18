@@ -56,7 +56,7 @@ type NativeMorningBriefDelivery = Pick<
  * the outbox lock it re-reads this relationship and refuses any changed or
  * missing provenance instead of accepting across the unlocked discovery gap.
  */
-export interface LockedNativeMorningBriefEmailAdmission {
+interface LockedNativeMorningBriefEmailAdmission {
   readonly outboxId: string;
   readonly admission: NativeMorningBriefEmailAdmission;
   readonly delivery: NativeMorningBriefDelivery | null;
