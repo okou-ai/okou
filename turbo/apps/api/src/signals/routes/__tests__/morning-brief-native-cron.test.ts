@@ -221,12 +221,13 @@ function scriptProviders(): { readonly calls: ProviderCalls } {
             message: {
               content: JSON.stringify({
                 decision: "deliver",
+                language: "en-US",
                 title: "Release readiness",
                 sections: [
                   {
                     heading: "Decisions",
                     items: [
-                      { text: "The release ships today.", sourceIds: ["m1"] },
+                      { text: "The release ships today.", citations: ["c1"] },
                     ],
                   },
                 ],

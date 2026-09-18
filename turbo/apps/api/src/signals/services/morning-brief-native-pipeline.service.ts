@@ -14,9 +14,9 @@ import type { MorningBriefMemberIdentity } from "./morning-brief-enrollment-data
 import type { MorningBriefGenerationView } from "@okouai/api-contracts/contracts/morning-brief-generation-preview";
 
 import {
-  executeMorningBriefGeneration$,
-  type MorningBriefGenerationExecution,
-} from "./morning-brief-generation-executor.service";
+  executeMorningBriefComposedGeneration$,
+  type MorningBriefComposedExecution,
+} from "./morning-brief-composed-generation.service";
 import type {
   NativeDeliveryRecovery,
   NativeSlotExecution,
@@ -225,13 +225,18 @@ async function proveNativeMorningBriefDrain(
  * never reported as zero spend or retried with a second POST.
  */
 function nativeSettlementOfGeneration(
-  execution: MorningBriefGenerationExecution,
+  execution: MorningBriefComposedExecution,
 ): NativeSlotExecution {
   switch (execution.kind) {
-    case "not-executed": {
+    case "not-executed":
+    case "denied":
+    case "authority-changed": {
       // Nothing was reserved and nothing was contacted, so this is the bounded
-      // pre-reservation configuration branch.
+      // pre-reservation configuration or authority branch.
       return { kind: "defer", reason: "generation-not-admitted" };
+    }
+    case "incomplete": {
+      return { kind: "collection-failed" };
     }
     case "invalid-anchor":
     case "conflict": {
@@ -316,7 +321,7 @@ export const executeNativeMorningBriefSlot$ = command(
     // A claim that moved while collection ran fails inside that transaction and
     // rolls the reservation back with it.
     const generation = await set(
-      executeMorningBriefGeneration$,
+      executeMorningBriefComposedGeneration$,
       {
         owner: args.owner,
         scheduledFor: args.occurrence.scheduledFor,

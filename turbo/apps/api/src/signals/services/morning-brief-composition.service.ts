@@ -204,6 +204,101 @@ export type MorningBriefCompositionOutcome =
   /** The owner's authority moved while this attempt was reading. */
   | { readonly kind: "authority-changed" };
 
+/** Finish request planning after every source read and normalization completes. */
+const finishMorningBriefComposition$ = command(
+  async (
+    { set },
+    args: {
+      readonly scope: MorningBriefCollectionScope;
+      readonly slackBinding: SlackBinding | null;
+      readonly bounded: ReturnType<typeof boundCombinedNormalizedItems>;
+      readonly descriptors: readonly MorningBriefRetainedSourceDescriptor[];
+      readonly waves: readonly (readonly MorningBriefSourceKind[])[];
+      readonly phaseDeadline: MorningBriefSourceDeadline;
+    },
+    signal: AbortSignal,
+  ): Promise<MorningBriefCompositionOutcome> => {
+    const { bounded, descriptors, waves } = args;
+    const candidates = bounded.collections.some((collection) => {
+      return collection.items.length > 0;
+    });
+    if (!candidates) {
+      const retained = boundMorningBriefDescriptors(descriptors);
+      if (retained.kind === "rejected") {
+        return unbounded(retained.reason);
+      }
+      return {
+        kind: "empty",
+        result: {
+          sources: sourceSummary(bounded.collections),
+          waves,
+          normalizedBytes: bounded.bytes,
+          omittedByNormalizedCap: bounded.omitted,
+          descriptors: retained.descriptors,
+          request: null,
+          language: null,
+        },
+      };
+    }
+
+    const planned = await set(
+      planMorningBriefRequest$,
+      {
+        scope: args.scope,
+        collections: bounded.collections,
+        descriptors,
+        slack: args.slackBinding,
+        phaseDeadline: args.phaseDeadline,
+      },
+      signal,
+    );
+    if (planned.kind !== "planned") {
+      return planned;
+    }
+    const retained = retainSuppliedAuthority(descriptors, planned);
+    if (retained.kind === "rejected") {
+      return unbounded(retained.reason);
+    }
+    if (planned.request === null) {
+      throw new Error("Morning Brief composition planned without a request");
+    }
+    const request = planned.request;
+    return {
+      kind: "composed",
+      result: {
+        sources: sourceSummary(planned.collections),
+        waves,
+        normalizedBytes: bounded.bytes,
+        omittedByNormalizedCap: bounded.omitted,
+        descriptors: retained.descriptors,
+        language: planned.language,
+        request: {
+          envelopeBytes: planned.envelopeBytes,
+          totalBytes: planned.totalBytes,
+          maxBytes: MORNING_BRIEF_REQUEST_MAX_BYTES,
+          items: planned.allocation.items.length,
+          omittedItems: planned.allocation.omittedItems,
+          omittedBytes: planned.allocation.omittedBytes,
+        },
+      },
+      transport: {
+        body: request.body,
+        bodyBytes: request.bodyBytes,
+        inputDigest: request.inputDigest,
+        citations: morningBriefCitationLinks(planned.allocation.items),
+        inputItems: planned.collections.reduce((total, collection) => {
+          return total + collection.items.length;
+        }, 0),
+        includedItems: planned.allocation.items.length,
+        sourceCoverage: aggregateCoverage(
+          planned.collections,
+          planned.allocation.omittedItems,
+        ),
+      },
+    };
+  },
+);
+
 /**
  * Run one bounded, source-independent composition.
  *
@@ -290,87 +385,18 @@ export const composeMorningBrief$ = command(
       };
     });
     const bounded = boundCombinedNormalizedItems(deduped);
-    const candidates = bounded.collections.some((collection) => {
-      return collection.items.length > 0;
-    });
-
-    if (!candidates) {
-      // Healthy empty: settle with no language I/O, no request and no delivery.
-      // Nothing was supplied, so nothing is marked contributing.
-      const retained = boundMorningBriefDescriptors(descriptors);
-      if (retained.kind === "rejected") {
-        return unbounded(retained.reason);
-      }
-      return {
-        kind: "empty",
-        result: {
-          sources: sourceSummary(bounded.collections),
-          waves,
-          normalizedBytes: bounded.bytes,
-          omittedByNormalizedCap: bounded.omitted,
-          descriptors: retained.descriptors,
-          request: null,
-          language: null,
-        },
-      };
-    }
-    const planned = await set(
-      planMorningBriefRequest$,
+    return await set(
+      finishMorningBriefComposition$,
       {
         scope,
-        collections: bounded.collections,
+        slackBinding,
+        bounded,
         descriptors,
-        slack: slackBinding,
+        waves,
         phaseDeadline,
       },
       signal,
     );
-    if (planned.kind !== "planned") {
-      return planned;
-    }
-    const retained = retainSuppliedAuthority(descriptors, planned);
-    if (retained.kind === "rejected") {
-      return unbounded(retained.reason);
-    }
-    if (planned.request === null) {
-      // `planned` only exists when evidence fit, so a missing request would
-      // mean the allocator and the planner disagreed about what was sent.
-      throw new Error("Morning Brief composition planned without a request");
-    }
-    const request = planned.request;
-    return {
-      kind: "composed",
-      result: {
-        sources: sourceSummary(planned.collections),
-        waves,
-        normalizedBytes: bounded.bytes,
-        omittedByNormalizedCap: bounded.omitted,
-        descriptors: retained.descriptors,
-        language: planned.language,
-        request: {
-          envelopeBytes: planned.envelopeBytes,
-          totalBytes: planned.totalBytes,
-          maxBytes: MORNING_BRIEF_REQUEST_MAX_BYTES,
-          items: planned.allocation.items.length,
-          omittedItems: planned.allocation.omittedItems,
-          omittedBytes: planned.allocation.omittedBytes,
-        },
-      },
-      transport: {
-        body: request.body,
-        bodyBytes: request.bodyBytes,
-        inputDigest: request.inputDigest,
-        citations: morningBriefCitationLinks(planned.allocation.items),
-        inputItems: planned.collections.reduce((total, collection) => {
-          return total + collection.items.length;
-        }, 0),
-        includedItems: planned.allocation.items.length,
-        sourceCoverage: aggregateCoverage(
-          planned.collections,
-          planned.allocation.omittedItems,
-        ),
-      },
-    };
   },
 );
 

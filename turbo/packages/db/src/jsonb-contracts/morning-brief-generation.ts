@@ -22,6 +22,8 @@ export interface MorningBriefRetainedSource {
   readonly membershipId: string;
   readonly agentId: string;
   readonly capturedAt: string;
+  /** Exact policy endpoints to re-check; empty for native Slack and Chat. */
+  readonly endpoints: readonly string[];
   /** The real provider containers that contributed, bounded in number. */
   readonly containers: readonly string[];
   /** True when this source's material entered the model input, cited or not. */

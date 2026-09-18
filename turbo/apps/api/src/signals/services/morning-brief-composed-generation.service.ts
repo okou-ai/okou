@@ -11,6 +11,7 @@ import { optionalEnv } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import { clerk$, type ClerkClient } from "../external/clerk";
 import { writeDb$, type Db } from "../external/db";
+import { settle } from "../utils";
 import {
   admitMorningBriefCollection,
   startMorningBriefSourceDeadline,
@@ -34,7 +35,10 @@ import {
   type MorningBriefCompositionTransport,
 } from "./morning-brief-composition.service";
 import { interpretComposedGenerationOutput } from "./morning-brief-generation-result";
-import { MORNING_BRIEF_DEFAULT_LANGUAGE } from "./morning-brief-language-policy";
+import {
+  MORNING_BRIEF_DEFAULT_LANGUAGE,
+  type MorningBriefLanguagePlan,
+} from "./morning-brief-language-policy";
 import {
   invokeAndPersist$,
   viewOfRow,
@@ -49,12 +53,16 @@ import {
   type MorningBriefGenerationAdmission,
 } from "./morning-brief-generation-store.service";
 import { MORNING_BRIEF_GENERATION_MODEL } from "./morning-brief-generation-prompt";
+import { revalidateMorningBriefStoredGenerationSources$ } from "./morning-brief-generation-source-revalidation.service";
 import { loadMorningBriefMigrationState } from "./morning-brief-migration-state.service";
+import { bindNativeGenerationAttempt } from "./morning-brief-native-schedule.service";
 import {
   morningBriefDescriptorRetainUntil,
   morningBriefSourcesToRevalidate,
   type MorningBriefRetainedSourceDescriptor,
 } from "./morning-brief-source-authority";
+import { revalidateMorningBriefRetainedSources } from "./morning-brief-source-revalidation.service";
+import { slackUserInstallation } from "./slack-data.service";
 
 /**
  * The real source-independent Morning Brief generation.
@@ -130,7 +138,7 @@ type MorningBriefComposedConflict =
   /** Another collection kind or contract version already owns this morning. */
   | "anchor-already-invoked";
 
-type MorningBriefComposedExecution =
+export type MorningBriefComposedExecution =
   | { readonly kind: "denied"; readonly reason: string }
   | { readonly kind: "invalid-anchor"; readonly message: string }
   | {
@@ -144,6 +152,20 @@ type MorningBriefComposedExecution =
     }
   | { readonly kind: "authority-changed" }
   | MorningBriefGenerationExecution;
+
+/** The native occurrence claim bound to the reserved attempt before POST. */
+interface MorningBriefNativeGenerationAuthority {
+  readonly ownerEpoch: number;
+  readonly membershipId: string;
+  readonly leaseToken: string;
+}
+
+class NativeGenerationAuthorityLost extends Error {
+  constructor() {
+    super("Morning Brief native authority moved before generation reservation");
+    this.name = "NativeGenerationAuthorityLost";
+  }
+}
 
 function validateAnchor(
   scheduledFor: Date,
@@ -243,6 +265,10 @@ async function retainedSourcesStillAuthorized(
     readonly clerk: ClerkClient;
     readonly scope: MorningBriefCollectionScope;
     readonly descriptors: readonly MorningBriefRetainedSourceDescriptor[];
+    readonly slack: {
+      readonly botToken: string;
+      readonly slackUserId: string;
+    } | null;
   },
   signal: AbortSignal,
 ): Promise<"owner_revoked" | "binding_changed" | null> {
@@ -250,44 +276,27 @@ async function retainedSourcesStillAuthorized(
   if (supplied.length === 0) {
     return null;
   }
-  const readmitted = await admitMorningBriefCollection(
+  const checked = await revalidateMorningBriefRetainedSources(
     {
       db: args.db,
       clerk: args.clerk,
-      orgId: args.scope.orgId,
-      userId: args.scope.userId,
-      anchor: args.scope.anchor,
+      scope: args.scope,
+      descriptors: supplied,
+      slack: args.slack,
       deadline: startMorningBriefSourceDeadline(COMPOSED_ADMISSION_BUDGET_MS),
     },
     signal,
   );
-  if (readmitted.kind !== "ok") {
+  if (checked.kind === "owner-lost") {
     return "owner_revoked";
   }
-  const current = readmitted.scope;
-  // The descriptors are the frozen proof of what was read and under whose
-  // authority. They are compared against live state rather than against an
-  // earlier in-request snapshot: a second snapshot is not evidence, and the
-  // question this fence answers is whether *these inputs* are still the
-  // owner's to send.
-  const moved = supplied.some((descriptor) => {
-    return (
-      descriptor.membershipId !== current.membershipId ||
-      descriptor.agentId !== current.agentId
-    );
-  });
-  return moved ? "binding_changed" : null;
+  return checked.revoked.length > 0 ? "binding_changed" : null;
 }
 
 function generationAdmissionOf(args: {
   readonly admission: MorningBriefCollectionAdmission;
   readonly transport: MorningBriefCompositionTransport;
-  readonly language: {
-    readonly authority: MorningBriefGenerationAdmission["languageSource"];
-    readonly fallbackLanguage: string;
-    readonly instructionsVersionId: string | null;
-    readonly instructionsDigest: string | null;
-  };
+  readonly language: MorningBriefLanguagePlan;
   readonly descriptors: readonly MorningBriefRetainedSourceDescriptor[];
   readonly at: Date;
   readonly occurrenceCreatedAt: Date;
@@ -309,8 +318,11 @@ function generationAdmissionOf(args: {
     model: MORNING_BRIEF_GENERATION_MODEL,
     language: args.language.fallbackLanguage,
     languageSource: args.language.authority,
-    instructionsVersionId: args.language.instructionsVersionId,
-    instructionsDigest: args.language.instructionsDigest,
+    instructionsVersionId: args.language.instructions.versionId,
+    instructionsDigest:
+      args.language.instructions.state === "available"
+        ? args.language.instructions.digest
+        : null,
     // Frozen with the reservation, because it describes the request that is
     // about to be sent. No source body, prompt or credential is in it.
     retainedSources: [...args.descriptors],
@@ -365,6 +377,8 @@ export const executeMorningBriefComposedGeneration$ = command(
       readonly owner: MorningBriefCollectionOwner;
       readonly scheduledFor: Date;
       readonly purpose: MorningBriefGenerationAdmission["executionPurpose"];
+      /** Required for production and bound in the reservation transaction. */
+      readonly nativeAuthority?: MorningBriefNativeGenerationAuthority;
     },
     signal: AbortSignal,
   ): Promise<MorningBriefComposedExecution> => {
@@ -374,6 +388,9 @@ export const executeMorningBriefComposedGeneration$ = command(
     const invalid = validateAnchor(args.scheduledFor, startedAt);
     if (invalid) {
       return invalid;
+    }
+    if (args.purpose === "production" && args.nativeAuthority === undefined) {
+      return { kind: "not-executed", reason: "native-authority-lost" };
     }
 
     // Bounded retention is consumed here rather than by a scheduler: every
@@ -426,7 +443,23 @@ export const executeMorningBriefComposedGeneration$ = command(
     if (claimed.kind === "already-completed") {
       // A completed occurrence is metadata about a collection, never a
       // checkpoint of one: this makes no provider call and offers no request.
-      return await resolveExisting(db, admission, claimed.occurrence, args);
+      return await resolveExisting(
+        db,
+        admission,
+        claimed.occurrence,
+        args,
+        async (attemptId) => {
+          return await set(
+            revalidateMorningBriefStoredGenerationSources$,
+            {
+              owner: args.owner,
+              resultAttemptId: attemptId,
+              purpose: args.purpose,
+            },
+            signal,
+          );
+        },
+      );
     }
     const { claim } = claimed;
     if (!collectionLeaseHeld(claim, nowDate())) {
@@ -461,7 +494,16 @@ export const executeMorningBriefComposedGeneration$ = command(
 
     return await set(
       reserveAndInvoke$,
-      { db, apiKey, admission, claim, scope, composed, purpose: args.purpose },
+      {
+        db,
+        apiKey,
+        admission,
+        claim,
+        scope,
+        composed,
+        purpose: args.purpose,
+        nativeAuthority: args.nativeAuthority,
+      },
       signal,
     );
   },
@@ -475,6 +517,7 @@ async function resolveExisting(
   args: {
     readonly purpose: MorningBriefGenerationAdmission["executionPurpose"];
   },
+  revalidate: (attemptId: string) => Promise<string | null>,
 ): Promise<MorningBriefComposedExecution> {
   const row = await readMorningBriefGeneration(
     db,
@@ -491,6 +534,9 @@ async function resolveExisting(
       kind: "collection-completed-without-generation",
       occurrence: occurrenceView(occurrence),
     };
+  }
+  if (row.state === "succeeded" && (await revalidate(row.attemptId)) !== null) {
+    return { kind: "authority-changed" };
   }
   return {
     kind: "already-generated",
@@ -520,6 +566,7 @@ async function admitComposedGeneration(
     readonly transport: MorningBriefCompositionTransport | null;
     readonly coverage: "complete" | "partial" | "empty";
     readonly purpose: MorningBriefGenerationAdmission["executionPurpose"];
+    readonly nativeAuthority?: MorningBriefNativeGenerationAuthority;
   },
   signal: AbortSignal,
 ): Promise<{
@@ -575,8 +622,7 @@ async function admitComposedGeneration(
       language: language ?? {
         authority: "default",
         fallbackLanguage: MORNING_BRIEF_DEFAULT_LANGUAGE,
-        instructionsVersionId: null,
-        instructionsDigest: null,
+        instructions: { state: "no-storage", versionId: null },
       },
       descriptors: args.composed.result.descriptors,
       at: result.at,
@@ -606,15 +652,110 @@ async function admitComposedGeneration(
             coverage === "partial" ? "skipped_incomplete" : "skipped_empty",
           )
         : await reserveMorningBriefGeneration(tx, pending);
-    if (took) {
-      generationAdmission = pending;
-    } else {
+    if (!took) {
       anchorConflict = true;
+      return result;
     }
+    if (transport !== null && args.nativeAuthority !== undefined) {
+      if (args.nativeAuthority.membershipId !== pending.membershipId) {
+        throw new NativeGenerationAuthorityLost();
+      }
+      const bound = await bindNativeGenerationAttempt(tx, admission.owner, {
+        scheduledFor: admission.scheduledFor,
+        generationAttemptId: pending.attemptId,
+        expectedEpoch: args.nativeAuthority.ownerEpoch,
+        leaseToken: args.nativeAuthority.leaseToken,
+        at: result.at,
+      });
+      if (!bound) {
+        throw new NativeGenerationAuthorityLost();
+      }
+    }
+    generationAdmission = pending;
     return result;
   });
   return { finalized, generationAdmission, anchorConflict };
 }
+
+/** Send the one transport body after its source-independent reservation. */
+const invokeComposedTransport$ = command(
+  async (
+    { get, set },
+    input: {
+      readonly db: Db;
+      readonly apiKey: string;
+      readonly scope: MorningBriefCollectionScope;
+      readonly composed: Extract<
+        MorningBriefCompositionOutcome,
+        { kind: "composed" }
+      >;
+      readonly transport: MorningBriefCompositionTransport;
+      readonly coverage: MorningBriefGenerationAdmission["sourceCoverage"];
+      readonly generationAdmission: MorningBriefGenerationAdmission;
+      readonly occurrence: MorningBriefCollectionOccurrenceView;
+      readonly occurrenceRow: MorningBriefCollectionOccurrenceRow;
+    },
+    signal: AbortSignal,
+  ): Promise<MorningBriefComposedExecution> => {
+    const clerk = get(clerk$);
+    const requestedLanguage =
+      input.composed.result.language?.fallbackLanguage ??
+      MORNING_BRIEF_DEFAULT_LANGUAGE;
+    const installation = await get(
+      slackUserInstallation({
+        orgId: input.scope.orgId,
+        userId: input.scope.userId,
+      }),
+    );
+    signal.throwIfAborted();
+    const slack =
+      installation.kind === "connected"
+        ? {
+            botToken: installation.botToken,
+            slackUserId: installation.slackUserId,
+          }
+        : null;
+    const revalidate = async (revalidationSignal: AbortSignal) => {
+      return await retainedSourcesStillAuthorized(
+        {
+          db: input.db,
+          clerk,
+          scope: input.scope,
+          descriptors: input.composed.result.descriptors,
+          slack,
+        },
+        revalidationSignal,
+      );
+    };
+    return await set(
+      invokeAndPersist$,
+      {
+        db: input.db,
+        apiKey: input.apiKey,
+        admission: input.generationAdmission,
+        body: input.transport.body,
+        coverage: input.coverage,
+        occurrence: input.occurrence,
+        occurrenceRow: input.occurrenceRow,
+        interpret: (content) => {
+          return interpretComposedGenerationOutput({
+            content,
+            citations: input.transport.citations,
+            coverage: {
+              collected: input.coverage,
+              omittedForSize:
+                input.transport.inputItems - input.transport.includedItems,
+            },
+            language: requestedLanguage,
+          });
+        },
+        preflight: revalidate,
+        postflight: revalidate,
+      },
+      signal,
+    );
+  },
+);
 
 /**
  * Finalize the collection, take the single reservation, then send once.
@@ -625,7 +766,7 @@ async function admitComposedGeneration(
  */
 const reserveAndInvoke$ = command(
   async (
-    { get, set },
+    { set },
     input: {
       readonly db: Db;
       readonly apiKey: string;
@@ -637,11 +778,11 @@ const reserveAndInvoke$ = command(
         { kind: "composed" | "empty" }
       >;
       readonly purpose: MorningBriefGenerationAdmission["executionPurpose"];
+      readonly nativeAuthority?: MorningBriefNativeGenerationAuthority;
     },
     signal: AbortSignal,
   ): Promise<MorningBriefComposedExecution> => {
     const { db, admission, claim, composed } = input;
-    const clerk = get(clerk$);
     const transport = composed.kind === "composed" ? composed.transport : null;
     const coverage = transport?.sourceCoverage ?? "empty";
     const completion = completionOf(
@@ -649,21 +790,32 @@ const reserveAndInvoke$ = command(
       coverage,
     );
 
-    const admitted = await admitComposedGeneration(
-      {
-        db,
-        admission,
-        claim,
-        completion,
-        composed,
-        transport,
-        coverage,
-        purpose: input.purpose,
-      },
+    const admissionAttempt = await settle(
+      admitComposedGeneration(
+        {
+          db,
+          admission,
+          claim,
+          completion,
+          composed,
+          transport,
+          coverage,
+          purpose: input.purpose,
+          nativeAuthority: input.nativeAuthority,
+        },
+        signal,
+      ),
       signal,
     );
     signal.throwIfAborted();
-    const { finalized, generationAdmission, anchorConflict } = admitted;
+    if (!admissionAttempt.ok) {
+      if (admissionAttempt.error instanceof NativeGenerationAuthorityLost) {
+        return { kind: "not-executed", reason: "native-authority-lost" };
+      }
+      throw admissionAttempt.error;
+    }
+    const { finalized, generationAdmission, anchorConflict } =
+      admissionAttempt.value;
 
     if (finalized.kind !== "finalized") {
       return {
@@ -692,42 +844,24 @@ const reserveAndInvoke$ = command(
         generation: viewOfRow(row, null),
       };
     }
+    if (composed.kind !== "composed") {
+      throw new Error(
+        "Morning Brief transport exists for an empty composition",
+      );
+    }
 
-    const language = composed.result.language;
-    const requestedLanguage =
-      language?.fallbackLanguage ?? MORNING_BRIEF_DEFAULT_LANGUAGE;
     return await set(
-      invokeAndPersist$,
+      invokeComposedTransport$,
       {
         db,
         apiKey: input.apiKey,
-        admission: generationAdmission,
-        body: transport.body,
+        scope: input.scope,
+        composed,
+        transport,
         coverage,
+        generationAdmission,
         occurrence,
         occurrenceRow: finalized.occurrence,
-        interpret: (content) => {
-          return interpretComposedGenerationOutput({
-            content,
-            citations: transport.citations,
-            coverage: {
-              collected: coverage,
-              omittedForSize: transport.inputItems - transport.includedItems,
-            },
-            language: requestedLanguage,
-          });
-        },
-        preflight: async (preflightSignal) => {
-          return await retainedSourcesStillAuthorized(
-            {
-              db,
-              clerk,
-              scope: input.scope,
-              descriptors: composed.result.descriptors,
-            },
-            preflightSignal,
-          );
-        },
       },
       signal,
     );

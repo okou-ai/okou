@@ -21,6 +21,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { onTestFinished } from "vitest";
 
 import { db } from "../lib/db";
+import { sweepExpiredMorningBriefGenerations } from "../signals/services/morning-brief-generation-store.service";
 import { holdDeferredRow } from "./pi-deferred-lock";
 
 /**
@@ -202,6 +203,15 @@ export async function expireMorningBriefGenerationRetention(
       expiresAt: at,
     })
     .where(ownerRows(owner));
+}
+
+/** Exercise the production owner-scoped content sweep after expiry. */
+export async function expireAndSweepMorningBriefGeneration(
+  owner: MorningBriefGenerationOwner,
+  args: { readonly expiresAt: Date; readonly sweptAt: Date },
+): Promise<number> {
+  await expireMorningBriefGenerationRetention(owner, args.expiresAt);
+  return await sweepExpiredMorningBriefGenerations(db(), owner, args.sweptAt);
 }
 
 /**

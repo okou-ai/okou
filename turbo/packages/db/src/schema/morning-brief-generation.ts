@@ -266,6 +266,8 @@ export const morningBriefGenerations = pgTable(
     /** Bounded preview retention, consumed by the owner-scoped sweep. */
     expiresAt: timestamp("expires_at").notNull(),
     finishedAt: timestamp("finished_at"),
+    /** When the accepted body was cleared while its invocation fence survived. */
+    contentPurgedAt: timestamp("content_purged_at"),
 
     decision: text("decision", { enum: MORNING_BRIEF_GENERATION_DECISIONS }),
     /** The model's own validated no-content reason, never a provider failure. */
@@ -365,9 +367,15 @@ export const morningBriefGenerations = pgTable(
         "chk_morning_brief_generation_decision",
         sql`(${table.state} = 'succeeded') = (${table.decision} IS NOT NULL)
           AND (${table.decision} = 'deliver') =
-            (${table.resultMarkdown} IS NOT NULL
-             AND ${table.resultTitle} IS NOT NULL
-             AND ${table.resultBytes} IS NOT NULL)
+            ((${table.resultMarkdown} IS NOT NULL
+              AND ${table.resultTitle} IS NOT NULL
+              AND ${table.resultBytes} IS NOT NULL)
+             OR (${table.contentPurgedAt} IS NOT NULL
+              AND ${table.resultMarkdown} IS NULL
+              AND ${table.resultTitle} IS NULL
+              AND ${table.resultBytes} IS NULL))
+          AND (${table.contentPurgedAt} IS NULL
+            OR (${table.state} = 'succeeded' AND ${table.decision} = 'deliver'))
           AND (${table.resultBytes} IS NULL OR ${table.resultBytes} > 0)`,
       ),
       check(

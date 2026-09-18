@@ -37,6 +37,8 @@ import {
   EMAIL_PUBLIC_BRAND,
 } from "./email-common.service";
 import { currentMorningBriefCollectionAuthority$ } from "./morning-brief-collection-executor.service";
+import { revalidateMorningBriefStoredGenerationSources$ } from "./morning-brief-generation-source-revalidation.service";
+import { retainMorningBriefGenerationProofUntil } from "./morning-brief-generation-store.service";
 import {
   lockCollectionOwner,
   type MorningBriefCollectionAdmission,
@@ -48,6 +50,7 @@ import {
   MorningBriefResultEmailRenderError,
   renderMorningBriefResultEmail,
 } from "./morning-brief-result-email-renderer";
+import { morningBriefDescriptorRetainUntil } from "./morning-brief-source-authority";
 import { excludeMorningBriefChatThread } from "./morning-brief-thread-provenance.service";
 import {
   ensureWorkflowUserAutomationThread,
@@ -187,6 +190,7 @@ async function resolveCachedRecipient(
 interface EmailIntent {
   readonly resolution: MorningBriefDeliveryEmailResolution;
   readonly outboxId: string | null;
+  readonly outboxCreatedAt: Date | null;
 }
 
 /**
@@ -214,12 +218,16 @@ async function resolveEmailIntent(
   },
 ): Promise<EmailIntent> {
   if (args.unsubscribed) {
-    return { resolution: "unsubscribed", outboxId: null };
+    return {
+      resolution: "unsubscribed",
+      outboxId: null,
+      outboxCreatedAt: null,
+    };
   }
 
   const recipient = await resolveCachedRecipient(tx, args.userId);
   if (!recipient) {
-    return { resolution: "no_email", outboxId: null };
+    return { resolution: "no_email", outboxId: null, outboxCreatedAt: null };
   }
 
   const [suppressed] = await tx
@@ -233,7 +241,7 @@ async function resolveEmailIntent(
     )
     .limit(1);
   if (suppressed) {
-    return { resolution: "suppressed", outboxId: null };
+    return { resolution: "suppressed", outboxId: null, outboxCreatedAt: null };
   }
 
   const unsubscribeUrl = buildOneClickUnsubscribeUrl(args.userId);
@@ -256,7 +264,11 @@ async function resolveEmailIntent(
     log.warn("Morning Brief result cannot be carried by email", {
       reason: rendered.error.message,
     });
-    return { resolution: "render_rejected", outboxId: null };
+    return {
+      resolution: "render_rejected",
+      outboxId: null,
+      outboxCreatedAt: null,
+    };
   }
 
   const [row] = await tx
@@ -271,11 +283,15 @@ async function resolveEmailIntent(
       status: "pending",
       attempts: 0,
     })
-    .returning({ id: emailOutbox.id });
+    .returning({ id: emailOutbox.id, createdAt: emailOutbox.createdAt });
   if (!row) {
     throw new Error("Morning Brief email intent was not created");
   }
-  return { resolution: "enqueued", outboxId: row.id };
+  return {
+    resolution: "enqueued",
+    outboxId: row.id,
+    outboxCreatedAt: row.createdAt,
+  };
 }
 
 /** The occurrence one accepted result belongs to. */
@@ -287,6 +303,7 @@ interface ResultAnchor {
 
 interface DeliverableResult {
   readonly membershipId: string;
+  readonly reservedAt: Date;
   readonly title: string;
   readonly markdown: string;
 }
@@ -372,6 +389,7 @@ async function loadDeliverableResult(
   const [row] = await tx
     .select({
       membershipId: morningBriefGenerations.membershipId,
+      reservedAt: morningBriefGenerations.reservedAt,
       state: morningBriefGenerations.state,
       decision: morningBriefGenerations.decision,
       title: morningBriefGenerations.resultTitle,
@@ -397,6 +415,7 @@ async function loadDeliverableResult(
   }
   return {
     membershipId: row.membershipId,
+    reservedAt: row.reservedAt,
     title: row.title,
     markdown: row.markdown,
   };
@@ -910,6 +929,19 @@ async function deliverInTransaction(
     title: result.title,
     markdown: result.markdown,
   });
+  if (intent.outboxCreatedAt !== null) {
+    const retained = await retainMorningBriefGenerationProofUntil(tx, {
+      owner,
+      attemptId: request.resultAttemptId,
+      retainedUntil: morningBriefDescriptorRetainUntil(
+        result.reservedAt,
+        intent.outboxCreatedAt,
+      ),
+    });
+    if (!retained) {
+      throw new DeliveryRejected("result-not-found");
+    }
+  }
 
   await tx.insert(morningBriefDeliveries).values({
     orgId: request.orgId,
@@ -984,12 +1016,38 @@ export const deliverMorningBriefResult$ = command(
       return { kind: "rejected", reason: "result-not-found" };
     }
 
+    // Re-run the same source-specific proof S5 used. This is outside the Chat
+    // transaction because connector and Slack checks can reach the network.
+    const sourceRefusal = await set(
+      revalidateMorningBriefStoredGenerationSources$,
+      {
+        owner,
+        resultAttemptId: request.resultAttemptId,
+        purpose,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (sourceRefusal !== null) {
+      return {
+        kind: "rejected",
+        reason:
+          sourceRefusal === "result-not-found"
+            ? "result-not-found"
+            : "owner-revoked",
+      };
+    }
+
     // The live canonical authority, resolved through the collection executor's
     // own reader rather than a second adoption algorithm. It reaches Clerk, so
     // it runs before the transaction opens and never inside one.
     const authority = await set(
       currentMorningBriefCollectionAuthority$,
-      { owner, scheduledFor: anchor.scheduledFor },
+      {
+        owner,
+        scheduledFor: anchor.scheduledFor,
+        collectionKind: anchor.collectionKind,
+      },
       signal,
     );
     signal.throwIfAborted();
