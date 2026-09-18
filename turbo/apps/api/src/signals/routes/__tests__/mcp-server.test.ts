@@ -1041,67 +1041,82 @@ describe("MCP chat mutations", () => {
     ).toStrictEqual([]);
   });
 
-  it("withdraws pending input exactly once without cancelling its active run", async () => {
-    const f = await chatRunFixture();
-    const active = await f.chat.requestSendEvent(
-      f.actor,
-      { agentId: f.agent.agentId, prompt: "Keep this run active" },
-      [201],
-    );
-    if (active.status !== 201 || !active.body.runId) {
-      throw new Error("Expected an active run");
-    }
-    const runId = active.body.runId;
-    onTestFinished(async () => {
-      await f.runs.requestCancelRun(f.actor, runId, [200]);
-    });
-    const token = f.auth.token({ scope: defaultScopes });
-    const args = {
-      threadId: active.body.threadId,
-      text: "Withdraw only this pending input",
-      requestId: randomUUID(),
-    };
-    const sent = await sendMessage(token, args);
-    expect(sent).toMatchObject({ disposition: "queued", runId: null });
-    const revoked = await revokeMessage(token, args.threadId, args.requestId);
-    expect(revoked).toMatchObject({ outcome: "revoked" });
-    await expect(
-      revokeMessage(token, args.threadId, args.requestId),
-    ).resolves.toMatchObject({ outcome: "already_revoked" });
-    await expect(sendMessage(token, args)).resolves.toMatchObject({
-      inputRef: sent.inputRef,
-      replayed: true,
-      disposition: "revoked",
-      runId: null,
-    });
-    expect(
-      (await getMessages(token, { threadId: args.threadId })).messages.map(
-        (message) => {
-          return message.text;
-        },
-      ),
-    ).toStrictEqual(["Keep this run active"]);
-    await expect(f.runs.readRun(f.actor, runId)).resolves.toMatchObject({
-      status: "pending",
-    });
-    expect(
-      (await f.chat.listThreadEvents(f.actor, args.threadId)).events.filter(
-        (event) => {
-          return (
-            event.eventType === "control.revoke" &&
-            event.revokesEventId === args.requestId
-          );
-        },
-      ),
-    ).toHaveLength(1);
-    const before = await f.chat.listThreadEvents(f.actor, args.threadId);
-    await expect(
-      revokeMessage(token, args.threadId, randomUUID()),
-    ).resolves.toMatchObject({ outcome: "unavailable" });
-    await expect(
-      f.chat.listThreadEvents(f.actor, args.threadId),
-    ).resolves.toStrictEqual(before);
-  });
+  it.each(["lowercase", "uppercase"] as const)(
+    "withdraws pending input exactly once without cancelling its active run (%s UUIDs)",
+    async (letterCase) => {
+      const f = await chatRunFixture();
+      const active = await f.chat.requestSendEvent(
+        f.actor,
+        { agentId: f.agent.agentId, prompt: "Keep this run active" },
+        [201],
+      );
+      if (active.status !== 201 || !active.body.runId) {
+        throw new Error("Expected an active run");
+      }
+      const runId = active.body.runId;
+      onTestFinished(async () => {
+        await f.runs.requestCancelRun(f.actor, runId, [200]);
+      });
+      const token = f.auth.token({ scope: defaultScopes });
+      const args = {
+        threadId: active.body.threadId,
+        text: "Withdraw only this pending input",
+        requestId: randomUUID(),
+      };
+      const sent = await sendMessage(token, args);
+      expect(sent).toMatchObject({ disposition: "queued", runId: null });
+      const revoked = await revokeMessage(
+        token,
+        letterCase === "uppercase"
+          ? args.threadId.toUpperCase()
+          : args.threadId,
+        letterCase === "uppercase"
+          ? args.requestId.toUpperCase()
+          : args.requestId,
+      );
+      expect(revoked).toMatchObject({
+        threadId: args.threadId,
+        inputId: args.requestId,
+        outcome: "revoked",
+      });
+      await expect(
+        revokeMessage(token, args.threadId, args.requestId),
+      ).resolves.toMatchObject({ outcome: "already_revoked" });
+      await expect(sendMessage(token, args)).resolves.toMatchObject({
+        inputRef: sent.inputRef,
+        replayed: true,
+        disposition: "revoked",
+        runId: null,
+      });
+      expect(
+        (await getMessages(token, { threadId: args.threadId })).messages.map(
+          (message) => {
+            return message.text;
+          },
+        ),
+      ).toStrictEqual(["Keep this run active"]);
+      await expect(f.runs.readRun(f.actor, runId)).resolves.toMatchObject({
+        status: "pending",
+      });
+      expect(
+        (await f.chat.listThreadEvents(f.actor, args.threadId)).events.filter(
+          (event) => {
+            return (
+              event.eventType === "control.revoke" &&
+              event.revokesEventId === args.requestId
+            );
+          },
+        ),
+      ).toHaveLength(1);
+      const before = await f.chat.listThreadEvents(f.actor, args.threadId);
+      await expect(
+        revokeMessage(token, args.threadId, randomUUID()),
+      ).resolves.toMatchObject({ outcome: "unavailable" });
+      await expect(
+        f.chat.listThreadEvents(f.actor, args.threadId),
+      ).resolves.toStrictEqual(before);
+    },
+  );
 
   it("starts an ordinary run and denies cancellation by another user or organization", async () => {
     const f = await chatRunFixture();
@@ -1245,54 +1260,60 @@ describe("MCP chat mutations", () => {
     });
   });
 
-  it("cancels an owned run cooperatively and keeps repeated cancellation idempotent", async () => {
-    const auth = await fixture();
-    const f = createChatEventsFixture(context);
-    const actor = await f.entitledChatActor({
-      userId: auth.userId,
-      orgId: auth.orgId,
-    });
-    const active = await f.sendChatRun(actor.actor, {
-      agentId: actor.agentId,
-      prompt: "Cancel this whole run",
-    });
-    const claimed = await f.claimChatRun(actor.runnerGroup, active.runId);
-    const token = auth.token({ scope: defaultScopes });
-    const result = await cancelRun(token, active.runId);
-    expect(result).toMatchObject({
-      runId: active.runId,
-      status: "cancelled",
-      alreadyCancelled: false,
-    });
-    await flushWaitUntilForTest();
-    await expect(
-      f.api.readRun(actor.actor, active.runId),
-    ).resolves.toMatchObject({
-      status: "cancelled",
-    });
-    await expect(
-      f.api.readRunnerCancellation(
-        claimed.claim.sandboxToken,
-        active.runId,
-        actor.runnerGroup,
-      ),
-    ).resolves.toMatchObject({ state: "present", mode: "cooperative" });
-    await expect(cancelRun(token, active.runId)).resolves.toMatchObject({
-      runId: active.runId,
-      status: "cancelled",
-      alreadyCancelled: true,
-    });
-    await flushWaitUntilForTest();
-    expect(
-      (
-        await f.chat.listThreadEvents(actor.actor, active.threadId)
-      ).events.filter((event) => {
-        return (
-          event.eventType === "run.cancelled" && event.runId === active.runId
-        );
-      }),
-    ).toHaveLength(1);
-  });
+  it.each(["lowercase", "uppercase"] as const)(
+    "cancels an owned run cooperatively and keeps repeated cancellation idempotent (%s UUIDs)",
+    async (letterCase) => {
+      const auth = await fixture();
+      const f = createChatEventsFixture(context);
+      const actor = await f.entitledChatActor({
+        userId: auth.userId,
+        orgId: auth.orgId,
+      });
+      const active = await f.sendChatRun(actor.actor, {
+        agentId: actor.agentId,
+        prompt: "Cancel this whole run",
+      });
+      const claimed = await f.claimChatRun(actor.runnerGroup, active.runId);
+      const token = auth.token({ scope: defaultScopes });
+      const result = await cancelRun(
+        token,
+        letterCase === "uppercase" ? active.runId.toUpperCase() : active.runId,
+      );
+      expect(result).toMatchObject({
+        runId: active.runId,
+        status: "cancelled",
+        alreadyCancelled: false,
+      });
+      await flushWaitUntilForTest();
+      await expect(
+        f.api.readRun(actor.actor, active.runId),
+      ).resolves.toMatchObject({
+        status: "cancelled",
+      });
+      await expect(
+        f.api.readRunnerCancellation(
+          claimed.claim.sandboxToken,
+          active.runId,
+          actor.runnerGroup,
+        ),
+      ).resolves.toMatchObject({ state: "present", mode: "cooperative" });
+      await expect(cancelRun(token, active.runId)).resolves.toMatchObject({
+        runId: active.runId,
+        status: "cancelled",
+        alreadyCancelled: true,
+      });
+      await flushWaitUntilForTest();
+      expect(
+        (
+          await f.chat.listThreadEvents(actor.actor, active.threadId)
+        ).events.filter((event) => {
+          return (
+            event.eventType === "run.cancelled" && event.runId === active.runId
+          );
+        }),
+      ).toHaveLength(1);
+    },
+  );
 
   it("rejects cancellation of a completed run without rewriting its terminal state", async () => {
     const auth = await fixture();

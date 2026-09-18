@@ -235,7 +235,9 @@ memory limits. Search reuses existing lexical indexes and adds no migration.
 `threadId`, nonblank `text` of at most 32,000 UTF-16 units, and a caller-generated
 UUID `requestId`. Text is preserved exactly, including surrounding whitespace.
 UUID letter case is normalized; uppercase and lowercase identifiers resolve to
-the same submission.
+the same submission. Withdrawal and run cancellation normalize their UUID
+inputs in the same way before applying lifecycle locks or selecting an active
+cancellation controller.
 The 64 KiB HTTP request-body limit also applies. The server derives the Agent
 from the authorized thread and uses its current model configuration and ordinary
 admission checks. This tool does not accept Agent/model overrides, attachments,

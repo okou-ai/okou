@@ -36,8 +36,8 @@ export const mcpSendChatMessageOutputSchema = z.strictObject({
 });
 
 export const mcpRevokeQueuedMessageInputSchema = z.strictObject({
-  threadId: z.uuid(),
-  inputId: z.uuid(),
+  threadId: z.uuid().toLowerCase(),
+  inputId: z.uuid().toLowerCase(),
 });
 
 export const mcpRevokeQueuedMessageOutputSchema = z.strictObject({
@@ -53,7 +53,9 @@ export const mcpRevokeQueuedMessageOutputSchema = z.strictObject({
   reason: z.enum(["reserved_or_associated", "not_queued"]).optional(),
 });
 
-export const mcpCancelRunInputSchema = z.strictObject({ runId: z.uuid() });
+export const mcpCancelRunInputSchema = z.strictObject({
+  runId: z.uuid().toLowerCase(),
+});
 
 export const mcpCancelRunOutputSchema = z.strictObject({
   runId: z.uuid(),
