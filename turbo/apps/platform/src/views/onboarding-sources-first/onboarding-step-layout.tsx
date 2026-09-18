@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Button, cn } from "@okouai/ui";
 import { useSet } from "ccstate-react";
-import { Loader2 } from "lucide-react";
+import { ChevronLeft, Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { AccountDropdown } from "../okou-page/sidebar-account";
 import { OrgSwitcherCompact } from "../okou-page/org-switcher.tsx";
@@ -116,13 +116,16 @@ export function OnboardingStepLayout({
             <p className="mt-5 text-base leading-[1.7] text-muted-foreground">
               {description}
             </p>
-            <div className="mt-10 flex flex-col gap-3">
+            {/* One filled action, its opt-out beside it, and the way back
+                under both -- the same weights the app's other footers use. */}
+            <div className="mt-9 flex flex-wrap items-center gap-2">
               <Button
                 type="button"
+                size="lg"
                 onClick={onPrimary}
                 disabled={primaryDisabled || primaryBusy}
                 aria-busy={primaryBusy}
-                className="h-14 w-full gap-2 rounded-full text-base font-semibold disabled:bg-[hsl(var(--primary-100))]"
+                className="min-w-[132px] gap-2 disabled:bg-[hsl(var(--primary-100))]"
               >
                 {primaryBusy ? (
                   <Loader2
@@ -136,25 +139,28 @@ export function OnboardingStepLayout({
               {secondaryLabel && onSecondary ? (
                 <Button
                   type="button"
-                  variant="outline"
+                  size="lg"
+                  variant="ghost"
                   onClick={onSecondary}
-                  className="h-14 w-full rounded-full text-base font-medium"
                 >
                   {secondaryLabel}
                 </Button>
               ) : null}
-              {onBack ? (
-                <button
-                  type="button"
-                  onClick={onBack}
-                  className="h-8 self-start border-0 bg-transparent px-0 text-sm font-medium text-muted-foreground hover:text-foreground"
-                >
-                  {t(($) => {
-                    return $.onboarding.sourcesFirst.common.back;
-                  })}
-                </button>
-              ) : null}
             </div>
+            {onBack ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="quiet"
+                onClick={onBack}
+                className="-ml-3 mt-3 gap-1"
+              >
+                <ChevronLeft size={16} aria-hidden="true" />
+                {t(($) => {
+                  return $.onboarding.sourcesFirst.common.back;
+                })}
+              </Button>
+            ) : null}
           </div>
           <div
             className={cn(
