@@ -405,19 +405,6 @@ describe("getAllFeatureStates", () => {
     expect(otherStates[FeatureSwitchKey.CustomTemplates]).toBe(false);
   });
 
-  it("releases the composer run controls to every org and keeps the off lever", () => {
-    const states = getAllFeatureStates({ orgId: "org_nonexistent" });
-    expect(states[FeatureSwitchKey.ModelPickerFlyout]).toBe(true);
-
-    const reverted = getAllFeatureStates({
-      orgId: "org_nonexistent",
-      overrides: {
-        [FeatureSwitchKey.ModelPickerFlyout]: false,
-      },
-    });
-    expect(reverted[FeatureSwitchKey.ModelPickerFlyout]).toBe(false);
-  });
-
   it("should apply overrides to enable disabled features", () => {
     const states = getAllFeatureStates({
       overrides: { [FeatureSwitchKey.AhrefsConnector]: true },

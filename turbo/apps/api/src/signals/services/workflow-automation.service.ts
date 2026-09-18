@@ -1,3 +1,4 @@
+import { MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { isDeepStrictEqual } from "node:util";
 
 import { command } from "ccstate";
@@ -69,6 +70,12 @@ import { and, asc, eq, isNotNull, isNull, or } from "drizzle-orm";
 
 import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { publishChatThreadAutomationsChangedSafely } from "../external/realtime";
+import {
+  applyMorningBriefLogicalChoice,
+  lockMorningBriefNativeSchedule,
+  type MorningBriefChoiceApplication,
+} from "./morning-brief-native-schedule.service";
+import { recordMorningBriefChoice } from "./morning-brief-enrollment-data.service";
 import { nowDate } from "../../lib/time";
 import type { Tx } from "../../lib/db-types";
 import {
@@ -5966,6 +5973,146 @@ const validateStripeFeature$ = command(
   },
 );
 
+/**
+ * Commit the Settings choice to native authority and the retained legacy row.
+ *
+ * Rollback needs the latter to reflect the same user choice even though legacy
+ * admission is closed while native owns scheduling. Keeping both writes in this
+ * schedule-first transaction also means no failure can expose opposite choices.
+ */
+export async function persistNativeMorningBriefPreferenceChoice(
+  db: Db,
+  args: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly automationId: string | null;
+    readonly enabled: boolean;
+    readonly expectedEpoch: number;
+    readonly at: Date;
+  },
+): Promise<MorningBriefChoiceApplication> {
+  const owner = { orgId: args.orgId, userId: args.userId };
+  return await db.transaction(async (tx) => {
+    const schedule = await lockMorningBriefNativeSchedule(tx, owner);
+    if (
+      schedule === undefined ||
+      schedule.phase === "legacy" ||
+      schedule.ownerEpoch !== args.expectedEpoch ||
+      schedule.legacyAutomationId !== args.automationId
+    ) {
+      return schedule === undefined
+        ? { kind: "absent" }
+        : { kind: "stale", row: schedule };
+    }
+    await recordMorningBriefChoice(tx, owner, args.enabled);
+    if (args.automationId !== null) {
+      await tx
+        .update(workflowAutomations)
+        .set({
+          enabled: args.enabled,
+          officialIntendedEnabled: args.enabled,
+          nextRunAt: null,
+          ...(args.enabled ? { consecutiveFailures: 0 } : {}),
+          updatedAt: args.at,
+        })
+        .where(
+          and(
+            eq(workflowAutomations.id, args.automationId),
+            eq(workflowAutomations.orgId, args.orgId),
+            eq(workflowAutomations.ownerUserId, args.userId),
+            eq(
+              workflowAutomations.officialBlueprintKey,
+              MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
+            ),
+          ),
+        );
+    }
+    return await applyMorningBriefLogicalChoice(
+      tx,
+      owner,
+      { enabled: args.enabled, expectedEpoch: args.expectedEpoch },
+      args.at,
+    );
+  });
+}
+
+/**
+ * Commit a generic Morning Brief automation toggle and its durable logical
+ * choice as one write.
+ *
+ * Every writer follows the same lock order: the caller's member-preference
+ * advisory lock (when present), then the native schedule, then the legacy
+ * automation, and finally any occurrence read by the choice application. A
+ * native owner never receives a new legacy `next_run_at`; rollback restores the
+ * future legacy obligation only after its drain commits.
+ */
+async function persistMorningBriefAutomationToggle(
+  db: Db,
+  args: {
+    readonly automation: AutomationRow;
+    readonly enabled: boolean;
+    readonly nextRunAt: Date | null;
+    readonly now: Date;
+    readonly inheritedAutonomyBudget?: number;
+  },
+): Promise<AutomationRow | undefined> {
+  if (
+    args.automation.officialBlueprintKey !==
+      MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY ||
+    args.automation.ownerUserId === null ||
+    args.automation.kind !== "schedule"
+  ) {
+    return undefined;
+  }
+  const owner = {
+    orgId: args.automation.orgId,
+    userId: args.automation.ownerUserId,
+  };
+  return await db.transaction(async (tx) => {
+    const native = await lockMorningBriefNativeSchedule(tx, owner);
+    await recordMorningBriefChoice(tx, owner, args.enabled);
+    const [row] = await tx
+      .update(workflowAutomations)
+      .set({
+        enabled: args.enabled,
+        nextRunAt:
+          args.enabled && native !== undefined && native.phase !== "legacy"
+            ? null
+            : args.nextRunAt,
+        consecutiveFailures: args.enabled
+          ? 0
+          : args.automation.consecutiveFailures,
+        updatedAt: args.now,
+        officialIntendedEnabled: args.enabled,
+        ...(args.inheritedAutonomyBudget === undefined
+          ? {}
+          : { autonomyBudget: args.inheritedAutonomyBudget }),
+      })
+      .where(officialAutomationLifecycleCondition(args.automation))
+      .returning(workflowAutomationColumns());
+    if (row === undefined) {
+      return undefined;
+    }
+    if (
+      native !== undefined &&
+      native.legacyAutomationId === args.automation.id
+    ) {
+      const applied = await applyMorningBriefLogicalChoice(
+        tx,
+        owner,
+        { enabled: args.enabled, expectedEpoch: native.ownerEpoch },
+        args.now,
+      );
+      if (applied.kind !== "applied") {
+        throw new Error(
+          "Morning Brief choice changed during automation toggle",
+        );
+      }
+    }
+    return row;
+  });
+}
+
 export const enableWorkflowAutomation$ = command(
   async (
     { set },
@@ -6049,6 +6196,25 @@ export const enableWorkflowAutomation$ = command(
         return failure;
       }
     }
+    const morningBriefRow = await persistMorningBriefAutomationToggle(writeDb, {
+      automation,
+      enabled: true,
+      nextRunAt,
+      now,
+      inheritedAutonomyBudget: args.inheritedAutonomyBudget,
+    });
+    signal.throwIfAborted();
+    if (morningBriefRow !== undefined) {
+      return await finalizeAndPublishEnabledWorkflowAutomation(
+        writeDb,
+        {
+          previousAutomation: automation,
+          enabledAutomation: morningBriefRow,
+          memberUserId: args.member.userId,
+        },
+        signal,
+      );
+    }
     return await persistAndReconcileEnabledWorkflowAutomation(
       writeDb,
       {
@@ -6085,18 +6251,29 @@ export const disableWorkflowAutomation$ = command(
     const now = nowDate();
     const nextRunAt =
       owned.automation.kind === "schedule" ? null : owned.automation.nextRunAt;
-    const [row] = await writeDb
-      .update(workflowAutomations)
-      .set({
-        enabled: false,
-        nextRunAt,
-        updatedAt: now,
-        ...(owned.automation.officialBlueprintKey === null
-          ? {}
-          : { officialIntendedEnabled: false }),
-      })
-      .where(officialAutomationLifecycleCondition(owned.automation))
-      .returning(workflowAutomationColumns());
+    const morningBriefRow = await persistMorningBriefAutomationToggle(writeDb, {
+      automation: owned.automation,
+      enabled: false,
+      nextRunAt,
+      now,
+    });
+    signal.throwIfAborted();
+    const [ordinaryRow] =
+      morningBriefRow === undefined
+        ? await writeDb
+            .update(workflowAutomations)
+            .set({
+              enabled: false,
+              nextRunAt,
+              updatedAt: now,
+              ...(owned.automation.officialBlueprintKey === null
+                ? {}
+                : { officialIntendedEnabled: false }),
+            })
+            .where(officialAutomationLifecycleCondition(owned.automation))
+            .returning(workflowAutomationColumns())
+        : [];
+    const row = morningBriefRow ?? ordinaryRow;
     signal.throwIfAborted();
     if (!row) {
       if (owned.automation.officialBlueprintKey !== null) {

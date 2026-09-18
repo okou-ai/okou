@@ -30,13 +30,14 @@ const TEMPLATE_IMPORT_EXTENSIONS: Readonly<
 > = {
   presentation: [".pptx", ".ppt", ".pdf"],
   document: [".docx", ".doc"],
-  // Empty on purpose, and only for as long as this pane has nowhere to show
-  // one. An illustration is published by the CLI already, but the catalog
-  // opens a deck as a column of pages and a document in a file viewer, and an
-  // image is neither; offering the file here first would put a tile in the
-  // grid that opens nothing. The extensions land with the surface that can
-  // draw one.
-  illustration: [],
+  // `.webp` is here even though the reverse scripts cannot read it: they
+  // convert it first, and it is what a phone screenshot or a saved web image
+  // is. Refusing it in the picker would turn the one format users arrive with
+  // into "not supported". `.gif` is absent for the opposite reason — a browser
+  // draws it, but it animates where a cover is one still image, and its
+  // palette is quantised to 256 colours, so the colour axis would describe the
+  // encoder. `.tiff` is absent because no browser draws it.
+  illustration: [".png", ".jpg", ".jpeg", ".webp", ".bmp"],
 };
 
 function acceptList(kinds: readonly UserTemplateKind[]): string {
@@ -92,10 +93,10 @@ function presentationTemplateImportPrompt(): string {
  * The same request, aimed at the custom template catalog.
  *
  * One sentence for every kind, because the guide already sorts them: the
- * `reverse-template` skill decides whether the file is a deck, a Word document
- * or a PDF document and follows the branch that matches. Repeating that
- * decision here would give the run two answers that can disagree, and the one
- * in the guide is the one that read the pages.
+ * `reverse-template` skill decides whether the file is a deck, a Word
+ * document, a PDF document or artwork and follows the branch that matches.
+ * Repeating that decision here would give the run two answers that can
+ * disagree, and the one in the guide is the one that read the file.
  *
  * Naming the catalog is what this message does have to carry. The guide's
  * presentation branch ends at `okou presentation-template publish`, which

@@ -97,12 +97,39 @@ export const visibleCustomTemplates$ = computed(
 );
 
 /**
+ * Where a kind is read.
+ *
+ * A deck is a column of page images, which this panel can already scroll, so
+ * it takes the panel over. A document and an illustration are each one file
+ * read at whatever size suits it — someone else's viewer for the document, the
+ * picture itself for the illustration — so both want a viewport of their own
+ * and open a dialog over the catalog instead.
+ *
+ * Every kind answers here rather than one being what the others fall through
+ * to, so a kind added to `USER_TEMPLATE_KINDS` fails this switch until someone
+ * says where clicking its tile leads. Without it a new kind opens nothing and
+ * the tile reads as broken.
+ */
+export function customTemplateSurface(
+  kind: UserTemplateKind,
+): "panel" | "dialog" {
+  switch (kind) {
+    case "presentation": {
+      return "panel";
+    }
+    case "document":
+    case "illustration": {
+      return "dialog";
+    }
+  }
+}
+
+/**
  * The open template, with the kind that decides where it opens.
  *
  * The kind travels with the id rather than being read back from the catalog,
- * because the surface has to be chosen in the same frame as the click: a deck
- * takes over the panel, a document opens a preview dialog over it, and waiting
- * for the detail request to say which would render one of them first and then
+ * because the surface has to be chosen in the same frame as the click: waiting
+ * for the detail request to say which would render one surface first and then
  * replace it.
  */
 interface OpenCustomTemplate {

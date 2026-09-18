@@ -70,6 +70,7 @@ export const introVideoAgentResponseSchema = z.object({
   notice: z.string().optional(),
   error: builtInGenerationErrorSchema.optional(),
   url: artifactUrlSchema.optional(),
+  privateArtifacts: z.boolean().optional(),
   filename: z.string().optional(),
   contentType: z.literal("video/mp4").optional(),
   size: z.number().nonnegative().optional(),

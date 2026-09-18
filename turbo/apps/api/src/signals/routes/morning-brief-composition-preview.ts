@@ -47,6 +47,11 @@ const composeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       orgId: auth.orgId,
       userId: auth.userId,
       anchor: new Date(body.data.anchor),
+      // The caller's budget, which the composition may only tighten with.
+      deadlineAt:
+        body.data.deadlineAt === undefined
+          ? null
+          : new Date(body.data.deadlineAt),
     },
     signal,
   );
@@ -69,6 +74,7 @@ const composeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
         result: "incomplete" as const,
         reason: outcome.reason,
         detail: outcome.detail,
+        sources: outcome.sources,
       },
     };
   }

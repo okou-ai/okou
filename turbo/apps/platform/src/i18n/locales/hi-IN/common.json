@@ -541,12 +541,14 @@
       "synced": "Google Drive से समन्वयित",
       "syncedFiles_one": "Google Drive से समन्वयित",
       "syncedFiles_other": "{{count}} फ़ाइलों को Google Drive में समन्वयित किया गया",
+      "syncedSlides": "Google Slides से समन्वयित",
       "syncFailed": "Google Drive से सिंक करने में विफल",
       "syncingArtifact": "आर्टिफ़ैक्ट सिंक हो रहा है...",
       "syncingFiles_one": "{{count}} फ़ाइल सिंक हो रही है...",
       "syncingFiles_other": "{{count}} फ़ाइलें सिंक हो रही हैं...",
       "syncingNamed": "{{filename}} सिंक हो रहा है...",
-      "upload": "Google Drive पर अपलोड करें"
+      "upload": "Google Drive पर अपलोड करें",
+      "uploadSlides": "Google Slides पर अपलोड करें"
     },
     "kinds": {
       "audio": "ऑडियो",

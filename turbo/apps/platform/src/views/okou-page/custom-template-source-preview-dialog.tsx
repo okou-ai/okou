@@ -17,18 +17,25 @@ import { OfficeDocumentPreview } from "./office-document-preview.tsx";
 import { isOfficeFilePreview } from "./office-file-preview.ts";
 import {
   closeCustomTemplate$,
+  customTemplateSurface,
   openCustomTemplateDetail$,
   openCustomTemplateKind$,
 } from "../../signals/okou-page/custom-template-library.ts";
 
 /**
- * What a document template is, rendered.
+ * What a template with no rendered pages is, rendered.
  *
- * A document template carries no rendered pages, so the source file is the
- * only thing there is to look at — and the browser cannot draw a Word document
- * at all. Both branches therefore hand the file to a renderer that can: the
- * Office web viewer for the formats it covers, and the browser's own PDF
- * viewer for the rest.
+ * Neither kind that lands here carries page images, so the source file is the
+ * only thing there is to look at. What it takes to look at it differs: the
+ * browser cannot draw a Word document at all, so those go to a renderer that
+ * can — the Office web viewer for the formats it covers, its own PDF viewer
+ * for the rest — while an illustration's source is already a picture and needs
+ * nothing but an `img`.
+ *
+ * The illustration branch is chosen by the row's kind rather than by the
+ * filename. The kind is what decided at publish that this source had to be an
+ * image a browser can draw, so reading it back is reading the same decision;
+ * sniffing the extension here would be a second rule that can disagree with it.
  */
 function CustomTemplateSourcePreview({
   detail,
@@ -49,6 +56,24 @@ function CustomTemplateSourcePreview({
     },
     { filename: detail.sourceFilename },
   );
+  if (detail.kind === "illustration") {
+    return (
+      // `contain` rather than `cover`: a reference is judged by its whole
+      // frame — how much of the sheet the art covers, where it sits, how wide
+      // the margin is — and cropping to fill the dialog would take exactly
+      // those away. The muted ground behind it is what gives a picture on
+      // white paper, or one with a transparent corner, an edge to be seen
+      // against.
+      <div className="flex h-full w-full items-center justify-center overflow-auto bg-muted p-6">
+        <img
+          src={detail.sourceUrl}
+          alt={title}
+          className="max-h-full max-w-full object-contain"
+          data-testid="custom-template-source-preview"
+        />
+      </div>
+    );
+  }
   return isOfficeFilePreview(detail.sourceFilename) ? (
     <OfficeDocumentPreview
       resourceUrl={detail.sourceUrl}
@@ -72,13 +97,13 @@ function CustomTemplateSourcePreview({
 }
 
 /**
- * The surface a document template opens on.
+ * The surface every kind that is not a deck opens on.
  *
  * A dialog rather than the panel takeover a deck gets: a deck is read as a
- * column of page images, which the panel can scroll, while a document is read
- * inside someone else's viewer, which needs a viewport of its own to be worth
- * opening. The management column is the same one either surface shows, so what
- * a member can do to a template does not depend on which kind it is.
+ * column of page images, which the panel can scroll, while a document and an
+ * illustration are each read as one file at a size of its own. The management
+ * column is the same one either surface shows, so what a member can do to a
+ * template does not depend on which kind it is.
  */
 export function CustomTemplateSourcePreviewDialog({
   onSelect,
@@ -97,7 +122,7 @@ export function CustomTemplateSourcePreviewDialog({
     detailLoadable.state === "hasData" ? detailLoadable.data : null;
   return (
     <Dialog
-      open={openKind === "document"}
+      open={openKind !== null && customTemplateSurface(openKind) === "dialog"}
       onOpenChange={(next) => {
         if (!next) {
           close();

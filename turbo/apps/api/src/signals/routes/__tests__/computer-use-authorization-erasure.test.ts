@@ -33,6 +33,7 @@ import {
 } from "../../../test-fixtures/chat-thread-content-erasure";
 import { deleteAgentRunRootFixture } from "../../../test-fixtures/run-deletion";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { isAbortError, settleIncludingAbort } from "../../utils";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -58,6 +59,36 @@ const STARTED_AT_MS = Date.parse("2026-09-18T04:00:00.000Z");
 const HOUR_MS = 60 * 60 * 1000;
 const BLOCKED = { interval: 10, timeout: 10_000 } as const;
 const CASE_TIMEOUT_MS = 30_000;
+
+type OwnedOperationOutcome =
+  | { readonly ok: true; readonly value: unknown }
+  | { readonly ok: false; readonly error: unknown };
+
+async function joinOwnedAuthorizationOperations(
+  release: () => Promise<void>,
+  operations: readonly Promise<OwnedOperationOutcome>[],
+  signal: AbortSignal,
+): Promise<void> {
+  const outcomes = await Promise.all([
+    settleIncludingAbort(release()),
+    ...operations,
+  ]);
+  const errors: unknown[] = [];
+  for (const outcome of outcomes) {
+    if (!outcome.ok && !(signal.aborted && isAbortError(outcome.error))) {
+      errors.push(outcome.error);
+    }
+  }
+  if (errors.length === 1) {
+    throw errors[0];
+  }
+  if (errors.length > 1) {
+    throw new AggregateError(
+      errors,
+      "Computer Use authorization fixture cleanup failed",
+    );
+  }
+}
 
 aroundEach(async (runTest) => {
   await withMockNowForTest(STARTED_AT_MS, runTest);
@@ -1202,6 +1233,107 @@ describe("account erasure fences Computer Use authorization request creation", (
         displayName: `Run-wait rebind ${randomUUID().slice(0, 8)}`,
         visibility: "public",
       });
+
+      // A setup failure must reject immediately and join its transaction instead
+      // of waiting for test-context cancellation to reject the readiness gate.
+      await expect(
+        holdComputerUseAuthorizationCreationRunFixture(
+          { runId: randomUUID() },
+          context.signal,
+        ),
+      ).rejects.toThrow("Expected the authorization creation run row");
+
+      // Exercise the same failure-path owner used below. Both competing
+      // operations have reached real PostgreSQL blocker edges before the
+      // synthetic early exit; cleanup must preserve that error while joining
+      // the holder rollback, request rollback and thread mutation.
+      const earlyController = new AbortController();
+      const earlySignal = AbortSignal.any([
+        context.signal,
+        earlyController.signal,
+      ]);
+      const earlyHolder = await holdComputerUseAuthorizationCreationRunFixture(
+        { runId: fixture.runId },
+        earlySignal,
+      );
+      const earlyCreating = requestAuthorizationCreation(
+        fixture,
+        [200],
+        undefined,
+        earlySignal,
+      );
+      const earlyCreatingOutcome = settleIncludingAbort(earlyCreating);
+      const earlyOperations: Promise<OwnedOperationOutcome>[] = [];
+      const expectedEarlyExit = new Error(
+        "Expected authorization fixture early exit",
+      );
+      const earlyWork = await settleIncludingAbort(
+        (async () => {
+          await expect
+            .poll(earlyHolder.blockedCreationRunPinCount, BLOCKED)
+            .toBeGreaterThanOrEqual(1);
+          const movingThread = setChatThreadAgentFixture({
+            chatThreadId: fixture.threadId,
+            agentId: reboundAgent.agentId,
+          });
+          earlyOperations.push(settleIncludingAbort(movingThread));
+          await expect
+            .poll(earlyHolder.blockedThreadMutationCount, BLOCKED)
+            .toBeGreaterThanOrEqual(1);
+          throw expectedEarlyExit;
+        })(),
+      );
+      const earlyAbort = new DOMException(
+        "Authorization fixture exited early",
+        "AbortError",
+      );
+      earlyController.abort(earlyAbort);
+      const [earlyCleanup, joinedEarlyCreating] = await Promise.all([
+        settleIncludingAbort(
+          joinOwnedAuthorizationOperations(
+            earlyHolder.release,
+            earlyOperations,
+            earlySignal,
+          ),
+        ),
+        earlyCreatingOutcome,
+      ]);
+      if (earlyWork.ok) {
+        throw new Error("Expected the authorization fixture to exit early");
+      }
+      if (earlyWork.error !== expectedEarlyExit) {
+        if (!earlyCleanup.ok) {
+          throw new AggregateError(
+            [earlyWork.error, earlyCleanup.error],
+            "Authorization fixture work and cleanup both failed",
+          );
+        }
+        throw earlyWork.error;
+      }
+      if (!earlyCleanup.ok) {
+        throw earlyCleanup.error;
+      }
+      expect(earlyWork.error).toBe(expectedEarlyExit);
+      if (joinedEarlyCreating.ok) {
+        throw new Error("Expected the aborted creation request to reject");
+      }
+      expect(joinedEarlyCreating.error).toStrictEqual(
+        expect.objectContaining({
+          message: expect.stringMatching(/Unknown response status 500/),
+        }),
+      );
+      await setChatThreadAgentFixture({
+        chatThreadId: fixture.threadId,
+        agentId: fixture.agentId,
+      });
+      const releasedRunProbe =
+        await holdComputerUseAuthorizationCreationRunFixture(
+          { runId: fixture.runId },
+          context.signal,
+        );
+      await releasedRunProbe.release();
+      await expect(readCreationState(fixture)).resolves.toStrictEqual(before);
+
       const holder = await holdComputerUseAuthorizationCreationRunFixture(
         { runId: fixture.runId },
         context.signal,
@@ -1209,6 +1341,16 @@ describe("account erasure fences Computer Use authorization request creation", (
       clearPublications();
 
       const creating = requestAuthorizationCreation(fixture, [200]);
+      const ownedOperations: Promise<OwnedOperationOutcome>[] = [
+        settleIncludingAbort(creating),
+      ];
+      onTestFinished(async () => {
+        await joinOwnedAuthorizationOperations(
+          holder.release,
+          ownedOperations,
+          context.signal,
+        );
+      });
       await expect
         .poll(holder.blockedCreationRunPinCount, BLOCKED)
         .toBeGreaterThanOrEqual(1);
@@ -1217,6 +1359,7 @@ describe("account erasure fences Computer Use authorization request creation", (
         chatThreadId: fixture.threadId,
         agentId: reboundAgent.agentId,
       });
+      ownedOperations.push(settleIncludingAbort(movingThread));
       // This is the second real blocker edge: holder -> creation's run pin and
       // creation's already-held thread SHARE -> the non-key Agent rebind.
       await expect
@@ -1226,8 +1369,7 @@ describe("account erasure fences Computer Use authorization request creation", (
 
       const admittedAtMs = STARTED_AT_MS + 5 * 60_000;
       mockNow(admittedAtMs);
-      holder.release();
-      await holder.done;
+      await holder.release();
       const created = await creating;
       await movingThread;
       await setChatThreadAgentFixture({

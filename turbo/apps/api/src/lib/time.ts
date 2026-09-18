@@ -16,6 +16,13 @@ const {
 const scopedMockNow = singleton(() => {
   return new AsyncLocalStorage<ScopedMockNow>();
 });
+const {
+  get: getMockedMonotonicNow,
+  set: setMockedMonotonicNow,
+  clear: clearMockedMonotonicNow,
+} = testOverride<number | undefined>(() => {
+  return undefined;
+});
 
 function timestamp(value: Date | number): number {
   return value instanceof Date ? value.getTime() : value;
@@ -35,6 +42,11 @@ export function now(): number {
 
 export function nowDate(): Date {
   return new Date(now());
+}
+
+/** The non-wall clock used to measure real elapsed I/O time. */
+export function monotonicNow(): number {
+  return getMockedMonotonicNow() ?? performance.now();
 }
 
 export function timestampWithoutTimeZone(value: Date): string {
@@ -60,6 +72,14 @@ export function clearMockNow(): void {
     return;
   }
   clearMockedNow();
+}
+
+export function mockMonotonicNow(value: number): void {
+  setMockedMonotonicNow(value);
+}
+
+export function clearMockMonotonicNow(): void {
+  clearMockedMonotonicNow();
 }
 
 export async function withMockNowForTest<T>(

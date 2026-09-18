@@ -50,6 +50,10 @@ import { agentRuns } from "./agent-run";
  * `idempotencyKey` is a caller-provided UUID for exactly-once semantics.
  * Writers must keep the same UUID across retries of the same logical
  * event; the UNIQUE index blocks duplicate insertions.
+ * Zero quantities are discarded without an idempotency receipt. Transactional
+ * writers may reserve a zero placeholder, but must remove it before commit if
+ * its final quantity is zero. Positive usage is retained even when its charge
+ * is covered by allowances or its price resolves to zero credits.
  *
  * Healthy usage remains `processed` for at least four days before hourly
  * rollup replacement, after which the source event is deleted.

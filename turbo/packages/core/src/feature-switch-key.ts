@@ -44,7 +44,6 @@ export enum FeatureSwitchKey {
   StabilityAiConnector = "stabilityAiConnector",
   ZoomConnector = "zoomConnector",
   WorkdayConnector = "workdayConnector",
-  ModelPickerFlyout = "modelPickerFlyout",
   ChatPreference = "chatPreference",
   PaidToolControls = "paidToolControls",
   RealAgentInPreview = "_realAgentInPreview",
@@ -77,4 +76,5 @@ export enum FeatureSwitchKey {
   ComposerAddMenu = "composerAddMenu",
   CustomTemplates = "customTemplates",
   DeliveryFormatGuidance = "deliveryFormatGuidance",
+  GoogleSlidesConversion = "googleSlidesConversion",
 }

@@ -79,6 +79,8 @@ import {
   mockGoogleDriveArtifactUpload,
   mockGoogleDriveConnectorOAuth,
   mockGoogleDriveFilesList,
+  mockGoogleDriveArtifactUploadRejection,
+  mockGoogleSlidesReadback,
 } from "./helpers/api-bdd-connectors";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -4543,6 +4545,194 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       connectionStatus: "reconnect-required",
       reconnectReason: null,
     });
+
+    chatCallbacks.mockChatOutputEvents([]);
+    await completeChatRunOk(run.runId, sandboxHeaders);
+  }, 120_000);
+
+  async function setupSlidesConversionSync(params: {
+    readonly agentLabel: string;
+    readonly conversionEnabled: boolean;
+  }) {
+    const { actor, agentId, runnerGroup } = await entitledChatActor(
+      params.agentLabel,
+    );
+    if (params.conversionEnabled) {
+      await createBillingMediaApi(context).updateFeatureSwitches(actor, {
+        [FeatureSwitchKey.GoogleSlidesConversion]: true,
+      });
+    }
+    chatCallbacks.failIfChatCallbackRouteIsFetched();
+    const objectStore = chatCallbacks.acceptChatObjectStorage();
+
+    const run = await sendChatRun(actor, {
+      agentId,
+      prompt: "produce a presentation artifact",
+    });
+    const { claim, sandboxHeaders } = await claimChatRun(
+      runnerGroup,
+      run.runId,
+    );
+    const deckId = randomUUID();
+    objectStore.addObject({
+      bucket: "test-user-artifacts",
+      key: `artifacts/${actor.userId}/${deckId}/deck.pptx`,
+      size: 4096,
+    });
+    await chat.completeUploadWithBearer(
+      `Bearer ${okouTokenFromClaim(claim)}`,
+      { id: deckId },
+      [200],
+    );
+
+    mockGoogleDriveConnectorOAuth();
+    const start = await connectorsApi.startOauth(
+      actor,
+      "google-drive",
+      "oauth",
+    );
+    await connectorsApi.completeOauthCallback("google-drive", {
+      code: "drive-ok",
+      state: stateFromAuthorizationUrl(start.authorizationUrl),
+    });
+    await api.enableAgentConnectors(actor, agentId, ["google-drive"]);
+
+    return { actor, deckId, run, sandboxHeaders };
+  }
+
+  it.each([
+    {
+      label: "converts a pptx artifact into a native slides deck",
+      pageElementCounts: [3, 5],
+      trashAccepted: true,
+      expectedMessage: null,
+    },
+    {
+      label: "discards a conversion that produced an empty deck",
+      pageElementCounts: [0, 0],
+      trashAccepted: true,
+      expectedMessage:
+        "Google Slides converted this presentation to an empty deck",
+    },
+    {
+      label: "reports an empty deck drive refused to discard",
+      pageElementCounts: [0, 0],
+      trashAccepted: false,
+      expectedMessage:
+        "Google Slides converted this presentation to an empty deck that could not be removed from Drive",
+    },
+  ])(
+    "$label",
+    async ({ pageElementCounts, trashAccepted, expectedMessage }) => {
+      const { actor, deckId, run, sandboxHeaders } =
+        await setupSlidesConversionSync({
+          agentLabel: "Artifacts slides conversion agent",
+          conversionEnabled: true,
+        });
+
+      const uploadRecorder = mockGoogleDriveArtifactUpload({
+        id: "drive-slides-deck",
+        name: "deck.pptx",
+        webViewLink:
+          "https://docs.google.com/presentation/d/drive-slides-deck/edit",
+      });
+      const readback = mockGoogleSlidesReadback(
+        pageElementCounts.map((pageElementCount) => {
+          return { pageElementCount };
+        }),
+        { trashAccepted },
+      );
+
+      const synced = await chat.requestSyncThreadArtifact(
+        actor,
+        run.threadId,
+        { runId: run.runId, fileId: deckId },
+        expectedMessage === null ? [200] : [400],
+      );
+
+      // The metadata asks Drive to convert while the part still declares the
+      // uploaded bytes' own type.
+      const multipart = Buffer.from(uploadRecorder.bodies[0]!).toString("utf8");
+      expect(multipart).toContain(
+        '"mimeType":"application/vnd.google-apps.presentation"',
+      );
+      expect(multipart).toContain(
+        "Content-Type: application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      );
+      expect(readback.presentationIds).toStrictEqual(["drive-slides-deck"]);
+
+      if (expectedMessage === null) {
+        expect(synced.body).toMatchObject({ id: "drive-slides-deck" });
+        expect(readback.trashedFileIds).toStrictEqual([]);
+      } else {
+        expectApiError(synced.body);
+        expect(synced.body.error.message).toBe(expectedMessage);
+        // A blank deck must not be reported as a successful sync, and a deck
+        // Drive would not discard must not be reported as discarded.
+        expect(readback.trashedFileIds).toStrictEqual(["drive-slides-deck"]);
+      }
+
+      chatCallbacks.mockChatOutputEvents([]);
+      await completeChatRunOk(run.runId, sandboxHeaders);
+    },
+    120_000,
+  );
+
+  it("uploads a presentation unchanged while slides conversion is off", async () => {
+    const { actor, deckId, run, sandboxHeaders } =
+      await setupSlidesConversionSync({
+        agentLabel: "Artifacts slides conversion disabled agent",
+        conversionEnabled: false,
+      });
+
+    const uploadRecorder = mockGoogleDriveArtifactUpload({
+      id: "drive-plain-deck",
+      name: "deck.pptx",
+      webViewLink: "https://drive.google.com/file/d/drive-plain-deck/view",
+    });
+    // No Slides handler is registered, so an unexpected read-back would fail
+    // the request instead of passing silently.
+
+    const synced = await chat.requestSyncThreadArtifact(
+      actor,
+      run.threadId,
+      { runId: run.runId, fileId: deckId },
+      [200],
+    );
+
+    expect(synced.body).toMatchObject({ id: "drive-plain-deck" });
+    const multipart = Buffer.from(uploadRecorder.bodies[0]!).toString("utf8");
+    expect(multipart).toContain(
+      '"mimeType":"application/vnd.openxmlformats-officedocument.presentationml.presentation"',
+    );
+    expect(multipart).not.toContain("application/vnd.google-apps.presentation");
+
+    chatCallbacks.mockChatOutputEvents([]);
+    await completeChatRunOk(run.runId, sandboxHeaders);
+  }, 120_000);
+
+  it("reports a presentation google slides cannot read", async () => {
+    const { actor, deckId, run, sandboxHeaders } =
+      await setupSlidesConversionSync({
+        agentLabel: "Artifacts slides unreadable agent",
+        conversionEnabled: true,
+      });
+
+    mockGoogleDriveArtifactUploadRejection(
+      "conversionUnsupportedConversionPath",
+    );
+
+    const rejected = await chat.requestSyncThreadArtifact(
+      actor,
+      run.threadId,
+      { runId: run.runId, fileId: deckId },
+      [400],
+    );
+
+    expectApiError(rejected.body);
+    expect(rejected.body.error.message).toBe(
+      "Google Slides could not read this presentation",
+    );
 
     chatCallbacks.mockChatOutputEvents([]);
     await completeChatRunOk(run.runId, sandboxHeaders);

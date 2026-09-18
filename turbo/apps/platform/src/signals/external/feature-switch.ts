@@ -92,14 +92,6 @@ export const composerImageAnnotationEnabled$ = computed((get): boolean => {
   return get(featureSwitch$)[FeatureSwitchKey.ComposerImageAnnotation] ?? false;
 });
 
-/**
- * How the composer draws the model list: the menu instead of the legacy
- * select, and on a desktop two detached panels instead of the menu's pages.
- */
-export const modelPickerFlyoutEnabled$ = computed((get): boolean => {
-  return get(featureSwitch$)[FeatureSwitchKey.ModelPickerFlyout] ?? false;
-});
-
 export const avatarNeckSweaterEnabled$ = computed((get): boolean => {
   return get(featureSwitch$)[FeatureSwitchKey.AvatarNeckSweater] ?? false;
 });
