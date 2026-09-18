@@ -1454,10 +1454,12 @@ function FileChipBody({
 export function FileAttachmentChip({
   contentType,
   filename,
+  preview,
   url,
 }: {
   contentType?: string;
   filename: string;
+  preview?: AttachmentPreviewSignals;
   url: string;
 }) {
   const { t } = useTranslation();
@@ -1470,7 +1472,11 @@ export function FileAttachmentChip({
       type="button"
       onClick={() => {
         if (previewOfficeDocument) {
-          openFileLightbox({ filename, url });
+          openFileLightbox({
+            filename,
+            url,
+            ...(preview ? { preview } : {}),
+          });
           return;
         }
         detach(
@@ -1588,12 +1594,14 @@ export function PreviewableFileAttachmentChip({
 export function PreviewableAudioAttachmentChip({
   contentType,
   filename,
+  preview,
   shareAvailable,
   splitViewAvailable,
   url,
 }: {
   contentType?: string;
   filename: string;
+  preview?: AttachmentPreviewSignals;
   shareAvailable?: boolean;
   splitViewAvailable?: boolean;
   url: string;
@@ -1608,6 +1616,7 @@ export function PreviewableAudioAttachmentChip({
         openAudioLightbox({
           url,
           filename,
+          ...(preview ? { preview } : {}),
           ...(shareAvailable === undefined ? {} : { shareAvailable }),
           ...(splitViewAvailable === undefined ? {} : { splitViewAvailable }),
         });
@@ -1859,6 +1868,7 @@ function AttachmentChip({
                           key: attachment.key,
                           filename: attachment.filename,
                           url: previewUrl,
+                          preview: imagePreview,
                           annotations,
                           commit: async (next, signal) => {
                             // Persist once, after the annotated copy exists or

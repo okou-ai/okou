@@ -86,7 +86,7 @@ type ArtifactSidebarProps = {
   readonly markdownTree$?: MarkdownPreviewTreeComputed;
   readonly onBack?: () => void;
   readonly onClose: () => void;
-  readonly onNavigateImage: (url: string) => void;
+  readonly onNavigateImage: (item: ImageArtifactNavigationItem) => void;
   readonly text$?: TextPreviewComputed;
   readonly thread: ChatPanelSignals;
 };
@@ -148,7 +148,7 @@ export function ArtifactSidebar({
       return undefined;
     }
     return () => {
-      onNavigateImage(navigationItem.url);
+      onNavigateImage(navigationItem);
     };
   };
 

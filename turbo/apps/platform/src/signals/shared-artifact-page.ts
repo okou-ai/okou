@@ -41,10 +41,8 @@ export function createSharedArtifactPreview(
   const kind = classifyChatAttachment(artifact);
   const contentUrl = new URL(artifact.url);
   contentUrl.hash = new URL(referenceUrl).hash;
-  const base = {
-    filename: artifact.filename,
-    url: referenceUrl,
-    ...(artifact.expiresAt === undefined
+  const previewSignals =
+    artifact.expiresAt === undefined
       ? createAttachmentPreviewSignals(contentUrl.href, {
           contentType: artifact.contentType,
         })
@@ -55,7 +53,12 @@ export function createSharedArtifactPreview(
             expiresAt: artifact.expiresAt,
             publicUrl: null,
           },
-        })),
+        });
+  const base = {
+    filename: artifact.filename,
+    url: referenceUrl,
+    preview: previewSignals,
+    ...previewSignals,
   };
   let preview: AttachmentLightboxState;
   if (isTextPreviewKind(kind)) {
