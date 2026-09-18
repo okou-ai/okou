@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.91.16](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.15...guest-agent-v0.91.16) (2026-09-18)
+
+
+### Bug Fixes
+
+* **guest-agent:** classify explicit codex output token limits ([#35139](https://github.com/vm0-ai/okou/issues/35139)) ([5dd23b6](https://github.com/vm0-ai/okou/commit/5dd23b67b36fe199796cfc97cddcbfa719ed6541))
+
 ## [0.91.15](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.14...guest-agent-v0.91.15) (2026-09-18)
 
 ## [0.91.14](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.13...guest-agent-v0.91.14) (2026-09-18)

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.21](https://github.com/vm0-ai/okou/compare/codex-mock-v0.11.20...codex-mock-v0.11.21) (2026-09-18)
+
+
+### Bug Fixes
+
+* **guest-agent:** classify explicit codex output token limits ([#35139](https://github.com/vm0-ai/okou/issues/35139)) ([5dd23b6](https://github.com/vm0-ai/okou/commit/5dd23b67b36fe199796cfc97cddcbfa719ed6541))
+
 ## [0.11.20](https://github.com/vm0-ai/okou/compare/codex-mock-v0.11.19...codex-mock-v0.11.20) (2026-09-18)
 
 ## [0.11.19](https://github.com/vm0-ai/okou/compare/codex-mock-v0.11.18...codex-mock-v0.11.19) (2026-09-18)

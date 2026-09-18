@@ -11,6 +11,27 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.915.0](https://github.com/vm0-ai/okou/compare/app-v0.914.1...app-v0.915.0) (2026-09-18)
+
+
+### Features
+
+* **templates:** preview a custom document template's source file ([#35031](https://github.com/vm0-ai/okou/issues/35031)) ([826b8d1](https://github.com/vm0-ai/okou/commit/826b8d1766fa5d97728ab1c776a6ade1e373d587))
+
+
+### Bug Fixes
+
+* log sandbox rootfs exhaustion at info ([#35141](https://github.com/vm0-ai/okou/issues/35141)) ([e015f06](https://github.com/vm0-ai/okou/commit/e015f0643c9d33d6ddb144b233845734bde075f5))
+* **ssh:** mention file import in the private key hint ([#35142](https://github.com/vm0-ai/okou/issues/35142)) ([279e9a5](https://github.com/vm0-ai/okou/commit/279e9a5a0f1ac7f0beee86d11d5fad25df3567ff))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.465.0
+    * @okouai/core bumped to 8.680.1
+
 ## [0.914.1](https://github.com/vm0-ai/okou/compare/app-v0.914.0...app-v0.914.1) (2026-09-18)
 
 

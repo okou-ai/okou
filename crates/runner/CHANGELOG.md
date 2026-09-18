@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.198.1](https://github.com/vm0-ai/okou/compare/runner-rs-v0.198.0...runner-rs-v0.198.1) (2026-09-18)
+
+
+### Bug Fixes
+
+* log sandbox rootfs exhaustion at info ([#35141](https://github.com/vm0-ai/okou/issues/35141)) ([e015f06](https://github.com/vm0-ai/okou/commit/e015f0643c9d33d6ddb144b233845734bde075f5))
+
 ## [0.198.0](https://github.com/vm0-ai/okou/compare/runner-rs-v0.197.6...runner-rs-v0.198.0) (2026-09-18)
 
 

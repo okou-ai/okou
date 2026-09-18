@@ -1,6 +1,6 @@
 [package]
 name = "guest-contracts"
-version = "0.14.17"
+version = "0.14.18"
 edition.workspace = true
 description = "Shared contracts between runner and guest binaries"
 

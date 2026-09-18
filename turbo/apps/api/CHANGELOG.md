@@ -8,6 +8,31 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.628.0](https://github.com/vm0-ai/okou/compare/api-v1.627.0...api-v1.628.0) (2026-09-18)
+
+
+### Features
+
+* **templates:** preview a custom document template's source file ([#35031](https://github.com/vm0-ai/okou/issues/35031)) ([826b8d1](https://github.com/vm0-ai/okou/commit/826b8d1766fa5d97728ab1c776a6ade1e373d587))
+
+
+### Bug Fixes
+
+* **api:** fence browser authorization creation ([#35109](https://github.com/vm0-ai/okou/issues/35109)) ([1f71c54](https://github.com/vm0-ai/okou/commit/1f71c5411a89a39d9f0f4fc55fabc9c13a33be95))
+* **api:** show workflow display names in automation messages ([#35140](https://github.com/vm0-ai/okou/issues/35140)) ([00d7601](https://github.com/vm0-ai/okou/commit/00d760179fe7b1e9a422ec14de70be27cf1799f0))
+* log sandbox rootfs exhaustion at info ([#35141](https://github.com/vm0-ai/okou/issues/35141)) ([e015f06](https://github.com/vm0-ai/okou/commit/e015f0643c9d33d6ddb144b233845734bde075f5))
+* **social:** remove non-actionable input warnings ([#35136](https://github.com/vm0-ai/okou/issues/35136)) ([0d2b243](https://github.com/vm0-ai/okou/commit/0d2b2437796cc95032099b44351f09f529a1b093))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.465.0
+    * @okouai/core bumped to 8.680.1
+    * @okouai/db bumped to 1.271.1
+    * @okouai/pi-agent-runtime bumped to 1.33.11
+
 ## [1.627.0](https://github.com/vm0-ai/okou/compare/api-v1.626.0...api-v1.627.0) (2026-09-18)
 
 
