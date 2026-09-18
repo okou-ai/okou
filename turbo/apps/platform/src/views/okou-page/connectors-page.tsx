@@ -1702,17 +1702,26 @@ function ConnectorsConnectedPanel({
 function RemoteAccessConnectedPanel(
   props: Parameters<typeof ConnectorsConnectedPanel>[0],
 ) {
+  const { t } = useTranslation();
   const summary = useLoadable(vncSummary$);
   const filtered = useLoadable(filteredVncSummary$);
   const rows = useLoadable(vncAgentAccessRows$);
   const failed = [summary.state, filtered.state, rows.state].includes(
     "hasError",
   );
+  const loading = summary.state === "loading" || filtered.state === "loading";
   return (
     <>
       <SshDirectoryLoadError />
       <VncDirectoryLoadError />
-      <ConnectorsConnectedPanel {...props} suppressEmpty={failed} />
+      {!failed && loading && (
+        <p role="status" className="text-sm text-muted-foreground">
+          {t(($) => {
+            return $.vnc.loading;
+          })}
+        </p>
+      )}
+      <ConnectorsConnectedPanel {...props} suppressEmpty={failed || loading} />
     </>
   );
 }

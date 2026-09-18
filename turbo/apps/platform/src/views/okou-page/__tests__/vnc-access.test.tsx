@@ -69,12 +69,15 @@ test("An unavailable grant cannot classify VNC as unshared and can be retried", 
     return respond(200, { configuredCount: 1 });
   });
   let failed = true;
-  context.mocks.api(agentVncAccessContract.get, ({ respond }) => {
-    return failed
-      ? respond(500, {
-          error: { code: "INTERNAL_ERROR", message: "private grant error" },
-        })
-      : respond(200, { enabled: false });
+  const recovery = context.mocks.deferred<void>();
+  context.mocks.api(agentVncAccessContract.get, async ({ respond }) => {
+    if (failed) {
+      return respond(500, {
+        error: { code: "INTERNAL_ERROR", message: "private grant error" },
+      });
+    }
+    await recovery.promise;
+    return respond(200, { enabled: false });
   });
   await setupPage({
     context,
@@ -92,6 +95,13 @@ test("An unavailable grant cannot classify VNC as unshared and can be retried", 
   expect(document.body.textContent).not.toContain("private grant error");
   failed = false;
   click(await findFastControl("button", "Retry"));
+  await expect(
+    screen.findByText("Loading VNC configuration…"),
+  ).resolves.toBeInTheDocument();
+  expect(
+    screen.queryByText(/Every connector is shared with an agent/u),
+  ).toBeNull();
+  recovery.resolve();
   await expect(
     findFastControl("link", "Manage VNC"),
   ).resolves.toBeInTheDocument();
