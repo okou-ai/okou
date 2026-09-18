@@ -28,7 +28,6 @@ import {
   type FeatureSwitchContext,
 } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isCodexFastModeEnabled } from "@okouai/core/model-feature-switch";
 import { isPiAgentModelSupported } from "@okouai/pi-agent-runtime";
 import { OPENROUTER_US_ORIGIN } from "@okouai/api-contracts/contracts/openrouter-routing";
 
@@ -175,7 +174,6 @@ export function shouldUsePiExecution(args: {
         FeatureSwitchKey.PiLoop,
         args.featureSwitchContext,
       ),
-      codexFastModeEnabled: isCodexFastModeEnabled(args.featureSwitchContext),
     })
   );
 }

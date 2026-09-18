@@ -220,7 +220,6 @@ test("Conversation configuration arriving before creation is retained", async ()
     context,
     path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
     auth,
-    featureSwitches: { [FeatureSwitchKey.CodexFastMode]: true },
   });
 
   await waitFor(() => {
@@ -316,7 +315,6 @@ test("Service tier and Computer Use settings update independently", async () => 
     auth,
     cachedChatThreadEvents: cachedChatListEvents(14, [target, newer]),
     featureSwitches: {
-      [FeatureSwitchKey.CodexFastMode]: true,
       [FeatureSwitchKey.ModelPickerFlyout]: false,
     },
   });

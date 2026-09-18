@@ -502,7 +502,6 @@ describe("CHAT effort: thread configuration", () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     await authDeviceSupport.updateFeatureSwitches(actor, {
       [FeatureSwitchKey.Effort]: true,
-      [FeatureSwitchKey.CodexFastMode]: true,
     });
     const { providerId } = await upsertOrgModelProvider(actor, {
       type: "openai-api-key",

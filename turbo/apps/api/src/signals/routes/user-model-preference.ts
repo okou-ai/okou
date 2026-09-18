@@ -11,10 +11,7 @@ import {
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import type { UserPreferenceChangedPayload } from "@okouai/api-contracts/contracts/realtime";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
-import {
-  isChatEffortEnabled,
-  isCodexFastModeEnabled,
-} from "@okouai/core/model-feature-switch";
+import { isChatEffortEnabled } from "@okouai/core/model-feature-switch";
 
 import { badRequestMessage } from "../../lib/error";
 import { publishUserPreferenceChangedForUserSafely } from "../external/realtime";
@@ -57,7 +54,6 @@ function validateModelSettingsPatch(args: {
 function validatePriorityServiceTier(args: {
   readonly requested: boolean;
   readonly configuredPolicy: OrgModelPolicy | undefined;
-  readonly enabled: boolean;
 }): ReturnType<typeof badRequestMessage> | undefined {
   if (!args.requested) {
     return undefined;
@@ -68,15 +64,9 @@ function validatePriorityServiceTier(args: {
   ) {
     return badRequestMessage("Invalid request");
   }
-  if (!args.enabled) {
-    return badRequestMessage(
-      "Codex fast mode is not enabled for this workspace",
-    );
-  }
   if (
     !isCodexFastServiceTierSupported({
       selectedModel: args.configuredPolicy.model,
-      codexFastModeEnabled: true,
     })
   ) {
     return badRequestMessage(
@@ -124,7 +114,7 @@ const updateUserModelPreferenceInner$ = command(
 
     const modelSettingsPatch = body.data.modelSettingsPatch;
     const featureSwitchContext =
-      body.data.serviceTier === "priority" || modelSettingsPatch !== undefined
+      modelSettingsPatch !== undefined
         ? await get(userFeatureSwitchContext(auth.orgId, auth.userId))
         : undefined;
     signal.throwIfAborted();
@@ -143,9 +133,6 @@ const updateUserModelPreferenceInner$ = command(
     const serviceTierError = validatePriorityServiceTier({
       requested: body.data.serviceTier === "priority",
       configuredPolicy,
-      enabled:
-        featureSwitchContext !== undefined &&
-        isCodexFastModeEnabled(featureSwitchContext),
     });
     if (serviceTierError) {
       return serviceTierError;

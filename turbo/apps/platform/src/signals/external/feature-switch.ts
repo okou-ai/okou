@@ -6,10 +6,7 @@ import {
 } from "@okouai/core/feature-switch";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import {
-  isChatEffortEnabled,
-  isCodexFastModeEnabled,
-} from "@okouai/core/model-feature-switch";
+import { isChatEffortEnabled } from "@okouai/core/model-feature-switch";
 import { clerk$ } from "../auth";
 import { apiClient$ } from "../api-client.ts";
 import { accept } from "../../lib/accept.ts";
@@ -107,10 +104,6 @@ export const chatEffortEnabled$ = computed((get): boolean => {
  */
 export const modelPickerFlyoutEnabled$ = computed((get): boolean => {
   return get(featureSwitch$)[FeatureSwitchKey.ModelPickerFlyout] ?? false;
-});
-
-export const codexFastModeEnabled$ = computed((get): boolean => {
-  return isCodexFastModeEnabled({ overrides: get(featureSwitch$) });
 });
 
 export const avatarNeckSweaterEnabled$ = computed((get): boolean => {

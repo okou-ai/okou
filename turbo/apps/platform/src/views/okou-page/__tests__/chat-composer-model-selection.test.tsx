@@ -237,7 +237,6 @@ async function openCodexExecutionChat(): Promise<void> {
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.CodexFastMode]: true,
       [FeatureSwitchKey.ChatPreference]: true,
     },
   });
@@ -259,7 +258,6 @@ async function openMixedProviderFastMenu() {
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.CodexFastMode]: true,
       [FeatureSwitchKey.ChatPreference]: true,
     },
   });
@@ -325,7 +323,6 @@ test.each([
       context,
       path: NEW_CHAT_PATH,
       featureSwitches: {
-        [FeatureSwitchKey.CodexFastMode]: true,
         [FeatureSwitchKey.ChatPreference]: true,
       },
     });
@@ -353,7 +350,6 @@ test("Localize fractional Fast speed guidance on hover", async () => {
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.CodexFastMode]: true,
       [FeatureSwitchKey.ChatPreference]: true,
     },
   });
@@ -411,7 +407,6 @@ test("Make a temporary Codex speed the default", async () => {
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.CodexFastMode]: true,
       [FeatureSwitchKey.ChatPreference]: true,
       // Speed is the subject here; effort would add its own preference patch.
       [FeatureSwitchKey.Effort]: false,
@@ -622,13 +617,11 @@ test("Explain model availability by plan and provider", async () => {
     return respond(200, limitedFreeBillingStatus());
   });
 
-  // One row per model: a Fast row would make the option names ambiguous.
   await setupLegacyPickerPage({
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
       [FeatureSwitchKey.Effort]: false,
-      [FeatureSwitchKey.CodexFastMode]: false,
     },
   });
 
@@ -637,12 +630,14 @@ test("Explain model availability by plan and provider", async () => {
   await expect(
     screen.findByRole("option", { name: /^DeepSeek V4 Flash/iu }),
   ).resolves.toBeVisible();
-  expect(
-    screen.getByRole("option", { name: /^GPT 5\.6 Luna/iu }),
-  ).toBeVisible();
-  expect(
-    screen.getByRole("option", { name: /^GPT 6 Astra.*Pro/iu }),
-  ).toBeVisible();
+  // A Fast-capable model always carries its own Fast row, so the plain row is
+  // addressed by its exact label rather than a shared prefix.
+  expect(screen.getByRole("option", { name: "GPT 5.6 Luna" })).toBeVisible();
+  // A Fast-capable row is labelled with its model name alone, so the plan
+  // badge is read from the row's own content.
+  const astraOption = screen.getByRole("option", { name: "GPT 6 Astra" });
+  expect(astraOption).toBeVisible();
+  expect(within(astraOption).getByText("Pro")).toBeVisible();
   expect(screen.getAllByText("Pro")).toHaveLength(4);
   expect(screen.getByText("BYOK")).toBeVisible();
 
@@ -700,14 +695,15 @@ test("Let an existing thread send while model availability is reconciling", asyn
     });
   });
 
-  // Sending during reconciliation is the subject; the run controls would
-  // otherwise wait on the same policy list.
+  // Sending during reconciliation is the subject: the composer keeps the
+  // draft, raises no availability error and creates exactly one run. Fast now
+  // belongs to every run's model selection, so that run lands with the policy
+  // list rather than ahead of it.
   await setupLegacyPickerPage({
     context,
     path: RUN_PATH,
     featureSwitches: {
       [FeatureSwitchKey.Effort]: false,
-      [FeatureSwitchKey.CodexFastMode]: false,
     },
   });
 
@@ -723,11 +719,11 @@ test("Let an existing thread send while model availability is reconciling", asyn
   ).not.toBeInTheDocument();
 
   click(await findButton("Send"));
+  policyGate.resolve(undefined);
   await waitFor(() => {
     expect(sentPrompts).toStrictEqual(["Continue the saved analysis"]);
   });
 
-  policyGate.resolve(undefined);
   await expect(
     screen.findByText("Continue the saved analysis"),
   ).resolves.toBeVisible();
@@ -744,7 +740,6 @@ test("Switch chat models immediately and adjust Fast from settings", async () =>
     featureSwitches: {
       [FeatureSwitchKey.Effort]: true,
       [FeatureSwitchKey.ModelPickerFlyout]: true,
-      [FeatureSwitchKey.CodexFastMode]: false,
       [FeatureSwitchKey.ChatPreference]: true,
     },
   });
@@ -796,7 +791,6 @@ test("Keep immediate Fast changes when navigating back through the menu", async 
     featureSwitches: {
       [FeatureSwitchKey.Effort]: true,
       [FeatureSwitchKey.ModelPickerFlyout]: true,
-      [FeatureSwitchKey.CodexFastMode]: false,
     },
   });
   await readyComposer();
@@ -890,7 +884,6 @@ test("Navigate the compact menu by keyboard and retain Fast after dismissal", as
     featureSwitches: {
       [FeatureSwitchKey.Effort]: true,
       [FeatureSwitchKey.ModelPickerFlyout]: true,
-      [FeatureSwitchKey.CodexFastMode]: false,
     },
   });
   const composer = await readyComposer();
@@ -930,7 +923,6 @@ test("Choose a model from the flyout without leaving the type list", async () =>
     path: NEW_CHAT_PATH,
     featureSwitches: {
       [FeatureSwitchKey.ModelPickerFlyout]: true,
-      [FeatureSwitchKey.CodexFastMode]: false,
     },
   });
   await readyComposer();
@@ -963,7 +955,6 @@ test("Offer Fast beside effort on the composer for a Fast-capable model", async 
     featureSwitches: {
       [FeatureSwitchKey.Effort]: true,
       [FeatureSwitchKey.ModelPickerFlyout]: true,
-      [FeatureSwitchKey.CodexFastMode]: true,
       [FeatureSwitchKey.ChatPreference]: true,
     },
   });
@@ -999,7 +990,6 @@ test("Adjust effort from the composer without opening the model picker", async (
     path: NEW_CHAT_PATH,
     featureSwitches: {
       [FeatureSwitchKey.Effort]: true,
-      [FeatureSwitchKey.CodexFastMode]: true,
       [FeatureSwitchKey.ChatPreference]: true,
     },
   });
@@ -1033,7 +1023,6 @@ test("Name the ends of the effort scale beside the bar", async () => {
     path: NEW_CHAT_PATH,
     featureSwitches: {
       [FeatureSwitchKey.Effort]: true,
-      [FeatureSwitchKey.CodexFastMode]: true,
       [FeatureSwitchKey.ChatPreference]: true,
     },
   });
@@ -1079,7 +1068,6 @@ test("Choose effort for a new chat and keep Fast independent", async () => {
     featureSwitches: {
       [FeatureSwitchKey.Effort]: true,
       [FeatureSwitchKey.ModelPickerFlyout]: true,
-      [FeatureSwitchKey.CodexFastMode]: true,
       [FeatureSwitchKey.PiLoop]: false,
       [FeatureSwitchKey.ChatPreference]: true,
     },
@@ -1139,7 +1127,6 @@ test("Select the default effort on an existing thread without changing Fast", as
     featureSwitches: {
       [FeatureSwitchKey.Effort]: true,
       [FeatureSwitchKey.ModelPickerFlyout]: true,
-      [FeatureSwitchKey.CodexFastMode]: true,
       [FeatureSwitchKey.PiLoop]: false,
     },
   });
@@ -1292,7 +1279,6 @@ test("Use the legacy picker and keep saved effort dormant when refactoring is di
     featureSwitches: {
       [FeatureSwitchKey.Effort]: false,
       [FeatureSwitchKey.ModelPickerFlyout]: false,
-      [FeatureSwitchKey.CodexFastMode]: true,
     },
   });
   await readyChat();
@@ -1526,7 +1512,6 @@ test("Adjust effort and Fast with keyboard controls on a desktop layout", async 
     featureSwitches: {
       [FeatureSwitchKey.ModelPickerFlyout]: true,
       [FeatureSwitchKey.Effort]: true,
-      [FeatureSwitchKey.CodexFastMode]: true,
       [FeatureSwitchKey.PiLoop]: false,
       [FeatureSwitchKey.ChatPreference]: true,
     },

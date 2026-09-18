@@ -267,14 +267,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
   },
 
-  // Effort's run controls carry Fast, so Fast reaches every user the moment
-  // Effort does. Keep this switch enabled for as long as Effort is enabled:
-  // the client send path still reads it directly to attach the run's tier.
-  [FeatureSwitchKey.CodexFastMode]: {
-    maintainer: "lancy@okou.ai",
-    description: "Enable Codex fast mode for GPT 5.6 runs.",
-    enabled: true,
-  },
   [FeatureSwitchKey.Effort]: {
     maintainer: "bingjie@okou.ai",
     description:

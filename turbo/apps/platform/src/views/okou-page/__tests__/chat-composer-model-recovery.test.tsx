@@ -532,13 +532,11 @@ async function openLimitedModelAvailability() {
     );
   });
 
-  // One row per model: a Fast row would make the option names ambiguous.
   await setupPage({
     context,
     path: RUN_PATH,
     featureSwitches: {
       [FeatureSwitchKey.Effort]: false,
-      [FeatureSwitchKey.CodexFastMode]: false,
     },
   });
 

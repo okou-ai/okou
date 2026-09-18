@@ -92,9 +92,6 @@ describe("/api/feature-switches", () => {
       ordinary.body.effectiveSwitches[FeatureSwitchKey.Effort],
     ).toBeTruthy();
     expect(
-      ordinary.body.effectiveSwitches[FeatureSwitchKey.CodexFastMode],
-    ).toBeTruthy();
-    expect(
       ordinary.body.effectiveSwitches[FeatureSwitchKey.ModelPickerFlyout],
     ).toBeTruthy();
   });

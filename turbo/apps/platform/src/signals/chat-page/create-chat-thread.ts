@@ -91,7 +91,6 @@ import { apiClient$ } from "../api-client.ts";
 import { debounceCommand } from "../command-scheduling.ts";
 import {
   chatEffortEnabled$,
-  codexFastModeEnabled$,
   featureSwitch$,
 } from "../external/feature-switch.ts";
 import { orgModelPolicies$ } from "../external/org-model-policies.ts";
@@ -480,18 +479,9 @@ function createModelSelection(
   });
 
   const codexFastModeActive$ = computed(async (get): Promise<boolean> => {
-    if (!get(codexFastModeEnabled$)) {
-      return false;
-    }
     const selectedModel = await get(selectedModel$);
     const policies = await get(orgModelPolicies$);
-    if (
-      !isCodexFastModeAvailableForSelection({
-        policies,
-        selectedModel,
-        codexFastModeEnabled: true,
-      })
-    ) {
+    if (!isCodexFastModeAvailableForSelection({ policies, selectedModel })) {
       return false;
     }
     return get(threadMeta$)?.serviceTier === "priority";
@@ -3278,7 +3268,6 @@ function sendRuntimeOptions(
   return {
     runOptions: runOptionsFromModelProviderSelection(
       modelSelection,
-      features[FeatureSwitchKey.CodexFastMode] ?? false,
       videoRunOptions,
     ),
     realAgentInPreviewEnabled:

@@ -750,7 +750,6 @@ export function createChatEventsFixture(context: TestContext) {
   ): Promise<string> {
     await authDeviceSupport.updateFeatureSwitches(actor, {
       [FeatureSwitchKey.PiLoop]: true,
-      [FeatureSwitchKey.CodexFastMode]: true,
     });
     const { providerId } = await upsertOrgModelProvider(actor, {
       type: route.type,
@@ -815,7 +814,6 @@ export function createChatEventsFixture(context: TestContext) {
     await authDeviceSupport.updateFeatureSwitches(actor, {
       [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
       [FeatureSwitchKey.PiLoop]: true,
-      [FeatureSwitchKey.CodexFastMode]: true,
     });
     const oauth = mockCodexDeviceAuthProvider({
       tokenScope: "personal",
@@ -1791,12 +1789,7 @@ export function createChatEventsFixture(context: TestContext) {
     await updateFeatureSwitchesForUser(
       context,
       { ...args.actor, orgId: args.actor.orgId },
-      {
-        [FeatureSwitchKey.PiLoop]: true,
-        ...(args.codexServiceTier === "fast"
-          ? { [FeatureSwitchKey.CodexFastMode]: true }
-          : {}),
-      },
+      { [FeatureSwitchKey.PiLoop]: true },
     );
     const usagePricingResolution =
       await createPiApiFirstTurnUsagePricingResolution(selectedModel);

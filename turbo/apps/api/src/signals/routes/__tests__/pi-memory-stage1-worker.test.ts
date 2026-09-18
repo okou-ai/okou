@@ -2775,7 +2775,6 @@ describe("Stage 1 background credential availability", () => {
           runtimeProviderType: type,
           codexServiceTier: undefined,
           piEnabled: true,
-          codexFastModeEnabled: false,
         })
       );
     });

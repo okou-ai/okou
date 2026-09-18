@@ -93,9 +93,6 @@ test.each(
       featureSwitches: {
         [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
         [FeatureSwitchKey.Effort]: layout === "compact",
-        // Fast rides on Effort, and a second row per model would make the
-        // model options ambiguous here.
-        [FeatureSwitchKey.CodexFastMode]: layout === "compact",
         [FeatureSwitchKey.ModelPickerFlyout]: layout !== "select",
       },
     });
@@ -131,8 +128,9 @@ test.each(
             await screen.findByRole("region", { name: "Chat models" }),
           )
         : await screen.findByRole("option", {
+            // A Fast-capable model adds its own " Fast" row beside the plain one.
             name: (name) => {
-              return name.includes(modelLabel);
+              return name.includes(modelLabel) && !name.endsWith(" Fast");
             },
           });
     if (!option) {
@@ -172,7 +170,6 @@ test("Uses the effective subscription for reasoning and Fast guidance", async ()
     featureSwitches: {
       [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
       [FeatureSwitchKey.Effort]: true,
-      [FeatureSwitchKey.CodexFastMode]: false,
       [FeatureSwitchKey.PiLoop]: true,
     },
   });

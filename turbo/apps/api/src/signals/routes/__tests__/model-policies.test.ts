@@ -1114,69 +1114,49 @@ describe("GET/PUT /api/model-policies", () => {
     });
   });
 
-  it.each([FeatureSwitchKey.CodexFastMode, FeatureSwitchKey.Effort])(
-    "stores priority with a GPT 5.6 user model preference with %s",
-    async (fastSwitch) => {
-      const fixture = await seedFixture();
-      useSession(fixture);
-      const client = apiClient();
-      const preferenceClient = setupApp({
-        context,
-        routes: userModelPreferenceRoutes,
-      })(userModelPreferenceContract);
-      const listResponse = await accept(
-        client.list({ headers: authHeaders() }),
-        [200],
-      );
-      const updates = [
-        ...toUpdate(listResponse.body),
-        makeBuiltInPolicy("gpt-5.6-sol"),
-      ];
-      await accept(
-        client.update({
-          headers: authHeaders(),
-          body: { policies: updates },
-        }),
-        [200],
-      );
+  it("stores priority with a GPT 5.6 user model preference", async () => {
+    const fixture = await seedFixture();
+    useSession(fixture);
+    const client = apiClient();
+    const preferenceClient = setupApp({
+      context,
+      routes: userModelPreferenceRoutes,
+    })(userModelPreferenceContract);
+    const listResponse = await accept(
+      client.list({ headers: authHeaders() }),
+      [200],
+    );
+    const updates = [
+      ...toUpdate(listResponse.body),
+      makeBuiltInPolicy("gpt-5.6-sol"),
+    ];
+    await accept(
+      client.update({
+        headers: authHeaders(),
+        body: { policies: updates },
+      }),
+      [200],
+    );
 
-      await updateFeatureSwitchesForUser(context, fixture, {
-        [FeatureSwitchKey.CodexFastMode]: false,
-        [FeatureSwitchKey.Effort]: false,
-      });
-      const switchOff = await accept(
-        preferenceClient.update({
-          headers: authHeaders(),
-          body: { selectedModel: "gpt-5.6-sol", serviceTier: "priority" },
-        }),
-        [400],
-      );
-      expect(switchOff.body.error.message).toBe(
-        "Codex fast mode is not enabled for this workspace",
-      );
-
-      await updateFeatureSwitchesForUser(context, fixture, {
-        [FeatureSwitchKey.CodexFastMode]: false,
-        [FeatureSwitchKey.Effort]: false,
-        [fastSwitch]: true,
-      });
-      const priority = await accept(
-        preferenceClient.update({
-          headers: authHeaders(),
-          body: { selectedModel: "gpt-5.6-sol", serviceTier: "priority" },
-        }),
-        [200],
-      );
-      expect(priority.body).toMatchObject({
-        selectedModel: "gpt-5.6-sol",
-        serviceTier: "priority",
-      });
-      expect(
-        (await accept(preferenceClient.get({ headers: authHeaders() }), [200]))
-          .body.serviceTier,
-      ).toBe("priority");
-    },
-  );
+    await updateFeatureSwitchesForUser(context, fixture, {
+      [FeatureSwitchKey.Effort]: true,
+    });
+    const priority = await accept(
+      preferenceClient.update({
+        headers: authHeaders(),
+        body: { selectedModel: "gpt-5.6-sol", serviceTier: "priority" },
+      }),
+      [200],
+    );
+    expect(priority.body).toMatchObject({
+      selectedModel: "gpt-5.6-sol",
+      serviceTier: "priority",
+    });
+    expect(
+      (await accept(preferenceClient.get({ headers: authHeaders() }), [200]))
+        .body.serviceTier,
+    ).toBe("priority");
+  });
 
   it("stores Fast for the effective personal route when the organization API provider is missing", async () => {
     const fixture = seedFixture();
@@ -1206,7 +1186,6 @@ describe("GET/PUT /api/model-policies", () => {
     await updateFeatureSwitchesForUser(context, fixture, {
       [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
       [FeatureSwitchKey.Effort]: true,
-      [FeatureSwitchKey.CodexFastMode]: false,
     });
     useSession(fixture);
     const preferences = setupApp({
