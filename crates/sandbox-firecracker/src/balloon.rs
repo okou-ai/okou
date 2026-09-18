@@ -11,9 +11,12 @@ use crate::sandbox::SandboxState;
 pub(crate) const PRESSURE_AVAILABLE_MIB: i64 = 192;
 /// Inflation leaves at least the smallest supported profile's Guest capacity.
 pub(crate) const MIN_GUEST_MIB: u32 = guest_contracts::process_containment::MIN_PROFILE_MEMORY_MB;
-/// Bound reuse recovery, including an in-flight API request. On failure the
-/// caller destroys this sandbox; normal Guest operations must remain fenced.
-const DEFLATION_TIMEOUT: Duration = Duration::from_secs(5);
+/// Background park can tolerate slower convergence and remains interruptible
+/// by an exact successor. Keep a bound because the full resource lease is held.
+const PARK_DEFLATION_TIMEOUT: Duration = Duration::from_secs(30);
+/// Bound foreground reuse recovery, including an in-flight statistics request.
+/// On failure the caller destroys this sandbox; Guest operations remain fenced.
+const UNPARK_DEFLATION_TIMEOUT: Duration = Duration::from_secs(5);
 const POLL_INTERVAL: Duration = Duration::from_millis(200);
 const FAST_POLL_INTERVALS: [Duration; 5] = [
     Duration::from_millis(25),
@@ -36,13 +39,17 @@ pub(crate) async fn wait_for_unpark_deflation(
     wait_for_deflation(client, state_rx, log_id, SandboxIdleTransition::Unpark).await
 }
 
-/// Observe the same bounded counter contract while park or activation owns the VM.
+/// Observe exact counters with a deadline appropriate to park or activation.
 pub(crate) async fn wait_for_deflation(
     client: &ApiClient,
     mut state_rx: watch::Receiver<SandboxState>,
     log_id: &str,
     transition: SandboxIdleTransition,
 ) -> sandbox::Result<()> {
+    let timeout = match transition {
+        SandboxIdleTransition::Park => PARK_DEFLATION_TIMEOUT,
+        SandboxIdleTransition::Unpark => UNPARK_DEFLATION_TIMEOUT,
+    };
     let error = |message: String| SandboxError::IdleTransition {
         transition,
         message,
@@ -72,9 +79,9 @@ pub(crate) async fn wait_for_deflation(
         () = wait_for_crash_or_stop(&mut state_rx) => {
             Err(error("sandbox stopped during balloon deflation".into()))
         }
-        result = tokio::time::timeout(DEFLATION_TIMEOUT, convergence) => {
+        result = tokio::time::timeout(timeout, convergence) => {
             result.unwrap_or_else(|_| Err(error(
-                "balloon deflation did not complete within 5 seconds".into(),
+                format!("balloon deflation did not complete within {} seconds", timeout.as_secs()),
             )))
         }
     }
@@ -162,7 +169,7 @@ mod tests {
         });
         api.next_request().await;
         tokio::time::pause();
-        tokio::time::advance(DEFLATION_TIMEOUT).await;
+        tokio::time::advance(UNPARK_DEFLATION_TIMEOUT).await;
         let error = task.await.unwrap().unwrap_err();
         assert!(error.to_string().contains("within 5 seconds"));
     }

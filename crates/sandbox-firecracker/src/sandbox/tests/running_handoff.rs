@@ -388,6 +388,11 @@ async fn park_deflation_deadline_rejects_stalled_statistics_without_pausing() {
                 release: Arc::clone(&release),
                 stats: MockBalloonStats::new(0, 512),
             },
+            MockBalloonStatsReply::GatedOk {
+                entered: Arc::clone(&entered),
+                release: Arc::clone(&release),
+                stats: MockBalloonStats::new(0, 512),
+            },
         ]),
     );
     let coordinator = ParkCoordinator::new();
@@ -408,6 +413,22 @@ async fn park_deflation_deadline_rejects_stalled_statistics_without_pausing() {
         }
         tokio::time::pause();
         tokio::time::advance(Duration::from_secs(5)).await;
+        assert!(
+            std::future::poll_fn(|cx| std::task::Poll::Ready(park.as_mut().poll(cx)))
+                .await
+                .is_pending(),
+            "background park must outlive the foreground deflation deadline"
+        );
+        // Allow one nonzero sample, then stall the next GET. The overall park
+        // deadline must expire before that later request's own 30-second limit.
+        tokio::time::resume();
+        release.notify_one();
+        tokio::select! {
+            () = entered.notified() => {}
+            _ = &mut park => panic!("park completed while balloon pages were still held"),
+        }
+        tokio::time::pause();
+        tokio::time::advance(Duration::from_secs(25)).await;
         let result = park.await;
         tokio::time::resume();
         result
@@ -416,7 +437,7 @@ async fn park_deflation_deadline_rejects_stalled_statistics_without_pausing() {
     assert_idle_transition_message(
         result.map(drop),
         SandboxIdleTransition::Park,
-        "balloon deflation did not complete within 5 seconds",
+        "balloon deflation did not complete within 30 seconds",
     );
     assert!(!is_parked);
     assert!(matches!(
@@ -431,7 +452,7 @@ async fn park_deflation_deadline_rejects_stalled_statistics_without_pausing() {
 }
 
 #[tokio::test]
-async fn exact_handoff_interrupts_deflation_without_pausing() {
+async fn exact_handoff_interrupts_deflation_after_foreground_deadline_without_pausing() {
     let (_state_tx, state_rx) = watch::channel(SandboxState::Running);
     let entered = Arc::new(Notify::new());
     let release = Arc::new(Notify::new());
@@ -468,10 +489,19 @@ async fn exact_handoff_interrupts_deflation_without_pausing() {
             () = entered.notified() => {}
             _ = &mut park => panic!("park completed before deflation was interrupted"),
         }
+        tokio::time::pause();
+        tokio::time::advance(Duration::from_secs(6)).await;
+        assert!(
+            std::future::poll_fn(|cx| std::task::Poll::Ready(park.as_mut().poll(cx)))
+                .await
+                .is_pending(),
+            "slow background deflation must remain available for takeover"
+        );
         assert!(handoff.request());
         let (_, result) = tokio::time::timeout(Duration::from_secs(1), park)
             .await
             .expect("running handoff must interrupt the pending statistics GET");
+        tokio::time::resume();
         result.unwrap()
     };
     release.notify_one();
@@ -491,4 +521,59 @@ async fn exact_handoff_interrupts_deflation_without_pausing() {
     assert_eq!(mock_request_body_json(writes[0])["amount_mib"], 1024);
     assert_eq!(mock_request_body_json(writes[1])["amount_mib"], 0);
     assert!(writes.iter().all(|request| request.path == "/balloon"));
+}
+
+#[tokio::test]
+async fn park_can_finish_deflation_after_foreground_deadline() {
+    let entered = Arc::new(Notify::new());
+    let release = Arc::new(Notify::new());
+    let mut api = MockLifecycleApi::with_stats(
+        std::collections::VecDeque::new(),
+        std::collections::VecDeque::from([
+            MockBalloonStatsReply::Ok(MockBalloonStats::new(1024, 1024)),
+            MockBalloonStatsReply::GatedOk {
+                entered: Arc::clone(&entered),
+                release: Arc::clone(&release),
+                stats: MockBalloonStats::new(0, 0),
+            },
+        ]),
+    );
+    let coordinator = ParkCoordinator::new();
+    let (_state_tx, state_rx) = watch::channel(SandboxState::Running);
+    let mut is_parked = false;
+    let (_, outcome, ()) = {
+        let park = coordinated_park(
+            &coordinator,
+            &mut is_parked,
+            api.socket_path(),
+            None,
+            state_rx,
+        );
+        tokio::pin!(park);
+        tokio::select! {
+            () = entered.notified() => {}
+            _ = &mut park => panic!("park completed before the deflation response"),
+        }
+        tokio::time::pause();
+        tokio::time::advance(Duration::from_secs(6)).await;
+        assert!(
+            std::future::poll_fn(|cx| std::task::Poll::Ready(park.as_mut().poll(cx)))
+                .await
+                .is_pending()
+        );
+        tokio::time::resume();
+        release.notify_one();
+        park.await.unwrap()
+    };
+    assert!(matches!(
+        outcome,
+        PhysicalParkOutcome::Idle(SandboxParkOutcome::Reusable)
+    ));
+    assert!(is_parked);
+    assert_eq!(coordinator.state(), CoordinatorState::Parked);
+    let requests = api.drain_requests();
+    let pause = requests.last().unwrap();
+    assert_eq!(pause.method, "PATCH");
+    assert_eq!(pause.path, "/vm");
+    assert_eq!(mock_request_body_json(pause)["state"], "Paused");
 }
