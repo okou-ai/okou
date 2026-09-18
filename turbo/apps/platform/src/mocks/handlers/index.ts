@@ -68,6 +68,7 @@ import {
 import { apiWorkflowsHandlers, resetMockWorkflows } from "./api-workflows.ts";
 import { apiRunsHandlers } from "./api-runs.ts";
 import { apiFeatureSwitchesHandlers } from "./api-feature-switches.ts";
+import { apiPaidToolsHandlers, resetMockPaidTools } from "./api-paid-tools.ts";
 import { apiGetStartedHandlers } from "./api-get-started.ts";
 import { apiRealtimeHandlers } from "./api-realtime.ts";
 import { resetAblySubscriptions } from "../ably.ts";
@@ -133,6 +134,7 @@ export const handlers = [
   ...apiWorkflowsHandlers,
   ...apiRunsHandlers,
   ...apiUserPreferencesHandlers,
+  ...apiPaidToolsHandlers,
   ...apiMorningBriefPreferenceHandlers,
   ...apiEmailSubscriptionHandlers,
   ...apiUserModelPreferenceHandlers,
@@ -157,6 +159,7 @@ export function resetAllMockHandlers(): void {
   resetMockAgentPhoneIntegration();
   resetMockGithubIntegration();
   resetMockUserPreferences();
+  resetMockPaidTools();
   resetMockMorningBriefPreference();
   resetMockEmailSubscription();
   resetMockUserModelPreference();

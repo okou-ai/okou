@@ -36,6 +36,8 @@ surface; the index does not replace their detailed rules.
 
 ## Specialized Guidance
 
+- [Personal paid-tool controls](./paid-tool-controls.md): workspace-member
+  preferences, run snapshots, CLI enforcement and the disabled rollout boundary.
 - [External MCP server](./mcp-server.md): OAuth resource setup, organization
   authority, Streamable HTTP behavior and hosted-client acceptance gates.
 

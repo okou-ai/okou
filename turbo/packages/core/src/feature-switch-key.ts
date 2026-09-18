@@ -48,6 +48,7 @@ export enum FeatureSwitchKey {
   Effort = "effort",
   ModelPickerFlyout = "modelPickerFlyout",
   ChatPreference = "chatPreference",
+  PaidToolControls = "paidToolControls",
   RealAgentInPreview = "_realAgentInPreview",
   ZapierConnector = "zapierConnector",
   ComputerUseDesktopPlugins = "computerUseDesktopPlugins",

@@ -1,4 +1,4 @@
-import type { UserResource } from "@clerk/shared/types";
+import type { BrowserClerk, UserResource } from "@clerk/shared/types";
 import { buildAccountsBaseUrl } from "@clerk/shared/buildAccountsBaseUrl";
 import { parsePublishableKey } from "@clerk/shared/keys";
 import { command, computed, state } from "ccstate";
@@ -35,6 +35,20 @@ import { sessionStorageSignals } from "./external/session-storage.ts";
 
 const reload$ = state(0);
 const clerkVersion$ = state(0);
+const internalAuthenticatedSessionKey$ = state<string | null>(null);
+
+/** Stable ownership across token and profile refreshes for the same session. */
+export const authenticatedSessionKey$ = computed((get) => {
+  return get(internalAuthenticatedSessionKey$);
+});
+
+function authenticatedSessionKey(
+  clerk: Pick<BrowserClerk, "user" | "organization" | "session">,
+): string | null {
+  return clerk.user && clerk.organization && clerk.session
+    ? JSON.stringify([clerk.organization.id, clerk.user.id, clerk.session.id])
+    : null;
+}
 
 const ATTRIBUTION_SOURCE_PARAM = "vm0_source";
 const HOMEPAGE_ATTRIBUTION_VALUE = "homepage";
@@ -535,6 +549,8 @@ export const setupClerk$ = command(
     const clerk = await get(clerk$);
     signal.throwIfAborted();
 
+    set(internalAuthenticatedSessionKey$, authenticatedSessionKey(clerk));
+
     // Set initial Sentry user context
     if (clerk.user) {
       setSentryUser(clerk.user.id);
@@ -551,6 +567,18 @@ export const setupClerk$ = command(
     // Clerk listener but don't change the user.
     let prevUserId = clerk.user?.id ?? null;
     const unsubscribe = clerk.addListener(() => {
+      // Transitive undefined resources do not replace a still-owned session.
+      // Request guards read Clerk directly and reject during that transition.
+      if (
+        clerk.user === null ||
+        clerk.organization === null ||
+        clerk.session === null ||
+        (clerk.user !== undefined &&
+          clerk.organization !== undefined &&
+          clerk.session !== undefined)
+      ) {
+        set(internalAuthenticatedSessionKey$, authenticatedSessionKey(clerk));
+      }
       if (clerk.user === undefined) {
         // Clerk's transitive state while `setActive()` navigates: the identity
         // is unknown, not signed out, and the next emit carries the real value.
