@@ -1441,9 +1441,11 @@
         "inReviewDescription": "제출됨, 검토 대기 중",
         "intro": {
           "checkin": {
-            "confirm": "확인",
-            "description": "{{amount}} 크레딧이 적립됐습니다. 내일 또 오세요.",
-            "title": "출석 완료"
+            "amount": "+{{amount}} 크레딧",
+            "confirm": "일하러 가기",
+            "description": "크레딧은 일 자체에 쓰입니다. 실행 한 번, 결과물 하나, 일정에 따라 도는 워크플로 모두에요.",
+            "progress": "{{total}}개 중 {{completed}}개 완료",
+            "title": "오늘 몫은 끝났습니다"
           },
           "connector": {
             "confirm": "모든 커넥터 보기",
@@ -1479,6 +1481,7 @@
             "prompt": "매주 월요일 아침에 경쟁사가 지난주에 공개한 내용을 확인하고 주제별로 묶어 비교표로 만들어 주세요.",
             "promptConfirm": "{{assistantName}}에게 보내기",
             "promptDescription": "단계를 일일이 적지 않아도 됩니다. {{assistantName}}가 방법을 찾고 도구를 고르고 완성된 결과를 가져옵니다.",
+            "promptOutcome": "자료를 읽고, 찾은 것을 묶어서 표로 답합니다. 결과가 괜찮으면 그 실행을 워크플로로 저장할지 물어봅니다.",
             "promptTitle": "동료에게 부탁하듯 말하세요",
             "stepRun": "한 번 실행해 보기",
             "stepRunDescription": "무엇을 정하기 전에 완성된 결과물을 먼저 봅니다.",

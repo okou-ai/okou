@@ -1441,9 +1441,11 @@
         "inReviewDescription": "送信済み、確認待ち",
         "intro": {
           "checkin": {
-            "confirm": "OK",
-            "description": "{{amount}} クレジットを追加しました。明日もまた来てください。",
-            "title": "チェックイン完了"
+            "amount": "+{{amount}} クレジット",
+            "confirm": "仕事に戻る",
+            "description": "クレジットは仕事そのものに使われます。1 回の実行、1 つの成果物、スケジュールで動くワークフローのすべてに。",
+            "progress": "{{total}} 個中 {{completed}} 個が完了",
+            "title": "今日のぶんは完了です"
           },
           "connector": {
             "confirm": "すべてのコネクターを見る",
@@ -1479,6 +1481,7 @@
             "prompt": "毎週月曜の朝に、競合が先週公開した内容を調べて、テーマごとにまとめて比較表にしてください。",
             "promptConfirm": "{{assistantName}} に送る",
             "promptDescription": "手順を細かく書く必要はありません。{{assistantName}} が進め方を考え、ツールを選び、仕上がったものを持ってきます。",
+            "promptOutcome": "情報源を読み、見つけたものを整理して、表にして返します。結果が良ければ、その実行をワークフローとして保存するか聞いてきます。",
             "promptTitle": "同僚に頼むように伝えてください",
             "stepRun": "まず 1 回動かす",
             "stepRunDescription": "何かを決める前に、仕上がった成果物を確認できます。",

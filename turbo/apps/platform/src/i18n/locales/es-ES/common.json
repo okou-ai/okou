@@ -1466,9 +1466,11 @@
         "inReviewDescription": "Enviado, pendiente de revisión",
         "intro": {
           "checkin": {
-            "confirm": "Entendido",
-            "description": "{{amount}} créditos añadidos. Vuelve mañana a por los siguientes.",
-            "title": "Registrado"
+            "amount": "+{{amount}} créditos",
+            "confirm": "Volver al trabajo",
+            "description": "Los créditos pagan el trabajo en sí: cada ejecución, cada artefacto, cada flujo que corre con un horario.",
+            "progress": "{{completed}} de {{total}} pasos hechos",
+            "title": "Lo de hoy está hecho"
           },
           "connector": {
             "confirm": "Ver todos los conectores",
@@ -1504,6 +1506,7 @@
             "prompt": "Cada lunes por la mañana, mira qué publicaron mis competidores la semana pasada, agrúpalo por temas y dame una tabla comparativa.",
             "promptConfirm": "Enviárselo a {{assistantName}}",
             "promptDescription": "No detallas los pasos. {{assistantName}} decide cómo hacerlo, elige las herramientas y trae el resultado terminado.",
+            "promptOutcome": "Lee las fuentes, agrupa lo que encuentra y responde con la tabla. Si el resultado está bien, te ofrece guardar esa ejecución como flujo.",
             "promptTitle": "Pídelo como se lo pedirías a un compañero",
             "stepRun": "Ejecútala una vez",
             "stepRunDescription": "Ves el trabajo terminado antes de comprometerte con nada.",

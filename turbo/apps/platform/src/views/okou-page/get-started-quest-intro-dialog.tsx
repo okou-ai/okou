@@ -2,7 +2,7 @@ import type { GetStartedQuestKey } from "@okouai/api-contracts/contracts/get-sta
 import type { ReactNode } from "react";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { Clock, Play, User } from "lucide-react";
+import { Check, Clock, Play, User } from "lucide-react";
 import {
   Button,
   Dialog,
@@ -263,6 +263,93 @@ function InviteFigure() {
           })}
         </span>
       </Tile>
+    </TileRow>
+  );
+}
+
+/**
+ * What comes back from a job: a small table, because the prompt this figure
+ * sits above asks for one. The point of the drawing is that the reply is an
+ * artifact, not a paragraph.
+ */
+function ReportArt({ accent }: { accent: string }) {
+  return (
+    <span
+      className={`flex h-[48px] w-[64px] flex-col justify-center gap-[5px] px-[9px] ${NODE_CLASS}`}
+      style={{ borderColor: `${accent}${LINE_ALPHA}` }}
+    >
+      <span className="flex gap-[4px]">
+        <span
+          className="h-[4px] w-[14px] rounded-full"
+          style={{ backgroundColor: accent }}
+        />
+        <span
+          className="h-[4px] w-[10px] rounded-full"
+          style={{ backgroundColor: accent }}
+        />
+        <span
+          className="h-[4px] w-[12px] rounded-full"
+          style={{ backgroundColor: accent }}
+        />
+      </span>
+      {["a", "b"].map((row) => {
+        return (
+          <span key={row} className="flex gap-[4px]">
+            <span
+              className="h-[3px] w-[14px] rounded-full"
+              style={{ backgroundColor: `${accent}${SOFT_ALPHA}` }}
+            />
+            <span
+              className="h-[3px] w-[10px] rounded-full"
+              style={{ backgroundColor: `${accent}${SOFT_ALPHA}` }}
+            />
+            <span
+              className="h-[3px] w-[12px] rounded-full"
+              style={{ backgroundColor: `${accent}${SOFT_ALPHA}` }}
+            />
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
+/** You ask in one sentence; what comes back is the finished thing. */
+function PromptFigure() {
+  const accent = ILLUSTRATION_ACCENTS.website;
+  return (
+    <TileRow>
+      <Tile accent={accent}>
+        <OkouAvatar size={64} />
+      </Tile>
+      <Joint accent={accent} />
+      <Tile accent={accent}>
+        <ReportArt accent={accent} />
+      </Tile>
+    </TileRow>
+  );
+}
+
+/**
+ * The check-in mark: the assistant's own face with the day's tick on it. The
+ * dialog it opens is the one moment in the checklist that is purely a reward,
+ * so it is drawn once, centred, rather than as a row of tiles.
+ */
+function CheckinFigure() {
+  const accent = ILLUSTRATION_ACCENTS.illustration;
+  return (
+    <TileRow>
+      <span className="relative">
+        <Tile accent={accent}>
+          <OkouAvatar size={72} />
+        </Tile>
+        <span
+          className="absolute -bottom-1 -right-1 grid size-[34px] place-items-center rounded-full border-4 border-card"
+          style={{ backgroundColor: accent, color: "#FFFFFF" }}
+        >
+          <Check size={17} strokeWidth={3} />
+        </span>
+      </span>
     </TileRow>
   );
 }
@@ -662,9 +749,17 @@ function WorkflowPromptIntro({
       onConfirm={() => {
         onSend(prompt);
       }}
+      figure={<PromptFigure />}
     >
-      <p className="rounded-surface-compact border border-surface-border px-3 py-2.5 text-sm">
+      {/* The sentence is the point of this screen, so it is set as the thing
+          being handed over rather than as a field in a form. */}
+      <p className="rounded-xl border border-surface-border bg-card px-4 py-3.5 text-[15px] leading-relaxed text-foreground">
         {prompt}
+      </p>
+      <p className="px-0.5 text-xs text-muted-foreground">
+        {t(($) => {
+          return $.chat.agentPage.getStarted.intro.workflow.promptOutcome;
+        })}
       </p>
     </IntroLayout>
   );
@@ -795,7 +890,15 @@ function QuestConnectModal() {
 }
 
 /** Confirms the daily check-in that already succeeded. */
-export function GetStartedCheckinDialog({ reward }: { reward: number }) {
+export function GetStartedCheckinDialog({
+  reward,
+  completed,
+  total,
+}: {
+  reward: number;
+  completed: number;
+  total: number;
+}) {
   const { t } = useTranslation();
   const open = useGet(checkinClaimedOpen$);
   const setOpen = useSet(setCheckinClaimedOpen$);
@@ -803,24 +906,44 @@ export function GetStartedCheckinDialog({ reward }: { reward: number }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent smMaxWidth={560}>
-        <DialogHeader>
-          <DialogTitle>
+        <CheckinFigure />
+        {/* The one screen in the checklist that is purely a reward, so it is
+            centred and reads top to bottom: the mark, what was earned, what it
+            is for, and where the checklist now stands. */}
+        <DialogHeader className="items-center text-center">
+          <DialogTitle className="text-xl">
             {t(($) => {
               return $.chat.agentPage.getStarted.intro.checkin.title;
             })}
           </DialogTitle>
-          <DialogDescription>
+          <p className="text-3xl font-semibold tabular-nums tracking-tight text-brand-text">
             {t(
               ($) => {
-                return $.chat.agentPage.getStarted.intro.checkin.description;
+                return $.chat.agentPage.getStarted.intro.checkin.amount;
               },
               { amount: formatLocalizedNumber(reward) },
             )}
+          </p>
+          <DialogDescription className="max-w-[380px]">
+            {t(($) => {
+              return $.chat.agentPage.getStarted.intro.checkin.description;
+            })}
           </DialogDescription>
         </DialogHeader>
-        <DialogFooter>
+        <p className="text-center text-xs text-muted-foreground">
+          <span className="rounded-full bg-state-hover px-3 py-1.5">
+            {t(
+              ($) => {
+                return $.chat.agentPage.getStarted.intro.checkin.progress;
+              },
+              { completed, total },
+            )}
+          </span>
+        </p>
+        <DialogFooter className="sm:justify-center">
           <Button
             type="button"
+            className="min-w-[160px]"
             onClick={() => {
               setOpen(false);
             }}

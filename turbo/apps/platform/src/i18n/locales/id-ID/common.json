@@ -1441,9 +1441,11 @@
         "inReviewDescription": "Terkirim, menunggu ditinjau",
         "intro": {
           "checkin": {
-            "confirm": "Oke",
-            "description": "{{amount}} kredit ditambahkan. Datang lagi besok untuk berikutnya.",
-            "title": "Sudah check-in"
+            "amount": "+{{amount}} kredit",
+            "confirm": "Kembali bekerja",
+            "description": "Kredit membayar pekerjaannya sendiri: setiap jalannya, setiap hasil, setiap alur kerja yang berjalan sesuai jadwal.",
+            "progress": "{{completed}} dari {{total}} langkah selesai",
+            "title": "Bagian hari ini selesai"
           },
           "connector": {
             "confirm": "Lihat semua konektor",
@@ -1479,6 +1481,7 @@
             "prompt": "Setiap Senin pagi, periksa apa yang dipublikasikan kompetitor saya minggu lalu, kelompokkan menurut tema, dan buatkan tabel perbandingan.",
             "promptConfirm": "Kirim ke {{assistantName}}",
             "promptDescription": "Anda tidak perlu merinci langkahnya. {{assistantName}} yang menentukan caranya, memilih alatnya, dan membawa hasil jadinya.",
+            "promptOutcome": "Ia membaca sumbernya, mengelompokkan yang ditemukan, lalu menjawab dengan tabelnya. Kalau hasilnya pas, ia menawarkan menyimpan jalannya itu sebagai alur kerja.",
             "promptTitle": "Minta seperti Anda meminta kepada rekan kerja",
             "stepRun": "Jalankan sekali",
             "stepRunDescription": "Anda melihat hasil jadinya sebelum memutuskan apa pun.",

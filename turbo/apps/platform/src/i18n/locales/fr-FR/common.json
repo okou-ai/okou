@@ -1466,9 +1466,11 @@
         "inReviewDescription": "Envoyé, en attente d'examen",
         "intro": {
           "checkin": {
-            "confirm": "Compris",
-            "description": "{{amount}} crédits ajoutés. Revenez demain pour les suivants.",
-            "title": "Présence enregistrée"
+            "amount": "+{{amount}} crédits",
+            "confirm": "Retour au travail",
+            "description": "Les crédits paient le travail lui-même : chaque exécution, chaque artefact, chaque workflow qui tourne à l'heure dite.",
+            "progress": "{{completed}} étapes sur {{total}}",
+            "title": "C'est fait pour aujourd'hui"
           },
           "connector": {
             "confirm": "Voir tous les connecteurs",
@@ -1504,6 +1506,7 @@
             "prompt": "Chaque lundi matin, regarde ce que mes concurrents ont publié la semaine dernière, regroupe-le par thème et donne-moi un tableau comparatif.",
             "promptConfirm": "L'envoyer à {{assistantName}}",
             "promptDescription": "Vous ne détaillez pas les étapes. {{assistantName}} trouve l'angle, choisit les outils et rapporte le résultat fini.",
+            "promptOutcome": "Il lit les sources, regroupe ce qu'il trouve et répond avec le tableau. Si le résultat convient, il propose de garder l'exécution comme workflow.",
             "promptTitle": "Demandez comme vous le demanderiez à un collègue",
             "stepRun": "Lancez-le une fois",
             "stepRunDescription": "Vous voyez le travail terminé avant de vous engager.",

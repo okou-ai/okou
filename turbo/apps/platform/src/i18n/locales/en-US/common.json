@@ -1442,9 +1442,11 @@
         "inReviewDescription": "Submitted, waiting on review",
         "intro": {
           "checkin": {
-            "confirm": "Got it",
-            "description": "{{amount}} credits added. Come back tomorrow for the next one.",
-            "title": "Checked in"
+            "amount": "+{{amount}} credits",
+            "confirm": "Back to work",
+            "description": "Credits pay for the work itself: every run, every artifact, every workflow that runs on a schedule.",
+            "progress": "{{completed}} of {{total}} steps done",
+            "title": "That is today done"
           },
           "connector": {
             "confirm": "Browse all connectors",
@@ -1480,6 +1482,7 @@
             "prompt": "Every Monday morning, check what my competitors published last week, group it by theme, and give me a comparison table.",
             "promptConfirm": "Send it to {{assistantName}}",
             "promptDescription": "You do not spell out the steps. {{assistantName}} works out the angle, picks the tools and brings back the finished thing.",
+            "promptOutcome": "It reads the sources, groups what it finds and replies with the table. If the result is right, it offers to keep the run as a workflow.",
             "promptTitle": "Ask the way you would ask a colleague",
             "stepRun": "Run it once",
             "stepRunDescription": "You see the finished work before you commit to anything.",

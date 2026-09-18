@@ -869,10 +869,15 @@ test("Checking in confirms the reward instead of closing silently", async () => 
   await openQuestPanel();
   click(screen.getByTestId("get-started-quest-checkin"));
 
-  const dialog = await screen.findByRole("dialog", { name: "Checked in" });
+  const dialog = await screen.findByRole("dialog", {
+    name: "That is today done",
+  });
+  // The reward, what it buys, and where the checklist now stands.
+  expect(within(dialog).getByText("+100 credits")).toBeInTheDocument();
   expect(
     within(dialog).getByText(
-      "100 credits added. Come back tomorrow for the next one.",
+      "Credits pay for the work itself: every run, every artifact, every workflow that runs on a schedule.",
     ),
   ).toBeInTheDocument();
+  expect(within(dialog).getByText(/of 6 steps done/u)).toBeInTheDocument();
 });

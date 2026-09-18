@@ -1442,9 +1442,11 @@
         "inReviewDescription": "Eingereicht, wartet auf Prüfung",
         "intro": {
           "checkin": {
-            "confirm": "Verstanden",
-            "description": "{{amount}} Credits gutgeschrieben. Kommen Sie morgen für die nächsten wieder.",
-            "title": "Eingecheckt"
+            "amount": "+{{amount}} Credits",
+            "confirm": "Zurück an die Arbeit",
+            "description": "Credits bezahlen die Arbeit selbst: jeden Durchlauf, jedes Artefakt, jeden Workflow, der nach Zeitplan läuft.",
+            "progress": "{{completed}} von {{total}} Schritten erledigt",
+            "title": "Für heute erledigt"
           },
           "connector": {
             "confirm": "Alle Konnektoren ansehen",
@@ -1480,6 +1482,7 @@
             "prompt": "Sieh jeden Montagmorgen nach, was meine Wettbewerber letzte Woche veröffentlicht haben, gruppiere es nach Thema und gib mir eine Vergleichstabelle.",
             "promptConfirm": "An {{assistantName}} senden",
             "promptDescription": "Sie buchstabieren die Schritte nicht aus. {{assistantName}} findet den Weg, wählt die Tools und bringt das fertige Ergebnis.",
+            "promptOutcome": "Es liest die Quellen, gruppiert, was es findet, und antwortet mit der Tabelle. Stimmt das Ergebnis, bietet es an, den Durchlauf als Workflow zu behalten.",
             "promptTitle": "Fragen Sie so, wie Sie eine Kollegin fragen würden",
             "stepRun": "Einmal laufen lassen",
             "stepRunDescription": "Sie sehen die fertige Arbeit, bevor Sie sich festlegen.",
