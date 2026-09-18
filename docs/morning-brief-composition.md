@@ -83,11 +83,11 @@ nobody connected is silent, a Calendar whose credential broke is not.
 | `denied`, `authority-changed`                                                             | The owner may not run this attempt, or their authority moved while it was reading   |
 
 Healthy empty requires an affirmative answer from **every** applicable source;
-unconfigured sources stay silent. Every non-success outcome carries the per-source
-outcomes the attempt did establish, because "Chat was never started" and "Chat was
-quiet" have to stay different facts for the attempt to be recovered rather than
-delivered as silence. None of them assembles a request, calls a model or delivers
-anything.
+unconfigured sources stay silent. Every `incomplete` outcome carries the
+per-source outcomes the attempt did establish, because "Chat was never started"
+and "Chat was quiet" have to stay different facts for the attempt to be recovered
+rather than delivered as silence. None of them assembles a request, calls a model
+or delivers anything.
 
 All five sources are attempted. Only a source's own reader knows whether the
 member has a usable selected connection, and each reports an unconfigured source
