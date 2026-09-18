@@ -1229,18 +1229,27 @@ const slidesPresentationSchema = z.object({
     .optional(),
 });
 
-async function trashDriveFile(args: {
-  readonly accessToken: string;
-  readonly fileId: string;
-}): Promise<void> {
-  await fetch(new URL(`${GOOGLE_DRIVE_FILES_URL}/${args.fileId}`), {
-    method: "PATCH",
-    headers: {
-      Authorization: `Bearer ${args.accessToken}`,
-      "Content-Type": "application/json",
+/** Returns whether Drive accepted the discard. */
+async function trashDriveFile(
+  args: {
+    readonly accessToken: string;
+    readonly fileId: string;
+  },
+  signal: AbortSignal,
+): Promise<boolean> {
+  const response = await fetch(
+    new URL(`${GOOGLE_DRIVE_FILES_URL}/${args.fileId}`),
+    {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${args.accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ trashed: true }),
+      signal,
     },
-    body: JSON.stringify({ trashed: true }),
-  });
+  );
+  return response.ok;
 }
 
 /**
@@ -1269,7 +1278,11 @@ async function rejectEmptyConvertedDeck(
     // An unreadable check is not evidence of an empty deck; keep the file.
     return undefined;
   }
-  const parsed = slidesPresentationSchema.safeParse(await response.json());
+  const payload = await settle(response.json());
+  if (!payload.ok) {
+    return undefined;
+  }
+  const parsed = slidesPresentationSchema.safeParse(payload.value);
   if (!parsed.success) {
     return undefined;
   }
@@ -1280,12 +1293,17 @@ async function rejectEmptyConvertedDeck(
   if (slides.length === 0 || hasContent) {
     return undefined;
   }
-  await trashDriveFile({
-    accessToken: args.accessToken,
-    fileId: args.presentationId,
-  });
+  const discarded = await trashDriveFile(
+    { accessToken: args.accessToken, fileId: args.presentationId },
+    signal,
+  );
+  // A deck we could not discard keeps its artifact appProperties, so the next
+  // status lookup still reports it as synced. Say so rather than claiming the
+  // blank deck is gone.
   return badRequestMessage(
-    "Google Slides converted this presentation to an empty deck",
+    discarded
+      ? "Google Slides converted this presentation to an empty deck"
+      : "Google Slides converted this presentation to an empty deck that could not be removed from Drive",
   );
 }
 

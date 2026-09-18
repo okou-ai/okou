@@ -1117,7 +1117,9 @@ interface GoogleSlidesReadbackRecorder {
  */
 export function mockGoogleSlidesReadback(
   slides: readonly { readonly pageElementCount: number }[],
+  options: { readonly trashAccepted?: boolean } = {},
 ): GoogleSlidesReadbackRecorder {
+  const trashAccepted = options.trashAccepted ?? true;
   const recorded: GoogleSlidesReadbackRecorder = {
     presentationIds: [],
     trashedFileIds: [],
@@ -1142,11 +1144,43 @@ export function mockGoogleSlidesReadback(
       },
     ),
     http.patch(`${GOOGLE_DRIVE_FILES_URL}/:fileId`, ({ params }) => {
-      recorded.trashedFileIds.push(String(params["fileId"]));
-      return HttpResponse.json({ id: String(params["fileId"]) });
+      const fileId = String(params["fileId"]);
+      recorded.trashedFileIds.push(fileId);
+      return trashAccepted
+        ? HttpResponse.json({ id: fileId })
+        : HttpResponse.json(
+            { error: { code: 403, message: "Insufficient permissions" } },
+            { status: 403 },
+          );
     }),
   );
   return recorded;
+}
+
+/** Drive folder lookup plus an upload the provider refuses to convert. */
+export function mockGoogleDriveArtifactUploadRejection(reason: string): void {
+  server.use(
+    http.get(GOOGLE_DRIVE_FILES_URL, () => {
+      return HttpResponse.json({
+        files: [
+          { id: "drive-artifact-thread-folder", name: "thread-artifacts" },
+        ],
+      });
+    }),
+    http.post(GOOGLE_DRIVE_UPLOAD_URL, () => {
+      return HttpResponse.json(
+        {
+          error: {
+            code: 400,
+            message:
+              "Conversion of the uploaded content to the requested output type is not supported.",
+            errors: [{ reason, domain: "global" }],
+          },
+        },
+        { status: 400 },
+      );
+    }),
+  );
 }
 
 function newGithubAppPrivateKeyBase64(): string {
