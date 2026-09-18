@@ -5878,6 +5878,51 @@
         "resetTimePassedTitle": "Ya pasó la hora de restablecimiento"
       }
     },
+    "paidTools": {
+      "description": "Elige qué herramientas de pago integradas puedes usar.",
+      "loadError": "No se pudieron cargar tus ajustes.",
+      "loading": "Cargando tus ajustes…",
+      "retry": "Reintentar",
+      "saveError": "No se ha guardado tu cambio.",
+      "saving": "Guardando…",
+      "scope": "Estos ajustes solo se aplican a ti en {{workspace}}.",
+      "timing": "Los cambios se aplican a las próximas ejecuciones. Las tareas en curso o ya preparadas pueden mantener los ajustes anteriores.",
+      "title": "Herramientas de pago",
+      "tools": {
+        "finance": {
+          "description": "Consulta empresas, cotizaciones y datos del mercado.",
+          "name": "Datos financieros"
+        },
+        "image-recognition": {
+          "description": "Lee y analiza imágenes.",
+          "name": "Reconocimiento de imágenes"
+        },
+        "maps": {
+          "description": "Encuentra lugares, direcciones y rutas.",
+          "name": "Mapas y lugares"
+        },
+        "people-search": {
+          "description": "Encuentra perfiles profesionales públicos.",
+          "name": "Búsqueda de personas"
+        },
+        "scrape": {
+          "description": "Lee y extrae contenido de páginas web.",
+          "name": "Extracción de páginas"
+        },
+        "seo": {
+          "description": "Investiga posiciones, palabras clave y enlaces entrantes.",
+          "name": "Investigación SEO"
+        },
+        "social": {
+          "description": "Investiga publicaciones públicas y recopila contenido multimedia.",
+          "name": "Investigación social"
+        },
+        "web-search": {
+          "description": "Encuentra información actual en la web.",
+          "name": "Búsqueda web"
+        }
+      }
+    },
     "preferences": {
       "account": {
         "manage": "Gestionar",

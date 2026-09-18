@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.200.2](https://github.com/vm0-ai/okou/compare/runner-rs-v0.200.1...runner-rs-v0.200.2) (2026-09-18)
+
+
+### Bug Fixes
+
+* **runner:** include python venv support in sandbox rootfs ([#35237](https://github.com/vm0-ai/okou/issues/35237)) ([b81314d](https://github.com/vm0-ai/okou/commit/b81314d84f0db9de7befd8376c40e9a128f03473))
+
 ## [0.200.1](https://github.com/vm0-ai/okou/compare/runner-rs-v0.200.0...runner-rs-v0.200.1) (2026-09-18)
 
 

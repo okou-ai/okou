@@ -1747,7 +1747,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.91.18"
+version = "0.91.19"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -1827,7 +1827,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-server"
-version = "0.21.27"
+version = "0.21.28"
 dependencies = [
  "chrono",
  "guest-contracts",
@@ -1843,7 +1843,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-tests"
-version = "0.12.7"
+version = "0.12.8"
 dependencies = [
  "guest-contracts",
  "guest-control-client",
@@ -1859,7 +1859,7 @@ dependencies = [
 
 [[package]]
 name = "guest-init"
-version = "0.16.276"
+version = "0.16.277"
 dependencies = [
  "guest-contracts",
  "guest-control-server",
@@ -3413,7 +3413,7 @@ dependencies = [
 
 [[package]]
 name = "rfb-client"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "des",
  "flate2",
@@ -3521,7 +3521,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.200.1"
+version = "0.200.2"
 dependencies = [
  "ably-subscriber",
  "api-contracts",

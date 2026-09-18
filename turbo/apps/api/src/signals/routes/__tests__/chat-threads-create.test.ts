@@ -955,89 +955,85 @@ describe("POST /api/chat-threads", () => {
     });
   });
 
-  it.each([FeatureSwitchKey.CodexFastMode, FeatureSwitchKey.Effort])(
-    "inherits priority from the run's chat thread and allows an explicit standard override with %s",
-    async (fastSwitch) => {
-      const fixture = await seedAgent();
-      await updateFeatureSwitchesForUser(context, fixture, {
-        [FeatureSwitchKey.CodexFastMode]: false,
-        [fastSwitch]: true,
-      });
-      const sourceToken = okouToken({
-        userId: fixture.userId,
-        orgId: fixture.orgId,
-        capabilities: ["chat-thread:read", "chat-thread:write"],
-      });
-      const source = await accept(
-        threadsClient().create({
-          headers: { authorization: `Bearer ${sourceToken}` },
-          body: {
-            agentId: fixture.agentId,
-            title: "Priority source",
-            model: PRIORITY_MODEL,
-            serviceTier: "priority",
-          },
-        }),
-        [201],
-      );
-      expect(source.body.serviceTier).toBe("priority");
-
-      const { runId } = await store.set(
-        seedRun$,
-        {
-          orgId: fixture.orgId,
-          userId: fixture.userId,
-          composeId: fixture.agentId,
-          triggerSource: "web",
-          chatThreadId: source.body.id,
-          selectedModel: PRIORITY_MODEL,
+  it("inherits priority from the run's chat thread and allows an explicit standard override", async () => {
+    const fixture = await seedAgent();
+    await updateFeatureSwitchesForUser(context, fixture, {
+      [FeatureSwitchKey.CodexFastMode]: true,
+    });
+    const sourceToken = okouToken({
+      userId: fixture.userId,
+      orgId: fixture.orgId,
+      capabilities: ["chat-thread:read", "chat-thread:write"],
+    });
+    const source = await accept(
+      threadsClient().create({
+        headers: { authorization: `Bearer ${sourceToken}` },
+        body: {
+          agentId: fixture.agentId,
+          title: "Priority source",
+          model: PRIORITY_MODEL,
+          serviceTier: "priority",
         },
-        context.signal,
-      );
-      const inheritedToken = okouToken({
-        userId: fixture.userId,
+      }),
+      [201],
+    );
+    expect(source.body.serviceTier).toBe("priority");
+
+    const { runId } = await store.set(
+      seedRun$,
+      {
         orgId: fixture.orgId,
-        capabilities: ["chat-thread:read", "chat-thread:write"],
-        runId,
-      });
-
-      const inherited = await accept(
-        threadsClient().create({
-          headers: { authorization: `Bearer ${inheritedToken}` },
-          body: { agentId: fixture.agentId, title: "Inherited priority" },
-        }),
-        [201],
-      );
-      expect(inherited.body).toMatchObject({
+        userId: fixture.userId,
+        composeId: fixture.agentId,
+        triggerSource: "web",
+        chatThreadId: source.body.id,
         selectedModel: PRIORITY_MODEL,
-        serviceTier: "priority",
-      });
-      const inheritedMetadata = await accept(
-        metadataClient().get({
-          headers: { authorization: `Bearer ${inheritedToken}` },
-          params: { id: inherited.body.id },
-        }),
-        [200],
-      );
-      expect(inheritedMetadata.body.serviceTier).toBe("priority");
+      },
+      context.signal,
+    );
+    const inheritedToken = okouToken({
+      userId: fixture.userId,
+      orgId: fixture.orgId,
+      capabilities: ["chat-thread:read", "chat-thread:write"],
+      runId,
+    });
 
-      const standard = await accept(
-        threadsClient().create({
-          headers: { authorization: `Bearer ${inheritedToken}` },
-          body: {
-            agentId: fixture.agentId,
-            title: "Explicit standard",
-            serviceTier: null,
-          },
-        }),
-        [201],
-      );
-      expect(standard.body).toMatchObject({
-        selectedModel: PRIORITY_MODEL,
-        serviceTier: null,
-      });
-    },
-  );
+    const inherited = await accept(
+      threadsClient().create({
+        headers: { authorization: `Bearer ${inheritedToken}` },
+        body: { agentId: fixture.agentId, title: "Inherited priority" },
+      }),
+      [201],
+    );
+    expect(inherited.body).toMatchObject({
+      selectedModel: PRIORITY_MODEL,
+      serviceTier: "priority",
+    });
+    const inheritedMetadata = await accept(
+      metadataClient().get({
+        headers: { authorization: `Bearer ${inheritedToken}` },
+        params: { id: inherited.body.id },
+      }),
+      [200],
+    );
+    expect(inheritedMetadata.body.serviceTier).toBe("priority");
+
+    const standard = await accept(
+      threadsClient().create({
+        headers: { authorization: `Bearer ${inheritedToken}` },
+        body: {
+          agentId: fixture.agentId,
+          title: "Explicit standard",
+          serviceTier: null,
+        },
+      }),
+      [201],
+    );
+    expect(standard.body).toMatchObject({
+      selectedModel: PRIORITY_MODEL,
+      serviceTier: null,
+    });
+  });
 
   it("rejects an omitted model when the token has no run model to inherit", async () => {
     const fixture = await seedAgent();

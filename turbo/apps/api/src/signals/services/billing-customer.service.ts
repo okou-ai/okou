@@ -1,5 +1,3 @@
-import { retireImpactMetadata } from "../../lib/impact-marketing";
-import { compatibleGoogleAdsAttribution } from "@okouai/core/google-ads-attribution";
 import { command } from "ccstate";
 import { sql, eq } from "drizzle-orm";
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
@@ -13,7 +11,6 @@ import { writeOrgMetadataWithDefaultPlanEntitlement } from "./org-plan-entitleme
 
 interface GetOrCreateStripeCustomerArgs {
   readonly orgId: string;
-  readonly metadata?: Readonly<Record<string, string | undefined>>;
 }
 
 /**
@@ -50,15 +47,6 @@ export const getOrCreateStripeCustomer$ = command(
 
       const stripe = getStripeClient();
       const metadata: Record<string, string> = { orgId: args.orgId };
-      for (const [key, value] of Object.entries(
-        compatibleGoogleAdsAttribution(
-          retireImpactMetadata(args.metadata ?? {}),
-        ),
-      )) {
-        if (value) {
-          metadata[key] = value;
-        }
-      }
       Object.assign(metadata, stripePreviewMetadata());
       const customer = await stripe.customers.create({ metadata });
       signal.throwIfAborted();
