@@ -715,10 +715,9 @@ export function GetStartedQuestIntroDialog({
         }}
       >
         <DialogContent
-          smMaxWidth="sm"
           // The connector quest carries the whole one-click catalog, so it is
           // given the wider of the two shells.
-          maxWidth={introducedKey === "connector" ? 640 : 560}
+          smMaxWidth={introducedKey === "connector" ? 640 : 560}
         >
           {introducedKey === "connector" && (
             <ConnectorIntro {...props} onPick={pick} />
@@ -776,7 +775,7 @@ export function GetStartedCheckinDialog({ reward }: { reward: number }) {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent smMaxWidth="sm" maxWidth={480}>
+      <DialogContent smMaxWidth={480}>
         <DialogHeader>
           <DialogTitle>
             {t(($) => {
