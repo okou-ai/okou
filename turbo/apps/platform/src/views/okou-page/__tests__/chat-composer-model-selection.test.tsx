@@ -648,7 +648,7 @@ test("Explain model availability by plan and provider", async () => {
   expect(
     screen.queryByRole("dialog", { name: "Settings" }),
   ).not.toBeInTheDocument();
-  expect(await modelPicker("DeepSeek V4 Flash")).toBeVisible();
+  await expect(modelPicker("DeepSeek V4 Flash")).resolves.toBeVisible();
 });
 
 test("Let an existing thread send while model availability is reconciling", async () => {

@@ -302,7 +302,10 @@ test("Show the curated image model catalog", async () => {
   });
 
   await openCategory("Image");
-  expectSelected("Nano Banana 2");
+  expect(mediaModelRow("Nano Banana 2")).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
   assertCatalogRows(
     PUBLIC_IMAGE_MODELS.map((model) => {
       return IMAGE_MODEL_CONFIGS[model].label;

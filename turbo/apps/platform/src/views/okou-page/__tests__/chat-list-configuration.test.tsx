@@ -57,7 +57,7 @@ async function openMediaCategory(
  */
 function expectSelectedMediaModel(panel: HTMLElement, label: string): void {
   const named = new RegExp(
-    `^${label.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}(?![\\w.])`,
+    `^${label.replace(/[.*+?^${}()|[\]\\]/gu, String.raw`\$&`)}(?![\\w.])`,
     "u",
   );
   const row = within(panel)
@@ -266,7 +266,10 @@ test("Media models do not overwrite one another or the run model", async () => {
   await expectSelectedModel("Claude Sonnet 4.6");
   expectSelectedMediaModel(await openMediaCategory("Image"), "GPT Image 2");
   expectSelectedMediaModel(await openMediaCategory("Video"), "MiniMax H3");
-  await expectSelectedModel("Claude Sonnet 4.6");
+  // Picking either media model must leave the run model where it was.
+  await expect(
+    composerModelTrigger("Claude Sonnet 4.6"),
+  ).resolves.toBeVisible();
 });
 
 test("Service tier and Computer Use settings update independently", async () => {
