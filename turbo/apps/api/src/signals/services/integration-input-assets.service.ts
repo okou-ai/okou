@@ -50,7 +50,7 @@ export const materializeIntegrationInputAssets$ = command(
           orgId: args.orgId,
           chatThreadId: args.chatThreadId,
           publicBrand: args.publicBrand,
-          source: provider === "lark" ? "feishu" : provider,
+          source: provider,
           scope: `${provider}-input`,
           key: JSON.stringify([args.orgId, installationId, externalFileId]),
           externalId: externalFileId,

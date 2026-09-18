@@ -1798,6 +1798,37 @@ Run-lifetime missed-notification window includes observed outages; this introduc
 no reconnect grace deadline, periodic reauthorization or new TTL. No coordinated
 API rollout or migration is required for this Runner change.
 
+## Feishu and Lark run sources
+
+New runs use `triggerSource=feishu` or `triggerSource=lark` from the verified
+installation loaded by the shared Feishu queue launcher. Both platforms keep
+the existing Feishu event context, delivery callbacks, and provider transport.
+Previously queued inputs still resolve their installation before creating a
+run, including ingress retries and queued follow-ups. Captured execution
+contexts and existing runs retain the source they were created with.
+
+The run and uploaded-file source columns are strings, so this change needs no
+database migration. Historical `feishu` runs and existing input assets are not
+rewritten: the source alone cannot prove which platform created them. The App
+retains its existing historical Lark display label only when the captured
+integration prompt explicitly identifies Lark. New run logs, filters, runtime
+guidance, and file attribution consume the canonical source. The deprecated
+billing usage source projection continues to classify both platforms as `other`.
+
+Both integrations remain non-GA under their existing disabled-by-default
+switches (`FeishuIntegration` and `LarkIntegration`). Deploy the capable API
+before the matching App; already-open Apps may need a refresh to display the
+new Lark label. No new switch, App floor, Runner protocol, or rollout bridge is
+introduced. The Runner transports prepared execution context without parsing
+a trigger-source enum.
+
+An API predating this reader cannot safely serve new Lark queue entries,
+canonical delivery callbacks, or captured deferred Pi launch intent. Retain a
+capable API for serving and rollback while these records can be consumed;
+disabling ingress does not remove persisted runs. Recovery from an older API
+requires restoring the capable API, not relabeling Lark data as Feishu. This
+non-GA cutover does not promise transparent rollback to the previous reader.
+
 ## Integration source links
 
 Telegram bot DMs, Teams chats, and AgentPhone DMs store their return link in

@@ -1,7 +1,4 @@
-import {
-  FEISHU_PLATFORMS,
-  type FeishuPlatform,
-} from "@okouai/core/feishu-platform";
+import { FEISHU_PLATFORMS } from "@okouai/core/feishu-platform";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { isUnsupportedRunAdmission } from "./run-admission-input";
 import { PLAN_UPGRADE_CLI_HINT } from "@okouai/api-contracts/contracts/errors";
@@ -169,7 +166,6 @@ interface CreateAgentRunCommandArgs {
     UserInfo,
     | "slackDisplayName"
     | "slackUserId"
-    | "feishuPlatform"
     | "feishuDisplayName"
     | "feishuOpenId"
     | "teamsUserDisplayName"
@@ -341,7 +337,6 @@ function buildExecutionTimeLimitPrompt(): string {
 
 function buildIntegrationToolsPrompt(
   triggerSource: TriggerSource,
-  feishuPlatform: FeishuPlatform | undefined,
   larkEnabled: boolean,
   deliveryFormatGuidanceEnabled: boolean,
 ): readonly string[] {
@@ -390,8 +385,9 @@ function buildIntegrationToolsPrompt(
         ...localFileContextLines,
       ];
     }
-    case "feishu": {
-      const platform = feishuPlatform ?? "feishu";
+    case "feishu":
+    case "lark": {
+      const platform = triggerSource;
       const providerName = FEISHU_PLATFORMS[platform].name;
       return [
         `- ${providerName} messaging and files: use \`okou ${platform} --help\`. Normal replies are automatically sent to the originating conversation, so ${providerName} commands are for a different chat, DM, reply target, or explicit extra message/file. Use \`okou ${platform} message send --help\` for extra messages, \`okou ${platform} download-file -h\` for \`[${providerName} file]\` blocks, and \`okou ${platform} upload-file -h\` when file delivery is needed. The current installation, chat, message, and sender IDs are in the integration context. Specify \`--installation\` when the organization has multiple ${providerName} bots.`,
@@ -433,7 +429,6 @@ function buildIntegrationToolsPrompt(
 
 function buildAgentToolsPrompt(args: {
   readonly privateArtifactsEnabled: boolean;
-  readonly feishuPlatform: FeishuPlatform | undefined;
   readonly triggerSource: TriggerSource;
   readonly cloudBrowserEnabled: boolean | undefined;
   readonly bankingEnabled: boolean;
@@ -502,7 +497,6 @@ function buildAgentToolsPrompt(args: {
       : []),
     ...buildIntegrationToolsPrompt(
       args.triggerSource,
-      args.feishuPlatform,
       args.larkEnabled,
       args.deliveryFormatGuidanceEnabled,
     ),
@@ -535,7 +529,10 @@ function buildAgentToolsPrompt(args: {
   ].join("\n");
 }
 
-function buildCurrentUserPrompt(userInfo: UserInfo): string {
+function buildCurrentUserPrompt(
+  userInfo: UserInfo,
+  triggerSource: TriggerSource,
+): string {
   const lines = ["# Current User Info"];
   if (userInfo.name) {
     lines.push(`Name: ${userInfo.name}`);
@@ -550,15 +547,14 @@ function buildCurrentUserPrompt(userInfo: UserInfo): string {
   if (userInfo.slackUserId) {
     lines.push(`Slack user ID: ${userInfo.slackUserId}`);
   }
-  const feishuProviderName =
-    FEISHU_PLATFORMS[userInfo.feishuPlatform ?? "feishu"].name;
-  if (userInfo.feishuDisplayName) {
-    lines.push(
-      `${feishuProviderName} display name: ${userInfo.feishuDisplayName}`,
-    );
-  }
-  if (userInfo.feishuOpenId) {
-    lines.push(`${feishuProviderName} open ID: ${userInfo.feishuOpenId}`);
+  if (triggerSource === "feishu" || triggerSource === "lark") {
+    const providerName = FEISHU_PLATFORMS[triggerSource].name;
+    if (userInfo.feishuDisplayName) {
+      lines.push(`${providerName} display name: ${userInfo.feishuDisplayName}`);
+    }
+    if (userInfo.feishuOpenId) {
+      lines.push(`${providerName} open ID: ${userInfo.feishuOpenId}`);
+    }
   }
   if (userInfo.teamsUserDisplayName) {
     lines.push(`Teams display name: ${userInfo.teamsUserDisplayName}`);
@@ -604,7 +600,6 @@ function buildAppendSystemPrompt(args: {
     buildExecutionTimeLimitPrompt(),
     buildAgentToolsPrompt({
       privateArtifactsEnabled: args.privateArtifactsEnabled,
-      feishuPlatform: args.userInfo.feishuPlatform,
       triggerSource: args.triggerSource,
       cloudBrowserEnabled: args.cloudBrowserEnabled,
       bankingEnabled: args.bankingEnabled,
@@ -612,7 +607,7 @@ function buildAppendSystemPrompt(args: {
       introVideoEnabled: args.introVideoEnabled,
       deliveryFormatGuidanceEnabled: args.deliveryFormatGuidanceEnabled,
     }),
-    buildCurrentUserPrompt(args.userInfo),
+    buildCurrentUserPrompt(args.userInfo, args.triggerSource),
   ]
     .filter((part): part is string => {
       return Boolean(part);
@@ -672,7 +667,6 @@ async function loadAgent(
 function buildAgentRunPlatformEnvironment(args: {
   readonly agentId: string;
   readonly triggerSource: TriggerSource;
-  readonly feishuPlatform: FeishuPlatform | undefined;
   readonly chatThreadId: string | undefined;
   readonly codexServiceTier: "fast" | undefined;
   readonly reasoningEffort?: ReasoningEffort | null;
@@ -682,7 +676,8 @@ function buildAgentRunPlatformEnvironment(args: {
     agent: "web",
     slack: "slack",
     teams: "teams",
-    feishu: args.feishuPlatform ?? "feishu",
+    feishu: "feishu",
+    lark: "lark",
     telegram: "telegram",
     agentphone: "phone",
     github: "github",
@@ -1053,7 +1048,6 @@ function buildCreateAgentRunArgs(args: {
     platformEnvironment: buildAgentRunPlatformEnvironment({
       agentId: args.agent.id,
       triggerSource: command.triggerSource ?? "web",
-      feishuPlatform: userInfo.feishuPlatform,
       chatThreadId: command.chatThreadId,
       codexServiceTier: command.codexServiceTier,
       reasoningEffort: command.reasoningEffort,

@@ -70,6 +70,7 @@ export type QueuedUserMessageTriggerSource =
   | "agent"
   | "slack"
   | "feishu"
+  | "lark"
   | "teams"
   | "telegram"
   | "agentphone"
@@ -90,12 +91,11 @@ function requiredQueuedUserMessageContextType(
 }
 
 export function queuedUserMessageTriggerSource(
-  contextType: QueuedUserMessageContextType,
+  contextType: Exclude<QueuedUserMessageContextType, "feishu">,
 ): QueuedUserMessageTriggerSource {
   switch (contextType) {
     case "web":
     case "slack":
-    case "feishu":
     case "teams":
     case "telegram":
     case "agentphone":

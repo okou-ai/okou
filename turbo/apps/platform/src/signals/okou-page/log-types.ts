@@ -34,14 +34,19 @@ export function getTriggerSourceLabel(
       });
     }
     case "feishu": {
-      // The shared transport keeps its historical source enum. The server's
-      // integration context carries the provider for display.
+      // Historical Lark runs retain the shared Feishu source. Preserve their
+      // existing label only when the captured integration prompt identifies Lark.
       const isLark =
         appendSystemPrompt
           ?.split("# Current Integration\n")[1]
           ?.startsWith("You are currently running inside: Lark\n") ?? false;
       return i18n.t(($) => {
         return $.activity.sources[isLark ? "lark" : "feishu"];
+      });
+    }
+    case "lark": {
+      return i18n.t(($) => {
+        return $.activity.sources.lark;
       });
     }
     case "email": {
