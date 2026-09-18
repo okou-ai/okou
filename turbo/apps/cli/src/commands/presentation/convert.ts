@@ -25,7 +25,7 @@ import {
 } from "fs";
 import { homedir, tmpdir } from "os";
 import { basename, extname, join } from "path";
-import { inflateRawSync } from "zlib";
+import { crc32, deflateRawSync, inflateRawSync } from "zlib";
 
 import chalk from "chalk";
 import { Command, InvalidArgumentError } from "commander";
@@ -302,6 +302,7 @@ function transfer(page: ReturnType<typeof browser>, length: number): Buffer {
 
 interface Rendered {
   readonly deck: Buffer;
+  readonly eastAsianFont: string;
   readonly selector: string;
   readonly slides: number;
   readonly texts: readonly string[];
@@ -335,6 +336,8 @@ function render(options: Options, bundle: string): Rendered {
     awaitSlides(page);
 
     const selector = options.selector ?? detectSelector(page, viewportAspect(page));
+    const eastAsian = page.evaluate(RESOLVE_EAST_ASIAN);
+    const eastAsianFont = typeof eastAsian === "string" ? eastAsian : "";
 
     // Read the source text before normalising, so verification compares against
     // what the deck says rather than against our own rewrite of it.
@@ -409,8 +412,11 @@ function render(options: Options, bundle: string): Rendered {
     }
     const { slides, length } = meta as { slides: number; length: number };
 
+    const transferred = transfer(page, length);
     return {
-      deck: transfer(page, length),
+      deck:
+        eastAsianFont === "" ? transferred : applyEastAsianFont(transferred, eastAsianFont),
+      eastAsianFont,
       selector,
       slides,
       texts: Array.isArray(texts) ? (texts as string[]) : [],
@@ -491,6 +497,117 @@ function deckText(deck: Buffer): { slides: number; text: string } {
   };
 }
 
+
+/**
+ * Finds a family in the deck's own font stacks that can draw Chinese, Japanese,
+ * or Korean text.
+ *
+ * A browser resolves `Fredoka, "PingFang SC", sans-serif` per character, so the
+ * display face covers Latin and a later family covers CJK. A pptx run carries
+ * one typeface per script slot instead, and the renderer copies the first
+ * family into all of them, which leaves every CJK glyph without a face.
+ *
+ * Availability is decided by drawing the glyph, not by measuring it: a missing
+ * CJK glyph is replaced by a box whose advance width matches a real one, so
+ * width comparison reports every family as capable.
+ */
+const RESOLVE_EAST_ASIAN = `(() => {
+  const canvas = document.createElement("canvas");
+  canvas.width = 48;
+  canvas.height = 48;
+  const context = canvas.getContext("2d");
+  const render = (family) => {
+    context.clearRect(0, 0, 48, 48);
+    context.font = '40px ' + family;
+    context.fillText("\u4e2d", 2, 40);
+    return canvas.toDataURL();
+  };
+  const absent = render('"okou-absent-family-probe"');
+  const seen = new Set();
+  const generic = new Set(["sans-serif", "serif", "monospace", "cursive", "fantasy", "system-ui"]);
+  for (const element of document.querySelectorAll("*")) {
+    const stack = getComputedStyle(element).fontFamily;
+    if (!stack || seen.has(stack)) continue;
+    seen.add(stack);
+    for (const entry of stack.split(",")) {
+      const family = entry.trim().replace(/^["']|["']$/gu, "");
+      if (!family || generic.has(family.toLowerCase())) continue;
+      if (render(JSON.stringify(family)) !== absent) return JSON.stringify(family);
+    }
+  }
+  return JSON.stringify("");
+})()`;
+
+const CJK = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af\uf900-\ufaff]/u;
+
+/** Rebuilds a ZIP from its entries; a .pptx has no directory or stream entries. */
+function packZip(entries: ReadonlyMap<string, Buffer>): Buffer {
+  const locals: Buffer[] = [];
+  const central: Buffer[] = [];
+  let offset = 0;
+  for (const [name, content] of entries) {
+    const rawName = Buffer.from(name, "utf8");
+    const deflated = deflateRawSync(content);
+    const sum = crc32(content);
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(8, 8);
+    local.writeUInt32LE(sum, 14);
+    local.writeUInt32LE(deflated.length, 18);
+    local.writeUInt32LE(content.length, 22);
+    local.writeUInt16LE(rawName.length, 26);
+    locals.push(local, rawName, deflated);
+
+    const entry = Buffer.alloc(46);
+    entry.writeUInt32LE(0x02014b50, 0);
+    entry.writeUInt16LE(20, 4);
+    entry.writeUInt16LE(20, 6);
+    entry.writeUInt16LE(8, 10);
+    entry.writeUInt32LE(sum, 16);
+    entry.writeUInt32LE(deflated.length, 20);
+    entry.writeUInt32LE(content.length, 24);
+    entry.writeUInt16LE(rawName.length, 28);
+    entry.writeUInt32LE(offset, 42);
+    central.push(entry, rawName);
+    offset += local.length + rawName.length + deflated.length;
+  }
+  const directory = Buffer.concat(central);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(entries.size, 8);
+  end.writeUInt16LE(entries.size, 10);
+  end.writeUInt32LE(directory.length, 12);
+  end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...locals, directory, end]);
+}
+
+/**
+ * Points every East Asian script slot at a family that can draw the glyphs.
+ *
+ * Only `a:ea` is rewritten, so Latin runs keep the deck's display face and a
+ * mixed run like "TED 演讲" renders both halves in the intended font.
+ */
+function applyEastAsianFont(deck: Buffer, family: string): Buffer {
+  const entries = zipEntries(deck);
+  let touched = false;
+  for (const [name, content] of entries) {
+    if (!/^ppt\/(slides|slideLayouts|slideMasters|notesSlides)\/[^/]+\.xml$/u.test(name)) {
+      continue;
+    }
+    const xml = content.toString("utf8");
+    const patched = xml.replace(
+      /<a:ea typeface="[^"]*"/gu,
+      `<a:ea typeface="${family}"`,
+    );
+    if (patched !== xml) {
+      entries.set(name, Buffer.from(patched, "utf8"));
+      touched = true;
+    }
+  }
+  return touched ? packZip(entries) : deck;
+}
+
 /**
  * Grades the export on whether the deck's words survived, not on how closely
  * the pixels line up.
@@ -541,6 +658,7 @@ function convert(options: Options): void {
       JSON.stringify({
         output: out,
         selector: rendered.selector,
+        eastAsianFont: rendered.eastAsianFont,
         slides: rendered.slides,
         bytes: rendered.deck.length,
         verify: report,
@@ -569,6 +687,9 @@ function convert(options: Options): void {
   console.log(chalk.dim(`  Output:   ${out}`));
   console.log(chalk.dim(`  Slides:   ${rendered.slides.toString()}`));
   console.log(chalk.dim(`  Selector: ${rendered.selector}`));
+  if (rendered.eastAsianFont !== "" && rendered.texts.some((entry) => CJK.test(entry))) {
+    console.log(chalk.dim(`  CJK font: ${rendered.eastAsianFont}`));
+  }
   if (report !== undefined) {
     const percent = (report.coverage * 100).toFixed(1);
     console.log(
