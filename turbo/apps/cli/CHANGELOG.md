@@ -1,5 +1,22 @@
 # Changelog
 
+## [9.341.0](https://github.com/vm0-ai/okou/compare/cli-v9.340.10...cli-v9.341.0) (2026-09-18)
+
+
+### Features
+
+* **connectors:** execute builtin mcp through unified connector flows ([#35132](https://github.com/vm0-ai/okou/issues/35132)) ([fc30ccb](https://github.com/vm0-ai/okou/commit/fc30ccb62f1ee00b66379aa4dcf3dc3f97df1763))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.468.0
+    * @okouai/connectors bumped to 3.13.0
+    * @okouai/core bumped to 8.680.4
+    * @okouai/pi-agent-runtime bumped to 1.33.14
+
 ## [9.340.10](https://github.com/vm0-ai/okou/compare/cli-v9.340.9...cli-v9.340.10) (2026-09-18)
 
 

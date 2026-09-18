@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.200.0](https://github.com/vm0-ai/okou/compare/runner-rs-v0.199.1...runner-rs-v0.200.0) (2026-09-18)
+
+
+### Features
+
+* **connectors:** execute builtin mcp through unified connector flows ([#35132](https://github.com/vm0-ai/okou/issues/35132)) ([fc30ccb](https://github.com/vm0-ai/okou/commit/fc30ccb62f1ee00b66379aa4dcf3dc3f97df1763))
+
 ## [0.199.1](https://github.com/vm0-ai/okou/compare/runner-rs-v0.199.0...runner-rs-v0.199.1) (2026-09-18)
 
 ## [0.199.0](https://github.com/vm0-ai/okou/compare/runner-rs-v0.198.1...runner-rs-v0.199.0) (2026-09-18)

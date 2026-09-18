@@ -8,6 +8,32 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.631.0](https://github.com/vm0-ai/okou/compare/api-v1.630.0...api-v1.631.0) (2026-09-18)
+
+
+### Features
+
+* **api:** journal legacy morning brief schedule claims and settle once ([#34857](https://github.com/vm0-ai/okou/issues/34857)) ([3710eeb](https://github.com/vm0-ai/okou/commit/3710eeb2d27ec1fb1110f17adce845cdeeab489a))
+* **connectors:** execute builtin mcp through unified connector flows ([#35132](https://github.com/vm0-ai/okou/issues/35132)) ([fc30ccb](https://github.com/vm0-ai/okou/commit/fc30ccb62f1ee00b66379aa4dcf3dc3f97df1763))
+
+
+### Bug Fixes
+
+* **api:** bound calendar envelope identity and coverage ([#35163](https://github.com/vm0-ai/okou/issues/35163)) ([6bcb0d3](https://github.com/vm0-ai/okou/commit/6bcb0d32fe4e0fd81676ee14304a493e8ea764ea))
+* **api:** revalidate complete morning brief source set ([#35184](https://github.com/vm0-ai/okou/issues/35184)) ([d473d0d](https://github.com/vm0-ai/okou/commit/d473d0d290f3a6c121614ee0e51ef2995e6b660e))
+* **platform:** refresh native delivery read state ([#35179](https://github.com/vm0-ai/okou/issues/35179)) ([09999f9](https://github.com/vm0-ai/okou/commit/09999f93b4aab05b3f247a37b0602ee05ecb6dd1))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.468.0
+    * @okouai/connectors bumped to 3.13.0
+    * @okouai/core bumped to 8.680.4
+    * @okouai/db bumped to 1.273.0
+    * @okouai/pi-agent-runtime bumped to 1.33.14
+
 ## [1.630.0](https://github.com/vm0-ai/okou/compare/api-v1.629.0...api-v1.630.0) (2026-09-18)
 
 
