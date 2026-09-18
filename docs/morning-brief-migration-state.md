@@ -390,15 +390,41 @@ Morning Brief already uses:
 
 - the `automation_id` cascade removes occurrences with their automation,
   including uninstall;
-- owner, organization and membership revocation deletes that scope's
-  occurrences, and changes nothing else.
+- owner, organization and membership revocation scrubs that scope's
+  occurrences: `org_id` and `owner_user_id` become NULL and the settlement
+  becomes the terminal `revoked`.
 
-Known limit: after revocation a late callback for that scope no longer matches a
-recorded occurrence and falls back to the unjournaled legacy branch, exactly as
-it would for an execution this table never recorded. Closing that residual
-replay window requires the durable owner and revocation epoch S7b owns. It is
-recorded here rather than closed by disabling schedules in cleanup, which would
-change behavior other Morning Brief surfaces already rely on.
+Revocation deliberately scrubs rather than deletes. Deleting would make a
+callback that is still in flight look like an execution this table never
+recorded, which is exactly the untracked legacy branch that may advance a
+schedule. What survives is content-free — automation, workflow, occurrence
+identity and timestamps — and its terminal settlement makes any later callback a
+no-op. No automation, workflow or other owner is touched, which is what keeps
+other Morning Brief surfaces unchanged.
+
+### Executed boundary evidence
+
+The focused API regression suite drives the production cron route, shared queue
+drain, Run transaction and callback dispatcher against PostgreSQL. It observes:
+
+- two real launchers reaching the same queue claim, with one Run and one binding;
+- a PostgreSQL `AFTER INSERT` fault rolling the Run and its earlier journal
+  binding back together;
+- the Pi launch composition reaching its API-first ownership transfer with the
+  same bound occurrence;
+- a completion callback settling after the Run transaction commits but before
+  the late `last_run_id` write starts;
+- a failed-Run callback whose first settlement is rolled back by PostgreSQL,
+  then retried while the outer pre-run failure enters the same settlement
+  operation;
+- the untracked pending-event compatibility branch being consumed through the
+  shared queue drain before the next real cron tick journals recovery; and
+- three journaled failures preserving the legacy auto-disable threshold.
+
+The generic scheduler regression suite remains the authority for unchanged
+insufficient-credit behavior: credit failures neither increment the failure
+count nor disable recurring schedules. These are executed boundaries, not an
+assertion that `claim_sequence` is the later S7b choice or rollback epoch.
 
 ### What this slice does not do
 

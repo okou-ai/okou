@@ -55,6 +55,7 @@ import {
 import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 
+import { setupRawAppRequestWithRoutes } from "../../../__tests__/test-app";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
@@ -77,13 +78,19 @@ import { holdChatEventQueueAdmissionLockFixture } from "../../../test-fixtures/c
 import { holdMorningBriefProjectionWrite } from "../../../test-fixtures/morning-brief-projection";
 import { readNativeSchedule } from "../../../test-fixtures/morning-brief-native-schedule";
 import {
+  holdWorkflowAutomationCommittedRunFixture,
   holdNewerMorningBriefClaimFixture,
+  installMorningBriefSettlementFailureFixture,
+  installWorkflowAutomationRunInsertFailureFixture,
+  observeMorningBriefSettlementAttemptsFixture,
   readMorningBriefScheduleClaimsFixture,
   readWorkflowAutomationLastRunFixture,
   recordWorkflowAutomationLastRunFixture,
 } from "../../../test-fixtures/morning-brief-schedule-claim";
+import { holdAgentRunPiExecutionSnapshotFixture } from "../../../test-fixtures/thread-bound-run-admission";
 import {
   admitWorkflowAutomationEventFixture,
+  drainWorkflowAutomationQueueFixture,
   holdWorkflowAutomationRowFixture,
 } from "../../../test-fixtures/workflow-queue";
 import { setOrgDefaultAgentFixture } from "../../../test-fixtures/org-metadata";
@@ -12593,17 +12600,26 @@ describe("Morning Brief legacy schedule claim journal", () => {
   async function deliverBriefCallback(
     runId: string,
     dispatchCount = 1,
+    status: "completed" | "failed" = "completed",
   ): Promise<{
     readonly callbackResults: number;
     readonly successfulCallbacks: number;
   }> {
     const response = await accept(
       automationExecutionClient().dispatchCallbacks({
-        body: {
-          run_id: runId,
-          status: "completed",
-          dispatch_count: dispatchCount,
-        },
+        body:
+          status === "completed"
+            ? {
+                run_id: runId,
+                status,
+                dispatch_count: dispatchCount,
+              }
+            : {
+                run_id: runId,
+                status,
+                error: "forced failed Morning Brief Run",
+                dispatch_count: dispatchCount,
+              },
       }),
       [200],
     );
@@ -12735,6 +12751,101 @@ describe("Morning Brief legacy schedule claim journal", () => {
     );
   });
 
+  it("leaves one binding when two real launchers race the same queue claim", async () => {
+    const brief = await installJournaledBrief();
+    const gate = await installOfficialWorkflowRunGateFixture(
+      context,
+      "observation",
+    );
+    mockNow(brief.anchor + 60_000);
+    const scheduledTick = accept(
+      automationExecutionClient().execute({
+        body: { automation_id: brief.automationId },
+      }),
+      [200],
+    );
+    await expect
+      .poll(async () => {
+        return (await gate.read()).arrivals;
+      })
+      .toBe(1);
+    const threadId = await briefThreadId(brief.actor, brief.workflowId);
+    const competingDrain = drainWorkflowAutomationQueueFixture({
+      chatThreadId: threadId,
+      signal: context.signal,
+    });
+    await expect
+      .poll(async () => {
+        return (await gate.read()).arrivals;
+      })
+      .toBe(2);
+    await gate.release();
+    await Promise.all([scheduledTick, competingDrain]);
+
+    const claims = await readMorningBriefScheduleClaimsFixture(
+      brief.automationId,
+    );
+    expect(claims).toHaveLength(1);
+    expect(claims[0]?.runId).toStrictEqual(expect.any(String));
+    expect(claims[0]?.queueDisposition).toBe("claimed");
+    // Both production launch compositions reached final observation, but only
+    // the winner of the authoritative queue claim inserted and bound a Run.
+    await expect(briefRunIds(threadId)).resolves.toStrictEqual([
+      claims[0]?.runId,
+    ]);
+  });
+
+  it("binds the journal through the actual Pi launch composition", async () => {
+    const commit = "a".repeat(40);
+    mockEnv("GIT_COMMIT_SHA", commit);
+    mockEnv(
+      "CLI_PKG_URL",
+      `https://static.okou.io/okou-cli/${commit}/package.tgz`,
+    );
+    const brief = await installJournaledBrief();
+    if (!brief.actor.orgId) {
+      throw new Error("Expected an organization-scoped brief owner");
+    }
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...brief.actor, orgId: brief.actor.orgId },
+      { [FeatureSwitchKey.PiLoop]: true },
+    );
+    const gate = holdAgentRunPiExecutionSnapshotFixture({
+      userId: brief.actor.userId,
+      orgId: brief.actor.orgId,
+      signal: context.signal,
+    });
+    onTestFinished(() => {
+      gate.release();
+    });
+    mockNow(brief.anchor + 60_000);
+    const tick = accept(
+      automationExecutionClient().execute({
+        body: { automation_id: brief.automationId },
+      }),
+      [200],
+    );
+    await expect(gate.arrival).resolves.toMatchObject({
+      piExecution: true,
+    });
+    gate.release();
+    await tick;
+
+    const threadId = await briefThreadId(brief.actor, brief.workflowId);
+    const [runId] = await briefRunIds(threadId);
+    expect(runId).toStrictEqual(expect.any(String));
+    const claims = await readMorningBriefScheduleClaimsFixture(
+      brief.automationId,
+    );
+    expect(claims).toHaveLength(1);
+    expect(claims[0]).toMatchObject({
+      runId,
+      queueDisposition: "claimed",
+      settlement: "unsettled",
+    });
+  });
+
   it("settles once when concurrent first deliveries of the same completion arrive", async () => {
     const brief = await installJournaledBrief();
     await pollAt(brief.automationId, brief.anchor + 60_000);
@@ -12768,6 +12879,58 @@ describe("Morning Brief legacy schedule claim journal", () => {
       new Date(brief.anchor + 60_000),
     );
     expect(successor).toBe(expectedSuccessor?.toISOString());
+  });
+
+  it("settles a fast callback before the post-return last-run write", async () => {
+    const brief = await installJournaledBrief();
+    const gate = holdWorkflowAutomationCommittedRunFixture({
+      automationId: brief.automationId,
+      signal: context.signal,
+    });
+    mockNow(brief.anchor + 60_000);
+    const tick = accept(
+      automationExecutionClient().execute({
+        body: { automation_id: brief.automationId },
+      }),
+      [200],
+    );
+    onTestFinished(async () => {
+      gate.release();
+      await tick;
+    });
+    const committed = await gate.arrival;
+    const beforeLateWrite = await readWorkflowAutomationLastRunFixture(
+      brief.automationId,
+    );
+    expect(beforeLateWrite.lastRunId).not.toBe(committed.runId);
+
+    const delivery = await deliverBriefCallback(committed.runId);
+    expect(delivery.callbackResults).toBeGreaterThan(0);
+    const beforeRelease = await readBriefPreference(brief.actor);
+    expect(beforeRelease.body.nextRunAt).toStrictEqual(expect.any(String));
+    const claimsBeforeRelease = await readMorningBriefScheduleClaimsFixture(
+      brief.automationId,
+    );
+    expect(claimsBeforeRelease[0]).toMatchObject({
+      runId: committed.runId,
+      settlement: "completed",
+    });
+
+    gate.release();
+    await tick;
+    const afterLateWrite = await readWorkflowAutomationLastRunFixture(
+      brief.automationId,
+    );
+    expect(afterLateWrite.lastRunId).toBe(committed.runId);
+    await expect(readBriefPreference(brief.actor)).resolves.toMatchObject({
+      body: { nextRunAt: beforeRelease.body.nextRunAt },
+    });
+    const claimsAfterRelease = await readMorningBriefScheduleClaimsFixture(
+      brief.automationId,
+    );
+    expect(claimsAfterRelease[0]?.settledAt?.getTime()).toBe(
+      claimsBeforeRelease[0]?.settledAt?.getTime(),
+    );
   });
 
   it("settles an active claim with the timezone edited while it was running", async () => {
@@ -12819,7 +12982,8 @@ describe("Morning Brief legacy schedule claim journal", () => {
     if (!runId) {
       throw new Error("Expected the occurrence to start a run");
     }
-    await deliverBriefCallback(runId);
+    await runs.requestCancelRun(brief.actor, runId, [200]);
+    await flushWaitUntilForTest();
     const advanced = await readBriefPreference(brief.actor);
     if (!advanced.body.nextRunAt) {
       throw new Error("Expected the completion to publish the next occurrence");
@@ -12843,6 +13007,37 @@ describe("Morning Brief legacy schedule claim journal", () => {
     await expect(
       briefAutomationEventCount(threadId),
     ).resolves.toBeGreaterThanOrEqual(1);
+
+    // Consume the old untracked obstacle through the shared production drain.
+    await drainWorkflowAutomationQueueFixture({
+      chatThreadId: threadId,
+      signal: context.signal,
+    });
+    const runIdsAfterDrain = await briefRunIds(threadId);
+    const untrackedRunId = runIdsAfterDrain.find((candidate) => {
+      return candidate !== runId;
+    });
+    if (!untrackedRunId) {
+      throw new Error("Expected the untracked obstacle to launch");
+    }
+    await runs.requestCancelRun(brief.actor, untrackedRunId, [200]);
+    await flushWaitUntilForTest();
+    const recoveredSchedule = await readBriefPreference(brief.actor);
+    if (!recoveredSchedule.body.nextRunAt) {
+      throw new Error("Expected the legacy callback to recover the schedule");
+    }
+    const recoveredAnchor = Date.parse(recoveredSchedule.body.nextRunAt);
+
+    // The next real cron tick now claims a recorded occurrence normally.
+    await pollAt(brief.automationId, recoveredAnchor + 60_000);
+    const recoveredClaims = await readMorningBriefScheduleClaimsFixture(
+      brief.automationId,
+    );
+    expect(recoveredClaims).toHaveLength(2);
+    expect(recoveredClaims[1]?.scheduledAnchorAt.getTime()).toBe(
+      recoveredAnchor,
+    );
+    expect(recoveredClaims[1]?.queueEventId).toStrictEqual(expect.any(String));
   });
 
   /** Publish a new occurrence through the real preference writer. */
@@ -13249,6 +13444,189 @@ describe("Morning Brief legacy schedule claim journal", () => {
     expect(recovered).toHaveLength(2);
     expect(recovered[1]?.scheduledAnchorAt.getTime()).toBe(recoveredAnchor);
     expect(recovered[1]?.queueEventId).toStrictEqual(expect.any(String));
+  });
+
+  it("rolls back the journal binding when PostgreSQL fails the real Run INSERT", async () => {
+    const brief = await installJournaledBrief();
+    const fault = await installWorkflowAutomationRunInsertFailureFixture({
+      automationId: brief.automationId,
+    });
+    onTestFinished(fault.release);
+
+    await pollAt(brief.automationId, brief.anchor + 60_000);
+    await expect(fault.readAttempts()).resolves.toBeGreaterThan(0);
+    await fault.release();
+
+    const claims = await readMorningBriefScheduleClaimsFixture(
+      brief.automationId,
+    );
+    expect(claims).toHaveLength(1);
+    expect(claims[0]).toMatchObject({
+      runId: null,
+      queueDisposition: "queued",
+      settlement: "pre_run_failure",
+    });
+    const threadId = await briefThreadId(brief.actor, brief.workflowId);
+    // The trigger raises after INSERT, so this empty public Run projection is
+    // evidence that both the inserted Run and its earlier journal binding were
+    // rolled back with the launch transaction.
+    await expect(briefRunIds(threadId)).resolves.toHaveLength(0);
+    await expect(readBriefPreference(brief.actor)).resolves.toMatchObject({
+      body: { enabled: true, nextRunAt: expect.any(String) },
+    });
+  });
+
+  it("settles once when a failed-Run callback races the real outer failure path", async () => {
+    const brief = await installJournaledBrief();
+    const acceptedDefinition =
+      await readAcceptedDefinitionFixture("morning-brief");
+    await accept(
+      storageClient().action({
+        body: {
+          action: "cleanup-owned-storage-cache",
+          storage_id: acceptedDefinition.definition.artifact.storageId,
+        },
+      }),
+      [200],
+    );
+    context.mocks.s3.getSignedUrl.mockRejectedValue(
+      new Error("forced Morning Brief launch preparation failure"),
+    );
+    const settlementFault = await installMorningBriefSettlementFailureFixture({
+      automationId: brief.automationId,
+    });
+    onTestFinished(settlementFault.release);
+    const settlementAttempts = observeMorningBriefSettlementAttemptsFixture({
+      automationId: brief.automationId,
+    });
+    onTestFinished(settlementAttempts.release);
+    const committedGate = holdWorkflowAutomationCommittedRunFixture({
+      automationId: brief.automationId,
+      signal: context.signal,
+      rejectOnRelease: true,
+    });
+    onTestFinished(() => {
+      committedGate.release();
+    });
+
+    mockNow(brief.anchor + 60_000);
+    const tick = setupRawAppRequestWithRoutes({
+      context,
+      routes: testWorkflowAutomationExecutionRoutes,
+    })("/api/test/workflow-automation-execution/execute", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ automation_id: brief.automationId }),
+    });
+    onTestFinished(async () => {
+      committedGate.release();
+      await tick;
+    });
+
+    // The failed Run's automatic callback enters the real settlement handler.
+    // PostgreSQL rejects that update after arrival, so dispatcher bookkeeping
+    // persists a retryable callback failure while the occurrence stays open.
+    const committed = await committedGate.arrival;
+    await expect(settlementFault.readAttempts()).resolves.toBe(1);
+    expect(settlementAttempts.readArrivals()).toBe(1);
+    const claimsBeforeRace = await readMorningBriefScheduleClaimsFixture(
+      brief.automationId,
+    );
+    expect(claimsBeforeRace[0]).toMatchObject({
+      runId: committed.runId,
+      queueDisposition: "claimed",
+      settlement: "unsettled",
+    });
+
+    // Hold the exact row both settlement paths acquire first. The failed
+    // callback retry and the post-commit hook's outer failure are independently
+    // observed as two blocked PostgreSQL sessions before either can win.
+    const held = await holdWorkflowAutomationRowFixture({
+      automationId: brief.automationId,
+      signal: context.signal,
+    });
+    onTestFinished(async () => {
+      held.release();
+      await held.done;
+    });
+    const callbackRetry = deliverBriefCallback(committed.runId, 1, "failed");
+    await expect.poll(settlementAttempts.readArrivals).toBe(2);
+    await expect
+      .poll(async () => {
+        return await held.blockedWaiterCount();
+      })
+      .toBe(1);
+    committedGate.release();
+    // The outer path has entered the same production settlement operation
+    // while the callback is observably blocked at its first row lock. A one-
+    // connection test pool may queue this transaction client-side, so handler
+    // entry—not a second PostgreSQL backend—is the portable overlap barrier.
+    await expect.poll(settlementAttempts.readArrivals).toBe(3);
+    held.release();
+    await held.done;
+    const [delivery, tickResponse] = await Promise.all([callbackRetry, tick]);
+    expect(tickResponse.status).toBe(200);
+    expect(delivery.callbackResults).toBeGreaterThan(0);
+    expect(delivery.successfulCallbacks).toBeGreaterThan(0);
+
+    const settled = await readMorningBriefScheduleClaimsFixture(
+      brief.automationId,
+    );
+    expect(settled).toHaveLength(1);
+    expect(["failed", "pre_run_failure"]).toContain(settled[0]?.settlement);
+    expect(settled[0]?.settledAt).not.toBeNull();
+    const preference = await readBriefPreference(brief.actor);
+    expect(preference.body).toMatchObject({
+      enabled: true,
+      nextRunAt: expect.any(String),
+    });
+  });
+
+  it("keeps the legacy three-failure auto-disable policy for journaled occurrences", async () => {
+    const brief = await installJournaledBrief();
+    let anchor = brief.anchor;
+    const seenRunIds = new Set<string>();
+
+    for (let failure = 1; failure <= 3; failure += 1) {
+      await pollAt(brief.automationId, anchor + 60_000);
+      const threadId = await briefThreadId(brief.actor, brief.workflowId);
+      const runId = (await briefRunIds(threadId)).find((candidate) => {
+        return !seenRunIds.has(candidate);
+      });
+      if (!runId) {
+        throw new Error(`Expected journaled failure Run ${failure}`);
+      }
+      seenRunIds.add(runId);
+      await runs.requestCancelRun(brief.actor, runId, [200]);
+      await flushWaitUntilForTest();
+
+      const preference = await readBriefPreference(brief.actor);
+      if (failure < 3) {
+        expect(preference.body).toMatchObject({
+          enabled: true,
+          nextRunAt: expect.any(String),
+        });
+        if (!preference.body.nextRunAt) {
+          throw new Error("Expected a successor before the disable threshold");
+        }
+        anchor = Date.parse(preference.body.nextRunAt);
+      } else {
+        expect(preference.body).toMatchObject({
+          enabled: false,
+          nextRunAt: null,
+        });
+      }
+    }
+
+    const claims = await readMorningBriefScheduleClaimsFixture(
+      brief.automationId,
+    );
+    expect(claims).toHaveLength(3);
+    expect(
+      claims.every((claim) => {
+        return claim.settlement === "failed" && claim.settledAt !== null;
+      }),
+    ).toBeTruthy();
   });
 
   it("settles a consumed occurrence through the outer pre-run failure path and recovers the schedule", async () => {

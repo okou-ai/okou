@@ -16,8 +16,8 @@ import { tapError } from "../utils";
 import { transitionAgentRunsToTerminal } from "./agent-run-terminal-transition.service";
 import { revokeMorningBriefNativeAuthority } from "./morning-brief-native-schedule.service";
 import { revokeMorningBriefCollectionOwnership } from "./morning-brief-collection-occurrence.service";
-import { revokeMorningBriefScheduleOwnership } from "./morning-brief-schedule-claim.service";
 import { revokeMorningBriefDeliveryOwnership } from "./morning-brief-delivery.service";
+import { revokeMorningBriefScheduleOwnership } from "./morning-brief-schedule-claim.service";
 import { eraseVncOwner } from "./vnc-owner-lifecycle.service";
 
 import type { Db } from "../external/db";

@@ -10,6 +10,7 @@ import { command } from "ccstate";
 import { eq } from "drizzle-orm";
 import { writeDb$, type Db } from "../external/db";
 import type { Tx } from "../../lib/db-types";
+import { testOverride } from "../../lib/singleton";
 import { now, nowDate } from "../../lib/time";
 import {
   isQueueFirstRunClaimLost,
@@ -50,6 +51,48 @@ import {
 } from "./built-in-model-runtime-route.service";
 
 export type AutomationRow = typeof workflowAutomations.$inferSelect;
+
+export interface WorkflowAutomationCommittedRunSnapshot {
+  readonly automationId: string;
+  readonly runId: string;
+  readonly runStatus: string;
+}
+
+type WorkflowAutomationCommittedRunHook = (
+  snapshot: WorkflowAutomationCommittedRunSnapshot,
+) => Promise<void>;
+
+const workflowAutomationCommittedRunHook = testOverride<
+  WorkflowAutomationCommittedRunHook | undefined
+>(() => {
+  return undefined;
+});
+
+export function setWorkflowAutomationCommittedRunHookForTest(
+  hook: WorkflowAutomationCommittedRunHook,
+): void {
+  workflowAutomationCommittedRunHook.set(hook);
+}
+
+export function clearWorkflowAutomationCommittedRunHookForTest(): void {
+  workflowAutomationCommittedRunHook.clear();
+}
+
+/**
+ * The Run and queue claim are committed while the legacy last-run fields have
+ * not been written. Tests suspend this production boundary to prove callback
+ * authority does not depend on that late write.
+ */
+async function awaitCommittedRunTestHook(
+  automationId: string,
+  run: { readonly runId: string; readonly status: string },
+): Promise<void> {
+  await workflowAutomationCommittedRunHook.get()?.({
+    automationId,
+    runId: run.runId,
+    runStatus: run.status,
+  });
+}
 
 export interface DueWorkflowAutomation {
   readonly automation: AutomationRow;
@@ -557,13 +600,15 @@ async function recordWorkflowAutomationRunStart(
   input: {
     readonly db: Db;
     readonly args: WorkflowAutomationLaunchArgs;
-    readonly runId: string;
-    readonly runStatus: string;
-    readonly claimedEventCreatedAt: Date;
+    readonly run: {
+      readonly body: { readonly runId: string; readonly status: string };
+      readonly queueFirstClaim: { readonly createdAt: Date };
+    };
   },
   signal: AbortSignal,
 ): Promise<void> {
-  const { db, args, runId } = input;
+  const { db, args } = input;
+  const runId = input.run.body.runId;
   const { automation, chatThreadId } = args.due;
   await finalizeClaimedRunUserMessage({
     db,
@@ -571,8 +616,8 @@ async function recordWorkflowAutomationRunStart(
     threadId: chatThreadId,
     userId: automation.ownerUserId,
     runId,
-    runStatus: input.runStatus,
-    createdAt: input.claimedEventCreatedAt,
+    runStatus: input.run.body.status,
+    createdAt: input.run.queueFirstClaim.createdAt,
   });
   signal.throwIfAborted();
 
@@ -719,7 +764,6 @@ export const launchQueuedWorkflowAutomation$ = command(
     const db = set(writeDb$);
     const { automation, agentId, chatThreadId } = args.due;
     const timing = workflowAutomationTiming(args);
-
     const readinessFailure = await checkQueuedWorkflowLaunchReadiness(
       { db, args, timing },
       signal,
@@ -727,7 +771,6 @@ export const launchQueuedWorkflowAutomation$ = command(
     if (readinessFailure) {
       return readinessFailure;
     }
-
     const modelContext = await resolveTimedWorkflowModelContext(
       {
         db,
@@ -829,16 +872,9 @@ export const launchQueuedWorkflowAutomation$ = command(
       signal.throwIfAborted();
       return { kind: "run_error", response: result };
     }
-    await recordWorkflowAutomationRunStart(
-      {
-        db,
-        args,
-        runId: result.body.runId,
-        runStatus: result.body.status,
-        claimedEventCreatedAt: result.queueFirstClaim.createdAt,
-      },
-      signal,
-    );
+    await awaitCommittedRunTestHook(automation.id, result.body);
+    signal.throwIfAborted();
+    await recordWorkflowAutomationRunStart({ db, args, run: result }, signal);
 
     return {
       kind: "ok",
