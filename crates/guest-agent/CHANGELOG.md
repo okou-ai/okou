@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.91.17](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.16...guest-agent-v0.91.17) (2026-09-18)
+
+
+### Bug Fixes
+
+* **guest:** control deferred handoff preparation ([#34919](https://github.com/vm0-ai/okou/issues/34919)) ([702150d](https://github.com/vm0-ai/okou/commit/702150d070cd14919171d2a88fc629fcad1a79b0))
+
 ## [0.91.16](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.15...guest-agent-v0.91.16) (2026-09-18)
 
 

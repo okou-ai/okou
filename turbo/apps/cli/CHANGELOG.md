@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.340.10](https://github.com/vm0-ai/okou/compare/cli-v9.340.9...cli-v9.340.10) (2026-09-18)
+
+
+### Bug Fixes
+
+* honor artifact sharing permissions in cli downloads ([#35162](https://github.com/vm0-ai/okou/issues/35162)) ([5bbdb8a](https://github.com/vm0-ai/okou/commit/5bbdb8a2220c110497afe59ff25d8a18e45896e0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.467.0
+    * @okouai/core bumped to 8.680.3
+    * @okouai/pi-agent-runtime bumped to 1.33.13
+
 ## [9.340.9](https://github.com/vm0-ai/okou/compare/cli-v9.340.8...cli-v9.340.9) (2026-09-18)
 
 
