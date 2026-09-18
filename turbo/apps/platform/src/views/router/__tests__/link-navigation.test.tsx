@@ -24,16 +24,20 @@ function mockAPIs(): void {
   ]);
 }
 
-test("An unknown route offers a working home link", async () => {
+test("An unknown route offers both of its destinations", async () => {
   mockAPIs();
   await setupPage({ context, path: "/missing-platform-route" });
 
   const homeLink = await waitFor(() => {
-    const homeLink = queryAllByRoleFast("link").find((link) => {
+    const links = queryAllByRoleFast("link");
+    const homeLink = links.find((link) => {
       return link.textContent?.trim() === "Back to home";
     });
-    if (!homeLink) {
-      throw new Error("Back to home link not found");
+    const workflowsLink = links.find((link) => {
+      return link.textContent?.trim() === "Browse workflows";
+    });
+    if (!homeLink || !workflowsLink) {
+      throw new Error("Not-found destinations not found");
     }
 
     expect(
@@ -45,6 +49,7 @@ test("An unknown route offers a working home link", async () => {
       ),
     ).toBeInTheDocument();
     expect(homeLink).toHaveAttribute("href", "/");
+    expect(workflowsLink).toHaveAttribute("href", "/workflows");
     return homeLink;
   });
 

@@ -60,7 +60,7 @@ export function NotFoundPage() {
             })}
           </Link>
         </Button>
-        <Button asChild size="lg" variant="secondary">
+        <Button asChild size="lg" variant="neutral">
           <Link pathname={ROUTES.workflows}>
             {t(($) => {
               return $.shared.notFound.browse;

@@ -116,11 +116,10 @@ and the system decides how thick it is. Components must not hand-write a width:
 an arbitrary bracketed width, or a literal width inside a `style` prop, is a
 second registry for a decision this token already owns, and the two round to
 different device-pixel counts wherever the device scale is odd.
-`no-restricted-syntax` in `eslint.style.config.mjs` rejects both, and the three
+`no-restricted-syntax` in `eslint.style.config.mjs` rejects both, and the two
 files that legitimately spell a width turn the rule off by name with their own
-reason: two pin a whole pixel against the repaint a fractional border shows when
-a box's content resolves, and the 404 page's `border-[24px]` is a mat around
-artwork rather than a border on anything.
+reason: both pin a whole pixel, the chat card against the repaint a fractional
+border shows when its content resolves.
 
 This is a real hairline, not a rounding no-op. On a 2x display 0.5px paints one
 device pixel where 1px paints two, so every bare border carries half the ink it
