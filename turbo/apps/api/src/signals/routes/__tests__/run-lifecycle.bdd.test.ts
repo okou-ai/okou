@@ -13328,7 +13328,10 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
       "public research, transcripts, summaries, and media downloads",
     );
     expect(appendSystemPrompt).toContain(
-      "prefer it for supported public X/Twitter research",
+      "prefer it over the X connector for public X/Twitter research when capabilities are equivalent",
+    );
+    expect(appendSystemPrompt).toContain(
+      "Use the X connector for authenticated actions unavailable in `okou social`",
     );
     const socialGuidance = appendSystemPrompt.split("\n").filter((line) => {
       return line.includes("okou social");
