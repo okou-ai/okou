@@ -14,10 +14,9 @@ import { Search, Plus, Filter, ChevronDown, Check } from "lucide-react";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { ConnectorAccountSummary } from "@okouai/api-contracts/contracts/connector-accounts";
 import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
-import {
-  isOneClickConnectorGrantKind,
-  type PublicConnectorCatalogCategoryMetadata,
-  type PublicConnectorCatalogDiscoveryResponse,
+import type {
+  PublicConnectorCatalogCategoryMetadata,
+  PublicConnectorCatalogDiscoveryResponse,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
 import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
@@ -1358,16 +1357,6 @@ function buildConnectorsBrowseModel({
     search.trim().length > 0 ||
     categoryFilter !== null ||
     connectionFilter.kind !== "all";
-  // One-click is a property of the connector, not of this workspace's
-  // connections, so it narrows the catalog before anything else groups it.
-  const visibleItems =
-    connectionFilter.kind === "one-click"
-      ? catalogItems.filter((connector) => {
-          return connector.authMethods.some((authMethod) => {
-            return isOneClickConnectorGrantKind(authMethod.grantKind);
-          });
-        })
-      : catalogItems;
   const sectionsOf = (
     items: readonly PlatformConnectorCatalogStatusItem[],
   ): ConnectorCategorySection<PlatformConnectorCatalogStatusItem>[] => {
@@ -1415,11 +1404,11 @@ function buildConnectorsBrowseModel({
     // fill one falls through to the plain list.
     showShelves: ready && !filtered && layout.shelves.length > 0,
     categoryConnectors:
-      ready && categoryFilter !== null && visibleItems.length > 0
-        ? visibleItems
+      ready && categoryFilter !== null && catalogItems.length > 0
+        ? catalogItems
         : null,
     layout,
-    connected: visibleItems.filter((connector) => {
+    connected: catalogItems.filter((connector) => {
       return connector.connected;
     }),
     // Chips come from the whole catalog, not the filtered view: a chip row

@@ -30,10 +30,11 @@ import type {
   InitClientReturn,
 } from "@okouai/api-contracts/contracts/trpc-contract";
 import type { ConnectorOauthDeviceAuthSessionPollResponse } from "@okouai/api-contracts/contracts/connector-schemas";
-import type {
-  PublicConnectorCatalogAuthMethodDetail,
-  PublicConnectorCatalogConnectionStatus,
-  PublicConnectorCatalogIcon,
+import {
+  isOneClickConnectorGrantKind,
+  type PublicConnectorCatalogAuthMethodDetail,
+  type PublicConnectorCatalogConnectionStatus,
+  type PublicConnectorCatalogIcon,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import {
   connectors$,
@@ -597,6 +598,14 @@ export const filteredConnectorCatalogItems$ = computed(async (get) => {
     // chosen, it only ever shows what this workspace has already connected.
     if (scope === "connected" && !connector.connected) {
       return false;
+    }
+    // One-click is a property of the connector itself: it holds an auth method
+    // that finishes in the browser, which is also what the Get started reward
+    // pays on.
+    if (effectiveFilter.kind === "one-click") {
+      return connector.authMethods.some((authMethod) => {
+        return isOneClickConnectorGrantKind(authMethod.grantKind);
+      });
     }
     if (effectiveFilter.kind === "connected") {
       return connector.connected;
