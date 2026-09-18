@@ -338,7 +338,7 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   },
   {
     name: "presentation",
-    description: "Render presentations to page images",
+    description: "Render presentations to page images and editable decks",
     load: async () => {
       return (await import("./commands/presentation")).presentationCommand;
     },
