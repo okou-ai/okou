@@ -90,9 +90,10 @@ The request keeps the shared helper's existing per-statement timeout bounds and
 contains no external call while the locks are held.
 
 The order agrees with existing Agent/thread-before-run paths. Creation inserts a
-fresh authorization row only after the run pin. Apply locks an existing request
-only after subjects, Agent and thread. Token reads take no row lock. There is no
-request-before-Agent/thread inverse.
+fresh authorization row only after the run pin. The unchanged Apply path loads
+an existing request before its existing scope checks and is outside this
+creation-only lock-order claim. Token reads take no row lock. Creation introduces
+no request-before-Agent/thread inverse.
 
 ## Complete post-authentication creation-service SQL and cost inventory
 
