@@ -1291,6 +1291,70 @@ async function rejectEmptyConvertedDeck(
   );
 }
 
+interface SyncArtifactArgs {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly threadId: string;
+  readonly runId: string;
+  readonly fileId: string;
+}
+
+interface DriveUploadAttempt {
+  readonly accessToken: string;
+  readonly result: DriveTokenResult<Response>;
+}
+
+/** Upload once, then retry under a refreshed token when Drive rejects it. */
+async function uploadArtifactRefreshingToken(
+  params: {
+    readonly args: SyncArtifactArgs;
+    readonly content: ResolvedArtifactContent;
+    readonly db: ReadonlyDb;
+    readonly featureSwitchContext: FeatureSwitchContext;
+    readonly targetMimeType: string | undefined;
+    readonly tokens: ConnectorTokens;
+  },
+  signal: AbortSignal,
+): Promise<DriveUploadAttempt> {
+  const upload = async (accessToken: string) => {
+    return await uploadArtifactWithToken({
+      accessToken,
+      threadId: params.args.threadId,
+      runId: params.args.runId,
+      fileId: params.args.fileId,
+      filename: params.content.filename,
+      contentType: params.content.contentType,
+      targetMimeType: params.targetMimeType,
+      file: params.content.file,
+    });
+  };
+
+  const accessToken = params.tokens.accessToken;
+  const result = await upload(accessToken);
+  signal.throwIfAborted();
+  if (result.type !== "unauthorized") {
+    return { accessToken, result };
+  }
+
+  const refreshed = await refreshDriveAccessToken(
+    {
+      connection: params.tokens.connection,
+      db: params.db,
+      featureSwitchContext: params.featureSwitchContext,
+      orgId: params.args.orgId,
+      userId: params.args.userId,
+    },
+    signal,
+  );
+  signal.throwIfAborted();
+  if (refreshed.type !== "ok") {
+    return { accessToken, result };
+  }
+  const retried = await upload(refreshed.accessToken);
+  signal.throwIfAborted();
+  return { accessToken: refreshed.accessToken, result: retried };
+}
+
 type NotFoundResponse = ReturnType<typeof notFound>;
 type BadRequestResponse = ReturnType<typeof badRequestMessage>;
 
@@ -1310,13 +1374,7 @@ type BadRequestResponse = ReturnType<typeof badRequestMessage>;
 export const syncArtifactToGoogleDrive$ = command(
   async (
     { get },
-    args: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly threadId: string;
-      readonly runId: string;
-      readonly fileId: string;
-    },
+    args: SyncArtifactArgs,
     signal: AbortSignal,
   ): Promise<
     | NotFoundResponse
@@ -1410,46 +1468,19 @@ export const syncArtifactToGoogleDrive$ = command(
       );
     }
 
-    let accessToken = tokens.accessToken;
-    let result = await uploadArtifactWithToken({
-      accessToken,
-      threadId: args.threadId,
-      runId: args.runId,
-      fileId: args.fileId,
-      filename: content.filename,
-      contentType: content.contentType,
-      targetMimeType,
-      file: content.file,
-    });
+    const upload = await uploadArtifactRefreshingToken(
+      {
+        args,
+        content,
+        db,
+        featureSwitchContext,
+        targetMimeType,
+        tokens,
+      },
+      signal,
+    );
     signal.throwIfAborted();
-
-    if (result.type === "unauthorized") {
-      const refreshed = await refreshDriveAccessToken(
-        {
-          connection: tokens.connection,
-          db,
-          featureSwitchContext,
-          orgId: args.orgId,
-          userId: args.userId,
-        },
-        signal,
-      );
-      signal.throwIfAborted();
-      if (refreshed.type === "ok") {
-        accessToken = refreshed.accessToken;
-        result = await uploadArtifactWithToken({
-          accessToken,
-          threadId: args.threadId,
-          runId: args.runId,
-          fileId: args.fileId,
-          filename: content.filename,
-          contentType: content.contentType,
-          targetMimeType,
-          file: content.file,
-        });
-        signal.throwIfAborted();
-      }
-    }
+    const { accessToken, result } = upload;
 
     if (result.type === "unauthorized") {
       return badRequestMessage("Google Drive upload failed with HTTP 401");
