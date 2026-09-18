@@ -38,6 +38,7 @@ export function SharedMessageAttachments({
                 src={r2ImageTransformUrl(attachment.url, {
                   width: 480,
                   height: 320,
+                  contentType: attachment.contentType,
                 })}
                 alt={attachment.filename}
                 loading="lazy"

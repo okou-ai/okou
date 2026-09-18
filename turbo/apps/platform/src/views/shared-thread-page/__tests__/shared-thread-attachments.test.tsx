@@ -9,58 +9,96 @@ import {
 } from "./shared-thread-test-helpers.ts";
 
 const context = testContext();
-const imageUrl = "https://a.okou.io/shared-threads/public/image/screenshot.png";
 const fileUrl = "https://a.okou.io/shared-threads/public/file/brief.pdf";
 
-test("Signed-out visitors can open prompt images and files in new tabs", async () => {
-  context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
-    return respond(
-      200,
-      sharedThread({
-        messages: [
-          {
-            messageIndex: 0,
-            role: "user",
-            content: "Build a dashboard like this",
-            attachments: [
-              {
-                filename: "screenshot.png",
-                contentType: "image/png",
-                size: 42,
-                url: imageUrl,
-              },
-              {
-                filename: "brief.pdf",
-                contentType: "application/pdf",
-                size: 80,
-                url: fileUrl,
-              },
-            ],
-          },
-        ],
-      }),
+test.each(["png", "bin"])(
+  "Signed-out visitors see prompt thumbnails stored as %s and open original files",
+  async (extension) => {
+    const imageUrl = `https://a.okou.io/shared-threads/public/image/screenshot.${extension}`;
+    context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
+      return respond(
+        200,
+        sharedThread({
+          messages: [
+            {
+              messageIndex: 0,
+              role: "user",
+              content: "Build a dashboard like this",
+              attachments: [
+                {
+                  filename: "screenshot.png",
+                  contentType: "image/png",
+                  size: 42,
+                  url: imageUrl,
+                },
+                {
+                  filename: "brief.pdf",
+                  contentType: "application/pdf",
+                  size: 80,
+                  url: fileUrl,
+                },
+              ],
+            },
+          ],
+        }),
+      );
+    });
+
+    await setupSharedThreadPage(context, { host: "app.okou.ai" });
+
+    expect(screen.getByText("Build a dashboard like this")).toBeInTheDocument();
+    const imageLink = screen.getByLabelText("screenshot.png");
+    const fileLink = screen.getByLabelText("brief.pdf");
+    expect(imageLink).toHaveAttribute("href", imageUrl);
+    expect(fileLink).toHaveAttribute("href", fileUrl);
+    for (const link of [imageLink, fileLink]) {
+      expect(link).toHaveAttribute("target", "_blank");
+      expect(link).toHaveAttribute("rel", "noopener noreferrer");
+    }
+    expect(
+      within(imageLink).getByRole("img", { name: "screenshot.png" }),
+    ).toHaveAttribute(
+      "src",
+      `https://a.okou.io/cdn-cgi/image/width=480,height=320,fit=scale-down,format=auto,quality=85,metadata=none/shared-threads/public/image/screenshot.${extension}`,
     );
-  });
+    expect(
+      screen.queryByText("[File: screenshot.png]"),
+    ).not.toBeInTheDocument();
+  },
+);
 
-  await setupSharedThreadPage(context, { host: "app.okou.ai" });
+test.each([false, true])(
+  "Shared Markdown images use thumbnails and preserve their destination (linked=%s)",
+  async (linked) => {
+    const imageUrl = "https://a.okou.io/shared-threads/public/image/answer.png";
+    const destination = linked ? "https://example.com/report" : imageUrl;
+    const image = `![Answer image](${imageUrl})`;
+    context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
+      return respond(
+        200,
+        sharedThread({
+          messages: [
+            {
+              messageIndex: 0,
+              role: "assistant",
+              content: linked ? `[${image}](${destination})` : image,
+              runIndex: 0,
+            },
+          ],
+        }),
+      );
+    });
 
-  expect(screen.getByText("Build a dashboard like this")).toBeInTheDocument();
-  const imageLink = screen.getByLabelText("screenshot.png");
-  const fileLink = screen.getByLabelText("brief.pdf");
-  expect(imageLink).toHaveAttribute("href", imageUrl);
-  expect(fileLink).toHaveAttribute("href", fileUrl);
-  for (const link of [imageLink, fileLink]) {
-    expect(link).toHaveAttribute("target", "_blank");
-    expect(link).toHaveAttribute("rel", "noopener noreferrer");
-  }
-  expect(
-    within(imageLink).getByRole("img", { name: "screenshot.png" }),
-  ).toHaveAttribute(
-    "src",
-    "https://a.okou.io/cdn-cgi/image/width=480,height=320,fit=scale-down,format=auto,quality=85,metadata=none/shared-threads/public/image/screenshot.png",
-  );
-  expect(screen.queryByText("[File: screenshot.png]")).not.toBeInTheDocument();
-});
+    await setupSharedThreadPage(context, { host: "app.okou.ai" });
+
+    const thumbnail = await screen.findByAltText("Answer image");
+    expect(thumbnail).toHaveAttribute(
+      "src",
+      "https://a.okou.io/cdn-cgi/image/width=800,height=720,fit=scale-down,format=auto,quality=85,metadata=none/shared-threads/public/image/answer.png",
+    );
+    expect(thumbnail.closest("a")).toHaveAttribute("href", destination);
+  },
+);
 
 test("Attachment-only prompts remain visible and active content is a file link", async () => {
   const url = "https://a.okou.io/shared-threads/public/file/diagram.svg";
