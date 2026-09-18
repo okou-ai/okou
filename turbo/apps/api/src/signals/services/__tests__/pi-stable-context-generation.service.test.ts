@@ -365,6 +365,15 @@ describe("Pi stable context generation fences", () => {
       throw new Error("Expected artifact reuse head");
     }
     const cutoff = new Date("2026-02-01T00:00:00.000Z");
+    const unrelatedArtifactDigest = randomUUID().replaceAll("-", "").repeat(2);
+    await db.insert(piStableContextArtifacts).values({
+      digest: unrelatedArtifactDigest,
+      orgId: fixture.orgId,
+      userId: fixture.userId,
+      agentId: fixture.agentId,
+      projection,
+      createdAt: expiredAt,
+    });
 
     const signal = AbortSignal.timeout(15_000);
     const publisherLocked = createDeferredPromise<void>(signal);
@@ -377,7 +386,9 @@ describe("Pi stable context generation fences", () => {
     });
     await publisherLocked.promise;
     await expect(
-      deleteExpiredPiStableContextArtifacts(db, cutoff),
+      deleteExpiredPiStableContextArtifacts(db, cutoff, {
+        artifactDigests: [artifactDigest],
+      }),
     ).resolves.toStrictEqual([]);
     releasePublisher.resolve();
     await expect(publisherFirst).resolves.toMatchObject({
@@ -401,6 +412,7 @@ describe("Pi stable context generation fences", () => {
     const gcLocked = createDeferredPromise<number>(signal);
     const releaseGc = createDeferredPromise<void>(signal);
     const gcFirst = deleteExpiredPiStableContextArtifacts(db, cutoff, {
+      artifactDigests: [artifactDigest],
       afterCandidatesLocked: async (tx) => {
         const result = await tx.execute(
           sql`SELECT pg_backend_pid()::int AS "pid"`,
@@ -444,6 +456,12 @@ describe("Pi stable context generation fences", () => {
         .from(piStableContextHeads)
         .where(eq(piStableContextHeads.id, head.id)),
     ).resolves.toStrictEqual([{ status: "ready", artifactDigest }]);
+    await expect(
+      db
+        .select({ digest: piStableContextArtifacts.digest })
+        .from(piStableContextArtifacts)
+        .where(eq(piStableContextArtifacts.digest, unrelatedArtifactDigest)),
+    ).resolves.toStrictEqual([{ digest: unrelatedArtifactDigest }]);
   });
 
   it("rolls invalidation back and fences stale multi-stage completion", async () => {

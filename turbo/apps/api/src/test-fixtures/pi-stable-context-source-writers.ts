@@ -9,6 +9,10 @@ import {
   setAgentDeletionHooksForTest,
 } from "../signals/services/agent-deletion.service";
 import {
+  clearClerkAgentLifecycleHooksForTest,
+  setClerkAgentLifecycleHooksForTest,
+} from "../signals/services/agent-lifecycle.service";
+import {
   clearChatThreadConnectorSelectionMutationHooksForTest,
   setChatThreadConnectorSelectionMutationHooksForTest,
 } from "../signals/services/chat-thread-connector-selection.service";
@@ -53,7 +57,9 @@ export function holdWorkflowUpdateBeforeErasureAdmissionFixture(
 }
 
 export function holdWorkflowUpdateAfterMetadataMutationFixture(
-  hold: () => Promise<void>,
+  hold: NonNullable<
+    Parameters<typeof setWorkflowUpdateHooksForTest>[0]["afterMetadataMutation"]
+  >,
 ): void {
   setWorkflowUpdateHooksForTest({ afterMetadataMutation: hold });
   onTestFinished(() => {
@@ -83,6 +89,17 @@ export function holdAgentDeletionAfterStableContextCleanupFixture(
   });
   onTestFinished(() => {
     clearAgentDeletionHooksForTest();
+  });
+}
+
+export function observeClerkAgentLifecycleBeforeAgentLockFixture(
+  observe: NonNullable<
+    Parameters<typeof setClerkAgentLifecycleHooksForTest>[0]["beforeAgentLock"]
+  >,
+): void {
+  setClerkAgentLifecycleHooksForTest({ beforeAgentLock: observe });
+  onTestFinished(() => {
+    clearClerkAgentLifecycleHooksForTest();
   });
 }
 

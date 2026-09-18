@@ -673,6 +673,48 @@ function rebindStorageMount(
 }
 
 /** Commit bounded demand for contexts that depend on an advanced Storage HEAD. */
+/** Retire immutable demand whose Storage source was authoritatively removed. */
+export async function retirePiStableContextStorageDemands(
+  db: Db,
+  storageIds: readonly string[],
+): Promise<void> {
+  if (storageIds.length === 0) {
+    return;
+  }
+  const dependent = or(
+    exists(
+      db
+        .select({ ordinal: piStableContextArtifactResources.ordinal })
+        .from(piStableContextArtifactResources)
+        .where(
+          and(
+            eq(
+              piStableContextArtifactResources.artifactDigest,
+              piStableContextHeads.artifactDigest,
+            ),
+            eq(
+              piStableContextArtifactResources.storageId,
+              sql`ANY(${sql.param(storageIds)}::uuid[])`,
+            ),
+          ),
+        ),
+    ),
+    sql`EXISTS (
+      SELECT 1
+      FROM jsonb_array_elements(COALESCE(${piStableContextHeads.input}->'storageMounts', '[]'::jsonb)) AS mount
+      WHERE mount->>'storageId' = ANY(${sql.param(storageIds)}::text[])
+    )`,
+  );
+  const locked = await lockHeadSet(
+    db,
+    requireCondition(
+      dependent,
+      "removed Storage-dependent stable-context heads",
+    ),
+  );
+  await resetLockedHeadSet(db, locked.ids, nowDate());
+}
+
 export async function enqueuePiStableContextStorageDemands(
   db: Db,
   resource: {

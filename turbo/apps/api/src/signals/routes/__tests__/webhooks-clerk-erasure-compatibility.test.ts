@@ -9,6 +9,7 @@ import {
 } from "@okouai/api-contracts/contracts/workflows";
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { webhookClerkContract } from "@okouai/api-contracts/contracts/webhooks";
+import { sql } from "drizzle-orm";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { nowDate } from "../../../lib/time";
@@ -18,6 +19,11 @@ import { createDeferredPromise } from "../../utils";
 import {
   countAgentStableContextPublicationsFixture,
   countUserStableContextGenerationsFixture,
+  deleteExpiredOwnedPiStableContextArtifactFixture,
+  readAgentInstructionsStorageFixture,
+  removePiStableContextHeadFixture,
+  seedPiStableContextStorageDemandFixture,
+  stableContextBackendBlockedByFixture,
 } from "../../../test-fixtures/pi-stable-context";
 import { holdUserConnectorMutationBeforeAdmissionFixture } from "../../../test-fixtures/user-connectors";
 import { holdUserPermissionGrantMutationBeforeAdmissionFixture } from "../../../test-fixtures/user-permission-grants";
@@ -28,6 +34,7 @@ import {
   holdWorkflowCreationBeforeErasureAdmissionFixture,
   holdWorkflowDeleteBeforeErasureAdmissionFixture,
   holdWorkflowUpdateAfterMetadataMutationFixture,
+  observeClerkAgentLifecycleBeforeAgentLockFixture,
   holdWorkflowUpdateBeforeErasureAdmissionFixture,
 } from "../../../test-fixtures/pi-stable-context-source-writers";
 import { agentsRoutes } from "../agents";
@@ -625,11 +632,20 @@ test("completes signed Agent-owner erasure behind a surviving Workflow update", 
     }),
   ).resolves.toBeGreaterThan(0);
 
-  const entered = createDeferredPromise<void>(context.signal);
+  const writerEntered = createDeferredPromise<number>(context.signal);
+  const cleanupEntered = createDeferredPromise<number>(context.signal);
   const release = createDeferredPromise<void>(context.signal);
-  holdWorkflowUpdateAfterMetadataMutationFixture(async () => {
-    entered.resolve();
+  holdWorkflowUpdateAfterMetadataMutationFixture(async (tx) => {
+    const result = await tx.execute(sql`SELECT pg_backend_pid()::int AS "pid"`);
+    writerEntered.resolve(Number(result.rows[0]?.pid));
     await release.promise;
+  });
+  observeClerkAgentLifecycleBeforeAgentLockFixture(async (tx, agentId) => {
+    if (agentId !== agent.body.agentId) {
+      return;
+    }
+    const result = await tx.execute(sql`SELECT pg_backend_pid()::int AS "pid"`);
+    cleanupEntered.resolve(Number(result.rows[0]?.pid));
   });
   const client = setupApp({ context, routes: workflowsRoutes })(
     workflowsDetailContract,
@@ -639,14 +655,26 @@ test("completes signed Agent-owner erasure behind a surviving Workflow update", 
     params: { workflowId: workflow.body.id },
     body: { instruction: "# commits before owner erasure" },
   });
-  await entered.promise;
+  const writerPid = await writerEntered.promise;
   await deleteUserWithSignedWebhook(
     ownerUserId,
     "workflow-update-agent-owner-erasure",
     { flush: false },
   );
+  const cleanupPid = await cleanupEntered.promise;
+  await expect
+    .poll(
+      async () => {
+        return await stableContextBackendBlockedByFixture({
+          blockedPid: cleanupPid,
+          blockerPid: writerPid,
+        });
+      },
+      { interval: 5, timeout: 80 },
+    )
+    .toBe(true);
   release.resolve();
-  await accept(update, [200]);
+  await accept(update, [409]);
   await flushWaitUntilForTest();
 
   await expect(
@@ -662,6 +690,90 @@ test("completes signed Agent-owner erasure behind a surviving Workflow update", 
     client.get({ headers, params: { workflowId: workflow.body.id } }),
     [404],
   );
+});
+
+test("completes signed Agent-owner erasure behind scoped artifact GC", async () => {
+  const orgId = `synthetic_org_${randomUUID()}`;
+  const ownerUserId = `synthetic_owner_${randomUUID()}`;
+  const survivingUserId = `synthetic_survivor_${randomUUID()}`;
+  const headers = { authorization: "Bearer clerk-session" };
+  context.mocks.s3.send.mockResolvedValue({});
+
+  mocks.clerk.session(ownerUserId, orgId, "org:admin");
+  const agent = await accept(
+    setupApp({ context, routes: agentsRoutes })(agentsMainContract).create({
+      headers,
+      body: { displayName: "GC-erased public owner", visibility: "public" },
+    }),
+    [201],
+  );
+  bdd.acceptAgentStorageWrites();
+  await bdd.updateAgentInstructions(
+    bdd.user({ orgId, userId: ownerUserId, orgRole: "org:admin" }),
+    agent.body.agentId,
+    "# instructions retained by another audience artifact",
+  );
+  const instructions = await readAgentInstructionsStorageFixture(
+    agent.body.agentId,
+  );
+  const headId = await seedPiStableContextStorageDemandFixture({
+    orgId,
+    userId: survivingUserId,
+    agentId: agent.body.agentId,
+    storageName: instructions.storageName,
+    versionId: instructions.versionId,
+    archiveSize: instructions.archiveSize,
+    resourceOrgId: orgId,
+    resourceUserId: instructions.resourceUserId,
+    ready: true,
+  });
+  const artifactDigest = await removePiStableContextHeadFixture(headId);
+  const gcEntered = createDeferredPromise<number>(context.signal);
+  const releaseGc = createDeferredPromise<void>(context.signal);
+  const gc = deleteExpiredOwnedPiStableContextArtifactFixture({
+    artifactDigest,
+    cutoff: new Date("2099-01-01T00:00:00.000Z"),
+    afterCandidatesLocked: async (tx) => {
+      const result = await tx.execute(
+        sql`SELECT pg_backend_pid()::int AS "pid"`,
+      );
+      gcEntered.resolve(Number(result.rows[0]?.pid));
+      await releaseGc.promise;
+    },
+  });
+  const gcPid = await gcEntered.promise;
+  const cleanupEntered = createDeferredPromise<number>(context.signal);
+  observeClerkAgentLifecycleBeforeAgentLockFixture(async (tx, agentId) => {
+    if (agentId !== agent.body.agentId) {
+      return;
+    }
+    const result = await tx.execute(sql`SELECT pg_backend_pid()::int AS "pid"`);
+    cleanupEntered.resolve(Number(result.rows[0]?.pid));
+  });
+  await deleteUserWithSignedWebhook(ownerUserId, "gc-agent-owner-erasure", {
+    flush: false,
+  });
+  const cleanupPid = await cleanupEntered.promise;
+  await expect
+    .poll(
+      async () => {
+        return await stableContextBackendBlockedByFixture({
+          blockedPid: cleanupPid,
+          blockerPid: gcPid,
+        });
+      },
+      { interval: 5, timeout: 500 },
+    )
+    .toBe(true);
+  releaseGc.resolve();
+  await expect(gc).resolves.toStrictEqual([{ digest: artifactDigest }]);
+  await flushWaitUntilForTest();
+  await expect(
+    countUserStableContextGenerationsFixture({
+      agentId: agent.body.agentId,
+      userId: survivingUserId,
+    }),
+  ).resolves.toBe(0);
 });
 
 test("does not recreate stable state after the public Agent owner is erased", async () => {

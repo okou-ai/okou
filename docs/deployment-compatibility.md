@@ -19,9 +19,8 @@ surfaces are on different versions.
 
 ## Pi stable-context schema rollout and rollback
 
-Migration 1163, following additive VNC migrations 1158 and 1160, MCP thread-
-discovery migration 1159, Morning Brief schedule-claim migration 1161, and
-Slack ingress retry-policy migration 1162, adds
+Migration 1165, following retained main migrations through
+`1164_odd_victor_mancha`, adds
 `pi_stable_context_erasure_fences`,
 `pi_stable_context_generations`,
 `pi_stable_context_publications`, `pi_stable_context_heads`,

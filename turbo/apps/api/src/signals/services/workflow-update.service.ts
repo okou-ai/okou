@@ -9,7 +9,11 @@ import { testOverride } from "../../lib/singleton";
 import type { Tx } from "../../lib/db-types";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
-import { uploadVolumeServerSide$ } from "./storage-volume-upload.service";
+import { settle } from "../utils";
+import {
+  isStalePiStableContextPublicationError,
+  uploadVolumeServerSide$,
+} from "./storage-volume-upload.service";
 import {
   loadWorkflowVolumeFiles,
   SKILL_FILENAME,
@@ -189,19 +193,31 @@ export const updateWorkflow$ = command(
         instruction: nextInstruction,
       });
 
-      await set(
-        uploadVolumeServerSide$,
-        {
-          orgId: workflow.orgId,
-          storageName: getCustomSkillStorageName(workflow.id),
-          files: [{ path: SKILL_FILENAME, content: skillMd }, ...attachedFiles],
-          piResourceIndex: true,
-          ...(metadata.stableContextPublication
-            ? { stableContextPublication: metadata.stableContextPublication }
-            : {}),
-        },
+      const upload = await settle(
+        set(
+          uploadVolumeServerSide$,
+          {
+            orgId: workflow.orgId,
+            storageName: getCustomSkillStorageName(workflow.id),
+            files: [
+              { path: SKILL_FILENAME, content: skillMd },
+              ...attachedFiles,
+            ],
+            piResourceIndex: true,
+            ...(metadata.stableContextPublication
+              ? { stableContextPublication: metadata.stableContextPublication }
+              : {}),
+          },
+          signal,
+        ),
         signal,
       );
+      if (!upload.ok) {
+        if (isStalePiStableContextPublicationError(upload.error)) {
+          return false;
+        }
+        throw upload.error;
+      }
       signal.throwIfAborted();
     }
     return true;

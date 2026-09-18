@@ -12,6 +12,7 @@ import { and, asc, eq, inArray, or, sql, type SQL } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 
 import type { Tx } from "../../lib/db-types";
+import { testOverride } from "../../lib/singleton";
 import { removeAgentInstructionsStorageInTransaction } from "./agent-instructions-storage-transaction.service";
 import { lockCanonicalAgentMutation } from "./agent-mutation-lock.service";
 import {
@@ -29,6 +30,24 @@ import { lockXResourceAdmission } from "./x-resource-usage-lifecycle";
 import { revokeMorningBriefDeliveryOwnership } from "./morning-brief-delivery.service";
 
 export const AGENT_LIFECYCLE_LOCK_TIMEOUT = "100ms";
+
+interface ClerkAgentLifecycleHooks {
+  readonly beforeAgentLock?: (tx: Tx, agentId: string) => Promise<void>;
+}
+
+const clerkAgentLifecycleHooks = testOverride<ClerkAgentLifecycleHooks>(() => {
+  return {};
+});
+
+export function setClerkAgentLifecycleHooksForTest(
+  hooks: ClerkAgentLifecycleHooks,
+): void {
+  clerkAgentLifecycleHooks.set(hooks);
+}
+
+export function clearClerkAgentLifecycleHooksForTest(): void {
+  clerkAgentLifecycleHooks.clear();
+}
 
 type ClerkDeletionScope =
   | { readonly kind: "organization"; readonly orgId: string }
@@ -229,6 +248,7 @@ export async function deleteClerkAgentLifecycleData(
       .where(agentScope)
       .orderBy(asc(agents.id));
     for (const agent of candidates) {
+      await clerkAgentLifecycleHooks.get().beforeAgentLock?.(tx, agent.id);
       await lockCanonicalAgentMutation(tx, agent.id);
     }
     // Revalidate locked ownership before children can escape the accounted cascade.

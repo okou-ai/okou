@@ -26,6 +26,12 @@ type UploadVolumeServerSideInput = PrepareVolumeServerSideInput & {
 
 class StalePiStableContextPublicationError extends Error {}
 
+export function isStalePiStableContextPublicationError(
+  error: unknown,
+): boolean {
+  return error instanceof StalePiStableContextPublicationError;
+}
+
 interface StorageVolumeUploadHooks {
   readonly afterStorageCommit?: (db: Db) => Promise<void>;
 }

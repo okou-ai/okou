@@ -1,8 +1,7 @@
 # 017: Pi stable-context report and repair
 
-Migration 1163 creates empty additive stable-context tables after the VNC 1158
-and 1160, MCP thread-discovery 1159, Morning Brief schedule-claim 1161, and
-Slack ingress retry-policy 1162 migrations. It intentionally
+Migration 1165 creates empty additive stable-context tables after retained main
+migrations through `1164_odd_victor_mancha`. It intentionally
 does not enumerate user x Agent x session combinations or materialize a
 production-wide cache. Normal authoritative source writes invalidate existing
 heads, and an exact request miss records bounded demand from captured immutable

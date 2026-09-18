@@ -874,9 +874,31 @@ describe("GET /api/cron/sync-skills", () => {
 
     const betaVersion = buildMockSkillVersion(fixture, fixture.betaSkill);
     const betaStorage = await findSystemStorageByName(betaVersion.storageName);
-    if (!betaStorage) {
-      throw new Error("Expected the beta skill storage");
+    if (!betaStorage?.archiveSize) {
+      throw new Error("Expected the indexed beta skill storage");
     }
+    const demandOrgId = `cron-skill-removal-${randomUUID()}`;
+    const demandUserId = `cron-skill-removal-user-${randomUUID()}`;
+    const demandUser = bdd.user({
+      orgId: demandOrgId,
+      userId: demandUserId,
+      orgRole: "org:admin",
+    });
+    bdd.acceptAgentStorageWrites();
+    const demandAgent = await bdd.createAgent(demandUser, {
+      displayName: "Removed system skill Agent",
+    });
+    const demandHeadId = await seedPiStableContextStorageDemandFixture({
+      orgId: demandOrgId,
+      userId: demandUserId,
+      agentId: demandAgent.agentId,
+      storageName: betaVersion.storageName,
+      versionId: betaVersion.versionHash,
+      archiveSize: betaStorage.archiveSize,
+      resourceOrgId: SYSTEM_ORG_ID,
+      resourceUserId: VOLUME_ORG_USER_ID,
+      ready: true,
+    });
     const betaObjectKeys = [
       `${betaStorage.s3Prefix}/${betaVersion.versionHash}/archive.tar.gz`,
       `${betaStorage.s3Prefix}/${betaVersion.versionHash}/manifest.json`,
@@ -912,6 +934,14 @@ describe("GET /api/cron/sync-skills", () => {
     await expect(
       findSkillByUrl(testSkillUrl(fixture.sentinelSkillName)),
     ).resolves.toMatchObject({ commitSha: sentinelCommitSha });
+    await expect(
+      readPiStableContextStorageDemandFixture(demandHeadId),
+    ).resolves.toMatchObject({
+      status: "missing",
+      input: null,
+      inputDigest: null,
+      artifactDigest: null,
+    });
 
     const deleteCommand = s3CallsByName("DeleteObjectsCommand")[0];
     expect(commandInput(deleteCommand)).toMatchObject({

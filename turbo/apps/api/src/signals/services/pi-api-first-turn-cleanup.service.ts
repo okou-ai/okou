@@ -1,8 +1,10 @@
 import { piResourceSnapshots } from "@okouai/db/schema/pi-resource-snapshot";
 import {
+  piStableContextArtifactResources,
   piStableContextArtifacts,
   piStableContextHeads,
 } from "@okouai/db/schema/pi-stable-context";
+import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { command } from "ccstate";
 import { and, asc, eq, inArray, lt, notExists } from "drizzle-orm";
 
@@ -46,39 +48,109 @@ function piResourceSnapshotExpirationCutoff(at: number): Date {
 export async function deleteExpiredPiStableContextArtifacts(
   db: Db,
   cutoff: Date,
-  hooks?: { readonly afterCandidatesLocked?: (tx: Tx) => Promise<void> },
+  options?: {
+    readonly afterCandidatesLocked?: (tx: Tx) => Promise<void>;
+    readonly artifactDigests?: readonly string[];
+  },
 ): Promise<readonly { readonly digest: string }[]> {
+  if (options?.artifactDigests?.length === 0) {
+    return [];
+  }
   return await db.transaction(async (tx) => {
-    // Coordinate with exact-digest re-publication. Publisher conflict updates
-    // retain a row lock through head attachment; SKIP LOCKED leaves those live
-    // artifacts for a later sweep. If GC owns the row first, the publisher
-    // waits, observes the committed deletion, and inserts the artifact anew.
+    const eligible = and(
+      lt(piStableContextArtifacts.createdAt, cutoff),
+      options?.artifactDigests
+        ? inArray(piStableContextArtifacts.digest, options.artifactDigests)
+        : undefined,
+      notExists(
+        tx
+          .select({ id: piStableContextHeads.id })
+          .from(piStableContextHeads)
+          .where(
+            eq(
+              piStableContextHeads.artifactDigest,
+              piStableContextArtifacts.digest,
+            ),
+          ),
+      ),
+    );
+    const candidateRows = await tx
+      .select({ digest: piStableContextArtifacts.digest })
+      .from(piStableContextArtifacts)
+      .where(eligible)
+      .orderBy(asc(piStableContextArtifacts.digest))
+      .limit(PI_STABLE_CONTEXT_ARTIFACT_GC_BATCH_SIZE);
+    const candidateDigests = candidateRows.map((candidate) => {
+      return candidate.digest;
+    });
+    if (candidateDigests.length === 0) {
+      return [];
+    }
+
+    // Every publisher owns Storage/version parents before artifact and edge
+    // rows. GC follows the same order so Clerk Storage deletion cannot hold a
+    // retention edge while waiting on an artifact already owned by GC.
+    const resources = await tx
+      .select({
+        storageId: piStableContextArtifactResources.storageId,
+        versionId: piStableContextArtifactResources.storageVersionId,
+      })
+      .from(piStableContextArtifactResources)
+      .where(
+        inArray(
+          piStableContextArtifactResources.artifactDigest,
+          candidateDigests,
+        ),
+      );
+    const storageIds = [
+      ...new Set(
+        resources.map((resource) => {
+          return resource.storageId;
+        }),
+      ),
+    ].sort();
+    const versionIds = [
+      ...new Set(
+        resources.map((resource) => {
+          return resource.versionId;
+        }),
+      ),
+    ].sort();
+    if (storageIds.length > 0) {
+      await tx
+        .select({ id: storages.id })
+        .from(storages)
+        .where(inArray(storages.id, storageIds))
+        .orderBy(asc(storages.id))
+        .for("key share");
+    }
+    if (versionIds.length > 0) {
+      await tx
+        .select({ id: storageVersions.id })
+        .from(storageVersions)
+        .where(inArray(storageVersions.id, versionIds))
+        .orderBy(asc(storageVersions.id))
+        .for("key share");
+    }
+
+    // Coordinate with exact-digest re-publication only after parent locks.
+    // SKIP LOCKED leaves publisher-owned artifacts for a later sweep. If GC
+    // owns the row first, the publisher waits and reinserts after deletion.
     const candidates = await tx
       .select({ digest: piStableContextArtifacts.digest })
       .from(piStableContextArtifacts)
       .where(
         and(
-          lt(piStableContextArtifacts.createdAt, cutoff),
-          notExists(
-            tx
-              .select({ id: piStableContextHeads.id })
-              .from(piStableContextHeads)
-              .where(
-                eq(
-                  piStableContextHeads.artifactDigest,
-                  piStableContextArtifacts.digest,
-                ),
-              ),
-          ),
+          eligible,
+          inArray(piStableContextArtifacts.digest, candidateDigests),
         ),
       )
       .orderBy(asc(piStableContextArtifacts.digest))
-      .limit(PI_STABLE_CONTEXT_ARTIFACT_GC_BATCH_SIZE)
       .for("update", { skipLocked: true });
     if (candidates.length === 0) {
       return [];
     }
-    await hooks?.afterCandidatesLocked?.(tx);
+    await options?.afterCandidatesLocked?.(tx);
     return await tx
       .delete(piStableContextArtifacts)
       .where(
