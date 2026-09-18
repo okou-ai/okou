@@ -506,9 +506,14 @@ describe("okou web-search route", () => {
     );
 
     expect(response.body.creditsCharged).toBe(5);
-    expect(usage.body.rows).toHaveLength(1);
-    expect(usage.body.rows[0]?.runId).toBe(run.runId);
-    expect(usage.body.rows[0]?.credits).toBe(5);
+    expect(usage.body.rows).toStrictEqual([
+      expect.objectContaining({
+        title: "Unavailable thread",
+        threadId: null,
+        runId: null,
+        credits: 5,
+      }),
+    ]);
     expect(context.mocks.ably.publish).not.toHaveBeenCalledWith(
       "billing:changed",
       null,

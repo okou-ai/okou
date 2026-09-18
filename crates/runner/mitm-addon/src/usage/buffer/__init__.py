@@ -35,6 +35,8 @@ from .models import (
     MAX_RETAINED_USAGE_BATCH_RETRIES,
     MAX_SOURCE_IDEMPOTENCY_KEYS,
     USAGE_EVENT_BATCH_SIZE,
+    ResourceUsageItem,
+    ResourceUsageRemainder,
     UsageEvent,
     UsageFlushTrigger,
 )
@@ -49,6 +51,8 @@ __all__ = [
     "MAX_RETAINED_USAGE_BATCH_RETRIES",
     "MAX_SOURCE_IDEMPOTENCY_KEYS",
     "USAGE_EVENT_BATCH_SIZE",
+    "ResourceUsageItem",
+    "ResourceUsageRemainder",
     "UsageEvent",
     "UsageEventBuffer",
     "UsageFlushTrigger",

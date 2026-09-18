@@ -85,6 +85,10 @@
   },
   "billableFirewalls": ["model-provider:fixture"],
   "modelUsageProvider": "fixture-model",
+  "xResourceBilling": {
+    "protocol": "x-resource-v1",
+    "startDate": "2099-01-01"
+  },
   "codexRuntimeConfig": {
     "providerId": "fixture_provider",
     "name": "Fixture Provider",

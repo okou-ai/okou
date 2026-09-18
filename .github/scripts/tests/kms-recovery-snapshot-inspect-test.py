@@ -62,13 +62,14 @@ class SnapshotInspectionTest(unittest.TestCase):
                 "PATH": str(binary) + os.pathsep + os.environ["PATH"],
                 "FIXTURE_STATE": str(state_path),
                 "RUNNER_TEMP": str(root),
-                "GITHUB_REPOSITORY": "vm0-ai/vm0",
+                "GITHUB_REPOSITORY": "vm0-ai/okou",
+                "GITHUB_REPOSITORY_ID": "1096175506",
                 "GITHUB_REF": "refs/heads/main",
                 "GITHUB_EVENT_NAME": "workflow_dispatch",
                 "GITHUB_RUN_ID": "12345",
                 "GITHUB_RUN_ATTEMPT": "1",
                 "GITHUB_SHA": "a" * 40,
-                "GITHUB_WORKFLOW_REF": "vm0-ai/vm0/.github/workflows/kms-recovery-snapshot-inspect.yml@refs/heads/main",
+                "GITHUB_WORKFLOW_REF": "vm0-ai/okou/.github/workflows/kms-recovery-snapshot-inspect.yml@refs/heads/main",
                 "NEON_PROJECT_ID": "hidden-lab-39609750",
                 "NEON_API_KEY": "fixture-private-token",
                 "SNAPSHOT_SHA256": hashlib.sha256(b"snapshot-manual").hexdigest(),
@@ -128,6 +129,16 @@ class SnapshotInspectionTest(unittest.TestCase):
                         },
                     )
             return result, report, state
+
+    def test_renamed_repository_uses_the_same_protected_workflow(self):
+        result, report, _ = self.invoke(
+            overrides={
+                "GITHUB_REPOSITORY": "maxandzoe/okou",
+                "GITHUB_WORKFLOW_REF": "maxandzoe/okou/.github/workflows/kms-recovery-snapshot-inspect.yml@refs/heads/main",
+            }
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(report["collectionComplete"])
 
     def test_inspects_snapshot_and_records_recoverable_cleanup_without_clearance(self):
         result, report, state = self.invoke()
@@ -523,13 +534,16 @@ class SnapshotInspectionTest(unittest.TestCase):
                 self.assertEqual(result.returncode, 1)
                 self.assertTrue(all(c["method"] == "GET" for c in state["calls"]))
 
-    def test_non_main_invocation_never_calls_neon(self):
-        result, report, state = self.invoke(
-            overrides={"GITHUB_REF": "refs/heads/feature"}
-        )
-        self.assertEqual(result.returncode, 1)
-        self.assertEqual(report["failure"], "unprotected_invocation")
-        self.assertEqual(state["calls"], [])
+    def test_unprotected_invocation_never_calls_neon(self):
+        for overrides in [
+            {"GITHUB_REF": "refs/heads/feature"},
+            {"GITHUB_REPOSITORY_ID": "1"},
+        ]:
+            with self.subTest(overrides=overrides):
+                result, report, state = self.invoke(overrides=overrides)
+                self.assertEqual(result.returncode, 1)
+                self.assertEqual(report["failure"], "unprotected_invocation")
+                self.assertEqual(state["calls"], [])
 
 
 if __name__ == "__main__":

@@ -11,6 +11,114 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.915.0](https://github.com/vm0-ai/okou/compare/app-v0.914.1...app-v0.915.0) (2026-09-18)
+
+
+### Features
+
+* **templates:** preview a custom document template's source file ([#35031](https://github.com/vm0-ai/okou/issues/35031)) ([826b8d1](https://github.com/vm0-ai/okou/commit/826b8d1766fa5d97728ab1c776a6ade1e373d587))
+
+
+### Bug Fixes
+
+* log sandbox rootfs exhaustion at info ([#35141](https://github.com/vm0-ai/okou/issues/35141)) ([e015f06](https://github.com/vm0-ai/okou/commit/e015f0643c9d33d6ddb144b233845734bde075f5))
+* **ssh:** mention file import in the private key hint ([#35142](https://github.com/vm0-ai/okou/issues/35142)) ([279e9a5](https://github.com/vm0-ai/okou/commit/279e9a5a0f1ac7f0beee86d11d5fad25df3567ff))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.465.0
+    * @okouai/core bumped to 8.680.1
+
+## [0.914.1](https://github.com/vm0-ai/okou/compare/app-v0.914.0...app-v0.914.1) (2026-09-18)
+
+
+### Bug Fixes
+
+* **app:** keep archived current chat visible ([#35103](https://github.com/vm0-ai/okou/issues/35103)) ([8bcc69d](https://github.com/vm0-ai/okou/commit/8bcc69d9e52cb8ea2f9012002a23c39426a61cb9))
+
+
+### Refactoring
+
+* remove team usage breakdown feature switch ([#35098](https://github.com/vm0-ai/okou/issues/35098)) ([4939996](https://github.com/vm0-ai/okou/commit/49399969ea1bcc428000cfced32effa669ce74cf))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.464.0
+    * @okouai/core bumped to 8.680.0
+
+## [0.914.0](https://github.com/vm0-ai/okou/compare/app-v0.913.0...app-v0.914.0) (2026-09-18)
+
+
+### Features
+
+* **connectors:** consume published v4 catalog for builtin mcp ([#34992](https://github.com/vm0-ai/okou/issues/34992)) ([3e2d169](https://github.com/vm0-ai/okou/commit/3e2d16947b51e3931cb07d31d332418e17230468))
+* **mcp:** add oauth-authorized http entry and indicators ([#34954](https://github.com/vm0-ai/okou/issues/34954)) ([7999ce4](https://github.com/vm0-ai/okou/commit/7999ce41c17d7544b0f1da457d840fb2f0505b54))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.463.0
+    * @okouai/connectors bumped to 3.12.0
+    * @okouai/core bumped to 8.679.0
+
+## [0.913.0](https://github.com/vm0-ai/okou/compare/app-v0.912.0...app-v0.913.0) (2026-09-17)
+
+
+### Features
+
+* **billing:** group usage by thread and show member breakdowns ([#35082](https://github.com/vm0-ai/okou/issues/35082)) ([6b7e3ae](https://github.com/vm0-ai/okou/commit/6b7e3ae71559d4c2ba8552c1fdb650054e4b41f6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.462.0
+    * @okouai/core bumped to 8.678.0
+
+## [0.912.0](https://github.com/vm0-ai/okou/compare/app-v0.911.3...app-v0.912.0) (2026-09-17)
+
+
+### Features
+
+* **app:** add chat thread archiving ([#35081](https://github.com/vm0-ai/okou/issues/35081)) ([c2c9e70](https://github.com/vm0-ai/okou/commit/c2c9e70124bf9457e69130566ab70d2e00cc06e5))
+
+
+### Documentation
+
+* **platform:** remove misleading source map comment ([#35085](https://github.com/vm0-ai/okou/issues/35085)) ([6e1b552](https://github.com/vm0-ai/okou/commit/6e1b552fddbbbe640f25d1fbfddff94b4fea0b15))
+
+
+### Refactoring
+
+* remove expired deployment compatibility ([#35084](https://github.com/vm0-ai/okou/issues/35084)) ([e94de40](https://github.com/vm0-ai/okou/commit/e94de408bfeaf7c5d21c5d3aa5de5f13908b1ea7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.461.1
+    * @okouai/core bumped to 8.677.0
+
+## [0.911.3](https://github.com/vm0-ai/okou/compare/app-v0.911.2...app-v0.911.3) (2026-09-17)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.461.0
+    * @okouai/core bumped to 8.676.3
+
 ## [0.911.2](https://github.com/vm0-ai/okou/compare/app-v0.911.1...app-v0.911.2) (2026-09-17)
 
 

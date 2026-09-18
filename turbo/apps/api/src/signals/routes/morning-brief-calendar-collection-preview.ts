@@ -14,6 +14,7 @@ import {
 } from "../services/morning-brief-calendar-collection.service";
 import {
   admitMorningBriefCollection,
+  freezeMorningBriefSourceSelection,
   startMorningBriefSourceDeadline,
 } from "../services/morning-brief-connector-reader.service";
 import {
@@ -100,8 +101,15 @@ const collectCalendarInner$ = command(
         `Morning Brief calendar preview is unavailable: ${admission.reason}`,
       );
     }
+    // One source, so admission is also the moment its account choice freezes.
+    const authority = await freezeMorningBriefSourceSelection(
+      db,
+      admission.scope,
+      "google-calendar",
+    );
+    signal.throwIfAborted();
     const collection = await collectMorningBriefCalendar(
-      { db, clerk: get(clerk$), scope: admission.scope, deadline },
+      { db, clerk: get(clerk$), scope: admission.scope, authority, deadline },
       signal,
     );
     signal.throwIfAborted();

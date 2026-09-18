@@ -24,6 +24,10 @@ import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import {
+  countPublishedTo,
+  userOrgChannelName,
+} from "./helpers/realtime-publications";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -324,45 +328,21 @@ async function expectSequenceUnconsumed(
 }
 
 /**
- * Every Ably publish paired with the channel it was routed to. The client mock
- * records `channels.get(name)` and the channel's `publish(topic)` on two
- * separate spies, so the channel is recovered from the last `get` that ran
- * before each publish rather than assumed. `publishChatDatabaseSignalNow`
- * performs both in one expression with no await between them, so that pairing
- * is exact.
- */
-function publishedChannelTopics(): readonly {
-  readonly channel: string;
-  readonly topic: unknown;
-}[] {
-  const gets = context.mocks.ably.channelGet.mock;
-  const publishes = context.mocks.ably.publish.mock;
-  return publishes.calls.map((call, index) => {
-    const publishedAt = publishes.invocationCallOrder[index] ?? 0;
-    let channel = "";
-    for (const [getIndex, order] of gets.invocationCallOrder.entries()) {
-      if (order < publishedAt) {
-        channel = String(gets.calls[getIndex]?.[0] ?? "");
-      }
-    }
-    return { channel, topic: call[0] };
-  });
-}
-
-/**
  * Sidebar invalidations actually routed to this owner's own user-org channel.
  * The send publishes other topics on that same channel, thread creation
  * publishes this topic before any title exists, and every other owner in this
  * file has its own channel — so the target and the topic are both filtered and
- * each case compares against a baseline it took itself.
+ * each case compares against a baseline it took itself. See
+ * {@link countPublishedTo} for how the shared publish spy is bound to a channel.
  */
 function threadListInvalidations(paused: PausedTitle): number {
-  const channel = `user-org:${paused.actor.userId}:${paused.orgId}`;
-  return publishedChannelTopics().filter((published) => {
-    return (
-      published.channel === channel && published.topic === "threadListChanged"
-    );
-  }).length;
+  return countPublishedTo(context.mocks, {
+    channel: userOrgChannelName({
+      userId: paused.actor.userId,
+      orgId: paused.orgId,
+    }),
+    topic: "threadListChanged",
+  });
 }
 
 /** Title, `renamed_at` and `updated_at` as one comparable persisted state. */

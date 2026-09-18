@@ -11,24 +11,60 @@ import { and, count, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "../lib/db";
+import type { Tx } from "../lib/db-types";
 import { executeRawRows } from "../lib/db-raw-rows";
 import {
   lockUsageEventCompaction,
   withUsageEventCompactionLockAttemptTrackingForTest,
+  withUsageEventCompactionLockScopeForTest,
 } from "../signals/services/usage-event-compaction-lock.service";
 import { createDeferredPromise } from "../signals/utils";
 
 const databasePidRowSchema = z.object({ pid: z.int() });
 const waiterCountRowSchema = z.object({ waiterCount: z.int() });
 
+/** Simulate another test owner, or the unscoped production admission boundary. */
+export async function withUsageEventCompactionScopeFixture<T>(
+  scope: string | undefined,
+  work: () => Promise<T>,
+): Promise<T> {
+  return await withUsageEventCompactionLockScopeForTest(scope, work);
+}
+
 /**
- * Holds the production usage-compaction advisory lock so route tests can prove
+ * Holds the scenario's usage-compaction advisory lock so route tests can prove
  * that destructive cleanup waits for the same transaction boundary.
  * An optional owned source reproduces the compactor's raw-row lock followed
  * by the rollup foreign key's Run KEY SHARE lock, without rewriting history.
  */
 export async function holdUsageEventCompactionLockFixture(
   signal: AbortSignal,
+  source?: {
+    readonly idempotencyKey: string;
+    readonly runId: string;
+  },
+) {
+  return await holdUsageEventCompactionLock(
+    signal,
+    lockUsageEventCompaction,
+    source,
+  );
+}
+
+/** An independent SQL participant verifies the unchanged production lock key. */
+export async function holdProductionUsageEventCompactionLockFixture(
+  signal: AbortSignal,
+) {
+  return await holdUsageEventCompactionLock(signal, async (tx) => {
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtext('vm0'), hashtext('usage_event_compaction'))`,
+    );
+  });
+}
+
+async function holdUsageEventCompactionLock(
+  signal: AbortSignal,
+  acquire: (tx: Tx) => Promise<void>,
   source?: {
     readonly idempotencyKey: string;
     readonly runId: string;
@@ -46,7 +82,7 @@ export async function holdUsageEventCompactionLockFixture(
   const released = createDeferredPromise<void>(signal);
   const acquisitionAttempted = createDeferredPromise<void>(signal);
   const done = db().transaction(async (tx) => {
-    await lockUsageEventCompaction(tx);
+    await acquire(tx);
     if (source) {
       const [owned] = await tx
         .select({ id: usageEvent.id })

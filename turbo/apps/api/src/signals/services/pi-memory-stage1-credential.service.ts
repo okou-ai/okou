@@ -158,6 +158,7 @@ async function builtinCredential(
   const route = await resolveBuiltInModelRuntimeRoute(
     db,
     PI_MEMORY_STAGE1_MODEL,
+    context,
   );
   signal.throwIfAborted();
   if (

@@ -1,5 +1,6 @@
 import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
+import { Readable } from "node:stream";
 
 import { morningBriefCompositionPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-composition-preview";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -24,10 +25,18 @@ import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import {
   createConnectorBddApi,
   mockGmailConnectorOAuth,
+  mockGitHubConnectorOAuth,
 } from "./helpers/api-bdd-connectors";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
+import {
+  createWorkflowsBddApi,
+  mockGoogleCalendarConnectorOAuth,
+} from "./helpers/api-bdd-workflows";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import {
+  seedSlackOrgConnection$,
+  seedSlackOrgInstallation$,
+} from "./helpers/integrations-slack";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
 
@@ -55,6 +64,12 @@ const GMAIL_LIST_URL =
   "https://gmail.googleapis.com/gmail/v1/users/me/messages";
 const GMAIL_MESSAGE_URL =
   "https://gmail.googleapis.com/gmail/v1/users/me/messages/:messageId";
+const CALENDAR_LIST_URL =
+  "https://www.googleapis.com/calendar/v3/users/me/calendarList";
+const CALENDAR_EVENTS_URL =
+  "https://www.googleapis.com/calendar/v3/calendars/:calendarId/events";
+const SLACK_CONVERSATIONS_URL = "https://slack.com/api/users.conversations";
+const GITHUB_API_URL = "https://api.github.com/*";
 
 /** The documented absolute phase and the cutoff that sits inside it. */
 const COLLECTION_PHASE_MS = 45_000;
@@ -72,10 +87,12 @@ afterEach(() => {
   clearMockNow();
 });
 
-function composeClient() {
-  return setupApp({ context, routes: morningBriefCompositionPreviewRoutes })(
-    morningBriefCompositionPreviewContract,
-  );
+function composeClient(signal?: AbortSignal) {
+  return setupApp({
+    context,
+    routes: morningBriefCompositionPreviewRoutes,
+    ...(signal === undefined ? {} : { signal, rethrowErrors: true }),
+  })(morningBriefCompositionPreviewContract);
 }
 
 interface Fixture {
@@ -93,8 +110,15 @@ interface Fixture {
  * connection, which is the difference between a source that reads a provider
  * and a source that never had one to read.
  */
+interface OwnerSourceOptions {
+  readonly gmail?: boolean;
+  readonly calendar?: boolean;
+  readonly github?: boolean;
+  readonly slack?: boolean;
+}
+
 async function setupOwner(
-  options: { readonly gmail?: boolean } = {},
+  options: OwnerSourceOptions = {},
 ): Promise<Fixture> {
   const { actor } = await workflowBdd.setupWorkflowOrg({
     timezone: "Asia/Shanghai",
@@ -107,9 +131,10 @@ async function setupOwner(
     throw new Error("Expected a default Agent");
   }
   const agentId = onboarding.defaultAgentId;
+  const connectorSlugs: string[] = [];
   if (options.gmail === true) {
     await connectGmail(actor, agentId);
-    await runsApi.enableAgentConnectors(actor, agentId, ["gmail"]);
+    connectorSlugs.push("gmail");
     // Message bodies are not allowed by default, so a working Gmail read needs
     // the real grant rather than a relaxed authorizer.
     await runsApi.applyUserPermissionGrant(actor, {
@@ -119,10 +144,33 @@ async function setupOwner(
       action: "allow",
     });
   }
+  if (options.calendar === true) {
+    await connectCalendar(actor, agentId);
+    connectorSlugs.push("google-calendar");
+  }
+  if (options.github === true) {
+    await connectGithub(actor, agentId);
+    connectorSlugs.push("github");
+  }
+  if (connectorSlugs.length > 0) {
+    await runsApi.enableAgentConnectors(actor, agentId, connectorSlugs);
+  }
   const installation = await installMorningBriefFixture(
     { orgId: actor.orgId, userId: actor.userId },
     { agentId },
   );
+  if (options.slack === true) {
+    const slack = await store.set(
+      seedSlackOrgInstallation$,
+      { orgId: actor.orgId, botToken: `xoxb-test-${randomUUID()}` },
+      context.signal,
+    );
+    await store.set(
+      seedSlackOrgConnection$,
+      { slackWorkspaceId: slack.slackWorkspaceId, userId: actor.userId },
+      context.signal,
+    );
+  }
   await updateFeatureSwitchesForUser(
     context,
     { orgId: actor.orgId, userId: actor.userId },
@@ -159,6 +207,57 @@ async function connectGmail(
   }
   await connectorsApi.completeOauthCallback("gmail", {
     code: `gmail-code-${subject}`,
+    state,
+  });
+}
+
+async function connectCalendar(
+  actor: ApiTestUser,
+  agentId: string,
+): Promise<void> {
+  const subject = `calendar-${randomUUID()}`;
+  mockGoogleCalendarConnectorOAuth({
+    accessToken: "calendar-access-token",
+    email: "owner@example.test",
+    subject,
+  });
+  const start = await connectorsApi.startOauth(
+    actor,
+    "google-calendar",
+    "oauth",
+    agentId,
+  );
+  const state = new URL(start.authorizationUrl).searchParams.get("state");
+  if (!state) {
+    throw new Error("Expected a Calendar OAuth state");
+  }
+  await connectorsApi.completeOauthCallback("google-calendar", {
+    code: `calendar-code-${subject}`,
+    state,
+  });
+}
+
+async function connectGithub(
+  actor: ApiTestUser,
+  agentId: string,
+): Promise<void> {
+  const suffix = randomUUID();
+  mockGitHubConnectorOAuth({
+    userId: 424_242,
+    login: `owner-${suffix}`,
+  });
+  const start = await connectorsApi.startOauth(
+    actor,
+    "github",
+    "oauth",
+    agentId,
+  );
+  const state = new URL(start.authorizationUrl).searchParams.get("state");
+  if (!state) {
+    throw new Error("Expected a GitHub OAuth state");
+  }
+  await connectorsApi.completeOauthCallback("github", {
+    code: `github-code-${suffix}`,
     state,
   });
 }
@@ -312,6 +411,100 @@ function stubGmail(
   };
 }
 
+interface TestObjectStorageCommand {
+  readonly input?: {
+    readonly Bucket?: string;
+    readonly Key?: string;
+    readonly Prefix?: string;
+    readonly Body?: unknown;
+    readonly Delete?: {
+      readonly Objects?: readonly { readonly Key?: string }[];
+    };
+  };
+}
+
+/**
+ * An object store that round-trips the canonical instruction publisher and
+ * exposes the archive download as an observable post-collection boundary.
+ */
+function stubInstructionStorage(onArchiveRead: () => void): void {
+  const objects = new Map<string, Buffer>();
+  const keyOf = (command: TestObjectStorageCommand): string => {
+    return `${command.input?.Bucket ?? ""}/${command.input?.Key ?? ""}`;
+  };
+  const handlers: Record<
+    string,
+    (command: TestObjectStorageCommand) => Promise<unknown>
+  > = {
+    PutObjectCommand: (command) => {
+      const body = command.input?.Body;
+      if (!(typeof body === "string" || body instanceof Uint8Array)) {
+        throw new Error("Expected an instruction object body");
+      }
+      objects.set(keyOf(command), Buffer.from(body));
+      return Promise.resolve({});
+    },
+    HeadObjectCommand: (command) => {
+      const stored = objects.get(keyOf(command));
+      return stored === undefined
+        ? Promise.reject(
+            Object.assign(new Error("NotFound"), { name: "NotFound" }),
+          )
+        : Promise.resolve({ ContentLength: stored.length });
+    },
+    GetObjectCommand: (command) => {
+      const key = keyOf(command);
+      const stored = objects.get(key);
+      if (stored === undefined) {
+        return Promise.reject(
+          Object.assign(new Error("NoSuchKey"), { name: "NoSuchKey" }),
+        );
+      }
+      if (key.endsWith("/archive.tar.gz")) {
+        onArchiveRead();
+      }
+      return Promise.resolve({
+        Body: Readable.from([stored]),
+        ContentLength: stored.length,
+      });
+    },
+    ListObjectsV2Command: (command) => {
+      const bucket = `${command.input?.Bucket ?? ""}/`;
+      const prefix = `${bucket}${command.input?.Prefix ?? ""}`;
+      return Promise.resolve({
+        Contents: [...objects]
+          .filter(([storedKey]) => {
+            return storedKey.startsWith(prefix);
+          })
+          .map(([storedKey, body]) => {
+            return {
+              Key: storedKey.slice(bucket.length),
+              Size: body.length,
+              LastModified: new Date(now()),
+            };
+          }),
+      });
+    },
+    DeleteObjectsCommand: (command) => {
+      for (const object of command.input?.Delete?.Objects ?? []) {
+        if (object.Key !== undefined) {
+          objects.delete(`${command.input?.Bucket ?? ""}/${object.Key}`);
+        }
+      }
+      return Promise.resolve({});
+    },
+  };
+  context.mocks.s3.send.mockImplementation((command: unknown) => {
+    if (typeof command !== "object" || command === null) {
+      return Promise.resolve({});
+    }
+    const handler = handlers[command.constructor.name];
+    return (
+      handler?.(command as TestObjectStorageCommand) ?? Promise.resolve({})
+    );
+  });
+}
+
 /** The coverage this composition reported for one source. */
 function coverageOf(
   composition: {
@@ -322,6 +515,86 @@ function coverageOf(
   return composition.sources.find((entry) => {
     return entry.source === source;
   })?.coverage;
+}
+
+/**
+ * Hold the first real provider boundary of each first-wave source.
+ *
+ * Active counts provider boundaries that correspond one-to-one with Calendar,
+ * Gmail and GitHub source jobs. Later provider fan-out is deliberately not
+ * counted as another source job.
+ */
+function holdFirstWaveProviders(release: Promise<void>) {
+  const arrived = createDeferredPromise<void>(context.signal);
+  const cancelled = createDeferredPromise<void>(context.signal);
+  let active = 0;
+  let maximum = 0;
+  let aborted = 0;
+  let slackCalls = 0;
+
+  const hold = async (request: Request): Promise<void> => {
+    active += 1;
+    maximum = Math.max(maximum, active);
+    if (active === 3 && !arrived.settled()) {
+      arrived.resolve();
+    }
+    request.signal.addEventListener(
+      "abort",
+      () => {
+        aborted += 1;
+        if (aborted === 3 && !cancelled.settled()) {
+          cancelled.resolve();
+        }
+      },
+      { once: true },
+    );
+    await release;
+    active -= 1;
+  };
+
+  server.use(
+    http.get(CALENDAR_LIST_URL, async ({ request }) => {
+      await hold(request);
+      return HttpResponse.json({ items: [] });
+    }),
+    http.get(GMAIL_LIST_URL, async ({ request }) => {
+      await hold(request);
+      return HttpResponse.json({ messages: [] });
+    }),
+    http.get(GITHUB_API_URL, async ({ request }) => {
+      const pathname = new URL(request.url).pathname;
+      if (pathname === "/user") {
+        await hold(request);
+        return HttpResponse.json({ id: 424_242, login: "owner" });
+      }
+      if (pathname === "/search/issues") {
+        return HttpResponse.json({
+          total_count: 0,
+          incomplete_results: false,
+          items: [],
+        });
+      }
+      return HttpResponse.json([]);
+    }),
+    http.get(SLACK_CONVERSATIONS_URL, () => {
+      slackCalls += 1;
+      return HttpResponse.json({ ok: true, channels: [] });
+    }),
+  );
+
+  return {
+    arrived: arrived.promise,
+    cancelled: cancelled.promise,
+    active: () => {
+      return active;
+    },
+    maximum: () => {
+      return maximum;
+    },
+    slackCalls: () => {
+      return slackCalls;
+    },
+  };
 }
 
 describe("POST /api/morning-brief/collection-preview/compose", () => {
@@ -347,7 +620,7 @@ describe("POST /api/morning-brief/collection-preview/compose", () => {
    * assertion about language I/O is about this attempt, not about its fixture.
    */
   async function readyOwner(
-    options: { readonly gmail?: boolean } = {},
+    options: OwnerSourceOptions = {},
   ): Promise<Fixture> {
     const fixture = await setupOwner(options);
     await clearMorningBriefInstructionsHead(fixture.agentId);
@@ -570,6 +843,121 @@ describe("POST /api/morning-brief/collection-preview/compose", () => {
     },
   );
 
+  it.each([
+    { name: "one millisecond before", offset: -1, expired: false },
+    { name: "at", offset: 0, expired: true },
+    { name: "after", offset: 1, expired: true },
+  ])(
+    "decides a held source body $name the absolute deadline",
+    async ({ offset, expired }) => {
+      const fixture = await readyOwner({ gmail: true });
+      const at = freezeClock();
+      const deadlineAt = at + 10_000;
+      const heldBody = createDeferredPromise<void>(context.signal);
+      const gmail = stubGmail({
+        messages: [{ id: "m-1", at: at - 30 * 60 * 1000 }],
+        holdDetails: heldBody.promise,
+      });
+      const pending = startCompose(fixture, {
+        anchor: anchorFor(at),
+        deadlineAt: new Date(deadlineAt).toISOString(),
+      });
+
+      await gmail.firstDetail;
+      mockNow(deadlineAt + offset);
+      heldBody.resolve();
+      const response = await accept(pending, [200]);
+
+      if (!expired) {
+        if (response.body.result === "incomplete") {
+          // One millisecond remains at the source boundary. Later bounded work
+          // may consume it, but this source-body sample itself is not expired.
+          expect(response.body.reason).not.toBe("deadline-exceeded");
+        }
+        return;
+      }
+      expect(response.body.result).toBe("incomplete");
+      if (response.body.result !== "incomplete") {
+        return;
+      }
+      expect(response.body.reason).toBe("deadline-exceeded");
+      // The source body answered before the public outcome was classified, so
+      // the expiry carries the known source facts instead of erasing them.
+      expect(response.body.sources.length).toBeGreaterThan(0);
+      expect(
+        response.body.sources.some((source) => {
+          return source.source === "gmail";
+        }),
+      ).toBeTruthy();
+    },
+  );
+
+  it.each([
+    { name: "one millisecond before", offset: -1, expired: false },
+    { name: "at", offset: 0, expired: true },
+    { name: "after", offset: 1, expired: true },
+  ])(
+    "decides the held final authority and canonical version fence $name the deadline",
+    async ({ offset, expired }) => {
+      const fixture = await setupOwner({ gmail: true });
+      const at = freezeClock();
+      const deadlineAt = at + 10_000;
+      const authorityReady = createDeferredPromise<
+        ReturnType<typeof holdMorningBriefMembershipLookup>
+      >(context.signal);
+      let installed = false;
+      stubInstructionStorage(() => {
+        if (installed) {
+          return;
+        }
+        installed = true;
+        // The archive download occurs only after all source jobs have settled.
+        // Installing the next exact membership hold here therefore targets the
+        // outer retained-authority check without a Clerk call ordinal.
+        authorityReady.resolve(
+          holdMorningBriefMembershipLookup(
+            { orgId: fixture.actor.orgId, userId: fixture.actor.userId },
+            context.signal,
+          ),
+        );
+      });
+      await bdd.updateAgentInstructions(
+        fixture.actor,
+        fixture.agentId,
+        "Write in Polish.",
+      );
+      await seedMembership(fixture);
+      stubGmail({ messages: [{ id: "m-1", at: at - 30 * 60 * 1000 }] });
+      const pending = startCompose(fixture, {
+        anchor: anchorFor(at),
+        deadlineAt: new Date(deadlineAt).toISOString(),
+      });
+
+      const authority = await authorityReady.promise;
+      await authority.waitForArrival();
+      mockNow(deadlineAt + offset);
+      authority.release();
+      const response = await accept(pending, [200]);
+
+      if (!expired) {
+        expect(response.body.result).toBe("composed");
+        if (response.body.result === "composed") {
+          expect(
+            response.body.composition.language?.instructions,
+          ).toMatchObject({ state: "available" });
+        }
+        return;
+      }
+      expect(response.body.result).toBe("incomplete");
+      if (response.body.result !== "incomplete") {
+        return;
+      }
+      expect(response.body.reason).toBe("deadline-exceeded");
+      expect(response.body.detail).toContain("final authority check");
+      expect(response.body.sources.length).toBeGreaterThan(0);
+    },
+  );
+
   it("takes the caller's deadline when it is tighter than the phase", async () => {
     const fixture = await readyOwner({ gmail: true });
     const at = freezeClock();
@@ -639,13 +1027,13 @@ describe("POST /api/morning-brief/collection-preview/compose", () => {
     );
   });
 
-  it("answers about every started reader when one source job fails", async () => {
+  it("reports rejected-source request spend as unknown", async () => {
     const fixture = await readyOwner({ gmail: true });
     const at = freezeClock();
     const held = createDeferredPromise<void>(context.signal);
-    // Gmail never answers, so its own budget aborts the job. The service clock
-    // stays frozen, so the attempt itself is not expired: a delivered timeout
-    // callback is not the same fact as spent time.
+    // Gmail never answers, so its source deadline rejects the job after at
+    // least one real provider request has started. Its exact spend is no longer
+    // available at the rejection boundary and must not be fabricated as zero.
     const gmail = stubGmail({ hold: held.promise });
     const pending = startCompose(fixture, {
       anchor: anchorFor(at),
@@ -656,41 +1044,114 @@ describe("POST /api/morning-brief/collection-preview/compose", () => {
     held.resolve();
 
     expect(gmail.calls.length).toBeGreaterThan(0);
-    // One rejected job does not discard the wave, and the attempt still answers
-    // rather than propagating that job's abort as the whole request's failure.
     expect(response.body.result).toBe("incomplete");
     if (response.body.result !== "incomplete") {
       return;
     }
     expect(response.body.detail).toContain("gmail=failed");
+    expect(
+      response.body.sources.find((source) => {
+        return source.source === "gmail";
+      })?.requests,
+    ).toBeNull();
   });
 
-  it("joins a held reader before it answers at all", async () => {
-    const fixture = await readyOwner({ gmail: true });
+  it("joins a failed source with a held useful sibling before answering", async () => {
+    const fixture = await readyOwner({ gmail: true, calendar: true });
     const at = freezeClock();
-    const held = createDeferredPromise<void>(context.signal);
-    const gmail = stubGmail({
-      messages: [{ id: "m-1", at: at - 30 * 60 * 1000 }],
-      hold: held.promise,
-    });
-    const pending = startCompose(fixture, { anchor: anchorFor(at) });
+    const calendarArrived = createDeferredPromise<void>(context.signal);
+    const releaseCalendar = createDeferredPromise<void>(context.signal);
+    stubGmail({ status: 500 });
+    server.use(
+      http.get(CALENDAR_LIST_URL, () => {
+        return HttpResponse.json({
+          items: [
+            {
+              id: "owner@example.test",
+              accessRole: "owner",
+              primary: true,
+              timeZone: "Asia/Shanghai",
+            },
+          ],
+        });
+      }),
+      http.get(CALENDAR_EVENTS_URL, async () => {
+        calendarArrived.resolve();
+        await releaseCalendar.promise;
+        return HttpResponse.json({
+          items: [
+            {
+              id: "event-1",
+              status: "confirmed",
+              summary: "Useful calendar sibling",
+              start: { dateTime: new Date(at - 30 * 60 * 1000).toISOString() },
+              end: { dateTime: new Date(at - 15 * 60 * 1000).toISOString() },
+            },
+          ],
+        });
+      }),
+    );
+    let publiclySettled = false;
+    const pending = startCompose(fixture, { anchor: anchorFor(at) }).finally(
+      () => {
+        publiclySettled = true;
+      },
+    );
 
-    await gmail.firstList;
-    let answeredWhileHeld = true;
-    const joined = pending.finally(() => {
-      answeredWhileHeld = !held.settled();
-    });
-    held.resolve();
-    const response = await accept(joined, [200]);
+    await calendarArrived.promise;
+    await Promise.resolve();
+    expect(publiclySettled).toBeFalsy();
+    releaseCalendar.resolve();
+    const response = await accept(pending, [200]);
 
-    // The response can only exist after the held reader settled, and it carries
-    // that reader's evidence.
-    expect(answeredWhileHeld).toBeFalsy();
     expect(response.body.result).toBe("composed");
     if (response.body.result !== "composed") {
       return;
     }
-    expect(coverageOf(response.body.composition, "gmail")).toBe("complete");
+    expect(coverageOf(response.body.composition, "calendar")).toBe("complete");
+    expect(coverageOf(response.body.composition, "gmail")).toBe("failed");
     expect(response.body.composition.request?.items).toBeGreaterThan(0);
+  });
+
+  it("joins every started job before caller cancellation completes and starts no later wave", async () => {
+    const fixture = await readyOwner({
+      gmail: true,
+      calendar: true,
+      github: true,
+      slack: true,
+    });
+    const at = freezeClock();
+    const release = createDeferredPromise<void>(context.signal);
+    const providers = holdFirstWaveProviders(release.promise);
+    const cancellation = new AbortController();
+    let publiclySettled = false;
+    const pending = composeClient(cancellation.signal)
+      .compose({
+        headers: authHeaders(fixture),
+        body: { anchor: anchorFor(at) },
+      })
+      .finally(() => {
+        publiclySettled = true;
+        expect(providers.active()).toBe(0);
+      });
+
+    await providers.arrived;
+    expect(providers.active()).toBe(3);
+    expect(providers.maximum()).toBe(3);
+    expect(providers.slackCalls()).toBe(0);
+    cancellation.abort(new Error("cancel composition"));
+    await providers.cancelled;
+    await Promise.resolve();
+
+    // Cancellation has reached all three started provider boundaries, but the
+    // public request still waits for the deliberately held siblings to settle.
+    expect(publiclySettled).toBeFalsy();
+    expect(providers.active()).toBe(3);
+    expect(providers.slackCalls()).toBe(0);
+
+    release.resolve();
+    await expect(pending).rejects.toThrow("cancel composition");
+    expect(providers.maximum()).toBe(3);
+    expect(providers.slackCalls()).toBe(0);
   });
 });

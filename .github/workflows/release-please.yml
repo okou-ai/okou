@@ -1537,7 +1537,6 @@ jobs:
           fi
 
           cp "$schema_path" /tmp/runtime-api-schema/current.json
-          cp "$schema_path" "/tmp/runtime-api-schema/runtime-api-schema-${RELEASE_SHA}.json"
 
           cat > /tmp/runtime-api-schema/release-notes.md <<EOF
           Mutable pointer to the runtime API schema currently deployed to production.
@@ -1549,7 +1548,6 @@ jobs:
 
           gh release upload "$SCHEMA_RELEASE_TAG" \
             /tmp/runtime-api-schema/current.json \
-            "/tmp/runtime-api-schema/runtime-api-schema-${RELEASE_SHA}.json" \
             --repo "$REPO" \
             --clobber
 

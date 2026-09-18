@@ -33,7 +33,6 @@ export const testCronCleanupSandboxesStateActionBodySchema = z
       "get-pi-inference-recovery-deadline",
       "seed-pi-inference-recovery",
       "expire-pi-inference",
-      "delete-pi-inference-model-key",
       "hold-pi-inference-test-lock",
       "get-pi-inference-test-lock",
       "release-pi-inference-test-lock",

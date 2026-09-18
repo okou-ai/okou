@@ -363,6 +363,31 @@ function noStatuses() {
   return { state: "pending", total_count: 0, statuses: [] };
 }
 
+/** One bounded check-runs page, reporting its own size unless told otherwise. */
+function checkRunsPage(
+  runs: readonly Record<string, unknown>[],
+  totalCount = runs.length,
+) {
+  return { total_count: totalCount, check_runs: [...runs] };
+}
+
+/** One bounded combined-status page, with the same total-count convention. */
+function statusPage(
+  statuses: readonly Record<string, unknown>[],
+  totalCount = statuses.length,
+) {
+  return { state: "success", total_count: totalCount, statuses: [...statuses] };
+}
+
+/** Exactly one review-requested pull request, so one head reaches the checks. */
+function reviewRequestedPull(number: number): Reply {
+  return searchByBranch({
+    reviewRequested: searchPage([
+      searchItem({ repo: "acme/api", number, updatedAt: MID_WINDOW }),
+    ]),
+  });
+}
+
 /** Route the assigned and review-requested branches to different pages. */
 function searchByBranch(script: {
   readonly assigned?: ReplyBody;
@@ -1781,5 +1806,412 @@ describe("Morning Brief GitHub collection preview", () => {
         title,
       ),
     ).toBeFalsy();
+  });
+
+  it("rejects an authority-adjacent backslash subject URL", async () => {
+    const f = await fixture();
+    const traffic = scriptGithub({
+      notifications: () => {
+        return [
+          // A URL parser treats the backslash as a path separator, so each of
+          // these really names a path the collector must not read an identity
+          // from: a dot segment, an encoded dot segment, and an extra leading
+          // segment that moves the whole repository path.
+          notification({
+            repo: "acme/api",
+            number: 81,
+            updatedAt: MID_WINDOW,
+            subjectUrl: String.raw`https://api.github.com\../repos/acme/api/pulls/81`,
+          }),
+          notification({
+            repo: "acme/api",
+            number: 82,
+            updatedAt: MID_WINDOW,
+            subjectUrl: String.raw`https://api.github.com\%2e%2e/repos/acme/api/pulls/82`,
+          }),
+          notification({
+            repo: "acme/api",
+            number: 83,
+            updatedAt: MID_WINDOW,
+            subjectUrl: String.raw`https://api.github.com\extra/repos/acme/api/pulls/83`,
+          }),
+        ];
+      },
+    });
+
+    const bundle = collectedBundle((await collect(f)).body);
+
+    expect(bundle.items).toHaveLength(0);
+    expect(bundle.limits).toContain("unsafe-link");
+    expect(bundle.branches.notifications.limits).toContain(
+      "unsupported-subject",
+    );
+    expect(bundle.coverage).toBe("partial");
+    // No enrichment read was attributed to any smuggled identity.
+    expect(requestsEnding(traffic, "/pulls/81")).toHaveLength(0);
+    expect(requestsEnding(traffic, "/pulls/82")).toHaveLength(0);
+    expect(requestsEnding(traffic, "/pulls/83")).toHaveLength(0);
+  });
+
+  it("rejects an authority-adjacent backslash repository URL on a search result", async () => {
+    const f = await fixture();
+    const traffic = scriptGithub({
+      search: searchByBranch({
+        assigned: searchPage(
+          [
+            String.raw`https://api.github.com\../repos/acme/api`,
+            String.raw`https://api.github.com\%2e%2e/repos/acme/api`,
+            String.raw`https://api.github.com\extra/repos/acme/api`,
+          ].map((repositoryUrl, index) => {
+            return {
+              ...searchItem({
+                repo: "acme/api",
+                number: 84 + index,
+                updatedAt: MID_WINDOW,
+              }),
+              repository_url: repositoryUrl,
+            };
+          }),
+        ),
+      }),
+    });
+
+    const bundle = collectedBundle((await collect(f)).body);
+
+    expect(bundle.items).toHaveLength(0);
+    expect(bundle.branches.assigned.limits).toContain("malformed-response");
+    expect(bundle.outcome).toBe("partial");
+    expect(requestsEnding(traffic, "/pulls/84")).toHaveLength(0);
+    expect(requestsEnding(traffic, "/pulls/85")).toHaveLength(0);
+    expect(requestsEnding(traffic, "/pulls/86")).toHaveLength(0);
+  });
+
+  it("still collects canonical subject and repository URLs", async () => {
+    const f = await fixture();
+    scriptGithub({
+      notifications: () => {
+        return [
+          notification({
+            repo: "acme/api",
+            number: 87,
+            updatedAt: MID_WINDOW,
+            collection: "issues",
+            type: "Issue",
+          }),
+        ];
+      },
+      search: searchByBranch({
+        assigned: searchPage([
+          searchItem({
+            repo: "acme/api",
+            number: 88,
+            updatedAt: MID_WINDOW,
+            isPullRequest: false,
+          }),
+        ]),
+      }),
+    });
+
+    const bundle = collectedBundle((await collect(f)).body);
+
+    expect(
+      bundle.items
+        .map((item) => {
+          return item.number;
+        })
+        .sort(),
+    ).toStrictEqual([87, 88]);
+    expect(bundle.limits).toStrictEqual([]);
+    expect(bundle.outcome).toBe("complete");
+  });
+
+  it("rejects a subject URL carrying a query or a fragment", async () => {
+    const f = await fixture();
+    const traffic = scriptGithub({
+      notifications: () => {
+        return [
+          notification({
+            repo: "acme/api",
+            number: 89,
+            updatedAt: MID_WINDOW,
+            subjectUrl: "https://api.github.com/repos/acme/api/pulls/89?x=1",
+          }),
+          notification({
+            repo: "acme/api",
+            number: 90,
+            updatedAt: MID_WINDOW,
+            subjectUrl: "https://api.github.com/repos/acme/api/pulls/90#frag",
+          }),
+        ];
+      },
+    });
+
+    const bundle = collectedBundle((await collect(f)).body);
+
+    expect(bundle.items).toHaveLength(0);
+    expect(bundle.limits).toContain("unsafe-link");
+    expect(requestsEnding(traffic, "/pulls/89")).toHaveLength(0);
+    expect(requestsEnding(traffic, "/pulls/90")).toHaveLength(0);
+  });
+
+  it("never reports a completed check run without a conclusion as failing", async () => {
+    const f = await fixture();
+    scriptGithub({
+      search: reviewRequestedPull(91),
+      checkRuns: () => {
+        return checkRunsPage([
+          { name: "unit", status: "completed", conclusion: null },
+          { name: "types", status: "completed" },
+        ]);
+      },
+    });
+
+    const bundle = collectedBundle((await collect(f)).body);
+
+    // GitHub's contract requires a conclusion once a run is `completed`, so
+    // this payload is unreadable rather than a report of two failures.
+    expect(bundle.items[0]?.checks).toMatchObject({
+      state: "unknown",
+      failing: 0,
+      pending: 0,
+      succeeded: 0,
+      incomplete: true,
+    });
+    expect(bundle.items[0]?.checks?.failingNames).toStrictEqual([]);
+    expect(bundle.branches.checks.limits).toContain("malformed-response");
+    expect(bundle.coverage).toBe("partial");
+  });
+
+  it("never turns an unrecognized run status or conclusion into a fact", async () => {
+    const f = await fixture();
+    scriptGithub({
+      search: reviewRequestedPull(92),
+      checkRuns: () => {
+        return checkRunsPage([
+          { name: "unit", status: "completed", conclusion: "mystery" },
+          { name: "lint", status: "hibernating" },
+        ]);
+      },
+    });
+
+    const bundle = collectedBundle((await collect(f)).body);
+
+    expect(bundle.items[0]?.checks).toMatchObject({
+      state: "unknown",
+      failing: 0,
+      pending: 0,
+      succeeded: 0,
+      incomplete: true,
+    });
+    expect(bundle.branches.checks.limits).toContain("malformed-response");
+    expect(bundle.coverage).toBe("partial");
+  });
+
+  it("never turns an unrecognized combined-status context state into a failure", async () => {
+    const f = await fixture();
+    scriptGithub({
+      search: reviewRequestedPull(93),
+      status: () => {
+        return statusPage([{ context: "deploy", state: "mystery" }]);
+      },
+    });
+
+    const bundle = collectedBundle((await collect(f)).body);
+
+    expect(bundle.items[0]?.checks).toMatchObject({
+      state: "unknown",
+      failing: 0,
+      pending: 0,
+      succeeded: 0,
+      incomplete: true,
+    });
+    expect(bundle.items[0]?.checks?.failingNames).toStrictEqual([]);
+    expect(bundle.branches.checks.limits).toContain("malformed-response");
+  });
+
+  it("keeps a known failing check next to an uninterpretable sibling", async () => {
+    const f = await fixture();
+    scriptGithub({
+      search: reviewRequestedPull(94),
+      checkRuns: () => {
+        return checkRunsPage([
+          { name: "unit", status: "completed", conclusion: "failure" },
+          { name: "types", status: "completed", conclusion: null },
+        ]);
+      },
+    });
+
+    const bundle = collectedBundle((await collect(f)).body);
+
+    // One unreadable sibling may not swallow an actually observed failure, and
+    // the failure may not hide that the surface was read only in part.
+    expect(bundle.items[0]?.checks).toMatchObject({
+      state: "failing",
+      failing: 1,
+      incomplete: true,
+    });
+    expect(bundle.items[0]?.checks?.failingNames).toStrictEqual(["unit"]);
+    expect(bundle.branches.checks.limits).toContain("malformed-response");
+  });
+
+  it("keeps a known pending check next to an uninterpretable sibling", async () => {
+    const f = await fixture();
+    scriptGithub({
+      search: reviewRequestedPull(95),
+      checkRuns: () => {
+        return checkRunsPage([
+          { name: "unit", status: "in_progress" },
+          { name: "types", status: "completed", conclusion: "mystery" },
+        ]);
+      },
+    });
+
+    const bundle = collectedBundle((await collect(f)).body);
+
+    expect(bundle.items[0]?.checks).toMatchObject({
+      state: "pending",
+      failing: 0,
+      pending: 1,
+      incomplete: true,
+    });
+    expect(bundle.branches.checks.limits).toContain("malformed-response");
+  });
+
+  it("reports every documented non-passing outcome as a failing check", async () => {
+    const f = await fixture();
+    scriptGithub({
+      search: reviewRequestedPull(96),
+      checkRuns: () => {
+        return checkRunsPage(
+          [
+            "action_required",
+            "cancelled",
+            "failure",
+            "stale",
+            "startup_failure",
+            "timed_out",
+          ].map((conclusion) => {
+            return { name: conclusion, status: "completed", conclusion };
+          }),
+        );
+      },
+      status: () => {
+        return statusPage([{ context: "deploy", state: "error" }]);
+      },
+    });
+
+    const bundle = collectedBundle((await collect(f)).body);
+
+    expect(bundle.items[0]?.checks).toMatchObject({
+      state: "failing",
+      failing: 7,
+      incomplete: false,
+    });
+    expect(bundle.branches.checks.limits).not.toContain("malformed-response");
+  });
+
+  it("reports a fully read healthy head as green", async () => {
+    const f = await fixture();
+    scriptGithub({
+      search: reviewRequestedPull(97),
+      checkRuns: () => {
+        return checkRunsPage([
+          { name: "unit", status: "completed", conclusion: "success" },
+          { name: "lint", status: "completed", conclusion: "neutral" },
+          { name: "e2e", status: "completed", conclusion: "skipped" },
+        ]);
+      },
+      status: () => {
+        return statusPage([{ context: "deploy", state: "success" }]);
+      },
+    });
+
+    const bundle = collectedBundle((await collect(f)).body);
+
+    expect(bundle.items[0]?.checks).toMatchObject({
+      state: "success",
+      failing: 0,
+      pending: 0,
+      succeeded: 4,
+      incomplete: false,
+    });
+    expect(bundle.limits).toStrictEqual([]);
+    expect(bundle.outcome).toBe("complete");
+  });
+
+  it("never reports green when a check-runs total underreports its own page", async () => {
+    const f = await fixture();
+    const traffic = scriptGithub({
+      search: reviewRequestedPull(98),
+      checkRuns: () => {
+        // No next page, and a total that contradicts the array it arrived with.
+        return checkRunsPage(
+          [{ name: "unit", status: "completed", conclusion: "success" }],
+          0,
+        );
+      },
+    });
+
+    const bundle = collectedBundle((await collect(f)).body);
+
+    expect(bundle.items[0]?.checks).toMatchObject({
+      state: "unknown",
+      succeeded: 1,
+      incomplete: true,
+    });
+    expect(bundle.branches.checks.limits).toContain("check-runs");
+    expect(bundle.coverage).toBe("partial");
+    // The exact head and the one-page ceiling are unchanged.
+    const reads = requestsEnding(traffic, "/check-runs");
+    expect(reads).toHaveLength(1);
+    expect(reads[0]?.url).toBe(
+      `https://api.github.com/repos/acme/api/commits/${HEAD_SHA}/check-runs`,
+    );
+    expect(reads[0]?.query?.get("page")).toBe("1");
+  });
+
+  it("never reports green when a combined-status total underreports its own page", async () => {
+    const f = await fixture();
+    scriptGithub({
+      search: reviewRequestedPull(99),
+      status: () => {
+        return statusPage([{ context: "deploy", state: "success" }], 0);
+      },
+    });
+
+    const bundle = collectedBundle((await collect(f)).body);
+
+    expect(bundle.items[0]?.checks).toMatchObject({
+      state: "unknown",
+      succeeded: 1,
+      incomplete: true,
+    });
+    expect(bundle.branches.checks.limits).toContain("commit-status");
+    expect(bundle.coverage).toBe("partial");
+  });
+
+  it("never reports green when a combined-status total overreports its own page", async () => {
+    const f = await fixture();
+    const traffic = scriptGithub({
+      search: reviewRequestedPull(100),
+      status: () => {
+        return statusPage([{ context: "deploy", state: "success" }], 3);
+      },
+    });
+
+    const bundle = collectedBundle((await collect(f)).body);
+
+    expect(bundle.items[0]?.checks).toMatchObject({
+      state: "unknown",
+      succeeded: 1,
+      incomplete: true,
+    });
+    expect(bundle.branches.checks.limits).toContain("commit-status");
+    expect(bundle.coverage).toBe("partial");
+    const reads = requestsEnding(traffic, "/status");
+    expect(reads).toHaveLength(1);
+    expect(reads[0]?.url).toBe(
+      `https://api.github.com/repos/acme/api/commits/${HEAD_SHA}/status`,
+    );
   });
 });

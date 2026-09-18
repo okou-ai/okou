@@ -21,7 +21,7 @@ import {
   connectorCatalogActiveSnapshot,
   connectorCatalogCompatibilityEvaluation,
 } from "@okouai/db/schema/connector-catalog";
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 
 import { logger } from "../../lib/log";
 import { singleton, testOverride } from "../../lib/singleton";
@@ -37,6 +37,7 @@ import {
   connectorCatalogArtifactFailureCode,
   decodeAttestedConnectorCatalogSnapshot,
   decodeConnectorCatalogSnapshot,
+  decodeRetainedV3ConnectorCatalogSnapshot,
 } from "@okouai/connectors/connector-catalog/artifacts/loader";
 import { isConnectorCatalogIconKey } from "@okouai/connectors/connector-catalog/artifacts/icon";
 import { deriveConnectorCatalogFirewallPermissions } from "@okouai/connectors/connector-catalog/artifacts/relationships";
@@ -250,6 +251,8 @@ function requestedScopes(
       return method.grant.scopes;
     }
     case "manual":
+    case "none":
+    case "automatic":
     case "openid-auth": {
       return [];
     }
@@ -334,12 +337,16 @@ async function readCurrentIdentity(args: {
         .where(
           and(
             eq(connectorCatalogActiveSnapshot.sourceId, args.sourceId),
-            eq(
-              connectorCatalogActiveSnapshot.schemaVersion,
+            inArray(connectorCatalogActiveSnapshot.schemaVersion, [
               SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-            ),
+              3,
+            ]),
           ),
         )
+        // Until normal sync first accepts v4, retained v3 keeps existing HTTP
+        // connectors available. An existing v4 always wins, including when
+        // invalid; its failures must never silently select v3 (#34913).
+        .orderBy(desc(connectorCatalogActiveSnapshot.schemaVersion))
         .limit(1);
     },
   );
@@ -428,6 +435,8 @@ async function readCurrentCatalog(args: {
   });
   const compatibilityEvaluationExists = row.executableCapabilityDigest !== null;
   const validationAuthorityIsCurrent =
+    args.identity.schemaVersion ===
+      SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION &&
     compatibilityEvaluationExists &&
     validationAuthority !== null &&
     connectorCatalogValidationAuthorityIsCurrent({
@@ -446,9 +455,12 @@ async function readCurrentCatalog(args: {
           : "different_authority",
     });
   }
-  const decoded = validationAuthorityIsCurrent
-    ? decodeAttestedConnectorCatalogSnapshot(decodeArgs)
-    : decodeConnectorCatalogSnapshot(decodeArgs);
+  const decoded =
+    args.identity.schemaVersion === 3
+      ? decodeRetainedV3ConnectorCatalogSnapshot(decodeArgs)
+      : validationAuthorityIsCurrent
+        ? decodeAttestedConnectorCatalogSnapshot(decodeArgs)
+        : decodeConnectorCatalogSnapshot(decodeArgs);
   const filteredAuthMethods = measureCatalogLoadSync(
     args.timing,
     "api_dispatch_connector_catalog_validate_compatibility",
@@ -795,6 +807,12 @@ function connectorCatalogItem(
     ...(rank === Number.MAX_SAFE_INTEGER ? {} : { popularityRank: rank }),
     generation: [...effective.connector.generation],
     tags: [...effective.connector.tags],
+    ...(effective.connector.mcp === undefined
+      ? {}
+      : { mcp: { ...effective.connector.mcp } }),
+    ...(effective.connector.replaces === undefined
+      ? {}
+      : { replaces: { ...effective.connector.replaces } }),
     authMethods: effective.authMethods.map(authMethodSummaryForCatalog),
     permissionSummary: permissionSummaryForCatalog(effective.connector),
   };

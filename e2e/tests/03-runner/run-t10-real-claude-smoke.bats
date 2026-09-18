@@ -171,13 +171,13 @@ run_real_claude_steer() {
     assert_success
 
     run run_real_chat \
-        "123+456. Reply only RESULT=<answer>." \
-        "RESULT=579" \
+        "1 + 2. Reply only RESULT=<answer>." \
+        "RESULT=3" \
         "$REAL_CLAUDE_MODEL"
 
     assert_success
     assert_output --partial '"status":"completed"'
-    assert_output --partial "RESULT=579"
+    assert_output --partial "RESULT=3"
     [[ -n "$(runner_chat_field "$output" '.runId')" ]]
     [[ -n "$(runner_chat_field "$output" '.threadId')" ]]
     [[ -n "$(runner_chat_field "$output" '.sessionId')" ]]
@@ -197,13 +197,13 @@ run_real_claude_steer() {
     assert_success
 
     run run_real_chat \
-        "123+456. Reply only RESULT=<answer>." \
-        "RESULT=579" \
+        "1 + 2. Reply only RESULT=<answer>." \
+        "RESULT=3" \
         "$REAL_PI_MODEL"
 
     assert_success
     assert_output --partial '"status":"completed"'
-    assert_output --partial "RESULT=579"
+    assert_output --partial "RESULT=3"
     local pi_output run_id
     pi_output="$output"
     run_id="$(runner_chat_field "$pi_output" '.runId')"

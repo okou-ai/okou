@@ -68,6 +68,7 @@ class SourceAuditCliTest(unittest.TestCase):
                 "SOURCE_AUDIT_WINDOW_START": start.isoformat(),
                 "RUNNER_TEMP": str(root),
                 "GITHUB_REPOSITORY": "vm0-ai/okou",
+                "GITHUB_REPOSITORY_ID": "1096175506",
                 "GITHUB_REF": "refs/heads/main",
                 "GITHUB_EVENT_NAME": "workflow_dispatch",
                 "GITHUB_RUN_ID": "12345",
@@ -192,6 +193,7 @@ class SourceAuditCliTest(unittest.TestCase):
     ):
         for overrides in [
             {"GITHUB_REF": "refs/heads/feature"},
+            {"GITHUB_REPOSITORY_ID": "1"},
             {"GITHUB_REPOSITORY": "another-owner/okou"},
             {"GITHUB_EVENT_NAME": "pull_request"},
             {"GITHUB_WORKFLOW_REF": "other-workflow"},

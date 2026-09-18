@@ -15619,7 +15619,7 @@ describe("BILL-02: usage reads for an entitled organization with runs", () => {
       expect.objectContaining({
         source: "chat",
         runId: null,
-        title: "Deleted chats",
+        title: "Unavailable thread",
         credits: 17,
       }),
     );
@@ -15666,7 +15666,7 @@ describe("BILL-02: usage reads for an entitled organization with runs", () => {
     });
     expect(listedUsage).toMatchObject({
       runId: null,
-      title: "Deleted chats",
+      title: "Unavailable thread",
     });
     expect(record.body.pagination.total).toBeGreaterThanOrEqual(1);
 
@@ -15792,6 +15792,19 @@ describe("BILL-02: usage reads for an entitled organization with runs", () => {
       cacheReadInputTokens: 0,
       cacheCreationInputTokens: 0,
       creditsCharged: 14,
+      breakdown: [
+        {
+          kind: "image",
+          credits: 14,
+          providers: [
+            {
+              provider: imageProvider,
+              credits: 14,
+              usageKinds: [{ kind: "image", credits: 14 }],
+            },
+          ],
+        },
+      ],
     });
     expect(aggregated.body.members[1]).toMatchObject({
       userId: actor.userId,
@@ -15801,6 +15814,19 @@ describe("BILL-02: usage reads for an entitled organization with runs", () => {
       cacheReadInputTokens: 0,
       cacheCreationInputTokens: 0,
       creditsCharged: 7,
+      breakdown: [
+        {
+          kind: "image",
+          credits: 7,
+          providers: [
+            {
+              provider: imageProvider,
+              credits: 7,
+              usageKinds: [{ kind: "image", credits: 7 }],
+            },
+          ],
+        },
+      ],
     });
 
     await api.requestCancelRun(actor, actorRun.runId, [200]);
@@ -16245,6 +16271,19 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
       },
     );
 
+    it.each(["anthropic-api-key", "built-in"] as const)(
+      "preserves failed completion when sandbox root storage fills on %s",
+      async (modelProvider) => {
+        const { runId } = await completeFailure({
+          modelProvider,
+          failureReason: "guest_root_filesystem_full",
+        });
+        await expect(readRunFailureReasonFixture(context, runId)).resolves.toBe(
+          "guest_root_filesystem_full",
+        );
+      },
+    );
+
     it("keeps the first failure when a duplicate repeats the capacity failure", async () => {
       const api = createRunsApi(context);
       const webhooks = createWebhookCallbackApi(context);
@@ -16329,6 +16368,14 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
       },
       {
         firstReason: "unsupported_model",
+        lateReason: "provider_overloaded",
+      },
+      {
+        firstReason: "provider_overloaded",
+        lateReason: "guest_root_filesystem_full",
+      },
+      {
+        firstReason: "guest_root_filesystem_full",
         lateReason: "provider_overloaded",
       },
     ] as const)(

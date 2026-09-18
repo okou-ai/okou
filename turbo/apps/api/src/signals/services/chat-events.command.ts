@@ -1012,6 +1012,7 @@ function emptyModelFirstThreadPin(): ThreadModelPin {
 async function withBuiltInModelRuntimeRoute(
   db: Db,
   configuration: ResolvedRunConfiguration,
+  featureSwitchContext: FeatureSwitchContext,
 ): Promise<ResolvedRunConfiguration | NormalSendFailure> {
   if (
     configuration.providerAdmission.error ||
@@ -1030,6 +1031,7 @@ async function withBuiltInModelRuntimeRoute(
   const builtInModelRuntimeRoute = await resolveBuiltInModelRuntimeRoute(
     db,
     selectedModel,
+    featureSwitchContext,
   );
   return builtInModelRuntimeRoute
     ? { ...configuration, builtInModelRuntimeRoute }
@@ -1045,6 +1047,7 @@ async function resolveExplicitRunConfiguration(params: {
   readonly body: NormalSendBody;
   readonly codexFastModeEnabled: boolean;
   readonly reasoningEffortEnabled: boolean;
+  readonly featureSwitchContext: FeatureSwitchContext;
   readonly timing?: ApiDispatchTimingCollector;
 }): Promise<ResolvedRunConfiguration | NormalSendFailure | undefined> {
   const modelSelection = params.body.modelSelection;
@@ -1113,17 +1116,21 @@ async function resolveExplicitRunConfiguration(params: {
   if (codexServiceTierError) {
     return codexServiceTierError;
   }
-  return await withBuiltInModelRuntimeRoute(params.db, {
-    modelPin,
-    providerAdmission,
-    reasoningEffort: effort.reasoningEffort,
-    modelSettings: effort.modelSettings,
-    codexServiceTier: codexServiceTierForRun({
-      body: params.body,
+  return await withBuiltInModelRuntimeRoute(
+    params.db,
+    {
       modelPin,
-      codexFastModeEnabled: params.codexFastModeEnabled,
-    }),
-  });
+      providerAdmission,
+      reasoningEffort: effort.reasoningEffort,
+      modelSettings: effort.modelSettings,
+      codexServiceTier: codexServiceTierForRun({
+        body: params.body,
+        modelPin,
+        codexFastModeEnabled: params.codexFastModeEnabled,
+      }),
+    },
+    params.featureSwitchContext,
+  );
 }
 
 async function resolveNormalSendFeatureSwitches(
@@ -1743,15 +1750,14 @@ function resolveExplicitThreadRunConfiguration(
   settings: {
     readonly requestedReasoningEffort?: ReasoningEffort;
     readonly requestedCodexServiceTier: CodexServiceTier | undefined;
-    readonly reasoningEffortEnabled: boolean;
-    readonly codexFastModeEnabled: boolean;
+    readonly featureSwitches: NormalSendFeatureSwitches;
   },
 ): ResolvedRunConfiguration | NormalSendFailure {
   const effort = resolveChatReasoningEffort({
     selectedModel: configuration.modelPin.selectedModel,
     modelSettings: thread.modelSettings,
     requested: settings.requestedReasoningEffort,
-    enabled: settings.reasoningEffortEnabled,
+    enabled: settings.featureSwitches.reasoningEffortEnabled,
   });
   if ("status" in effort) {
     return effort;
@@ -1767,7 +1773,8 @@ function resolveExplicitThreadRunConfiguration(
             thread.codexServiceTier === "fast" &&
             isCodexFastServiceTierSupported({
               selectedModel: configuration.modelPin.selectedModel,
-              codexFastModeEnabled: settings.codexFastModeEnabled,
+              codexFastModeEnabled:
+                settings.featureSwitches.codexFastModeEnabled,
             })
               ? "fast"
               : undefined,
@@ -1787,10 +1794,9 @@ async function resolveThread(params: {
   readonly initialPin: ThreadModelPin;
   readonly explicitRunConfiguration: ResolvedRunConfiguration | undefined;
   readonly requestedReasoningEffort?: ReasoningEffort;
-  readonly reasoningEffortEnabled: boolean;
   readonly requestedCodexServiceTier: CodexServiceTier | undefined;
   readonly persistRequestedCodexServiceTier: boolean;
-  readonly codexFastModeEnabled: boolean;
+  readonly featureSwitches: NormalSendFeatureSwitches;
   readonly timing?: ApiDispatchTimingCollector;
 }): Promise<ResolvedThreadAndRunConfiguration | NormalSendFailure> {
   if (!params.existingThreadId) {
@@ -1822,7 +1828,6 @@ async function resolveThread(params: {
       runConfiguration: params.explicitRunConfiguration,
     };
   }
-
   const [thread] = await loadTimedExistingThreadSnapshot({
     db: params.db,
     orgId: params.orgId,
@@ -1852,11 +1857,11 @@ async function resolveThread(params: {
           threadId: thread.id,
           threadSnapshot: thread,
           requestedReasoningEffort: params.requestedReasoningEffort,
-          reasoningEffortEnabled: params.reasoningEffortEnabled,
+          reasoningEffortEnabled: params.featureSwitches.reasoningEffortEnabled,
           requestedCodexServiceTier: params.requestedCodexServiceTier,
           persistRequestedCodexServiceTier:
             params.persistRequestedCodexServiceTier,
-          codexFastModeEnabled: params.codexFastModeEnabled,
+          codexFastModeEnabled: params.featureSwitches.codexFastModeEnabled,
         });
       },
     );
@@ -1875,6 +1880,7 @@ async function resolveThread(params: {
         reasoningEffort: persisted.reasoningEffort,
         modelSettings: persisted.modelSettings,
       },
+      params.featureSwitches.featureSwitchContext,
     );
     if ("status" in resolvedRunConfiguration) {
       return resolvedRunConfiguration;
@@ -2683,6 +2689,7 @@ function resolveTimedExplicitRunConfiguration(
         body: args.body,
         codexFastModeEnabled: featureSwitches.codexFastModeEnabled,
         reasoningEffortEnabled: featureSwitches.reasoningEffortEnabled,
+        featureSwitchContext: featureSwitches.featureSwitchContext,
         timing: args.timing,
       });
     },
@@ -2757,7 +2764,6 @@ function resolveTimedThread(
         initialPin,
         explicitRunConfiguration,
         requestedReasoningEffort: args.body.runOptions?.reasoningEffort,
-        reasoningEffortEnabled: featureSwitches.reasoningEffortEnabled,
         requestedCodexServiceTier: args.body.runOptions?.codexServiceTier,
         persistRequestedCodexServiceTier:
           (args.body.modelSelection !== undefined &&
@@ -2765,7 +2771,7 @@ function resolveTimedThread(
           (args.body.runOptions !== undefined &&
             args.body.runOptions.reasoningEffort === undefined) ||
           args.body.runOptions?.codexServiceTier !== undefined,
-        codexFastModeEnabled: featureSwitches.codexFastModeEnabled,
+        featureSwitches,
         timing: args.timing,
       });
       if ("status" in resolved) {

@@ -3,6 +3,7 @@ import {
   webhookHeartbeatContract,
   webhookTelemetryContract,
   webhookUsageEventContract,
+  type ArchiveSizeMismatch,
   type RunnerPreSpawnConcurrencyBucket,
   type RunnerResourceBudgetLeaseCountBucket,
   type RunnerResourceBudgetUtilizationBucket,
@@ -57,6 +58,7 @@ interface SandboxOperationDimensionInput {
   readonly error?: string;
   readonly outcome?: string;
   readonly reason?: string;
+  readonly archive_size_mismatch?: ArchiveSizeMismatch;
   readonly dns_readiness_attempt?: number;
   readonly dns_readiness_final_attempt?: boolean;
   readonly dns_readiness_guest_duration_ms?: number;
@@ -163,6 +165,20 @@ function sandboxOperationDimensions(
     ...(op.error ? { error: op.error } : {}),
     ...(op.outcome ? { outcome: op.outcome } : {}),
     ...(op.reason ? { reason: op.reason } : {}),
+    ...(op.archive_size_mismatch
+      ? {
+          archive_size_mismatch_expected_bytes:
+            op.archive_size_mismatch.expected_bytes,
+          archive_size_mismatch_response_bytes:
+            op.archive_size_mismatch.response_bytes,
+          archive_size_mismatch_source_kind:
+            op.archive_size_mismatch.source_kind,
+          archive_size_mismatch_source_index:
+            op.archive_size_mismatch.source_index,
+          archive_size_mismatch_content_encoding:
+            op.archive_size_mismatch.content_encoding,
+        }
+      : {}),
     ...dnsReadinessDimensions(op),
     ...(op.runner_startup_path
       ? { runner_startup_path: op.runner_startup_path }

@@ -27,20 +27,6 @@ if [ $# -eq 0 ]; then
   exit 0
 fi
 
-# The applicable byte limit for one path. Callers pass repository-relative
-# paths, so the leading segment is matched as well as accepted without it.
-limit_for() {
-  case "$1" in
-    */packages/db/src/migrations/meta/[0-9][0-9][0-9][0-9]_snapshot.json | \
-      packages/db/src/migrations/meta/[0-9][0-9][0-9][0-9]_snapshot.json)
-      printf '%s' "$SNAPSHOT_LIMIT_BYTES"
-      ;;
-    *)
-      printf '%s' "$LIMIT_BYTES"
-      ;;
-  esac
-}
-
 failed=0
 checked=0
 
@@ -53,7 +39,18 @@ for file in "$@"; do
   # Get file size (portable across Linux/macOS)
   size=$(wc -c < "$file" | tr -d ' ')
   checked=$((checked + 1))
-  limit=$(limit_for "$file")
+
+  # Select the limit in the current shell. Command substitution would add one
+  # subprocess per input file and make full-tree checks unnecessarily slow.
+  case "$file" in
+    */packages/db/src/migrations/meta/[0-9][0-9][0-9][0-9]_snapshot.json | \
+      packages/db/src/migrations/meta/[0-9][0-9][0-9][0-9]_snapshot.json)
+      limit=$SNAPSHOT_LIMIT_BYTES
+      ;;
+    *)
+      limit=$LIMIT_BYTES
+      ;;
+  esac
 
   if [ "$size" -gt "$limit" ]; then
     size_mb=$(awk "BEGIN {printf \"%.2f\", $size / 1048576}")

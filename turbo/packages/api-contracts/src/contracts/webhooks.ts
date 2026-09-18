@@ -1025,6 +1025,22 @@ export type RunnerResourceBudgetLeaseCountBucket = z.infer<
   typeof runnerResourceBudgetLeaseCountBucketSchema
 >;
 
+// Decimal text preserves a declared u64 response length beyond JS safe integers.
+const archiveSizeBytesSchema = z
+  .string()
+  .max(20)
+  .regex(/^(0|[1-9][0-9]*)$/u);
+
+const archiveSizeMismatchSchema = z.object({
+  expected_bytes: archiveSizeBytesSchema,
+  response_bytes: archiveSizeBytesSchema,
+  source_kind: z.enum(["storage", "artifact"]),
+  source_index: z.number().int().nonnegative(),
+  content_encoding: z.enum(["absent", "identity", "gzip", "other"]),
+});
+
+export type ArchiveSizeMismatch = z.infer<typeof archiveSizeMismatchSchema>;
+
 /**
  * Sandbox operation schema for internal sandbox operations (init, storage, cli, checkpoint, cleanup)
  */
@@ -1036,6 +1052,7 @@ const sandboxOperationSchema = z.object({
   error: z.string().optional(),
   outcome: z.string().max(64).optional(),
   reason: z.string().max(64).optional(),
+  archive_size_mismatch: archiveSizeMismatchSchema.optional(),
   dns_readiness_attempt: z.number().int().min(1).max(3).optional(),
   dns_readiness_final_attempt: z.boolean().optional(),
   dns_readiness_guest_duration_ms: z

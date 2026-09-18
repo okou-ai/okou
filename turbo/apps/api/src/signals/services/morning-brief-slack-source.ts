@@ -143,6 +143,9 @@ export function morningBriefSlackDescriptor(args: {
     connectionId: null,
     accountRef: `${args.workspaceId}:${args.slackUserId}`,
     scopeDigest: morningBriefScopeDigest(MORNING_BRIEF_SLACK_READ_SURFACE),
+    // The native installation authorizes against the shared conversations
+    // below rather than a per-request URL policy.
+    endpoints: [],
     membershipId: args.membershipId,
     agentId: args.agentId,
     capturedAt: args.capturedAt.toISOString(),

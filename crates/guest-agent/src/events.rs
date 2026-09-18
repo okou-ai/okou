@@ -9,7 +9,7 @@ use crate::error::AgentError;
 use crate::failure_patterns::{
     has_exact_codex_oauth_connector, is_codex_chatgpt_account_unsupported_model_message,
     is_codex_context_window_exceeded_message, is_codex_model_capacity_message,
-    is_content_policy_rejection_message,
+    is_codex_output_token_limit_message, is_content_policy_rejection_message,
 };
 use crate::http::{HttpAttemptObserver, HttpClient};
 use crate::masker::SecretMasker;
@@ -374,6 +374,14 @@ fn codex_error_failure_reason(error: Option<&Value>) -> Option<FailureReason> {
     }
     if let Some(reason) = crate::provider_failure::provider_error_reason(error) {
         return Some(reason);
+    }
+    // Codex maps this incomplete-response stream error to `other`. Recognized
+    // native/provider causes above remain authoritative over display text.
+    if codex_error_message(Some(error))
+        .as_deref()
+        .is_some_and(is_codex_output_token_limit_message)
+    {
+        return Some(FailureReason::OutputTokenLimit);
     }
     if codex_error_message(Some(error))
         .as_deref()
@@ -922,6 +930,92 @@ mod tests {
             assert!(
                 masked_codex_failure_diagnostic(&success, &SecretMasker::from_raw("")).is_none()
             );
+        }
+    }
+
+    #[test]
+    fn codex_output_limit_preserves_structured_causes_and_native_text() {
+        let message = "stream disconnected before completion: Incomplete response returned, reason: max_output_tokens";
+        for (fields, reason) in [
+            (json!({}), FailureReason::OutputTokenLimit),
+            (
+                json!({"codex_error_info": "other"}),
+                FailureReason::OutputTokenLimit,
+            ),
+            (
+                json!({"codex_error_info": "contextWindowExceeded"}),
+                FailureReason::ContextWindowExceeded,
+            ),
+            (
+                json!({"codex_error_info": "internalServerError"}),
+                FailureReason::ProviderServerError,
+            ),
+            (
+                json!({"codex_error_info": "unauthorized"}),
+                FailureReason::InvalidCredentials,
+            ),
+            (
+                json!({"codex_error_info": "usageLimitExceeded"}),
+                FailureReason::UsageLimit,
+            ),
+            (
+                json!({"codex_error_info": "cyberPolicy"}),
+                FailureReason::SafetyPolicyRefusal,
+            ),
+            (
+                json!({"codex_error_info": {"responseStreamDisconnected": {"httpStatusCode": null}}}),
+                FailureReason::ResponseConnectionLost,
+            ),
+            (
+                json!({"codex_error_info": {"responseTooManyFailedAttempts": {"httpStatusCode": 503}}}),
+                FailureReason::ProviderServerError,
+            ),
+            (
+                json!({"code": "server_error"}),
+                FailureReason::ProviderServerError,
+            ),
+        ] {
+            let mut error = fields;
+            error["message"] = json!(message);
+            for event in [
+                json!({"type": "error", "message": message, "error": error}),
+                json!({"type": "turn.completed", "turn": {"status": "failed", "error": error}}),
+            ] {
+                let diagnostic =
+                    masked_codex_failure_diagnostic(&event, &SecretMasker::from_raw(""))
+                        .expect("terminal failure diagnostic");
+                assert_eq!(diagnostic.failure_reason, Some(reason), "event: {event}");
+                assert_eq!(diagnostic.message, message);
+            }
+        }
+    }
+
+    #[test]
+    fn codex_output_limit_does_not_classify_normal_output_or_similar_errors() {
+        let message = "stream disconnected before completion: Incomplete response returned, reason: max_output_tokens";
+        for event in [
+            json!({"type": "warning", "message": message}),
+            json!({"type": "turn.completed", "turn": {"status": "completed", "error": {"message": message}}}),
+            json!({"type": "item.completed", "item": {"type": "agent_message", "text": message}}),
+            json!({"type": "item.completed", "item": {"type": "command_execution", "aggregated_output": message, "exit_code": 1}}),
+        ] {
+            assert!(masked_codex_failure_diagnostic(&event, &SecretMasker::from_raw("")).is_none());
+        }
+        for message in [
+            "stream disconnected before completion",
+            "stream disconnected before completion: Incomplete response returned, reason: unknown",
+            "stream disconnected before completion: Incomplete response returned, reason: content_filter",
+            "stream disconnected before completion: Incomplete response returned, reason: max_output_tokens_extra",
+            "stream disconnected before completion: Incomplete response returned, reason: max_output_tokens (server error)",
+            "Set max_output_tokens to configure the output budget",
+            "Tool output: stream disconnected before completion: Incomplete response returned, reason: max_output_tokens",
+        ] {
+            let event = json!({"type": "turn.completed", "turn": {
+                "status": "failed", "error": {"message": message, "codex_error_info": "other"}
+            }});
+            let diagnostic = masked_codex_failure_diagnostic(&event, &SecretMasker::from_raw(""))
+                .expect("terminal failure diagnostic");
+            assert_eq!(diagnostic.failure_reason, None, "message: {message}");
         }
     }
 

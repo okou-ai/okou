@@ -19,6 +19,11 @@ import {
   withChatThreadContentBarrierFixture,
 } from "../../../test-fixtures/chat-thread-content-erasure";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import {
+  channelsPublishedTo,
+  countPublishedTo,
+  userOrgChannelName,
+} from "./helpers/realtime-publications";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -36,13 +41,32 @@ interface GenerationModelFixture {
   readonly userId: string;
   readonly orgId: string;
   readonly agentId: string;
+  /** The Agent's `owner`. It equals {@link GenerationModelFixture.userId}
+   * unless the fixture was asked for a genuinely distinct shared owner. */
+  readonly agentOwnerId: string;
   readonly threadId: string;
+}
+
+interface GenerationModelFixtureOptions {
+  /**
+   * Give the Agent to a second **real** member of the same organization and
+   * share it with that organization, before the thread exists.
+   *
+   * This is what makes the distinct-owner closure case legitimate rather than
+   * an ownership or visibility denial wearing B1's answer: the caller stays the
+   * thread's own user, the Agent stays in the caller's organization, and the
+   * only thing that changes between the open-owner control and the denial is
+   * whether that second member is closed. A synthetic `user_<uuid>` assigned to
+   * a private Agent after the fact would prove neither.
+   */
+  readonly sharedAgentOwner?: boolean;
 }
 
 /** Creates an org route, an Agent and a chat thread through the product
  * routes, so every later pin write is an ordinary client write. */
 async function createGenerationModelFixture(
   title: string,
+  options: GenerationModelFixtureOptions = {},
 ): Promise<GenerationModelFixture> {
   const actor = bdd.user();
   bdd.acceptAgentStorageWrites();
@@ -56,29 +80,36 @@ async function createGenerationModelFixture(
       modelProviderId: providerId,
     },
   ]);
-  const agent = await bdd.createAgent(actor, {
+  const { orgId } = actor;
+  if (!orgId) {
+    throw new Error("Expected the seeded actor to belong to an org");
+  }
+  const agentOwner = options.sharedAgentOwner ? bdd.user({ orgId }) : actor;
+  const agent = await bdd.createAgent(agentOwner, {
     displayName: "Chat thread generation model agent",
-    visibility: "private",
+    // An organization-visible Agent is the ordinary shape a second member's
+    // Agent takes when other members hold threads on it; an unshared one stays
+    // private to the single owner that is also the thread user.
+    visibility: options.sharedAgentOwner ? "public" : "private",
   });
   const thread = await chat.createThread(actor, {
     agentId: agent.agentId,
     title,
     model: "claude-sonnet-5",
   });
-  const { orgId } = actor;
-  if (!orgId) {
-    throw new Error("Expected the seeded actor to belong to an org");
+  for (const member of new Set([actor.userId, agentOwner.userId])) {
+    await store.set(
+      seedOrgMembership$,
+      { orgId, userId: member },
+      context.signal,
+    );
   }
-  await store.set(
-    seedOrgMembership$,
-    { orgId, userId: actor.userId },
-    context.signal,
-  );
   return {
     actor,
     userId: actor.userId,
     orgId,
     agentId: agent.agentId,
+    agentOwnerId: agentOwner.userId,
     threadId: thread.id,
   };
 }
@@ -305,17 +336,52 @@ async function readUpdatedAt(fixture: GenerationModelFixture): Promise<string> {
   return (await readChatThreadTitleStateFixture(fixture.threadId)).updatedAt;
 }
 
-/** The `threadListChanged` invalidations published so far, counted from a
- * cleared mock so an earlier setup write is never attributed to this one. */
-function threadListInvalidations(): number {
-  return context.mocks.ably.publish.mock.calls.filter((call) => {
-    return call[0] === "threadListChanged";
-  }).length;
+/** The channel a pin accepted for this owner must publish on: the caller's own
+ * user/org channel, whose identity the admission checked. */
+function ownerChannel(fixture: GenerationModelFixture): string {
+  return userOrgChannelName({
+    userId: fixture.userId,
+    orgId: fixture.orgId,
+  });
 }
 
-async function flushedInvalidations(): Promise<number> {
+/**
+ * `threadListChanged` invalidations that actually reached **this** owner's own
+ * channel, counted from a cleared mock so an earlier setup write is never
+ * attributed to this one.
+ *
+ * {@link countPublishedTo} pairs each `publish` with the `channels.get` that
+ * routed it through the mock's real invocation order. A `publish(topic)` call
+ * and a `channelGet` naming this channel are two independent facts; only the
+ * pairing shows that this owner's notification is the one that went to this
+ * owner's channel.
+ */
+function threadListInvalidations(fixture: GenerationModelFixture): number {
+  return countPublishedTo(context.mocks, {
+    channel: ownerChannel(fixture),
+    topic: "threadListChanged",
+  });
+}
+
+/** Every `threadListChanged` publication so far with the channel that carried
+ * it, so an extra or wrong-channel invalidation is visible instead of being
+ * filtered away by a per-owner count. */
+function allThreadListChannels(): readonly string[] {
+  return channelsPublishedTo(context.mocks, "threadListChanged");
+}
+
+async function flushedInvalidations(
+  fixture: GenerationModelFixture,
+): Promise<number> {
   await flushWaitUntilForTest();
-  return threadListInvalidations();
+  return threadListInvalidations(fixture);
+}
+
+/** Clears both publication spies together, so every later pairing is taken
+ * from calls this case made. */
+function clearPublications(): void {
+  context.mocks.ably.publish.mockClear();
+  context.mocks.ably.channelGet.mockClear();
 }
 
 describe.each(generationModelEndpoints())(
@@ -337,7 +403,7 @@ describe.each(generationModelEndpoints())(
         subjectId: fixture.userId,
       });
 
-      context.mocks.ably.publish.mockClear();
+      clearPublications();
       await endpoint.requestPinNext(fixture.actor, fixture.threadId, [404]);
 
       await expect(readPins(fixture)).resolves.toStrictEqual(pins);
@@ -345,7 +411,10 @@ describe.each(generationModelEndpoints())(
       await expect(generationModelEvents(fixture)).resolves.toStrictEqual(
         before,
       );
-      await expect(flushedInvalidations()).resolves.toBe(0);
+      await expect(flushedInvalidations(fixture)).resolves.toBe(0);
+      // Nothing reached any other channel either, so the denial did not merely
+      // move the notification somewhere this owner's filter cannot see.
+      expect(allThreadListChannels()).toStrictEqual([]);
 
       // The denied attempt left the durable sequence untouched, so the next
       // accepted pin takes the very next sidebar sequence id.
@@ -358,53 +427,117 @@ describe.each(generationModelEndpoints())(
       await expect(readPins(fixture)).resolves.toMatchObject({
         [endpoint.pinKey]: endpoint.nextModel,
       });
+      // That one accepted write published exactly one invalidation, and it went
+      // to this caller's own admitted channel.
+      await expect(flushedInvalidations(fixture)).resolves.toBe(1);
+      expect(allThreadListChannels()).toStrictEqual([ownerChannel(fixture)]);
     });
 
-    it("denies the pin for a closed distinct Agent owner and for a closed organization", async () => {
+    it("denies the pin for a closed distinct shared-Agent owner and keeps the pin, timestamp, event and sequence", async () => {
       const shared = await createGenerationModelFixture(
         `Shared owner ${endpoint.label}`,
+        { sharedAgentOwner: true },
       );
-      const sharedBefore = await readPins(shared);
-      const sharedOwner = `user_${randomUUID()}`;
-      await transferAgentOwnerFixture({
-        agentId: shared.agentId,
-        owner: sharedOwner,
+      expect(shared.agentOwnerId).not.toBe(shared.userId);
+      await endpoint.pinBaseline(shared.actor, shared.threadId);
+
+      // Open-owner control. The distinct owner is a real, open second member of
+      // the same organization and the Agent is shared with it, so this exact
+      // arrangement is accepted. Any later 404 is therefore B1's closure and
+      // not an ownership or visibility denial.
+      const controlEvents = await generationModelEvents(shared);
+      const controlSeqId = await lastStreamSeqId(shared);
+      clearPublications();
+      await endpoint.pinNext(shared.actor, shared.threadId);
+      expect(
+        (await generationModelEvents(shared)).slice(controlEvents.length),
+      ).toStrictEqual([{ seqId: controlSeqId + 1, kind: endpoint.kind }]);
+      await expect(flushedInvalidations(shared)).resolves.toBe(1);
+      expect(allThreadListChannels()).toStrictEqual([ownerChannel(shared)]);
+
+      const before = await generationModelEvents(shared);
+      const pins = await readPins(shared);
+      const updatedAt = await readUpdatedAt(shared);
+      const lastSeqId = await lastStreamSeqId(shared);
+      const closed = await closeSubject({
+        subjectKind: "user",
+        subjectId: shared.agentOwnerId,
       });
-      await closeSubject({ subjectKind: "user", subjectId: sharedOwner });
 
+      clearPublications();
       await endpoint.requestPinNext(shared.actor, shared.threadId, [404]);
-      await expect(readPins(shared)).resolves.toStrictEqual(sharedBefore);
-      await expect(generationModelEvents(shared)).resolves.toStrictEqual([]);
 
+      await expect(readPins(shared)).resolves.toStrictEqual(pins);
+      await expect(readUpdatedAt(shared)).resolves.toBe(updatedAt);
+      await expect(generationModelEvents(shared)).resolves.toStrictEqual(
+        before,
+      );
+      await expect(flushedInvalidations(shared)).resolves.toBe(0);
+      expect(allThreadListChannels()).toStrictEqual([]);
+
+      // Reopening the same owner proves the sequence was never consumed: the
+      // next accepted pin takes exactly the baseline's next id.
+      await removeErasureSubjectsFixture([closed.jobId]);
+      await endpoint.pinNext(shared.actor, shared.threadId);
+      expect(
+        (await generationModelEvents(shared)).slice(before.length),
+      ).toStrictEqual([{ seqId: lastSeqId + 1, kind: endpoint.kind }]);
+      await expect(flushedInvalidations(shared)).resolves.toBe(1);
+      expect(allThreadListChannels()).toStrictEqual([ownerChannel(shared)]);
+    });
+
+    it("denies the pin for a closed organization and keeps the pin, timestamp, event and sequence", async () => {
       const organization = await createGenerationModelFixture(
         `Closed org ${endpoint.label}`,
       );
-      const organizationBefore = await readPins(organization);
-      await closeSubject({
+      await endpoint.pinBaseline(organization.actor, organization.threadId);
+      const before = await generationModelEvents(organization);
+      const pins = await readPins(organization);
+      const updatedAt = await readUpdatedAt(organization);
+      const lastSeqId = await lastStreamSeqId(organization);
+      const closed = await closeSubject({
         subjectKind: "organization",
         subjectId: organization.orgId,
       });
 
+      clearPublications();
       await endpoint.requestPinNext(
         organization.actor,
         organization.threadId,
         [404],
       );
-      await expect(readPins(organization)).resolves.toStrictEqual(
-        organizationBefore,
-      );
-      await expect(generationModelEvents(organization)).resolves.toStrictEqual(
-        [],
-      );
 
-      // An unrelated owner is untouched by either closure.
+      await expect(readPins(organization)).resolves.toStrictEqual(pins);
+      await expect(readUpdatedAt(organization)).resolves.toBe(updatedAt);
+      await expect(generationModelEvents(organization)).resolves.toStrictEqual(
+        before,
+      );
+      await expect(flushedInvalidations(organization)).resolves.toBe(0);
+      expect(allThreadListChannels()).toStrictEqual([]);
+
+      // An unrelated owner is untouched by the closure, and its own accepted
+      // write publishes exactly once on its own channel.
       const unrelated = await createGenerationModelFixture(
         `Unrelated ${endpoint.label}`,
       );
+      clearPublications();
       await endpoint.pinNext(unrelated.actor, unrelated.threadId);
       await expect(readPins(unrelated)).resolves.toMatchObject({
         [endpoint.pinKey]: endpoint.nextModel,
       });
+      await expect(flushedInvalidations(unrelated)).resolves.toBe(1);
+      expect(allThreadListChannels()).toStrictEqual([ownerChannel(unrelated)]);
+
+      await removeErasureSubjectsFixture([closed.jobId]);
+      clearPublications();
+      await endpoint.pinNext(organization.actor, organization.threadId);
+      expect(
+        (await generationModelEvents(organization)).slice(before.length),
+      ).toStrictEqual([{ seqId: lastSeqId + 1, kind: endpoint.kind }]);
+      await expect(flushedInvalidations(organization)).resolves.toBe(1);
+      expect(allThreadListChannels()).toStrictEqual([
+        ownerChannel(organization),
+      ]);
     });
 
     it("makes a closure wait for an admitted pin and fences the next one", async () => {
@@ -417,8 +550,7 @@ describe.each(generationModelEndpoints())(
       const before = await readPins(fixture);
       const baselineEvents = await generationModelEvents(fixture);
       const lastSeqId = await lastStreamSeqId(fixture);
-      context.mocks.ably.publish.mockClear();
-      context.mocks.ably.channelGet.mockClear();
+      clearPublications();
 
       const closed = await withChatThreadContentBarrierFixture(
         {
@@ -442,15 +574,23 @@ describe.each(generationModelEndpoints())(
               .toBeGreaterThanOrEqual(1);
 
             // A separate reader still sees the baseline pin and no new event,
-            // and no invalidation has escaped to any tab.
+            // and no invalidation has escaped to this caller's own channel.
             await expect(readPins(fixture)).resolves.toStrictEqual(before);
             await expect(generationModelEvents(fixture)).resolves.toStrictEqual(
               baselineEvents,
             );
-            await expect(flushedInvalidations()).resolves.toBe(0);
+            await expect(flushedInvalidations(fixture)).resolves.toBe(0);
+            expect(allThreadListChannels()).toStrictEqual([]);
 
-            // An unrelated owner is not serialized behind that barrier.
+            // An unrelated owner is not serialized behind that barrier, and its
+            // accepted write publishes exactly one invalidation on its own
+            // channel while the paused caller's channel still has none.
             await endpoint.pinNext(unrelated.actor, unrelated.threadId);
+            await expect(flushedInvalidations(unrelated)).resolves.toBe(1);
+            expect(threadListInvalidations(fixture)).toBe(0);
+            expect(allThreadListChannels()).toStrictEqual([
+              ownerChannel(unrelated),
+            ]);
 
             barrier.release();
             await pinning;
@@ -470,25 +610,37 @@ describe.each(generationModelEndpoints())(
       await expect(readPins(fixture)).resolves.toMatchObject({
         [endpoint.pinKey]: endpoint.nextModel,
       });
-      // The accepted write published exactly one invalidation, on this
-      // caller's own admitted user/org channel.
+      // The released write published exactly one invalidation and it went to
+      // this caller's own admitted user/org channel, paired through the mock's
+      // invocation order. Across every channel the whole window produced
+      // exactly these two notifications — this caller's and the unrelated
+      // owner's — so no duplicate and no wrong-channel `threadListChanged`
+      // escaped either.
       await flushWaitUntilForTest();
+      expect(threadListInvalidations(fixture)).toBe(1);
+      expect(threadListInvalidations(unrelated)).toBe(1);
+      expect(allThreadListChannels()).toStrictEqual([
+        ownerChannel(unrelated),
+        ownerChannel(fixture),
+      ]);
       expect(context.mocks.ably.publish).toHaveBeenCalledWith(
         "threadListChanged",
         null,
       );
-      expect(context.mocks.ably.channelGet.mock.calls).toContainEqual([
-        `user-org:${fixture.userId}:${fixture.orgId}`,
-      ]);
 
       // The closure landed behind the admitted write, so the next pin is
-      // rejected and changes nothing.
+      // rejected, changes nothing and adds no notification on any channel.
       const pinned = await readPins(fixture);
       await endpoint.requestPinNext(fixture.actor, fixture.threadId, [404]);
       await expect(readPins(fixture)).resolves.toStrictEqual(pinned);
       await expect(generationModelEvents(fixture)).resolves.toStrictEqual(
         admitted,
       );
+      await expect(flushedInvalidations(fixture)).resolves.toBe(1);
+      expect(allThreadListChannels()).toStrictEqual([
+        ownerChannel(unrelated),
+        ownerChannel(fixture),
+      ]);
     });
 
     it("rolls the pin, the timestamp and the sequence back when the event insert conflicts", async () => {
@@ -509,7 +661,7 @@ describe.each(generationModelEndpoints())(
         chatThreadId: fixture.threadId,
         signal: context.signal,
       });
-      context.mocks.ably.publish.mockClear();
+      clearPublications();
       // The pin `UPDATE` has already run and the durable sequence is already
       // reserved when the append blocks on the held event id and fails on its
       // own bounded budget. A genuine transaction failure is neither a 204 nor
@@ -528,17 +680,35 @@ describe.each(generationModelEndpoints())(
         before,
       );
       await expect(eventIds(fixture)).resolves.not.toContain(eventId);
-      await expect(flushedInvalidations()).resolves.toBe(0);
+      await expect(flushedInvalidations(fixture)).resolves.toBe(0);
+      expect(allThreadListChannels()).toStrictEqual([]);
 
       // The reserved sequence was not consumed, so the next accepted pin still
-      // takes the very next sidebar sequence id.
+      // takes the very next sidebar sequence id, and only that accepted write
+      // publishes — exactly once, on this caller's own channel.
       await endpoint.pinNext(fixture.actor, fixture.threadId);
       const after = await generationModelEvents(fixture);
       expect(after.slice(before.length)).toStrictEqual([
         { seqId: lastSeqId + 1, kind: endpoint.kind },
       ]);
+      await expect(flushedInvalidations(fixture)).resolves.toBe(1);
+      expect(allThreadListChannels()).toStrictEqual([ownerChannel(fixture)]);
     });
 
+    /**
+     * The cancelled signal here is the route handler's own **operation**
+     * signal, the one `updateImageModelInner$` / `updateVideoModelInner$`
+     * receive and pass into the admission helper — not a client-side `fetch`
+     * abandonment, which the server never observes and which is used nowhere in
+     * this file as a stand-in for cancellation.
+     *
+     * The barrier stops **after** the pin `UPDATE` executed and before the
+     * helper's last in-transaction abort check, which is the only window where
+     * that check can still turn the abort into a rollback. This case therefore
+     * claims nothing about an abort that arrives after that final check or
+     * during `COMMIT`: such a `COMMIT` can still succeed, and proving otherwise
+     * would need a runtime cancellation redesign this slice does not request.
+     */
     it("rolls the pin back when the operation is cancelled after the pin UPDATE", async () => {
       const fixture = await createGenerationModelFixture(
         `Cancelled ${endpoint.label}`,
@@ -548,7 +718,7 @@ describe.each(generationModelEndpoints())(
       const baselineEvents = await generationModelEvents(fixture);
       const updatedAt = await readUpdatedAt(fixture);
       const controller = new AbortController();
-      context.mocks.ably.publish.mockClear();
+      clearPublications();
 
       await withChatThreadContentBarrierFixture(
         {
@@ -584,21 +754,25 @@ describe.each(generationModelEndpoints())(
       await expect(generationModelEvents(fixture)).resolves.toStrictEqual(
         baselineEvents,
       );
-      await expect(flushedInvalidations()).resolves.toBe(0);
+      await expect(flushedInvalidations(fixture)).resolves.toBe(0);
+      expect(allThreadListChannels()).toStrictEqual([]);
 
       // A rolled back attempt is not a durable denial: the same request is
-      // accepted once its operation is no longer cancelled.
+      // accepted once its operation is no longer cancelled, and only then does
+      // exactly one invalidation reach this caller's own channel.
       await endpoint.pinNext(fixture.actor, fixture.threadId);
       await expect(readPins(fixture)).resolves.toMatchObject({
         [endpoint.pinKey]: endpoint.nextModel,
       });
+      await expect(flushedInvalidations(fixture)).resolves.toBe(1);
+      expect(allThreadListChannels()).toStrictEqual([ownerChannel(fixture)]);
     });
 
     it("finds a thread deleted under the locks and writes no pin", async () => {
       const fixture = await createGenerationModelFixture(
         `Deleted ${endpoint.label}`,
       );
-      context.mocks.ably.publish.mockClear();
+      clearPublications();
 
       const pinned = await withChatThreadContentBarrierFixture(
         {
@@ -615,7 +789,7 @@ describe.each(generationModelEndpoints())(
             // The deletion publishes its own invalidation; clear it so the
             // count below measures only what the resumed pin attempt does.
             await flushWaitUntilForTest();
-            context.mocks.ably.publish.mockClear();
+            clearPublications();
             barrier.release();
             return await pinning;
           },
@@ -632,7 +806,8 @@ describe.each(generationModelEndpoints())(
         [404],
       );
       expect(readBack.status).toBe(404);
-      await expect(flushedInvalidations()).resolves.toBe(0);
+      await expect(flushedInvalidations(fixture)).resolves.toBe(0);
+      expect(allThreadListChannels()).toStrictEqual([]);
     });
 
     it("propagates a held parent lock as a failure rather than a closure 404", async () => {
@@ -712,7 +887,7 @@ describe("account erasure re-resolves moved parents for the generation model rou
     const baselineEvents = await generationModelEvents(fixture);
     const newOwner = `user_${randomUUID()}`;
     await closeSubject({ subjectKind: "user", subjectId: newOwner });
-    context.mocks.ably.publish.mockClear();
+    clearPublications();
 
     await withChatThreadContentBarrierFixture(
       {
@@ -742,7 +917,8 @@ describe("account erasure re-resolves moved parents for the generation model rou
     await expect(generationModelEvents(fixture)).resolves.toStrictEqual(
       baselineEvents,
     );
-    await expect(flushedInvalidations()).resolves.toBe(0);
+    await expect(flushedInvalidations(fixture)).resolves.toBe(0);
+    expect(allThreadListChannels()).toStrictEqual([]);
   });
 
   it("re-resolves a changed Agent organization and never publishes a video pin to the stale one", async () => {
@@ -753,7 +929,7 @@ describe("account erasure re-resolves moved parents for the generation model rou
     const baselineEvents = await generationModelEvents(fixture);
     const newOrgId = `org_${randomUUID()}`;
     await closeSubject({ subjectKind: "organization", subjectId: newOrgId });
-    context.mocks.ably.publish.mockClear();
+    clearPublications();
 
     await withChatThreadContentBarrierFixture(
       {
@@ -777,7 +953,8 @@ describe("account erasure re-resolves moved parents for the generation model rou
       context.signal,
     );
 
-    await expect(flushedInvalidations()).resolves.toBe(0);
+    await expect(flushedInvalidations(fixture)).resolves.toBe(0);
+    expect(allThreadListChannels()).toStrictEqual([]);
     await transferAgentOrganizationFixture({
       agentId: fixture.agentId,
       orgId: fixture.orgId,
@@ -843,10 +1020,18 @@ describe("the fenced generation model routes keep their own write semantics", ()
     const fixture = await createGenerationModelFixture("Concurrent pins");
     const lastSeqId = await lastStreamSeqId(fixture);
 
-    // Both writers hold the helper's retained `FOR KEY SHARE` on this thread.
-    // The pin `UPDATE` takes `FOR NO KEY UPDATE`, which is compatible with
-    // that, so they serialize on the thread row instead of deadlocking on a
-    // key-lock upgrade.
+    // Two concurrently issued requests on one thread both land. The mode a pin
+    // `UPDATE` takes is compatible with the helper's retained `FOR KEY SHARE`,
+    // so they serialize on the thread row instead of deadlocking on a key-lock
+    // upgrade — which is why this case can end in both pins and two adjacent
+    // sequence ids rather than a deadlock error.
+    //
+    // This is the observed outcome of two overlapping requests, not evidence
+    // that both transactions held their locks at one deterministic instant:
+    // nothing here pins the interleaving, and the assertions below deliberately
+    // depend only on the result. Proving a simultaneous hold would need its own
+    // barrier, which is a separate concurrency question this slice does not
+    // open.
     await Promise.all([
       imageEndpoint().pinNext(fixture.actor, fixture.threadId),
       videoEndpoint().pinNext(fixture.actor, fixture.threadId),

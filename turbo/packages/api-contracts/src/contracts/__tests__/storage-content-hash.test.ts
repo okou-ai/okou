@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   computeContentHashFromHashes,
   type FileEntryWithHash,
-} from "../storage-content-hash.service";
-import contentHashContract from "./storage-content-hash-contract.json";
+} from "../storage-content-hash";
+import contentHashContract from "./fixtures/storage-content-hash.json";
 
 interface ContentHashFixture {
   readonly name: string;

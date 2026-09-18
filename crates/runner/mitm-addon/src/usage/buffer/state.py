@@ -77,7 +77,8 @@ from collections.abc import Iterable
 from ..idempotency import USAGE_EVENT_NAMESPACE_AGGREGATE, derive_usage_idempotency_key
 from ..quantities import MAX_USAGE_QUANTITY, is_usage_quantity
 from ..webhook import WebhookDeliveryOutcome
-from .logging import _log_rejected_usage_quantity
+from .batching import resource_event_fits, source_event_batches, source_event_size
+from .logging import _log_rejected_resource_size, _log_rejected_usage_quantity
 from .models import (
     MAX_AGGREGATE_BUCKETS,
     MAX_BUFFERED_SOURCE_EVENTS,
@@ -151,6 +152,9 @@ class _UsageBufferState:
             if any(not is_usage_quantity(event["quantity"]) for event in events):
                 _log_rejected_usage_quantity(proxy_log_path, run_id)
                 return 0
+            if any(not resource_event_fits(run_id, event) for event in events):
+                _log_rejected_resource_size(proxy_log_path, run_id)
+                return 0
             batch_source_keys = {event["idempotencyKey"] for event in events}
             if (
                 atomic_source_key in self._seen_source_keys
@@ -171,14 +175,24 @@ class _UsageBufferState:
             if not is_usage_quantity(event["quantity"]):
                 _log_rejected_usage_quantity(proxy_log_path, run_id)
                 continue
+            if not resource_event_fits(run_id, event):
+                _log_rejected_resource_size(proxy_log_path, run_id)
+                continue
             source_key = event["idempotencyKey"]
             if source_key in self._seen_source_keys:
                 continue
             self._seen_source_keys[source_key] = None
-            if preserve_source_idempotency:
+            if preserve_source_idempotency or event.get("protocol") == "x-resource-v1":
                 if source_events is None:
                     source_events = self._source_events.setdefault(destination, [])
-                source_events.append(_BufferedSourceEvent(run_id=run_id, event=_copy_event(event)))
+                copied = _copy_event(event)
+                source_events.append(
+                    _BufferedSourceEvent(
+                        run_id=run_id,
+                        event=copied,
+                        encoded_size=source_event_size(copied),
+                    )
+                )
             else:
                 if buckets is None:
                     buckets = self._buckets.setdefault(destination, {})
@@ -236,15 +250,7 @@ class _UsageBufferState:
                 for event_count in events_by_run.values()
             )
         for source_events in self._source_events.values():
-            source_events_by_run: dict[str, int] = {}
-            for source_event in source_events:
-                source_events_by_run[source_event.run_id] = (
-                    source_events_by_run.get(source_event.run_id, 0) + 1
-                )
-            count += sum(
-                (event_count + USAGE_EVENT_BATCH_SIZE - 1) // USAGE_EVENT_BATCH_SIZE
-                for event_count in source_events_by_run.values()
-            )
+            count += sum(1 for _ in source_event_batches(source_events))
         return count
 
     def has_schedulable_work(self) -> bool:
@@ -498,32 +504,19 @@ class _UsageBufferState:
                 item.proxy_log_path,
             ),
         ):
-            events_by_run: dict[str, list[_FlushEvent]] = {}
-            for source_event in source_events_by_destination[destination]:
-                events_by_run.setdefault(source_event.run_id, []).append(
-                    _FlushEvent(
-                        payload=_source_event_payload(source_event.event),
-                        source_event_count=1,
+            for run_id, events in source_event_batches(source_events_by_destination[destination]):
+                batches.append(
+                    _FlushBatch(
+                        url=destination.url,
+                        sandbox_token=destination.sandbox_token,
+                        payload={
+                            "runId": run_id,
+                            "events": [_source_event_payload(event) for event in events],
+                        },
+                        proxy_log_path=destination.proxy_log_path,
+                        source_event_count=len(events),
                     )
                 )
-            for run_id in sorted(events_by_run):
-                events = events_by_run[run_id]
-                for start in range(0, len(events), USAGE_EVENT_BATCH_SIZE):
-                    batch_events = events[start : start + USAGE_EVENT_BATCH_SIZE]
-                    batches.append(
-                        _FlushBatch(
-                            url=destination.url,
-                            sandbox_token=destination.sandbox_token,
-                            payload={
-                                "runId": run_id,
-                                "events": [event.payload for event in batch_events],
-                            },
-                            proxy_log_path=destination.proxy_log_path,
-                            source_event_count=sum(
-                                event.source_event_count for event in batch_events
-                            ),
-                        )
-                    )
         return batches
 
     def _events_by_run(
@@ -587,23 +580,26 @@ class _UsageBufferState:
 
 
 def _copy_event(event: UsageEvent) -> UsageEvent:
-    return {
+    copied: UsageEvent = {
         "idempotencyKey": event["idempotencyKey"],
         "kind": event["kind"],
         "provider": event["provider"],
         "category": event["category"],
         "quantity": event["quantity"],
     }
+    if "protocol" in event:
+        copied["protocol"] = event["protocol"]
+    if "observedAt" in event:
+        copied["observedAt"] = event["observedAt"]
+    if "resources" in event:
+        copied["resources"] = [resource.copy() for resource in event["resources"]]
+    if "remainder" in event:
+        copied["remainder"] = [item.copy() for item in event["remainder"]]
+    return copied
 
 
 def _source_event_payload(event: UsageEvent) -> dict:
-    return {
-        "idempotencyKey": event["idempotencyKey"],
-        "provider": event["provider"],
-        "category": event["category"],
-        "quantity": event["quantity"],
-        "kind": event["kind"],
-    }
+    return dict(_copy_event(event))
 
 
 def _flush_batch_sort_key(batch: _FlushBatch) -> tuple[object, ...]:

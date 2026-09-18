@@ -27,6 +27,7 @@ describe("FeatureSwitchKey", () => {
     expect(FeatureSwitchKey.TestOauthConnector).toBe("_testOauthConnector");
     expect(FeatureSwitchKey.PiLoop).toBe("piLoop");
     expect(FeatureSwitchKey.PiMemory).toBe("piMemory");
+    expect(FeatureSwitchKey.ChatThreadArchiving).toBe("chatThreadArchiving");
   });
 });
 
@@ -99,6 +100,33 @@ describe("isFeatureEnabled", () => {
         "Extract, consolidate, and recall memory for Pi threads. Off for everyone, including the staff org; enabled one user at a time through explicit overrides.",
       rolloutStage: "alpha",
     });
+  });
+
+  it("enables chat thread archiving for staff by default and honors explicit overrides", () => {
+    const staffContext = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.ChatThreadArchiving, staffContext),
+    ).toBe(true);
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.ChatThreadArchiving, {
+        ...staffContext,
+        overrides: { [FeatureSwitchKey.ChatThreadArchiving]: false },
+      }),
+    ).toBe(false);
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.ChatThreadArchiving, {
+        orgId: "org_nonexistent",
+      }),
+    ).toBe(false);
+    expect(isFeatureEnabled(FeatureSwitchKey.ChatThreadArchiving, {})).toBe(
+      false,
+    );
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.ChatThreadArchiving, {
+        orgId: "org_nonexistent",
+        overrides: { [FeatureSwitchKey.ChatThreadArchiving]: true },
+      }),
+    ).toBe(true);
   });
 
   it("enables OpenRouter US routing for staff and honors explicit overrides", () => {
