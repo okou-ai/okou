@@ -6490,7 +6490,7 @@ async fn park_small_vm_skips_balloon_but_pauses_vcpus() {
 }
 
 #[tokio::test]
-async fn unpark_resumes_and_deflates() {
+async fn unpark_without_completed_deflation_resumes_and_deflates() {
     let mut api = MockLifecycleApi::new(
         std::collections::VecDeque::new(),
         Some(Arc::new(AtomicU32::new(0))),
@@ -6502,6 +6502,7 @@ async fn unpark_resumes_and_deflates() {
     unpark_inner(
         &mut is_parked,
         2048,
+        None,
         api.socket_path(),
         state_rx.clone(),
         "test-unpark",
@@ -6541,8 +6542,15 @@ async fn unpark_waits_for_physical_deflation() {
     let (_state_tx, state_rx) = watch::channel(SandboxState::Running);
     let task = tokio::spawn(async move {
         let mut is_parked = true;
-        let result =
-            unpark_inner(&mut is_parked, 4096, &socket, state_rx, "pending-deflation").await;
+        let result = unpark_inner(
+            &mut is_parked,
+            4096,
+            None,
+            &socket,
+            state_rx,
+            "pending-deflation",
+        )
+        .await;
         (result, is_parked)
     });
     tokio::time::timeout(Duration::from_secs(1), entered.notified())
@@ -6575,6 +6583,7 @@ async fn unpark_propagates_deflate_error() {
     let result = unpark_inner(
         &mut is_parked,
         2048,
+        None,
         api.socket_path(),
         state_rx.clone(),
         "test-unpark-err",
@@ -6601,6 +6610,7 @@ async fn unpark_small_vm_skips_balloon_but_resumes_vcpus() {
     unpark_inner(
         &mut is_parked,
         balloon::MIN_GUEST_MIB,
+        None,
         api.socket_path(),
         state_rx.clone(),
         "test-unpark-small",
@@ -6652,6 +6662,7 @@ async fn running_reactivation_rechecks_deflation_without_resuming_twice() {
     unpark_inner(
         &mut is_parked,
         2048,
+        None,
         api.socket_path(),
         state_rx.clone(),
         "du",
@@ -6662,6 +6673,7 @@ async fn running_reactivation_rechecks_deflation_without_resuming_twice() {
     unpark_inner(
         &mut is_parked,
         2048,
+        None,
         api.socket_path(),
         state_rx.clone(),
         "du",
@@ -6693,7 +6705,6 @@ async fn park_unpark_park_cycle() {
         std::collections::VecDeque::from([
             MockBalloonStatsReply::Ok(MockBalloonStats::new(1024, 1024)),
             MockBalloonStatsReply::Ok(MockBalloonStats::new(0, 0)),
-            MockBalloonStatsReply::Ok(MockBalloonStats::new(0, 0)),
             MockBalloonStatsReply::Ok(MockBalloonStats::new(1024, 1024)),
             MockBalloonStatsReply::Ok(MockBalloonStats::new(0, 0)),
         ]),
@@ -6702,7 +6713,7 @@ async fn park_unpark_park_cycle() {
     let (_state_tx, state_rx) = watch::channel(SandboxState::Running);
 
     // Turn 1: park.
-    park_inner(&mut is_parked, 2048, api.socket_path(), "cycle")
+    let outcome = park_inner(&mut is_parked, 2048, api.socket_path(), "cycle")
         .await
         .unwrap();
     assert!(is_parked);
@@ -6711,6 +6722,7 @@ async fn park_unpark_park_cycle() {
     unpark_inner(
         &mut is_parked,
         2048,
+        Some(&outcome),
         api.socket_path(),
         state_rx.clone(),
         "cycle",
@@ -6724,9 +6736,8 @@ async fn park_unpark_park_cycle() {
         .unwrap();
     assert!(is_parked);
 
-    // PATCH sequence: inflate, deflate, pause, resume, deflate, inflate, deflate, pause.
-    // Filter to only PATCHes (ignoring GET /balloon/statistics from
-    // wait_for_balloon and the unpark deflation wait).
+    // PATCH sequence: inflate, deflate, pause, resume, inflate, deflate, pause.
+    // Statistics are only needed during park.
     let reqs = api.drain_requests();
     let ps = patches(&reqs);
     let ops: Vec<(&str, Option<u64>)> = ps
@@ -6745,7 +6756,6 @@ async fn park_unpark_park_cycle() {
             ("/balloon", Some(0)),    // park 1: deflate
             ("/vm", None),            // park 1: pause
             ("/vm", None),            // unpark: resume
-            ("/balloon", Some(0)),    // unpark: deflate
             ("/balloon", Some(1024)), // park 2: inflate
             ("/balloon", Some(0)),    // park 2: deflate
             ("/vm", None),            // park 2: pause
@@ -6844,6 +6854,7 @@ async fn unpark_retry_after_failure_succeeds() {
     let first = unpark_inner(
         &mut is_parked,
         2048,
+        None,
         api.socket_path(),
         state_rx.clone(),
         "retry",
@@ -6855,6 +6866,7 @@ async fn unpark_retry_after_failure_succeeds() {
     unpark_inner(
         &mut is_parked,
         2048,
+        None,
         api.socket_path(),
         state_rx.clone(),
         "retry",
@@ -6920,6 +6932,7 @@ async fn unpark_resume_http_400_propagates_as_idle_transition() {
     let result = unpark_inner(
         &mut is_parked,
         2048,
+        None,
         api.socket_path(),
         state_rx.clone(),
         "resume-fail",
@@ -6956,6 +6969,7 @@ async fn unpark_retry_after_partial_failure_resumes_idempotently() {
     let first = unpark_inner(
         &mut is_parked,
         2048,
+        None,
         api.socket_path(),
         state_rx.clone(),
         "idem",
@@ -6968,6 +6982,7 @@ async fn unpark_retry_after_partial_failure_resumes_idempotently() {
     unpark_inner(
         &mut is_parked,
         2048,
+        None,
         api.socket_path(),
         state_rx.clone(),
         "idem",

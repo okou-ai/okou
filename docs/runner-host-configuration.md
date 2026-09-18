@@ -75,12 +75,14 @@ repopulating backing discarded by Firecracker; subsequent Guest accesses can
 fault that backing in again. Reclamation diagnostics and severe-retention
 rejection are decided against the original positive target before deflation.
 
-Unpark resumes paused vCPUs, requests target zero, and confirms exact target/actual
-page counts are zero before reopening Guest operations. A completed reusable
-park already reports zero, so this normally only revalidates readiness. The convergence wait,
-including in-flight statistics requests, is bounded at five seconds; failures
-keep operations fenced and use the existing destroy/fresh-create recovery.
-Interrupted reclamation can still leave deflation work for activation. No background balloon controller or
+Unpark of a completed reusable park resumes vCPUs and Guest operations without
+another balloon request or statistics query. Park already completed deflation,
+and no other owner changes the target while idle; blank preparation never
+inflated. Running handoffs and non-reusable cleanup still request target zero
+and wait for exact target/actual page counts to reach zero before reopening Guest
+operations. Their convergence wait, including in-flight statistics requests, is
+bounded at five seconds; failures keep operations fenced and use the existing
+destroy/fresh-create recovery. No background balloon controller or
 Agent-readiness reclamation gate remains. The full profile budget stays reserved
 throughout. Minimum profiles never inflate and skip this balloon recovery.
 

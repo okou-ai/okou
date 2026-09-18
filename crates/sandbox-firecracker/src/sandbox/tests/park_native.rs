@@ -210,6 +210,10 @@ async fn physical_park_reclaims_before_pause_and_hands_off_without_pause() -> Na
     unpark_inner(
         &mut is_parked,
         MEMORY_MIB,
+        match &result {
+            PhysicalParkOutcome::Idle(outcome) => Some(outcome),
+            PhysicalParkOutcome::Handoff(_) => None,
+        },
         &socket,
         state_rx,
         "native-reuse",

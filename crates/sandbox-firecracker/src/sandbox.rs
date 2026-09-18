@@ -551,12 +551,12 @@ pub struct FirecrackerSandbox {
     /// sandbox can be parked but non-reusable after severe memory retention.
     /// Set by `park()` after the pause succeeds and cleared by a completed
     /// `unpark()`. Used to make both methods idempotent, to let `unpark()` know
-    /// whether it should request balloon deflation, and to let `stop()`
+    /// whether it should resume vCPUs, and to let `stop()`
     /// skip vsock graceful shutdown (a paused guest cannot respond).
     is_parked: bool,
     /// Eligibility returned by the completed park that set `is_parked`.
     /// Retained so an idempotent repeated park cannot upgrade a non-reusable
-    /// sandbox to reusable.
+    /// sandbox to reusable. Reusable also proves unpark needs no balloon work.
     park_outcome: Option<SandboxParkOutcome>,
     /// Host-side normal-operation fence held while this sandbox is parked.
     park_fence: Option<NormalOperationFence>,
@@ -2395,13 +2395,14 @@ impl FirecrackerSandbox {
         let id = self.id.clone();
         let api_sock = self.sock_paths.api_sock();
         let memory_mb = self.config.resources.memory_mb;
+        let park_outcome = self.park_outcome.as_ref();
         let state_rx = self.state_tx.subscribe();
         let is_parked = &mut self.is_parked;
         let park_fence = &mut self.park_fence;
         unpark_with_ready_for_operations(
             &id,
             &coordinator,
-            || unpark_inner(is_parked, memory_mb, &api_sock, state_rx, &id),
+            || unpark_inner(is_parked, memory_mb, park_outcome, &api_sock, state_rx, &id),
             || async move {
                 let guest = guest.lock().await.as_ref().cloned().ok_or_else(|| {
                     io::Error::new(
@@ -2602,11 +2603,11 @@ impl Sandbox for FirecrackerSandbox {
     // aggressive idle inflation while its caller retains the full budget.
     //
     // `unpark()` is called when the runner pulls the sandbox back out of
-    // the idle pool. It resumes paused vCPUs, requests target zero, and checks
-    // physical deflation before reopening operations. Completed idle parks
-    // have already deflated; a running handoff skips vCPU resume and waits for
-    // any remaining deflation. Active workloads retain their full configured
-    // capacity.
+    // the idle pool. Completed reusable parks only need vCPU and Guest resume:
+    // their balloon is already deflated or was never inflated. Running
+    // handoffs skip vCPU resume; they and non-reusable cleanup request target
+    // zero and wait for any remaining deflation before reopening operations.
+    // Active workloads retain their full configured capacity.
     // Terminal operations share the same readiness sequence.
     //
     // Park first closes the sandbox policy gate, then acquires a host-side
@@ -4824,6 +4825,7 @@ async fn park_inner(
 async fn unpark_inner(
     is_parked: &mut bool,
     memory_mb: u32,
+    park_outcome: Option<&SandboxParkOutcome>,
     api_sock: &std::path::Path,
     state_rx: watch::Receiver<SandboxState>,
     log_id: &str,
@@ -4844,7 +4846,12 @@ async fn unpark_inner(
             })?;
     }
 
-    if memory_mb > balloon::MIN_GUEST_MIB {
+    // Reusable park already completed deflation before pausing, or never
+    // inflated for blank preparation. Nothing changes the target while idle.
+    // Running handoffs and non-reusable cleanup still need physical readiness.
+    if memory_mb > balloon::MIN_GUEST_MIB
+        && !matches!(park_outcome, Some(SandboxParkOutcome::Reusable))
+    {
         // Propagate deflate failure rather than swallow it. On a healthy
         // Firecracker, PATCH /balloon doesn't return transient errors —
         // any failure here (Connect / Http / Other) strongly suggests FC
