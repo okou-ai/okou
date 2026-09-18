@@ -96,6 +96,13 @@ function scheduleWhere(owner: MorningBriefMemberIdentity) {
   );
 }
 
+function occurrenceOwnerWhere(owner: MorningBriefMemberIdentity) {
+  return and(
+    eq(morningBriefNativeOccurrences.orgId, owner.orgId),
+    eq(morningBriefNativeOccurrences.userId, owner.userId),
+  );
+}
+
 /**
  * Read the native row without locking it.
  *
@@ -1454,13 +1461,18 @@ export async function resumeMorningBriefNativeOccurrence(
  */
 export async function loadResumableOccurrences(
   db: MorningBriefNativeReader,
-  args: { readonly now: Date; readonly limit: number },
+  args: {
+    readonly now: Date;
+    readonly limit: number;
+    readonly owner?: MorningBriefMemberIdentity;
+  },
 ): Promise<readonly MorningBriefNativeOccurrenceRow[]> {
   return await db
     .select()
     .from(morningBriefNativeOccurrences)
     .where(
       and(
+        args.owner === undefined ? undefined : occurrenceOwnerWhere(args.owner),
         isNull(morningBriefNativeOccurrences.settledAt),
         // Receipt-first is a per-occurrence invariant, not a property of one
         // scan happening to fit in one batch. A slot that already bound an
@@ -1508,7 +1520,10 @@ export async function loadResumableOccurrences(
  */
 export async function loadBootstrapCandidates(
   db: MorningBriefNativeReader,
-  args: { readonly limit: number },
+  args: {
+    readonly limit: number;
+    readonly owner?: MorningBriefMemberIdentity;
+  },
 ): Promise<readonly MorningBriefMemberIdentity[]> {
   const rows = await db
     .select({
@@ -1530,6 +1545,12 @@ export async function loadBootstrapCandidates(
           MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
         ),
         eq(workflowAutomations.kind, "schedule"),
+        args.owner === undefined
+          ? undefined
+          : and(
+              eq(workflowAutomations.orgId, args.owner.orgId),
+              eq(workflowAutomations.ownerUserId, args.owner.userId),
+            ),
         isNull(morningBriefNativeSchedules.orgId),
       ),
     )
@@ -1584,13 +1605,18 @@ async function restoreLegacyMorningBriefAdmission(
  */
 export async function loadDueNativeOwners(
   db: MorningBriefNativeReader,
-  args: { readonly now: Date; readonly limit: number },
+  args: {
+    readonly now: Date;
+    readonly limit: number;
+    readonly owner?: MorningBriefMemberIdentity;
+  },
 ): Promise<readonly MorningBriefNativeScheduleRow[]> {
   return await db
     .select()
     .from(morningBriefNativeSchedules)
     .where(
       and(
+        args.owner === undefined ? undefined : scheduleWhere(args.owner),
         eq(morningBriefNativeSchedules.scheduleOwner, "native"),
         eq(morningBriefNativeSchedules.enabled, true),
         eq(morningBriefNativeSchedules.phase, "native"),
@@ -1610,7 +1636,10 @@ export async function loadDueNativeOwners(
  */
 export async function loadPendingDeliveryOccurrences(
   db: MorningBriefNativeReader,
-  args: { readonly limit: number },
+  args: {
+    readonly limit: number;
+    readonly owner?: MorningBriefMemberIdentity;
+  },
 ): Promise<readonly MorningBriefNativeOccurrenceRow[]> {
   return await db
     .select()
@@ -1623,6 +1652,7 @@ export async function loadPendingDeliveryOccurrences(
       // would go to S5 first and mistake a swept result for a healthy empty
       // day.
       and(
+        args.owner === undefined ? undefined : occurrenceOwnerWhere(args.owner),
         eq(morningBriefNativeOccurrences.deliveryPending, true),
         isNotNull(morningBriefNativeOccurrences.generationAttemptId),
       ),
@@ -1703,7 +1733,11 @@ export async function closeRecoveredMorningBriefDelivery(
  */
 export async function loadTransitionCandidates(
   db: MorningBriefNativeReader,
-  args: { readonly now: Date; readonly limit: number },
+  args: {
+    readonly now: Date;
+    readonly limit: number;
+    readonly owner?: MorningBriefMemberIdentity;
+  },
 ): Promise<readonly MorningBriefNativeScheduleRow[]> {
   return await db
     .select()
@@ -1712,7 +1746,7 @@ export async function loadTransitionCandidates(
     // target and a steady `legacy`/`legacy` row is exactly where a first
     // cutover has to start. The bounded limit and the ordering keep one tick's
     // work finite; a row already at its target costs one no-op comparison.
-    .where(sql`true`)
+    .where(args.owner === undefined ? sql`true` : scheduleWhere(args.owner))
     .orderBy(morningBriefNativeSchedules.updatedAt)
     .limit(args.limit);
 }

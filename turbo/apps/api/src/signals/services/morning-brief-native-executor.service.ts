@@ -251,6 +251,8 @@ export interface NativeDeliveryRecovery {
 
 /** Everything the tick needs from outside itself. */
 export interface NativeTickDependencies {
+  /** Test-route ownership scope; production cron intentionally leaves it absent. */
+  readonly scope?: MorningBriefMemberIdentity;
   readonly executor: NativeSlotExecutor;
   readonly delivery: NativeDeliveryRecovery;
   /**
@@ -299,6 +301,7 @@ const runDeliveryRecoveryPass$ = command(
     const { deps, counters } = args;
     for (const occurrence of await loadPendingDeliveryOccurrences(db, {
       limit: DELIVERY_RECOVERY_BATCH,
+      owner: deps.scope,
     })) {
       if (args.overBudget()) {
         return true;
@@ -360,6 +363,7 @@ const runTransitionPass$ = command(
     for (const row of await loadTransitionCandidates(db, {
       now: nowDate(),
       limit: DRAIN_REPORT_BATCH,
+      owner: args.deps.scope,
     })) {
       if (args.overBudget()) {
         return true;
@@ -411,6 +415,7 @@ const runResumePass$ = command(
     for (const stale of await loadResumableOccurrences(db, {
       now: nowDate(),
       limit: DUE_OWNER_BATCH,
+      owner: deps.scope,
     })) {
       if (overBudget()) {
         return true;
@@ -636,6 +641,7 @@ export const executeNativeMorningBriefTick$ = command(
     //    `legacy`-phase row, so it is never a cutover on its own.
     for (const owner of await loadBootstrapCandidates(db, {
       limit: BOOTSTRAP_SCAN_WINDOW,
+      owner: deps.scope,
     })) {
       if (overBudget() || counters.materialized >= DUE_OWNER_BATCH) {
         break;
@@ -676,6 +682,7 @@ export const executeNativeMorningBriefTick$ = command(
     for (const schedule of await loadDueNativeOwners(db, {
       now: nowDate(),
       limit: DUE_OWNER_BATCH,
+      owner: deps.scope,
     })) {
       if (overBudget()) {
         return exhausted();

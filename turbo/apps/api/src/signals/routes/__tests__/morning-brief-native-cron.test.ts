@@ -34,7 +34,7 @@ import {
   resumableOccurrenceAnchors,
   seedRecipientAddress,
 } from "../../../test-fixtures/morning-brief-native-schedule";
-import { cronExecuteMorningBriefsRoutes } from "../cron-execute-morning-briefs";
+import { createScopedMorningBriefCronRoutesForTest } from "../cron-execute-morning-briefs";
 import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import {
@@ -97,14 +97,15 @@ interface Fixture {
   readonly automationId: string;
 }
 
-function cronClient() {
-  return setupApp({ context, routes: cronExecuteMorningBriefsRoutes })(
-    cronExecuteMorningBriefsContract,
-  );
+function cronClient(owner: Fixture) {
+  return setupApp({
+    context,
+    routes: createScopedMorningBriefCronRoutesForTest(owner),
+  })(cronExecuteMorningBriefsContract);
 }
 
-function tick(secret: string = CRON_SECRET) {
-  return cronClient().execute({
+function tick(owner: Fixture, secret: string = CRON_SECRET) {
+  return cronClient(owner).execute({
     headers: { authorization: `Bearer ${secret}` },
   });
 }
@@ -260,7 +261,7 @@ function scriptProviders(): { readonly calls: ProviderCalls } {
 /** Drive the real cutover to completion through ordinary ticks. */
 async function tickUntilNative(f: Fixture): Promise<void> {
   for (let attempt = 0; attempt < 5; attempt += 1) {
-    await accept(tick(), [200]);
+    await accept(tick(f), [200]);
     if ((await readNativeSchedule(f))?.phase === "native") {
       return;
     }
@@ -273,7 +274,7 @@ describe("native Morning Brief cron", () => {
     const f = await fixture();
     const { calls } = scriptProviders();
 
-    await accept(tick("wrong-secret"), [401]);
+    await accept(tick(f, "wrong-secret"), [401]);
 
     expect(calls.generation).toHaveLength(0);
     await expect(readNativeSchedule(f)).resolves.toBeUndefined();
@@ -286,7 +287,7 @@ describe("native Morning Brief cron", () => {
 
     // The first tick may only bootstrap and start the cutover; it must never
     // take a member straight from "installed" to "native work admitted".
-    const first = await accept(tick(), [200]);
+    const first = await accept(tick(f), [200]);
     expect(first.body.materialized).toBe(1);
 
     const bootstrapped = await readNativeSchedule(f);
@@ -308,7 +309,7 @@ describe("native Morning Brief cron", () => {
         break;
       }
       await expect(readNativeOccurrences(f)).resolves.toHaveLength(0);
-      await accept(tick(), [200]);
+      await accept(tick(f), [200]);
     }
 
     const cutover = await readNativeSchedule(f);
@@ -340,7 +341,7 @@ describe("native Morning Brief cron", () => {
     await expect(readLegacyAutomation(f.automationId)).resolves.toBeUndefined();
     const due = await makeNativeOccurrenceDue(f);
 
-    const executed = await accept(tick(), [200]);
+    const executed = await accept(tick(f), [200]);
     expect(executed.body.claimed).toBe(1);
     expect(executed.body.settled).toBe(1);
 
@@ -392,7 +393,7 @@ describe("native Morning Brief cron", () => {
 
     await tickUntilNative(f);
     const due = await makeNativeOccurrenceDue(f);
-    await accept(tick(), [200]);
+    await accept(tick(f), [200]);
     expect(calls.generation).toHaveLength(1);
     const beforeCrash = await readNativeOccurrences(f);
     expect(beforeCrash[0]?.generationAttemptId).not.toBeNull();
@@ -411,7 +412,7 @@ describe("native Morning Brief cron", () => {
       leaseToken: randomUUID(),
     });
 
-    const recovery = await accept(tick(), [200]);
+    const recovery = await accept(tick(f), [200]);
     expect(recovery.body.deliveriesRecovered).toBe(1);
 
     // Recovered from the durable receipt: no second model request, no second
@@ -445,7 +446,7 @@ describe("native Morning Brief cron", () => {
 
     await tickUntilNative(f);
     const due = await makeNativeOccurrenceDue(f);
-    await accept(tick(), [200]);
+    await accept(tick(f), [200]);
     expect(calls.generation).toHaveLength(1);
 
     // Put the slot back into the bound-but-unsettled state, with its lease
@@ -464,7 +465,7 @@ describe("native Morning Brief cron", () => {
     // receipt pass handled it this tick.
     await expect(resumableOccurrenceAnchors(f)).resolves.toStrictEqual([]);
 
-    await accept(tick(), [200]);
+    await accept(tick(f), [200]);
 
     // Whatever the recovery pass decided, no second generation was started and
     // the committed receipt was never re-read as an empty day.
@@ -487,7 +488,7 @@ describe("native Morning Brief cron", () => {
 
     await tickUntilNative(f);
     await makeNativeOccurrenceDue(f);
-    await accept(tick(), [200]);
+    await accept(tick(f), [200]);
 
     const deliveries = await readNativeDeliveries(f);
     expect(deliveries).toHaveLength(1);
@@ -548,11 +549,11 @@ describe("native Morning Brief cron", () => {
 
     await tickUntilNative(f);
     await makeNativeOccurrenceDue(f);
-    await accept(tick(), [200]);
+    await accept(tick(f), [200]);
     expect(calls.generation).toHaveLength(1);
 
     // A later tick finds the slot settled and its successor in the future.
-    const repeat = await accept(tick(), [200]);
+    const repeat = await accept(tick(f), [200]);
     expect(repeat.body.claimed).toBe(0);
     expect(calls.generation).toHaveLength(1);
     await expect(readNativeGenerations(f)).resolves.toHaveLength(1);
@@ -602,7 +603,7 @@ describe("native Morning Brief cron", () => {
     await makeNativeOccurrenceDue(f);
     expect(revoked).toBeFalsy();
 
-    await accept(tick(), [200]);
+    await accept(tick(f), [200]);
 
     // Collection ran, the revocation landed inside it, and the reservation
     // refused: no request crossed the provider boundary and no generation row
@@ -624,7 +625,7 @@ describe("native Morning Brief cron", () => {
 
     await tickUntilNative(f);
     const due = await makeNativeOccurrenceDue(f);
-    await accept(tick(), [200]);
+    await accept(tick(f), [200]);
     expect(calls.generation).toHaveLength(1);
 
     // A worker that died before contacting the provider: claimed, unsettled,
@@ -637,7 +638,7 @@ describe("native Morning Brief cron", () => {
     );
 
     for (let attempt = 0; attempt < 6; attempt += 1) {
-      await accept(tick(), [200]);
+      await accept(tick(f), [200]);
       if ((await readNativeSchedule(f))?.phase === "legacy") {
         break;
       }
@@ -674,7 +675,7 @@ describe("native Morning Brief cron", () => {
     );
 
     for (let attempt = 0; attempt < 5; attempt += 1) {
-      await accept(tick(), [200]);
+      await accept(tick(f), [200]);
     }
 
     const held = await readNativeSchedule(f);
@@ -697,8 +698,8 @@ describe("native Morning Brief cron", () => {
     scriptSlack();
     const { calls } = scriptProviders();
 
-    await accept(tick(), [200]);
-    await accept(tick(), [200]);
+    await accept(tick(f), [200]);
+    await accept(tick(f), [200]);
 
     const schedule = await readNativeSchedule(f);
     expect(schedule?.phase).toBe("legacy");

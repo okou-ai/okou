@@ -75,6 +75,7 @@ import {
   lockMorningBriefNativeSchedule,
   type MorningBriefChoiceApplication,
 } from "./morning-brief-native-schedule.service";
+import { recordMorningBriefChoice } from "./morning-brief-enrollment-data.service";
 import { nowDate } from "../../lib/time";
 import type { Tx } from "../../lib/db-types";
 import {
@@ -6003,6 +6004,7 @@ export async function persistNativeMorningBriefPreferenceChoice(
         ? { kind: "absent" }
         : { kind: "stale", row: schedule };
     }
+    await recordMorningBriefChoice(tx, owner, args.enabled);
     if (args.automationId !== null) {
       await tx
         .update(workflowAutomations)
@@ -6068,6 +6070,7 @@ async function persistMorningBriefAutomationToggle(
   };
   return await db.transaction(async (tx) => {
     const native = await lockMorningBriefNativeSchedule(tx, owner);
+    await recordMorningBriefChoice(tx, owner, args.enabled);
     const [row] = await tx
       .update(workflowAutomations)
       .set({

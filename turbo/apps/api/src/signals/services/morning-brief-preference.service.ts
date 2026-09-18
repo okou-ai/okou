@@ -864,13 +864,15 @@ const updateMorningBriefWhileLocked$ = command(
     const { installation } = await loadMorningBriefOwnership(db, identity);
     signal.throwIfAborted();
 
-    await recordMorningBriefChoice(db, identity, args.enabled);
-    signal.throwIfAborted();
     if (!installation) {
+      await recordMorningBriefChoice(db, identity, args.enabled);
+      signal.throwIfAborted();
       return await set(createMorningBriefFromPreference$, args, signal);
     }
 
     if (installation.installationState !== "installed") {
+      await recordMorningBriefChoice(db, identity, args.enabled);
+      signal.throwIfAborted();
       return await loadInstalledPreference(db, args);
     }
 
@@ -927,6 +929,8 @@ const updateMorningBriefWhileLocked$ = command(
       return await loadInstalledPreference(db, args);
     }
 
+    await recordMorningBriefChoice(db, identity, args.enabled);
+    signal.throwIfAborted();
     const current = await loadInstalledPreference(db, args);
     signal.throwIfAborted();
     if (current.kind !== "ok" || current.workflowId === undefined) {
