@@ -62,7 +62,7 @@ export interface NativeMorningBriefOwnerPreflight {
  * row that will be resolved locally anyway, and — worse — leaves the row the
  * claim does take without evidence of its own.
  */
-export interface NativeMorningBriefCandidateBounds {
+interface NativeMorningBriefCandidateBounds {
   /** The fixed batch clock the claim uses for retry eligibility. */
   readonly dueAt: Date;
   /** A fresh clock sample for the row's original finite lifetime. */
