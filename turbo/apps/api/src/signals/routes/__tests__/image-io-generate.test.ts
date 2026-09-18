@@ -3049,6 +3049,40 @@ describe("POST /api/image-io/generate", () => {
     await expect(orgCredits(fixture)).resolves.toBe(1000);
   });
 
+  it("rejects a Qwen Image source image without calling fal", async () => {
+    const fixture = await seedImageFixture({ credits: 1000 });
+    mocks.clerk.session(fixture.userId, fixture.orgId);
+
+    let falCalls = 0;
+    server.use(
+      http.post(FAL_QWEN_IMAGE_URL, () => {
+        falCalls += 1;
+        return HttpResponse.json({});
+      }),
+    );
+
+    const app = createImageIoTestApp();
+    const response = await app.request("/api/image-io/generate", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({
+        prompt: "restyle this mockup",
+        model: "qwen-image",
+        imageUrl: MOCKUP_IMAGE_URL,
+      }),
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toStrictEqual({
+      error: {
+        message: "qwen-image does not support source images",
+        code: "BAD_REQUEST",
+      },
+    });
+    expect(falCalls).toBe(0);
+    await expect(orgCredits(fixture)).resolves.toBe(1000);
+  });
+
   it("bills Seedream 5 Pro output tiers and references through BytePlus", async () => {
     const fixture = await seedImageFixture({ credits: 1000 });
     const pricingFixture = await createScopedImagePricing({

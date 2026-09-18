@@ -405,6 +405,7 @@ Options:
     not supported on the fal-backed image path. Ideogram prompt expansion is
     disabled because Okou supplies the final prompt and expansion costs extra.
   - Image-to-image: pass --image-url to use the model's edit/reference path.
+    qwen-image does not accept source images.
     GPT Image 2.5 accepts up to 16 source images and an optional mask.
     Nano Banana 2 models and Seedream 5 Lite accept up to 14 source images;
     Seedream 5 Pro accepts up to 10; flux-2-pro accepts up to 9;

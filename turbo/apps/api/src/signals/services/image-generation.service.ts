@@ -316,7 +316,7 @@ const IMAGE_GENERATION_MODEL_CONFIGS = {
     alias: "qwen-image",
     promptless: false,
     endpointId: "fal-ai/qwen-image",
-    imageToImageEndpointId: "fal-ai/qwen-image-2/edit",
+    imageToImageEndpointId: undefined,
     sourceImageInput: "image_url",
     provider: "fal",
     sizeMode: "flexible",
@@ -1234,6 +1234,17 @@ function appendSourceImageUrls(
   return null;
 }
 
+/**
+ * fal retired `fal-ai/qwen-image-2/edit`, leaving Qwen Image with no
+ * image-to-image endpoint. A model without one rejects source images rather
+ * than routing to a dead endpoint.
+ */
+function sourceImagesUnsupportedError(
+  modelConfig: ImageModelConfig,
+): ErrorResponse {
+  return badRequest(`${modelConfig.alias} does not support source images`);
+}
+
 function parseSourceImageUrls(
   body: Record<string, unknown>,
   modelConfig: ImageModelConfig,
@@ -1257,6 +1268,9 @@ function parseSourceImageUrls(
       return badRequest(`${modelConfig.alias} requires imageUrl`);
     }
     return sourceImageUrls;
+  }
+  if (modelConfig.imageToImageEndpointId === undefined) {
+    return sourceImagesUnsupportedError(modelConfig);
   }
   const maxSourceImageUrls =
     modelConfig.provider === "openai"
@@ -1808,7 +1822,7 @@ function falImageInput(
   };
 }
 
-function falImageEndpointId(options: ImageOptions): string {
+function falImageEndpointId(options: ImageOptions): string | undefined {
   const modelConfig = IMAGE_MODEL_CONFIGS[options.model];
   return options.sourceImageUrls.length > 0
     ? modelConfig.imageToImageEndpointId
@@ -1832,6 +1846,9 @@ export async function submitFalImageQueueGeneration(
   signal: AbortSignal,
 ): Promise<FalImageQueueHandle | ErrorResponse> {
   const endpointId = falImageEndpointId(options);
+  if (endpointId === undefined) {
+    return sourceImagesUnsupportedError(IMAGE_MODEL_CONFIGS[options.model]);
+  }
   const queueUrl = new URL(`${FAL_IMAGE_QUEUE_URL_PREFIX}/${endpointId}`);
   queueUrl.searchParams.set("fal_webhook", webhookUrl);
   const response = await fetch(queueUrl, {

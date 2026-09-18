@@ -92,9 +92,16 @@ async function createFixture(privateArtifacts: boolean) {
     configured: [
       {
         kind: "image",
-        provider: "fal-ai/qwen-image",
-        category: "output_megapixel",
-        unitPrice: 24,
+        provider: "alibaba/qwen-image-3/text-to-image",
+        category: "output_image.1k",
+        unitPrice: 48,
+        unitSize: 1,
+      },
+      {
+        kind: "image",
+        provider: "alibaba/qwen-image-3/text-to-image",
+        category: "output_image.2k",
+        unitPrice: 90,
         unitSize: 1,
       },
       {
@@ -218,7 +225,7 @@ async function queueImage(
       headers,
       body: {
         prompt: "A private landscape",
-        model: "qwen-image",
+        model: "qwen-image-3",
         imageUrls,
         ...(requirePrivateArtifact ? { requirePrivateArtifact: true } : {}),
       },
@@ -489,7 +496,7 @@ describe("managed artifact privacy", () => {
     const response = await fixture.api(imageIoGenerateContract).post({
       headers,
       body: {
-        model: "qwen-image",
+        model: "qwen-image-3",
         prompt: "Use reference",
         imageUrls: [image.url],
       },
