@@ -46,9 +46,18 @@ retried automatically.
 
 ## Framebuffer contract
 
-`Authenticated::initialize(deadline)` sends shared ClientInit, validates bounded
-ServerInit metadata, and negotiates 32-bit little-endian true-color RGBX (depth 24,
-8-bit channels at shifts 0/8/16). Native server formats are validated before this
+`Authenticated::initialize(sharing_mode, deadline)` requires an explicit
+`SharingMode::Shared` or `SharingMode::Exclusive` for each connection. It sends
+ClientInit's shared-flag as 1 or 0 respectively. Shared requests that existing
+clients remain connected; exclusive requests that they be disconnected. The server
+may refuse or override either request according to its configuration. Successful
+initialization does not confirm exclusive control, prevent a later client from
+connecting, or exclude local input. There is no automatic mode change or reconnect
+after refusal, and this crate imposes no additional cross-session control lock.
+
+Initialization validates bounded ServerInit metadata and negotiates 32-bit
+little-endian true-color RGBX (depth 24, 8-bit channels at shifts 0/8/16). Native
+server formats are validated before this
 normalization. Desktop names are bounded and discarded. Only ZRLE, CopyRect, Raw,
 Cursor and DesktopSize are advertised, in that preference order.
 
@@ -126,7 +135,7 @@ closed. Invalid input detected before IO preserves the untouched session. `close
 and dropping the session immediately release the transport; retained captures keep
 only their own memory reservations. No reconnect or input replay is automatic.
 
-The caller owns idle timers, current authorization, leases and Run/session admission.
+The caller owns idle timers, current authorization and Run/session admission.
 `expires_at()` supplies a two-hour maximum operation deadline. Every operation is
 clamped to that expiry, but an idle, unpolled object does not close itself or detect
 a disconnect. The future Runner owner must close/drop it on expiry, revocation or
@@ -187,7 +196,8 @@ named modifiers and F1-F35 follow X11 keysyms.
 
 Public-API integration tests use real TCP and TLS peers, synthetic certificates,
 an independent DES challenge vector, malformed protocol messages and observable
-peer disconnects. Framebuffer tests verify exact pixels, all ZRLE modes, independent
+peer disconnects. Framebuffer tests verify both ClientInit sharing flags and
+server refusal without a mode fallback, exact pixels, all ZRLE modes, independent
 persistent-zlib fixtures, CopyRect overlap/coverage, cursor/resize behavior,
 decompression limits, cancellation and maximum geometry allocation accounting.
 Session tests additionally verify immutable PNG pixels, refresh/resize ordering,

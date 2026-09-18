@@ -142,7 +142,7 @@ export function morningBriefSourceWaves(
 }
 
 /** What survived request budgeting, and what it cost to say so honestly. */
-interface MorningBriefRequestAllocation {
+export interface MorningBriefRequestAllocation {
   readonly items: readonly MorningBriefSourceItem[];
   readonly bytes: number;
   readonly omittedBySource: Readonly<
@@ -201,14 +201,56 @@ export function allocateMorningBriefRequest(
   let omittedBytes = 0;
 
   /**
-   * What the sources that have not yet placed anything still need.
+   * The sources whose first item the opening round holds capacity for.
    *
    * Round-robin alone does not make the first round fair: an early source's
    * first item can be large enough to consume everything that is left, and a
    * later source with a small first item then contributes nothing at all. So
-   * until every source has placed one item, an admission must also leave room
-   * for the first item of each source still waiting.
+   * until every source has placed one item, an admission also leaves room for
+   * the first item of each source still waiting.
+   *
+   * Reserving for *every* waiting source is the defect that replaces: a
+   * reservation nobody can honour suppresses the items that could have been
+   * honoured. A 247-byte Calendar item and a 40,242-byte Chat item sharing
+   * 1,000 bytes of capacity both got dropped, because Calendar was charged a
+   * reserve for a Chat item that could never fit under any allocation at all —
+   * so the attempt reported that nothing fitted while holding something that
+   * did.
+   *
+   * The reservation is therefore chosen up front and is always jointly
+   * satisfiable: smallest first item first, taking each while the running total
+   * still fits the capacity. Smallest-first admits the largest number of
+   * sources any selection can, and among those the one that leaves the most
+   * room for the rounds that follow; equal sizes keep the fixed source order.
+   * A source left out of it is not excluded from the request — it simply
+   * carries no reservation, and still takes its ordinary turn in every round.
    */
+  const reservedFirstBytes = new Map<MorningBriefSourceKind, number>();
+  const firstItemCharges = queues
+    .map((queue, index) => {
+      const first = queue.items[0];
+      return {
+        source: queue.source,
+        index,
+        bytes: first === undefined ? 0 : morningBriefItemBytes(first),
+      };
+    })
+    .filter((entry) => {
+      return entry.bytes > 0;
+    })
+    .sort((left, right) => {
+      return left.bytes - right.bytes || left.index - right.index;
+    });
+  let reservedTotal = 0;
+  for (const entry of firstItemCharges) {
+    if (reservedTotal + entry.bytes > capacity) {
+      continue;
+    }
+    reservedTotal += entry.bytes;
+    reservedFirstBytes.set(entry.source, entry.bytes);
+  }
+
+  /** What the still-waiting reserved sources after this one are holding. */
   const reserveForWaitingSources = (afterIndex: number): number => {
     let reserve = 0;
     for (let index = afterIndex + 1; index < queues.length; index += 1) {
@@ -216,10 +258,7 @@ export function allocateMorningBriefRequest(
       if (queue === undefined || queue.placed) {
         continue;
       }
-      const first = queue.items[0];
-      if (first !== undefined) {
-        reserve += morningBriefItemBytes(first);
-      }
+      reserve += reservedFirstBytes.get(queue.source) ?? 0;
     }
     return reserve;
   };
@@ -243,8 +282,12 @@ export function allocateMorningBriefRequest(
         continue;
       }
       const itemBytes = morningBriefItemBytes(item);
+      // One items array carries every source, so only the very first item
+      // placed pays no separator. Charging exactly what the array grows by is
+      // what lets a request budgeted to the ceiling reach it precisely.
+      const charge = itemBytes - (accepted.length === 0 ? 1 : 0);
       const reserve = firstRound ? reserveForWaitingSources(index) : 0;
-      if (bytes + itemBytes + reserve > capacity) {
+      if (bytes + charge + reserve > capacity) {
         omittedBySource.set(
           queue.source,
           (omittedBySource.get(queue.source) ?? 0) + 1,
@@ -252,7 +295,7 @@ export function allocateMorningBriefRequest(
         omittedBytes += itemBytes;
         continue;
       }
-      bytes += itemBytes;
+      bytes += charge;
       queue.placed = true;
       accepted.push(item);
     }

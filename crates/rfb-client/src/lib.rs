@@ -3,7 +3,7 @@
 //! [`authenticate`] consumes an already connected stream. The caller owns
 //! destination/authorization policy; this crate never resolves or connects a host.
 //! Authentication stops before ClientInit. [`Authenticated::initialize`] adds
-//! shared-mode desktop negotiation and owned framebuffer updates.
+//! desktop negotiation with an explicit [`SharingMode`] and owned framebuffer updates.
 //! [`Session`] adds immutable PNG captures and balanced keyboard/pointer input.
 //! Failure or cancellation drops the stream, with no background tasks.
 
@@ -38,6 +38,18 @@ pub use trust::TrustRoots;
 
 /// Maximum lifetime of the complete negotiation, including TLS and authentication.
 pub const MAX_HANDSHAKE_DURATION: Duration = Duration::from_secs(30);
+
+/// Per-connection sharing request sent in RFB ClientInit. The server controls
+/// whether it accepts the request and which other clients remain connected.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SharingMode {
+    /// Request that existing clients remain connected (shared-flag = 1).
+    Shared,
+    /// Request that existing clients be disconnected (shared-flag = 0).
+    /// The server may refuse this connection or override the request; successful
+    /// initialization does not prove exclusive control of the desktop.
+    Exclusive,
+}
 
 /// A validated VNC password. Debug output is redacted and owned bytes are erased
 /// when dropped, including on validation failure or cancellation.
