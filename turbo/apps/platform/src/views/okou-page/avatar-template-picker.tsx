@@ -14,10 +14,6 @@ import type {
   AvatarVideoVoice,
   AvatarVideoVoicesQuery,
 } from "@okouai/api-contracts/contracts/avatar-video";
-import type {
-  IntroVideoVoice,
-  IntroVideoVoicesQuery,
-} from "@okouai/api-contracts/contracts/intro-video-presenter";
 import {
   Button,
   Popover,
@@ -48,9 +44,7 @@ import { detach, Reason } from "../../signals/utils.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { isSelectedAvatarTemplate } from "../../signals/okou-page/avatar-template-selection.ts";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
-import { introVideoVoicePickerSignals } from "../../signals/okou-page/intro-video-voice-picker.ts";
 import { IconTooltipButton } from "../components/icon-tooltip.tsx";
-import { IntroVideoCatalogPagination } from "./intro-video-catalog-pagination.tsx";
 
 const AVATAR_CARD_SHADOW =
   "shadow-[0_2px_12px_hsl(220_12%_50%/0.04),0_0_0_0.5px_hsl(220_12%_50%/0.02)]";
@@ -99,23 +93,6 @@ const VOICE_AGE_VALUES = [
   "middle_aged",
   "old",
 ] as const satisfies readonly NonNullable<AvatarVideoVoicesQuery["age"]>[];
-const INTRO_VIDEO_VOICE_GENDER_VALUES = [
-  "female",
-  "male",
-] as const satisfies readonly NonNullable<IntroVideoVoicesQuery["gender"]>[];
-const INTRO_VIDEO_VOICE_LANGUAGE_VALUES = [
-  "English",
-  "Spanish",
-  "French",
-  "German",
-  "Portuguese",
-  "Italian",
-  "Hindi",
-  "Indonesian",
-  "Japanese",
-  "Korean",
-  "Chinese",
-] as const;
 
 interface CatalogFilterOption<T extends string> {
   readonly value: T;
@@ -836,11 +813,7 @@ const VOICE_PREVIEW_CARD_PROPS = {
 
 const VOICE_PREVIEW_CARD_CLASS = "group/voice";
 
-export function VoicePreviewControl({
-  voice,
-}: {
-  readonly voice: VoiceCardVoice;
-}) {
+function VoicePreviewControl({ voice }: { readonly voice: VoiceCardVoice }) {
   const { t } = useTranslation();
   return (
     <>
@@ -1296,166 +1269,6 @@ export function AvatarTemplatePickerToolbar({
     );
   }
   return <AvatarCatalogFilters signals={signals} />;
-}
-
-function IntroVideoVoiceFilters() {
-  const { t } = useTranslation();
-  const filters = useGet(introVideoVoicePickerSignals.filters$);
-  const setFilters = useSet(introVideoVoicePickerSignals.setFilters$);
-  const allLabel = t(($) => {
-    return $.artifacts.templates.filters.all;
-  });
-  const activeCount = [filters.language, filters.gender].filter(Boolean).length;
-
-  return (
-    <CatalogFiltersPopover
-      activeCount={activeCount}
-      onClear={() => {
-        setFilters({ language: undefined, gender: undefined });
-      }}
-    >
-      <div className="grid grid-cols-2 gap-3">
-        <CatalogFilterField
-          label={t(($) => {
-            return $.artifacts.templates.filters.language;
-          })}
-          allLabel={allLabel}
-          value={filters.language}
-          options={catalogFilterOptions(INTRO_VIDEO_VOICE_LANGUAGE_VALUES)}
-          onChange={(language) => {
-            setFilters({ ...filters, language });
-          }}
-        />
-        <CatalogFilterField
-          label={t(($) => {
-            return $.artifacts.templates.filters.gender;
-          })}
-          allLabel={allLabel}
-          value={filters.gender}
-          options={catalogFilterOptions(INTRO_VIDEO_VOICE_GENDER_VALUES)}
-          onChange={(gender) => {
-            setFilters({ ...filters, gender });
-          }}
-        />
-      </div>
-    </CatalogFiltersPopover>
-  );
-}
-
-function IntroVideoVoiceCatalog({
-  selectedVoiceId,
-  query,
-  onSelect,
-}: {
-  readonly selectedVoiceId: string | undefined;
-  /** Narrows the pages already loaded; the provider has no name search. */
-  readonly query?: string;
-  readonly onSelect: (voice: IntroVideoVoice) => void;
-}) {
-  const { t } = useTranslation();
-  const catalog = useLoadable(introVideoVoicePickerSignals.catalogPage$);
-  const lastCatalog = useLastResolved(
-    introVideoVoicePickerSignals.catalogPage$,
-  );
-  const generation = useGet(introVideoVoicePickerSignals.generation$);
-  const loadMore = useSet(introVideoVoicePickerSignals.loadMore$);
-  const paging = useLoadable(introVideoVoicePickerSignals.paging$);
-  const setSentinelRef = useSet(introVideoVoicePickerSignals.setSentinelRef$);
-  const reload = useSet(introVideoVoicePickerSignals.reload$);
-  const pageSignal = useGet(pageSignal$);
-  const visibleCatalog =
-    catalog.state === "hasData"
-      ? catalog.data
-      : lastCatalog?.generation === generation
-        ? lastCatalog
-        : undefined;
-  const handleLoadMore = () => {
-    detach(loadMore(pageSignal), Reason.DomCallback, "HeyGen voice paging");
-  };
-  const needle = query?.trim().toLowerCase() ?? "";
-  const visibleItems = (visibleCatalog?.items ?? []).filter((voice) => {
-    return needle === "" || voice.name.toLowerCase().includes(needle);
-  });
-
-  return (
-    <section className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <div
-        data-avatar-voice-list-scroll=""
-        data-intro-video-catalog-scroll=""
-        className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-      >
-        {catalog.state === "hasError" ? (
-          <div className="grid justify-items-center gap-3">
-            <AvatarTemplateEmpty error />
-            <Button type="button" variant="outline" size="sm" onClick={reload}>
-              {t(($) => {
-                return $.chat.introVideo.catalog.retry;
-              })}
-            </Button>
-          </div>
-        ) : visibleCatalog === undefined ? (
-          <AvatarVoiceSkeletonGrid />
-        ) : visibleItems.length > 0 ? (
-          <div className="grid grid-cols-1 gap-2.5">
-            {visibleItems.map((voice) => {
-              return (
-                <AvatarVoiceCard
-                  key={voice.id}
-                  voice={voice}
-                  selected={voice.id === selectedVoiceId}
-                  recommended={false}
-                  highlightRecommendation={false}
-                  onSelect={onSelect}
-                />
-              );
-            })}
-          </div>
-        ) : (
-          <AvatarTemplateEmpty error={false} />
-        )}
-        <IntroVideoCatalogPagination
-          hasNext={visibleCatalog?.hasNext ?? false}
-          loading={paging.state === "loading"}
-          error={paging.state === "hasError" ? paging.error : null}
-          onLoadMore={handleLoadMore}
-          onReload={reload}
-          onSentinelRef={setSentinelRef}
-        />
-      </div>
-    </section>
-  );
-}
-
-export function VoiceLibraryToolbar() {
-  return <IntroVideoVoiceFilters />;
-}
-
-export function VoiceLibraryContent({
-  header,
-  selectedVoiceId,
-  query,
-  onSelect,
-}: {
-  /** Rendered inside the picker so its own previews stop when a card plays. */
-  readonly header?: ReactNode;
-  readonly selectedVoiceId: string | undefined;
-  readonly query?: string;
-  readonly onSelect: (voice: IntroVideoVoice) => void;
-}) {
-  return (
-    <div
-      data-avatar-voice-picker=""
-      data-intro-video-voice-provider="heygen"
-      className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden"
-    >
-      {header}
-      <IntroVideoVoiceCatalog
-        selectedVoiceId={selectedVoiceId}
-        query={query}
-        onSelect={onSelect}
-      />
-    </div>
-  );
 }
 
 export function AvatarTemplatePickerContent({

@@ -624,7 +624,6 @@
       "categories": "टेम्पलेट श्रेणियां",
       "category": "टेम्पलेट श्रेणी",
       "chooseVoice": "{{title}} के लिए आवाज़ चुनें",
-      "creativeVideo": "क्रिएटिव वीडियो",
       "filters": {
         "age": "आयु",
         "all": "सभी",
@@ -647,10 +646,8 @@
       "importedSlides_one": "{{count}} स्लाइड",
       "importedSlides_other": "{{count}} स्लाइड",
       "importFile": "अपनी फ़ाइल इंपोर्ट करें",
-      "importFileHint": "({{formats}})",
+      "importFileHint": "फ़ाइल के डिज़ाइन का पुन: उपयोग करें",
       "importUnsupported": "टेम्पलेट बनाने के लिए {{formats}} फ़ाइल चुनें।",
-      "introVideo": "इंट्रो वीडियो",
-      "introVideoUnavailable": "यह वीडियो टेम्पलेट अब उपलब्ध नहीं है। अपना संदेश भेजने के लिए इसे हटाएँ।",
       "multiAccent": "बहु-उच्चारण",
       "needPro": "Pro चाहिए",
       "nextSlide": "अगली स्लाइड का पूर्वावलोकन करें",
@@ -668,7 +665,6 @@
       "renameImportedTemplate": "टेम्पलेट का नाम बदलें",
       "searchConnector": "टेम्पलेट खोजें",
       "searchConnectors": "टेम्पलेट खोजें",
-      "selected": "चयनित",
       "selectStyle": "शैली {{style}} चुनें",
       "selectTemplate": "टेम्पलेट {{title}} चुनें",
       "selectVideo": "वीडियो टेम्पलेट {{title}} चुनें",
@@ -1883,70 +1879,6 @@
       "sent": "सफलतापूर्वक फ़ॉरवर्ड किया गया",
       "threads": "चैट",
       "title": "फ़ॉरवर्ड करें"
-    },
-    "introVideo": {
-      "avatar": {
-        "heading": "अवतार चुनें",
-        "label": "अवतार",
-        "none": "कोई अवतार नहीं",
-        "noneDetail": "केवल शैली",
-        "previewLook": "{{name}} रूप का पूर्वावलोकन"
-      },
-      "catalog": {
-        "error": "कैटलॉग लोड नहीं हो सका।",
-        "loading": "और विकल्प लोड हो रहे हैं",
-        "reload": "कैटलॉग फिर लोड करें",
-        "retry": "फिर से कोशिश करें"
-      },
-      "footer": {
-        "cancel": "रद्द करें"
-      },
-      "picker": {
-        "allPresenters": "सभी प्रेज़ेंटर",
-        "allPresentersCount": "सभी प्रेज़ेंटर ({{total}})",
-        "allVoices": "सभी आवाज़ें",
-        "allVoicesCount": "सभी आवाज़ें ({{total}})",
-        "autoVoiceDescription": "आपकी शैली से मेल खाती आवाज़",
-        "avatarVoice": "अवतार की आवाज़",
-        "back": "वापस",
-        "closeOptions": "विकल्प बंद करें",
-        "done": "हो गया",
-        "moreOptions": "अधिक विकल्प",
-        "noMatches": "कोई परिणाम नहीं मिला।",
-        "optionsNote": "इन्हें चैट के चिप से कभी भी बदला जा सकता है।",
-        "pickStyle": "शैली चुनें",
-        "reset": "रीसेट करें",
-        "searchPresenters": "प्रेज़ेंटर खोजें",
-        "searchStyles": "शैलियाँ खोजें",
-        "searchVoices": "आवाज़ें खोजें",
-        "selectedStyle": "चयनित: {{name}}",
-        "settings": "इंट्रो वीडियो की सेटिंग",
-        "styleCount_one": "{{count}} शैली",
-        "styleCount_other": "{{count}} शैलियाँ",
-        "styleCountOf": "{{total}} में से {{shown}}",
-        "useStyle": "{{name}} इस्तेमाल करें"
-      },
-      "style": {
-        "auto": "Okou को चुनने दें",
-        "browseGroups": "शैली के अनुसार देखें",
-        "groups": {
-          "cinematic": "फ़िल्म और फ़ोटोग्राफ़ी",
-          "handmade": "हस्तकला और सामग्री",
-          "iconic-artist": "कला और डिज़ाइन",
-          "other": "अन्य शैलियाँ",
-          "pop-culture": "पॉप संस्कृति",
-          "print": "मुद्रण और प्रकाशन",
-          "retro-tech": "रेट्रो तकनीक और इंटरफ़ेस"
-        },
-        "preview": "{{title}} का पूर्वावलोकन"
-      },
-      "voice": {
-        "auto": "Okou को चुनने दें",
-        "defaultDescription": "चुने गए अवतार की डिफ़ॉल्ट आवाज़ इस्तेमाल करें",
-        "label": "आवाज़",
-        "none": "बिना वॉइसओवर",
-        "noneShortDescription": "मूल ऑडियो रखें"
-      }
     },
     "mail": {
       "bcc": "गुप्त प्रतिलिपि",
@@ -3745,7 +3677,7 @@
           "iconAlt": "वैकल्पिक {{brandName}} ऐप आइकन",
           "iconHint": ", या अपनी पसंद के किसी भी आइकन का उपयोग करें।",
           "iconTitle": "वैकल्पिक {{brandName}} ऐप आइकन",
-          "imageAlt": "Feishu ऐप निर्माण फॉर्म जिसमें ऐप का नाम, आइकन और क्रिएट बटन हाइलाइट किया गया है",
+          "imageAlt": "Lark ऐप निर्माण फॉर्म जिसमें ऐप का नाम, आइकन और क्रिएट बटन हाइलाइट किया गया है",
           "title": "Agent प्रकार का ऐप बनाएं"
         },
         "credentials": {

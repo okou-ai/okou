@@ -17,6 +17,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import {
   chatThreadConnectorSelectionContract,
+  chatThreadModelSelectionContract,
   chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import {
@@ -31,6 +32,10 @@ import {
   customConnectorsContract,
 } from "@okouai/api-contracts/contracts/custom-connectors";
 import { agentCustomConnectorsContract } from "@okouai/api-contracts/contracts/agent-custom-connectors";
+import {
+  logsByIdContract,
+  logsListContract,
+} from "@okouai/api-contracts/contracts/logs";
 import {
   feishuConnectContract,
   larkConnectContract,
@@ -105,6 +110,7 @@ import { customConnectorProposalRoutes } from "../custom-connectors-proposal";
 import { customConnectorsUpdateRoutes } from "../custom-connectors-update";
 import { customConnectorsValuesSetRoutes } from "../custom-connectors-values-set";
 import { feishuConnectRoutes } from "../feishu-connect";
+import { logsRoutes } from "../logs";
 
 const customConnectorByIdTestRoutes = Object.freeze([
   ...customConnectorsDeleteRoutes,
@@ -1314,6 +1320,18 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
     );
   }
 
+  async function expectRunSource(actor: ApiTestUser, runId: string) {
+    mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+    const result = await accept(
+      setupApp({ context, routes: logsRoutes })(logsByIdContract).getById({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { id: runId },
+      }),
+      [200],
+    );
+    expect(result.body.triggerSource).toBe(platform);
+  }
+
   async function expectFeishuResourceDownloads(args: {
     readonly actor: ApiTestUser;
     readonly runId: string;
@@ -1372,7 +1390,10 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
     }
   }
 
-  async function startFeishuDmSession(fixture: FeishuRunFixture): Promise<{
+  async function startFeishuDmSession(
+    fixture: FeishuRunFixture,
+    threadId?: string,
+  ): Promise<{
     readonly firstMessageId: string;
     readonly mainSessionId: string;
   }> {
@@ -1383,6 +1404,7 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
       callbackUrl,
       directMessage(appId, "start the Feishu DM session", "ou_feishu_user", {
         messageId: firstMessageId,
+        threadId,
       }),
       { encrypted: true },
     );
@@ -3378,6 +3400,7 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
       await flushWaitUntilForTest();
 
       const run = await findRun(fixture.actor, prompt);
+      await expectRunSource(fixture.actor, run.id);
 
       if (phase === "input context") {
         const inputEvent = requireValue(
@@ -4512,7 +4535,7 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
             { type: "text", text: expect.stringContaining(feishuFilePrompt) },
             {
               type: "source",
-              kind: "feishu",
+              kind: platform,
               href: `${provider.appLinkOrigin}/client/chat/open?openChatId=oc_feishu_dm`,
             },
           ],
@@ -4741,7 +4764,7 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
                   "Image comparison\nCompare these images with [the brief](https://example.com/brief)",
                 ),
               },
-              expect.objectContaining({ type: "source", kind: "feishu" }),
+              expect.objectContaining({ type: "source", kind: platform }),
             ],
           },
         }),
@@ -5318,6 +5341,32 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
       null,
     );
     const run = await findRun(actor, "do the Feishu task");
+    await expectRunSource(actor, run.id);
+    const logsClient = setupApp({ context, routes: logsRoutes })(
+      logsListContract,
+    );
+    const listed = await accept(
+      logsClient.list({
+        headers: { authorization: "Bearer clerk-session" },
+        query: { triggerSource: platform, limit: 20 },
+      }),
+      [200],
+    );
+    expect(listed.body.data).toContainEqual(
+      expect.objectContaining({ id: run.id, triggerSource: platform }),
+    );
+    expect(listed.body.filters.sources).toContain(platform);
+    const otherPlatform = await accept(
+      logsClient.list({
+        headers: { authorization: "Bearer clerk-session" },
+        query: {
+          triggerSource: platform === "lark" ? "feishu" : "lark",
+          limit: 20,
+        },
+      }),
+      [200],
+    );
+    expect(otherPlatform.body.data).toHaveLength(0);
     mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
     const threadEvents = await accept(
       setupApp({ context, routes: chatThreadRoutes })(
@@ -5347,7 +5396,7 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
             { type: "text", text: "do the Feishu task" },
             {
               type: "source",
-              kind: "feishu",
+              kind: platform,
               href: `${provider.appLinkOrigin}/client/chat/open?openChatId=oc_feishu_dm`,
             },
           ],
@@ -5435,7 +5484,7 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
         event.userMessage.parts.some((part) => {
           return (
             part.type === "source" &&
-            part.kind === "feishu" &&
+            part.kind === platform &&
             part.href ===
               `${provider.appLinkOrigin}/client/chat/open?openChatId=oc_feishu_dm`
           );
@@ -5525,6 +5574,7 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
     );
     await flushWaitUntilForTest();
     const followUpRun = await findRun(actor, "continue the Feishu DM session");
+    await expectRunSource(actor, followUpRun.id);
     await runsApi.heartbeatRunner(runnerGroup);
     const followUpClaim = await runsApi.claimRunnerJob(followUpRun.id);
     expect(followUpClaim.resumeSession?.sessionId).toBe(mainSessionId);
@@ -5546,6 +5596,78 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
       }),
       [200],
     );
+  });
+
+  it("retains platform run history when a model change starts a fresh session", async () => {
+    const fixture = await setupFeishuRunFixture();
+    const { actor, runnerGroup, appId, callbackUrl, defaultAgentId } = fixture;
+    const providerThreadId = `omt_${randomUUID()}`;
+    await startFeishuDmSession(fixture, providerThreadId);
+    const { providerId } = await runsApi.createOrgModelProvider(actor, {
+      type: "openai-api-key",
+      secret: "feishu-history-openai-key",
+    });
+    await runsApi.updateOrgModelPolicies(actor, [
+      {
+        model: "gpt-5.6-terra",
+        isDefault: true,
+        defaultProviderType: "openai-api-key",
+        credentialScope: "org",
+        modelProviderId: providerId,
+      },
+    ]);
+    mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+    const threads = await accept(
+      setupApp({ context, routes: chatThreadRoutes })(
+        chatThreadsContract,
+      ).events({
+        headers: { authorization: "Bearer clerk-session" },
+        query: {},
+      }),
+      [200],
+    );
+    const thread = requireValue(
+      threads.body.events.find((event) => {
+        return event.kind === "created" && event.agentId === defaultAgentId;
+      }),
+      "Expected the integration chat thread",
+    );
+    await accept(
+      setupApp({ context, routes: chatThreadRoutes })(
+        chatThreadModelSelectionContract,
+      ).update({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { id: thread.chatThreadId },
+        body: { model: "gpt-5.6-terra" },
+      }),
+      [204],
+    );
+    const prompt = "continue after changing model family";
+    await postEvent(
+      callbackUrl,
+      directMessage(appId, prompt, "ou_feishu_user", {
+        threadId: providerThreadId,
+      }),
+      { encrypted: true },
+    );
+    await flushWaitUntilForTest();
+    const run = await findRun(actor, prompt);
+    await expectRunSource(actor, run.id);
+    await runsApi.heartbeatRunner(runnerGroup);
+    const claim = await runsApi.claimRunnerJob(run.id);
+    expect(claim.resumeSession).toBeNull();
+    expect(claim.appendSystemPrompt).toContain(
+      `# ${provider.name} Run Context`,
+    );
+    expect(claim.appendSystemPrompt).toContain(
+      "User: start the Feishu DM session",
+    );
+    expect(claim.appendSystemPrompt).toContain(
+      "Assistant: Initial Feishu DM answer",
+    );
+    await runsApi.requestCancelRun(actor, run.id, [200]);
+    await flushWaitUntilForTest();
+    await removeFeishuInstallation(fixture);
   });
 
   it("keeps quoted Feishu DM input on the main session and replies in a thread", async () => {
@@ -5887,6 +6009,13 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
       }),
     );
     expect(runs[2]?.status).toBe("queued");
+    const queue = await runsApi.readRunQueue(actor);
+    expect(queue.body.queue).toContainEqual(
+      expect.objectContaining({
+        runId: runs[2]?.id,
+        triggerSource: platform,
+      }),
+    );
     for (const run of [...runs].reverse()) {
       await runsApi.requestCancelRun(actor, run.id, [200]);
     }
@@ -6334,6 +6463,7 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
     });
 
     const secondRun = await findRun(secondActor, `@Nova ${secondPrompt}`);
+    await expectRunSource(secondActor, secondRun.id);
     await runsApi.heartbeatRunner(runnerGroup);
     const secondClaim = await runsApi.claimRunnerJob(secondRun.id);
     expect(secondClaim.prompt).toBe(`@Nova ${secondPrompt}`);

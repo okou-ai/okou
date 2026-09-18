@@ -14,10 +14,7 @@ const packageRoot = path.join(appRoot, "native", "computer-use-helper");
 const distDir = path.join(appRoot, "native", "dist", "native");
 const symbolsDir = path.join(appRoot, "native", "dist", "symbols");
 
-// Both executables ship from one SwiftPM package, but they run as separate
-// processes: the Computer Use client kills and respawns its helper on command
-// timeouts, which would destroy an in-flight screen capture.
-const helperNames = ["computer-use-helper", "screen-recorder-helper"];
+const helperNames = ["computer-use-helper"];
 
 execFileSync(
   "swift",

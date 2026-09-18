@@ -61,7 +61,6 @@ export enum FeatureSwitchKey {
   PiMemory = "piMemory",
   OpenRouterUsRouting = "openRouterUsRouting",
   LangfuseTrace = "_langfuseTrace",
-  IntroVideo = "introVideo",
   ComposerTaskChips = "composerTaskChips",
   ComposerImageAnnotation = "composerImageAnnotation",
   GradientColorThemes = "gradientColorThemes",
@@ -75,6 +74,7 @@ export enum FeatureSwitchKey {
   GetStartedQuests = "getStartedQuests",
   ComposerAddMenu = "composerAddMenu",
   CustomTemplates = "customTemplates",
+  PresentationConvert = "presentationConvert",
   DeliveryFormatGuidance = "deliveryFormatGuidance",
   GoogleSlidesConversion = "googleSlidesConversion",
 }

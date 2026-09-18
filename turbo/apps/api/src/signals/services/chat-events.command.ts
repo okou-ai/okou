@@ -10,7 +10,6 @@ import {
   resolveReasoningEffortForDispatch,
 } from "./chat-reasoning-effort.service";
 /** Canonical ChatEvent write commands. */
-import { loadIntroVideoTemplateAccess } from "./intro-video-access.service";
 import { randomBytes } from "node:crypto";
 import { command } from "ccstate";
 import type { ChatEventType } from "@okouai/api-contracts/contracts/chat-events";
@@ -486,7 +485,6 @@ function shouldTouchThreadSortFromNormalSend(
 }
 
 interface NormalSendFeatureSwitches {
-  readonly introVideoEnabled: boolean;
   /**
    * Carried whole so downstream checks can read it without reloading the
    * switches this request already read.
@@ -1159,11 +1157,9 @@ async function resolveNormalSendFeatureSwitches(
   db: Db,
   orgId: string,
   userId: string,
-  templates: readonly GenerationTemplateRequest[],
 ): Promise<NormalSendFeatureSwitches> {
   const context = await loadUserFeatureSwitchContext(db, orgId, userId);
   return {
-    introVideoEnabled: loadIntroVideoTemplateAccess(templates, context),
     featureSwitchContext: context,
   };
 }
@@ -1199,7 +1195,6 @@ function resolveSelectedTemplateContext(
   readonly videoRunOptions: ChatRunVideoOptionsRequest | null;
 } {
   const resolved = resolveThreadGenerationTemplatePrompt({
-    introVideoEnabled: featureSwitches.introVideoEnabled,
     explicit: runtimeBody.primaryTemplate,
     explicitTemplates: runtimeBody.templates,
     mountedUserPresentationTemplateIds,
@@ -1253,7 +1248,6 @@ async function validateGenerationTemplatePrompt(
   }
   for (const template of generationTemplates) {
     const validation = buildGenerationTemplatePrompt(template, {
-      introVideoEnabled: featureSwitches.introVideoEnabled,
       mountedUserPresentationTemplateIds: selectedIds,
       mountedUserTemplates: authorizedCustom,
     });
@@ -2793,14 +2787,7 @@ function resolveTimedNormalSendFeatureSwitches(
     "api_dispatch_pre_create_agent_web_chat_prepare_normal_send_resolve_feature_switches",
     "nested",
     () => {
-      return resolveNormalSendFeatureSwitches(
-        db,
-        args.orgId,
-        args.userId,
-        args.body.userMessage.parts.flatMap((part) => {
-          return part.type === "template" ? [part.template] : [];
-        }),
-      );
+      return resolveNormalSendFeatureSwitches(db, args.orgId, args.userId);
     },
   );
 }

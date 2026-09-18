@@ -5,15 +5,11 @@ import {
   CANONICAL_CODEX_HOME_DIR,
   CANONICAL_WORKING_DIR,
 } from "@okouai/api-contracts/contracts/runners";
-import {
-  FEISHU_PLATFORMS,
-  type FeishuPlatform,
-} from "@okouai/core/feishu-platform";
+import { FEISHU_PLATFORMS } from "@okouai/core/feishu-platform";
 import { presentationTemplateSkillInstruction } from "@okouai/core/presentation-template-skill";
 
 function buildIntegrationToolsPrompt(
   triggerSource: TriggerSource,
-  feishuPlatform: FeishuPlatform | undefined,
   larkEnabled: boolean,
   deliveryFormatGuidanceEnabled: boolean,
 ): readonly string[] {
@@ -62,8 +58,9 @@ function buildIntegrationToolsPrompt(
         ...localFileContextLines,
       ];
     }
-    case "feishu": {
-      const platform = feishuPlatform ?? "feishu";
+    case "feishu":
+    case "lark": {
+      const platform = triggerSource;
       const providerName = FEISHU_PLATFORMS[platform].name;
       return [
         `- ${providerName} messaging and files: use \`okou ${platform} --help\`. Normal replies are automatically sent to the originating conversation, so ${providerName} commands are for a different chat, DM, reply target, or explicit extra message/file. Use \`okou ${platform} message send --help\` for extra messages, \`okou ${platform} download-file -h\` for \`[${providerName} file]\` blocks, and \`okou ${platform} upload-file -h\` when file delivery is needed. The current installation, chat, message, and sender IDs are in the integration context. Specify \`--installation\` when the organization has multiple ${providerName} bots.`,
@@ -105,13 +102,11 @@ function buildIntegrationToolsPrompt(
 
 export function buildAgentToolsPrompt(args: {
   readonly privateArtifactsEnabled: boolean;
-  readonly feishuPlatform: FeishuPlatform | undefined;
   readonly triggerSource: TriggerSource;
   readonly cloudBrowserEnabled: boolean | undefined;
   readonly bankingEnabled: boolean;
   readonly vncEnabled: boolean;
   readonly larkEnabled: boolean;
-  readonly introVideoEnabled: boolean;
   readonly deliveryFormatGuidanceEnabled: boolean;
 }): string {
   const okouCliCommand = `npx --yes --package="\${CLI_PKG_URL}" okou`;
@@ -137,12 +132,6 @@ export function buildAgentToolsPrompt(args: {
     '- Workflow and automation requests use the `workflow-setup` skill first, then follow its guidance. This covers creating, editing, inspecting, running, scheduling, enabling, disabling, copying, or deleting a workflow or automation, and any recurring or event-driven request (for example "every morning", "when a new email arrives", "whenever X happens", "monitor", "remind me", "keep this in sync") even when the user does not say the word "workflow".',
     "- Manage recurring workflow automations: `okou workflow automation --help`. Do NOT use /loop, cron tools (CronCreate, CronList, CronDelete), or ScheduleWakeup — they are not available.",
     `- ${presentationTemplateSkillInstruction()}`,
-    ...(args.introVideoEnabled
-      ? [
-          "- Intro-video creation: read and follow the `intro-video` skill for requests from the Create an intro video flow.",
-          "- Click-driven intro-video camera moves: when a screen recording includes a synchronized same-stem `.clicks.json` sidecar, run `okou video camera --help` and follow its plan/review workflow.",
-        ]
-      : []),
     "- Browser access: `agent-browser` provides rendered-page inspection and interaction. For one known public URL when you only need page content, prefer `okou scrape <url> --format markdown`; use `agent-browser` when you need browser state, authentication, JavaScript, screenshots, or interaction.",
     ...(args.cloudBrowserEnabled === true
       ? [
@@ -180,7 +169,6 @@ export function buildAgentToolsPrompt(args: {
       : []),
     ...buildIntegrationToolsPrompt(
       args.triggerSource,
-      args.feishuPlatform,
       args.larkEnabled,
       args.deliveryFormatGuidanceEnabled,
     ),

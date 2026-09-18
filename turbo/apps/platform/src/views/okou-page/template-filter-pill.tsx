@@ -1,8 +1,11 @@
 import type { Ref } from "react";
 import { cn } from "@okouai/ui";
 
-import type { ScrollFade } from "../../signals/okou-page/intro-video-picker.ts";
-import { SCROLLBAR_HIDDEN, SCROLL_FADE_X } from "./scroll-fade.ts";
+import {
+  SCROLLBAR_HIDDEN,
+  SCROLL_FADE_X,
+  type ScrollFade,
+} from "./scroll-fade.ts";
 
 interface TemplateFilterPill {
   readonly id: string;
@@ -10,16 +13,12 @@ interface TemplateFilterPill {
 }
 
 /**
- * The template picker's filter row, shared by the workflow tab and the intro
- * video style gallery. The two filter the same kind of surface — a wall of
- * cards below a search box — so they have to read as one control, which is
- * what stopped the intro video gallery from keeping its own outlined toggle
- * buttons.
+ * The template picker's filter row: a wall of cards below a search box, with
+ * one control for narrowing it.
  *
- * `layout` is the one thing the two tabs disagree on. The workflow tab's
- * personas grow with the catalog and `wrap` onto as many lines as they need;
- * the style groups are a fixed seven, so they stay on one `scroll`ing line
- * rather than spending a second line of the dialog's height.
+ * `layout` lets a caller choose how the pills use the dialog's height. The
+ * workflow tab's personas grow with the catalog and `wrap` onto as many lines
+ * as they need; a fixed set of groups stays on one `scroll`ing line instead.
  *
  * The caller owns the row's padding, because each tab indents its content to a
  * different gutter, and supplies `label` when the row is a named group for

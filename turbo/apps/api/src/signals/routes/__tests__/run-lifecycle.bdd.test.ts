@@ -31,7 +31,7 @@ import type {
 import { testCustomConnectorSkillVersionAssociationContract } from "@okouai/api-contracts/contracts/test-custom-connector-skill-version-association";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { DISABLED_PAID_TOOLS_ENV_VAR } from "@okouai/api-contracts/contracts/paid-tools";
-import { INTRO_VIDEO_SKILL_NAME, SEED_SKILLS } from "@okouai/core/seed-skills";
+import { SEED_SKILLS } from "@okouai/core/seed-skills";
 import {
   getCustomConnectorSkillStorageName,
   getCustomSkillStorageName,
@@ -1005,129 +1005,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     expect(claim.appendSystemPrompt).toContain("# Agent Tools");
     expect(claim.appendSystemPrompt).not.toContain("# Thread Goal");
     await api.requestCancelRun(actor, run.runId, [200]);
-  });
-
-  it("advertises the intro-video skill and camera tooling only while its rollout switch is on", async () => {
-    // Skill publication is independent of the dev-seed snapshot. Resolve this
-    // request to an owned volume so concurrent tests never see a temporary
-    // canonical system skill, even before cleanup runs.
-    const fullPath = `vm0-ai/vm0-skills/tree/fixture-${randomUUID()}/${INTRO_VIDEO_SKILL_NAME}`;
-    const skillUrl = `https://github.com/${fullPath}`;
-    const storageName = `agent-skills@${fullPath}`;
-    onTestFinished(async () => {
-      await cleanupOwnedSkillsState(context, {
-        skillUrls: [skillUrl],
-        storageNames: [storageName],
-      });
-    });
-    await seedCurrentSkillVersionsState(context, {
-      staleCommitSha: "intro-video-rollout-fixture",
-      versions: [
-        {
-          name: INTRO_VIDEO_SKILL_NAME,
-          url: skillUrl,
-          full_path: fullPath,
-          storage_name: storageName,
-          version_hash: createHash("sha256").update(randomUUID()).digest("hex"),
-          size: 1024,
-          archive_size: 1024,
-          file_count: 1,
-          frontmatter: {
-            name: INTRO_VIDEO_SKILL_NAME,
-            description:
-              "Create an intro video using the selected HeyGen options",
-          },
-        },
-      ],
-    });
-    const bdd = createBddApi(context);
-    const api = createRunsApi(context, {
-      [INTRO_VIDEO_SKILL_NAME]: storageName,
-    });
-    const connectors = createConnectorBddApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
-    const skillHint = "read and follow the `intro-video` skill";
-    const toolHint = "Click-driven intro-video camera moves:";
-    await bdd.readMe(actor);
-    await connectors.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.IntroVideo]: true,
-    });
-
-    const enabledByOverride = await api.createRun(actor, {
-      agentId,
-      prompt: "Create a polished video from the attached source.",
-      modelProvider: "anthropic-api-key",
-    });
-    await api.heartbeatRunner(runnerGroup);
-    const enabledByOverrideClaim = await api.claimRunnerJob(
-      enabledByOverride.runId,
-    );
-    expect(enabledByOverrideClaim.appendSystemPrompt ?? "").toContain(
-      skillHint,
-    );
-    expect(enabledByOverrideClaim.appendSystemPrompt ?? "").toContain(toolHint);
-    expect(enabledByOverrideClaim.appendSystemPrompt ?? "").toContain(
-      "okou video camera --help",
-    );
-    expect(
-      expectCanonicalStorageManifest(
-        enabledByOverrideClaim.storageManifest,
-      )?.storageMounts.map((mount) => {
-        return mount.mountPath;
-      }),
-    ).toContain(`/home/user/.claude/skills/${INTRO_VIDEO_SKILL_NAME}`);
-
-    await api.createOrgModelProvider(actor, {
-      type: "openai-api-key",
-      secret: "intro-video-codex-key",
-    });
-    const enabledCodex = await api.createRun(actor, {
-      agentId,
-      prompt: "Create a polished video from the attached source.",
-      modelProvider: "openai-api-key",
-    });
-    await api.heartbeatRunner(runnerGroup);
-    const enabledCodexClaim = await api.claimRunnerJob(enabledCodex.runId);
-    expect(enabledCodexClaim.cliAgentType).toBe("codex");
-    expect(enabledCodexClaim.appendSystemPrompt ?? "").toContain(skillHint);
-    expect(
-      expectCanonicalStorageManifest(
-        enabledCodexClaim.storageManifest,
-      )?.storageMounts.map((mount) => {
-        return mount.mountPath;
-      }),
-    ).toContain(`/home/user/.codex/skills/${INTRO_VIDEO_SKILL_NAME}`);
-    await api.requestCancelRun(actor, enabledCodex.runId, [200]);
-
-    await connectors.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.IntroVideo]: false,
-    });
-
-    const disabledByOverride = await api.createRun(actor, {
-      agentId,
-      prompt: "Create a polished video from the attached source.",
-      modelProvider: "anthropic-api-key",
-    });
-    await api.heartbeatRunner(runnerGroup);
-    const disabledByOverrideClaim = await api.claimRunnerJob(
-      disabledByOverride.runId,
-    );
-    expect(disabledByOverrideClaim.appendSystemPrompt ?? "").toContain(
-      "# Agent Tools",
-    );
-    expect(disabledByOverrideClaim.appendSystemPrompt ?? "").not.toContain(
-      skillHint,
-    );
-    expect(disabledByOverrideClaim.appendSystemPrompt ?? "").not.toContain(
-      toolHint,
-    );
-    expect(
-      expectCanonicalStorageManifest(
-        disabledByOverrideClaim.storageManifest,
-      )?.storageMounts.map((mount) => {
-        return mount.mountPath;
-      }),
-    ).not.toContain(`/home/user/.claude/skills/${INTRO_VIDEO_SKILL_NAME}`);
   });
 
   it("advertises artifact sharing only when private artifacts are enabled", async () => {

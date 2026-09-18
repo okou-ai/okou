@@ -1,7 +1,5 @@
 import type { ComputerUseCommandClock } from "./computer-use-command-budget";
-import { DesktopRecorderController } from "./desktop-recorder-controller";
-import { createRecorderNativeBackend } from "./desktop-recorder-native";
-import { mkdtempSync, writeFileSync, rmSync, chmodSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { DesktopMcpPluginManager } from "./desktop-mcp-plugin";
@@ -487,45 +485,6 @@ lines.on("line", (line) => {
   return { manager, ready: ready.promise };
 }
 
-function recorderFixture() {
-  const dir = mkdtempSync(path.join(tmpdir(), "driver-recorder-"));
-  const helperPath = path.join(dir, "recorder.cjs");
-  writeFileSync(
-    helperPath,
-    `#!${process.execPath}
-const readline = require("node:readline");
-let status = "idle";
-readline.createInterface({ input: process.stdin }).on("line", (line) => {
-  const request = JSON.parse(line);
-  if (request.kind === "recorder.start") status = "recording";
-  if (request.kind === "recorder.pause") status = "paused";
-  if (request.kind === "recorder.resume") status = "recording";
-  const result = request.kind === "recorder.prepare"
-    ? { sessionId: String(process.pid), width: 800, height: 600, geometry: { originX: 0, originY: 0, widthPoints: 800, heightPoints: 600, scale: 1 } }
-    : { status, elapsedMs: 1000 };
-  process.stdout.write(JSON.stringify({ id: request.id, status: "succeeded", result }) + "\\n");
-});
-`,
-  );
-  chmodSync(helperPath, 0o755);
-  const backend = createRecorderNativeBackend({ helperPath });
-  const recorder = new DesktopRecorderController({
-    createBackend: () => backend,
-    createOutputPath: () => path.join(dir, "recording.mp4"),
-    canDeliver: async () => true,
-    deliver: async () => {
-      throw new Error("Recording delivery is outside this fixture");
-    },
-    openReview: () => {},
-  });
-  recorder.setFeatureEnabled(true);
-  cleanups.push(async () => {
-    backend.dispose();
-    rmSync(dir, { recursive: true, force: true });
-  });
-  return recorder;
-}
-
 const action: ComputerUseCommand = {
   id: "command-1",
   kind: "keyboard.type_text",
@@ -709,23 +668,14 @@ it.each(["permissions.state", "apps.list", "app.open", "app.state"])(
 );
 
 describe("native permission recovery through the runtime owner", () => {
-  it("preserves the MCP process and recorder session while recovering the native helper", async () => {
+  it("preserves the MCP process while recovering the native helper", async () => {
     const plugin = pluginFixture();
     const app = desktop({
       plugin: plugin.manager,
       nativeRequestTimeoutMs: 100,
     });
-    const recorder = recorderFixture();
     await app.controller.start();
     await plugin.ready;
-    await recorder.prepare({
-      sourceId: "display:1",
-      sourceKind: "display",
-      systemAudio: false,
-      microphone: false,
-    });
-    await recorder.start();
-    const sessionId = recorder.getState().sessionId;
     const command: ComputerUseCommand = {
       id: "plugin",
       kind: "plugin.call",
@@ -748,11 +698,6 @@ describe("native permission recovery through the runtime owner", () => {
     queued.response.resolve();
     expect(await queued.completed.promise).toEqual(before);
     queued.completeResponse.resolve();
-    await recorder.refreshRecordingStatus();
-    expect(recorder.getState()).toMatchObject({
-      status: "recording",
-      sessionId,
-    });
     expect(app.online).toEqual([true]);
   });
 

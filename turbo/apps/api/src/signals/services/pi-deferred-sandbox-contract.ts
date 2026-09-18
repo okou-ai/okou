@@ -167,7 +167,6 @@ export const piDeferredConfigurationSchema = z
     includeOkouTokenSecret: z.boolean(),
     okouTokenComputerUseHostId: z.uuid().optional(),
     okouTokenCloudBrowserEnabled: z.boolean().optional(),
-    introVideoEnabled: z.boolean().optional(),
     injectSkillVolumes: z
       .strictObject({
         workflows: z.array(

@@ -1,5 +1,4 @@
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
-import type { FeishuPlatform } from "@okouai/core/feishu-platform";
 
 import type { PersistedStorageMount } from "../types";
 import type { PiResourceSnapshotV1 } from "./pi-resource-snapshot";
@@ -59,7 +58,6 @@ export interface PiStableContextPromptInputs {
   readonly vncEnabled: boolean;
   readonly larkEnabled: boolean;
   readonly deliveryFormatGuidanceEnabled: boolean;
-  readonly introVideoEnabled: boolean;
   readonly customConnectorMcpEnabled: boolean;
   readonly triggerSource: TriggerSource;
   readonly cloudBrowserEnabled: boolean | undefined;
@@ -67,7 +65,6 @@ export interface PiStableContextPromptInputs {
 
 export interface PiStableContextSemanticInput {
   readonly promptInputs: PiStableContextPromptInputs;
-  readonly feishuPlatform: FeishuPlatform | null;
   readonly connectorScope: {
     readonly allowedConnectorSlugs: readonly string[];
     readonly allowedCustomConnectorIds: readonly string[];

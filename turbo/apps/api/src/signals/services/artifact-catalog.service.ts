@@ -64,9 +64,6 @@ const ARTIFACT_CATALOG_DEFAULT_LIMIT = 60;
 const OFFICIAL_IMAGE_MARKER = "zero-official-image";
 const OFFICIAL_VIDEO_MARKER = "zero-official-video";
 const AVATAR_VIDEO_MARKER = "zero-joggai-avatar-video";
-const INTERNAL_INTRO_VIDEO_PRESENTER_MARKER =
-  "zero-internal-intro-video-presenter";
-const INTERNAL_INTRO_VIDEO_VOICE_MARKER = "zero-internal-intro-video-voice";
 
 const artifactCursorSchema = z.object({
   createdAt: z.string(),
@@ -129,8 +126,7 @@ function fileArtifactKind(row: CatalogFileRow): "file" | "image" | "video" {
  * Avatar is a catalog projection over the existing video storage kind. Keeping
  * the persisted kind readable as `video` lets the previous API version keep
  * serving during rollout, while generated JoggAI videos appear in the
- * dedicated category on the new API. Intro Video's HeyGen WebM is an internal
- * composition input and is deliberately excluded from every catalog kind.
+ * dedicated category on the new API.
  */
 function catalogArtifactKind(
   kind: ArtifactKind,
@@ -173,11 +169,6 @@ function artifactCatalogKindFilter(kind: ArtifactCatalogKind): SQL | undefined {
     );
   }
   return eq(artifacts.kind, kind);
-}
-
-function internalIntroVideoArtifactFilter(): SQL {
-  const generatedBy = sql`${runUploadedFiles.metadata} ->> 'generatedBy'`;
-  return sql`${generatedBy} IS DISTINCT FROM ${INTERNAL_INTRO_VIDEO_PRESENTER_MARKER} AND ${generatedBy} IS DISTINCT FROM ${INTERNAL_INTRO_VIDEO_VOICE_MARKER}`;
 }
 
 function hostedArtifactKind(
@@ -903,7 +894,6 @@ export const listArtifactCatalog$ = command(
         and(
           eq(artifacts.orgId, args.orgId),
           artifactCatalogOwnerFilter(args.userId),
-          internalIntroVideoArtifactFilter(),
           args.kind ? artifactCatalogKindFilter(args.kind) : undefined,
           args.chatThreadId
             ? chatThreadFilter(db, args.chatThreadId)

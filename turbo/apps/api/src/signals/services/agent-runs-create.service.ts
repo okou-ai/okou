@@ -1,7 +1,4 @@
-import {
-  FEISHU_PLATFORMS,
-  type FeishuPlatform,
-} from "@okouai/core/feishu-platform";
+import { FEISHU_PLATFORMS } from "@okouai/core/feishu-platform";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { isUnsupportedRunAdmission } from "./run-admission-input";
 import { AGENT_EXECUTION_TIMEOUT_SECONDS } from "@okouai/api-contracts/contracts/runners";
@@ -155,7 +152,6 @@ interface CreateAgentRunCommandArgs {
     UserInfo,
     | "slackDisplayName"
     | "slackUserId"
-    | "feishuPlatform"
     | "feishuDisplayName"
     | "feishuOpenId"
     | "teamsUserDisplayName"
@@ -299,7 +295,10 @@ function buildExecutionTimeLimitPrompt(): string {
   ].join("\n");
 }
 
-function buildCurrentUserPrompt(userInfo: UserInfo): string {
+function buildCurrentUserPrompt(
+  userInfo: UserInfo,
+  triggerSource: TriggerSource,
+): string {
   const lines = ["# Current User Info"];
   if (userInfo.name) {
     lines.push(`Name: ${userInfo.name}`);
@@ -314,15 +313,14 @@ function buildCurrentUserPrompt(userInfo: UserInfo): string {
   if (userInfo.slackUserId) {
     lines.push(`Slack user ID: ${userInfo.slackUserId}`);
   }
-  const feishuProviderName =
-    FEISHU_PLATFORMS[userInfo.feishuPlatform ?? "feishu"].name;
-  if (userInfo.feishuDisplayName) {
-    lines.push(
-      `${feishuProviderName} display name: ${userInfo.feishuDisplayName}`,
-    );
-  }
-  if (userInfo.feishuOpenId) {
-    lines.push(`${feishuProviderName} open ID: ${userInfo.feishuOpenId}`);
+  if (triggerSource === "feishu" || triggerSource === "lark") {
+    const providerName = FEISHU_PLATFORMS[triggerSource].name;
+    if (userInfo.feishuDisplayName) {
+      lines.push(`${providerName} display name: ${userInfo.feishuDisplayName}`);
+    }
+    if (userInfo.feishuOpenId) {
+      lines.push(`${providerName} open ID: ${userInfo.feishuOpenId}`);
+    }
   }
   if (userInfo.teamsUserDisplayName) {
     lines.push(`Teams display name: ${userInfo.teamsUserDisplayName}`);
@@ -354,12 +352,13 @@ function buildCurrentUserPrompt(userInfo: UserInfo): string {
 function buildAppendSystemPrompt(args: {
   readonly stable: PiStableContextPromptProjection;
   readonly userInfo: UserInfo;
+  readonly triggerSource: TriggerSource;
 }): string {
   return [
     args.stable.agentIdentity,
     args.stable.executionLimit,
     args.stable.tools,
-    buildCurrentUserPrompt(args.userInfo),
+    buildCurrentUserPrompt(args.userInfo, args.triggerSource),
   ]
     .filter((part): part is string => {
       return Boolean(part);
@@ -388,13 +387,11 @@ export function clearStableAgentPromptBuildHookForTest(): void {
 function buildStableAgentPrompt(args: {
   readonly privateArtifactsEnabled: boolean;
   readonly agent: AgentRunRecord;
-  readonly feishuPlatform: FeishuPlatform | undefined;
   readonly triggerSource: TriggerSource;
   readonly cloudBrowserEnabled: boolean | undefined;
   readonly bankingEnabled: boolean;
   readonly vncEnabled: boolean;
   readonly larkEnabled: boolean;
-  readonly introVideoEnabled: boolean;
   readonly deliveryFormatGuidanceEnabled: boolean;
   readonly customConnectorMcpEnabled: boolean;
 }): PiStableContextPromptProjection {
@@ -404,13 +401,11 @@ function buildStableAgentPrompt(args: {
     executionLimit: buildExecutionTimeLimitPrompt(),
     tools: buildAgentToolsPrompt({
       privateArtifactsEnabled: args.privateArtifactsEnabled,
-      feishuPlatform: args.feishuPlatform,
       triggerSource: args.triggerSource,
       cloudBrowserEnabled: args.cloudBrowserEnabled,
       bankingEnabled: args.bankingEnabled,
       vncEnabled: args.vncEnabled,
       larkEnabled: args.larkEnabled,
-      introVideoEnabled: args.introVideoEnabled,
       deliveryFormatGuidanceEnabled: args.deliveryFormatGuidanceEnabled,
     }),
   };
@@ -468,7 +463,6 @@ async function loadAgent(
 function buildAgentRunPlatformEnvironment(args: {
   readonly agentId: string;
   readonly triggerSource: TriggerSource;
-  readonly feishuPlatform: FeishuPlatform | undefined;
   readonly chatThreadId: string | undefined;
   readonly codexServiceTier: "fast" | undefined;
   readonly reasoningEffort?: ReasoningEffort | null;
@@ -478,7 +472,8 @@ function buildAgentRunPlatformEnvironment(args: {
     agent: "web",
     slack: "slack",
     teams: "teams",
-    feishu: args.feishuPlatform ?? "feishu",
+    feishu: "feishu",
+    lark: "lark",
     telegram: "telegram",
     agentphone: "phone",
     github: "github",
@@ -599,6 +594,7 @@ function createRunBody(args: {
   const baseAppendSystemPrompt = buildAppendSystemPrompt({
     stable: args.stablePrompt,
     userInfo: args.userInfo,
+    triggerSource,
   });
   return {
     prompt: args.body.prompt,
@@ -788,15 +784,10 @@ function emptyStablePrompt(): PiStableContextPromptProjection {
 }
 
 function buildStableRunPromptContext(args: BuildCreateAgentRunArgsInput): {
-  readonly introVideoEnabled: boolean;
   readonly userInfo: UserInfo;
   readonly initialStablePrompt: PiStableContextPromptProjection;
   readonly piStableContext: NonNullable<CreateAgentRunArgs["piStableContext"]>;
 } {
-  const introVideoEnabled = isFeatureEnabled(
-    FeatureSwitchKey.IntroVideo,
-    args.featureSwitchContext,
-  );
   const promptInputs = {
     privateArtifactsEnabled: isFeatureEnabled(
       FeatureSwitchKey.PrivateArtifacts,
@@ -818,7 +809,6 @@ function buildStableRunPromptContext(args: BuildCreateAgentRunArgsInput): {
       FeatureSwitchKey.DeliveryFormatGuidance,
       args.featureSwitchContext,
     ),
-    introVideoEnabled,
     customConnectorMcpEnabled: true,
     triggerSource: args.command.triggerSource ?? "web",
     cloudBrowserEnabled: args.cloudBrowserEnabled,
@@ -830,12 +820,10 @@ function buildStableRunPromptContext(args: BuildCreateAgentRunArgsInput): {
     stablePrompt ??= buildStableAgentPrompt({
       ...promptInputs,
       agent: args.agent,
-      feishuPlatform: userInfo.feishuPlatform,
     });
     return stablePrompt;
   };
   return {
-    introVideoEnabled,
     userInfo,
     initialStablePrompt: args.command.piExecution
       ? emptyStablePrompt()
@@ -853,12 +841,11 @@ function buildStableRunPromptContext(args: BuildCreateAgentRunArgsInput): {
       variantDigest: piStableContextVariantDigest({
         triggerSource: promptInputs.triggerSource,
         cloudBrowserEnabled: promptInputs.cloudBrowserEnabled,
-        feishuPlatform: userInfo.feishuPlatform ?? null,
         connectorSource: "stored_agent",
       }),
       buildPrompt,
       dynamicAppendSystemPrompt: [
-        buildCurrentUserPrompt(userInfo),
+        buildCurrentUserPrompt(userInfo, promptInputs.triggerSource),
         args.command.appendSystemPrompt,
       ]
         .filter((part): part is string => {
@@ -867,7 +854,6 @@ function buildStableRunPromptContext(args: BuildCreateAgentRunArgsInput): {
         .join("\n\n"),
       semantic: {
         promptInputs,
-        feishuPlatform: userInfo.feishuPlatform ?? null,
         connectorScope: {
           allowedConnectorSlugs: args.allowedConnectorSlugs,
           allowedCustomConnectorIds: args.allowedCustomConnectorIds,
@@ -913,7 +899,7 @@ function buildCreateAgentRunArgs(
   const command = args.command;
   const agentModelProviderId = optionalAgentSetting(args.agent.modelProviderId);
   const agentSelectedModel = optionalAgentSetting(args.agent.selectedModel);
-  const { introVideoEnabled, userInfo, initialStablePrompt, piStableContext } =
+  const { userInfo, initialStablePrompt, piStableContext } =
     buildStableRunPromptContext(args);
   const productAgentExecutionPlan = {
     identity: "agent" as const,
@@ -953,7 +939,6 @@ function buildCreateAgentRunArgs(
     platformEnvironment: buildAgentRunPlatformEnvironment({
       agentId: args.agent.id,
       triggerSource: command.triggerSource ?? "web",
-      feishuPlatform: userInfo.feishuPlatform,
       chatThreadId: command.chatThreadId,
       codexServiceTier: command.codexServiceTier,
       reasoningEffort: command.reasoningEffort,
@@ -963,7 +948,6 @@ function buildCreateAgentRunArgs(
     productAgentExecutionPlan,
     okouTokenComputerUseHostId: command.computerUseHostId,
     okouTokenCloudBrowserEnabled: args.cloudBrowserEnabled,
-    introVideoEnabled,
     enforceBuiltInCredits: true,
     queueOnConcurrencyLimit: true,
     injectSkillVolumes: { workflows: args.workflows },

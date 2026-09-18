@@ -40,9 +40,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { i18n } from "../../i18n/index.ts";
-import { introVideoTemplateOptions } from "@okouai/core/intro-video-template";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { IntroVideoPicker } from "./intro-video-picker.tsx";
 import { PaidToolNotice, TemplatePaidToolNotice } from "./paid-tool-notice.tsx";
 import { TemplateEmptyPanel } from "./template-empty-panel.tsx";
 import { CustomTemplatePickerPane } from "./custom-template-picker-pane.tsx";
@@ -51,11 +49,6 @@ import {
   customTemplateCatalog$,
   resetCustomTemplatePicker$,
 } from "../../signals/okou-page/custom-template-library.ts";
-import {
-  avatarSelectionLabel,
-  styleSelectionLabel,
-  voiceSelectionLabel,
-} from "./intro-video-selection-labels.ts";
 import {
   importPresentationTemplateDeck$,
   PRESENTATION_TEMPLATE_IMPORT_ACCEPT,
@@ -80,7 +73,6 @@ import {
   ArrowUp,
   Bolt,
   Check,
-  Clapperboard,
   Download,
   Globe,
   Image as ImageIcon,
@@ -4231,15 +4223,11 @@ function IllustrationTemplateCard({
 /** `category` is null until an entry point or the member names one. */
 function resolveTemplatePickerCategory(
   category: string | null,
-  introVideoEnabled: boolean,
   customTemplatesEnabled: boolean,
 ): string {
   switch (category) {
     case "custom": {
       return customTemplatesEnabled ? category : "slides";
-    }
-    case "intro-video": {
-      return introVideoEnabled ? category : "video";
     }
     case "slides":
     case "website":
@@ -4259,12 +4247,10 @@ function resolveTemplatePickerCategory(
 
 function TemplatePickerCategoryNav({
   selectedCategory,
-  introVideoEnabled,
   customTemplatesEnabled,
   onChange,
 }: {
   selectedCategory: string;
-  introVideoEnabled: boolean;
   customTemplatesEnabled: boolean;
   onChange: (value: string) => void;
 }) {
@@ -4312,23 +4298,10 @@ function TemplatePickerCategoryNav({
     {
       value: "video",
       label: t(($) => {
-        return introVideoEnabled
-          ? $.artifacts.templates.creativeVideo
-          : $.artifacts.kinds.video;
+        return $.artifacts.kinds.video;
       }),
       Icon: Video,
     },
-    ...(introVideoEnabled
-      ? [
-          {
-            value: "intro-video",
-            label: t(($) => {
-              return $.artifacts.templates.introVideo;
-            }),
-            Icon: Clapperboard,
-          },
-        ]
-      : []),
     {
       value: "avatar",
       label: t(($) => {
@@ -6172,12 +6145,10 @@ function TemplatePickerDialog({
   });
 
   const features = useGet(featureSwitch$);
-  const introVideoEnabled = features[FeatureSwitchKey.IntroVideo] === true;
   const customTemplatesEnabled =
     features[FeatureSwitchKey.CustomTemplates] === true;
   const selectedCategory = resolveTemplatePickerCategory(
     category,
-    introVideoEnabled,
     customTemplatesEnabled,
   );
   const showTemplatePickerSearch = selectedCategory === "workflow";
@@ -6476,77 +6447,63 @@ function TemplatePickerDialog({
             <div className="flex min-h-0 flex-1 flex-col sm:flex-row">
               <TemplatePickerCategoryNav
                 selectedCategory={selectedCategory}
-                introVideoEnabled={introVideoEnabled}
                 customTemplatesEnabled={customTemplatesEnabled}
                 onChange={handleCategoryChange}
               />
               <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
                 <TemplatePaidToolNotice category={selectedCategory} />
-                {selectedCategory === "intro-video" ? (
-                  <IntroVideoPicker
-                    signals={signals.template.introVideo}
-                    onCancel={closeTemplatePicker}
-                    onSelect={(template) => {
-                      onChange(template);
-                      closeTemplatePicker();
-                    }}
-                  />
-                ) : (
-                  <>
-                    <div
-                      className={cn(
-                        "relative h-[68px] shrink-0 items-center px-6 pr-14",
-                        showTemplatePickerSearch || showAvatarPickerToolbar
-                          ? "flex"
-                          : "hidden sm:flex",
-                      )}
-                    >
-                      {showTemplatePickerSearch ? (
-                        <TemplatePickerWorkflowSearch
-                          search={search}
-                          onSearchChange={handleSearchChange}
-                        />
-                      ) : null}
-                      {showAvatarPickerToolbar ? (
-                        <AvatarTemplatePickerToolbar signals={signals} />
-                      ) : null}
-                    </div>
-                    <TemplatePickerCategoryContent
-                      signals={signals}
-                      selectedCategory={selectedCategory}
-                      pptItems={presentationItems}
-                      importedPptItems={importedTemplateItems}
-                      websiteItems={WEBSITE_TEMPLATE_ITEMS}
-                      illustrationItems={ILLUSTRATION_TEMPLATE_ITEMS}
-                      videoItems={VIDEO_TEMPLATE_ITEMS}
-                      videoGenerationAllowed={videoGenerationAllowed}
-                      workflowCatalog={workflowCatalog}
-                      value={value}
-                      illustrationVariantIndex={illustrationVariantIndex}
-                      onPresentationScroll={setPresentationGridScrollTop}
-                      onRestorePresentationScroll={
-                        restorePresentationGridScrollNode
-                      }
-                      onSelectPresentation={handleSelectPresentation}
-                      onSelectImportedPresentation={
-                        handleSelectImportedPresentation
-                      }
-                      onSelectCustom={handleSelectCustom}
-                      onPreviewPresentation={handlePreview}
-                      onPreviewImportedPresentation={handlePreviewImported}
-                      onImportedPresentation={closeTemplatePicker}
-                      onSelectWebsite={handleSelectWebsite}
-                      onPreviewWebsite={handlePreviewWebsite}
-                      onSelectIllustration={handleSelectIllustration}
-                      onIllustrationVariantChange={setIllustrationVariantIndex}
-                      onSelectVideo={handleSelectVideo}
-                      onSelectAvatar={handleSelectAvatar}
-                      onWorkflowCategoryChange={setWorkflowCategoryFilter}
-                      onSelectWorkflow={handleSelectWorkflow}
-                      runtime={runtime}
+                <div
+                  className={cn(
+                    "relative h-[68px] shrink-0 items-center px-6 pr-14",
+                    showTemplatePickerSearch || showAvatarPickerToolbar
+                      ? "flex"
+                      : "hidden sm:flex",
+                  )}
+                >
+                  {showTemplatePickerSearch ? (
+                    <TemplatePickerWorkflowSearch
+                      search={search}
+                      onSearchChange={handleSearchChange}
                     />
-                  </>
-                )}
+                  ) : null}
+                  {showAvatarPickerToolbar ? (
+                    <AvatarTemplatePickerToolbar signals={signals} />
+                  ) : null}
+                </div>
+                <TemplatePickerCategoryContent
+                  signals={signals}
+                  selectedCategory={selectedCategory}
+                  pptItems={presentationItems}
+                  importedPptItems={importedTemplateItems}
+                  websiteItems={WEBSITE_TEMPLATE_ITEMS}
+                  illustrationItems={ILLUSTRATION_TEMPLATE_ITEMS}
+                  videoItems={VIDEO_TEMPLATE_ITEMS}
+                  videoGenerationAllowed={videoGenerationAllowed}
+                  workflowCatalog={workflowCatalog}
+                  value={value}
+                  illustrationVariantIndex={illustrationVariantIndex}
+                  onPresentationScroll={setPresentationGridScrollTop}
+                  onRestorePresentationScroll={
+                    restorePresentationGridScrollNode
+                  }
+                  onSelectPresentation={handleSelectPresentation}
+                  onSelectImportedPresentation={
+                    handleSelectImportedPresentation
+                  }
+                  onSelectCustom={handleSelectCustom}
+                  onPreviewPresentation={handlePreview}
+                  onPreviewImportedPresentation={handlePreviewImported}
+                  onImportedPresentation={closeTemplatePicker}
+                  onSelectWebsite={handleSelectWebsite}
+                  onPreviewWebsite={handlePreviewWebsite}
+                  onSelectIllustration={handleSelectIllustration}
+                  onIllustrationVariantChange={setIllustrationVariantIndex}
+                  onSelectVideo={handleSelectVideo}
+                  onSelectAvatar={handleSelectAvatar}
+                  onWorkflowCategoryChange={setWorkflowCategoryFilter}
+                  onSelectWorkflow={handleSelectWorkflow}
+                  runtime={runtime}
+                />
               </div>
             </div>
           </div>
@@ -6824,25 +6781,6 @@ function selectedComposerTemplateAttachment(
       customTemplates,
     );
   }
-  const introVideo = introVideoTemplateOptions(value);
-  if (introVideo) {
-    return {
-      type: "video",
-      category: "intro-video",
-      title: [
-        i18n.t(($) => {
-          return $.artifacts.templates.introVideo;
-        }),
-        styleSelectionLabel(i18n.t, introVideo.style),
-        avatarSelectionLabel(i18n.t, introVideo.avatar),
-        voiceSelectionLabel(i18n.t, introVideo.voice, introVideo.avatar),
-      ].join(" · "),
-      previewImageUrl:
-        introVideo.style.kind === "catalog"
-          ? introVideo.style.style.thumbnailUrl
-          : undefined,
-    };
-  }
   const avatar = avatarTemplateSelection(value);
   if (avatar) {
     return {
@@ -6924,8 +6862,6 @@ function useTemplatePickerTrigger(signals: ComposerSignals) {
   const { t } = useTranslation();
   const category = useGet(signals.template.templatePickerCategory$);
   const pickerFeatures = useGet(featureSwitch$);
-  const introVideoEnabled =
-    pickerFeatures[FeatureSwitchKey.IntroVideo] === true;
   const customTemplatesEnabled =
     pickerFeatures[FeatureSwitchKey.CustomTemplates] === true;
   const createMode = useGet(signals.create.mode$);
@@ -6954,11 +6890,7 @@ function useTemplatePickerTrigger(signals: ComposerSignals) {
     templateMode === "presentation"
       ? "slides"
       : (templateMode ??
-        resolveTemplatePickerCategory(
-          category,
-          introVideoEnabled,
-          customTemplatesEnabled,
-        ));
+        resolveTemplatePickerCategory(category, customTemplatesEnabled));
   const prewarm = () => {
     prewarmTemplatePreviewImages(
       runtime,

@@ -9,8 +9,6 @@ import {
   type SandboxTokenPayload,
 } from "./lib/api/sandbox-token.js";
 import { getOkouToken } from "./lib/okou-env.js";
-import { introVideoCatalogCommand } from "./commands/__intro-video-catalog.js";
-import { introVideoAgentCommand } from "./commands/__intro-video-agent.js";
 import { artifactCommand } from "./commands/artifact/index.js";
 import { installPaidToolPolicy } from "./lib/command/paid-tools.js";
 
@@ -112,36 +110,6 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     description: "Internal sandbox agent loop",
     load: async () => {
       return (await import("./commands/__agent-loop")).agentLoopCommand;
-    },
-  },
-  {
-    name: "__intro-video-catalog",
-    description: "Internal public HeyGen catalog discovery for Intro Video",
-    load: async () => {
-      return introVideoCatalogCommand;
-    },
-  },
-  {
-    name: "__intro-video-agent",
-    description: "Internal managed HeyGen Video Agent submission and status",
-    load: async () => {
-      return introVideoAgentCommand;
-    },
-  },
-  {
-    name: "__intro-video-presenter",
-    description: "Internal Intro Video presenter renderer",
-    load: async () => {
-      return (await import("./commands/__intro-video-presenter"))
-        .introVideoPresenterCommand;
-    },
-  },
-  {
-    name: "__intro-video-voice",
-    description: "Internal Intro Video HeyGen narration renderer",
-    load: async () => {
-      return (await import("./commands/__intro-video-voice"))
-        .introVideoVoiceCommand;
     },
   },
   {
@@ -347,7 +315,7 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   },
   {
     name: "presentation",
-    description: "Render presentations to page images",
+    description: "Render presentations to page images and editable decks",
     load: async () => {
       return (await import("./commands/presentation")).presentationCommand;
     },

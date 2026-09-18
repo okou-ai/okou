@@ -121,13 +121,7 @@ describe("Okou CLI program", () => {
 
   it("should keep internal commands out of the public surface", () => {
     expect(commandNames).toContain("__agent-loop");
-    expect(commandNames).toContain("__intro-video-presenter");
-    expect(commandNames).toContain("__intro-video-agent");
-    expect(commandNames).toContain("__intro-video-voice");
     expect(canonicalCommandNames).not.toContain("__agent-loop");
-    expect(canonicalCommandNames).not.toContain("__intro-video-presenter");
-    expect(canonicalCommandNames).not.toContain("__intro-video-agent");
-    expect(canonicalCommandNames).not.toContain("__intro-video-voice");
   });
 
   it("should have exactly 44 canonical commands", () => {

@@ -317,6 +317,38 @@ describe("chat thread generation template contract", () => {
     ).toMatchObject({ success: true });
   });
 
+  it("still reads a message carrying a retired Intro Video selection", () => {
+    // `chat_events` is append-only (`chat_events_reject_update`), so selections
+    // written before Intro Video was removed can be neither rewritten nor
+    // migrated. Rejecting them here makes the archived readers behind thread
+    // sharing and user export throw for the whole request.
+    const parsed = userMessageDocumentSchema.safeParse({
+      version: 1,
+      parts: [
+        { type: "text", text: "Explain the product" },
+        {
+          type: "template",
+          titleSnapshot: "Intro video",
+          template: {
+            type: "intro-video",
+            selection: {
+              options: {
+                style: { kind: "auto" },
+                avatar: { kind: "none" },
+                voice: { kind: "none" },
+              },
+            },
+          },
+        },
+      ],
+    });
+    expect(parsed).toMatchObject({ success: true });
+    expect(parsed.data?.parts[0]).toStrictEqual({
+      type: "text",
+      text: "Explain the product",
+    });
+  });
+
   it("accepts an internal agent-run source annotation", () => {
     const runId = "00000000-0000-4000-8000-000000000001";
     const threadId = "00000000-0000-4000-8000-000000000002";

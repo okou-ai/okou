@@ -99,7 +99,7 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
       screen.findByText("Create an Agent app"),
     ).resolves.toBeInTheDocument();
     const createGuideImage = screen.getByRole("img", {
-      name: "Feishu app creation form with the app name, icon, and Create button highlighted",
+      name: `${provider.name} app creation form with the app name, icon, and Create button highlighted`,
     });
     expect(createGuideImage).toBeInTheDocument();
     expect(screen.getByText(/select the Agent type/u)).toBeVisible();

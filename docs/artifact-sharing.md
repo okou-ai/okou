@@ -109,10 +109,11 @@ With `privateArtifacts` enabled, new artifacts default to `only-me`. Omitting
 the option preserves the existing creation flow, including legacy behavior when
 the switch is off. An explicit option requires the switch and a compatible API;
 it is never silently ignored. `org` and `public` share the completed artifact
-through the same owner endpoints as `okou artifact`, and text, JSON, and Markdown
-outputs use the returned audience-specific URL. Explicit `only-me` leaves a new
-private artifact unshared. For hosted sites it does not revoke an older version's
-existing share; use `okou artifact --visibility only-me` to revoke that share.
+through the same owner endpoints as `okou artifact`. Text, JSON, and Markdown
+outputs always use the stable App artifact URL for the created artifact rather
+than an audience-specific delivery alias. Explicit `only-me` leaves a new
+private artifact unshared and does not revoke another artifact's existing share;
+use `okou artifact --visibility only-me` to revoke that share.
 
 ```bash
 okou web upload-file -f report.pdf --visibility org
@@ -152,15 +153,18 @@ are not management identities.
 Without `--visibility`, the command reads the current visibility and URL without
 changing permissions. Setting `only-me`, `org`, or `public` uses the existing API
 values `private`, `organization`, and `public`. The API returns a stable
-`ownerUrl` for the requested artifact version in addition to the existing share
-URL fields. The CLI returns that owner URL for `only-me`, and the existing share
-URL for `org` or `public`, in both text and JSON output. Historical organization
-shares without a short alias still return no share URL until explicitly updated.
+`ownerUrl` for the requested artifact in addition to the existing share URL
+fields. The CLI always returns that App artifact URL in text, JSON, and Markdown
+output, including after organization or Public sharing. Public CDN and
+hosted-site delivery aliases remain API delivery details and are not printed for
+these private-artifact results. Historical organization shares therefore still
+have a stable CLI URL even when they do not yet have a short audience alias.
 
-An explicit visibility change checks the selected target, version, audience and
-allocated alias before writing; an already shared version returns its current
-link. The Share button sees the same policy and reuses that link. A newer hosted
-version remains private until explicitly selected for sharing. Setting an
+An explicit visibility change checks the selected target, audience, and
+allocated alias before writing; an already shared artifact does not write again.
+The Share button sees the same policy and reuses its audience delivery alias,
+while the CLI returns the stable App artifact URL. Every new hosted publication
+remains private until explicitly shared. Setting an
 already private artifact to `only-me` returns its owner URL without creating a grant. There is one active
 audience, so switching Public to organization or private revokes the old public
 link; later Public sharing allocates a new public token. Previously issued

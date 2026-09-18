@@ -421,12 +421,34 @@ interface ApplyState {
   readonly lastSeqId: number;
 }
 
+/**
+ * Reads durable apply state without crossing the separately fenced GET path.
+ * Apply race tests intentionally inspect MVCC state while Apply or closure owns
+ * a business-row lock; the public GET can now correctly wait or deny there.
+ */
+async function readDurableAuthorization(
+  fixture: AuthorizationFixture,
+  selection: Awaited<ReturnType<typeof readSelection>>,
+): Promise<Awaited<ReturnType<typeof readAuthorization>>> {
+  const request = await readBrowserAuthorizationRequestFixture(
+    fixture.requestToken,
+  );
+  if (!request) {
+    throw new Error("Expected the browser authorization request row");
+  }
+  return {
+    completedAt: request.completedAt,
+    cloudBrowserEnabled: selection.cloudBrowserEnabled,
+  };
+}
+
 async function readApplyState(
   fixture: AuthorizationFixture,
 ): Promise<ApplyState> {
+  const selection = await readSelection(fixture);
   return {
-    selection: await readSelection(fixture),
-    authorization: await readAuthorization(fixture),
+    selection,
+    authorization: await readDurableAuthorization(fixture, selection),
     events: await sidebarHostEvents(fixture),
     lastSeqId: await lastSidebarSeqId(fixture),
   };

@@ -623,7 +623,6 @@
       "categories": "Kategori template",
       "category": "Kategori template",
       "chooseVoice": "Pilih suara untuk {{title}}",
-      "creativeVideo": "Video kreatif",
       "filters": {
         "age": "Usia",
         "all": "Semua",
@@ -646,10 +645,8 @@
       "importedSlides_one": "{{count}} slide",
       "importedSlides_other": "{{count}} slide",
       "importFile": "Impor file Anda sendiri",
-      "importFileHint": "({{formats}})",
+      "importFileHint": "Pakai lagi desain file Anda",
       "importUnsupported": "Pilih file {{formats}} untuk membuat templat.",
-      "introVideo": "Video intro",
-      "introVideoUnavailable": "Template video ini tidak lagi tersedia. Hapus untuk mengirim pesan Anda.",
       "multiAccent": "Multi-aksen",
       "needPro": "Perlu Pro",
       "nextSlide": "Pratinjau slide berikutnya",
@@ -667,7 +664,6 @@
       "renameImportedTemplate": "Ganti nama templat",
       "searchConnector": "Cari templat",
       "searchConnectors": "Cari templat",
-      "selected": "Dipilih",
       "selectStyle": "Pilih gaya {{style}}",
       "selectTemplate": "Pilih template {{title}}",
       "selectVideo": "Pilih template video {{title}}",
@@ -1875,69 +1871,6 @@
       "sent": "Berhasil diteruskan",
       "threads": "Chat",
       "title": "Teruskan ke"
-    },
-    "introVideo": {
-      "avatar": {
-        "heading": "Pilih avatar",
-        "label": "Avatar",
-        "none": "Tanpa avatar",
-        "noneDetail": "Hanya gaya",
-        "previewLook": "Pratinjau tampilan {{name}}"
-      },
-      "catalog": {
-        "error": "Katalog tidak dapat dimuat.",
-        "loading": "Memuat pilihan lainnya",
-        "reload": "Muat ulang katalog",
-        "retry": "Coba lagi"
-      },
-      "footer": {
-        "cancel": "Batal"
-      },
-      "picker": {
-        "allPresenters": "Semua presenter",
-        "allPresentersCount": "Semua presenter ({{total}})",
-        "allVoices": "Semua suara",
-        "allVoicesCount": "Semua suara ({{total}})",
-        "autoVoiceDescription": "Suara yang cocok dengan gaya Anda",
-        "avatarVoice": "Suara avatar",
-        "back": "Kembali",
-        "closeOptions": "Tutup opsi",
-        "done": "Selesai",
-        "moreOptions": "Opsi lainnya",
-        "noMatches": "Tidak ada hasil.",
-        "optionsNote": "Anda bisa mengubahnya kapan saja lewat chip di chat.",
-        "pickStyle": "Pilih gaya",
-        "reset": "Atur ulang",
-        "searchPresenters": "Cari presenter",
-        "searchStyles": "Cari gaya",
-        "searchVoices": "Cari suara",
-        "selectedStyle": "Dipilih: {{name}}",
-        "settings": "Pengaturan video intro",
-        "styleCount_other": "{{count}} gaya",
-        "styleCountOf": "{{shown}} dari {{total}}",
-        "useStyle": "Gunakan {{name}}"
-      },
-      "style": {
-        "auto": "Biarkan Okou memilih",
-        "browseGroups": "Jelajahi menurut gaya",
-        "groups": {
-          "cinematic": "Film dan fotografi",
-          "handmade": "Kerajinan dan material",
-          "iconic-artist": "Seni dan desain",
-          "other": "Gaya lainnya",
-          "pop-culture": "Budaya pop",
-          "print": "Percetakan dan penerbitan",
-          "retro-tech": "Teknologi retro dan antarmuka"
-        },
-        "preview": "Pratinjau {{title}}"
-      },
-      "voice": {
-        "auto": "Biarkan Okou memilih",
-        "defaultDescription": "Gunakan suara default avatar yang dipilih",
-        "label": "Suara",
-        "none": "Tanpa narasi",
-        "noneShortDescription": "Pertahankan audio asli"
-      }
     },
     "mail": {
       "bcc": "bcc",
@@ -3731,7 +3664,7 @@
           "iconAlt": "Ikon aplikasi {{brandName}} opsional",
           "iconHint": ", atau gunakan ikon apa pun yang Anda suka.",
           "iconTitle": "Ikon aplikasi {{brandName}} opsional",
-          "imageAlt": "Formulir pembuatan aplikasi Feishu dengan nama aplikasi, ikon, dan tombol Create disorot",
+          "imageAlt": "Formulir pembuatan aplikasi Lark dengan nama aplikasi, ikon, dan tombol Create disorot",
           "title": "Buat aplikasi bertipe Agent"
         },
         "credentials": {

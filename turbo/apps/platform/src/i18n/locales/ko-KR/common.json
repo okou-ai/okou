@@ -623,7 +623,6 @@
       "categories": "템플릿 카테고리",
       "category": "템플릿 카테고리",
       "chooseVoice": "{{title}}의 음성 선택",
-      "creativeVideo": "창작 영상",
       "filters": {
         "age": "연령",
         "all": "전체",
@@ -646,10 +645,8 @@
       "importedSlides_one": "{{count}}장",
       "importedSlides_other": "{{count}}장",
       "importFile": "내 파일 가져오기",
-      "importFileHint": "({{formats}})",
+      "importFileHint": "파일의 디자인을 재사용",
       "importUnsupported": "템플릿을 만들려면 {{formats}} 파일을 선택하세요.",
-      "introVideo": "인트로 영상",
-      "introVideoUnavailable": "이 동영상 템플릿은 더 이상 사용할 수 없습니다. 메시지를 보내려면 삭제하세요.",
       "multiAccent": "다중 악센트",
       "needPro": "Pro 필요",
       "nextSlide": "다음 슬라이드 미리보기",
@@ -667,7 +664,6 @@
       "renameImportedTemplate": "템플릿 이름 바꾸기",
       "searchConnector": "템플릿 검색",
       "searchConnectors": "템플릿 검색",
-      "selected": "선택됨",
       "selectStyle": "스타일 선택 {{style}}",
       "selectTemplate": "템플릿 선택 {{title}}",
       "selectVideo": "비디오 템플릿 선택 {{title}}",
@@ -1875,69 +1871,6 @@
       "sent": "전달했습니다",
       "threads": "채팅",
       "title": "전달 대상"
-    },
-    "introVideo": {
-      "avatar": {
-        "heading": "아바타 선택",
-        "label": "아바타",
-        "none": "아바타 없음",
-        "noneDetail": "스타일만",
-        "previewLook": "{{name}} 모습 미리보기"
-      },
-      "catalog": {
-        "error": "카탈로그를 불러올 수 없습니다.",
-        "loading": "옵션 더 불러오는 중",
-        "reload": "목록 새로고침",
-        "retry": "다시 시도"
-      },
-      "footer": {
-        "cancel": "취소"
-      },
-      "picker": {
-        "allPresenters": "모든 프레젠터",
-        "allPresentersCount": "모든 프레젠터 ({{total}})",
-        "allVoices": "모든 음성",
-        "allVoicesCount": "모든 음성 ({{total}})",
-        "autoVoiceDescription": "스타일에 어울리는 음성",
-        "avatarVoice": "아바타 음성",
-        "back": "뒤로",
-        "closeOptions": "옵션 닫기",
-        "done": "완료",
-        "moreOptions": "추가 옵션",
-        "noMatches": "결과가 없습니다.",
-        "optionsNote": "채팅의 칩에서 언제든지 변경할 수 있습니다.",
-        "pickStyle": "스타일 선택",
-        "reset": "초기화",
-        "searchPresenters": "프레젠터 검색",
-        "searchStyles": "스타일 검색",
-        "searchVoices": "음성 검색",
-        "selectedStyle": "선택됨: {{name}}",
-        "settings": "인트로 영상 설정",
-        "styleCount_other": "스타일 {{count}}개",
-        "styleCountOf": "{{total}}개 중 {{shown}}개",
-        "useStyle": "{{name}} 사용"
-      },
-      "style": {
-        "auto": "Okou에게 맡기기",
-        "browseGroups": "스타일별로 찾기",
-        "groups": {
-          "cinematic": "영화와 사진",
-          "handmade": "수공예와 소재",
-          "iconic-artist": "예술과 디자인",
-          "other": "기타 스타일",
-          "pop-culture": "대중문화",
-          "print": "인쇄와 출판",
-          "retro-tech": "레트로 기술과 인터페이스"
-        },
-        "preview": "{{title}} 미리보기"
-      },
-      "voice": {
-        "auto": "Okou에게 맡기기",
-        "defaultDescription": "선택한 아바타의 기본 음성 사용",
-        "label": "음성",
-        "none": "내레이션 없음",
-        "noneShortDescription": "원본 오디오 유지"
-      }
     },
     "mail": {
       "bcc": "숨은 참조",
@@ -3731,7 +3664,7 @@
           "iconAlt": "선택 사항인 {{brandName}} 앱 아이콘",
           "iconHint": ", 또는 원하는 아이콘을 사용하세요.",
           "iconTitle": "선택 사항인 {{brandName}} 앱 아이콘",
-          "imageAlt": "앱 이름, 아이콘, 생성 버튼이 강조된 Feishu 앱 생성 양식",
+          "imageAlt": "앱 이름, 아이콘, 생성 버튼이 강조된 Lark 앱 생성 양식",
           "title": "Agent 유형의 앱 만들기"
         },
         "credentials": {

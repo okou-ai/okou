@@ -13,13 +13,13 @@ import type { FeishuDeliveryTarget } from "./feishu-chat-callback-payload";
 import { buildFeishuSystemPrompt } from "./feishu-dispatch.service";
 
 export interface FeishuQueuedLaunchMaterial {
+  readonly triggerSource: FeishuPlatform;
   readonly prompt: string;
   readonly appendSystemPrompt: string;
   readonly publicBrand: PublicBrand;
   readonly connectorSourceId: string;
   readonly feishuDelivery: FeishuDeliveryTarget;
   readonly userInfoExtras: {
-    readonly feishuPlatform: FeishuPlatform;
     readonly feishuDisplayName?: string;
     readonly feishuOpenId: string;
   };
@@ -189,6 +189,7 @@ export async function loadFeishuQueuedLaunchMaterial(
     return null;
   }
   return {
+    triggerSource: context.platform,
     prompt: context.messageText,
     appendSystemPrompt: buildFeishuSystemPrompt({
       platform: context.platform,
@@ -214,7 +215,6 @@ export async function loadFeishuQueuedLaunchMaterial(
       files: [...context.messageFiles],
     },
     userInfoExtras: {
-      feishuPlatform: context.platform,
       ...(context.feishuDisplayName
         ? { feishuDisplayName: context.feishuDisplayName }
         : {}),

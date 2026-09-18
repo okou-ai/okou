@@ -33,10 +33,7 @@ interface ArtifactOptions {
 function printStatus(status: ArtifactShareStatus, json: boolean | undefined) {
   const result = {
     visibility: visibilities[status.audience],
-    url:
-      status.audience === "private"
-        ? status.ownerUrl
-        : (status.shortUrl ?? status.url),
+    url: status.ownerUrl,
     organization: status.organization,
     selectedTarget: status.selectedTarget,
   };
@@ -51,13 +48,7 @@ function printStatus(status: ArtifactShareStatus, json: boolean | undefined) {
       `Shared artifact: ${result.selectedTarget.kind} ${result.selectedTarget.id}`,
     );
   }
-  if (result.url) {
-    console.log(`URL: ${result.url}`);
-  } else {
-    console.log(
-      `Run okou artifact <artifact> --visibility ${result.visibility} to allocate its link.`,
-    );
-  }
+  console.log(`URL: ${result.url}`);
 }
 
 export const artifactCommand = new Command("artifact")
@@ -92,9 +83,9 @@ Examples:
 
 Notes:
   - Without --visibility, read the current visibility and URL without changing permissions
-  - only-me revokes sharing and returns the stable owner URL
-  - org requires current membership in the artifact's original organization
-  - public allows anyone with the returned link to access the shared artifact
+  - only-me revokes sharing; org requires current membership in the artifact's original organization
+  - public allows anyone with the returned stable App artifact URL to access the shared artifact
+  - Every visibility returns the stable App artifact URL; delivery aliases are not printed
   - Uses OKOU_TOKEN; reading visibility requires artifact:read and setting it also requires artifact:write
   - Downloads use artifact:read for owned, organization-shared, or public references under their current access policy; raw file IDs use file:read
   - Hosted sites download all pages and assets into --out as a directory, preserving the authorized publication
@@ -104,9 +95,8 @@ Notes:
   - Change visibility only when the user requests it; uploads, generation, and hosting retain their existing privacy
   - There is one active audience. Switching to org or only-me revokes the old public link
   - Previously issued temporary previews retain their expiration; downloaded content cannot be recalled
-  - Repeating the same visibility for the same artifact reuses the existing URL, including links created by the Share button
+  - Repeating the same visibility for the same artifact reuses the existing audience grant
   - Every new hosted publication requires its own explicit --visibility org or public to be shared
-  - Older organization shares without a short link return no URL until visibility is explicitly set
   - Return the exact URL printed by the command, never a temporary preview URL
   - If an update fails, rerun without --visibility before retrying; the permission change may have applied`,
   )

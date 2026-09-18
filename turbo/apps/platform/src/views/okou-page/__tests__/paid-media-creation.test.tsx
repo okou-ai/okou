@@ -39,7 +39,6 @@ async function setupComposer(enabled = true, taskChips = false) {
       [FeatureSwitchKey.PaidToolControls]: enabled,
       [FeatureSwitchKey.ComposerSlashTemplatePanel]: true,
       [FeatureSwitchKey.ComposerTaskChips]: taskChips,
-      [FeatureSwitchKey.IntroVideo]: true,
     },
   });
   return findComposerEditor();
@@ -212,7 +211,7 @@ test("Gallery notices follow each paid branch without blocking unrelated preview
   await within(dialog).findByText(
     "Avatar video generation is disabled in your paid tool settings.",
   );
-  click(tabByText("Creative video"));
+  click(tabByText("Video"));
   await within(dialog).findByLabelText(
     `Select video template ${VIDEO_TEMPLATE_ITEMS[0]?.title}`,
   );
@@ -229,7 +228,7 @@ test("A selected disabled video template can still be discussed without a Create
   const editor = await setupComposer();
   const dialog = await openTemplatePicker(
     userEvent.setup({ delay: null }),
-    "Creative video",
+    "Video",
   );
   await within(dialog).findByText(
     "Video generation is disabled in your paid tool settings.",

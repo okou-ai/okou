@@ -7,22 +7,6 @@ export function desktopRendererUrl(): string {
   return `${DESKTOP_RENDERER_PROTOCOL}://${DESKTOP_RENDERER_HOST}/index.html`;
 }
 
-/**
- * The recorder bar and its area selector, which run in their own overlay
- * windows rather than the main window.
- *
- * `mode` picks which of the two the page renders; it is a query rather than a
- * separate document so both share one bundle, and `desktopRendererFilePath`
- * resolves on the pathname alone.
- */
-export function desktopRecorderUrl(
-  mode: "area" | "bar" | "controller" | "windows",
-  params: Readonly<Record<string, string>> = {},
-): string {
-  const query = new URLSearchParams({ mode, ...params });
-  return `${DESKTOP_RENDERER_PROTOCOL}://${DESKTOP_RENDERER_HOST}/recorder.html?${query.toString()}`;
-}
-
 export function desktopRendererRoot(distDir: string = __dirname): string {
   return path.join(distDir, "renderer");
 }

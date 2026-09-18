@@ -1,10 +1,8 @@
 /**
  * The template gallery's tile chrome, shared by every picker that shows a wall
- * of covers: presentation, illustration, website, creative video and intro
- * video. Keeping the class lists in one module is what stops a new gallery from
- * inventing a parallel card — the intro video style card did exactly that and
- * ended up with a permanent scrim, a different play affordance and a caption
- * inside the card.
+ * of covers: presentation, illustration, website and creative video. Keeping
+ * the class lists in one module is what stops a new gallery from inventing a
+ * parallel card with its own scrim, play affordance and caption placement.
  */
 
 /**
@@ -42,10 +40,3 @@ export const TEMPLATE_TILE_USE =
 export const TEMPLATE_TILE_CAPTION = "flex items-baseline gap-2 px-2 pb-2 pt-2";
 export const TEMPLATE_TILE_NAME =
   "min-w-0 truncate text-sm font-medium leading-5 text-foreground";
-
-/**
- * Selected badge, drawn over the artwork's top-left corner. Callers own the
- * `Check` glyph so the icon import stays with the component that renders it.
- */
-export const TEMPLATE_TILE_SELECTED_BADGE =
-  "pointer-events-none absolute left-[7px] top-[7px] z-20 flex size-[22px] items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm";

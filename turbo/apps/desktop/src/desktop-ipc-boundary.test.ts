@@ -9,7 +9,6 @@ import type { DesktopAuthState } from "./desktop-bridge";
 import { DesktopAuthWindow } from "./desktop-auth-window";
 import { DESKTOP_AUTH_CHANNELS } from "./desktop-auth-ipc-channels";
 import { DESKTOP_DEVELOPER_TOOLS_CHANNELS } from "./desktop-developer-tools-ipc-channels";
-import { DESKTOP_RECORDER_CHANNELS } from "./desktop-recorder-ipc-channels";
 
 type IpcEvent = {
   readonly sender?: object;
@@ -64,7 +63,6 @@ interface MockBrowserWindow {
 }
 
 const rendererUrl = "vm0-desktop://renderer/index.html";
-const recorderUrl = "vm0-desktop://renderer/recorder.html?mode=bar";
 const trustedFrame = {
   url: rendererUrl,
   detached: false,
@@ -223,7 +221,7 @@ describe("Desktop IPC boundary", () => {
       expect(
         Promise.resolve().then(() => handler(event, { userInitiated: true })),
       ).rejects.toThrow("unavailable on this page");
-    await reject({ sender: {}, senderFrame: trustedFrame }); // auth/recorder/other local window
+    await reject({ sender: {}, senderFrame: trustedFrame }); // auth/other local window
     await reject({
       sender: trustedContents,
       senderFrame: { url: rendererUrl },
@@ -261,143 +259,6 @@ describe("Desktop IPC boundary", () => {
       ).rejects.toThrow("Invalid Computer Use start options");
     }
     expect(api.start).not.toHaveBeenCalled();
-  });
-
-  it("rejects recorder handlers from every frame but the recorder overlays", async () => {
-    const { installDesktopRecorderIpc } =
-      await import("./desktop-recorder-electron");
-    const api = {
-      getState: vi.fn(),
-      getCapabilities: vi.fn(async () => ({ supportsMicrophone: true })),
-      listWindowOptions: vi.fn(async () => []),
-      startCapture: vi.fn(async () => {}),
-      pause: vi.fn(async () => {}),
-      resume: vi.fn(async () => {}),
-      discard: vi.fn(async () => {}),
-      stop: vi.fn(async () => {}),
-      beginAreaSelection: vi.fn(),
-      completeAreaSelection: vi.fn(async () => {}),
-      selectWindow: vi.fn(async () => null),
-      completeWindowSelection: vi.fn(),
-      cancel: vi.fn(),
-      openScreenRecordingSettings: vi.fn(),
-    };
-
-    installDesktopRecorderIpc(api, { recorderUrl });
-
-    // Keyed by channel so a new recorder channel cannot be added without
-    // deciding what an untrusted page may send it. The list below is checked
-    // against the channel table, and a missing entry fails this test.
-    const sampleArgs: Record<string, readonly unknown[]> = {
-      [DESKTOP_RECORDER_CHANNELS.getState]: [],
-      [DESKTOP_RECORDER_CHANNELS.getCapabilities]: [],
-      [DESKTOP_RECORDER_CHANNELS.startCapture]: [
-        { sourceKind: "display", systemAudio: true, microphone: false },
-      ],
-      [DESKTOP_RECORDER_CHANNELS.beginAreaSelection]: [
-        { systemAudio: true, microphone: false },
-      ],
-      [DESKTOP_RECORDER_CHANNELS.completeAreaSelection]: [null],
-      [DESKTOP_RECORDER_CHANNELS.selectWindow]: [],
-      [DESKTOP_RECORDER_CHANNELS.listWindowOptions]: [],
-      [DESKTOP_RECORDER_CHANNELS.completeWindowSelection]: [null],
-      // Ending a capture is as sensitive as starting one: an untrusted page
-      // reaching discard would throw away someone's recording.
-      [DESKTOP_RECORDER_CHANNELS.pause]: [],
-      [DESKTOP_RECORDER_CHANNELS.resume]: [],
-      [DESKTOP_RECORDER_CHANNELS.discard]: [],
-      [DESKTOP_RECORDER_CHANNELS.stop]: [],
-      [DESKTOP_RECORDER_CHANNELS.cancel]: [],
-      [DESKTOP_RECORDER_CHANNELS.openScreenRecordingSettings]: [],
-    };
-
-    expect(Object.keys(sampleArgs).sort()).toEqual(
-      Object.values(DESKTOP_RECORDER_CHANNELS).sort(),
-    );
-
-    for (const [channel, args] of Object.entries(sampleArgs)) {
-      await expect(invokeIpc(channel, blockedAppUrl, ...args)).rejects.toThrow(
-        "Screen recording is unavailable on this page",
-      );
-      // The main window is not a recorder overlay either.
-      await expect(invokeIpc(channel, rendererUrl, ...args)).rejects.toThrow(
-        "Screen recording is unavailable on this page",
-      );
-    }
-
-    expect(api.startCapture).not.toHaveBeenCalled();
-    expect(api.beginAreaSelection).not.toHaveBeenCalled();
-    expect(api.selectWindow).not.toHaveBeenCalled();
-    expect(api.cancel).not.toHaveBeenCalled();
-    expect(api.pause).not.toHaveBeenCalled();
-    expect(api.resume).not.toHaveBeenCalled();
-    expect(api.discard).not.toHaveBeenCalled();
-    expect(api.stop).not.toHaveBeenCalled();
-  });
-
-  it("validates capture requests before they reach the recorder", async () => {
-    const { installDesktopRecorderIpc } =
-      await import("./desktop-recorder-electron");
-    const api = {
-      getState: vi.fn(),
-      getCapabilities: vi.fn(async () => ({ supportsMicrophone: true })),
-      listWindowOptions: vi.fn(async () => []),
-      startCapture: vi.fn(async () => {}),
-      pause: vi.fn(async () => {}),
-      resume: vi.fn(async () => {}),
-      discard: vi.fn(async () => {}),
-      stop: vi.fn(async () => {}),
-      beginAreaSelection: vi.fn(),
-      completeAreaSelection: vi.fn(async () => {}),
-      selectWindow: vi.fn(async () => null),
-      completeWindowSelection: vi.fn(),
-      cancel: vi.fn(),
-      openScreenRecordingSettings: vi.fn(),
-    };
-
-    installDesktopRecorderIpc(api, { recorderUrl });
-
-    await expect(
-      invokeIpc(DESKTOP_RECORDER_CHANNELS.startCapture, recorderUrl, {
-        sourceKind: "everything",
-        systemAudio: true,
-        microphone: false,
-      }),
-    ).rejects.toThrow("Unsupported screen recording source kind: everything");
-    await expect(
-      invokeIpc(DESKTOP_RECORDER_CHANNELS.startCapture, recorderUrl, {
-        sourceKind: "window",
-        systemAudio: true,
-        microphone: false,
-      }),
-    ).rejects.toThrow("Recording a window needs the window to record");
-    // A region without its display would be rebased onto the wrong screen.
-    await expect(
-      invokeIpc(DESKTOP_RECORDER_CHANNELS.completeAreaSelection, recorderUrl, {
-        area: { x: 10, y: 20, width: 300, height: 200 },
-      }),
-    ).rejects.toThrow("A selected region must name its display and rectangle");
-    await expect(
-      invokeIpc(
-        DESKTOP_RECORDER_CHANNELS.completeWindowSelection,
-        recorderUrl,
-        { sourceId: "window:1" },
-      ),
-    ).rejects.toThrow("A chosen window must name its source");
-    expect(api.startCapture).not.toHaveBeenCalled();
-
-    await invokeIpc(
-      DESKTOP_RECORDER_CHANNELS.completeAreaSelection,
-      recorderUrl,
-      {
-        displayId: 7,
-        area: { x: 10, y: 20, width: 300, height: 200 },
-      },
-    );
-    expect(api.completeAreaSelection).toHaveBeenCalledWith({
-      displayId: 7,
-      area: { x: 10, y: 20, width: 300, height: 200 },
-    });
   });
 
   it("rejects desktop auth renderer handlers from untrusted sender frames", async () => {

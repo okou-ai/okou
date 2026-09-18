@@ -965,6 +965,7 @@ const INTEGRATION_USER_ID_TABLES = [
   "agentphone_user_agent_preferences",
   "agentphone_user_links",
   "feishu_org_connections",
+  "feishu_platform_user_agent_preferences",
   "feishu_user_agent_preferences",
   "github_user_links",
   "slack_org_connections",
@@ -979,22 +980,32 @@ const INTEGRATION_USER_ID_TABLES = [
 const INTEGRATION_USER_ID_PREFERENCE_PRIMARY_KEYS = [
   {
     constraintName: "agentphone_user_agent_preferences_user_id_org_id_pk",
+    definition: "PRIMARY KEY (user_id, org_id)",
     tableName: "agentphone_user_agent_preferences",
   },
   {
+    constraintName: "feishu_platform_user_agent_preferences_pk",
+    definition: "PRIMARY KEY (user_id, org_id, platform)",
+    tableName: "feishu_platform_user_agent_preferences",
+  },
+  {
     constraintName: "feishu_user_agent_preferences_user_id_org_id_pk",
+    definition: "PRIMARY KEY (user_id, org_id)",
     tableName: "feishu_user_agent_preferences",
   },
   {
     constraintName: "slack_user_agent_preferences_user_id_org_id_pk",
+    definition: "PRIMARY KEY (user_id, org_id)",
     tableName: "slack_user_agent_preferences",
   },
   {
     constraintName: "teams_user_agent_preferences_user_id_org_id_pk",
+    definition: "PRIMARY KEY (user_id, org_id)",
     tableName: "teams_user_agent_preferences",
   },
   {
     constraintName: "telegram_user_agent_preferences_user_id_org_id_pk",
+    definition: "PRIMARY KEY (user_id, org_id)",
     tableName: "telegram_user_agent_preferences",
   },
 ] as const;
@@ -1023,6 +1034,14 @@ const INTEGRATION_USER_ID_CANONICAL_INDEXES = [
     isUnique: false,
     name: "idx_feishu_org_connections_user_id_installation",
     tableName: "feishu_org_connections",
+  },
+  {
+    definition:
+      "CREATE UNIQUE INDEX feishu_platform_user_agent_preferences_pk ON public.feishu_platform_user_agent_preferences USING btree (user_id, org_id, platform)",
+    isPrimary: true,
+    isUnique: true,
+    name: "feishu_platform_user_agent_preferences_pk",
+    tableName: "feishu_platform_user_agent_preferences",
   },
   {
     definition:
@@ -1145,15 +1164,7 @@ async function assertCanonicalIntegrationIdentitySchema(
   );
   assert.deepEqual(
     primaryKeys.rows,
-    INTEGRATION_USER_ID_PREFERENCE_PRIMARY_KEYS.map(
-      ({ constraintName, tableName }) => {
-        return {
-          constraintName,
-          definition: "PRIMARY KEY (user_id, org_id)",
-          tableName,
-        };
-      },
-    ),
+    INTEGRATION_USER_ID_PREFERENCE_PRIMARY_KEYS,
   );
 
   await client.query("SET search_path TO public, pg_catalog");
@@ -1187,6 +1198,74 @@ async function assertCanonicalIntegrationIdentitySchema(
   assert.deepEqual(indexes.rows, INTEGRATION_USER_ID_CANONICAL_INDEXES);
 }
 
+async function assertFeishuPlatformPreferenceConstraints(
+  client: Client,
+): Promise<void> {
+  const agentId = "00000000-0000-4000-8000-000000116401";
+  const userId = "platform-preference-test-user";
+  const orgId = "platform-preference-test-org";
+  const insertPreference = `
+    INSERT INTO "feishu_platform_user_agent_preferences"
+      ("user_id", "org_id", "platform", "selected_agent_id")
+    VALUES ($1, $2, $3, $4)
+  `;
+
+  try {
+    await client.query(
+      `INSERT INTO "agents" ("id", "org_id", "owner", "name")
+       VALUES ($1, $2, $3, 'platform-preference-test')`,
+      [agentId, orgId, userId],
+    );
+    for (const platform of ["feishu", "lark"]) {
+      await client.query(insertPreference, [userId, orgId, platform, agentId]);
+    }
+    await expectDatabaseError(client, {
+      code: "23505",
+      messageIncludes: "feishu_platform_user_agent_preferences_pk",
+      query: insertPreference,
+      values: [userId, orgId, "lark", agentId],
+    });
+    await expectDatabaseError(client, {
+      code: "23514",
+      messageIncludes: "chk_feishu_platform_user_agent_preferences_platform",
+      query: insertPreference,
+      values: [userId, orgId, "unknown", agentId],
+    });
+    await expectDatabaseError(client, {
+      code: "23503",
+      query: insertPreference,
+      values: [
+        `${userId}-missing-agent`,
+        orgId,
+        "lark",
+        "00000000-0000-4000-8000-000000116402",
+      ],
+    });
+
+    await client.query(`DELETE FROM "agents" WHERE "id" = $1`, [agentId]);
+    const remaining = await client.query<{
+      platform: string;
+      selectedAgentId: string | null;
+    }>(
+      `SELECT "platform", "selected_agent_id" AS "selectedAgentId"
+       FROM "feishu_platform_user_agent_preferences"
+       WHERE "user_id" = $1 AND "org_id" = $2
+       ORDER BY "platform"`,
+      [userId, orgId],
+    );
+    assert.deepEqual(remaining.rows, [
+      { platform: "feishu", selectedAgentId: null },
+      { platform: "lark", selectedAgentId: null },
+    ]);
+  } finally {
+    await client.query(
+      `DELETE FROM "feishu_platform_user_agent_preferences" WHERE "org_id" = $1`,
+      [orgId],
+    );
+    await client.query(`DELETE FROM "agents" WHERE "id" = $1`, [agentId]);
+  }
+}
+
 async function validateCanonicalIntegrationIdentitySchema(
   dbUrl: string,
 ): Promise<void> {
@@ -1198,6 +1277,7 @@ async function validateCanonicalIntegrationIdentitySchema(
 
   try {
     await assertCanonicalIntegrationIdentitySchema(client);
+    await assertFeishuPlatformPreferenceConstraints(client);
     console.log(
       "   ✅ Canonical integration identity columns, keys, and indexes match\n",
     );

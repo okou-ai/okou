@@ -1,4 +1,3 @@
-import type { FeishuPlatform } from "@okouai/core/feishu-platform";
 import { userPermissionGrantActionSchema } from "@okouai/api-contracts/contracts/user-permission-grants";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
@@ -106,7 +105,6 @@ export interface UserInfo {
   readonly timezone: string | null;
   readonly slackDisplayName?: string;
   readonly slackUserId?: string;
-  readonly feishuPlatform?: FeishuPlatform;
   readonly feishuDisplayName?: string;
   readonly feishuOpenId?: string;
   readonly teamsUserDisplayName?: string;

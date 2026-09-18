@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.343.2](https://github.com/vm0-ai/okou/compare/cli-v9.343.1...cli-v9.343.2) (2026-09-18)
+
+
+### Refactoring
+
+* retire hosted version controls and audit historical publications ([#35281](https://github.com/vm0-ai/okou/issues/35281)) ([a8fed1e](https://github.com/vm0-ai/okou/commit/a8fed1e3bf69e3ab7133db0f6d08ada0419f42fb))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.473.1
+    * @okouai/core bumped to 8.681.4
+    * @okouai/pi-agent-runtime bumped to 1.33.21
+
 ## [9.343.1](https://github.com/vm0-ai/okou/compare/cli-v9.343.0...cli-v9.343.1) (2026-09-18)
 
 

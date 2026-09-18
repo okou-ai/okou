@@ -1,10 +1,5 @@
 import type { DesktopAuthState } from "./desktop-bridge";
 import {
-  STOP_SCREEN_RECORDING_ACCELERATOR_LABEL,
-  type DesktopRecorderErrorCode,
-  type DesktopRecorderState,
-} from "./desktop-recorder-types";
-import {
   hasRequiredComputerUsePermissions,
   type ComputerUseHostRuntimeStatus,
   type ComputerUseLocalCommandLogEntry,
@@ -30,19 +25,6 @@ const COMMAND_STATUS_LABELS = {
 
 const MAX_RECENT_COMMANDS = 5;
 
-/**
- * Errors that leave an undelivered capture on disk, so offering it again is
- * worth more than re-recording.
- *
- * The set matters because `lastRecording` outlives a successful delivery.
- * `signed_out` is raised by `prepare` before anything is captured, so retrying
- * on it would re-upload an unrelated recording that was already handed over.
- */
-const UNDELIVERED_RECORDING_ERROR_CODES = new Set<DesktopRecorderErrorCode>([
-  "capture_failed",
-  "delivery_failed",
-  "source_lost",
-]);
 const MAX_COMMAND_LABEL_LENGTH = 90;
 
 export interface DesktopTrayMenuItem {
@@ -67,9 +49,6 @@ export interface DesktopTrayMenuActions {
   readonly openAccessibilitySettings: () => void;
   readonly openScreenRecordingSettings: () => void;
   readonly setKeepAwakeEnabled: (enabled: boolean) => void;
-  readonly startScreenRecording: () => void;
-  readonly stopScreenRecording: () => void;
-  readonly retryScreenRecordingDelivery: () => void;
   readonly quit: () => void;
 }
 
@@ -78,8 +57,6 @@ interface DesktopTrayMenuState {
   readonly auth: DesktopAuthState | null;
   readonly authLoading?: boolean;
   readonly authError: string | null;
-  /** Absent unless intro video and native screen recording are both enabled. */
-  readonly recorder?: DesktopRecorderState;
 }
 
 function separator(): DesktopTrayMenuItem {
@@ -389,91 +366,6 @@ function buildRecentCommandSection(
   return [disabledLabel("Recent Commands"), ...commands];
 }
 
-function formatRecordingElapsed(elapsedMs: number): string {
-  const totalSeconds = Math.max(0, Math.floor(elapsedMs / 1000));
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
-}
-
-function screenRecordingStatusLabel(recorder: DesktopRecorderState): string {
-  switch (recorder.status) {
-    case "recording":
-      return formatRecordingElapsed(recorder.elapsedMs);
-    case "paused":
-      return `${formatRecordingElapsed(recorder.elapsedMs)} paused`;
-    case "preparing":
-      return "Starting...";
-    case "finalizing":
-      return "Saving...";
-    case "delivering":
-      return "Uploading...";
-    case "ready":
-      return "Ready";
-    default:
-      return recorder.error ? "Failed" : "Ready";
-  }
-}
-
-function buildScreenRecordingSubmenu(
-  recorder: DesktopRecorderState,
-  actions: DesktopTrayMenuActions,
-): readonly DesktopTrayMenuItem[] {
-  const items: DesktopTrayMenuItem[] = [];
-
-  if (recorder.status === "recording" || recorder.status === "paused") {
-    // Stopping must stay reachable while paused; the menu bar is the only stop
-    // control for a whole-display capture, where the controller is in frame.
-    items.push({
-      label: `Stop Recording (${STOP_SCREEN_RECORDING_ACCELERATOR_LABEL})`,
-      click: actions.stopScreenRecording,
-    });
-  } else if (recorder.status === "idle") {
-    items.push({
-      label: "New Recording...",
-      click: actions.startScreenRecording,
-    });
-  } else {
-    items.push(disabledLabel(screenRecordingStatusLabel(recorder)));
-  }
-
-  if (recorder.error) {
-    items.push(
-      separator(),
-      disabledLabel(truncateMenuLabel(recorder.error.message)),
-    );
-    // The capture already produced files on disk, so delivering them is worth
-    // another try rather than re-recording. This covers a capture that broke
-    // partway as well as a failed upload.
-    if (
-      UNDELIVERED_RECORDING_ERROR_CODES.has(recorder.error.code) &&
-      recorder.lastRecording
-    ) {
-      items.push({
-        label: "Retry Delivery",
-        click: actions.retryScreenRecordingDelivery,
-      });
-    }
-  }
-  return items;
-}
-
-function buildScreenRecordingSection(
-  state: DesktopTrayMenuState,
-  actions: DesktopTrayMenuActions,
-): readonly DesktopTrayMenuItem[] {
-  const recorder = state.recorder;
-  if (!recorder?.available) {
-    return [];
-  }
-  return [
-    {
-      label: `Screen Recording: ${screenRecordingStatusLabel(recorder)}`,
-      submenu: buildScreenRecordingSubmenu(recorder, actions),
-    },
-  ];
-}
-
 export function buildDesktopTrayMenuItems(
   state: DesktopTrayMenuState,
   actions: DesktopTrayMenuActions,
@@ -500,7 +392,6 @@ export function buildDesktopTrayMenuItems(
         actions.setKeepAwakeEnabled(!state.computerUse.keepAwake.enabled);
       },
     },
-    ...buildScreenRecordingSection(state, actions),
     separator(),
     ...buildRecentCommandSection(state, actions),
     separator(),

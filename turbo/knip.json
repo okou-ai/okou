@@ -65,7 +65,6 @@
         "src/main.ts",
         "src/preload.ts",
         "src/renderer/main.tsx",
-        "src/renderer/recorder/main.tsx",
         "src/**/*.{test,spec}.{ts,tsx}"
       ],
       "project": ["src/**/*.{ts,tsx}", "*.{js,ts}"],

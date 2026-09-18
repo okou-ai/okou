@@ -5,14 +5,11 @@ import {
   type FeatureSwitchContext,
 } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { parseGitHubTreeUrl, resolveSkillRef } from "@okouai/core/github-url";
-import { INTRO_VIDEO_SKILL_NAME } from "@okouai/core/seed-skills";
 import {
   getCustomConnectorSkillName,
   getCustomConnectorSkillStorageName,
   getCustomSkillStorageName,
   getOfficialWorkflowDefinitionStorageName,
-  getSkillStorageName,
   SYSTEM_ORG_ID,
   VOLUME_ORG_USER_ID,
 } from "@okouai/core/storage-names";
@@ -107,10 +104,6 @@ function featurePromptInputs(
     ),
     deliveryFormatGuidanceEnabled: isFeatureEnabled(
       FeatureSwitchKey.DeliveryFormatGuidance,
-      featureContext,
-    ),
-    introVideoEnabled: isFeatureEnabled(
-      FeatureSwitchKey.IntroVideo,
       featureContext,
     ),
     customConnectorMcpEnabled: true,
@@ -305,14 +298,6 @@ async function loadStableContextSourceSnapshot(
   };
 }
 
-function introVideoStorageName(): string {
-  const parsed = parseGitHubTreeUrl(resolveSkillRef(INTRO_VIDEO_SKILL_NAME));
-  if (!parsed) {
-    throw new Error("Intro Video skill source is invalid");
-  }
-  return getSkillStorageName(parsed.fullPath);
-}
-
 export function customConnectorDefinitionHasStableSkill(
   definition: CustomConnectorDefinitionVersion,
   promptInputs: PiStableContextPromptInputs,
@@ -438,17 +423,6 @@ async function desiredDynamicMounts(
   }
   return [
     ...customConnectorMounts(snapshot, input.owner.orgId),
-    ...(snapshot.promptInputs.introVideoEnabled
-      ? [
-          {
-            kind: "injected" as const,
-            orgId: SYSTEM_ORG_ID,
-            storageName: introVideoStorageName(),
-            versionId: undefined,
-            mountPath: `${PI_SKILLS_ROOT}/${INTRO_VIDEO_SKILL_NAME}`,
-          },
-        ]
-      : []),
     ...builtin,
     ...workflow,
   ];
@@ -622,9 +596,6 @@ function dynamicStorageIdentities(
       );
     }
   }
-  if (semantic.promptInputs.introVideoEnabled) {
-    add(SYSTEM_ORG_ID, introVideoStorageName());
-  }
   return identities;
 }
 
@@ -732,7 +703,6 @@ export async function recapturePiStableContextInput(
   const snapshot = captured.value;
   const semantic: PiStableContextSemanticInput = {
     promptInputs: snapshot.promptInputs,
-    feishuPlatform: input.semantic.feishuPlatform,
     connectorScope: snapshot.connectorScope,
   };
   const latestInstructions = await resolveLatestInstructionMounts(db, input);
@@ -755,10 +725,7 @@ export async function recapturePiStableContextInput(
     prompt: {
       ...input.prompt,
       agentIdentity: snapshot.agentIdentity,
-      tools: buildAgentToolsPrompt({
-        ...snapshot.promptInputs,
-        feishuPlatform: semantic.feishuPlatform ?? undefined,
-      }),
+      tools: buildAgentToolsPrompt(snapshot.promptInputs),
     },
     semantic,
     source: {

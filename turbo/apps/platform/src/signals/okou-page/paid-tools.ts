@@ -111,12 +111,6 @@ export function templatePaidTool(
     case "avatar": {
       return "avatar-video-generation";
     }
-    case "intro-video": {
-      return template.type === "intro-video" &&
-        template.selection.options?.voice.kind === "none"
-        ? "video-rendering"
-        : "video-generation";
-    }
     default: {
       return undefined;
     }

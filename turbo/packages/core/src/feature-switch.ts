@@ -79,6 +79,17 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
   },
+  [FeatureSwitchKey.PresentationConvert]: {
+    maintainer: "bingjie@okou.ai",
+    description:
+      "Convert an HTML presentation into an editable pptx from the CLI.",
+    enabled: false,
+    // Held to the maintainer while fidelity is still being measured against
+    // real decks: conversion succeeds, but what a viewer without the deck's
+    // fonts makes of the result is only known for the decks tried so far.
+    enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
+    enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
+  },
   [FeatureSwitchKey.ComposerTaskChips]: {
     maintainer: "bingjie@okou.ai",
     description: "Lightweight chat task chips and contextual starting ideas",
@@ -321,13 +332,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Trace explicitly opted-in Pi runs across the API-first and Sandbox ownership boundary in Langfuse.",
     enabled: false,
-  },
-  [FeatureSwitchKey.IntroVideo]: {
-    maintainer: "bingjie@okou.ai",
-    description:
-      "Enable intro videos with style, avatar, and voice selection in the template picker.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.AvatarNeckSweater]: {
     maintainer: "ming@okou.ai",

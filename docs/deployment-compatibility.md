@@ -19,8 +19,8 @@ surfaces are on different versions.
 
 ## Pi stable-context schema rollout and rollback
 
-Migration 1166, following retained main migrations through
-`1165_supreme_red_skull`, adds
+Migration 1167, following retained main migrations through
+`1166_feishu_platform_agent_preferences`, adds
 `pi_stable_context_erasure_fences`,
 `pi_stable_context_generations`,
 `pi_stable_context_publications`, `pi_stable_context_heads`,
@@ -39,7 +39,7 @@ the same check. A refresh admitted before closure either finishes first and is
 subsequently cleaned up, or waits and observes the fence. The table is
 feature-local deletion finality: it does not register the dormant account-
 erasure bridge, retain the raw Clerk identifier, or authorize deletion of any
-other product data. Keep stable-context activation on hold until migration 1166
+other product data. Keep stable-context activation on hold until migration 1167
 and this API writer are present on every serving API instance.
 
 Mixed-version API operation is safe by construction. A new reader with no
@@ -1933,6 +1933,59 @@ Run-lifetime missed-notification window includes observed outages; this introduc
 no reconnect grace deadline, periodic reauthorization or new TTL. No coordinated
 API rollout or migration is required for this Runner change.
 
+## Feishu and Lark integration identity
+
+New runs use `triggerSource=feishu` or `triggerSource=lark` from the verified
+installation loaded by the shared Feishu queue launcher. Both platforms keep
+the existing Feishu event context, delivery callbacks, and provider transport.
+Previously queued inputs still resolve their installation before creating a
+run, including ingress retries and queued follow-ups. Captured execution
+contexts and existing runs retain the source they were created with.
+
+The run and uploaded-file source columns are strings, so their new source needs
+no database migration. Historical `feishu` runs and existing input assets are not
+rewritten: the source alone cannot prove which platform created them. The App
+retains its existing historical Lark display label only when the captured
+integration prompt explicitly identifies Lark. New run logs, filters, runtime
+guidance, and file attribution consume the canonical source. The deprecated
+billing usage source projection continues to classify both platforms as `other`.
+
+New chat messages also persist the verified platform in their `source.kind`.
+The App reads `lark` directly; it retains the existing historical Lark label for
+`feishu` messages only when their stored link explicitly uses the Lark app-link
+domain. Historical message documents are unchanged. APIs and Apps predating the
+new kind cannot parse those new strict message documents, including chat history
+and queued input. Keep a capable API while such records remain readable and
+refresh old Apps after promotion.
+
+Migration `1166_feishu_platform_agent_preferences` adds
+`feishu_platform_user_agent_preferences`, keyed by user, organization, and
+platform. `/switch` and `/switch default` affect only the current platform.
+The unscoped historical preference table remains untouched: its records do not
+identify which platform selected the Agent, so they are neither copied nor read
+by new dispatch. Each platform initially uses its installation default until the
+user makes a new selection. Existing chat history and runs are retained.
+
+The additive migration preserves every outgoing API statement against the old
+table. It must complete before promoting the new API; new code requires the new
+table. Old and new APIs do not synchronize preferences: during the non-GA cutover
+or rollback, each reads its own table. Recover by restoring the capable API;
+do not copy unscoped selections into both platforms.
+
+Both integrations remain non-GA under their existing disabled-by-default
+switches (`FeishuIntegration` and `LarkIntegration`). Deploy the capable API
+before the matching App; already-open Apps may need a refresh to display the
+new Lark label. No new switch, App floor, Runner protocol, or rollout bridge is
+introduced. The Runner transports prepared execution context without parsing
+a trigger-source enum.
+
+An API predating this reader cannot safely serve new Lark chat documents, queue entries,
+canonical delivery callbacks, or captured deferred Pi launch intent. Retain a
+capable API for serving and rollback while these records can be consumed;
+disabling ingress does not remove persisted runs. Recovery from an older API
+requires restoring the capable API, not relabeling Lark data as Feishu. This
+non-GA cutover does not promise transparent rollback to the previous reader.
+
 ## Integration source links
 
 Telegram bot DMs, Teams chats, and AgentPhone DMs store their return link in
@@ -2553,7 +2606,7 @@ ownership and global deletion finality remain S7 gates.
 
 ## Morning Brief retained generation authority (#35054)
 
-Migration 1164 generalizes collection occurrences from Slack-only to an exact
+Migration 1165 generalizes collection occurrences from Slack-only to an exact
 kind-specific binding and adds the all-source generation provenance:
 instruction version/digest, reported language, retained source descriptors and
 deadline, complete installation/automation/destination ids, and
@@ -2574,7 +2627,7 @@ The API and migration therefore have these mixed-version rules:
   newer API.
 - **New code before migration** must not be promoted. Reservation, stored-result
   revalidation, and expiry sanitation name the new columns directly; without
-  migration 1164 they fail with `42703`. The default-off feature switch and
+  migration 1165 they fail with `42703`. The default-off feature switch and
   protected preview route contain provider use, but they are not a substitute
   for the repository's migration-before-API ordering.
 - **New readers of old rows** preserve only the Slack-only contract. A row whose

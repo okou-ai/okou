@@ -30,6 +30,7 @@ import { appendChatThreadEvent } from "./chat-thread-event.service";
 import {
   computerUseHostIsOnline,
   listComputerUseHosts$,
+  projectComputerUseHosts,
 } from "./computer-use.service";
 
 const COMPUTER_USE_AUTHORIZATION_REQUEST_TTL_MS = 60 * 60 * 1000;
@@ -726,6 +727,129 @@ export const createComputerUseAuthorizationRequest$ = command(
   },
 );
 
+/**
+ * Retains every non-key canonical thread identity field while GET waits for its
+ * exact request pin. UPDATE is intentionally stronger than the shared helper's
+ * KEY SHARE: all Apply and direct-setting paths acquire at least KEY SHARE on
+ * the thread before any later request or host-dependent mutation, so they wait
+ * here before a second business-row lock can create an inverse. The projection
+ * takes no host row lock; host lifecycle's host -> thread order is unchanged.
+ */
+async function retainComputerUseAuthorizationReadThread(
+  tx: Tx,
+  identity: ChatThreadContentIdentity,
+): Promise<string | null> {
+  const [thread] = await tx
+    .select({
+      userId: chatThreads.userId,
+      agentId: chatThreads.agentId,
+      computerUseHostId: chatThreads.computerUseHostId,
+    })
+    .from(chatThreads)
+    .where(eq(chatThreads.id, identity.chatThreadId))
+    .limit(1)
+    .for("update");
+  if (
+    !thread ||
+    thread.userId !== identity.userId ||
+    thread.agentId !== identity.agentId
+  ) {
+    throw new ChatThreadContentOwnershipChangedError();
+  }
+  return thread.computerUseHostId;
+}
+
+/**
+ * Reads one canonical source:chat projection under the same retained B1,
+ * Agent, thread and exact request barriers. The final host statement observes
+ * every exact actor/org, nonrevoked host in last-seen order inside this
+ * transaction; filtering to online happens only after complete serialization.
+ *
+ * The retained thread prevents a host lifecycle transaction that already owns
+ * a host lock from committing its binding clear until this read commits. The
+ * final READ COMMITTED host statement therefore provides the projection's
+ * database linearization point without adding a thread -> host lock. Heartbeat
+ * and grant changes that do not need the thread remain outside this slice's
+ * linearization claim.
+ */
+async function readAuthorizedComputerUseProjection(
+  tx: Tx,
+  args: {
+    readonly identity: ChatThreadContentIdentity & {
+      readonly agentId: string;
+    };
+    readonly request: AuthorizationRequestRow;
+    readonly requestToken: string;
+    readonly orgId: string;
+    readonly userId: string;
+  },
+  signal: AbortSignal,
+): Promise<ReadComputerUseAuthorizationRequestResult> {
+  const selectedHostId = await retainComputerUseAuthorizationReadThread(
+    tx,
+    args.identity,
+  );
+  signal.throwIfAborted();
+
+  const [request] = await tx
+    .select({
+      expiresAt: computerUseAuthorizationRequests.expiresAt,
+      completedAt: computerUseAuthorizationRequests.completedAt,
+    })
+    .from(computerUseAuthorizationRequests)
+    .where(
+      and(
+        eq(computerUseAuthorizationRequests.id, args.request.id),
+        eq(
+          computerUseAuthorizationRequests.requestTokenHash,
+          hashSecret(args.requestToken),
+        ),
+        eq(computerUseAuthorizationRequests.orgId, args.orgId),
+        eq(computerUseAuthorizationRequests.userId, args.userId),
+        eq(computerUseAuthorizationRequests.runId, args.request.runId),
+        eq(computerUseAuthorizationRequests.source, "chat"),
+        eq(
+          computerUseAuthorizationRequests.chatThreadId,
+          args.identity.chatThreadId,
+        ),
+      ),
+    )
+    .limit(1)
+    .for("share");
+  signal.throwIfAborted();
+  if (!request) {
+    return { status: "not_found" };
+  }
+
+  // Both TTL and heartbeat eligibility use an explicit clock acquired only
+  // after every potentially waiting business-row pin.
+  const projectionAt = nowDate();
+  if (request.expiresAt.getTime() <= projectionAt.getTime()) {
+    return { status: "expired" };
+  }
+  const hosts = await projectComputerUseHosts(
+    {
+      db: tx,
+      orgId: args.orgId,
+      userId: args.userId,
+      now: projectionAt,
+    },
+    signal,
+  );
+  signal.throwIfAborted();
+
+  return {
+    status: "found",
+    source: "chat",
+    expiresAt: request.expiresAt.toISOString(),
+    completedAt: request.completedAt?.toISOString() ?? null,
+    computerUseHostId: request.completedAt ? selectedHostId : null,
+    hosts: hosts.hosts.filter((host) => {
+      return host.status === "online";
+    }),
+  };
+}
+
 export const readComputerUseAuthorizationRequest$ = command(
   async (
     { set },
@@ -737,6 +861,8 @@ export const readComputerUseAuthorizationRequest$ = command(
     signal: AbortSignal,
   ): Promise<ReadComputerUseAuthorizationRequestResult> => {
     const db = set(writeDb$);
+    // The token lookup is a locator only. Exact actor/org predicates preserve
+    // the route's non-oracular 404 before canonical scope or expiry is exposed.
     const loaded = await loadRequestByToken({
       db,
       orgId: args.orgId,
@@ -750,20 +876,60 @@ export const readComputerUseAuthorizationRequest$ = command(
       return loaded;
     }
 
+    if (loaded.request.source === "chat") {
+      const chatThreadId = requiredChatThreadId(loaded.request);
+      const result = await withChatThreadContentWrite(
+        db,
+        {
+          chatThreadId,
+          authorize: (identity) => {
+            return (
+              identity.userId === args.userId &&
+              identity.agentId !== null &&
+              identity.orgId === args.orgId
+            );
+          },
+        },
+        async (tx, identity) => {
+          if (identity.agentId === null) {
+            return { status: "not_found" as const };
+          }
+          return await readAuthorizedComputerUseProjection(
+            tx,
+            {
+              identity: { ...identity, agentId: identity.agentId },
+              request: loaded.request,
+              requestToken: args.requestToken,
+              orgId: args.orgId,
+              userId: args.userId,
+            },
+            signal,
+          );
+        },
+        signal,
+      );
+      signal.throwIfAborted();
+      if (result.outcome !== "written") {
+        return { status: "not_found" };
+      }
+      return result.value;
+    }
+
+    // Legacy persisted Teams/Slack sources retain their existing authority and
+    // own-database host-list behavior. Canonical web, Slack and Teams creation
+    // all persists source:chat and therefore follows the fenced branch above.
     const computerUseHostId = await loadAuthorizedComputerUseHostId({
       db,
       request: loaded.request,
       userId: args.userId,
     });
     signal.throwIfAborted();
-
     const hosts = await set(
       listComputerUseHosts$,
       { orgId: args.orgId, userId: args.userId },
       signal,
     );
     signal.throwIfAborted();
-
     return {
       status: "found",
       source: loaded.request.source as ComputerUseAuthorizationSource,

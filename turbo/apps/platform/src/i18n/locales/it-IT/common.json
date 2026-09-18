@@ -642,7 +642,6 @@
       "categories": "Categorie di modelli",
       "category": "Categoria modello",
       "chooseVoice": "Scegli una voce per {{title}}",
-      "creativeVideo": "Video creativo",
       "filters": {
         "age": "Età",
         "all": "Tutti",
@@ -666,10 +665,8 @@
       "importedSlides_many": "{{count}} diapositive",
       "importedSlides_other": "{{count}} diapositive",
       "importFile": "Importa il tuo file",
-      "importFileHint": "({{formats}})",
+      "importFileHint": "Riutilizza il design del tuo file",
       "importUnsupported": "Scegli un file {{formats}} per creare un modello.",
-      "introVideo": "Video introduttivo",
-      "introVideoUnavailable": "Questo modello video non è più disponibile. Rimuovilo per inviare il messaggio.",
       "multiAccent": "Multiaccento",
       "needPro": "Richiede Pro",
       "nextSlide": "Anteprima della diapositiva successiva",
@@ -687,7 +684,6 @@
       "renameImportedTemplate": "Rinomina modello",
       "searchConnector": "Cerca modelli",
       "searchConnectors": "Cerca modelli",
-      "selected": "Selezionato",
       "selectStyle": "Seleziona lo stile {{style}}",
       "selectTemplate": "Seleziona il modello {{title}}",
       "selectVideo": "Seleziona il modello video {{title}}",
@@ -1921,71 +1917,6 @@
       "sent": "Inoltrato correttamente",
       "threads": "Chat",
       "title": "Inoltra a"
-    },
-    "introVideo": {
-      "avatar": {
-        "heading": "Scegli un avatar",
-        "label": "Avatar",
-        "none": "Nessun avatar",
-        "noneDetail": "Solo stile",
-        "previewLook": "Anteprima dell’aspetto {{name}}"
-      },
-      "catalog": {
-        "error": "Impossibile caricare il catalogo.",
-        "loading": "Caricamento di altre opzioni",
-        "reload": "Ricarica catalogo",
-        "retry": "Riprova"
-      },
-      "footer": {
-        "cancel": "Annulla"
-      },
-      "picker": {
-        "allPresenters": "Tutti i presentatori",
-        "allPresentersCount": "Tutti i presentatori ({{total}})",
-        "allVoices": "Tutte le voci",
-        "allVoicesCount": "Tutte le voci ({{total}})",
-        "autoVoiceDescription": "Una voce adatta al tuo stile",
-        "avatarVoice": "Voce dell’avatar",
-        "back": "Indietro",
-        "closeOptions": "Chiudi opzioni",
-        "done": "Fatto",
-        "moreOptions": "Altre opzioni",
-        "noMatches": "Nessun risultato.",
-        "optionsNote": "Puoi cambiarle in qualsiasi momento dal chip nella chat.",
-        "pickStyle": "Scegli uno stile",
-        "reset": "Reimposta",
-        "searchPresenters": "Cerca presentatori",
-        "searchStyles": "Cerca stili",
-        "searchVoices": "Cerca voci",
-        "selectedStyle": "Selezionato: {{name}}",
-        "settings": "Impostazioni del video introduttivo",
-        "styleCount_one": "{{count}} stile",
-        "styleCount_many": "{{count}} stili",
-        "styleCount_other": "{{count}} stili",
-        "styleCountOf": "{{shown}} di {{total}}",
-        "useStyle": "Usa {{name}}"
-      },
-      "style": {
-        "auto": "Lascia scegliere a Okou",
-        "browseGroups": "Esplora per stile",
-        "groups": {
-          "cinematic": "Cinema e fotografia",
-          "handmade": "Artigianato e materiali",
-          "iconic-artist": "Arte e design",
-          "other": "Altri stili",
-          "pop-culture": "Cultura pop",
-          "print": "Stampa ed editoria",
-          "retro-tech": "Tecnologia rétro e interfacce"
-        },
-        "preview": "Anteprima di {{title}}"
-      },
-      "voice": {
-        "auto": "Lascia scegliere a Okou",
-        "defaultDescription": "Usa la voce predefinita dell’avatar scelto",
-        "label": "Voce",
-        "none": "Nessuna voce fuori campo",
-        "noneShortDescription": "Mantieni l’audio originale"
-      }
     },
     "mail": {
       "bcc": "bcc",
@@ -3801,7 +3732,7 @@
           "iconAlt": "Icona facoltativa dell'app {{brandName}}",
           "iconHint": "oppure utilizza l'icona che preferisci.",
           "iconTitle": "Icona facoltativa dell'app {{brandName}}",
-          "imageAlt": "Feishu modulo di creazione dell'app con il nome dell'app, l'icona e il pulsante Crea evidenziati",
+          "imageAlt": "Lark modulo di creazione dell'app con il nome dell'app, l'icona e il pulsante Crea evidenziati",
           "title": "Crea un’app di tipo Agent"
         },
         "credentials": {

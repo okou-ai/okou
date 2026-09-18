@@ -1,6 +1,6 @@
 {
   "name": "api",
-  "version": "1.636.0",
+  "version": "1.636.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -50,7 +50,6 @@
     "@okouai/core": "workspace:*",
     "@okouai/db": "workspace:*",
     "@okouai/pi-agent-runtime": "workspace:*",
-    "@zip.js/zip.js": "^2.14.1",
     "ably": "^2.21.0",
     "archiver": "^8.0.0",
     "ccstate": "^5.5.0",

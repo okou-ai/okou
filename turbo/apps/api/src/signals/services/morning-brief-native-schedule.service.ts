@@ -6,9 +6,20 @@ import {
   type MorningBriefExecutionTarget,
   type MorningBriefNativeOutcome,
 } from "@okouai/db/schema/morning-brief-native-schedule";
+import { morningBriefScheduleClaims } from "@okouai/db/schema/morning-brief-schedule-claim";
 import { MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
-import { and, eq, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  isNotNull,
+  isNull,
+  lt,
+  lte,
+  or,
+  sql,
+} from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 import type { ReadonlyDb } from "../external/db";
@@ -28,10 +39,11 @@ import { calculateNextRun } from "./time-automation";
  * Two of them are load-bearing everywhere else:
  *
  * - **Lock order.** A writer that touches both the legacy automation and this
- *   row takes the member's Morning Brief preference advisory lock first, then
- *   this row's `FOR UPDATE`, then any occurrence row. Nothing else is allowed,
- *   so the Settings, reconciliation, deletion and cron writers can never
- *   deadlock against each other.
+ *   row takes the member's Morning Brief preference/admission lock first when
+ *   applicable, then this row's `FOR UPDATE`, the selected legacy automation,
+ *   its S7a claim/Run/callback rows, and finally any native occurrence row.
+ *   Nothing else is allowed, so Settings, reconciliation, deletion and cron
+ *   writers cannot deadlock against each other.
  * - **Fresh predicates.** Every mutation revalidates the epoch and phase it
  *   read before it commits. External preflight (Clerk, provider, Slack) happens
  *   outside the transaction, and the transaction re-reads what it depends on.
@@ -137,6 +149,151 @@ export async function lockMorningBriefNativeSchedule(
     .limit(1)
     .for("update");
   return row;
+}
+
+/** The selected legacy row a reconciliation, claim or callback may mutate. */
+export interface MorningBriefLegacyLineage extends MorningBriefMemberIdentity {
+  readonly workflowId: string;
+  readonly automationId: string;
+}
+
+/**
+ * Exact durable state a multi-transaction legacy writer is allowed to resume.
+ *
+ * Epoch alone cannot fence a timezone edit because schedule-only edits
+ * deliberately keep the epoch. The phase, choice, obligation and lineage are
+ * therefore carried together; a compensation that finds any one changed must
+ * fail closed rather than restore its older copy.
+ */
+export interface MorningBriefLegacyWriterFence {
+  readonly kind: "ordinary" | "selected";
+  readonly phase?: MorningBriefExecutionPhase;
+  readonly target?: MorningBriefExecutionTarget;
+  readonly ownerEpoch?: number;
+  readonly enabled?: boolean;
+  readonly cronExpression?: string | null;
+  readonly timezone?: string;
+  readonly nextRunAt?: Date | null;
+  readonly scheduleOwner?: MorningBriefNativeScheduleRow["scheduleOwner"];
+  readonly legacyWorkflowId?: string | null;
+  readonly legacyAutomationId?: string | null;
+  readonly updatedAt?: Date;
+}
+
+export type MorningBriefLegacyWriterAuthority =
+  | {
+      readonly kind: "ordinary";
+      readonly fence: MorningBriefLegacyWriterFence;
+    }
+  | {
+      readonly kind: "selected";
+      readonly row: MorningBriefNativeScheduleRow;
+      readonly fence: MorningBriefLegacyWriterFence;
+    }
+  | { readonly kind: "stale" };
+
+function legacyWriterFence(
+  row: MorningBriefNativeScheduleRow | undefined,
+  lineage: MorningBriefLegacyLineage,
+): MorningBriefLegacyWriterFence {
+  if (
+    row === undefined ||
+    row.legacyWorkflowId !== lineage.workflowId ||
+    row.legacyAutomationId !== lineage.automationId
+  ) {
+    return { kind: "ordinary" };
+  }
+  return {
+    kind: "selected",
+    phase: row.phase,
+    target: row.target,
+    ownerEpoch: row.ownerEpoch,
+    enabled: row.enabled,
+    cronExpression: row.cronExpression,
+    timezone: row.timezone,
+    nextRunAt: row.nextRunAt,
+    scheduleOwner: row.scheduleOwner,
+    legacyWorkflowId: row.legacyWorkflowId,
+    legacyAutomationId: row.legacyAutomationId,
+    updatedAt: row.updatedAt,
+  };
+}
+
+function sameInstant(
+  left: Date | null | undefined,
+  right: Date | null | undefined,
+): boolean {
+  return left === null ||
+    left === undefined ||
+    right === null ||
+    right === undefined
+    ? left === right
+    : left.getTime() === right.getTime();
+}
+
+function sameLegacyWriterFence(
+  expected: MorningBriefLegacyWriterFence,
+  current: MorningBriefLegacyWriterFence,
+): boolean {
+  if (expected.kind !== current.kind) {
+    return false;
+  }
+  if (expected.kind === "ordinary") {
+    return true;
+  }
+  return (
+    expected.phase === current.phase &&
+    expected.target === current.target &&
+    expected.ownerEpoch === current.ownerEpoch &&
+    expected.enabled === current.enabled &&
+    expected.cronExpression === current.cronExpression &&
+    expected.timezone === current.timezone &&
+    sameInstant(expected.nextRunAt, current.nextRunAt) &&
+    expected.scheduleOwner === current.scheduleOwner &&
+    expected.legacyWorkflowId === current.legacyWorkflowId &&
+    expected.legacyAutomationId === current.legacyAutomationId &&
+    sameInstant(expected.updatedAt, current.updatedAt)
+  );
+}
+
+/**
+ * Lock durable authority before a selected legacy automation.
+ *
+ * Callers pass the prior fence when they resume after external work. An
+ * `ordinary` fence is meaningful too: materialization or lineage adoption
+ * between stages turns it stale instead of letting the older stage bypass the
+ * newly authoritative row.
+ */
+export async function lockMorningBriefLegacyWriterAuthority(
+  tx: MorningBriefNativeWriter,
+  lineage: MorningBriefLegacyLineage,
+  expected?: MorningBriefLegacyWriterFence,
+): Promise<MorningBriefLegacyWriterAuthority> {
+  const row = await lockMorningBriefNativeSchedule(tx, lineage);
+  const current = legacyWriterFence(row, lineage);
+  if (expected !== undefined && !sameLegacyWriterFence(expected, current)) {
+    return { kind: "stale" };
+  }
+  if (current.kind === "ordinary" || row === undefined) {
+    return { kind: "ordinary", fence: current };
+  }
+  return { kind: "selected", row, fence: current };
+}
+
+/** Refresh a selected authority after this transaction mutates its row. */
+async function refreshedLegacyWriterAuthority(
+  tx: MorningBriefNativeWriter,
+  lineage: MorningBriefLegacyLineage,
+): Promise<MorningBriefLegacyWriterAuthority> {
+  const row = await lockMorningBriefNativeSchedule(tx, lineage);
+  if (
+    row === undefined ||
+    row.legacyWorkflowId !== lineage.workflowId ||
+    row.legacyAutomationId !== lineage.automationId
+  ) {
+    return { kind: "stale" };
+  }
+  return { kind: "selected", row, fence: legacyWriterFence(row, lineage) };
 }
 
 /**
@@ -400,6 +557,245 @@ export type MorningBriefChoiceApplication =
   | { readonly kind: "stale"; readonly row: MorningBriefNativeScheduleRow }
   | { readonly kind: "absent" };
 
+interface MorningBriefReconciledAutomationState {
+  readonly kind: string;
+  readonly scheduleType: string | null;
+  readonly cronExpression: string | null;
+  readonly timezone: string;
+  readonly nextRunAt: Date | null;
+}
+
+interface MorningBriefLegacyAutomationOverrides {
+  readonly enabled?: boolean;
+  readonly officialIntendedEnabled?: boolean;
+  readonly nextRunAt?: Date | null;
+}
+
+/**
+ * Fence one Official Workflow reconciliation mutation for the selected row.
+ *
+ * Reconciliation owns configuration readiness, not the member's choice. A
+ * selected row therefore always retains the durable enabled bit. Outside the
+ * `legacy` phase its admission instant is forced closed; in `legacy`, a current
+ * S7a claim keeps the obligation until its one settlement. Configuration
+ * changes are copied to durable authority without revoking an in-flight slot.
+ */
+export async function prepareMorningBriefLegacyReconciliationMutation(
+  tx: MorningBriefNativeWriter,
+  lineage: MorningBriefLegacyLineage,
+  authority: Exclude<MorningBriefLegacyWriterAuthority, { kind: "stale" }>,
+  args:
+    | {
+        readonly mode: "configured";
+        readonly proposed: MorningBriefReconciledAutomationState;
+        readonly at: Date;
+      }
+    | { readonly mode: "paused"; readonly at: Date },
+): Promise<{
+  readonly automation: MorningBriefLegacyAutomationOverrides;
+  readonly authority: Exclude<
+    MorningBriefLegacyWriterAuthority,
+    { kind: "stale" }
+  >;
+}> {
+  if (authority.kind === "ordinary") {
+    return { automation: {}, authority };
+  }
+
+  const schedule = authority.row;
+  let automation: MorningBriefLegacyAutomationOverrides = {
+    enabled: args.mode === "configured" ? schedule.enabled : false,
+    officialIntendedEnabled: schedule.enabled,
+    nextRunAt: null,
+  };
+  let schedulePatch:
+    | Partial<typeof morningBriefNativeSchedules.$inferInsert>
+    | undefined;
+
+  if (args.mode === "paused") {
+    if (schedule.phase === "legacy") {
+      schedulePatch = { nextRunAt: null, scheduleOwner: null };
+    }
+  } else if (
+    args.proposed.kind === "schedule" &&
+    args.proposed.scheduleType === "cron" &&
+    args.proposed.cronExpression !== null &&
+    isValidTimeZone(args.proposed.timezone)
+  ) {
+    if (schedule.phase === "legacy") {
+      const claimInFlight =
+        schedule.legacyAutomationId !== null &&
+        (await hasCurrentUnsettledLegacyClaim(tx, schedule.legacyAutomationId));
+      const nextRunAt =
+        schedule.enabled && !claimInFlight ? args.proposed.nextRunAt : null;
+      automation = { ...automation, nextRunAt };
+      schedulePatch = {
+        cronExpression: args.proposed.cronExpression,
+        timezone: args.proposed.timezone,
+        nextRunAt,
+        scheduleOwner: nextRunAt === null ? null : "legacy",
+      };
+    } else {
+      const inFlight = await loadUnsettledOccurrence(tx, lineage);
+      const obligation = resolveObligationAfterChoice({
+        current: schedule,
+        enabled: schedule.enabled,
+        cronExpression: args.proposed.cronExpression,
+        timezone: args.proposed.timezone,
+        revokes: false,
+        inFlight,
+        legacyInFlight: false,
+        at: args.at,
+      });
+      schedulePatch = {
+        cronExpression: args.proposed.cronExpression,
+        timezone: args.proposed.timezone,
+        ...obligation,
+      };
+    }
+  } else if (schedule.phase === "legacy") {
+    // An unreconciled non-cron replacement is not a runnable legacy target.
+    schedulePatch = { nextRunAt: null, scheduleOwner: null };
+  }
+
+  if (schedulePatch === undefined) {
+    return { automation, authority };
+  }
+  const [updated] = await tx
+    .update(morningBriefNativeSchedules)
+    .set({ ...schedulePatch, updatedAt: args.at })
+    .where(
+      and(
+        scheduleWhere(lineage),
+        eq(morningBriefNativeSchedules.ownerEpoch, schedule.ownerEpoch),
+        eq(morningBriefNativeSchedules.phase, schedule.phase),
+        eq(morningBriefNativeSchedules.legacyWorkflowId, lineage.workflowId),
+        eq(
+          morningBriefNativeSchedules.legacyAutomationId,
+          lineage.automationId,
+        ),
+      ),
+    )
+    .returning();
+  if (updated === undefined) {
+    throw new Error("Morning Brief reconciliation authority changed");
+  }
+  const refreshed = await refreshedLegacyWriterAuthority(tx, lineage);
+  if (refreshed.kind === "stale") {
+    throw new Error("Morning Brief reconciliation lineage changed");
+  }
+  return { automation, authority: refreshed };
+}
+
+/**
+ * Consume the durable legacy obligation with the exact S7a claim transaction.
+ */
+export async function consumeSelectedLegacyMorningBriefObligation(
+  tx: MorningBriefNativeWriter,
+  lineage: MorningBriefLegacyLineage,
+  authority: Exclude<MorningBriefLegacyWriterAuthority, { kind: "stale" }>,
+  args: { readonly occurrenceAt: Date; readonly claimedAt: Date },
+): Promise<boolean> {
+  if (authority.kind === "ordinary") {
+    return true;
+  }
+  if (
+    authority.row.phase !== "legacy" ||
+    !authority.row.enabled ||
+    authority.row.scheduleOwner !== "legacy" ||
+    authority.row.nextRunAt?.getTime() !== args.occurrenceAt.getTime()
+  ) {
+    return false;
+  }
+  const [consumed] = await tx
+    .update(morningBriefNativeSchedules)
+    .set({
+      nextRunAt: null,
+      scheduleOwner: null,
+      updatedAt: args.claimedAt,
+    })
+    .where(
+      and(
+        scheduleWhere(lineage),
+        eq(morningBriefNativeSchedules.ownerEpoch, authority.row.ownerEpoch),
+        eq(morningBriefNativeSchedules.phase, "legacy"),
+        eq(morningBriefNativeSchedules.enabled, true),
+        eq(morningBriefNativeSchedules.scheduleOwner, "legacy"),
+        eq(morningBriefNativeSchedules.nextRunAt, args.occurrenceAt),
+        eq(morningBriefNativeSchedules.legacyWorkflowId, lineage.workflowId),
+        eq(
+          morningBriefNativeSchedules.legacyAutomationId,
+          lineage.automationId,
+        ),
+      ),
+    )
+    .returning({ ownerEpoch: morningBriefNativeSchedules.ownerEpoch });
+  return consumed !== undefined;
+}
+
+/**
+ * Mirror a selected legacy settlement into durable choice and obligation.
+ *
+ * Callers invoke this only after the locked legacy row accepted the settlement.
+ * Drain/native phases deliberately do nothing: their returning callback may
+ * close its journal fact, but may not publish or pause either scheduler.
+ */
+export async function settleSelectedLegacyMorningBriefObligation(
+  tx: MorningBriefNativeWriter,
+  lineage: MorningBriefLegacyLineage,
+  authority: Exclude<MorningBriefLegacyWriterAuthority, { kind: "stale" }>,
+  args: {
+    readonly enabled: boolean;
+    readonly cronExpression: string | null;
+    readonly timezone: string;
+    readonly nextRunAt: Date | null;
+    readonly at: Date;
+  },
+): Promise<boolean> {
+  if (authority.kind !== "selected" || authority.row.phase !== "legacy") {
+    return false;
+  }
+  const applied = await applyMorningBriefLogicalChoice(
+    tx,
+    lineage,
+    {
+      enabled: args.enabled,
+      cronExpression: args.cronExpression,
+      timezone: args.timezone,
+      expectedEpoch: authority.row.ownerEpoch,
+    },
+    args.at,
+  );
+  if (applied.kind !== "applied" || applied.row.phase !== "legacy") {
+    throw new Error("Morning Brief settlement authority changed");
+  }
+  const nextRunAt = args.enabled ? args.nextRunAt : null;
+  const [settled] = await tx
+    .update(morningBriefNativeSchedules)
+    .set({
+      nextRunAt,
+      scheduleOwner: nextRunAt === null ? null : "legacy",
+      updatedAt: args.at,
+    })
+    .where(
+      and(
+        scheduleWhere(lineage),
+        eq(morningBriefNativeSchedules.ownerEpoch, applied.row.ownerEpoch),
+        eq(morningBriefNativeSchedules.phase, "legacy"),
+        eq(morningBriefNativeSchedules.legacyWorkflowId, lineage.workflowId),
+        eq(
+          morningBriefNativeSchedules.legacyAutomationId,
+          lineage.automationId,
+        ),
+      ),
+    )
+    .returning({ ownerEpoch: morningBriefNativeSchedules.ownerEpoch });
+  if (settled === undefined) {
+    throw new Error("Morning Brief settlement obligation changed");
+  }
+  return true;
+}
+
 /**
  * Apply a logical Settings-level change coherently.
  *
@@ -450,6 +846,10 @@ export async function applyMorningBriefLogicalChoice(
   const revokes = enabledChanged || destinationReplaced;
 
   const inFlight = await loadUnsettledOccurrence(tx, owner);
+  const legacyInFlight =
+    current.phase === "legacy" && current.legacyAutomationId !== null
+      ? await hasCurrentUnsettledLegacyClaim(tx, current.legacyAutomationId)
+      : false;
 
   // Only an enabled-choice change or a destination replacement revokes. A
   // schedule or timezone edit is deliberately not a revocation.
@@ -462,6 +862,7 @@ export async function applyMorningBriefLogicalChoice(
     timezone,
     revokes,
     inFlight,
+    legacyInFlight,
     at,
   });
 
@@ -533,6 +934,7 @@ function resolveObligationAfterChoice(args: {
   readonly timezone: string;
   readonly revokes: boolean;
   readonly inFlight: MorningBriefNativeOccurrenceRow | undefined;
+  readonly legacyInFlight: boolean;
   readonly at: Date;
 }): {
   readonly nextRunAt: Date | null;
@@ -558,8 +960,9 @@ function resolveObligationAfterChoice(args: {
     };
   }
   if (
-    args.inFlight !== undefined &&
-    args.inFlight.ownerEpoch === current.ownerEpoch
+    args.legacyInFlight ||
+    (args.inFlight !== undefined &&
+      args.inFlight.ownerEpoch === current.ownerEpoch)
   ) {
     // The in-flight execution still owns the obligation; leave it to settle.
     return {
@@ -605,6 +1008,19 @@ function scheduleOwnerForPhase(
       return "native";
     }
   }
+}
+
+async function hasCurrentUnsettledLegacyClaim(
+  db: MorningBriefNativeReader,
+  automationId: string,
+): Promise<boolean> {
+  const [claim] = await db
+    .select({ settlement: morningBriefScheduleClaims.settlement })
+    .from(morningBriefScheduleClaims)
+    .where(eq(morningBriefScheduleClaims.automationId, automationId))
+    .orderBy(desc(morningBriefScheduleClaims.claimSequence))
+    .limit(1);
+  return claim?.settlement === "unsettled";
 }
 
 /** The unsettled occurrence a member currently owes, if any. */

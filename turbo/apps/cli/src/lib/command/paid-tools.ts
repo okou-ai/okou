@@ -110,14 +110,6 @@ function paidToolsForHelp(path: Command[]): readonly PaidToolId[] {
     const tool = getGenerationPaidTool(type);
     return tool ? [tool] : [];
   }
-  if (family === "video") {
-    return path[1] === undefined || path[1].name() === "render"
-      ? ["video-rendering"]
-      : [];
-  }
-  if (family === "__intro-video-agent") return ["video-generation"];
-  if (family === "__intro-video-presenter") return ["avatar-video-generation"];
-  if (family === "__intro-video-voice") return ["voice-generation"];
   const tool = paidToolIdSchema.safeParse(family);
   return tool.success ? [tool.data] : [];
 }

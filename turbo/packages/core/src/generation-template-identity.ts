@@ -4,7 +4,6 @@ import {
   generationTemplateKind,
   type GenerationTemplateKind,
 } from "./generation-template-kind";
-import { INTRO_VIDEO_TEMPLATE_ID } from "./intro-video-template";
 import { isUserPresentationTemplateId } from "./presentation-template-selection";
 import { findWorkflowTemplateItem } from "./workflow-template-items";
 
@@ -25,7 +24,6 @@ export type GenerationTemplateCategory =
   | "avatar"
   | "custom"
   | "illustration"
-  | "intro-video"
   | "presentation"
   | "video"
   | "website"
@@ -66,6 +64,9 @@ export interface GenerationTemplateIdentity {
  * built-in templates from bring-your-own ones.
  */
 const USER_IMPORTED_TEMPLATE_ID = "user-template";
+
+/** What Intro Video selections reported before they had their own wire type. */
+const RETIRED_INTRO_VIDEO_TEMPLATE_ID = "explainer-video";
 
 function unreachableGenerationTemplateType(request: never): never {
   throw new Error(
@@ -174,12 +175,6 @@ export function generationTemplateIdentity(
     case "video": {
       return videoIdentity(request.selection);
     }
-    case "intro-video": {
-      // One template, so the product name is the identifier. Selections stored
-      // before the wire split reported `explainer-video` in the `video`
-      // category; neither is rewritten.
-      return builtinIdentity("intro-video", INTRO_VIDEO_TEMPLATE_ID);
-    }
     case "illustration": {
       return builtinIdentity(
         "illustration",
@@ -202,6 +197,12 @@ export function generationTemplateIdentity(
         templateSlug: USER_IMPORTED_TEMPLATE_ID,
         source: "user-imported",
       };
+    }
+    case "intro-video": {
+      // Retired product; the rows are append-only. Reported in the video
+      // bucket under the identifier the pre-split selections already used, so
+      // one removed product does not open a permanent reporting category.
+      return builtinIdentity("video", RETIRED_INTRO_VIDEO_TEMPLATE_ID);
     }
     default: {
       return unreachableGenerationTemplateType(request);
