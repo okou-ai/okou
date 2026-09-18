@@ -105,7 +105,22 @@ existing shadow comparison and optional small GitHub manifest publication.
 Fresh publication and download are required: missing configuration, storage
 failures, invalid manifests, or binary hash/size mismatches fail the job. Cache-hit
 downloads remain required as well. Compilation stays in the existing compile
-job; only its transfer step receives R2 credentials.
+job. Its transfer step and compiler-cache startup step receive R2 credentials;
+credentials are not exported through `GITHUB_ENV` or added to the build step.
+
+The compile job uses sccache's S3 backend against the existing R2 bucket, under
+`runner-sccache/v1/<repository>/<target>/`. These compiler outputs are separate
+from runner binary objects and manifests. PR, merge-group, and main builds with
+the existing R2 access share this cache; forks without those secrets cannot
+populate it. The sccache server retains the startup step's credentials for its
+job-local lifetime. Missing R2 configuration fails cache startup explicitly.
+
+This avoids GitHub's branch-scoped compiler cache and shared storage quota.
+The additional Cargo dependency cache still uses GitHub and saves only on main;
+main often reuses the complete runner binary and skips compilation, so that
+cache alone cannot reliably warm later builds. The first build of new compiler
+inputs remains cold. Cache backend statistics in the compile job report actual
+hits, misses, and write errors; binary and image validation remain required.
 
 Required consumer GETs use `runner-binary-download.sh`: at most three complete
 download attempts, with 1s/2s backoff and a new partial file each time. Cached
