@@ -839,23 +839,15 @@ def _report_usage(
             "category": category,
             "quantity": qty,
         }
-        if resource_protocol and method == "GET":
-            if category in {"posts.read", "user.read"}:
-                event, remainder = resource_event(
-                    event,
-                    resp_meta,
-                    endpoint_bucket=endpoint_bucket,
-                    path=urllib.parse.urlparse(original_url).path,
-                    observation_time=observation_time,
-                    count_endpoint=req_meta["is_count_endpoint"],
-                )
-            else:
-                remainder = [{"reason": "unsupported_resource", "quantity": qty}]
-            summary = flow.metadata.setdefault(metadata_keys.X_RESOURCE_REMAINDER, {})
-            category_summary = summary.setdefault(category, {})
-            for item in remainder:
-                reason = item["reason"]
-                category_summary[reason] = category_summary.get(reason, 0) + item["quantity"]
+        if resource_protocol and method == "GET" and category in {"posts.read", "user.read"}:
+            event = resource_event(
+                event,
+                resp_meta,
+                endpoint_bucket=endpoint_bucket,
+                path=urllib.parse.urlparse(original_url).path,
+                observation_time=observation_time,
+                count_endpoint=req_meta["is_count_endpoint"],
+            )
         events.append(event)
     buffer = buffer_source_usage_events if capability is not None else buffer_usage_events
     buffer(
