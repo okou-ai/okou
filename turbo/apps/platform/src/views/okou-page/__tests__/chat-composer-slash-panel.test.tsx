@@ -151,6 +151,29 @@ test("The pane carries the whole category, so its covers match the count it head
   expect(within(pane).getByText(last.title)).toBeInTheDocument();
 });
 
+test("Moving to another type opens its covers at the top", async () => {
+  const user = userEvent.setup();
+  await openSlashMenu();
+  const scroller = document.querySelector<HTMLElement>(
+    '[data-slot="slash-template-covers"]',
+  );
+  if (!scroller) {
+    throw new Error("Expected the cover scroller");
+  }
+  scroller.scrollTop = 200;
+  // The pane stays mounted across types, so without its own scroller per type
+  // the next one would open at whatever offset this one was left at.
+  expect(scroller.scrollTop).toBe(200);
+  await user.hover(slashButton("Website"));
+  await waitFor(() => {
+    expect(detailPane()).toHaveAttribute("data-category", "website");
+  });
+  expect(
+    document.querySelector<HTMLElement>('[data-slot="slash-template-covers"]')
+      ?.scrollTop,
+  ).toBe(0);
+});
+
 test("Illustration covers keep their own proportion; decks keep the 16:9 tile", async () => {
   const user = userEvent.setup();
   await openSlashMenu();
