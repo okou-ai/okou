@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { http, HttpResponse } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DISABLED_PAID_TOOLS_ENV_VAR } from "@okouai/api-contracts/contracts/paid-tools";
 import {
   introVideoRenderRequestSchema,
   type IntroVideoRenderResponse,
@@ -64,9 +65,11 @@ describe("managed video render command", () => {
     log.mockClear();
     errors.mockClear();
     await rm(dir, { recursive: true, force: true });
+    vi.unstubAllEnvs();
   });
 
   it("dry-runs without authentication, excluding old renders and honoring project ignore rules", async () => {
+    vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, '["video-rendering"]');
     vi.stubEnv("OKOU_TOKEN", "");
     await mkdir(join(dir, "renders"));
     await writeFile(join(dir, "renders", "old.mp4"), "old output");
@@ -177,6 +180,96 @@ describe("managed video render command", () => {
     await renderCommand.parseAsync(["node", "okou", "resume", ID, "--json"]);
     expect(submissions).toBe(1);
   });
+
+  it("rejects repeated render submission without changing saved input", async () => {
+    vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, '["video-rendering"]');
+    await mkdir(join(dir, ".okou"));
+    const statePath = join(dir, ".okou", "cloud-render.json");
+    const state = JSON.stringify({
+      requestId: ID,
+      digest: "saved",
+      composition: "index.html",
+      input,
+    });
+    await writeFile(statePath, state);
+    const requests: string[] = [];
+    server.use(
+      http.all("*", ({ request }) => {
+        requests.push(request.url);
+        return HttpResponse.json(
+          { error: "Unexpected request" },
+          { status: 500 },
+        );
+      }),
+    );
+
+    await expect(
+      renderCommand.parseAsync(["node", "okou", dir, "--json"]),
+    ).rejects.toThrow("process.exit called");
+
+    expect(errors.mock.calls.flat().join("\n")).toContain(
+      'Paid tool "video-rendering" is disabled',
+    );
+    expect(requests).toEqual([]);
+    expect(await readFile(statePath, "utf8")).toBe(state);
+  });
+
+  it.each([
+    { command: "status", replay: true, denied: false },
+    { command: "resume", replay: false, denied: false },
+    { command: "resume", replay: true, denied: true },
+  ])(
+    "allows disabled render observation but blocks replay: $command, replay=$replay",
+    async ({ command, replay, denied }) => {
+      vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, '["video-rendering"]');
+      let reads = 0;
+      let submissions = 0;
+      server.use(
+        http.get(`${BASE}/${ID}`, () => {
+          reads += 1;
+          return HttpResponse.json(
+            replay
+              ? {
+                  ...pending,
+                  phase: "submission_unknown",
+                  providerRenderId: null,
+                  recovery: {
+                    action: "replay_submission",
+                    retryAfterSeconds: 10,
+                  },
+                }
+              : pending,
+          );
+        }),
+        http.post(BASE, () => {
+          submissions += 1;
+          return HttpResponse.json(pending, { status: 202 });
+        }),
+      );
+
+      const invocation = renderCommand.parseAsync([
+        "node",
+        "okou",
+        command,
+        ID,
+        "--json",
+      ]);
+      if (denied) {
+        await expect(invocation).rejects.toThrow("process.exit called");
+        expect(errors.mock.calls.flat().join("\n")).toContain(
+          'Paid tool "video-rendering" is disabled',
+        );
+        expect(log).not.toHaveBeenCalled();
+      } else {
+        await invocation;
+        expect(JSON.parse(String(log.mock.calls[0]?.[0]))).toMatchObject({
+          generationId: ID,
+        });
+      }
+      expect(reads).toBe(1);
+      expect(submissions).toBe(0);
+    },
+  );
 
   it.each(["https://a.okou.io/intro.mp4", "/artifacts/abcxyz1234.mp4"])(
     "does not resubmit expired tasks and returns a complete URL for %s on completion",

@@ -43,6 +43,7 @@ import { i18n } from "../../i18n/index.ts";
 import { introVideoTemplateOptions } from "@okouai/core/intro-video-template";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { IntroVideoPicker } from "./intro-video-picker.tsx";
+import { PaidToolNotice, TemplatePaidToolNotice } from "./paid-tool-notice.tsx";
 import { TemplateEmptyPanel } from "./template-empty-panel.tsx";
 import { CustomTemplatePickerPane } from "./custom-template-picker-pane.tsx";
 import type { UserTemplateCatalogEntry } from "@okouai/api-contracts/contracts/user-templates";
@@ -308,7 +309,6 @@ import {
 } from "../../signals/external/user-model-preference.ts";
 import {
   codexFastModeEnabled$,
-  modelPickerFlyoutEnabled$,
   featureSwitch$,
 } from "../../signals/external/feature-switch.ts";
 import { preferredChatReasoningEffort } from "../../signals/okou-page/model-reasoning-effort.ts";
@@ -6484,6 +6484,7 @@ function TemplatePickerDialog({
                 onChange={handleCategoryChange}
               />
               <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+                <TemplatePaidToolNotice category={selectedCategory} />
                 {selectedCategory === "intro-video" ? (
                   <IntroVideoPicker
                     signals={signals.template.introVideo}
@@ -9847,13 +9848,6 @@ function ComposerRunModelPickerControl({
   mediaModelPanel: MediaModelPanelState | undefined;
 }) {
   const { t } = useTranslation();
-  // One switch owns how the picker looks. Effort keeps its own switch, because
-  // it is a run setting the composer shows beside the model rather than a way
-  // of drawing the model list.
-  const modelMenuEnabled = useGet(modelPickerFlyoutEnabled$);
-  // The flyout needs the room a phone does not have; narrow viewports keep the
-  // menu's pages until the sheet layout lands.
-  const modelFlyoutEnabled = modelMenuEnabled && desktopLayout;
   const modelPickerOpen = useGet(signals.model.modelPickerOpen$);
   const setModelPickerOpen = useSet(signals.model.setModelPickerOpen$);
   const setLifecycleRef = useSet(signals.model.desktopModelPickerLifecycleRef$);
@@ -9866,11 +9860,13 @@ function ComposerRunModelPickerControl({
           return $.chat.composer.selectModel;
         })}
         triggerClassName={composerModelPickerTriggerClassName()}
-        menuSignals={modelMenuEnabled ? signals.model.menu : undefined}
+        menuSignals={signals.model.menu}
         // The effort control beside it carries the bolt when Fast is on, so the
         // model keeps its own name.
         fastShownByCaller
-        flyoutLayout={modelFlyoutEnabled}
+        // The flyout needs the room a phone does not have; narrow viewports keep
+        // the menu's pages until the sheet layout lands.
+        flyoutLayout={desktopLayout}
         onSelected={() => {
           setModelPickerOpen(false);
         }}
@@ -11135,6 +11131,7 @@ function ComposerCard({ signals }: { signals: ComposerSignals }) {
   const actions = useComposerActions(signals);
   const connectorActions = useComposerConnectorActions(signals.connector);
   const hasTemplateAttachment = useGet(signals.template.hasTemplateAttachment$);
+  const paidToolHints = useGet(signals.paidToolHints$);
   const dragOver = useGet(signals.draft.dragOver$);
   const setDragOver = useSet(signals.draft.setDragOver$);
   const uploadFile = useComposerFileUpload(signals);
@@ -11185,6 +11182,7 @@ function ComposerCard({ signals }: { signals: ComposerSignals }) {
             actions={actions}
             minimumHeightClassName={layoutHeightClassNames.input}
           />
+          <PaidToolNotice tools={paidToolHints} />
           {/* Voice states share 8px/12px outer tray spacing and 12px/8px
               inner padding so their surfaces stay aligned through handoff. */}
           <ComposerFooter

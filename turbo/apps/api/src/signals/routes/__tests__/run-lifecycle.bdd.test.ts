@@ -13315,16 +13315,18 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
       [FeatureSwitchKey.PaidToolControls]: true,
     });
     await setPaidToolDisabled(context, actor, "web-search", true);
+    await setPaidToolDisabled(context, actor, "image-generation", true);
     const queued = await api.createRun(actor, {
       agentId,
       prompt: "capture my paid tool preferences",
       modelProvider: "anthropic-api-key",
     });
     await setPaidToolDisabled(context, actor, "web-search", false);
+    await setPaidToolDisabled(context, actor, "image-generation", false);
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(queued.runId);
     expect(claim.platformEnvironment[DISABLED_PAID_TOOLS_ENV_VAR]).toBe(
-      '["web-search"]',
+      '["image-generation","web-search"]',
     );
     expect(claim.environment).not.toHaveProperty(DISABLED_PAID_TOOLS_ENV_VAR);
     await api.requestCancelRun(actor, queued.runId, [200]);
@@ -13341,6 +13343,7 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     await api.requestCancelRun(actor, enabled.runId, [200]);
 
     await setPaidToolDisabled(context, actor, "web-search", true);
+    await setPaidToolDisabled(context, actor, "video-rendering", true);
     await connectors.updateFeatureSwitches(actor, {
       [FeatureSwitchKey.PaidToolControls]: false,
     });
@@ -13352,7 +13355,7 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     const rolloutOffClaim = await api.claimRunnerJob(rolloutOff.runId);
     expect(
       rolloutOffClaim.platformEnvironment[DISABLED_PAID_TOOLS_ENV_VAR],
-    ).toBe('["web-search"]');
+    ).toBe('["video-rendering","web-search"]');
     await api.requestCancelRun(actor, rolloutOff.runId, [200]);
   });
 

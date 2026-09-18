@@ -6,7 +6,15 @@ import type {
   ChatThreadArtifactGoogleDriveSync,
   ChatThreadArtifactRun,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
+import {
+  isFeatureEnabled,
+  type FeatureSwitchContext,
+} from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import {
+  GOOGLE_SLIDES_MIME_TYPE,
+  convertsToGoogleSlides,
+} from "@okouai/core/google-slides-conversion";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
@@ -37,6 +45,7 @@ import {
   createDeferredPromise,
   onRejection,
   safeSync,
+  settle,
   tapError,
 } from "../utils";
 import {
@@ -59,7 +68,11 @@ import { uploadedArtifactObject } from "./uploaded-artifact.service";
 const GOOGLE_DRIVE_FILES_URL = "https://www.googleapis.com/drive/v3/files";
 const GOOGLE_DRIVE_UPLOAD_URL =
   "https://www.googleapis.com/upload/drive/v3/files";
+const GOOGLE_SLIDES_PRESENTATIONS_URL =
+  "https://slides.googleapis.com/v1/presentations";
 const GOOGLE_DRIVE_FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
+/** Drive's documented ceiling for converting an upload into a Slides deck. */
+const GOOGLE_SLIDES_MAX_SOURCE_BYTES = 100 * 1024 * 1024;
 const GOOGLE_DRIVE_STATUS_TIMEOUT_MS = 2000;
 const GOOGLE_DRIVE_ARTIFACT_APP_PROPERTY = "vm0Artifact";
 const GOOGLE_DRIVE_THREAD_APP_PROPERTY = "vm0ThreadId";
@@ -1088,12 +1101,15 @@ async function uploadDriveFile(args: {
   readonly runId: string;
   readonly fileId: string;
   readonly contentType: string;
+  readonly targetMimeType?: string | undefined;
   readonly file: Buffer;
 }): Promise<Response> {
   const boundary = `multipart-${randomUUID()}`;
   const metadata = JSON.stringify({
     name: args.filename,
-    mimeType: args.contentType,
+    // Naming a Google editor type here is what asks Drive to convert; the
+    // part below still declares the uploaded bytes' own type.
+    mimeType: args.targetMimeType ?? args.contentType,
     parents: [args.parentFolderId],
     appProperties: {
       [GOOGLE_DRIVE_ARTIFACT_APP_PROPERTY]: "true",
@@ -1141,6 +1157,7 @@ async function uploadArtifactWithToken(args: {
   readonly fileId: string;
   readonly filename: string;
   readonly contentType: string;
+  readonly targetMimeType?: string | undefined;
   readonly file: Buffer;
 }): Promise<DriveTokenResult<Response>> {
   const folder = await ensureArtifactFolder({
@@ -1158,12 +1175,36 @@ async function uploadArtifactWithToken(args: {
     runId: args.runId,
     fileId: args.fileId,
     contentType: args.contentType,
+    targetMimeType: args.targetMimeType,
     file: args.file,
   });
   if (response.status === 401) {
     return { type: "unauthorized" };
   }
   return { type: "ok", value: response };
+}
+
+const driveErrorResponseSchema = z.object({
+  error: z.object({
+    errors: z.array(z.object({ reason: z.string().optional() })).optional(),
+  }),
+});
+
+/** Drive's reason code when it cannot read the uploaded bytes at all. */
+const UNSUPPORTED_CONVERSION_REASON = "conversionUnsupportedConversionPath";
+
+async function isUnsupportedConversion(response: Response): Promise<boolean> {
+  const payload = await settle(response.clone().json());
+  if (!payload.ok) {
+    return false;
+  }
+  const parsed = driveErrorResponseSchema.safeParse(payload.value);
+  return (
+    parsed.success &&
+    (parsed.data.error.errors ?? []).some((entry) => {
+      return entry.reason === UNSUPPORTED_CONVERSION_REASON;
+    })
+  );
 }
 
 async function parseUploadResponse(
@@ -1180,6 +1221,182 @@ async function parseUploadResponse(
     name: parsed.name,
     webViewLink: parsed.webViewLink ?? null,
   };
+}
+
+const slidesPresentationSchema = z.object({
+  slides: z
+    .array(z.object({ pageElements: z.array(z.unknown()).optional() }))
+    .optional(),
+});
+
+/** Returns whether Drive accepted the discard. */
+async function trashDriveFile(
+  args: {
+    readonly accessToken: string;
+    readonly fileId: string;
+  },
+  signal: AbortSignal,
+): Promise<boolean> {
+  const response = await fetch(
+    new URL(`${GOOGLE_DRIVE_FILES_URL}/${args.fileId}`),
+    {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${args.accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ trashed: true }),
+      signal,
+    },
+  );
+  return response.ok;
+}
+
+/**
+ * Reject a conversion that produced an empty deck.
+ *
+ * Drive answers HTTP 200 for source formats its importer cannot actually read,
+ * leaving a deck with the right page count and no page elements. The upload
+ * response cannot show that, so read the result back and discard it rather
+ * than reporting a successful sync of a blank presentation.
+ */
+async function rejectEmptyConvertedDeck(
+  args: {
+    readonly accessToken: string;
+    readonly presentationId: string;
+  },
+  signal: AbortSignal,
+): Promise<BadRequestResponse | undefined> {
+  const response = await fetch(
+    new URL(`${GOOGLE_SLIDES_PRESENTATIONS_URL}/${args.presentationId}`),
+    {
+      headers: { Authorization: `Bearer ${args.accessToken}` },
+      signal,
+    },
+  );
+  if (!response.ok) {
+    // An unreadable check is not evidence of an empty deck; keep the file.
+    return undefined;
+  }
+  const payload = await settle(response.json());
+  if (!payload.ok) {
+    return undefined;
+  }
+  const parsed = slidesPresentationSchema.safeParse(payload.value);
+  if (!parsed.success) {
+    return undefined;
+  }
+  const slides = parsed.data.slides ?? [];
+  const hasContent = slides.some((slide) => {
+    return (slide.pageElements ?? []).length > 0;
+  });
+  if (slides.length === 0 || hasContent) {
+    return undefined;
+  }
+  const discarded = await trashDriveFile(
+    { accessToken: args.accessToken, fileId: args.presentationId },
+    signal,
+  );
+  // A deck we could not discard keeps its artifact appProperties, so the next
+  // status lookup still reports it as synced. Say so rather than claiming the
+  // blank deck is gone.
+  return badRequestMessage(
+    discarded
+      ? "Google Slides converted this presentation to an empty deck"
+      : "Google Slides converted this presentation to an empty deck that could not be removed from Drive",
+  );
+}
+
+type SlidesTargetResolution =
+  | { readonly kind: "target"; readonly mimeType: string | undefined }
+  | { readonly kind: "rejected"; readonly response: BadRequestResponse };
+
+/** Decide whether this sync asks Drive for a Slides deck, and whether it can. */
+function resolveSlidesTarget(
+  content: ResolvedArtifactContent,
+  featureSwitchContext: FeatureSwitchContext,
+): SlidesTargetResolution {
+  const converts =
+    isFeatureEnabled(
+      FeatureSwitchKey.GoogleSlidesConversion,
+      featureSwitchContext,
+    ) && convertsToGoogleSlides(content.filename);
+  if (!converts) {
+    return { kind: "target", mimeType: undefined };
+  }
+  if (content.file.byteLength > GOOGLE_SLIDES_MAX_SOURCE_BYTES) {
+    return {
+      kind: "rejected",
+      response: badRequestMessage(
+        "This presentation is too large to convert to Google Slides",
+      ),
+    };
+  }
+  return { kind: "target", mimeType: GOOGLE_SLIDES_MIME_TYPE };
+}
+
+interface SyncArtifactArgs {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly threadId: string;
+  readonly runId: string;
+  readonly fileId: string;
+}
+
+interface DriveUploadAttempt {
+  readonly accessToken: string;
+  readonly result: DriveTokenResult<Response>;
+}
+
+/** Upload once, then retry under a refreshed token when Drive rejects it. */
+async function uploadArtifactRefreshingToken(
+  params: {
+    readonly args: SyncArtifactArgs;
+    readonly content: ResolvedArtifactContent;
+    readonly db: ReadonlyDb;
+    readonly featureSwitchContext: FeatureSwitchContext;
+    readonly targetMimeType: string | undefined;
+    readonly tokens: ConnectorTokens;
+  },
+  signal: AbortSignal,
+): Promise<DriveUploadAttempt> {
+  const upload = async (accessToken: string) => {
+    return await uploadArtifactWithToken({
+      accessToken,
+      threadId: params.args.threadId,
+      runId: params.args.runId,
+      fileId: params.args.fileId,
+      filename: params.content.filename,
+      contentType: params.content.contentType,
+      targetMimeType: params.targetMimeType,
+      file: params.content.file,
+    });
+  };
+
+  const accessToken = params.tokens.accessToken;
+  const result = await upload(accessToken);
+  signal.throwIfAborted();
+  if (result.type !== "unauthorized") {
+    return { accessToken, result };
+  }
+
+  const refreshed = await refreshDriveAccessToken(
+    {
+      connection: params.tokens.connection,
+      db: params.db,
+      featureSwitchContext: params.featureSwitchContext,
+      orgId: params.args.orgId,
+      userId: params.args.userId,
+    },
+    signal,
+  );
+  signal.throwIfAborted();
+  if (refreshed.type !== "ok") {
+    return { accessToken, result };
+  }
+  const retried = await upload(refreshed.accessToken);
+  signal.throwIfAborted();
+  return { accessToken: refreshed.accessToken, result: retried };
 }
 
 type NotFoundResponse = ReturnType<typeof notFound>;
@@ -1201,13 +1418,7 @@ type BadRequestResponse = ReturnType<typeof badRequestMessage>;
 export const syncArtifactToGoogleDrive$ = command(
   async (
     { get },
-    args: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly threadId: string;
-      readonly runId: string;
-      readonly fileId: string;
-    },
+    args: SyncArtifactArgs,
     signal: AbortSignal,
   ): Promise<
     | NotFoundResponse
@@ -1285,50 +1496,52 @@ export const syncArtifactToGoogleDrive$ = command(
       );
     }
 
-    let result = await uploadArtifactWithToken({
-      accessToken: tokens.accessToken,
-      threadId: args.threadId,
-      runId: args.runId,
-      fileId: args.fileId,
-      filename: content.filename,
-      contentType: content.contentType,
-      file: content.file,
-    });
-    signal.throwIfAborted();
-
-    if (result.type === "unauthorized") {
-      const refreshed = await refreshDriveAccessToken(
-        {
-          connection: tokens.connection,
-          db,
-          featureSwitchContext,
-          orgId: args.orgId,
-          userId: args.userId,
-        },
-        signal,
-      );
-      signal.throwIfAborted();
-      if (refreshed.type === "ok") {
-        result = await uploadArtifactWithToken({
-          accessToken: refreshed.accessToken,
-          threadId: args.threadId,
-          runId: args.runId,
-          fileId: args.fileId,
-          filename: content.filename,
-          contentType: content.contentType,
-          file: content.file,
-        });
-        signal.throwIfAborted();
-      }
+    const target = resolveSlidesTarget(content, featureSwitchContext);
+    if (target.kind === "rejected") {
+      return target.response;
     }
+    const targetMimeType = target.mimeType;
+
+    const upload = await uploadArtifactRefreshingToken(
+      {
+        args,
+        content,
+        db,
+        featureSwitchContext,
+        targetMimeType,
+        tokens,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    const { accessToken, result } = upload;
 
     if (result.type === "unauthorized") {
       return badRequestMessage("Google Drive upload failed with HTTP 401");
     }
 
-    return {
-      status: 200 as const,
-      body: await parseUploadResponse(result.value),
-    };
+    if (
+      targetMimeType !== undefined &&
+      !result.value.ok &&
+      (await isUnsupportedConversion(result.value))
+    ) {
+      return badRequestMessage(
+        "Google Slides could not read this presentation",
+      );
+    }
+    const body = await parseUploadResponse(result.value);
+    signal.throwIfAborted();
+    if (targetMimeType !== undefined) {
+      const rejected = await rejectEmptyConvertedDeck(
+        { accessToken, presentationId: body.id },
+        signal,
+      );
+      signal.throwIfAborted();
+      if (rejected) {
+        return rejected;
+      }
+    }
+
+    return { status: 200 as const, body };
   },
 );

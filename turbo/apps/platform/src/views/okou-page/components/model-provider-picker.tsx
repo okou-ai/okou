@@ -9,15 +9,7 @@ import {
   useLastResolved,
   useSet,
 } from "ccstate-react";
-import {
-  Check,
-  ChevronDown,
-  Cpu,
-  Image as ImageIcon,
-  MessageCircle,
-  Video,
-  Zap,
-} from "lucide-react";
+import { Check, ChevronDown, Cpu, Zap } from "lucide-react";
 import {
   Popover,
   PopoverContent,
@@ -31,8 +23,6 @@ import {
   SelectSeparator,
   SelectTrigger,
   SelectValue,
-  SegmentControl,
-  SegmentControlItem,
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -73,7 +63,6 @@ import { pageSignal$ } from "../../../signals/page-signal";
 import { resolveExplicitModelSelection$ } from "../../../signals/okou-page/model-default-selection";
 import { detach, Reason } from "../../../signals/utils";
 import {
-  getMediaModelPriceTierLabel,
   getModelBrandIconType,
   getBuiltInModelPriceTier,
   getBuiltInModelPriceTierLabel,
@@ -113,15 +102,15 @@ export type MediaModelCategoryId = "image" | "video";
 export interface MediaModelPanelCategory {
   readonly id: MediaModelCategoryId;
   readonly label: string;
-  /** Short form for the desktop category strip, where three tabs share a row. */
+  /** Short form for the flyout's type rail, where three types share a column. */
   readonly tabLabel: string;
   readonly options: readonly MediaModelPanelOption[];
 }
 
 /**
- * Media-model categories share the run-model popover without joining its
- * Select value space. Both layouts drive the same active category: desktop
- * switches it from the tab strip, mobile from a nested drill-in.
+ * Media-model categories share the run-model popover. The compact menu updates
+ * the composer's active category; the desktop flyout owns its navigation in
+ * the menu signals.
  */
 export interface MediaModelPanelState {
   readonly activeCategory: MediaModelCategoryId | null;
@@ -168,7 +157,10 @@ interface ModelProviderPickerProps {
   showInheritOption?: boolean;
   /** Media-model category panel state for composer callers. */
   mediaModelPanel?: MediaModelPanelState;
-  /** Composer-owned navigation for the compact model menu rollout. */
+  /**
+   * Composer-owned navigation for the model menu. Callers that leave it unset
+   * get the plain select instead.
+   */
   menuSignals?: ModelPickerMenuSignals;
   /** Replaces the menu's pages with the detached type/model flyout. */
   flyoutLayout?: boolean;
@@ -645,7 +637,6 @@ function ModelFirstPolicyItems({
   placeholder,
   showInheritOption,
   showSeparator = true,
-  showModelsLabel = true,
 }: {
   policies: OrgModelPolicy[];
   selection: ModelProviderSelection | null;
@@ -654,8 +645,6 @@ function ModelFirstPolicyItems({
   placeholder: string;
   showInheritOption: boolean;
   showSeparator?: boolean;
-  /** When false, the media-model header already carries the category title. */
-  showModelsLabel?: boolean;
 }) {
   const { t } = useTranslation();
   const explicitSelectedModel = selection?.selectedModel ?? null;
@@ -690,13 +679,11 @@ function ModelFirstPolicyItems({
         </div>
       ) : (
         <SelectGroup>
-          {showModelsLabel && (
-            <SelectLabel className="pl-2 pr-8 py-1.5 text-xs font-medium text-muted-foreground">
-              {t(($) => {
-                return $.settings.models.picker.models;
-              })}
-            </SelectLabel>
-          )}
+          <SelectLabel className="pl-2 pr-8 py-1.5 text-xs font-medium text-muted-foreground">
+            {t(($) => {
+              return $.settings.models.picker.models;
+            })}
+          </SelectLabel>
           {policies.map((policy) => {
             return (
               <ModelFirstPolicyRow
@@ -713,12 +700,6 @@ function ModelFirstPolicyItems({
     </>
   );
 }
-
-// Rows in media-model panels are plain buttons rather than SelectItems: the
-// Select's value space belongs to the run model, and a SelectItem here would
-// both join it and close the popover on click.
-const MEDIA_MODEL_PANEL_ROW_CLASS =
-  "relative flex w-full cursor-pointer select-none items-center gap-2 rounded-lg py-1.5 pl-2 pr-8 text-left text-sm outline-none transition-colors hover:bg-state-hover hover:text-accent-foreground";
 
 const BYTEDANCE_ICON_PATH =
   "M19.8772 1.4685 24 2.5326v18.9426l-4.1228 1.0563V1.4685zm-13.3481 9.428 4.115 1.0641v8.9786l-4.115 1.0642v-11.107zM0 2.572l4.115 1.0642v16.7354L0 21.428V2.572zm17.4553 5.6205v11.107l-4.1228-1.0642V9.2568l4.1228-1.0642z";
@@ -1015,136 +996,6 @@ export function VideoModelBrandIcon({ model }: { model: VideoModel }) {
   );
 }
 
-function MediaModelPanelRow({ option }: { option: MediaModelPanelOption }) {
-  return (
-    <button
-      type="button"
-      aria-label={option.label}
-      aria-pressed={option.selected}
-      aria-current={option.selected ? "true" : undefined}
-      className={MEDIA_MODEL_PANEL_ROW_CLASS}
-      onClick={option.onSelect}
-    >
-      {option.icon}
-      <span className="min-w-0 flex-1 truncate">{option.label}</span>
-      <PriceTierBadge
-        tier={option.priceTier}
-        description={getMediaModelPriceTierLabel(option.priceTier)}
-      />
-      {option.selected && (
-        <Check size={15} className="absolute right-2 text-foreground" />
-      )}
-    </button>
-  );
-}
-
-function MediaModelPanel({ category }: { category: MediaModelPanelCategory }) {
-  return (
-    <SelectGroup>
-      {category.options.map((option) => {
-        return <MediaModelPanelRow key={option.key} option={option} />;
-      })}
-    </SelectGroup>
-  );
-}
-
-/**
- * The list header carries the category title beside the category switch on one
- * row, so the switch stays quiet: it borrows the label's height instead of
- * adding a band of its own above it. It is rendered once for the whole popover
- * (rather than once per panel) so switching category keeps the same switch.
- */
-function ModelPickerListHeader({
-  label,
-  categorySwitch,
-}: {
-  label: string;
-  categorySwitch: ReactNode;
-}) {
-  return (
-    // Pinned so switching category never means scrolling back up for the
-    // switch. The negative side and top margins bleed the row over the list's
-    // own `p-1` inset so rows scroll under an opaque surface rather than
-    // beside it.
-    //
-    // The 28px switch is what sets this row's height, so its padding is what
-    // sets the label's distance from the first option: `py-2` left the label
-    // floating in a band nearly four times its own ink. `py-1` seats the
-    // switch on the same 4px inset the rows sit on, and `-mb-1` takes back the
-    // list's `gap-1` so the header's own padding is the whole distance.
-    <div className="sticky top-0 z-10 -mx-1 -mt-1 -mb-1 flex items-center gap-2 bg-card py-1 pl-3 pr-2">
-      <span className="min-w-0 flex-1 truncate text-xs font-medium text-muted-foreground">
-        {label}
-      </span>
-      {categorySwitch}
-    </div>
-  );
-}
-
-const MEDIA_MODEL_CATEGORY_ICONS = {
-  image: <ImageIcon size={16} aria-hidden="true" />,
-  video: <Video size={16} aria-hidden="true" />,
-} satisfies Record<MediaModelCategoryId, ReactNode>;
-
-const CHAT_CATEGORY_VALUE = "chat";
-
-// Icon-only: three glyphs sitting straight on the popover surface. A filled
-// track was the darkest thing in a popover otherwise made of quiet rows, and
-// the labels it carried repeated the group label beside it. The `plain`
-// variant is what drops the track and, with it, the raised fill and shadow the
-// selected glyph used to carry; only the square footprint is set here.
-const MEDIA_MODEL_CATEGORY_SEGMENT_CLASS = "w-7 px-0";
-
-/**
- * Category switch for the popover. It used to live in the composer as a filled
- * track holding three controls, which read as heavy for a row of quiet
- * controls; the composer keeps one trigger and the split happens here instead.
- * Every viewport gets the same switch -- mobile previously drilled into a
- * nested category from a root menu, which was a second way to express one
- * choice.
- */
-function MediaModelCategorySwitch({ panel }: { panel: MediaModelPanelState }) {
-  const { t } = useTranslation();
-  return (
-    <SegmentControl
-      size="xs"
-      variant="plain"
-      className="shrink-0"
-      aria-label={t(($) => {
-        return $.settings.models.picker.models;
-      })}
-      value={panel.activeCategory ?? CHAT_CATEGORY_VALUE}
-      onValueChange={(next: string) => {
-        panel.onActiveCategoryChange(
-          next === CHAT_CATEGORY_VALUE ? null : (next as MediaModelCategoryId),
-        );
-      }}
-    >
-      <SegmentControlItem
-        value={CHAT_CATEGORY_VALUE}
-        aria-label={t(($) => {
-          return $.settings.models.picker.categoryChat;
-        })}
-        className={MEDIA_MODEL_CATEGORY_SEGMENT_CLASS}
-      >
-        <MessageCircle size={16} aria-hidden="true" />
-      </SegmentControlItem>
-      {panel.categories.map((category) => {
-        return (
-          <SegmentControlItem
-            key={category.id}
-            value={category.id}
-            aria-label={category.tabLabel}
-            className={MEDIA_MODEL_CATEGORY_SEGMENT_CLASS}
-          >
-            {MEDIA_MODEL_CATEGORY_ICONS[category.id]}
-          </SegmentControlItem>
-        );
-      })}
-    </SegmentControl>
-  );
-}
-
 interface ModelFirstModelPickerContentBaseProps {
   selectValue: string;
   placeholder: string;
@@ -1153,7 +1004,6 @@ interface ModelFirstModelPickerContentBaseProps {
   modelCapabilities: ModelPlanCapabilities;
   codexFastModeEnabled: boolean;
   fastLabel: string;
-  mediaModelPanel: MediaModelPanelState | undefined;
   showInheritOption: boolean;
 }
 
@@ -1165,63 +1015,35 @@ function ModelFirstModelPickerContentLayout({
   modelCapabilities,
   codexFastModeEnabled,
   fastLabel,
-  mediaModelPanel,
   showInheritOption,
 }: ModelFirstModelPickerContentBaseProps) {
-  const { t } = useTranslation();
-  const activeMediaModelCategoryId = mediaModelPanel?.activeCategory;
-  const activeMediaModelCategory = mediaModelPanel?.categories.find(
-    (category) => {
-      return category.id === activeMediaModelCategoryId;
-    },
-  );
-  const mediaModelPanelOpen = activeMediaModelCategory !== undefined;
   return (
     <SelectContent className="min-w-[260px] max-h-[var(--available-height)]">
-      {/* A media-model panel replaces the model rows, so keep the selected run
-          model measurable the same way a hidden select value is. */}
-      {(mediaModelPanelOpen ||
-        (isHiddenModelFirstSelectValue(selectValue) &&
-          !(showInheritOption && selectValue === INHERIT_SENTINEL))) && (
-        <SelectItem
-          value={selectValue}
-          className={MEASURABLE_HIDDEN_SELECT_ITEM_CLASS}
-          disabled
-          aria-hidden="true"
-        >
-          {selectionLabel({
-            selection,
-            placeholder,
-            codexFastModeEnabled,
-            fastLabel,
-          })}
-        </SelectItem>
-      )}
-      {mediaModelPanel && (
-        <ModelPickerListHeader
-          label={
-            activeMediaModelCategory?.label ??
-            t(($) => {
-              return $.settings.models.picker.chatModels;
-            })
-          }
-          categorySwitch={<MediaModelCategorySwitch panel={mediaModelPanel} />}
-        />
-      )}
-      {mediaModelPanel && activeMediaModelCategory ? (
-        <MediaModelPanel category={activeMediaModelCategory} />
-      ) : (
-        <ModelFirstPolicyItems
-          policies={policies}
-          selection={selection}
-          modelCapabilities={modelCapabilities}
-          codexFastModeEnabled={codexFastModeEnabled}
-          placeholder={placeholder}
-          showInheritOption={showInheritOption}
-          showSeparator={showInheritOption}
-          showModelsLabel={!mediaModelPanel}
-        />
-      )}
+      {isHiddenModelFirstSelectValue(selectValue) &&
+        !(showInheritOption && selectValue === INHERIT_SENTINEL) && (
+          <SelectItem
+            value={selectValue}
+            className={MEASURABLE_HIDDEN_SELECT_ITEM_CLASS}
+            disabled
+            aria-hidden="true"
+          >
+            {selectionLabel({
+              selection,
+              placeholder,
+              codexFastModeEnabled,
+              fastLabel,
+            })}
+          </SelectItem>
+        )}
+      <ModelFirstPolicyItems
+        policies={policies}
+        selection={selection}
+        modelCapabilities={modelCapabilities}
+        codexFastModeEnabled={codexFastModeEnabled}
+        placeholder={placeholder}
+        showInheritOption={showInheritOption}
+        showSeparator={showInheritOption}
+      />
     </SelectContent>
   );
 }
@@ -1498,7 +1320,6 @@ function SubscribedExplicitModelFirstModelPickerContent({
       modelCapabilities={modelCapabilities}
       codexFastModeEnabled={codexFastModeEnabled}
       fastLabel={fastLabel}
-      mediaModelPanel={mediaModelPanel}
       showInheritOption={showInheritOption}
     />
   );

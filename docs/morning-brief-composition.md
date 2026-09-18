@@ -47,8 +47,11 @@ Each collection also carries the window its evidence is only true within — the
 half-open activity range, the frozen local dates and the owner timezone that
 make an all-day date a day, the instant an outstanding-work snapshot was taken,
 each provider branch with its own window or snapshot, and the collector's own
-declared limitations. Request counts are the collector's own count of reads
-issued, never a proxy such as the number of calendars enumerated.
+declared limitations. Request counts are the collector's own exact count of reads
+issued, including reads that ended in a classified provider failure, never a
+proxy such as the number of calendars enumerated. Zero means the source was
+proven not to have issued a read; `null` is reserved for a rejected source job
+that could not return its collector accounting.
 
 Deduplication is identity-only. Two calendars' copies of one meeting are two
 authorized records, and an email whose subject matches an issue title is not the

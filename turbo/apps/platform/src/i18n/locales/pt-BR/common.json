@@ -558,13 +558,15 @@
       "syncedFiles_one": "Sincronizado com o Google Drive",
       "syncedFiles_many": "{{count}} arquivos sincronizados com o Google Drive",
       "syncedFiles_other": "{{count}} arquivos sincronizados com o Google Drive",
+      "syncedSlides": "Sincronizado com o Google Slides",
       "syncFailed": "Falha ao sincronizar com o Google Drive",
       "syncingArtifact": "Sincronizando artefato...",
       "syncingFiles_one": "Sincronizando {{count}} arquivo...",
       "syncingFiles_many": "Sincronizando {{count}} arquivos...",
       "syncingFiles_other": "Sincronizando {{count}} arquivos...",
       "syncingNamed": "Sincronizando {{filename}}...",
-      "upload": "Enviar para o Google Drive"
+      "upload": "Enviar para o Google Drive",
+      "uploadSlides": "Enviar para o Google Slides"
     },
     "kinds": {
       "audio": "Áudio",
@@ -5880,8 +5882,10 @@
     },
     "paidTools": {
       "description": "Escolha quais ferramentas pagas integradas você pode usar.",
+      "disabledForCreation": "{{tool}} está desativado nas suas configurações de ferramentas pagas.",
       "loadError": "Não foi possível carregar suas configurações.",
       "loading": "Carregando suas configurações…",
+      "openSettings": "Abrir configurações de ferramentas pagas",
       "retry": "Tentar novamente",
       "saveError": "Sua alteração não foi salva.",
       "saving": "Salvando…",
@@ -5889,9 +5893,17 @@
       "timing": "As alterações valem para execuções futuras. Tarefas em andamento ou já preparadas podem manter as configurações anteriores.",
       "title": "Ferramentas pagas",
       "tools": {
+        "avatar-video-generation": {
+          "description": "Crie vídeos com avatares falantes.",
+          "name": "Geração de vídeos com avatar"
+        },
         "finance": {
           "description": "Consulte empresas, cotações e dados de mercado.",
           "name": "Dados financeiros"
+        },
+        "image-generation": {
+          "description": "Crie imagens com modelos integrados.",
+          "name": "Geração de imagens"
         },
         "image-recognition": {
           "description": "Leia e analise imagens.",
@@ -5916,6 +5928,18 @@
         "social": {
           "description": "Pesquise publicações públicas e colete mídia.",
           "name": "Pesquisa em redes sociais"
+        },
+        "video-generation": {
+          "description": "Crie vídeos com modelos integrados.",
+          "name": "Geração de vídeos"
+        },
+        "video-rendering": {
+          "description": "Renderize composições de vídeo na nuvem.",
+          "name": "Renderização de vídeo"
+        },
+        "voice-generation": {
+          "description": "Crie fala com vozes integradas.",
+          "name": "Geração de voz"
         },
         "web-search": {
           "description": "Encontre informações atuais na web.",

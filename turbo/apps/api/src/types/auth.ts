@@ -60,6 +60,12 @@ export type AgentAuthContext =
     };
 
 export type AuthContext =
+  | {
+      readonly tokenType: "oauth";
+      readonly userId: string;
+      readonly orgId: string;
+      readonly orgRole: ApiOrgRole;
+    }
   | SessionAuthContext
   | PatAuthContext
   | SandboxAuthContext

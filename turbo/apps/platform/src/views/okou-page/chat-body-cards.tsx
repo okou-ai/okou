@@ -409,7 +409,7 @@ function ArtifactCardView({
   }
   return (
     <AttachmentPreview
-      resourceUrl$={signals.resourceUrl$}
+      preview={signals}
       attachment={{
         filename: signals.kind === "html" && label ? label : signals.filename,
         url: signals.url,

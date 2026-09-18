@@ -37,10 +37,13 @@ function formatBytes(bytes: number): string {
 
 export const hostCommand = new Command()
   .name("host")
-  .description("Deploy, inspect, and clone static hosted sites")
+  .description("Publish, inspect, and clone static hosted sites")
   .argument("<dir>", "Static build directory, for example ./dist")
-  .option("--site <slug>", "Logical site slug, e.g. my-product-demo")
-  .option("--slug-suffix <suffix>", "Reuse a legacy generated site URL suffix")
+  .option(
+    "--site <slug>",
+    "Preferred site slug; collisions get an automatic suffix",
+  )
+  .option("--slug-suffix <suffix>", "Site URL suffix for legacy API servers")
   .option(
     "--artifact-kind <kind>",
     "Artifact kind to record for this hosted deployment",
@@ -56,8 +59,7 @@ export const hostCommand = new Command()
     `
 Examples:
   Publish a Vite build:  okou host ./dist --site my-product-demo --spa
-  Publish next version:  okou host ./dist --site my-product-demo --spa
-  Reuse a legacy URL:    okou host ./dist --site my-product-demo --slug-suffix release-01 --spa
+  Publish another copy:  okou host ./dist --site my-product-demo --spa
   List site versions:    okou host versions my-product-demo
   Clone a hosted site:   okou host clone my-product-demo ./site
   Machine readable:     okou host ./dist --site my-product-demo --spa --json
@@ -70,12 +72,11 @@ Notes:
   - Return the exact hosted URL printed by the command
   - Authenticates via OKOU_TOKEN (publish requires host:write; clone requires host:read)
   - With private artifacts enabled, the result is an authenticated preview URL
-  - With privateArtifacts enabled, new versions default to only-me; --visibility org or public explicitly shares the new version
+  - Every publication creates a new site; reusing --site automatically adds a suffix when the name is taken
+  - Return the new URL after each publication; previous URLs keep their original content and cannot be redeployed
+  - Use the returned Site slug with versions or clone to inspect that publication
+  - With privateArtifacts enabled, new sites default to only-me; --visibility org or public explicitly shares the new site
   - --visibility requires privateArtifacts and is checked before uploading; without the option, flag-off behavior is unchanged
-  - only-me leaves any older version's existing share unchanged
-  - Private deployments never update an existing public alias
-  - For public versioned deployments, reusing --site updates the same alias
-  - Otherwise, reuse both --site and --slug-suffix to keep a legacy URL
   - The directory must include index.html
   - Local HTML/CSS asset references must point at files inside the directory`,
   )

@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.681.1](https://github.com/vm0-ai/okou/compare/core-v8.681.0...core-v8.681.1) (2026-09-18)
+
+
+### Refactoring
+
+* remove the model picker flyout feature switch ([#35191](https://github.com/vm0-ai/okou/issues/35191)) ([4ef1c13](https://github.com/vm0-ai/okou/commit/4ef1c138fd7a337026383435491707e0392adeed))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.471.0
+
 ## [8.681.0](https://github.com/vm0-ai/okou/compare/core-v8.680.6...core-v8.681.0) (2026-09-18)
 
 

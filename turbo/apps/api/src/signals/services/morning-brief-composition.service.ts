@@ -32,13 +32,14 @@ import type { MorningBriefSourceFailure } from "@okouai/api-contracts/contracts/
 import { MORNING_BRIEF_COLLECTION_VERSION } from "@okouai/db/schema/morning-brief-collection-occurrence";
 import { command } from "ccstate";
 
-import { nowDate } from "../../lib/time";
+import { monotonicNow, nowDate } from "../../lib/time";
 import { clerk$, type ClerkClient } from "../external/clerk";
 import { writeDb$, type Db } from "../external/db";
 import {
   admitMorningBriefCollection,
   admitMorningBriefNativeCollection,
   freezeMorningBriefSourceSelection,
+  narrowMorningBriefSourceDeadline,
   type MorningBriefCollectionScope,
   type MorningBriefSourceAuthorityLedger,
   type MorningBriefSourceDeadline,
@@ -162,7 +163,10 @@ interface MorningBriefSourceReport {
   readonly items: number;
   /** Of those, the ones the request could actually carry. */
   readonly includedInRequest: number;
-  /** Null when a rejected source could not return collector accounting. */
+  /**
+   * Exact provider reads issued, or null only when the source job rejected
+   * before returning its collector accounting.
+   */
   readonly requests: number | null;
   readonly timeSemantics: MorningBriefTimeSemanticsCount;
   readonly omitted: MorningBriefSourceOmissions;
@@ -256,6 +260,21 @@ export type MorningBriefCompositionOutcome =
   /** The owner's authority moved while this attempt was reading. */
   | { readonly kind: "authority-changed" };
 
+function sourceDeadlineForComposition(
+  deadline: MorningBriefCompositionDeadline,
+  ioStartedAt: number,
+): MorningBriefSourceDeadline {
+  const budgetMs = Math.max(
+    0,
+    deadline.deadlineAt.getTime() - deadline.startedAt.getTime(),
+  );
+  return {
+    at: deadline.deadlineAt.getTime(),
+    ioAt: ioStartedAt + budgetMs,
+    signal: AbortSignal.timeout(budgetMs),
+  };
+}
+
 /**
  * Run one bounded, source-independent composition.
  *
@@ -277,20 +296,19 @@ export const composeMorningBrief$ = command(
   ): Promise<MorningBriefCompositionOutcome> => {
     const db: Db = set(writeDb$);
     const clerk = get(clerk$);
+    const phaseIoStartedAt = monotonicNow();
     const deadline = morningBriefCompositionDeadline(
       nowDate(),
       args.deadlineAt ?? null,
     );
     const phaseStartedAt = deadline.startedAt;
     const phaseDeadlineAt = deadline.deadlineAt;
-    const phaseDeadline: MorningBriefSourceDeadline = {
-      // Keep the shared authorizers on the exact resolved instant. Starting a
-      // duration helper here would sample the clock again and move this fence.
-      at: phaseDeadlineAt.getTime(),
-      signal: AbortSignal.timeout(
-        Math.max(0, phaseDeadlineAt.getTime() - nowDate().getTime()),
-      ),
-    };
+    // Keep both shared-authorizer clocks on the one resolved duration. The
+    // monotonic start was sampled before the application deadline resolution.
+    const phaseDeadline = sourceDeadlineForComposition(
+      deadline,
+      phaseIoStartedAt,
+    );
     const expired = (
       step: string,
       sources: readonly MorningBriefSourceReport[] = [],
@@ -343,6 +361,7 @@ export const composeMorningBrief$ = command(
           selections,
           phaseStartedAt,
           phaseDeadlineAt,
+          phaseDeadline,
           readChat,
         },
         signal,
@@ -835,6 +854,7 @@ async function readMorningBriefSource(
     readonly selections: MorningBriefSelections;
     readonly phaseStartedAt: Date;
     readonly phaseDeadlineAt: Date;
+    readonly phaseDeadline: MorningBriefSourceDeadline;
     readonly capturedAt: Date;
     readonly readChat: ChatReader;
   },
@@ -855,12 +875,13 @@ async function readMorningBriefSource(
     return { kind: "not-started" };
   }
   // The composition already allocated this source's absolute deadline, so the
-  // reader is handed that exact instant rather than starting a second budget of
-  // its own.
-  const sourceDeadline: MorningBriefSourceDeadline = {
-    at: budget.deadlineAt.getTime(),
-    signal: AbortSignal.timeout(budgetMs),
-  };
+  // reader receives a narrowed view of the phase deadline rather than starting
+  // a second budget of its own.
+  const sourceDeadline = narrowMorningBriefSourceDeadline(
+    { at: args.phaseDeadline.at, ioAt: args.phaseDeadline.ioAt },
+    budget.deadlineAt.getTime(),
+    args.phaseDeadline.signal,
+  );
   const sourceSignal = AbortSignal.any([signal, sourceDeadline.signal]);
   const read = async (): Promise<CollectedSource> => {
     if (source === "calendar") {
@@ -1129,7 +1150,7 @@ async function proveRetainedAuthority(
   }
   const reservation = input.deadline;
   const deadline = startMorningBriefRetainedCheckDeadline(
-    reservation.at,
+    { at: reservation.at, ioAt: reservation.ioAt },
     reservation.signal,
   );
   const initialExpiry = retainedAuthorityExpired(
@@ -1407,6 +1428,7 @@ async function collectMorningBriefWaves(
     readonly selections: MorningBriefSelections;
     readonly phaseStartedAt: Date;
     readonly phaseDeadlineAt: Date;
+    readonly phaseDeadline: MorningBriefSourceDeadline;
     readonly readChat: ChatReader;
   },
   signal: AbortSignal,
@@ -1449,6 +1471,7 @@ async function collectMorningBriefWaves(
             selections: input.selections,
             phaseStartedAt,
             phaseDeadlineAt,
+            phaseDeadline: input.phaseDeadline,
             capturedAt,
             readChat: input.readChat,
           },
@@ -1731,7 +1754,7 @@ async function readSlackSource(
         source: "slack",
         coverage: "failed",
         items: [],
-        requests: 0,
+        requests: collected.requests,
         provenance: MORNING_BRIEF_NO_PROVENANCE,
         omittedBySource: MORNING_BRIEF_NO_OMISSIONS,
       },

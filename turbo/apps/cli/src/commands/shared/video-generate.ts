@@ -8,6 +8,7 @@ import {
 } from "../../lib/api/domains/web";
 import { getBillingStatus } from "../../lib/api/domains/billing";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
+import { assertPaidToolEnabled } from "../../lib/command/paid-tools";
 import { createArtifactPresentation } from "./artifact-return";
 import {
   applyArtifactVisibility,
@@ -532,6 +533,7 @@ Models:
           return;
         }
 
+        await assertPaidToolEnabled("video-generation");
         if (currentTokenCanReadBilling()) {
           const billing = await getBillingStatus();
           if (!currentPlanAllowsVideo(billing)) {

@@ -59,8 +59,11 @@ import {
 } from "./chat-user-message.service";
 import {
   admitMorningBriefCollection,
+  isMorningBriefDatabaseDeadlineExceeded,
   morningBriefScopeIsCurrent,
+  narrowMorningBriefSourceDeadline,
   startMorningBriefSourceDeadline,
+  withMorningBriefDatabaseDeadline,
   type MorningBriefCollectionScope,
   type MorningBriefSourceDeadline,
 } from "./morning-brief-connector-reader.service";
@@ -145,6 +148,8 @@ interface AttemptBudget {
    * this attempt's budget instead of starting a second one.
    */
   readonly deadline: MorningBriefSourceDeadline;
+  /** The shorter child bound used by discovery and per-thread work. */
+  readonly candidateDeadline: MorningBriefSourceDeadline;
   /** The instant the whole attempt must have finished by. */
   readonly deadlineAt: number;
   /** Where candidate work stops, leaving the final fence its reserve. */
@@ -161,11 +166,18 @@ function attemptBudget(signal: AbortSignal): AttemptBudget {
   const remaining = (limit: number): number => {
     return Math.max(0, limit - nowDate().getTime());
   };
+  const { at: deadlineAt, signal: deadlineTimer } = deadline;
+  const candidateDeadlineAt = deadlineAt - FINAL_AUTHORITY_RESERVE_MS;
   return {
     deadline,
-    deadlineAt: deadline.at,
-    candidateDeadlineAt: deadline.at - FINAL_AUTHORITY_RESERVE_MS,
-    signal: AbortSignal.any([signal, deadline.signal]),
+    candidateDeadline: narrowMorningBriefSourceDeadline(
+      deadline,
+      candidateDeadlineAt,
+      deadlineTimer,
+    ),
+    deadlineAt,
+    candidateDeadlineAt,
+    signal: AbortSignal.any([signal, deadlineTimer]),
     remaining,
     // The timer bit only flips once its callback has run, so the clock decides
     // and the timer is left to interrupt I/O already in flight.
@@ -204,32 +216,10 @@ async function withinBudget<T>(
   throw settled.error;
 }
 
-/**
- * Keep one transaction inside the remaining budget.
- *
- * PostgreSQL enforces both server-side, so a wait that would outlive the
- * attempt is cancelled at the database rather than abandoned as detached work
- * behind a promise race. Its own caps still apply: the budget can shorten a
- * wait, never lengthen it.
- */
-async function boundTransaction(
-  tx: Tx,
-  budget: AttemptBudget,
-  limit: number,
-): Promise<void> {
-  // PostgreSQL reads `0` as "no timeout", so an already-spent budget still
-  // bounds the transaction at the smallest real value rather than removing the
-  // bound entirely.
-  const remaining = Math.max(1, budget.remaining(limit));
-  const lockTimeout = Math.min(THREAD_LOCK_TIMEOUT_MS, remaining);
-  const statementTimeout = Math.min(THREAD_STATEMENT_TIMEOUT_MS, remaining);
-  await tx.execute(
-    sql`SELECT set_config('lock_timeout', ${`${lockTimeout.toString()}ms`}, true)`,
-  );
-  await tx.execute(
-    sql`SELECT set_config('statement_timeout', ${`${statementTimeout.toString()}ms`}, true)`,
-  );
-}
+const CHAT_DATABASE_CAPS = {
+  lockTimeoutMs: THREAD_LOCK_TIMEOUT_MS,
+  statementTimeoutMs: THREAD_STATEMENT_TIMEOUT_MS,
+} as const;
 
 interface CandidateThread {
   readonly threadId: string;
@@ -371,13 +361,22 @@ async function loadUnreadCandidates(
   owner: MorningBriefChatCollectionOwner,
   anchor: Date,
   budget: AttemptBudget,
+  signal: AbortSignal,
 ): Promise<readonly CandidateThread[]> {
-  return await db.transaction(async (tx) => {
-    // Selection can queue behind a writer of the same rows, so it is bounded by
-    // what is left of the attempt rather than by nothing at all.
-    await boundTransaction(tx, budget, budget.candidateDeadlineAt);
-    return await selectUnreadCandidates(tx, owner, anchor);
-  });
+  const bounded = AbortSignal.any([signal, budget.candidateDeadline.signal]);
+  return await withMorningBriefDatabaseDeadline(
+    {
+      db,
+      deadline: budget.candidateDeadline,
+      caps: CHAT_DATABASE_CAPS,
+    },
+    bounded,
+    async (tx) => {
+      // Selection can queue behind a writer of the same rows, so the server
+      // receives the remaining absolute candidate bound before this query.
+      return await selectUnreadCandidates(tx, owner, anchor);
+    },
+  );
 }
 
 async function selectUnreadCandidates(
@@ -551,18 +550,21 @@ async function revalidateThread(
   owner: MorningBriefChatCollectionOwner,
   candidate: CandidateThread,
   anchor: Date,
+  beforeStatement: () => Promise<void>,
 ): Promise<EligibleThread | MorningBriefChatSkipReason> {
   await tx
     .select({ id: agents.id })
     .from(agents)
     .where(eq(agents.id, candidate.agentId))
     .for("key share");
+  await beforeStatement();
   await tx
     .select({ id: chatThreads.id })
     .from(chatThreads)
     .where(eq(chatThreads.id, candidate.threadId))
     .for("no key update");
 
+  await beforeStatement();
   const [current] = await tx
     .select({
       userId: chatThreads.userId,
@@ -597,6 +599,7 @@ async function revalidateThread(
     return provenance;
   }
 
+  await beforeStatement();
   const [terminal] = await tx
     .select({
       eventId: chatEvents.id,
@@ -622,6 +625,7 @@ async function revalidateThread(
     return "read_state_advanced";
   }
 
+  await beforeStatement();
   const [activeRun] = await tx
     .select({ id: agentRuns.id })
     .from(agentRuns)
@@ -704,53 +708,73 @@ async function collectThread(
     readonly remainingTextBytes: number;
     readonly budget: AttemptBudget;
   },
+  signal: AbortSignal,
 ): Promise<ThreadOutcome> {
   const { owner, candidate, anchor, remainingTextBytes, budget } = args;
-  return await db.transaction(async (tx) => {
-    await boundTransaction(tx, budget, budget.candidateDeadlineAt);
-    const admitted = await erasureAdmitted(
-      tx,
-      ownerErasureSubjects({ ...owner, agentOwner: candidate.agentOwner }),
-    );
-    if (!admitted) {
-      return skipped("owner_context_unavailable");
-    }
+  const bounded = AbortSignal.any([signal, budget.candidateDeadline.signal]);
+  return await withMorningBriefDatabaseDeadline(
+    {
+      db,
+      deadline: budget.candidateDeadline,
+      caps: CHAT_DATABASE_CAPS,
+    },
+    bounded,
+    async (tx, beforeStatement) => {
+      const admitted = await erasureAdmitted(
+        tx,
+        ownerErasureSubjects({ ...owner, agentOwner: candidate.agentOwner }),
+      );
+      if (!admitted) {
+        return skipped("owner_context_unavailable");
+      }
 
-    const eligible = await revalidateThread(tx, owner, candidate, anchor);
-    if (typeof eligible === "string") {
-      return skipped(eligible);
-    }
+      await beforeStatement();
+      const eligible = await revalidateThread(
+        tx,
+        owner,
+        candidate,
+        anchor,
+        beforeStatement,
+      );
+      if (typeof eligible === "string") {
+        return skipped(eligible);
+      }
 
-    const rows = await loadThreadExcerpts(
-      tx,
-      candidate,
-      eligible.terminalRunId,
-    );
-    const { excerpts, truncations, textBytes } = buildExcerpts(
-      rows,
-      remainingTextBytes,
-    );
-    if (excerpts.length === 0) {
-      return skipped("no_visible_excerpts", [...truncations]);
-    }
-    return {
-      item: {
-        threadId: candidate.threadId,
-        agentId: candidate.agentId,
-        provenance: ORDINARY_CHAT_THREAD_PROVENANCE,
-        terminal: {
-          eventId: eligible.terminalEventId,
-          runId: eligible.terminalRunId,
-          seqId: eligible.terminalSeqId,
-          at: eligible.terminalAt.toISOString(),
+      // This is the content boundary the outer late-result discard could not
+      // protect: after all authority waits, re-read the remaining time before
+      // dispatching the body query at all.
+      await beforeStatement();
+      const rows = await loadThreadExcerpts(
+        tx,
+        candidate,
+        eligible.terminalRunId,
+      );
+      const { excerpts, truncations, textBytes } = buildExcerpts(
+        rows,
+        remainingTextBytes,
+      );
+      if (excerpts.length === 0) {
+        return skipped("no_visible_excerpts", [...truncations]);
+      }
+      return {
+        item: {
+          threadId: candidate.threadId,
+          agentId: candidate.agentId,
+          provenance: ORDINARY_CHAT_THREAD_PROVENANCE,
+          terminal: {
+            eventId: eligible.terminalEventId,
+            runId: eligible.terminalRunId,
+            seqId: eligible.terminalSeqId,
+            at: eligible.terminalAt.toISOString(),
+          },
+          excerpts,
+          truncations: [...truncations],
         },
-        excerpts,
         truncations: [...truncations],
-      },
-      truncations: [...truncations],
-      textBytes,
-    };
-  });
+        textBytes,
+      };
+    },
+  );
 }
 
 function validateAnchor(
@@ -824,13 +848,17 @@ async function inspectCandidates(
       continue;
     }
     const outcome = await settle(
-      collectThread(db, {
-        owner: args.owner,
-        candidate,
-        anchor: args.anchor,
-        remainingTextBytes,
-        budget,
-      }),
+      collectThread(
+        db,
+        {
+          owner: args.owner,
+          candidate,
+          anchor: args.anchor,
+          remainingTextBytes,
+          budget,
+        },
+        signal,
+      ),
     );
     signal.throwIfAborted();
     // A lock wait, a statement or the read itself can outlast the boundary.
@@ -838,6 +866,13 @@ async function inspectCandidates(
     // nor the refusal reason — both facts about this member's threads — is
     // reported, and the gap is declared instead.
     if (budget.exhausted(limit)) {
+      truncations.add("deadline_exceeded");
+      break;
+    }
+    if (!outcome.ok && isMorningBriefDatabaseDeadlineExceeded(outcome.error)) {
+      // PostgreSQL enforced the absolute transaction bound before the
+      // application timer callback ran. This is the same candidate deadline,
+      // not a generic per-thread failure and not a reason to expose its id.
       truncations.add("deadline_exceeded");
       break;
     }
@@ -934,7 +969,10 @@ export const collectMorningBriefChat$ = command(
     // them. Running it here too means an admitted scope is one the release
     // check would accept right now, at the cost of one extra membership read.
     const authorized = await withinBudget(
-      morningBriefScopeIsCurrent({ db, clerk, scope }, budget.signal),
+      morningBriefScopeIsCurrent(
+        { db, clerk, scope, deadline: budget.deadline },
+        budget.signal,
+      ),
       budget,
       budget.deadlineAt,
       signal,
@@ -947,7 +985,7 @@ export const collectMorningBriefChat$ = command(
     }
 
     const discovered = await withinBudget(
-      loadUnreadCandidates(db, args.owner, args.scheduledFor, budget),
+      loadUnreadCandidates(db, args.owner, args.scheduledFor, budget, signal),
       budget,
       budget.candidateDeadlineAt,
       signal,
@@ -983,7 +1021,10 @@ export const collectMorningBriefChat$ = command(
     // Agent and a closed subject all fail here. Clerk is observed first; the
     // local erasure/binding/Agent decision follows in one short transaction.
     const released = await withinBudget(
-      morningBriefScopeIsCurrent({ db, clerk, scope }, budget.signal),
+      morningBriefScopeIsCurrent(
+        { db, clerk, scope, deadline: budget.deadline },
+        budget.signal,
+      ),
       budget,
       budget.deadlineAt,
       signal,

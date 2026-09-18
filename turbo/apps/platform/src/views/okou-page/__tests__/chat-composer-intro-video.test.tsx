@@ -1,4 +1,5 @@
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import { paidToolsContract } from "@okouai/api-contracts/contracts/paid-tools";
 import {
   introVideoPresenterContract,
   type IntroVideoStyle,
@@ -155,12 +156,15 @@ function summary(dialog: HTMLElement) {
   return node;
 }
 
-async function openIntroVideo() {
+async function openIntroVideo(paidTools = false) {
   const user = userEvent.setup({ delay: null });
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.IntroVideo]: true },
+    featureSwitches: {
+      [FeatureSwitchKey.IntroVideo]: true,
+      [FeatureSwitchKey.PaidToolControls]: paidTools,
+    },
   });
   const dialog = await openTemplatePicker(user);
   expect(control("Creative video", dialog, "tab")).toBeVisible();
@@ -218,6 +222,44 @@ test.each([
 
   const dialog = await screen.findByRole("dialog");
   expect(control("Intro video", dialog, "tab")).toBeVisible();
+});
+
+test("Intro video notices distinguish native generation from no-voice rendering", async () => {
+  installCatalogs();
+  context.mocks.api(paidToolsContract.get, ({ respond }) => {
+    return respond(200, {
+      disabledTools: [
+        "video-generation",
+        "video-rendering",
+        "voice-generation",
+        "avatar-video-generation",
+      ],
+    });
+  });
+  const { dialog } = await openIntroVideo(true);
+  await within(dialog).findByText(
+    "Video generation is disabled in your paid tool settings.",
+  );
+  expect(
+    within(dialog).queryByText(
+      "Voice generation is disabled in your paid tool settings.",
+    ),
+  ).not.toBeInTheDocument();
+  expect(
+    within(dialog).queryByText(
+      "Avatar video generation is disabled in your paid tool settings.",
+    ),
+  ).not.toBeInTheDocument();
+  optionsRoot(dialog);
+  click(within(dialog).getByText("No voiceover"));
+  await within(dialog).findByText(
+    "Video rendering is disabled in your paid tool settings.",
+  );
+  expect(
+    within(dialog).queryByText(
+      "Video generation is disabled in your paid tool settings.",
+    ),
+  ).not.toBeInTheDocument();
 });
 
 test("Style filters and search narrow the gallery and preserve the selected style", async () => {
