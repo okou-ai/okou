@@ -141,6 +141,14 @@ async function revokeOrgMemberRunAuthority(
       orgId: args.orgId,
       userId: args.userId,
     });
+    // Native schedule authority is the first Morning Brief business lock. The
+    // same order is used by admission, delivery, thread/Agent deletion and the
+    // remaining cleanup writers below.
+    await revokeMorningBriefNativeAuthority(
+      tx,
+      { orgId: args.orgId, userId: args.userId },
+      revokedAt,
+    );
     const rows = await transitionAgentRunsToTerminal(tx, {
       values: {
         status: "cancelled",
@@ -181,14 +189,6 @@ async function revokeOrgMemberRunAuthority(
       userId: args.userId,
     });
 
-    // The durable native authority goes with them: the epoch is bumped so no
-    // admitted occurrence can still deliver or settle, and the scheduling
-    // obligation is cleared in this same transaction rather than left unowned.
-    await revokeMorningBriefNativeAuthority(
-      tx,
-      { orgId: args.orgId, userId: args.userId },
-      revokedAt,
-    );
     await tx
       .delete(agentRunQueue)
       .where(

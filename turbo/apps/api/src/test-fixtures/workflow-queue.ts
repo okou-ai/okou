@@ -78,11 +78,13 @@ export async function admitWorkflowAutomationEventFixture(
 
 const automationPidRowSchema = z.object({ pid: z.int() });
 const automationWaiterRowSchema = z.object({ waiterCount: z.int() });
+const automationCancelRowSchema = z.object({ cancelled: z.boolean() });
 
 interface HeldWorkflowAutomationRow {
   readonly release: () => void;
   readonly done: Promise<void>;
   readonly blockedWaiterCount: () => Promise<number>;
+  readonly cancelBlockedWaiters: () => Promise<number>;
 }
 
 /**
@@ -142,6 +144,22 @@ export async function holdWorkflowAutomationRowFixture(args: {
         throw new Error("Expected one automation waiter count row");
       }
       return row.waiterCount;
+    },
+    // No production API can fail a claim transaction at this exact point. Only
+    // queries blocked on this fixture's own row lock are cancelled.
+    cancelBlockedWaiters: async () => {
+      const rows = await executeRawRows(
+        db(),
+        sql`
+          SELECT pg_cancel_backend(activity.pid) AS "cancelled"
+          FROM pg_stat_activity AS activity
+          WHERE ${holderPid} = ANY(pg_blocking_pids(activity.pid))
+        `,
+        automationCancelRowSchema,
+      );
+      return rows.filter((row) => {
+        return row.cancelled;
+      }).length;
     },
   };
 }

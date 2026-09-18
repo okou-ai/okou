@@ -5972,48 +5972,78 @@ const validateStripeFeature$ = command(
 );
 
 /**
- * Mirror a generic automation toggle onto the member's durable Morning Brief
- * choice, when that automation is the one their brief is bound to.
+ * Commit a generic Morning Brief automation toggle and its durable logical
+ * choice as one write.
  *
- * The generic automations API can enable or disable the same schedule Settings
- * owns. Once execution ownership has left `legacy` the durable row is the
- * authority, so a toggle that only moved the legacy automation would leave the
- * native scheduler running against a choice the user just changed. Anything
- * that is not a Morning Brief automation, and any member still on `legacy`, is
- * untouched.
+ * Every writer follows the same lock order: the caller's member-preference
+ * advisory lock (when present), then the native schedule, then the legacy
+ * automation, and finally any occurrence read by the choice application. A
+ * native owner never receives a new legacy `next_run_at`; rollback restores the
+ * future legacy obligation only after its drain commits.
  */
-async function mirrorMorningBriefChoice(
+async function persistMorningBriefAutomationToggle(
   db: Db,
-  automation: {
-    readonly id: string;
-    readonly orgId: string;
-    readonly ownerUserId: string | null;
-    readonly officialBlueprintKey: string | null;
+  args: {
+    readonly automation: AutomationRow;
+    readonly enabled: boolean;
+    readonly nextRunAt: Date | null;
+    readonly now: Date;
+    readonly inheritedAutonomyBudget?: number;
   },
-  enabled: boolean,
-): Promise<void> {
+): Promise<AutomationRow | undefined> {
   if (
-    automation.officialBlueprintKey !== MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY ||
-    automation.ownerUserId === null
+    args.automation.officialBlueprintKey !==
+      MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY ||
+    args.automation.ownerUserId === null ||
+    args.automation.kind !== "schedule"
   ) {
-    return;
+    return undefined;
   }
-  const owner = { orgId: automation.orgId, userId: automation.ownerUserId };
-  await db.transaction(async (tx) => {
+  const owner = {
+    orgId: args.automation.orgId,
+    userId: args.automation.ownerUserId,
+  };
+  return await db.transaction(async (tx) => {
     const native = await lockMorningBriefNativeSchedule(tx, owner);
-    if (
-      native === undefined ||
-      native.phase === "legacy" ||
-      native.legacyAutomationId !== automation.id
-    ) {
-      return;
+    const [row] = await tx
+      .update(workflowAutomations)
+      .set({
+        enabled: args.enabled,
+        nextRunAt:
+          args.enabled && native !== undefined && native.phase !== "legacy"
+            ? null
+            : args.nextRunAt,
+        consecutiveFailures: args.enabled
+          ? 0
+          : args.automation.consecutiveFailures,
+        updatedAt: args.now,
+        officialIntendedEnabled: args.enabled,
+        ...(args.inheritedAutonomyBudget === undefined
+          ? {}
+          : { autonomyBudget: args.inheritedAutonomyBudget }),
+      })
+      .where(officialAutomationLifecycleCondition(args.automation))
+      .returning(workflowAutomationColumns());
+    if (row === undefined) {
+      return undefined;
     }
-    await applyMorningBriefLogicalChoice(
-      tx,
-      owner,
-      { enabled, expectedEpoch: native.ownerEpoch },
-      nowDate(),
-    );
+    if (
+      native !== undefined &&
+      native.legacyAutomationId === args.automation.id
+    ) {
+      const applied = await applyMorningBriefLogicalChoice(
+        tx,
+        owner,
+        { enabled: args.enabled, expectedEpoch: native.ownerEpoch },
+        args.now,
+      );
+      if (applied.kind !== "applied") {
+        throw new Error(
+          "Morning Brief choice changed during automation toggle",
+        );
+      }
+    }
+    return row;
   });
 }
 
@@ -6100,7 +6130,26 @@ export const enableWorkflowAutomation$ = command(
         return failure;
       }
     }
-    const enabled = await persistAndReconcileEnabledWorkflowAutomation(
+    const morningBriefRow = await persistMorningBriefAutomationToggle(writeDb, {
+      automation,
+      enabled: true,
+      nextRunAt,
+      now,
+      inheritedAutonomyBudget: args.inheritedAutonomyBudget,
+    });
+    signal.throwIfAborted();
+    if (morningBriefRow !== undefined) {
+      return await finalizeAndPublishEnabledWorkflowAutomation(
+        writeDb,
+        {
+          previousAutomation: automation,
+          enabledAutomation: morningBriefRow,
+          memberUserId: args.member.userId,
+        },
+        signal,
+      );
+    }
+    return await persistAndReconcileEnabledWorkflowAutomation(
       writeDb,
       {
         automation,
@@ -6112,12 +6161,6 @@ export const enableWorkflowAutomation$ = command(
       },
       signal,
     );
-    signal.throwIfAborted();
-    if (enabled.kind === "ok") {
-      await mirrorMorningBriefChoice(writeDb, automation, true);
-      signal.throwIfAborted();
-    }
-    return enabled;
   },
 );
 
@@ -6142,18 +6185,29 @@ export const disableWorkflowAutomation$ = command(
     const now = nowDate();
     const nextRunAt =
       owned.automation.kind === "schedule" ? null : owned.automation.nextRunAt;
-    const [row] = await writeDb
-      .update(workflowAutomations)
-      .set({
-        enabled: false,
-        nextRunAt,
-        updatedAt: now,
-        ...(owned.automation.officialBlueprintKey === null
-          ? {}
-          : { officialIntendedEnabled: false }),
-      })
-      .where(officialAutomationLifecycleCondition(owned.automation))
-      .returning(workflowAutomationColumns());
+    const morningBriefRow = await persistMorningBriefAutomationToggle(writeDb, {
+      automation: owned.automation,
+      enabled: false,
+      nextRunAt,
+      now,
+    });
+    signal.throwIfAborted();
+    const [ordinaryRow] =
+      morningBriefRow === undefined
+        ? await writeDb
+            .update(workflowAutomations)
+            .set({
+              enabled: false,
+              nextRunAt,
+              updatedAt: now,
+              ...(owned.automation.officialBlueprintKey === null
+                ? {}
+                : { officialIntendedEnabled: false }),
+            })
+            .where(officialAutomationLifecycleCondition(owned.automation))
+            .returning(workflowAutomationColumns())
+        : [];
+    const row = morningBriefRow ?? ordinaryRow;
     signal.throwIfAborted();
     if (!row) {
       if (owned.automation.officialBlueprintKey !== null) {
@@ -6164,8 +6218,6 @@ export const disableWorkflowAutomation$ = command(
       }
       throw new Error("Failed to disable workflow automation");
     }
-    await mirrorMorningBriefChoice(writeDb, owned.automation, row.enabled);
-    signal.throwIfAborted();
     if (supportedNotionEventType(row.eventType)) {
       await invalidateNotionPendingEventsForAutomation(writeDb, row.id);
       signal.throwIfAborted();

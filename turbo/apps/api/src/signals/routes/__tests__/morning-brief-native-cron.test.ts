@@ -20,6 +20,7 @@ import {
   countOrgUsageEvents,
   enqueueUnsentLegacyEmail,
   countOrgAgentRuns,
+  deleteLegacyMorningBriefInstallation,
   interruptNativeSettlement,
   makeNativeOccurrenceDue,
   readLegacyAutomation,
@@ -320,9 +321,13 @@ describe("native Morning Brief cron", () => {
 
     await tickUntilNative(f);
 
-    // The legacy scheduler is now closed for this member. Everything below has
-    // to work anyway, which is the whole point of the native authority.
+    // The legacy scheduler is now closed for this member. Remove its live
+    // Workflow entirely: native collection and delivery retain lineage only
+    // and must continue from their durable choice, destination and epoch.
     expect((await readLegacyAutomation(f.automationId))?.nextRunAt).toBeNull();
+    expect((await readNativeSchedule(f))?.phase).toBe("native");
+    await deleteLegacyMorningBriefInstallation(f.workflowId);
+    await expect(readLegacyAutomation(f.automationId)).resolves.toBeUndefined();
     const due = await makeNativeOccurrenceDue(f);
 
     const executed = await accept(tick(), [200]);

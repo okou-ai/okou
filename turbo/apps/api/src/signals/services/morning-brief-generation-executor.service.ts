@@ -341,6 +341,7 @@ async function admitGeneration(
         scheduledFor: context.admission.scheduledFor,
         generationAttemptId: admission.attemptId,
         expectedEpoch: nativeAuthority.ownerEpoch,
+        expectedMembershipId: nativeAuthority.membershipId,
         leaseToken: nativeAuthority.leaseToken,
         at: context.at,
       },

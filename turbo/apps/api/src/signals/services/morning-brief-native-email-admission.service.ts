@@ -14,6 +14,7 @@ import { loadCurrentMembershipId } from "./morning-brief-membership.service";
 import type { Db } from "../external/db";
 import { lockCollectionOwner } from "./morning-brief-collection-occurrence.service";
 import { loadMorningBriefMigrationState } from "./morning-brief-migration-state.service";
+import { lockMorningBriefNativeSchedule } from "./morning-brief-native-schedule.service";
 
 /**
  * Outbox template name of a native Morning Brief delivery.
@@ -205,6 +206,7 @@ async function checkOwnerBinding(
   delivery: {
     readonly orgId: string;
     readonly userId: string;
+    readonly executionPurpose: "preview" | "production";
     readonly workflowId: string;
     readonly automationId: string;
     readonly agentId: string;
@@ -226,6 +228,10 @@ async function checkOwnerBinding(
     (agent.visibility === "private" && agent.owner !== delivery.userId)
   ) {
     return rejected("Morning Brief installation Agent is no longer usable");
+  }
+
+  if (delivery.executionPurpose === "production") {
+    return null;
   }
 
   const state = await loadMorningBriefMigrationState(tx, {
@@ -289,6 +295,34 @@ async function checkDestination(
     : rejected("Morning Brief delivery destination is no longer owned");
 }
 
+async function checkNativeAuthority(
+  tx: Tx,
+  delivery: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly membershipId: string;
+    readonly nativeOwnerEpoch: number | null;
+    readonly executionPurpose: string;
+    readonly agentId: string;
+    readonly chatThreadId: string;
+  },
+): Promise<NativeMorningBriefEmailAdmission | null> {
+  if (delivery.executionPurpose !== "production") {
+    return null;
+  }
+  const native = await lockMorningBriefNativeSchedule(tx, delivery);
+  return delivery.nativeOwnerEpoch === null ||
+    native === undefined ||
+    (native.phase !== "native" && native.phase !== "rollback-draining") ||
+    !native.enabled ||
+    native.ownerEpoch !== delivery.nativeOwnerEpoch ||
+    native.membershipId !== delivery.membershipId ||
+    native.agentId !== delivery.agentId ||
+    native.chatThreadId !== delivery.chatThreadId
+    ? rejected("Morning Brief native delivery authority was revoked")
+    : null;
+}
+
 /**
  * Decide whether one native Morning Brief outbox row may still be sent.
  *
@@ -312,6 +346,8 @@ export async function admitNativeMorningBriefEmail(
       collectionKind: morningBriefDeliveries.collectionKind,
       collectionVersion: morningBriefDeliveries.collectionVersion,
       membershipId: morningBriefDeliveries.membershipId,
+      nativeOwnerEpoch: morningBriefDeliveries.nativeOwnerEpoch,
+      executionPurpose: morningBriefDeliveries.executionPurpose,
       workflowId: morningBriefDeliveries.workflowId,
       automationId: morningBriefDeliveries.automationId,
       agentId: morningBriefDeliveries.agentId,
@@ -337,6 +373,11 @@ export async function admitNativeMorningBriefEmail(
 
   if (!(await lockCollectionOwner(tx, owner))) {
     return rejected("Morning Brief delivery owner was revoked or erased");
+  }
+
+  const nativeRefusal = await checkNativeAuthority(tx, delivery);
+  if (nativeRefusal) {
+    return nativeRefusal;
   }
 
   const [occurrence] = await tx
