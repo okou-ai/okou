@@ -20,7 +20,7 @@ import { localizedWorkflowTemplate } from "./workflow-template-copy.ts";
 // Every kind draws into the same square slot so the row reads as one family.
 // The card is only ~292px wide, so the tile stays small enough to leave the
 // title on one line and the description on two.
-export const THUMBNAIL_CLASS =
+const THUMBNAIL_CLASS =
   "grid size-[72px] shrink-0 place-items-center overflow-hidden rounded-xl";
 
 export const NODE_CLASS = "rounded-md border bg-card";

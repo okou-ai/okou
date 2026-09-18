@@ -62,7 +62,7 @@ function ConnectorTile({
       onClick={() => {
         onSelect(connector);
       }}
-      className="flex min-w-0 items-center gap-2.5 rounded-xl border border-border bg-card px-3 py-2.5 text-left transition-colors hover:border-brand hover:bg-state-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default"
+      className="flex min-w-0 items-center gap-2.5 rounded-xl border border-border bg-card px-3 py-2.5 text-left transition-colors hover:border-foreground hover:bg-state-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default"
     >
       <ConnectorIcon icon={connector.icon} size={22} />
       <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">
