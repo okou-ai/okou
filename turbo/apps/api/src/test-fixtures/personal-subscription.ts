@@ -1,12 +1,109 @@
-import { count, sql } from "drizzle-orm";
+import { and, count, eq, sql } from "drizzle-orm";
 import { z } from "zod";
+import { modelProviders } from "@okouai/db/schema/model-provider";
 
 import { db } from "../lib/db";
 import { executeRawRows } from "../lib/db-raw-rows";
 import { withPreparedLaunchAdmissionTrackingForTest } from "../signals/services/prepared-launch-admission-lock.service";
-import { createDeferredPromise } from "../signals/utils";
+import {
+  createDeferredPromise,
+  onRejection,
+  settleIncludingAbort,
+} from "../signals/utils";
 
 const waiterCountSchema = z.object({ waiterCount: z.number() });
+const backendPidSchema = z.object({ pid: z.number() });
+
+// Infrastructure-only synchronization: the API cannot hold a row lock between
+// two requests. This holder changes no product rows; the competing production
+// writer owns the advisory lock, account mutation, and eventual commit.
+export async function holdPersonalSubscriptionProviderRowLockFixture(
+  args: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly type: "claude-code-oauth-token" | "codex-oauth-token";
+  },
+  signal: AbortSignal,
+) {
+  const entered = createDeferredPromise<number>(signal);
+  const released = createDeferredPromise<void>(signal);
+  const done = onRejection(
+    db().transaction(async (tx) => {
+      signal.throwIfAborted();
+      const [provider] = await tx
+        .select({ id: modelProviders.id })
+        .from(modelProviders)
+        .where(
+          and(
+            eq(modelProviders.orgId, args.orgId),
+            eq(modelProviders.userId, args.userId),
+            eq(modelProviders.type, args.type),
+          ),
+        )
+        .for("no key update");
+      signal.throwIfAborted();
+      if (!provider) {
+        throw new Error("Expected the test-owned subscription provider");
+      }
+      const [backend] = await executeRawRows(
+        tx,
+        sql`SELECT pg_backend_pid() AS pid`,
+        backendPidSchema,
+      );
+      signal.throwIfAborted();
+      if (!backend) {
+        throw new Error("Expected the subscription row lock holder pid");
+      }
+      entered.resolve(backend.pid);
+      await released.promise;
+      signal.throwIfAborted();
+    }),
+    (error) => {
+      if (!entered.settled()) {
+        entered.reject(error);
+      }
+    },
+  );
+  // Observe every transaction failure immediately. If cancellation wins before
+  // entry, no caller has received the holder yet, so this function must join its
+  // rollback before propagating the failure.
+  const transaction = settleIncludingAbort(done);
+  const entry = await settleIncludingAbort(entered.promise);
+  if (!entry.ok) {
+    if (!released.settled()) {
+      released.resolve();
+    }
+    const result = await transaction;
+    if (!result.ok) {
+      throw result.error;
+    }
+    throw entry.error;
+  }
+  const holderPid = entry.value;
+  return {
+    done,
+    release() {
+      if (!released.settled()) {
+        released.resolve();
+      }
+    },
+    async waiterCount() {
+      const [row] = await executeRawRows(
+        db(),
+        sql`
+          SELECT ${count()}::int AS "waiterCount"
+          FROM pg_stat_activity
+          WHERE ${holderPid} = ANY(pg_blocking_pids(pid))
+        `,
+        waiterCountSchema,
+      );
+      if (!row) {
+        throw new Error("Expected the subscription row lock waiter count");
+      }
+      return row.waiterCount;
+    },
+  };
+}
 
 // Infrastructure-only observation: no API exposes when this request has
 // finished preparation and is about to acquire its final admission lock.
