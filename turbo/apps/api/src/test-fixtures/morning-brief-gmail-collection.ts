@@ -12,10 +12,11 @@ import {
   workflowUserAutomationThreads,
   workflows,
 } from "@okouai/db/schema/workflow";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 import { db } from "../lib/db";
 import { now } from "../lib/time";
+import { holdDeferredRow } from "./pi-deferred-lock";
 
 /**
  * Persistence-only setup for Morning Brief Gmail collection tests.
@@ -26,6 +27,23 @@ import { now } from "../lib/time";
  * catalog policy and credentials all run through the production modules under
  * test.
  */
+
+/**
+ * Hold the canonical installation relation against the real shared authorizer.
+ *
+ * No production endpoint can intentionally pause a relation read. This fixture
+ * takes a PostgreSQL `ACCESS EXCLUSIVE` lock after setup, then uses
+ * `pg_blocking_pids` through `holdDeferredRow` to prove a production
+ * authorization query has reached the wait. It changes no row and installs no
+ * application hook.
+ */
+export async function holdMorningBriefAuthorizerFixture(
+  signal: AbortSignal,
+): Promise<Awaited<ReturnType<typeof holdDeferredRow>>> {
+  return await holdDeferredRow(signal, async (tx) => {
+    await tx.execute(sql`LOCK TABLE ${workflows} IN ACCESS EXCLUSIVE MODE`);
+  });
+}
 
 interface MorningBriefOwner {
   readonly orgId: string;

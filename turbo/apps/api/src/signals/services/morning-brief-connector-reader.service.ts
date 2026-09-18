@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { connectorRuntimeTargetKey } from "@okouai/api-contracts/contracts/runners";
 import { matchFirewallRequestDecision } from "@okouai/connectors/firewall-rule-matcher";
@@ -520,7 +522,11 @@ async function pinnedAccountIsLive(
   connectorSlug: ConnectorSlug,
 ): Promise<boolean> {
   const [account] = await db
-    .select({ needsReconnect: connectors.needsReconnect })
+    .select({
+      externalEmail: connectors.externalEmail,
+      externalId: connectors.externalId,
+      needsReconnect: connectors.needsReconnect,
+    })
     .from(connectors)
     .where(
       and(
@@ -531,7 +537,14 @@ async function pinnedAccountIsLive(
       ),
     )
     .limit(1);
-  return account !== undefined && !account.needsReconnect;
+  if (account === undefined || account.needsReconnect) {
+    return false;
+  }
+  const expectedRef = pinned.externalEmail ?? pinned.externalId;
+  return (
+    expectedRef === null ||
+    (account.externalEmail ?? account.externalId) === expectedRef
+  );
 }
 
 /** Accepted catalog visibility for this member. Availability is not policy. */
@@ -1445,6 +1458,10 @@ export async function revalidateMorningBriefRetainedRead(
     readonly connectorSlug: ConnectorSlug;
     /** The connection the retained material was read through. */
     readonly connectionId: string;
+    /** The provider identity the retained material was read from. */
+    readonly accountRef: string;
+    /** Digest of the effective permissions the original read exercised. */
+    readonly scopeDigest: string;
     /** Every endpoint whose result is still held. */
     readonly endpoints: readonly string[];
   },
@@ -1459,13 +1476,14 @@ export async function revalidateMorningBriefRetainedRead(
   };
   const pinned: PinnedAccount = {
     connectorId: args.connectionId,
-    externalEmail: null,
+    externalEmail: args.accountRef,
     externalId: null,
   };
   const identity = await authorizeIdentity(request, pinned, "release", signal);
   if (identity.kind !== "allow") {
     return identity.reason;
   }
+  const permissions = new Set<string>();
   for (const url of args.endpoints) {
     const decision = await authorizeUrl(
       request,
@@ -1481,8 +1499,14 @@ export async function revalidateMorningBriefRetainedRead(
       // A permission that produced retained material is no longer effective.
       return "source-revoked";
     }
+    if (decision.permission !== null) {
+      permissions.add(decision.permission);
+    }
   }
-  return null;
+  const currentScopeDigest = createHash("sha256")
+    .update([...permissions].sort().join("\n"), "utf8")
+    .digest("hex");
+  return currentScopeDigest === args.scopeDigest ? null : "source-revoked";
 }
 
 /**

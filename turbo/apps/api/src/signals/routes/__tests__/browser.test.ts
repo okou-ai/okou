@@ -2564,25 +2564,27 @@ describe("okou browser route", () => {
 
       await chat.deleteThread(actor, current.threadId);
       await flushWaitUntilForTest();
-      expect(context.mocks.s3.send).not.toHaveBeenCalledWith(
-        expect.objectContaining({
-          input: expect.objectContaining({
-            Delete: { Objects: [{ Key: finalScreenshotKey }] },
-          }),
+      expect(
+        context.mocks.s3.send.mock.calls.filter(([command]) => {
+          const input = commandInput(command);
+          return (JSON.stringify(input.Delete) ?? "").includes(
+            finalScreenshotKey,
+          );
         }),
-      );
+      ).toHaveLength(0);
 
       const reconciled = await reconcileBrowsers(current.threadId);
       expect(reconciled.body).toMatchObject({
         errors: 0,
       });
-      expect(context.mocks.s3.send).not.toHaveBeenCalledWith(
-        expect.objectContaining({
-          input: expect.objectContaining({
-            Delete: { Objects: [{ Key: finalScreenshotKey }] },
-          }),
+      expect(
+        context.mocks.s3.send.mock.calls.filter(([command]) => {
+          const input = commandInput(command);
+          return (JSON.stringify(input.Delete) ?? "").includes(
+            finalScreenshotKey,
+          );
         }),
-      );
+      ).toHaveLength(0);
     },
     120_000,
   );

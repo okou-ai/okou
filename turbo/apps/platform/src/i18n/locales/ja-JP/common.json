@@ -6350,7 +6350,6 @@
       "description": "Okou がファイルのデザインを、繰り返し使えるテンプレートに変換します。"
     },
     "loadFailed": "テンプレートを読み込めませんでした。",
-    "pageCount_other": "{{count}} ページ",
     "renameFailed": "テンプレートの名前を変更できませんでした。",
     "retry": "再試行",
     "sharedBy": "{{owner}} が共有",

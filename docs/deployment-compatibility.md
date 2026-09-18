@@ -1969,6 +1969,37 @@ bridge cleanup after every serving source and supported bootstrap target has
 accepted v4 and the deployment/rollback window no longer needs the bridge.
 Historical v3 object and row retention for old binaries remains independent.
 
+### Builtin MCP execution
+
+Builtin MCP uses the current App, CLI and Runner contract directly. There is no
+MCP-specific request-header negotiation, old-client HTTP projection, upgrade
+response or Runner claim capability flag. Agent connector replacement applies
+to the complete submitted list, including MCP grants. The CLI is kept current;
+its package URL does not need to match the serving API commit for MCP admission.
+Custom and builtin MCP use the same typed discovery response.
+
+Queued Runs retain their captured CLI package and exact account mapping.
+Builtin MCP admission requires the Run's Okou token for authenticated MCP
+discovery. None/manual methods are executable; the published Plaud Automatic
+method remains unavailable until its handler lands. The addon honors explicit
+owner intent and never injects another owner's credentials when the requested
+owner is absent, including overlapping builtin/custom destinations.
+
+No-auth builtin and custom MCP requests skip credential validity checks and
+proxy auth resolution, including Automatic custom MCP resolved to no
+authentication. Credentialed builtin MCP auth responses use the existing `expiresAt`
+field to cap cached account authorization at 30 seconds from validation; this
+also bounds static-token cache reuse. Discovery immediately removes deleted
+accounts, while subsequent proxy requests may reuse an existing lease until
+expiry. Expiry does not interrupt an in-flight request or stream. After
+resolution, the addon rechecks the current owner before forwarding. No new
+Runner wire field or HTTP/custom cache policy is introduced.
+
+The v3 catalog read bridge and its cleanup under
+[#34913](https://github.com/vm0-ai/okou/issues/34913) remain as described above.
+This execution change adds no environment variable, release workflow change or
+per-service skill.
+
 ## PostHog CIMD OAuth
 
 PostHog OAuth uses a public client identified by

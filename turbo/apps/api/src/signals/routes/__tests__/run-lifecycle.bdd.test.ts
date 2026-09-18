@@ -66,6 +66,7 @@ import {
 } from "../../../test-fixtures/org-plan-entitlement";
 import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
 import {
+  API_TEST_CONNECTOR_CATALOG,
   API_TEST_CONNECTOR_FIREWALL_CONFIGS,
   apiTestConnectorCatalogValidationAuthority,
   clearApiTestConnectorCatalogRuntimeProjectionIdentityReplacements,
@@ -237,7 +238,7 @@ function runnerPreference(job: RunnerJob | null | undefined) {
 }
 
 const CODEX_WEB_IMAGE_UPLOAD_PROMPT_SNIPPET = "okou web upload-file -f <path>";
-const MCP_CONNECTOR_PROMPT_HEADING = "# MCP Custom Connectors";
+const MCP_CONNECTOR_PROMPT_HEADING = "# MCP Connectors";
 const MCP_CONNECTOR_PROMPT_INVENTORY_LIMIT = 20;
 
 function mcpConnectorPromptSection(prompt: string): string | undefined {
@@ -10880,7 +10881,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     await api.requestCancelRun(actor, run.runId, [200]);
   });
 
-  it("synthesizes bearer auth for Automatic MCP accounts resolved to OAuth", async () => {
+  it("synthesizes OAuth bearer auth and omits stale credentials for Automatic MCP no-auth accounts", async () => {
     mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
     mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
     mockEnv("APP_URL", "https://app.okou.ai");
@@ -10954,6 +10955,8 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     if (!actor.orgId) {
       throw new Error("Expected an Automatic MCP actor with an organization");
     }
+    // The production no-auth transition clears OAuth material. Seed historical
+    // inconsistent storage here to verify that none never reuses stale tokens.
     await setCustomConnectorCredentialStorageState(context, {
       orgId: actor.orgId,
       userId: actor.userId,
@@ -10962,20 +10965,41 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       storageVersion: 1,
     });
     await api.requestCancelRun(actor, run.runId, [200]);
-    const partialRun = await api.createRun(actor, {
+    const noAuthRun = await api.createRun(actor, {
       agentId,
-      prompt: "reject a partial Automatic OAuth account",
+      prompt: "use the Automatic MCP connector without credentials",
       modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
-    const partialClaim = await api.claimRunnerJob(partialRun.runId);
-    expect(partialClaim.connectorRuntimeTargets).not.toContainEqual(
-      expect.objectContaining({
-        kind: "custom",
-        customConnectorId: mcp.id,
-      }),
+    const noAuthClaim = await api.claimRunnerJob(noAuthRun.runId);
+    const noAuthTarget = customConnectorRuntimeRegistration(
+      noAuthClaim,
+      mcp.id,
     );
-    await api.requestCancelRun(actor, partialRun.runId, [200]);
+    expect(noAuthTarget).toStrictEqual(target);
+    expect(
+      inlineFirewallApis(noAuthClaim.firewalls, internalName)[0]?.auth,
+    ).toStrictEqual({ headers: {}, query: {} });
+    const [noAuthRuntimeResult] = await api.syncConnectorRuntime(
+      noAuthRun.runId,
+      {
+        targets: [noAuthTarget],
+      },
+    );
+    const noAuthRuntime = availableCustomConnectorRuntime(noAuthRuntimeResult);
+    expect(noAuthRuntime.firewall.sourceId).toBe(target.sourceId);
+    expect(noAuthRuntime.firewall.firewall.apis[0]?.auth).toStrictEqual({
+      headers: {},
+      query: {},
+    });
+    const noAuthResponses = JSON.stringify({
+      claim: noAuthClaim,
+      runtime: noAuthRuntime,
+    });
+    expect(noAuthResponses).not.toContain("automatic-initial-access-token");
+    expect(noAuthResponses).not.toContain("automatic-refresh-token");
+    expect(noAuthResponses).not.toContain(secretKey);
+    await api.requestCancelRun(actor, noAuthRun.runId, [200]);
   });
 
   it("injects proposed custom connector fields into headers, query, and host templates", async () => {
@@ -12694,7 +12718,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     await api.requestCancelRun(actor, resumed.runId, [200]);
   });
 
-  it("preserves defaults and overrides across a broad connector scope", async () => {
+  it("preserves defaults and overrides across a broad HTTP connector scope", async () => {
     const bdd = createBddApi(context);
     const api = createRunsApi(context);
     const fw = createFirewallApi(context);
@@ -12711,13 +12735,18 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     });
     // Nintendo Store owns a catalog skill, so enabling it without its account
     // intentionally fails run preparation before firewall policy assembly.
-    const broadConnectorScope = API_TEST_CONNECTOR_FIREWALL_CONFIGS.filter(
-      (firewall) => {
-        return firewall.name !== "nintendo-store";
-      },
-    ).map((firewall) => {
-      return firewall.name;
-    });
+    // MCP connectors do not participate in HTTP permission grants.
+    const broadConnectorScope = API_TEST_CONNECTOR_CATALOG.connectors
+      .filter((connector) => {
+        return (
+          connector.mcp === undefined &&
+          connector.firewall.kind !== "none" &&
+          connector.slug !== "nintendo-store"
+        );
+      })
+      .map((connector) => {
+        return connector.slug;
+      });
     expect(broadConnectorScope.length).toBeGreaterThanOrEqual(17);
     await api.enableAgentConnectors(actor, agentId, broadConnectorScope);
 

@@ -4239,8 +4239,15 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     await expect(
       connectorsApi.listCustomConnectorAccounts(admin, customConnectorId),
     ).resolves.toMatchObject([
-      { authMethod: "none", connectionStatus: "reconnect-required" },
+      {
+        authMethod: "none",
+        connectionStatus: "connected",
+        reconnectReason: null,
+      },
     ]);
+    await expect(
+      connectorsApi.readCustomConnector(admin, customConnectorId),
+    ).resolves.toMatchObject({ authMode: "automatic", connected: true });
     await setCustomConnectorCredentialStorageState(context, {
       orgId: requiredOrgId(admin),
       userId: admin.userId,

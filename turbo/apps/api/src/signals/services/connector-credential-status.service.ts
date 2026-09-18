@@ -41,6 +41,9 @@ export function connectorCredentialStatusWithMethod(args: {
   readonly tokenExpiresAt: Date | null;
   readonly now: Date;
 }): ConnectorCredentialStatus {
+  if (args.method.grant.kind === "none") {
+    return "available";
+  }
   return connectorCredentialStatusForAccess({
     storedNeedsReconnect: args.storedNeedsReconnect,
     tokenExpiresAt: args.tokenExpiresAt,
@@ -55,6 +58,9 @@ export function connectorCredentialReconnectReasonWithMethod(args: {
   readonly tokenExpiresAt: Date | null;
   readonly now: Date;
 }): ConnectorReconnectReason | null {
+  if (args.method.grant.kind === "none") {
+    return null;
+  }
   const credentialStatus = connectorCredentialStatusForAccess({
     storedNeedsReconnect: args.storedNeedsReconnect,
     tokenExpiresAt: args.tokenExpiresAt,
@@ -78,6 +84,9 @@ export function connectorRuntimeCredentialStatusWithMethod(args: {
   readonly tokenExpiresAt: Date | null;
   readonly now: Date;
 }): ConnectorCredentialStatus {
+  if (args.method.grant.kind === "none") {
+    return "available";
+  }
   return connectorRuntimeCredentialStatusForAccess({
     storedNeedsReconnect: args.storedNeedsReconnect,
     tokenExpiresAt: args.tokenExpiresAt,

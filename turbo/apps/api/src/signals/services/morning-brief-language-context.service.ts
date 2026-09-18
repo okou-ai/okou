@@ -48,7 +48,9 @@ import {
   MORNING_BRIEF_ARCHIVE_MAX_DECOMPRESSED_BYTES,
   MORNING_BRIEF_INSTRUCTIONS_MAX_BYTES,
   MORNING_BRIEF_MANIFEST_MAX_BYTES,
-  MORNING_BRIEF_STORAGE_PHASE_MS,
+  morningBriefStoragePhaseExpired,
+  morningBriefStoragePhaseExpiresAt,
+  morningBriefStoragePhaseRemainingMs,
 } from "./morning-brief-language-bounds";
 import type { MorningBriefCollectionOwner } from "./morning-brief-collection-occurrence.service";
 
@@ -286,6 +288,66 @@ async function resolveMorningBriefInstructionsVersion(
   return { kind: "resolved", versionId: version.id, s3Key: version.s3Key };
 }
 
+function canonicalMorningBriefInstructionsTarget(): string {
+  return normalizePath(
+    getInstructionsFilename(
+      APPLICATION_OWNED_AGENT_EXECUTION_PLAN.framework.fallback,
+    ),
+  );
+}
+
+function promisedManifestEntries(
+  buffer: Buffer,
+  target: string,
+): readonly ManifestFileEntry[] | null {
+  const manifest = parseManifest(buffer);
+  return (
+    manifest?.files.filter((file) => {
+      return normalizePath(file.path) === target;
+    }) ?? null
+  );
+}
+
+interface ActiveMorningBriefLanguageStoragePhase {
+  readonly signal: AbortSignal;
+  readonly expired: () => boolean;
+}
+
+/** Start the reader's one absolute phase, or refuse an exhausted admission. */
+function startMorningBriefLanguageStoragePhase(
+  deadlineAt: Date,
+  signal: AbortSignal,
+): ActiveMorningBriefLanguageStoragePhase | null {
+  const expiresAt = morningBriefStoragePhaseExpiresAt(
+    now(),
+    deadlineAt.getTime(),
+  );
+  const expired = (): boolean => {
+    return morningBriefStoragePhaseExpired(expiresAt, now());
+  };
+  if (expired()) {
+    return null;
+  }
+  // The clock can cross expiry after the check above. Admit a positive sampled
+  // duration before calling the timer, which rejects negative values.
+  const remainingMs = morningBriefStoragePhaseRemainingMs(expiresAt, now());
+  if (remainingMs === null) {
+    return null;
+  }
+  const phaseSignal = AbortSignal.any([
+    signal,
+    AbortSignal.timeout(remainingMs),
+  ]);
+  return {
+    signal: phaseSignal,
+    expired: () => {
+      // Callers check their own signal first, so an aborted combined signal is
+      // the phase timeout rather than a cancellation to translate.
+      return phaseSignal.aborted || expired();
+    },
+  };
+}
+
 /**
  * Read one resolved version's canonical instruction file within the bounds.
  *
@@ -304,26 +366,17 @@ export const readMorningBriefLanguageContext$ = command(
     signal: AbortSignal,
   ): Promise<MorningBriefLanguageContext> => {
     const db = get(db$);
-    // One absolute deadline, started before the work it bounds. The phase is
-    // the tighter of its own five seconds and whatever is left of the
-    // collection budget, and reaching it is already expired: a successful
-    // response that arrives at the deadline is as unusable as one that never
-    // arrives, and its timer may not have run yet.
-    const expiresAt = Math.min(
-      now() + MORNING_BRIEF_STORAGE_PHASE_MS,
-      args.deadlineAt.getTime(),
+    // One absolute deadline: five seconds or the tighter collection remainder.
+    const phase = startMorningBriefLanguageStoragePhase(
+      args.deadlineAt,
+      signal,
     );
-    const expired = (): boolean => {
-      return now() >= expiresAt;
-    };
-    if (expired()) {
+    if (phase === null) {
       // An exhausted budget buys nothing by asking storage anything at all.
       return { kind: "unavailable", reason: "timed-out", versionId: null };
     }
-    const phaseSignal = AbortSignal.any([
-      signal,
-      AbortSignal.timeout(expiresAt - now()),
-    ]);
+    const phaseSignal = phase.signal;
+    const phaseExpired = phase.expired;
 
     const resolved = await resolveMorningBriefInstructionsVersion(
       db,
@@ -338,7 +391,7 @@ export const readMorningBriefLanguageContext$ = command(
         versionId: null,
       };
     }
-    if (expired()) {
+    if (phaseExpired()) {
       return {
         kind: "unavailable",
         reason: "timed-out",
@@ -350,10 +403,7 @@ export const readMorningBriefLanguageContext$ = command(
     }
     const { versionId, s3Key } = resolved;
 
-    const filename = getInstructionsFilename(
-      APPLICATION_OWNED_AGENT_EXECUTION_PLAN.framework.fallback,
-    );
-    const target = normalizePath(filename);
+    const target = canonicalMorningBriefInstructionsTarget();
 
     const manifestDownload = await settle(
       get(
@@ -369,22 +419,28 @@ export const readMorningBriefLanguageContext$ = command(
     if (!manifestDownload.ok) {
       return {
         kind: "unavailable",
-        reason: storageFailure(manifestDownload.error, phaseSignal, expired()),
+        reason: storageFailure(
+          manifestDownload.error,
+          phaseSignal,
+          phaseExpired(),
+        ),
         versionId,
       };
     }
-    if (expired()) {
+    if (phaseExpired()) {
       return { kind: "unavailable", reason: "timed-out", versionId };
     }
 
-    const manifest = parseManifest(manifestDownload.value);
-    if (manifest === null) {
+    const promised = promisedManifestEntries(manifestDownload.value, target);
+    signal.throwIfAborted();
+    // Re-admit the synchronous parse/filter result before release or next I/O.
+    if (phaseExpired()) {
+      return { kind: "unavailable", reason: "timed-out", versionId };
+    }
+    if (promised === null) {
       // Unreadable metadata about the promised version, not a configuration.
       return { kind: "unavailable", reason: "storage-unavailable", versionId };
     }
-    const promised = manifest.files.filter((file) => {
-      return normalizePath(file.path) === target;
-    });
     if (promised.length === 0) {
       // The volume exists and simply carries no instructions file.
       return { kind: "absent", reason: "no-target", versionId };
@@ -415,11 +471,15 @@ export const readMorningBriefLanguageContext$ = command(
     if (!archiveDownload.ok) {
       return {
         kind: "unavailable",
-        reason: storageFailure(archiveDownload.error, phaseSignal, expired()),
+        reason: storageFailure(
+          archiveDownload.error,
+          phaseSignal,
+          phaseExpired(),
+        ),
         versionId,
       };
     }
-    if (expired()) {
+    if (phaseExpired()) {
       return { kind: "unavailable", reason: "timed-out", versionId };
     }
 
@@ -431,7 +491,7 @@ export const readMorningBriefLanguageContext$ = command(
     signal.throwIfAborted();
     // Decompression and extraction are synchronous and unbounded by the timer,
     // so the clock is read once more before anything is released.
-    if (expired()) {
+    if (phaseExpired()) {
       return { kind: "unavailable", reason: "timed-out", versionId };
     }
     return extracted;

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 
 import { morningBriefCompositionPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-composition-preview";
+import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createStore } from "ccstate";
 import { http, HttpResponse } from "msw";
@@ -14,6 +15,10 @@ import { clearMockNow, mockNow } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
 import {
+  bindMorningBriefThreadFixture as rebindMorningBriefThreadFixture,
+  replaceMorningBriefAutomationFixture,
+} from "../../../test-fixtures/morning-brief-chat-collection";
+import {
   bindMorningBriefThreadFixture,
   installMorningBriefFixture,
   reselectThreadGmailAccountFixture,
@@ -21,6 +26,7 @@ import {
   selectThreadGmailAccountFixture,
 } from "../../../test-fixtures/morning-brief-gmail-collection";
 import { createDeferredPromise } from "../../utils";
+import { integrationsSlackRoutes } from "../integrations-slack";
 import { morningBriefCompositionPreviewRoutes } from "../morning-brief-composition-preview";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import {
@@ -95,7 +101,10 @@ const workflowBdd = createWorkflowsBddApi(context);
  * reports an unreadable Agent instead of running. Keeping the written bytes is
  * what makes the published instructions readable by the same production path.
  */
-function stubObjectStorage(objects: Map<string, Buffer>): void {
+function stubObjectStorage(
+  objects: Map<string, Buffer>,
+  onGet?: () => void,
+): void {
   const objectKey = (command: {
     readonly input?: { readonly Bucket?: string; readonly Key?: string };
   }): string => {
@@ -133,6 +142,7 @@ function stubObjectStorage(objects: Map<string, Buffer>): void {
         : Promise.resolve({ ContentLength: stored.length });
     }
     if (name === "GetObjectCommand") {
+      onGet?.();
       return stored === undefined
         ? Promise.reject(
             Object.assign(new Error("NoSuchKey"), { name: "NoSuchKey" }),
@@ -146,11 +156,19 @@ function stubObjectStorage(objects: Map<string, Buffer>): void {
   });
 }
 
-function composeClient() {
+function composeClient(signal?: AbortSignal, rethrowErrors = false) {
   return setupApp({
     context,
     routes: morningBriefCompositionPreviewRoutes,
+    signal,
+    rethrowErrors,
   })(morningBriefCompositionPreviewContract);
+}
+
+function slackClient() {
+  return setupApp({ context, routes: integrationsSlackRoutes })(
+    integrationsSlackContract,
+  );
 }
 
 function authHeaders(actor: ApiTestUser) {
@@ -162,6 +180,7 @@ interface Fixture {
   readonly actor: ApiTestUser & { readonly orgId: string };
   readonly agentId: string;
   readonly workflowId: string;
+  readonly automationId: string;
   readonly chatThreadId: string;
   readonly gmailAccountId: string;
   readonly botToken: string;
@@ -209,21 +228,33 @@ function gmailMessagePayload(id: string, unread: boolean, anchorMs: number) {
 function stubProviders(args: {
   readonly slackHold?: Promise<void>;
   readonly onSlackEnumerated?: () => void;
+  readonly onGmailRequest?: () => void;
+  readonly onSlackEnumeration?: (
+    call: number,
+    request: Request,
+  ) => Promise<
+    readonly { readonly id: string; readonly name: string }[] | void
+  >;
+  readonly gmailBody?: string;
   readonly gmailUnread?: boolean;
   readonly slackFraction?: string;
+  readonly slackText?: string;
   readonly calendarAllDay?: boolean;
   readonly onCalendarRequest?: () => void;
   readonly anchorMs?: number;
 }): ProviderCalls {
   const calls: ProviderCalls = { gmail: [], slack: [] };
-  // Slack enumerates once to discover the intersection and again to prove it
-  // before release, so the arrival barrier fires on the first one only.
+  // The first enumeration is collection discovery. With one channel, the
+  // collector then proves the protected history read and its final release;
+  // the fourth enumeration is the retained-source re-proof.
+  let slackEnumerations = 0;
   let onEnumerated = args.onSlackEnumerated;
   const fireOnce = (): void => {
     onEnumerated = undefined;
   };
   server.use(
     http.get(GMAIL_LIST_URL, ({ request }) => {
+      args.onGmailRequest?.();
       const url = new URL(request.url);
       calls.gmail.push(url.pathname);
       const query = url.searchParams.get("q") ?? "";
@@ -235,25 +266,37 @@ function stubProviders(args: {
       });
     }),
     http.get(GMAIL_MESSAGE_URL, ({ request, params }) => {
+      args.onGmailRequest?.();
       calls.gmail.push(new URL(request.url).pathname);
-      return HttpResponse.json(
-        gmailMessagePayload(
-          String(params["messageId"]),
-          args.gmailUnread === true,
-          args.anchorMs ?? ANCHOR_MS,
-        ),
+      const payload = gmailMessagePayload(
+        String(params["messageId"]),
+        args.gmailUnread === true,
+        args.anchorMs ?? ANCHOR_MS,
       );
+      payload.payload.parts[0]!.body.data = Buffer.from(
+        args.gmailBody ?? `Body ${String(params["messageId"])}`,
+      ).toString("base64url");
+      return HttpResponse.json(payload);
     }),
-    http.get(SLACK_CONVERSATIONS_URL, async () => {
+    http.get(SLACK_CONVERSATIONS_URL, async ({ request }) => {
       calls.slack.push("users.conversations");
+      slackEnumerations += 1;
       onEnumerated?.();
       fireOnce();
       if (args.slackHold) {
         await args.slackHold;
       }
+      const channels = await args.onSlackEnumeration?.(
+        slackEnumerations,
+        request,
+      );
       return HttpResponse.json({
         ok: true,
-        channels: [{ id: "C1", name: "general", is_private: false }],
+        channels: (channels ?? [{ id: "C1", name: "general" }]).map(
+          (channel) => {
+            return { ...channel, is_private: false };
+          },
+        ),
       });
     }),
     http.get(SLACK_HISTORY_URL, () => {
@@ -265,7 +308,7 @@ function stubProviders(args: {
             type: "message",
             ts: `${String(Math.floor(((args.anchorMs ?? ANCHOR_MS) - 120_000) / 1000))}.${args.slackFraction ?? "000100"}`,
             user: "U9",
-            text: "standup at ten",
+            text: args.slackText ?? "standup at ten",
           },
         ],
       });
@@ -353,9 +396,16 @@ async function connectGmail(
 async function setupOwner(
   /** Everything this suite's production writes published, kept across setup. */
   objectStorage: Map<string, Buffer>,
-  timezone = "Asia/Shanghai",
-  withCalendar = false,
+  options: {
+    readonly instructions?: string;
+    readonly timezone?: string;
+    readonly withCalendar?: boolean;
+    readonly withGmail?: boolean;
+  } = {},
 ): Promise<Fixture> {
+  const timezone = options.timezone ?? "Asia/Shanghai";
+  const withCalendar = options.withCalendar === true;
+  const withGmail = options.withGmail !== false;
   const { actor } = await workflowBdd.setupWorkflowOrg({ timezone });
   if (!actor.orgId) {
     throw new Error("Expected an organization-scoped actor");
@@ -375,11 +425,17 @@ async function setupOwner(
   const agentId = agent.agentId;
   // Published through the production endpoint, so the composition's language
   // context resolves a real version rather than an unreadable promise.
-  await bdd.updateAgentInstructions(actor, agentId, "Summarize the morning.");
-  const gmailAccountId = await connectGmail(actor, agentId, {
-    email: "owner@example.test",
-    subject: `gmail-${randomUUID()}`,
-  });
+  await bdd.updateAgentInstructions(
+    actor,
+    agentId,
+    options.instructions ?? "Summarize the morning.",
+  );
+  const gmailAccountId = withGmail
+    ? await connectGmail(actor, agentId, {
+        email: "owner@example.test",
+        subject: `gmail-${randomUUID()}`,
+      })
+    : "";
   if (withCalendar) {
     const calendarSubject = `calendar-${randomUUID()}`;
     mockGoogleCalendarConnectorOAuth({
@@ -404,17 +460,21 @@ async function setupOwner(
       state: calendarState,
     });
   }
-  await runsApi.enableAgentConnectors(
-    actor,
-    agentId,
-    withCalendar ? ["gmail", "google-calendar"] : ["gmail"],
-  );
-  await runsApi.applyUserPermissionGrant(actor, {
-    agentId,
-    connectorSlug: "gmail",
-    permission: "messages.detail",
-    action: "allow",
-  });
+  const connectorSlugs = [
+    ...(withGmail ? (["gmail"] as const) : []),
+    ...(withCalendar ? (["google-calendar"] as const) : []),
+  ];
+  if (connectorSlugs.length > 0) {
+    await runsApi.enableAgentConnectors(actor, agentId, connectorSlugs);
+  }
+  if (withGmail) {
+    await runsApi.applyUserPermissionGrant(actor, {
+      agentId,
+      connectorSlug: "gmail",
+      permission: "messages.detail",
+      action: "allow",
+    });
+  }
   const installation = await installMorningBriefFixture(
     { orgId: actor.orgId, userId: actor.userId },
     { agentId, timezone },
@@ -423,10 +483,12 @@ async function setupOwner(
     { orgId: actor.orgId, userId: actor.userId },
     { workflowId: installation.workflowId, agentId },
   );
-  await selectThreadGmailAccountFixture({
-    chatThreadId,
-    connectorId: gmailAccountId,
-  });
+  if (withGmail) {
+    await selectThreadGmailAccountFixture({
+      chatThreadId,
+      connectorId: gmailAccountId,
+    });
+  }
   const botToken = `xoxb-test-${randomUUID()}`;
   const slack = await store.set(
     seedSlackOrgInstallation$,
@@ -450,6 +512,7 @@ async function setupOwner(
     actor: { ...actor, orgId: actor.orgId },
     agentId,
     workflowId: installation.workflowId,
+    automationId: installation.automationId,
     chatThreadId,
     gmailAccountId,
     botToken,
@@ -496,11 +559,10 @@ describe("Morning Brief exact source selection and retained authority", () => {
     async () => {
       const anchor = "2026-11-01T20:00:00.000Z";
       mockNow(Date.parse(anchor) + 30_000);
-      const fixture = await setupOwner(
-        objectStorage,
-        "America/Los_Angeles",
-        true,
-      );
+      const fixture = await setupOwner(objectStorage, {
+        timezone: "America/Los_Angeles",
+        withCalendar: true,
+      });
       let calendarRequests = 0;
       stubProviders({
         calendarAllDay: true,
@@ -663,6 +725,12 @@ describe("Morning Brief exact source selection and retained authority", () => {
       const gmail = baseline.body.composition.descriptors.find((descriptor) => {
         return descriptor.source === "gmail";
       });
+      expect(baseline.body.composition.descriptorBytes).toBe(
+        Buffer.byteLength(
+          JSON.stringify(baseline.body.composition.descriptors),
+          "utf8",
+        ),
+      );
       // The retained proof names the exact connection and mailbox this material
       // came from, and the endpoints a later check re-asks about.
       expect(gmail?.connectionId).toBe(fixture.gmailAccountId);
@@ -718,6 +786,378 @@ describe("Morning Brief exact source selection and retained authority", () => {
           return path.endsWith("/messages");
         }).length,
       ).toBeLessThanOrEqual(2);
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "keeps a frozen absent account absent when one is connected mid-attempt",
+    async () => {
+      const fixture = await setupOwner(objectStorage, { withGmail: false });
+      const held = createDeferredPromise<void>(context.signal);
+      const enumerated = createDeferredPromise<void>(context.signal);
+      const calls = stubProviders({
+        slackHold: held.promise,
+        onSlackEnumerated: () => {
+          enumerated.resolve();
+        },
+      });
+
+      const pending = compose(fixture);
+      await enumerated.promise;
+      await connectGmail(fixture.actor, fixture.agentId, {
+        email: "late@example.test",
+        subject: `gmail-${randomUUID()}`,
+      });
+      held.resolve();
+
+      const response = await pending;
+      if (response.status !== 200 || response.body.result !== "composed") {
+        throw new Error(
+          `Expected a Slack composition, received ${JSON.stringify(response.body)}`,
+        );
+      }
+      expect(calls.gmail).toStrictEqual([]);
+      expect(
+        response.body.composition.descriptors.find((descriptor) => {
+          return descriptor.source === "gmail";
+        })?.contributed,
+      ).toBeFalsy();
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "proves a source introduced by reallocation before releasing the final request",
+    async () => {
+      const fixture = await setupOwner(objectStorage, {
+        instructions: '"'.repeat(62_000),
+      });
+      const providerShape = {
+        gmailBody: "g".repeat(10_000),
+        slackText: "s".repeat(10_000),
+      } as const;
+      stubProviders(providerShape);
+      const control = await compose(fixture);
+      if (control.status !== 200 || control.body.result !== "composed") {
+        throw new Error(
+          `Expected a composed control, received ${JSON.stringify(control.body)}`,
+        );
+      }
+      const contributed = control.body.composition.descriptors.filter(
+        (descriptor) => {
+          return descriptor.contributed;
+        },
+      );
+      expect(
+        contributed.map((descriptor) => {
+          return descriptor.source;
+        }),
+      ).toStrictEqual(["gmail"]);
+      expect(
+        control.body.composition.descriptors.find((descriptor) => {
+          return descriptor.source === "slack";
+        })?.contributed,
+      ).toBeFalsy();
+
+      const collectionArrived = createDeferredPromise<void>(context.signal);
+      const releaseCollection = createDeferredPromise<void>(context.signal);
+      const calls = stubProviders({
+        ...providerShape,
+        slackHold: releaseCollection.promise,
+        onSlackEnumerated: () => {
+          collectionArrived.resolve();
+        },
+        onSlackEnumeration: (call) => {
+          if (call !== 4) {
+            return Promise.resolve();
+          }
+          // Gmail was revoked after its collection. Slack was allocation-
+          // dropped in the first plan and only enters after replanning, so
+          // reaching this refusal proves the new final source was re-asked.
+          return Promise.resolve([]);
+        },
+      });
+      const pending = compose(fixture);
+      await collectionArrived.promise;
+      await runsApi.applyUserPermissionGrant(fixture.actor, {
+        agentId: fixture.agentId,
+        connectorSlug: "gmail",
+        permission: "messages.detail",
+        action: "deny",
+      });
+      releaseCollection.resolve();
+
+      const response = await pending;
+      expect(response.body).toStrictEqual({ result: "authority-changed" });
+      // The newly eligible source is authorized, not recollected.
+      expect(
+        calls.gmail.filter((path) => {
+          return path.endsWith("/messages");
+        }),
+      ).toHaveLength(2);
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "rejects a local Slack disconnect committed while the remote re-proof is held",
+    async () => {
+      const fixture = await setupOwner(objectStorage);
+      const reproofArrived = createDeferredPromise<void>(context.signal);
+      const releaseReproof = createDeferredPromise<void>(context.signal);
+      stubProviders({
+        onSlackEnumeration: async (call) => {
+          if (call === 4) {
+            reproofArrived.resolve();
+            await releaseReproof.promise;
+          }
+        },
+      });
+
+      const pending = compose(fixture);
+      await reproofArrived.promise;
+      context.mocks.slack.views.publish.mockResolvedValue({ ok: true });
+      await accept(
+        slackClient().disconnect({
+          headers: authHeaders(fixture.actor),
+          query: {},
+        }),
+        [200],
+      );
+      releaseReproof.resolve();
+
+      const response = await pending;
+      if (response.status !== 200 || response.body.result !== "composed") {
+        throw new Error(
+          `Expected Gmail to survive, received ${JSON.stringify(response.body)}`,
+        );
+      }
+      expect(
+        response.body.composition.descriptors.find((descriptor) => {
+          return descriptor.source === "slack";
+        }),
+      ).toBeUndefined();
+      expect(
+        response.body.composition.descriptors.find((descriptor) => {
+          return descriptor.source === "gmail";
+        })?.contributed,
+      ).toBeTruthy();
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  it.each([
+    [4999, "composed"],
+    [5000, "authority-changed"],
+    [5001, "authority-changed"],
+  ] as const)(
+    "decides retained proof at the absolute five-second boundary (%i ms)",
+    async (elapsedMs, expected) => {
+      const fixture = await setupOwner(objectStorage);
+      const reproofArrived = createDeferredPromise<void>(context.signal);
+      const releaseReproof = createDeferredPromise<void>(context.signal);
+      const calls = stubProviders({
+        onSlackEnumeration: async (call) => {
+          if (call === 4) {
+            reproofArrived.resolve();
+            await releaseReproof.promise;
+          }
+        },
+      });
+
+      const pending = compose(fixture);
+      await reproofArrived.promise;
+      mockNow(ANCHOR_MS + 30_000 + elapsedMs);
+      releaseReproof.resolve();
+
+      const response = await pending;
+      expect(response.body.result).toBe(expected);
+      expect(
+        calls.slack.filter((call) => {
+          return call === "users.conversations";
+        }),
+      ).toHaveLength(4);
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  it.each([
+    [3999, "composed"],
+    [4000, "authority-changed"],
+  ] as const)(
+    "uses the tighter attempt reservation for retained proof (%i ms)",
+    async (retainedElapsedMs, expected) => {
+      const fixture = await setupOwner(objectStorage);
+      const phaseStartedAt = ANCHOR_MS + 30_000;
+      const reproofArrived = createDeferredPromise<void>(context.signal);
+      const releaseReproof = createDeferredPromise<void>(context.signal);
+      // Wave one finishes at +19s. Slack therefore receives the remaining
+      // new-read window and lands at +39s; language storage advances within its
+      // own bound to +41s, leaving only four seconds of the attempt reservation.
+      stubObjectStorage(objectStorage, () => {
+        mockNow(phaseStartedAt + 41_000);
+      });
+      stubProviders({
+        onGmailRequest: () => {
+          mockNow(phaseStartedAt + 19_000);
+        },
+        onSlackEnumeration: async (call) => {
+          if (call === 3) {
+            mockNow(phaseStartedAt + 39_000);
+          }
+          if (call === 4) {
+            reproofArrived.resolve();
+            await releaseReproof.promise;
+          }
+        },
+      });
+
+      const pending = compose(fixture);
+      await reproofArrived.promise;
+      mockNow(phaseStartedAt + 41_000 + retainedElapsedMs);
+      releaseReproof.resolve();
+
+      const response = await pending;
+      expect(response.body.result).toBe(expected);
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  it.each([
+    [
+      "automation replacement",
+      async (fixture: Fixture) => {
+        await replaceMorningBriefAutomationFixture({
+          orgId: fixture.actor.orgId,
+          userId: fixture.actor.userId,
+          workflowId: fixture.workflowId,
+          automationId: fixture.automationId,
+        });
+      },
+    ],
+    [
+      "destination rebind",
+      async (fixture: Fixture) => {
+        await rebindMorningBriefThreadFixture({
+          orgId: fixture.actor.orgId,
+          userId: fixture.actor.userId,
+          workflowId: fixture.workflowId,
+          chatThreadId: null,
+        });
+      },
+    ],
+  ] as const)(
+    "rejects a %s committed during retained provider work",
+    async (_name, changeBinding) => {
+      const fixture = await setupOwner(objectStorage);
+      const reproofArrived = createDeferredPromise<void>(context.signal);
+      const releaseReproof = createDeferredPromise<void>(context.signal);
+      stubProviders({
+        onSlackEnumeration: async (call) => {
+          if (call === 4) {
+            reproofArrived.resolve();
+            await releaseReproof.promise;
+          }
+        },
+      });
+
+      const pending = compose(fixture);
+      await reproofArrived.promise;
+      await changeBinding(fixture);
+      releaseReproof.resolve();
+
+      const response = await pending;
+      expect(response.body).toStrictEqual({ result: "authority-changed" });
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "rejects a changed membership generation through the shared owner authorizer",
+    async () => {
+      const fixture = await setupOwner(objectStorage);
+      const reproofArrived = createDeferredPromise<void>(context.signal);
+      const releaseReproof = createDeferredPromise<void>(context.signal);
+      stubProviders({
+        onSlackEnumeration: async (call) => {
+          if (call === 4) {
+            reproofArrived.resolve();
+            await releaseReproof.promise;
+          }
+        },
+      });
+
+      const pending = compose(fixture);
+      await reproofArrived.promise;
+      await store.set(
+        seedOrgMembership$,
+        {
+          orgId: fixture.actor.orgId,
+          userId: fixture.actor.userId,
+          role: "admin",
+          membershipId: `orgmem_rejoined_${randomUUID()}`,
+        },
+        context.signal,
+      );
+      releaseReproof.resolve();
+
+      const response = await pending;
+      expect(response.body).toStrictEqual({ result: "authority-changed" });
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "propagates caller cancellation from a held retained proof without starting more checks",
+    async () => {
+      const fixture = await setupOwner(objectStorage);
+      const controller = new AbortController();
+      const cancellation = new Error(`cancelled ${randomUUID()}`);
+      const reproofArrived = createDeferredPromise<void>(context.signal);
+      const reproofCancelled = createDeferredPromise<void>(context.signal);
+      const calls = stubProviders({
+        onSlackEnumeration: async (call, request) => {
+          if (call !== 4) {
+            return;
+          }
+          request.signal.addEventListener(
+            "abort",
+            () => {
+              reproofCancelled.resolve();
+            },
+            { once: true },
+          );
+          reproofArrived.resolve();
+          await reproofCancelled.promise;
+          return [];
+        },
+      });
+      await store.set(
+        seedOrgMembership$,
+        {
+          orgId: fixture.actor.orgId,
+          userId: fixture.actor.userId,
+          role: "admin",
+          membershipId: fixture.membershipId,
+        },
+        context.signal,
+      );
+      const pending = composeClient(controller.signal, true).compose({
+        headers: authHeaders(fixture.actor),
+        body: { anchor: ANCHOR_ISO },
+      });
+
+      await reproofArrived.promise;
+      controller.abort(cancellation);
+      await reproofCancelled.promise;
+
+      await expect(pending).rejects.toThrow(cancellation.message);
+      expect(
+        calls.slack.filter((call) => {
+          return call === "users.conversations";
+        }),
+      ).toHaveLength(4);
     },
     TEST_TIMEOUT_MS,
   );

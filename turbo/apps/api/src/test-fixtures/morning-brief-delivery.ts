@@ -644,6 +644,55 @@ export async function readBoundChatThreadId(
 }
 
 /**
+ * The complete local state delivery can prepare before its final receipt write.
+ * This is a transaction-test snapshot rather than a product reader: it includes
+ * a missing binding, any newly created destination, sticky provenance, events,
+ * receipts, and even an outbox row whose receipt insert might have rolled back.
+ */
+export async function readMorningBriefDeliveryAtomicState(args: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly agentId: string;
+  readonly workflowId: string;
+  readonly automationId: string;
+}) {
+  const [binding, threadRows, deliveries, outbox] = await Promise.all([
+    readBoundChatThreadId(args.workflowId),
+    db()
+      .select({
+        threadId: chatThreads.id,
+        provenance: chatThreads.provenance,
+        lastMessageAt: chatThreads.lastMessageAt,
+        eventId: chatEvents.id,
+        eventType: chatEvents.eventType,
+        eventPayload: chatEvents.payload,
+      })
+      .from(chatThreads)
+      .leftJoin(chatEvents, eq(chatEvents.chatThreadId, chatThreads.id))
+      .where(
+        and(
+          eq(chatThreads.userId, args.userId),
+          eq(chatThreads.agentId, args.agentId),
+        ),
+      )
+      .orderBy(asc(chatThreads.id), asc(chatEvents.seqId)),
+    readMorningBriefDeliveries(args),
+    db()
+      .select({
+        id: emailOutbox.id,
+        status: emailOutbox.status,
+        sourceRunId: emailOutbox.sourceRunId,
+        sourceWorkflowAutomationId: emailOutbox.sourceWorkflowAutomationId,
+        template: emailOutbox.template,
+      })
+      .from(emailOutbox)
+      .where(eq(emailOutbox.sourceWorkflowAutomationId, args.automationId))
+      .orderBy(asc(emailOutbox.id)),
+  ]);
+  return { binding, threadRows, deliveries, outbox };
+}
+
+/**
  * Fail this owner's delivery row insert, the last write the transaction makes.
  *
  * No product input can reject one specific write inside the delivery

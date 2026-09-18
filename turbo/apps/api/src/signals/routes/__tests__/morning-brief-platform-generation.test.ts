@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
 
+import { agentsByIdContract } from "@okouai/api-contracts/contracts/agents";
 import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import { modelProvidersMainContract } from "@okouai/api-contracts/contracts/model-provider-routes";
 import { morningBriefCollectionPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-collection-preview";
+import { morningBriefPreferenceContract } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { testWorkflowAutomationExecutionContract } from "@okouai/api-contracts/contracts/test-workflow-automation-execution";
 import {
   morningBriefGenerationPreviewContract,
@@ -20,6 +22,7 @@ import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import {
   deleteMorningBriefAgent,
+  holdMorningBriefAdmissionAgent,
   holdMorningBriefCollectionOccurrence,
   pauseMorningBriefAutomation,
   readMorningBriefCollectionOccurrences,
@@ -30,7 +33,11 @@ import {
   expireMorningBriefGenerationRetention,
   expireMorningBriefGenerationReservation,
   failMorningBriefGenerationUpdates,
+  holdMorningBriefAdmissionInstallation,
+  holdMorningBriefAuthorityRead,
+  holdMorningBriefFeatureSwitchRead,
   holdMorningBriefGenerationReservation,
+  holdMorningBriefGenerationRow,
   holdMorningBriefOwnerRow,
   interceptPlatformGenerationReceiptWrites,
   readMorningBriefGenerations,
@@ -44,9 +51,11 @@ import { upsertOrgMetadataFixture } from "../../../test-fixtures/org-metadata";
 import { waitForDeferredBlocker } from "../../../test-fixtures/pi-deferred-lock";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
+import { agentsRoutes } from "../agents";
 import { modelProvidersRoutes } from "../model-providers";
 import { morningBriefCollectionPreviewRoutes } from "../morning-brief-collection-preview";
 import { morningBriefGenerationPreviewRoutes } from "../morning-brief-generation-preview";
+import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
 import { testWorkflowAutomationExecutionRoutes } from "../test-workflow-automation-execution";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import {
@@ -58,6 +67,7 @@ import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 const store = createStore();
+const routeMocks = createRouteMocks(context);
 
 const SLACK_USER_CONVERSATIONS_URL =
   "https://slack.com/api/users.conversations";
@@ -81,6 +91,7 @@ interface Fixture {
   readonly orgId: string;
   readonly userId: string;
   readonly agentId: string;
+  readonly agentOwnerId: string;
   readonly workflowId: string;
   readonly automationId: string;
   readonly headers: { readonly authorization: string };
@@ -98,18 +109,71 @@ function collectOnlyClient() {
   );
 }
 
+function clerkHeaders(userId: string, orgId: string) {
+  routeMocks.clerk.session(userId, orgId);
+  return { authorization: "Bearer clerk-session" };
+}
+
+async function makeMorningBriefAgentPrivate(f: Fixture): Promise<void> {
+  await accept(
+    setupApp({ context, routes: agentsRoutes })(
+      agentsByIdContract,
+    ).updateMetadata({
+      params: { id: f.agentId },
+      headers: clerkHeaders(f.agentOwnerId, f.orgId),
+      body: { visibility: "private" },
+    }),
+    [200],
+  );
+}
+
+async function requestDeleteMorningBriefAgent(
+  f: Fixture,
+  statuses: readonly (204 | 409)[],
+) {
+  return await accept(
+    setupApp({ context, routes: agentsRoutes })(agentsByIdContract).delete({
+      params: { id: f.agentId },
+      headers: clerkHeaders(f.agentOwnerId, f.orgId),
+    }),
+    statuses,
+  );
+}
+
+async function disableMorningBriefThroughSettings(f: Fixture): Promise<void> {
+  await accept(
+    setupApp({ context, routes: morningBriefPreferenceRoutes })(
+      morningBriefPreferenceContract,
+    ).update({
+      headers: clerkHeaders(f.userId, f.orgId),
+      body: { enabled: false },
+    }),
+    [200],
+  );
+}
+
 /**
  * Run the retention batch the maintenance tick runs, through its endpoint.
  *
- * It takes no owner: this is the global, bounded consumer, and the point of the
+ * It is the same bounded consumer the tick drives, and the point of the
  * assertions around it is that an owner who never invokes the preview again
- * still loses their expired content.
+ * still loses their expired content. The owners are named because these cases
+ * move the clock forward by a day: an unrestricted purge under a moved clock
+ * would delete rows a concurrently running suite still needs.
  */
-async function runRetentionMaintenance(): Promise<number> {
+async function runRetentionMaintenance(
+  owners: readonly Pick<Fixture, "orgId" | "userId">[],
+): Promise<number> {
   const response = await accept(
     setupApp({ context, routes: testWorkflowAutomationExecutionRoutes })(
       testWorkflowAutomationExecutionContract,
-    ).retainMorningBriefGenerations({ body: {} }),
+    ).retainMorningBriefGenerations({
+      body: {
+        owners: owners.map(({ orgId, userId }) => {
+          return { orgId, userId };
+        }),
+      },
+    }),
     [200],
   );
   return response.body.purged;
@@ -141,19 +205,32 @@ async function fixture(
     readonly locale?: string | null;
     readonly capabilities?: readonly Capability[];
     readonly llmConfigured?: boolean;
+    readonly foreignAgentOwner?: boolean;
   } = {},
 ): Promise<Fixture> {
   const orgId = `org_${randomUUID()}`;
   const userId = `user_${randomUUID()}`;
+  const agentOwnerId = options.foreignAgentOwner
+    ? `user_${randomUUID()}`
+    : userId;
   await store.set(
     seedOrgMembership$,
     { userId, orgId, role: "admin" },
     context.signal,
   );
+  if (agentOwnerId !== userId) {
+    await store.set(
+      seedOrgMembership$,
+      { userId: agentOwnerId, orgId, role: "member" },
+      context.signal,
+    );
+  }
   const brief = await seedInstalledMorningBrief({
     orgId,
     userId,
     enabled: options.enabled,
+    agentOwner: agentOwnerId,
+    agentVisibility: "public",
   });
   if (options.locale !== undefined && options.locale !== null) {
     await setMorningBriefMemberLocale({ orgId, userId }, options.locale);
@@ -161,7 +238,10 @@ async function fixture(
   await updateFeatureSwitchesForUser(
     context,
     { orgId, userId },
-    { [FeatureSwitchKey.SimpleMorningBrief]: options.feature !== false },
+    {
+      [FeatureSwitchKey.MorningBrief]: true,
+      [FeatureSwitchKey.SimpleMorningBrief]: options.feature !== false,
+    },
   );
   const installation = await store.set(
     seedSlackOrgInstallation$,
@@ -181,6 +261,7 @@ async function fixture(
     orgId,
     userId,
     agentId: brief.agentId,
+    agentOwnerId,
     workflowId: brief.workflowId,
     automationId: brief.automationId,
     headers: agentToken(userId, orgId, options.capabilities),
@@ -2176,14 +2257,21 @@ describe("Morning Brief platform-funded generation commit admission", () => {
         releaseProvider.resolve();
       })(),
     ]);
-    expect(expectGenerated(firstResponse.body).generation.state).toBe(
-      "succeeded",
-    );
+    const accepted = expectGenerated(firstResponse.body).generation;
+    expect(accepted.state).toBe("succeeded");
     expect(traffic.bodies).toHaveLength(1);
 
     const [row, ...extraRows] = await readMorningBriefGenerations(f);
     expect(extraRows).toStrictEqual([]);
     expect(row?.state).toBe("succeeded");
+    // One committed invocation identity, and the overlap never restarted the
+    // reservation or extended the result's lifetime.
+    expect(row?.attemptId).toBe(accepted.attemptId);
+    expect(row?.reservedAt.toISOString()).toBe(accepted.reservedAt);
+    expect(row?.reservationExpiresAt.toISOString()).toBe(
+      accepted.reservationExpiresAt,
+    );
+    expect(row?.expiresAt.toISOString()).toBe(accepted.expiresAt);
     await expect(
       readPlatformGenerationReceipts([row?.attemptId ?? ""]),
     ).resolves.toHaveLength(1);
@@ -2507,7 +2595,7 @@ describe("Morning Brief platform-funded generation release fence", () => {
 
     const { pending, fenced, membership } = readBackWhileFenced(f, async () => {
       mockNow(now() + 25 * 60 * 60 * 1000);
-      await expect(runRetentionMaintenance()).resolves.toBeGreaterThan(0);
+      await expect(runRetentionMaintenance([f])).resolves.toBeGreaterThan(0);
     });
     const response = await accept(pending, [200]);
     await fenced;
@@ -2614,6 +2702,16 @@ describe("Morning Brief platform-funded generation release fence", () => {
 });
 
 describe("Morning Brief platform-funded generation retention", () => {
+  it("requires an explicit test-owned scope", async () => {
+    const response = await accept(
+      setupApp({ context, routes: testWorkflowAutomationExecutionRoutes })(
+        testWorkflowAutomationExecutionContract,
+      ).retainMorningBriefGenerations({ body: { owners: [] } }),
+      [400],
+    );
+    expect(response.body.error.code).toBe("BAD_REQUEST");
+  });
+
   it("purges an idle owner's expired content without that owner invoking again", async () => {
     const f = await fixture();
     const other = await fixture();
@@ -2631,7 +2729,7 @@ describe("Morning Brief platform-funded generation retention", () => {
 
     // The owner never comes back: the bounded maintenance consumer is what
     // removes the content, on an existing tick rather than a new scheduler.
-    await expect(runRetentionMaintenance()).resolves.toBeGreaterThan(0);
+    await expect(runRetentionMaintenance([f, other])).resolves.toBe(1);
 
     await expect(readMorningBriefGenerations(f)).resolves.toStrictEqual([]);
     const [survivor] = await readMorningBriefGenerations(other);
@@ -3323,4 +3421,485 @@ describe("Morning Brief platform-funded generation transport loss", () => {
     expect(reread.receipt?.cost.state).toBe("unavailable");
     expect(traffic.bodies).toHaveLength(1);
   }, 15_000);
+});
+
+interface AdmissionFence {
+  readonly waitForArrival: (minimum?: number) => Promise<number>;
+  readonly release: () => Promise<void>;
+}
+
+/**
+ * Hold the workflow row after admission has taken the Agent parent.
+ *
+ * A request observed here owns the Agent's `FOR SHARE` lock and is still before
+ * workflow, schedule, Slack and generation. This is the deterministic opposite
+ * order for a real Agent mutation: admission wins Agent first, then the mutator
+ * waits rather than creating an Agent→workflow→generation cycle.
+ */
+async function holdFinalAdmission(f: Fixture): Promise<AdmissionFence> {
+  return await holdMorningBriefAdmissionInstallation(
+    f.workflowId,
+    context.signal,
+  );
+}
+
+/**
+ * Act once the fenced request has really arrived, then let it through.
+ *
+ * The hold is released whatever the action did, so a failing expectation
+ * reports itself instead of leaving a suspended request to time out.
+ */
+function actWhileFenced(
+  held: AdmissionFence,
+  act: () => Promise<void>,
+): Promise<void> {
+  return (async () => {
+    const acted = await settleIncludingAbort(
+      (async () => {
+        await held.waitForArrival();
+        await act();
+      })(),
+    );
+    await held.release();
+    if (!acted.ok) {
+      throw acted.error;
+    }
+  })();
+}
+
+describe("Morning Brief platform-funded generation final local admission", () => {
+  /** Script Slack and the single provider request these cases share. */
+  function scriptOneGeneration(): ProviderTraffic {
+    slackWithMessages();
+    return scriptProvider(() => {
+      return completion({ cost: 0.003 });
+    });
+  }
+
+  it("commits no owner content when the caller cancels during the final local read", async () => {
+    const f = await fixture();
+    slackWithMessages();
+    const providerArrived = createDeferredPromise<void>(context.signal);
+    const releaseProvider = createDeferredPromise<void>(context.signal);
+    const traffic = scriptProvider(async () => {
+      providerArrived.resolve();
+      await releaseProvider.promise;
+      return completion({ cost: 0.003 });
+    });
+    const controller = new AbortController();
+    const pending = settleIncludingAbort(
+      cancellableGeneration(controller.signal).preview({
+        headers: f.headers,
+        body: { scheduledFor: ANCHOR },
+      }),
+    );
+    await providerArrived.promise;
+    const owner = await holdMorningBriefOwnerRow(f, context.signal);
+    releaseProvider.resolve();
+    // This is the persistence transaction: both post-provider authority passes
+    // and the receipt write have already completed before it reaches owner.
+    await owner.waitForArrival();
+    const authority = await holdMorningBriefAuthorityRead(context.signal);
+    await owner.release();
+    await authority.waitForArrival();
+    controller.abort();
+    await authority.release();
+
+    const outcome = await pending;
+    expect(outcome.ok && outcome.value.status === 200).toBeFalsy();
+    expect(traffic.bodies).toHaveLength(1);
+
+    const [reserved, ...extraRows] = await readMorningBriefGenerations(f);
+    expect(extraRows).toStrictEqual([]);
+    expect(reserved?.state).toBe("reserved");
+    expect(reserved?.resultMarkdown).toBeNull();
+    // The charge was incurred before cancellation could reach the writer, so it
+    // survives independently of the owner-scoped write that unwound.
+    await expect(
+      readPlatformGenerationReceipts([reserved?.attemptId ?? ""]),
+    ).resolves.toHaveLength(1);
+
+    // The original reservation identity and lifetime are intact, and the
+    // ambiguity it was left in never permits a second request.
+    await expireMorningBriefGenerationReservation(f, new Date(now() - 1000));
+    const settled = await accept(generate(f), [200]);
+    if (settled.body.result !== "already-generated") {
+      throw new Error(`Expected already-generated, got ${settled.body.result}`);
+    }
+    expect(settled.body.generation.attemptId).toBe(reserved?.attemptId);
+    expect(settled.body.generation.state).toBe("invocation_outcome_unknown");
+    expect(settled.body.generation.result).toBeNull();
+    expect(traffic.bodies).toHaveLength(1);
+  });
+
+  const deadlineCases: readonly (readonly [
+    string,
+    number,
+    string,
+    string | null,
+  ])[] = [
+    ["one millisecond before the deadline", -1, "succeeded", null],
+    ["at the deadline exactly", 0, "result_discarded", "reservation_expired"],
+    ["after the deadline", 1, "result_discarded", "reservation_expired"],
+  ];
+
+  it.each(deadlineCases)(
+    "decides acceptance with the admission instant: %s",
+    async (_label, offsetMs, expectedState, expectedReason) => {
+      const f = await fixture();
+      slackWithMessages();
+      const providerArrived = createDeferredPromise<void>(context.signal);
+      const releaseProvider = createDeferredPromise<void>(context.signal);
+      const traffic = scriptProvider(async () => {
+        providerArrived.resolve();
+        await releaseProvider.promise;
+        return completion({ cost: 0.003 });
+      });
+      const pending = generate(f);
+      await providerArrived.promise;
+      const [reserved] = await readMorningBriefGenerations(f);
+      if (!reserved) {
+        throw new Error("Expected a committed reservation");
+      }
+      const owner = await holdMorningBriefOwnerRow(f, context.signal);
+      releaseProvider.resolve();
+      await owner.waitForArrival();
+      const authority = await holdMorningBriefAuthorityRead(context.signal);
+      await owner.release();
+      await authority.waitForArrival();
+      // Equality with the reservation deadline is already expired, and the
+      // decision has to use the instant the write is really admitted at rather
+      // than one sampled before this real relation-lock wait.
+      mockNow(reserved.reservationExpiresAt.getTime() + offsetMs);
+      await authority.release();
+
+      const response = await accept(pending, [200]);
+      const { generation } = expectGenerated(response.body);
+      expect(generation.state).toBe(expectedState);
+      expect(generation.failureReason).toBe(expectedReason);
+
+      const [row] = await readMorningBriefGenerations(f);
+      expect(row?.state).toBe(expectedState);
+      expect(row?.resultMarkdown === null).toBe(expectedState !== "succeeded");
+      // The reservation is never extended to cover a late result.
+      expect(row?.reservationExpiresAt.toISOString()).toBe(
+        generation.reservationExpiresAt,
+      );
+      expect(traffic.bodies).toHaveLength(1);
+      await expect(
+        readPlatformGenerationReceipts([generation.attemptId]),
+      ).resolves.toHaveLength(1);
+    },
+  );
+
+  it.each([
+    [
+      "the brief is disabled through Settings",
+      async (f: Fixture) => {
+        await disableMorningBriefThroughSettings(f);
+      },
+      "owner_revoked",
+    ],
+    [
+      "the connected Slack account is rebound",
+      async (f: Fixture) => {
+        await rebindMorningBriefSlackAccount(
+          f.userId,
+          `U${randomUUID().slice(0, 8)}`,
+        );
+      },
+      "binding_changed",
+    ],
+  ])(
+    "refuses content when %s commits during the final local read",
+    async (_label, mutate, expectedReason) => {
+      const f = await fixture();
+      const other = await fixture();
+      const traffic = scriptOneGeneration();
+      const held = await holdFinalAdmission(f);
+      const pending = generate(f);
+      const fenced = actWhileFenced(held, async () => {
+        await mutate(f);
+      });
+
+      const response = await accept(pending, [200]);
+      await fenced;
+      const { generation } = expectGenerated(response.body);
+      expect(generation.state).toBe("result_discarded");
+      expect(generation.failureReason).toBe(expectedReason);
+      expect(generation.result).toBeNull();
+
+      const [row] = await readMorningBriefGenerations(f);
+      expect(row?.state).toBe("result_discarded");
+      expect(row?.resultMarkdown).toBeNull();
+      // The incurred charge survives the refusal.
+      await expect(
+        readPlatformGenerationReceipts([generation.attemptId]),
+      ).resolves.toHaveLength(1);
+
+      // An unrelated owner is unaffected by this owner's revocation.
+      const unrelated = await accept(generate(other), [200]);
+      expect(expectGenerated(unrelated.body).generation.state).toBe(
+        "succeeded",
+      );
+      const [unrelatedRow] = await readMorningBriefGenerations(other);
+      expect(unrelatedRow?.resultMarkdown).toContain("# Release readiness");
+      expect(traffic.bodies).toHaveLength(2);
+    },
+  );
+
+  it("accepts content when the same revocation commits after the admission", async () => {
+    const f = await fixture();
+    const traffic = scriptOneGeneration();
+    // The other commit order. The write is admitted first, so the accepted
+    // result stands and the revocation governs only what may be released next:
+    // an admission that already committed cannot be retracted.
+    const response = await accept(generate(f), [200]);
+    expect(expectGenerated(response.body).generation.state).toBe("succeeded");
+    await disableMorningBriefThroughSettings(f);
+
+    const [row] = await readMorningBriefGenerations(f);
+    expect(row?.state).toBe("succeeded");
+    expect(row?.resultMarkdown).toContain("# Release readiness");
+    const after = await accept(generate(f), [200]);
+    if (after.body.result !== "not-executed") {
+      throw new Error(`Expected not-executed, got ${after.body.result}`);
+    }
+    expect(after.body.reason).toBe("brief-paused");
+    expect(traffic.bodies).toHaveLength(1);
+  });
+
+  it("discards content when a real public-Agent visibility revocation commits before admission", async () => {
+    const f = await fixture({ foreignAgentOwner: true });
+    const other = await fixture();
+    slackWithMessages();
+    const providerArrived = createDeferredPromise<void>(context.signal);
+    const releaseProvider = createDeferredPromise<void>(context.signal);
+    let firstRequest = true;
+    const traffic = scriptProvider(async () => {
+      if (firstRequest) {
+        firstRequest = false;
+        providerArrived.resolve();
+        await releaseProvider.promise;
+      }
+      return completion({ cost: 0.003 });
+    });
+
+    const pending = generate(f);
+    await providerArrived.promise;
+    const held = await holdMorningBriefAdmissionAgent(
+      f.agentId,
+      context.signal,
+    );
+    const mutation = makeMorningBriefAgentPrivate(f);
+    const mutationBackend = await held.waitForArrival();
+    releaseProvider.resolve();
+    // The mutation queues first on the held Agent. Final admission then queues
+    // behind that distinct backend, proving both independent arrivals.
+    await waitForDeferredBlocker(mutationBackend);
+    await held.release();
+    await mutation;
+
+    const response = await accept(pending, [200]);
+    const { generation } = expectGenerated(response.body);
+    expect(generation.state).toBe("result_discarded");
+    expect(generation.failureReason).toBe("owner_revoked");
+    expect(generation.result).toBeNull();
+
+    const unrelated = await accept(generate(other), [200]);
+    expect(expectGenerated(unrelated.body).generation.state).toBe("succeeded");
+    expect(traffic.bodies).toHaveLength(2);
+  }, 15_000);
+
+  it("keeps accepted content when admission wins before the real visibility revocation", async () => {
+    const f = await fixture({ foreignAgentOwner: true });
+    const traffic = scriptOneGeneration();
+    const held = await holdFinalAdmission(f);
+    const pending = generate(f);
+    const requestBackend = await held.waitForArrival();
+    const mutation = makeMorningBriefAgentPrivate(f);
+    await waitForDeferredBlocker(requestBackend);
+    await held.release();
+
+    const [response] = await Promise.all([accept(pending, [200]), mutation]);
+    expect(expectGenerated(response.body).generation.state).toBe("succeeded");
+    const [row] = await readMorningBriefGenerations(f);
+    expect(row?.resultMarkdown).toContain("# Release readiness");
+    const after = await accept(generate(f), [200]);
+    if (after.body.result !== "not-executed") {
+      throw new Error(`Expected not-executed, got ${after.body.result}`);
+    }
+    expect(after.body.reason).toBe("missing-agent");
+    expect(traffic.bodies).toHaveLength(1);
+  });
+
+  it("orders its locks so the real Agent deletion returns its bounded conflict instead of deadlocking", async () => {
+    const f = await fixture();
+    const traffic = scriptOneGeneration();
+    const held = await holdFinalAdmission(f);
+    const pending = generate(f);
+    // Arrival at the workflow means admission already holds Agent `FOR SHARE`.
+    // The real delete service takes Agent first with NOWAIT and its 100 ms
+    // budget, so it returns the documented retryable conflict; it never holds
+    // workflow while waiting on generation and cannot close the cascade cycle.
+    await held.waitForArrival();
+    const deletion = await requestDeleteMorningBriefAgent(f, [409]);
+    if (deletion.status !== 409) {
+      throw new Error(`Expected deletion conflict, got ${deletion.status}`);
+    }
+    expect(deletion.body.error.message).toContain("retry shortly");
+    await held.release();
+
+    const response = await accept(pending, [200]);
+    expect(expectGenerated(response.body).generation.state).toBe("succeeded");
+    expect(traffic.bodies).toHaveLength(1);
+
+    // Once admission commits, the same real lifecycle endpoint can retry and
+    // its FK cascades remove both occurrence and generation.
+    await requestDeleteMorningBriefAgent(f, [204]);
+    await expect(readMorningBriefGenerations(f)).resolves.toStrictEqual([]);
+    await expect(
+      readMorningBriefCollectionOccurrences(f),
+    ).resolves.toStrictEqual([]);
+  });
+});
+
+describe("Morning Brief platform-funded generation readback admission", () => {
+  /** One accepted result, then a provider no read-back may ever contact. */
+  async function storedGeneration(f: Fixture): Promise<string> {
+    slackWithMessages();
+    scriptProvider(() => {
+      return completion({ cost: 0.002 });
+    });
+    const response = await accept(generate(f), [200]);
+    const { generation } = expectGenerated(response.body);
+    expect(generation.state).toBe("succeeded");
+    scriptProvider(() => {
+      throw new Error("a read-back must never reach the provider");
+    });
+    return generation.attemptId;
+  }
+
+  it("releases no cached markdown when retention is reached after the row lock wins", async () => {
+    const f = await fixture();
+    const attemptId = await storedGeneration(f);
+    const [stored] = await readMorningBriefGenerations(f);
+    if (!stored) {
+      throw new Error("Expected a stored result");
+    }
+    const generation = await holdMorningBriefGenerationRow(f, context.signal);
+    const pending = generate(f);
+    await generation.waitForArrival();
+    // Admission has taken every authority parent and is waiting for generation.
+    // Park its first canonical read only after it acquires generation, proving
+    // the purge observes the exact row the release will decide against.
+    const authority = await holdMorningBriefFeatureSwitchRead(context.signal);
+    await generation.release();
+    await authority.waitForArrival();
+    mockNow(stored.expiresAt.getTime());
+    await expect(runRetentionMaintenance([f])).resolves.toBe(0);
+    await authority.release();
+
+    const response = await accept(pending, [200]);
+    expect(response.body.result).toBe(
+      "collection-completed-without-generation",
+    );
+    const [row] = await readMorningBriefGenerations(f);
+    expect(row?.state).toBe("succeeded");
+    await expect(runRetentionMaintenance([f])).resolves.toBe(1);
+    await expect(readMorningBriefGenerations(f)).resolves.toStrictEqual([]);
+    await expect(
+      readPlatformGenerationReceipts([attemptId]),
+    ).resolves.toHaveLength(1);
+  });
+
+  it("returns no cached copy when purge wins before the final row lock", async () => {
+    const f = await fixture();
+    const attemptId = await storedGeneration(f);
+    const [stored] = await readMorningBriefGenerations(f);
+    if (!stored) {
+      throw new Error("Expected a stored result");
+    }
+    // Stage after the earlier authority proof and receipt lookup at the final
+    // transaction's owner fence. Then hold a still-unread authority relation so
+    // that transaction cannot reach generation until the real purge commits.
+    const owner = await holdMorningBriefOwnerRow(f, context.signal);
+    const pending = generate(f);
+    await owner.waitForArrival();
+    const authority = await holdMorningBriefAuthorityRead(context.signal);
+    await owner.release();
+    await authority.waitForArrival();
+    mockNow(stored.expiresAt.getTime());
+    await expect(runRetentionMaintenance([f])).resolves.toBe(1);
+    await authority.release();
+
+    const response = await accept(pending, [200]);
+    expect(response.body.result).toBe(
+      "collection-completed-without-generation",
+    );
+    await expect(readMorningBriefGenerations(f)).resolves.toStrictEqual([]);
+    await expect(
+      readPlatformGenerationReceipts([attemptId]),
+    ).resolves.toHaveLength(1);
+  });
+
+  it("releases nothing when the real Agent visibility endpoint revokes access before final admission", async () => {
+    const f = await fixture({ foreignAgentOwner: true });
+    await storedGeneration(f);
+    const held = await holdMorningBriefAdmissionAgent(
+      f.agentId,
+      context.signal,
+    );
+    const mutation = makeMorningBriefAgentPrivate(f);
+    const mutationBackend = await held.waitForArrival();
+    const pending = generate(f);
+    await waitForDeferredBlocker(mutationBackend);
+    await held.release();
+    await mutation;
+
+    const response = await accept(pending, [200]);
+    if (response.body.result !== "not-executed") {
+      throw new Error(`Expected not-executed, got ${response.body.result}`);
+    }
+    expect(response.body.reason).toBe("missing-agent");
+    await expect(readMorningBriefGenerations(f)).resolves.toHaveLength(1);
+  }, 15_000);
+
+  it("releases nothing when the brief is disabled during the final local read", async () => {
+    const f = await fixture();
+    await storedGeneration(f);
+    const held = await holdFinalAdmission(f);
+    const pending = generate(f);
+    const fenced = actWhileFenced(held, async () => {
+      await disableMorningBriefThroughSettings(f);
+    });
+
+    const response = await accept(pending, [200]);
+    await fenced;
+    if (response.body.result !== "not-executed") {
+      throw new Error(`Expected not-executed, got ${response.body.result}`);
+    }
+    expect(response.body.reason).toBe("brief-paused");
+    await expect(readMorningBriefGenerations(f)).resolves.toHaveLength(1);
+  });
+
+  it("releases nothing when the Slack binding moves during the final local read", async () => {
+    const f = await fixture();
+    await storedGeneration(f);
+    const held = await holdFinalAdmission(f);
+    const pending = generate(f);
+    const fenced = actWhileFenced(held, async () => {
+      await rebindMorningBriefSlackAccount(
+        f.userId,
+        `U${randomUUID().slice(0, 8)}`,
+      );
+    });
+
+    const conflict = await accept(pending, [409]);
+    await fenced;
+    expect(conflict.body.error.code).toBe(
+      "MORNING_BRIEF_COLLECTION_BINDING_CHANGED",
+    );
+    await expect(readMorningBriefGenerations(f)).resolves.toHaveLength(1);
+  });
 });

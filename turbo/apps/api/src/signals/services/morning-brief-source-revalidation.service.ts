@@ -48,6 +48,7 @@ import {
 import { ORDINARY_CHAT_THREAD_PROVENANCE } from "./morning-brief-thread-provenance.service";
 import type { MorningBriefRetainedSourceDescriptor } from "./morning-brief-source-authority";
 import type { MorningBriefSourceKind } from "./morning-brief-source-item";
+import { loadSlackUserBinding } from "./slack-data.service";
 
 /**
  * The ceiling for the whole revalidation phase.
@@ -83,7 +84,36 @@ function connectorSlugOf(source: MorningBriefSourceKind): ConnectorSlug | null {
 /** The native Slack binding whose shared conversations are re-proved. */
 interface MorningBriefSlackAuthority {
   readonly botToken: string;
+  readonly workspaceId: string;
   readonly slackUserId: string;
+}
+
+/**
+ * Start the one absolute retained-check allowance for this composition.
+ *
+ * Every finite replan receives this same object. The attempt's reservation may
+ * be nearer than five seconds, and its existing signal remains part of the
+ * interruption boundary rather than being replaced by a fresh timeout.
+ */
+export function startMorningBriefRetainedCheckDeadline(
+  reservationAt: number,
+  reservationSignal: AbortSignal,
+): MorningBriefSourceDeadline {
+  const startedAt = nowDate().getTime();
+  const at = Math.min(
+    startedAt + MORNING_BRIEF_REVALIDATION_PHASE_MS,
+    reservationAt,
+  );
+  const timeout = AbortSignal.timeout(Math.max(0, at - startedAt));
+  return { at, signal: AbortSignal.any([reservationSignal, timeout]) };
+}
+
+/** Equality is expired even before the timeout callback gets a turn. */
+export function morningBriefRetainedCheckExpired(
+  deadlineAt: number,
+  deadlineSignal: AbortSignal,
+): boolean {
+  return deadlineSignal.aborted || nowDate().getTime() >= deadlineAt;
 }
 
 /** One retained source that may no longer be used, and why. */
@@ -106,6 +136,16 @@ type MorningBriefRevalidationOutcome =
       readonly revoked: readonly MorningBriefRevokedSource[];
     };
 
+interface MorningBriefRetainedRevalidationInput {
+  readonly db: Db;
+  readonly clerk: ClerkClient;
+  readonly scope: MorningBriefCollectionScope;
+  readonly descriptors: readonly MorningBriefRetainedSourceDescriptor[];
+  readonly slack: MorningBriefSlackAuthority | null;
+  /** The attempt's own reservation; the phase bound never outlives it. */
+  readonly deadline: MorningBriefSourceDeadline;
+}
+
 /**
  * Re-ask the existing authorizers about every retained input.
  *
@@ -115,66 +155,31 @@ type MorningBriefRevalidationOutcome =
  * material.
  */
 export async function revalidateMorningBriefRetainedSources(
-  input: {
-    readonly db: Db;
-    readonly clerk: ClerkClient;
-    readonly scope: MorningBriefCollectionScope;
-    readonly descriptors: readonly MorningBriefRetainedSourceDescriptor[];
-    readonly slack: MorningBriefSlackAuthority | null;
-    /** The attempt's own reservation; the phase bound never outlives it. */
-    readonly deadline: MorningBriefSourceDeadline;
-  },
+  input: MorningBriefRetainedRevalidationInput,
   signal: AbortSignal,
 ): Promise<MorningBriefRevalidationOutcome> {
-  const { db, clerk, scope } = input;
-  const remainingMs = input.deadline.at - nowDate().getTime();
-  if (remainingMs <= 0) {
+  const { db, clerk, scope, deadline } = input;
+  if (morningBriefRetainedCheckExpired(deadline.at, deadline.signal)) {
     return { kind: "owner-lost", reason: "deadline-exceeded" };
   }
-  const bounded = AbortSignal.any([
-    signal,
-    AbortSignal.timeout(
-      Math.min(MORNING_BRIEF_REVALIDATION_PHASE_MS, remainingMs),
-    ),
-  ]);
+  const bounded = AbortSignal.any([signal, deadline.signal]);
 
   // The owner-level gate first: one answer covers every source, and a lost
   // owner makes the per-source answers irrelevant.
-  const admitted = await settle(
-    admitMorningBriefCollection(
-      {
-        db,
-        clerk,
-        orgId: scope.orgId,
-        userId: scope.userId,
-        anchor: scope.anchor,
-        // The attempt's own reservation, never a fresh one: a slow check
-        // shortens what is left rather than earning a new allowance.
-        deadline: input.deadline,
-      },
-      bounded,
-    ),
+  const initialOwnerLoss = await retainedOwnerLossReason(
+    input,
+    bounded,
     signal,
   );
-  if (!admitted.ok) {
-    return { kind: "owner-lost", reason: "check-unavailable" };
-  }
-  if (admitted.value.kind !== "ok") {
-    return { kind: "owner-lost", reason: admitted.value.reason };
-  }
-  const current = admitted.value.scope;
-  if (
-    current.membershipId !== scope.membershipId ||
-    current.agentId !== scope.agentId ||
-    current.installationId !== scope.installationId ||
-    current.automationId !== scope.automationId ||
-    current.chatThreadId !== scope.chatThreadId
-  ) {
-    return { kind: "owner-lost", reason: "owner-changed" };
+  if (initialOwnerLoss !== null) {
+    return { kind: "owner-lost", reason: initialOwnerLoss };
   }
 
   const revoked: MorningBriefRevokedSource[] = [];
   for (const descriptor of input.descriptors) {
+    if (morningBriefRetainedCheckExpired(deadline.at, deadline.signal)) {
+      return { kind: "owner-lost", reason: "deadline-exceeded" };
+    }
     const reason = await settle(
       revalidateSource(
         { db, clerk, scope, slack: input.slack, descriptor },
@@ -182,6 +187,10 @@ export async function revalidateMorningBriefRetainedSources(
       ),
       signal,
     );
+    signal.throwIfAborted();
+    if (morningBriefRetainedCheckExpired(deadline.at, deadline.signal)) {
+      return { kind: "owner-lost", reason: "deadline-exceeded" };
+    }
     // An unfinished check is not a proof of authority. A source whose answer
     // did not arrive inside the phase is withheld like a revoked one.
     const outcome = reason.ok ? reason.value : "check-unavailable";
@@ -189,7 +198,57 @@ export async function revalidateMorningBriefRetainedSources(
       revoked.push({ source: descriptor.source, reason: outcome });
     }
   }
-  return { kind: "checked", revoked };
+  // Source checks may wait on provider I/O. Re-enter the same owner authorizer
+  // afterwards so a membership, installation or Agent change committed during
+  // the last wait cannot release the previous owner's material.
+  const finalOwnerLoss = await retainedOwnerLossReason(input, bounded, signal);
+  return finalOwnerLoss === null
+    ? { kind: "checked", revoked }
+    : { kind: "owner-lost", reason: finalOwnerLoss };
+}
+
+/** `null` means the exact original owner scope still holds. */
+async function retainedOwnerLossReason(
+  input: MorningBriefRetainedRevalidationInput,
+  bounded: AbortSignal,
+  signal: AbortSignal,
+): Promise<string | null> {
+  const deadline = input.deadline;
+  if (morningBriefRetainedCheckExpired(deadline.at, deadline.signal)) {
+    return "deadline-exceeded";
+  }
+  const admitted = await settle(
+    admitMorningBriefCollection(
+      {
+        db: input.db,
+        clerk: input.clerk,
+        orgId: input.scope.orgId,
+        userId: input.scope.userId,
+        anchor: input.scope.anchor,
+        deadline: input.deadline,
+      },
+      bounded,
+    ),
+    signal,
+  );
+  signal.throwIfAborted();
+  if (morningBriefRetainedCheckExpired(deadline.at, deadline.signal)) {
+    return "deadline-exceeded";
+  }
+  if (!admitted.ok) {
+    return "check-unavailable";
+  }
+  if (admitted.value.kind !== "ok") {
+    return admitted.value.reason;
+  }
+  const current = admitted.value.scope;
+  return current.membershipId !== input.scope.membershipId ||
+    current.agentId !== input.scope.agentId ||
+    current.installationId !== input.scope.installationId ||
+    current.automationId !== input.scope.automationId ||
+    current.chatThreadId !== input.scope.chatThreadId
+    ? "owner-changed"
+    : null;
 }
 
 /** `null` means this source's retained material may still be used. */
@@ -204,11 +263,21 @@ async function revalidateSource(
   signal: AbortSignal,
 ): Promise<string | null> {
   const { descriptor } = args;
+  if (
+    descriptor.membershipId !== args.scope.membershipId ||
+    descriptor.agentId !== args.scope.agentId
+  ) {
+    return "source-provenance-changed";
+  }
   const connectorSlug = connectorSlugOf(descriptor.source);
   if (connectorSlug !== null) {
-    if (descriptor.connectionId === null) {
-      // No connection was ever proved, so there is nothing to re-ask. An
-      // unproven account never authorizes retained content.
+    if (
+      descriptor.connectionId === null ||
+      descriptor.accountRef === null ||
+      descriptor.scopeDigest === ""
+    ) {
+      // No exact connection, account and exercised grant were ever proved, so
+      // there is nothing complete to re-ask.
       return "unproven-account";
     }
     return await revalidateMorningBriefRetainedRead(
@@ -218,6 +287,8 @@ async function revalidateSource(
         scope: args.scope,
         connectorSlug,
         connectionId: descriptor.connectionId,
+        accountRef: descriptor.accountRef,
+        scopeDigest: descriptor.scopeDigest,
         endpoints: descriptor.endpoints,
       },
       signal,
@@ -225,7 +296,12 @@ async function revalidateSource(
   }
   if (descriptor.source === "slack") {
     return await revalidateSlackContainers(
-      { slack: args.slack, containers: descriptor.containers },
+      {
+        db: args.db,
+        scope: args.scope,
+        slack: args.slack,
+        descriptor,
+      },
       signal,
     );
   }
@@ -245,24 +321,33 @@ async function revalidateSource(
  */
 async function revalidateSlackContainers(
   args: {
+    readonly db: Db;
+    readonly scope: MorningBriefCollectionScope;
     readonly slack: MorningBriefSlackAuthority | null;
-    readonly containers: readonly string[];
+    readonly descriptor: MorningBriefRetainedSourceDescriptor;
   },
   signal: AbortSignal,
 ): Promise<string | null> {
-  if (args.containers.length === 0) {
+  if (args.descriptor.containers.length === 0) {
     return null;
   }
-  if (args.slack === null) {
+  const slack = args.slack;
+  if (slack === null) {
     return "not-connected";
   }
-  const unproven = new Set(args.containers);
+  const bound = { ...args, slack };
+  if (!(await slackBindingMatchesDescriptor(bound))) {
+    return "not-connected";
+  }
+  signal.throwIfAborted();
+
+  const unproven = new Set(args.descriptor.containers);
   let cursor: string | undefined;
   for (let page = 0; page < SLACK_REPROOF_PAGES; page += 1) {
     const result = await settle(
       listSharedSlackChannelsPage(
-        args.slack.botToken,
-        args.slack.slackUserId,
+        slack.botToken,
+        slack.slackUserId,
         { limit: SLACK_REPROOF_PAGE_LIMIT, cursor },
         signal,
       ),
@@ -275,14 +360,49 @@ async function revalidateSlackContainers(
       unproven.delete(channel.id);
     }
     if (unproven.size === 0) {
-      return null;
+      break;
     }
     cursor = result.value.response_metadata?.next_cursor || undefined;
     if (cursor === undefined) {
-      break;
+      return "source-revoked";
     }
   }
-  return "source-revoked";
+  if (unproven.size > 0) {
+    return "source-revoked";
+  }
+
+  // The external answer ran without a database lock. Re-read the canonical
+  // installation/member connection afterwards so a disconnect or rebind that
+  // committed while Slack was held wins this decision. A later change remains
+  // the final consumer's responsibility; no remote check can make it atomic.
+  return (await slackBindingMatchesDescriptor(bound)) ? null : "not-connected";
+}
+
+/** Credential-free comparison against the exact retained native identity. */
+async function slackBindingMatchesDescriptor(args: {
+  readonly db: Db;
+  readonly scope: MorningBriefCollectionScope;
+  readonly slack: MorningBriefSlackAuthority;
+  readonly descriptor: MorningBriefRetainedSourceDescriptor;
+}): Promise<boolean> {
+  const binding = await args.db.transaction(
+    async (tx) => {
+      return await loadSlackUserBinding(tx, {
+        orgId: args.scope.orgId,
+        userId: args.scope.userId,
+      });
+    },
+    { isolationLevel: "repeatable read", accessMode: "read only" },
+  );
+  if (binding.kind !== "connected") {
+    return false;
+  }
+  const workspaceId = binding.installation.slackWorkspaceId;
+  return (
+    workspaceId === args.slack.workspaceId &&
+    binding.slackUserId === args.slack.slackUserId &&
+    args.descriptor.accountRef === `${workspaceId}:${binding.slackUserId}`
+  );
 }
 
 /**

@@ -718,7 +718,7 @@ function referenceMetadataForCatalog(
 function permissionSummaryForCatalog(
   connector: ConnectorCatalogArtifactConnector,
 ): PublicConnectorCatalogPermissionSummary {
-  if (connector.firewall.kind === "none") {
+  if (connector.mcp !== undefined || connector.firewall.kind === "none") {
     return {
       hasPermissions: false,
       permissionCount: 0,
@@ -1331,7 +1331,11 @@ export async function getExternalPublicConnectorCatalogPermissionDetail(
   const entry = effective.find((connector) => {
     return connector.connector.slug === args.connectorSlug;
   });
-  if (!entry || entry.connector.firewall.kind === "none") {
+  if (
+    !entry ||
+    entry.connector.mcp !== undefined ||
+    entry.connector.firewall.kind === "none"
+  ) {
     return null;
   }
   const firewall = entry.connector.firewall;

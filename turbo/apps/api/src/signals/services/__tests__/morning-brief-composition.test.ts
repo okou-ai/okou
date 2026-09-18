@@ -18,6 +18,9 @@ import {
   MORNING_BRIEF_ARCHIVE_MAX_DECOMPRESSED_BYTES,
   MORNING_BRIEF_INSTRUCTIONS_MAX_BYTES,
   MORNING_BRIEF_MANIFEST_MAX_BYTES,
+  morningBriefStoragePhaseExpired,
+  morningBriefStoragePhaseExpiresAt,
+  morningBriefStoragePhaseRemainingMs,
   MORNING_BRIEF_STORAGE_PHASE_MS,
 } from "../morning-brief-language-bounds";
 import {
@@ -485,6 +488,61 @@ describe("collection phase bounds", () => {
 });
 
 describe("retained source authority", () => {
+  const descriptorSources: readonly MorningBriefSourceKind[] = [
+    "calendar",
+    "gmail",
+    "github",
+    "slack",
+    "chat",
+  ];
+
+  function descriptorAtBytes(
+    source: MorningBriefSourceKind,
+    targetBytes: number,
+    prefix = "",
+  ): MorningBriefRetainedSourceDescriptor {
+    const base: MorningBriefRetainedSourceDescriptor = {
+      source,
+      connectionId: null,
+      accountRef: null,
+      scopeDigest: "",
+      endpoints: [],
+      membershipId: "orgmem_bound",
+      agentId: "agent_bound",
+      capturedAt: "2026-09-17T06:00:00.000Z",
+      containers: [prefix],
+      contributed: false,
+    };
+    const baseBytes = Buffer.byteLength(JSON.stringify(base), "utf8");
+    if (baseBytes > targetBytes) {
+      throw new Error(
+        `Descriptor base exceeds ${targetBytes.toString()} bytes`,
+      );
+    }
+    const sized = {
+      ...base,
+      containers: [`${prefix}${"a".repeat(targetBytes - baseBytes)}`],
+    };
+    expect(Buffer.byteLength(JSON.stringify(sized), "utf8")).toBe(targetBytes);
+    return sized;
+  }
+
+  function descriptorSetAtBytes(
+    targetBytes: number,
+  ): readonly MorningBriefRetainedSourceDescriptor[] {
+    // JSON array serialization costs two brackets and one comma between each
+    // descriptor. Spread the object bytes across all five distinct sources so
+    // no individual descriptor approaches its own 2 KiB ceiling.
+    const objectBytes = targetBytes - (descriptorSources.length + 1);
+    const base = Math.floor(objectBytes / descriptorSources.length);
+    let remainder = objectBytes % descriptorSources.length;
+    return descriptorSources.map((source, index) => {
+      const bytes = base + (remainder > 0 ? 1 : 0);
+      remainder = Math.max(0, remainder - 1);
+      return descriptorAtBytes(source, bytes, index === 0 ? '早"escaped' : "");
+    });
+  }
+
   const descriptor: MorningBriefRetainedSourceDescriptor = {
     source: "slack",
     connectionId: null,
@@ -521,6 +579,54 @@ describe("retained source authority", () => {
     expect(
       boundMorningBriefDescriptors([descriptor, { ...descriptor }]),
     ).toStrictEqual({ kind: "rejected", reason: "duplicate-source" });
+  });
+
+  it.each([8191, 8192] as const)(
+    "reports and accepts the exact %i-byte serialized descriptor set",
+    (bytes) => {
+      const descriptors = descriptorSetAtBytes(bytes);
+      const bounded = boundMorningBriefDescriptors(descriptors);
+
+      expect(bounded).toMatchObject({ kind: "bounded", bytes });
+      expect(Buffer.byteLength(JSON.stringify(descriptors), "utf8")).toBe(
+        bytes,
+      );
+    },
+  );
+
+  it("rejects an 8,193-byte serialized descriptor set", () => {
+    const descriptors = descriptorSetAtBytes(8193);
+
+    expect(boundMorningBriefDescriptors(descriptors)).toStrictEqual({
+      kind: "rejected",
+      reason: "set-too-large",
+    });
+  });
+
+  it("counts array brackets and separators in the five-descriptor counterexample", () => {
+    const descriptors = descriptorSources.map((source, index) => {
+      return descriptorAtBytes(source, index === 4 ? 1632 : 1640);
+    });
+
+    expect(
+      descriptors.reduce((total, entry) => {
+        return total + Buffer.byteLength(JSON.stringify(entry), "utf8");
+      }, 0),
+    ).toBe(8192);
+    expect(Buffer.byteLength(JSON.stringify(descriptors), "utf8")).toBe(8198);
+    expect(boundMorningBriefDescriptors(descriptors)).toStrictEqual({
+      kind: "rejected",
+      reason: "set-too-large",
+    });
+  });
+
+  it("accepts a 2 KiB descriptor and rejects the next serialized byte", () => {
+    expect(
+      boundMorningBriefDescriptors([descriptorAtBytes("chat", 2048)]).kind,
+    ).toBe("bounded");
+    expect(
+      boundMorningBriefDescriptors([descriptorAtBytes("chat", 2049)]),
+    ).toStrictEqual({ kind: "rejected", reason: "descriptor-too-large" });
   });
 
   it("rejects an oversized account reference", () => {
@@ -953,6 +1059,22 @@ describe("declared bounds", () => {
     expect(MORNING_BRIEF_STORAGE_PHASE_MS).toBe(5000);
   });
 
+  it("selects one language deadline and admits only positive timer time", () => {
+    const expiresAt = 5000;
+
+    expect(morningBriefStoragePhaseExpiresAt(0, 45_000)).toBe(5000);
+    expect(morningBriefStoragePhaseExpiresAt(44_000, 45_000)).toBe(45_000);
+    expect(morningBriefStoragePhaseRemainingMs(45_000, 44_000)).toBe(1000);
+    expect(morningBriefStoragePhaseExpiresAt(45_000, 45_000)).toBe(45_000);
+    expect(morningBriefStoragePhaseRemainingMs(45_000, 45_000)).toBeNull();
+    expect(morningBriefStoragePhaseExpired(expiresAt, 4999)).toBeFalsy();
+    expect(morningBriefStoragePhaseRemainingMs(expiresAt, 4999)).toBe(1);
+    expect(morningBriefStoragePhaseExpired(expiresAt, 5000)).toBeTruthy();
+    expect(morningBriefStoragePhaseRemainingMs(expiresAt, 5000)).toBeNull();
+    expect(morningBriefStoragePhaseExpired(expiresAt, 5010)).toBeTruthy();
+    expect(morningBriefStoragePhaseRemainingMs(expiresAt, 5010)).toBeNull();
+  });
+
   it("pins the retained descriptor bounds", () => {
     expect(MORNING_BRIEF_MAX_RETAINED_DESCRIPTORS).toBe(5);
     expect(MORNING_BRIEF_DESCRIPTOR_MAX_BYTES).toBe(2048);
@@ -1107,6 +1229,9 @@ describe("five-source normalization", () => {
     });
     expect(JSON.stringify(serialized)).not.toContain("T00:00:00.000Z");
     expect(only?.identity.container).toBe("cal-1");
+    // Request evidence is independent of retained per-calendar coverage: the
+    // collector may omit whole coverage entries to stay inside its text cap.
+    expect(normalized.requests).toBe(1);
   });
 
   it("keeps two occurrences of one recurring series apart", () => {

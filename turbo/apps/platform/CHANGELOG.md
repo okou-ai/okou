@@ -11,6 +11,22 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.915.2](https://github.com/vm0-ai/okou/compare/app-v0.915.1...app-v0.915.2) (2026-09-18)
+
+
+### Bug Fixes
+
+* **app:** copy thread share link and show toast on creation ([#35175](https://github.com/vm0-ai/okou/issues/35175)) ([4ed16f2](https://github.com/vm0-ai/okou/commit/4ed16f2043dd6948ad86531e4f88a499a49f22ef))
+* use the refreshed quick start deck in welcome threads ([#35181](https://github.com/vm0-ai/okou/issues/35181)) ([9065172](https://github.com/vm0-ai/okou/commit/9065172e555179e161d907cd9af4a6cc5e4feff0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.467.0
+    * @okouai/core bumped to 8.680.3
+
 ## [0.915.1](https://github.com/vm0-ai/okou/compare/app-v0.915.0...app-v0.915.1) (2026-09-18)
 
 

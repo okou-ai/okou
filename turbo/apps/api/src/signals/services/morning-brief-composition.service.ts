@@ -92,7 +92,11 @@ import {
   boundMorningBriefDescriptors,
   type MorningBriefRetainedSourceDescriptor,
 } from "./morning-brief-source-authority";
-import { revalidateMorningBriefRetainedSources } from "./morning-brief-source-revalidation.service";
+import {
+  morningBriefRetainedCheckExpired,
+  revalidateMorningBriefRetainedSources,
+  startMorningBriefRetainedCheckDeadline,
+} from "./morning-brief-source-revalidation.service";
 import {
   boundCombinedNormalizedItems,
   dedupeMorningBriefItems,
@@ -174,6 +178,8 @@ interface MorningBriefCompositionResult {
   } | null;
   readonly language: MorningBriefLanguagePlan | null;
   readonly descriptors: readonly MorningBriefRetainedSourceDescriptor[];
+  /** Exact UTF-8 bytes of the serialized descriptor array consumers retain. */
+  readonly descriptorBytes: number;
 }
 
 /** Why a composition produced no model request. */
@@ -312,6 +318,7 @@ export const composeMorningBrief$ = command(
             accepted: [],
           }),
           descriptors: retained.descriptors,
+          descriptorBytes: retained.bytes,
           request: null,
           language: null,
         },
@@ -348,6 +355,7 @@ export const composeMorningBrief$ = command(
           accepted: planned.allocation.items,
         }),
         descriptors: retained.descriptors,
+        descriptorBytes: retained.bytes,
         language: planned.language,
         request: requestReport(planned),
       },
@@ -785,64 +793,88 @@ async function proveRetainedAuthority(
   },
   signal: AbortSignal,
 ): Promise<RetainedAuthorityOutcome> {
-  if (nowDate().getTime() >= input.deadline.at) {
+  const reservation = input.deadline;
+  const deadline = startMorningBriefRetainedCheckDeadline(
+    reservation.at,
+    reservation.signal,
+  );
+  if (morningBriefRetainedCheckExpired(deadline.at, deadline.signal)) {
     return { kind: "withdrawn" };
   }
-  const supplied = new Set(
-    input.planned.allocation.items.map((item) => {
-      return item.identity.source;
+  const descriptors = new Map(
+    input.descriptors.map((descriptor) => {
+      return [descriptor.source, descriptor] as const;
     }),
   );
-  const revalidation = await revalidateMorningBriefRetainedSources(
-    {
-      db: input.db,
-      clerk: input.clerk,
-      scope: input.scope,
-      descriptors: input.descriptors.filter((descriptor) => {
+  const revoked = new Set<MorningBriefSourceKind>();
+  let collections = input.collections;
+  let replanned = input.planned;
+
+  // Every pass proves the complete supplied set. If a refusal changes
+  // allocation, the next pass re-proves every input in the new final request,
+  // not only the source that entered during reallocation. Each changed pass
+  // removes at least one source, so at most five sources make this finite; all
+  // passes spend the one absolute deadline created above.
+  for (let pass = 0; pass <= input.descriptors.length; pass += 1) {
+    if (morningBriefRetainedCheckExpired(deadline.at, deadline.signal)) {
+      return { kind: "withdrawn" };
+    }
+    const supplied = allocatedSourceKinds(replanned);
+    let removed = false;
+    for (const source of supplied) {
+      if (!descriptors.has(source)) {
+        revoked.add(source);
+        removed = true;
+      }
+    }
+    if (!removed) {
+      const retained = input.descriptors.filter((descriptor) => {
         return supplied.has(descriptor.source);
-      }),
-      slack:
-        input.slack === null
-          ? null
-          : {
-              botToken: input.slack.botToken,
-              slackUserId: input.slack.slackUserId,
-            },
-      deadline: input.deadline,
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-  if (revalidation.kind === "owner-lost") {
-    return { kind: "withdrawn" };
+      });
+      const revalidation = await revalidateMorningBriefRetainedSources(
+        {
+          db: input.db,
+          clerk: input.clerk,
+          scope: input.scope,
+          descriptors: retained,
+          slack:
+            input.slack === null
+              ? null
+              : {
+                  botToken: input.slack.botToken,
+                  workspaceId: input.slack.workspaceId,
+                  slackUserId: input.slack.slackUserId,
+                },
+          deadline,
+        },
+        signal,
+      );
+      signal.throwIfAborted();
+      if (
+        revalidation.kind === "owner-lost" ||
+        morningBriefRetainedCheckExpired(deadline.at, deadline.signal)
+      ) {
+        return { kind: "withdrawn" };
+      }
+      for (const refused of revalidation.revoked) {
+        revoked.add(refused.source);
+        removed = true;
+      }
+    }
+    if (!removed) {
+      return { kind: "proved", collections, revoked, replanned };
+    }
+    collections = withdrawRevokedSources(input.collections, revoked);
+    replanned = allocateForCollections(collections, {
+      language: input.language,
+      instructions: input.instructions,
+      omittedByNormalizedCap: input.omittedByNormalizedCap,
+    });
+    if (replanned.allocation.items.length === 0) {
+      return { kind: "withdrawn" };
+    }
   }
-  const revoked = new Set(
-    revalidation.revoked.map((entry) => {
-      return entry.source;
-    }),
-  );
-  if (revoked.size === 0) {
-    return {
-      kind: "proved",
-      collections: input.collections,
-      revoked,
-      replanned: input.planned,
-    };
-  }
-  // Withdrawn material is removed and the authorized siblings are planned
-  // again, so the coverage the model receives describes the day that is
-  // actually being summarized rather than the one that was collected.
-  const collections = withdrawRevokedSources(input.collections, revoked);
-  const replanned = allocateForCollections(collections, {
-    language: input.language,
-    instructions: input.instructions,
-    omittedByNormalizedCap: input.omittedByNormalizedCap,
-  });
-  // The owner had material and every piece of it lost its authority. That is an
-  // authority change, never a quiet morning.
-  return replanned.allocation.items.length === 0
-    ? { kind: "withdrawn" }
-    : { kind: "proved", collections, revoked, replanned };
+  return { kind: "withdrawn" };
 }
 
 /** One sized request: the fixed envelope, the evidence that fits, the total. */
@@ -850,6 +882,17 @@ interface MorningBriefAllocated {
   readonly envelopeBytes: number;
   readonly totalBytes: number;
   readonly allocation: ReturnType<typeof allocateMorningBriefRequest>;
+}
+
+/** The sources whose material the current request would actually release. */
+function allocatedSourceKinds(
+  planned: MorningBriefAllocated,
+): ReadonlySet<MorningBriefSourceKind> {
+  return new Set(
+    planned.allocation.items.map((item) => {
+      return item.identity.source;
+    }),
+  );
 }
 
 /** Allocate with the shared consumed serializer/packing contract. */
@@ -1134,8 +1177,6 @@ async function readGithubSource(
   return {
     normalized,
     descriptor: morningBriefGithubDescriptor({
-      // The exact login of the selected token, resolved by the collector.
-      login: execution.bundle.login,
       proof: args.authority.proof,
       membershipId: args.scope.membershipId,
       agentId: args.scope.agentId,

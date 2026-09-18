@@ -110,19 +110,21 @@ import type {
 import { isCancelledRunEvent } from "./chat-run-lifecycle.ts";
 import {
   deriveRunIndicatorStateFromChatEvents,
+  liveRunIdsFromChatEvents,
+  queuedEventsFromChatEvents,
+  type RunIndicatorState,
+} from "./chat-event-state.ts";
+import {
   groupSemanticChatEvents,
   isGoalMarkerEvent,
   isInterruptControlEvent,
   isInterruptedAssistantCancellation,
   isQueueMarkerEvent,
   isUsageEvent,
-  liveRunIdsFromChatEvents,
-  queuedEventsFromChatEvents,
   semanticChatEventsFromChatEvents,
-  type RunIndicatorState,
   type SemanticChatEventState,
   type SemanticChatGroups as GenericSemanticChatGroups,
-} from "./chat-event-state.ts";
+} from "@okouai/api-contracts/contracts/chat-event-semantics";
 import { logger } from "../log.ts";
 import {
   createCancellationRecoverySignals,
@@ -1709,6 +1711,10 @@ function createArtifactPreviewImageUrls(
           continue;
         }
         previewImageUrlsByUrl.set(file.url, file.previewImageUrl);
+        previewImageUrlsByUrl.set(
+          canonicalUserMessageFileUrl(file.id),
+          file.previewImageUrl,
+        );
         if (file.aliasUrl) {
           previewImageUrlsByUrl.set(file.aliasUrl, file.previewImageUrl);
         }

@@ -356,16 +356,41 @@
 
         var script = document.getElementById("okou-clerk-core-script");
         if (!script) throw new Error("Clerk core script is unavailable");
-        script.dataset.clerkJsScript = "";
-        script.dataset.clerkPublishableKey = publishableKey;
-        script.onerror = function () {
-          rejectRuntime(new Error("Clerk core resource is unavailable"));
-        };
-        script.onload = function () {
-          Promise.resolve()
-            .then(createClerkRuntime)
-            .then(resolveRuntime, rejectRuntime);
-        };
+        var coreScriptUrl = script.src;
+        var retryDelays = [500, 1000];
+        function watchCoreScript(coreScript, attempt) {
+          coreScript.dataset.clerkJsScript = "";
+          coreScript.dataset.clerkPublishableKey = publishableKey;
+          coreScript.onerror = function () {
+            coreScript.onload = null;
+            coreScript.onerror = null;
+            coreScript.remove();
+            if (attempt === retryDelays.length) {
+              rejectRuntime(new Error("Clerk core resource is unavailable"));
+              return;
+            }
+            // Keep the shared runtime pending until this resource recovers or
+            // exhausts its retries. Invalid exports and load() errors are final.
+            setTimeout(function () {
+              var retryScript = document.createElement("script");
+              retryScript.id = "okou-clerk-core-script";
+              retryScript.src = coreScriptUrl;
+              retryScript.type = "text/javascript";
+              retryScript.crossOrigin = "anonymous";
+              retryScript.async = true;
+              watchCoreScript(retryScript, attempt + 1);
+              document.head.appendChild(retryScript);
+            }, retryDelays[attempt]);
+          };
+          coreScript.onload = function () {
+            coreScript.onload = null;
+            coreScript.onerror = null;
+            Promise.resolve()
+              .then(createClerkRuntime)
+              .then(resolveRuntime, rejectRuntime);
+          };
+        }
+        watchCoreScript(script, 0);
         startClerkUI();
       })();
     </script>

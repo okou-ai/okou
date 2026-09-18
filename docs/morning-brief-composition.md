@@ -234,8 +234,10 @@ authorization surface actually exercised, **one endpoint per permission whose
 result the input still holds**, the membership generation, the Agent, when it
 was captured, **the containers the evidence actually came from**, and whether it
 entered the model input. At most one per source, at most 24 containers, at most
-8 endpoints, 2 KiB each and 8 KiB in total. No raw source body, prompt,
-credential or unrestricted URL blob is persisted or logged.
+8 endpoints, 2 KiB each and 8 KiB for the exact serialized descriptor array,
+including its brackets and commas. The reported byte count is that same retained
+serialization. No raw source body, prompt, credential or unrestricted URL blob
+is persisted or logged.
 
 The digest is taken over the **effective permissions the read was admitted
 under**, never over constant method names: a digest of method names hashes
@@ -264,23 +266,32 @@ Revalidation runs on the composition path itself, after the last network await
 and before any reservation. It re-enters the **existing** authorizers rather
 than a second engine: connector sources re-run the shared reader's identity and
 URL-policy gates for the frozen account and every retained endpoint, native
-Slack re-runs the same shared-conversation enumeration its collector proves
-against, and Chat re-resolves the same ownership, visibility and provenance
-predicates its collector resolved. No credential is decrypted and no provider
-payload is fetched: whether an input may still be used is a permission question,
-not a reason to fetch it again.
+Slack re-reads the credential-free canonical installation/member binding,
+re-runs the same shared-conversation enumeration its collector proves against,
+and then re-reads that local binding so a disconnect committed during the
+external wait wins. Chat re-resolves the same ownership, visibility and
+provenance predicates its collector resolved. No credential is decrypted and no
+provider payload is fetched: whether an input may still be used is a permission
+question, not a reason to fetch it again.
 
-The whole phase is bounded at 5 seconds and further constrained by the attempt's
-own reservation, whichever is nearer; shared-channel and permission work is
-counted inside it rather than given a budget of its own. A check that does not
-finish inside the phase is not a proof of authority, so its source is withheld
-like a revoked one.
+The whole phase has one absolute 5-second deadline and is further constrained by
+the attempt's own reservation, whichever is nearer; every finite replan spends
+that same deadline. Shared-channel and permission work is counted inside it
+rather than given a budget of its own. The clock and caller cancellation are
+checked after every wait and before proof is released; equality is expired. A
+check that does not finish inside the phase is not a proof of authority, so its
+source is withheld like a revoked one. Provider HTTP observes the phase signal;
+database and SDK operations that cannot be interrupted are still joined before
+public completion and their late answers are rejected.
 
 Material whose authority was withdrawn is removed and the authorized siblings
 are planned again, with that source's day reported as failed rather than as a
-quiet morning. Whole-owner loss — a lost membership, a disabled or reinstalled
-brief, an Agent the member can no longer act through — yields no plan at all, and
-losing every supplied source is an authority change rather than an empty brief.
+quiet morning. If replanning introduces a source that was not in the previous
+request, that source is proved before the new plan can be released; the bounded
+loop ends only when every final supplied source has proof or has been removed.
+Whole-owner loss — a lost membership, a disabled or reinstalled brief, an Agent
+the member can no longer act through — yields no plan at all, and losing every
+supplied source is an authority change rather than an empty brief.
 
 Contribution is decided by the material the final request actually carries. An
 item dropped by allocation supplied nothing, and marking its source contributing
@@ -375,11 +386,30 @@ any storage I/O.
 The version is resolved before network reads and that immutable version is read
 outside any transaction. One absolute deadline starts before that resolution and
 bounds everything the phase owns; it is the tighter of the five seconds and what
-is left of the collection budget, and reaching it is already expired. The clock
-and cancellation are rechecked after every wait and after the synchronous parse
-and extraction, so a successful response whose own timer has not fired yet
-cannot be released late, and an exhausted budget asks storage for nothing at
-all.
+is left of the collection budget, and reaching it is already expired. A positive
+remaining duration is admitted before the phase timer is constructed, so a clock
+that crosses the deadline between the initial check and timer creation returns
+the normal timeout outcome rather than passing a negative delay to the timer.
+The clock and cancellation are rechecked after every wait and after manifest
+decode, JSON parsing, target filtering and archive extraction, so a successful
+response whose own timer has not fired yet cannot release absence or text late
+or authorize another archive read. An exhausted budget asks storage for nothing
+at all.
+
+The registered composition-route coverage uses the real database, canonical
+instruction publisher and an object-storage boundary double. It proves
+before/equality/after behavior at the nearest real manifest and archive response
+boundaries and joined cancellation while a storage read is held. A production
+route cannot yield between source finalization and language admission or between
+two synchronous parsing instructions. The pure production admission helper
+therefore pins the exact before/equality/after rule used at those synchronous
+edges, including genuinely tighter outer-deadline selection and the nonpositive
+entry that returns before timer or storage construction; no internal reader,
+planner or authorizer is replaced. Held-I/O
+cases use arrival and settlement barriers rather than sleeps. This is
+deterministic integration and helper evidence for admission and ownership, not
+evidence of real model language compliance. The single-model migration/cohort
+limitation below remains open.
 
 Every frozen outcome is revalidated against live configuration before the
 generation reservation, absence included: an available or empty file must still

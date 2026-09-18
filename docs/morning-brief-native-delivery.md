@@ -33,12 +33,18 @@ No index is added for that lookup. The generation primary key starts with
 `(org_id, user_id)`, so the scan is bounded to one member's own occurrences —
 on the order of one per day — rather than the table.
 
-## The delivery transaction
+## Authority preflight and the delivery transaction
 
-In order, inside one transaction:
+Before opening a transaction, delivery resolves live collection authority through
+`currentMorningBriefCollectionAuthority$`, the canonical collection executor
+reader. That preflight may reach Clerk, so it deliberately holds no database
+locks. Its answer is not durable authority: a transaction that waits must prove
+the local state again under the rows that serialize the corresponding writers.
 
-1. `lockCollectionOwner` — erasure admission, then the durable
-   `org_members_metadata` row, the same order collection and generation take.
+In order, inside the one local write transaction:
+
+1. `lockCollectionOwner` — repeat erasure admission, then lock the durable
+   `org_members_metadata` row, in the same order collection and generation take.
 2. Resolve the deliverable result (above).
 3. Return the existing delivery for this occurrence, if there is one.
 4. Re-read the occurrence and require the **frozen** `membership_id` recorded on

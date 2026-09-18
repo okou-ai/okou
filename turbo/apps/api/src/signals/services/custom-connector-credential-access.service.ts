@@ -1,7 +1,17 @@
-import { and, eq, inArray, or, sql, type SQL } from "drizzle-orm";
+import {
+  and,
+  eq,
+  inArray,
+  ne,
+  or,
+  sql,
+  type SQL,
+  type SQLWrapper,
+} from "drizzle-orm";
 import {
   orgCustomConnectors,
   type OrgCustomConnectorAuthMode,
+  type OrgCustomConnectorMcpTransport,
 } from "@okouai/db/schema/org-custom-connector";
 import { connectors } from "@okouai/db/schema/connector";
 import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-connector-account-oauth-binding";
@@ -23,7 +33,6 @@ import {
 
 const OAUTH_ACCESS_TOKEN_SECRET_NAME = "access_token";
 const OAUTH_REFRESH_TOKEN_SECRET_NAME = "refresh_token";
-const OAUTH_ID_TOKEN_SECRET_NAME = "id_token";
 const customConnectorRuntimeStorageKindSchema = z.enum(["secret", "variable"]);
 type CustomConnectorRuntimeStorageKind = z.output<
   typeof customConnectorRuntimeStorageKindSchema
@@ -39,10 +48,6 @@ const customConnectorAccessTokenSecret = alias(
 const customConnectorRefreshTokenSecret = alias(
   secrets,
   "custom_connector_refresh_token_secret",
-);
-const customConnectorIdTokenSecret = alias(
-  secrets,
-  "custom_connector_id_token_secret",
 );
 
 export interface CustomConnectorCredentialValueMarker {
@@ -82,10 +87,10 @@ interface CustomConnectorStoredConnection {
   readonly storedNeedsReconnect: boolean;
   readonly tokenExpiresAt: Date | null;
   readonly definitionAuthMethod: OrgCustomConnectorAuthMode;
+  readonly definitionMcpTransport: OrgCustomConnectorMcpTransport | null;
   readonly definitionStorageVersion: number;
   readonly oauthAccessTokenId: string | null;
   readonly oauthRefreshTokenId: string | null;
-  readonly oauthIdTokenId: string | null;
   readonly automaticOAuthBindingId: string | null;
 }
 
@@ -166,6 +171,7 @@ function customConnectorStoredConnectionsQuery(
       definitionAuthMethod: sql`${orgCustomConnectors.authMode}`
         .mapWith(orgCustomConnectors.authMode)
         .as("definition_auth_method"),
+      definitionMcpTransport: orgCustomConnectors.mcpTransport,
       definitionStorageVersion: sql`${orgCustomConnectors.storageVersion}`
         .mapWith(orgCustomConnectors.storageVersion)
         .as("definition_storage_version"),
@@ -175,9 +181,6 @@ function customConnectorStoredConnectionsQuery(
       oauthRefreshTokenId: sql`${customConnectorRefreshTokenSecret.id}`
         .mapWith(customConnectorRefreshTokenSecret.id)
         .as("oauth_refresh_token_id"),
-      oauthIdTokenId: sql`${customConnectorIdTokenSecret.id}`
-        .mapWith(customConnectorIdTokenSecret.id)
-        .as("oauth_id_token_id"),
       automaticOAuthBindingId:
         sql`${customConnectorAccountOauthBindings.connectorAccountId}`
           .mapWith(customConnectorAccountOauthBindings.connectorAccountId)
@@ -209,13 +212,6 @@ function customConnectorStoredConnectionsQuery(
           customConnectorRefreshTokenSecret.name,
           OAUTH_REFRESH_TOKEN_SECRET_NAME,
         ),
-      ),
-    )
-    .leftJoin(
-      customConnectorIdTokenSecret,
-      and(
-        eq(customConnectorIdTokenSecret.connectorId, connectors.id),
-        eq(customConnectorIdTokenSecret.name, OAUTH_ID_TOKEN_SECRET_NAME),
       ),
     )
     .leftJoin(
@@ -286,8 +282,8 @@ function resolveCustomConnectorAccountAuthMethod(
 }
 
 function customConnectorStoredAuthMethodIsCompatibleSql(args: {
-  readonly definitionAuthMethod: typeof orgCustomConnectors.authMode;
-  readonly storedAuthMethod: typeof connectors.authMethod;
+  readonly definitionAuthMethod: SQLWrapper;
+  readonly storedAuthMethod: SQLWrapper;
 }): SQL {
   return or(
     eq(args.definitionAuthMethod, args.storedAuthMethod),
@@ -298,6 +294,18 @@ function customConnectorStoredAuthMethodIsCompatibleSql(args: {
   )!;
 }
 
+export function customConnectorAccountStorageIsCompatible(args: {
+  readonly authMethod: string;
+  readonly mcpTransport: OrgCustomConnectorMcpTransport | null;
+  readonly storageVersion: number;
+  readonly definitionStorageVersion: number;
+}): boolean {
+  return (
+    (args.authMethod === "none" && args.mcpTransport !== null) ||
+    args.storageVersion === args.definitionStorageVersion
+  );
+}
+
 function customConnectorStoredConnectionIsCurrent(
   connection: CustomConnectorStoredConnection,
 ): boolean {
@@ -306,7 +314,12 @@ function customConnectorStoredConnectionIsCurrent(
       connection.definitionAuthMethod,
       connection.storedAuthMethod,
     ) !== null &&
-    connection.storedStorageVersion === connection.definitionStorageVersion
+    customConnectorAccountStorageIsCompatible({
+      authMethod: connection.storedAuthMethod,
+      mcpTransport: connection.definitionMcpTransport,
+      storageVersion: connection.storedStorageVersion,
+      definitionStorageVersion: connection.definitionStorageVersion,
+    })
   );
 }
 
@@ -314,10 +327,7 @@ export function customConnectorAccountHasRequiredCredentialMaterial(args: {
   readonly definitionAuthMode: OrgCustomConnectorAuthMode;
   readonly storedAuthMethod: string;
   readonly hasAccessToken: boolean;
-  readonly hasRefreshToken: boolean;
-  readonly hasIdToken: boolean;
   readonly hasAutomaticOAuthBinding: boolean;
-  readonly hasTokenExpiry: boolean;
 }): boolean {
   if (
     !customConnectorAccountAuthMethodIsCompatible(
@@ -327,23 +337,11 @@ export function customConnectorAccountHasRequiredCredentialMaterial(args: {
   ) {
     return false;
   }
-  if (args.definitionAuthMode === "automatic") {
-    return args.storedAuthMethod === "oauth"
-      ? args.hasAccessToken && args.hasAutomaticOAuthBinding
-      : !args.hasAccessToken &&
-          !args.hasRefreshToken &&
-          !args.hasIdToken &&
-          !args.hasAutomaticOAuthBinding &&
-          !args.hasTokenExpiry;
+  if (args.storedAuthMethod === "none") {
+    return true;
   }
-  if (args.definitionAuthMode === "none") {
-    return (
-      !args.hasAccessToken &&
-      !args.hasRefreshToken &&
-      !args.hasIdToken &&
-      !args.hasAutomaticOAuthBinding &&
-      !args.hasTokenExpiry
-    );
+  if (args.definitionAuthMode === "automatic") {
+    return args.hasAccessToken && args.hasAutomaticOAuthBinding;
   }
   return (
     args.definitionAuthMode === "manual" ||
@@ -358,10 +356,7 @@ function customConnectorStoredConnectionHasRequiredMaterial(
     definitionAuthMode: connection.definitionAuthMethod,
     storedAuthMethod: connection.storedAuthMethod,
     hasAccessToken: connection.oauthAccessTokenId !== null,
-    hasRefreshToken: connection.oauthRefreshTokenId !== null,
-    hasIdToken: connection.oauthIdTokenId !== null,
     hasAutomaticOAuthBinding: connection.automaticOAuthBindingId !== null,
-    hasTokenExpiry: connection.tokenExpiresAt !== null,
   });
 }
 
@@ -371,6 +366,9 @@ function customConnectorStoredConnectionIsConnected(
 ): boolean {
   if (!customConnectorStoredConnectionIsCurrent(connection)) {
     return false;
+  }
+  if (connection.storedAuthMethod === "none") {
+    return true;
   }
   const credentialStatus = connectorCredentialStatusForAccess({
     storedNeedsReconnect: connection.storedNeedsReconnect,
@@ -391,6 +389,9 @@ function currentCustomConnectorStoredConnectionIsRuntimeAvailable(
   connection: CustomConnectorStoredConnection,
   now: Date,
 ): boolean {
+  if (connection.storedAuthMethod === "none") {
+    return true;
+  }
   return (
     connectorRuntimeCredentialStatusForAccess({
       storedNeedsReconnect: connection.storedNeedsReconnect,
@@ -664,16 +665,10 @@ export async function loadCurrentCustomConnectorStoredValues(
       memberConnectorIds,
     }),
   );
-  const authMethodCurrent = or(
-    eq(
-      storedConnections.storedAuthMethod,
-      storedConnections.definitionAuthMethod,
-    ),
-    and(
-      eq(storedConnections.definitionAuthMethod, "automatic"),
-      inArray(storedConnections.storedAuthMethod, ["none", "oauth"]),
-    ),
-  );
+  const authMethodCurrent = customConnectorStoredAuthMethodIsCompatibleSql({
+    definitionAuthMethod: storedConnections.definitionAuthMethod,
+    storedAuthMethod: storedConnections.storedAuthMethod,
+  });
   const storageVersionCurrent = eq(
     storedConnections.storedStorageVersion,
     storedConnections.definitionStorageVersion,
@@ -698,6 +693,7 @@ export async function loadCurrentCustomConnectorStoredValues(
         eq(secrets.userId, args.userId),
         authMethodCurrent,
         storageVersionCurrent,
+        ne(storedConnections.storedAuthMethod, "none"),
       ),
     );
   const variableQuery = db
@@ -736,10 +732,10 @@ export async function loadCurrentCustomConnectorStoredValues(
       storedNeedsReconnect: storedConnections.storedNeedsReconnect,
       tokenExpiresAt: storedConnections.tokenExpiresAt,
       definitionAuthMethod: storedConnections.definitionAuthMethod,
+      definitionMcpTransport: storedConnections.definitionMcpTransport,
       definitionStorageVersion: storedConnections.definitionStorageVersion,
       oauthAccessTokenId: storedConnections.oauthAccessTokenId,
       oauthRefreshTokenId: storedConnections.oauthRefreshTokenId,
-      oauthIdTokenId: storedConnections.oauthIdTokenId,
       automaticOAuthBindingId: storedConnections.automaticOAuthBindingId,
       kind: storedValues.kind,
       key: storedValues.key,

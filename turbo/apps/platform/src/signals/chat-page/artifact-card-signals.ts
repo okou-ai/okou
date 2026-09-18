@@ -8,7 +8,6 @@ import {
   isTextPreviewKind,
 } from "../text-preview.ts";
 import {
-  createAttachmentResourceUrl$,
   createAttachmentPreviewSignals,
   type AttachmentPreviewSignals,
 } from "../attachment-resource-url.ts";
@@ -63,7 +62,9 @@ function createArtifactSignals(
     }
     const previewImageUrlsByUrl = await get(previewImageUrlsByUrl$);
     const url = previewImageUrlsByUrl.get(descriptor.url);
-    return url ? await get(createAttachmentResourceUrl$(url)) : undefined;
+    return url
+      ? await get(createAttachmentPreviewSignals(url).thumbnailUrl$)
+      : undefined;
   });
   return {
     ...descriptor,
