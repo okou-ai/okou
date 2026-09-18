@@ -41,7 +41,6 @@ import {
 import { IntroVideoAvatarGroupCard } from "./intro-video-avatar-group-card.tsx";
 import { IntroVideoCatalogPagination } from "./intro-video-catalog-pagination.tsx";
 import { TemplateFilterPillRow } from "./template-filter-pill.tsx";
-import { SCROLL_FADE_Y } from "./scroll-fade.ts";
 import {
   TEMPLATE_TILE_MEDIA,
   TEMPLATE_TILE_RING,
@@ -49,6 +48,8 @@ import {
   TEMPLATE_TILE_SELECTED_BADGE,
 } from "./template-tile.ts";
 import {
+  VOICE_PREVIEW_CARD_CLASS,
+  VOICE_PREVIEW_CARD_PROPS,
   VoiceLibraryContent,
   VoiceLibraryToolbar,
   VoicePreviewControl,
@@ -66,6 +67,14 @@ import {
  */
 const OPTIONS_PANEL_WIDTH = "w-[344px]";
 const OPTIONS_PANEL_RESERVE = "pr-[360px]";
+
+/**
+ * The layer's own chrome. Its header and footer are the dialog's 52/56px bands
+ * rather than the 36px control row, because each holds a title or a pair of
+ * actions against a rule.
+ */
+const OPTIONS_PANEL_HEADER = "h-[52px]";
+const OPTIONS_PANEL_FOOTER = "h-[56px]";
 
 /** How many of each library the layer's first screen offers outright. */
 const PANEL_PREVIEW_COUNT = 2;
@@ -146,7 +155,9 @@ function StyleSearch({ signals }: PickerProps) {
 function StyleToolbar({ signals }: PickerProps) {
   const { t } = useTranslation();
   const panelOpen = useGet(signals.panelOpen$);
+  const view = useGet(signals.panelView$);
   const setPanelOpen = useSet(signals.setPanelOpen$);
+  const setPanelView = useSet(signals.setPanelView$);
   const label = t(($) => {
     return $.chat.introVideo.picker.moreOptions;
   });
@@ -162,6 +173,13 @@ function StyleToolbar({ signals }: PickerProps) {
         aria-expanded={panelOpen}
         aria-controls="intro-video-options"
         onClick={() => {
+          // Inside a library this control is the way back to the layer's own
+          // first screen; closing the whole layer from here would throw away
+          // two steps at once.
+          if (panelOpen && view !== "root") {
+            setPanelView("root");
+            return;
+          }
           setPanelOpen(!panelOpen);
         }}
         className="ml-auto shrink-0 gap-2"
@@ -305,44 +323,43 @@ function StyleGallery({
   const style = useGet(signals.style$);
   const setStyle = useSet(signals.setStyle$);
   const reload = useSet(introVideoStyleGallerySignals.reload$);
-  const fade = useGet(signals.galleryFade$);
-  const setGalleryRef = useSet(signals.setGalleryRef$);
   return (
-    <div
-      ref={setGalleryRef}
-      data-fade={fade === "none" ? undefined : fade}
-      data-intro-video-catalog-scroll=""
-      className={cn(
-        "min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6",
-        SCROLL_FADE_Y,
-      )}
-    >
-      {error ? (
-        <PickerMessage error onRetry={reload} />
-      ) : loading ? (
-        <PickerSkeleton />
-      ) : items.length === 0 ? (
-        <PickerMessage />
-      ) : (
-        // Columns follow the section's own width, not the viewport: the
-        // options layer takes 360px off it while the window never changes.
-        <div className="grid grid-cols-1 gap-x-4 gap-y-5 @[420px]/panel:grid-cols-2 @[720px]/panel:grid-cols-3">
-          {items.map((item) => {
-            return (
-              <IntroVideoStyleCard
-                key={item.id}
-                style={item}
-                selected={
-                  style?.kind === "catalog" && style.style.id === item.id
-                }
-                onSelect={() => {
-                  setStyle({ kind: "catalog", style: item });
-                }}
-              />
-            );
-          })}
-        </div>
-      )}
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      <div
+        data-intro-video-catalog-scroll=""
+        className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-4 sm:px-6"
+      >
+        {error ? (
+          <PickerMessage error onRetry={reload} />
+        ) : loading ? (
+          <PickerSkeleton />
+        ) : items.length === 0 ? (
+          <PickerMessage />
+        ) : (
+          // Columns follow the section's own width, not the viewport: the
+          // options layer takes 360px off it while the window never changes.
+          <div className="grid grid-cols-1 gap-x-4 gap-y-5 @[420px]/panel:grid-cols-2 @[720px]/panel:grid-cols-3">
+            {items.map((item) => {
+              return (
+                <IntroVideoStyleCard
+                  key={item.id}
+                  style={item}
+                  selected={
+                    style?.kind === "catalog" && style.style.id === item.id
+                  }
+                  onSelect={() => {
+                    setStyle({ kind: "catalog", style: item });
+                  }}
+                />
+              );
+            })}
+          </div>
+        )}
+      </div>
+      {/* Only the top edge: the filter row above it draws no rule, while the
+          footer below already ends the scroller with one. Same 24px wash the
+          workflow tab uses under its own pills. */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-6 bg-gradient-to-b from-card to-transparent" />
     </div>
   );
 }
@@ -367,6 +384,7 @@ function PanelRow({
 }) {
   return (
     <div
+      {...VOICE_PREVIEW_CARD_PROPS}
       role="button"
       tabIndex={0}
       aria-pressed={selected}
@@ -381,17 +399,18 @@ function PanelRow({
         }
       }}
       className={cn(
+        VOICE_PREVIEW_CARD_CLASS,
         "flex w-full cursor-pointer items-center gap-2.5 rounded-xl border border-border bg-card px-2.5 py-2 text-left transition-colors hover:bg-state-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         selected && "border-primary bg-state-selected",
       )}
     >
       {leading}
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[13px] font-medium leading-5">
+        <span className="block truncate text-sm font-medium leading-5">
           {title}
         </span>
         {detail ? (
-          <span className="block truncate text-[11px] font-normal leading-4 text-muted-foreground">
+          <span className="block truncate text-xs font-normal leading-4 text-muted-foreground">
             {detail}
           </span>
         ) : null}
@@ -405,15 +424,25 @@ function PanelRow({
   );
 }
 
+/**
+ * The rows' one leading slot. 36px is the product's neutral control square, and
+ * it is what `VoicePreviewControl size="compact"` draws, so a row with a
+ * preview and a row without keep one height and one optical weight.
+ */
 function PanelIcon({ children }: { readonly children: ReactNode }) {
   return (
-    <span className="grid size-7 shrink-0 place-items-center rounded-full bg-state-hover text-muted-foreground">
+    <span className="grid size-9 shrink-0 place-items-center rounded-full bg-state-hover text-muted-foreground">
       {children}
     </span>
   );
 }
 
 /** Label left, chevron right — the way into a full library. */
+/**
+ * The way into a full library. It takes the outline control treatment the rows
+ * above already use, so the section reads as one stack of bordered rows rather
+ * than a list with a grey slab under it.
+ */
 function PanelMoreRow({
   label,
   onSelect,
@@ -424,12 +453,12 @@ function PanelMoreRow({
   return (
     <Button
       type="button"
-      variant="quiet"
+      variant="outline"
       onClick={onSelect}
-      className="mt-1.5 w-full justify-between px-2.5 text-[13px]"
+      className="mt-1.5 w-full justify-between rounded-xl border-border px-2.5 text-sm hover:bg-state-hover"
     >
       <span className="min-w-0 truncate text-left">{label}</span>
-      <ChevronRight size={15} />
+      <ChevronRight size={15} className="text-muted-foreground" />
     </Button>
   );
 }
@@ -483,7 +512,7 @@ function PanelPresenterTile({
       <span className="mt-1.5 block truncate px-0.5 text-xs font-medium leading-4 text-foreground">
         {name}
       </span>
-      <span className="block truncate px-0.5 text-[11px] leading-4 text-muted-foreground">
+      <span className="block truncate px-0.5 text-xs leading-4 text-muted-foreground">
         {detail}
       </span>
     </button>
@@ -565,7 +594,7 @@ function DefaultVoiceRow({ signals }: PickerProps) {
     <PanelRow
       leading={
         sample ? (
-          <VoicePreviewControl voice={sample} />
+          <VoicePreviewControl voice={sample} size="compact" />
         ) : (
           <PanelIcon>
             <Volume2 size={15} />
@@ -631,7 +660,7 @@ function OptionsVoiceSection({ signals }: PickerProps) {
           return (
             <PanelRow
               key={item.id}
-              leading={<VoicePreviewControl voice={item} />}
+              leading={<VoicePreviewControl voice={item} size="compact" />}
               title={item.name}
               detail={voiceDetail(item)}
               selected={voice.kind === "catalog" && voice.voice.id === item.id}
@@ -906,6 +935,7 @@ function VoiceLibraryView({ signals }: PickerProps) {
  */
 function OptionsPanel({ signals }: PickerProps) {
   const { t } = useTranslation();
+  const open = useGet(signals.panelOpen$);
   const view = useGet(signals.panelView$);
   const setView = useSet(signals.setPanelView$);
   const setPanelOpen = useSet(signals.setPanelOpen$);
@@ -914,17 +944,29 @@ function OptionsPanel({ signals }: PickerProps) {
     <aside
       id="intro-video-options"
       data-intro-video-options={view}
+      data-open={open ? "true" : "false"}
+      aria-hidden={!open}
+      inert={!open}
       aria-label={t(($) => {
         return $.chat.introVideo.picker.settings;
       })}
       className={cn(
         "absolute inset-y-2 right-2 z-20 flex flex-col overflow-hidden rounded-lg border border-border bg-card",
         "shadow-[0_8px_24px_-12px_rgba(0,0,0,0.12)] dark:shadow-[0_12px_32px_-12px_rgba(0,0,0,0.5)]",
-        "motion-safe:animate-intro-video-options-in",
+        // The layer and the gutter it opens move on one duration and one
+        // curve, so they arrive together; leaving is the same movement run
+        // backwards rather than an unmount.
+        "transition-[transform,opacity] duration-200 ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none",
+        "data-[open=false]:pointer-events-none data-[open=false]:translate-x-[calc(100%+0.5rem)] data-[open=false]:opacity-0",
         OPTIONS_PANEL_WIDTH,
       )}
     >
-      <header className="flex h-[52px] shrink-0 items-center gap-1 border-b border-border px-2">
+      <header
+        className={cn(
+          "flex shrink-0 items-center gap-1 border-b border-border px-2",
+          OPTIONS_PANEL_HEADER,
+        )}
+      >
         {view === "root" ? null : (
           <IconButton
             type="button"
@@ -960,7 +1002,7 @@ function OptionsPanel({ signals }: PickerProps) {
         </IconButton>
       </header>
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-4">
-        {view === "voice" ? (
+        {!open ? null : view === "voice" ? (
           <VoiceLibraryView signals={signals} />
         ) : view === "avatar" ? (
           <AvatarLibraryView signals={signals} />
@@ -968,7 +1010,12 @@ function OptionsPanel({ signals }: PickerProps) {
           <OptionsRootView signals={signals} />
         )}
       </div>
-      <footer className="flex h-[56px] shrink-0 items-center gap-2 border-t border-border px-4">
+      <footer
+        className={cn(
+          "flex shrink-0 items-center gap-2 border-t border-border px-4",
+          OPTIONS_PANEL_FOOTER,
+        )}
+      >
         {view === "root" ? (
           <Button type="button" variant="quiet" onClick={resetOptions}>
             <RotateCcw size={15} />
@@ -1006,13 +1053,13 @@ function SelectionSummary({ signals }: PickerProps) {
   return (
     <div
       data-intro-video-summary=""
-      className="hidden min-w-0 flex-1 items-center gap-1 @[560px]/panel:flex"
+      className="hidden min-w-0 flex-1 items-center gap-1 overflow-hidden @[560px]/panel:flex"
     >
       <Button
         type="button"
         variant="quiet"
         size="sm"
-        className="min-w-0 gap-1.5 px-2 text-[13px] font-normal"
+        className="min-w-0 gap-1.5 px-2 text-sm font-normal"
         onClick={() => {
           setView("root");
         }}
@@ -1031,7 +1078,7 @@ function SelectionSummary({ signals }: PickerProps) {
         type="button"
         variant="quiet"
         size="sm"
-        className="min-w-0 gap-1.5 px-2 text-[13px] font-normal"
+        className="min-w-0 gap-1.5 px-2 text-sm font-normal"
         onClick={() => {
           setView("root");
         }}
@@ -1116,7 +1163,7 @@ export function IntroVideoPicker({
         />
         <footer className="flex h-[60px] shrink-0 items-center gap-2 border-t border-border px-4 sm:px-6">
           {panelOpen ? null : <SelectionSummary signals={signals} />}
-          <div className="flex-1" />
+          <div className="min-w-0 flex-1" />
           <Button
             type="button"
             variant="outline"
@@ -1151,7 +1198,7 @@ export function IntroVideoPicker({
           </Button>
         </footer>
       </div>
-      {panelOpen ? <OptionsPanel signals={signals} /> : null}
+      <OptionsPanel signals={signals} />
     </div>
   );
 }

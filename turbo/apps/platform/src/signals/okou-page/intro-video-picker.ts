@@ -20,15 +20,12 @@ type IntroVideoPickerPanelView = "root" | "voice" | "avatar";
  */
 export type ScrollFade = "none" | "start" | "end" | "both";
 
-function scrollFade(node: HTMLElement, axis: "x" | "y"): ScrollFade {
-  const max =
-    axis === "x"
-      ? node.scrollWidth - node.clientWidth
-      : node.scrollHeight - node.clientHeight;
+function scrollFade(node: HTMLElement): ScrollFade {
+  const max = node.scrollWidth - node.clientWidth;
   if (max <= 1) {
     return "none";
   }
-  const position = axis === "x" ? node.scrollLeft : node.scrollTop;
+  const position = node.scrollLeft;
   return position <= 1 ? "end" : position >= max - 1 ? "start" : "both";
 }
 
@@ -38,11 +35,11 @@ function scrollFade(node: HTMLElement, axis: "x" | "y"): ScrollFade {
  * so a scroll listener alone would keep a stale value; the observer is what
  * covers a resize the user never scrolled for.
  */
-function createScrollFadeRef(fade$: State<ScrollFade>, axis: "x" | "y") {
+function createScrollFadeRef(fade$: State<ScrollFade>) {
   return onRef<HTMLDivElement>(
     command(({ set }, node: HTMLDivElement, signal: AbortSignal) => {
       const sync = () => {
-        set(fade$, scrollFade(node, axis));
+        set(fade$, scrollFade(node));
       };
       sync();
       node.addEventListener("scroll", sync, { passive: true, signal });
@@ -74,7 +71,6 @@ export function createIntroVideoPickerSignals() {
   const panelOpen$ = state(false);
   const panelView$ = state<IntroVideoPickerPanelView>("root");
   const filterFade$ = state<ScrollFade>("none");
-  const galleryFade$ = state<ScrollFade>("none");
   return {
     style$: computed((get) => {
       return get(style$);
@@ -102,9 +98,6 @@ export function createIntroVideoPickerSignals() {
     }),
     filterFade$: computed((get) => {
       return get(filterFade$);
-    }),
-    galleryFade$: computed((get) => {
-      return get(galleryFade$);
     }),
     template$: computed((get): GenerationTemplateRequest | null => {
       const style = get(style$);
@@ -157,8 +150,7 @@ export function createIntroVideoPickerSignals() {
       set(panelOpen$, true);
       set(libraryQuery$, "");
     }),
-    setFilterRowRef$: createScrollFadeRef(filterFade$, "x"),
-    setGalleryRef$: createScrollFadeRef(galleryFade$, "y"),
+    setFilterRowRef$: createScrollFadeRef(filterFade$),
     restore$: command(({ set }, template: GenerationTemplateRequest | null) => {
       const options = introVideoTemplateOptions(template);
       set(group$, "all");

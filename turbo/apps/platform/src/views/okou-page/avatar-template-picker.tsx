@@ -829,17 +829,20 @@ interface VoiceCardVoice {
  * DOM contract for the row that hosts a {@link VoicePreviewControl}: the toggle
  * finds its audio through the card and flips `data-playing` for the icon swap.
  */
-const VOICE_PREVIEW_CARD_PROPS = {
+export const VOICE_PREVIEW_CARD_PROPS = {
   "data-avatar-voice-card": "",
   "data-playing": "false",
 } as const;
 
-const VOICE_PREVIEW_CARD_CLASS = "group/voice";
+export const VOICE_PREVIEW_CARD_CLASS = "group/voice";
 
 export function VoicePreviewControl({
   voice,
+  size = "default",
 }: {
   readonly voice: VoiceCardVoice;
+  /** `compact` matches the 36px leading slot the options layer's rows state. */
+  readonly size?: "default" | "compact";
 }) {
   const { t } = useTranslation();
   return (
@@ -855,16 +858,17 @@ export function VoicePreviewControl({
         disabled={!voice.sampleUrl}
         onClick={toggleVoicePreview}
         className={cn(
-          "flex size-11 shrink-0 items-center justify-center rounded-full border border-primary/15 bg-primary/10 text-brand-text transition-all hover:scale-105 hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-40",
+          "flex shrink-0 items-center justify-center rounded-full border border-primary/15 bg-primary/10 text-brand-text transition-all hover:scale-105 hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-40",
+          size === "compact" ? "size-9" : "size-11",
           "group-data-[playing=true]/voice:bg-primary group-data-[playing=true]/voice:text-primary-foreground",
         )}
       >
         <Play
-          size={17}
+          size={size === "compact" ? 15 : 17}
           className="ml-0.5 group-data-[playing=true]/voice:hidden"
         />
         <Pause
-          size={17}
+          size={size === "compact" ? 15 : 17}
           className="hidden group-data-[playing=true]/voice:block"
         />
       </IconTooltipButton>

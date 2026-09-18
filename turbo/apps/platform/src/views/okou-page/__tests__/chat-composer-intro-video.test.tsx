@@ -111,9 +111,13 @@ function control(
   return found;
 }
 
-/** The advanced options layer, or null while it is closed. */
+/**
+ * The advanced options layer while it is open. The frame stays mounted so it
+ * can animate out, and states `data-open`.
+ */
 function optionsPanel(dialog: HTMLElement) {
-  return dialog.querySelector<HTMLElement>("[data-intro-video-options]");
+  const panel = dialog.querySelector<HTMLElement>("[data-intro-video-options]");
+  return panel?.dataset.open === "true" ? panel : null;
 }
 
 /** Opens the options layer and walks it back to its first screen. */
@@ -300,6 +304,18 @@ test("Avatar looks require Use, and explicit voice choices survive removing the 
       },
     },
   });
+});
+
+test("The options layer's own voice rows can be auditioned", async () => {
+  installCatalogs();
+  const media = mockPlayableMedia();
+  const { dialog } = await openIntroVideo();
+  const root = optionsRoot(dialog);
+  // The row hosts the shared preview control, so it owes that control the DOM
+  // contract it reaches its audio through; without it the button is dead.
+  const preview = await within(root).findByLabelText("Preview voice Annie");
+  click(preview);
+  expect(media.play).toHaveBeenCalledTimes(1);
 });
 
 test("A voice the provider repeats under a second id is listed once", async () => {

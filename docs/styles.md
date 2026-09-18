@@ -697,6 +697,30 @@ the same specificity, so a `motion-reduce:` override would depend on Tailwind's
 emission order to win; `motion-safe:` simply does not apply, and the registered
 initial value is what reduced motion resolves to anyway.
 
+### Fading a scroller's edge
+
+A scroller fades an edge only when nothing else terminates it. A rule, a border
+or the surface's own edge already ends the content there, and a fade laid over
+one of those dims content for no reason — the intro video gallery briefly faded
+into the footer's `border-t`, which read as a rendering fault rather than as an
+affordance.
+
+Two treatments, by what is known about the surface behind the edge:
+
+- **A vertical scroller under a header that draws no rule** takes a 24px wash,
+  `bg-gradient-to-b from-card to-transparent`, positioned over the scroller
+  rather than masking it. The chat-to-composer fade, the workflow template
+  grid and the intro video gallery all draw this one, so the figure and the
+  mechanism stay the same across the product.
+- **A horizontal scroller** masks 24px on whichever side still holds content,
+  and neither side when nothing overflows. A mask rather than a wash, because
+  a row of pills can sit on more than one surface and an opaque strip would
+  show its own colour against the wrong one.
+
+Either way the edge that is already at the end of its content is not faded:
+fading both ends of a row that does not scroll, or the bottom of a list that
+ends in a rule, states an affordance that is not there.
+
 ### Literal colors and gradients
 
 Tailwind's color and gradient utilities interpolate in oklab, so they do not
