@@ -7,7 +7,7 @@ mod common;
 
 use guest_agent::error::AgentError;
 use guest_agent::masker::SecretMasker;
-use guest_contracts::diagnostics::FailureReason;
+use guest_contracts::diagnostics::{FailureClass, FailureReason};
 use std::time::Duration;
 
 struct StructuredErrorCase {
@@ -59,6 +59,14 @@ async fn codex_app_server_classifies_supported_structured_errors()
             expected_reason: Some(FailureReason::SafetyPolicyRefusal),
         },
         StructuredErrorCase {
+            scenario: "runtime-turn-failed-biological-risk-rejection",
+            expected_reason: Some(FailureReason::SafetyPolicyRefusal),
+        },
+        StructuredErrorCase {
+            scenario: "runtime-turn-failed-biological-risk-internal-server-error",
+            expected_reason: Some(FailureReason::ProviderServerError),
+        },
+        StructuredErrorCase {
             scenario: "runtime-turn-failed-invalid-request-format",
             expected_reason: None,
         },
@@ -99,6 +107,27 @@ async fn codex_app_server_classifies_supported_structured_errors()
             .unwrap_or_else(|| panic!("missing diagnostic for scenario: {}", case.scenario));
         assert_eq!(
             diagnostic.failure_reason, case.expected_reason,
+            "scenario: {}",
+            case.scenario
+        );
+        let terminal_failure = guest_agent::failure_diagnostics::cli_nonzero_failure_for_config(
+            &runtime.config,
+            None,
+            &result,
+        );
+        assert_eq!(
+            terminal_failure.diagnostic.failure_class,
+            FailureClass::CliNonzero,
+            "scenario: {}",
+            case.scenario
+        );
+        assert_eq!(
+            terminal_failure.diagnostic.failure_reason, case.expected_reason,
+            "scenario: {}",
+            case.scenario
+        );
+        assert_eq!(
+            terminal_failure.message, diagnostic.message,
             "scenario: {}",
             case.scenario
         );

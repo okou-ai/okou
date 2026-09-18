@@ -392,6 +392,30 @@ describe("window policy", () => {
       decideWindowOpen("javascript:alert('nope')", allowedOrigins),
     ).toStrictEqual({ action: "deny" });
   });
+
+  it("opens a single-recipient Messages link externally", () => {
+    expect(decideWindowOpen("sms:+15551234567", allowedOrigins)).toStrictEqual({
+      action: "open-external",
+      url: "sms:+15551234567",
+    });
+    expect(isAllowedAppNavigation("sms:+15551234567", allowedOrigins)).toBe(
+      false,
+    );
+  });
+
+  it.each([
+    "sms:",
+    "sms://+15551234567",
+    "sms:+15551234567?body=hello",
+    "sms:+15551234567#message",
+    "sms:person@example.com",
+    "sms:+15551234567,+15557654321",
+    "sms:+123",
+  ])("denies unsupported Messages link %s", (url) => {
+    expect(decideWindowOpen(url, allowedOrigins)).toStrictEqual({
+      action: "deny",
+    });
+  });
 });
 
 describe("computer use native helper", () => {

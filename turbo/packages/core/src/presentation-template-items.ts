@@ -1353,111 +1353,6 @@ const PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES = {
 export const PRESENTATION_TEMPLATE_PICKER_ITEMS: readonly PresentationTemplateItem[] =
   [
     {
-      slug: "playful-launch-presentation",
-      title: "Sunburst playroom",
-      prompt:
-        "/gen presentation, create a 15-slide launch deck for SproutPop, a playful habit-building app for remote teams introducing a shared 30-day wellness challenge. Present it to people and culture leaders with cover, agenda, launch story, audience pain points, product vision, feature tour, rollout timeline, activation moments, team, early metrics, testimonials, pricing, and next steps. Make it saturated, joyful, idea-led, and structured.",
-      embedUrl:
-        "https://static.vm0.io/vm0/artifact-templates/presentation/daf7c2d1-5195-4c09-ad4b-8d85778fc104/playful-launch-presentation.html",
-      previewImage: PLAYFUL_LAUNCH_CDN_PREVIEW_IMAGES[0],
-      cardPreviewImagesByTheme:
-        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES[
-          "playful-launch-presentation"
-        ],
-      cardPreviewImage:
-        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES[
-          "playful-launch-presentation"
-        ]["carnival"],
-      previewImages: PLAYFUL_LAUNCH_CDN_PREVIEW_IMAGES,
-      slideCount: 15,
-      colorSystemId: "color-system:carnival",
-      templateId: "template:html-ppt-playful-launch",
-    },
-    {
-      slug: "botane-organic-deck",
-      title: "Mauve garden",
-      prompt:
-        "/gen presentation, create a 15-slide brand story deck for Moss & Moon, a coastal wellness retreat launching a seasonal herb garden, tea bar, and slow-living membership program. Present it to hospitality partners with cover, agenda, origin story, guest philosophy, retreat spaces, treatment menu, garden-to-table process, photography gallery, sustainability metrics, member testimonials, packages, and contact. Make it calm, editorial, rounded, and organic.",
-      embedUrl:
-        "https://static.vm0.io/vm0/artifact-templates/presentation/0babab92-7ad9-414e-b44f-7a060ed48bcc/botane-organic-deck.html",
-      previewImage: BOTANE_ORGANIC_PREVIEW_IMAGES[0],
-      cardPreviewImagesByTheme:
-        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["botane-organic-deck"],
-      cardPreviewImage:
-        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["botane-organic-deck"][
-          "mauve-dusk"
-        ],
-      previewImages: BOTANE_ORGANIC_PREVIEW_IMAGES,
-      slideCount: 15,
-      colorSystemId: "color-system:mauve-dusk",
-      templateId: "template:html-ppt-botane-organic",
-    },
-    {
-      slug: "business-data-presentation",
-      title: "Berry dashboard",
-      prompt:
-        "/gen presentation, create a 15-slide executive data readout for HarborCart, an omnichannel grocery retailer reviewing 2026 growth, loyalty behavior, basket mix, and store-to-delivery conversion. Present it to the leadership team with cover, agenda, business context, KPI scorecard, regional segments, channel comparison, customer cohorts, operational drivers, forecast, strategic bets, risks, recommendations, and appendix contact. Make it number-first, chart-led, confident, modern, and readable.",
-      embedUrl:
-        "https://static.vm0.io/vm0/artifact-templates/presentation/95648bba-2a52-497e-b1b8-9cdd0cab9d93/business-data-presentation.html",
-      previewImage: BUSINESS_DATA_CDN_PREVIEW_IMAGES[0],
-      cardPreviewImagesByTheme:
-        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES[
-          "business-data-presentation"
-        ],
-      cardPreviewImage:
-        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES[
-          "business-data-presentation"
-        ]["berry-pop"],
-      previewImages: BUSINESS_DATA_CDN_PREVIEW_IMAGES,
-      slideCount: 15,
-      colorSystemId: "color-system:berry-pop",
-      templateId: "template:html-ppt-business-data",
-    },
-    {
-      slug: "crayon-learning-deck",
-      title: "Crayon doodle",
-      prompt:
-        "/gen presentation, create a 15-slide parent-night deck for Rainbow Lab, a summer art-and-science camp where kids build storybooks, cardboard cities, and tiny robots. Present it to families with cover, agenda, camp promise, learning goals, weekly themes, instructor team, sample day, workshop stations, student gallery, safety plan, progress metrics, parent quotes, pricing, and registration steps. Make it bright, rounded, joyful, and crayon-like.",
-      embedUrl:
-        "https://static.vm0.io/vm0/artifact-templates/presentation/63af1d38-51e8-493e-b975-1728f4f796da/crayon-learning-deck.html",
-      previewImage: CRAYON_PREVIEW_IMAGES[0],
-      cardPreviewImagesByTheme:
-        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES[
-          "crayon-learning-deck"
-        ],
-      cardPreviewImage:
-        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES[
-          "crayon-learning-deck"
-        ]["prism"],
-      previewImages: CRAYON_PREVIEW_IMAGES,
-      slideCount: 15,
-      previewHtmls: CRAYON_PREVIEW_HTMLS,
-      colorSystemId: "color-system:prism",
-      templateId: "template:html-ppt-crayon",
-    },
-    {
-      slug: "creative-agency-presentation",
-      title: "Foliage gallery",
-      prompt:
-        "/gen presentation, create a 15-slide rebrand pitch for Northstar Studio proposing a new identity, website, and launch campaign for a boutique hotel group expanding into three coastal cities. Present it to the client board with cover, agenda, brand challenge, strategic insight, creative direction, visual territories, service scope, project process, case-study gallery, launch roadmap, impact metrics, client quotes, investment, and contact. Make it minimal, editorial, sharp, and agency-grade.",
-      embedUrl:
-        "https://static.vm0.io/vm0/artifact-templates/presentation/527ad859-e0dd-4cfd-90a4-09e5030b71e1/creative-agency-presentation.html",
-      previewImage: CREATIVE_AGENCY_PREVIEW_IMAGES[0],
-      cardPreviewImagesByTheme:
-        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES[
-          "creative-agency-presentation"
-        ],
-      cardPreviewImage:
-        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES[
-          "creative-agency-presentation"
-        ]["coral-studio"],
-      previewImages: CREATIVE_AGENCY_PREVIEW_IMAGES,
-      slideCount: 15,
-      previewHtmls: CREATIVE_AGENCY_PREVIEW_HTMLS,
-      colorSystemId: "color-system:coral-studio",
-      templateId: "template:html-ppt-creative-agency",
-    },
-    {
       slug: "data-report-presentation",
       title: "Candy charts",
       prompt:
@@ -1502,48 +1397,269 @@ export const PRESENTATION_TEMPLATE_PICKER_ITEMS: readonly PresentationTemplateIt
       templateId: "template:html-ppt-editorial-magazine",
     },
     {
-      slug: "landing-consulting-deck",
-      title: "Neon browser",
+      slug: "vantage",
+      title: "Numbered boardroom",
       prompt:
-        "/gen presentation, create a 15-slide growth proposal for ScaleBridge advising a B2B fintech SaaS team on reducing onboarding drop-off and improving trial-to-paid conversion. Present it to the revenue leadership team with cover, agenda, opportunity size, diagnosis, desired outcomes, engagement model, workstreams, sprint process, benchmark gallery, proof metrics, client testimonials, pricing tiers, decision timeline, and contact. Make it landing-page-like, sharp, high-contrast, and conversion-oriented.",
+        "/gen presentation, create a 15-slide business proposal for Vantage Partners helping a robotics manufacturer launch a new service program. Present it to enterprise buyers with cover, agenda, market context, buyer pain points, proposed solution, service model, operating plan, proof metrics, roadmap, commercials, implementation timeline, team, and close. Make it business-focused, confident, structured, and modern.",
       embedUrl:
-        "https://static.vm0.io/vm0/artifact-templates/presentation/998aed16-60a1-4d84-b60e-1ab093de8fa6/landing-consulting-deck.html",
-      previewImage: LANDING_CONSULTING_PREVIEW_IMAGES[0],
+        "https://static.vm0.io/vm0/artifact-templates/presentation/acada4b0-952c-4354-a382-56dcf49bb7e9/vantage.html",
+      previewImage:
+        PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES["vantage"][0],
       cardPreviewImagesByTheme:
-        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES[
-          "landing-consulting-deck"
-        ],
+        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["vantage"],
       cardPreviewImage:
-        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES[
-          "landing-consulting-deck"
-        ]["pop-art"],
-      previewImages: LANDING_CONSULTING_PREVIEW_IMAGES,
+        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["vantage"][
+          "slate-corporate"
+        ],
+      previewImages: PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES["vantage"],
       slideCount: 15,
-      previewHtmls: LANDING_CONSULTING_PREVIEW_HTMLS,
-      colorSystemId: "color-system:pop-art",
-      templateId: "template:html-ppt-landing-consulting",
+      colorSystemId: "color-system:slate-corporate",
+      templateId: "template:html-ppt-vantage",
     },
     {
-      slug: "lumina-creative-studio",
-      title: "Brush stickers",
+      slug: "taped-consulting",
+      title: "Polaroid wall",
       prompt:
-        "/gen presentation, create a 15-slide portfolio deck for LensLab Studio, a photography and motion team pitching a beauty brand's global campaign shoot across studio sets, street casting, and social cutdowns. Include cover, agenda, studio point of view, campaign concept, team, production services, creative process, location plan, image gallery, motion deliverables, campaign metrics, client quotes, package options, and contact. Make it bold, sticker-tagged, sharp, and creative-studio oriented.",
+        "/gen presentation, create a 15-slide transformation proposal for Clearpath Advisory helping a healthcare network improve patient intake operations. Present it to operations executives with cover, agenda, current-state diagnosis, opportunity, engagement model, workstreams, field research, process redesign, timeline, proof metrics, testimonials, pricing, and next steps. Make it consulting-focused, tactile, polished, and persuasive.",
       embedUrl:
-        "https://static.vm0.io/vm0/artifact-templates/presentation/08fe05a2-a7dd-4355-822d-14fb6a0987b3/lumina-creative-studio.html",
-      previewImage: LUMINA_PREVIEW_IMAGES[0],
+        "https://static.vm0.io/vm0/artifact-templates/presentation/ffa53ff0-36b0-4bd1-b44a-4c2d8d66aaa6/taped-consulting.html",
+      previewImage:
+        PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES["taped-consulting"][0],
       cardPreviewImagesByTheme:
-        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES[
-          "lumina-creative-studio"
-        ],
+        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["taped-consulting"],
       cardPreviewImage:
-        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES[
-          "lumina-creative-studio"
-        ]["prism"],
-      previewImages: LUMINA_PREVIEW_IMAGES,
+        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["taped-consulting"][
+          "slate-corporate"
+        ],
+      previewImages:
+        PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES["taped-consulting"],
       slideCount: 15,
-      previewHtmls: LUMINA_PREVIEW_HTMLS,
+      colorSystemId: "color-system:slate-corporate",
+      templateId: "template:html-ppt-taped-consulting",
+    },
+    {
+      slug: "strata",
+      title: "Red staircase",
+      prompt:
+        "/gen presentation, create a 15-slide agency proposal for Strata Studio helping a fintech brand redesign its onboarding and lifecycle communications. Present it to the client leadership team with cover, agenda, business challenge, strategic principles, design direction, service scope, sprint process, sample work, measurement plan, timeline, investment, team, and next steps. Make it Swiss-minimal, precise, editorial, and agency-grade.",
+      embedUrl:
+        "https://static.vm0.io/vm0/artifact-templates/presentation/040ddb5c-6819-436a-bd3a-87cb5de2be0e/strata.html",
+      previewImage: PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES["strata"][0],
+      cardPreviewImagesByTheme:
+        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["strata"],
+      cardPreviewImage:
+        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["strata"]["mono-ink"],
+      previewImages: PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES["strata"],
+      slideCount: 15,
+      colorSystemId: "color-system:mono-ink",
+      templateId: "template:html-ppt-strata",
+    },
+    {
+      slug: "sticker-scrapbook",
+      title: "Sticker notebook",
+      prompt:
+        "/gen presentation, create a 15-slide brand collaboration deck for Patch Party, a youth culture festival launching sponsor activations, creator booths, and collectible merch. Present it to brand partners with cover, agenda, audience story, event concept, activation zones, creator plan, media moments, sponsor packages, timeline, reach metrics, testimonials, budget, and contact. Make it vibrant, scrapbook-like, sticker-heavy, and celebratory.",
+      embedUrl:
+        "https://static.vm0.io/vm0/artifact-templates/presentation/f15ccce7-90f1-4773-b4c8-c7eaf903ce76/sticker-scrapbook.html",
+      previewImage:
+        PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES["sticker-scrapbook"][0],
+      cardPreviewImagesByTheme:
+        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["sticker-scrapbook"],
+      cardPreviewImage:
+        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["sticker-scrapbook"][
+          "prism"
+        ],
+      previewImages:
+        PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES["sticker-scrapbook"],
+      slideCount: 15,
       colorSystemId: "color-system:prism",
-      templateId: "template:html-ppt-lumina",
+      templateId: "template:html-ppt-sticker-scrapbook",
+    },
+    {
+      slug: "schoolhouse",
+      title: "Kraft poster",
+      prompt:
+        "/gen presentation, create a 15-slide community education deck for Maple Hall launching a weekend skills program for families and local makers. Present it to city partners with cover, agenda, mission, audience needs, program tracks, sample day, instructor team, venue plan, safety approach, outcomes, testimonials, membership tiers, budget, and registration steps. Make it warm, retro, classroom-inspired, and approachable.",
+      embedUrl:
+        "https://static.vm0.io/vm0/artifact-templates/presentation/cb03f77b-982d-4708-8781-2a0ab450a4fb/schoolhouse.html",
+      previewImage:
+        PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES["schoolhouse"][0],
+      cardPreviewImagesByTheme:
+        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["schoolhouse"],
+      cardPreviewImage:
+        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["schoolhouse"][
+          "bauhaus-primary"
+        ],
+      previewImages:
+        PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES["schoolhouse"],
+      slideCount: 15,
+      colorSystemId: "color-system:bauhaus-primary",
+      templateId: "template:html-ppt-schoolhouse",
+    },
+    {
+      slug: "prospectus",
+      title: "Homepage pitch",
+      prompt:
+        "/gen presentation, create a 15-slide business plan for Atlas Harbor, a B2B logistics platform expanding into regional fulfillment. Present it to strategic partners with cover, agenda, market context, customer problem, solution, operating model, product experience, growth plan, financial model, implementation roadmap, risks, team, partnership terms, and next steps. Make it corporate, polished, structured, and proposal-ready.",
+      embedUrl:
+        "https://static.vm0.io/vm0/artifact-templates/presentation/64a9b8c5-f89d-4379-998c-9da755f7ca62/prospectus.html",
+      previewImage:
+        PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES["prospectus"][0],
+      cardPreviewImagesByTheme:
+        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["prospectus"],
+      cardPreviewImage:
+        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["prospectus"][
+          "slate-corporate"
+        ],
+      previewImages:
+        PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES["prospectus"],
+      slideCount: 15,
+      colorSystemId: "color-system:slate-corporate",
+      templateId: "template:html-ppt-prospectus",
+    },
+    {
+      slug: "pixel-glitch",
+      title: "Arcade pixels",
+      prompt:
+        "/gen presentation, create a 15-slide creative studio deck for Arcade Signal pitching a retro-futurist campaign for an indie game launch. Present it to the publisher team with cover, agenda, audience insight, campaign concept, visual world, channel plan, creator program, launch timeline, asset gallery, performance targets, budget, team, and next steps. Make it pixelated, energetic, digital, and sharp.",
+      embedUrl:
+        "https://static.vm0.io/vm0/artifact-templates/presentation/274e4cc3-d811-40a1-a091-526db9a62734/pixel-glitch.html",
+      previewImage:
+        PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES["pixel-glitch"][0],
+      cardPreviewImagesByTheme:
+        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["pixel-glitch"],
+      cardPreviewImage:
+        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["pixel-glitch"][
+          "bauhaus-primary"
+        ],
+      previewImages:
+        PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES["pixel-glitch"],
+      slideCount: 15,
+      colorSystemId: "color-system:bauhaus-primary",
+      templateId: "template:html-ppt-pixel-glitch",
+    },
+    {
+      slug: "nocturne",
+      title: "Midnight stage",
+      prompt:
+        "/gen presentation, create a 15-slide annual keynote for NightOps Cloud reviewing reliability, infrastructure scale, and the roadmap for autonomous operations. Present it to technical customers with cover, agenda, state of the platform, usage growth, reliability metrics, architecture, product updates, customer stories, roadmap, ecosystem, pricing changes, and closing call to action. Make it dark, data-rich, polished, and keynote-ready.",
+      embedUrl:
+        "https://static.vm0.io/vm0/artifact-templates/presentation/dd4ecb89-b6b1-4ed0-bfca-4ebf3db3a664/nocturne.html",
+      previewImage:
+        PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES["nocturne"][0],
+      cardPreviewImagesByTheme:
+        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["nocturne"],
+      cardPreviewImage:
+        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["nocturne"][
+          "midnight-mono"
+        ],
+      previewImages: PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES["nocturne"],
+      slideCount: 15,
+      colorSystemId: "color-system:midnight-mono",
+      templateId: "template:html-ppt-nocturne",
+    },
+    {
+      slug: "neo-brutalism",
+      title: "Shadow shop",
+      prompt:
+        "/gen presentation, create a 15-slide founder pitch for BlockForge, a developer tooling startup launching a collaborative build system. Present it to early-stage investors with cover, agenda, problem, product, technical edge, market, traction, customer proof, business model, go-to-market, competition, roadmap, team, funding ask, and next steps. Make it bold, direct, high-contrast, and brutalist.",
+      embedUrl:
+        "https://static.vm0.io/vm0/artifact-templates/presentation/4d8a4052-b43d-498a-81cc-b4c743103ff2/neo-brutalism.html",
+      previewImage:
+        PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES["neo-brutalism"][0],
+      cardPreviewImagesByTheme:
+        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["neo-brutalism"],
+      cardPreviewImage:
+        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["neo-brutalism"][
+          "mono-ink"
+        ],
+      previewImages:
+        PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES["neo-brutalism"],
+      slideCount: 15,
+      colorSystemId: "color-system:mono-ink",
+      templateId: "template:html-ppt-neo-brutalism",
+    },
+    {
+      slug: "meridian",
+      title: "Cobalt blocks",
+      prompt:
+        "/gen presentation, create a 15-slide agency capabilities deck for Meridian Works, a data strategy studio helping enterprise teams modernize analytics operations. Present it to a prospective client executive team with cover, agenda, market context, client challenges, service model, team, process, case studies, measurement plan, operating rhythm, timeline, commercial model, and contact. Make it professional, sharp, data-led, and executive-ready.",
+      embedUrl:
+        "https://static.vm0.io/vm0/artifact-templates/presentation/58cc240d-7d84-49a7-92ba-57eea4168730/meridian.html",
+      previewImage:
+        PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES["meridian"][0],
+      cardPreviewImagesByTheme:
+        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["meridian"],
+      cardPreviewImage:
+        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["meridian"][
+          "slate-corporate"
+        ],
+      previewImages: PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES["meridian"],
+      slideCount: 15,
+      colorSystemId: "color-system:slate-corporate",
+      templateId: "template:html-ppt-meridian",
+    },
+    {
+      slug: "blueprint-academy",
+      title: "Drafting campus",
+      prompt:
+        "/gen presentation, create a 15-slide curriculum proposal for Northline Academy launching an applied AI certificate for working professionals. Present it to academic leadership with cover, agenda, program context, learner needs, curriculum map, module sequence, faculty team, classroom experience, assessment model, outcomes, partnerships, enrollment plan, budget, and next steps. Make it academic, structured, blueprint-like, and credible.",
+      embedUrl:
+        "https://static.vm0.io/vm0/artifact-templates/presentation/f64cd670-7565-483f-b872-117a18c0c414/blueprint-academy.html",
+      previewImage:
+        PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES["blueprint-academy"][0],
+      cardPreviewImagesByTheme:
+        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["blueprint-academy"],
+      cardPreviewImage:
+        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["blueprint-academy"][
+          "forest-editorial"
+        ],
+      previewImages:
+        PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES["blueprint-academy"],
+      slideCount: 15,
+      colorSystemId: "color-system:forest-editorial",
+      templateId: "template:html-ppt-blueprint-academy",
+    },
+    {
+      slug: "bloom-pitch",
+      title: "Petal pitch",
+      prompt:
+        "/gen presentation, create a 15-slide investor pitch for PetalLoop, a climate-friendly flower delivery marketplace raising a seed round. Include cover, agenda, market shift, customer problem, solution, product flow, traction, business model, go-to-market, competitive position, roadmap, team, financial plan, ask, and next steps. Make it playful, optimistic, organic, and investor-ready.",
+      embedUrl:
+        "https://static.vm0.io/vm0/artifact-templates/presentation/d29707fb-9b85-44bc-be55-cf3cf082f68d/bloom-pitch.html",
+      previewImage:
+        PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES["bloom-pitch"][0],
+      cardPreviewImagesByTheme:
+        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["bloom-pitch"],
+      cardPreviewImage:
+        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["bloom-pitch"][
+          "carnival"
+        ],
+      previewImages:
+        PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES["bloom-pitch"],
+      slideCount: 15,
+      colorSystemId: "color-system:carnival",
+      templateId: "template:html-ppt-bloom-pitch",
+    },
+    {
+      slug: "playful-pop-deck",
+      title: "Neon candy",
+      prompt:
+        "/gen presentation, create a 15-slide campus launch deck for FizzPop, a sparkling tea brand planning a colorful back-to-school sampling tour, creator challenge, and limited-edition flavor drop. Present it to retail and student ambassador partners with cover, agenda, brand world, audience insight, campaign idea, flavor lineup, activation map, event flow, content plan, gallery, reach metrics, partner testimonials, budget, and contact. Make it neon, bouncy, rounded, and pop-art playful.",
+      embedUrl:
+        "https://static.vm0.io/vm0/artifact-templates/presentation/6b2f388a-119f-4ecc-8638-5cc309779b67/playful-pop-deck.html",
+      previewImage: PLAYFUL_POP_PREVIEW_IMAGES[0],
+      cardPreviewImagesByTheme:
+        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["playful-pop-deck"],
+      cardPreviewImage:
+        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["playful-pop-deck"][
+          "pop-art"
+        ],
+      previewImages: PLAYFUL_POP_PREVIEW_IMAGES,
+      slideCount: 15,
+      previewHtmls: PLAYFUL_POP_PREVIEW_HTMLS,
+      colorSystemId: "color-system:pop-art",
+      templateId: "template:html-ppt-playful-pop",
     },
     {
       slug: "mosaic-geometric-pitch",
@@ -1568,269 +1684,152 @@ export const PRESENTATION_TEMPLATE_PICKER_ITEMS: readonly PresentationTemplateIt
       templateId: "template:html-ppt-mosaic-geometric",
     },
     {
-      slug: "playful-pop-deck",
-      title: "Neon candy",
+      slug: "lumina-creative-studio",
+      title: "Brush stickers",
       prompt:
-        "/gen presentation, create a 15-slide campus launch deck for FizzPop, a sparkling tea brand planning a colorful back-to-school sampling tour, creator challenge, and limited-edition flavor drop. Present it to retail and student ambassador partners with cover, agenda, brand world, audience insight, campaign idea, flavor lineup, activation map, event flow, content plan, gallery, reach metrics, partner testimonials, budget, and contact. Make it neon, bouncy, rounded, and pop-art playful.",
+        "/gen presentation, create a 15-slide portfolio deck for LensLab Studio, a photography and motion team pitching a beauty brand's global campaign shoot across studio sets, street casting, and social cutdowns. Include cover, agenda, studio point of view, campaign concept, team, production services, creative process, location plan, image gallery, motion deliverables, campaign metrics, client quotes, package options, and contact. Make it bold, sticker-tagged, sharp, and creative-studio oriented.",
       embedUrl:
-        "https://static.vm0.io/vm0/artifact-templates/presentation/6b2f388a-119f-4ecc-8638-5cc309779b67/playful-pop-deck.html",
-      previewImage: PLAYFUL_POP_PREVIEW_IMAGES[0],
+        "https://static.vm0.io/vm0/artifact-templates/presentation/08fe05a2-a7dd-4355-822d-14fb6a0987b3/lumina-creative-studio.html",
+      previewImage: LUMINA_PREVIEW_IMAGES[0],
       cardPreviewImagesByTheme:
-        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["playful-pop-deck"],
-      cardPreviewImage:
-        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["playful-pop-deck"][
-          "pop-art"
+        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES[
+          "lumina-creative-studio"
         ],
-      previewImages: PLAYFUL_POP_PREVIEW_IMAGES,
+      cardPreviewImage:
+        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES[
+          "lumina-creative-studio"
+        ]["prism"],
+      previewImages: LUMINA_PREVIEW_IMAGES,
       slideCount: 15,
-      previewHtmls: PLAYFUL_POP_PREVIEW_HTMLS,
-      colorSystemId: "color-system:pop-art",
-      templateId: "template:html-ppt-playful-pop",
+      previewHtmls: LUMINA_PREVIEW_HTMLS,
+      colorSystemId: "color-system:prism",
+      templateId: "template:html-ppt-lumina",
     },
-
     {
-      slug: "bloom-pitch",
-      title: "Petal pitch",
+      slug: "landing-consulting-deck",
+      title: "Neon browser",
       prompt:
-        "/gen presentation, create a 15-slide investor pitch for PetalLoop, a climate-friendly flower delivery marketplace raising a seed round. Include cover, agenda, market shift, customer problem, solution, product flow, traction, business model, go-to-market, competitive position, roadmap, team, financial plan, ask, and next steps. Make it playful, optimistic, organic, and investor-ready.",
+        "/gen presentation, create a 15-slide growth proposal for ScaleBridge advising a B2B fintech SaaS team on reducing onboarding drop-off and improving trial-to-paid conversion. Present it to the revenue leadership team with cover, agenda, opportunity size, diagnosis, desired outcomes, engagement model, workstreams, sprint process, benchmark gallery, proof metrics, client testimonials, pricing tiers, decision timeline, and contact. Make it landing-page-like, sharp, high-contrast, and conversion-oriented.",
       embedUrl:
-        "https://static.vm0.io/vm0/artifact-templates/presentation/d29707fb-9b85-44bc-be55-cf3cf082f68d/bloom-pitch.html",
-      previewImage:
-        PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES["bloom-pitch"][0],
+        "https://static.vm0.io/vm0/artifact-templates/presentation/998aed16-60a1-4d84-b60e-1ab093de8fa6/landing-consulting-deck.html",
+      previewImage: LANDING_CONSULTING_PREVIEW_IMAGES[0],
       cardPreviewImagesByTheme:
-        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["bloom-pitch"],
-      cardPreviewImage:
-        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["bloom-pitch"][
-          "carnival"
+        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES[
+          "landing-consulting-deck"
         ],
-      previewImages:
-        PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES["bloom-pitch"],
+      cardPreviewImage:
+        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES[
+          "landing-consulting-deck"
+        ]["pop-art"],
+      previewImages: LANDING_CONSULTING_PREVIEW_IMAGES,
+      slideCount: 15,
+      previewHtmls: LANDING_CONSULTING_PREVIEW_HTMLS,
+      colorSystemId: "color-system:pop-art",
+      templateId: "template:html-ppt-landing-consulting",
+    },
+    {
+      slug: "creative-agency-presentation",
+      title: "Foliage gallery",
+      prompt:
+        "/gen presentation, create a 15-slide rebrand pitch for Northstar Studio proposing a new identity, website, and launch campaign for a boutique hotel group expanding into three coastal cities. Present it to the client board with cover, agenda, brand challenge, strategic insight, creative direction, visual territories, service scope, project process, case-study gallery, launch roadmap, impact metrics, client quotes, investment, and contact. Make it minimal, editorial, sharp, and agency-grade.",
+      embedUrl:
+        "https://static.vm0.io/vm0/artifact-templates/presentation/527ad859-e0dd-4cfd-90a4-09e5030b71e1/creative-agency-presentation.html",
+      previewImage: CREATIVE_AGENCY_PREVIEW_IMAGES[0],
+      cardPreviewImagesByTheme:
+        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES[
+          "creative-agency-presentation"
+        ],
+      cardPreviewImage:
+        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES[
+          "creative-agency-presentation"
+        ]["coral-studio"],
+      previewImages: CREATIVE_AGENCY_PREVIEW_IMAGES,
+      slideCount: 15,
+      previewHtmls: CREATIVE_AGENCY_PREVIEW_HTMLS,
+      colorSystemId: "color-system:coral-studio",
+      templateId: "template:html-ppt-creative-agency",
+    },
+    {
+      slug: "crayon-learning-deck",
+      title: "Crayon doodle",
+      prompt:
+        "/gen presentation, create a 15-slide parent-night deck for Rainbow Lab, a summer art-and-science camp where kids build storybooks, cardboard cities, and tiny robots. Present it to families with cover, agenda, camp promise, learning goals, weekly themes, instructor team, sample day, workshop stations, student gallery, safety plan, progress metrics, parent quotes, pricing, and registration steps. Make it bright, rounded, joyful, and crayon-like.",
+      embedUrl:
+        "https://static.vm0.io/vm0/artifact-templates/presentation/63af1d38-51e8-493e-b975-1728f4f796da/crayon-learning-deck.html",
+      previewImage: CRAYON_PREVIEW_IMAGES[0],
+      cardPreviewImagesByTheme:
+        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES[
+          "crayon-learning-deck"
+        ],
+      cardPreviewImage:
+        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES[
+          "crayon-learning-deck"
+        ]["prism"],
+      previewImages: CRAYON_PREVIEW_IMAGES,
+      slideCount: 15,
+      previewHtmls: CRAYON_PREVIEW_HTMLS,
+      colorSystemId: "color-system:prism",
+      templateId: "template:html-ppt-crayon",
+    },
+    {
+      slug: "business-data-presentation",
+      title: "Berry dashboard",
+      prompt:
+        "/gen presentation, create a 15-slide executive data readout for HarborCart, an omnichannel grocery retailer reviewing 2026 growth, loyalty behavior, basket mix, and store-to-delivery conversion. Present it to the leadership team with cover, agenda, business context, KPI scorecard, regional segments, channel comparison, customer cohorts, operational drivers, forecast, strategic bets, risks, recommendations, and appendix contact. Make it number-first, chart-led, confident, modern, and readable.",
+      embedUrl:
+        "https://static.vm0.io/vm0/artifact-templates/presentation/95648bba-2a52-497e-b1b8-9cdd0cab9d93/business-data-presentation.html",
+      previewImage: BUSINESS_DATA_CDN_PREVIEW_IMAGES[0],
+      cardPreviewImagesByTheme:
+        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES[
+          "business-data-presentation"
+        ],
+      cardPreviewImage:
+        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES[
+          "business-data-presentation"
+        ]["berry-pop"],
+      previewImages: BUSINESS_DATA_CDN_PREVIEW_IMAGES,
+      slideCount: 15,
+      colorSystemId: "color-system:berry-pop",
+      templateId: "template:html-ppt-business-data",
+    },
+    {
+      slug: "botane-organic-deck",
+      title: "Mauve garden",
+      prompt:
+        "/gen presentation, create a 15-slide brand story deck for Moss & Moon, a coastal wellness retreat launching a seasonal herb garden, tea bar, and slow-living membership program. Present it to hospitality partners with cover, agenda, origin story, guest philosophy, retreat spaces, treatment menu, garden-to-table process, photography gallery, sustainability metrics, member testimonials, packages, and contact. Make it calm, editorial, rounded, and organic.",
+      embedUrl:
+        "https://static.vm0.io/vm0/artifact-templates/presentation/0babab92-7ad9-414e-b44f-7a060ed48bcc/botane-organic-deck.html",
+      previewImage: BOTANE_ORGANIC_PREVIEW_IMAGES[0],
+      cardPreviewImagesByTheme:
+        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["botane-organic-deck"],
+      cardPreviewImage:
+        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["botane-organic-deck"][
+          "mauve-dusk"
+        ],
+      previewImages: BOTANE_ORGANIC_PREVIEW_IMAGES,
+      slideCount: 15,
+      colorSystemId: "color-system:mauve-dusk",
+      templateId: "template:html-ppt-botane-organic",
+    },
+    {
+      slug: "playful-launch-presentation",
+      title: "Sunburst playroom",
+      prompt:
+        "/gen presentation, create a 15-slide launch deck for SproutPop, a playful habit-building app for remote teams introducing a shared 30-day wellness challenge. Present it to people and culture leaders with cover, agenda, launch story, audience pain points, product vision, feature tour, rollout timeline, activation moments, team, early metrics, testimonials, pricing, and next steps. Make it saturated, joyful, idea-led, and structured.",
+      embedUrl:
+        "https://static.vm0.io/vm0/artifact-templates/presentation/daf7c2d1-5195-4c09-ad4b-8d85778fc104/playful-launch-presentation.html",
+      previewImage: PLAYFUL_LAUNCH_CDN_PREVIEW_IMAGES[0],
+      cardPreviewImagesByTheme:
+        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES[
+          "playful-launch-presentation"
+        ],
+      cardPreviewImage:
+        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES[
+          "playful-launch-presentation"
+        ]["carnival"],
+      previewImages: PLAYFUL_LAUNCH_CDN_PREVIEW_IMAGES,
       slideCount: 15,
       colorSystemId: "color-system:carnival",
-      templateId: "template:html-ppt-bloom-pitch",
-    },
-    {
-      slug: "blueprint-academy",
-      title: "Drafting campus",
-      prompt:
-        "/gen presentation, create a 15-slide curriculum proposal for Northline Academy launching an applied AI certificate for working professionals. Present it to academic leadership with cover, agenda, program context, learner needs, curriculum map, module sequence, faculty team, classroom experience, assessment model, outcomes, partnerships, enrollment plan, budget, and next steps. Make it academic, structured, blueprint-like, and credible.",
-      embedUrl:
-        "https://static.vm0.io/vm0/artifact-templates/presentation/f64cd670-7565-483f-b872-117a18c0c414/blueprint-academy.html",
-      previewImage:
-        PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES["blueprint-academy"][0],
-      cardPreviewImagesByTheme:
-        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["blueprint-academy"],
-      cardPreviewImage:
-        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["blueprint-academy"][
-          "forest-editorial"
-        ],
-      previewImages:
-        PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES["blueprint-academy"],
-      slideCount: 15,
-      colorSystemId: "color-system:forest-editorial",
-      templateId: "template:html-ppt-blueprint-academy",
-    },
-    {
-      slug: "meridian",
-      title: "Cobalt blocks",
-      prompt:
-        "/gen presentation, create a 15-slide agency capabilities deck for Meridian Works, a data strategy studio helping enterprise teams modernize analytics operations. Present it to a prospective client executive team with cover, agenda, market context, client challenges, service model, team, process, case studies, measurement plan, operating rhythm, timeline, commercial model, and contact. Make it professional, sharp, data-led, and executive-ready.",
-      embedUrl:
-        "https://static.vm0.io/vm0/artifact-templates/presentation/58cc240d-7d84-49a7-92ba-57eea4168730/meridian.html",
-      previewImage:
-        PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES["meridian"][0],
-      cardPreviewImagesByTheme:
-        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["meridian"],
-      cardPreviewImage:
-        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["meridian"][
-          "slate-corporate"
-        ],
-      previewImages: PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES["meridian"],
-      slideCount: 15,
-      colorSystemId: "color-system:slate-corporate",
-      templateId: "template:html-ppt-meridian",
-    },
-    {
-      slug: "neo-brutalism",
-      title: "Shadow shop",
-      prompt:
-        "/gen presentation, create a 15-slide founder pitch for BlockForge, a developer tooling startup launching a collaborative build system. Present it to early-stage investors with cover, agenda, problem, product, technical edge, market, traction, customer proof, business model, go-to-market, competition, roadmap, team, funding ask, and next steps. Make it bold, direct, high-contrast, and brutalist.",
-      embedUrl:
-        "https://static.vm0.io/vm0/artifact-templates/presentation/4d8a4052-b43d-498a-81cc-b4c743103ff2/neo-brutalism.html",
-      previewImage:
-        PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES["neo-brutalism"][0],
-      cardPreviewImagesByTheme:
-        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["neo-brutalism"],
-      cardPreviewImage:
-        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["neo-brutalism"][
-          "mono-ink"
-        ],
-      previewImages:
-        PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES["neo-brutalism"],
-      slideCount: 15,
-      colorSystemId: "color-system:mono-ink",
-      templateId: "template:html-ppt-neo-brutalism",
-    },
-    {
-      slug: "nocturne",
-      title: "Midnight stage",
-      prompt:
-        "/gen presentation, create a 15-slide annual keynote for NightOps Cloud reviewing reliability, infrastructure scale, and the roadmap for autonomous operations. Present it to technical customers with cover, agenda, state of the platform, usage growth, reliability metrics, architecture, product updates, customer stories, roadmap, ecosystem, pricing changes, and closing call to action. Make it dark, data-rich, polished, and keynote-ready.",
-      embedUrl:
-        "https://static.vm0.io/vm0/artifact-templates/presentation/dd4ecb89-b6b1-4ed0-bfca-4ebf3db3a664/nocturne.html",
-      previewImage:
-        PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES["nocturne"][0],
-      cardPreviewImagesByTheme:
-        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["nocturne"],
-      cardPreviewImage:
-        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["nocturne"][
-          "midnight-mono"
-        ],
-      previewImages: PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES["nocturne"],
-      slideCount: 15,
-      colorSystemId: "color-system:midnight-mono",
-      templateId: "template:html-ppt-nocturne",
-    },
-    {
-      slug: "pixel-glitch",
-      title: "Arcade pixels",
-      prompt:
-        "/gen presentation, create a 15-slide creative studio deck for Arcade Signal pitching a retro-futurist campaign for an indie game launch. Present it to the publisher team with cover, agenda, audience insight, campaign concept, visual world, channel plan, creator program, launch timeline, asset gallery, performance targets, budget, team, and next steps. Make it pixelated, energetic, digital, and sharp.",
-      embedUrl:
-        "https://static.vm0.io/vm0/artifact-templates/presentation/274e4cc3-d811-40a1-a091-526db9a62734/pixel-glitch.html",
-      previewImage:
-        PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES["pixel-glitch"][0],
-      cardPreviewImagesByTheme:
-        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["pixel-glitch"],
-      cardPreviewImage:
-        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["pixel-glitch"][
-          "bauhaus-primary"
-        ],
-      previewImages:
-        PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES["pixel-glitch"],
-      slideCount: 15,
-      colorSystemId: "color-system:bauhaus-primary",
-      templateId: "template:html-ppt-pixel-glitch",
-    },
-    {
-      slug: "prospectus",
-      title: "Homepage pitch",
-      prompt:
-        "/gen presentation, create a 15-slide business plan for Atlas Harbor, a B2B logistics platform expanding into regional fulfillment. Present it to strategic partners with cover, agenda, market context, customer problem, solution, operating model, product experience, growth plan, financial model, implementation roadmap, risks, team, partnership terms, and next steps. Make it corporate, polished, structured, and proposal-ready.",
-      embedUrl:
-        "https://static.vm0.io/vm0/artifact-templates/presentation/64a9b8c5-f89d-4379-998c-9da755f7ca62/prospectus.html",
-      previewImage:
-        PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES["prospectus"][0],
-      cardPreviewImagesByTheme:
-        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["prospectus"],
-      cardPreviewImage:
-        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["prospectus"][
-          "slate-corporate"
-        ],
-      previewImages:
-        PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES["prospectus"],
-      slideCount: 15,
-      colorSystemId: "color-system:slate-corporate",
-      templateId: "template:html-ppt-prospectus",
-    },
-    {
-      slug: "schoolhouse",
-      title: "Kraft poster",
-      prompt:
-        "/gen presentation, create a 15-slide community education deck for Maple Hall launching a weekend skills program for families and local makers. Present it to city partners with cover, agenda, mission, audience needs, program tracks, sample day, instructor team, venue plan, safety approach, outcomes, testimonials, membership tiers, budget, and registration steps. Make it warm, retro, classroom-inspired, and approachable.",
-      embedUrl:
-        "https://static.vm0.io/vm0/artifact-templates/presentation/cb03f77b-982d-4708-8781-2a0ab450a4fb/schoolhouse.html",
-      previewImage:
-        PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES["schoolhouse"][0],
-      cardPreviewImagesByTheme:
-        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["schoolhouse"],
-      cardPreviewImage:
-        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["schoolhouse"][
-          "bauhaus-primary"
-        ],
-      previewImages:
-        PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES["schoolhouse"],
-      slideCount: 15,
-      colorSystemId: "color-system:bauhaus-primary",
-      templateId: "template:html-ppt-schoolhouse",
-    },
-    {
-      slug: "sticker-scrapbook",
-      title: "Sticker notebook",
-      prompt:
-        "/gen presentation, create a 15-slide brand collaboration deck for Patch Party, a youth culture festival launching sponsor activations, creator booths, and collectible merch. Present it to brand partners with cover, agenda, audience story, event concept, activation zones, creator plan, media moments, sponsor packages, timeline, reach metrics, testimonials, budget, and contact. Make it vibrant, scrapbook-like, sticker-heavy, and celebratory.",
-      embedUrl:
-        "https://static.vm0.io/vm0/artifact-templates/presentation/f15ccce7-90f1-4773-b4c8-c7eaf903ce76/sticker-scrapbook.html",
-      previewImage:
-        PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES["sticker-scrapbook"][0],
-      cardPreviewImagesByTheme:
-        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["sticker-scrapbook"],
-      cardPreviewImage:
-        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["sticker-scrapbook"][
-          "prism"
-        ],
-      previewImages:
-        PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES["sticker-scrapbook"],
-      slideCount: 15,
-      colorSystemId: "color-system:prism",
-      templateId: "template:html-ppt-sticker-scrapbook",
-    },
-    {
-      slug: "strata",
-      title: "Red staircase",
-      prompt:
-        "/gen presentation, create a 15-slide agency proposal for Strata Studio helping a fintech brand redesign its onboarding and lifecycle communications. Present it to the client leadership team with cover, agenda, business challenge, strategic principles, design direction, service scope, sprint process, sample work, measurement plan, timeline, investment, team, and next steps. Make it Swiss-minimal, precise, editorial, and agency-grade.",
-      embedUrl:
-        "https://static.vm0.io/vm0/artifact-templates/presentation/040ddb5c-6819-436a-bd3a-87cb5de2be0e/strata.html",
-      previewImage: PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES["strata"][0],
-      cardPreviewImagesByTheme:
-        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["strata"],
-      cardPreviewImage:
-        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["strata"]["mono-ink"],
-      previewImages: PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES["strata"],
-      slideCount: 15,
-      colorSystemId: "color-system:mono-ink",
-      templateId: "template:html-ppt-strata",
-    },
-    {
-      slug: "taped-consulting",
-      title: "Polaroid wall",
-      prompt:
-        "/gen presentation, create a 15-slide transformation proposal for Clearpath Advisory helping a healthcare network improve patient intake operations. Present it to operations executives with cover, agenda, current-state diagnosis, opportunity, engagement model, workstreams, field research, process redesign, timeline, proof metrics, testimonials, pricing, and next steps. Make it consulting-focused, tactile, polished, and persuasive.",
-      embedUrl:
-        "https://static.vm0.io/vm0/artifact-templates/presentation/ffa53ff0-36b0-4bd1-b44a-4c2d8d66aaa6/taped-consulting.html",
-      previewImage:
-        PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES["taped-consulting"][0],
-      cardPreviewImagesByTheme:
-        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["taped-consulting"],
-      cardPreviewImage:
-        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["taped-consulting"][
-          "slate-corporate"
-        ],
-      previewImages:
-        PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES["taped-consulting"],
-      slideCount: 15,
-      colorSystemId: "color-system:slate-corporate",
-      templateId: "template:html-ppt-taped-consulting",
-    },
-    {
-      slug: "vantage",
-      title: "Numbered boardroom",
-      prompt:
-        "/gen presentation, create a 15-slide business proposal for Vantage Partners helping a robotics manufacturer launch a new service program. Present it to enterprise buyers with cover, agenda, market context, buyer pain points, proposed solution, service model, operating plan, proof metrics, roadmap, commercials, implementation timeline, team, and close. Make it business-focused, confident, structured, and modern.",
-      embedUrl:
-        "https://static.vm0.io/vm0/artifact-templates/presentation/acada4b0-952c-4354-a382-56dcf49bb7e9/vantage.html",
-      previewImage:
-        PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES["vantage"][0],
-      cardPreviewImagesByTheme:
-        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["vantage"],
-      cardPreviewImage:
-        PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_IMAGES["vantage"][
-          "slate-corporate"
-        ],
-      previewImages: PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES["vantage"],
-      slideCount: 15,
-      colorSystemId: "color-system:slate-corporate",
-      templateId: "template:html-ppt-vantage",
+      templateId: "template:html-ppt-playful-launch",
     },
   ];

@@ -354,9 +354,12 @@ test("Show the filtered connector count in the add dialog", async () => {
   await openConnectors(user);
   const catalog = await openAddConnectors(user);
   const search = within(catalog).getByPlaceholderText("Find connectors...");
+  await expect(
+    findFastControl("link", "Manage SSH hosts", catalog),
+  ).resolves.toBeVisible();
   expect(
     within(catalog).getByRole("heading", {
-      name: "Available connectors to connect (3)",
+      name: "Available connectors to connect (4)",
     }),
   ).toBeVisible();
 
@@ -382,7 +385,7 @@ test("Show the filtered connector count in the add dialog", async () => {
   await waitFor(() => {
     expect(
       within(catalog).getByRole("heading", {
-        name: "Available connectors to connect (3)",
+        name: "Available connectors to connect (4)",
       }),
     ).toBeVisible();
   });
@@ -651,7 +654,7 @@ test("Use the shortest valid connector setup from chat", async () => {
 });
 
 test.each([null, "Close", "Escape", "backdrop"] as const)(
-  "Keep chat OAuth in one dialog through completion (dismissal: %s)",
+  "Keep chat OAuth in one dialog, with explicit cancellation and outside-press protection (%s)",
   async (dismissal) => {
     const user = userEvent.setup({ delay: null });
     const fixture = installComposerConnectorFixture({
@@ -718,12 +721,13 @@ test.each([null, "Close", "Escape", "backdrop"] as const)(
         await user.click(viewport);
       }
     }
+    const cancelled = dismissal === "Close" || dismissal === "Escape";
     await waitFor(() => {
       expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(
-        dismissal ? 0 : 1,
+        cancelled ? 0 : 1,
       );
     });
-    expect(authWindow.closed).toBeFalsy();
+    expect(authWindow.closed).toBe(cancelled);
 
     const account = connectorAccount({
       id: "f0000000-0000-4000-a000-000000000064",
@@ -736,14 +740,17 @@ test.each([null, "Close", "Escape", "backdrop"] as const)(
       { ...account, slug: GOOGLE_ANALYTICS_SLUG },
     ]);
     fixture.completeOAuth(account.id);
+    expect(
+      screen.queryByText("Google Analytics connected and authorized for Scout"),
+    ).toBeNull();
+    if (cancelled) {
+      authorization.resolve();
+      return;
+    }
     authWindow.close();
     await authorizationStarted.promise;
-    expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(
-      dismissal ? 0 : 1,
-    );
-    expect(screen.queryAllByText("Connecting...")).toHaveLength(
-      dismissal ? 0 : 1,
-    );
+    expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(1);
+    expect(screen.queryAllByText("Connecting...")).toHaveLength(1);
     authorization.resolve();
     await expect(
       screen.findByText("Google Analytics connected and authorized for Scout"),
@@ -755,7 +762,7 @@ test.each([null, "Close", "Escape", "backdrop"] as const)(
   },
 );
 
-test("Keep a reopened connector directory usable while chat OAuth is pending", async () => {
+test("Retry chat OAuth immediately after closing and reopening the directory", async () => {
   const user = userEvent.setup({ delay: null });
   installComposerConnectorFixture({
     catalog: [
@@ -786,7 +793,7 @@ test("Keep a reopened connector directory usable while chat OAuth is pending", a
   await waitFor(() => {
     expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(0);
   });
-  expect(authWindow.closed).toBeFalsy();
+  expect(authWindow.closed).toBeTruthy();
 
   await openConnectors(user);
   const reopened = await openAddConnectors(user);
@@ -798,14 +805,21 @@ test("Keep a reopened connector directory usable while chat OAuth is pending", a
     "Connect Google Analytics",
     reopened,
   );
-  expect(connect).toHaveAttribute("aria-disabled", "true");
-  await user.click(connect);
+  expect(connect).not.toHaveAttribute("aria-disabled", "true");
   expect(browserOpen.calls).toHaveLength(1);
+  const nextWindow = createAuthWindow();
+  context.mocks.browser.open(nextWindow);
+  await user.click(connect);
+  await waitFor(() => {
+    expect(nextWindow.location.href).toBe(
+      "https://accounts.example.test/google-analytics",
+    );
+  });
   expect(within(reopened).getByRole("status")).toHaveTextContent(
     "Connecting...",
   );
 
-  authWindow.close();
+  nextWindow.close();
   await waitFor(() => {
     expect(connect).not.toHaveAttribute("aria-disabled", "true");
   });

@@ -95,6 +95,7 @@ nix = { version = "0.31", default-features = false }
 pin-project-lite = { version = "0.2", default-features = false }
 pkcs5 = { version = "0.8", default-features = false }
 pkcs8 = { version = "0.11", default-features = false }
+png = { version = "0.18", default-features = false }
 proc-macro2 = { version = "1", default-features = false }
 proptest = { version = "1", default-features = false }
 rcgen = { version = "0.14", default-features = false }

@@ -134,8 +134,8 @@ export function GoogleCalendarRecoveryDialogs() {
           onClose={() => {
             closeReconnect(recovery);
           }}
-          onSuccess={(connectionId) => {
-            return checkRecovery(recovery, connectionId, pageSignal);
+          onSuccess={(connectionId, signal) => {
+            return checkRecovery(recovery, connectionId, signal);
           }}
         />
       ) : null}

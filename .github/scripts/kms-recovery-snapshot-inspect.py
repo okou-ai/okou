@@ -20,9 +20,9 @@ from kms_recovery_verify import (
 
 PROJECT = "hidden-lab-39609750"
 BASE = f"https://console.neon.tech/api/v2/projects/{PROJECT}"
-WORKFLOW = (
-    "vm0-ai/vm0/.github/workflows/kms-recovery-snapshot-inspect.yml@refs/heads/main"
-)
+# GitHub keeps this numeric identity stable across owner and repository renames.
+OKOU_REPOSITORY_ID = "1096175506"
+WORKFLOW_PATH = ".github/workflows/kms-recovery-snapshot-inspect.yml@refs/heads/main"
 PREFIX = "kms-recovery-32264-"
 DEADLINE = time.monotonic() + 90 * 60
 
@@ -348,11 +348,14 @@ def main():
     target_environment = None
     checkpoint()
     try:
+        repository = os.environ.get("GITHUB_REPOSITORY")
         require(
-            os.environ.get("GITHUB_REPOSITORY") == "vm0-ai/vm0"
+            os.environ.get("GITHUB_REPOSITORY_ID") == OKOU_REPOSITORY_ID
+            and bool(repository)
             and os.environ.get("GITHUB_REF") == "refs/heads/main"
             and os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
-            and os.environ.get("GITHUB_WORKFLOW_REF") == WORKFLOW,
+            and os.environ.get("GITHUB_WORKFLOW_REF")
+            == f"{repository}/{WORKFLOW_PATH}",
             "unprotected_invocation",
         )
         verification = os.environ.get("VERIFY_TARGET_CIPHERTEXT", "false")

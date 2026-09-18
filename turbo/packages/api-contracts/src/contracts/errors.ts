@@ -57,6 +57,11 @@ export const ApiError = {
     status: 503 as const,
     code: "EVENT_DELIVERY_UNAVAILABLE",
   },
+  /** A bounded attempt ran out of its own budget and released nothing. */
+  REQUEST_DEADLINE_EXCEEDED: {
+    status: 503 as const,
+    code: "REQUEST_DEADLINE_EXCEEDED",
+  },
   PROVIDER_DELETED: {
     status: 422 as const,
     code: "PROVIDER_DELETED",
@@ -238,6 +243,12 @@ export const CHAT_RUN_TRANSIENT_ERROR_MESSAGE =
 
 export const CHAT_RUN_EXECUTION_TIMEOUT_MESSAGE =
   "This run reached its execution time limit.";
+
+export const CHAT_RUN_USAGE_LIMIT_MESSAGE =
+  "Your model provider's usage allowance has been reached. Check your provider's usage limits or choose a different model or account.";
+
+export const CHAT_RUN_UNSUPPORTED_MODEL_MESSAGE =
+  "The selected model is not available with the configured provider account. Choose a supported model or update the provider configuration.";
 
 /**
  * A provider content-safety rejection is deterministic for the same input, so
@@ -701,7 +712,8 @@ type StructuredRunErrorBehavior =
   | "insufficient-credits"
   | "provider-balance"
   | "overloaded"
-  | "passthrough"
+  | "usage-limit"
+  | "unsupported-model"
   | "reconnect"
   | "terms";
 
@@ -727,8 +739,8 @@ const STRUCTURED_RUN_ERROR_BEHAVIOR: Record<
   response_connection_lost: "generic",
   safety_policy_refusal: "content-policy",
   reconnect_required: "reconnect",
-  unsupported_model: "passthrough",
-  usage_limit: "passthrough",
+  unsupported_model: "unsupported-model",
+  usage_limit: "usage-limit",
 };
 
 function formatReconnectRunError(
@@ -805,8 +817,15 @@ function formatStructuredRunError(params: {
       }
       return CHAT_RUN_TRANSIENT_ERROR_MESSAGE;
     }
-    case "passthrough": {
-      return params.errorMessage;
+    case "usage-limit": {
+      return isActionableRunError(params.errorMessage)
+        ? params.errorMessage
+        : CHAT_RUN_USAGE_LIMIT_MESSAGE;
+    }
+    case "unsupported-model": {
+      return isActionableRunError(params.errorMessage)
+        ? params.errorMessage
+        : CHAT_RUN_UNSUPPORTED_MODEL_MESSAGE;
     }
     case "generic": {
       return CHAT_RUN_TRANSIENT_ERROR_MESSAGE;

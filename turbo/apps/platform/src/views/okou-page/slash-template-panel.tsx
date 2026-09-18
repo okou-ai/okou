@@ -48,7 +48,10 @@ interface SlashTemplatePanelProps {
   readonly previewIndex: number | null;
   readonly onPreview: (index: number | null) => void;
   readonly onSelectCategory: (category: SlashTemplateCategory) => void;
-  readonly onSelectTemplate: (preview: SlashTemplatePreview) => void;
+  readonly onSelectTemplate: (
+    preview: SlashTemplatePreview,
+    category: SlashTemplatePreviewCategory,
+  ) => void;
   readonly onImportDeck: (file: File) => void;
   readonly onSelectWorkflow: (workflow: ComposerSlashWorkflowMatch) => void;
   readonly onBrowseAll: () => void;
@@ -166,7 +169,7 @@ function SlashTemplateCover({
   onSelectTemplate,
 }: {
   readonly preview: SlashTemplatePreview;
-  readonly onSelectTemplate: (preview: SlashTemplatePreview) => void;
+  readonly onSelectTemplate: () => void;
 }) {
   const { t } = useTranslation();
   const aspect = preview.aspect;
@@ -186,7 +189,7 @@ function SlashTemplateCover({
       onMouseDown={(event) => {
         // Keep the editor focused; the panel never takes selection.
         event.preventDefault();
-        onSelectTemplate(preview);
+        onSelectTemplate();
       }}
     >
       <span
@@ -222,7 +225,10 @@ function SlashTemplateDetailPane({
   onImportDeck,
 }: {
   readonly category: SlashTemplatePreviewCategory;
-  readonly onSelectTemplate: (preview: SlashTemplatePreview) => void;
+  readonly onSelectTemplate: (
+    preview: SlashTemplatePreview,
+    category: SlashTemplatePreviewCategory,
+  ) => void;
   readonly onImportDeck: (file: File) => void;
 }) {
   const { t } = useTranslation();
@@ -298,7 +304,9 @@ function SlashTemplateDetailPane({
                 <SlashTemplateCover
                   key={preview.slug}
                   preview={preview}
-                  onSelectTemplate={onSelectTemplate}
+                  onSelectTemplate={() => {
+                    onSelectTemplate(preview, category);
+                  }}
                 />
               );
             })}
@@ -419,6 +427,17 @@ export function SlashTemplatePanel({
       className="flex h-[380px] overflow-hidden"
       data-slot="slash-panel"
       onMouseLeave={() => {
+        // A closed pane means the row under the pointer just narrowed the
+        // panel by the cover pane's width. The popover is content-width, so
+        // when the viewport edge has collision-shifted it, that narrowing
+        // re-pins it and the left column slides out from under a pointer that
+        // never moved — which the browser reports here as a leave. Restoring
+        // the keyboard preview would reopen the covers the pointer just
+        // closed and widen the panel back over it, so the row would stay
+        // hovered while another type kept the pane.
+        if (detailCategory === null) {
+          return;
+        }
         onPreview(null);
       }}
     >

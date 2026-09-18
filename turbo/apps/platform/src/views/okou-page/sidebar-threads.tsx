@@ -13,6 +13,8 @@ import {
   MessageSquareDot,
   Pin,
   PinOff,
+  Archive,
+  ArchiveRestore,
 } from "lucide-react";
 import { useChatThreadsTitleLabels } from "./sidebar-shared.tsx";
 import {
@@ -95,6 +97,12 @@ import { OverlayScrollArea } from "./sidebar-scroll.tsx";
 import { ThreadPinMoveMenuItems } from "./sidebar-thread-reorder.tsx";
 import { equalArrays } from "../../lib/equality.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import {
+  chatThreadShowArchived$,
+  setChatThreadShowArchived$,
+} from "../../signals/chat-page/chat-thread-show-archived.ts";
 
 // The row glyphs draw at 17px, which the shared button base (`[&_svg]:size-4`)
 // would otherwise clamp to 16px. Dimming stays on the individual glyphs so the
@@ -207,6 +215,57 @@ function ChatThreadMarkUnreadMenuItem({
         return $.chat.sidebar.markUnread;
       })}
     </DropdownMenuItem>
+  );
+}
+
+function ChatThreadArchiveMenuItem({
+  signals,
+}: {
+  signals: SidebarChatThreadItemSignals;
+}) {
+  const { t } = useTranslation();
+  const archived = useGet(signals.archived$);
+  const toggleArchived = useSet(signals.toggleArchived$);
+  const pageSignal = useGet(pageSignal$);
+  const label = archived
+    ? t(($) => {
+        return $.chat.sidebar.unarchive;
+      })
+    : t(($) => {
+        return $.chat.sidebar.archive;
+      });
+
+  return (
+    <DropdownMenuItem
+      onSelect={() => {
+        detach(toggleArchived(pageSignal), Reason.DomCallback);
+      }}
+    >
+      {archived ? (
+        <ArchiveRestore size={16} className="mr-2" />
+      ) : (
+        <Archive size={16} className="mr-2" />
+      )}
+      {label}
+    </DropdownMenuItem>
+  );
+}
+
+function ChatThreadArchiveMenuSection({
+  signals,
+}: {
+  signals: SidebarChatThreadItemSignals;
+}) {
+  const archiveEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true;
+  if (!archiveEnabled) {
+    return null;
+  }
+  return (
+    <>
+      <ChatThreadArchiveMenuItem signals={signals} />
+      <DropdownMenuSeparator />
+    </>
   );
 }
 
@@ -348,6 +407,7 @@ function ChatThreadMenu({
         >
           <ChatThreadPinMenuItems signals={signals} />
           <ChatThreadMarkUnreadMenuItem signals={signals} />
+          <ChatThreadArchiveMenuSection signals={signals} />
           <DropdownMenuModalItem
             aria-label={renameLabel}
             aria-keyshortcuts={
@@ -737,6 +797,44 @@ function VirtualizedChatThreads({
   );
 }
 
+function ArchivedChatThreadsEmptyState() {
+  const { t } = useTranslation();
+  const showArchived = useSet(setChatThreadShowArchived$);
+
+  return (
+    <div className="flex flex-col items-center px-2 py-6 text-center">
+      <span
+        aria-hidden="true"
+        className="font-family-emoji text-xl leading-none"
+      >
+        🎉
+      </span>
+      <p className="mt-2 text-xs font-medium text-nav-copy">
+        {t(($) => {
+          return $.chat.sidebar.allCaughtUp;
+        })}
+      </p>
+      <p className="mt-1 text-xs leading-relaxed text-nav-copy-muted">
+        {t(($) => {
+          return $.chat.sidebar.allArchived;
+        })}
+      </p>
+      <Button
+        type="button"
+        variant="link"
+        className="mt-1 h-auto p-0 text-xs"
+        onClick={() => {
+          showArchived(true);
+        }}
+      >
+        {t(($) => {
+          return $.chat.sidebar.showArchivedChats;
+        })}
+      </Button>
+    </div>
+  );
+}
+
 function ChatThreads({
   listSignals,
 }: {
@@ -745,8 +843,14 @@ function ChatThreads({
   const { t } = useTranslation();
   const unreadOnly = useGet(chatThreadOnlyUnread$);
   const threadCount = useGet(listSignals.count$);
+  const hasHiddenArchivedThreads = useGet(
+    listSignals.hasHiddenArchivedThreads$,
+  );
 
   if (threadCount === 0) {
+    if (!unreadOnly && hasHiddenArchivedThreads) {
+      return <ArchivedChatThreadsEmptyState />;
+    }
     return (
       <p className="px-2 py-2 text-xs text-nav-copy-muted leading-relaxed">
         {unreadOnly
@@ -857,9 +961,21 @@ function ChatThreadFilterMenuItems() {
   const setCollapsed = useSet(setSessionListCollapsed$);
   const unreadOnly = useGet(chatThreadOnlyUnread$);
   const setUnreadOnly = useSet(setChatThreadOnlyUnread$);
+  const archiveEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true;
+  const showArchived = useGet(chatThreadShowArchived$);
+  const setShowArchived = useSet(setChatThreadShowArchived$);
 
   function toggleUnreadOnly(next: boolean) {
     setUnreadOnly(next);
+    if (next) {
+      setCollapsed(false);
+    }
+  }
+
+  function toggleShowArchived() {
+    const next = !showArchived;
+    setShowArchived(next);
     if (next) {
       setCollapsed(false);
     }
@@ -887,6 +1003,20 @@ function ChatThreadFilterMenuItems() {
           return $.chat.sidebar.unreadOnly;
         })}
       </DropdownMenuItem>
+      {archiveEnabled ? (
+        <>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onSelect={toggleShowArchived}>
+            <Check
+              size={16}
+              className={`mr-2 ${showArchived ? "" : "invisible"}`}
+            />
+            {t(($) => {
+              return $.chat.sidebar.showArchived;
+            })}
+          </DropdownMenuItem>
+        </>
+      ) : null}
     </>
   );
 }

@@ -44,7 +44,6 @@ const getUsageRecordInner$ = command(
         tz: query.tz,
         page: query.page,
         pageSize: query.pageSize,
-        source: query.source,
       },
       signal,
     );

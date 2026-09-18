@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.19](https://github.com/vm0-ai/okou/compare/codex-mock-v0.11.18...codex-mock-v0.11.19) (2026-09-18)
+
+
+### Bug Fixes
+
+* classify explicit biological risk refusals ([#35036](https://github.com/vm0-ai/okou/issues/35036)) ([3b89f3e](https://github.com/vm0-ai/okou/commit/3b89f3e687af19e8989a5f7612e9c51b6179e571)), closes [#34764](https://github.com/vm0-ai/okou/issues/34764)
+
 ## [0.11.18](https://github.com/vm0-ai/okou/compare/codex-mock-v0.11.17...codex-mock-v0.11.18) (2026-09-17)
 
 ## [0.11.17](https://github.com/vm0-ai/okou/compare/codex-mock-v0.11.16...codex-mock-v0.11.17) (2026-09-17)

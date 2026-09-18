@@ -58,7 +58,8 @@ import type { Tx } from "../../lib/db-types";
 import { now, nowDate } from "../../lib/time";
 import { type Db, db$, type ReadonlyDb, writeDb$ } from "../external/db";
 import { inferMimetype } from "./chat-event-shared.service";
-import { latestRunFinishEventSubquery } from "./chat-thread-read-state-query";
+import { latestReadWatermarkEventSubquery } from "./chat-thread-read-state-query";
+import { revokeMorningBriefDeliveryOwnership } from "./morning-brief-delivery.service";
 import {
   appendChatThreadEvent,
   chatThreadServiceTierFromCodex,
@@ -76,6 +77,7 @@ import {
   type PreparedChatThreadConnectorSelection,
 } from "./chat-thread-connector-selection.service";
 import { loadNewChatThreadModelSettings } from "./chat-thread-model-settings.service";
+import { ORDINARY_CHAT_THREAD_PROVENANCE } from "./morning-brief-thread-provenance.service";
 
 type ChatThreadRow = {
   readonly id: string;
@@ -319,15 +321,18 @@ export function chatThreadUnreads(args: {
 }): Computed<Promise<readonly { threadId: string; unreadAt: string }[]>> {
   return computed(async (get) => {
     const db = get(db$);
-    const lastRunFinish = latestRunFinishEventSubquery(db, chatThreads.id);
+    const latestReadWatermark = latestReadWatermarkEventSubquery(
+      db,
+      chatThreads.id,
+    );
     const rows = await db
       .select({
         threadId: chatThreads.id,
-        unreadAt: lastRunFinish.createdAt,
+        unreadAt: latestReadWatermark.createdAt,
       })
       .from(chatThreads)
       .innerJoin(agents, eq(agents.id, chatThreads.agentId))
-      .crossJoinLateral(lastRunFinish)
+      .crossJoinLateral(latestReadWatermark)
       .where(
         and(
           eq(chatThreads.userId, args.userId),
@@ -335,7 +340,7 @@ export function chatThreadUnreads(args: {
           eq(chatThreads.agentId, args.agentId),
           or(
             isNull(chatThreads.lastReadAt),
-            gt(lastRunFinish.createdAt, chatThreads.lastReadAt),
+            gt(latestReadWatermark.createdAt, chatThreads.lastReadAt),
           ),
           noActiveRunsForCurrentThreadCondition(db),
         ),
@@ -379,7 +384,10 @@ export function chatIndicators(args: {
           ),
         ),
     );
-    const lastRunFinish = latestRunFinishEventSubquery(db, chatThreads.id);
+    const latestReadWatermark = latestReadWatermarkEventSubquery(
+      db,
+      chatThreads.id,
+    );
     const unreadThreads = db.$with("unread_threads").as(
       db
         .select({
@@ -389,7 +397,7 @@ export function chatIndicators(args: {
         .from(chatThreads)
         .innerJoin(agents, eq(agents.id, chatThreads.agentId))
         .leftJoin(activeThreads, eq(activeThreads.threadId, chatThreads.id))
-        .crossJoinLateral(lastRunFinish)
+        .crossJoinLateral(latestReadWatermark)
         .where(
           and(
             eq(chatThreads.userId, args.userId),
@@ -400,14 +408,14 @@ export function chatIndicators(args: {
               isNull(chatThreads.lastReadAt),
               gt(chatThreads.lastMessageAt, chatThreads.lastReadAt),
             ),
-            gte(lastRunFinish.createdAt, unreadCutoff),
+            gte(latestReadWatermark.createdAt, unreadCutoff),
             or(
               isNull(chatThreads.lastReadAt),
-              gt(lastRunFinish.createdAt, chatThreads.lastReadAt),
+              gt(latestReadWatermark.createdAt, chatThreads.lastReadAt),
             ),
           ),
         )
-        .orderBy(desc(lastRunFinish.createdAt), desc(chatThreads.id))
+        .orderBy(desc(latestReadWatermark.createdAt), desc(chatThreads.id))
         .limit(INDICATOR_UNREAD_LIMIT),
     );
     const indicatorRows = db.$with("indicator_rows").as(
@@ -726,6 +734,10 @@ export async function createChatThreadInTransaction(
     userId: args.userId,
     agentId: args.agentId,
     title: args.title ?? null,
+    // Positive classification belongs to the INSERT itself. A conflicting
+    // replay below returns the existing row without writing this value, so a
+    // client id that already names an unknown or excluded thread keeps it.
+    provenance: ORDINARY_CHAT_THREAD_PROVENANCE,
     lastReadAt: sql`NOW()`,
     modelProviderId: args.modelProviderId,
     modelProviderType:
@@ -862,15 +874,6 @@ export const deleteChatThread$ = command(
         };
       }
 
-      await appendChatThreadEvent(tx, {
-        kind: "deleted",
-        userId: args.userId,
-        orgId: args.orgId,
-        chatThreadId: ownedThread.id,
-        agentId: ownedThread.agentId,
-        eventId: args.eventId,
-      });
-
       // Capture related active runs while the thread row blocks new FK attaches.
       // Terminal runs (completed/failed/cancelled) are left untouched; only
       // queued/pending/running runs need stopping.
@@ -911,13 +914,36 @@ export const deleteChatThread$ = command(
         .delete(chatEventSearchMessages)
         .where(eq(chatEventSearchMessages.chatThreadId, ownedThread.id));
 
-      // Delete the thread last inside the lock. Cascades chat_events; captured
-      // active runs lose their canonical chatThreadId, while any retained legacy
+      // A native Morning Brief delivery cascades away with this thread, and it
+      // is the only association to its still-unsent mail. Remove both here, so
+      // the cascade cannot orphan content-bearing email.
+      await revokeMorningBriefDeliveryOwnership(tx, {
+        kind: "thread",
+        chatThreadId: ownedThread.id,
+      });
+
+      // Delete the thread after cleanup under its row lock. Cascades chat_events.
+      // Captured active runs lose their canonical chatThreadId, while any retained legacy
       // row is independently nulled by its own foreign key.
       const [deletedThread] = await tx
         .delete(chatThreads)
         .where(eq(chatThreads.id, ownedThread.id))
         .returning({ id: chatThreads.id });
+
+      if (deletedThread) {
+        // Acquire the user/org event sequence only after all cleanup and
+        // cascading deletes. A blocked child row must not hold this shared
+        // lock and stall events for other threads. Keep the tombstone in this
+        // transaction so deletion and its ordered event become visible together.
+        await appendChatThreadEvent(tx, {
+          kind: "deleted",
+          userId: args.userId,
+          orgId: args.orgId,
+          chatThreadId: ownedThread.id,
+          agentId: ownedThread.agentId,
+          eventId: args.eventId,
+        });
+      }
 
       return {
         deleted: Boolean(deletedThread),

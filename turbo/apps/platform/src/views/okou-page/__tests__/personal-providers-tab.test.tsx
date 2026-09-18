@@ -324,12 +324,62 @@ test("Review personal subscriptions through account identity", async () => {
     screen.findAllByText("Account A Organization"),
   ).resolves.not.toHaveLength(0);
   click(within(rowA).getByLabelText("More options"));
+  const accountMenu = await screen.findByRole("menu");
   expect(
-    queryAllByRoleFast("menuitem").some((item) => {
-      return item.textContent?.trim() === "Remove";
-    }),
-  ).toBeFalsy();
+    within(accountMenu).getByText("Disconnect account"),
+  ).toBeInTheDocument();
   click(within(rowA).getByLabelText("More options"));
+});
+
+test("Disconnect an active personal subscription account", async () => {
+  context.mocks.data.org({
+    id: "org_1",
+    name: "Test Org",
+    role: "member",
+  });
+  const account = connectedPersonalCodexAccount({
+    id: "00000000-0000-4000-a000-000000000311",
+    email: "account-a@example.com",
+    isActive: true,
+    createdAt: "2026-03-01T00:00:00Z",
+  });
+  context.mocks.data.personalModelProviders([account]);
+
+  await openModelSettings("Models", {
+    [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
+  });
+
+  const row = await screen.findByTestId(`oauth-account-${account.id}`);
+  click(within(row).getByLabelText("More options"));
+  click(await screen.findByText("Disconnect account"));
+
+  const confirmation = await screen.findByRole("dialog", {
+    name: "Disconnect account-a@example.com?",
+  });
+  expect(
+    within(confirmation).getByText(
+      "This removes the account from Okou. It won’t cancel your subscription with the provider.",
+    ),
+  ).toBeInTheDocument();
+  const disconnectButton = queryAllByRoleFast("button", confirmation).find(
+    (button) => {
+      return button.textContent?.trim() === "Disconnect account";
+    },
+  );
+  if (!disconnectButton) {
+    throw new Error("Disconnect account button not found");
+  }
+  click(disconnectButton);
+
+  await waitFor(() => {
+    expect(screen.queryByTestId(`oauth-account-${account.id}`)).toBeNull();
+    expect(
+      screen.queryByRole("dialog", {
+        name: "Disconnect account-a@example.com?",
+      }),
+    ).toBeNull();
+  });
+  expect(screen.getByText("Account disconnected")).toBeInTheDocument();
 });
 
 test("Review personal subscriptions through usage details", async () => {

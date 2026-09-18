@@ -7,7 +7,7 @@ const c = initContract();
 export const marketingOnboardingContract = c.router({
   record: {
     method: "POST",
-    path: "/api/marketing/finish-onboarding",
+    path: "/api/marketing/onboarding-start",
     headers: authHeadersSchema,
     body: c.noBody(),
     responses: {
@@ -16,6 +16,6 @@ export const marketingOnboardingContract = c.router({
       403: z.object({ error: z.string() }),
       503: z.object({ error: z.string() }),
     },
-    summary: "Associate existing Marketing attribution during onboarding",
+    summary: "Bind Marketing attribution and record entry into onboarding",
   },
 });

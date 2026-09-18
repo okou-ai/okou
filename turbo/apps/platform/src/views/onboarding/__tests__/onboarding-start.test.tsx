@@ -9,7 +9,7 @@ import { localStorageSignals } from "../../../signals/external/local-storage.ts"
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
-const ENDPOINT = "https://www.okou.ai/api/marketing/finish-onboarding";
+const ENDPOINT = "https://www.okou.ai/api/marketing/onboarding-start";
 const previousAttempts = localStorageSignals("marketing_onboarding_attempts");
 
 function goBack() {
@@ -186,4 +186,20 @@ test("A different user's previous attempt does not suppress onboarding attributi
   await openOnboarding();
   await received.promise;
   expect(document.querySelector("iframe")).toBeNull();
+});
+
+test("Changing the session cancels the pending onboarding request", async () => {
+  onboardingNeeded();
+  const received = context.mocks.deferred<Request>();
+  context.mocks.http.post(ENDPOINT, ({ request, never }) => {
+    received.resolve(request);
+    return never();
+  });
+
+  await openOnboarding();
+  const request = await received.promise;
+  expect(request.signal.aborted).toBeFalsy();
+  const switched = window._okou?.switchClerkSession("another-test-session");
+  expect(request.signal.aborted).toBeTruthy();
+  await switched;
 });

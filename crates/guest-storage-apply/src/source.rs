@@ -1,4 +1,5 @@
 use crate::LOG_TAG;
+use crate::connection_observation::{self, CallObservation};
 use crate::error::DownloadError;
 use guest_telemetry::log_info;
 use std::cell::Cell;
@@ -16,7 +17,7 @@ const LOOKUP_ERROR_PREFIX: &str = "failed to lookup address information:";
 static HTTP_AGENT: LazyLock<ureq::Agent> = LazyLock::new(|| {
     use ureq::tls::{RootCerts, TlsConfig};
 
-    ureq::Agent::config_builder()
+    let config = ureq::Agent::config_builder()
         .timeout_global(Some(TIMEOUT))
         .http_status_as_error(false)
         .tls_config(
@@ -24,8 +25,8 @@ static HTTP_AGENT: LazyLock<ureq::Agent> = LazyLock::new(|| {
                 .root_certs(RootCerts::PlatformVerifier)
                 .build(),
         )
-        .build()
-        .new_agent()
+        .build();
+    connection_observation::agent(config)
 });
 
 /// Open the archive byte stream. HTTP/HTTPS URLs use the direct remote-fetch
@@ -48,9 +49,19 @@ pub(crate) fn open_archive(
     }
 
     let metrics = metrics.cloned().unwrap_or_default();
+    let observation = url
+        .split_once("://")
+        .is_some_and(|(scheme, _)| {
+            scheme.eq_ignore_ascii_case("http") || scheme.eq_ignore_ascii_case("https")
+        })
+        .then(CallObservation::start);
     let request_start = Instant::now();
     let response = HTTP_AGENT.get(url).call();
-    metrics.record_request_to_response_headers(request_start.elapsed());
+    let request_elapsed = request_start.elapsed();
+    metrics.record_request_to_response_headers(request_elapsed);
+    if let Some(observation) = observation {
+        observation.finish(request_elapsed, response.is_ok());
+    }
     let response = response.map_err(|e| DownloadError::new(classify_http_error(&e)))?;
     if response.status().is_client_error() || response.status().is_server_error() {
         return Err(crate::http_failure::from_response(url, response));

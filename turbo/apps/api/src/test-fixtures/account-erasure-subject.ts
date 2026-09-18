@@ -133,15 +133,43 @@ export function barrierQueryBinds(
   return values.success && values.data.includes(value);
 }
 
+/**
+ * The statements the currently selected transaction has already issued, in
+ * order. A thread id alone cannot identify a transaction when several of them
+ * read the same thread, so `stopAt` uses this to recognize the phase it wants —
+ * for example a transaction that has already taken a `FOR KEY SHARE` lock is
+ * the writer, not the read-only gate that precedes it.
+ */
+export interface SelectedTransaction {
+  readonly statements: readonly string[];
+}
+
 export interface TransactionBarrier {
   readonly entered: Promise<{
     readonly lockTimeout: string;
     readonly statementTimeout: string;
+    /**
+     * Rows the chosen statement itself reported. It carries a number only in
+     * `pauseAfter` mode, where that statement has already run inside the still
+     * open transaction, and is `null` when the barrier pauses before dispatch.
+     */
+    readonly rowCount: number | null;
   }>;
   /** Backends currently blocked by the paused transaction, so a test never
    * guesses at timing with a sleep. */
   readonly blockedWaiterCount: () => Promise<number>;
   readonly release: () => void;
+}
+
+/** The row count `pg` reports for an executed statement. */
+function pausedRowCount(executed: unknown): number {
+  const parsed = z.object({ rowCount: z.number() }).safeParse(executed);
+  if (!parsed.success) {
+    throw new Error(
+      "Expected the paused statement result to carry a row count",
+    );
+  }
+  return parsed.data.rowCount;
 }
 
 /**
@@ -152,13 +180,27 @@ export interface TransactionBarrier {
  * transaction `select` identifies waits, at one chosen point. Nothing is mocked
  * and no result or error is replaced.
  *
- * The pause always happens before the chosen statement is dispatched, so no
- * server-side lock or statement timer runs during the observation window and a
- * test never has to win the writer's own bounded budget.
+ * By default the pause happens before the chosen statement is dispatched. With
+ * `pauseAfter` that statement runs first and the transaction pauses holding its
+ * result, which is the only way to observe a mutation that is applied and still
+ * uncommitted, and the only boundary at which a writer's own post-write
+ * cancellation check has not run yet. Either way the backend is idle inside its
+ * transaction for the whole window, so no lock or statement timer is running
+ * and a test never has to win the writer's own bounded budget. `pauseAfter`
+ * does retain the executed statement's row locks, so a concurrent writer to the
+ * same row waits; a plain reader is unaffected.
  *
- * `select` recognizes the target transaction from a statement only it issues;
- * `stopAt` then chooses where that transaction pauses, and receives whether the
- * current statement is the selecting one so a caller can stop there.
+ * `select` recognizes a candidate transaction from a statement it issues;
+ * `stopAt` then chooses where that candidate pauses, and receives whether the
+ * current statement is the selecting one so a caller can stop there, plus the
+ * statements that candidate has already issued so it can require a phase.
+ *
+ * A candidate that reaches `COMMIT` or `ROLLBACK` without ever satisfying
+ * `stopAt` was not the transaction the caller meant: the latch is released and
+ * the next candidate is considered. Several transactions legitimately read the
+ * same row — an admission gate commits before the writer it precedes — so
+ * latching the first one permanently either pauses the wrong transaction or
+ * waits forever for a stop it will never reach.
  */
 export async function withDatabaseTransactionBarrierFixture<T>(
   args: {
@@ -166,7 +208,9 @@ export async function withDatabaseTransactionBarrierFixture<T>(
     readonly stopAt: (
       queryArgs: unknown[],
       selectingStatement: boolean,
+      transaction: SelectedTransaction,
     ) => boolean;
+    readonly pauseAfter?: boolean;
     readonly work: (barrier: TransactionBarrier) => Promise<T>;
   },
   signal: AbortSignal,
@@ -177,6 +221,7 @@ export async function withDatabaseTransactionBarrierFixture<T>(
     readonly pid: number;
     readonly lockTimeout: string;
     readonly statementTimeout: string;
+    readonly rowCount: number | null;
   }>(signal);
   const blocked = async () => {
     return await blockedWaiterCount((await entered.promise).pid);
@@ -189,22 +234,34 @@ export async function withDatabaseTransactionBarrierFixture<T>(
   };
   const original = Client.prototype.query;
   let selected: unknown;
+  let statements: string[] = [];
   let paused = false;
   Client.prototype.query = new Proxy(original, {
     apply(target, receiver: unknown, queryArgs: unknown[]): unknown {
       const selectingStatement = args.select(queryArgs);
-      if (!paused && selectingStatement) {
+      if (!paused && selectingStatement && selected === undefined) {
         selected = receiver;
+        statements = [];
       }
-      if (
-        paused ||
-        receiver !== selected ||
-        !args.stopAt(queryArgs, selectingStatement)
-      ) {
+      if (paused || receiver !== selected) {
+        return Reflect.apply(target, receiver, queryArgs);
+      }
+      const text = barrierQueryText(queryArgs);
+      if (!args.stopAt(queryArgs, selectingStatement, { statements })) {
+        statements.push(text);
+        if (text === "commit" || text === "rollback") {
+          // This candidate finished without ever reaching the requested stop,
+          // so it was not the target transaction.
+          selected = undefined;
+          statements = [];
+        }
         return Reflect.apply(target, receiver, queryArgs);
       }
       paused = true;
       return (async () => {
+        const executed: unknown = args.pauseAfter
+          ? await Reflect.apply(target, receiver, queryArgs)
+          : undefined;
         const settings: unknown = await Reflect.apply(target, receiver, [
           "SELECT pg_backend_pid() AS pid, current_setting('lock_timeout') AS lock_timeout, current_setting('statement_timeout') AS statement_timeout",
         ]);
@@ -228,9 +285,12 @@ export async function withDatabaseTransactionBarrierFixture<T>(
           pid: row.pid,
           lockTimeout: row.lock_timeout,
           statementTimeout: row.statement_timeout,
+          rowCount: args.pauseAfter ? pausedRowCount(executed) : null,
         });
         await released.promise;
-        return await Reflect.apply(target, receiver, queryArgs);
+        return args.pauseAfter
+          ? executed
+          : await Reflect.apply(target, receiver, queryArgs);
       })();
     },
   });

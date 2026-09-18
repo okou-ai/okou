@@ -9,8 +9,8 @@ import {
 } from "../contracts";
 import { attempt, parseJson } from "../safe";
 import {
-  CONNECTOR_CATALOG_ACTIVE_KEY,
   connectorCatalogArtifactSchema,
+  retainedV3ConnectorCatalogArtifactSchema,
   SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
   type ConnectorCatalogArtifact,
 } from "./artifacts";
@@ -44,24 +44,19 @@ export interface ConnectorCatalogValidationTiming {
   ): T;
 }
 
-const connectorCatalogObjectKeySchema = artifactKeySchema.refine((key) => {
-  const namespace = `connectors/v${SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION}/`;
-  return (
-    key.startsWith(namespace) &&
-    key !== CONNECTOR_CATALOG_ACTIVE_KEY &&
-    key.endsWith(".json") &&
-    !key.includes("?") &&
-    !key.includes("#")
-  );
-}, "Catalog key must be a trusted connector JSON object key");
-
 const connectorCatalogActivePointerSchema = z
   .object({
     catalogVersion: connectorCatalogVersionSchema,
-    catalogKey: connectorCatalogObjectKeySchema,
+    catalogKey: artifactKeySchema,
     catalogDigest: digestSchema,
   })
-  .strict();
+  .strict()
+  .refine((pointer) => {
+    return (
+      pointer.catalogKey ===
+      `connectors/v${SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION}/releases/${pointer.catalogVersion}/catalog.json`
+    );
+  }, "Catalog key must match its supported generation and release version");
 
 export type ConnectorCatalogActivePointer = z.infer<
   typeof connectorCatalogActivePointerSchema
@@ -173,11 +168,14 @@ function parseStrict<T>(
   return parsed.data;
 }
 
-function assertSupportedArtifactSchema(value: unknown): void {
+function assertSupportedArtifactSchema(
+  value: unknown,
+  schemaVersion: 3 | 4,
+): void {
   if (
     isRecord(value) &&
     typeof value.artifactSchemaVersion === "number" &&
-    value.artifactSchemaVersion !== SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION
+    value.artifactSchemaVersion !== schemaVersion
   ) {
     fail("unsupported-schema");
   }
@@ -194,16 +192,21 @@ function measureSnapshotPhase<T>(
 function validateCatalogJson(args: {
   readonly json: unknown;
   readonly catalogVersion: string;
+  readonly schemaVersion?: 3 | 4;
   readonly timing?: ConnectorCatalogValidationTiming;
 }): ConnectorCatalogArtifact {
   const artifact = measureSnapshotPhase(
     args.timing,
     "api_dispatch_connector_catalog_validate_schema",
     () => {
-      assertSupportedArtifactSchema(args.json);
-      const parsed = parseStrict(
+      const schemaVersion =
+        args.schemaVersion ?? SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION;
+      assertSupportedArtifactSchema(args.json, schemaVersion);
+      const parsed = parseStrict<ConnectorCatalogArtifact>(
         args.json,
-        connectorCatalogArtifactSchema,
+        schemaVersion === 3
+          ? retainedV3ConnectorCatalogArtifactSchema
+          : connectorCatalogArtifactSchema,
         "invalid-artifact",
       );
       if (parsed.catalogVersion !== args.catalogVersion) {
@@ -288,6 +291,11 @@ export async function loadConnectorCatalogCandidate(args: {
   readonly reader: ConnectorCatalogArtifactReader;
   readonly pointer: ConnectorCatalogActivePointer;
 }): Promise<ValidatedConnectorCatalogCandidate> {
+  parseStrict(
+    args.pointer,
+    connectorCatalogActivePointerSchema,
+    "invalid-pointer",
+  );
   const rawBytes = await readBoundedArtifact(
     args.reader,
     args.pointer.catalogKey,
@@ -377,6 +385,20 @@ export function decodeConnectorCatalogSnapshot(
     artifact: validateCatalogJson({
       json: decodeConnectorCatalogSnapshotJson(args),
       catalogVersion: args.catalogVersion,
+      ...(args.timing === undefined ? {} : { timing: args.timing }),
+    }),
+  };
+}
+
+/** Decode retained v3 bytes without rewriting their header or digest (#34913). */
+export function decodeRetainedV3ConnectorCatalogSnapshot(
+  args: ConnectorCatalogSnapshotDecodeArgs,
+): DecodedConnectorCatalogSnapshot {
+  return {
+    artifact: validateCatalogJson({
+      json: decodeConnectorCatalogSnapshotJson(args),
+      catalogVersion: args.catalogVersion,
+      schemaVersion: 3,
       ...(args.timing === undefined ? {} : { timing: args.timing }),
     }),
   };

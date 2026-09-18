@@ -304,7 +304,7 @@ async function readProjectionIdentity(
       identity: {
         projectionSetId: row.projectionSetId,
         sourceId,
-        schemaVersion: row.schemaVersion,
+        schemaVersion: SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
         catalogVersion: row.catalogVersion,
         catalogDigest: row.catalogDigest,
         capabilityDigest,

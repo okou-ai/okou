@@ -1030,7 +1030,7 @@ checksum = "0c9ea0ac24bc397ab3c98583a3c9ba74fa56b09a4449bbe172b9b1ddb016027a"
 
 [[package]]
 name = "codex-mock"
-version = "0.11.18"
+version = "0.11.19"
 dependencies = [
  "chrono",
  "clap",
@@ -1474,6 +1474,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223"
 
 [[package]]
+name = "fdeflate"
+version = "0.3.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e6853b52649d4ac5c0bd02320cddc5ba956bdb407c4b75a2c6b75bf51500f8c"
+dependencies = [
+ "simd-adler32",
+]
+
+[[package]]
 name = "ff"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1738,7 +1747,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.91.11"
+version = "0.91.14"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -1792,7 +1801,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-client"
-version = "0.21.2"
+version = "0.21.3"
 dependencies = [
  "guest-contracts",
  "guest-control-proto",
@@ -1810,7 +1819,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-proto"
-version = "0.21.14"
+version = "0.21.15"
 dependencies = [
  "guest-contracts",
  "proptest",
@@ -1818,7 +1827,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-server"
-version = "0.21.22"
+version = "0.21.23"
 dependencies = [
  "chrono",
  "guest-contracts",
@@ -1834,7 +1843,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-tests"
-version = "0.12.2"
+version = "0.12.3"
 dependencies = [
  "guest-contracts",
  "guest-control-client",
@@ -1850,7 +1859,7 @@ dependencies = [
 
 [[package]]
 name = "guest-init"
-version = "0.16.271"
+version = "0.16.272"
 dependencies = [
  "guest-contracts",
  "guest-control-server",
@@ -1869,7 +1878,7 @@ dependencies = [
 
 [[package]]
 name = "guest-storage-apply"
-version = "0.23.95"
+version = "0.24.0"
 dependencies = [
  "flate2",
  "guest-contracts",
@@ -1921,7 +1930,7 @@ dependencies = [
 
 [[package]]
 name = "guest-write-file"
-version = "0.1.168"
+version = "0.1.169"
 dependencies = [
  "guest-contracts",
  "guest-control-proto",
@@ -2623,6 +2632,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1fa76a2c86f704bdb222d66965fb3d63269ce38518b83cb0575fca855ebb6316"
 dependencies = [
  "adler2",
+ "simd-adler32",
 ]
 
 [[package]]
@@ -3022,6 +3032,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548"
 
 [[package]]
+name = "png"
+version = "0.18.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "60769b8b31b2a9f263dae2776c37b1b28ae246943cf719eb6946a1db05128a61"
+dependencies = [
+ "bitflags",
+ "crc32fast",
+ "fdeflate",
+ "flate2",
+ "miniz_oxide 0.8.9",
+]
+
+[[package]]
 name = "poly1305"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3390,15 +3413,19 @@ dependencies = [
 
 [[package]]
 name = "rfb-client"
-version = "0.2.0"
+version = "0.4.0"
 dependencies = [
  "des",
  "flate2",
+ "png",
  "rcgen",
  "rustls",
+ "serde_json",
+ "tempfile",
  "thiserror",
  "tokio",
  "tokio-rustls",
+ "uuid",
  "webpki-roots",
  "zeroize",
 ]
@@ -3494,7 +3521,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.197.2"
+version = "0.197.6"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -3851,7 +3878,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-firecracker"
-version = "0.43.2"
+version = "0.43.3"
 dependencies = [
  "async-trait",
  "clap",

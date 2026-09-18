@@ -97,6 +97,10 @@ import {
 } from "./chat-thread-model.service";
 import { loadNewChatThreadMediaModels } from "./chat-thread-media-model.service";
 import { loadNewChatThreadModelSettings } from "./chat-thread-model-settings.service";
+import {
+  ORDINARY_CHAT_THREAD_PROVENANCE,
+  recordOfficialWorkflowThreadProvenance,
+} from "./morning-brief-thread-provenance.service";
 import { touchChatThreadLastMessageAt } from "./chat-event-shared.service";
 import {
   revokeChatEvent,
@@ -171,6 +175,12 @@ import {
   userPresentationTemplateVolumes,
   type PresentationTemplateVolume,
 } from "./presentation-template-data.service";
+import {
+  authorizedUserTemplates,
+  selectedUserTemplateIds,
+  userTemplateVolumes,
+  type MountedUserTemplate,
+} from "./user-template-data.service";
 import { resolveThreadGenerationTemplatePrompt } from "../../lib/thread-generation-template";
 import {
   logTemplateUsage,
@@ -1002,6 +1012,7 @@ function emptyModelFirstThreadPin(): ThreadModelPin {
 async function withBuiltInModelRuntimeRoute(
   db: Db,
   configuration: ResolvedRunConfiguration,
+  featureSwitchContext: FeatureSwitchContext,
 ): Promise<ResolvedRunConfiguration | NormalSendFailure> {
   if (
     configuration.providerAdmission.error ||
@@ -1020,6 +1031,7 @@ async function withBuiltInModelRuntimeRoute(
   const builtInModelRuntimeRoute = await resolveBuiltInModelRuntimeRoute(
     db,
     selectedModel,
+    featureSwitchContext,
   );
   return builtInModelRuntimeRoute
     ? { ...configuration, builtInModelRuntimeRoute }
@@ -1035,6 +1047,7 @@ async function resolveExplicitRunConfiguration(params: {
   readonly body: NormalSendBody;
   readonly codexFastModeEnabled: boolean;
   readonly reasoningEffortEnabled: boolean;
+  readonly featureSwitchContext: FeatureSwitchContext;
   readonly timing?: ApiDispatchTimingCollector;
 }): Promise<ResolvedRunConfiguration | NormalSendFailure | undefined> {
   const modelSelection = params.body.modelSelection;
@@ -1103,17 +1116,21 @@ async function resolveExplicitRunConfiguration(params: {
   if (codexServiceTierError) {
     return codexServiceTierError;
   }
-  return await withBuiltInModelRuntimeRoute(params.db, {
-    modelPin,
-    providerAdmission,
-    reasoningEffort: effort.reasoningEffort,
-    modelSettings: effort.modelSettings,
-    codexServiceTier: codexServiceTierForRun({
-      body: params.body,
+  return await withBuiltInModelRuntimeRoute(
+    params.db,
+    {
       modelPin,
-      codexFastModeEnabled: params.codexFastModeEnabled,
-    }),
-  });
+      providerAdmission,
+      reasoningEffort: effort.reasoningEffort,
+      modelSettings: effort.modelSettings,
+      codexServiceTier: codexServiceTierForRun({
+        body: params.body,
+        modelPin,
+        codexFastModeEnabled: params.codexFastModeEnabled,
+      }),
+    },
+    params.featureSwitchContext,
+  );
 }
 
 async function resolveNormalSendFeatureSwitches(
@@ -1135,10 +1152,27 @@ async function resolveNormalSendFeatureSwitches(
  * The two things this message's own selections contribute to its run: the
  * template guidance block and the video options the composer sent with it.
  */
+/**
+ * The packages this run carries, from both catalogs.
+ *
+ * Both can be selected in one message while the tables are separate, and the
+ * run mounts whichever it was actually given. The two directories differ, so
+ * neither can overwrite the other.
+ */
+function templateVolumesFor(
+  authorized: AuthorizedGenerationTemplates,
+): readonly PresentationTemplateVolume[] {
+  return [
+    ...userPresentationTemplateVolumes(authorized.userPresentationTemplateIds),
+    ...userTemplateVolumes(authorized.userTemplates),
+  ];
+}
+
 function resolveSelectedTemplateContext(
   runtimeBody: RuntimeNormalSendBody,
   featureSwitches: NormalSendFeatureSwitches,
   mountedUserPresentationTemplateIds: readonly string[],
+  mountedUserTemplates: readonly MountedUserTemplate[],
 ): {
   readonly generationTemplatePrompt: string;
   readonly generationTemplateIdentities: readonly GenerationTemplateIdentity[];
@@ -1149,6 +1183,7 @@ function resolveSelectedTemplateContext(
     explicit: runtimeBody.primaryTemplate,
     explicitTemplates: runtimeBody.templates,
     mountedUserPresentationTemplateIds,
+    mountedUserTemplates,
   });
   return {
     generationTemplatePrompt: resolved.prompt,
@@ -1165,6 +1200,7 @@ function resolveSelectedTemplateContext(
  */
 interface AuthorizedGenerationTemplates {
   readonly userPresentationTemplateIds: readonly string[];
+  readonly userTemplates: readonly MountedUserTemplate[];
 }
 
 async function validateGenerationTemplatePrompt(
@@ -1174,15 +1210,32 @@ async function validateGenerationTemplatePrompt(
   featureSwitches: NormalSendFeatureSwitches,
 ): Promise<NormalSendFailure | AuthorizedGenerationTemplates> {
   if (generationTemplates.length === 0) {
-    return { userPresentationTemplateIds: [] };
+    return { userPresentationTemplateIds: [], userTemplates: [] };
   }
   // Syntax first: every selection this message names is a candidate mount, so
   // the builder can reject a malformed private id before consulting the database.
   const selectedIds = selectedUserPresentationTemplateIds(generationTemplates);
+  const selectedCustomIds = selectedUserTemplateIds(generationTemplates);
+  // The kind decides the framing sentence, so validation needs the rows even
+  // though authorization is checked again below. Reading them once and passing
+  // the result to both keeps the two from disagreeing.
+  const authorizedCustom = await authorizedUserTemplates(db, {
+    orgId: args.orgId,
+    userId: args.userId,
+    templateIds: selectedCustomIds,
+    enabled: isFeatureEnabled(
+      FeatureSwitchKey.CustomTemplates,
+      featureSwitches.featureSwitchContext,
+    ),
+  });
+  if (authorizedCustom.length !== selectedCustomIds.length) {
+    return badRequestMessage("Custom template not found");
+  }
   for (const template of generationTemplates) {
     const validation = buildGenerationTemplatePrompt(template, {
       introVideoEnabled: featureSwitches.introVideoEnabled,
       mountedUserPresentationTemplateIds: selectedIds,
+      mountedUserTemplates: authorizedCustom,
     });
     if (validation.status === "invalid") {
       return badRequestMessage(validation.message);
@@ -1196,7 +1249,10 @@ async function validateGenerationTemplatePrompt(
   if (authorizedIds.length !== selectedIds.length) {
     return badRequestMessage("Presentation template not found");
   }
-  return { userPresentationTemplateIds: authorizedIds };
+  return {
+    userPresentationTemplateIds: authorizedIds,
+    userTemplates: authorizedCustom,
+  };
 }
 
 async function updateUserModelPreference(
@@ -1546,6 +1602,10 @@ async function createChatThread(
           userId: args.userId,
           agentId: args.agentId,
           title: null,
+          // Only this successful INSERT may classify the thread. A conflicting
+          // client id resolves to the existing row below and keeps whatever
+          // classification that row already carries.
+          provenance: ORDINARY_CHAT_THREAD_PROVENANCE,
           modelProviderId: pinColumns.modelProviderId,
           modelProviderType: pinColumns.modelProviderType,
           modelProviderCredentialScope: pinColumns.modelProviderCredentialScope,
@@ -1600,6 +1660,7 @@ async function createChatThread(
         userId: args.userId,
         agentId: args.agentId,
         title: null,
+        provenance: ORDINARY_CHAT_THREAD_PROVENANCE,
         modelProviderId: pinColumns.modelProviderId,
         modelProviderType: pinColumns.modelProviderType,
         modelProviderCredentialScope: pinColumns.modelProviderCredentialScope,
@@ -1689,15 +1750,14 @@ function resolveExplicitThreadRunConfiguration(
   settings: {
     readonly requestedReasoningEffort?: ReasoningEffort;
     readonly requestedCodexServiceTier: CodexServiceTier | undefined;
-    readonly reasoningEffortEnabled: boolean;
-    readonly codexFastModeEnabled: boolean;
+    readonly featureSwitches: NormalSendFeatureSwitches;
   },
 ): ResolvedRunConfiguration | NormalSendFailure {
   const effort = resolveChatReasoningEffort({
     selectedModel: configuration.modelPin.selectedModel,
     modelSettings: thread.modelSettings,
     requested: settings.requestedReasoningEffort,
-    enabled: settings.reasoningEffortEnabled,
+    enabled: settings.featureSwitches.reasoningEffortEnabled,
   });
   if ("status" in effort) {
     return effort;
@@ -1713,7 +1773,8 @@ function resolveExplicitThreadRunConfiguration(
             thread.codexServiceTier === "fast" &&
             isCodexFastServiceTierSupported({
               selectedModel: configuration.modelPin.selectedModel,
-              codexFastModeEnabled: settings.codexFastModeEnabled,
+              codexFastModeEnabled:
+                settings.featureSwitches.codexFastModeEnabled,
             })
               ? "fast"
               : undefined,
@@ -1733,10 +1794,9 @@ async function resolveThread(params: {
   readonly initialPin: ThreadModelPin;
   readonly explicitRunConfiguration: ResolvedRunConfiguration | undefined;
   readonly requestedReasoningEffort?: ReasoningEffort;
-  readonly reasoningEffortEnabled: boolean;
   readonly requestedCodexServiceTier: CodexServiceTier | undefined;
   readonly persistRequestedCodexServiceTier: boolean;
-  readonly codexFastModeEnabled: boolean;
+  readonly featureSwitches: NormalSendFeatureSwitches;
   readonly timing?: ApiDispatchTimingCollector;
 }): Promise<ResolvedThreadAndRunConfiguration | NormalSendFailure> {
   if (!params.existingThreadId) {
@@ -1768,7 +1828,6 @@ async function resolveThread(params: {
       runConfiguration: params.explicitRunConfiguration,
     };
   }
-
   const [thread] = await loadTimedExistingThreadSnapshot({
     db: params.db,
     orgId: params.orgId,
@@ -1798,11 +1857,11 @@ async function resolveThread(params: {
           threadId: thread.id,
           threadSnapshot: thread,
           requestedReasoningEffort: params.requestedReasoningEffort,
-          reasoningEffortEnabled: params.reasoningEffortEnabled,
+          reasoningEffortEnabled: params.featureSwitches.reasoningEffortEnabled,
           requestedCodexServiceTier: params.requestedCodexServiceTier,
           persistRequestedCodexServiceTier:
             params.persistRequestedCodexServiceTier,
-          codexFastModeEnabled: params.codexFastModeEnabled,
+          codexFastModeEnabled: params.featureSwitches.codexFastModeEnabled,
         });
       },
     );
@@ -1821,6 +1880,7 @@ async function resolveThread(params: {
         reasoningEffort: persisted.reasoningEffort,
         modelSettings: persisted.modelSettings,
       },
+      params.featureSwitches.featureSwitchContext,
     );
     if ("status" in resolvedRunConfiguration) {
       return resolvedRunConfiguration;
@@ -1923,6 +1983,45 @@ async function resolveExistingUnassociatedClientEventId(
   return resolution.kind === "available" ? { kind: "conflict" } : resolution;
 }
 
+/** Reject a server-owned Official Workflow claim that cannot be authoritative. */
+function assertOfficialSourceClaim(
+  params: AppendUnassociatedUserMessageParams,
+): void {
+  if (params.requiredOfficialWorkflowIds?.length === 0) {
+    throw new Error("Official Workflow source claim cannot be empty");
+  }
+  if (
+    params.requiredOfficialWorkflowIds !== undefined &&
+    params.triggerSource === "agent" &&
+    params.agentRunSource === null
+  ) {
+    throw new Error("Official agent queue source is missing its source Run");
+  }
+}
+
+/**
+ * Record what a server-owned Official Workflow claim means for this thread.
+ *
+ * The claim is the authority for what the input is, so classifying it here
+ * commits the thread's Morning Brief exclusion in the same transaction as the
+ * input that carries the brief. A duplicate client event id inserts nothing and
+ * therefore classifies nothing.
+ */
+async function recordOfficialSourceThreadProvenance(
+  tx: ChatThreadEventTransaction,
+  params: AppendUnassociatedUserMessageParams,
+): Promise<void> {
+  if (params.requiredOfficialWorkflowIds === undefined) {
+    return;
+  }
+  await recordOfficialWorkflowThreadProvenance(tx, {
+    chatThreadId: params.threadId,
+    userId: params.userId,
+    orgId: params.orgId,
+    workflowIds: params.requiredOfficialWorkflowIds,
+  });
+}
+
 async function appendUnassociatedUserMessageTransaction(
   tx: ChatThreadEventTransaction,
   params: AppendUnassociatedUserMessageParams,
@@ -1948,16 +2047,7 @@ async function appendUnassociatedUserMessageTransaction(
   );
 
   const explicitId = params.clientEventId ?? undefined;
-  if (params.requiredOfficialWorkflowIds?.length === 0) {
-    throw new Error("Official Workflow source claim cannot be empty");
-  }
-  if (
-    params.requiredOfficialWorkflowIds !== undefined &&
-    params.triggerSource === "agent" &&
-    params.agentRunSource === null
-  ) {
-    throw new Error("Official agent queue source is missing its source Run");
-  }
+  assertOfficialSourceClaim(params);
   const event: NewChatEvent = {
     ...(explicitId ? { id: explicitId } : {}),
     chatThreadId: params.threadId,
@@ -2004,6 +2094,7 @@ async function appendUnassociatedUserMessageTransaction(
     },
   );
   if (inserted) {
+    await recordOfficialSourceThreadProvenance(tx, params);
     if (params.getStartedWorkflowId) {
       await recordGetStartedWorkflow(tx, {
         orgId: params.orgId,
@@ -2598,6 +2689,7 @@ function resolveTimedExplicitRunConfiguration(
         body: args.body,
         codexFastModeEnabled: featureSwitches.codexFastModeEnabled,
         reasoningEffortEnabled: featureSwitches.reasoningEffortEnabled,
+        featureSwitchContext: featureSwitches.featureSwitchContext,
         timing: args.timing,
       });
     },
@@ -2672,7 +2764,6 @@ function resolveTimedThread(
         initialPin,
         explicitRunConfiguration,
         requestedReasoningEffort: args.body.runOptions?.reasoningEffort,
-        reasoningEffortEnabled: featureSwitches.reasoningEffortEnabled,
         requestedCodexServiceTier: args.body.runOptions?.codexServiceTier,
         persistRequestedCodexServiceTier:
           (args.body.modelSelection !== undefined &&
@@ -2680,7 +2771,7 @@ function resolveTimedThread(
           (args.body.runOptions !== undefined &&
             args.body.runOptions.reasoningEffort === undefined) ||
           args.body.runOptions?.codexServiceTier !== undefined,
-        codexFastModeEnabled: featureSwitches.codexFastModeEnabled,
+        featureSwitches,
         timing: args.timing,
       });
       if ("status" in resolved) {
@@ -2994,6 +3085,7 @@ const prepareNormalSend$ = command(
       runtimeBody,
       featureSwitches,
       authorizedTemplates.userPresentationTemplateIds,
+      authorizedTemplates.userTemplates,
     );
     const persistedExplicitSelection = await persistTimedExplicitSelections(
       args,
@@ -3020,9 +3112,7 @@ const prepareNormalSend$ = command(
       generationTemplatePrompt: templateContext.generationTemplatePrompt,
       generationTemplateIdentities:
         templateContext.generationTemplateIdentities,
-      presentationTemplateVolumes: userPresentationTemplateVolumes(
-        authorizedTemplates.userPresentationTemplateIds,
-      ),
+      presentationTemplateVolumes: templateVolumesFor(authorizedTemplates),
       videoRunOptions: templateContext.videoRunOptions,
       computerUseHostGrant: computerAccess.computerUseHostGrant,
       persistedExplicitSelection,

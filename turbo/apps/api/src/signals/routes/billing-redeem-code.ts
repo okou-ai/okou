@@ -7,6 +7,7 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
 import { clerk$ } from "../external/clerk";
+import { findClerkUser } from "../external/clerk-users";
 import type { RouteEntry } from "../route-entry";
 import { safeJsonParse, tapError } from "../utils";
 
@@ -150,9 +151,8 @@ async function primaryEmailForUser(
   userId: string,
   signal: AbortSignal,
 ): Promise<string | undefined> {
-  const users = await clerk.users.getUserList({ userId: [userId], limit: 1 });
+  const user = await findClerkUser(clerk, userId, signal);
   signal.throwIfAborted();
-  const user = users.data[0];
   if (!user) {
     return undefined;
   }

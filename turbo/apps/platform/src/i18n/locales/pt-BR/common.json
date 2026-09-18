@@ -665,7 +665,6 @@
       "importedSlides_other": "{{count}} slides",
       "importFile": "Importe seu próprio arquivo",
       "importFileHint": "({{formats}})",
-      "importStarted": "Analisando {{filename}}. Ele aparecerá em Custom quando estiver pronto.",
       "importUnsupported": "Escolha um arquivo {{formats}} para criar um modelo.",
       "introVideo": "Vídeo de introdução",
       "introVideoUnavailable": "Este modelo de vídeo não está mais disponível. Remova-o para enviar sua mensagem.",
@@ -1939,13 +1938,14 @@
       "picker": {
         "autoVoiceDescription": "Encontre uma voz que combine com seu conteúdo.",
         "avatarVoice": "Voz do avatar",
-        "changeAvatar": "Alterar avatar",
+        "back": "Voltar",
         "chooseStyle": "Escolha um estilo",
-        "chooseStyleAndVoice": "Escolha um estilo e uma voz.",
+        "closeOptions": "Fechar opções",
+        "moreOptions": "Mais opções",
         "noMatches": "Nenhum resultado.",
-        "ready": "Pronto para usar. Adicione seu conteúdo na conversa.",
+        "searchStyles": "Pesquisar estilos",
+        "selectionSummary": "Voz: {{voice}} · Avatar: {{avatar}}",
         "settings": "Configurações do vídeo de introdução",
-        "style": "Estilo",
         "useSelection": "Usar seleção"
       },
       "style": {
@@ -2014,10 +2014,12 @@
       "github": "GitHub",
       "lark": "Lark",
       "openChat": "Abrir conversa",
+      "openChatIn": "Abrir conversa no {{integration}}",
       "openFeishuChat": "Abrir conversa original no Feishu",
       "openGithubMessage": "Abrir a issue ou pull request original no GitHub",
       "openLarkChat": "Abrir conversa original no Lark",
       "openMessage": "Abrir mensagem",
+      "openMessages": "Abrir Mensagens",
       "openSlackMessage": "Abrir mensagem original no Slack",
       "openTeamsMessage": "Abrir mensagem original no Microsoft Teams",
       "openTelegramMessage": "Abrir mensagem original no Telegram",
@@ -2158,7 +2160,10 @@
       "number": "número"
     },
     "sidebar": {
+      "allArchived": "Todas as suas conversas estão arquivadas",
+      "allCaughtUp": "Tudo em dia",
       "allChats": "Todas as conversas",
+      "archive": "Arquivar conversa",
       "chatsWith": "Conversas com {{agentName}}",
       "chatThreads": "Conversas",
       "delete": "Excluir",
@@ -2177,7 +2182,10 @@
       "pinned": "Fixada",
       "rename": "Renomear conversa",
       "renameDescription": "Escolha um novo nome para esta conversa.",
+      "showArchived": "Mostrar arquivadas",
+      "showArchivedChats": "Mostrar conversas arquivadas",
       "titlePlaceholder": "Título da conversa",
+      "unarchive": "Desarquivar conversa",
       "unpin": "Desafixar conversa",
       "unread": "Não lida",
       "unreadOnly": "Somente não lidas"
@@ -2889,6 +2897,7 @@
       "ariaLabel": "Conversa",
       "changeIcon": "Alterar ícone",
       "emoji": {
+        "archive": "Arquivar",
         "done": "Concluído",
         "idea": "Ideia",
         "no": "Não",
@@ -3614,6 +3623,7 @@
           "sourceUnavailable": "Origem indisponível",
           "stale": "Desatualizado",
           "unchanged": "Sem alterações",
+          "unsupportedProtocol": "Protocolo não compatível",
           "unsupportedSchema": "Schema não compatível"
         }
       },
@@ -4271,6 +4281,8 @@
         "tiny-wanderer": "Pequeno Viajante"
       },
       "presentation": {
+        "bloom-pitch": "Petal pitch",
+        "blueprint-academy": "Drafting campus",
         "botane-organic-deck": "Mauve garden",
         "business-data-presentation": "Berry dashboard",
         "crayon-learning-deck": "Crayon doodle",
@@ -4279,9 +4291,19 @@
         "editorial-magazine-deck": "Paper magazine",
         "landing-consulting-deck": "Neon browser",
         "lumina-creative-studio": "Brush stickers",
+        "meridian": "Cobalt blocks",
         "mosaic-geometric-pitch": "Bauhaus tiles",
+        "neo-brutalism": "Shadow shop",
+        "nocturne": "Midnight stage",
+        "pixel-glitch": "Arcade pixels",
         "playful-launch-presentation": "Sunburst playroom",
-        "playful-pop-deck": "Neon candy"
+        "playful-pop-deck": "Neon candy",
+        "prospectus": "Homepage pitch",
+        "schoolhouse": "Kraft poster",
+        "sticker-scrapbook": "Sticker notebook",
+        "strata": "Red staircase",
+        "taped-consulting": "Polaroid wall",
+        "vantage": "Numbered boardroom"
       },
       "video": {
         "chinese-ink-art": "Arte em Tinta Chinesa",
@@ -5381,7 +5403,8 @@
       "availableNow": "Disponível agora",
       "inUse_one": "{{active}} de {{limit}} slot em uso",
       "inUse_many": "{{active}} de {{limit}} slots em uso",
-      "inUse_other": "{{active}} de {{limit}} slots em uso"
+      "inUse_other": "{{active}} de {{limit}} slots em uso",
+      "waitingForSandbox": "Aguardando Sandbox"
     },
     "tiers": {
       "custom": "Personalizado",
@@ -5521,7 +5544,7 @@
         "usage": {
           "balanceDescription": "O que resta para a sua equipe gastar.",
           "balanceTitle": "Saldo de créditos",
-          "usageDescription": "Seu uso de créditos em conversas, automações e canais.",
+          "usageDescription": "Seu uso de créditos, agrupado por conversa.",
           "usageTitle": "Uso de créditos"
         }
       },
@@ -5685,9 +5708,12 @@
         "codexDescription": "Conecte o login do dispositivo do Codex para usar rotas de modelos baseadas no Codex.",
         "codexTitle": "ChatGPT (Codex)",
         "description": "Usados somente nas suas execuções, com suas próprias credenciais.",
+        "disconnectAccount": "Desconectar conta",
+        "disconnectDescription": "Isso remove a conta do Okou. Sua assinatura com o provedor não será cancelada.",
+        "disconnecting": "Desconectando…",
+        "disconnectTitle": "Desconectar {{account}}?",
         "noAccounts": "Nenhuma conta conectada.",
         "reconnectAccount": "Reconectar",
-        "removeAccount": "Remover",
         "sectionTitle": "Pessoal",
         "status": {
           "connected": "Conectado",
@@ -5816,7 +5842,7 @@
         "codexTitle": "A sessão do ChatGPT precisa ser reconectada"
       },
       "toasts": {
-        "accountRemoved": "Conta removida",
+        "accountDisconnected": "Conta desconectada",
         "accountSwitched": "Conta ativa alterada",
         "disconnected": "{{provider}} desconectado",
         "policiesUpdated": "Configurações dos provedores de modelo atualizadas",
@@ -6352,6 +6378,18 @@
     "manage": "Gerenciar hosts SSH",
     "notLearned": "Chave de host ainda não armazenada",
     "passphrase": "Frase secreta (opcional)",
+    "placeholders": {
+      "accessName": "ex.: Acesso à produção",
+      "clientId": "Cole o Client ID do Service Token",
+      "clientSecret": "Cole o Client Secret do Service Token",
+      "credentialName": "ex.: Login de implantação",
+      "displayName": "ex.: Servidor de produção",
+      "host": "ex.: ssh.example.com",
+      "passphrase": "Deixe em branco se a chave não for criptografada",
+      "password": "Digite a senha do usuário SSH",
+      "privateKey": "Cole a chave privada completa",
+      "username": "ex.: ubuntu"
+    },
     "port": "Porta",
     "privateKey": "Chave privada",
     "reset": "Redefinir chave de host",
@@ -6392,6 +6430,7 @@
     "pageCount_one": "{{count}} página",
     "pageCount_many": "{{count}} páginas",
     "pageCount_other": "{{count}} páginas",
+    "renameFailed": "Não foi possível renomear o modelo.",
     "retry": "Tentar novamente",
     "sharedBy": "Compartilhado por {{owner}}",
     "visibility": {
@@ -6433,38 +6472,28 @@
     "records": {
       "empty": {
         "billingPeriodTitle": "Nenhum uso neste período de cobrança",
-        "description": "Os créditos que você gasta em chats, automações e canais aparecem aqui.",
+        "description": "Os créditos que você gasta em conversas aparecem aqui.",
         "noBillingPeriodDescription": "O uso da equipe aparece assim que um período de cobrança começa.",
         "noBillingPeriodTitle": "Nenhum período de cobrança ativo",
         "rangeTitle": "Nenhum uso neste período",
-        "teamDescription": "Os créditos que sua equipe gasta em chats, automações e canais aparecem aqui."
+        "teamDescription": "Os créditos que sua equipe gasta em conversas aparecem aqui."
       },
       "loadError": "Não foi possível carregar seu uso.",
       "loadMore": "Carregar mais",
       "myUsage": "Meu uso",
       "teamLoadError": "Não foi possível carregar o uso da equipe.",
       "teamUsage": "Uso da equipe",
+      "thread": "Conversa",
+      "unavailableThread": "Conversa indisponível",
       "untitled": "(sem título)"
     },
-    "sources": {
-      "agent": "Agente",
-      "automation": "Automação",
-      "chat": "Conversa",
-      "email": "E-mail",
-      "github": "GitHub",
-      "other": "Outro",
-      "phone": "Telefone",
-      "slack": "Slack",
-      "teams": "Microsoft Teams",
-      "telegram": "Telegram"
-    },
     "units": {
-      "chat_one": "{{value}} conversa",
-      "chat_many": "{{value}} conversas",
-      "chat_other": "{{value}} conversas",
       "credit_one": "{{value}} crédito",
       "credit_many": "{{value}} créditos",
-      "credit_other": "{{value}} créditos"
+      "credit_other": "{{value}} créditos",
+      "thread_one": "{{value}} conversa",
+      "thread_many": "{{value}} conversas",
+      "thread_other": "{{value}} conversas"
     }
   },
   "workflows": {

@@ -4,6 +4,12 @@ import { EllipsisVertical, Plus, RotateCcw } from "lucide-react";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   Button,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -22,10 +28,12 @@ import {
   activatePersonalOAuthCredentialAccount$,
   deletePersonalOAuthCredentialAccount$,
   disconnectPersonalOAuthCredential$,
+  personalAccountDisconnectDialog$,
   personalActionPromise$,
   personalConfiguredProviders$,
   resetPersonalCodexAccountSubscriptionUsage$,
   resetPersonalCodexSubscriptionUsage$,
+  setPersonalAccountDisconnectDialog$,
   setSettingsCodexResetDialog$,
   settingsCodexResetDialog$,
 } from "../../../../signals/okou-page/settings/personal-model-providers.ts";
@@ -102,7 +110,7 @@ function OAuthAccountGroupsSection() {
   );
   const openCodexDeviceAuthDialog = useSet(openCodexDeviceAuthDialogPersonal$);
   const activateAccount = useSet(activatePersonalOAuthCredentialAccount$);
-  const deleteAccount = useSet(deletePersonalOAuthCredentialAccount$);
+  const setDisconnectDialog = useSet(setPersonalAccountDisconnectDialog$);
   const setResetDialog = useSet(setSettingsCodexResetDialog$);
   const pageSignal = useGet(pageSignal$);
 
@@ -177,8 +185,8 @@ function OAuthAccountGroupsSection() {
                   onReconnect={(id) => {
                     openAccountAuth(type, id);
                   }}
-                  onRemove={(id) => {
-                    detach(deleteAccount(id, pageSignal), Reason.DomCallback);
+                  onDisconnect={(account, fallbackIndex) => {
+                    setDisconnectDialog({ account, fallbackIndex });
                   }}
                   onReset={(account) => {
                     setResetDialog({
@@ -193,6 +201,9 @@ function OAuthAccountGroupsSection() {
           )}
         </div>
       </TooltipProvider>
+      <PersonalAccountDisconnectDialogController
+        actionPending={actionPending}
+      />
       <CodexResetDialogController
         actionPending={actionPending}
         mode="account"
@@ -209,7 +220,7 @@ function OAuthAccountGroup({
   onAdd,
   onActivate,
   onReconnect,
-  onRemove,
+  onDisconnect,
   onReset,
 }: {
   readonly type: ModelProviderType;
@@ -219,7 +230,10 @@ function OAuthAccountGroup({
   readonly onAdd: () => void;
   readonly onActivate: (id: string) => void;
   readonly onReconnect: (id: string) => void;
-  readonly onRemove: (id: string) => void;
+  readonly onDisconnect: (
+    account: ModelProviderResponse,
+    fallbackIndex: number,
+  ) => void;
   readonly onReset: (account: ModelProviderResponse) => void;
 }) {
   const { t } = useTranslation();
@@ -290,8 +304,8 @@ function OAuthAccountGroup({
                 onReconnect={() => {
                   onReconnect(account.id);
                 }}
-                onRemove={() => {
-                  onRemove(account.id);
+                onDisconnect={() => {
+                  onDisconnect(account, index + 1);
                 }}
                 onReset={() => {
                   onReset(account);
@@ -311,7 +325,7 @@ function OAuthAccountRow({
   actionPending,
   onActivate,
   onReconnect,
-  onRemove,
+  onDisconnect,
   onReset,
 }: {
   readonly account: ModelProviderResponse;
@@ -319,7 +333,7 @@ function OAuthAccountRow({
   readonly actionPending: boolean;
   readonly onActivate: () => void;
   readonly onReconnect: () => void;
-  readonly onRemove: () => void;
+  readonly onDisconnect: () => void;
   readonly onReset: () => void;
 }) {
   const { t } = useTranslation();
@@ -416,7 +430,7 @@ function OAuthAccountRow({
             account={account}
             actionPending={actionPending}
             onReconnect={onReconnect}
-            onRemove={onRemove}
+            onDisconnect={onDisconnect}
             onReset={onReset}
           />
         </div>
@@ -474,13 +488,13 @@ function OAuthAccountMenu({
   account,
   actionPending,
   onReconnect,
-  onRemove,
+  onDisconnect,
   onReset,
 }: {
   readonly account: ModelProviderResponse;
   readonly actionPending: boolean;
   readonly onReconnect: () => void;
-  readonly onRemove: () => void;
+  readonly onDisconnect: () => void;
   readonly onReset: () => void;
 }) {
   const { t } = useTranslation();
@@ -514,17 +528,14 @@ function OAuthAccountMenu({
       onSelect: onReconnect,
       opensModal: true,
     },
-    ...(!account.isActive
-      ? [
-          {
-            label: t(($) => {
-              return $.settings.models.personal.removeAccount;
-            }),
-            disabled: actionPending,
-            onSelect: onRemove,
-          },
-        ]
-      : []),
+    {
+      label: t(($) => {
+        return $.settings.models.personal.disconnectAccount;
+      }),
+      disabled: actionPending,
+      onSelect: onDisconnect,
+      opensModal: true,
+    },
   ];
 
   return (
@@ -552,6 +563,104 @@ function OAuthAccountMenu({
         })}
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+function PersonalAccountDisconnectDialogController({
+  actionPending,
+}: {
+  readonly actionPending: boolean;
+}) {
+  const { t } = useTranslation();
+  const dialog = useGet(personalAccountDisconnectDialog$);
+  const setDialog = useSet(setPersonalAccountDisconnectDialog$);
+  const deleteAccount = useSet(deletePersonalOAuthCredentialAccount$);
+  const pageSignal = useGet(pageSignal$);
+
+  if (!dialog) {
+    return null;
+  }
+
+  const identity =
+    dialog.account.accountEmail ??
+    dialog.account.workspaceName ??
+    t(
+      ($) => {
+        return $.settings.models.personal.accountFallback;
+      },
+      { number: dialog.fallbackIndex },
+    );
+
+  const confirmDisconnect = () => {
+    detach(
+      (async () => {
+        await deleteAccount(dialog.account.id, pageSignal);
+        setDialog(null);
+      })(),
+      Reason.DomCallback,
+    );
+  };
+
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open && !actionPending) {
+          setDialog(null);
+        }
+      }}
+    >
+      <DialogContent
+        maxWidth="md"
+        closeLabel={t(($) => {
+          return $.settings.shared.close;
+        })}
+      >
+        <DialogHeader>
+          <DialogTitle className="line-clamp-2 break-words pr-8 leading-snug">
+            {t(
+              ($) => {
+                return $.settings.models.personal.disconnectTitle;
+              },
+              { account: identity },
+            )}
+          </DialogTitle>
+          <DialogDescription>
+            {t(($) => {
+              return $.settings.models.personal.disconnectDescription;
+            })}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={actionPending}
+            onClick={() => {
+              setDialog(null);
+            }}
+          >
+            {t(($) => {
+              return $.settings.shared.cancel;
+            })}
+          </Button>
+          <Button
+            type="button"
+            variant="destructive"
+            disabled={actionPending}
+            onClick={confirmDisconnect}
+          >
+            {actionPending
+              ? t(($) => {
+                  return $.settings.models.personal.disconnecting;
+                })
+              : t(($) => {
+                  return $.settings.models.personal.disconnectAccount;
+                })}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

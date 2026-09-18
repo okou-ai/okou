@@ -1,5 +1,114 @@
 # Changelog
 
+## [9.340.6](https://github.com/vm0-ai/okou/compare/cli-v9.340.5...cli-v9.340.6) (2026-09-18)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.463.0
+    * @okouai/connectors bumped to 3.12.0
+    * @okouai/core bumped to 8.679.0
+    * @okouai/pi-agent-runtime bumped to 1.33.9
+
+## [9.340.5](https://github.com/vm0-ai/okou/compare/cli-v9.340.4...cli-v9.340.5) (2026-09-17)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.462.0
+    * @okouai/core bumped to 8.678.0
+    * @okouai/pi-agent-runtime bumped to 1.33.8
+
+## [9.340.4](https://github.com/vm0-ai/okou/compare/cli-v9.340.3...cli-v9.340.4) (2026-09-17)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.461.1
+    * @okouai/core bumped to 8.677.0
+    * @okouai/pi-agent-runtime bumped to 1.33.7
+
+## [9.340.3](https://github.com/vm0-ai/okou/compare/cli-v9.340.2...cli-v9.340.3) (2026-09-17)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.461.0
+    * @okouai/core bumped to 8.676.3
+    * @okouai/pi-agent-runtime bumped to 1.33.6
+
+## [9.340.2](https://github.com/vm0-ai/okou/compare/cli-v9.340.1...cli-v9.340.2) (2026-09-17)
+
+
+### Bug Fixes
+
+* retire gpt 5.5 from run models ([#34450](https://github.com/vm0-ai/okou/issues/34450)) ([d68750c](https://github.com/vm0-ai/okou/commit/d68750c8cfea642e0c94ab547ec1c683ecbab41e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.460.0
+    * @okouai/core bumped to 8.676.2
+    * @okouai/pi-agent-runtime bumped to 1.33.5
+
+## [9.340.1](https://github.com/vm0-ai/okou/compare/cli-v9.340.0...cli-v9.340.1) (2026-09-17)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.459.0
+    * @okouai/core bumped to 8.676.1
+    * @okouai/pi-agent-runtime bumped to 1.33.4
+
+## [9.340.0](https://github.com/vm0-ai/okou/compare/cli-v9.339.1...cli-v9.340.0) (2026-09-17)
+
+
+### Features
+
+* **api:** replace a custom template's package in place ([#34961](https://github.com/vm0-ai/okou/issues/34961)) ([a1dd59a](https://github.com/vm0-ai/okou/commit/a1dd59a97090f1bdc1f7a53f8cdb987a6606ce63))
+
+
+### Bug Fixes
+
+* **cli:** qualify remaining private artifact outputs ([#34972](https://github.com/vm0-ai/okou/issues/34972)) ([069eb83](https://github.com/vm0-ai/okou/commit/069eb835fb9c864665406d5ce53c6cdfa5976c40))
+
+
+### Performance Improvements
+
+* **cli:** extract camera review frames in one decode pass per video ([#34989](https://github.com/vm0-ai/okou/issues/34989)) ([03c5bb1](https://github.com/vm0-ai/okou/commit/03c5bb16012c48891f6784e01c3555cb232812f4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.458.0
+    * @okouai/core bumped to 8.676.0
+    * @okouai/pi-agent-runtime bumped to 1.33.3
+
+## [9.339.1](https://github.com/vm0-ai/okou/compare/cli-v9.339.0...cli-v9.339.1) (2026-09-17)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.457.0
+    * @okouai/core bumped to 8.675.1
+    * @okouai/pi-agent-runtime bumped to 1.33.2
+
 ## [9.339.0](https://github.com/vm0-ai/okou/compare/cli-v9.338.2...cli-v9.339.0) (2026-09-17)
 
 

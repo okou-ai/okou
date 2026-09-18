@@ -21,6 +21,8 @@ const SCHEMA = {
   DATABASE_URL: z.string().min(1),
   CLERK_SECRET_KEY: z.string().min(1),
   CLERK_PUBLISHABLE_KEY: z.string().min(1),
+  MCP_RESOURCE_URL: z.url().optional(),
+  MCP_OAUTH_ISSUER: z.url().optional(),
   SECRETS_ENCRYPTION_KEY: z.string().length(64),
   SECRETS_KMS_KEY_ID: z.string().min(1).optional(),
   OFFICIAL_RUNNER_SECRET: z.string().length(64),
@@ -79,6 +81,8 @@ const SCHEMA = {
     .email()
     .optional(),
   CRON_SECRET: z.string().min(1),
+  // Fleet-wide clean-day cutover; unset until #34615 verifies producer drain.
+  X_RESOURCE_BILLING_START_DATE: z.iso.date().optional(),
   R2_ACCESS_KEY_ID: z.string().min(1),
   R2_ACCOUNT_ID: z.string().min(1),
   R2_SECRET_ACCESS_KEY: z.string().min(1),

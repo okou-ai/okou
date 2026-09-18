@@ -621,6 +621,9 @@ fn turn_failure_message(failure: TurnFailure) -> &'static str {
         TurnFailure::ContentPolicyRejection => {
             r#"{"error":{"message":"Content Exists Risk","type":"invalid_request_error","param":null,"code":"invalid_request_error"}}"#
         }
+        TurnFailure::BiologicalRiskRejection | TurnFailure::BiologicalRiskInternalServerError => {
+            "This content was flagged for possible biological risk. If this seems wrong, try rephrasing your request. We are continuously refining our work in detecting biological risk, and you can read more about our approach in our blog post: https://example.invalid/policy"
+        }
         TurnFailure::InvalidRequestFormat => {
             r#"{"error":{"message":"Invalid Format","type":"invalid_request_error","param":null,"code":"invalid_request_error"}}"#
         }
@@ -633,8 +636,11 @@ fn turn_failure_error_info(failure: TurnFailure) -> Option<Value> {
         TurnFailure::Generic
         | TurnFailure::ContentPolicyRejection
         | TurnFailure::InvalidRequestFormat => None,
+        TurnFailure::BiologicalRiskRejection => Some(json!("other")),
         TurnFailure::ContextWindowExceeded => Some(json!("contextWindowExceeded")),
-        TurnFailure::InternalServerError => Some(json!("internalServerError")),
+        TurnFailure::InternalServerError | TurnFailure::BiologicalRiskInternalServerError => {
+            Some(json!("internalServerError"))
+        }
         TurnFailure::ResponseStreamConnectionFailed => Some(json!({
             "responseStreamConnectionFailed": {
                 "httpStatusCode": 502

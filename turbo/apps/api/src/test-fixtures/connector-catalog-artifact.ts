@@ -17,7 +17,10 @@ type DeviceStartOption = Extract<
   ConnectorCatalogAuthMethod["grant"],
   { readonly kind: "device-auth" }
 >["startOptions"][number];
-type EnvironmentBindings = ConnectorCatalogAuthMethod["access"]["envBindings"];
+type EnvironmentBindings = Extract<
+  ConnectorCatalogAuthMethod["access"],
+  { readonly kind: "static" }
+>["envBindings"];
 type GeneratedFirewall = Extract<
   ConnectorCatalogArtifactConnector["firewall"],
   { readonly kind: "generated" }
@@ -1000,9 +1003,38 @@ const connectors = [
         scopes: ["repo", "project", "workflow"],
       }),
     ],
-    firewall: generatedFirewall([
-      bearerApi("https://api.github.com", "GITHUB_TOKEN"),
-    ]),
+    firewall: generatedFirewall(
+      [
+        // The read routes Morning Brief's GitHub priorities collector needs,
+        // each behind its own permission so a test can allow one branch and
+        // deny another.
+        bearerApi("https://api.github.com", "GITHUB_TOKEN", [
+          { name: "user:read", rules: ["GET /user"] },
+          { name: "notifications:read", rules: ["GET /notifications"] },
+          { name: "search:read", rules: ["GET /search/issues"] },
+          {
+            name: "pull_requests:read",
+            rules: ["GET /repos/{owner}/{repo}/pulls/{pull_number}"],
+          },
+          {
+            name: "checks:read",
+            rules: [
+              "GET /repos/{owner}/{repo}/commits/{ref}/check-runs",
+              "GET /repos/{owner}/{repo}/commits/{ref}/status",
+            ],
+          },
+        ]),
+      ],
+      {
+        defaultAllowed: [
+          "user:read",
+          "notifications:read",
+          "search:read",
+          "pull_requests:read",
+          "checks:read",
+        ],
+      },
+    ),
   }),
   connector({
     connectorSlug: "gitlab",
@@ -1129,7 +1161,19 @@ const connectors = [
       }),
     ],
     firewall: generatedFirewall([
-      bearerApi("https://www.googleapis.com/calendar", "GOOGLE_CALENDAR_TOKEN"),
+      bearerApi(
+        "https://www.googleapis.com/calendar",
+        "GOOGLE_CALENDAR_TOKEN",
+        [
+          {
+            name: "events.read",
+            rules: [
+              "GET /v3/users/me/calendarList",
+              "GET /v3/calendars/{calendarId}/events",
+            ],
+          },
+        ],
+      ),
     ]),
   }),
   connector({
@@ -2263,8 +2307,8 @@ const connectors = [
 ] satisfies readonly ConnectorCatalogArtifactConnector[];
 
 export const API_TEST_CONNECTOR_CATALOG_ARTIFACT = {
-  artifactSchemaVersion: 3,
-  catalogVersion: "api-test-v3",
+  artifactSchemaVersion: 4,
+  catalogVersion: "api-test-v4",
   categoryMetadata: {
     categories: [
       {

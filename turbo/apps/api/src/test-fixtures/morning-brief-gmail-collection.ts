@@ -134,6 +134,28 @@ export async function selectThreadGmailAccountFixture(args: {
     .onConflictDoNothing();
 }
 
+/**
+ * Move the canonical thread's selection onto a different connected account.
+ *
+ * This is the row the Settings account picker writes when an owner changes
+ * which mailbox a brief reads, and the only way to express that change while a
+ * collection is already running.
+ */
+export async function reselectThreadGmailAccountFixture(args: {
+  readonly chatThreadId: string;
+  readonly connectorId: string;
+}): Promise<void> {
+  await db()
+    .update(chatThreadConnectorSelections)
+    .set({ connectorId: args.connectorId })
+    .where(
+      and(
+        eq(chatThreadConnectorSelections.chatThreadId, args.chatThreadId),
+        eq(chatThreadConnectorSelections.connectorSlug, "gmail"),
+      ),
+    );
+}
+
 export async function revokeAgentConnectorGrantFixture(
   owner: MorningBriefOwner,
   args: { readonly agentId: string; readonly connectorSlug: string },
@@ -195,6 +217,23 @@ export async function requireConnectorReconnectFixture(
   await db()
     .update(connectors)
     .set({ needsReconnect: true })
+    .where(eq(connectors.id, connectorId));
+}
+
+/**
+ * Move a stored token expiry inside the reader's refresh buffer.
+ *
+ * This is the shape of the ordinary Gmail credential a scheduled collection
+ * meets: still usable, close enough to expiry that the reader refreshes it
+ * before the first provider request. The connect flow stores an hour of
+ * validity, which never reaches that branch.
+ */
+export async function expireConnectorTokenFixture(
+  connectorId: string,
+): Promise<void> {
+  await db()
+    .update(connectors)
+    .set({ tokenExpiresAt: new Date(now() + 30_000) })
     .where(eq(connectors.id, connectorId));
 }
 

@@ -37,6 +37,8 @@ export const morningBriefTruncationSchema = z.enum([
   "deadline",
   "response-bytes",
   "total-response-bytes",
+  /** A retained header value hit its own per-field ceiling. */
+  "header-characters",
   "excerpt-characters",
   "text-characters",
   "mime-nodes",
@@ -75,8 +77,19 @@ export const morningBriefGmailItemSchema = z.object({
   internalDate: z.string().datetime(),
   unread: z.boolean(),
   excerpt: z.string(),
-  /** `none` and `html-only` are declared coverage gaps, not empty content. */
-  excerptSource: z.enum(["text-plain", "html-normalized", "none", "html-only"]),
+  /**
+   * `none`, `html-only` and `mime-truncated` are declared coverage gaps, not
+   * empty content. `html-only` means the message really carried no usable
+   * inline text; `mime-truncated` means a MIME cap stopped the walk before the
+   * whole structure was seen, so nothing here proves what the message contains.
+   */
+  excerptSource: z.enum([
+    "text-plain",
+    "html-normalized",
+    "none",
+    "html-only",
+    "mime-truncated",
+  ]),
   sourceUrl: z.string(),
 });
 
@@ -89,6 +102,16 @@ export const morningBriefGmailCollectionSchema = z.object({
    * losing coverage, and `unavailable` produced none.
    */
   status: z.enum(["ok", "empty", "partial", "unavailable"]),
+  /**
+   * The exact mailbox the shared reader resolved for this member's selected
+   * connection, never a process account or an environment token's identity.
+   *
+   * `null` means the reader could not resolve one — an unconfigured connector
+   * or a failed profile read. A consumer treats null as "not observed", never
+   * as "any mailbox": it is the identity a later permission recheck is run
+   * against, so an absent value makes that input unproven rather than allowed.
+   */
+  accountEmail: z.string().nullable(),
   anchor: z.string().datetime(),
   collectedAt: z.string().datetime(),
   timezone: z.string(),
@@ -130,6 +153,11 @@ export const morningBriefGmailCollectionPreviewContract = c.router({
       403: apiErrorSchema,
       404: z.string(),
       500: apiErrorSchema,
+      // The source's single absolute deadline expired inside the preflight that
+      // admits it, before an installation and timezone were resolved. There is
+      // no collection envelope to answer with and nothing was refused, so the
+      // spent budget is reported as its own outcome rather than as a denial.
+      504: apiErrorSchema,
     },
     summary: "Collect Gmail for Simple Morning Brief in a developer preview",
   },

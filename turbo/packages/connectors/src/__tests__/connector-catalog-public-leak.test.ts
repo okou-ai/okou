@@ -141,7 +141,10 @@ describe("connector catalog relationship failure details", () => {
             outputs: { token: VALUE_REF },
           };
         }
-        if (rule === "undeclared-storage-reference") {
+        if (
+          rule === "undeclared-storage-reference" &&
+          "envBindings" in method.access
+        ) {
           method.access.envBindings.SERVICE_TOKEN =
             "$secrets.UNDECLARED_PRIVATE_TOKEN";
         }

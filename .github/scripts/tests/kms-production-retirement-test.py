@@ -23,6 +23,7 @@ TARGET = "arn:aws:kms:us-west-2:251964670836:key/e68917e2-5541-4597-b6ef-7e9eb56
 
 class RetirementCliTest(unittest.TestCase):
     def invoke(self, scenario="success", overrides=None):
+        repository = (overrides or {}).get("GITHUB_REPOSITORY", "vm0-ai/okou")
         with tempfile.TemporaryDirectory(prefix="kms-retirement-test-") as directory:
             root = Path(directory)
             binary = root / "bin"
@@ -133,7 +134,7 @@ class RetirementCliTest(unittest.TestCase):
                 key["MultiRegion"] = True
             run = {
                 "id": 54321,
-                "repository": {"full_name": "vm0-ai/okou"},
+                "repository": {"full_name": repository},
                 "workflow_id": 353130414,
                 "path": ".github/workflows/kms-production-preflight.yml",
                 "event": "workflow_dispatch",
@@ -182,6 +183,7 @@ class RetirementCliTest(unittest.TestCase):
                 "GITHUB_RUN_ATTEMPT": "1",
                 "GITHUB_ACTOR": "hulh122",
                 "GITHUB_REPOSITORY": "vm0-ai/okou",
+                "GITHUB_REPOSITORY_ID": "1096175506",
                 "GITHUB_REF": "refs/heads/main",
                 "GITHUB_EVENT_NAME": "workflow_dispatch",
                 "GITHUB_RUN_ID": "12345",
@@ -241,6 +243,17 @@ class RetirementCliTest(unittest.TestCase):
         self.assertEqual(report["deletionDate"], provider["key"]["DeletionDate"])
         self.assertEqual(report["mutationEffects"], "scheduled")
         self.assertFalse(report["physicalDeletionConfirmed"])
+
+    def test_renamed_repository_reads_proof_from_the_new_api_namespace(self):
+        result, provider, report = self.invoke(
+            overrides={
+                "GITHUB_REPOSITORY": "maxandzoe/okou",
+                "GITHUB_WORKFLOW_REF": "maxandzoe/okou/.github/workflows/kms-production-retire.yml@refs/heads/main",
+            }
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(report["result"], "pending_deletion")
+        self.assertGreater(provider["verificationReads"], 0)
 
     def test_proof_and_artifact_failures_leave_key_usable(self):
         for scenario in [
@@ -404,6 +417,7 @@ class RetirementCliTest(unittest.TestCase):
         for overrides in [
             {"GITHUB_RUN_ATTEMPT": "2"},
             {"GITHUB_REF": "refs/heads/feature"},
+            {"GITHUB_REPOSITORY_ID": "1"},
             {"GITHUB_REPOSITORY": "another-owner/okou"},
             {"GITHUB_WORKFLOW_REF": "other"},
             {"ACCEPT_HISTORICAL_RECOVERY_LOSS": "false"},

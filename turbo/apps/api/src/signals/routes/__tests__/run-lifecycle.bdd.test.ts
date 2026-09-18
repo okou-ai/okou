@@ -5163,7 +5163,7 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
       await api.requestCancelRun(actor, first.runId, [200]);
       const failed = await waitForRunStatus(api, actor, queued.runId, "failed");
       expect(failed.error).toBe(
-        "Claude Fable 5 has been retired. Select Claude Fable 5.1.",
+        "This model has been retired. Select another available model.",
       );
       expect(
         (await waitForRunQueueLength(api, actor, 0)).body.queue,
@@ -13424,55 +13424,39 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     await api.requestCancelRun(actor, run.runId, [200]);
   });
 
-  it.each([true, false])(
-    "gates SSH guidance and Run scopes only on enabled=%s for an ordinary organization",
-    async (enabled) => {
-      const api = createRunsApi(context);
-      const connectors = createConnectorBddApi(context);
-      const { actor, agentId, runnerGroup } = await entitledRunActor();
-      await connectors.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.SshAccess]: enabled,
-      });
-      const run = await api.createRun(actor, {
-        agentId,
-        prompt: "inspect my SSH hosts",
-        modelProvider: "anthropic-api-key",
-      });
-      const prompt =
-        (await api.readRun(actor, run.runId)).appendSystemPrompt ?? "";
-      if (enabled) {
-        expect(prompt).toContain("okou ssh host list --json");
-        expect(prompt).toContain("okou ssh exec");
-        expect(prompt).toContain("okou ssh session");
-        expect(prompt).toContain("okou ssh upload");
-        expect(prompt).toContain("okou ssh download");
-        expect(prompt).toContain("okou ssh --help");
-        expect(prompt).toContain("relevant subcommand's `--help` before use");
-        const sshGuidance = prompt.split("\n").filter((line) => {
-          return line.startsWith("- SSH");
-        });
-        expect(sshGuidance).toHaveLength(1);
-        expect(sshGuidance.join("\n").length).toBeLessThanOrEqual(400);
-      } else {
-        expect(prompt).not.toContain("okou ssh");
-      }
-      await api.heartbeatRunner(runnerGroup);
-      const claim = await api.claimRunnerJob(run.runId);
-      const token = claim.platformEnvironment.OKOU_TOKEN;
-      if (!token) {
-        throw new Error("Expected a minted Run token");
-      }
-      const capabilities = verifyOkouToken(token)?.capabilities;
-      if (enabled) {
-        expect(capabilities).toContain("ssh:read");
-        expect(capabilities).toContain("ssh:write");
-      } else {
-        expect(capabilities).not.toContain("ssh:read");
-        expect(capabilities).not.toContain("ssh:write");
-      }
-      await api.requestCancelRun(actor, run.runId, [200]);
-    },
-  );
+  it("advertises SSH guidance and grants Run scopes for an ordinary organization", async () => {
+    const api = createRunsApi(context);
+    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const run = await api.createRun(actor, {
+      agentId,
+      prompt: "inspect my SSH hosts",
+      modelProvider: "anthropic-api-key",
+    });
+    const prompt =
+      (await api.readRun(actor, run.runId)).appendSystemPrompt ?? "";
+    expect(prompt).toContain("okou ssh host list --json");
+    expect(prompt).toContain("okou ssh exec");
+    expect(prompt).toContain("okou ssh session");
+    expect(prompt).toContain("okou ssh upload");
+    expect(prompt).toContain("okou ssh download");
+    expect(prompt).toContain("okou ssh --help");
+    expect(prompt).toContain("relevant subcommand's `--help` before use");
+    const sshGuidance = prompt.split("\n").filter((line) => {
+      return line.startsWith("- SSH");
+    });
+    expect(sshGuidance).toHaveLength(1);
+    expect(sshGuidance.join("\n").length).toBeLessThanOrEqual(400);
+    await api.heartbeatRunner(runnerGroup);
+    const claim = await api.claimRunnerJob(run.runId);
+    const token = claim.platformEnvironment.OKOU_TOKEN;
+    if (!token) {
+      throw new Error("Expected a minted Run token");
+    }
+    const capabilities = verifyOkouToken(token)?.capabilities;
+    expect(capabilities).toContain("ssh:read");
+    expect(capabilities).toContain("ssh:write");
+    await api.requestCancelRun(actor, run.runId, [200]);
+  });
 
   it("advertises connector account switching", async () => {
     const api = createRunsApi(context);
@@ -15635,7 +15619,7 @@ describe("BILL-02: usage reads for an entitled organization with runs", () => {
       expect.objectContaining({
         source: "chat",
         runId: null,
-        title: "Deleted chats",
+        title: "Unavailable thread",
         credits: 17,
       }),
     );
@@ -15682,7 +15666,7 @@ describe("BILL-02: usage reads for an entitled organization with runs", () => {
     });
     expect(listedUsage).toMatchObject({
       runId: null,
-      title: "Deleted chats",
+      title: "Unavailable thread",
     });
     expect(record.body.pagination.total).toBeGreaterThanOrEqual(1);
 
@@ -15808,6 +15792,19 @@ describe("BILL-02: usage reads for an entitled organization with runs", () => {
       cacheReadInputTokens: 0,
       cacheCreationInputTokens: 0,
       creditsCharged: 14,
+      breakdown: [
+        {
+          kind: "image",
+          credits: 14,
+          providers: [
+            {
+              provider: imageProvider,
+              credits: 14,
+              usageKinds: [{ kind: "image", credits: 14 }],
+            },
+          ],
+        },
+      ],
     });
     expect(aggregated.body.members[1]).toMatchObject({
       userId: actor.userId,
@@ -15817,6 +15814,19 @@ describe("BILL-02: usage reads for an entitled organization with runs", () => {
       cacheReadInputTokens: 0,
       cacheCreationInputTokens: 0,
       creditsCharged: 7,
+      breakdown: [
+        {
+          kind: "image",
+          credits: 7,
+          providers: [
+            {
+              provider: imageProvider,
+              credits: 7,
+              usageKinds: [{ kind: "image", credits: 7 }],
+            },
+          ],
+        },
+      ],
     });
 
     await api.requestCancelRun(actor, actorRun.runId, [200]);

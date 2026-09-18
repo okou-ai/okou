@@ -1,5 +1,77 @@
 # Changelog
 
+## [1.8.56](https://github.com/vm0-ai/okou/compare/app-worker-v1.8.55...app-worker-v1.8.56) (2026-09-18)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.679.0
+
+## [1.8.55](https://github.com/vm0-ai/okou/compare/app-worker-v1.8.54...app-worker-v1.8.55) (2026-09-17)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.678.0
+
+## [1.8.54](https://github.com/vm0-ai/okou/compare/app-worker-v1.8.53...app-worker-v1.8.54) (2026-09-17)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.677.0
+
+## [1.8.53](https://github.com/vm0-ai/okou/compare/app-worker-v1.8.52...app-worker-v1.8.53) (2026-09-17)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.676.3
+
+## [1.8.52](https://github.com/vm0-ai/okou/compare/app-worker-v1.8.51...app-worker-v1.8.52) (2026-09-17)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.676.2
+
+## [1.8.51](https://github.com/vm0-ai/okou/compare/app-worker-v1.8.50...app-worker-v1.8.51) (2026-09-17)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.676.1
+
+## [1.8.50](https://github.com/vm0-ai/okou/compare/app-worker-v1.8.49...app-worker-v1.8.50) (2026-09-17)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.676.0
+
+## [1.8.49](https://github.com/vm0-ai/okou/compare/app-worker-v1.8.48...app-worker-v1.8.49) (2026-09-17)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.675.1
+
 ## [1.8.48](https://github.com/vm0-ai/okou/compare/app-worker-v1.8.47...app-worker-v1.8.48) (2026-09-17)
 
 

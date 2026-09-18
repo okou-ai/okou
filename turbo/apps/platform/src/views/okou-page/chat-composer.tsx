@@ -45,7 +45,11 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { IntroVideoPicker } from "./intro-video-picker.tsx";
 import { TemplateEmptyPanel } from "./template-empty-panel.tsx";
 import { CustomTemplatePickerPane } from "./custom-template-picker-pane.tsx";
-import { resetCustomTemplatePicker$ } from "../../signals/okou-page/custom-template-library.ts";
+import type { UserTemplateCatalogEntry } from "@okouai/api-contracts/contracts/user-templates";
+import {
+  customTemplateCatalog$,
+  resetCustomTemplatePicker$,
+} from "../../signals/okou-page/custom-template-library.ts";
 import {
   avatarSelectionLabel,
   styleSelectionLabel,
@@ -163,6 +167,18 @@ import type {
   AvatarVideoAvatar,
   AvatarVideoVoice,
 } from "@okouai/api-contracts/contracts/avatar-video";
+import {
+  TEMPLATE_CARD_SHADOW,
+  TEMPLATE_TILE_CAPTION,
+  TEMPLATE_TILE_MEDIA,
+  TEMPLATE_TILE_NAME,
+  TEMPLATE_TILE_RING,
+  TEMPLATE_TILE_RING_SELECTED,
+  TEMPLATE_TILE_SCRIM,
+  TEMPLATE_TILE_USE,
+  TEMPLATE_TILE_WRAPPER,
+} from "./template-tile.ts";
+import { TemplateFilterPillRow } from "./template-filter-pill.tsx";
 import { AttachmentChips } from "./attachment-chips.tsx";
 import { ImageAnnotationEditor } from "./image-annotation-editor.tsx";
 import { TiptapWorkflowComposer } from "./tiptap-workflow-composer.tsx";
@@ -253,12 +269,17 @@ import {
   defaultCustomConnectorAccountOptions,
   type DefaultConnectorAccountMutationOptions,
 } from "../../signals/okou-page/settings/connector-account-dialogs.ts";
-import { matchesConnectorSearch } from "../../signals/okou-page/settings/connectors.ts";
+import {
+  matchesConnectorSearch,
+  type ConnectorConnectSuccess,
+} from "../../signals/okou-page/settings/connectors.ts";
+import { ConnectorConnectionCancelButton } from "../components/connector-connection-progress.tsx";
 import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
 import { ConnectorDirectoryDialog } from "./connector-directory-dialog.tsx";
 import { resetCustomConnectorConnectInput$ } from "../../signals/okou-page/settings/custom-connectors.ts";
 import {
-  dismissConnectorConnectionProgress$,
+  cancelConnectorConnection$,
+  connectorConnectionAttempt$,
   registerConnectorConnectionDialog$,
 } from "../../signals/connector-connection-progress.ts";
 import { LoadingSwitch } from "../components/loading-switch.tsx";
@@ -959,43 +980,8 @@ function VideoTemplatePreview({ item }: { item: VideoTemplateItem }) {
   );
 }
 
-/**
- * Soft, cool-tinted card shadow for the template picker. It reads as the home
- * chat composer's elevation but is not that value: the blue-grey `220 12% 50%`
- * here is a different tint from `--okou-card-shadow`'s warm `30 6% 45%`, and it
- * carries slightly less alpha. Replaces Tailwind `shadow-sm`, whose hard black
- * tint reads muddy on white.
- *
- * `--okou-card-shadow` is declared at `:root` and would resolve here, so this
- * is a colour decision rather than a constraint. Adopting the token would also
- * pick up its gradient-palette override, which this surface has never had.
- */
-const TEMPLATE_CARD_SHADOW =
-  "shadow-[0_2px_12px_hsl(220_12%_50%/0.04),0_0_0_0.5px_hsl(220_12%_50%/0.02)]";
-
-/**
- * Gallery tile. Hover feedback comes from the scrim and the Use pill alone —
- * the card already carries a hairline border, so a hover ring only doubled it.
- * The ring is reserved for the selected state, offset so it is drawn outside
- * the card and keeps a gap from the artwork.
- */
-const TEMPLATE_TILE_WRAPPER = "group/tile relative cursor-pointer";
-const TEMPLATE_TILE_RING =
-  "rounded-xl ring-offset-1 ring-offset-card transition-shadow duration-150";
-const TEMPLATE_TILE_RING_SELECTED = "ring-1 ring-primary";
-const TEMPLATE_TILE_MEDIA =
-  "relative overflow-hidden border border-border bg-muted";
-const TEMPLATE_TILE_SCRIM =
-  "pointer-events-none absolute inset-x-0 bottom-0 z-[15] h-14 bg-gradient-to-t from-black/45 to-transparent opacity-0 group-hover/tile:opacity-100";
-const TEMPLATE_TILE_USE =
-  "absolute bottom-2 right-2 z-20 h-[30px] rounded-lg bg-primary px-3 text-[12.5px] font-medium text-primary-foreground opacity-100 hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:focus-visible:opacity-100 [@media(hover:hover)]:group-hover/tile:opacity-100";
-// Caption metrics track the illustration card: same text size, and enough
-// breathing room under the artwork that the title never crowds it.
-const TEMPLATE_TILE_CAPTION = "flex items-baseline gap-2 px-2 pb-2 pt-2";
 /** The cover width every type's shelf uses, so the rows line up across tabs. */
 const PRESENTATION_SHELF_COVER = "w-[200px]";
-const TEMPLATE_TILE_NAME =
-  "min-w-0 truncate text-sm font-medium leading-5 text-foreground";
 
 function VideoTemplateCard({
   item,
@@ -1391,7 +1377,8 @@ interface ResolvedWorkflowTemplateCatalog {
 }
 
 // Persona pill filter for the workflow template tab, styled like the in-app
-// Ideas & Use Cases gallery: an "All" pill plus one pill per persona.
+// Ideas & Use Cases gallery: an "All" pill plus one pill per persona. The pill
+// treatment itself belongs to the shared filter row.
 function WorkflowTemplatePillRow({
   pills,
   active,
@@ -1403,33 +1390,22 @@ function WorkflowTemplatePillRow({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="flex flex-wrap items-center gap-1.5 px-6">
-      {["all", ...pills].map((pill) => {
-        const isActive = active === pill;
-        return (
-          <button
-            key={pill}
-            type="button"
-            aria-pressed={isActive}
-            className={cn(
-              "h-7 shrink-0 rounded-md border border-border px-2.5 text-sm font-medium leading-none transition-colors cursor-pointer",
-              isActive
-                ? "bg-muted text-foreground"
-                : "bg-background text-muted-foreground hover:bg-state-hover hover:text-foreground",
-            )}
-            onClick={() => {
-              onSelect(pill);
-            }}
-          >
-            {pill === "all"
-              ? t(($) => {
-                  return $.artifacts.templates.all;
-                })
-              : localizedWorkflowTemplateCategory(pill)}
-          </button>
-        );
-      })}
-    </div>
+    <TemplateFilterPillRow
+      className="px-6"
+      active={active}
+      pills={[
+        {
+          id: "all",
+          label: t(($) => {
+            return $.artifacts.templates.all;
+          }),
+        },
+        ...pills.map((pill) => {
+          return { id: pill, label: localizedWorkflowTemplateCategory(pill) };
+        }),
+      ]}
+      onSelect={onSelect}
+    />
   );
 }
 
@@ -4286,13 +4262,11 @@ function TemplatePickerCategoryNav({
   selectedCategory,
   introVideoEnabled,
   customTemplatesEnabled,
-  creativeVideoOnly,
   onChange,
 }: {
   selectedCategory: string;
   introVideoEnabled: boolean;
   customTemplatesEnabled: boolean;
-  creativeVideoOnly: boolean;
   onChange: (value: string) => void;
 }) {
   const { t } = useTranslation();
@@ -4371,9 +4345,6 @@ function TemplatePickerCategoryNav({
       Icon: Route,
     },
   ];
-  const visibleCategories = categoryOptions.filter(({ value }) => {
-    return !creativeVideoOnly || value === "video";
-  });
 
   return (
     <>
@@ -4388,7 +4359,7 @@ function TemplatePickerCategoryNav({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {visibleCategories.flatMap(({ value, label, Icon }) => {
+            {categoryOptions.flatMap(({ value, label, Icon }) => {
               return [
                 <SelectItem key={value} value={value}>
                   <span className="flex items-center gap-2">
@@ -4416,7 +4387,7 @@ function TemplatePickerCategoryNav({
             data-template-picker-sidebar=""
             className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-3 pb-3"
           >
-            {visibleCategories.flatMap(
+            {categoryOptions.flatMap(
               ({ value, label, Icon }, categoryIndex) => {
                 const selected = value === selectedCategory;
                 return [
@@ -4433,15 +4404,15 @@ function TemplatePickerCategoryNav({
                       let nextIndex: number | null = null;
                       if (event.key === "ArrowDown") {
                         nextIndex =
-                          (categoryIndex + 1) % visibleCategories.length;
+                          (categoryIndex + 1) % categoryOptions.length;
                       } else if (event.key === "ArrowUp") {
                         nextIndex =
-                          (categoryIndex - 1 + visibleCategories.length) %
-                          visibleCategories.length;
+                          (categoryIndex - 1 + categoryOptions.length) %
+                          categoryOptions.length;
                       } else if (event.key === "Home") {
                         nextIndex = 0;
                       } else if (event.key === "End") {
-                        nextIndex = visibleCategories.length - 1;
+                        nextIndex = categoryOptions.length - 1;
                       }
                       if (nextIndex === null) {
                         return;
@@ -4451,7 +4422,7 @@ function TemplatePickerCategoryNav({
                         ?.querySelectorAll<HTMLElement>("[role=tab]")
                         .item(nextIndex);
                       nextTab?.focus();
-                      onChange(visibleCategories[nextIndex]?.value ?? value);
+                      onChange(categoryOptions[nextIndex]?.value ?? value);
                     }}
                     className={cn(
                       "group flex h-9 w-full shrink-0 items-center gap-2.5 rounded-lg px-2.5 text-left text-sm leading-5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
@@ -5144,6 +5115,12 @@ function ImportedPresentationTemplateRenameControl({
       data-rename-dirty="false"
       onSubmit={(event) => {
         event.preventDefault();
+        // One rename at a time, stated where every path that submits has to
+        // pass. The closed field and the disabled control each block one way
+        // in; this is the rule they are both enforcing.
+        if (updating) {
+          return;
+        }
         const nextTitle = new FormData(event.currentTarget).get("title");
         if (typeof nextTitle !== "string") {
           return;
@@ -5161,6 +5138,15 @@ function ImportedPresentationTemplateRenameControl({
         className="grid min-h-10 min-w-0 flex-1 rounded-lg border border-transparent px-1 py-[5px] text-xl font-semibold leading-7 text-foreground transition-colors after:col-start-1 after:row-start-1 after:invisible after:whitespace-pre-wrap after:break-words after:content-[attr(data-value)_'_'] hover:border-[hsl(var(--gray-400))] focus-within:border-primary focus-within:ring-[3px] focus-within:ring-primary/10"
         data-value={title}
       >
+        {/*
+         * Closed while its own rename is in flight. Disabling the submit
+         * control is not enough on its own: Enter reaches the form through
+         * `requestSubmit()`, which does not consult a submit button's disabled
+         * state, so a second rename could still leave here before the first
+         * came back — and nothing orders the two, so the earlier one could
+         * land last and take the name back. Confirming already gives up focus,
+         * so closing the field costs the member nothing.
+         */}
         <textarea
           name="title"
           aria-label={label}
@@ -5168,6 +5154,7 @@ function ImportedPresentationTemplateRenameControl({
           required
           rows={1}
           maxLength={255}
+          disabled={updating}
           className="col-start-1 row-start-1 resize-none overflow-hidden break-words bg-transparent p-0 outline-none"
           onChange={(event) => {
             const field = event.currentTarget;
@@ -5838,6 +5825,12 @@ function ImportedPresentationTemplateLibraryStatus({
   );
 }
 
+/** The catalog behind a `custom` selection's chip. Empty until it loads. */
+function useCustomTemplateCatalog(): readonly UserTemplateCatalogEntry[] {
+  const loadable = useLoadable(customTemplateCatalog$);
+  return loadable.state === "hasData" ? loadable.data : [];
+}
+
 function useImportedPresentationTemplates(
   signals: ComposerSignals,
 ): readonly PresentationTemplateSummary[] {
@@ -5889,13 +5882,6 @@ export function ComposerPresentationRecommendations({
   const builtIn = PRESENTATION_TEMPLATE_PICKER_ITEMS;
   const openTemplates = useSet(signals.template.openTemplatePicker$);
   const setMode = useSet(signals.create.setMode$);
-  // The shelf keeps mixing uploaded and built-in covers — it recommends rather
-  // than classifies — but "more" has to land on the tab that now holds the
-  // uploaded ones.
-  const moreTemplatesCategory =
-    useGet(featureSwitch$)[FeatureSwitchKey.CustomTemplates] === true
-      ? "custom"
-      : "slides";
   const label = t(($) => {
     return $.chat.taskChips.presentationTemplates;
   });
@@ -5916,7 +5902,10 @@ export function ComposerPresentationRecommendations({
           size="xs"
           className="shrink-0 gap-1.5 font-normal"
           onClick={() => {
-            openTemplates({ kind: "insert", category: moreTemplatesCategory });
+            // This shelf is the presentation catalog's entry, so "more" opens
+            // the Presentation tab like every other type's shelf does, whether
+            // or not the member also has Custom.
+            openTemplates({ kind: "insert", category: "slides" });
           }}
         >
           {t(($) => {
@@ -6088,8 +6077,6 @@ function TemplatePickerDialog({
   const openBillingPlans = useSet(openSettingsBillingPlans$);
   const openSettings = useSet(setSettingsDialogOpen$);
   const category = useGet(signals.template.templatePickerCategory$);
-  const creativeVideo = useGet(signals.create.creativeVideo$);
-  const creativeVideoOnly = creativeVideo && category === "video";
   const setCategory = useSet(signals.template.setTemplatePickerCategory$);
   const search = useGet(signals.template.templatePickerSearch$);
   const setSearch = useSet(signals.template.setTemplatePickerSearch$);
@@ -6252,6 +6239,16 @@ function TemplatePickerDialog({
     template: PresentationTemplateSummary,
   ) => {
     onChange(toImportedPresentationGenerationTemplate(template));
+    closeTemplatePicker();
+  };
+
+  const handleSelectCustom = (template: UserTemplateCatalogEntry) => {
+    // The row id alone. What this template produces lives on the row, so the
+    // selection does not restate it and cannot disagree with it.
+    onChange({
+      type: "custom",
+      selection: { userTemplateId: template.id },
+    });
     closeTemplatePicker();
   };
 
@@ -6482,7 +6479,6 @@ function TemplatePickerDialog({
                 selectedCategory={selectedCategory}
                 introVideoEnabled={introVideoEnabled}
                 customTemplatesEnabled={customTemplatesEnabled}
-                creativeVideoOnly={creativeVideoOnly}
                 onChange={handleCategoryChange}
               />
               <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
@@ -6535,6 +6531,7 @@ function TemplatePickerDialog({
                       onSelectImportedPresentation={
                         handleSelectImportedPresentation
                       }
+                      onSelectCustom={handleSelectCustom}
                       onPreviewPresentation={handlePreview}
                       onPreviewImportedPresentation={handlePreviewImported}
                       onImportedPresentation={closeTemplatePicker}
@@ -6595,6 +6592,7 @@ function TemplatePickerCategoryContent({
   onRestorePresentationScroll,
   onSelectPresentation,
   onSelectImportedPresentation,
+  onSelectCustom,
   onPreviewPresentation,
   onPreviewImportedPresentation,
   onImportedPresentation,
@@ -6626,6 +6624,7 @@ function TemplatePickerCategoryContent({
     colorSystemId?: string,
   ) => void;
   onSelectImportedPresentation: (template: PresentationTemplateSummary) => void;
+  onSelectCustom: (template: UserTemplateCatalogEntry) => void;
   onPreviewPresentation: (
     item: PresentationTemplateItem,
     slideIndex?: number,
@@ -6652,7 +6651,7 @@ function TemplatePickerCategoryContent({
   if (selectedCategory === "custom") {
     return (
       <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-6 pt-0.5">
-        <CustomTemplatePickerPane signals={signals} />
+        <CustomTemplatePickerPane signals={signals} onSelect={onSelectCustom} />
       </div>
     );
   }
@@ -6788,10 +6787,43 @@ function TemplatePickerCategoryContent({
   return null;
 }
 
+/**
+ * The chip for a custom template.
+ *
+ * The catalog is the only place its title and cover exist, so a selection
+ * whose row has not loaded produces no chip rather than an unnamed one.
+ */
+function customTemplateAttachment(
+  userTemplateId: string,
+  customTemplates: readonly UserTemplateCatalogEntry[],
+): ComposerTemplateAttachment | undefined {
+  const template = customTemplates.find((candidate) => {
+    return candidate.id === userTemplateId;
+  });
+  if (!template) {
+    return undefined;
+  }
+  return {
+    type: "custom",
+    title: template.title,
+    category: "custom",
+    ...(template.coverUrl === null
+      ? {}
+      : { previewImageUrl: template.coverUrl }),
+  };
+}
+
 function selectedComposerTemplateAttachment(
   value: GenerationTemplateRequest | undefined,
   importedTemplates: readonly PresentationTemplateSummary[] = [],
+  customTemplates: readonly UserTemplateCatalogEntry[] = [],
 ): ComposerTemplateAttachment | undefined {
+  if (value?.type === "custom") {
+    return customTemplateAttachment(
+      value.selection.userTemplateId,
+      customTemplates,
+    );
+  }
   const introVideo = introVideoTemplateOptions(value);
   if (introVideo) {
     return {
@@ -7306,7 +7338,8 @@ function AddConnectorsDialog({
     resetCustomConnectorConnectInput$,
   );
   const registerConnectionDialog = useSet(registerConnectorConnectionDialog$);
-  const dismissProgress = useSet(dismissConnectorConnectionProgress$);
+  const cancelConnection = useSet(cancelConnectorConnection$);
+  const connectionAttempt = useGet(connectorConnectionAttempt$);
   const search = connectorUi.addDialogSearch;
   const filtered = unconnected.filter((item) => {
     return matchesConnectorSearch(search, item);
@@ -7325,9 +7358,15 @@ function AddConnectorsDialog({
   return (
     <Dialog
       open
-      onOpenChange={(open) => {
+      onOpenChange={(open, details) => {
+        if (!open && connecting && details.reason === "outside-press") {
+          details.cancel();
+          return;
+        }
         if (!open) {
-          dismissProgress();
+          if (connecting) {
+            cancelConnection(connectionAttempt);
+          }
           onClose();
         }
       }}
@@ -7358,6 +7397,9 @@ function AddConnectorsDialog({
               })}
             </p>
           )}
+          {connecting ? (
+            <ConnectorConnectionCancelButton onCancel={onClose} />
+          ) : null}
         </DialogHeader>
         <div className="shrink-0">
           <Input
@@ -9337,6 +9379,7 @@ function useComposerTemplatePicker(
 ): ComposerTemplatePicker {
   const insertTemplate = useSet(signals.template.insertTemplate$);
   const importedTemplates = useImportedPresentationTemplates(signals);
+  const customTemplates = useCustomTemplateCatalog();
   const notifyDraftChanged = useComposerDraftChange(signals);
   return {
     onChange(value) {
@@ -9346,6 +9389,7 @@ function useComposerTemplatePicker(
       const attachment = selectedComposerTemplateAttachment(
         value,
         importedTemplates,
+        customTemplates,
       );
       if (!attachment) {
         return;
@@ -10643,7 +10687,7 @@ function ComposerConnectorConnectDialogs({
   readonly selectedCustomConnectorAccountOptions: DefaultConnectorAccountMutationOptions | null;
   readonly agentId: string;
   readonly onBuiltinClose: () => void;
-  readonly onBuiltinSuccess: () => Promise<void>;
+  readonly onBuiltinSuccess: ConnectorConnectSuccess;
   readonly onCustomClose: () => void;
 }) {
   return (
@@ -10782,12 +10826,15 @@ function ComposerConnectorsSlot({
   const selectedCustomConnectorAccountOptions =
     defaultCustomConnectorAccountOptions(selectedCustomConnector);
 
-  const handleConnectSuccess = async (connectorSlug: ConnectorSlug) => {
+  const handleConnectSuccess = async (
+    connectorSlug: ConnectorSlug,
+    signal: AbortSignal,
+  ) => {
     const label = connectorMap.get(connectorSlug)?.label ?? connectorSlug;
     await setConnectorAuthorization(
       { kind: "builtin", connectorSlug },
       true,
-      pageSignal,
+      signal,
     );
     toast.success(
       t(
@@ -10807,13 +10854,15 @@ function ComposerConnectorsSlot({
 
   const completeConnectorAddition = async (
     connectorSlug: ConnectorSlug,
+    signal: AbortSignal,
   ): Promise<void> => {
     if (
       connectorData?.authorization.agentId !== agentRecordId ||
       !authorizedSet.has(connectorSlug)
     ) {
-      await handleConnectSuccess(connectorSlug);
+      await handleConnectSuccess(connectorSlug, signal);
     }
+    signal.throwIfAborted();
     updateConnectorUi({
       showAddDialog: false,
     });
@@ -10845,8 +10894,8 @@ function ComposerConnectorsSlot({
               agentId: agentRecordId,
               ...accountOptions,
             },
-            onSuccess: () => {
-              return completeConnectorAddition(connectorSlug);
+            onSuccess: (_connectionId, signal) => {
+              return completeConnectorAddition(connectorSlug, signal);
             },
           },
           pageSignal,
@@ -10860,8 +10909,8 @@ function ComposerConnectorsSlot({
           {
             connectorSlug,
             authMethod,
-            onSuccess: () => {
-              return completeConnectorAddition(connectorSlug);
+            onSuccess: (_connectionId, signal) => {
+              return completeConnectorAddition(connectorSlug, signal);
             },
             options: {
               connectorLabel: connector.label,
@@ -10930,10 +10979,10 @@ function ComposerConnectorsSlot({
         onBuiltinClose={() => {
           updateConnectorUi({ selectedConnectorSlug: null });
         }}
-        onBuiltinSuccess={async () => {
+        onBuiltinSuccess={async (_connectionId, signal) => {
           const connectorSlug = selectedConnectorSlug;
           if (connectorSlug) {
-            await completeConnectorAddition(connectorSlug);
+            await completeConnectorAddition(connectorSlug, signal);
           }
         }}
         onCustomClose={() => {

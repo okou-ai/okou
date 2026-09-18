@@ -2,7 +2,7 @@ import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull, or } from "drizzle-orm";
 import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
 import { nowDate } from "../../lib/time";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
@@ -15,6 +15,8 @@ import { publishCancelToRunnerGroup } from "../external/realtime";
 import { tapError } from "../utils";
 import { transitionAgentRunsToTerminal } from "./agent-run-terminal-transition.service";
 import { revokeMorningBriefCollectionOwnership } from "./morning-brief-collection-occurrence.service";
+import { revokeMorningBriefDeliveryOwnership } from "./morning-brief-delivery.service";
+import { eraseVncOwner } from "./vnc-owner-lifecycle.service";
 
 import type { Db } from "../external/db";
 
@@ -23,25 +25,48 @@ export async function cleanupOrgMemberResources(
   args: {
     readonly orgId: string;
     readonly userId: string;
+    readonly membershipId?: string;
   },
   signal: AbortSignal,
 ): Promise<void> {
   await revokeOrgMemberRunAuthority(db, args, signal);
   signal.throwIfAborted();
+  const currentTime = nowDate();
   await db
-    .update(morningBriefEnrollments)
-    .set({ state: "departed", updatedAt: nowDate() })
-    .where(
-      and(
-        eq(morningBriefEnrollments.orgId, args.orgId),
-        eq(morningBriefEnrollments.userId, args.userId),
+    .insert(morningBriefEnrollments)
+    .values({
+      orgId: args.orgId,
+      userId: args.userId,
+      state: "departed",
+      membershipId: args.membershipId,
+      availableAt: currentTime,
+      createdAt: currentTime,
+      updatedAt: currentTime,
+    })
+    .onConflictDoUpdate({
+      target: [morningBriefEnrollments.orgId, morningBriefEnrollments.userId],
+      set: {
+        state: "departed",
+        // Deletion can arrive before enrollment or after a missing live lookup.
+        // Retain its generation so a late created event cannot revive intent.
+        membershipId: args.membershipId ?? morningBriefEnrollments.membershipId,
+        updatedAt: currentTime,
+      },
+      setWhere: and(
+        args.membershipId
+          ? or(
+              isNull(morningBriefEnrollments.membershipId),
+              eq(morningBriefEnrollments.membershipId, args.membershipId),
+            )
+          : undefined,
         inArray(morningBriefEnrollments.state, [
           "checking",
           "pending",
           "ineligible",
+          "departed",
         ]),
       ),
-    );
+    });
   const [installation] = await db
     .select({ slackWorkspaceId: slackOrgInstallations.slackWorkspaceId })
     .from(slackOrgInstallations)
@@ -106,7 +131,14 @@ async function revokeOrgMemberRunAuthority(
   // Membership revocation is a hard authority boundary, including credentials
   // retained by ordinary personal-settings disconnect. Commit revocation before
   // best-effort runner notification or the remaining member resource cleanup.
+  const revokedAt = nowDate();
   const cancelled = await db.transaction(async (tx) => {
+    // Cleanup scope ownership precedes Run and all other business-row locks.
+    await eraseVncOwner(tx, {
+      kind: "owner",
+      orgId: args.orgId,
+      userId: args.userId,
+    });
     const rows = await transitionAgentRunsToTerminal(tx, {
       values: {
         status: "cancelled",
@@ -120,9 +152,19 @@ async function revokeOrgMemberRunAuthority(
       ],
     });
     // A Morning Brief collection attempt is the same kind of authority, so it
-    // loses its occurrence here rather than surviving until the member row it
-    // hangs from is removed further down this cleanup.
-    await revokeMorningBriefCollectionOwnership(tx, {
+    // is revoked here rather than surviving until the member row it hangs from
+    // is removed further down this cleanup. The durable stamp this writes is
+    // what also stops a claim admitted just before this commit, including when
+    // there is no occurrence to delete yet.
+    await revokeMorningBriefCollectionOwnership(
+      tx,
+      { kind: "membership", orgId: args.orgId, userId: args.userId },
+      revokedAt,
+    );
+    // A delivered brief's unsent email intent is the same kind of authority and
+    // still carries the recipient and the rendered body, so it leaves in this
+    // same transaction rather than in a later one that a fault could skip.
+    await revokeMorningBriefDeliveryOwnership(tx, {
       kind: "membership",
       orgId: args.orgId,
       userId: args.userId,

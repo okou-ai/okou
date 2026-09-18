@@ -25,9 +25,9 @@ describe("FeatureSwitchKey", () => {
     expect(FeatureSwitchKey.RealAgentInPreview).toBe("_realAgentInPreview");
     expect(FeatureSwitchKey.LangfuseTrace).toBe("_langfuseTrace");
     expect(FeatureSwitchKey.TestOauthConnector).toBe("_testOauthConnector");
-    expect(FeatureSwitchKey.SshAccess).toBe("sshAccess");
     expect(FeatureSwitchKey.PiLoop).toBe("piLoop");
     expect(FeatureSwitchKey.PiMemory).toBe("piMemory");
+    expect(FeatureSwitchKey.ChatThreadArchiving).toBe("chatThreadArchiving");
   });
 });
 
@@ -102,6 +102,33 @@ describe("isFeatureEnabled", () => {
     });
   });
 
+  it("enables chat thread archiving for staff by default and honors explicit overrides", () => {
+    const staffContext = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.ChatThreadArchiving, staffContext),
+    ).toBe(true);
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.ChatThreadArchiving, {
+        ...staffContext,
+        overrides: { [FeatureSwitchKey.ChatThreadArchiving]: false },
+      }),
+    ).toBe(false);
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.ChatThreadArchiving, {
+        orgId: "org_nonexistent",
+      }),
+    ).toBe(false);
+    expect(isFeatureEnabled(FeatureSwitchKey.ChatThreadArchiving, {})).toBe(
+      false,
+    );
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.ChatThreadArchiving, {
+        orgId: "org_nonexistent",
+        overrides: { [FeatureSwitchKey.ChatThreadArchiving]: true },
+      }),
+    ).toBe(true);
+  });
+
   it("enables OpenRouter US routing for staff and honors explicit overrides", () => {
     for (const context of [{}, { orgId: "org_nonexistent" }]) {
       expect(
@@ -138,13 +165,6 @@ describe("isFeatureEnabled", () => {
 
   it("should return false for disabled switch without context", () => {
     expect(isFeatureEnabled(FeatureSwitchKey.AhrefsConnector, {})).toBe(false);
-    expect(isFeatureEnabled(FeatureSwitchKey.SshAccess, {})).toBe(false);
-    expect(getFeatureSwitchMetadata()[FeatureSwitchKey.SshAccess]).toEqual({
-      maintainer: "liangyou@okou.ai",
-      description:
-        "Enable Runner-mediated SSH with Direct and Cloudflare Access transports",
-      rolloutStage: "beta",
-    });
   });
 
   it("should return false for disabled switch with non-matching userId", () => {
@@ -340,7 +360,6 @@ describe("getAllFeatureStates", () => {
     expect(staffOrgStates[FeatureSwitchKey.GradientColorThemes]).toBe(false);
     expect(staffOrgStates[FeatureSwitchKey.OfficialWorkflows]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.MorningBrief]).toBe(true);
-    expect(staffOrgStates[FeatureSwitchKey.SshAccess]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.ChatThreadHeaderActions]).toBe(true);
 
     const otherOrgStates = getAllFeatureStates({
@@ -383,18 +402,37 @@ describe("getAllFeatureStates", () => {
     expect(colleagueStates[FeatureSwitchKey.PiLoop]).toBe(true);
   });
 
-  it("should enable effort for Bingjie by email outside the staff org", () => {
+  it("should enable custom templates for Bingjie by email outside the staff org", () => {
     const bingjieStates = getAllFeatureStates({
       email: "BINGJIE@OKOU.AI",
       orgId: "org_nonexistent",
     });
-    expect(bingjieStates[FeatureSwitchKey.Effort]).toBe(true);
+    expect(bingjieStates[FeatureSwitchKey.CustomTemplates]).toBe(true);
 
     const otherStates = getAllFeatureStates({
       email: "ethan@okou.ai",
       orgId: "org_nonexistent",
     });
-    expect(otherStates[FeatureSwitchKey.Effort]).toBe(false);
+    expect(otherStates[FeatureSwitchKey.CustomTemplates]).toBe(false);
+  });
+
+  it("releases the composer run controls to every org and keeps the off lever", () => {
+    const states = getAllFeatureStates({ orgId: "org_nonexistent" });
+    expect(states[FeatureSwitchKey.Effort]).toBe(true);
+    expect(states[FeatureSwitchKey.CodexFastMode]).toBe(true);
+    expect(states[FeatureSwitchKey.ModelPickerFlyout]).toBe(true);
+
+    const reverted = getAllFeatureStates({
+      orgId: "org_nonexistent",
+      overrides: {
+        [FeatureSwitchKey.Effort]: false,
+        [FeatureSwitchKey.CodexFastMode]: false,
+        [FeatureSwitchKey.ModelPickerFlyout]: false,
+      },
+    });
+    expect(reverted[FeatureSwitchKey.Effort]).toBe(false);
+    expect(reverted[FeatureSwitchKey.CodexFastMode]).toBe(false);
+    expect(reverted[FeatureSwitchKey.ModelPickerFlyout]).toBe(false);
   });
 
   it("should apply overrides to enable disabled features", () => {

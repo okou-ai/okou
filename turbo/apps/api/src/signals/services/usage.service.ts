@@ -10,7 +10,10 @@ import { clerk$, type ClerkUser } from "../external/clerk";
 import { writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 import { getOrgBillingPeriod$ } from "./org-billing-period.service";
-import { getMemberUsageTotals } from "./usage-reporting-ledger";
+import {
+  getMemberUsageBreakdowns,
+  getMemberUsageTotals,
+} from "./usage-reporting-ledger";
 import { fixedRangeToPeriod } from "./usage-period";
 
 interface UsageMembersArgs {
@@ -44,7 +47,18 @@ export const usageMembers$ = command(
     }
 
     const db = set(writeDb$);
-    const rows = await getMemberUsageTotals(db, args.orgId, period);
+    const { rows, breakdownByUser } = await db.transaction(
+      async (tx) => {
+        const rows = await getMemberUsageTotals(tx, args.orgId, period);
+        const breakdownByUser = await getMemberUsageBreakdowns(
+          tx,
+          args.orgId,
+          period,
+        );
+        return { rows, breakdownByUser };
+      },
+      { isolationLevel: "repeatable read", accessMode: "read only" },
+    );
     signal.throwIfAborted();
 
     if (rows.length === 0) {
@@ -71,6 +85,7 @@ export const usageMembers$ = command(
         cacheReadInputTokens: row.cacheReadInputTokens,
         cacheCreationInputTokens: row.cacheCreationInputTokens,
         creditsCharged: row.creditsCharged,
+        breakdown: breakdownByUser.get(row.userId) ?? [],
       };
     });
 

@@ -8,7 +8,6 @@ import {
 } from "../okou-page/sidebar-state.ts";
 import {
   currentChatThreadListSignals$,
-  currentChatThreadId$,
   type ChatThreadListSignals,
 } from "../agent-chat.ts";
 import {
@@ -27,6 +26,7 @@ export interface SidebarChatThreadWindow {
 export interface SidebarChatThreadListSignals {
   readonly count$: Computed<number>;
   readonly currentThreadListed$: Computed<boolean>;
+  readonly hasHiddenArchivedThreads$: Computed<boolean>;
   readonly threadIds$: Computed<readonly string[]>;
   readonly window$: Computed<SidebarChatThreadWindow>;
 }
@@ -203,8 +203,8 @@ function getFixedVirtualRange({
   return { startIndex, endIndex };
 }
 
-function createSidebarChatThreadListSignals(
-  dom: SidebarChatThreadDomSignals,
+function createSidebarChatThreadViewportSignals(
+  domSignals: SidebarChatThreadDomSignals,
   list: ChatThreadListSignals,
 ): SidebarChatThreadListSignals {
   const itemSignals$ = computed((get) => {
@@ -212,20 +212,10 @@ function createSidebarChatThreadListSignals(
       get(list.threadIds$),
     );
   });
-  const count$ = computed((get): number => {
-    return get(list.threadIds$).length;
-  });
-  const currentThreadListed$ = computed((get): boolean => {
-    const threadId = get(currentChatThreadId$);
-    if (!threadId) {
-      return false;
-    }
-    return get(list.threadIds$).includes(threadId);
-  });
   const window$ = computed((get): SidebarChatThreadWindow => {
     const itemSignals = get(itemSignals$);
-    const scrollViewport = get(dom.scrollViewport$);
-    const scrollMetrics = get(dom.scrollMetrics$);
+    const scrollViewport = get(domSignals.scrollViewport$);
+    const scrollMetrics = get(domSignals.scrollMetrics$);
     const measuredViewportHeight =
       scrollMetrics.clientHeight || scrollViewport?.clientHeight;
     const viewportHeight =
@@ -253,15 +243,16 @@ function createSidebarChatThreadListSignals(
   });
 
   return {
-    count$,
-    currentThreadListed$,
+    count$: list.count$,
+    currentThreadListed$: list.currentThreadListed$,
+    hasHiddenArchivedThreads$: list.hasHiddenArchivedThreads$,
     threadIds$: list.threadIds$,
     window$,
   };
 }
 
 function createScrollVirtualListToIndexCommand(
-  dom: SidebarChatThreadDomSignals,
+  domSignals: SidebarChatThreadDomSignals,
 ) {
   return command(
     (
@@ -273,12 +264,12 @@ function createScrollVirtualListToIndexCommand(
         return false;
       }
 
-      const scrollViewport = get(dom.scrollViewport$);
+      const scrollViewport = get(domSignals.scrollViewport$);
       if (!scrollViewport) {
         return false;
       }
 
-      const currentMetrics = get(dom.scrollMetrics$);
+      const currentMetrics = get(domSignals.scrollMetrics$);
       const viewportHeight =
         currentMetrics.clientHeight ||
         scrollViewport.clientHeight ||
@@ -298,7 +289,7 @@ function createScrollVirtualListToIndexCommand(
       }
 
       scrollViewport.scrollTop = nextScrollTop;
-      set(dom.setScrollMetrics$, {
+      set(domSignals.setScrollMetrics$, {
         scrollTop: nextScrollTop,
         clientHeight: scrollViewport.clientHeight,
       });
@@ -308,14 +299,15 @@ function createScrollVirtualListToIndexCommand(
 }
 
 function createSidebarChatThreadScrollSignals(): SidebarChatThreadScrollSignals {
-  const dom = createSidebarChatThreadDomSignals();
-  // The async boundary selects a list context. Its count and virtual window
-  // remain synchronous when thread events or scroll metrics change.
+  const domSignals = createSidebarChatThreadDomSignals();
+  // The async boundary selects the shared list context. Each viewport only
+  // adds its own synchronous virtual window over that list.
   const list$ = computed(async (get): Promise<SidebarChatThreadListSignals> => {
     const list = await get(currentChatThreadListSignals$);
-    return createSidebarChatThreadListSignals(dom, list);
+    return createSidebarChatThreadViewportSignals(domSignals, list);
   });
-  const scrollVirtualListToIndex$ = createScrollVirtualListToIndexCommand(dom);
+  const scrollVirtualListToIndex$ =
+    createScrollVirtualListToIndexCommand(domSignals);
   const scrollToThread$ = command(
     async (
       { get, set },
@@ -346,11 +338,11 @@ function createSidebarChatThreadScrollSignals(): SidebarChatThreadScrollSignals 
   );
 
   return {
-    isScrolled$: dom.isScrolled$,
+    isScrolled$: domSignals.isScrolled$,
     list$,
-    setScrollMetrics$: dom.setScrollMetrics$,
-    setScrollViewport$: dom.setScrollViewport$,
-    refreshScrollViewport$: dom.refreshScrollViewport$,
+    setScrollMetrics$: domSignals.setScrollMetrics$,
+    setScrollViewport$: domSignals.setScrollViewport$,
+    refreshScrollViewport$: domSignals.refreshScrollViewport$,
     scrollToThread$,
     scrollCurrentChatThreadOnRef$,
   };

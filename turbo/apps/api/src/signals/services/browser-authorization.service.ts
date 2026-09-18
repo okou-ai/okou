@@ -5,9 +5,11 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { browserAuthorizationRequests } from "@okouai/db/schema/browser-session";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
 import { env } from "../../lib/env";
+import type { Tx } from "../../lib/db-types";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import { publishThreadListChanged } from "../external/realtime";
+import { withChatThreadContentWrite } from "./chat-thread-content-erasure-admission.service";
 import { appendChatThreadEvent } from "./chat-thread-event.service";
 
 const BROWSER_AUTHORIZATION_REQUEST_TTL_MS = 60 * 60 * 1000;
@@ -214,6 +216,116 @@ export const readBrowserAuthorizationRequest$ = command(
   },
 );
 
+/**
+ * Approving an authorization link writes the same thread selection state as the
+ * direct settings route, so the one transaction that owns those writes runs
+ * inside the shared B1 admission and the canonical Agent and thread identity
+ * locks. The thread `UPDATE`, the durable sidebar sequence and event, and this
+ * request's own completion stamp stay in that single transaction.
+ *
+ * The request row is a locator, not authority. Its stored `user_id`/`org_id`
+ * only decide which opaque token was presented; the thread's real user, its
+ * non-null Agent and that Agent's organization decide whether this apply may
+ * write. A request whose thread has since moved to another organization is
+ * therefore no longer in scope, and is refused instead of publishing a
+ * selection event under the organization the request was minted in.
+ *
+ * Inside the admitted transaction the exact request is re-read and pinned
+ * before any content mutation, so a request deleted or expired after the
+ * preflight — including one that lapses while that pin is being acquired —
+ * can never leave a committed thread update, a consumed sidebar sequence or a
+ * false success behind.
+ */
+async function applyAuthorizedBrowserSelection(
+  tx: Tx,
+  args: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly requestToken: string;
+    readonly requestId: string;
+    readonly chatThreadId: string;
+  },
+): Promise<ApplyBrowserAuthorizationRequestResult> {
+  // `FOR NO KEY UPDATE` is exactly the lock the completion `UPDATE` below
+  // takes, so the pin never upgrades mid-transaction; it also blocks a
+  // concurrent `DELETE`, though that alone would not require this mode, since
+  // `KEY SHARE` blocks `DELETE` too. No other statement in the codebase locks
+  // `browser_authorization_requests`: the only writers are this service's own
+  // creation `INSERT`, this completion `UPDATE`, and the token lookups both
+  // read paths share, and none of them takes a canonical Agent or thread lock,
+  // so this subject -> Agent -> thread -> request order has no inverse.
+  const [request] = await tx
+    .select({ expiresAt: browserAuthorizationRequests.expiresAt })
+    .from(browserAuthorizationRequests)
+    .where(
+      and(
+        eq(browserAuthorizationRequests.id, args.requestId),
+        eq(
+          browserAuthorizationRequests.requestTokenHash,
+          hashSecret(args.requestToken),
+        ),
+        eq(browserAuthorizationRequests.orgId, args.orgId),
+        eq(browserAuthorizationRequests.userId, args.userId),
+        eq(browserAuthorizationRequests.chatThreadId, args.chatThreadId),
+      ),
+    )
+    .limit(1)
+    .for("no key update");
+  if (!request) {
+    return { status: "not_found" };
+  }
+  // Read the clock only once the pin is held. Acquiring it can wait on a
+  // concurrent holder and on the transaction's own bounded budget, so a reading
+  // taken before that wait can report a request as live that has already
+  // lapsed, and would let this transaction write thread settings, a durable
+  // sidebar event and a completion stamp for it. This one reading decides the
+  // TTL and is then reused for every timestamp the accepted write stores, so
+  // they all keep sharing a single value.
+  const appliedAt = nowDate();
+  if (request.expiresAt.getTime() <= appliedAt.getTime()) {
+    return { status: "expired" };
+  }
+  // An already completed request keeps its existing repeat behavior: the token
+  // is not consumed, so applying it again re-applies the same selection.
+
+  const [thread] = await tx
+    .update(chatThreads)
+    .set({
+      computerUseHostId: null,
+      cloudBrowserEnabled: true,
+      updatedAt: appliedAt,
+    })
+    .where(
+      and(
+        eq(chatThreads.id, args.chatThreadId),
+        eq(chatThreads.userId, args.userId),
+        isNotNull(chatThreads.agentId),
+      ),
+    )
+    .returning({
+      id: chatThreads.id,
+      agentId: chatThreads.agentId,
+    });
+  if (!thread?.agentId) {
+    return { status: "scope_not_found" };
+  }
+  await appendChatThreadEvent(tx, {
+    kind: "computer_use_host_updated",
+    userId: args.userId,
+    orgId: args.orgId,
+    chatThreadId: thread.id,
+    agentId: thread.agentId,
+    computerUseHostId: null,
+    cloudBrowserEnabled: true,
+    createdAt: appliedAt,
+  });
+  await tx
+    .update(browserAuthorizationRequests)
+    .set({ completedAt: appliedAt, updatedAt: appliedAt })
+    .where(eq(browserAuthorizationRequests.id, args.requestId));
+  return { status: "applied" };
+}
+
 export const applyBrowserAuthorizationRequest$ = command(
   async (
     { set },
@@ -225,54 +337,42 @@ export const applyBrowserAuthorizationRequest$ = command(
     signal: AbortSignal,
   ): Promise<ApplyBrowserAuthorizationRequestResult> => {
     const db = set(writeDb$);
-    const now = nowDate();
-    const loaded = await loadRequestByToken({ db, ...args, now });
+    const loaded = await loadRequestByToken({ db, ...args, now: nowDate() });
     signal.throwIfAborted();
     if (loaded.status !== "found") {
       return loaded;
     }
 
-    const applied = await db.transaction(async (tx) => {
-      const [thread] = await tx
-        .update(chatThreads)
-        .set({
-          computerUseHostId: null,
-          cloudBrowserEnabled: true,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(chatThreads.id, loaded.request.chatThreadId),
-            eq(chatThreads.userId, args.userId),
-            isNotNull(chatThreads.agentId),
-          ),
-        )
-        .returning({
-          id: chatThreads.id,
-          agentId: chatThreads.agentId,
+    const result = await withChatThreadContentWrite(
+      db,
+      {
+        chatThreadId: loaded.request.chatThreadId,
+        authorize: (identity) => {
+          return (
+            identity.userId === args.userId &&
+            identity.agentId !== null &&
+            identity.orgId === args.orgId
+          );
+        },
+      },
+      async (tx, identity) => {
+        return await applyAuthorizedBrowserSelection(tx, {
+          ...args,
+          requestId: loaded.request.id,
+          chatThreadId: identity.chatThreadId,
         });
-      if (!thread?.agentId) {
-        return false;
-      }
-      await appendChatThreadEvent(tx, {
-        kind: "computer_use_host_updated",
-        userId: args.userId,
-        orgId: args.orgId,
-        chatThreadId: thread.id,
-        agentId: thread.agentId,
-        computerUseHostId: null,
-        cloudBrowserEnabled: true,
-        createdAt: now,
-      });
-      await tx
-        .update(browserAuthorizationRequests)
-        .set({ completedAt: now, updatedAt: now })
-        .where(eq(browserAuthorizationRequests.id, loaded.request.id));
-      return true;
-    });
+      },
+      signal,
+    );
     signal.throwIfAborted();
-    if (!applied) {
+    // A thread that is absent, foreign, organization-foreign or Agent-less
+    // keeps this route's existing scope-not-found disposition, and B1 closure
+    // reuses it without revealing which subject closed.
+    if (result.outcome !== "written") {
       return { status: "scope_not_found" };
+    }
+    if (result.value.status !== "applied") {
+      return result.value;
     }
 
     await publishThreadListChanged({

@@ -17,7 +17,7 @@ import {
   readRunUsageEventsFixture,
 } from "../../../test-fixtures/chat-events";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise } from "../../utils";
+import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { workflowsRoutes } from "../workflows";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
@@ -62,6 +62,35 @@ const {
   completeSandboxFirstPiRun,
   queueCapabilityProvenPiRun,
 } = createChatEventsFixture(context);
+
+function observePendingSend<T>(send: Promise<T>) {
+  const result = settleIncludingAbort(send);
+  const phases: Promise<unknown>[] = [];
+
+  async function beforeSettlement(phase: PromiseLike<unknown>) {
+    // Vitest polls are lazy thenables. Normalize once and retain each started
+    // poll so an early request failure cannot leave it running after cleanup.
+    const work = Promise.resolve(phase);
+    phases.push(work);
+    await Promise.race([
+      work,
+      result.then((settled) => {
+        if (!settled.ok) {
+          throw settled.error;
+        }
+        throw new Error(
+          "Chat send completed before its held preparation phase",
+        );
+      }),
+    ]);
+  }
+
+  async function joinPhases() {
+    await Promise.allSettled(phases);
+  }
+
+  return { result, beforeSettlement, joinPhases };
+}
 
 describe("CHAT-02: model-first provider policies", () => {
   it.each(["pending", "cancelled", "queued"] as const)(
@@ -323,9 +352,10 @@ describe("CHAT-02: model-first provider policies", () => {
     const checkpointObjects = mockPiCheckpointObjectStore();
     const instructions = await publishPendingPiInstructions(actor, agentId);
     const thread = await chat.createThread(actor, { agentId });
+    const sdkOwner = new AbortController();
     const sdk = await context.mocks.piSdk.controlInitialization(
       { sessionId: thread.id, instructions, holdInitialization: true },
-      context.signal,
+      AbortSignal.any([context.signal, sdkOwner.signal]),
     );
     // Infrastructure must hold admission until the real SDK initializer has
     // started; no production endpoint can schedule that late-result boundary.
@@ -333,6 +363,7 @@ describe("CHAT-02: model-first provider policies", () => {
       orgId: requireOrgId(actor),
       signal: context.signal,
     });
+    const lockDone = settleIncludingAbort(lock.done);
     onTestFinished(async () => {
       lock.release();
       await lock.done;
@@ -363,27 +394,59 @@ describe("CHAT-02: model-first provider policies", () => {
       },
       usagePricingResolution,
     );
-    await sdk.entered;
-    lock.release();
-    await lock.done;
-    const run = await send;
-    await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
-      status: "queued",
+    const observed = observePendingSend(send);
+    const result = await settleIncludingAbort(async () => {
+      await observed.beforeSettlement(sdk.entered);
+      lock.release();
+      await lock.done;
+      const run = await send;
+      await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
+        status: "queued",
+      });
+      expect(sdk.disposeCount()).toBe(0);
+      expect(requests).toHaveLength(0);
+      expectNoPiApiFirstTurnArtifacts(run.runId, checkpointObjects);
+      sdk.release();
+      await sdk.disposed;
+      await flushWaitUntilForTest();
+      expect(sdk.disposeCount()).toBe(1);
+      expect(requests).toHaveLength(0);
+      expectNoPiApiFirstTurnArtifacts(run.runId, checkpointObjects);
+      await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
+        status: "queued",
+      });
+      await cancelChatRun(actor, run.runId);
+      await cancelChatRun(actor, anchor.runId);
     });
-    expect(sdk.disposeCount()).toBe(0);
-    expect(requests).toHaveLength(0);
-    expectNoPiApiFirstTurnArtifacts(run.runId, checkpointObjects);
     sdk.release();
-    await sdk.disposed;
-    await flushWaitUntilForTest();
-    expect(sdk.disposeCount()).toBe(1);
-    expect(requests).toHaveLength(0);
-    expectNoPiApiFirstTurnArtifacts(run.runId, checkpointObjects);
-    await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
-      status: "queued",
+    lock.release();
+    sdkOwner.abort(
+      new DOMException("SDK preparation scope finished", "AbortError"),
+    );
+    const cleanup = await settleIncludingAbort(async () => {
+      await observed.joinPhases();
+      const [sent, unlocked] = await Promise.all([observed.result, lockDone]);
+      await flushWaitUntilForTest();
+      if (!unlocked.ok) {
+        throw unlocked.error;
+      }
+      if (!result.ok && sent.ok) {
+        await api.requestCancelRun(actor, sent.value.runId, [200, 400]);
+      }
+      if (!result.ok) {
+        await api.requestCancelRun(actor, anchor.runId, [200, 400]);
+      }
+      await flushWaitUntilForTest();
+      if (!sent.ok) {
+        throw sent.error;
+      }
     });
-    await cancelChatRun(actor, run.runId);
-    await cancelChatRun(actor, anchor.runId);
+    if (!result.ok) {
+      throw result.error;
+    }
+    if (!cleanup.ok) {
+      throw cleanup.error;
+    }
   }, 30_000);
 
   it("retains a pre-commit SDK initialization failure for canonical Sandbox handoff", async () => {
@@ -402,6 +465,7 @@ describe("CHAT-02: model-first provider policies", () => {
     const initializationFailure = new Error(
       "Pi SDK initialization fixture failure",
     );
+    const sdkOwner = new AbortController();
     const sdk = await context.mocks.piSdk.controlInitialization(
       {
         sessionId: thread.id,
@@ -409,7 +473,7 @@ describe("CHAT-02: model-first provider policies", () => {
         holdInitialization: false,
         initializationFailure,
       },
-      context.signal,
+      AbortSignal.any([context.signal, sdkOwner.signal]),
     );
     // This real lock separates the external SDK failure from the durable
     // admission result without observing the private preparation handle.
@@ -417,6 +481,7 @@ describe("CHAT-02: model-first provider policies", () => {
       orgId: requireOrgId(actor),
       signal: context.signal,
     });
+    const lockDone = settleIncludingAbort(lock.done);
     onTestFinished(async () => {
       lock.release();
       await lock.done;
@@ -437,67 +502,100 @@ describe("CHAT-02: model-first provider policies", () => {
       { agentId, threadId: thread.id, prompt, model: "gpt-5.6-terra" },
       usagePricingResolution,
     );
-    await expect.poll(lock.waiterCount).toBe(1);
-    await expect(sdk.failed).resolves.toBe(initializationFailure);
-    expect(sdk.initializationCount()).toBe(1);
-    expect(providerCalls).toBe(0);
-    expect(
-      [...checkpointObjects.keys()].filter((key) => {
-        return key.includes("/pi-api-first-turn/");
-      }),
-    ).toStrictEqual([]);
-    const beforeCommit = (await chat.listThreadEvents(actor, thread.id)).events;
-    expect(
-      beforeCommit.filter((event) => {
-        return (
-          event.eventType.startsWith("output.") ||
-          isChatRunTerminalEventType(event.eventType)
-        );
-      }),
-    ).toStrictEqual([]);
+    const observed = observePendingSend(send);
+    const result = await settleIncludingAbort(async () => {
+      await observed.beforeSettlement(expect.poll(lock.waiterCount).toBe(1));
+      await observed.beforeSettlement(sdk.failed);
+      await expect(sdk.failed).resolves.toBe(initializationFailure);
+      expect(sdk.initializationCount()).toBe(1);
+      expect(providerCalls).toBe(0);
+      expect(
+        [...checkpointObjects.keys()].filter((key) => {
+          return key.includes("/pi-api-first-turn/");
+        }),
+      ).toStrictEqual([]);
+      const beforeCommit = (await chat.listThreadEvents(actor, thread.id))
+        .events;
+      expect(
+        beforeCommit.filter((event) => {
+          return (
+            event.eventType.startsWith("output.") ||
+            isChatRunTerminalEventType(event.eventType)
+          );
+        }),
+      ).toStrictEqual([]);
 
+      lock.release();
+      await lock.done;
+      const run = await send;
+      await flushWaitUntilForTest();
+      expect(context.mocks.ably.publish.mock.calls).toContainEqual([
+        "job",
+        expect.objectContaining({ runId: run.runId }),
+      ]);
+      // The existing PI_API_PREHEAT_FAILED classification permits this H0
+      // transfer; an untyped model failure would instead fail the durable run.
+      const manifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${run.runId}/manifest.json`;
+      const manifest = piApiFirstTurnManifestSchema.parse(
+        JSON.parse(
+          checkpointObjects.get(manifestKey)?.toString("utf8") ?? "{}",
+        ),
+      );
+      expect(manifest).toMatchObject({
+        outcome: "ownership-transfer",
+        mode: "sandbox-first",
+        baseSession: { sessionId: thread.id, sha256: null },
+        session: { sessionId: thread.id },
+        sandboxEventSequenceStart: 1,
+      });
+      const sessionKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${run.runId}/session.jsonl`;
+      const h0 = MemoryPiSession.fromJsonl(
+        checkpointObjects.get(sessionKey)?.toString("utf8") ?? "",
+      );
+      expect(h0.buildSessionContext().messages).toHaveLength(0);
+      expect(providerCalls).toBe(0);
+      expect(sdk.initializationCount()).toBe(1);
+      expect(sdk.disposeCount()).toBe(0);
+      await expectNoBuiltInModelUsage(run.runId);
+      await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
+        status: "pending",
+      });
+      const events = (await chat.listThreadEvents(actor, thread.id)).events;
+      expect(eventBackedContents(events, run.runId)).toStrictEqual([]);
+      const claimed = await claimChatRun(runnerGroup, run.runId);
+      expect(claimed.claim).toMatchObject({
+        cliAgentType: "pi",
+        piSessionId: thread.id,
+        prompt,
+      });
+      await cancelChatRun(actor, run.runId);
+    });
+    sdk.release();
     lock.release();
-    await lock.done;
-    const run = await send;
-    await flushWaitUntilForTest();
-    expect(context.mocks.ably.publish.mock.calls).toContainEqual([
-      "job",
-      expect.objectContaining({ runId: run.runId }),
-    ]);
-    // The existing PI_API_PREHEAT_FAILED classification permits this H0
-    // transfer; an untyped model failure would instead fail the durable run.
-    const manifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${run.runId}/manifest.json`;
-    const manifest = piApiFirstTurnManifestSchema.parse(
-      JSON.parse(checkpointObjects.get(manifestKey)?.toString("utf8") ?? "{}"),
+    sdkOwner.abort(
+      new DOMException("SDK preparation scope finished", "AbortError"),
     );
-    expect(manifest).toMatchObject({
-      outcome: "ownership-transfer",
-      mode: "sandbox-first",
-      baseSession: { sessionId: thread.id, sha256: null },
-      session: { sessionId: thread.id },
-      sandboxEventSequenceStart: 1,
+    const cleanup = await settleIncludingAbort(async () => {
+      await observed.joinPhases();
+      const [sent, unlocked] = await Promise.all([observed.result, lockDone]);
+      await flushWaitUntilForTest();
+      if (!unlocked.ok) {
+        throw unlocked.error;
+      }
+      if (!result.ok && sent.ok) {
+        await api.requestCancelRun(actor, sent.value.runId, [200, 400]);
+      }
+      await flushWaitUntilForTest();
+      if (!sent.ok) {
+        throw sent.error;
+      }
     });
-    const sessionKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${run.runId}/session.jsonl`;
-    const h0 = MemoryPiSession.fromJsonl(
-      checkpointObjects.get(sessionKey)?.toString("utf8") ?? "",
-    );
-    expect(h0.buildSessionContext().messages).toHaveLength(0);
-    expect(providerCalls).toBe(0);
-    expect(sdk.initializationCount()).toBe(1);
-    expect(sdk.disposeCount()).toBe(0);
-    await expectNoBuiltInModelUsage(run.runId);
-    await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
-      status: "pending",
-    });
-    const events = (await chat.listThreadEvents(actor, thread.id)).events;
-    expect(eventBackedContents(events, run.runId)).toStrictEqual([]);
-    const claimed = await claimChatRun(runnerGroup, run.runId);
-    expect(claimed.claim).toMatchObject({
-      cliAgentType: "pi",
-      piSessionId: thread.id,
-      prompt,
-    });
-    await cancelChatRun(actor, run.runId);
+    if (!result.ok) {
+      throw result.error;
+    }
+    if (!cleanup.ok) {
+      throw cleanup.error;
+    }
   }, 30_000);
 
   it("uses newly published Pi instruction indexes with resource archives unavailable", async () => {

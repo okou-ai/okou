@@ -645,7 +645,6 @@
       "importedSlides_other": "{{count}} slide",
       "importFile": "Impor file Anda sendiri",
       "importFileHint": "({{formats}})",
-      "importStarted": "Menganalisis {{filename}}. Templat akan muncul di Custom setelah siap.",
       "importUnsupported": "Pilih file {{formats}} untuk membuat templat.",
       "introVideo": "Video intro",
       "introVideoUnavailable": "Template video ini tidak lagi tersedia. Hapus untuk mengirim pesan Anda.",
@@ -1893,13 +1892,14 @@
       "picker": {
         "autoVoiceDescription": "Temukan suara yang cocok dengan konten Anda.",
         "avatarVoice": "Suara avatar",
-        "changeAvatar": "Ubah avatar",
+        "back": "Kembali",
         "chooseStyle": "Pilih gaya",
-        "chooseStyleAndVoice": "Pilih gaya dan suara.",
+        "closeOptions": "Tutup opsi",
+        "moreOptions": "Opsi lainnya",
         "noMatches": "Tidak ada hasil.",
-        "ready": "Siap digunakan. Tambahkan konten Anda di obrolan.",
+        "searchStyles": "Cari gaya",
+        "selectionSummary": "Suara: {{voice}} · Avatar: {{avatar}}",
         "settings": "Pengaturan video intro",
-        "style": "Gaya",
         "useSelection": "Gunakan pilihan"
       },
       "style": {
@@ -1968,10 +1968,12 @@
       "github": "GitHub",
       "lark": "Lark",
       "openChat": "Buka chat",
+      "openChatIn": "Buka chat di {{integration}}",
       "openFeishuChat": "Buka chat asli di Feishu",
       "openGithubMessage": "Buka masalah atau pull request asli di GitHub",
       "openLarkChat": "Buka chat asli di Lark",
       "openMessage": "Buka pesan",
+      "openMessages": "Buka Pesan",
       "openSlackMessage": "Buka pesan asli di Slack",
       "openTeamsMessage": "Buka pesan asli di Microsoft Teams",
       "openTelegramMessage": "Buka pesan asli di Telegram",
@@ -2102,7 +2104,10 @@
       "number": "nomor"
     },
     "sidebar": {
+      "allArchived": "Semua chat Anda telah diarsipkan",
+      "allCaughtUp": "Semua sudah beres",
       "allChats": "Semua chat",
+      "archive": "Arsipkan chat",
       "chatsWith": "Chat dengan {{agentName}}",
       "chatThreads": "Thread chat",
       "delete": "Hapus chat",
@@ -2121,7 +2126,10 @@
       "pinned": "Disematkan",
       "rename": "Ganti nama chat",
       "renameDescription": "Masukkan nama baru untuk thread chat ini.",
+      "showArchived": "Tampilkan yang diarsipkan",
+      "showArchivedChats": "Tampilkan chat yang diarsipkan",
       "titlePlaceholder": "Judul chat",
+      "unarchive": "Batalkan pengarsipan",
       "unpin": "Lepas sematan chat",
       "unread": "Belum dibaca",
       "unreadOnly": "Hanya yang belum dibaca"
@@ -2833,6 +2841,7 @@
       "ariaLabel": "Thread chat",
       "changeIcon": "Ubah ikon",
       "emoji": {
+        "archive": "Arsipkan",
         "done": "Selesai",
         "idea": "Ide",
         "no": "Tidak",
@@ -3546,6 +3555,7 @@
           "sourceUnavailable": "Sumber tidak tersedia",
           "stale": "Usang",
           "unchanged": "Tidak berubah",
+          "unsupportedProtocol": "Protokol tidak didukung",
           "unsupportedSchema": "Skema tidak didukung"
         }
       },
@@ -4203,6 +4213,8 @@
         "tiny-wanderer": "Pengembara Kecil"
       },
       "presentation": {
+        "bloom-pitch": "Presentasi Kelopak",
+        "blueprint-academy": "Kampus Gambar Teknik",
         "botane-organic-deck": "Kebun Mauve",
         "business-data-presentation": "Dasbor Berry",
         "crayon-learning-deck": "Coretan Krayon",
@@ -4211,9 +4223,19 @@
         "editorial-magazine-deck": "Majalah Kertas",
         "landing-consulting-deck": "Browser Neon",
         "lumina-creative-studio": "Stiker Kuas",
+        "meridian": "Blok Kobalt",
         "mosaic-geometric-pitch": "Ubin Bauhaus",
+        "neo-brutalism": "Toko Bayangan",
+        "nocturne": "Panggung Tengah Malam",
+        "pixel-glitch": "Piksel Arkade",
         "playful-launch-presentation": "Ruang Bermain Semburat Matahari",
-        "playful-pop-deck": "Permen Neon"
+        "playful-pop-deck": "Permen Neon",
+        "prospectus": "Presentasi Beranda",
+        "schoolhouse": "Poster Kraft",
+        "sticker-scrapbook": "Buku Stiker",
+        "strata": "Tangga Merah",
+        "taped-consulting": "Dinding Polaroid",
+        "vantage": "Ruang Rapat Bernomor"
       },
       "video": {
         "chinese-ink-art": "Lukisan Tinta Tiongkok",
@@ -5310,7 +5332,8 @@
     "status": {
       "availableNow": "Tersedia sekarang",
       "inUse_one": "{{active}} dari {{limit}} slot digunakan",
-      "inUse_other": "{{active}} dari {{limit}} slot digunakan"
+      "inUse_other": "{{active}} dari {{limit}} slot digunakan",
+      "waitingForSandbox": "Menunggu Sandbox"
     },
     "tiers": {
       "custom": "Kustom",
@@ -5449,7 +5472,7 @@
         "usage": {
           "balanceDescription": "Sisa yang bisa dibelanjakan tim Anda.",
           "balanceTitle": "Saldo kredit",
-          "usageDescription": "Penggunaan kredit Anda di seluruh chat, otomatisasi, dan channel.",
+          "usageDescription": "Penggunaan kredit Anda, dikelompokkan berdasarkan utas.",
           "usageTitle": "Penggunaan kredit"
         }
       },
@@ -5613,9 +5636,12 @@
         "codexDescription": "Hubungkan dengan login perangkat Codex untuk rute model berbasis Codex.",
         "codexTitle": "ChatGPT (Codex)",
         "description": "Hanya digunakan di eksekusi Anda, dengan kredensial Anda sendiri.",
+        "disconnectAccount": "Putuskan akun",
+        "disconnectDescription": "Ini menghapus akun dari Okou. Langganan Anda dengan penyedia tidak akan dibatalkan.",
+        "disconnecting": "Memutuskan…",
+        "disconnectTitle": "Putuskan {{account}}?",
         "noAccounts": "Belum ada akun terhubung.",
         "reconnectAccount": "Hubungkan ulang",
-        "removeAccount": "Hapus",
         "sectionTitle": "Pribadi",
         "status": {
           "connected": "Terhubung",
@@ -5741,7 +5767,7 @@
         "codexTitle": "Sesi ChatGPT perlu disambungkan ulang"
       },
       "toasts": {
-        "accountRemoved": "Akun dihapus",
+        "accountDisconnected": "Akun diputuskan",
         "accountSwitched": "Akun aktif diganti",
         "disconnected": "{{provider}} terputus",
         "policiesUpdated": "Pengaturan provider model diperbarui",
@@ -6266,6 +6292,18 @@
     "manage": "Kelola host SSH",
     "notLearned": "Kunci host belum tersimpan",
     "passphrase": "Frasa sandi (opsional)",
+    "placeholders": {
+      "accessName": "mis. Akses produksi",
+      "clientId": "Tempel Client ID Service Token",
+      "clientSecret": "Tempel Client Secret Service Token",
+      "credentialName": "mis. Login deployment",
+      "displayName": "mis. Server produksi",
+      "host": "mis. ssh.example.com",
+      "passphrase": "Kosongkan jika kunci tidak dienkripsi",
+      "password": "Masukkan kata sandi pengguna SSH",
+      "privateKey": "Tempel seluruh kunci privat",
+      "username": "mis. ubuntu"
+    },
     "port": "Port",
     "privateKey": "Kunci privat",
     "reset": "Reset kunci host",
@@ -6301,6 +6339,7 @@
     },
     "loadFailed": "Tidak dapat memuat templat.",
     "pageCount_other": "{{count}} halaman",
+    "renameFailed": "Tidak dapat mengganti nama templat.",
     "retry": "Coba lagi",
     "sharedBy": "Dibagikan oleh {{owner}}",
     "visibility": {
@@ -6342,36 +6381,26 @@
     "records": {
       "empty": {
         "billingPeriodTitle": "Tidak ada penggunaan pada periode penagihan ini",
-        "description": "Kredit yang Anda pakai di chat, automasi, dan kanal muncul di sini.",
+        "description": "Kredit yang Anda pakai di utas muncul di sini.",
         "noBillingPeriodDescription": "Penggunaan tim muncul setelah periode penagihan dimulai.",
         "noBillingPeriodTitle": "Tidak ada periode penagihan aktif",
         "rangeTitle": "Tidak ada penggunaan pada rentang waktu ini",
-        "teamDescription": "Kredit yang dipakai tim Anda di chat, automasi, dan kanal muncul di sini."
+        "teamDescription": "Kredit yang dipakai tim Anda di utas muncul di sini."
       },
       "loadError": "Tidak dapat memuat penggunaan Anda.",
       "loadMore": "Muat lebih banyak",
       "myUsage": "Penggunaan saya",
       "teamLoadError": "Tidak dapat memuat penggunaan tim.",
       "teamUsage": "Penggunaan tim",
+      "thread": "Utas",
+      "unavailableThread": "Utas tidak tersedia",
       "untitled": "(tanpa judul)"
     },
-    "sources": {
-      "agent": "Agen",
-      "automation": "Otomatisasi",
-      "chat": "Chat",
-      "email": "Email",
-      "github": "GitHub",
-      "other": "Lainnya",
-      "phone": "Telepon",
-      "slack": "Slack",
-      "teams": "Microsoft Teams",
-      "telegram": "Telegram"
-    },
     "units": {
-      "chat_one": "{{value}} chat",
-      "chat_other": "{{value}} chat",
       "credit_one": "{{value}} kredit",
-      "credit_other": "{{value}} kredit"
+      "credit_other": "{{value}} kredit",
+      "thread_one": "{{value}} utas",
+      "thread_other": "{{value}} utas"
     }
   },
   "workflows": {

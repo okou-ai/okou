@@ -1,0 +1,22 @@
+{
+  "repository": "vm0-ai/vm0-connectors",
+  "sourceSha": "985039aaa1bfef5bd93952913e8f9fd7ee077a79",
+  "runUrl": "https://github.com/vm0-ai/vm0-connectors/actions/runs/35209618715",
+  "artifactId": 10490894258,
+  "catalogKey": "connectors/v4/releases/2026-09-17.4559/catalog.json",
+  "catalogDigest": "sha256:caa97a427cda78f72840a1279da97a607c6d8aea7eb6b5c3277f203de923b987",
+  "catalogBytes": 30590739,
+  "connectorCount": 4596,
+  "publicationDigest": "sha256:0f46e80440add287ed92a64e31df2ee96966e0470a9a25c1522f528ba2800390",
+  "publicationResourceCount": 13705,
+  "excerpt": "The catalog header, category metadata, and seven complete connector descriptors retain their published JSON values. The connectors array is filtered and JSON is reserialized; the published catalog digest applies to the complete original artifact, not this excerpt.",
+  "connectorSlugs": [
+    "019sms",
+    "ahrefs",
+    "archer",
+    "base44",
+    "nintendo-store",
+    "plaud-mcp",
+    "steam"
+  ]
+}

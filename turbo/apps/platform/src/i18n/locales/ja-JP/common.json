@@ -645,7 +645,6 @@
       "importedSlides_other": "{{count}} 枚",
       "importFile": "自分のファイルをインポート",
       "importFileHint": "({{formats}})",
-      "importStarted": "{{filename}} を解析しています。完成すると Custom に表示されます。",
       "importUnsupported": "テンプレートを作成するには {{formats}} のファイルを選択してください。",
       "introVideo": "イントロ動画",
       "introVideoUnavailable": "この動画テンプレートは現在利用できません。削除してメッセージを送信してください。",
@@ -1893,13 +1892,14 @@
       "picker": {
         "autoVoiceDescription": "コンテンツに合う音声を選びます。",
         "avatarVoice": "アバターの音声",
-        "changeAvatar": "アバターを変更",
+        "back": "戻る",
         "chooseStyle": "スタイルを選択",
-        "chooseStyleAndVoice": "スタイルと音声を選択してください。",
+        "closeOptions": "オプションを閉じる",
+        "moreOptions": "その他のオプション",
         "noMatches": "見つかりませんでした。",
-        "ready": "準備ができました。チャットにコンテンツを追加してください。",
+        "searchStyles": "スタイルを検索",
+        "selectionSummary": "音声: {{voice}} · アバター: {{avatar}}",
         "settings": "イントロ動画の設定",
-        "style": "スタイル",
         "useSelection": "この設定を使用"
       },
       "style": {
@@ -1968,10 +1968,12 @@
       "github": "GitHub",
       "lark": "Lark",
       "openChat": "オープンチャット",
+      "openChatIn": "{{integration}}でチャットを開く",
       "openFeishuChat": "Feishu で元のチャットを開く",
       "openGithubMessage": "GitHub で元の Issue または Pull Request を開く",
       "openLarkChat": "Lark で元のチャットを開く",
       "openMessage": "メッセージを開く",
+      "openMessages": "メッセージを開く",
       "openSlackMessage": "Slack で元のメッセージを開く",
       "openTeamsMessage": "Microsoft Teams で元のメッセージを開く",
       "openTelegramMessage": "Telegram で元のメッセージを開く",
@@ -2102,7 +2104,10 @@
       "number": "番号"
     },
     "sidebar": {
+      "allArchived": "すべてのチャットがアーカイブされています",
+      "allCaughtUp": "すべて完了しました",
       "allChats": "すべてのチャット",
+      "archive": "チャットをアーカイブ",
       "chatsWith": "{{agentName}} とのチャット",
       "chatThreads": "チャットスレッド",
       "delete": "チャットを削除する",
@@ -2121,7 +2126,10 @@
       "pinned": "ピン留め済み",
       "rename": "チャットの名前を変更する",
       "renameDescription": "このチャット スレッドの新しい名前を入力します。",
+      "showArchived": "アーカイブ済みを表示",
+      "showArchivedChats": "アーカイブ済みのチャットを表示",
       "titlePlaceholder": "チャットのタイトル",
+      "unarchive": "アーカイブを解除",
       "unpin": "チャットの固定を解除する",
       "unread": "未読",
       "unreadOnly": "未読のみ"
@@ -2833,6 +2841,7 @@
       "ariaLabel": "チャットスレッド",
       "changeIcon": "アイコンの変更",
       "emoji": {
+        "archive": "アーカイブ",
         "done": "完了",
         "idea": "アイデア",
         "no": "いいえ",
@@ -3546,6 +3555,7 @@
           "sourceUnavailable": "ソースが利用できません",
           "stale": "古い",
           "unchanged": "変わらない",
+          "unsupportedProtocol": "サポートされていないプロトコル",
           "unsupportedSchema": "サポートされていないスキーマ"
         }
       },
@@ -4203,6 +4213,8 @@
         "tiny-wanderer": "小さな放浪者"
       },
       "presentation": {
+        "bloom-pitch": "ペタルピッチ",
+        "blueprint-academy": "製図キャンパス",
         "botane-organic-deck": "モーブガーデン",
         "business-data-presentation": "ベリーダッシュボード",
         "crayon-learning-deck": "クレヨンの落書き",
@@ -4211,9 +4223,19 @@
         "editorial-magazine-deck": "紙の雑誌",
         "landing-consulting-deck": "ネオンブラウザ",
         "lumina-creative-studio": "ブラシステッカー",
+        "meridian": "コバルトブロック",
         "mosaic-geometric-pitch": "バウハウスタイル",
+        "neo-brutalism": "シャドウショップ",
+        "nocturne": "ミッドナイトステージ",
+        "pixel-glitch": "アーケードピクセル",
         "playful-launch-presentation": "サンバーストプレイルーム",
-        "playful-pop-deck": "ネオンキャンディー"
+        "playful-pop-deck": "ネオンキャンディー",
+        "prospectus": "ホームページピッチ",
+        "schoolhouse": "クラフトポスター",
+        "sticker-scrapbook": "ステッカーノート",
+        "strata": "赤い階段",
+        "taped-consulting": "ポラロイドウォール",
+        "vantage": "番号付き会議室"
       },
       "video": {
         "chinese-ink-art": "中国の水墨画",
@@ -5310,7 +5332,8 @@
     "status": {
       "availableNow": "現在利用可能",
       "inUse_one": "{{limit}} スロットの {{active}} が使用中です",
-      "inUse_other": "{{limit}} スロット中 {{active}} が使用中です"
+      "inUse_other": "{{limit}} スロット中 {{active}} が使用中です",
+      "waitingForSandbox": "Sandbox を待機中"
     },
     "tiers": {
       "custom": "カスタム",
@@ -5449,7 +5472,7 @@
         "usage": {
           "balanceDescription": "チームが使える残高です。",
           "balanceTitle": "クレジット残高",
-          "usageDescription": "チャット、オートメーション、チャネル全体でのクレジットの使用状況。",
+          "usageDescription": "スレッドごとにまとめたクレジット使用量。",
           "usageTitle": "クレジット使用量"
         }
       },
@@ -5613,9 +5636,12 @@
         "codexDescription": "Codex をサポートするモデル ルートの Codex デバイス ログインを使用して接続します。",
         "codexTitle": "ChatGPT (Codex)",
         "description": "自分の実行でのみ、自分の資格情報を使用して使用されます。",
+        "disconnectAccount": "アカウントの接続を解除",
+        "disconnectDescription": "このアカウントをOkouから削除します。プロバイダーとのサブスクリプションは解約されません。",
+        "disconnecting": "接続を解除中…",
+        "disconnectTitle": "{{account}}の接続を解除しますか？",
         "noAccounts": "接続済みのアカウントはありません。",
         "reconnectAccount": "再接続",
-        "removeAccount": "削除",
         "sectionTitle": "個人的な",
         "status": {
           "connected": "接続済み",
@@ -5741,7 +5767,7 @@
         "codexTitle": "ChatGPTセッションは再接続が必要です"
       },
       "toasts": {
-        "accountRemoved": "アカウントを削除しました",
+        "accountDisconnected": "アカウントの接続を解除しました",
         "accountSwitched": "使用するアカウントを切り替えました",
         "disconnected": "{{provider}} が切断されました",
         "policiesUpdated": "モデルプロバイダーの設定が更新されました",
@@ -6266,6 +6292,18 @@
     "manage": "SSH ホストを管理",
     "notLearned": "ホスト鍵はまだ記憶されていません",
     "passphrase": "パスフレーズ（任意）",
+    "placeholders": {
+      "accessName": "例: 本番環境へのアクセス",
+      "clientId": "Service Token の Client ID を貼り付け",
+      "clientSecret": "Service Token の Client Secret を貼り付け",
+      "credentialName": "例: デプロイ用ログイン",
+      "displayName": "例: 本番サーバー",
+      "host": "例: ssh.example.com",
+      "passphrase": "鍵が暗号化されていなければ空欄",
+      "password": "SSH ユーザーのパスワードを入力",
+      "privateKey": "秘密鍵全体を貼り付け",
+      "username": "例: ubuntu"
+    },
     "port": "ポート",
     "privateKey": "秘密鍵",
     "reset": "ホスト鍵をリセット",
@@ -6301,6 +6339,7 @@
     },
     "loadFailed": "テンプレートを読み込めませんでした。",
     "pageCount_other": "{{count}} ページ",
+    "renameFailed": "テンプレートの名前を変更できませんでした。",
     "retry": "再試行",
     "sharedBy": "{{owner}} が共有",
     "visibility": {
@@ -6342,36 +6381,26 @@
     "records": {
       "empty": {
         "billingPeriodTitle": "この請求期間の利用はありません",
-        "description": "チャット、オートメーション、チャネルで使ったクレジットがここに表示されます。",
+        "description": "スレッドで使ったクレジットがここに表示されます。",
         "noBillingPeriodDescription": "請求期間が始まるとチームの利用状況が表示されます。",
         "noBillingPeriodTitle": "有効な請求期間はありません",
         "rangeTitle": "この期間の利用はありません",
-        "teamDescription": "チームがチャット、オートメーション、チャネルで使ったクレジットがここに表示されます。"
+        "teamDescription": "チームがスレッドで使ったクレジットがここに表示されます。"
       },
       "loadError": "使用量を読み込めませんでした。",
       "loadMore": "さらに読み込む",
       "myUsage": "自分の使用量",
       "teamLoadError": "チームの使用量を読み込めませんでした。",
       "teamUsage": "チームの使用量",
+      "thread": "スレッド",
+      "unavailableThread": "利用できないスレッド",
       "untitled": "(無題)"
     },
-    "sources": {
-      "agent": "エージェント",
-      "automation": "オートメーション",
-      "chat": "チャット",
-      "email": "メール",
-      "github": "GitHub",
-      "other": "その他",
-      "phone": "電話",
-      "slack": "Slack",
-      "teams": "Microsoft Teams",
-      "telegram": "Telegram"
-    },
     "units": {
-      "chat_one": "{{value}}件の会話",
-      "chat_other": "{{value}}件の会話",
       "credit_one": "{{value}}クレジット",
-      "credit_other": "{{value}}クレジット"
+      "credit_other": "{{value}}クレジット",
+      "thread_one": "{{value}}件のスレッド",
+      "thread_other": "{{value}}件のスレッド"
     }
   },
   "workflows": {

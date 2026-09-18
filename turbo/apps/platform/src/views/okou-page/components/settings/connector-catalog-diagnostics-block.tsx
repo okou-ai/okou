@@ -152,6 +152,12 @@ const DIAGNOSTIC_ENUM_VALUE_TRANSLATIONS: Readonly<
       return $.connectors.providerSettings.catalogDiagnostics.values.unchanged;
     });
   },
+  "unsupported-protocol": () => {
+    return i18n.t(($) => {
+      return $.connectors.providerSettings.catalogDiagnostics.values
+        .unsupportedProtocol;
+    });
+  },
   "unsupported-schema": () => {
     return i18n.t(($) => {
       return $.connectors.providerSettings.catalogDiagnostics.values

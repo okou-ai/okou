@@ -10,6 +10,7 @@ describe("getModelDisplayName", () => {
     expect(getModelDisplayName("gpt-5.6-terra")).toBe("GPT 5.6 Terra");
     expect(getModelDisplayName("gpt-5.6-luna")).toBe("GPT 5.6 Luna");
     expect(getModelDisplayName("gpt-5.5")).toBe("GPT 5.5");
+    expect(getModelDisplayName("openai/gpt-5.5")).toBe("GPT 5.5");
   });
 
   it("falls back to raw IDs for historical retired models", () => {

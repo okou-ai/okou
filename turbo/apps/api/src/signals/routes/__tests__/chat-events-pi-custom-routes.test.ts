@@ -1472,7 +1472,6 @@ describe("CHAT-02: model-first provider policies", () => {
   it.each([
     { selectedModel: "gpt-6-astra", tier: undefined, piLoop: true },
     { selectedModel: "gpt-6-astra", tier: "fast", piLoop: true },
-    { selectedModel: "gpt-5.5", tier: undefined, piLoop: true },
     ...GPT_PI_BDD_MODELS.map((selectedModel) => {
       return { selectedModel, tier: "fast", piLoop: false } as const;
     }),
@@ -1509,6 +1508,7 @@ describe("CHAT-02: model-first provider policies", () => {
       await configureCustomPiModel(actor, selectedModel);
       await authDeviceSupport.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.CodexFastMode]: false,
+        [FeatureSwitchKey.Effort]: false,
       });
       const clientThreadId = randomUUID();
       const rejected = await chat.requestSendEvent(

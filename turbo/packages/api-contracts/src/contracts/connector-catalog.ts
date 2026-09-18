@@ -19,6 +19,7 @@ const publicConnectorCatalogAuthMethodSummarySchema = z.object({
   description: z.string().nullable(),
   grantKind: z.enum([
     "none",
+    "automatic",
     "manual",
     "auth-code",
     "openid-auth",
@@ -72,6 +73,13 @@ const publicConnectorCatalogItemSchema = z.object({
   popularityRank: z.number().int().nonnegative().optional(),
   generation: z.array(z.string()),
   tags: z.array(z.string()),
+  mcp: z
+    .object({
+      transport: z.literal("streamable-http"),
+      endpoint: z.url({ protocol: /^https$/u }),
+    })
+    .optional(),
+  replaces: z.object({ connectorSlug: connectorSlugSchema }).optional(),
   authMethods: z.array(publicConnectorCatalogAuthMethodSummarySchema),
   permissionSummary: publicConnectorCatalogPermissionSummarySchema,
 });

@@ -1,0 +1,89 @@
+name: iOS
+
+on:
+  pull_request:
+  merge_group:
+    types: [checks_requested]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  npm_config_audit: "false"
+
+concurrency:
+  group: ios-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      needed: ${{ steps.changes.outputs.needed }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Merge groups and main pushes can contain more than one commit.
+          fetch-depth: 0
+      - name: Verify CI change detection and gate behavior
+        run: |
+          bash -n ios/scripts/*.sh
+          shellcheck ios/scripts/*.sh
+          bash ios/scripts/test-ci.sh
+      - name: Detect iOS changes
+        id: changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          CHECKOUT_REF: ${{ github.ref }}
+          PULL_REQUEST_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          needed=$(bash ios/scripts/ci-changed.sh)
+          echo "needed=$needed" >> "$GITHUB_OUTPUT"
+
+  build-test:
+    needs: detect
+    if: needs.detect.outputs.needed == 'true'
+    runs-on: macos-26
+    timeout-minutes: 15
+    env:
+      # https://github.com/actions/runner-images/blob/main/images/macos/macos-26-arm64-Readme.md
+      # Image 20260907.0351.1 includes Xcode 26.3 and the iOS 26.2 runtime.
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+      IOS_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check Swift formatting and property lists
+        run: |
+          xcodebuild -version
+          xcrun swift-format lint --strict --recursive ios/Okou ios/OkouTests
+          plutil -lint ios/Okou/Resources/Info.plist ios/Okou.xcodeproj/project.pbxproj
+      - name: Build app and run isolated simulator tests
+        run: bash ios/scripts/ci-test.sh
+      - name: Upload failed test results
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ios-test-results-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/okou-ios-ci/*.xcresult
+          if-no-files-found: ignore
+          retention-days: 7
+
+  ci-gate-ios:
+    needs: [detect, build-test]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Validate iOS check results
+        env:
+          DETECT_RESULT: ${{ needs.detect.result }}
+          IOS_NEEDED: ${{ needs.detect.outputs.needed }}
+          BUILD_RESULT: ${{ needs.build-test.result }}
+        run: bash ios/scripts/ci-gate.sh

@@ -15,6 +15,7 @@ import { delay } from "signal-timers";
 import { z } from "zod";
 
 import { clerk$ } from "../external/clerk";
+import { settle } from "../utils";
 import { publishMorningBriefChangedSafely } from "../external/realtime";
 import { nowDate } from "../../lib/time";
 import { calculateNextRun } from "./time-automation";
@@ -26,6 +27,13 @@ import {
   recordMorningBriefMembership,
   type MorningBriefMemberIdentity,
 } from "./morning-brief-enrollment-data.service";
+import {
+  claimMorningBriefEnrollment,
+  deferMorningBriefPrerequisite,
+  finishMorningBriefEnrollmentAttempt,
+  prepareMorningBriefEnrollment,
+} from "./morning-brief-enrollment-retry.service";
+import { readAcceptedOfficialWorkflowDefinition } from "./official-workflow-catalog-read.service";
 import {
   loadMorningBriefDefaultAgentId,
   loadMorningBriefMigrationState,
@@ -94,6 +102,7 @@ export type EnsureMorningBriefDefaultEnabledResult =
         | "missing-timezone"
         | "missing-default-agent"
         | "user-disabled"
+        | "retry-deferred"
         | "membership-unavailable";
     }
   | {
@@ -331,17 +340,6 @@ const qualifyMorningBriefMembership$ = command(
   ): Promise<EnsureMorningBriefDefaultEnabledResult | null> => {
     const db = set(writeDb$);
     const identity = morningBriefOwner(args);
-    await db
-      .insert(morningBriefEnrollments)
-      .values({
-        ...identity,
-        state: "checking",
-        availableAt: nowDate(),
-        createdAt: nowDate(),
-        updatedAt: nowDate(),
-      })
-      .onConflictDoNothing();
-    signal.throwIfAborted();
     let enrollment = await loadMorningBriefEnrollment(db, identity);
     signal.throwIfAborted();
     if (
@@ -397,6 +395,7 @@ const qualifyMorningBriefMembership$ = command(
         ...identity,
         membershipId: membership.id,
         createdAt,
+        preserveRetrySchedule: true,
       });
       signal.throwIfAborted();
       enrollment = await loadMorningBriefEnrollment(db, identity);
@@ -479,6 +478,111 @@ const installMorningBriefEnrollment$ = command(
   },
 );
 
+const preflightMorningBriefEnrollment$ = command(
+  async (
+    { set },
+    args: EnsureMorningBriefDefaultEnabledArgs & {
+      readonly installationAgentId?: string;
+    },
+    signal: AbortSignal,
+  ): Promise<
+    | EnsureMorningBriefDefaultEnabledResult
+    | { readonly outcome: "ready"; readonly agentId: string }
+  > => {
+    const db = set(writeDb$);
+    const identity = morningBriefOwner(args);
+    const featureSwitchContext = await loadUserFeatureSwitchContext(
+      db,
+      args.orgId,
+      args.member.userId,
+    );
+    signal.throwIfAborted();
+    if (
+      !isFeatureEnabled(FeatureSwitchKey.MorningBrief, featureSwitchContext)
+    ) {
+      return { outcome: "skipped", reason: "feature-disabled" };
+    }
+
+    const unavailableReason = await loadUnavailableReason(
+      db,
+      args,
+      args.installationAgentId,
+    );
+    signal.throwIfAborted();
+    if (unavailableReason !== null) {
+      return { outcome: "skipped", reason: unavailableReason };
+    }
+
+    const agentId =
+      args.installationAgentId ??
+      (await loadMorningBriefDefaultAgentId(db, identity));
+    signal.throwIfAborted();
+    if (agentId === null) {
+      return { outcome: "skipped", reason: "missing-default-agent" };
+    }
+
+    const definition = await readAcceptedOfficialWorkflowDefinition(
+      db,
+      MORNING_BRIEF_OFFICIAL_DEFINITION_NAME,
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!definition || definition.lifecycle !== "active") {
+      return {
+        outcome: "failed",
+        reason: "installation-failed",
+        failureKind: definition ? "conflict" : "not-found",
+        message: definition
+          ? `Official Workflow is retired: ${MORNING_BRIEF_OFFICIAL_DEFINITION_NAME}`
+          : `Official Workflow not found: ${MORNING_BRIEF_OFFICIAL_DEFINITION_NAME}`,
+      };
+    }
+    return { outcome: "ready", agentId };
+  },
+);
+
+const attemptMorningBriefEnrollment$ = command(
+  async (
+    { set },
+    args: MorningBriefPreferenceArgs & {
+      readonly agentId?: string;
+      readonly installationAgentId?: string;
+    },
+    signal: AbortSignal,
+  ): Promise<{
+    readonly result: EnsureMorningBriefDefaultEnabledResult;
+    readonly localDeferral: boolean;
+  }> => {
+    const qualification = await set(
+      qualifyMorningBriefMembership$,
+      args,
+      signal,
+    );
+    signal.throwIfAborted();
+    if (qualification !== null) {
+      return { result: qualification, localDeferral: false };
+    }
+    // Unknown eligibility is resolved once even without local prerequisites,
+    // so historical members retain their ineligible preference state.
+    const preflight =
+      args.agentId === undefined
+        ? await set(preflightMorningBriefEnrollment$, args, signal)
+        : { outcome: "ready" as const, agentId: args.agentId };
+    signal.throwIfAborted();
+    if (preflight.outcome !== "ready") {
+      return { result: preflight, localDeferral: true };
+    }
+    return {
+      result: await set(
+        installMorningBriefEnrollment$,
+        { ...args, agentId: preflight.agentId },
+        signal,
+      ),
+      localDeferral: false,
+    };
+  },
+);
+
 const ensureMorningBriefWhileLocked$ = command(
   async (
     { set },
@@ -501,51 +605,75 @@ const ensureMorningBriefWhileLocked$ = command(
         installationCount: installations.length,
       };
     }
-
-    const qualification = await set(
-      qualifyMorningBriefMembership$,
-      args,
-      signal,
-    );
+    await prepareMorningBriefEnrollment(db, identity);
     signal.throwIfAborted();
-    if (qualification !== null) {
-      return qualification;
+    const enrollment = await loadMorningBriefEnrollment(db, identity);
+    signal.throwIfAborted();
+    if (!enrollment) {
+      throw new Error("Morning Brief enrollment intent is missing");
     }
-    const featureSwitchContext = await loadUserFeatureSwitchContext(
-      db,
-      args.orgId,
-      args.member.userId,
-    );
-    signal.throwIfAborted();
     if (
-      !isFeatureEnabled(FeatureSwitchKey.MorningBrief, featureSwitchContext)
+      enrollment.state !== "checking" &&
+      enrollment.state !== "pending" &&
+      enrollment.state !== "departed"
     ) {
-      return { outcome: "skipped", reason: "feature-disabled" };
+      return {
+        outcome: "skipped",
+        reason:
+          enrollment.state === "cancelled" ? "user-disabled" : "not-eligible",
+      };
     }
-
-    const unavailableReason = await loadUnavailableReason(
-      db,
-      args,
-      installation?.agentId,
-    );
+    const preflight =
+      enrollment.state === "checking"
+        ? null
+        : await set(
+            preflightMorningBriefEnrollment$,
+            { ...args, installationAgentId: installation?.agentId },
+            signal,
+          );
     signal.throwIfAborted();
-    if (unavailableReason !== null) {
-      return { outcome: "skipped", reason: unavailableReason };
+    if (preflight !== null && preflight.outcome !== "ready") {
+      await deferMorningBriefPrerequisite(
+        db,
+        enrollment,
+        preflight.outcome === "failed" ? preflight.message : null,
+      );
+      signal.throwIfAborted();
+      return preflight;
     }
-
-    const agentId =
-      installation?.agentId ??
-      (await loadMorningBriefDefaultAgentId(db, identity));
+    const claim = await claimMorningBriefEnrollment(db, enrollment);
     signal.throwIfAborted();
-    if (agentId === null) {
-      return { outcome: "skipped", reason: "missing-default-agent" };
+    if (!claim) {
+      return { outcome: "skipped", reason: "retry-deferred" };
     }
-
-    return await set(
-      installMorningBriefEnrollment$,
-      { ...args, agentId },
+    const result = await settle(
+      set(
+        attemptMorningBriefEnrollment$,
+        {
+          ...args,
+          agentId: preflight?.agentId,
+          installationAgentId: installation?.agentId,
+        },
+        signal,
+      ),
       signal,
     );
+    const lastError = !result.ok
+      ? String(result.error)
+      : result.value.result.outcome === "failed"
+        ? result.value.result.message
+        : null;
+    await finishMorningBriefEnrollmentAttempt(
+      db,
+      claim,
+      lastError,
+      result.ok && result.value.localDeferral,
+    );
+    signal.throwIfAborted();
+    if (!result.ok) {
+      throw result.error;
+    }
+    return result.value.result;
   },
 );
 

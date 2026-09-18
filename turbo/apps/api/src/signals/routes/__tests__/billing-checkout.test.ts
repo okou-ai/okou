@@ -1,4 +1,8 @@
 import {
+  mockClerkUsers,
+  ClerkUserNotFoundTestError,
+} from "./helpers/clerk-users";
+import {
   readGetStartedStatus,
   setGetStartedEnabled,
 } from "./helpers/get-started";
@@ -1058,7 +1062,7 @@ describe("POST /api/billing/checkout", () => {
       context.mocks.clerk.organizations.getOrganizationInvitationList.mockResolvedValue(
         { data: [] },
       );
-      context.mocks.clerk.users.getUserList.mockRejectedValue(
+      context.mocks.clerk.users.getUser.mockRejectedValue(
         new ClerkApiResponseTestError(1),
       );
       context.mocks.stripe.customers.create.mockResolvedValue({
@@ -1113,6 +1117,7 @@ describe("POST /api/billing/checkout", () => {
       expect(response.body).toStrictEqual({
         url: "https://checkout.stripe.com/session/ci",
       });
+      expect(context.mocks.clerk.users.getUser).not.toHaveBeenCalled();
       expect(context.mocks.clerk.users.getUserList).not.toHaveBeenCalled();
       expect(
         context.mocks.clerk.users.updateUserMetadata,
@@ -2045,25 +2050,61 @@ describe("POST /api/billing/checkout", () => {
     ).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["missing user", new ClerkUserNotFoundTestError()],
+    ["provider failure", new Error("Clerk attribution unavailable")],
+  ])(
+    "keeps checkout available after a %s attribution read",
+    async (_label, error) => {
+      const fixture = trackedSeed();
+      mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
+      context.mocks.clerk.users.getUser.mockRejectedValue(error);
+      context.mocks.stripe.customers.create.mockResolvedValue({
+        id: `cus_${randomUUID().slice(0, 8)}`,
+      });
+      const checkoutUrl =
+        "https://checkout.stripe.com/session/optional-attribution";
+      context.mocks.stripe.checkout.sessions.create.mockResolvedValue({
+        url: checkoutUrl,
+      });
+      const response = await accept(
+        setupApp({ context, routes: billingCheckoutRoutes })(
+          billingCheckoutContract,
+        ).create({
+          body: {
+            tier: "pro",
+            successUrl: `${APP_ORIGIN}/billing?billing=success`,
+            cancelUrl: `${APP_ORIGIN}/billing?billing=canceled`,
+          },
+          headers: { authorization: "Bearer clerk-session" },
+        }),
+        [200],
+      );
+      expect(response.body).toMatchObject({ url: checkoutUrl });
+      expect(context.mocks.clerk.users.getUser).toHaveBeenCalledExactlyOnceWith(
+        fixture.userId,
+      );
+      expect(context.mocks.clerk.users.getUserList).not.toHaveBeenCalled();
+    },
+  );
+
   it("keeps a stored click separate from a later campaign during checkout", async () => {
     const fixture = await trackedSeed();
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
-    context.mocks.clerk.users.getUserList.mockResolvedValue({
-      data: [
-        {
-          id: fixture.userId,
-          privateMetadata: {
-            signup_attribution: {
-              source_type: "paid",
-              gclid: "first-click",
-              gclid_present: "true",
-              utm_source: "google",
-              recorded_at: "2026-09-01T00:00:00.000Z",
-            },
+    mockClerkUsers(context, [
+      {
+        id: fixture.userId,
+        privateMetadata: {
+          signup_attribution: {
+            source_type: "paid",
+            gclid: "first-click",
+            gclid_present: "true",
+            utm_source: "google",
+            recorded_at: "2026-09-01T00:00:00.000Z",
           },
         },
-      ],
-    });
+      },
+    ]);
     context.mocks.stripe.customers.create.mockResolvedValue({
       id: `cus_${randomUUID().slice(0, 8)}`,
     });
@@ -14248,9 +14289,7 @@ describe("usage pack allocation management", () => {
       data: [],
       has_more: false,
     });
-    context.mocks.clerk.users.getUserList.mockResolvedValue({
-      data: [{ id: fixture.userId, privateMetadata: {} }],
-    });
+    mockClerkUsers(context, [{ id: fixture.userId, privateMetadata: {} }]);
     context.mocks.stripe.customers.retrieve.mockResolvedValue({
       id: fixture.customerId,
       metadata: {},
@@ -21811,14 +21850,12 @@ describe("POST /api/billing/credit-checkout", () => {
       clickId: "credit-partner",
       capturedAt: nowDate().toISOString(),
     };
-    context.mocks.clerk.users.getUserList.mockResolvedValue({
-      data: [
-        {
-          id: fixture.userId,
-          privateMetadata: { impact_attribution: impact },
-        },
-      ],
-    });
+    mockClerkUsers(context, [
+      {
+        id: fixture.userId,
+        privateMetadata: { impact_attribution: impact },
+      },
+    ]);
     context.mocks.stripe.customers.retrieve.mockResolvedValue({
       id: fixture.customerId,
       metadata: {},
@@ -21936,14 +21973,12 @@ describe("POST /api/billing/credit-checkout", () => {
       clickId: "credit-preview-partner",
       capturedAt: capturedAt.toISOString(),
     };
-    context.mocks.clerk.users.getUserList.mockResolvedValue({
-      data: [
-        {
-          id: fixture.userId,
-          privateMetadata: { impact_attribution: impact },
-        },
-      ],
-    });
+    mockClerkUsers(context, [
+      {
+        id: fixture.userId,
+        privateMetadata: { impact_attribution: impact },
+      },
+    ]);
     mockCreditPurchasePreview(fixture.customerId);
 
     const client = setupApp({

@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import { authContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { clerk$ } from "../external/clerk";
+import { findClerkUser } from "../external/clerk-users";
 import { db$, writeDb$ } from "../external/db";
 import { now } from "../../lib/time";
 import type { RouteEntry } from "../route-entry";
@@ -64,11 +65,8 @@ const getAuthMeInner$ = command(
     }
 
     const client = get(clerk$);
-    const users = await client.users.getUserList({ userId: [auth.userId] });
+    const user = await findClerkUser(client, auth.userId, signal);
     signal.throwIfAborted();
-    const user = users.data.find((candidate: ClerkEmailProfile) => {
-      return candidate.id === auth.userId;
-    });
     if (!user) {
       throw new Error(`No Clerk user found for user ${auth.userId}`);
     }

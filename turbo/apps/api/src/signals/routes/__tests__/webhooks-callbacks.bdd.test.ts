@@ -6759,377 +6759,431 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
       .toStrictEqual(["pro-suspend", null, false]);
   });
 
-  it("cleans up user state after a verified user.deleted event", async () => {
-    const bdd = createBddApi(context);
-    const chat = createChatFilesBddApi(context);
-    const runs = createRunsApi(context);
-    const connectors = createConnectorBddApi(context);
-    const userConfig = createUserConfigBddApi(context);
-    const gh = createGithubBddApi(context);
-    api.configureClerkWebhookSecret();
-    bdd.acceptAgentStorageWrites();
-    runs.acceptStorageDownloads();
-    runs.acceptTelemetryIngest();
-    const runnerGroup = runs.configureRunnerGroup();
-    acceptGithubGrantRevocations();
-    mockSlackConnectorOAuth();
-    const customOAuthProvider = mockCustomConnectorOAuth2Provider(context);
+  describe("verified user.deleted cleanup", () => {
+    async function prepareUserErasure() {
+      const bdd = createBddApi(context);
+      const runs = createRunsApi(context);
+      api.configureClerkWebhookSecret();
+      bdd.acceptAgentStorageWrites();
+      runs.acceptStorageDownloads();
+      runs.acceptTelemetryIngest();
+      const runnerGroup = runs.configureRunnerGroup();
 
-    const doomed = bdd.user();
-    await runs.grantProEntitlement(doomed);
-    await runs.ensureOrgModelProvider(doomed);
-    await connectors.connectManualGrant(doomed, "openai", "api-token", {
-      apiKey: "user-teardown-connector-token",
-    });
-    const peer = bdd.user({ orgId: doomed.orgId, orgRole: "org:member" });
-    const sharedAgent = await bdd.createAgent(peer, {
-      displayName: "BDD Shared Grant Agent",
-      visibility: "public",
-    });
-    const doomedAgent = await bdd.createAgent(doomed, {
-      displayName: "BDD Doomed Agent",
-      visibility: "private",
-    });
-    const connectorSelectionThread = await chat.createThread(doomed, {
-      agentId: doomedAgent.agentId,
-      title: "BDD doomed connector selection",
-    });
-    await runs.enableAgentConnectors(doomed, sharedAgent.agentId, ["openai"]);
-    await connectors.connectManualGrant(
-      peer,
-      "openai",
-      "api-token",
-      { apiKey: "peer-teardown-connector-token" },
-      sharedAgent.agentId,
-    );
-
-    const customManual = await connectors.createCustomConnector(
-      doomed,
-      customManualConnectorBodyForTeardown("user"),
-    );
-    await connectors.setCustomConnectorSecret(
-      doomed,
-      customManual.id,
-      "doomed-custom-secret",
-    );
-    const customManualStorage =
-      await readCustomConnectorCredentialStorageParent(context, {
-        orgId: orgOf(doomed),
-        userId: doomed.userId,
-        customConnectorId: customManual.id,
+      const doomed = bdd.user();
+      await runs.grantProEntitlement(doomed);
+      await runs.ensureOrgModelProvider(doomed);
+      const peer = bdd.user({ orgId: doomed.orgId, orgRole: "org:member" });
+      const sharedAgent = await bdd.createAgent(peer, {
+        displayName: "BDD Shared Grant Agent",
+        visibility: "public",
       });
-    const customManualMemberConnectorId = customManualStorage.connector?.id;
-    if (!customManualMemberConnectorId) {
-      throw new Error("Expected the doomed custom connector account");
+      const doomedAgent = await bdd.createAgent(doomed, {
+        displayName: "BDD Doomed Agent",
+        visibility: "private",
+      });
+      return { runs, runnerGroup, doomed, peer, sharedAgent, doomedAgent };
     }
-    await connectors.setCustomConnectorSecret(
-      peer,
-      customManual.id,
-      "peer-custom-secret",
-    );
-    await connectors.updateAgentCustomConnectors(doomed, sharedAgent.agentId, [
-      customManual.id,
-    ]);
-    await connectors.updateAgentCustomConnectors(peer, sharedAgent.agentId, [
-      customManual.id,
-    ]);
 
-    const customOauth = await connectors.createCustomConnector(
-      doomed,
-      customOauthConnectorBodyForTeardown("user", customOAuthProvider),
-    );
-    const doomedBuiltinOauthState = oauthStateFromAuthorizationUrl(
-      (
-        await connectors.startOauth(
-          doomed,
-          "slack",
-          "oauth",
-          sharedAgent.agentId,
-        )
-      ).authorizationUrl,
-    );
-    const peerBuiltinOauthState = oauthStateFromAuthorizationUrl(
-      (await connectors.startOauth(peer, "slack", "oauth", sharedAgent.agentId))
-        .authorizationUrl,
-    );
-    const doomedCustomOauthState = oauthStateFromAuthorizationUrl(
-      await connectors.startCustomConnectorOAuth2(
-        doomed,
-        customOauth.id,
-        sharedAgent.agentId,
-      ),
-    );
-    const peerCustomOauthState = oauthStateFromAuthorizationUrl(
-      await connectors.startCustomConnectorOAuth2(
-        peer,
-        customOauth.id,
-        sharedAgent.agentId,
-      ),
-    );
+    async function startUserDeletion(
+      fixture: Awaited<ReturnType<typeof prepareUserErasure>>,
+    ) {
+      // The external membership lookup must still see the surviving peer,
+      // independently of which actor made the last setup request.
+      context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+        {
+          data: [{ publicUserData: { userId: fixture.peer.userId } }],
+        },
+      );
+      // A failed user-storage listing must not stop any cleanup domain.
+      const s3CallCountBeforeCleanup = context.mocks.s3.send.mock.calls.length;
+      context.mocks.s3.send.mockRejectedValueOnce(new Error("R2 unavailable"));
+      api.verifyNextClerkWebhook({
+        type: "user.deleted",
+        data: { id: fixture.doomed.userId },
+      });
+      const response = await api.requestClerkWebhook("{}", {}, [200]);
+      expect(response.body).toBe("OK");
+      return s3CallCountBeforeCleanup;
+    }
 
-    const doomedKey = await runs.createCliToken(doomed);
-    const doomedBearer = `Bearer ${doomedKey.token}`;
-    const livePoll = await runs.requestPollRunnerAs(
-      doomedBearer,
-      { group: runnerGroup, supportedProfiles: ["vm0/default"] },
-      [200],
-    );
-    expect(livePoll.status).toBe(200);
+    async function expectSurvivingOrganization(
+      fixture: Awaited<ReturnType<typeof prepareUserErasure>>,
+      s3CallCountBeforeCleanup: number,
+    ) {
+      const firstCleanupS3Prefix = commandInput(
+        context.mocks.s3.send.mock.calls[s3CallCountBeforeCleanup]?.[0],
+      ).Prefix;
+      expect(
+        typeof firstCleanupS3Prefix === "string" &&
+          firstCleanupS3Prefix.startsWith(`${orgOf(fixture.doomed)}/`) &&
+          firstCleanupS3Prefix.endsWith("/"),
+      ).toBeTruthy();
+      expect(context.mocks.stripe.subscriptions.list).not.toHaveBeenCalled();
+      expect(context.mocks.stripe.subscriptions.update).not.toHaveBeenCalled();
+      expect(context.mocks.stripe.subscriptions.cancel).not.toHaveBeenCalled();
+      const preserved = await createBillingMediaApi(context).readBillingStatus(
+        fixture.peer,
+      );
+      expect(preserved.tier).toBe("pro");
+      expect(preserved.hasSubscription).toBeTruthy();
+    }
 
-    const run = await runs.createRun(doomed, {
-      agentId: sharedAgent.agentId,
-      prompt: "user teardown run",
-      modelProvider: "anthropic-api-key",
-    });
-    expect(run.status).toBe("pending");
-    await seedCustomThreadConnectorSelection(context, {
-      chatThreadId: connectorSelectionThread.id,
-      connectorId: customManualMemberConnectorId,
-      customConnectorId: customManual.id,
-    });
-    await runs.claimRunnerJob(run.runId);
-    await store.set(
-      insertUsageEvent$,
-      {
-        orgId: orgOf(doomed),
-        userId: doomed.userId,
-        runId: run.runId,
-        status: "processed",
-        creditsCharged: 10,
-        processedAt: nowDate(),
-      },
-      context.signal,
-    );
-    await expect(
-      store.set(
-        materializeHourlyUsage$,
+    it("waits for usage compaction before deleting a user's runs and runner token", async () => {
+      const fixture = await prepareUserErasure();
+      const { runs, runnerGroup, doomed, sharedAgent } = fixture;
+      const doomedKey = await runs.createCliToken(doomed);
+      const doomedBearer = `Bearer ${doomedKey.token}`;
+      const livePoll = await runs.requestPollRunnerAs(
+        doomedBearer,
+        { group: runnerGroup, supportedProfiles: ["vm0/default"] },
+        [200],
+      );
+      expect(livePoll.status).toBe(200);
+      const run = await runs.createRun(doomed, {
+        agentId: sharedAgent.agentId,
+        prompt: "user teardown run",
+        modelProvider: "anthropic-api-key",
+      });
+      expect(run.status).toBe("pending");
+      await runs.claimRunnerJob(run.runId);
+      await store.set(
+        insertUsageEvent$,
         {
           orgId: orgOf(doomed),
           userId: doomed.userId,
           runId: run.runId,
+          status: "processed",
+          creditsCharged: 10,
+          processedAt: nowDate(),
         },
         context.signal,
-      ),
-    ).resolves.toBe(1);
-    await store.set(
-      insertUsageEvent$,
-      {
-        orgId: orgOf(doomed),
-        userId: doomed.userId,
-        runId: run.runId,
-        status: "processed",
-        creditsCharged: 5,
-        processedAt: nowDate(),
-      },
-      context.signal,
-    );
-    await expect(
-      store.set(
-        readUsageStorageCounts$,
-        { scope: "user", id: doomed.userId },
+      );
+      await expect(
+        store.set(
+          materializeHourlyUsage$,
+          {
+            orgId: orgOf(doomed),
+            userId: doomed.userId,
+            runId: run.runId,
+          },
+          context.signal,
+        ),
+      ).resolves.toBe(1);
+      await store.set(
+        insertUsageEvent$,
+        {
+          orgId: orgOf(doomed),
+          userId: doomed.userId,
+          runId: run.runId,
+          status: "processed",
+          creditsCharged: 5,
+          processedAt: nowDate(),
+        },
         context.signal,
-      ),
-    ).resolves.toStrictEqual({ raw: 1, hourly: 1 });
+      );
+      await expect(
+        store.set(
+          readUsageStorageCounts$,
+          { scope: "user", id: doomed.userId },
+          context.signal,
+        ),
+      ).resolves.toStrictEqual({ raw: 1, hourly: 1 });
 
-    // The installation's default agent is the peer's compose, so the
-    // installation itself survives the user teardown while the doomed
-    // user's GitHub link is removed.
-    await gh.installGithubApp(doomed, sharedAgent.agentId, {
-      oauthCode: {
-        code: `whcb08b-${randomUUID().slice(0, 8)}`,
-        githubUserId: newGithubUserId(),
-      },
-    });
-    expect((await gh.readInstallation(doomed)).isConnected).toBeTruthy();
-    const botToken = await registerTelegramBot(doomed, doomedAgent.agentId);
-
-    await runs.applyUserPermissionGrant(doomed, {
-      agentId: sharedAgent.agentId,
-      connectorSlug: "slack",
-      permission: "conversations:read",
-      action: "allow",
-    });
-    await runs.applyUserPermissionGrant(peer, {
-      agentId: sharedAgent.agentId,
-      connectorSlug: "slack",
-      permission: "chat:write",
-      action: "deny",
-    });
-
-    // User storage cleanup is best-effort: a failing S3 listing must not
-    // stop the rest of the teardown.
-    const s3CallCountBeforeCleanup = context.mocks.s3.send.mock.calls.length;
-    context.mocks.s3.send.mockRejectedValueOnce(new Error("R2 unavailable"));
-    const compactionLock = await holdUsageEventCompactionLockFixture(
-      context.signal,
-    );
-    onTestFinished(async () => {
+      const compactionLock = await holdUsageEventCompactionLockFixture(
+        context.signal,
+      );
+      onTestFinished(async () => {
+        compactionLock.release();
+        await compactionLock.done;
+        await flushWaitUntilForTest();
+      });
+      context.mocks.ably.publish.mockClear();
+      const s3CallCountBeforeCleanup =
+        await compactionLock.withAcquisitionAttemptTracking(() => {
+          return startUserDeletion(fixture);
+        });
+      await compactionLock.acquisitionAttempted;
+      await expect.poll(compactionLock.waiterCount).toBeGreaterThanOrEqual(1);
+      await expect(
+        store.set(
+          readUsageStorageCounts$,
+          { scope: "user", id: doomed.userId },
+          context.signal,
+        ),
+      ).resolves.toStrictEqual({ raw: 1, hourly: 1 });
       compactionLock.release();
       await compactionLock.done;
       await flushWaitUntilForTest();
-    });
-    context.mocks.ably.publish.mockClear();
-    api.verifyNextClerkWebhook({
-      type: "user.deleted",
-      data: { id: doomed.userId },
-    });
-    const response = await compactionLock.withAcquisitionAttemptTracking(() => {
-      return api.requestClerkWebhook("{}", {}, [200]);
-    });
-    expect(response.body).toBe("OK");
-    await compactionLock.acquisitionAttempted;
-    await expect.poll(compactionLock.waiterCount).toBeGreaterThanOrEqual(1);
-    await expect(
-      store.set(
-        readUsageStorageCounts$,
-        { scope: "user", id: doomed.userId },
-        context.signal,
-      ),
-    ).resolves.toStrictEqual({ raw: 1, hourly: 1 });
-    compactionLock.release();
-    await compactionLock.done;
-    await flushWaitUntilForTest();
-    expect(context.mocks.ably.publish).toHaveBeenCalledWith("cancel", {
-      runId: run.runId,
-      mode: "hard",
-    });
-    const firstCleanupS3Prefix = commandInput(
-      context.mocks.s3.send.mock.calls[s3CallCountBeforeCleanup]?.[0],
-    ).Prefix;
-    expect(
-      typeof firstCleanupS3Prefix === "string" &&
-        firstCleanupS3Prefix.startsWith(`${orgOf(doomed)}/`) &&
-        firstCleanupS3Prefix.endsWith("/"),
-    ).toBeTruthy();
+      expect(context.mocks.ably.publish).toHaveBeenCalledWith("cancel", {
+        runId: run.runId,
+        mode: "hard",
+      });
 
-    await waitForExpectation(() => {
-      expect(context.mocks.telegram.deleteWebhook).toHaveBeenCalledWith(
-        botToken,
-      );
-    });
-    await waitForExpectation(async () => {
-      const listed = await connectors.listConnectors(doomed);
-      expect(listed.connectors).not.toContainEqual(
-        expect.objectContaining({
-          type: "openai",
-          connectionStatus: "connected",
-        }),
-      );
-    });
-    let revokedPoll:
-      | Awaited<ReturnType<typeof runs.requestPollRunnerAs>>
-      | undefined;
-    await expect
-      .poll(async () => {
-        revokedPoll = await runs.requestPollRunnerAs(
-          doomedBearer,
-          { group: runnerGroup, supportedProfiles: ["vm0/default"] },
-          [200, 401],
-        );
-        return revokedPoll.status;
-      })
-      .toBe(401);
-    if (!revokedPoll || revokedPoll.status !== 401) {
-      throw new Error("Expected deleted user's runner token to be revoked");
-    }
-    expectApiError(revokedPoll.body);
-    await runs.requestReadRun(doomed, run.runId, [404]);
-    expect((await gh.readInstallation(doomed)).isConnected).toBeFalsy();
-    await waitForExpectation(async () => {
+      let revokedPoll:
+        | Awaited<ReturnType<typeof runs.requestPollRunnerAs>>
+        | undefined;
+      await expect
+        .poll(async () => {
+          revokedPoll = await runs.requestPollRunnerAs(
+            doomedBearer,
+            { group: runnerGroup, supportedProfiles: ["vm0/default"] },
+            [200, 401],
+          );
+          return revokedPoll.status;
+        })
+        .toBe(401);
+      if (!revokedPoll || revokedPoll.status !== 401) {
+        throw new Error("Expected deleted user's runner token to be revoked");
+      }
+      expectApiError(revokedPoll.body);
+      await runs.requestReadRun(doomed, run.runId, [404]);
       await expect(
-        runs.listUserPermissionGrants(doomed, sharedAgent.agentId),
-      ).resolves.toStrictEqual([]);
+        store.set(
+          readUsageStorageCounts$,
+          { scope: "user", id: doomed.userId },
+          context.signal,
+        ),
+      ).resolves.toStrictEqual({ raw: 0, hourly: 0 });
+      await expectSurvivingOrganization(fixture, s3CallCountBeforeCleanup);
     });
-    const peerGrants = await runs.listUserPermissionGrants(
-      peer,
-      sharedAgent.agentId,
-    );
-    expect(peerGrants).toHaveLength(1);
-    expect(peerGrants[0]).toMatchObject({
-      permission: "chat:write",
-      action: "deny",
-    });
-    await expect(
-      userConfig.readUserConnectors(doomed, sharedAgent.agentId),
-    ).resolves.toStrictEqual({ enabledConnectorSlugs: [] });
-    await expect(
-      userConfig.readUserConnectors(peer, sharedAgent.agentId),
-    ).resolves.toMatchObject({ enabledConnectorSlugs: ["openai"] });
-    await expect(
-      connectors.readAgentCustomConnectors(doomed, sharedAgent.agentId),
-    ).resolves.toStrictEqual([]);
-    await expect(
-      connectors.readAgentCustomConnectors(peer, sharedAgent.agentId),
-    ).resolves.toStrictEqual([customManual.id]);
-    await expect(
-      connectors.readCustomConnector(doomed, customManual.id),
-    ).resolves.toMatchObject({
-      connected: false,
-      configuredFieldKeys: [],
-    });
-    await expect(
-      readThreadConnectorSelectionState(context, {
+
+    it("deletes a user's connector state while preserving peer accounts and grants", async () => {
+      const fixture = await prepareUserErasure();
+      const { runs, doomed, peer, sharedAgent, doomedAgent } = fixture;
+      const connectors = createConnectorBddApi(context);
+      const userConfig = createUserConfigBddApi(context);
+      const chat = createChatFilesBddApi(context);
+      await connectors.connectManualGrant(doomed, "openai", "api-token", {
+        apiKey: "user-teardown-connector-token",
+      });
+      const connectorSelectionThread = await chat.createThread(doomed, {
+        agentId: doomedAgent.agentId,
+        title: "BDD doomed connector selection",
+      });
+      await runs.enableAgentConnectors(doomed, sharedAgent.agentId, ["openai"]);
+      await connectors.connectManualGrant(
+        peer,
+        "openai",
+        "api-token",
+        { apiKey: "peer-teardown-connector-token" },
+        sharedAgent.agentId,
+      );
+      const customManual = await connectors.createCustomConnector(
+        doomed,
+        customManualConnectorBodyForTeardown("user"),
+      );
+      await connectors.setCustomConnectorSecret(
+        doomed,
+        customManual.id,
+        "doomed-custom-secret",
+      );
+      const customManualStorage =
+        await readCustomConnectorCredentialStorageParent(context, {
+          orgId: orgOf(doomed),
+          userId: doomed.userId,
+          customConnectorId: customManual.id,
+        });
+      const customManualMemberConnectorId = customManualStorage.connector?.id;
+      if (!customManualMemberConnectorId) {
+        throw new Error("Expected the doomed custom connector account");
+      }
+      await connectors.setCustomConnectorSecret(
+        peer,
+        customManual.id,
+        "peer-custom-secret",
+      );
+      await connectors.updateAgentCustomConnectors(
+        doomed,
+        sharedAgent.agentId,
+        [customManual.id],
+      );
+      await connectors.updateAgentCustomConnectors(peer, sharedAgent.agentId, [
+        customManual.id,
+      ]);
+      await seedCustomThreadConnectorSelection(context, {
         chatThreadId: connectorSelectionThread.id,
         connectorId: customManualMemberConnectorId,
-      }),
-    ).resolves.toBeFalsy();
-    await expect(
-      connectors.readCustomConnector(peer, customManual.id),
-    ).resolves.toMatchObject({
-      connected: true,
-    });
-    await expect(
-      connectors.completeOauthCallbackResult("slack", {
-        code: "doomed-deleted-state",
-        state: doomedBuiltinOauthState,
-      }),
-    ).resolves.toMatchObject({
-      body: {
-        status: "error",
-        message: "Invalid state - please try again",
-      },
-    });
-    await expect(
-      connectors.completeCustomConnectorOAuth2CallbackResult({
-        code: "doomed-deleted-custom-state",
-        state: doomedCustomOauthState,
-      }),
-    ).resolves.toMatchObject({
-      body: {
-        status: "error",
-        message: "Invalid OAuth state - please try again",
-      },
-    });
-    await expect(
-      connectors.completeOauthCallbackResult("slack", {
-        code: "peer-surviving-state",
-        state: peerBuiltinOauthState,
-      }),
-    ).resolves.toMatchObject({ body: { status: "success" } });
-    await expect(
-      connectors.completeCustomConnectorOAuth2CallbackResult({
-        code: "peer-surviving-custom-state",
-        state: peerCustomOauthState,
-      }),
-    ).resolves.toMatchObject({ body: { status: "success" } });
-    await expect(
-      store.set(
-        readUsageStorageCounts$,
-        { scope: "user", id: doomed.userId },
-        context.signal,
-      ),
-    ).resolves.toStrictEqual({ raw: 0, hourly: 0 });
-    expect(context.mocks.stripe.subscriptions.list).not.toHaveBeenCalled();
-    expect(context.mocks.stripe.subscriptions.update).not.toHaveBeenCalled();
-    expect(context.mocks.stripe.subscriptions.cancel).not.toHaveBeenCalled();
-    // The org outlives the user teardown: the surviving member still sees the
-    // granted pro subscription through the billing status read.
-    const billing = createBillingMediaApi(context);
-    const preserved = await billing.readBillingStatus(peer);
-    expect(preserved.tier).toBe("pro");
-    expect(preserved.hasSubscription).toBeTruthy();
-  });
+        customConnectorId: customManual.id,
+      });
+      await runs.applyUserPermissionGrant(doomed, {
+        agentId: sharedAgent.agentId,
+        connectorSlug: "slack",
+        permission: "conversations:read",
+        action: "allow",
+      });
+      await runs.applyUserPermissionGrant(peer, {
+        agentId: sharedAgent.agentId,
+        connectorSlug: "slack",
+        permission: "chat:write",
+        action: "deny",
+      });
 
+      const s3CallCountBeforeCleanup = await startUserDeletion(fixture);
+      await flushWaitUntilForTest();
+      await waitForExpectation(async () => {
+        const listed = await connectors.listConnectors(doomed);
+        expect(listed.connectors).not.toContainEqual(
+          expect.objectContaining({
+            type: "openai",
+            connectionStatus: "connected",
+          }),
+        );
+      });
+      await waitForExpectation(async () => {
+        await expect(
+          runs.listUserPermissionGrants(doomed, sharedAgent.agentId),
+        ).resolves.toStrictEqual([]);
+      });
+      const peerGrants = await runs.listUserPermissionGrants(
+        peer,
+        sharedAgent.agentId,
+      );
+      expect(peerGrants).toHaveLength(1);
+      expect(peerGrants[0]).toMatchObject({
+        permission: "chat:write",
+        action: "deny",
+      });
+      await expect(
+        userConfig.readUserConnectors(doomed, sharedAgent.agentId),
+      ).resolves.toStrictEqual({ enabledConnectorSlugs: [] });
+      await expect(
+        userConfig.readUserConnectors(peer, sharedAgent.agentId),
+      ).resolves.toMatchObject({ enabledConnectorSlugs: ["openai"] });
+      await expect(
+        connectors.readAgentCustomConnectors(doomed, sharedAgent.agentId),
+      ).resolves.toStrictEqual([]);
+      await expect(
+        connectors.readAgentCustomConnectors(peer, sharedAgent.agentId),
+      ).resolves.toStrictEqual([customManual.id]);
+      await expect(
+        connectors.readCustomConnector(doomed, customManual.id),
+      ).resolves.toMatchObject({
+        connected: false,
+        configuredFieldKeys: [],
+      });
+      await expect(
+        readThreadConnectorSelectionState(context, {
+          chatThreadId: connectorSelectionThread.id,
+          connectorId: customManualMemberConnectorId,
+        }),
+      ).resolves.toBeFalsy();
+      await expect(
+        connectors.readCustomConnector(peer, customManual.id),
+      ).resolves.toMatchObject({ connected: true });
+      await expectSurvivingOrganization(fixture, s3CallCountBeforeCleanup);
+    });
+
+    it("invalidates only the deleted user's pending builtin and custom OAuth states", async () => {
+      const fixture = await prepareUserErasure();
+      const { doomed, peer, sharedAgent } = fixture;
+      const connectors = createConnectorBddApi(context);
+      mockSlackConnectorOAuth();
+      const customOAuthProvider = mockCustomConnectorOAuth2Provider(context);
+      const customOauth = await connectors.createCustomConnector(
+        doomed,
+        customOauthConnectorBodyForTeardown("user", customOAuthProvider),
+      );
+      const doomedBuiltinOauthState = oauthStateFromAuthorizationUrl(
+        (
+          await connectors.startOauth(
+            doomed,
+            "slack",
+            "oauth",
+            sharedAgent.agentId,
+          )
+        ).authorizationUrl,
+      );
+      const peerBuiltinOauthState = oauthStateFromAuthorizationUrl(
+        (
+          await connectors.startOauth(
+            peer,
+            "slack",
+            "oauth",
+            sharedAgent.agentId,
+          )
+        ).authorizationUrl,
+      );
+      const doomedCustomOauthState = oauthStateFromAuthorizationUrl(
+        await connectors.startCustomConnectorOAuth2(
+          doomed,
+          customOauth.id,
+          sharedAgent.agentId,
+        ),
+      );
+      const peerCustomOauthState = oauthStateFromAuthorizationUrl(
+        await connectors.startCustomConnectorOAuth2(
+          peer,
+          customOauth.id,
+          sharedAgent.agentId,
+        ),
+      );
+
+      const s3CallCountBeforeCleanup = await startUserDeletion(fixture);
+      await flushWaitUntilForTest();
+      await expect(
+        connectors.completeOauthCallbackResult("slack", {
+          code: "doomed-deleted-state",
+          state: doomedBuiltinOauthState,
+        }),
+      ).resolves.toMatchObject({
+        body: {
+          status: "error",
+          message: "Invalid state - please try again",
+        },
+      });
+      await expect(
+        connectors.completeCustomConnectorOAuth2CallbackResult({
+          code: "doomed-deleted-custom-state",
+          state: doomedCustomOauthState,
+        }),
+      ).resolves.toMatchObject({
+        body: {
+          status: "error",
+          message: "Invalid OAuth state - please try again",
+        },
+      });
+      await expect(
+        connectors.completeOauthCallbackResult("slack", {
+          code: "peer-surviving-state",
+          state: peerBuiltinOauthState,
+        }),
+      ).resolves.toMatchObject({ body: { status: "success" } });
+      await expect(
+        connectors.completeCustomConnectorOAuth2CallbackResult({
+          code: "peer-surviving-custom-state",
+          state: peerCustomOauthState,
+        }),
+      ).resolves.toMatchObject({ body: { status: "success" } });
+      await expectSurvivingOrganization(fixture, s3CallCountBeforeCleanup);
+    });
+
+    it("removes deleted-user integration links while preserving the shared organization", async () => {
+      const fixture = await prepareUserErasure();
+      const { doomed, sharedAgent, doomedAgent } = fixture;
+      const gh = createGithubBddApi(context);
+      acceptGithubGrantRevocations();
+      // The peer's compose remains the installation's default agent; only the
+      // deleted user's link should disappear.
+      await gh.installGithubApp(doomed, sharedAgent.agentId, {
+        oauthCode: {
+          code: `whcb08b-${randomUUID().slice(0, 8)}`,
+          githubUserId: newGithubUserId(),
+        },
+      });
+      expect((await gh.readInstallation(doomed)).isConnected).toBeTruthy();
+      const botToken = await registerTelegramBot(doomed, doomedAgent.agentId);
+
+      const s3CallCountBeforeCleanup = await startUserDeletion(fixture);
+      await flushWaitUntilForTest();
+      await waitForExpectation(() => {
+        expect(context.mocks.telegram.deleteWebhook).toHaveBeenCalledWith(
+          botToken,
+        );
+      });
+      expect((await gh.readInstallation(doomed)).isConnected).toBeFalsy();
+      await expectSurvivingOrganization(fixture, s3CallCountBeforeCleanup);
+    });
+  });
   it("suspends user-owned runs after a verified user.banned event", async () => {
     const bdd = createBddApi(context);
     const runs = createRunsApi(context);

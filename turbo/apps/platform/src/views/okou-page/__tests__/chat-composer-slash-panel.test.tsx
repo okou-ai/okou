@@ -23,6 +23,7 @@ import {
   mockAgent,
   mockBillingCapabilities,
   mockOrgModelRoutes,
+  tabByText,
   workflowSummary,
 } from "./chat-composer-test-helpers.ts";
 
@@ -207,6 +208,37 @@ test("Hovering a workflow closes the preview pane", async () => {
   });
 });
 
+test("Hovering the Workflow type closes the preview pane", async () => {
+  const user = userEvent.setup();
+  await openSlashMenu();
+  expect(detailPane()).not.toBeNull();
+  await user.hover(slashButton("Workflow"));
+  await waitFor(() => {
+    expect(detailPane()).toBeNull();
+  });
+});
+
+test("The closed preview pane stays closed when the panel leaves a still pointer", async () => {
+  await openSlashMenu();
+  const workflow = slashButton("Workflow");
+  // The popover is content-width, so closing the pane narrows it. When the
+  // popover has been collision-shifted against a boundary, that narrowing
+  // re-pins it and the left column slides away from a pointer that never
+  // moved, which the browser reports as a leave at the move's own
+  // coordinates. Replayed here because jsdom has no layout to shift.
+  const still = { clientX: 300, clientY: 470 };
+  fireEvent.mouseOver(workflow, still);
+  fireEvent.mouseMove(workflow, still);
+  await waitFor(() => {
+    expect(detailPane()).toBeNull();
+  });
+
+  fireEvent.mouseOut(workflow, { ...still, relatedTarget: document.body });
+
+  expect(detailPane()).toBeNull();
+  expect(slashButton("Presentation")).not.toHaveAttribute("data-active");
+});
+
 test.each(WORKFLOW_NAVIGATION_CASES)(
   "Enter keeps the keyboard selection while another workflow is hovered for query '$query'",
   async ({ query, downCount }) => {
@@ -300,11 +332,11 @@ test("Tab keeps the keyboard selection after the pointer leaves the menu", async
 });
 
 test.each([
-  { action: "Enter", expectedMode: "Create presentation" },
-  { action: "click", expectedMode: "Create video" },
+  { action: "Enter", expectedTab: "Presentation" },
+  { action: "click", expectedTab: "Video" },
 ])(
-  "$action activates the appropriate category while Video is hovered",
-  async ({ action, expectedMode }) => {
+  "$action opens the picker on the $expectedTab tab while Video is hovered",
+  async ({ action, expectedTab }) => {
     const user = userEvent.setup();
     await openSlashMenu();
     const video = slashButton("Video");
@@ -319,12 +351,43 @@ test.each([
       await user.keyboard("{Enter}");
     }
 
-    await expect(
-      screen.findByTestId("composer-create-mode"),
-    ).resolves.toHaveTextContent(expectedMode);
+    await waitFor(() => {
+      return screen.getByRole("dialog");
+    });
+    expect(tabByText(expectedTab)).toHaveAttribute("aria-selected", "true");
     expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
   },
 );
+
+// The two rows without a create mode are the ones that used to leave the menu
+// standing, so the dialog they opened had to compete with it.
+test.each(["Website", "Workflow"])(
+  "Clicking %s opens the picker on its own tab",
+  async (category) => {
+    const user = userEvent.setup();
+    await openSlashMenu();
+
+    await user.click(slashButton(category));
+
+    await waitFor(() => {
+      return screen.getByRole("dialog");
+    });
+    expect(tabByText(category)).toHaveAttribute("aria-selected", "true");
+    expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+  },
+);
+
+test("Browse all templates opens the picker", async () => {
+  const user = userEvent.setup();
+  await openSlashMenu();
+
+  await user.click(slashButton("Browse all templates"));
+
+  await waitFor(() => {
+    return screen.getByRole("dialog");
+  });
+  expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+});
 
 test("Keyboard navigation restores its preview even at the first row boundary", async () => {
   const user = userEvent.setup();
@@ -348,9 +411,10 @@ test("Keyboard navigation restores its preview even at the first row boundary", 
     expect(detailPane()).toHaveAttribute("data-category", "website");
   });
   await user.keyboard("{Enter}");
-  await expect(
-    screen.findByTestId("composer-create-mode"),
-  ).resolves.toHaveTextContent("Create presentation");
+  await waitFor(() => {
+    return screen.getByRole("dialog");
+  });
+  expect(tabByText("Presentation")).toHaveAttribute("aria-selected", "true");
 });
 
 test("Leaving the panel restores the keyboard-selected category preview", async () => {
@@ -509,6 +573,23 @@ test("Choosing a cover in the pane attaches that template without opening the pi
   await user.click(slashButton(first.title));
   await expectInlineTemplateInComposer(first.title);
   expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+test("Choosing a cover consumes the slash token that opened the panel", async () => {
+  const user = userEvent.setup();
+  await openSlashMenu("pre");
+  const editor = await findComposerEditor();
+  const [first] = PRESENTATION_TEMPLATE_PICKER_ITEMS;
+  if (!first) {
+    throw new Error("Expected a presentation template");
+  }
+
+  await user.click(slashButton(first.title));
+
+  await expectInlineTemplateInComposer(first.title);
+  // The whole token goes, not only its slash, and the prose before it stays.
+  expect(editor).not.toHaveTextContent("/");
+  expect(editor).toHaveTextContent("Draft");
 });
 
 const IMPORT_PROMPT =
