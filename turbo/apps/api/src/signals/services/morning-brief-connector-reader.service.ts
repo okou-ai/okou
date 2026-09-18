@@ -1490,7 +1490,10 @@ export async function withMorningBriefConnectorReader<T>(
   );
   if (!admission.ok) {
     return unavailable(
-      deadline.aborted ? "deadline-exceeded" : "provider-failed",
+      deadlineHasPassed(deadlineAt, deadline) ||
+        isMorningBriefDatabaseDeadlineExceeded(admission.error)
+        ? "deadline-exceeded"
+        : "provider-failed",
     );
   }
   if (admission.value.kind !== "allow") {
@@ -1503,7 +1506,10 @@ export async function withMorningBriefConnectorReader<T>(
   );
   if (!collected.ok) {
     return unavailable(
-      deadline.aborted ? "deadline-exceeded" : "provider-failed",
+      deadlineHasPassed(deadlineAt, deadline) ||
+        isMorningBriefDatabaseDeadlineExceeded(collected.error)
+        ? "deadline-exceeded"
+        : "provider-failed",
     );
   }
   if (state.revoked !== null) {
@@ -1519,7 +1525,10 @@ export async function withMorningBriefConnectorReader<T>(
   );
   if (!release.ok) {
     return unavailable(
-      deadline.aborted ? "deadline-exceeded" : "provider-failed",
+      deadlineHasPassed(deadlineAt, deadline) ||
+        isMorningBriefDatabaseDeadlineExceeded(release.error)
+        ? "deadline-exceeded"
+        : "provider-failed",
     );
   }
   if (release.value !== null) {
@@ -1667,7 +1676,10 @@ export async function admitMorningBriefCollection(
   if (admitted.ok) {
     return admitted.value;
   }
-  if (deadlineHasPassed(args.deadline.at, args.deadline.signal)) {
+  if (
+    deadlineHasPassed(args.deadline.at, args.deadline.signal) ||
+    isMorningBriefDatabaseDeadlineExceeded(admitted.error)
+  ) {
     return { kind: "unavailable", reason: "deadline-exceeded" };
   }
   // A genuine preflight failure stays a failure; it is not relabelled as a
