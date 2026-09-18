@@ -131,7 +131,10 @@ export function installSharedThreadStorage(context: TestContext) {
   const otherStorage = context.mocks.s3.send.getMockImplementation();
   let rejectCopies = false;
   context.mocks.s3.getSignedUrl.mockImplementation((_client, command) => {
-    if (command instanceof GetObjectCommand) {
+    if (
+      command instanceof GetObjectCommand &&
+      command.input.Key?.includes("/thread-shares/")
+    ) {
       return Promise.resolve(
         `https://attachment-storage.example/${command.input.Bucket}/${command.input.Key}?X-Amz-Signature=fixture`,
       );
