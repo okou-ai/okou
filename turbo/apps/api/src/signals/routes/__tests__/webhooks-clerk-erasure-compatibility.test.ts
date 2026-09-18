@@ -22,6 +22,7 @@ import {
   deleteExpiredOwnedPiStableContextArtifactFixture,
   readAgentInstructionsStorageFixture,
   removePiStableContextHeadFixture,
+  seedAgentInstructionsStorageWithIdFixture,
   seedPiStableContextStorageDemandFixture,
   stableContextBackendBlockedByFixture,
 } from "../../../test-fixtures/pi-stable-context";
@@ -30,6 +31,7 @@ import { holdUserPermissionGrantMutationBeforeAdmissionFixture } from "../../../
 import {
   holdChatThreadConnectorSelectionBeforeAgentLockFixture,
   holdChatThreadConnectorSelectionBeforeErasureAdmissionFixture,
+  holdClerkAgentLifecycleAfterInstructionsStorageLocksFixture,
   holdWorkflowCopyBeforeErasureAdmissionFixture,
   holdWorkflowCreationBeforeErasureAdmissionFixture,
   holdWorkflowDeleteBeforeErasureAdmissionFixture,
@@ -774,6 +776,118 @@ test("completes signed Agent-owner erasure behind scoped artifact GC", async () 
       userId: survivingUserId,
     }),
   ).resolves.toBe(0);
+});
+
+test("orders multi-Agent instruction Storage cleanup before scoped artifact GC", async () => {
+  const orgId = `synthetic_org_${randomUUID()}`;
+  const ownerUserId = `synthetic_owner_${randomUUID()}`;
+  const survivingUserId = `synthetic_survivor_${randomUUID()}`;
+  const headers = { authorization: "Bearer clerk-session" };
+  context.mocks.s3.send.mockResolvedValue({});
+
+  mocks.clerk.session(ownerUserId, orgId, "org:admin");
+  const createdAgents = await Promise.all(
+    ["Storage order A", "Storage order B"].map(async (displayName) => {
+      return await accept(
+        setupApp({ context, routes: agentsRoutes })(agentsMainContract).create({
+          headers,
+          body: { displayName, visibility: "public" },
+        }),
+        [201],
+      );
+    }),
+  );
+  const orderedAgents = [...createdAgents].sort((left, right) => {
+    return left.body.agentId.localeCompare(right.body.agentId);
+  });
+  const storageIds = [
+    "ffffffff-ffff-4fff-bfff-ffffffffffff",
+    "00000000-0000-4000-8000-000000000001",
+  ] as const;
+  const instructions = await Promise.all(
+    orderedAgents.map(async (agent, index) => {
+      return await seedAgentInstructionsStorageWithIdFixture({
+        agentId: agent.body.agentId,
+        storageId: storageIds[index]!,
+      });
+    }),
+  );
+  const artifactDigests = await Promise.all(
+    orderedAgents.map(async (agent, index) => {
+      const storage = instructions[index]!;
+      const headId = await seedPiStableContextStorageDemandFixture({
+        orgId,
+        userId: survivingUserId,
+        agentId: agent.body.agentId,
+        storageName: storage.storageName,
+        versionId: storage.versionId,
+        archiveSize: storage.archiveSize,
+        resourceOrgId: orgId,
+        resourceUserId: storage.resourceUserId,
+        ready: true,
+      });
+      return await removePiStableContextHeadFixture(headId);
+    }),
+  );
+
+  const cleanupLocked = createDeferredPromise<{
+    readonly pid: number;
+    readonly storageIds: readonly string[];
+  }>(context.signal);
+  const releaseCleanup = createDeferredPromise<void>(context.signal);
+  holdClerkAgentLifecycleAfterInstructionsStorageLocksFixture(
+    async (tx, lockedStorageIds) => {
+      const result = await tx.execute(
+        sql`SELECT pg_backend_pid()::int AS "pid"`,
+      );
+      cleanupLocked.resolve({
+        pid: Number(result.rows[0]?.pid),
+        storageIds: lockedStorageIds,
+      });
+      await releaseCleanup.promise;
+    },
+  );
+  await deleteUserWithSignedWebhook(ownerUserId, "multi-storage-gc-erasure", {
+    flush: false,
+  });
+  const cleanup = await cleanupLocked.promise;
+  expect(cleanup.storageIds).toStrictEqual([storageIds[1], storageIds[0]]);
+
+  const gcEntered = createDeferredPromise<number>(context.signal);
+  const gc = deleteExpiredOwnedPiStableContextArtifactFixture({
+    artifactDigests,
+    cutoff: new Date("2099-01-01T00:00:00.000Z"),
+    beforeStorageLocks: async (tx) => {
+      const result = await tx.execute(
+        sql`SELECT pg_backend_pid()::int AS "pid"`,
+      );
+      gcEntered.resolve(Number(result.rows[0]?.pid));
+    },
+  });
+  const gcPid = await gcEntered.promise;
+  await expect
+    .poll(
+      async () => {
+        return await stableContextBackendBlockedByFixture({
+          blockedPid: gcPid,
+          blockerPid: cleanup.pid,
+        });
+      },
+      { interval: 5, timeout: 500 },
+    )
+    .toBe(true);
+
+  releaseCleanup.resolve();
+  await flushWaitUntilForTest();
+  await expect(gc).resolves.toStrictEqual([]);
+  for (const agent of orderedAgents) {
+    await expect(
+      countUserStableContextGenerationsFixture({
+        agentId: agent.body.agentId,
+        userId: survivingUserId,
+      }),
+    ).resolves.toBe(0);
+  }
 });
 
 test("does not recreate stable state after the public Agent owner is erased", async () => {

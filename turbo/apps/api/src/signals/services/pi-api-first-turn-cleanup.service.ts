@@ -49,6 +49,7 @@ export async function deleteExpiredPiStableContextArtifacts(
   db: Db,
   cutoff: Date,
   options?: {
+    readonly beforeStorageLocks?: (tx: Tx) => Promise<void>;
     readonly afterCandidatesLocked?: (tx: Tx) => Promise<void>;
     readonly artifactDigests?: readonly string[];
   },
@@ -116,6 +117,7 @@ export async function deleteExpiredPiStableContextArtifacts(
         }),
       ),
     ].sort();
+    await options?.beforeStorageLocks?.(tx);
     if (storageIds.length > 0) {
       await tx
         .select({ id: storages.id })

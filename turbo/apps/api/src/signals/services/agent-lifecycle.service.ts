@@ -13,7 +13,10 @@ import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 
 import type { Tx } from "../../lib/db-types";
 import { testOverride } from "../../lib/singleton";
-import { removeAgentInstructionsStorageInTransaction } from "./agent-instructions-storage-transaction.service";
+import {
+  lockAgentInstructionsStoragesInTransaction,
+  removeLockedAgentInstructionsStoragesInTransaction,
+} from "./agent-instructions-storage-transaction.service";
 import { lockCanonicalAgentMutation } from "./agent-mutation-lock.service";
 import {
   deleteLockedRuns,
@@ -33,6 +36,10 @@ export const AGENT_LIFECYCLE_LOCK_TIMEOUT = "100ms";
 
 interface ClerkAgentLifecycleHooks {
   readonly beforeAgentLock?: (tx: Tx, agentId: string) => Promise<void>;
+  readonly afterInstructionsStorageLocks?: (
+    tx: Tx,
+    storageIds: readonly string[],
+  ) => Promise<void>;
 }
 
 const clerkAgentLifecycleHooks = testOverride<ClerkAgentLifecycleHooks>(() => {
@@ -213,6 +220,32 @@ async function revokeOwnedAgentMorningBriefDeliveries(
   }
 }
 
+async function lockClerkAgentInstructionsStorages(
+  tx: Tx,
+  scope: ClerkDeletionScope,
+  ownedAgents: readonly {
+    readonly name: string;
+    readonly orgId: string;
+  }[],
+) {
+  if (scope.kind !== "user") {
+    return [];
+  }
+  const locked = await lockAgentInstructionsStoragesInTransaction(
+    tx,
+    ownedAgents.map((agent) => {
+      return { orgId: agent.orgId, agentName: agent.name };
+    }),
+  );
+  await clerkAgentLifecycleHooks.get().afterInstructionsStorageLocks?.(
+    tx,
+    locked.map((storage) => {
+      return storage.id;
+    }),
+  );
+  return locked;
+}
+
 export async function deleteClerkAgentLifecycleData(
   db: NodePgDatabase,
   scope: ClerkDeletionScope,
@@ -276,6 +309,11 @@ export async function deleteClerkAgentLifecycleData(
     const agentIds = ownedAgents.map((agent) => {
       return agent.id;
     });
+    const lockedInstructionsStorages = await lockClerkAgentInstructionsStorages(
+      tx,
+      scope,
+      ownedAgents,
+    );
     const ownedSessions = tx
       .select({ id: agentSessions.id })
       .from(agentSessions)
@@ -316,12 +354,10 @@ export async function deleteClerkAgentLifecycleData(
     await deleteLockedRuns(tx, runIds);
     await deleteClerkStableContextLifecycleData(tx, scope, agentIds);
     if (scope.kind === "user") {
-      for (const agent of ownedAgents) {
-        await removeAgentInstructionsStorageInTransaction(tx, {
-          orgId: agent.orgId,
-          agentName: agent.name,
-        });
-      }
+      await removeLockedAgentInstructionsStoragesInTransaction(
+        tx,
+        lockedInstructionsStorages,
+      );
     }
     if (agentIds.length > 0) {
       await revokeOwnedAgentMorningBriefDeliveries(tx, agentIds);

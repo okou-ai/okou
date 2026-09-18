@@ -103,6 +103,21 @@ export function observeClerkAgentLifecycleBeforeAgentLockFixture(
   });
 }
 
+export function holdClerkAgentLifecycleAfterInstructionsStorageLocksFixture(
+  hold: NonNullable<
+    Parameters<
+      typeof setClerkAgentLifecycleHooksForTest
+    >[0]["afterInstructionsStorageLocks"]
+  >,
+): void {
+  setClerkAgentLifecycleHooksForTest({
+    afterInstructionsStorageLocks: hold,
+  });
+  onTestFinished(() => {
+    clearClerkAgentLifecycleHooksForTest();
+  });
+}
+
 export function holdChatThreadConnectorSelectionBeforeErasureAdmissionFixture(
   hold: () => Promise<void>,
 ): void {

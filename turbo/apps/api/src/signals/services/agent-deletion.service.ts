@@ -18,7 +18,10 @@ import { settle } from "../utils";
 import { lockCanonicalAgentMutation } from "./agent-mutation-lock.service";
 import { deleteAgentStableContextLifecycleData } from "./agent-lifecycle.service";
 import { lockUsageEventCompaction } from "./usage-event-compaction-lock.service";
-import { removeAgentInstructionsStorageInTransaction } from "./agent-instructions-storage-transaction.service";
+import {
+  lockAgentInstructionsStoragesInTransaction,
+  removeLockedAgentInstructionsStoragesInTransaction,
+} from "./agent-instructions-storage-transaction.service";
 import { reconcileAutomationEventWatches } from "./automation-event-watch-lifecycle.service";
 import { purgeDeletedStoragePrefix$ } from "./storage-prefix-purge.service";
 import {
@@ -261,6 +264,12 @@ async function deleteAgentInTransaction(tx: Tx, args: DeleteAgentArgs) {
     );
 
   const removed = await deleteRunConversations(tx, lifecycle.runIds);
+  // Storage parents precede stable artifacts/edges in the publisher and GC
+  // lock order. Prelock before lifecycle cleanup, not after Agent deletion.
+  const lockedInstructionsStorages =
+    await lockAgentInstructionsStoragesInTransaction(tx, [
+      { orgId: args.orgId, agentName: lifecycle.agentName },
+    ]);
 
   // Remove current non-FK lifecycle rows before the Agent cascade.
   await deleteAgentStableContextLifecycleData(tx, args.agentId);
@@ -281,10 +290,11 @@ async function deleteAgentInTransaction(tx: Tx, args: DeleteAgentArgs) {
   // after the first scan cannot outlive the deleted Agent.
   await deleteAgentStableContextLifecycleData(tx, args.agentId);
 
-  const s3Prefix = await removeAgentInstructionsStorageInTransaction(tx, {
-    orgId: args.orgId,
-    agentName: lifecycle.agentName,
-  });
+  await removeLockedAgentInstructionsStoragesInTransaction(
+    tx,
+    lockedInstructionsStorages,
+  );
+  const s3Prefix = lockedInstructionsStorages[0]?.s3Prefix ?? null;
 
   return {
     kind: "deleted" as const,
