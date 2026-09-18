@@ -45,6 +45,17 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.XResourceDeduplication]: {
+    maintainer: "liangyou@okou.ai",
+    description:
+      "Deduplicate daily X resource charges; observations are always recorded",
+    enabled: false,
+  },
+  [FeatureSwitchKey.PaidToolControls]: {
+    maintainer: "liangyou@okou.ai",
+    description: "Show personal paid-tool controls in Settings",
+    enabled: false,
+  },
   [FeatureSwitchKey.WelcomeThread]: {
     maintainer: "lancy@okou.ai",
     description: "Manually create a welcome conversation with fixed examples",
@@ -266,13 +277,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable the Workday HCM and finance connector",
     enabled: false,
   },
-
-  [FeatureSwitchKey.Effort]: {
-    maintainer: "bingjie@okou.ai",
-    description:
-      "Set Fast mode and chat reasoning effort from the composer's run controls.",
-    enabled: true,
-  },
   [FeatureSwitchKey.ModelPickerFlyout]: {
     maintainer: "tongx@okou.ai",
     description:
@@ -410,13 +414,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.CustomConnectorMcp]: {
-    maintainer: "liangyou@okou.ai",
-    description:
-      "Enable remote Streamable HTTP MCP definitions for organization Custom Connectors.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.McpServer]: {
     maintainer: "liangyou@okou.ai",
     description:
@@ -447,7 +444,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Treat the check-mark chat icon as archived and hide archived chats from the sidebar unless they are unread or explicitly shown.",
     enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ComposerSlashTemplatePanel]: {
     maintainer: "tongx@okou.ai",

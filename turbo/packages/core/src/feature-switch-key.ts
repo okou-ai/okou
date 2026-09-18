@@ -4,6 +4,7 @@
  * Defines all available feature switch identifiers.
  */
 export enum FeatureSwitchKey {
+  XResourceDeduplication = "xResourceDeduplication",
   PersonalSubscriptionPriority = "personalSubscriptionPriority",
   WelcomeThread = "welcomeThread",
   ThreadActivitySummary = "threadActivitySummary",
@@ -43,9 +44,9 @@ export enum FeatureSwitchKey {
   StabilityAiConnector = "stabilityAiConnector",
   ZoomConnector = "zoomConnector",
   WorkdayConnector = "workdayConnector",
-  Effort = "effort",
   ModelPickerFlyout = "modelPickerFlyout",
   ChatPreference = "chatPreference",
+  PaidToolControls = "paidToolControls",
   RealAgentInPreview = "_realAgentInPreview",
   ZapierConnector = "zapierConnector",
   ComputerUseDesktopPlugins = "computerUseDesktopPlugins",
@@ -54,7 +55,6 @@ export enum FeatureSwitchKey {
   PersonalModelProviderAccounts = "_multipleSubscriptions",
   FeishuIntegration = "_feishuIntegration",
   LarkIntegration = "_larkIntegration",
-  CustomConnectorMcp = "customConnectorMcp",
   McpServer = "mcpServer",
   VncAccess = "vncAccess",
   PiDeferredSandbox = "piDeferredSandbox",

@@ -22,11 +22,33 @@ provider's own identity rather than a flattened string:
 | Slack    | Workspace + channel + the exact fractional timestamp and thread identity; half-open source window and the declared old-root reply limit                           |
 | Chat     | Thread + event identity and unread snapshot semantics; the destination and every Morning Brief or unknown-provenance thread excluded by the reader                |
 
-`timeSemantics` records why an item is in the window — a precise instant, a
-timed span that only overlaps it, an end-exclusive all-day date, or outstanding
-backlog that predates it. Losing that distinction is how a brief starts
-describing a three-day conference as "today" or drops an issue that has been
-open for a week.
+Time is discriminated rather than flattened. Precise activity, timed overlap
+and outstanding backlog carry real observed instants. An all-day Calendar item
+instead carries `{ kind: "date-only", startDate, endDateExclusive, timezone }`.
+It has no `occurredAt` or `endsAt` instant in the serialized evidence: parsing
+`2026-11-01` as UTC midnight would describe the previous local afternoon in
+America/Los_Angeles and would turn that DST day into the wrong span. A private
+ordering key may rank the item, but it never becomes model-visible evidence.
+Losing that distinction is how a brief starts describing a three-day conference
+as "today" or drops an issue that has been open for a week.
+
+Beside it travels every provider fact the collector already paid to read:
+each branch that selected the record with its own reason and unread flag, the
+provider's lifecycle state, the verbatim start and end strings, the record and
+container timezones, the local day offset, the recurrence series, the observed
+check state with the exact head it describes, the attributed actor and how the
+body was obtained. None of it is re-derived and none of it is inferred. A title
+and a body alone cannot tell one obligation from another: the same pull request
+as "review requested, head A failing" and as "assigned, head B green" is two
+different mornings, and a normalization that kept only the title produced one
+byte-identical item for both.
+
+Each collection also carries the window its evidence is only true within — the
+half-open activity range, the frozen local dates and the owner timezone that
+make an all-day date a day, the instant an outstanding-work snapshot was taken,
+each provider branch with its own window or snapshot, and the collector's own
+declared limitations. Request counts are the collector's own count of reads
+issued, never a proxy such as the number of calendars enumerated.
 
 Deduplication is identity-only. Two calendars' copies of one meeting are two
 authorized records, and an email whose subject matches an issue title is not the
@@ -88,6 +110,37 @@ reports about half the real size, because every `"` becomes `\"` and property
 names, separators, braces and `null`s cost nothing in the sum and real bytes in
 the request. A budget that undercounts by 2x does not bound anything.
 
+The 1 MiB combined ceiling bounds **one aggregate document**, not a pile of
+bodies: each source's coverage, provenance window, request count, omission
+account and items are serialized together, and that document's UTF-8 size is
+the number. A budget blind to the metadata travelling beside the items bounds
+something nobody holds. Each item is charged exactly what it adds — its own
+serialization plus the one separator byte every element after the first in its
+array costs — including the exact `partial` to `complete` metadata transition
+when the final item fits. The returned size is then re-measured from the
+consumer's document rather than trusted from a parallel counter.
+
+Request coverage is not reserved through a synthetic "widest" report. Included
+and omitted counts can cross different digit boundaries, so no one extreme is
+always widest. Packing instead builds the final coverage metadata and exact
+request, lowers only the whole-item budget by any measured overflow, and repeats
+monotonically until the consumed serialization fits or no item remains. Agent
+instruction text is never sliced.
+
+Both ceilings measure documents this pipeline builds. The **provider body** that
+carries the request is the integration consumer's own boundary and is a
+different number: a wrapper that escapes this document into a JSON string field
+roughly doubles a quote-heavy payload, and a 127,390-byte inner document became
+251,113 bytes inside a minimal message envelope. The 128 KiB transport limit has
+to be enforced against the complete outgoing body; reusing an inner-document
+measurement as transport proof is exactly how a request that "fit" arrives
+oversized.
+
+The preview's `evidenceDigest` fingerprints the serialized evidence items only;
+it is not a digest of coverage, language instructions, the provider wrapper or
+the complete outgoing body. The integration consumer owns that complete-body
+digest and transport fence.
+
 The combined ceiling and the request ceiling both drop **whole items**. A
 half sentence attributed to a real message is worse evidence than no message, so
 nothing is sliced and the omission counts are what the coverage note reports. An
@@ -106,6 +159,17 @@ large enough to consume everything left, and a later source with a small first
 item then contributes nothing. So until every source has placed one item, an
 admission must also leave room for the first item of each source still waiting.
 
+That reservation is chosen up front and is always jointly satisfiable: smallest
+first item first, taking each while the running total still fits. Reserving for
+_every_ waiting source instead is how a reservation nobody could honour
+suppressed the items that could have been. A 247-byte Calendar item and a
+40,242-byte Chat item sharing 1,000 bytes of capacity both got dropped, because
+Calendar was charged a reserve for a Chat item no allocation could ever place,
+and the attempt then reported that nothing fitted while holding something that
+did. A source left out of the reservation is not excluded from the request: it
+carries no reservation and still takes its ordinary turn in every round, so a
+source whose first item is impossible can still contribute a later one.
+
 Nonempty authorized evidence may produce one honestly partial brief even when
 every applicable source is partial. Only when no usable evidence remains does the
 attempt take an explicit incomplete or failed outcome — with zero model calls,
@@ -116,6 +180,17 @@ and never relabelled as healthy-empty.
 A brief built from a bounded read and a request that dropped candidates reads
 exactly like a brief about a quiet day. The reduction used to be recorded only
 in HTTP metadata and in the prompt — neither of which the reader ever sees.
+
+Three independent reductions can each shorten a day, and they act on disjoint
+records: the collector's own caps, the combined normalized ceiling and request
+packing. Each is reported as itself, so the known counts add without
+double-counting. A cap that ended a provider read never enumerated what was
+behind it, so the remainder stays an explicit unknown rather than a number
+nothing observed — the count of _truncation kinds_ is not a count of messages,
+and reporting one as the other states a total the collector never made. Chat is
+the one source that can count what it dropped, because every skipped thread is a
+thread it looked at; its deliberate policy exclusions, the destination thread
+and threads that have hosted Morning Brief content, are not losses at all.
 
 So the note is written by the program, from the same numbers the request was
 built from, and the model can neither produce it, edit it nor suppress it.
@@ -159,8 +234,10 @@ authorization surface actually exercised, **one endpoint per permission whose
 result the input still holds**, the membership generation, the Agent, when it
 was captured, **the containers the evidence actually came from**, and whether it
 entered the model input. At most one per source, at most 24 containers, at most
-8 endpoints, 2 KiB each and 8 KiB in total. No raw source body, prompt,
-credential or unrestricted URL blob is persisted or logged.
+8 endpoints, 2 KiB each and 8 KiB for the exact serialized descriptor array,
+including its brackets and commas. The reported byte count is that same retained
+serialization. No raw source body, prompt, credential or unrestricted URL blob
+is persisted or logged.
 
 The digest is taken over the **effective permissions the read was admitted
 under**, never over constant method names: a digest of method names hashes
@@ -189,23 +266,32 @@ Revalidation runs on the composition path itself, after the last network await
 and before any reservation. It re-enters the **existing** authorizers rather
 than a second engine: connector sources re-run the shared reader's identity and
 URL-policy gates for the frozen account and every retained endpoint, native
-Slack re-runs the same shared-conversation enumeration its collector proves
-against, and Chat re-resolves the same ownership, visibility and provenance
-predicates its collector resolved. No credential is decrypted and no provider
-payload is fetched: whether an input may still be used is a permission question,
-not a reason to fetch it again.
+Slack re-reads the credential-free canonical installation/member binding,
+re-runs the same shared-conversation enumeration its collector proves against,
+and then re-reads that local binding so a disconnect committed during the
+external wait wins. Chat re-resolves the same ownership, visibility and
+provenance predicates its collector resolved. No credential is decrypted and no
+provider payload is fetched: whether an input may still be used is a permission
+question, not a reason to fetch it again.
 
-The whole phase is bounded at 5 seconds and further constrained by the attempt's
-own reservation, whichever is nearer; shared-channel and permission work is
-counted inside it rather than given a budget of its own. A check that does not
-finish inside the phase is not a proof of authority, so its source is withheld
-like a revoked one.
+The whole phase has one absolute 5-second deadline and is further constrained by
+the attempt's own reservation, whichever is nearer; every finite replan spends
+that same deadline. Shared-channel and permission work is counted inside it
+rather than given a budget of its own. The clock and caller cancellation are
+checked after every wait and before proof is released; equality is expired. A
+check that does not finish inside the phase is not a proof of authority, so its
+source is withheld like a revoked one. Provider HTTP observes the phase signal;
+database and SDK operations that cannot be interrupted are still joined before
+public completion and their late answers are rejected.
 
 Material whose authority was withdrawn is removed and the authorized siblings
 are planned again, with that source's day reported as failed rather than as a
-quiet morning. Whole-owner loss — a lost membership, a disabled or reinstalled
-brief, an Agent the member can no longer act through — yields no plan at all, and
-losing every supplied source is an authority change rather than an empty brief.
+quiet morning. If replanning introduces a source that was not in the previous
+request, that source is proved before the new plan can be released; the bounded
+loop ends only when every final supplied source has proof or has been removed.
+Whole-owner loss — a lost membership, a disabled or reinstalled brief, an Agent
+the member can no longer act through — yields no plan at all, and losing every
+supplied source is an authority change rather than an empty brief.
 
 Contribution is decided by the material the final request actually carries. An
 item dropped by allocation supplied nothing, and marking its source contributing
@@ -300,11 +386,30 @@ any storage I/O.
 The version is resolved before network reads and that immutable version is read
 outside any transaction. One absolute deadline starts before that resolution and
 bounds everything the phase owns; it is the tighter of the five seconds and what
-is left of the collection budget, and reaching it is already expired. The clock
-and cancellation are rechecked after every wait and after the synchronous parse
-and extraction, so a successful response whose own timer has not fired yet
-cannot be released late, and an exhausted budget asks storage for nothing at
-all.
+is left of the collection budget, and reaching it is already expired. A positive
+remaining duration is admitted before the phase timer is constructed, so a clock
+that crosses the deadline between the initial check and timer creation returns
+the normal timeout outcome rather than passing a negative delay to the timer.
+The clock and cancellation are rechecked after every wait and after manifest
+decode, JSON parsing, target filtering and archive extraction, so a successful
+response whose own timer has not fired yet cannot release absence or text late
+or authorize another archive read. An exhausted budget asks storage for nothing
+at all.
+
+The registered composition-route coverage uses the real database, canonical
+instruction publisher and an object-storage boundary double. It proves
+before/equality/after behavior at the nearest real manifest and archive response
+boundaries and joined cancellation while a storage read is held. A production
+route cannot yield between source finalization and language admission or between
+two synchronous parsing instructions. The pure production admission helper
+therefore pins the exact before/equality/after rule used at those synchronous
+edges, including genuinely tighter outer-deadline selection and the nonpositive
+entry that returns before timer or storage construction; no internal reader,
+planner or authorizer is replaced. Held-I/O
+cases use arrival and settlement barriers rather than sleeps. This is
+deterministic integration and helper evidence for admission and ownership, not
+evidence of real model language compliance. The single-model migration/cohort
+limitation below remains open.
 
 Every frozen outcome is revalidated against live configuration before the
 generation reservation, absence included: an available or empty file must still

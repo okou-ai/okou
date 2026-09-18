@@ -14,7 +14,6 @@ import {
   customConnectorsContract,
   type CustomConnectorOAuthConfig,
 } from "@okouai/api-contracts/contracts/custom-connectors";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -586,7 +585,6 @@ test.each([
     await setupPage({
       context,
       path: "/connectors?tab=custom",
-      featureSwitches: { [FeatureSwitchKey.CustomConnectorMcp]: true },
     });
     const connect = await waitFor(() => {
       return getConnectorAction("button", `Connect ${connector.displayName}`);

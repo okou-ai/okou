@@ -34,6 +34,89 @@ function sdkClientForDataset(
 }
 
 describe("shared SDK ingestion", () => {
+  it("preserves archive mismatch diagnostics through the sandbox-operation SDK transport", async () => {
+    // Logger-suite exception: ingestion is the subject and no read endpoint
+    // exposes it. Use the real webhook to cover validation and projection.
+    const bdd = createBddApi(context);
+    const runs = createRunsApi(context);
+    const actor = bdd.user();
+    bdd.acceptAgentStorageWrites();
+    runs.acceptStorageDownloads();
+    runs.acceptTelemetryIngest();
+    runs.configureRunnerGroup();
+    await runs.grantProEntitlement(actor);
+    await runs.ensureOrgModelProvider(actor);
+    const agent = await bdd.createAgent(actor, {
+      displayName: `Archive mismatch telemetry ${randomUUID()}`,
+      visibility: "private",
+    });
+    const { runId } = await runs.createRun(actor, {
+      agentId: agent.agentId,
+      prompt: "check archive startup",
+      modelProvider: "anthropic-api-key",
+    });
+    const token = runs.sandboxTokenForRun(actor, runId);
+    const operation = {
+      ts: "2026-09-18T00:00:00Z",
+      action_type: "storage_cache_fresh_delivery_headers",
+      duration_ms: 183,
+      success: false,
+      error: "response-size-mismatch",
+    };
+    const diagnostic = {
+      expected_bytes: "5",
+      response_bytes: "18446744073709551615",
+      source_kind: "storage",
+      source_index: 0,
+      content_encoding: "other",
+      archive_url: "https://private.example/archive?secret=private",
+      raw_content_encoding: "private-header",
+    } as const;
+    const response = await accept(
+      setupApp({ context, routes: webhooksAgentHealthUsageTelemetryRoutes })(
+        webhookTelemetryContract,
+      ).send({
+        headers: { authorization: `Bearer ${token}` },
+        body: {
+          runId,
+          sandboxOperations: [
+            operation,
+            { ...operation, archive_size_mismatch: diagnostic },
+          ],
+        },
+      }),
+      [200],
+    );
+    expect(response.body).toStrictEqual({ success: true, id: runId });
+    const expected = {
+      _time: operation.ts,
+      source: "sandbox",
+      sandbox_type: "runner",
+      op_type: operation.action_type,
+      duration_ms: operation.duration_ms,
+      success: false,
+      error: operation.error,
+      run_id: runId,
+    };
+    expect(context.mocks.axiom.sdkIngest).toHaveBeenCalledWith(
+      "vm0-sandbox-op-log-dev",
+      [expected],
+    );
+    expect(context.mocks.axiom.sdkIngest).toHaveBeenCalledWith(
+      "vm0-sandbox-op-log-dev",
+      [
+        {
+          ...expected,
+          archive_size_mismatch_expected_bytes: "5",
+          archive_size_mismatch_response_bytes: "18446744073709551615",
+          archive_size_mismatch_source_kind: "storage",
+          archive_size_mismatch_source_index: 0,
+          archive_size_mismatch_content_encoding: "other",
+        },
+      ],
+    );
+  });
+
   it("preserves workspace restore measurements through the sandbox-operation SDK transport", async () => {
     // Logger-suite exception: the SDK ingestion record is the subject, and no
     // production read endpoint exposes it. Exercise the real webhook so its

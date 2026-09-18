@@ -73,7 +73,6 @@ async function openChat(
     featureSwitches: {
       [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
       [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
-      [FeatureSwitchKey.Effort]: true,
       [FeatureSwitchKey.ModelPickerFlyout]: true,
       [FeatureSwitchKey.ChatPreference]: true,
     },

@@ -92,7 +92,6 @@ test.each(
       path: NEW_CHAT_PATH,
       featureSwitches: {
         [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
-        [FeatureSwitchKey.Effort]: layout === "compact",
         [FeatureSwitchKey.ModelPickerFlyout]: layout !== "select",
       },
     });
@@ -169,7 +168,6 @@ test("Uses the effective subscription for reasoning and Fast guidance", async ()
     path: NEW_CHAT_PATH,
     featureSwitches: {
       [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
-      [FeatureSwitchKey.Effort]: true,
       [FeatureSwitchKey.PiLoop]: true,
     },
   });

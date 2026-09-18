@@ -97,7 +97,11 @@ export async function loadCustomConnectorPermissionBundle(args: {
   }
 
   const connectorSlug = customConnectorPermissionBundleDependencySlug(args.ref);
-  if (!connectorSlug || !args.catalog.has(connectorSlug)) {
+  if (
+    !connectorSlug ||
+    !args.catalog.has(connectorSlug) ||
+    args.catalog.isMcp(connectorSlug)
+  ) {
     return null;
   }
 

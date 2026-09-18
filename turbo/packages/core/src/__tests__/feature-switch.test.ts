@@ -101,31 +101,22 @@ describe("isFeatureEnabled", () => {
     });
   });
 
-  it("enables chat thread archiving for staff by default and honors explicit overrides", () => {
-    const staffContext = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
-    expect(
-      isFeatureEnabled(FeatureSwitchKey.ChatThreadArchiving, staffContext),
-    ).toBe(true);
-    expect(
-      isFeatureEnabled(FeatureSwitchKey.ChatThreadArchiving, {
-        ...staffContext,
-        overrides: { [FeatureSwitchKey.ChatThreadArchiving]: false },
-      }),
-    ).toBe(false);
-    expect(
-      isFeatureEnabled(FeatureSwitchKey.ChatThreadArchiving, {
-        orgId: "org_nonexistent",
-      }),
-    ).toBe(false);
-    expect(isFeatureEnabled(FeatureSwitchKey.ChatThreadArchiving, {})).toBe(
-      false,
-    );
-    expect(
-      isFeatureEnabled(FeatureSwitchKey.ChatThreadArchiving, {
-        orgId: "org_nonexistent",
-        overrides: { [FeatureSwitchKey.ChatThreadArchiving]: true },
-      }),
-    ).toBe(true);
+  it("keeps chat thread archiving disabled by default and honors explicit overrides", () => {
+    for (const context of [
+      {},
+      { orgId: "org_nonexistent" },
+      { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
+    ]) {
+      expect(
+        isFeatureEnabled(FeatureSwitchKey.ChatThreadArchiving, context),
+      ).toBe(false);
+      expect(
+        isFeatureEnabled(FeatureSwitchKey.ChatThreadArchiving, {
+          ...context,
+          overrides: { [FeatureSwitchKey.ChatThreadArchiving]: true },
+        }),
+      ).toBe(true);
+    }
   });
 
   it("enables OpenRouter US routing for staff and honors explicit overrides", () => {
@@ -351,7 +342,6 @@ describe("getAllFeatureStates", () => {
     expect(staffOrgStates[FeatureSwitchKey.PiLoop]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.PiMemory]).toBe(false);
     expect(staffOrgStates[FeatureSwitchKey.ChatPreference]).toBe(true);
-    expect(staffOrgStates[FeatureSwitchKey.CustomConnectorMcp]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.PersonalModelProviderAccounts]).toBe(
       true,
     );
@@ -360,6 +350,7 @@ describe("getAllFeatureStates", () => {
     expect(staffOrgStates[FeatureSwitchKey.OfficialWorkflows]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.MorningBrief]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.ChatThreadHeaderActions]).toBe(true);
+    expect(staffOrgStates[FeatureSwitchKey.ChatThreadArchiving]).toBe(false);
 
     const otherOrgStates = getAllFeatureStates({
       orgId: "org_nonexistent",
@@ -370,7 +361,6 @@ describe("getAllFeatureStates", () => {
     expect(otherOrgStates[FeatureSwitchKey.PiLoop]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.PiMemory]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.ChatPreference]).toBe(false);
-    expect(otherOrgStates[FeatureSwitchKey.CustomConnectorMcp]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.PersonalModelProviderAccounts]).toBe(
       false,
     );
@@ -417,17 +407,14 @@ describe("getAllFeatureStates", () => {
 
   it("releases the composer run controls to every org and keeps the off lever", () => {
     const states = getAllFeatureStates({ orgId: "org_nonexistent" });
-    expect(states[FeatureSwitchKey.Effort]).toBe(true);
     expect(states[FeatureSwitchKey.ModelPickerFlyout]).toBe(true);
 
     const reverted = getAllFeatureStates({
       orgId: "org_nonexistent",
       overrides: {
-        [FeatureSwitchKey.Effort]: false,
         [FeatureSwitchKey.ModelPickerFlyout]: false,
       },
     });
-    expect(reverted[FeatureSwitchKey.Effort]).toBe(false);
     expect(reverted[FeatureSwitchKey.ModelPickerFlyout]).toBe(false);
   });
 

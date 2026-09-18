@@ -460,7 +460,9 @@ function createTemplatePickerDialogSignals() {
 function createTemplatePickerListSignals() {
   const avatarTemplates = createAvatarTemplatePickerSignals();
   const introVideo = createIntroVideoPickerSignals();
-  const internalTemplatePickerCategory$ = state("slides");
+  // Null until an entry point names a category, so the picker can open on the
+  // one the member's own switches lead the nav with.
+  const internalTemplatePickerCategory$ = state<string | null>(null);
   const templatePickerCategory$ = computed((get) => {
     return get(internalTemplatePickerCategory$);
   });

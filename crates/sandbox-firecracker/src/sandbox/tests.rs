@@ -18,10 +18,12 @@ use tracing_test_support::{CapturedEvent, CapturedEvents};
 mod guest_connection_timing;
 mod guest_rpc;
 mod managed_exit;
+mod park_native;
 mod private_write_diagnostics;
 mod process_exit;
 mod process_timeout_logging;
 mod process_write;
+mod running_handoff;
 
 struct TestNormalOperationFence;
 
@@ -1165,6 +1167,7 @@ async fn final_exec_park_observer_reports_completed_stages_in_order() {
         "test-sandbox",
         &coordinator,
         Some(&mut observer),
+        |_| false,
         || async { Ok((TestNormalOperationFence, "prepared")) },
         || async { Ok(()) },
         |_timing, events| async {
@@ -1196,6 +1199,7 @@ async fn final_exec_park_observer_reports_preparation_failure_only() {
         "test-sandbox",
         &coordinator,
         Some(&mut observer),
+        |_| false,
         || async {
             Err::<(TestNormalOperationFence, ()), _>(ParkNormalOperationFenceError::FinalOperation(
                 io::Error::new(io::ErrorKind::ConnectionReset, "final exec disconnected"),
@@ -1228,6 +1232,7 @@ async fn final_exec_park_observer_reports_physical_park_failure() {
         "test-sandbox",
         &coordinator,
         Some(&mut observer),
+        |_| false,
         || async { Ok((TestNormalOperationFence, ())) },
         || async { Ok(()) },
         |_timing, events| async {
@@ -1265,6 +1270,7 @@ async fn final_exec_park_observer_keeps_completed_substage_on_cancellation() {
             "test-sandbox",
             &coordinator,
             Some(&mut observer),
+            |_| false,
             || async { Ok((TestNormalOperationFence, ())) },
             || async { Ok(()) },
             |timing, mut events| async move {
@@ -1378,7 +1384,7 @@ fn ready_for_park_boundary_missing_fence_marks_dirty_after_ready_for_park() {
         ParkBoundaryGuard::new(coordinator.clone(), attempt);
 
     guard.complete_prepare().unwrap();
-    let error = guard.mark_parked().unwrap_err();
+    let error = guard.mark_completed(false).unwrap_err();
 
     assert!(matches!(error, PrepareParkError::Dirty { .. }));
     assert!(matches!(
@@ -4741,13 +4747,13 @@ enum MockBalloonStatsSource {
 }
 
 impl MockBalloonStatsSource {
-    fn next(&self) -> MockBalloonStatsReply {
+    fn next(&self, target_mib: u32) -> MockBalloonStatsReply {
         match self {
             Self::DynamicActual(balloon_actual) => {
                 let actual_mib = balloon_actual
                     .as_ref()
-                    .map_or(99999, |actual| actual.load(Ordering::Relaxed));
-                MockBalloonStatsReply::Ok(MockBalloonStats::new(0, actual_mib))
+                    .map_or(target_mib, |actual| actual.load(Ordering::Relaxed));
+                MockBalloonStatsReply::Ok(MockBalloonStats::new(target_mib, actual_mib))
             }
             Self::Sequence(sequence) => sequence.lock().unwrap().next(),
         }
@@ -4786,12 +4792,14 @@ impl MockLifecycleApi {
         balloon_stats_source: MockBalloonStatsSource,
     ) -> Self {
         let patch_statuses = Arc::new(Mutex::new(patch_statuses));
+        let balloon_target = Arc::new(AtomicU32::new(0));
         let api = MockFirecrackerApi::with_handler(move |request| {
             let patch_statuses = Arc::clone(&patch_statuses);
             let balloon_stats_source = balloon_stats_source.clone();
+            let balloon_target = Arc::clone(&balloon_target);
             async move {
                 if request.method == "GET" && request.path == "/balloon/statistics" {
-                    match balloon_stats_source.next() {
+                    match balloon_stats_source.next(balloon_target.load(Ordering::Relaxed)) {
                         MockBalloonStatsReply::Ok(stats) => MockResponse::ok_body(stats.to_json()),
                         MockBalloonStatsReply::DelayedOk(delay, stats) => {
                             tokio::time::sleep(delay).await;
@@ -4813,6 +4821,12 @@ impl MockLifecycleApi {
                 } else if request.method == "PATCH" {
                     let status = patch_statuses.lock().unwrap().pop_front().unwrap_or(204);
                     if status == 204 {
+                        if request.path == "/balloon" {
+                            let amount = mock_request_body_json(&request)["amount_mib"]
+                                .as_u64()
+                                .expect("balloon PATCH must include amount_mib");
+                            balloon_target.store(u32::try_from(amount).unwrap(), Ordering::Relaxed);
+                        }
                         MockResponse::no_content()
                     } else {
                         MockResponse::new(status, "Bad Request", r#"{"fault_message":"test"}"#)
@@ -5942,9 +5956,13 @@ async fn wait_for_balloon_timeout_logs_severe_deficit_and_memory_stats() {
 
 #[tokio::test]
 async fn park_pauses_when_balloon_stats_are_unavailable() {
+    let (_state_tx, state_rx) = watch::channel(SandboxState::Running);
     let mut api = MockLifecycleApi::with_stats(
         std::collections::VecDeque::new(),
-        std::collections::VecDeque::from([MockBalloonStatsReply::Status(500)]),
+        std::collections::VecDeque::from([
+            MockBalloonStatsReply::Status(500),
+            MockBalloonStatsReply::Ok(MockBalloonStats::new(0, 0)),
+        ]),
     );
     let mut is_parked = false;
     let mut observer = RecordingFinalExecParkObserver::default();
@@ -5959,6 +5977,7 @@ async fn park_pauses_when_balloon_stats_are_unavailable() {
                 guest: Arc::new(tokio::sync::Mutex::new(None)),
                 handoff: None,
                 memory_policy: ParkMemoryPolicy::Reclaim,
+                state_rx: state_rx.clone(),
             },
             SandboxFinalExecParkSubstageEvents::new(Some(&mut observer)),
         ))
@@ -5983,19 +6002,22 @@ async fn park_pauses_when_balloon_stats_are_unavailable() {
                 true,
                 Some(SandboxFinalExecParkSubstageOutcome::StatsUnavailable),
             ),
+            (SandboxFinalExecParkSubstage::BalloonDeflate, true, None),
             (SandboxFinalExecParkSubstage::VcpuPause, true, None),
         ]
     );
     let reqs = api.drain_requests();
     let ps = patches(&reqs);
-    assert_eq!(ps.len(), 2, "expected balloon inflate + vm pause");
+    assert_eq!(ps.len(), 3, "expected balloon inflate + deflate + vm pause");
     assert_eq!(ps[0].path, "/balloon");
-    assert_eq!(ps[1].path, "/vm");
-    assert!(ps[1].body.contains("Paused"));
+    assert_eq!(mock_request_body_json(ps[1])["amount_mib"], 0);
+    assert_eq!(ps[2].path, "/vm");
+    assert!(ps[2].body.contains("Paused"));
 }
 
 #[tokio::test]
-async fn exact_handoff_skips_balloon_target_but_still_pauses() {
+async fn exact_handoff_before_balloon_reverses_target_without_pausing() {
+    let (_state_tx, state_rx) = watch::channel(SandboxState::Running);
     let mut api = MockLifecycleApi::new(std::collections::VecDeque::new(), None);
     let mut is_parked = false;
     let mut observer = RecordingFinalExecParkObserver::default();
@@ -6012,6 +6034,7 @@ async fn exact_handoff_skips_balloon_target_but_still_pauses() {
                 guest: Arc::new(tokio::sync::Mutex::new(None)),
                 handoff: Some(&handoff),
                 memory_policy: ParkMemoryPolicy::Reclaim,
+                state_rx: state_rx.clone(),
             },
             SandboxFinalExecParkSubstageEvents::new(Some(&mut observer)),
         )
@@ -6023,7 +6046,7 @@ async fn exact_handoff_skips_balloon_target_but_still_pauses() {
         result.unwrap(),
         PhysicalParkOutcome::Handoff(SandboxFinalExecParkHandoffPoint::BeforeBalloon)
     ));
-    assert!(is_parked);
+    assert!(!is_parked);
     assert_eq!(
         observer.substage_records,
         vec![
@@ -6037,17 +6060,32 @@ async fn exact_handoff_skips_balloon_target_but_still_pauses() {
                 true,
                 Some(SandboxFinalExecParkSubstageOutcome::Skipped),
             ),
-            (SandboxFinalExecParkSubstage::VcpuPause, true, None),
+            (
+                SandboxFinalExecParkSubstage::BalloonDeflate,
+                true,
+                Some(SandboxFinalExecParkSubstageOutcome::HandoffRequested),
+            ),
+            (
+                SandboxFinalExecParkSubstage::VcpuPause,
+                true,
+                Some(SandboxFinalExecParkSubstageOutcome::Skipped),
+            ),
         ]
     );
     let requests = api.drain_requests();
     let patches = patches(&requests);
-    assert_eq!(patches.len(), 1, "handoff should only pause the VM");
-    assert_eq!(patches[0].path, "/vm");
+    assert_eq!(
+        patches.len(),
+        1,
+        "handoff should only reverse the balloon target"
+    );
+    assert_eq!(patches[0].path, "/balloon");
+    assert_eq!(mock_request_body_json(patches[0])["amount_mib"], 0);
 }
 
 #[tokio::test]
 async fn exact_handoff_interrupts_in_flight_balloon_settle() {
+    let (_state_tx, state_rx) = watch::channel(SandboxState::Running);
     let stats_entered = Arc::new(Notify::new());
     let stats_release = Arc::new(Notify::new());
     let mut api = MockLifecycleApi::with_stats(
@@ -6071,6 +6109,7 @@ async fn exact_handoff_interrupts_in_flight_balloon_settle() {
                 guest: Arc::new(tokio::sync::Mutex::new(None)),
                 handoff: Some(&handoff),
                 memory_policy: ParkMemoryPolicy::Reclaim,
+                state_rx: state_rx.clone(),
             },
             SandboxFinalExecParkSubstageEvents::new(Some(&mut observer)),
         );
@@ -6092,7 +6131,7 @@ async fn exact_handoff_interrupts_in_flight_balloon_settle() {
         result.unwrap(),
         PhysicalParkOutcome::Handoff(SandboxFinalExecParkHandoffPoint::DuringBalloonSettle)
     ));
-    assert!(is_parked);
+    assert!(!is_parked);
     assert_eq!(
         observer.substage_records,
         vec![
@@ -6102,7 +6141,16 @@ async fn exact_handoff_interrupts_in_flight_balloon_settle() {
                 true,
                 Some(SandboxFinalExecParkSubstageOutcome::HandoffRequested),
             ),
-            (SandboxFinalExecParkSubstage::VcpuPause, true, None),
+            (
+                SandboxFinalExecParkSubstage::BalloonDeflate,
+                true,
+                Some(SandboxFinalExecParkSubstageOutcome::HandoffRequested),
+            ),
+            (
+                SandboxFinalExecParkSubstage::VcpuPause,
+                true,
+                Some(SandboxFinalExecParkSubstageOutcome::Skipped),
+            ),
         ]
     );
     let requests = api.drain_requests();
@@ -6110,10 +6158,11 @@ async fn exact_handoff_interrupts_in_flight_balloon_settle() {
     assert_eq!(
         patches.len(),
         2,
-        "handoff should inflate once and then pause"
+        "handoff should inflate once and then reverse the balloon target"
     );
     assert_eq!(patches[0].path, "/balloon");
-    assert_eq!(patches[1].path, "/vm");
+    assert_eq!(patches[1].path, "/balloon");
+    assert_eq!(mock_request_body_json(patches[1])["amount_mib"], 0);
 }
 
 #[tokio::test]
@@ -6350,14 +6399,16 @@ async fn park_inflates_and_pauses() {
     let ps = patches(&reqs);
     assert_eq!(
         ps.len(),
-        2,
-        "expected balloon inflate + vm pause, got {ps:?}"
+        3,
+        "expected balloon inflate + deflate + vm pause, got {ps:?}"
     );
     assert_eq!(ps[0].path, "/balloon");
     let parsed: serde_json::Value = serde_json::from_str(&ps[0].body).unwrap();
     assert_eq!(parsed["amount_mib"].as_u64().unwrap(), 1024);
-    assert_eq!(ps[1].path, "/vm");
-    assert!(ps[1].body.contains("Paused"));
+    assert_eq!(ps[1].path, "/balloon");
+    assert_eq!(mock_request_body_json(ps[1])["amount_mib"], 0);
+    assert_eq!(ps[2].path, "/vm");
+    assert!(ps[2].body.contains("Paused"));
 }
 
 #[tokio::test]
@@ -6377,16 +6428,19 @@ async fn park_inflates_by_one_at_min_plus_one() {
     assert!(is_parked);
     let reqs = api.drain_requests();
     let ps = patches(&reqs);
-    assert_eq!(ps.len(), 2);
+    assert_eq!(ps.len(), 3);
     assert_eq!(ps[0].path, "/balloon");
     let parsed: serde_json::Value = serde_json::from_str(&ps[0].body).unwrap();
     assert_eq!(parsed["amount_mib"].as_u64().unwrap(), 1);
-    assert_eq!(ps[1].path, "/vm");
-    assert!(ps[1].body.contains("Paused"));
+    assert_eq!(ps[1].path, "/balloon");
+    assert_eq!(mock_request_body_json(ps[1])["amount_mib"], 0);
+    assert_eq!(ps[2].path, "/vm");
+    assert!(ps[2].body.contains("Paused"));
 }
 
 #[tokio::test]
 async fn park_small_vm_skips_balloon_but_pauses_vcpus() {
+    let (_state_tx, state_rx) = watch::channel(SandboxState::Running);
     let mut api = MockLifecycleApi::new(std::collections::VecDeque::new(), None);
     let mut is_parked = false;
     let mut observer = RecordingFinalExecParkObserver::default();
@@ -6401,6 +6455,7 @@ async fn park_small_vm_skips_balloon_but_pauses_vcpus() {
                 guest: Arc::new(tokio::sync::Mutex::new(None)),
                 handoff: None,
                 memory_policy: ParkMemoryPolicy::Reclaim,
+                state_rx: state_rx.clone(),
             },
             SandboxFinalExecParkSubstageEvents::new(Some(&mut observer)),
         )
@@ -6435,7 +6490,7 @@ async fn park_small_vm_skips_balloon_but_pauses_vcpus() {
 }
 
 #[tokio::test]
-async fn unpark_resumes_and_deflates() {
+async fn unpark_without_completed_deflation_resumes_and_deflates() {
     let mut api = MockLifecycleApi::new(
         std::collections::VecDeque::new(),
         Some(Arc::new(AtomicU32::new(0))),
@@ -6447,6 +6502,7 @@ async fn unpark_resumes_and_deflates() {
     unpark_inner(
         &mut is_parked,
         2048,
+        None,
         api.socket_path(),
         state_rx.clone(),
         "test-unpark",
@@ -6486,8 +6542,15 @@ async fn unpark_waits_for_physical_deflation() {
     let (_state_tx, state_rx) = watch::channel(SandboxState::Running);
     let task = tokio::spawn(async move {
         let mut is_parked = true;
-        let result =
-            unpark_inner(&mut is_parked, 4096, &socket, state_rx, "pending-deflation").await;
+        let result = unpark_inner(
+            &mut is_parked,
+            4096,
+            None,
+            &socket,
+            state_rx,
+            "pending-deflation",
+        )
+        .await;
         (result, is_parked)
     });
     tokio::time::timeout(Duration::from_secs(1), entered.notified())
@@ -6520,6 +6583,7 @@ async fn unpark_propagates_deflate_error() {
     let result = unpark_inner(
         &mut is_parked,
         2048,
+        None,
         api.socket_path(),
         state_rx.clone(),
         "test-unpark-err",
@@ -6546,6 +6610,7 @@ async fn unpark_small_vm_skips_balloon_but_resumes_vcpus() {
     unpark_inner(
         &mut is_parked,
         balloon::MIN_GUEST_MIB,
+        None,
         api.socket_path(),
         state_rx.clone(),
         "test-unpark-small",
@@ -6579,13 +6644,13 @@ async fn double_park_is_idempotent() {
     let ps = patches(&reqs);
     assert_eq!(
         ps.len(),
-        2,
-        "expected exactly one park sequence (inflate + pause) despite double-park"
+        3,
+        "expected exactly one park sequence (inflate + deflate + pause) despite double-park"
     );
 }
 
 #[tokio::test]
-async fn double_unpark_is_idempotent() {
+async fn running_reactivation_rechecks_deflation_without_resuming_twice() {
     let mut api = MockLifecycleApi::new(
         std::collections::VecDeque::new(),
         Some(Arc::new(AtomicU32::new(0))),
@@ -6597,6 +6662,7 @@ async fn double_unpark_is_idempotent() {
     unpark_inner(
         &mut is_parked,
         2048,
+        None,
         api.socket_path(),
         state_rx.clone(),
         "du",
@@ -6607,6 +6673,7 @@ async fn double_unpark_is_idempotent() {
     unpark_inner(
         &mut is_parked,
         2048,
+        None,
         api.socket_path(),
         state_rx.clone(),
         "du",
@@ -6618,27 +6685,17 @@ async fn double_unpark_is_idempotent() {
     let reqs = api.drain_requests();
     let ps = patches(&reqs);
     let deflate_count = ps.iter().filter(|r| r.path == "/balloon").count();
-    assert_eq!(deflate_count, 1, "expected exactly one deflate PATCH");
+    assert_eq!(deflate_count, 2, "each activation must confirm deflation");
+    assert_eq!(ps.iter().filter(|r| r.path == "/vm").count(), 1);
 }
 
 #[tokio::test]
 async fn unpark_without_park_is_noop() {
-    let mut api = MockLifecycleApi::new(std::collections::VecDeque::new(), None);
-    let mut is_parked = false;
-    let (_state_tx, state_rx) = watch::channel(SandboxState::Running);
-
-    unpark_inner(
-        &mut is_parked,
-        2048,
-        api.socket_path(),
-        state_rx.clone(),
-        "fresh",
-    )
-    .await
-    .unwrap();
-
-    assert!(!is_parked);
-    assert!(patches(&api.drain_requests()).is_empty());
+    let mut sandbox = test_sandbox_with_state(SandboxState::Running);
+    sandbox.unpark().await.unwrap();
+    sandbox.unpark().await.unwrap();
+    assert!(!sandbox.is_parked);
+    assert_eq!(sandbox.park_coordinator.state(), CoordinatorState::Open);
 }
 
 #[tokio::test]
@@ -6649,13 +6706,14 @@ async fn park_unpark_park_cycle() {
             MockBalloonStatsReply::Ok(MockBalloonStats::new(1024, 1024)),
             MockBalloonStatsReply::Ok(MockBalloonStats::new(0, 0)),
             MockBalloonStatsReply::Ok(MockBalloonStats::new(1024, 1024)),
+            MockBalloonStatsReply::Ok(MockBalloonStats::new(0, 0)),
         ]),
     );
     let mut is_parked = false;
     let (_state_tx, state_rx) = watch::channel(SandboxState::Running);
 
     // Turn 1: park.
-    park_inner(&mut is_parked, 2048, api.socket_path(), "cycle")
+    let outcome = park_inner(&mut is_parked, 2048, api.socket_path(), "cycle")
         .await
         .unwrap();
     assert!(is_parked);
@@ -6664,6 +6722,7 @@ async fn park_unpark_park_cycle() {
     unpark_inner(
         &mut is_parked,
         2048,
+        Some(&outcome),
         api.socket_path(),
         state_rx.clone(),
         "cycle",
@@ -6677,9 +6736,8 @@ async fn park_unpark_park_cycle() {
         .unwrap();
     assert!(is_parked);
 
-    // PATCH sequence: inflate, pause, resume, deflate, inflate, pause.
-    // Filter to only PATCHes (ignoring GET /balloon/statistics from
-    // wait_for_balloon and the unpark deflation wait).
+    // PATCH sequence: inflate, deflate, pause, resume, inflate, deflate, pause.
+    // Statistics are only needed during park.
     let reqs = api.drain_requests();
     let ps = patches(&reqs);
     let ops: Vec<(&str, Option<u64>)> = ps
@@ -6695,10 +6753,11 @@ async fn park_unpark_park_cycle() {
         ops,
         vec![
             ("/balloon", Some(1024)), // park 1: inflate
+            ("/balloon", Some(0)),    // park 1: deflate
             ("/vm", None),            // park 1: pause
             ("/vm", None),            // unpark: resume
-            ("/balloon", Some(0)),    // unpark: deflate
             ("/balloon", Some(1024)), // park 2: inflate
+            ("/balloon", Some(0)),    // park 2: deflate
             ("/vm", None),            // park 2: pause
         ],
         "unexpected PATCH sequence: {ops:?}"
@@ -6707,6 +6766,7 @@ async fn park_unpark_park_cycle() {
 
 #[tokio::test]
 async fn park_balloon_failure_leaves_flag_false() {
+    let (_state_tx, state_rx) = watch::channel(SandboxState::Running);
     // Balloon inflate fails (400). Pause should not be attempted.
     let mut api = MockLifecycleApi::new(std::collections::VecDeque::from(vec![400]), None);
     let mut is_parked = false;
@@ -6722,6 +6782,7 @@ async fn park_balloon_failure_leaves_flag_false() {
                 guest: Arc::new(tokio::sync::Mutex::new(None)),
                 handoff: None,
                 memory_policy: ParkMemoryPolicy::Reclaim,
+                state_rx: state_rx.clone(),
             },
             SandboxFinalExecParkSubstageEvents::new(Some(&mut observer)),
         )
@@ -6744,25 +6805,17 @@ async fn park_balloon_failure_leaves_flag_false() {
             Some(SandboxFinalExecParkSubstageOutcome::Failed),
         )]
     );
-    // A follow-up unpark must be a clean no-op because is_parked is false.
-    let (_state_tx, state_rx) = watch::channel(SandboxState::Running);
-    unpark_inner(
-        &mut is_parked,
-        2048,
-        api.socket_path(),
-        state_rx.clone(),
-        "test-park-fail",
-    )
-    .await
-    .unwrap();
-    assert!(!is_parked);
+    // A failed physical transition is rejected by the owning coordinator;
+    // the incomplete sandbox cannot be published or reactivated.
 }
 
 #[tokio::test]
 async fn park_retry_after_failure_succeeds() {
-    // First park: balloon fails (400). Second park: balloon OK (204), pause OK (204).
-    let mut api =
-        MockLifecycleApi::new(std::collections::VecDeque::from(vec![400, 204, 204]), None);
+    // First park: balloon fails (400). Second park: inflate, deflate and pause succeed.
+    let mut api = MockLifecycleApi::new(
+        std::collections::VecDeque::from(vec![400, 204, 204, 204]),
+        None,
+    );
     let mut is_parked = false;
 
     let first = park_inner(&mut is_parked, 2048, api.socket_path(), "retry").await;
@@ -6776,12 +6829,14 @@ async fn park_retry_after_failure_succeeds() {
 
     let reqs = api.drain_requests();
     let ps = patches(&reqs);
-    // First attempt: balloon(400). Second: balloon(204) + pause(204).
-    assert_eq!(ps.len(), 3);
+    // First attempt: balloon(400). Second: inflate(204) + deflate(204) + pause(204).
+    assert_eq!(ps.len(), 4);
     assert_eq!(ps[0].path, "/balloon");
     assert_eq!(ps[1].path, "/balloon");
-    assert_eq!(ps[2].path, "/vm");
-    assert!(ps[2].body.contains("Paused"));
+    assert_eq!(ps[2].path, "/balloon");
+    assert_eq!(mock_request_body_json(ps[2])["amount_mib"], 0);
+    assert_eq!(ps[3].path, "/vm");
+    assert!(ps[3].body.contains("Paused"));
 }
 
 #[tokio::test]
@@ -6799,6 +6854,7 @@ async fn unpark_retry_after_failure_succeeds() {
     let first = unpark_inner(
         &mut is_parked,
         2048,
+        None,
         api.socket_path(),
         state_rx.clone(),
         "retry",
@@ -6810,6 +6866,7 @@ async fn unpark_retry_after_failure_succeeds() {
     unpark_inner(
         &mut is_parked,
         2048,
+        None,
         api.socket_path(),
         state_rx.clone(),
         "retry",
@@ -6875,6 +6932,7 @@ async fn unpark_resume_http_400_propagates_as_idle_transition() {
     let result = unpark_inner(
         &mut is_parked,
         2048,
+        None,
         api.socket_path(),
         state_rx.clone(),
         "resume-fail",
@@ -6911,6 +6969,7 @@ async fn unpark_retry_after_partial_failure_resumes_idempotently() {
     let first = unpark_inner(
         &mut is_parked,
         2048,
+        None,
         api.socket_path(),
         state_rx.clone(),
         "idem",
@@ -6923,6 +6982,7 @@ async fn unpark_retry_after_partial_failure_resumes_idempotently() {
     unpark_inner(
         &mut is_parked,
         2048,
+        None,
         api.socket_path(),
         state_rx.clone(),
         "idem",
@@ -6946,6 +7006,7 @@ async fn park_waits_for_balloon_before_pause() {
                 release: Arc::clone(&release_ready_response),
                 stats: MockBalloonStats::new(target_mib, target_mib),
             },
+            MockBalloonStatsReply::Ok(MockBalloonStats::new(0, 0)),
         ]),
     );
     let socket_path = api.socket_path().to_path_buf();
@@ -6996,13 +7057,18 @@ async fn park_waits_for_balloon_before_pause() {
         .iter()
         .filter(|request| request.method == "GET" && request.path == "/balloon/statistics")
         .count();
-    assert_eq!(stats_gets, 2);
+    assert_eq!(
+        stats_gets, 3,
+        "two inflation samples and one exact-zero deflation sample"
+    );
 
     let ps = patches(&reqs);
-    assert_eq!(ps.len(), 2);
+    assert_eq!(ps.len(), 3);
     assert_eq!(ps[0].path, "/balloon");
-    assert_eq!(ps[1].path, "/vm");
-    assert!(ps[1].body.contains("Paused"));
+    assert_eq!(ps[1].path, "/balloon");
+    assert_eq!(mock_request_body_json(ps[1])["amount_mib"], 0);
+    assert_eq!(ps[2].path, "/vm");
+    assert!(ps[2].body.contains("Paused"));
 }
 
 #[tokio::test]
@@ -7012,9 +7078,15 @@ async fn park_pauses_when_balloon_is_within_settle_tolerance() {
     // memory. That is close enough to park without waiting for the full
     // timeout and emitting a WARN.
     let balloon_actual = Arc::new(AtomicU32::new(4096 - balloon::MIN_GUEST_MIB - 39));
-    let mut api = MockLifecycleApi::new(
+    let mut api = MockLifecycleApi::with_stats(
         std::collections::VecDeque::new(),
-        Some(Arc::clone(&balloon_actual)),
+        std::collections::VecDeque::from([
+            MockBalloonStatsReply::Ok(MockBalloonStats::new(
+                4096 - balloon::MIN_GUEST_MIB,
+                balloon_actual.load(Ordering::Relaxed),
+            )),
+            MockBalloonStatsReply::Ok(MockBalloonStats::new(0, 0)),
+        ]),
     );
     let mut is_parked = false;
 
@@ -7029,15 +7101,17 @@ async fn park_pauses_when_balloon_is_within_settle_tolerance() {
         .filter(|r| r.method == "GET" && r.path == "/balloon/statistics")
         .count();
     assert_eq!(
-        stats_gets, 1,
-        "near-target balloon should settle on the first stats poll"
+        stats_gets, 2,
+        "near-target balloon should settle on the first inflation poll, then confirm deflation"
     );
 
     let ps = patches(&reqs);
-    assert_eq!(ps.len(), 2, "expected balloon inflate + vm pause");
+    assert_eq!(ps.len(), 3, "expected balloon inflate + deflate + vm pause");
     assert_eq!(ps[0].path, "/balloon");
-    assert_eq!(ps[1].path, "/vm");
-    assert!(ps[1].body.contains("Paused"));
+    assert_eq!(ps[1].path, "/balloon");
+    assert_eq!(mock_request_body_json(ps[1])["amount_mib"], 0);
+    assert_eq!(ps[2].path, "/vm");
+    assert!(ps[2].body.contains("Paused"));
 }
 
 #[tokio::test]
@@ -7046,9 +7120,15 @@ async fn park_pauses_when_balloon_deficit_equals_settle_tolerance() {
     let balloon_actual = Arc::new(AtomicU32::new(
         target_mib - balloon_settle_tolerance_mib(target_mib),
     ));
-    let mut api = MockLifecycleApi::new(
+    let mut api = MockLifecycleApi::with_stats(
         std::collections::VecDeque::new(),
-        Some(Arc::clone(&balloon_actual)),
+        std::collections::VecDeque::from([
+            MockBalloonStatsReply::Ok(MockBalloonStats::new(
+                4096 - balloon::MIN_GUEST_MIB,
+                balloon_actual.load(Ordering::Relaxed),
+            )),
+            MockBalloonStatsReply::Ok(MockBalloonStats::new(0, 0)),
+        ]),
     );
     let mut is_parked = false;
 
@@ -7063,15 +7143,17 @@ async fn park_pauses_when_balloon_deficit_equals_settle_tolerance() {
         .filter(|r| r.method == "GET" && r.path == "/balloon/statistics")
         .count();
     assert_eq!(
-        stats_gets, 1,
-        "exact tolerance boundary should settle on the first stats poll"
+        stats_gets, 2,
+        "exact tolerance boundary should settle on the first inflation poll, then confirm deflation"
     );
 
     let ps = patches(&reqs);
-    assert_eq!(ps.len(), 2, "expected balloon inflate + vm pause");
+    assert_eq!(ps.len(), 3, "expected balloon inflate + deflate + vm pause");
     assert_eq!(ps[0].path, "/balloon");
-    assert_eq!(ps[1].path, "/vm");
-    assert!(ps[1].body.contains("Paused"));
+    assert_eq!(ps[1].path, "/balloon");
+    assert_eq!(mock_request_body_json(ps[1])["amount_mib"], 0);
+    assert_eq!(ps[2].path, "/vm");
+    assert!(ps[2].body.contains("Paused"));
 }
 
 #[tokio::test]
@@ -7080,7 +7162,10 @@ async fn park_pauses_when_balloon_reclaim_is_pressure_limited() {
     let stats = MockBalloonStats::new(target_mib, 800).with_memory(mib(64), mib(128), mib(2048));
     let mut api = MockLifecycleApi::with_stats(
         std::collections::VecDeque::new(),
-        std::collections::VecDeque::from([MockBalloonStatsReply::Ok(stats)]),
+        std::collections::VecDeque::from([
+            MockBalloonStatsReply::Ok(stats),
+            MockBalloonStatsReply::Ok(MockBalloonStats::new(0, 0)),
+        ]),
     );
     let mut is_parked = false;
 
@@ -7107,15 +7192,17 @@ async fn park_pauses_when_balloon_reclaim_is_pressure_limited() {
         .filter(|r| r.method == "GET" && r.path == "/balloon/statistics")
         .count();
     assert_eq!(
-        stats_gets, 1,
-        "pressure-limited balloon should settle on the first stats poll"
+        stats_gets, 2,
+        "pressure-limited balloon should settle on the first inflation poll, then confirm deflation"
     );
 
     let ps = patches(&reqs);
-    assert_eq!(ps.len(), 2, "expected balloon inflate + vm pause");
+    assert_eq!(ps.len(), 3, "expected balloon inflate + deflate + vm pause");
     assert_eq!(ps[0].path, "/balloon");
-    assert_eq!(ps[1].path, "/vm");
-    assert!(ps[1].body.contains("Paused"));
+    assert_eq!(ps[1].path, "/balloon");
+    assert_eq!(mock_request_body_json(ps[1])["amount_mib"], 0);
+    assert_eq!(ps[2].path, "/vm");
+    assert!(ps[2].body.contains("Paused"));
 }
 
 #[tokio::test]
@@ -7166,6 +7253,7 @@ async fn park_rejects_severe_balloon_retention_after_pausing() {
 
 #[tokio::test]
 async fn severe_park_collects_terminal_guest_memory_before_pause() {
+    let (_state_tx, state_rx) = watch::channel(SandboxState::Running);
     let target_mib = 2048 - balloon::MIN_GUEST_MIB;
     let mut api = MockLifecycleApi::with_stats(
         std::collections::VecDeque::new(),
@@ -7189,6 +7277,7 @@ async fn severe_park_collects_terminal_guest_memory_before_pause() {
                 guest,
                 handoff: None,
                 memory_policy: ParkMemoryPolicy::Reclaim,
+                state_rx: state_rx.clone(),
             },
             SandboxFinalExecParkSubstageEvents::new(None),
         )
@@ -7236,12 +7325,14 @@ async fn severe_park_collects_terminal_guest_memory_before_pause() {
 
 #[tokio::test]
 async fn reusable_park_does_not_request_terminal_guest_memory() {
+    let (_state_tx, state_rx) = watch::channel(SandboxState::Running);
     let target_mib = 2048 - balloon::MIN_GUEST_MIB;
     let mut api = MockLifecycleApi::with_stats(
         std::collections::VecDeque::new(),
-        std::collections::VecDeque::from([MockBalloonStatsReply::Ok(MockBalloonStats::new(
-            target_mib, target_mib,
-        ))]),
+        std::collections::VecDeque::from([
+            MockBalloonStatsReply::Ok(MockBalloonStats::new(target_mib, target_mib)),
+            MockBalloonStatsReply::Ok(MockBalloonStats::new(0, 0)),
+        ]),
     );
     let (guest, guest_stream) = connected_mock_guest().await;
     let retained_guest = Arc::clone(&guest);
@@ -7258,6 +7349,7 @@ async fn reusable_park_does_not_request_terminal_guest_memory() {
                 guest,
                 handoff: None,
                 memory_policy: ParkMemoryPolicy::Reclaim,
+                state_rx: state_rx.clone(),
             },
             SandboxFinalExecParkSubstageEvents::new(Some(&mut observer)),
         )
@@ -7289,6 +7381,7 @@ async fn reusable_park_does_not_request_terminal_guest_memory() {
                 true,
                 Some(SandboxFinalExecParkSubstageOutcome::TargetReached),
             ),
+            (SandboxFinalExecParkSubstage::BalloonDeflate, true, None),
             (SandboxFinalExecParkSubstage::VcpuPause, true, None),
         ]
     );
@@ -7296,6 +7389,7 @@ async fn reusable_park_does_not_request_terminal_guest_memory() {
 
 #[tokio::test]
 async fn park_small_vm_pause_failure_leaves_flag_false() {
+    let (_state_tx, state_rx) = watch::channel(SandboxState::Running);
     // A minimum-size VM does no balloon work and only pauses.
     let api = MockLifecycleApi::new(std::collections::VecDeque::from(vec![500]), None);
     let mut is_parked = false;
@@ -7311,6 +7405,7 @@ async fn park_small_vm_pause_failure_leaves_flag_false() {
                 guest: Arc::new(tokio::sync::Mutex::new(None)),
                 handoff: None,
                 memory_policy: ParkMemoryPolicy::Reclaim,
+                state_rx: state_rx.clone(),
             },
             SandboxFinalExecParkSubstageEvents::new(Some(&mut observer)),
         )

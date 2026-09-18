@@ -1,17 +1,232 @@
 # External MCP server
 
 The Hono API exposes a Streamable HTTP resource server at `/mcp`. It uses the
-official MCP SDK and serves `get_indicators`, a read-only tool backed by the same
-user/organization projection as the app's indicators endpoint. This is the first
-slice of #34890, tracked by #34931. Thread history and mutations are separate slices.
+official MCP SDK and serves `list_chat_threads`, `get_chat_thread`,
+`get_chat_messages` and `search_chat_messages`. These
+read-only tools query current user/organization-owned conversations. The OAuth
+foundation shipped in #34931; discovery and current context are tracked by
+#34932 under #34890. Message history is delivered in #34933 and search in
+#35100; mutations are separate slices. Results include both structured content and a
+JSON text representation.
 
-`get_indicators` accepts an empty object and returns `agents` and `threads` maps.
-Each entry is `active` or `unread`; absent entries have no indicator. These sparse
-maps are not a list of all runs or an authoritative terminal run status. Results
-include both structured content and a JSON text representation.
-Active threads are complete; unread threads use the existing projection's latest
-50 terminal markers from the last seven days. An unread agent indicator takes
-precedence when another thread of that agent is active.
+## Conversation discovery
+
+`list_chat_threads` accepts these optional arguments:
+
+| Argument          | Meaning                                                                                       |
+| ----------------- | --------------------------------------------------------------------------------------------- |
+| `agentId`         | Restrict to one Agent UUID.                                                                   |
+| `title`           | Case-insensitive literal substring, up to 200 characters. `%` and `_` are literal characters. |
+| `since`, `before` | ISO timestamps filtering last-message time: inclusive lower and exclusive upper bounds.       |
+| `activity`        | `active` or `idle`, using the canonical queued/pending/running projection.                    |
+| `unread`          | Filter the canonical retained-watermark unread state.                                         |
+| `limit`           | Page size, default 20 and maximum 50.                                                         |
+| `cursor`          | Continuation from `nextCursor`; keep the same filters.                                        |
+
+For example, call `list_chat_threads` with `{"title":"release","limit":10}`,
+then pass a result's `threadId` to `get_chat_thread` as
+`{"threadId":"<thread UUID>"}`. Discovery returns `threads`, `nextCursor` and
+`unreadCoverage`; detail returns `thread` and `unreadCoverage`.
+
+Each thread includes its current title, Agent identity/name, selected and
+effective model metadata, timestamps, authenticated App URL, queued/pending/
+running activity flags and unread state. Titles are bounded to 500 Unicode
+characters, with an explicit truncation flag. Agent names retain their existing
+256-character storage bound. Private drafts, Agent
+instructions, message content and provider credentials are excluded.
+
+Model metadata is a read-only view of current policy. A null `effectiveModel`
+means no usable policy route was resolved; it does not invent a default or
+repair stored settings. `admission: "checked_on_send"` means credentials, quota,
+policy and other execution checks still apply when a future message is sent.
+The selected thread model does not change an already-running execution.
+
+Pagination orders by last-message time descending, then thread ID descending.
+The opaque cursor preserves database timestamp precision, expires after 24
+hours and is authenticated and bound to the user, selected organization and
+filters. Invalid or expired cursors require restarting without a cursor.
+Every page rechecks current ownership. This is live pagination: new activity
+can move a thread ahead of the cursor, and edits/deletions can change matches.
+Start a fresh traversal when a complete refreshed collection is required; the
+cursor is not a global metadata snapshot or the App's pinned-sidebar order.
+
+Filters run in SQL before the page limit. An owner/recency index supports
+ordered reads, and read transactions enforce a three-second statement deadline.
+Selective filters can still inspect many candidates; a deadline failure returns
+a tool error, not a partial result. Retry or narrow the Agent/time filters.
+
+`unreadCoverage` is `retained_terminal_events_and_native_deliveries`. It combines
+retained run terminal events with durable native Morning Brief deliveries,
+compares the latest watermark to the user's read cursor, and suppresses unread
+while a queued/pending/running run with a trigger source exists. It has no sparse
+50-thread/seven-day cap, but terminal-event retention means it is not an
+archive-complete unread history. Missing activity does not prove a run succeeded;
+`unread: false` does not prove every historical result was read.
+
+Listing and reading never mark a thread read, change recency or reconcile model
+settings. The MCP catalog replaces `get_indicators` with these two tools; the
+first-party indicators API and its existing sparse semantics remain unchanged.
+
+## Message history
+
+`get_chat_messages` reconstructs the current canonical history from its verified
+schema-7 gzip snapshot and PostgreSQL tail in one read-only repeatable-read
+transaction. It checks thread ownership and the selected Agent organization
+before accessing archive storage. Reading does not change read markers, recency,
+run state or artifact visibility. It reuses the App's semantic visibility,
+replacement/revocation and run-turn ordering rules. Output contains ordinary
+visible user messages and assistant message events, including work the App may
+collapse. Thinking, usage, bookkeeping and hidden `additional_info` are excluded.
+Replaced user messages preserve the original submission time.
+
+| Argument   | Meaning                                                                                                                        |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `threadId` | Required conversation UUID from discovery.                                                                                     |
+| `runId`    | Optional filter to visible messages associated with this run.                                                                  |
+| `around`   | Initial context anchor containing a genuine `eventId`, `seqId`, or both. Both must identify the same visible event.            |
+| `limit`    | Maximum messages per page, default 20, maximum 50; byte limits can produce fewer.                                              |
+| `cursor`   | An `olderCursor`, `newerCursor`, or message's `nextContentCursor`. Keep thread, run filter and limit unchanged; omit `around`. |
+
+For example, begin with `{"threadId":"<thread UUID>","limit":20}`. The latest
+page is returned in conversation order. Follow `olderCursor` to read earlier
+messages. To inspect a message-search hit, use
+`{"threadId":"<thread UUID>","around":{"seqId":123},"limit":10}`. In each hit,
+`ref.seqId` is a sequence number; `ref.eventId` is its canonical event ID. A revoked, replaced, absent or
+run-filtered anchor returns an explicit unavailable-reference error. Around
+pages expose older and newer continuations where applicable.
+
+Every message includes `ref: {threadId,eventId,seqId}`, `role`, `eventType`,
+`createdAt`, nullable `runId`, visible `text`, `files` and the actual authenticated
+conversation `url`. Files retain original `fileId`, filename and content type,
+plus `annotatedFileId` when present. Assistant Markdown keeps its original
+artifact links. Neither an event reference nor a file/artifact identifier grants
+access; normal owner authorization still applies. No per-message URL or public
+artifact copy is invented.
+
+Messages can be segmented. A response segment contains at most 8,192 UTF-16 text
+units without splitting a surrogate pair, eight file records and 64 KiB of
+serialized message data. `textOffset` and `fileOffset` identify the segment's
+starting positions; `textComplete` and `filesComplete` identify its completion.
+Whenever either is false, follow `nextContentCursor` through the same tool and
+concatenate text and files in offset order. Content continuation returns one
+message segment and no history-page cursors; retain the original page's cursors
+separately. A large attachment can occupy a segment on its own; its text resumes
+from the unchanged text offset in later segments. Oversized indivisible metadata
+fails explicitly. Complete structured responses are capped at 160 KiB,
+reserving space for the SDK's duplicate text representation and JSON escaping
+within a 512 KiB tool result.
+
+Signed cursors bind the user, selected organization, thread, run filter, page
+size and operation, and expire 24 hours after the initial page. History cursors
+fingerprint visible content and ordering: visible changes require restarting
+without the cursor, optionally using a still-visible `around` reference.
+Storage-only snapshot advancement and invisible bookkeeping preserve them.
+Content cursors fingerprint only their target message, so unrelated appends do
+not prevent finishing a long message. Changed or hidden targets require a fresh
+read. All continuations recheck current authorization.
+
+### Supported history limits
+
+This initial reader reconstructs the complete supported history on **each**
+request; it does not offer indexed random access. Limits are cumulative:
+
+- 8 MiB compressed archive download.
+- 32 MiB decoded archive plus conservatively measured PostgreSQL tail. Tail
+  payload text sizes are checked in bounded metadata pages before bodies load.
+- 50,000 canonical event rows, including hidden events.
+- Three seconds per SQL statement and a 15-second caller-visible operation
+  budget, including waiting for a database connection. Cancellation propagates
+  to storage reads. PostgreSQL acquisition and transaction cleanup are not
+  themselves abortable: if acquisition completes after cancellation, the
+  transaction rolls back before reading history. An already-running statement
+  finishes or reaches its bounded deadline before connection release.
+
+Histories exceeding these limits return an explicit resource error, never an
+apparently complete prefix. Lowering `limit` or adding `runId` does not avoid full
+reconstruction and cannot make an oversized history fit. Missing/corrupt archive
+storage returns an unavailable error, not an empty conversation. Repeated event
+IDs in the combined archive and tail also return an unavailable error until the
+canonical snapshot writer repairs the identities; reads never deduplicate or
+rewrite them. Empty accessible threads return an empty successful page.
+Invalid/expired cursors, changed views, unavailable references and inaccessible
+threads have separate recovery messages.
+
+Synthetic measurements on Node 24.21 used the actual bounded reader, semantic
+projection and cursor generation with local PostgreSQL and simulated R2: 25,000
+events, 30,749,912 decoded bytes, 7,804,275 compressed bytes, including one 2 MiB
+message. Latest-page, older-page and content-continuation reads took 1,142 ms,
+958 ms and 779 ms respectively. Process RSS was 650 MB before reads (including
+Vitest and fixture generation), and 688/707/810 MB after those reads. This is
+not an isolated per-request allocation measurement, a production distribution
+sample, or an OAuth/network/concurrency benchmark. Byte caps bound source data,
+not absolute process allocation. Larger supported histories would require
+measured justification and a separate indexed/chunked history design.
+
+## Message search
+
+`search_chat_messages` finds indexed visible user and assistant text, including
+retained messages whose live database events have been archived. It accepts:
+
+| Argument              | Meaning                                                                                                                             |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `query`               | Required, trimmed, 1–200 UTF-16 units. Whole words are case-insensitive; CJK phrases are literal substrings. All groups must match. |
+| `threadId`, `agentId` | Optional UUID filters.                                                                                                              |
+| `role`                | Optional `user` or `assistant`.                                                                                                     |
+| `since`, `before`     | UTC ISO timestamps, up to six fractional digits; inclusive lower/exclusive upper source-event bounds.                               |
+| `limit`               | Default 20, maximum 50.                                                                                                             |
+| `cursor`              | Follow `nextCursor` with the identical query, filters and limit.                                                                    |
+
+For example, search with `{"query":"上海发布","limit":10}`. For each match,
+pass `ref.threadId` as `threadId` and `{eventId: ref.eventId, seqId: ref.seqId}`
+as `around` to `get_chat_messages`. Search returns a bounded excerpt, its UTF-16
+offset and `hasBefore`/`hasAfter`, thread title/truncation, current Agent, role,
+nullable run ID, source-event timestamp, authenticated conversation URL and the
+real canonical `ref`. Excerpts contain at most 1,000 UTF-16 units and do not split
+surrogate pairs. Use the message reader for complete text/files. This is lexical
+text search, not semantic search or attachment-content indexing. Punctuation-only
+queries and single-character CJK groups return a useful unsupported-query error.
+
+The durable search projection supplies candidates, never final visibility.
+Current owner, organization, Agent and request filters are checked before the
+SQL limit. The bounded candidates are verified against canonical archive plus
+tail history using the message reader's visibility rules and text fingerprints.
+Revoked, replaced, hidden or changed candidates are skipped. A missing/corrupt
+archive fails the whole call instead of returning a successful partial page.
+Search does not advance read state, run work, update projections or repair data.
+
+Order is indexed source-event time descending, then thread UUID and sequence descending;
+cursor ordering preserves the stored PostgreSQL microseconds. The live JavaScript
+projector stores millisecond dates; historical SQL-produced rows may have finer
+precision. Replacement-event timestamps
+can differ from the original input-submission time displayed by the message
+reader. Signed cursors bind the user, organization, query, every filter and page
+size and expire 24 hours after the initial page. Every request reauthorizes.
+Indexing is asynchronous and pages read live state, not a global snapshot. A
+newly indexed match can fall ahead of an existing cursor; restart for refreshed
+results. No total count, completeness, indexing-delay bound or global watermark
+is promised. For recently sent content, read `get_chat_messages` using the known
+thread ID; an empty search does not prove send failure or that a topic was never
+discussed. References can become stale after a result is returned; the context
+reader then reports the unavailable anchor.
+
+A call processes at most 100 candidates and reads one additional metadata row to
+detect continuation. `nextCursor` means more indexed candidates remain, not that
+another visible match is guaranteed. Stale candidates consume scan budget; an
+empty page can carry a cursor. `scanLimited: true` reports the candidate cap with
+more candidates remaining. Follow the cursor until it is null. Byte-limited
+pages never advance past an undelivered match.
+
+Canonical validation shares a **single** 32 MiB decoded/database-tail,
+50,000-event and 15-second budget across all encountered threads, with the
+reader's 8 MiB compressed limit per archive and three-second SQL deadline.
+Each distinct thread is reconstructed once per call. Index text fingerprints
+are calculated only after the candidate limit, and bodies over 32 MiB are
+rejected before hashing. Structured pages are capped at 160 KiB, keeping the
+SDK's duplicate text/JSON output within 512 KiB. Resource errors recommend
+narrowing thread/Agent/time filters or retrying; reducing page size cannot make
+one oversized history readable. These source-size caps are not absolute process
+memory limits. Existing lexical indexes are reused; no new index or migration
+is introduced.
 
 ## Configuration and authorization
 
@@ -79,7 +294,7 @@ clients can request them in one consent flow without relying on incremental
 authorization support.
 
 Only `user:org:read` and `okou:chat:read` are required for the current endpoint and
-`get_indicators`. Tokens with just these two scopes remain valid. A
+all four conversation read tools. Tokens with just these two scopes remain valid. A
 `403 insufficient_scope` challenge names those required scopes. Each future tool
 must enforce its own permissions; listing a scope does not
 implement or authorize that operation. A tool argument cannot select or override
@@ -175,6 +390,7 @@ Before enabling broader access, record a generic MCP client/Inspector check
 against a real hosted preview or staging endpoint, including complete JSON and
 SSE response delivery. Then record basic OAuth, discovery and indicators results
 for Claude, ChatGPT, Claude Code and Codex, with client version/account conditions.
-Local HTTP tests do not establish hosted-client reachability. The four-client
-matrix for the full tool set remains #34936; provider and first-tool acceptance
-for #34931 remains open until supported by actual evidence.
+Local HTTP tests do not establish hosted-client reachability. OAuth foundation
+and discovery shipped separately in #34931 and #34932. The client matrix for the
+full tool set remains #34936; the new message-reader tests do not establish that
+broader hosted acceptance.

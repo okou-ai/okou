@@ -17,7 +17,6 @@ import type {
   SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -535,9 +534,6 @@ async function openLimitedModelAvailability() {
   await setupPage({
     context,
     path: RUN_PATH,
-    featureSwitches: {
-      [FeatureSwitchKey.Effort]: false,
-    },
   });
 
   await readyChat();

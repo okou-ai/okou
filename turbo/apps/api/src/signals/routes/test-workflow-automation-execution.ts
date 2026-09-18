@@ -31,6 +31,9 @@ const dispatchBody$ = bodyResultOf(
 const interruptionBody$ = bodyResultOf(
   testWorkflowAutomationExecutionContract.interruptResultEmailCallback,
 );
+const retainBody$ = bodyResultOf(
+  testWorkflowAutomationExecutionContract.retainMorningBriefGenerations,
+);
 
 const executeTestWorkflowAutomation$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -256,8 +259,14 @@ const retainMorningBriefGenerations$ = command(
     if (!isTestEndpointAllowed(get(request$))) {
       return testEndpointNotFoundResponse();
     }
+    const body = await get(retainBody$);
+    signal.throwIfAborted();
+    if (!body.ok) {
+      return body.response;
+    }
     const purged = await set(
       executeMorningBriefGenerationRetentionWork$,
+      body.data.owners,
       signal,
     );
     signal.throwIfAborted();

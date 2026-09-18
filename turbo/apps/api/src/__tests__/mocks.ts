@@ -813,8 +813,8 @@ vi.mock("@aws-sdk/client-s3", () => {
       apiTestMocks.s3.clientConfig(config);
     }
 
-    send(command: unknown): Promise<unknown> {
-      return apiTestMocks.s3.send(command);
+    send(...args: unknown[]): Promise<unknown> {
+      return apiTestMocks.s3.send(...args);
     }
   }
 

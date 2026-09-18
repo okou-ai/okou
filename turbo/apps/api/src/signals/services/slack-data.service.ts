@@ -277,6 +277,48 @@ type SlackUserBinding =
  * `slackUserInstallation` below is this same read plus the decryption, so the
  * two can never disagree about what "connected" means.
  */
+/**
+ * Hold the two rows a native Slack binding is decided by, for this transaction.
+ *
+ * `loadSlackUserBinding` is a plain read, so an install, uninstall, connect,
+ * disconnect or rebinding may commit between it and the caller's COMMIT. A
+ * caller that acts on the binding takes these rows first: `FOR SHARE` is the
+ * weakest mode that conflicts with the `FOR NO KEY UPDATE` an ordinary `UPDATE`
+ * takes and with the `FOR UPDATE` a `DELETE` takes, so either the change is
+ * already visible to the read, or it waits for this transaction.
+ *
+ * The organization installation is taken before the member connection because
+ * the connection is resolved through the installation's workspace; a row that
+ * does not exist yet cannot be held, so this makes an existing binding stable
+ * rather than reserving a future one. It matches `loadSlackUserBinding` exactly
+ * and is deliberately not a second definition of "connected".
+ */
+export async function lockSlackUserBindingRows(
+  db: Pick<ReadonlyDb, "select">,
+  args: { readonly orgId: string; readonly userId: string },
+): Promise<void> {
+  const [installation] = await db
+    .select({ slackWorkspaceId: slackOrgInstallations.slackWorkspaceId })
+    .from(slackOrgInstallations)
+    .where(eq(slackOrgInstallations.orgId, args.orgId))
+    .limit(1)
+    .for("share");
+  if (!installation) {
+    return;
+  }
+  await db
+    .select({ id: slackOrgConnections.id })
+    .from(slackOrgConnections)
+    .where(
+      and(
+        eq(slackOrgConnections.userId, args.userId),
+        eq(slackOrgConnections.slackWorkspaceId, installation.slackWorkspaceId),
+      ),
+    )
+    .limit(1)
+    .for("share");
+}
+
 export async function loadSlackUserBinding(
   db: Pick<ReadonlyDb, "select">,
   args: { readonly orgId: string; readonly userId: string },

@@ -112,6 +112,19 @@ and has no signed-URL expiry. Each request validates the exact Run, user,
 organization, owner epoch, intent generation and claimed lease; cancellation
 fences later chunks.
 
+Deferred preparation remains owned by the same Guest execution controls that
+own a running CLI. Before admitting the first request, while awaiting every
+response body or later chunk, after collecting the final bytes and immediately
+before child spawn, the Guest observes the production user-cancellation token,
+the original absolute execution deadline and terminal heartbeat status. It does
+not reset the execution clock, add grace, retry with another credential or
+detach an HTTP task. If a control outcome wins, including when response readiness
+is simultaneous, the Guest closes active input, drops the in-flight body, removes
+the handoff and launch-payload files, reports the existing typed control outcome
+and starts no child. The handoff endpoint's own bounded request timeout and
+captured deferred deadline remain additional ceilings, not substitutes for those
+execution controls.
+
 The Guest bounds and assembles the chunks before spawning the CLI, then writes
 the exact serialized handoff to a 0600 run-scoped file. The child receives only
 `OKOU_PI_DEFERRED_HANDOFF_FILE`; `OKOU_API_TOKEN` remains Guest-private and the
@@ -145,11 +158,12 @@ Both bounds are applied before a continuation can become executable: immutable
 object publication rejects an oversized history, demand admission re-checks the
 aggregate once both objects are durable, and materialization checks it again
 before the job row exists. The same schema validates durable objects when they
-are read. No migration is required for that read-side tightening because no
-production publisher is enabled and `piDeferredSandbox` remains off, including
-for staff. This credential repair does not enable that writer. An unsupported
-continuation is rejected or finalized truthfully; already-incurred inference
-usage, diagnostic locators and pending tool identity are retained, and history
+are read. No migration is required for that read-side tightening. The switch
+default remains off and this correction does not enable its writer, but a default
+does not establish every organization or staff override; historical production
+attempts under #34795 mean retained v4 obligations must still be accounted for.
+An unsupported continuation is rejected or finalized truthfully; already-incurred
+inference usage, diagnostic locators and pending tool identity are retained, and history
 is never truncated nor the original prompt or provider request replayed. A
 producer calling the demand interface observes `false` and an already terminal
 Run rather than queued executable work.
@@ -207,12 +221,13 @@ the receipt and the claim barrier for another cycle, and capacity is never freed
 without a matched proof. A missing, malformed or unknown outcome fails response
 decoding and retains the same responsibility; it cannot be converted to stale.
 
-There is no old-response fallback for this non-GA path. No production publisher
-is enabled and `piDeferredSandbox` remains off, so an old API cannot produce a
-v4 job for a new Runner and old Runners remain excluded from v4 jobs. The
-capable API, Runner/Guest and commit-addressed CLI become one reader floor
-before any activation; after activation, existing v4 obligations must drain
-before rollback below that floor.
+There is no old-response fallback for this non-GA path. New admission remains
+default-off and the user-reported shutdown is the current operational boundary;
+neither fact proves that every override is off or erases obligations retained
+from historical production attempts. Old Runners remain excluded from v4 jobs.
+The capable API, Runner/Guest and commit-addressed CLI form one reader floor.
+Any retained v4 intents, leases, claims and release receipts must drain before
+rollback below that floor.
 
 Cleanup identity is independent of a still-live execution binding. A threadless
 private maintenance Run is otherwise discoverable only through the live
@@ -239,7 +254,19 @@ generated from the current Drizzle journal, never reserved against another PR.
 Focused verification uses real PostgreSQL persistence, a separate terminated H1
 publisher process, actual queue/Runner HTTP handlers, Guest-private authenticated
 chunk reads with child-environment isolation, bounded CLI file reads, existing
-native RPC continuation tests and Runner compile/tests.
-These are implementation checks. A real production Sandbox, provider traffic,
-usage reconciliation, deployment and the sub-300ms performance target require the
-controller's separate acceptance and release process.
+native RPC continuation tests and Runner compile/tests. The joined boundary
+fixture creates a valid claimed Run, uses production-signed distinct Agent and
+claimed Sandbox tokens, executes the built Guest and locally built real CLI, and
+passes the Guest-written file through the real private-boundary and official
+continuation code. A loopback TLS provider captures the one pending-tool request;
+a deterministic local read tool proves retained tool identity and result. The
+settled-session case emits the restored session's sequence-5 `system/init`
+record through the Guest event path before the original Guest execution
+deadline terminates it, while making no provider request. Supplying the ordinary
+Agent token to the real handoff verifier produces its real 401 and no child. Only unrelated
+liveness/checkpoint object storage and terminal completion are stubbed locally.
+
+These are test-infrastructure integration checks, not production Firecracker
+E2E, live-provider traffic, billing reconciliation, deployment or proof of the
+sub-300ms performance target. Those require the controller's separate acceptance
+and release process.

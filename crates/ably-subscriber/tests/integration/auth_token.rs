@@ -285,9 +285,10 @@ async fn token_renewal() {
     let ws = MockAblyServer::start().await.unwrap();
 
     let now = now_ms();
-    // First token: expires in 1 second (token renewal margin is 300s, so
-    // renewal fires almost immediately).  Second token: 1 hour TTL, so
-    // after renewal the subscriber should stop calling the endpoint.
+    // First token: expires in 1 second. If it is still valid when installed,
+    // the 300s margin is capped at half its remaining lifetime; if setup has
+    // consumed that lifetime, renewal is immediately due. Second token: 1 hour
+    // TTL, so the next renewal stays beyond the test's observation window.
     let short_body = serde_json::to_vec(&serde_json::json!({
         "token": "short-lived-token",
         "expires": now + 1_000,
@@ -655,8 +656,9 @@ async fn token_renewal_failures_fatal() {
     let http = MockServer::start();
     let ws = MockAblyServer::start().await.unwrap();
 
-    // Return a short-lived token so renewal fires immediately.
-    // TOKEN_RENEWAL_MARGIN is 300s, so a 1s token means renew_in = 0.
+    // Return a token that expires in 1 second. If it is still valid when
+    // installed, the 300s margin is capped at half its remaining lifetime;
+    // if setup has consumed that lifetime, renewal is immediately due.
     let now = now_ms();
     let short_token = serde_json::json!({
         "token": "short-lived-token",

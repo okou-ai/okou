@@ -635,13 +635,23 @@ async function replaceCreativeVideoWithIntroVideo() {
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
       [FeatureSwitchKey.IntroVideo]: true,
-      [FeatureSwitchKey.ComposerTaskChips]: true,
+      [FeatureSwitchKey.ComposerSlashTemplatePanel]: true,
     },
   });
   const user = userEvent.setup({ delay: null });
   const editor = await screen.findByRole("textbox", { name: "Message" });
-  const tasks = screen.getByRole("group", { name: "Choose a task" });
-  click(control("Video", tasks));
+  // Video has no Make row of its own, so the composer enters the row below
+  // Presentation and switches the type from there.
+  await user.click(editor);
+  await user.paste("/");
+  await screen.findByTestId("slash-workflow-menu");
+  await user.keyboard("{ArrowDown}{Enter}");
+  click(control("Close", await screen.findByRole("dialog")));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  click(await screen.findByRole("combobox", { name: "Choose a type" }));
+  click(await screen.findByRole("option", { name: "Video" }));
   click(
     await waitFor(() => {
       return control("Video options 16:9 · 8s · 720p");
@@ -656,7 +666,7 @@ async function replaceCreativeVideoWithIntroVideo() {
   }
   click(portrait);
   await user.keyboard("{Escape}");
-  click(control("Remove Video"));
+  click(control("Exit create mode"));
   const dialog = await openTemplatePicker(user);
   click(control("Intro video", dialog, "tab"));
   click(await within(dialog).findByLabelText("Select style Minimalism"));

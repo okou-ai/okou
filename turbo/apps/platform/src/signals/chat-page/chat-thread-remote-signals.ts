@@ -16,7 +16,6 @@ import type { ModelSettingsPatch } from "@okouai/api-contracts/contracts/model-r
 import { accept } from "../../lib/accept.ts";
 import { nowDate } from "../../lib/time.ts";
 import { apiClient$ } from "../api-client.ts";
-import { chatEffortEnabled$ } from "../external/feature-switch.ts";
 import { threadCodexServiceTierFromSelection } from "./model-selection-request.ts";
 import {
   setAblyInvalidationLoop$,
@@ -81,14 +80,12 @@ interface SubscribeRealtimeArgs {
 }
 
 function changedModelSettingsPatch(args: {
-  readonly enabled: boolean;
   readonly threadMeta: ThreadMeta | undefined;
   readonly selection: ModelProviderSelection | null;
 }): ModelSettingsPatch | undefined {
   const selection = args.selection;
   const selectedModel = selection?.selectedModel;
   if (
-    !args.enabled ||
     !args.threadMeta ||
     !selection ||
     args.threadMeta.selectedModel !== selectedModel ||
@@ -149,7 +146,6 @@ export const patchChatThreadModelSelection$ = command(
   ) => {
     const threadMeta = get(chatThreadMetaMap$).get(threadId);
     const modelSettingsPatch = changedModelSettingsPatch({
-      enabled: get(chatEffortEnabled$),
       threadMeta,
       selection: modelSelection,
     });

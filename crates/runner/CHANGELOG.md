@@ -1,5 +1,48 @@
 # Changelog
 
+## [0.200.2](https://github.com/vm0-ai/okou/compare/runner-rs-v0.200.1...runner-rs-v0.200.2) (2026-09-18)
+
+
+### Bug Fixes
+
+* **runner:** include python venv support in sandbox rootfs ([#35237](https://github.com/vm0-ai/okou/issues/35237)) ([b81314d](https://github.com/vm0-ai/okou/commit/b81314d84f0db9de7befd8376c40e9a128f03473))
+
+## [0.200.1](https://github.com/vm0-ai/okou/compare/runner-rs-v0.200.0...runner-rs-v0.200.1) (2026-09-18)
+
+
+### Bug Fixes
+
+* **runner:** preserve preinstalled rust toolchain in agent environments ([#35214](https://github.com/vm0-ai/okou/issues/35214)) ([889718b](https://github.com/vm0-ai/okou/commit/889718b259e92a3c96994b88204aaa05077b73ad))
+
+
+### Performance Improvements
+
+* **ci:** share runner compiler cache through r2 ([#35205](https://github.com/vm0-ai/okou/issues/35205)) ([5dd5ad7](https://github.com/vm0-ai/okou/commit/5dd5ad7f9ac9823df873d8d5fe8e12520a47cf96))
+* **runner:** deflate before park and transfer running sandboxes ([#35177](https://github.com/vm0-ai/okou/issues/35177)) ([e70762c](https://github.com/vm0-ai/okou/commit/e70762c0c7e82681048048d394399ec459fa374f))
+
+## [0.200.0](https://github.com/vm0-ai/okou/compare/runner-rs-v0.199.1...runner-rs-v0.200.0) (2026-09-18)
+
+
+### Features
+
+* **connectors:** execute builtin mcp through unified connector flows ([#35132](https://github.com/vm0-ai/okou/issues/35132)) ([fc30ccb](https://github.com/vm0-ai/okou/commit/fc30ccb62f1ee00b66379aa4dcf3dc3f97df1763))
+
+## [0.199.1](https://github.com/vm0-ai/okou/compare/runner-rs-v0.199.0...runner-rs-v0.199.1) (2026-09-18)
+
+## [0.199.0](https://github.com/vm0-ai/okou/compare/runner-rs-v0.198.1...runner-rs-v0.199.0) (2026-09-18)
+
+
+### Features
+
+* **runner:** record archive size mismatch diagnostics ([#35149](https://github.com/vm0-ai/okou/issues/35149)) ([b6ce895](https://github.com/vm0-ai/okou/commit/b6ce8952ca15bb670cc4e592676c8d2a21b88332))
+
+## [0.198.1](https://github.com/vm0-ai/okou/compare/runner-rs-v0.198.0...runner-rs-v0.198.1) (2026-09-18)
+
+
+### Bug Fixes
+
+* log sandbox rootfs exhaustion at info ([#35141](https://github.com/vm0-ai/okou/issues/35141)) ([e015f06](https://github.com/vm0-ai/okou/commit/e015f0643c9d33d6ddb144b233845734bde075f5))
+
 ## [0.198.0](https://github.com/vm0-ai/okou/compare/runner-rs-v0.197.6...runner-rs-v0.198.0) (2026-09-18)
 
 

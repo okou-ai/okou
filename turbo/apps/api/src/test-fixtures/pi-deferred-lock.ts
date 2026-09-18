@@ -63,18 +63,33 @@ export async function holdDeferredRow(
   onTestFinished(releaseLock);
   const pid = await entered.promise;
   return {
-    waitForBlocked: () => {
-      return waitForDeferredBlocker(pid);
+    waitForBlocked: (minimum?: number) => {
+      return waitForDeferredBlocker(pid, minimum);
     },
     release: releaseLock,
   };
 }
 
-export async function waitForDeferredBlocker(pid: number): Promise<number> {
+/**
+ * Wait until `minimum` distinct backends are blocked by `pid`, and name one.
+ *
+ * The count matters. A caller that observes "somebody is blocked" twice can be
+ * satisfied twice by the same still-blocked backend, which proves nothing about
+ * a second competitor ever arriving. Requiring a distinct-backend count, and
+ * returning the newest waiter, lets a caller chain the observation — wait for
+ * the request that blocks here, then wait for whatever blocks on *that* — so
+ * every competitor's own arrival is established rather than assumed.
+ */
+export async function waitForDeferredBlocker(
+  pid: number,
+  minimum = 1,
+): Promise<number> {
   const waiters = () => {
     return executeRawRows(
       db(),
-      sql`SELECT pid FROM pg_stat_activity WHERE ${pid} = ANY(pg_blocking_pids(pid))`,
+      sql`SELECT pid FROM pg_stat_activity
+          WHERE ${pid} = ANY(pg_blocking_pids(pid))
+          ORDER BY pid`,
       z.object({ pid: z.number() }),
     );
   };
@@ -85,8 +100,9 @@ export async function waitForDeferredBlocker(pid: number): Promise<number> {
       },
       { timeout: 10_000 },
     )
-    .toBeGreaterThan(0);
-  const [waiter] = await waiters();
+    .toBeGreaterThanOrEqual(minimum);
+  const blocked = await waiters();
+  const waiter = blocked[minimum - 1];
   if (!waiter) {
     throw new Error("Missing blocked transaction");
   }

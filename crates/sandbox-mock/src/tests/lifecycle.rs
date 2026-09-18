@@ -138,6 +138,11 @@ async fn operation_overrides_preserve_unrelated_sandbox_behavior() {
                 true,
                 Some(SandboxFinalExecParkSubstageOutcome::Skipped),
             ),
+            (
+                SandboxFinalExecParkSubstage::BalloonDeflate,
+                true,
+                Some(SandboxFinalExecParkSubstageOutcome::Skipped),
+            ),
             (SandboxFinalExecParkSubstage::VcpuPause, true, None),
         ]
     );
@@ -146,6 +151,7 @@ async fn operation_overrides_preserve_unrelated_sandbox_behavior() {
         vec![
             (SandboxFinalExecParkSubstage::BalloonSetup, Duration::ZERO),
             (SandboxFinalExecParkSubstage::BalloonSettle, Duration::ZERO),
+            (SandboxFinalExecParkSubstage::BalloonDeflate, Duration::ZERO),
             (SandboxFinalExecParkSubstage::VcpuPause, Duration::ZERO),
         ]
     );

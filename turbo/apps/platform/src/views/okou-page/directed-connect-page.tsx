@@ -86,7 +86,6 @@ import {
 import { CustomConnectorIcon } from "./components/settings/custom-connector-icon.tsx";
 import { CustomConnectorConnectDialog } from "./components/settings/custom-connector-connect-dialog.tsx";
 import { customConnectorTarget } from "./components/settings/custom-connector-display.ts";
-import { customConnectorMcpEnabled$ } from "../../signals/external/feature-switch.ts";
 import {
   defaultBuiltinConnectorAccountOptions,
   defaultCustomConnectorAccountOptions,
@@ -884,13 +883,9 @@ function DirectedConnectCard() {
 function customConnectorForSlug(
   connectors: readonly CustomConnectorResponse[],
   connectorSlug: CustomConnectorSlug,
-  mcpEnabled: boolean,
 ): CustomConnectorResponse | undefined {
   return connectors.find((connector) => {
-    return (
-      connector.slug === connectorSlug &&
-      (connector.kind === "http" || mcpEnabled)
-    );
+    return connector.slug === connectorSlug;
   });
 }
 
@@ -942,7 +937,6 @@ function CustomDirectedConnectCard({
   const agentId = useGet(directedConnectAgentId$);
   const agentNameLoadable = useLastLoadable(directedConnectAgentName$);
   const connectorsLoadable = useLastLoadable(customConnectors$);
-  const mcpEnabled = useGet(customConnectorMcpEnabled$);
   const dialogKey = useGet(directedConnectCustomDialogKey$);
   const setDialogKey = useSet(setDirectedConnectCustomDialogKey$);
   const resetConnectInput = useSet(resetCustomConnectorConnectInput$);
@@ -951,11 +945,7 @@ function CustomDirectedConnectCard({
   const signal = useGet(pageSignal$);
   const connectors =
     connectorsLoadable.state === "hasData" ? connectorsLoadable.data : [];
-  const connector = customConnectorForSlug(
-    connectors,
-    connectorSlug,
-    mcpEnabled,
-  );
+  const connector = customConnectorForSlug(connectors, connectorSlug);
   const connection = customConnectorConnection(connector);
   const dialogOpen =
     dialogKey?.connectorSlug === connectorSlug &&

@@ -1138,9 +1138,6 @@ describe("GET/PUT /api/model-policies", () => {
       [200],
     );
 
-    await updateFeatureSwitchesForUser(context, fixture, {
-      [FeatureSwitchKey.Effort]: true,
-    });
     const priority = await accept(
       preferenceClient.update({
         headers: authHeaders(),
@@ -1185,7 +1182,6 @@ describe("GET/PUT /api/model-policies", () => {
     await seedOrgMetadata({ orgId: fixture.orgId, tier: "pro", credits: 0 });
     await updateFeatureSwitchesForUser(context, fixture, {
       [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
-      [FeatureSwitchKey.Effort]: true,
     });
     useSession(fixture);
     const preferences = setupApp({

@@ -1,7 +1,3 @@
-import {
-  googleAdsAccountForAttribution,
-  GOOGLE_ADS_ADSMARCH_ACCOUNT_ID,
-} from "@okouai/core/google-ads-account";
 import { command } from "ccstate";
 import {
   billingCheckoutContract,
@@ -13,16 +9,12 @@ import {
   type UsagePackCatalogItem,
   type UsagePackSubscriptionChangePreviewResponse,
 } from "@okouai/api-contracts/contracts/billing";
-import { adAttributionMetadataSchema } from "@okouai/api-contracts/contracts/acquisition-attribution";
-import { clerkAttributionDisabled } from "../../lib/clerk-attribution";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { eq } from "drizzle-orm";
 
 import { optionalEnv } from "../../lib/env";
 import { billingRedirectAllowed } from "../../lib/billing-redirect";
-import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { settle } from "../utils";
 import {
   badRequestMessage,
   conflict,
@@ -38,9 +30,8 @@ import {
   createClerkReadContext,
   type ClerkClient,
 } from "../external/clerk";
-import { findClerkUser } from "../external/clerk-users";
 import { db$, writeDb$, type Db } from "../external/db";
-import { getStripeClient, type StripeInvoice } from "../external/stripe-client";
+import { getStripeClient } from "../external/stripe-client";
 import {
   activePriceId,
   activeUsagePackPlanPriceId,
@@ -93,10 +84,6 @@ import {
   loadBillingOrganizationMemberships,
 } from "../services/billing-clerk-directory.service";
 import { reconcilePaidStripeInvoice$ } from "../services/webhooks-stripe.service";
-import {
-  mergeFirstTouchAttribution,
-  parseStoredSignupAttribution,
-} from "../services/acquisition-attribution.service";
 import type { RouteEntry } from "../route-entry";
 import { withBillingClerkRateLimit } from "./billing-clerk-rate-limit";
 
@@ -110,10 +97,8 @@ const adminRequired = Object.freeze({
   }),
 });
 
-const SIGNUP_ATTRIBUTION_KEY = "signup_attribution";
 const USAGE_PACK_PLAN_ENDING_MESSAGE =
   "Your Plan is scheduled to end before this usage pack change can take effect. Restore your Plan first, then try again.";
-const log = logger("api:billing-checkout");
 
 type UsagePackSubscriptionChangePreviewResult = Awaited<
   ReturnType<typeof previewUsagePackSubscriptionChange>
@@ -139,48 +124,6 @@ function isUsagePackSubscriptionChangeConflict(
   result: UsagePackSubscriptionChangeResult,
 ): result is UsagePackSubscriptionChangeConflictResult {
   return result.status === "plan_ending" || result.status === "conflict";
-}
-
-async function signupAttributionForUser(
-  clerk: ClerkClient,
-  userId: string,
-  signal: AbortSignal,
-): Promise<ReturnType<typeof adAttributionMetadataSchema.parse> | undefined> {
-  const usersResult = await settle(
-    findClerkUser(clerk, userId, signal),
-    signal,
-  );
-  if (!usersResult.ok) {
-    log.warn("Unable to read Clerk signup attribution for checkout", {
-      userId,
-      error: usersResult.error,
-    });
-    return undefined;
-  }
-
-  const user = usersResult.value;
-  return user
-    ? parseStoredSignupAttribution(
-        user.privateMetadata?.[SIGNUP_ATTRIBUTION_KEY],
-      )
-    : undefined;
-}
-
-async function checkoutAttribution(
-  clerk: ClerkClient,
-  userId: string,
-  adAttribution: Parameters<typeof mergeFirstTouchAttribution>[0],
-  signal: AbortSignal,
-): Promise<ReturnType<typeof mergeFirstTouchAttribution>> {
-  if (clerkAttributionDisabled()) {
-    return undefined;
-  }
-  const storedAttribution = await signupAttributionForUser(
-    clerk,
-    userId,
-    signal,
-  );
-  return mergeFirstTouchAttribution(adAttribution, storedAttribution);
 }
 
 function memberUsagePackIdsMatch(
@@ -479,73 +422,6 @@ function usagePackCheckoutTierConflicts(
   );
 }
 
-const googleAdsPaidConversion$ = command(
-  async (
-    { get },
-    invoice: StripeInvoice | null,
-    orgId: string,
-    signal: AbortSignal,
-  ) => {
-    const amountPaidCents = invoice?.amount_paid ?? 0;
-    if (
-      invoice?.status !== "paid" ||
-      invoice.currency.toLowerCase() !== "usd" ||
-      amountPaidCents <= 0
-    ) {
-      return undefined;
-    }
-
-    // Invoice attribution is a frozen checkout snapshot. Never fill an unknown
-    // invoice click with a campaign from a different touch or organization.
-    const snapshots = [
-      invoice.metadata,
-      invoice.parent?.subscription_details?.metadata,
-    ];
-    const attribution = snapshots.find((metadata) => {
-      return (
-        metadata &&
-        [
-          "gclid",
-          "gbraid",
-          "wbraid",
-          "okou_campaign_id",
-          "vm0_campaign_id",
-        ].some((key) => {
-          return metadata[key];
-        })
-      );
-    });
-    let googleAdsAccountId: string | null;
-    if (attribution) {
-      googleAdsAccountId = googleAdsAccountForAttribution(attribution);
-    } else {
-      const [org] = await get(db$)
-        .select({
-          campaignId: orgMetadata.acquisitionCampaignId,
-          adGroupId: orgMetadata.acquisitionAdGroupId,
-        })
-        .from(orgMetadata)
-        .where(eq(orgMetadata.orgId, orgId))
-        .limit(1);
-      signal.throwIfAborted();
-      googleAdsAccountId = googleAdsAccountForAttribution({
-        okou_campaign_id: org?.campaignId ?? undefined,
-        okou_ad_group_id: org?.adGroupId ?? undefined,
-      });
-    }
-    // Legacy paid conversions are UPLOAD_CLICKS and remain on the offline path.
-    // Omitting this optional payload also protects already-open old clients.
-    if (googleAdsAccountId !== GOOGLE_ADS_ADSMARCH_ACCOUNT_ID) {
-      return undefined;
-    }
-    return {
-      transactionId: invoice.id,
-      valueUsd: amountPaidCents / 100,
-      googleAdsAccountId,
-    };
-  },
-);
-
 const confirmPlanPurchaseForOrg$ = command(
   async ({ set }, orgId: string, previewToken: string, signal: AbortSignal) => {
     const result = await set(confirmPlanPurchase$, orgId, previewToken, signal);
@@ -566,18 +442,9 @@ const confirmPlanPurchaseForOrg$ = command(
         );
       }
     }
-    const conversion = await set(
-      googleAdsPaidConversion$,
-      result.paidInvoice,
-      orgId,
-      signal,
-    );
     return {
       status: 200 as const,
-      body:
-        result.response.status === "completed" && conversion
-          ? { ...result.response, googleAdsConversion: conversion }
-          : result.response,
+      body: result.response,
     };
   },
 );
@@ -606,22 +473,9 @@ const checkoutAuthed$ = command(async ({ get, set }, signal: AbortSignal) => {
       return confirmation;
     }
   }
-  const {
-    tier,
-    supportsInAppPreview,
-    successUrl,
-    cancelUrl,
-    trialDays,
-    adAttribution,
-  } = bodyResult.data;
+  const { tier, supportsInAppPreview, successUrl, cancelUrl, trialDays } =
+    bodyResult.data;
   const previewEnabled = supportsInAppPreview === true;
-  const clerk = get(clerk$);
-  const resolvedAttribution = await checkoutAttribution(
-    clerk,
-    auth.userId,
-    adAttribution,
-    signal,
-  );
 
   if (!checkoutRedirectsAllowed(successUrl, cancelUrl)) {
     return badRequestMessage(
@@ -680,7 +534,6 @@ const checkoutAuthed$ = command(async ({ get, set }, signal: AbortSignal) => {
       trialDays,
       successUrl,
       cancelUrl,
-      adAttribution: resolvedAttribution,
       supportsInAppPreview: previewEnabled,
       subscriptionId: metadata?.stripeSubscriptionId ?? null,
     },
@@ -775,18 +628,9 @@ const confirmUsagePackPurchaseForOrg$ = command(
         );
       }
     }
-    const conversion = await set(
-      googleAdsPaidConversion$,
-      result.paidInvoice,
-      orgId,
-      signal,
-    );
     return {
       status: 200 as const,
-      body:
-        result.response.status === "completed" && conversion
-          ? { ...result.response, googleAdsConversion: conversion }
-          : result.response,
+      body: result.response,
     };
   },
 );
@@ -828,12 +672,6 @@ const usagePackCheckoutAuthed$ = command(
 
     const previewEnabled = body.supportsInAppPreview === true;
     const clerk = get(clerk$);
-    const resolvedAttribution = await checkoutAttribution(
-      clerk,
-      auth.userId,
-      body.adAttribution,
-      signal,
-    );
 
     if (!checkoutRedirectsAllowed(body.successUrl, body.cancelUrl)) {
       return badRequestMessage(
@@ -898,7 +736,6 @@ const usagePackCheckoutAuthed$ = command(
         allocations,
         successUrl: body.successUrl,
         cancelUrl: body.cancelUrl,
-        adAttribution: resolvedAttribution,
         supportsInAppPreview: previewEnabled,
         sourceSubscriptionId: metadata?.stripeSubscriptionId ?? null,
       },
@@ -1904,17 +1741,10 @@ const checkoutCompleteAuthed$ = command(
       }
     }
 
-    const conversion = await set(
-      googleAdsPaidConversion$,
-      result.paidInvoice,
-      auth.orgId,
-      signal,
-    );
     return {
       status: 200 as const,
       body: {
         completed: true,
-        ...(conversion ? { googleAdsConversion: conversion } : {}),
       },
     };
   },

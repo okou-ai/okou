@@ -11,17 +11,12 @@ import {
   isMemberModelPolicyConfigurable,
 } from "@okouai/api-contracts/contracts/member-model-policy";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isChatEffortEnabled } from "@okouai/core/model-feature-switch";
 import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
 
 /** Saved preferences remain independent of the route's current capability. */
 export function preferredChatReasoningEffort(
   selection: ModelProviderSelection | null | undefined,
-  switches: Partial<Record<FeatureSwitchKey, boolean>>,
 ): ReasoningEffort | undefined {
-  if (!isChatEffortEnabled({ overrides: switches })) {
-    return undefined;
-  }
   return modelReasoningEffort(
     selection?.selectedModel,
     selection?.modelSettings,
@@ -34,12 +29,7 @@ export function availableChatReasoningEfforts(
   switches: Partial<Record<FeatureSwitchKey, boolean>>,
   policy: OrgModelPolicy | undefined,
 ): readonly ReasoningEffort[] {
-  if (
-    !selection ||
-    !policy ||
-    !isMemberModelPolicyConfigurable(policy) ||
-    !isChatEffortEnabled({ overrides: switches })
-  ) {
+  if (!selection || !policy || !isMemberModelPolicyConfigurable(policy)) {
     return [];
   }
   const route = getMemberModelPolicyRoute(policy);
@@ -71,7 +61,7 @@ export function effectiveChatReasoningEffort(
     return undefined;
   }
   const available = availableChatReasoningEfforts(selection, switches, policy);
-  const preferred = preferredChatReasoningEffort(selection, switches);
+  const preferred = preferredChatReasoningEffort(selection);
   if (preferred && available.includes(preferred)) {
     return preferred;
   }

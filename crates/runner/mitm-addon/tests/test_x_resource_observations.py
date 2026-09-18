@@ -40,7 +40,7 @@ def _complete(flow, body):
     usage.flush_usage_events(trigger="test")
 
 
-def test_json_preserves_occurrences_expansions_exact_ids_and_transient_remainder(
+def test_json_preserves_occurrences_expansions_exact_ids_and_unidentified_remainder(
     real_flow, tmp_path, usage_webhook_api
 ):
     flow = _flow(real_flow, tmp_path)
@@ -79,10 +79,6 @@ def test_json_preserves_occurrences_expansions_exact_ids_and_transient_remainder
     assert events["user.read"]["resources"] == [{"id": "7", "occurrences": 1}]
     assert all(event["protocol"] == "x-resource-v1" for event in events.values())
     assert len(webhook.usage_events()) == 2
-    assert flow.metadata[metadata_keys.X_RESOURCE_REMAINDER]["posts.read"] == {
-        "missing_id": 3,
-        "unsupported_resource": 1,
-    }
 
 
 @pytest.mark.parametrize(

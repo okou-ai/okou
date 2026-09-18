@@ -1723,7 +1723,7 @@ function selectOwner(
 ): OwnerSelection {
   const [owner, ...otherOwners] = winningOwnerNames(collection);
   if (owner === undefined) return { kind: "selected", name: null };
-  if (otherOwners.length === 0) {
+  if (otherOwners.length === 0 && intent.status === "absent") {
     return { kind: "selected", name: owner };
   }
   const owners = [owner, ...otherOwners];

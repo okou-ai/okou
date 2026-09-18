@@ -30,6 +30,16 @@ interface UserTemplatePreviewAssetIdentity {
 }
 
 /**
+ * The cache identity of one storage object.
+ *
+ * Presigned URLs are cached per object rather than per row, so a rendered page
+ * and the file the template was compiled from are keyed the same way.
+ */
+export function userTemplateStorageVersionId(objectKey: string): string {
+  return createHash("sha256").update(objectKey).digest("base64url");
+}
+
+/**
  * Give a rendered page a stable public identity without exposing its object
  * key. The hash follows the immutable page object if page order changes.
  */
@@ -37,10 +47,7 @@ export function userTemplatePreviewAssetId(
   templateId: string,
   objectKey: string,
 ): string {
-  const storageVersionId = createHash("sha256")
-    .update(objectKey)
-    .digest("base64url");
-  return `${USER_TEMPLATE_PREVIEW_ASSET_PREFIX}${templateId}:${storageVersionId}`;
+  return `${USER_TEMPLATE_PREVIEW_ASSET_PREFIX}${templateId}:${userTemplateStorageVersionId(objectKey)}`;
 }
 
 export function parseUserTemplatePreviewAssetId(
@@ -66,7 +73,7 @@ export function parseUserTemplatePreviewAssetId(
 }
 
 /**
- * The rendered pages this row owns, in page order. Element 0 is the cover.
+ * The rendered pages this row owns, in page order.
  *
  * Every kind answers for itself rather than one being what the others fall
  * through to, so a kind added to the manifest union fails this switch until
@@ -77,8 +84,39 @@ export function userTemplatePageKeys(row: UserTemplateRow): readonly string[] {
     case "presentation": {
       return row.manifest.pageKeys;
     }
+    case "document":
+    case "illustration": {
+      return [];
+    }
+  }
+}
+
+/**
+ * The objects this row is recognised by in the catalog, in order. Element 0 is
+ * the cover.
+ *
+ * Separate from the pages above because a cover is what a grid shows and a
+ * page is what a reader scrolls, and for one kind those are different files. A
+ * deck is recognised by its first slide, so its pages are both. An
+ * illustration has no pages at all and is recognised by the picture it was
+ * reversed from, which is the source — the one kind whose source file is
+ * already an image a browser can draw.
+ *
+ * Sharing one list between the cover and the pages is what would put that
+ * source into `pageUrls`, where a reader would be shown the same picture the
+ * cover is already showing, and where it would contradict the `pageCount` of
+ * null that travels beside it.
+ */
+export function userTemplateCoverKeys(row: UserTemplateRow): readonly string[] {
+  switch (row.manifest.kind) {
+    case "presentation": {
+      return row.manifest.pageKeys;
+    }
     case "document": {
       return [];
+    }
+    case "illustration": {
+      return [row.sourceStorageKey];
     }
   }
 }
@@ -86,15 +124,17 @@ export function userTemplatePageKeys(row: UserTemplateRow): readonly string[] {
 /**
  * How many pages to report, or null for a kind that has none.
  *
- * Null rather than zero: a document template is its styles, so counting its
- * pages would report an emptiness it does not have.
+ * Null rather than zero: a document template is its styles and an illustration
+ * template is one picture, so counting their pages would report an emptiness
+ * neither has.
  */
 function userTemplatePageCount(row: UserTemplateRow): number | null {
   switch (row.manifest.kind) {
     case "presentation": {
       return row.manifest.pageKeys.length;
     }
-    case "document": {
+    case "document":
+    case "illustration": {
       return null;
     }
   }

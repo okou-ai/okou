@@ -308,7 +308,6 @@ describe("CHAT-02: model-first provider policies", () => {
         { ...actor, orgId },
         {
           [FeatureSwitchKey.PiLoop]: true,
-          [FeatureSwitchKey.Effort]: true,
         },
       );
       mockPiResourceArchiveDownloads();

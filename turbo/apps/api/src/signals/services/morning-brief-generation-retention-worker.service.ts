@@ -2,6 +2,7 @@ import { command } from "ccstate";
 
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
+import type { MorningBriefCollectionOwner } from "./morning-brief-collection-occurrence.service";
 import { purgeExpiredMorningBriefGenerations } from "./morning-brief-generation-store.service";
 
 /**
@@ -20,6 +21,11 @@ import { purgeExpiredMorningBriefGenerations } from "./morning-brief-generation-
  * leaves behind is unreadable in the meantime: the release fence refuses a
  * result at its deadline, so purge latency delays physical removal, never
  * accessibility.
+ *
+ * `owners` narrows the same passes to an explicit set of members. Production
+ * maintenance passes none; it exists so a test can run this exact consumer
+ * against the identities its own case created instead of every expired row in
+ * the database.
  */
 
 /** Rows one pass removes per statement. Small enough to never hold locks long. */
@@ -28,11 +34,22 @@ const GENERATION_PURGE_BATCH_SIZE = 200;
 /** Passes one tick may run. Bounds the work a single maintenance call does. */
 const GENERATION_PURGE_MAX_BATCHES = 10;
 
-/** The wall-clock budget one tick may spend, whatever the batches cost. */
+/**
+ * The wall-clock budget one tick may spend, checked between passes.
+ *
+ * It bounds how many further batches are started, not how long a batch already
+ * in flight may run: a pass that begins just under the deadline still runs to
+ * completion, so one statement's duration is bounded by the batch size rather
+ * than by this budget.
+ */
 const GENERATION_PURGE_BUDGET_MS = 5000;
 
 export const executeMorningBriefGenerationRetentionWork$ = command(
-  async ({ set }, signal: AbortSignal): Promise<number> => {
+  async (
+    { set },
+    owners: readonly MorningBriefCollectionOwner[] | undefined,
+    signal: AbortSignal,
+  ): Promise<number> => {
     const db = set(writeDb$);
     const deadline = nowDate().getTime() + GENERATION_PURGE_BUDGET_MS;
     let purged = 0;
@@ -42,6 +59,7 @@ export const executeMorningBriefGenerationRetentionWork$ = command(
         db,
         nowDate(),
         GENERATION_PURGE_BATCH_SIZE,
+        owners,
       );
       signal.throwIfAborted();
       purged += removed;

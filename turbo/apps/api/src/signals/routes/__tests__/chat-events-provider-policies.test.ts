@@ -14,6 +14,7 @@ import {
   readRunLangfuseTraceEnabledFixture,
   readRunModelRuntimeRouteFixture,
 } from "../../../test-fixtures/agent-runs";
+import { withBuiltInModelRuntimeRouteCandidateUnavailableForTest } from "../../../test-fixtures/built-in-model-runtime-route";
 import {
   acquireBddBuiltInModelKey,
   holdChatThreadRowLockFixture,
@@ -707,7 +708,6 @@ describe("CHAT-02: model-first provider policies", () => {
       const { actor, agentId } = await entitledChatActor();
       await configureBuiltInPiModel(actor, "deepseek-v4.1-flash");
       await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.Effort]: true,
         [FeatureSwitchKey.PiLoop]: true,
       });
       if (boundary !== "effort") {
@@ -1870,13 +1870,15 @@ describe("CHAT-02: model-first provider policies", () => {
     "deepseek-v4-flash",
     "deepseek-v4-pro",
   ] as const)(
-    "fails closed for built-in $model when only the direct key is available",
+    "fails closed for built-in %s when only the direct candidate is available",
     async (model) => {
       const { actor, agentId } = await entitledChatActor();
       if (model === "deepseek-v4.1-flash") {
         configureNativeCliArtifact();
       }
-      await seedBuiltInModelKey(model);
+      // Other tests can own the global OpenRouter key. Keep it present and
+      // scope only its candidate's unavailability to this request.
+      await seedBuiltInModelCandidateKeys(context, model);
       await api.updateOrgModelPolicies(actor, [
         {
           model,
@@ -1892,16 +1894,26 @@ describe("CHAT-02: model-first provider policies", () => {
       });
 
       const prompt = "do not fall back to the managed DeepSeek direct key";
-      const response = await requestSendEventRaw(actor, {
-        agentId,
-        prompt,
-        userMessage: {
-          version: 1,
-          parts: [{ type: "text", text: prompt }],
-        },
-        model,
-        hasTextContent: true,
-      });
+      const response =
+        await withBuiltInModelRuntimeRouteCandidateUnavailableForTest(
+          {
+            selectedModel: model,
+            providerType: "openrouter-codex",
+            upstreamModel: `deepseek/${model}`,
+          },
+          async () => {
+            return await requestSendEventRaw(actor, {
+              agentId,
+              prompt,
+              userMessage: {
+                version: 1,
+                parts: [{ type: "text", text: prompt }],
+              },
+              model,
+              hasTextContent: true,
+            });
+          },
+        );
       expect(response.status).toBe(503);
       expectApiError(response.body);
       expect(response.body.error.message).toBe(

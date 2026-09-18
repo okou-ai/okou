@@ -40,17 +40,20 @@ exact implementation and adds no second authorization engine:
   the preview gate: the default-off `simpleMorningBrief` switch, a canonical
   installed and enabled Morning Brief, the member's current Clerk membership
   generation, and erasure-subject admission. It returns the frozen
-  `MorningBriefCollectionScope` — owner, installation, pinned Agent, canonical
-  thread, anchor, timezone and `membershipId`. None of it can be supplied by a
-  caller; a removal and rejoin issues a new `membershipId`, so a new membership
+  `MorningBriefCollectionScope` — owner, installation, exact automation,
+  pinned Agent, nullable canonical thread, anchor, timezone and `membershipId`.
+  None of it can be supplied by a caller; a removal and rejoin issues a new
+  `membershipId`, so a new membership
   cannot release what the previous one collected.
 - `withMorningBriefConnectorReader(args, collect, signal)` takes the shared
   `clerk` client alongside `db` and a separate final `AbortSignal`, and owns one
   absolute deadline covering admission, credentials, every request and body, and
   the release fence. It re-derives live authority before the credential is
   resolved, before every request, and again before the payload is released:
-  canonical ownership, membership, the pinned connector account, the Agent's
-  grants, accepted catalog visibility and effective URL policy. Holding a
+  complete canonical ownership, membership, the pinned connector account, the
+  Agent's grants, accepted catalog visibility and effective URL policy. The
+  external membership answer precedes the final local erasure/binding/Agent
+  transaction; no network call runs under those locks. Holding a
   credential is not permission; every gate must produce an unambiguous `allow`.
 - An explicit account selection that no longer resolves fails closed
   (`not-connected`); it never falls back to the member's default account.
@@ -160,11 +163,22 @@ bounded page number.
   that accepts a string proves the payload had a string there, not that the
   string is a state this reader knows.
 
-  | Surface                | Recognized values                                                                                                               |
-  | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-  | Check-run `status`     | `completed`; `queued`, `in_progress`, `waiting`, `requested`, `pending` are still running                                       |
-  | Check-run `conclusion` | `success`, `neutral`, `skipped` pass; `action_required`, `cancelled`, `failure`, `stale`, `startup_failure`, `timed_out` do not |
-  | Status context `state` | `pending`, `success`, and `error`/`failure` as failures                                                                         |
+  | Surface                | Recognized values                                                                                            |
+  | ---------------------- | ------------------------------------------------------------------------------------------------------------ |
+  | Check-run `status`     | `completed`; `queued`, `in_progress`, `waiting`, `requested`, `pending` are still running                    |
+  | Check-run `conclusion` | `success`, `neutral`, `skipped` pass; `action_required`, `cancelled`, `failure`, `stale`, `timed_out` do not |
+  | Status context `state` | `pending`, `success`, and `error`/`failure` as failures                                                      |
+
+  Status and conclusion are interpreted together. A recognized in-flight status
+  is pending only with an absent or `null` conclusion; pairing it with any
+  terminal conclusion contradicts the lifecycle because GitHub's
+  [update-check-run contract](https://docs.github.com/en/rest/checks/runs#update-a-check-run)
+  automatically sets the status to `completed` when a conclusion is supplied.
+  `startup_failure` belongs to the check-suite conclusion vocabulary in the
+  [pinned GitHub OpenAPI contract](https://github.com/github/rest-api-description/blob/d4278c869e367f5d6d4e0f46878119128abba77b/descriptions/api.github.com/api.github.com.json),
+  not the check-run vocabulary, and is therefore not inferred as a check-run
+  failure. `stale` remains recognized because the check-run endpoint explicitly
+  documents it as a conclusion only GitHub can set.
 
   Anything else is a state this reader cannot interpret, and an uninterpretable
   state is a **coverage gap rather than a new fact**: it adds nothing to
@@ -172,9 +186,9 @@ bounded page number.
   records `malformed-response` on the checks branch. `completed` with an absent
   or `null` conclusion contradicts GitHub's own contract and is treated the same
   way — it is not a failure. One uninterpretable entry never discards a readable
-  sibling: a real failing or pending check on the same head still reports
-  `failing` or `pending`, alongside the explicit incompleteness, and a head
-  whose checks were all read and all passed still reports `success`.
+  sibling: real failing, pending and successful checks on the same head retain
+  their counts and state alongside the explicit incompleteness, and a head whose
+  checks were all read and all passed still reports `success`.
 
 ### Provider-supplied URLs are data
 

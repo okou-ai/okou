@@ -22,8 +22,10 @@ import {
   listAccessibleUserTemplates,
   loadAccessibleUserTemplate,
   parseUserTemplatePreviewAssetId,
+  userTemplateCoverKeys,
   userTemplatePageKeys,
   userTemplatePreviewAssetId,
+  userTemplateStorageVersionId,
   userTemplateSummary,
   type UserTemplateRow,
 } from "../services/user-template-data.service";
@@ -131,9 +133,37 @@ function userTemplatePreviewAssetsForRow(args: {
   readonly row: UserTemplateRow;
   readonly orgId: string;
 }): readonly AccessibleUserTemplatePreviewAsset[] {
-  return userTemplatePageKeys(args.row).map((objectKey) => {
+  return userTemplateCoverKeys(args.row).map((objectKey) => {
     return userTemplatePreviewAsset({ ...args, objectKey });
   });
+}
+
+/**
+ * The file the template was compiled from, signed the same way its pages are.
+ *
+ * Not reached through a preview asset id: an asset id is a handle a client
+ * hands back to have one picture's URL reissued, and the detail this request
+ * belongs to already carries the URL. Minting a second handle for a file the
+ * reader has been handed anyway buys nothing.
+ *
+ * An illustration's source is separately a cover, and therefore does have an
+ * asset id — one produced by `userTemplateCoverKeys`, which the resolve
+ * endpoint reads too, so that handle is one it accepts. Both paths sign the
+ * same object with the same version, so they share a cache key and the second
+ * one costs nothing.
+ */
+function userTemplateSourceRequest(args: {
+  readonly row: UserTemplateRow;
+  readonly orgId: string;
+}): PresentationTemplatePreviewPresignedUrlRequest {
+  const objectKey = args.row.sourceStorageKey;
+  return {
+    bucket: templateArtifactBucket(objectKey),
+    objectKey,
+    storageVersionId: userTemplateStorageVersionId(objectKey),
+    resolvedOrgId: args.orgId,
+    publicEndpoint: true,
+  };
 }
 
 function resolvedUserTemplatePreviewAssets(
@@ -172,8 +202,10 @@ function accessibleUserTemplatePreviewAssets(args: {
     const identity = parseUserTemplatePreviewAssetId(previewAssetId);
     const row = identity ? rowById.get(identity.templateId) : undefined;
     const objectKey = row
-      ? userTemplatePageKeys(row).find((pageKey) => {
-          return userTemplatePreviewAssetId(row.id, pageKey) === previewAssetId;
+      ? userTemplateCoverKeys(row).find((coverKey) => {
+          return (
+            userTemplatePreviewAssetId(row.id, coverKey) === previewAssetId
+          );
         })
       : undefined;
     return identity === null || row === undefined || objectKey === undefined
@@ -307,12 +339,16 @@ const getInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     row,
     orgId: auth.orgId,
   });
+  const sourceRequest = userTemplateSourceRequest({ row, orgId: auth.orgId });
   const urlsByCacheKey = await get(
     resolvePresentationTemplatePreviewPresignedUrls({
       db: set(writeDb$),
-      requests: previewAssets.map((asset) => {
-        return asset.request;
-      }),
+      requests: [
+        ...previewAssets.map((asset) => {
+          return asset.request;
+        }),
+        sourceRequest,
+      ],
     }),
   );
   signal.throwIfAborted();
@@ -320,14 +356,36 @@ const getInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     previewAssets,
     urlsByCacheKey,
   );
-  const pageUrls = resolvedPreviewAssets.map((asset) => {
-    return asset.url;
+  // Narrowed from the resolved covers rather than resolved again: for a deck
+  // the two lists are the same objects, and for an illustration the cover is
+  // the source, which is not a page and must not be stacked as one.
+  const pageAssetIds = new Set(
+    userTemplatePageKeys(row).map((pageKey) => {
+      return userTemplatePreviewAssetId(row.id, pageKey);
+    }),
+  );
+  const pageUrls = resolvedPreviewAssets.flatMap((asset) => {
+    return pageAssetIds.has(asset.previewAssetId) ? [asset.url] : [];
   });
+  const source = urlsByCacheKey.get(
+    presentationTemplatePreviewPresignedUrlCacheKey(sourceRequest),
+  );
+  if (source === undefined) {
+    throw new Error(`Source URL not resolved: ${row.id}`);
+  }
   return {
     status: 200 as const,
     body: {
-      ...userTemplateSummary(row, pageUrls[0] ?? null, auth.userId),
+      // The cover comes from the resolved covers, not from the pages: they are
+      // the same picture for a deck, and for an illustration only the former
+      // has one.
+      ...userTemplateSummary(
+        row,
+        resolvedPreviewAssets[0]?.url ?? null,
+        auth.userId,
+      ),
       pageUrls,
+      sourceUrl: source.url,
       previewAssets: resolvedPreviewAssets,
     },
   };

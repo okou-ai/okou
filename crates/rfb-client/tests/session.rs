@@ -15,7 +15,9 @@ use std::{
 };
 
 use common_framebuffer::*;
-use rfb_client::{Capture, Error, Input, InputOutcome, Key, MouseButton, ScrollAxis, Session};
+use rfb_client::{
+    Capture, Error, Input, InputOutcome, Key, MouseButton, ScrollAxis, Session, SharingMode,
+};
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf},
     net::TcpStream,
@@ -641,8 +643,8 @@ async fn cancelling_backpressured_input_closes_socket_and_keeps_delivery_unknown
     let init = server_init(1, 1, RGBX, b"backpressure fixture");
     let (client, ()) = bounded(async {
         tokio::join!(
-            client.initialize(deadline()),
-            negotiate_framebuffer(&mut peer, &init)
+            client.initialize(SharingMode::Shared, deadline()),
+            negotiate_framebuffer(&mut peer, &init, 1)
         )
     })
     .await;

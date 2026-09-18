@@ -2,7 +2,7 @@ import {
   billingCheckoutContract,
   billingStatusContract,
 } from "@okouai/api-contracts/contracts/billing";
-import { marketingCheckoutRequestSchema } from "@okouai/api-contracts/contracts/marketing-checkout";
+import { marketingEventRequestSchema } from "@okouai/api-contracts/contracts/marketing-events";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 
@@ -22,7 +22,7 @@ import {
   RUN_PATH,
 } from "./chat-run-test-fixtures.ts";
 
-const ENDPOINT = "https://www.okou.ai/api/marketing/checkout-start";
+const ENDPOINT = "https://www.okou.ai/api/events";
 const STRIPE_URL = "https://checkout.stripe.com/test/marketing-paywall";
 const OCCURRED_AT = "2026-09-17T08:30:00.000Z";
 
@@ -97,7 +97,7 @@ function confirmButton(dialog: HTMLElement) {
   return button;
 }
 
-test("Each actual checkout action sends a new bounded event without waiting for Marketing", async () => {
+test("Each actual checkout action sends a new event without waiting for Marketing", async () => {
   prepareCheckout();
   const requests: Request[] = [];
   const firstReceived = context.mocks.deferred<Request>();
@@ -128,16 +128,15 @@ test("Each actual checkout action sends a new bounded event without waiting for 
   });
 
   const firstBody: unknown = await first.json();
-  const secondBody = marketingCheckoutRequestSchema.parse(await second.json());
+  const secondBody = marketingEventRequestSchema.parse(await second.json());
   expect(firstBody).toStrictEqual({
     eventId: expect.stringMatching(
       /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu,
     ),
-    occurredAt: OCCURRED_AT,
-    checkoutSource: "paywall",
+    tag: "checkout-start",
   });
   expect(secondBody.eventId).not.toBe(
-    marketingCheckoutRequestSchema.parse(firstBody).eventId,
+    marketingEventRequestSchema.parse(firstBody).eventId,
   );
   expect(first.credentials).toBe("include");
   expect(first.headers.get("authorization")).toBe("Bearer test-token");
@@ -215,11 +214,10 @@ test("A Plan preview does not record Checkout Start; a conflict-refresh redirect
   await waitFor(() => {
     expect(window.location.href).toBe(STRIPE_URL);
   });
-  expect(
-    marketingCheckoutRequestSchema.parse(await request.json()),
-  ).toMatchObject({
-    checkoutSource: "paywall",
-    occurredAt: OCCURRED_AT,
-  });
+  expect(marketingEventRequestSchema.parse(await request.json())).toMatchObject(
+    {
+      tag: "checkout-start",
+    },
+  );
   expect(requests).toHaveLength(1);
 });

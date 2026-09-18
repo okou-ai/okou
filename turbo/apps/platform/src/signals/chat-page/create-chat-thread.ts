@@ -89,10 +89,7 @@ import { runOptionsFromModelProviderSelection } from "./model-selection-request.
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { debounceCommand } from "../command-scheduling.ts";
-import {
-  chatEffortEnabled$,
-  featureSwitch$,
-} from "../external/feature-switch.ts";
+import { featureSwitch$ } from "../external/feature-switch.ts";
 import { orgModelPolicies$ } from "../external/org-model-policies.ts";
 import { userModelPreference$ } from "../external/user-model-preference.ts";
 import {
@@ -109,19 +106,21 @@ import type {
 import { isCancelledRunEvent } from "./chat-run-lifecycle.ts";
 import {
   deriveRunIndicatorStateFromChatEvents,
+  liveRunIdsFromChatEvents,
+  queuedEventsFromChatEvents,
+  type RunIndicatorState,
+} from "./chat-event-state.ts";
+import {
   groupSemanticChatEvents,
   isGoalMarkerEvent,
   isInterruptControlEvent,
   isInterruptedAssistantCancellation,
   isQueueMarkerEvent,
   isUsageEvent,
-  liveRunIdsFromChatEvents,
-  queuedEventsFromChatEvents,
   semanticChatEventsFromChatEvents,
-  type RunIndicatorState,
   type SemanticChatEventState,
   type SemanticChatGroups as GenericSemanticChatGroups,
-} from "./chat-event-state.ts";
+} from "@okouai/api-contracts/contracts/chat-event-semantics";
 import { logger } from "../log.ts";
 import {
   createCancellationRecoverySignals,
@@ -473,9 +472,7 @@ function createModelSelection(
   );
 
   const modelSettings$ = computed((get) => {
-    return get(chatEffortEnabled$)
-      ? (get(threadMeta$)?.modelSettings ?? {})
-      : {};
+    return get(threadMeta$)?.modelSettings ?? {};
   });
 
   const codexFastModeActive$ = computed(async (get): Promise<boolean> => {
@@ -1699,6 +1696,10 @@ function createArtifactPreviewImageUrls(
           continue;
         }
         previewImageUrlsByUrl.set(file.url, file.previewImageUrl);
+        previewImageUrlsByUrl.set(
+          canonicalUserMessageFileUrl(file.id),
+          file.previewImageUrl,
+        );
         if (file.aliasUrl) {
           previewImageUrlsByUrl.set(file.aliasUrl, file.previewImageUrl);
         }

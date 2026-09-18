@@ -7,6 +7,7 @@ import {
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { z } from "zod";
+import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
 
 import { env } from "../../lib/env";
 import { now } from "../../lib/time";
@@ -31,6 +32,8 @@ const CONDITIONAL_CAPABILITIES = [
   ["banking:read", FeatureSwitchKey.Banking],
   ["lark:write", FeatureSwitchKey.LarkIntegration],
   ["user-template:write", FeatureSwitchKey.CustomTemplates],
+  ["vnc:read", FeatureSwitchKey.VncAccess],
+  ["vnc:write", FeatureSwitchKey.VncAccess],
 ] as const satisfies readonly (readonly [Capability, FeatureSwitchKey])[];
 
 const AGENT_EXCLUDED_CAPABILITIES = [
@@ -42,6 +45,7 @@ interface OkouTokenOptions {
   readonly cloudBrowserEnabled?: boolean;
   readonly imageRecognitionAvailable?: boolean;
   readonly customConnectorSourceIds?: Readonly<Record<string, string>>;
+  readonly builtinConnectorSourceIds?: Readonly<Record<string, string>>;
 }
 
 const jwtBaseSchema = z.object({
@@ -88,6 +92,9 @@ const okouTokenPayloadSchema = jwtBaseSchema.extend({
   cloudBrowserEnabled: z.literal(true).optional(),
   customConnectorSourceIds: z
     .record(z.string().uuid(), z.string().uuid())
+    .optional(),
+  builtinConnectorSourceIds: z
+    .record(connectorSlugSchema, z.string().uuid())
     .optional(),
 });
 
@@ -280,6 +287,9 @@ export function verifyOkouToken(token: string): AgentAuth | null {
     ...(parsed.data.customConnectorSourceIds
       ? { customConnectorSourceIds: parsed.data.customConnectorSourceIds }
       : {}),
+    ...(parsed.data.builtinConnectorSourceIds
+      ? { builtinConnectorSourceIds: parsed.data.builtinConnectorSourceIds }
+      : {}),
   };
 }
 
@@ -378,6 +388,9 @@ function buildOkouTokenClaims(
       : {}),
     ...(options?.customConnectorSourceIds
       ? { customConnectorSourceIds: options.customConnectorSourceIds }
+      : {}),
+    ...(options?.builtinConnectorSourceIds
+      ? { builtinConnectorSourceIds: options.builtinConnectorSourceIds }
       : {}),
     iat: nowSeconds,
     exp: nowSeconds + 2 * 60 * 60,

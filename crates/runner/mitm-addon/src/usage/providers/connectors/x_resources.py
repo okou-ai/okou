@@ -75,7 +75,7 @@ def resource_event(
     path: str,
     observation_time: str,
     count_endpoint: bool,
-) -> tuple[UsageEvent, list[ResourceUsageRemainder]]:
+) -> UsageEvent:
     """Preserve Q = identified occurrences + explicit unidentified remainder."""
     category = event["category"]
     includes = {} if count_endpoint else response.get("response_includes") or {}
@@ -134,4 +134,4 @@ def resource_event(
         "resources": resources,
         "remainder": remainder,
     }
-    return observation, remainder
+    return observation

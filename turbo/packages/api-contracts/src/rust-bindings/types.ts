@@ -18,6 +18,7 @@ import {
 } from "../contracts/runners";
 import { piNativeTypeBindings } from "./pi-native-types";
 import { sshTypeBindings } from "./ssh-types";
+import { vncTypeBindings } from "./vnc-types";
 import { knownRunFailureReasonSchema } from "../contracts/run-failure-reasons";
 import { modelProviderCodexRuntimeConfigSchema } from "../contracts/model-providers";
 import { fileEntryWithHashSchema } from "../contracts/storages";
@@ -66,6 +67,10 @@ export const rustTypeModuleDocs = [
   {
     rustModulePath: ["runners", "ssh"],
     rustDoc: ["Private Runner SSH authority DTOs."],
+  },
+  {
+    rustModulePath: ["runners", "vnc"],
+    rustDoc: ["Private Runner VNC credentials and current authorization DTOs."],
   },
   {
     rustModulePath: ["runners"],
@@ -187,6 +192,7 @@ export const rustTypeBindings = [
     ],
   },
   ...sshTypeBindings,
+  ...vncTypeBindings,
   ...piNativeTypeBindings,
   {
     schema: modelProviderCodexRuntimeConfigSchema,

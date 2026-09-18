@@ -86,8 +86,10 @@ async function clickPanelRow(label: string, menu: HTMLElement): Promise<void> {
 const CREATE_MODE_ROWS = {
   presentation: { row: "Presentation", mode: "Create presentation" },
   image: { row: "Illustration", mode: "Create image" },
-  video: { row: "Video", mode: "Create video" },
 } as const;
+
+/** Video has no Make row of its own; the type picker is the way into it. */
+const VIDEO_MODE = { row: "Illustration", mode: "Create video" } as const;
 
 /**
  * A panel row opens the template picker as well as entering the mode, and the
@@ -101,18 +103,33 @@ async function closeTemplatePicker(): Promise<void> {
   });
 }
 
-async function chooseCommand(
-  editor: HTMLElement,
-  text: string,
-  command: keyof typeof CREATE_MODE_ROWS,
+/** Lands the composer on a create mode from an already open slash panel. */
+async function enterCreateMode(
+  command: keyof typeof CREATE_MODE_ROWS | "video",
+  menu: HTMLElement,
 ): Promise<void> {
-  const { row, mode } = CREATE_MODE_ROWS[command];
-  await fill(editor, text);
-  const menu = await screen.findByTestId("slash-workflow-menu");
+  const { row, mode } =
+    command === "video" ? VIDEO_MODE : CREATE_MODE_ROWS[command];
   await clickPanelRow(row, menu);
+  if (command === "video") {
+    click(screen.getByRole("combobox", { name: "Choose a type" }));
+    click(await screen.findByRole("option", { name: "Video" }));
+  }
   await waitFor(() => {
     expect(screen.getByTestId("composer-create-mode")).toHaveTextContent(mode);
   });
+}
+
+async function chooseCommand(
+  editor: HTMLElement,
+  text: string,
+  command: keyof typeof CREATE_MODE_ROWS | "video",
+): Promise<void> {
+  await fill(editor, text);
+  await enterCreateMode(
+    command,
+    await screen.findByTestId("slash-workflow-menu"),
+  );
 }
 
 test("Create commands stay hidden until enabled", async () => {
@@ -141,7 +158,7 @@ test("The type a slash command selects states the run in the action row", async 
   );
 });
 
-test("Choose a video from the slash panel with the keyboard and submit its settings", async () => {
+test("Choose a video from the type picker and submit its settings", async () => {
   setupModels();
   const submissions: {
     userMessage?: UserMessageDocument;
@@ -154,18 +171,8 @@ test("Choose a video from the slash panel with the keyboard and submit its setti
   });
   const editor = await setupComposer();
   const user = userEvent.setup({ delay: null });
-  await fill(editor, "A train crossing the mountains /");
-  const menu = await screen.findByTestId("slash-workflow-menu");
-  expect(button("Video", menu)).toBeInTheDocument();
-  // Presentation leads the panel's Make rows, so Video is the third.
-  await user.keyboard("{ArrowDown}{ArrowDown}{Enter}");
-  await closeTemplatePicker();
-  await waitFor(() => {
-    expect(screen.getByTestId("composer-create-mode")).toHaveTextContent(
-      "Create video",
-    );
-  });
-  expect(menu).not.toBeInTheDocument();
+  await chooseCommand(editor, "A train crossing the mountains /", "video");
+  expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
   const card = editor.closest('[data-slot="chat-composer-card"]');
   expect(card).toContainElement(
     screen.getByRole("combobox", { name: "Choose a type" }),
@@ -501,14 +508,7 @@ test.each(createTemplateScenarios)(
 
 test.each(createTemplateScenarios)(
   "$commandLabel edits only the clicked draft template and sends every reference",
-  async ({
-    mode,
-    commandLabel,
-    pickerLabel,
-    selectLabel,
-    previewLabel,
-    templates,
-  }) => {
+  async ({ mode, pickerLabel, selectLabel, previewLabel, templates }) => {
     setupModels();
     const submissions: UserMessageDocument[] = [];
     mockChatLifecycle(context, {
@@ -552,12 +552,7 @@ test.each(createTemplateScenarios)(
     await user.click(editor);
     await user.paste(" /");
     const menu = await screen.findByTestId("slash-workflow-menu");
-    await clickPanelRow(CREATE_MODE_ROWS[mode].row, menu);
-    await waitFor(() => {
-      expect(screen.getByTestId("composer-create-mode")).toHaveTextContent(
-        commandLabel,
-      );
-    });
+    await enterCreateMode(mode, menu);
 
     const firstChip = composerInlineTemplates()[0];
     if (!firstChip) {

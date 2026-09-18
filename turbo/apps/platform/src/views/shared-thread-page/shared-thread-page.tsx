@@ -1,5 +1,6 @@
 import type {
   SharedMessage,
+  SharedMessageAttachment,
   SharedThreadResponse,
 } from "@okouai/api-contracts/contracts/shared-threads";
 import { DEFAULT_AGENT_AVATAR_URL } from "@okouai/core/agent-avatar";
@@ -15,6 +16,7 @@ import {
   type BrandName,
 } from "../../signals/branding.ts";
 import { currentUserInfo$ } from "../../signals/auth.ts";
+import type { AttachmentPreviewSignals } from "../../signals/attachment-resource-url.ts";
 import type { SharedThreadRichContentSignals } from "../../signals/shared-thread-page/shared-thread-rich-content.ts";
 import { shellDocumentAttributesRef$ } from "../../signals/theme.ts";
 import { writeToClipboard } from "../../signals/okou-page/clipboard.ts";
@@ -47,7 +49,14 @@ import { SharedMessageAttachments } from "./shared-message-attachments.tsx";
  * tree undefined and are derived by the thread's rich-content signals when the
  * view consumes them.
  */
-export type SharedDisplayMessage = SharedMessage & { readonly tree?: Root };
+export type SharedDisplayAttachment = SharedMessageAttachment & {
+  readonly preview: AttachmentPreviewSignals;
+};
+
+export type SharedDisplayMessage = Omit<SharedMessage, "attachments"> & {
+  readonly tree?: Root;
+  readonly attachments?: readonly SharedDisplayAttachment[];
+};
 
 export type SharedDisplayThread = Omit<SharedThreadResponse, "messages"> & {
   readonly messages: readonly SharedDisplayMessage[];

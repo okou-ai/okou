@@ -25,6 +25,7 @@ import {
   MessageCircle,
   ReceiptText,
   Users,
+  Wrench,
 } from "lucide-react";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
@@ -43,6 +44,7 @@ import {
 } from "../../../../signals/okou-page/settings/settings-dialog.ts";
 import { PreferenceSection } from "./sections/preference-section.tsx";
 import { ChatSection } from "./sections/chat-section.tsx";
+import { PaidToolsSection } from "./sections/paid-tools-section.tsx";
 import { ModelSection } from "./sections/model-section.tsx";
 import { DebugSection } from "./sections/debug-section.tsx";
 import { GeneralSection } from "./sections/general-section.tsx";
@@ -74,6 +76,7 @@ interface SidebarGroup {
 const SECTION_COMPONENTS = {
   preference: PreferenceSection,
   chat: ChatSection,
+  "paid-tools": PaidToolsSection,
   model: ModelSection,
   debug: DebugSection,
   general: GeneralSection,
@@ -150,6 +153,7 @@ function SettingsDialog({
     isAdminLoadable.state === "hasData" ? isAdminLoadable.data : false;
   const showDebug = features[FeatureSwitchKey.OkouDebug] ?? false;
   const showChat = features[FeatureSwitchKey.ChatPreference] ?? false;
+  const showPaidTools = features[FeatureSwitchKey.PaidToolControls] ?? false;
 
   const sectionMeta = {
     preference: {
@@ -166,6 +170,14 @@ function SettingsDialog({
       }),
       description: t(($) => {
         return $.settings.preferences.chat.description;
+      }),
+    },
+    "paid-tools": {
+      title: t(($) => {
+        return $.settings.paidTools.title;
+      }),
+      description: t(($) => {
+        return $.settings.paidTools.description;
       }),
     },
     model: {
@@ -248,6 +260,15 @@ function SettingsDialog({
           },
         ]
       : []),
+    ...(showPaidTools
+      ? [
+          {
+            id: "paid-tools" as const,
+            label: sectionMeta["paid-tools"].title,
+            icon: Wrench,
+          },
+        ]
+      : []),
     { id: "debug", label: sectionMeta.debug.title, icon: Bug },
   ];
   const personalGroup: SidebarGroup = {
@@ -319,6 +340,7 @@ function SettingsDialog({
   const availableSection = resolveAvailableSettingsSection(activeSection, {
     isAdmin,
     chatPreferenceEnabled: showChat,
+    paidToolControlsEnabled: showPaidTools,
   });
   const resolvedSection: SettingsSection =
     !showDebug && availableSection === "debug"

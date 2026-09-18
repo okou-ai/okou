@@ -9,7 +9,6 @@ import {
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createStore } from "ccstate";
 import { describe, expect, it } from "vitest";
 
@@ -597,9 +596,6 @@ describe("POST /api/chat-threads", () => {
 
   it("creates exact custom HTTP and MCP connector selections", async () => {
     const fixture = await seedAgent();
-    await updateFeatureSwitchesForUser(context, fixture, {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
-    });
     const httpConnector = await connectorApi.createCustomConnector(
       fixture.actor,
       manualHttpCustomConnectorCreateBody({
@@ -960,9 +956,6 @@ describe("POST /api/chat-threads", () => {
 
   it("inherits priority from the run's chat thread and allows an explicit standard override", async () => {
     const fixture = await seedAgent();
-    await updateFeatureSwitchesForUser(context, fixture, {
-      [FeatureSwitchKey.Effort]: true,
-    });
     const sourceToken = okouToken({
       userId: fixture.userId,
       orgId: fixture.orgId,
