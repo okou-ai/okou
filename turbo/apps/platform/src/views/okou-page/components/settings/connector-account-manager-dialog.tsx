@@ -63,7 +63,6 @@ interface ConnectorAccountManagerDialogProps {
   readonly target: ConnectorAccountTarget;
   readonly connectorLabel: string;
   readonly icon: ReactNode;
-  readonly connectionActionsEnabled: boolean;
   readonly onClose: () => void;
   readonly onAdd?: () => void;
   readonly onReconnect: (account: ConnectorAccountConnection) => void;
@@ -173,13 +172,11 @@ function AccountDefaultRadio({
 function AccountActions({
   target,
   account,
-  connectionActionsEnabled,
   onReconnect,
   onReviewScopes,
 }: {
   readonly target: ConnectorAccountTarget;
   readonly account: ConnectorAccountConnection;
-  readonly connectionActionsEnabled: boolean;
   readonly onReconnect: (account: ConnectorAccountConnection) => void;
   readonly onReviewScopes?: (account: ConnectorAccountConnection) => void;
 }) {
@@ -216,8 +213,7 @@ function AccountActions({
             })}
           </DropdownMenuItem>
         ) : null}
-        {connectionActionsEnabled &&
-        account.connectionStatus !== "reconnect-required" ? (
+        {account.connectionStatus !== "reconnect-required" ? (
           <DropdownMenuItem
             onClick={() => {
               return onReconnect(account);
@@ -258,13 +254,11 @@ function AccountActions({
 function AccountRow({
   target,
   account,
-  connectionActionsEnabled,
   onReconnect,
   onReviewScopes,
 }: {
   readonly target: ConnectorAccountTarget;
   readonly account: ConnectorAccountConnection;
-  readonly connectionActionsEnabled: boolean;
   readonly onReconnect: (account: ConnectorAccountConnection) => void;
   readonly onReviewScopes?: (account: ConnectorAccountConnection) => void;
 }) {
@@ -293,7 +287,7 @@ function AccountRow({
               <span className="truncate">{identity}</span>
             </>
           ) : null}
-          {needsReconnect && connectionActionsEnabled ? (
+          {needsReconnect ? (
             <>
               <span aria-hidden="true">·</span>
               <Button
@@ -317,7 +311,6 @@ function AccountRow({
         <AccountActions
           target={target}
           account={account}
-          connectionActionsEnabled={connectionActionsEnabled}
           onReconnect={onReconnect}
           onReviewScopes={onReviewScopes}
         />
@@ -331,7 +324,6 @@ function AccountsCard({
   defaultConnection,
   search,
   target,
-  connectionActionsEnabled,
   onReconnect,
   onReviewScopes,
 }: {
@@ -339,7 +331,6 @@ function AccountsCard({
   readonly defaultConnection: ConnectorAccountConnection | null;
   readonly search: string;
   readonly target: ConnectorAccountTarget;
-  readonly connectionActionsEnabled: boolean;
   readonly onReconnect: (account: ConnectorAccountConnection) => void;
   readonly onReviewScopes?: (account: ConnectorAccountConnection) => void;
 }) {
@@ -385,7 +376,6 @@ function AccountsCard({
             <AccountRow
               target={target}
               account={account}
-              connectionActionsEnabled={connectionActionsEnabled}
               onReconnect={onReconnect}
               onReviewScopes={onReviewScopes}
             />
@@ -650,7 +640,6 @@ export function ConnectorAccountManagerDialog({
   target,
   connectorLabel,
   icon,
-  connectionActionsEnabled,
   onClose,
   onAdd,
   onReconnect,
@@ -710,7 +699,6 @@ export function ConnectorAccountManagerDialog({
             defaultConnection={defaultConnection}
             search={search}
             target={target}
-            connectionActionsEnabled={connectionActionsEnabled}
             onReconnect={reconnect}
             onReviewScopes={reviewScopes}
           />
@@ -742,7 +730,6 @@ export function ConnectorAccountManagerDialog({
             <Button
               type="button"
               disabled={
-                !connectionActionsEnabled ||
                 accountsLoadable.state === "hasError" ||
                 (accountsLoadable.state === "hasData" &&
                   !accountsLoadable.data.available)

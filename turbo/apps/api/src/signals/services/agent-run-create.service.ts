@@ -5234,22 +5234,13 @@ async function loadCustomConnectorContext(
     return emptyCustomConnectorRuntimeContext();
   }
   signal.throwIfAborted();
-  const newRunRows = rows.filter((row) => {
-    return (
-      row.connector.kind !== "mcp" ||
-      isFeatureEnabled(
-        FeatureSwitchKey.CustomConnectorMcp,
-        args.featureSwitchContext,
-      )
-    );
-  });
   const context = await measureApiDispatchTiming(
     timing,
     "api_dispatch_prepare_context_build_custom_connector_firewalls",
     "nested",
     async () => {
       return await buildNewRunCustomConnectorRuntimeContext({
-        rows: newRunRows,
+        rows,
         featureSwitchContext: args.featureSwitchContext,
         connectorCatalogSnapshot: args.connectorCatalogSnapshot,
         grants: args.customConnectorGrants,

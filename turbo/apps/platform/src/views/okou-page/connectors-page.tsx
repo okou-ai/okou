@@ -22,10 +22,7 @@ import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector
 import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
 import { Tabs, TabsList, TabsTrigger } from "@okouai/ui/components/ui/tabs";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import {
-  customConnectorMcpEnabled$,
-  featureSwitch$,
-} from "../../signals/external/feature-switch.ts";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { formatLocalizedNumber } from "../../i18n/format.ts";
 import {
   connectorsPageTab$,
@@ -1978,7 +1975,6 @@ export function ConnectorsPage() {
   const custom = directoryCustomConnectors(
     useLastLoadable(filteredDirectoryCustomConnectors$),
   );
-  const customMcpEnabled = useGet(customConnectorMcpEnabled$);
   const scopeBadge = connectorsScopeBadge(connectedBadge, custom.all.length);
   // SSH belongs to the connected scope once hosts exist; until then it is only
   // a thing to discover, and the catalog already carries it.
@@ -2272,7 +2268,6 @@ export function ConnectorsPage() {
                         <CustomConnectorGrid
                           connectors={custom.connected}
                           isAdmin={isAdmin}
-                          mcpEnabled={customMcpEnabled}
                           className="contents"
                         />
                       )}
@@ -2353,7 +2348,6 @@ export function ConnectorsPage() {
           }}
           connectorLabel={managedAccountConnector.label}
           icon={<ConnectorIcon icon={managedAccountConnector.icon} size={20} />}
-          connectionActionsEnabled
           onClose={() => {
             closeAccountManager();
           }}

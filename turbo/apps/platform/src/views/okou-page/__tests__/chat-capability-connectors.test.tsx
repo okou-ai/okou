@@ -21,7 +21,6 @@ import {
   type CustomConnectorResponse,
 } from "@okouai/api-contracts/contracts/custom-connectors";
 import { userConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, describe, beforeEach, it } from "vitest";
@@ -502,7 +501,6 @@ test("Connect and authorize a custom MCP connector", async () => {
     context,
     host: "app.okou.ai",
     path: RUN_PATH,
-    featureSwitches: { [FeatureSwitchKey.CustomConnectorMcp]: true },
   });
 
   await readyChat();

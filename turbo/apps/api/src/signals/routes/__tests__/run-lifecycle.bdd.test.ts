@@ -8446,9 +8446,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       authentication: "none",
     });
 
-    await connectors.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
-    });
     const httpConnector = await connectors.createCustomConnector(actor, {
       kind: "http",
       displayName: "BDD No Auth HTTP Runtime",
@@ -9288,15 +9285,12 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     expect(cancelled.status).toBe("cancelled");
   });
 
-  it("admits feature-gated MCP connectors with exact synchronized runtime state", async () => {
+  it("admits MCP connectors with exact synchronized runtime state", async () => {
     const api = createRunsApi(context);
     const connectors = createConnectorBddApi(context);
     const fw = createFirewallApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
 
-    await connectors.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
-    });
     const mcpDefinition = manualMcpRuntimeConnectorBody({
       displayName: "BDD MCP Runtime",
       endpoint: "https://mcp-runtime.example.test/api/mcp",
@@ -9324,48 +9318,14 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       http.id,
     ]);
 
-    await connectors.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.CustomConnectorMcp]: false,
-    });
-    const disabledRun = await api.createRun(actor, {
-      agentId,
-      prompt: "do not admit MCP while rollout is disabled",
-      modelProvider: "anthropic-api-key",
-    });
-    await api.heartbeatRunner(runnerGroup);
-    const disabledClaim = await api.claimRunnerJob(disabledRun.runId);
-    const mcpInternalName = `custom_connector_${mcp.id.replaceAll("-", "")}`;
-    expect(disabledClaim.connectorRuntimeTargets).not.toContainEqual(
-      expect.objectContaining({
-        kind: "custom",
-        customConnectorId: mcp.id,
-      }),
-    );
-    expect(
-      findFirewallEntry(disabledClaim.firewalls, mcpInternalName),
-    ).toBeUndefined();
-    expect(
-      expectCanonicalStorageManifest(disabledClaim.storageManifest)
-        ?.storageMounts,
-    ).not.toContainEqual(
-      expect.objectContaining({
-        name: getCustomConnectorSkillStorageName(mcp.id),
-      }),
-    );
-    expect(
-      mcpConnectorPromptSection(disabledClaim.appendSystemPrompt ?? ""),
-    ).toBeUndefined();
-    await api.requestCancelRun(actor, disabledRun.runId, [200]);
-
-    await connectors.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
-    });
     const run = await api.createRun(actor, {
       agentId,
       prompt: "use the admitted MCP connector",
       modelProvider: "anthropic-api-key",
     });
+    await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
+    const mcpInternalName = `custom_connector_${mcp.id.replaceAll("-", "")}`;
     const admittedIds = [http.id, mcp.id].sort();
     expect(
       claim.connectorRuntimeTargets
@@ -9471,20 +9431,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       reason: "connector-unavailable",
     });
 
-    await connectors.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.CustomConnectorMcp]: false,
-    });
-    const [activeWhileDisabledResult] = await api.syncConnectorRuntime(
-      run.runId,
-      { targets: [target] },
-    );
-    expect(
-      availableCustomConnectorRuntime(activeWhileDisabledResult).baseUrlVars,
-    ).toStrictEqual({});
-
-    await connectors.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
-    });
     const movedDefinition = manualMcpRuntimeConnectorBody({
       displayName: "BDD MCP Runtime Moved",
       endpoint: "https://mcp-runtime.example.test/v2/mcp/",
@@ -9599,9 +9545,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     const webhooks = createWebhookCallbackApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
 
-    await connectors.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
-    });
     const admittedSlugs = Array.from(
       { length: MCP_CONNECTOR_PROMPT_INVENTORY_LIMIT + 1 },
       (_, index) => {
@@ -10802,9 +10745,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     const fw = createFirewallApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
 
-    await connectors.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
-    });
     const mcp = await connectors.createCustomConnector(actor, {
       kind: "mcp",
       displayName: "BDD MCP OAuth Runtime",
@@ -10893,9 +10833,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     const connectors = createConnectorBddApi(context);
     const fw = createFirewallApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
-    await connectors.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
-    });
     const mcp = await connectors.createCustomConnector(actor, {
       kind: "mcp",
       displayName: "BDD Automatic OAuth MCP Runtime",

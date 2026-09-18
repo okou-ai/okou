@@ -30,7 +30,6 @@ import { CustomConnectorIcon } from "../okou-page/components/settings/custom-con
 import { ConnectorPermissionRow } from "../okou-page/components/settings/connector-permission-row.tsx";
 import { CustomConnectorPermissionsDrawer } from "../okou-page/components/settings/custom-connector-permissions-drawer.tsx";
 import { customConnectorTarget } from "../okou-page/components/settings/custom-connector-display.ts";
-import { customConnectorMcpEnabled$ } from "../../signals/external/feature-switch.ts";
 
 function JobCustomConnectorRow({
   connector,
@@ -148,7 +147,6 @@ function ConnectedJobCustomConnectorsSection({
   readonly connectors: readonly CustomConnectorResponse[];
 }) {
   const { t } = useTranslation("agents");
-  const mcpEnabled = useGet(customConnectorMcpEnabled$);
   const addedLoadable = useLastLoadable(agentAddedCustomConnectors$);
   const added = addedLoadable.state === "hasData" ? addedLoadable.data : [];
   const addedSet = new Set(added);
@@ -159,11 +157,6 @@ function ConnectedJobCustomConnectorsSection({
   );
   const grantsLoadable = useLastLoadable(agentCustomConnectorGrants$);
   const detail = useLastResolved(agentDetail$);
-  const visibleConnectors = connectors.filter((connector) => {
-    return (
-      connector.kind === "http" || mcpEnabled || addedSet.has(connector.id)
-    );
-  });
 
   const activePermissionDraft =
     permissionDraft?.surface === "agent-detail" &&
@@ -187,10 +180,6 @@ function ConnectedJobCustomConnectorsSection({
       ? permissionBundleLoadable.data
       : null;
 
-  if (visibleConnectors.length === 0) {
-    return null;
-  }
-
   return (
     <div className={surfaceVariants()}>
       <div className="px-5 pt-4 pb-3 text-sm text-muted-foreground border-b border-border/50">
@@ -198,7 +187,7 @@ function ConnectedJobCustomConnectorsSection({
           return $.authorization.customConnectors.description;
         })}
       </div>
-      {visibleConnectors.map((connector, index) => {
+      {connectors.map((connector, index) => {
         return (
           <JobCustomConnectorRow
             key={connector.id}
@@ -209,7 +198,7 @@ function ConnectedJobCustomConnectorsSection({
               grantsLoadable.state === "hasData" ? grantsLoadable.data : null
             }
             grantsLoading={grantsLoadable.state === "loading"}
-            isLast={index === visibleConnectors.length - 1}
+            isLast={index === connectors.length - 1}
           />
         );
       })}
