@@ -391,8 +391,8 @@ export function createComputerUseBddApi(context: TestContext) {
     );
   }
 
-  function auditEventsClient() {
-    return setupApp({ context, routes: computerUseRoutes })(
+  function auditEventsClient(signal?: AbortSignal) {
+    return setupApp({ context, routes: computerUseRoutes, signal })(
       computerUseAuditEventsContract,
     );
   }
@@ -845,7 +845,7 @@ export function createComputerUseBddApi(context: TestContext) {
     },
 
     async requestListComputerUseAuditEvents(
-      actor: ApiTestUser | null,
+      actor: ComputerUseAuth,
       query: {
         readonly commandId?: string;
         readonly hostId?: string;
@@ -853,9 +853,10 @@ export function createComputerUseBddApi(context: TestContext) {
         readonly limit?: number;
       },
       statuses: readonly (200 | 401 | 403)[],
+      signal?: AbortSignal,
     ) {
       return await accept(
-        auditEventsClient().list({
+        auditEventsClient(signal).list({
           headers: authenticate(actor),
           query,
         }),
@@ -864,16 +865,17 @@ export function createComputerUseBddApi(context: TestContext) {
     },
 
     async listComputerUseAuditEvents(
-      actor: ApiTestUser,
+      actor: Exclude<ComputerUseAuth, null>,
       query: {
         readonly commandId?: string;
         readonly hostId?: string;
         readonly runId?: string;
         readonly limit?: number;
       } = {},
+      signal?: AbortSignal,
     ): Promise<ComputerUseAuditEventListResponse> {
       const response = await accept(
-        auditEventsClient().list({
+        auditEventsClient(signal).list({
           headers: authenticate(actor),
           query,
         }),

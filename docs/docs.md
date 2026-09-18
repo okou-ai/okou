@@ -80,6 +80,9 @@ surface; the index does not replace their detailed rules.
 - [Standalone Computer Use host directory](./account-erasure-computer-use-host-directory.md):
   exact host-owner admission, complete online/offline projection, Agent-bound
   narrowing and unbounded host-cardinality evidence.
+- [Standalone Computer Use audit events](./account-erasure-computer-use-audit-events.md):
+  exact owner admission, retained selector/redaction semantics and bounded output
+  with explicit physical-scan evidence.
 - [Connector catalog rejections](./connector-catalog-rejections.md): safe
   validation reasons, cached rejection records, retained snapshots and recovered
   publication-order evidence.

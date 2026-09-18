@@ -2100,64 +2100,59 @@ export const completeComputerUseHostCommand$ = command(
   },
 );
 
-export const listComputerUseAuditEvents$ = command(
-  async (
-    { set },
-    params: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly limit: number;
-      readonly commandId?: string;
-      readonly hostId?: string;
-      readonly runId?: string;
-    },
-    signal: AbortSignal,
-  ) => {
-    const db = set(writeDb$);
-    const filters = [
-      eq(computerUseCommandAuditEvents.orgId, params.orgId),
-      eq(computerUseCommandAuditEvents.userId, params.userId),
-    ];
-    if (params.commandId) {
-      filters.push(
-        eq(computerUseCommandAuditEvents.commandId, params.commandId),
-      );
-    }
-    if (params.hostId) {
-      filters.push(eq(computerUseCommandAuditEvents.hostId, params.hostId));
-    }
-    if (params.runId) {
-      filters.push(eq(computerUseCommandAuditEvents.runId, params.runId));
-    }
-
-    const rows = await db
-      .select()
-      .from(computerUseCommandAuditEvents)
-      .where(and(...filters))
-      .orderBy(desc(computerUseCommandAuditEvents.createdAt))
-      .limit(params.limit);
-    signal.throwIfAborted();
-
-    L.debug("Listed computer-use audit events", {
-      orgId: params.orgId,
-      count: rows.length,
-    });
-
-    return {
-      auditEvents: rows.map((row) => {
-        return {
-          id: row.id,
-          commandId: row.commandId,
-          runId: row.runId,
-          hostId: row.hostId,
-          kind: row.kind as ComputerUseCommandKind,
-          app: row.app,
-          event: row.event as "completed",
-          redactedResult: row.redactedResult,
-          error: row.error,
-          createdAt: row.createdAt.toISOString(),
-        };
-      }),
-    };
+export async function projectComputerUseAuditEvents(
+  args: {
+    readonly db: Pick<Db, "select">;
+    readonly orgId: string;
+    readonly userId: string;
+    readonly limit: number;
+    readonly commandId?: string;
+    readonly hostId?: string;
+    readonly runId?: string;
   },
-);
+  signal: AbortSignal,
+) {
+  const filters = [
+    eq(computerUseCommandAuditEvents.orgId, args.orgId),
+    eq(computerUseCommandAuditEvents.userId, args.userId),
+  ];
+  if (args.commandId) {
+    filters.push(eq(computerUseCommandAuditEvents.commandId, args.commandId));
+  }
+  if (args.hostId) {
+    filters.push(eq(computerUseCommandAuditEvents.hostId, args.hostId));
+  }
+  if (args.runId) {
+    filters.push(eq(computerUseCommandAuditEvents.runId, args.runId));
+  }
+
+  const rows = await args.db
+    .select()
+    .from(computerUseCommandAuditEvents)
+    .where(and(...filters))
+    .orderBy(desc(computerUseCommandAuditEvents.createdAt))
+    .limit(args.limit);
+  signal.throwIfAborted();
+
+  L.debug("Listed computer-use audit events", {
+    orgId: args.orgId,
+    count: rows.length,
+  });
+
+  return {
+    auditEvents: rows.map((row) => {
+      return {
+        id: row.id,
+        commandId: row.commandId,
+        runId: row.runId,
+        hostId: row.hostId,
+        kind: row.kind as ComputerUseCommandKind,
+        app: row.app,
+        event: row.event as "completed",
+        redactedResult: row.redactedResult,
+        error: row.error,
+        createdAt: row.createdAt.toISOString(),
+      };
+    }),
+  };
+}

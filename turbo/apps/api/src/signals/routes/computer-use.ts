@@ -27,10 +27,10 @@ import {
   getComputerUseCommandPluginContent$,
   getComputerUseCommandScreenshot$,
   heartbeatComputerUseHost$,
-  listComputerUseAuditEvents$,
   startComputerUseHost$,
   stopComputerUseHost$,
 } from "../services/computer-use.service";
+import { listAdmittedComputerUseAuditEvents$ } from "../services/computer-use-audit-events-erasure-admission.service";
 import { listAdmittedComputerUseHosts$ } from "../services/computer-use-host-directory-erasure-admission.service";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import type { RouteEntry } from "../route-entry";
@@ -590,7 +590,7 @@ const auditEventsListInner$ = command(
     const auth = get(organizationAuthContext$);
     const query = get(auditEventsQuery$);
     const result = await set(
-      listComputerUseAuditEvents$,
+      listAdmittedComputerUseAuditEvents$,
       {
         orgId: auth.orgId,
         userId: auth.userId,
@@ -602,8 +602,10 @@ const auditEventsListInner$ = command(
       signal,
     );
     signal.throwIfAborted();
-
-    return { status: 200 as const, body: result };
+    if (result.outcome === "closed") {
+      return forbidden("Computer-use audit events are not available");
+    }
+    return { status: 200 as const, body: result.value };
   },
 );
 
