@@ -530,21 +530,21 @@ function render(options: Options, bundle: string): Rendered {
       page.call(["eval", `${PREPARE}(${JSON.stringify(selector)})`]);
     }
 
+    // An owned session is a browser this process started here, so its failure
+    // to read the cached bundle is a broken cache and must surface. A borrowed
+    // session may be driving a remote browser with no view of this filesystem,
+    // which is why it is served the same published artifact over the network.
+    const source = borrowed ? RENDERER_CDN : `file://${bundle}`;
     page.call([
       "eval",
       `(async()=>{
-        const load = (src) => new Promise((resolve, reject) => {
+        await new Promise((resolve, reject) => {
           const tag = document.createElement("script");
-          tag.src = src;
+          tag.src = ${JSON.stringify(source)};
           tag.addEventListener("load", () => resolve(), { once: true });
-          tag.addEventListener("error", () => reject(new Error("cannot load " + src)), { once: true });
+          tag.addEventListener("error", () => reject(new Error("cannot load " + ${JSON.stringify(source)})), { once: true });
           document.head.append(tag);
         });
-        try {
-          await load(${JSON.stringify(`file://${bundle}`)});
-        } catch {
-          await load(${JSON.stringify(RENDERER_CDN)});
-        }
         if (!window.domToPptx || !window.domToPptx.exportToPptx) {
           throw new Error("renderer bundle exposed no exportToPptx");
         }
