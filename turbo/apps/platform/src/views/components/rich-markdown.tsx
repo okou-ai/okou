@@ -22,6 +22,7 @@ import {
 } from "../../lib/markdown/pipeline.ts";
 import { openImageLightbox$ } from "../../signals/okou-page/attachment-chips.ts";
 import { openMarkdownArtifact$ } from "../../signals/okou-page/markdown-artifact-preview.ts";
+import { pageSignal$ } from "../../signals/page-signal.ts";
 import type {
   ArtifactKind,
   ArtifactSignals,
@@ -417,6 +418,7 @@ export function SharedThreadArtifactCard({
   const resourceUrl = useLoadable(signals.resourceUrl$);
   const previewImage = useLastLoadable(signals.previewImageUrl$);
   const openPreview = useSet(signals.openPreview$);
+  const pageSignal = useGet(pageSignal$);
   const title =
     signals.kind === "html"
       ? fallbackHtmlPreviewTitle(label.trim() || signals.filename, signals.url)
@@ -440,7 +442,7 @@ export function SharedThreadArtifactCard({
         }
         filename={signals.filename}
         onPreview={() => {
-          openPreview(title);
+          openPreview(title, pageSignal);
         }}
         posterClassName="h-full w-full"
         posterLoad={signals.previewImageLoad}
@@ -476,7 +478,7 @@ export function SharedThreadArtifactCard({
                 return;
               }
               event.preventDefault();
-              openPreview(title);
+              openPreview(title, pageSignal);
             }
           : undefined
       }

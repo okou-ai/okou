@@ -1,7 +1,13 @@
 import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
@@ -219,11 +225,21 @@ test.each([false, true])(
   },
 );
 
-test("older snapshot responses without a download URL still download authorized file bytes", async () => {
+test("a public artifact reference downloads freshly authorized file bytes", async () => {
   const browser = context.mocks.browser.blobDownload();
-  const { video } = mockSnapshotResources();
-  const downloadUrl = `${R2_ORIGIN}/snapshots/launch.mp4?X-Amz-Signature=download`;
-  context.mocks.http.get(`${R2_ORIGIN}/snapshots/launch.mp4`, ({ request }) => {
+  const previewUrl = `${R2_ORIGIN}/files/launch.mp4?X-Amz-Signature=preview`;
+  const video = { url: previewUrl };
+  context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
+    return respond(200, {
+      url: video.url,
+      filename: "lightvid01.mp4",
+      contentType: "video/mp4",
+      expiresAt: "2099-01-01T00:00:00Z",
+      target: { kind: "file", id: FILE_ID },
+    });
+  });
+  const downloadUrl = `${R2_ORIGIN}/files/launch.mp4?X-Amz-Signature=download`;
+  context.mocks.http.get(`${R2_ORIGIN}/files/launch.mp4`, ({ request }) => {
     return new URL(request.url).searchParams.get("X-Amz-Signature") ===
       "download"
       ? HttpResponse.text("shared video bytes", {
@@ -236,7 +252,12 @@ test("older snapshot responses without a download URL still download authorized 
   await setupSharedThreadPage(context, { host: "app.okou.ai" });
 
   const card = await screen.findByTestId("markdown-artifact-preview-video");
-  await within(card).findByTestId("chat-video-preview-thumbnail");
+  await waitFor(() => {
+    expect(card.querySelector("video")).toHaveAttribute(
+      "src",
+      `${previewUrl}#t=0.001`,
+    );
+  });
 
   click(card);
 
@@ -244,7 +265,7 @@ test("older snapshot responses without a download URL still download authorized 
   await waitFor(() => {
     expect(dialog.querySelector("video")).toHaveAttribute(
       "src",
-      `${VIDEO_URL}#t=2`,
+      `${previewUrl}#t=2`,
     );
   });
   video.url = downloadUrl;
@@ -259,8 +280,98 @@ test("older snapshot responses without a download URL still download authorized 
   );
   expect(dialog.querySelector("video")).toHaveAttribute(
     "src",
-    `${VIDEO_URL}#t=2`,
+    `${previewUrl}#t=2`,
   );
+});
+
+test("switching shared conversations cancels an active download and resets the viewer", async () => {
+  const browser = context.mocks.browser.blobDownload();
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  const requested = context.mocks.deferred<void>();
+  const cancelled = context.mocks.deferred<void>();
+  const videoUrl = `${R2_ORIGIN}/files/launch.mp4?X-Amz-Signature=preview`;
+  const nextId = "30000000-0000-4000-8000-000000000703";
+  context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
+    return respond(200, {
+      url: videoUrl,
+      filename: "lightvid01.mp4",
+      contentType: "video/mp4",
+      expiresAt: "2099-01-01T00:00:00Z",
+      target: { kind: "file", id: FILE_ID },
+    });
+  });
+  context.mocks.api(sharedThreadsContract.get, ({ params, respond }) => {
+    return respond(
+      200,
+      sharedThread({
+        id: params.id,
+        title:
+          params.id === nextId ? "Next shared conversation" : "Launch review",
+        messages: [
+          {
+            messageIndex: 0,
+            role: "assistant",
+            content: `![Launch video](${VIDEO})`,
+          },
+        ],
+      }),
+    );
+  });
+  context.mocks.http.get(
+    `${R2_ORIGIN}/files/launch.mp4`,
+    async ({ request }) => {
+      request.signal.addEventListener(
+        "abort",
+        () => {
+          cancelled.resolve();
+        },
+        { once: true },
+      );
+      requested.resolve();
+      await cancelled.promise;
+      return HttpResponse.text("shared video bytes", {
+        headers: { "Content-Type": "video/mp4" },
+      });
+    },
+  );
+
+  await setupSharedThreadPage(context, { host: "app.okou.ai" });
+
+  click(await screen.findByTestId("markdown-artifact-preview-video"));
+
+  const dialog = await screen.findByRole("dialog");
+  await waitFor(() => {
+    expect(getButtonByName("Download", dialog)).toBeEnabled();
+  });
+  click(getButtonByName("Download", dialog));
+  await requested.promise;
+
+  act(() => {
+    window.history.pushState({}, "", `/share/threads/${nextId}`);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  });
+
+  await cancelled.promise;
+  await expect(
+    screen.findByRole("heading", { name: "Next shared conversation" }),
+  ).resolves.toBeInTheDocument();
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(browser.downloads).toStrictEqual([]);
+
+  click(await screen.findByTestId("markdown-artifact-preview-video"));
+
+  const nextDialog = await screen.findByRole("dialog");
+  await waitFor(() => {
+    expect(nextDialog.querySelector("video")).toHaveAttribute(
+      "src",
+      `${videoUrl}#t=2`,
+    );
+  });
+  click(getButtonByName("Copy link", nextDialog));
+
+  await waitFor(() => {
+    expect(clipboard.writes).toStrictEqual([VIDEO]);
+  });
 });
 
 test("a shared video uses its generated cover and plays the original in the viewer", async () => {

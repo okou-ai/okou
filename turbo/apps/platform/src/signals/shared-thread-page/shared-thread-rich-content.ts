@@ -31,7 +31,7 @@ export interface SharedThreadRichContentSignals {
 }
 
 export interface SharedThreadArtifactSignals extends ArtifactSignals {
-  readonly openPreview$: Command<void, [label: string]>;
+  readonly openPreview$: Command<void, [label: string, signal: AbortSignal]>;
 }
 
 export function createSharedThreadArtifactSignals(
@@ -44,8 +44,8 @@ export function createSharedThreadArtifactSignals(
   const artifact = createArtifactSignals(descriptor, previewImageUrlsByUrl$);
   return {
     ...artifact,
-    openPreview$: command(({ set }, label: string) => {
-      set(viewer.open$, artifact, label);
+    openPreview$: command(({ set }, label: string, signal: AbortSignal) => {
+      set(viewer.open$, artifact, label, signal);
     }),
   };
 }

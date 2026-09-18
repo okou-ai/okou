@@ -12,42 +12,48 @@ import { resetSignal } from "../utils.ts";
 
 export interface SharedThreadArtifactPreview {
   readonly title: string;
-  readonly preview: AttachmentLightboxState;
+  readonly preview: AttachmentLightboxState & { readonly filename: string };
 }
 
 /** One public conversation owns its preview and cancels actions on close/leave. */
-export function createSharedThreadArtifactPreviewSignals(
-  pageSignal: AbortSignal,
-) {
+export function createSharedThreadArtifactPreviewSignals() {
   const current$ = state<SharedThreadArtifactPreview | null>(null);
   const visible$ = state(false);
   const fullscreen$ = state(false);
+  const resetOwner$ = resetSignal();
   const resetCopy$ = resetSignal();
   const resetDownload$ = resetSignal();
   const imageCanvas = createZoomableImageCanvasSignals();
 
-  const open$ = command(({ set }, artifact: ArtifactSignals, label: string) => {
-    pageSignal.throwIfAborted();
-    if (artifact.kind !== "html" && artifact.kind !== "video") {
-      return;
-    }
-    set(resetCopy$);
-    set(resetDownload$);
-    set(imageCanvas.reset$);
-    set(fullscreen$, false);
-    set(current$, {
-      title: label.trim() || artifact.filename,
-      preview: {
-        ...artifact,
-        ...createAttachmentPreviewSignals(artifact.url, {
-          contentType: artifact.contentType,
-        }),
-        kind: artifact.kind,
-        url: new URL(artifact.url, location.origin).href,
-      },
-    });
-    set(visible$, true);
-  });
+  const open$ = command(
+    (
+      { set },
+      artifact: ArtifactSignals,
+      label: string,
+      signal: AbortSignal,
+    ) => {
+      signal.throwIfAborted();
+      if (artifact.kind !== "html" && artifact.kind !== "video") {
+        return;
+      }
+      set(resetCopy$);
+      set(resetDownload$);
+      set(imageCanvas.reset$);
+      set(fullscreen$, false);
+      set(current$, {
+        title: label.trim() || artifact.filename,
+        preview: {
+          ...artifact,
+          ...createAttachmentPreviewSignals(artifact.url, {
+            contentType: artifact.contentType,
+          }),
+          kind: artifact.kind,
+          url: new URL(artifact.url, location.origin).href,
+        },
+      });
+      set(visible$, true);
+    },
+  );
   const close$ = command(({ set }) => {
     set(visible$, false);
     set(resetCopy$);
@@ -58,6 +64,17 @@ export function createSharedThreadArtifactPreviewSignals(
     set(current$, null);
     set(fullscreen$, false);
     set(imageCanvas.reset$);
+  });
+  const initialize$ = command(({ set }, parentSignal: AbortSignal) => {
+    parentSignal.throwIfAborted();
+    const signal = set(resetOwner$, parentSignal);
+    signal.addEventListener(
+      "abort",
+      () => {
+        set(dispose$);
+      },
+      { once: true },
+    );
   });
   const finishClose$ = command(({ get, set }, open: boolean) => {
     if (!open && !get(visible$)) {
@@ -92,7 +109,7 @@ export function createSharedThreadArtifactPreviewSignals(
       await downloadAttachmentUrl(
         url,
         signal,
-        current.preview.filename ?? "artifact",
+        current.preview.filename,
         token?.downloadUrl ? "native" : "blob",
         "default",
       );
@@ -112,6 +129,7 @@ export function createSharedThreadArtifactPreviewSignals(
     open$,
     close$,
     dispose$,
+    initialize$,
     finishClose$,
     toggleFullscreen$,
     copyLink$,
