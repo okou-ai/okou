@@ -15,6 +15,7 @@ import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import {
   clearMorningBriefInstructionsHead,
+  holdMorningBriefInstructionVersionRead,
   holdMorningBriefMembershipLookup,
   pauseMorningBriefAutomation,
 } from "../../../test-fixtures/morning-brief-collection";
@@ -117,9 +118,7 @@ interface OwnerSourceOptions {
   readonly slack?: boolean;
 }
 
-async function setupOwner(
-  options: OwnerSourceOptions = {},
-): Promise<Fixture> {
+async function setupOwner(options: OwnerSourceOptions = {}): Promise<Fixture> {
   const { actor } = await workflowBdd.setupWorkflowOrg({
     timezone: "Asia/Shanghai",
   });
@@ -897,7 +896,7 @@ describe("POST /api/morning-brief/collection-preview/compose", () => {
     { name: "at", offset: 0, expired: true },
     { name: "after", offset: 1, expired: true },
   ])(
-    "decides the held final authority and canonical version fence $name the deadline",
+    "decides the held final authority read $name the deadline",
     async ({ offset, expired }) => {
       const fixture = await setupOwner({ gmail: true });
       const at = freezeClock();
@@ -954,6 +953,72 @@ describe("POST /api/morning-brief/collection-preview/compose", () => {
       }
       expect(response.body.reason).toBe("deadline-exceeded");
       expect(response.body.detail).toContain("final authority check");
+      expect(response.body.sources.length).toBeGreaterThan(0);
+    },
+  );
+
+  it.each([
+    { name: "one millisecond before", offset: -1, expired: false },
+    { name: "at", offset: 0, expired: true },
+    { name: "after", offset: 1, expired: true },
+  ])(
+    "decides the held canonical instruction version read $name the deadline",
+    async ({ offset, expired }) => {
+      const fixture = await setupOwner({ gmail: true });
+      const at = freezeClock();
+      const deadlineAt = at + 10_000;
+      const authorityReady = createDeferredPromise<
+        ReturnType<typeof holdMorningBriefMembershipLookup>
+      >(context.signal);
+      let installed = false;
+      stubInstructionStorage(() => {
+        if (installed) {
+          return;
+        }
+        installed = true;
+        authorityReady.resolve(
+          holdMorningBriefMembershipLookup(
+            { orgId: fixture.actor.orgId, userId: fixture.actor.userId },
+            context.signal,
+          ),
+        );
+      });
+      await bdd.updateAgentInstructions(
+        fixture.actor,
+        fixture.agentId,
+        "Write in Polish.",
+      );
+      await seedMembership(fixture);
+      stubGmail({ messages: [{ id: "m-1", at: at - 30 * 60 * 1000 }] });
+      const pending = startCompose(fixture, {
+        anchor: anchorFor(at),
+        deadlineAt: new Date(deadlineAt).toISOString(),
+      });
+
+      const authority = await authorityReady.promise;
+      await authority.waitForArrival();
+      // The initial language read is complete and retained-source authority is
+      // waiting. Acquire the database boundary before releasing authority so
+      // only the final canonical version SELECT can arrive at this lock.
+      const versionRead = await holdMorningBriefInstructionVersionRead(
+        context.signal,
+      );
+      authority.release();
+      await versionRead.waitForBlocked();
+      mockNow(deadlineAt + offset);
+      await versionRead.release();
+      const response = await accept(pending, [200]);
+
+      if (!expired) {
+        expect(response.body.result).toBe("composed");
+        return;
+      }
+      expect(response.body.result).toBe("incomplete");
+      if (response.body.result !== "incomplete") {
+        return;
+      }
+      expect(response.body.reason).toBe("deadline-exceeded");
+      expect(response.body.detail).toContain("instruction version check");
       expect(response.body.sources.length).toBeGreaterThan(0);
     },
   );
