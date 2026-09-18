@@ -63,7 +63,6 @@ const TASK_ICONS = {
   workflow: Route,
   presentation: Presentation,
   image: Image,
-  video: Video,
   website: Globe,
   visualization: ChartNoAxesCombined,
 } as const;
@@ -391,14 +390,14 @@ export function ComposerTaskChips({
     },
     { returnObjects: true },
   );
-  const tasks: readonly ComposerTask[] = [
+  /** Video is not offered here; it stays a create mode rather than a chip. */
+  const tasks = [
     "workflow",
     "presentation",
     "image",
-    "video",
     "website",
     "visualization",
-  ];
+  ] as const satisfies readonly ComposerTask[];
   return (
     <section
       className="flex min-w-0 flex-col gap-5"

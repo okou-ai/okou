@@ -85,13 +85,13 @@ export function toWebsiteGenerationTemplate(
 }
 
 /**
- * The five things the slash panel indexes. These are the template picker's own
- * categories, so opening the picker from a row lands on the same tab.
+ * The four things the slash panel indexes. These are the template picker's own
+ * categories, so opening the picker from a row lands on the same tab. Video is
+ * not one of them: its catalog is reached from the picker itself.
  */
 export const SLASH_TEMPLATE_CATEGORIES = [
   "slides",
   "illustration",
-  "video",
   "website",
   "workflow",
 ] as const;
@@ -99,26 +99,29 @@ export const SLASH_TEMPLATE_CATEGORIES = [
 export type SlashTemplateCategory = (typeof SLASH_TEMPLATE_CATEGORIES)[number];
 
 /**
- * Only these four carry cover art, so only these four open the detail pane.
- * Workflow templates are text, and a pane sized for covers would be mostly
- * empty for them.
+ * The catalogs that carry cover art, so they can fill a pane or a shelf of
+ * them. Video keeps its covers for the task chips' shelf even though it is no
+ * longer a slash row.
  */
-const SLASH_TEMPLATE_PREVIEW_CATEGORIES = [
-  "slides",
-  "illustration",
-  "video",
-  "website",
-] as const;
-
 export type SlashTemplatePreviewCategory =
-  (typeof SLASH_TEMPLATE_PREVIEW_CATEGORIES)[number];
+  | "slides"
+  | "illustration"
+  | "video"
+  | "website";
 
-export function isSlashTemplatePreviewCategory(
+/**
+ * The slash rows that open the detail pane. Workflow templates are text, and a
+ * pane sized for covers would be mostly empty for them.
+ */
+export type SlashTemplateDetailCategory = Exclude<
+  SlashTemplateCategory,
+  "workflow"
+>;
+
+export function isSlashTemplateDetailCategory(
   category: SlashTemplateCategory,
-): category is SlashTemplatePreviewCategory {
-  return SLASH_TEMPLATE_PREVIEW_CATEGORIES.some((candidate) => {
-    return candidate === category;
-  });
+): category is SlashTemplateDetailCategory {
+  return category !== "workflow";
 }
 
 /** Covers render two across a 320px pane, so they are requested at 2x that. */
