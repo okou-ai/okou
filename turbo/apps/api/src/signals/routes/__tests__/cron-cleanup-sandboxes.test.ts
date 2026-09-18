@@ -37,7 +37,6 @@ import { generateSandboxToken } from "../../auth/tokens";
 import {
   holdAgentRunDeletionFixture,
   holdOrgCreditLockFixture,
-  holdRunOutputProjectionLockFixture,
   insertPendingInlineDeliveryCallbackFixture,
   readRunCallbackFixture,
   readHistoryBlobReferenceCountFixture,
@@ -1077,7 +1076,7 @@ describe("sandbox cleanup", () => {
     });
   });
 
-  it("acknowledges an event projection that loses the root-delete race", async () => {
+  it("acknowledges an event projection when root deletion wins the run-row order", async () => {
     mockNow(THREADLESS_TEST_NOW_MS);
     const fixture = await trackRun(
       insertRunFixture({
@@ -1089,13 +1088,13 @@ describe("sandbox cleanup", () => {
         threadless: true,
       }),
     );
-    const held = await holdRunOutputProjectionLockFixture({
+    const deleting = await holdAgentRunDeletionFixture({
       runId: fixture.runId,
       signal: context.signal,
     });
     onTestFinished(async () => {
-      held.release();
-      await held.done;
+      deleting.release();
+      await deleting.done;
     });
     const headers = {
       authorization: `Bearer ${generateSandboxToken(
@@ -1121,13 +1120,9 @@ describe("sandbox cleanup", () => {
       headers,
       [200],
     );
-    await expect.poll(held.blockedWaiterCount).toBeGreaterThan(0);
-
-    const cleanup = await cleanupRegisteredFixtures();
-    expect(cleanup.body.threadlessRuns.discovered).toBe(1);
-    expect(cleanup.body.threadlessRuns.deleted).toBe(1);
-    held.release();
-    await held.done;
+    await expect.poll(deleting.blockedWaiterCount).toBeGreaterThan(0);
+    deleting.release();
+    await deleting.done;
     const eventResponse = await eventRequest;
     expect(eventResponse).toMatchObject({
       status: 200,

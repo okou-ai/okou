@@ -16,6 +16,7 @@ import {
   holdRunActivityFixture,
   holdRunActivityParentFixture,
   expireRunActivityRetentionFixture,
+  deleteRunActivitySnapshotFixture,
   cancelRunActivityWaiterFixture,
   readRunActivityBookkeepingFixture,
 } from "../../../test-fixtures/run-activity";
@@ -776,6 +777,110 @@ describe("thread activity summary", () => {
     expect(inputs).toHaveLength(1);
   });
 
+  it("degrades completion contention after rollback without publishing the provider phrase", async () => {
+    const f = await fixture();
+    const entered = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<string>(context.signal);
+    const inputs = provider(async () => {
+      entered.resolve(undefined);
+      return await release.promise;
+    });
+    const pending = summarize(f.actor, f.run);
+    await entered.promise;
+    const before = await readRunActivityBookkeepingFixture(f.run.runId);
+    const held = await holdRunActivityParentFixture(
+      f.run.runId,
+      context.signal,
+    );
+    release.resolve("This uncommitted phrase must stay private");
+    await expect(pending).resolves.toStrictEqual({
+      runId: f.run.runId,
+      status: "unavailable",
+      messages: [],
+    });
+    await expect(
+      readRunActivityBookkeepingFixture(f.run.runId),
+    ).resolves.toStrictEqual(before);
+    expect(inputs).toHaveLength(1);
+    await held.release();
+    await expect(summarize(f.actor, f.run)).resolves.toMatchObject({
+      status: "available",
+      messages: [],
+    });
+    expect(inputs).toHaveLength(1);
+  });
+
+  it.each(["abort", "database cancellation"] as const)(
+    "propagates completion %s instead of degrading it",
+    async (failure) => {
+      const f = await fixture();
+      const entered = createDeferredPromise<void>(context.signal);
+      const release = createDeferredPromise<string>(context.signal);
+      const inputs = provider(async () => {
+        entered.resolve(undefined);
+        return await release.promise;
+      });
+      const shutdown = new AbortController();
+      const pending = settleIncludingAbort(
+        request(f.actor, f.run, {
+          signal: shutdown.signal,
+          rethrowErrors: true,
+        }),
+      );
+      await entered.promise;
+      const before = await readRunActivityBookkeepingFixture(f.run.runId);
+      const held = await holdRunActivityParentFixture(
+        f.run.runId,
+        context.signal,
+      );
+      release.resolve("This completion must roll back");
+      const waiter = await held.waitForBlocked();
+      const reason = new DOMException("API instance stopping", "AbortError");
+      if (failure === "abort") {
+        shutdown.abort(reason);
+      } else {
+        await cancelRunActivityWaiterFixture(waiter);
+      }
+      const result = await pending;
+      if (failure === "abort") {
+        expect(result).toStrictEqual({ ok: false, error: reason });
+      } else {
+        expect(result).toMatchObject({
+          ok: false,
+          error: { cause: { code: "57014" } },
+        });
+      }
+      await expect(
+        readRunActivityBookkeepingFixture(f.run.runId),
+      ).resolves.toStrictEqual(before);
+      expect(inputs).toHaveLength(1);
+      await held.release();
+    },
+  );
+
+  it("does not resurrect a snapshot cleaned before completion admission", async () => {
+    const f = await fixture();
+    const entered = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<string>(context.signal);
+    const inputs = provider(async () => {
+      entered.resolve(undefined);
+      return await release.promise;
+    });
+    const pending = summarize(f.actor, f.run);
+    await entered.promise;
+    await deleteRunActivitySnapshotFixture(f.run.runId);
+    release.resolve("This phrase has no retained snapshot");
+    await expect(pending).resolves.toStrictEqual({
+      runId: f.run.runId,
+      status: "unavailable",
+      messages: [],
+    });
+    await expect(
+      readRunActivityBookkeepingFixture(f.run.runId),
+    ).resolves.toBeUndefined();
+    expect(inputs).toHaveLength(1);
+  });
+
   it.each(["user", "organization"] as const)(
     "does not recreate activity after account %s deletion during generation",
     async (kind) => {
@@ -796,8 +901,8 @@ describe("thread activity summary", () => {
       await webhooks.requestClerkWebhook("{}", {}, [200]);
       await flushWaitUntilForTest();
       release.resolve("This phrase belongs to a deleted account");
-      // Fresh admission rejects the deleted identity before completion or the
-      // final snapshot INSERT; no stale provider output reaches the caller.
+      // Fresh completion admission rejects the deleted identity; no stale
+      // provider output reaches the caller and no response-path INSERT runs.
       expect((await accept(pending, [200])).body).toStrictEqual({
         runId: f.run.runId,
         status: "ineligible",
@@ -903,8 +1008,8 @@ describe("thread activity summary", () => {
         await chat.deleteThread(f.actor, f.run.threadId);
       }
       release.resolve("This phrase must not revive the run");
-      // Every post-provider transaction rechecks current-run eligibility;
-      // even the final INSERT/read must not return a terminal run's cache.
+      // The combined completion/response transaction freshly rechecks
+      // current-run eligibility and cannot return a terminal run's cache.
       await expect(pending).resolves.toMatchObject({
         status: "ineligible",
         messages: [],
