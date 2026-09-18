@@ -3,7 +3,7 @@ import type {
   ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { connectors } from "@okouai/db/schema/connector";
-import { builtinConnectorAccountOauthBindings } from "@okouai/db/schema/builtin-connector-account-oauth-binding";
+import { connectorAccountOauthBindings } from "@okouai/db/schema/connector-account-oauth-binding";
 import { and, eq, sql } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
@@ -392,13 +392,8 @@ export async function replaceConnectorConnection(
     signal,
   );
   await db
-    .delete(builtinConnectorAccountOauthBindings)
-    .where(
-      eq(
-        builtinConnectorAccountOauthBindings.connectorAccountId,
-        connection.id,
-      ),
-    );
+    .delete(connectorAccountOauthBindings)
+    .where(eq(connectorAccountOauthBindings.connectorAccountId, connection.id));
   await args.writeCredentials({ db, connectorId: connection.id }, signal);
   signal.throwIfAborted();
 

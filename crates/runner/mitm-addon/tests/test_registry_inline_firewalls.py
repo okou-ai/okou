@@ -30,7 +30,7 @@ class TestRegistryInlineFirewalls:
         entry["firewall"]["name"] = "automatic-mcp"
         api = entry["firewall"]["apis"][0]
         api["auth"] = (
-            {"headers": {"Authorization": "Bearer ${{ secrets.BUILTIN_MCP_ACCESS_TOKEN }}"}}
+            {"headers": {"Authorization": "Bearer ${{ secrets.MCP_ACCESS_TOKEN }}"}}
             if oauth
             else {}
         )

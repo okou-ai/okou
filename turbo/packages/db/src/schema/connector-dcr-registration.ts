@@ -11,8 +11,8 @@ import {
 } from "drizzle-orm/pg-core";
 
 /** Organization-scoped client registration for one exact builtin MCP contract. */
-export const builtinConnectorDcrRegistrations = pgTable(
-  "builtin_connector_dcr_registrations",
+export const connectorDcrRegistrations = pgTable(
+  "connector_dcr_registrations",
   {
     id: uuid("id").defaultRandom().primaryKey(),
     orgId: text("org_id").notNull(),
@@ -38,31 +38,31 @@ export const builtinConnectorDcrRegistrations = pgTable(
   },
   (table) => {
     return [
-      unique("uq_builtin_dcr_owner").on(
+      unique("uq_connector_dcr_owner").on(
         table.id,
         table.orgId,
         table.connectorSlug,
         table.authMethod,
         table.contractHash,
       ),
-      unique("uq_builtin_dcr_issuer").on(
+      unique("uq_connector_dcr_issuer").on(
         table.orgId,
         table.connectorSlug,
         table.authMethod,
         table.contractHash,
         table.issuer,
       ),
-      index("idx_builtin_dcr_org").on(table.orgId),
+      index("idx_connector_dcr_org").on(table.orgId),
       check(
-        "chk_builtin_dcr_identity",
+        "chk_connector_dcr_identity",
         sql`btrim(${table.issuer}) <> '' AND btrim(${table.clientId}) <> '' AND btrim(${table.redirectUri}) <> '' AND ${table.contractHash} ~ '^[a-f0-9]{64}$'`,
       ),
       check(
-        "chk_builtin_dcr_client_auth",
+        "chk_connector_dcr_client_auth",
         sql`(${table.tokenEndpointAuthMethod} = 'none' AND ${table.encryptedClientSecret} IS NULL) OR (${table.tokenEndpointAuthMethod} IN ('client_secret_basic', 'client_secret_post') AND ${table.encryptedClientSecret} IS NOT NULL)`,
       ),
       check(
-        "chk_builtin_dcr_expiry",
+        "chk_connector_dcr_expiry",
         sql`${table.expiresAt} IS NULL OR ${table.expiresAt} > ${table.issuedAt}`,
       ),
     ];

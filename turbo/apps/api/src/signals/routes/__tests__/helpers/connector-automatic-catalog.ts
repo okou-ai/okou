@@ -7,7 +7,7 @@ import {
   installApiTestConnectorCatalog,
 } from "../../../../test-fixtures/connector-catalog";
 
-export async function installBuiltinAutomaticMcpCatalog(
+export async function installAutomaticMcpCatalog(
   args: {
     readonly slug?: string;
     readonly methodId?: string;

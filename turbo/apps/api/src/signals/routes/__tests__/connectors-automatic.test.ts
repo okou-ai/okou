@@ -10,7 +10,7 @@ import { connectorsAutomaticRoutes } from "../connectors-automatic";
 import { connectorsSlugCallbackRoutes } from "../connectors-slug-callback";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { mockAutomaticMcpOAuthProvider } from "./helpers/api-bdd-connectors";
-import { installBuiltinAutomaticMcpCatalog } from "./helpers/builtin-automatic-catalog";
+import { installAutomaticMcpCatalog } from "./helpers/connector-automatic-catalog";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -38,7 +38,7 @@ async function fixture() {
   mocks.clerk.session(actor.userId, actor.orgId);
   mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
   mockEnv("APP_URL", "https://app.okou.ai");
-  const catalog = await installBuiltinAutomaticMcpCatalog();
+  const catalog = await installAutomaticMcpCatalog();
   onTestFinished(async () => {
     mockEnv("R2_USER_STORAGES_BUCKET_NAME", catalog.bucket);
     mocks.clerk.session(actor.userId, actor.orgId);
@@ -219,7 +219,7 @@ describe("builtin MCP automatic authentication", () => {
       registration: "cimd",
     });
     const started = await beginOAuth(f);
-    await installBuiltinAutomaticMcpCatalog({
+    await installAutomaticMcpCatalog({
       slug: f.slug,
       methodId: f.methodId,
       storageVersion: 2,

@@ -1706,7 +1706,7 @@ mod tests {
             {
                 firewall.apis[0].auth.headers.insert(
                     "Authorization".to_string(),
-                    "Bearer ${{ secrets.BUILTIN_MCP_ACCESS_TOKEN }}".to_string(),
+                    "Bearer ${{ secrets.MCP_ACCESS_TOKEN }}".to_string(),
                 );
             }
             harness

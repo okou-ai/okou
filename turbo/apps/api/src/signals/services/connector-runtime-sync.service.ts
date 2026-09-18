@@ -30,7 +30,7 @@ import {
   type ConnectorAccountResolutionRequest,
 } from "./connector-account-resolution.service";
 import { resolveConnectorCredentialAccess } from "./connector-credential-access.service";
-import { resolveBuiltinMcpRuntimeFirewall } from "./builtin-mcp-firewall.service";
+import { resolveConnectorMcpRuntimeFirewall } from "./connector-mcp-firewall.service";
 
 const L = logger("connector-runtime-sync");
 
@@ -366,7 +366,7 @@ async function resolveCustomTarget(args: {
   };
 }
 
-function builtinAccountRequests(
+function connectorAccountRequests(
   registrations: readonly ConnectorRuntimeTargetRegistration[],
 ): readonly ConnectorAccountResolutionRequest[] {
   return registrations.flatMap((registration) => {
@@ -416,7 +416,7 @@ async function resolveConnectorRuntimeTargetStates(args: {
       resolveConnectorAccounts(args.db, {
         orgId: args.scope.orgId,
         userId: args.scope.userId,
-        requests: builtinAccountRequests(args.targets),
+        requests: connectorAccountRequests(args.targets),
       }),
       customRegistrations.length > 0
         ? loadCustomSnapshot({
@@ -483,7 +483,7 @@ async function resolveConnectorRuntimeTargetStates(args: {
       accountResolution?.kind === "resolved" &&
       builtinCatalogSelection &&
       credentialAccess?.kind === "ok"
-        ? resolveBuiltinMcpRuntimeFirewall({
+        ? resolveConnectorMcpRuntimeFirewall({
             snapshot: builtinCatalogSelection,
             connectorSlug: registration.connectorSlug,
             authMethodId: accountResolution.account.authMethod,

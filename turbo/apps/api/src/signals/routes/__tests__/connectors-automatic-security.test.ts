@@ -9,14 +9,14 @@ import { describe, expect, it, onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
-import { holdBuiltinConnectorAccountFixture } from "../../../test-fixtures/builtin-connector-account-lock";
+import { holdConnectorAccountFixture } from "../../../test-fixtures/connector-account-lock";
 import { waitForDeferredBlocker } from "../../../test-fixtures/pi-deferred-lock";
 import { settleIncludingAbort } from "../../utils";
 import { connectorsAutomaticRoutes } from "../connectors-automatic";
 import { connectorsRoutes } from "../connectors";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { mockAutomaticMcpOAuthProvider } from "./helpers/api-bdd-connectors";
-import { installBuiltinAutomaticMcpCatalog } from "./helpers/builtin-automatic-catalog";
+import { installAutomaticMcpCatalog } from "./helpers/connector-automatic-catalog";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -44,7 +44,7 @@ async function fixture() {
   mocks.clerk.session(actor.userId, actor.orgId);
   mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
   mockEnv("APP_URL", "https://app.okou.ai");
-  const catalog = await installBuiltinAutomaticMcpCatalog();
+  const catalog = await installAutomaticMcpCatalog();
   onTestFinished(async () => {
     mocks.clerk.session(actor.userId, actor.orgId);
     mockEnv("R2_USER_STORAGES_BUCKET_NAME", catalog.bucket);
@@ -157,7 +157,7 @@ describe("builtin Automatic account and consent ownership", () => {
       receipt(second, secondInitial.attemptId),
       [200],
     );
-    await installBuiltinAutomaticMcpCatalog({
+    await installAutomaticMcpCatalog({
       slug: first.slug,
       methodId: first.methodId,
       additionalNoAuthMethodId: "replacement-connect",
@@ -165,7 +165,7 @@ describe("builtin Automatic account and consent ownership", () => {
     });
     mocks.clerk.session(first.userId, first.orgId);
     const retiring = await oauthStart(first, firstAccount.body.connectionId);
-    const held = await holdBuiltinConnectorAccountFixture(
+    const held = await holdConnectorAccountFixture(
       { ...second, connectorId: secondAccount.body.connectionId },
       context.signal,
     );
@@ -241,7 +241,7 @@ describe("builtin Automatic account and consent ownership", () => {
         );
       }
     });
-    await installBuiltinAutomaticMcpCatalog({
+    await installAutomaticMcpCatalog({
       slug: first.slug,
       methodId: first.methodId,
       additionalAutomaticMethodId: second.methodId,
@@ -276,7 +276,7 @@ describe("builtin Automatic account and consent ownership", () => {
 
     // The row lock models database contention. Both competing callbacks must
     // arrive before release, whether they wait on a lifecycle or account lock.
-    const held = await holdBuiltinConnectorAccountFixture(
+    const held = await holdConnectorAccountFixture(
       { ...first, connectorId: firstAccount.body.connectionId },
       context.signal,
     );
@@ -486,7 +486,7 @@ describe("builtin Automatic account and consent ownership", () => {
       registration: "cimd",
     });
     const started = await oauthStart(f);
-    await installBuiltinAutomaticMcpCatalog({
+    await installAutomaticMcpCatalog({
       slug: f.slug,
       methodId: f.methodId,
       endpoint: "https://replacement.example.test/mcp",

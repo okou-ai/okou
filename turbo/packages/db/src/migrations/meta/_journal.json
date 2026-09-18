@@ -649,8 +649,8 @@
     {
       "idx": 1170,
       "version": "7",
-      "when": 1789807088313,
-      "tag": "1170_builtin_mcp_automatic_oauth",
+      "when": 1789807137528,
+      "tag": "1170_connector_mcp_automatic_oauth",
       "breakpoints": true
     }
   ]

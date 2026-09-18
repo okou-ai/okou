@@ -1,5 +1,5 @@
 {
-  "id": "4fcb84c3-9a4e-4f33-ba37-ccc43e9cbbb6",
+  "id": "1f99ed58-09ef-4589-adca-b0967973d444",
   "prevId": "16341e84-f451-46c8-90ab-a0ae0ba359bb",
   "version": "7",
   "dialect": "postgresql",
@@ -7075,357 +7075,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.builtin_connector_account_oauth_bindings": {
-      "name": "builtin_connector_account_oauth_bindings",
-      "schema": "",
-      "columns": {
-        "connector_account_id": {
-          "name": "connector_account_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "org_id": {
-          "name": "org_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "connector_slug": {
-          "name": "connector_slug",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "auth_method": {
-          "name": "auth_method",
-          "type": "varchar(50)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "storage_version": {
-          "name": "storage_version",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "contract_hash": {
-          "name": "contract_hash",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "endpoint": {
-          "name": "endpoint",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "issuer": {
-          "name": "issuer",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "resource": {
-          "name": "resource",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "resource_metadata_url": {
-          "name": "resource_metadata_url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "token_endpoint": {
-          "name": "token_endpoint",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "client_id": {
-          "name": "client_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "token_endpoint_auth_method": {
-          "name": "token_endpoint_auth_method",
-          "type": "varchar(32)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "registration_method": {
-          "name": "registration_method",
-          "type": "varchar(8)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "dcr_registration_id": {
-          "name": "dcr_registration_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_builtin_oauth_binding_dcr": {
-          "name": "idx_builtin_oauth_binding_dcr",
-          "columns": [
-            {
-              "expression": "dcr_registration_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "fk_builtin_oauth_binding_account": {
-          "name": "fk_builtin_oauth_binding_account",
-          "tableFrom": "builtin_connector_account_oauth_bindings",
-          "tableTo": "connectors",
-          "columnsFrom": [
-            "connector_account_id",
-            "connector_slug"
-          ],
-          "columnsTo": [
-            "id",
-            "connector_slug"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "fk_builtin_oauth_binding_account_owner": {
-          "name": "fk_builtin_oauth_binding_account_owner",
-          "tableFrom": "builtin_connector_account_oauth_bindings",
-          "tableTo": "connectors",
-          "columnsFrom": [
-            "connector_account_id",
-            "org_id",
-            "user_id"
-          ],
-          "columnsTo": [
-            "id",
-            "org_id",
-            "user_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "fk_builtin_oauth_binding_dcr_owner": {
-          "name": "fk_builtin_oauth_binding_dcr_owner",
-          "tableFrom": "builtin_connector_account_oauth_bindings",
-          "tableTo": "builtin_connector_dcr_registrations",
-          "columnsFrom": [
-            "dcr_registration_id",
-            "org_id",
-            "connector_slug",
-            "auth_method",
-            "contract_hash"
-          ],
-          "columnsTo": [
-            "id",
-            "org_id",
-            "connector_slug",
-            "auth_method",
-            "contract_hash"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "chk_builtin_oauth_binding_identity": {
-          "name": "chk_builtin_oauth_binding_identity",
-          "value": "\"builtin_connector_account_oauth_bindings\".\"storage_version\" > 0 AND \"builtin_connector_account_oauth_bindings\".\"contract_hash\" ~ '^[a-f0-9]{64}$' AND btrim(\"builtin_connector_account_oauth_bindings\".\"endpoint\") <> '' AND btrim(\"builtin_connector_account_oauth_bindings\".\"issuer\") <> '' AND btrim(\"builtin_connector_account_oauth_bindings\".\"resource\") <> '' AND btrim(\"builtin_connector_account_oauth_bindings\".\"token_endpoint\") <> '' AND btrim(\"builtin_connector_account_oauth_bindings\".\"client_id\") <> ''"
-        },
-        "chk_builtin_oauth_binding_token_auth": {
-          "name": "chk_builtin_oauth_binding_token_auth",
-          "value": "\"builtin_connector_account_oauth_bindings\".\"token_endpoint_auth_method\" IN ('none', 'client_secret_basic', 'client_secret_post')"
-        },
-        "chk_builtin_oauth_binding_registration": {
-          "name": "chk_builtin_oauth_binding_registration",
-          "value": "(\"builtin_connector_account_oauth_bindings\".\"registration_method\" = 'cimd' AND \"builtin_connector_account_oauth_bindings\".\"dcr_registration_id\" IS NULL AND \"builtin_connector_account_oauth_bindings\".\"token_endpoint_auth_method\" = 'none') OR (\"builtin_connector_account_oauth_bindings\".\"registration_method\" = 'dcr' AND \"builtin_connector_account_oauth_bindings\".\"dcr_registration_id\" IS NOT NULL)"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.builtin_connector_dcr_registrations": {
-      "name": "builtin_connector_dcr_registrations",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "org_id": {
-          "name": "org_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "connector_slug": {
-          "name": "connector_slug",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "auth_method": {
-          "name": "auth_method",
-          "type": "varchar(50)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "contract_hash": {
-          "name": "contract_hash",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "issuer": {
-          "name": "issuer",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "client_id": {
-          "name": "client_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "encrypted_client_secret": {
-          "name": "encrypted_client_secret",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "token_endpoint_auth_method": {
-          "name": "token_endpoint_auth_method",
-          "type": "varchar(32)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "registered_scopes": {
-          "name": "registered_scopes",
-          "type": "text[]",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::text[]"
-        },
-        "redirect_uri": {
-          "name": "redirect_uri",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "issued_at": {
-          "name": "issued_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_builtin_dcr_org": {
-          "name": "idx_builtin_dcr_org",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "uq_builtin_dcr_owner": {
-          "name": "uq_builtin_dcr_owner",
-          "nullsNotDistinct": false,
-          "columns": [
-            "id",
-            "org_id",
-            "connector_slug",
-            "auth_method",
-            "contract_hash"
-          ]
-        },
-        "uq_builtin_dcr_issuer": {
-          "name": "uq_builtin_dcr_issuer",
-          "nullsNotDistinct": false,
-          "columns": [
-            "org_id",
-            "connector_slug",
-            "auth_method",
-            "contract_hash",
-            "issuer"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "chk_builtin_dcr_identity": {
-          "name": "chk_builtin_dcr_identity",
-          "value": "btrim(\"builtin_connector_dcr_registrations\".\"issuer\") <> '' AND btrim(\"builtin_connector_dcr_registrations\".\"client_id\") <> '' AND btrim(\"builtin_connector_dcr_registrations\".\"redirect_uri\") <> '' AND \"builtin_connector_dcr_registrations\".\"contract_hash\" ~ '^[a-f0-9]{64}$'"
-        },
-        "chk_builtin_dcr_client_auth": {
-          "name": "chk_builtin_dcr_client_auth",
-          "value": "(\"builtin_connector_dcr_registrations\".\"token_endpoint_auth_method\" = 'none' AND \"builtin_connector_dcr_registrations\".\"encrypted_client_secret\" IS NULL) OR (\"builtin_connector_dcr_registrations\".\"token_endpoint_auth_method\" IN ('client_secret_basic', 'client_secret_post') AND \"builtin_connector_dcr_registrations\".\"encrypted_client_secret\" IS NOT NULL)"
-        },
-        "chk_builtin_dcr_expiry": {
-          "name": "chk_builtin_dcr_expiry",
-          "value": "\"builtin_connector_dcr_registrations\".\"expires_at\" IS NULL OR \"builtin_connector_dcr_registrations\".\"expires_at\" > \"builtin_connector_dcr_registrations\".\"issued_at\""
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.chat_agent_run_context": {
       "name": "chat_agent_run_context",
       "schema": "",
@@ -11153,6 +10802,205 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.connector_account_oauth_bindings": {
+      "name": "connector_account_oauth_bindings",
+      "schema": "",
+      "columns": {
+        "connector_account_id": {
+          "name": "connector_account_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "org_id": {
+          "name": "org_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "connector_slug": {
+          "name": "connector_slug",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "auth_method": {
+          "name": "auth_method",
+          "type": "varchar(50)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "storage_version": {
+          "name": "storage_version",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "contract_hash": {
+          "name": "contract_hash",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "endpoint": {
+          "name": "endpoint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "issuer": {
+          "name": "issuer",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "resource": {
+          "name": "resource",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "resource_metadata_url": {
+          "name": "resource_metadata_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "token_endpoint": {
+          "name": "token_endpoint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "client_id": {
+          "name": "client_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token_endpoint_auth_method": {
+          "name": "token_endpoint_auth_method",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "registration_method": {
+          "name": "registration_method",
+          "type": "varchar(8)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "dcr_registration_id": {
+          "name": "dcr_registration_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_connector_oauth_binding_dcr": {
+          "name": "idx_connector_oauth_binding_dcr",
+          "columns": [
+            {
+              "expression": "dcr_registration_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "fk_connector_oauth_binding_account": {
+          "name": "fk_connector_oauth_binding_account",
+          "tableFrom": "connector_account_oauth_bindings",
+          "tableTo": "connectors",
+          "columnsFrom": [
+            "connector_account_id",
+            "connector_slug"
+          ],
+          "columnsTo": [
+            "id",
+            "connector_slug"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "fk_connector_oauth_binding_account_owner": {
+          "name": "fk_connector_oauth_binding_account_owner",
+          "tableFrom": "connector_account_oauth_bindings",
+          "tableTo": "connectors",
+          "columnsFrom": [
+            "connector_account_id",
+            "org_id",
+            "user_id"
+          ],
+          "columnsTo": [
+            "id",
+            "org_id",
+            "user_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "fk_connector_oauth_binding_dcr_owner": {
+          "name": "fk_connector_oauth_binding_dcr_owner",
+          "tableFrom": "connector_account_oauth_bindings",
+          "tableTo": "connector_dcr_registrations",
+          "columnsFrom": [
+            "dcr_registration_id",
+            "org_id",
+            "connector_slug",
+            "auth_method",
+            "contract_hash"
+          ],
+          "columnsTo": [
+            "id",
+            "org_id",
+            "connector_slug",
+            "auth_method",
+            "contract_hash"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_connector_oauth_binding_identity": {
+          "name": "chk_connector_oauth_binding_identity",
+          "value": "\"connector_account_oauth_bindings\".\"storage_version\" > 0 AND \"connector_account_oauth_bindings\".\"contract_hash\" ~ '^[a-f0-9]{64}$' AND btrim(\"connector_account_oauth_bindings\".\"endpoint\") <> '' AND btrim(\"connector_account_oauth_bindings\".\"issuer\") <> '' AND btrim(\"connector_account_oauth_bindings\".\"resource\") <> '' AND btrim(\"connector_account_oauth_bindings\".\"token_endpoint\") <> '' AND btrim(\"connector_account_oauth_bindings\".\"client_id\") <> ''"
+        },
+        "chk_connector_oauth_binding_token_auth": {
+          "name": "chk_connector_oauth_binding_token_auth",
+          "value": "\"connector_account_oauth_bindings\".\"token_endpoint_auth_method\" IN ('none', 'client_secret_basic', 'client_secret_post')"
+        },
+        "chk_connector_oauth_binding_registration": {
+          "name": "chk_connector_oauth_binding_registration",
+          "value": "(\"connector_account_oauth_bindings\".\"registration_method\" = 'cimd' AND \"connector_account_oauth_bindings\".\"dcr_registration_id\" IS NULL AND \"connector_account_oauth_bindings\".\"token_endpoint_auth_method\" = 'none') OR (\"connector_account_oauth_bindings\".\"registration_method\" = 'dcr' AND \"connector_account_oauth_bindings\".\"dcr_registration_id\" IS NOT NULL)"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.connector_catalog_active_snapshot": {
       "name": "connector_catalog_active_snapshot",
       "schema": "",
@@ -11714,6 +11562,158 @@
         "connector_catalog_sync_state_rejection_authority_complete": {
           "name": "connector_catalog_sync_state_rejection_authority_complete",
           "value": "(\n          \"connector_catalog_sync_state\".\"last_rejected_failure_code\" IS NULL\n          AND \"connector_catalog_sync_state\".\"last_rejected_backend_version\" IS NULL\n          AND \"connector_catalog_sync_state\".\"last_rejected_build_commit_sha\" IS NULL\n        ) OR (\n          \"connector_catalog_sync_state\".\"last_rejected_failure_code\" IS NOT NULL\n          AND \"connector_catalog_sync_state\".\"last_rejected_backend_version\" IS NOT NULL\n          AND \"connector_catalog_sync_state\".\"last_rejected_backend_version\" ~ '^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$'\n          AND (\n            \"connector_catalog_sync_state\".\"last_rejected_build_commit_sha\" IS NULL\n            OR \"connector_catalog_sync_state\".\"last_rejected_build_commit_sha\" ~ '^[a-f0-9]{40}$'\n          )\n        )"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.connector_dcr_registrations": {
+      "name": "connector_dcr_registrations",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "org_id": {
+          "name": "org_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "connector_slug": {
+          "name": "connector_slug",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "auth_method": {
+          "name": "auth_method",
+          "type": "varchar(50)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "contract_hash": {
+          "name": "contract_hash",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "issuer": {
+          "name": "issuer",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "client_id": {
+          "name": "client_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "encrypted_client_secret": {
+          "name": "encrypted_client_secret",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "token_endpoint_auth_method": {
+          "name": "token_endpoint_auth_method",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "registered_scopes": {
+          "name": "registered_scopes",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::text[]"
+        },
+        "redirect_uri": {
+          "name": "redirect_uri",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "issued_at": {
+          "name": "issued_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_connector_dcr_org": {
+          "name": "idx_connector_dcr_org",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "uq_connector_dcr_owner": {
+          "name": "uq_connector_dcr_owner",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "org_id",
+            "connector_slug",
+            "auth_method",
+            "contract_hash"
+          ]
+        },
+        "uq_connector_dcr_issuer": {
+          "name": "uq_connector_dcr_issuer",
+          "nullsNotDistinct": false,
+          "columns": [
+            "org_id",
+            "connector_slug",
+            "auth_method",
+            "contract_hash",
+            "issuer"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "chk_connector_dcr_identity": {
+          "name": "chk_connector_dcr_identity",
+          "value": "btrim(\"connector_dcr_registrations\".\"issuer\") <> '' AND btrim(\"connector_dcr_registrations\".\"client_id\") <> '' AND btrim(\"connector_dcr_registrations\".\"redirect_uri\") <> '' AND \"connector_dcr_registrations\".\"contract_hash\" ~ '^[a-f0-9]{64}$'"
+        },
+        "chk_connector_dcr_client_auth": {
+          "name": "chk_connector_dcr_client_auth",
+          "value": "(\"connector_dcr_registrations\".\"token_endpoint_auth_method\" = 'none' AND \"connector_dcr_registrations\".\"encrypted_client_secret\" IS NULL) OR (\"connector_dcr_registrations\".\"token_endpoint_auth_method\" IN ('client_secret_basic', 'client_secret_post') AND \"connector_dcr_registrations\".\"encrypted_client_secret\" IS NOT NULL)"
+        },
+        "chk_connector_dcr_expiry": {
+          "name": "chk_connector_dcr_expiry",
+          "value": "\"connector_dcr_registrations\".\"expires_at\" IS NULL OR \"connector_dcr_registrations\".\"expires_at\" > \"connector_dcr_registrations\".\"issued_at\""
         }
       },
       "isRLSEnabled": false

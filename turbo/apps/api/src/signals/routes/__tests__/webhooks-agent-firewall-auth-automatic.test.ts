@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
-import { holdBuiltinConnectorAccountFixture } from "../../../test-fixtures/builtin-connector-account-lock";
+import { holdConnectorAccountFixture } from "../../../test-fixtures/connector-account-lock";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { connectorsAutomaticRoutes } from "../connectors-automatic";
@@ -17,7 +17,7 @@ import {
 } from "./helpers/api-bdd-connectors";
 import { createFirewallApi } from "./helpers/api-bdd-firewall";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { installBuiltinAutomaticMcpCatalog } from "./helpers/builtin-automatic-catalog";
+import { installAutomaticMcpCatalog } from "./helpers/connector-automatic-catalog";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -31,7 +31,7 @@ describe("builtin Automatic firewall credential destinations", () => {
       mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
       mockEnv("APP_URL", "https://app.okou.ai");
       mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
-      const catalog = await installBuiltinAutomaticMcpCatalog();
+      const catalog = await installAutomaticMcpCatalog();
       const refreshGate =
         timing === "during refresh"
           ? {
@@ -167,7 +167,7 @@ describe("builtin Automatic firewall credential destinations", () => {
             );
           }
           async function updateCatalog() {
-            await installBuiltinAutomaticMcpCatalog({
+            await installAutomaticMcpCatalog({
               ...catalog,
               endpoint: nextEndpoint,
               isolateSource: false,
@@ -179,7 +179,7 @@ describe("builtin Automatic firewall credential destinations", () => {
             }
             // Hold a real database row to pause resolution after it captured A;
             // construct and inspect the account only through production routes.
-            const held = await holdBuiltinConnectorAccountFixture(
+            const held = await holdConnectorAccountFixture(
               {
                 orgId: actor.orgId,
                 userId: actor.userId,

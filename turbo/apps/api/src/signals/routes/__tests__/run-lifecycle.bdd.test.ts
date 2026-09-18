@@ -72,7 +72,7 @@ import {
   upsertOrgPlanEntitlementFixture,
 } from "../../../test-fixtures/org-plan-entitlement";
 import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
-import { holdBuiltinConnectorAccountFixture } from "../../../test-fixtures/builtin-connector-account-lock";
+import { holdConnectorAccountFixture } from "../../../test-fixtures/connector-account-lock";
 import { waitForDeferredBlocker } from "../../../test-fixtures/pi-deferred-lock";
 import {
   API_TEST_CONNECTOR_CATALOG,
@@ -190,7 +190,7 @@ import { connectorsAutomaticRoutes } from "../connectors-automatic";
 import { connectorsRoutes } from "../connectors";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { connectorCheckRoutes } from "../connector-check";
-import { installBuiltinAutomaticMcpCatalog } from "./helpers/builtin-automatic-catalog";
+import { installAutomaticMcpCatalog } from "./helpers/connector-automatic-catalog";
 import { createRouteMocks } from "./helpers/route-test";
 
 /**
@@ -210,7 +210,7 @@ const SANDBOX_OP_LOG_DATASET = "vm0-sandbox-op-log-dev";
 const ASSISTANT_EVENT_ID_NAMESPACE = "bfec4fb6-d5b8-43e4-a72a-9f58f87d7e01";
 const TEST_DATA_KEY = Buffer.from("0123456789abcdef0123456789abcdef", "utf8");
 
-async function connectBuiltinAutomaticRuntime(args: {
+async function connectAutomaticRuntime(args: {
   readonly actor: ApiTestUser;
   readonly agentId: string;
   readonly slug: string;
@@ -10786,7 +10786,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
   it.each(["none", "oauth"] as const)(
     "admits the exact builtin Automatic %s account and injects auth outside the sandbox",
     async (resolution) => {
-      const catalog = await installBuiltinAutomaticMcpCatalog();
+      const catalog = await installAutomaticMcpCatalog();
       const provider = mockAutomaticMcpOAuthProvider(context, {
         registration: "cimd",
         authentication: resolution,
@@ -10796,14 +10796,14 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       const connectors = createConnectorBddApi(context);
       const fw = createFirewallApi(context);
       const { actor, agentId, runnerGroup } = await entitledRunActor();
-      const connectionId = await connectBuiltinAutomaticRuntime({
+      const connectionId = await connectAutomaticRuntime({
         actor,
         agentId,
         ...catalog,
         issuer: provider.issuer,
       });
       if (resolution === "none") {
-        await installBuiltinAutomaticMcpCatalog({
+        await installAutomaticMcpCatalog({
           slug: catalog.slug,
           methodId: catalog.methodId,
           storageVersion: 2,
@@ -10887,7 +10887,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
           authentication: "none",
         });
         await expect(
-          connectBuiltinAutomaticRuntime({
+          connectAutomaticRuntime({
             actor,
             agentId,
             ...catalog,
@@ -10936,7 +10936,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
   it.each(["none", "manual"] as const)(
     "replaces running builtin Automatic auth when reconnecting to %s",
     async (authMode) => {
-      const catalog = await installBuiltinAutomaticMcpCatalog({
+      const catalog = await installAutomaticMcpCatalog({
         slug: "manual-mcp",
         additionalNoAuthMethodId: "public-connect",
       });
@@ -10948,7 +10948,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       const connectors = createConnectorBddApi(context);
       const fw = createFirewallApi(context);
       const { actor, agentId, runnerGroup } = await entitledRunActor();
-      const connectionId = await connectBuiltinAutomaticRuntime({
+      const connectionId = await connectAutomaticRuntime({
         actor,
         agentId,
         ...catalog,
@@ -10966,7 +10966,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
         inlineFirewallApis(claim.firewalls, catalog.slug)[0]?.auth,
       ).toStrictEqual({
         headers: {
-          Authorization: `Bearer \${{ secrets.BUILTIN_MCP_ACCESS_TOKEN }}`,
+          Authorization: `Bearer \${{ secrets.MCP_ACCESS_TOKEN }}`,
         },
       });
       if (authMode === "none") {
@@ -11057,7 +11057,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
   );
 
   it("rotates builtin Automatic credentials once for concurrent expiry and requires reconnect after revocation", async () => {
-    const catalog = await installBuiltinAutomaticMcpCatalog();
+    const catalog = await installAutomaticMcpCatalog();
     const provider = mockAutomaticMcpOAuthProvider(context, {
       registration: "cimd",
       initialExpiresIn: 120,
@@ -11078,7 +11078,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     const fw = createFirewallApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
     const connectedAt = now();
-    const connectionId = await connectBuiltinAutomaticRuntime({
+    const connectionId = await connectAutomaticRuntime({
       actor,
       agentId,
       ...catalog,
@@ -11198,7 +11198,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
   ] as const)(
     "settles builtin Automatic DCR retirement racing $owner account $mutation",
     async ({ owner, mutation }) => {
-      const catalog = await installBuiltinAutomaticMcpCatalog();
+      const catalog = await installAutomaticMcpCatalog();
       const provider = mockAutomaticMcpOAuthProvider(context, {
         registration: "dcr",
         initialExpiresIn: 3600,
@@ -11226,7 +11226,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       const siblingIds: string[] = [];
       for (let index = 0; index < 2; index += 1) {
         siblingIds.push(
-          await connectBuiltinAutomaticRuntime({
+          await connectAutomaticRuntime({
             actor: mutationActor,
             agentId: mutationAgentId,
             ...catalog,
@@ -11248,7 +11248,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       const refreshConnectionId =
         owner === "same user"
           ? heldConnectionId
-          : await connectBuiltinAutomaticRuntime({
+          : await connectAutomaticRuntime({
               actor,
               agentId,
               ...catalog,
@@ -11268,7 +11268,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       if (!apiEntry) {
         throw new Error("Expected builtin Automatic firewall");
       }
-      const held = await holdBuiltinConnectorAccountFixture(
+      const held = await holdConnectorAccountFixture(
         {
           orgId: actor.orgId,
           userId: mutationActor.userId,
@@ -11395,7 +11395,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
   );
 
   it("uses a builtin Automatic access token without optional refresh until it expires", async () => {
-    const catalog = await installBuiltinAutomaticMcpCatalog();
+    const catalog = await installAutomaticMcpCatalog();
     const provider = mockAutomaticMcpOAuthProvider(context, {
       registration: "cimd",
       initialExpiresIn: 60,
@@ -11406,7 +11406,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     const fw = createFirewallApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
     const connectedAt = now();
-    const connectionId = await connectBuiltinAutomaticRuntime({
+    const connectionId = await connectAutomaticRuntime({
       actor,
       agentId,
       ...catalog,

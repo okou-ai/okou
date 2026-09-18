@@ -19,9 +19,9 @@ import { env } from "../../lib/env";
 import { connectorOAuthRedirectResponse } from "../../lib/connector-oauth-state";
 import { connectorActionResolver } from "../services/connector-action-resolver.service";
 import {
-  completeBuiltinConnectorAutomatic$,
-  startBuiltinConnectorAutomatic$,
-} from "../services/builtin-connector-automatic-oauth.service";
+  completeConnectorAutomatic$,
+  startConnectorAutomatic$,
+} from "../services/connector-automatic-oauth.service";
 import {
   authorizeConnectedConnector$,
   connectorAgentAuthorizationRequested,
@@ -30,7 +30,7 @@ import {
 import { recordConnectorOAuthCompletion } from "../services/connector-oauth-completion.service";
 import { publishBuiltinConnectorInvalidationAfterCommit } from "../services/connector-client-invalidation.service";
 import {
-  builtinConnectorAutomaticOAuthRedirectUri,
+  connectorAutomaticOAuthRedirectUri,
   okouMcpOAuthClientMetadata,
   okouMcpOAuthDynamicClientMetadata,
 } from "../services/mcp-oauth-client-metadata.service";
@@ -132,7 +132,7 @@ const startAutomaticInner$ = command(
     const request = get(request$).raw;
     const authorizeAgent = connectorAgentAuthorizationRequested(body.data);
     const result = await set(
-      startBuiltinConnectorAutomatic$,
+      startConnectorAutomatic$,
       {
         orgId: auth.orgId,
         userId: auth.userId,
@@ -140,7 +140,7 @@ const startAutomaticInner$ = command(
         account: body.data.account,
         agentId: body.data.agentId ?? null,
         authorizeAgent,
-        redirectUri: builtinConnectorAutomaticOAuthRedirectUri(request),
+        redirectUri: connectorAutomaticOAuthRedirectUri(request),
         cimdClientId: okouMcpOAuthClientMetadata(request).client_id,
         dcrClientMetadata: okouMcpOAuthDynamicClientMetadata(
           request,
@@ -208,16 +208,14 @@ const completeAutomatic$ = command(
       };
     }
     const completed = await set(
-      completeBuiltinConnectorAutomatic$,
+      completeConnectorAutomatic$,
       {
         state: query.state,
         code: query.code,
         error: query.error,
         errorDescription: query.error_description,
         issuer: query.iss,
-        redirectUri: builtinConnectorAutomaticOAuthRedirectUri(
-          get(request$).raw,
-        ),
+        redirectUri: connectorAutomaticOAuthRedirectUri(get(request$).raw),
       },
       signal,
     );

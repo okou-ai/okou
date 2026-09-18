@@ -97,7 +97,7 @@ import {
   lockModelProviderState,
 } from "./auth-state-lock.service";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
-import { resolveBuiltinAutomaticMcpCredential } from "./builtin-connector-automatic-oauth.service";
+import { resolveConnectorAutomaticMcpCredential } from "./connector-automatic-oauth.service";
 import {
   loadRunCreditAdmissionState,
   resolveOrgCreditAvailability,
@@ -240,8 +240,8 @@ interface PreparedNonCustomFirewallAuth {
   readonly forceRefreshStartedAtMicros: bigint | null;
 }
 
-interface PreparedBuiltinAutomaticFirewallAuth {
-  readonly kind: "builtin-automatic";
+interface PreparedConnectorAutomaticFirewallAuth {
+  readonly kind: "connector-automatic";
   readonly connectorSlug: string;
   readonly connectorId: string;
   readonly authMethodId: string;
@@ -250,7 +250,7 @@ interface PreparedBuiltinAutomaticFirewallAuth {
 
 type PreparedFirewallAuth =
   | PreparedCustomFirewallAuth
-  | PreparedBuiltinAutomaticFirewallAuth
+  | PreparedConnectorAutomaticFirewallAuth
   | PreparedNonCustomFirewallAuth;
 
 type MissingResolvedSecretFailure =
@@ -5790,7 +5790,7 @@ async function prepareNonCustomFirewallAuth(args: {
   readonly forceRefreshStartedAtMicros: bigint | null;
 }): Promise<
   FirewallAuthPreparation<
-    PreparedNonCustomFirewallAuth | PreparedBuiltinAutomaticFirewallAuth
+    PreparedNonCustomFirewallAuth | PreparedConnectorAutomaticFirewallAuth
   >
 > {
   const connectorCatalogSnapshot = await loadConnectorRuntimeSnapshot(args.db);
@@ -5834,7 +5834,7 @@ async function prepareNonCustomFirewallAuth(args: {
       return {
         ok: true,
         prepared: {
-          kind: "builtin-automatic",
+          kind: "connector-automatic",
           connectorSlug,
           connectorId: account.id,
           authMethodId: account.authMethod,
@@ -6038,8 +6038,8 @@ async function resolveFirewallAuthMaterial(args: {
   readonly referenced: ReferencedAuthKeys;
   readonly prepared: PreparedFirewallAuth;
 }): Promise<FirewallAuthMaterialResolution> {
-  if (args.prepared.kind === "builtin-automatic") {
-    const credential = await resolveBuiltinAutomaticMcpCredential(
+  if (args.prepared.kind === "connector-automatic") {
+    const credential = await resolveConnectorAutomaticMcpCredential(
       {
         db: args.db,
         orgId: args.auth.orgId,
@@ -6068,7 +6068,7 @@ async function resolveFirewallAuthMaterial(args: {
       material: {
         secrets:
           credential.kind === "oauth"
-            ? { BUILTIN_MCP_ACCESS_TOKEN: credential.accessToken }
+            ? { MCP_ACCESS_TOKEN: credential.accessToken }
             : {},
         vars: {},
         expiresAt:

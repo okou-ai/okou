@@ -3,7 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { holdDeferredRow } from "./pi-deferred-lock";
 
 /** Pause an API reconnect at its account row; all resulting state is asserted through routes. */
-export async function holdBuiltinConnectorAccountFixture(
+export async function holdConnectorAccountFixture(
   args: {
     readonly orgId: string;
     readonly userId: string;
