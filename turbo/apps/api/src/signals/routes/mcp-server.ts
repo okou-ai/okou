@@ -12,11 +12,14 @@ import {
 import type { McpPrincipal } from "../../types/mcp";
 import { request$ } from "../context/hono";
 import { verifyClerkOAuthAccessToken } from "../external/clerk";
-import { db$ } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { serveMcpRequest } from "../external/mcp-server";
 import type { RouteEntry } from "../route-entry";
 import { getMemberRoleAndUpdateCache$ } from "../services/auth.service";
-import { chatIndicators } from "../services/chat-thread.service";
+import {
+  getMcpChatThread,
+  listMcpChatThreads,
+} from "../services/mcp-chat-threads.service";
 import { loadUserFeatureSwitchContext } from "../services/feature-switches.service";
 import { awaitWithSignal, settle } from "../utils";
 
@@ -140,12 +143,17 @@ const mcpRequest$ = command(async ({ get, set }, rootSignal: AbortSignal) => {
     {
       readScope: MCP_READ_SCOPE,
       scopes: principal.scopes,
-      readIndicators: async (readSignal) => {
-        const result = await awaitWithSignal(
-          get(chatIndicators(principal)),
+      listThreads: async (input, readSignal) => {
+        return await awaitWithSignal(
+          listMcpChatThreads(set(writeDb$), principal, input),
           readSignal,
         );
-        return result;
+      },
+      getThread: async (input, readSignal) => {
+        return await awaitWithSignal(
+          getMcpChatThread(set(writeDb$), principal, input),
+          readSignal,
+        );
       },
     },
     signal,
