@@ -1456,8 +1456,7 @@
           "invite": {
             "confirm": "Undang tim",
             "description": "Undang rekan-rekan Anda ke ruang kerja ini.",
-            "pointAccounts": "Masing-masing menghubungkan akunnya sendiri.",
-            "pointShared": "Rekan kerja bisa menjalankan alur kerja yang Anda buat.",
+            "note": "Yang Anda siapkan sekali berhenti jadi milik Anda sendiri. Orang yang bergabung pagi ini bisa menjalankannya sore ini, tanpa bertanya caranya.",
             "title": "Yang diketahui satu orang bisa dijalankan semua orang"
           },
           "later": "Nanti saja",
@@ -1465,8 +1464,7 @@
             "appBadge": "APP",
             "confirm": "Tambahkan ke Slack",
             "description": "Tambahkan {{assistantName}} ke ruang kerja Slack tim Anda.",
-            "pointChannels": "Ia hanya melihat kanal tempat Anda mengundangnya.",
-            "pointTeam": "Ruang kerja Anda menjadi milik tim.",
+            "note": "Rekan-rekan tidak perlu lewat Anda dulu. Mereka minta di kanal, dan hasilnya kembali di thread itu, di depan semua orang.",
             "sampleChannel": "# growth",
             "title": "Bekerja dengan {{assistantName}} di tempat tim Anda sudah berbicara"
           },

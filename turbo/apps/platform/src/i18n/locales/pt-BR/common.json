@@ -1481,8 +1481,7 @@
           "invite": {
             "confirm": "Convidar o time",
             "description": "Convide seus colegas para este espaço de trabalho.",
-            "pointAccounts": "Cada um conecta as próprias contas.",
-            "pointShared": "Os colegas podem rodar os fluxos que você criar.",
+            "note": "O que você montou uma vez deixa de ser só seu. Quem entrou hoje de manhã já roda à tarde, sem perguntar como funciona.",
             "title": "O que uma pessoa aprende, o time inteiro executa"
           },
           "later": "Depois",
@@ -1490,8 +1489,7 @@
             "appBadge": "APP",
             "confirm": "Adicionar ao Slack",
             "description": "Adicione o {{assistantName}} ao espaço do Slack do seu time.",
-            "pointChannels": "Ele só enxerga os canais para os quais você o convida.",
-            "pointTeam": "Seu espaço passa a ser o do time.",
+            "note": "Seus colegas deixam de precisar passar por você. Eles pedem no canal e o trabalho volta na thread, onde todo mundo vê.",
             "sampleChannel": "# growth",
             "title": "Trabalhe com o {{assistantName}} onde seu time já conversa"
           },

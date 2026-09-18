@@ -1457,8 +1457,7 @@
           "invite": {
             "confirm": "Team einladen",
             "description": "Laden Sie Ihre Kolleginnen und Kollegen in diesen Workspace ein.",
-            "pointAccounts": "Jede verbindet dabei ihre eigenen Konten.",
-            "pointShared": "Kolleginnen können die Workflows ausführen, die Sie bauen.",
+            "note": "Was Sie einmal eingerichtet haben, gehört nicht mehr nur Ihnen. Wer heute Morgen angefangen hat, kann es heute Nachmittag ausführen, ohne Sie zu fragen.",
             "title": "Was einer weiß, können alle ausführen"
           },
           "later": "Später",
@@ -1466,8 +1465,7 @@
             "appBadge": "APP",
             "confirm": "Zu Slack hinzufügen",
             "description": "Fügen Sie {{assistantName}} zum Slack-Workspace Ihres Teams hinzu.",
-            "pointChannels": "Es sieht nur die Channels, in die Sie es einladen.",
-            "pointTeam": "Ihr Workspace wird der des Teams.",
+            "note": "Ihre Kolleginnen müssen nicht mehr zuerst zu Ihnen. Sie fragen im Channel, und die Arbeit kommt im Thread zurück, wo alle sie sehen.",
             "sampleChannel": "# growth",
             "title": "Arbeiten Sie mit {{assistantName}} dort, wo Ihr Team schon spricht"
           },

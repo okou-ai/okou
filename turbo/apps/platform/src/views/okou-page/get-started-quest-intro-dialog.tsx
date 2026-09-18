@@ -433,26 +433,15 @@ function WorkflowStep({
 }
 
 /**
- * Two short lines under the figure, for the quests where the drawing cannot
- * say who the step affects. Kept to one clause each: the title carries the
- * claim and the description says what the step is, so this only adds what
- * neither of them can.
+ * The sentence under the figure, for the quests where the reason to do it is
+ * about the reader rather than about the feature. It is prose, not a list of
+ * properties: what changes for them once the step is done.
  */
-function IntroPoints({ items }: { items: readonly string[] }) {
+function IntroNote({ children }: { children: ReactNode }) {
   return (
-    <ul className="flex flex-col gap-1.5 px-0.5 text-[13px] text-muted-foreground">
-      {items.map((item) => {
-        return (
-          <li key={item} className="flex items-start gap-2">
-            <span
-              aria-hidden="true"
-              className="mt-[7px] size-[3px] shrink-0 rounded-full bg-muted-foreground"
-            />
-            <span>{item}</span>
-          </li>
-        );
-      })}
-    </ul>
+    <p className="px-0.5 text-[13px] leading-relaxed text-muted-foreground">
+      {children}
+    </p>
   );
 }
 
@@ -581,16 +570,11 @@ function SlackIntro({ onConfirm, onClose }: IntroProps) {
       })}
       onConfirm={onConfirm}
     >
-      <IntroPoints
-        items={[
-          t(($) => {
-            return $.chat.agentPage.getStarted.intro.slack.pointTeam;
-          }),
-          t(($) => {
-            return $.chat.agentPage.getStarted.intro.slack.pointChannels;
-          }),
-        ]}
-      />
+      <IntroNote>
+        {t(($) => {
+          return $.chat.agentPage.getStarted.intro.slack.note;
+        })}
+      </IntroNote>
     </IntroLayout>
   );
 }
@@ -613,16 +597,11 @@ function InviteIntro({ onConfirm, onClose }: IntroProps) {
       })}
       onConfirm={onConfirm}
     >
-      <IntroPoints
-        items={[
-          t(($) => {
-            return $.chat.agentPage.getStarted.intro.invite.pointShared;
-          }),
-          t(($) => {
-            return $.chat.agentPage.getStarted.intro.invite.pointAccounts;
-          }),
-        ]}
-      />
+      <IntroNote>
+        {t(($) => {
+          return $.chat.agentPage.getStarted.intro.invite.note;
+        })}
+      </IntroNote>
     </IntroLayout>
   );
 }
