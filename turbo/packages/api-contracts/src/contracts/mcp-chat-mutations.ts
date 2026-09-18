@@ -3,7 +3,7 @@ import { z } from "zod";
 import { mcpChatMessageSchema } from "./mcp-chat-messages";
 
 export const mcpSendChatMessageInputSchema = z.strictObject({
-  threadId: z.uuid(),
+  threadId: z.uuid().toLowerCase(),
   text: z
     .string()
     .max(32_000)
@@ -15,7 +15,7 @@ export const mcpSendChatMessageInputSchema = z.strictObject({
         message: "Message text must not be blank",
       },
     ),
-  requestId: z.uuid(),
+  requestId: z.uuid().toLowerCase(),
 });
 
 export const mcpSendChatMessageOutputSchema = z.strictObject({

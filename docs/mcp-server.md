@@ -234,6 +234,8 @@ memory limits. Search reuses existing lexical indexes and adds no migration.
 `send_chat_message` sends text to an existing conversation. It requires
 `threadId`, nonblank `text` of at most 32,000 UTF-16 units, and a caller-generated
 UUID `requestId`. Text is preserved exactly, including surrounding whitespace.
+UUID letter case is normalized; uppercase and lowercase identifiers resolve to
+the same submission.
 The 64 KiB HTTP request-body limit also applies. The server derives the Agent
 from the authorized thread and uses its current model configuration and ordinary
 admission checks. This tool does not accept Agent/model overrides, attachments,

@@ -347,6 +347,34 @@ async function chatRunFixture() {
 }
 
 describe("MCP chat mutations", () => {
+  it("treats UUID letter case as the same submission identity", async () => {
+    const f = await messageFixture();
+    const thread = await f.chat.createThread(f.actor, {
+      agentId: f.agent.agentId,
+    });
+    const requestId = randomUUID();
+    const token = f.auth.token({ scope: defaultScopes });
+    const text = "Preserve the message while normalizing its identifiers";
+    const accepted = await sendMessage(token, {
+      threadId: thread.id.toUpperCase(),
+      requestId: requestId.toUpperCase(),
+      text,
+    });
+    expect(accepted).toMatchObject({
+      inputRef: { threadId: thread.id, eventId: requestId },
+      replayed: false,
+    });
+    const replay = await sendMessage(token, {
+      threadId: thread.id,
+      requestId,
+      text,
+    });
+    expect(replay).toStrictEqual({ ...accepted, replayed: true });
+    expect(
+      (await getMessages(token, { threadId: thread.id })).messages,
+    ).toMatchObject([{ text }]);
+  });
+
   it("preserves exact text and the original input reference when run admission rejects it", async () => {
     const f = await messageFixture();
     const thread = await f.chat.createThread(f.actor, {
