@@ -17,10 +17,10 @@ within the same account does not reset resource identity.
 
 The existing usage webhook validates the strict `x-resource-v1` schema and
 authenticates the sandbox run in both switch states. The standard
-`xResourceDeduplication` feature switch defaults to disabled, with no staff
-whitelist. Resolve it once per batch using the authenticated Run owner's
-organization and user through `loadUserFeatureSwitchContext`. It controls only
-the final quantity charged for a newly accepted resource observation. Collection,
+`xResourceDeduplication` feature switch defaults to disabled and is enabled for
+staff organizations. Resolve it once per batch using the authenticated Run
+owner's organization and user through `loadUserFeatureSwitchContext`. It controls
+only the final quantity charged for a newly accepted resource observation. Collection,
 reporting, validation, resource recording, source idempotency, pricing, settlement
 and lifecycle admission remain active when the switch is disabled.
 

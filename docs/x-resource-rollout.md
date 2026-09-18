@@ -128,11 +128,11 @@ in-flight requests, streams and retained uploads before claiming full coverage;
 checking binary versions alone is insufficient to claim complete resource
 coverage. Record immutable artifact identities and actual drain outcomes.
 
-The standard `xResourceDeduplication` switch defaults to disabled, with no staff
-whitelist, and resolves the authenticated Run owner's organization/user context
-once per batch. When authorized, use existing user overrides within the
-authenticated organization to
-enable deduplication; there is no future UTC activation date to configure. Resource
+The standard `xResourceDeduplication` switch defaults to disabled and is enabled
+for staff organizations. It resolves the authenticated Run owner's
+organization/user context once per batch. Existing user overrides within the
+authenticated organization can explicitly enable or disable deduplication; there
+is no future UTC activation date to configure. Resource
 records collected while disabled are already available for the same-day switch
 to N + R billing. Resource identity is global even when switch rollout is scoped.
 Disabling the switch charges Q for newly accepted observations while continuing
