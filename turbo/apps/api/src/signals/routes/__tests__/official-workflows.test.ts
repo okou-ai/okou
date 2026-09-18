@@ -94,7 +94,6 @@ import {
   observeMorningBriefSettlementAttemptsFixture,
   readMorningBriefScheduleClaimsFixture,
   removeMorningBriefScheduleClaimForCompatibilityFixture,
-  removeRetainedMorningBriefAutomationFixture,
   readWorkflowAutomationLastRunFixture,
   recordWorkflowAutomationLastRunFixture,
 } from "../../../test-fixtures/morning-brief-schedule-claim";
@@ -13577,7 +13576,7 @@ describe("Morning Brief legacy schedule claim journal", () => {
       definitionName: "morning-brief",
       automationId: brief.automationId,
     });
-    await removeRetainedMorningBriefAutomationFixture(brief.automationId);
+    await runOfficialWorkflowReconciliationWorker();
     await expect(
       readLegacyAutomation(brief.automationId),
     ).resolves.toBeUndefined();

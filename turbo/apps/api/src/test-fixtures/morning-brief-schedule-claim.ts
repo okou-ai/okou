@@ -89,23 +89,6 @@ export async function removeMorningBriefScheduleClaimForCompatibilityFixture(arg
   }
 }
 
-/**
- * Remove only the retained automation after the lifecycle-crash route has
- * durably reserved its identity and reconciliation work. No production API can
- * stop between those internal lifecycle commits to expose this crash state.
- */
-export async function removeRetainedMorningBriefAutomationFixture(
-  automationId: string,
-): Promise<void> {
-  const removed = await db()
-    .delete(workflowAutomations)
-    .where(eq(workflowAutomations.id, automationId))
-    .returning({ id: workflowAutomations.id });
-  if (removed.length !== 1) {
-    throw new Error("Expected one retained Morning Brief automation");
-  }
-}
-
 /** The automation fields the late last-run write is allowed to touch. */
 export async function readWorkflowAutomationLastRunFixture(
   automationId: string,
