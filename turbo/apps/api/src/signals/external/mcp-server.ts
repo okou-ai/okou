@@ -1,5 +1,21 @@
 import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import {
+  mcpCreateChatThreadInputSchema,
+  mcpCreateChatThreadOutputSchema,
+  type McpCreateChatThreadInput,
+  type McpCreateChatThreadOutput,
+} from "@okouai/api-contracts/contracts/mcp-chat-creation";
+import {
+  mcpListAgentsInputSchema,
+  mcpListAgentsOutputSchema,
+  mcpListModelsInputSchema,
+  mcpListModelsOutputSchema,
+  type McpListAgentsInput,
+  type McpListAgentsOutput,
+  type McpListModelsOutput,
+  type McpDiscoveryResult,
+} from "@okouai/api-contracts/contracts/mcp-chat-discovery";
+import {
   mcpGetChatStatusInputSchema,
   mcpGetChatStatusOutputSchema,
   type McpGetChatStatusInput,
@@ -48,6 +64,17 @@ import { onRejection, settle, settleIncludingAbort } from "../utils";
 interface McpChatAccess {
   readonly readScope: string;
   readonly scopes: readonly string[];
+  readonly listAgents: (
+    input: McpListAgentsInput,
+    signal: AbortSignal,
+  ) => Promise<McpDiscoveryResult<McpListAgentsOutput>>;
+  readonly listModels: (
+    signal: AbortSignal,
+  ) => Promise<McpDiscoveryResult<McpListModelsOutput>>;
+  readonly createThread: (
+    input: McpCreateChatThreadInput,
+    signal: AbortSignal,
+  ) => Promise<McpChatMutationResult<McpCreateChatThreadOutput>>;
   readonly getStatus: (
     input: McpGetChatStatusInput,
     signal: AbortSignal,
@@ -164,6 +191,7 @@ async function mutationTool<T extends Record<string, unknown>>(
   scope: string,
   operation: (signal: AbortSignal) => Promise<McpChatMutationResult<T>>,
   requestSignal: AbortSignal,
+  unavailableMessage = "The operation result is unavailable. For sends, retry the identical requestId, threadId and text within 24 hours; otherwise inspect the current state before retrying.",
 ) {
   if (!access.scopes.includes(scope)) {
     return toolError("Insufficient scope");
@@ -171,9 +199,7 @@ async function mutationTool<T extends Record<string, unknown>>(
   requestSignal.throwIfAborted();
   const result = await settle(operation(requestSignal), requestSignal);
   if (!result.ok) {
-    return toolError(
-      "The operation result is unavailable. For sends, retry the identical requestId, threadId and text within 24 hours; otherwise inspect the current state before retrying.",
-    );
+    return toolError(unavailableMessage);
   }
   if (result.value.kind === "error") {
     return toolError(result.value.message);
@@ -191,6 +217,34 @@ function registerMutationTools(
   access: McpChatAccess,
   requestSignal: AbortSignal,
 ): void {
+  if (access.scopes.includes("okou:chat:manage")) {
+    server.registerTool(
+      "create_chat_thread",
+      {
+        description:
+          "Create an empty conversation in the authorized organization, without sending a message or starting a run. First use list_agents and list_models; supply an explicit visible agentId, nonblank title and selectable model. Generate one UUID requestId per intended conversation; retry with that same requestId and identical Agent, exact title and model within 24 hours of acceptance. Retry returns current settings without overwriting later edits. Deleted, expired or conflicting requests fail. Deduplication is not guaranteed beyond retained identity; never automatically retry an uncertain old request. The threadId is the requestId. Follow nextAction to send a message separately; actual run admission is checked on send.",
+        inputSchema: mcpCreateChatThreadInputSchema,
+        outputSchema: mcpCreateChatThreadOutputSchema,
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
+      },
+      (input, context) => {
+        return mutationTool(
+          access,
+          "okou:chat:manage",
+          (signal) => {
+            return access.createThread(input, signal);
+          },
+          AbortSignal.any([requestSignal, context.mcpReq.signal]),
+          "Creation result is unavailable. Retry the identical requestId, Agent, exact title and model within 24 hours; inspect that threadId before creating new work. Never automatically retry an uncertain old request.",
+        );
+      },
+    );
+  }
   if (access.scopes.includes("okou:chat:send")) {
     server.registerTool(
       "send_chat_message",
@@ -272,6 +326,55 @@ function registerMutationTools(
   }
 }
 
+function registerDiscoveryTools(
+  server: McpServer,
+  access: McpChatAccess,
+  requestSignal: AbortSignal,
+): void {
+  server.registerTool(
+    "list_agents",
+    {
+      description:
+        "Discover Agents visible to you in the authorized organization, including the default Agent. Returns bounded descriptions, not instructions or configuration. Follow nextCursor with the same limit (default 20, maximum 50); response limits may shorten a page. Cursors expire after 24 hours and visibility is rechecked on every page. Use agentId with create_chat_thread.",
+      inputSchema: mcpListAgentsInputSchema,
+      outputSchema: mcpListAgentsOutputSchema,
+      annotations: readAnnotations,
+    },
+    (input, context) => {
+      const signal = AbortSignal.any([requestSignal, context.mcpReq.signal]);
+      return readTool(
+        access,
+        () => {
+          return access.listAgents(input, signal);
+        },
+        signal,
+        "Agent discovery is temporarily unavailable. Retry later.",
+      );
+    },
+  );
+  server.registerTool(
+    "list_models",
+    {
+      description:
+        "Discover the current model catalog and your member/workspace default. selectable means the model can be configured; availability separately reports known plan, connection or reconnection requirements. available is metadata only: quota, credentials and admission are checked when sending. This read does not create or repair configuration. Use a selectable model id with create_chat_thread.",
+      inputSchema: mcpListModelsInputSchema,
+      outputSchema: mcpListModelsOutputSchema,
+      annotations: readAnnotations,
+    },
+    (_input, context) => {
+      const signal = AbortSignal.any([requestSignal, context.mcpReq.signal]);
+      return readTool(
+        access,
+        () => {
+          return access.listModels(signal);
+        },
+        signal,
+        "Model discovery is temporarily unavailable. Retry later.",
+      );
+    },
+  );
+}
+
 function createChatServer(
   access: McpChatAccess,
   requestSignal: AbortSignal,
@@ -345,6 +448,7 @@ function createChatServer(
         );
       },
     );
+    registerDiscoveryTools(server, access, requestSignal);
     server.registerTool(
       "list_chat_threads",
       {

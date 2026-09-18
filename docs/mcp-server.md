@@ -1,15 +1,84 @@
 # External MCP server
 
 The Hono API exposes a Streamable HTTP resource server at `/mcp`. It uses the
-official MCP SDK and serves `list_chat_threads`, `get_chat_thread`,
+official MCP SDK and serves `list_agents`, `list_models`, `create_chat_thread`,
+`list_chat_threads`, `get_chat_thread`,
 `get_chat_messages`, `search_chat_messages`, `get_chat_status`, `send_chat_message`,
 `revoke_queued_message` and `cancel_run`. The read tools query current
 user/organization-owned conversations; mutations reuse the existing input queue
 and run lifecycle. The OAuth
 foundation shipped in #34931; discovery and current context are tracked by
 #34932 under #34890. Message history is delivered in #34933 and search in
-#35100; sending and cancellation are delivered in #34934, status in #35101. Results include both structured content and a
+#35100; sending and cancellation are delivered in #34934, status in #35101,
+and Agent/model discovery and empty conversation creation in #35102.
+Results include both structured content and a
 JSON text representation.
+
+## Starting a conversation
+
+Call `list_agents` and `list_models` before `create_chat_thread`. Discovery
+requires `okou:chat:read`; creation additionally requires `okou:chat:manage`.
+All calls retain the endpoint's organization/read-scope requirements.
+
+`list_agents` accepts optional `limit` (default 20, maximum 50) and `cursor`.
+It lists public or caller-owned Agents in the authorized organization, with
+`agentId`, name, a description bounded to 500 Unicode characters,
+`descriptionTruncated`, and `isDefault`. Instructions and private configuration
+are excluded. Pages use ascending Agent UUID order. Follow `nextCursor` with the
+same limit; the 16 KiB response budget may shorten a page. Cursors bind the caller,
+organization and page size, expire after 24 hours, and recheck current visibility
+on each page. Restart without a cursor after an invalid or expired cursor.
+
+`list_models` takes `{}` and reads persisted active model policies without
+initializing or repairing them. Each model includes `id`, `name`, `selectable`,
+`availability`, and an optional explanation in `reason`. Availability is
+`available`, `reconnect_required`, `connection_required`, `plan_restricted`, or
+`unavailable`. `selectable` describes whether canonical model selection accepts
+the configuration; a selectable model can still require a connection or plan
+change before execution. `available` is a metadata observation, not a credential
+probe or admission guarantee. `defaultModel` chooses a valid member preference,
+then the organization default, or returns null model/source. Provider account
+identifiers, credentials and configuration are excluded. Missing policies return
+a setup error rather than inventing defaults. Discovery reads enforce a
+15-second deadline, three-second SQL limits and a 16 KiB data budget.
+
+For example:
+
+```json
+{
+  "requestId": "<new UUID for this intended conversation>",
+  "agentId": "<visible Agent UUID from list_agents>",
+  "title": "Review the quarterly plan",
+  "model": "<selectable model id from list_models>"
+}
+```
+
+All four fields are required; title must be nonblank and at most 200 UTF-16 units.
+Creation returns `threadId` (the normalized `requestId`), Agent, current title,
+selected/effective model, service tier, creation time, authenticated App URL,
+`replayed`, `retryUntil`, and `nextAction` pointing to `send_chat_message` with
+that thread ID. The conversation starts empty: no message is submitted, no run
+starts, and no context or run is inherited. Existing media/reasoning defaults
+apply; the service tier starts unset. Sending is a separate call with its own
+request ID and self-contained text. Credentials, quota and execution policy are
+checked on send, as indicated by `admission: "checked_on_send"`.
+
+Retry an uncertain creation using the identical request ID, Agent, exact title
+and model within 24 hours of acceptance. The canonical `created` event retains
+the original intent; replay returns current stored settings without undoing
+later title/model edits. Concurrent identical requests converge on one thread.
+Conflicting input, deleted conversations, expired retries or missing creation
+evidence return an error. The guarantee is limited to accessible conversations
+and the 24-hour window; creation events have seven-day live retention. There is
+no permanent request-ID ledger. Never automatically retry an uncertain old
+request after the window; inspect the original thread before intentionally
+creating new work. No new table or schema migration is introduced.
+
+Creation checks current Agent visibility and account-content admission in its
+transaction, including the Agent owner's account. It uses the existing creation
+event and publishes thread-list changes after commit. Once admitted, finite
+mutation work retains server ownership if the HTTP client disconnects; the
+client must use the same retry identity when the result was not received.
 
 ## Conversation discovery
 
@@ -466,20 +535,20 @@ organization selection, chat operations and refresh-token access, so
 clients can request them in one consent flow without relying on incremental
 authorization support.
 
-Only `user:org:read` and `okou:chat:read` are required for the endpoint and
-all four conversation read tools. Tokens with just these two scopes remain valid
-for reads. A `403 insufficient_scope` challenge names those required scopes.
+The endpoint and all read tools require `user:org:read` and `okou:chat:read`.
+Tokens with just these two scopes remain valid for reads.
+A `403 insufficient_scope` challenge names those required scopes.
 Mutation permissions are checked on every tool invocation:
 
 | Tool                                  | Additional required scope |
 | ------------------------------------- | ------------------------- |
+| `create_chat_thread`                  | `okou:chat:manage`        |
 | `send_chat_message`                   | `okou:chat:send`          |
 | `revoke_queued_message`, `cancel_run` | `okou:run:cancel`         |
 
 Tools requiring a missing mutation scope are not advertised. Direct invocation
 is rejected and performs no operation.
-`okou:chat:manage` remains reserved for conversation metadata operations;
-advertising it does not implement those tools. A tool argument cannot select or override
+Title/model editing is delivered separately. A tool argument cannot select or override
 the organization. Existing grants do not automatically gain scopes; clients must
 reauthorize to obtain additional permissions.
 
