@@ -51,6 +51,11 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Deduplicate daily X resource charges; observations are always recorded",
     enabled: false,
   },
+  [FeatureSwitchKey.PaidToolControls]: {
+    maintainer: "liangyou@okou.ai",
+    description: "Show personal paid-tool controls in Settings",
+    enabled: false,
+  },
   [FeatureSwitchKey.WelcomeThread]: {
     maintainer: "lancy@okou.ai",
     description: "Manually create a welcome conversation with fixed examples",

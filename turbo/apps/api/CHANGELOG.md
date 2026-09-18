@@ -8,6 +8,24 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.632.1](https://github.com/vm0-ai/okou/compare/api-v1.632.0...api-v1.632.1) (2026-09-18)
+
+
+### Bug Fixes
+
+* **api:** remove redundant run output advisory lock ([#35239](https://github.com/vm0-ai/okou/issues/35239)) ([e379489](https://github.com/vm0-ai/okou/commit/e379489060f8c1a91ec6f47e4c79aba79a5ef9b0))
+* download complete sites with visibility-aware cloning ([#35220](https://github.com/vm0-ai/okou/issues/35220)) ([1707f8b](https://github.com/vm0-ai/okou/commit/1707f8b786945a00deb1da9597ba2ab4a3488b71))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.469.1
+    * @okouai/core bumped to 8.680.6
+    * @okouai/db bumped to 1.273.2
+    * @okouai/pi-agent-runtime bumped to 1.33.16
+
 ## [1.632.0](https://github.com/vm0-ai/okou/compare/api-v1.631.0...api-v1.632.0) (2026-09-18)
 
 

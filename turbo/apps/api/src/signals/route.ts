@@ -210,6 +210,7 @@ import { userTemplatesRoutes } from "./routes/user-templates";
 import { usageMembersRoutes } from "./routes/usage-members";
 import { usageRecordRoutes } from "./routes/usage-record";
 import { userPreferencesRoutes } from "./routes/user-preferences";
+import { paidToolsRoutes } from "./routes/paid-tools";
 import { userPermissionGrantsRoutes } from "./routes/user-permission-grants";
 import { userModelPreferenceRoutes } from "./routes/user-model-preference";
 import { avatarVideoRoutes } from "./routes/avatar-video";
@@ -389,6 +390,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...pushSubscriptionsRoutes,
   ...userPermissionGrantsRoutes,
   ...userPreferencesRoutes,
+  ...paidToolsRoutes,
   ...userModelPreferenceRoutes,
   ...morningBriefPreferenceRoutes,
   ...morningBriefCalendarCollectionPreviewRoutes,

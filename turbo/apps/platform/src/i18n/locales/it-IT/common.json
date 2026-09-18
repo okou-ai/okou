@@ -5878,6 +5878,51 @@
         "resetTimePassedTitle": "È trascorso il tempo di ripristino"
       }
     },
+    "paidTools": {
+      "description": "Scegli quali strumenti integrati a pagamento puoi usare.",
+      "loadError": "Impossibile caricare le impostazioni.",
+      "loading": "Caricamento delle impostazioni…",
+      "retry": "Riprova",
+      "saveError": "La modifica non è stata salvata.",
+      "saving": "Salvataggio…",
+      "scope": "Queste impostazioni si applicano solo a te in {{workspace}}.",
+      "timing": "Le modifiche valgono per le esecuzioni future. Le attività in corso o già preparate potrebbero mantenere le impostazioni precedenti.",
+      "title": "Strumenti a pagamento",
+      "tools": {
+        "finance": {
+          "description": "Consulta aziende, quotazioni e dati di mercato.",
+          "name": "Dati finanziari"
+        },
+        "image-recognition": {
+          "description": "Leggi e analizza le immagini.",
+          "name": "Riconoscimento immagini"
+        },
+        "maps": {
+          "description": "Trova luoghi, indirizzi e indicazioni.",
+          "name": "Mappe e luoghi"
+        },
+        "people-search": {
+          "description": "Trova profili professionali pubblici.",
+          "name": "Ricerca di persone"
+        },
+        "scrape": {
+          "description": "Leggi ed estrai contenuti dalle pagine web.",
+          "name": "Estrazione di pagine"
+        },
+        "seo": {
+          "description": "Analizza posizionamenti, parole chiave e backlink.",
+          "name": "Ricerca SEO"
+        },
+        "social": {
+          "description": "Analizza post pubblici e raccogli contenuti multimediali.",
+          "name": "Ricerca sui social"
+        },
+        "web-search": {
+          "description": "Trova informazioni aggiornate sul web.",
+          "name": "Ricerca web"
+        }
+      }
+    },
     "preferences": {
       "account": {
         "manage": "Gestisci",

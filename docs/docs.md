@@ -36,6 +36,8 @@ surface; the index does not replace their detailed rules.
 
 ## Specialized Guidance
 
+- [Personal paid-tool controls](./paid-tool-controls.md): workspace-member
+  preferences, run snapshots, CLI enforcement and the disabled rollout boundary.
 - [External MCP server](./mcp-server.md): OAuth resource setup, organization
   authority, Streamable HTTP behavior and hosted-client acceptance gates.
 
@@ -63,6 +65,9 @@ surface; the index does not replace their detailed rules.
 - [Browser authorization request creation](./account-erasure-browser-authorization-creation.md):
   account-erasure admission, retained thread/run identity, SQL cost inventory
   and failure boundaries for minting cloud-browser authorization links.
+- [Computer Use authorization request creation](./account-erasure-computer-use-authorization-creation.md):
+  account-erasure admission, retained canonical identity, compatibility source
+  semantics and failure boundaries for Computer Use authorization links.
 - [Connector catalog rejections](./connector-catalog-rejections.md): safe
   validation reasons, cached rejection records, retained snapshots and recovered
   publication-order evidence.
