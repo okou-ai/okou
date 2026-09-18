@@ -13456,17 +13456,21 @@ describe("Morning Brief legacy schedule claim journal", () => {
     await flushWaitUntilForTest();
   }
 
-  async function runMorningBriefReconciliationUntilAutomationRestored(
+  async function runMorningBriefReconciliationUntilAutomationPresence(
     automationId: string,
+    expectedPresent: boolean,
   ): Promise<void> {
     for (let page = 0; page < 100; page += 1) {
       await makeOfficialWorkflowReconciliationWorkDue("morning-brief");
       await runOfficialWorkflowReconciliationWorker();
-      if ((await readLegacyAutomation(automationId)) !== undefined) {
+      const present = (await readLegacyAutomation(automationId)) !== undefined;
+      if (present === expectedPresent) {
         return;
       }
     }
-    throw new Error("Morning Brief automation was not restored");
+    throw new Error(
+      `Morning Brief automation was not ${expectedPresent ? "restored" : "removed"}`,
+    );
   }
 
   it("orders a selected unjournaled callback before disable and re-enable", async () => {
@@ -13576,7 +13580,10 @@ describe("Morning Brief legacy schedule claim journal", () => {
       definitionName: "morning-brief",
       automationId: brief.automationId,
     });
-    await runOfficialWorkflowReconciliationWorker();
+    await runMorningBriefReconciliationUntilAutomationPresence(
+      brief.automationId,
+      false,
+    );
     await expect(
       readLegacyAutomation(brief.automationId),
     ).resolves.toBeUndefined();
@@ -13596,8 +13603,9 @@ describe("Morning Brief legacy schedule claim journal", () => {
     const callback = flushWaitUntilForTest();
     await held.arrival;
 
-    await runMorningBriefReconciliationUntilAutomationRestored(
+    await runMorningBriefReconciliationUntilAutomationPresence(
       brief.automationId,
+      true,
     );
     const legacyBefore = await readLegacyAutomation(brief.automationId);
     const nativeBefore = await readNativeSchedule(owner);
