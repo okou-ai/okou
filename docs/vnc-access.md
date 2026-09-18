@@ -130,8 +130,8 @@ how to admit clients; shared sessions can interact with the same desktop.
 
 The generated migration is additive: deploy it before the API code. Old API
 binaries continue to work with the expanded schema and ignore the new tables.
-Existing connections receive a private random incarnation ID; older configuration
-writers also receive that default on inserts. Public metadata stays unchanged.
+The Runner authority slice adds only the Agent grant table; connection identity
+continues to use the saved ID and generation, matching SSH. Public metadata stays unchanged.
 There is no credential rewrite or destructive reset. Existing SSH data and behavior are
 unchanged. The configuration API stays unavailable until the feature is
 explicitly enabled; merging this change does not enable it.

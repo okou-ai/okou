@@ -7,12 +7,7 @@ import { vncAuthenticationSchema } from "./vnc-credentials";
 
 const c = initContract();
 
-export const runnerVncAuthoritySchema = z
-  .object({
-    instanceId: z.uuid(),
-    generation: z.int().positive().max(2_147_483_647),
-  })
-  .strict();
+const generationSchema = z.int().positive().max(2_147_483_647);
 
 const commonRequestSchema = z
   .object({
@@ -53,7 +48,7 @@ const resolveResponseSchema = z.discriminatedUnion("outcome", [
       outcome: z.literal("resolved"),
       host: z.string().min(1).max(VNC_HOST_MAX_LENGTH),
       port: z.int().min(1).max(65_535),
-      authority: runnerVncAuthoritySchema,
+      generation: generationSchema,
       authentication: vncAuthenticationSchema,
       security: vncSecuritySchema,
     })
@@ -61,7 +56,7 @@ const resolveResponseSchema = z.discriminatedUnion("outcome", [
 ]);
 
 const checkRequestSchema = commonRequestSchema.extend({
-  authority: runnerVncAuthoritySchema,
+  expectedGeneration: generationSchema,
 });
 const checkResponseSchema = z.discriminatedUnion("outcome", [
   z.object({ outcome: z.literal("valid") }).strict(),
@@ -99,7 +94,6 @@ export const runnerVncContract = c.router({
   },
 });
 
-export type RunnerVncAuthority = z.infer<typeof runnerVncAuthoritySchema>;
 export type RunnerVncResolveRequest = z.infer<typeof resolveRequestSchema>;
 export type RunnerVncResolveResponse = z.infer<typeof resolveResponseSchema>;
 export type RunnerVncCheckRequest = z.infer<typeof checkRequestSchema>;

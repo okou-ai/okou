@@ -44,18 +44,24 @@ methods or profiles are rejected. Future engine support must not broaden a saved
 policy or create an implicit downgrade path.
 
 A resolved response contains host, port, typed authentication/security and
-`authority: { instanceId, generation }`. The private instance ID distinguishes
-deletion/recreation of a saved connection UUID even when generation restarts at
-one. Generation changes on credential rotation, rebinding or connection edits.
+`generation`, matching SSH's connection identity. Generation changes on credential
+rotation, rebinding or connection edits.
 KMS decryption runs outside locks, followed by another current-authority check
-before handoff. A committed configuration change during decryption discards the
-stale snapshot.
+before handoff. A committed generation change during decryption discards the stale
+snapshot.
 
-`check` takes `connectionId`, `runnerIdentity` and the resolved `authority`. It
+`check` takes `connectionId`, `runnerIdentity` and `expectedGeneration`. It
 returns `valid`, `configuration_changed` or `unavailable`. It rechecks current
 authorization without decrypting credentials or changing database state. Multiple
 authorized Runs can independently resolve and check the same connection. Neither
 endpoint reserves a desktop or provides a duration-based authorization token.
+
+As with SSH, a client-generated connection ID can be reused after deletion and
+generation restarts at one. There is no retained creation history. A check cannot
+distinguish a replacement with the same ID and generation, including across a
+pending resolve. Absence is unavailable, and a different generation is stale.
+This identity model does not add SSH's Run-lifetime credential cache or notification
+transport; the current checks and #34780 runtime responsibilities below still apply.
 
 Generated Rust resolve DTOs use zeroizing `SecretText<8>` and deliberately omit
 Debug, Clone and Serialize. The runtime must also validate printable ASCII through
@@ -85,7 +91,7 @@ disconnection does not trigger an automatic reconnect, mode retry or input repla
 ## Runtime and cleanup
 
 The #34780 Runner must check current authority before each screenshot/input and
-stop fresh work on authority/API failure. Configuration changes require closing
+stop fresh work on authority/API failure. Detected generation changes require closing
 the old session rather than adopting new credentials into its socket. Run
 cancellation and explicit session close own socket/operation teardown; resource
 permits remain held until work actually ends. Input is serialized within each
@@ -106,9 +112,9 @@ and owner admission. KMS and Clerk calls never run under these locks.
 ## Deployment
 
 Apply the generated VNC authority migration before the new API. It adds the
-Agent grant table and connection instance ID. Older configuration writers receive
-the new instance default; existing public responses stay unchanged. Old Runners
-make no VNC calls; missing endpoints cannot authorize a new Runner operation.
+Agent grant table; the existing connection schema and public responses stay
+unchanged. Old Runners make no VNC calls; missing endpoints cannot authorize a new
+Runner operation.
 
 Before creating grants, every serving and rollback API must support grant
 cleanup. Keep the additive schema on rollback. Disable the feature to stop new

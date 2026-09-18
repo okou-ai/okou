@@ -51,28 +51,9 @@ try {
     [{ encrypted_password: "retained-ciphertext" }],
   );
   assert.deepEqual(
-    (
-      await client.query(
-        "SELECT count(instance_id)::int AS count FROM vnc_connections",
-      )
-    ).rows,
-    [{ count: 1 }],
+    (await client.query("SELECT host, generation FROM vnc_connections")).rows,
+    [{ host: "desktop.example.com", generation: 1 }],
   );
-  // An older configuration writer still omits the new private incarnation field.
-  await client.query(
-    legacyConnectionInsert.replace("000000000002", "000000000005"),
-  );
-  assert.deepEqual(
-    (
-      await client.query(
-        "SELECT count(DISTINCT instance_id)::int AS count FROM vnc_connections",
-      )
-    ).rows,
-    [{ count: 2 }],
-  );
-  await rejects("UPDATE vnc_connections SET instance_id=NULL", {
-    code: "23502",
-  });
 
   await client.query(`
     INSERT INTO agent_vnc_access (org_id,user_id,agent_id)
@@ -99,22 +80,6 @@ try {
     [{ count: 0 }],
   );
 
-  await client.query(`
-    CREATE TABLE previous_incarnation AS
-      SELECT instance_id FROM vnc_connections WHERE id='00000000-0000-4000-8000-000000000002';
-    DELETE FROM vnc_connections WHERE id='00000000-0000-4000-8000-000000000002';
-  `);
-  await client.query(legacyConnectionInsert);
-  assert.deepEqual(
-    (
-      await client.query(`
-      SELECT v.generation, v.instance_id <> p.instance_id AS fresh
-      FROM vnc_connections v CROSS JOIN previous_incarnation p
-      WHERE v.id='00000000-0000-4000-8000-000000000002'
-    `)
-    ).rows,
-    [{ generation: 1, fresh: true }],
-  );
   console.log(
     "VNC Runner authority migration and grant ownership constraints passed",
   );

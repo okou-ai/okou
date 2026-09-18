@@ -13,19 +13,6 @@ function identityDocs(name: string): RustTypeDeclarationDoc {
   };
 }
 
-function authorityDocs(name: string): RustTypeDeclarationDoc {
-  return {
-    rustTypeName: name,
-    rustDoc: ["Exact saved connection incarnation and configuration."],
-    fields: {
-      instanceId: [
-        "Connection incarnation; changes after delete and recreate.",
-      ],
-      generation: ["Current configuration generation."],
-    },
-  };
-}
-
 export const vncTypeBindings = [
   {
     schema: runnerVncContract.resolve.body,
@@ -75,7 +62,7 @@ export const vncTypeBindings = [
         fields: {
           host: ["Current private destination."],
           port: ["Current destination port."],
-          authority: ["Saved configuration identity for subsequent checks."],
+          generation: ["Current saved configuration generation."],
           authentication: ["Credential for the explicitly saved method."],
           security: [
             "Explicit saved transport and trust policy; never downgrade.",
@@ -93,7 +80,6 @@ export const vncTypeBindings = [
           ],
         },
       },
-      authorityDocs("ResolveResponseResolvedAuthority"),
       {
         rustTypeName: "ResolveResponseResolvedAuthentication",
         rustDoc: ["Typed private VNC credential."],
@@ -141,13 +127,12 @@ export const vncTypeBindings = [
         fields: {
           connectionId: ["Exact saved VNC connection UUID."],
           runnerIdentity: ["Winning process identity."],
-          authority: [
-            "Configuration identity returned by credential resolution.",
+          expectedGeneration: [
+            "Configuration generation returned by credential resolution.",
           ],
         },
       },
       identityDocs("CheckRequestRunnerIdentity"),
-      authorityDocs("CheckRequestAuthority"),
     ],
   },
   {
@@ -166,10 +151,10 @@ export const vncTypeBindings = [
           valid: ["Current Run remains authorized for the same configuration."],
           unavailable: ["Current authority is unavailable."],
           configuration_changed: [
-            "Saved connection incarnation or configuration changed.",
+            "Saved connection configuration generation changed.",
           ],
         },
       },
     ],
   },
-] satisfies readonly RustTypeBinding[];
+] as const satisfies readonly RustTypeBinding[];

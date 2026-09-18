@@ -1,5 +1,5 @@
 {
-  "id": "60b61bc9-a37e-44ce-acad-7df720e81fd1",
+  "id": "f777f9bd-ca1e-4676-8c42-2d12bf15f5ad",
   "prevId": "208f13f6-900e-4ed0-a105-743d80d5931e",
   "version": "7",
   "dialect": "postgresql",
@@ -33465,13 +33465,6 @@
           "name": "id",
           "type": "uuid",
           "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "instance_id": {
-          "name": "instance_id",
-          "type": "uuid",
-          "primaryKey": false,
           "notNull": true,
           "default": "gen_random_uuid()"
         },

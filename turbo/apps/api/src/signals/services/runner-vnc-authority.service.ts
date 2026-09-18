@@ -1,7 +1,4 @@
-import type {
-  RunnerVncAuthority,
-  RunnerVncResolveRequest,
-} from "@okouai/api-contracts/contracts/runner-vnc";
+import type { RunnerVncResolveRequest } from "@okouai/api-contracts/contracts/runner-vnc";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agents } from "@okouai/db/schema/agent";
@@ -27,7 +24,6 @@ export async function currentRunnerVncAuthority(
 ) {
   const [row] = await db
     .select({
-      instanceId: vncConnections.instanceId,
       generation: vncConnections.generation,
       orgId: agentRuns.orgId,
       userId: agentRuns.userId,
@@ -108,23 +104,4 @@ export async function currentRunnerVncAuthority(
     throw new Error("VNC configuration has an unsupported stored profile");
   }
   return row;
-}
-
-export function runnerVncAuthorityStamp(
-  row: RunnerVncAuthority,
-): RunnerVncAuthority {
-  return {
-    instanceId: row.instanceId,
-    generation: row.generation,
-  };
-}
-
-export function matchesRunnerVncAuthority(
-  row: RunnerVncAuthority,
-  expected: RunnerVncAuthority,
-): boolean {
-  return (
-    row.instanceId === expected.instanceId &&
-    row.generation === expected.generation
-  );
 }

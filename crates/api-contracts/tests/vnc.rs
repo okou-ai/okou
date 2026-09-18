@@ -1,16 +1,14 @@
 use api_contracts::generated::types::runners::vnc::{
-    CheckResponse, ResolveResponse, ResolveResponseResolvedAuthentication,
-    ResolveResponseResolvedSecurity, ResolveResponseResolvedSecurityX509VncTrust,
+    CheckRequest, CheckRequestRunnerIdentity, CheckResponse, ResolveResponse,
+    ResolveResponseResolvedAuthentication, ResolveResponseResolvedSecurity,
+    ResolveResponseResolvedSecurityX509VncTrust,
 };
 use serde_json::{Value, json};
 
 fn resolved() -> Value {
     json!({
         "outcome": "resolved", "host": "vnc.example.com", "port": 5900,
-        "authority": {
-            "instanceId": "00000000-0000-4000-8000-000000000001",
-            "generation": 5
-        },
+        "generation": 5,
         "authentication": {"method": "vnc_password", "password": " pass  "},
         "security": {"type": "x509_vnc", "trust": {"mode": "system"}}
     })
@@ -22,7 +20,7 @@ fn credential_handoff_preserves_explicit_authentication_and_trust() {
     let ResolveResponse::Resolved {
         authentication,
         security,
-        authority,
+        generation,
         ..
     } = response
     else {
@@ -30,7 +28,7 @@ fn credential_handoff_preserves_explicit_authentication_and_trust() {
     };
     let ResolveResponseResolvedAuthentication::VncPassword { password } = authentication;
     assert_eq!(password.expose(), " pass  ");
-    assert_eq!(authority.generation, 5);
+    assert_eq!(generation, 5);
     let ResolveResponseResolvedSecurity::X509Vnc { trust } = security;
     assert!(matches!(
         trust,
@@ -62,13 +60,7 @@ fn private_handoff_rejects_unknown_tags_and_mixed_variant_fields() {
         *invalid.pointer_mut(pointer).unwrap() = json!(value);
         assert!(serde_json::from_str::<ResolveResponse>(&invalid.to_string()).is_err());
     }
-    for pointer in [
-        "",
-        "/authority",
-        "/authentication",
-        "/security",
-        "/security/trust",
-    ] {
+    for pointer in ["", "/authentication", "/security", "/security/trust"] {
         let mut invalid = resolved();
         invalid.pointer_mut(pointer).unwrap()["unknown"] = json!("secret-canary");
         let error = serde_json::from_str::<ResolveResponse>(&invalid.to_string())
@@ -97,13 +89,13 @@ fn malformed_credentials_and_duplicate_fields_do_not_expose_passwords() {
             .unwrap();
         assert!(!error.to_string().contains("secret-canary"));
     }
-    for field in ["authority", "authentication", "security", "host", "port"] {
+    for field in ["generation", "authentication", "security", "host", "port"] {
         let mut invalid = resolved();
         invalid.as_object_mut().unwrap().remove(field);
         assert!(serde_json::from_str::<ResolveResponse>(&invalid.to_string()).is_err());
     }
     let body = resolved().to_string();
-    for field in ["outcome", "authentication", "security", "authority"] {
+    for field in ["outcome", "authentication", "security", "generation"] {
         let duplicate = format!("{{\"{field}\":{},{}", resolved()[field], &body[1..]);
         assert!(serde_json::from_str::<ResolveResponse>(&duplicate).is_err());
     }
@@ -115,7 +107,26 @@ fn malformed_credentials_and_duplicate_fields_do_not_expose_passwords() {
 }
 
 #[test]
-fn authorization_check_preserves_closed_outcomes() {
+fn authorization_check_preserves_expected_generation_and_closed_outcomes() {
+    let request = CheckRequest {
+        connection_id: "00000000-0000-4000-8000-000000000001".to_owned(),
+        runner_identity: CheckRequestRunnerIdentity {
+            runner_id: "00000000-0000-4000-8000-000000000002".to_owned(),
+            heartbeat_generation: 5_000_000_000,
+        },
+        expected_generation: 5,
+    };
+    assert_eq!(
+        serde_json::to_value(request).unwrap(),
+        json!({
+            "connectionId": "00000000-0000-4000-8000-000000000001",
+            "runnerIdentity": {
+                "runnerId": "00000000-0000-4000-8000-000000000002",
+                "heartbeatGeneration": 5_000_000_000_i64
+            },
+            "expectedGeneration": 5
+        })
+    );
     for (outcome, expected) in [
         ("valid", CheckResponse::Valid),
         ("configuration_changed", CheckResponse::ConfigurationChanged),

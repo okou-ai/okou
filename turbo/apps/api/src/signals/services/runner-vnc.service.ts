@@ -11,11 +11,7 @@ import type { ClerkClient } from "../external/clerk";
 import { decryptStoredSecretValue } from "./crypto.utils";
 import { settle } from "../utils";
 import { hasCurrentVncMembership } from "./vnc-owner-lifecycle.service";
-import {
-  currentRunnerVncAuthority,
-  matchesRunnerVncAuthority,
-  runnerVncAuthorityStamp,
-} from "./runner-vnc-authority.service";
+import { currentRunnerVncAuthority } from "./runner-vnc-authority.service";
 
 export async function checkRunnerVnc(
   db: Db,
@@ -28,9 +24,10 @@ export async function checkRunnerVnc(
     return { outcome: "unavailable" };
   }
   return {
-    outcome: matchesRunnerVncAuthority(row, input.authority)
-      ? "valid"
-      : "configuration_changed",
+    outcome:
+      row.generation === input.expectedGeneration
+        ? "valid"
+        : "configuration_changed",
   };
 }
 
@@ -93,7 +90,7 @@ export async function resolveRunnerVnc(
   const current = await currentRunnerVncAuthority(db, input, signal);
   if (
     !current ||
-    !matchesRunnerVncAuthority(current, row) ||
+    current.generation !== row.generation ||
     !(await hasCurrentVncMembership(clerk, current, signal))
   ) {
     return { outcome: "unavailable" };
@@ -102,7 +99,7 @@ export async function resolveRunnerVnc(
     outcome: "resolved",
     host: row.host,
     port: row.port,
-    authority: runnerVncAuthorityStamp(row),
+    generation: row.generation,
     security: security.data,
     authentication: authentication.data,
   };

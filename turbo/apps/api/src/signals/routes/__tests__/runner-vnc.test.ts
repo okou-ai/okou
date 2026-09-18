@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
   runnerVncContract,
-  type RunnerVncAuthority,
   type RunnerVncCheckRequest,
 } from "@okouai/api-contracts/contracts/runner-vnc";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -31,7 +30,7 @@ beforeEach(initializeVncRuntimeTest);
 
 function check(
   f: VncRuntimeFixture,
-  authority: RunnerVncAuthority,
+  expectedGeneration: number,
   override: Partial<RunnerVncCheckRequest> = {},
 ) {
   return accept(
@@ -41,7 +40,7 @@ function check(
       body: {
         connectionId: f.connectionId,
         runnerIdentity: f.runnerIdentity,
-        authority,
+        expectedGeneration,
         ...override,
       },
     }),
@@ -77,34 +76,33 @@ describe("private Runner VNC authority", () => {
       port: 5900,
       authentication: { method: "vnc_password", password: vncPassword },
       security: vncSecurity,
-      authority: { generation: 1 },
+      generation: 1,
     });
     const first = await api.resolved(f);
     await api.grant(f, true);
-    expect((await api.resolved(f)).authority).toStrictEqual(first.authority);
+    expect((await api.resolved(f)).generation).toBe(first.generation);
     const listed = await accept(
       api.connections().list({ headers: vncSessionHeaders }),
       [200],
     );
     expect(JSON.stringify(listed.body)).not.toContain(vncPassword);
-    expect(listed.body.connections[0]).not.toHaveProperty("instanceId");
     await api.grant(f, false);
     await expect(api.resolve(f)).resolves.toStrictEqual({
       outcome: "unavailable",
     });
-    expect((await check(f, first.authority)).body).toStrictEqual({
+    expect((await check(f, first.generation)).body).toStrictEqual({
       outcome: "unavailable",
     });
     await api.grant(f, true);
-    expect((await api.resolved(f)).authority).toStrictEqual(first.authority);
-    expect((await check(f, first.authority)).body).toStrictEqual({
+    expect((await api.resolved(f)).generation).toBe(first.generation);
+    expect((await check(f, first.generation)).body).toStrictEqual({
       outcome: "valid",
     });
   });
 
   it("rejects wrong auth classes and exact winning-process mismatches before KMS", async () => {
     const f = await api.fixture();
-    const { authority } = await api.resolved(f);
+    const { generation } = await api.resolved(f);
     const kms = useSecretKmsProbe();
     const body = {
       connectionId: f.connectionId,
@@ -130,7 +128,7 @@ describe("private Runner VNC authority", () => {
         body: {
           connectionId: f.connectionId,
           runnerIdentity: f.runnerIdentity,
-          authority,
+          expectedGeneration: generation,
         },
       });
       expect(checked.status).toBe(401);
@@ -155,7 +153,7 @@ describe("private Runner VNC authority", () => {
         body: {
           connectionId: f.connectionId,
           runnerIdentity: f.runnerIdentity,
-          authority,
+          expectedGeneration: generation,
         },
       }),
       [403],
@@ -169,7 +167,7 @@ describe("private Runner VNC authority", () => {
       await expect(api.resolve(f, override)).resolves.toStrictEqual({
         outcome: "unavailable",
       });
-      expect((await check(f, authority, override)).body).toStrictEqual({
+      expect((await check(f, generation, override)).body).toStrictEqual({
         outcome: "unavailable",
       });
     }
@@ -179,7 +177,7 @@ describe("private Runner VNC authority", () => {
       outcome: "unavailable",
     });
     expect(
-      (await check({ ...f, runId: randomUUID() }, authority)).body,
+      (await check({ ...f, runId: randomUUID() }, generation)).body,
     ).toStrictEqual({ outcome: "unavailable" });
     expect(kms.decryptCalls).toBe(0);
   });
@@ -187,14 +185,14 @@ describe("private Runner VNC authority", () => {
   it("keeps cross-owner connections opaque", async () => {
     const f = await api.fixture();
     const foreign = await api.fixture();
-    const { authority } = await api.resolved(foreign);
+    const { generation } = await api.resolved(foreign);
     api.authenticate(f);
     const kms = useSecretKmsProbe();
     await expect(
       api.resolve(f, { connectionId: foreign.connectionId }),
     ).resolves.toStrictEqual({ outcome: "unavailable" });
     expect(
-      (await check(f, authority, { connectionId: foreign.connectionId })).body,
+      (await check(f, generation, { connectionId: foreign.connectionId })).body,
     ).toStrictEqual({ outcome: "unavailable" });
     expect(kms.decryptCalls).toBe(0);
   });
@@ -245,12 +243,12 @@ describe("private Runner VNC authority", () => {
     const checkBody = {
       connectionId: f.connectionId,
       runnerIdentity: f.runnerIdentity,
-      authority: { instanceId: randomUUID(), generation: 1 },
+      expectedGeneration: 1,
     };
     for (const body of [
       { ...checkBody, host: "attacker.example.com" },
       { ...checkBody, userId: f.userId },
-      { ...checkBody, authority: { ...checkBody.authority, generation: 0 } },
+      { ...checkBody, expectedGeneration: 0 },
     ]) {
       const result = await request(
         runnerVncContract.check.path.replace(":runId", f.runId),
@@ -267,7 +265,7 @@ describe("private Runner VNC authority", () => {
 
   it("rejects inactive and unclaimed Runs without requiring chat provenance", async () => {
     const f = await api.fixture();
-    const { authority } = await api.resolved(f);
+    const { generation } = await api.resolved(f);
     const kms = useSecretKmsProbe();
     for (const runtime of [
       { status: "pending" as const },
@@ -280,7 +278,7 @@ describe("private Runner VNC authority", () => {
       await expect(api.resolve({ ...f, ...other })).resolves.toStrictEqual({
         outcome: "unavailable",
       });
-      expect((await check({ ...f, ...other }, authority)).body).toStrictEqual({
+      expect((await check({ ...f, ...other }, generation)).body).toStrictEqual({
         outcome: "unavailable",
       });
     }
@@ -302,7 +300,7 @@ describe("private Runner VNC authority", () => {
 
   it("rechecks feature and current membership on private calls", async () => {
     const f = await api.fixture();
-    const { authority } = await api.resolved(f);
+    const { generation } = await api.resolved(f);
     const kms = useSecretKmsProbe();
     await updateFeatureSwitchesForUser(context, f, {
       [FeatureSwitchKey.VncAccess]: false,
@@ -310,7 +308,7 @@ describe("private Runner VNC authority", () => {
     await expect(api.resolve(f)).resolves.toStrictEqual({
       outcome: "unavailable",
     });
-    expect((await check(f, authority)).body).toStrictEqual({
+    expect((await check(f, generation)).body).toStrictEqual({
       outcome: "unavailable",
     });
     await updateFeatureSwitchesForUser(context, f, {
@@ -322,7 +320,7 @@ describe("private Runner VNC authority", () => {
     await expect(api.resolve(f)).resolves.toStrictEqual({
       outcome: "unavailable",
     });
-    expect((await check(f, authority)).body).toStrictEqual({
+    expect((await check(f, generation)).body).toStrictEqual({
       outcome: "unavailable",
     });
     expect(kms.decryptCalls).toBe(0);
@@ -335,11 +333,11 @@ describe("private Runner VNC authority", () => {
       api.resolved(f),
       api.resolved(other),
     ]);
-    expect(second.authority).toStrictEqual(first.authority);
+    expect(second.generation).toBe(first.generation);
     const kms = useSecretKmsProbe();
     for (const result of await Promise.all([
-      check(f, first.authority),
-      check(other, second.authority),
+      check(f, first.generation),
+      check(other, second.generation),
     ])) {
       expect(result.headers.get("cache-control")).toBe("no-store");
       expect(result.body).toStrictEqual({ outcome: "valid" });
@@ -347,7 +345,7 @@ describe("private Runner VNC authority", () => {
     expect(kms.decryptCalls).toBe(0);
   });
 
-  it("rejects rotated configuration and a deleted connection incarnation even when its public UUID is reused", async () => {
+  it("checks the current generation through rotation, deletion and recreation with the same connection UUID", async () => {
     const f = await api.fixture();
     const original = await api.resolved(f);
     await accept(
@@ -362,11 +360,11 @@ describe("private Runner VNC authority", () => {
       [200],
     );
     const rotated = await api.resolved(f);
-    expect(rotated.authority.generation).toBe(2);
-    expect((await check(f, original.authority)).body).toStrictEqual({
+    expect(rotated.generation).toBe(2);
+    expect((await check(f, original.generation)).body).toStrictEqual({
       outcome: "configuration_changed",
     });
-    expect((await check(f, rotated.authority)).body).toStrictEqual({
+    expect((await check(f, rotated.generation)).body).toStrictEqual({
       outcome: "valid",
     });
     await accept(
@@ -377,26 +375,38 @@ describe("private Runner VNC authority", () => {
       }),
       [204],
     );
-    expect((await check(f, rotated.authority)).body).toStrictEqual({
+    expect((await check(f, rotated.generation)).body).toStrictEqual({
       outcome: "unavailable",
     });
     await accept(
       api.connections().create({
         headers: vncSessionHeaders,
-        body: vncConnectionBody(f.connectionId),
+        body: {
+          ...vncConnectionBody(f.connectionId),
+          credential: {
+            create: {
+              name: "Replacement VNC password",
+              authentication: {
+                method: "vnc_password",
+                password: "replaced",
+              },
+            },
+          },
+        },
       }),
       [201],
     );
     const replacement = await api.resolved(f);
-    expect(replacement.authority.generation).toBe(1);
-    expect(replacement.authority.instanceId).not.toBe(
-      original.authority.instanceId,
-    );
-    expect((await check(f, original.authority)).body).toStrictEqual({
-      outcome: "configuration_changed",
+    expect(replacement.generation).toBe(1);
+    expect(replacement.authentication).toStrictEqual({
+      method: "vnc_password",
+      password: "replaced",
     });
-    expect((await check(f, replacement.authority)).body).toStrictEqual({
+    expect((await check(f, original.generation)).body).toStrictEqual({
       outcome: "valid",
+    });
+    expect((await check(f, rotated.generation)).body).toStrictEqual({
+      outcome: "configuration_changed",
     });
   });
 
@@ -451,7 +461,7 @@ describe("private Runner VNC authority", () => {
     await expect(pending).resolves.toStrictEqual({ outcome: "unavailable" });
     await expect(api.resolved(f)).resolves.toMatchObject({
       authentication: { method: "vnc_password", password: "rotated" },
-      authority: { generation: 2 },
+      generation: 2,
     });
   });
 });

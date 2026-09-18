@@ -6,7 +6,6 @@ CREATE TABLE "agent_vnc_access" (
 	CONSTRAINT "agent_vnc_access_pkey" PRIMARY KEY("org_id","user_id","agent_id")
 );
 --> statement-breakpoint
-ALTER TABLE "vnc_connections" ADD COLUMN "instance_id" uuid DEFAULT gen_random_uuid() NOT NULL;--> statement-breakpoint
 ALTER TABLE "agent_vnc_access" ADD CONSTRAINT "agent_vnc_access_agent_id_agents_id_fk" FOREIGN KEY ("agent_id") REFERENCES "public"."agents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "idx_agent_vnc_access_agent" ON "agent_vnc_access" USING btree ("agent_id");--> statement-breakpoint
 CREATE INDEX "idx_agent_vnc_access_user" ON "agent_vnc_access" USING btree ("user_id");

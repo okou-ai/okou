@@ -1981,16 +1981,6 @@ pub mod runners {
             pub heartbeat_generation: i64,
         }
 
-        /// Exact saved connection incarnation and configuration.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        pub struct CheckRequestAuthority {
-            /// Connection incarnation; changes after delete and recreate.
-            pub instance_id: String,
-            /// Current configuration generation.
-            pub generation: i64,
-        }
-
         /// Recheck current Run authorization and saved configuration.
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         #[serde(rename_all = "camelCase")]
@@ -1999,8 +1989,8 @@ pub mod runners {
             pub connection_id: String,
             /// Winning process identity.
             pub runner_identity: CheckRequestRunnerIdentity,
-            /// Configuration identity returned by credential resolution.
-            pub authority: CheckRequestAuthority,
+            /// Configuration generation returned by credential resolution.
+            pub expected_generation: i64,
         }
 
         /// Current authorization snapshot, not a reservation or guarantee of exclusive control.
@@ -2014,7 +2004,7 @@ pub mod runners {
             /// Current authority is unavailable.
             #[serde(rename = "unavailable")]
             Unavailable,
-            /// Saved connection incarnation or configuration changed.
+            /// Saved connection configuration generation changed.
             #[serde(rename = "configuration_changed")]
             ConfigurationChanged,
         }
@@ -2049,16 +2039,6 @@ pub mod runners {
             pub runner_identity: ResolveRequestRunnerIdentity,
             /// Exact supported pairs; empty means no supported policy.
             pub supported_profiles: Vec<ResolveRequestSupportedProfile>,
-        }
-
-        /// Exact saved connection incarnation and configuration.
-        #[derive(serde::Deserialize)]
-        #[serde(rename_all = "camelCase", deny_unknown_fields)]
-        pub struct ResolveResponseResolvedAuthority {
-            /// Connection incarnation; changes after delete and recreate.
-            pub instance_id: String,
-            /// Current configuration generation.
-            pub generation: i64,
         }
 
         /// Typed private VNC credential.
@@ -2298,8 +2278,8 @@ pub mod runners {
                 host: String,
                 /// Current destination port.
                 port: u64,
-                /// Saved configuration identity for subsequent checks.
-                authority: ResolveResponseResolvedAuthority,
+                /// Current saved configuration generation.
+                generation: i64,
                 /// Credential for the explicitly saved method.
                 authentication: ResolveResponseResolvedAuthentication,
                 /// Explicit saved transport and trust policy; never downgrade.
@@ -2328,8 +2308,8 @@ pub mod runners {
                     Host,
                     #[serde(rename = "port")]
                     Port,
-                    #[serde(rename = "authority")]
-                    Authority,
+                    #[serde(rename = "generation")]
+                    Generation,
                     #[serde(rename = "authentication")]
                     Authentication,
                     #[serde(rename = "security")]
@@ -2351,7 +2331,7 @@ pub mod runners {
                         let mut outcome = None::<Kind>;
                         let mut host = None::<String>;
                         let mut port = None::<u64>;
-                        let mut authority = None::<ResolveResponseResolvedAuthority>;
+                        let mut generation = None::<i64>;
                         let mut authentication = None::<ResolveResponseResolvedAuthentication>;
                         let mut security = None::<ResolveResponseResolvedSecurity>;
                         while let Some(field) = map.next_key::<Field>()? {
@@ -2380,13 +2360,13 @@ pub mod runners {
                                     }
                                     port = Some(map.next_value()?);
                                 }
-                                Field::Authority => {
-                                    if authority.is_some() {
+                                Field::Generation => {
+                                    if generation.is_some() {
                                         return Err(serde::de::Error::custom(
                                             "duplicate authority field",
                                         ));
                                     }
-                                    authority = Some(map.next_value()?);
+                                    generation = Some(map.next_value()?);
                                 }
                                 Field::Authentication => {
                                     if authentication.is_some() {
@@ -2406,7 +2386,7 @@ pub mod runners {
                                 }
                             }
                         }
-                        match (outcome, host, port, authority, authentication, security) {
+                        match (outcome, host, port, generation, authentication, security) {
                             (Some(Kind::Unavailable), None, None, None, None, None) => {
                                 Ok(ResolveResponse::Unavailable)
                             }
@@ -2417,13 +2397,13 @@ pub mod runners {
                                 Some(Kind::Resolved),
                                 Some(host),
                                 Some(port),
-                                Some(authority),
+                                Some(generation),
                                 Some(authentication),
                                 Some(security),
                             ) => Ok(ResolveResponse::Resolved {
                                 host,
                                 port,
-                                authority,
+                                generation,
                                 authentication,
                                 security,
                             }),
