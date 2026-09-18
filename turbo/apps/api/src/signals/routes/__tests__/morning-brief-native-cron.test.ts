@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { cronExecuteMorningBriefsContract } from "@okouai/api-contracts/contracts/cron";
+import { morningBriefPreferenceContract } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createStore } from "ccstate";
 import { http, HttpResponse } from "msw";
@@ -34,6 +35,7 @@ import {
   seedRecipientAddress,
 } from "../../../test-fixtures/morning-brief-native-schedule";
 import { cronExecuteMorningBriefsRoutes } from "../cron-execute-morning-briefs";
+import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import {
   seedSlackOrgConnection$,
@@ -41,6 +43,7 @@ import {
 } from "./helpers/integrations-slack";
 import { mockClerkUsers } from "./helpers/clerk-users";
 import { seedOrgMembership$ } from "./helpers/org-membership";
+import { createRouteMocks } from "./helpers/route-test";
 
 /**
  * The native Morning Brief cron, exercised through its registered route.
@@ -57,6 +60,7 @@ import { seedOrgMembership$ } from "./helpers/org-membership";
  */
 
 const context = testContext();
+const mocks = createRouteMocks(context);
 const store = createStore();
 
 const CRON_SECRET = "native-morning-brief-cron-secret";
@@ -103,6 +107,12 @@ function tick(secret: string = CRON_SECRET) {
   return cronClient().execute({
     headers: { authorization: `Bearer ${secret}` },
   });
+}
+
+function preferenceClient() {
+  return setupApp({ context, routes: morningBriefPreferenceRoutes })(
+    morningBriefPreferenceContract,
+  );
 }
 
 async function fixture(
@@ -499,6 +509,36 @@ describe("native Morning Brief cron", () => {
     expect(calls.generation).toHaveLength(1);
     await expect(countOrgAgentRuns(f.orgId)).resolves.toBe(0);
     await expect(countOrgUsageEvents(f.orgId)).resolves.toBe(0);
+  });
+
+  it("commits a native Settings pause with the retained rollback choice", async () => {
+    const f = await fixture();
+    scriptSlack();
+    scriptProviders();
+    await tickUntilNative(f);
+    mocks.clerk.session(f.userId, f.orgId);
+
+    const paused = await accept(
+      preferenceClient().update({
+        headers: { authorization: "Bearer clerk-session" },
+        body: { enabled: false },
+      }),
+      [200],
+    );
+    expect(paused.body).toMatchObject({
+      enabled: false,
+      status: "paused",
+      nextRunAt: null,
+    });
+    await expect(readNativeSchedule(f)).resolves.toMatchObject({
+      enabled: false,
+      nextRunAt: null,
+      scheduleOwner: null,
+    });
+    await expect(readLegacyAutomation(f.automationId)).resolves.toMatchObject({
+      enabled: false,
+      nextRunAt: null,
+    });
   });
 
   it("does not contact the provider twice for the same slot across ticks", async () => {

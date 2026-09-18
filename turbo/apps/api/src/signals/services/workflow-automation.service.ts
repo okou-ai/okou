@@ -73,6 +73,7 @@ import { publishChatThreadAutomationsChangedSafely } from "../external/realtime"
 import {
   applyMorningBriefLogicalChoice,
   lockMorningBriefNativeSchedule,
+  type MorningBriefChoiceApplication,
 } from "./morning-brief-native-schedule.service";
 import { nowDate } from "../../lib/time";
 import type { Tx } from "../../lib/db-types";
@@ -5970,6 +5971,68 @@ const validateStripeFeature$ = command(
       : stripeInvoicePaidWorkflowAutomationsDisabledResult();
   },
 );
+
+/**
+ * Commit the Settings choice to native authority and the retained legacy row.
+ *
+ * Rollback needs the latter to reflect the same user choice even though legacy
+ * admission is closed while native owns scheduling. Keeping both writes in this
+ * schedule-first transaction also means no failure can expose opposite choices.
+ */
+export async function persistNativeMorningBriefPreferenceChoice(
+  db: Db,
+  args: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly automationId: string | null;
+    readonly enabled: boolean;
+    readonly expectedEpoch: number;
+    readonly at: Date;
+  },
+): Promise<MorningBriefChoiceApplication> {
+  const owner = { orgId: args.orgId, userId: args.userId };
+  return await db.transaction(async (tx) => {
+    const schedule = await lockMorningBriefNativeSchedule(tx, owner);
+    if (
+      schedule === undefined ||
+      schedule.phase === "legacy" ||
+      schedule.ownerEpoch !== args.expectedEpoch ||
+      schedule.legacyAutomationId !== args.automationId
+    ) {
+      return schedule === undefined
+        ? { kind: "absent" }
+        : { kind: "stale", row: schedule };
+    }
+    if (args.automationId !== null) {
+      await tx
+        .update(workflowAutomations)
+        .set({
+          enabled: args.enabled,
+          officialIntendedEnabled: args.enabled,
+          nextRunAt: null,
+          ...(args.enabled ? { consecutiveFailures: 0 } : {}),
+          updatedAt: args.at,
+        })
+        .where(
+          and(
+            eq(workflowAutomations.id, args.automationId),
+            eq(workflowAutomations.orgId, args.orgId),
+            eq(workflowAutomations.ownerUserId, args.userId),
+            eq(
+              workflowAutomations.officialBlueprintKey,
+              MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
+            ),
+          ),
+        );
+    }
+    return await applyMorningBriefLogicalChoice(
+      tx,
+      owner,
+      { enabled: args.enabled, expectedEpoch: args.expectedEpoch },
+      args.at,
+    );
+  });
+}
 
 /**
  * Commit a generic Morning Brief automation toggle and its durable logical

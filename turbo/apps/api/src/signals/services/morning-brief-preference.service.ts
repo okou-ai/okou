@@ -61,6 +61,7 @@ import { reconcileOfficialWorkflowInstallation$ } from "./official-workflow-reco
 import {
   disableWorkflowAutomation$,
   enableWorkflowAutomation$,
+  persistNativeMorningBriefPreferenceChoice,
 } from "./workflow-automation.service";
 import type { WorkflowMember } from "./workflow-data.service";
 
@@ -901,13 +902,12 @@ const updateMorningBriefWhileLocked$ = command(
     const nativeRow = await readMorningBriefNativeSchedule(db, identity);
     signal.throwIfAborted();
     if (nativeRow !== undefined && nativeRow.phase !== "legacy") {
-      const applied = await db.transaction(async (tx) => {
-        return await applyMorningBriefLogicalChoice(
-          tx,
-          identity,
-          { enabled: args.enabled, expectedEpoch: nativeRow.ownerEpoch },
-          nowDate(),
-        );
+      const applied = await persistNativeMorningBriefPreferenceChoice(db, {
+        ...identity,
+        automationId: nativeRow.legacyAutomationId,
+        enabled: args.enabled,
+        expectedEpoch: nativeRow.ownerEpoch,
+        at: nowDate(),
       });
       signal.throwIfAborted();
       if (applied.kind === "stale") {

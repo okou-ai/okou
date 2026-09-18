@@ -388,7 +388,7 @@ interface MorningBriefLogicalChoicePatch {
   readonly expectedEpoch?: number;
 }
 
-type MorningBriefChoiceApplication =
+export type MorningBriefChoiceApplication =
   | { readonly kind: "applied"; readonly row: MorningBriefNativeScheduleRow }
   | { readonly kind: "stale"; readonly row: MorningBriefNativeScheduleRow }
   | { readonly kind: "absent" };
