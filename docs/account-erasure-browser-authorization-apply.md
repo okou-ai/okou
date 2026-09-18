@@ -102,9 +102,11 @@ The lock order has no inverse. Every statement that touches
 `browser-authorization.service.ts`: the creation `INSERT`, the token lookup both
 read paths share, and this completion `UPDATE`. Nothing deletes the row — no
 endpoint revokes one, the table declares no foreign key that could cascade it
-away, and no cleanup job sweeps it — and none of those statements takes a
-canonical Agent or thread lock, so no other writer can acquire this row before
-`agents` or `chat_threads`.
+away, and no cleanup job sweeps it. Request
+[creation](account-erasure-browser-authorization-creation.md) now takes
+subjects -> Agent -> thread -> run before inserting a fresh request; apply takes
+subjects -> Agent -> thread -> this existing request; the token lookups take no
+row lock. No path therefore locks a request before `agents` or `chat_threads`.
 
 `chat_threads` keeps taking its own `FOR NO KEY UPDATE` through the selection
 `UPDATE`, which does not conflict with the retained `FOR KEY SHARE`, so no new

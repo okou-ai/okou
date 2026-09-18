@@ -9,7 +9,11 @@ import type { Tx } from "../../lib/db-types";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import { publishThreadListChanged } from "../external/realtime";
-import { withChatThreadContentWrite } from "./chat-thread-content-erasure-admission.service";
+import {
+  ChatThreadContentOwnershipChangedError,
+  type ChatThreadContentIdentity,
+  withChatThreadContentWrite,
+} from "./chat-thread-content-erasure-admission.service";
 import { appendChatThreadEvent } from "./chat-thread-event.service";
 
 const BROWSER_AUTHORIZATION_REQUEST_TTL_MS = 60 * 60 * 1000;
@@ -63,17 +67,27 @@ function authorizationUrl(requestToken: string): string {
   )}`;
 }
 
-async function resolveChatThreadId(args: {
+interface BrowserAuthorizationRunLocator {
+  readonly chatThreadId: string;
+  readonly triggerSource: string;
+}
+
+async function resolveRunLocator(args: {
   readonly db: Db;
   readonly orgId: string;
   readonly userId: string;
   readonly runId: string;
-}): Promise<string | "run_not_found" | "unsupported_context"> {
+}): Promise<
+  BrowserAuthorizationRunLocator | "run_not_found" | "unsupported_context"
+> {
   if (!isUuid(args.runId)) {
     return "run_not_found";
   }
   const [run] = await args.db
-    .select({ chatThreadId: agentRuns.chatThreadId })
+    .select({
+      chatThreadId: agentRuns.chatThreadId,
+      triggerSource: agentRuns.triggerSource,
+    })
     .from(agentRuns)
     .where(
       and(
@@ -84,10 +98,75 @@ async function resolveChatThreadId(args: {
       ),
     )
     .limit(1);
-  if (!run) {
+  if (!run || run.triggerSource === null) {
     return "run_not_found";
   }
-  return run.chatThreadId ?? "unsupported_context";
+  if (run.chatThreadId === null) {
+    return "unsupported_context";
+  }
+  return {
+    chatThreadId: run.chatThreadId,
+    triggerSource: run.triggerSource,
+  };
+}
+
+/**
+ * Extends the shared thread admission only for authorization-request creation.
+ *
+ * The shared helper's retained thread KEY SHARE protects deletion, but not a
+ * non-key `user_id` or `agent_id` update. Creation can then wait while pinning
+ * its run, so it first upgrades this one thread to SHARE and compares the row
+ * returned under that lock with the identity whose subjects were admitted.
+ * Any change restarts the helper's whole bounded attempt, before a newly
+ * discovered subject or Agent can be locked out of order.
+ *
+ * The run comes last. SHARE is required because every identity field checked
+ * here is non-key; KEY SHARE would allow those updates to commit while the
+ * request retained stale labels. The exact locator is never followed to a new
+ * thread.
+ */
+async function retainBrowserAuthorizationCreationIdentity(
+  tx: Tx,
+  args: {
+    readonly identity: ChatThreadContentIdentity;
+    readonly locator: BrowserAuthorizationRunLocator;
+    readonly orgId: string;
+    readonly userId: string;
+    readonly runId: string;
+  },
+): Promise<boolean> {
+  const [thread] = await tx
+    .select({
+      userId: chatThreads.userId,
+      agentId: chatThreads.agentId,
+    })
+    .from(chatThreads)
+    .where(eq(chatThreads.id, args.locator.chatThreadId))
+    .limit(1)
+    .for("share");
+  if (
+    !thread ||
+    thread.userId !== args.identity.userId ||
+    thread.agentId !== args.identity.agentId
+  ) {
+    throw new ChatThreadContentOwnershipChangedError();
+  }
+
+  const [run] = await tx
+    .select({ id: agentRuns.id })
+    .from(agentRuns)
+    .where(
+      and(
+        eq(agentRuns.id, args.runId),
+        eq(agentRuns.userId, args.userId),
+        eq(agentRuns.orgId, args.orgId),
+        eq(agentRuns.chatThreadId, args.locator.chatThreadId),
+        eq(agentRuns.triggerSource, args.locator.triggerSource),
+      ),
+    )
+    .limit(1)
+    .for("share");
+  return run !== undefined;
 }
 
 async function loadRequestByToken(args: {
@@ -138,37 +217,75 @@ export const createBrowserAuthorizationRequest$ = command(
     signal: AbortSignal,
   ): Promise<CreateBrowserAuthorizationRequestResult> => {
     const db = set(writeDb$);
-    const chatThreadId = await resolveChatThreadId({ db, ...args });
+    const locator = await resolveRunLocator({ db, ...args });
     signal.throwIfAborted();
-    if (chatThreadId === "run_not_found") {
+    if (locator === "run_not_found") {
       return { status: "run_not_found" };
     }
-    if (chatThreadId === "unsupported_context") {
+    if (locator === "unsupported_context") {
       return { status: "unsupported_context" };
     }
 
+    // This value is opaque and is never persisted. Reusing it across a bounded
+    // ownership retry is safe because only the accepted attempt can INSERT its
+    // hash, and no URL is returned until that transaction commits.
     const requestToken = generateOpaqueToken();
-    const now = nowDate();
-    const expiresAt = new Date(
-      now.getTime() + BROWSER_AUTHORIZATION_REQUEST_TTL_MS,
-    );
-    await db.insert(browserAuthorizationRequests).values({
-      requestTokenHash: hashSecret(requestToken),
-      orgId: args.orgId,
-      userId: args.userId,
-      runId: args.runId,
-      chatThreadId,
-      expiresAt,
-      createdAt: now,
-      updatedAt: now,
-    });
-    signal.throwIfAborted();
+    const result = await withChatThreadContentWrite(
+      db,
+      {
+        chatThreadId: locator.chatThreadId,
+        authorize: (identity) => {
+          return (
+            identity.userId === args.userId &&
+            identity.agentId !== null &&
+            identity.orgId === args.orgId
+          );
+        },
+      },
+      async (
+        tx,
+        identity,
+      ): Promise<CreateBrowserAuthorizationRequestResult> => {
+        const retained = await retainBrowserAuthorizationCreationIdentity(tx, {
+          identity,
+          locator,
+          ...args,
+        });
+        if (!retained) {
+          return { status: "run_not_found" };
+        }
+        signal.throwIfAborted();
 
-    return {
-      status: "created",
-      authorizationUrl: authorizationUrl(requestToken),
-      expiresAt: expiresAt.toISOString(),
-    };
+        // Required locks can wait on real deletion and identity writers. Start
+        // the one-hour validity only after those waits, immediately before the
+        // INSERT whose transaction retains every admission and identity lock.
+        const now = nowDate();
+        const expiresAt = new Date(
+          now.getTime() + BROWSER_AUTHORIZATION_REQUEST_TTL_MS,
+        );
+        await tx.insert(browserAuthorizationRequests).values({
+          requestTokenHash: hashSecret(requestToken),
+          orgId: args.orgId,
+          userId: args.userId,
+          runId: args.runId,
+          chatThreadId: locator.chatThreadId,
+          expiresAt,
+          createdAt: now,
+          updatedAt: now,
+        });
+
+        return {
+          status: "created",
+          authorizationUrl: authorizationUrl(requestToken),
+          expiresAt: expiresAt.toISOString(),
+        };
+      },
+      signal,
+    );
+    if (result.outcome !== "written") {
+      return { status: "run_not_found" };
+    }
+    return result.value;
   },
 );
 
@@ -251,9 +368,10 @@ async function applyAuthorizedBrowserSelection(
   // concurrent `DELETE`, though that alone would not require this mode, since
   // `KEY SHARE` blocks `DELETE` too. No other statement in the codebase locks
   // `browser_authorization_requests`: the only writers are this service's own
-  // creation `INSERT`, this completion `UPDATE`, and the token lookups both
-  // read paths share, and none of them takes a canonical Agent or thread lock,
-  // so this subject -> Agent -> thread -> request order has no inverse.
+  // creation `INSERT` and this completion `UPDATE`. Creation now takes subjects
+  // -> Agent -> thread -> run before inserting a fresh request, apply takes
+  // subjects -> Agent -> thread -> this existing request, and the token lookups
+  // take no row lock. No path therefore locks a request before Agent or thread.
   const [request] = await tx
     .select({ expiresAt: browserAuthorizationRequests.expiresAt })
     .from(browserAuthorizationRequests)
