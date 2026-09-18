@@ -1,6 +1,6 @@
 import type { GetStartedQuestKey } from "@okouai/api-contracts/contracts/get-started";
 import type { ReactNode } from "react";
-import { useGet, useSet } from "ccstate-react";
+import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { Clock, Play, User } from "lucide-react";
 import {
@@ -25,6 +25,15 @@ import {
 import { formatLocalizedNumber } from "../../i18n/format.ts";
 import { platformStaticAssetUrl } from "../../lib/static-assets.ts";
 import { WorkflowConnectorIcon } from "../onboarding/onboarding-workflow-diagram.tsx";
+import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
+import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
+import {
+  selectedConnectorSlug$,
+  setSelectedConnectorSlug$,
+} from "../../signals/okou-page/settings/connectors.ts";
+import { defaultBuiltinConnectorAccountOptions } from "../../signals/okou-page/settings/connector-account-dialogs.ts";
+import { ConnectModal } from "./components/settings/add-connection-dialog.tsx";
+import { QuestConnectorPicker } from "./get-started-connector-picker.tsx";
 import {
   ILLUSTRATION_ACCENTS,
   LINE_ALPHA,
@@ -144,56 +153,6 @@ function Person({ accent, size }: { accent: string; size: number }) {
     >
       <User size={Math.round(size * 0.56)} strokeWidth={2.2} />
     </span>
-  );
-}
-
-/**
- * The user's own material: a fanned stack of documents, drawn the way the start
- * cards draw a deck, because depth is what keeps a small object from reading as
- * a diagram.
- */
-function ToolStackArt({ accent }: { accent: string }) {
-  const edge = { borderColor: `${accent}${LINE_ALPHA}` };
-  return (
-    <span className="relative block h-[32px] w-[44px]">
-      <span
-        className={`absolute inset-0 -translate-x-[3px] translate-y-[2px] -rotate-6 ${NODE_CLASS}`}
-        style={edge}
-      />
-      <span
-        className={`absolute inset-0 translate-x-[3px] translate-y-px rotate-6 ${NODE_CLASS}`}
-        style={edge}
-      />
-      <span className={`absolute inset-0 ${NODE_CLASS}`} style={edge}>
-        <span
-          className="absolute left-[8px] top-[9px] size-[7px] rounded-[2px]"
-          style={{ backgroundColor: accent }}
-        />
-        <span
-          className="absolute left-[19px] top-[10px] h-[3px] w-[17px] rounded-full"
-          style={{ backgroundColor: `${accent}${SOFT_ALPHA}` }}
-        />
-        <span
-          className="absolute left-[8px] top-[20px] h-[3px] w-[28px] rounded-full"
-          style={{ backgroundColor: `${accent}${SOFT_ALPHA}` }}
-        />
-      </span>
-    </span>
-  );
-}
-
-function ConnectorFigure() {
-  const accent = ILLUSTRATION_ACCENTS.website;
-  return (
-    <TileRow>
-      <Tile accent={accent}>
-        <OkouAvatar size={44} />
-      </Tile>
-      <Joint accent={accent} />
-      <Tile accent={accent}>
-        <ToolStackArt accent={accent} />
-      </Tile>
-    </TileRow>
   );
 }
 
@@ -443,7 +402,13 @@ function useLaterLabel(): string {
   });
 }
 
-function ConnectorIntro({ onConfirm, onClose }: IntroProps) {
+function ConnectorIntro({
+  onConfirm,
+  onClose,
+  onPick,
+}: IntroProps & {
+  readonly onPick: (connector: PlatformConnectorCatalogStatusItem) => void;
+}) {
   const { t } = useTranslation();
   const assistantName = useGet(assistantName$);
   return (
@@ -457,7 +422,10 @@ function ConnectorIntro({ onConfirm, onClose }: IntroProps) {
       description={t(($) => {
         return $.chat.agentPage.getStarted.intro.connector.description;
       })}
-      figure={<ConnectorFigure />}
+      // The connectors themselves are the illustration: every one of them
+      // connects in one press, which is the claim the abstract figure was
+      // making and these marks make better.
+      figure={<QuestConnectorPicker onPick={onPick} />}
       secondaryLabel={useLaterLabel()}
       onSecondary={onClose}
       confirmLabel={t(($) => {
@@ -715,6 +683,7 @@ export function GetStartedQuestIntroDialog({
 }) {
   const openKey = useGet(questIntroKey$);
   const setOpenKey = useSet(setQuestIntroKey$);
+  const setSelectedSlug = useSet(setSelectedConnectorSlug$);
   const introducedKey =
     openKey !== null && isIntroduced(openKey) ? openKey : null;
 
@@ -728,28 +697,74 @@ export function GetStartedQuestIntroDialog({
     close();
   };
   const props: IntroProps = { onConfirm: confirm, onClose: close };
+  const pick = (connector: PlatformConnectorCatalogStatusItem) => {
+    setSelectedSlug(connector.slug);
+  };
 
   // The dialog stays mounted and closed rather than appearing already open:
   // a popup that is born open never runs its enter transition, so its portal
   // has nothing to show.
   return (
-    <Dialog
-      open={introducedKey !== null}
-      onOpenChange={(next) => {
-        if (!next) {
-          close();
-        }
+    <>
+      <Dialog
+        open={introducedKey !== null}
+        onOpenChange={(next) => {
+          if (!next) {
+            close();
+          }
+        }}
+      >
+        <DialogContent
+          smMaxWidth="sm"
+          // The connector quest carries the whole one-click catalog, so it is
+          // given the wider of the two shells.
+          maxWidth={introducedKey === "connector" ? 640 : 560}
+        >
+          {introducedKey === "connector" && (
+            <ConnectorIntro {...props} onPick={pick} />
+          )}
+          {introducedKey === "slack" && <SlackIntro {...props} />}
+          {introducedKey === "invite" && <InviteIntro {...props} />}
+          {introducedKey === "workflow" && (
+            <WorkflowIntro onConfirm={confirm} onClose={close} />
+          )}
+        </DialogContent>
+      </Dialog>
+      <QuestConnectModal />
+    </>
+  );
+}
+
+/**
+ * The connect flow a picked connector opens.
+ *
+ * It is mounted beside the intro rather than inside it so that cancelling the
+ * connection returns the reader to the list they picked from, and so the flow
+ * is not unmounted mid-authorization if the intro closes underneath it.
+ */
+function QuestConnectModal() {
+  const selectedSlug = useGet(selectedConnectorSlug$);
+  const setSelectedSlug = useSet(setSelectedConnectorSlug$);
+  const catalogLoadable = useLastLoadable(connectorCatalogStatus$);
+  const selected =
+    selectedSlug !== null && catalogLoadable.state === "hasData"
+      ? catalogLoadable.data.connectors.find((connector) => {
+          return connector.slug === selectedSlug;
+        })
+      : undefined;
+  const accountOptions = defaultBuiltinConnectorAccountOptions(selected);
+  if (!selected || !accountOptions) {
+    return null;
+  }
+  return (
+    <ConnectModal
+      item={selected}
+      accountOptions={accountOptions}
+      authorizeVisibleAgentsOnConnect
+      onClose={() => {
+        setSelectedSlug(null);
       }}
-    >
-      <DialogContent smMaxWidth="sm" maxWidth={440}>
-        {introducedKey === "connector" && <ConnectorIntro {...props} />}
-        {introducedKey === "slack" && <SlackIntro {...props} />}
-        {introducedKey === "invite" && <InviteIntro {...props} />}
-        {introducedKey === "workflow" && (
-          <WorkflowIntro onConfirm={confirm} onClose={close} />
-        )}
-      </DialogContent>
-    </Dialog>
+    />
   );
 }
 
@@ -761,7 +776,7 @@ export function GetStartedCheckinDialog({ reward }: { reward: number }) {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent smMaxWidth="sm" maxWidth={420}>
+      <DialogContent smMaxWidth="sm" maxWidth={480}>
         <DialogHeader>
           <DialogTitle>
             {t(($) => {

@@ -5,6 +5,11 @@ import {
   type GetStartedStatus,
 } from "@okouai/api-contracts/contracts/get-started";
 import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import {
+  connectorCatalogContract,
+  type PublicConnectorCatalogStatusItem,
+} from "@okouai/api-contracts/contracts/connector-catalog";
+import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
@@ -61,6 +66,65 @@ function slackInstalled(): SlackOrgStatus {
       missingVars: [],
     },
   };
+}
+
+/**
+ * One connector of each half of the catalog: Gmail finishes in the browser and
+ * earns the reward, OpenAI wants a key pasted in from another site and does
+ * not.
+ */
+function catalogItem(
+  slug: ConnectorSlug,
+  label: string,
+  grantKind: "auth-code" | "manual",
+): PublicConnectorCatalogStatusItem {
+  return {
+    slug,
+    label,
+    description: `${label} test connector`,
+    icon: {
+      url: `https://icons.example.test/${slug}.svg`,
+      invertInDarkMode: false,
+    },
+    category: "test",
+    generation: [],
+    tags: [],
+    authMethods: [
+      {
+        id: grantKind === "auth-code" ? "oauth" : "key",
+        label,
+        description: null,
+        grantKind,
+        manualFields: [],
+        startOptions: [],
+      },
+    ],
+    permissionSummary: {
+      hasPermissions: false,
+      permissionCount: 0,
+      hasCategories: false,
+      hasDefaultPolicyOverrides: false,
+    },
+    connection: null,
+    connected: false,
+    connectionStatus: "not-connected",
+    scopeMismatch: false,
+    authMethodSupportsRefresh: true,
+    tokenExpiresAt: null,
+    singleAuthCodeAuthMethodId: grantKind === "auth-code" ? "oauth" : null,
+    connectNotice: null,
+  };
+}
+
+function mockQuestCatalog(): void {
+  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
+    return respond(200, {
+      connectors: [
+        catalogItem("gmail", "Gmail", "auth-code"),
+        catalogItem("openai", "OpenAI", "manual"),
+      ],
+    });
+  });
 }
 
 function configureQuestPage(
@@ -644,6 +708,7 @@ test("A pending check-in disables the action and a failed request leaves it avai
 
 test("The connector step says what it costs the user before it hands them off", async () => {
   configureQuestPage(context, "admin");
+  mockQuestCatalog();
   await setupPage({
     context,
     path: questChatPath(),
@@ -668,15 +733,42 @@ test("The connector step says what it costs the user before it hands them off", 
   // Explaining is all it does: the destination is still the connector list.
   expect(pathname()).toBe(questChatPath());
 
-  click(buttonNamed("Pick a tool", dialog));
+  // The reward only pays on connectors that finish in the browser, so those
+  // are the ones the dialog offers; the key-pasting half of the catalog would
+  // earn nothing and is not shown here.
+  const picker = await within(dialog).findByTestId("quest-connector-picker");
+  expect(within(picker).getByText("Gmail")).toBeInTheDocument();
+  expect(within(picker).queryByText("OpenAI")).not.toBeInTheDocument();
+
+  // The whole catalog is still one press away for anyone who wants it.
+  click(buttonNamed("Browse all connectors", dialog));
   await waitFor(() => {
     expect(pathname()).toBe("/connectors");
   });
-  // The reward only pays on connectors that finish in the browser, so the
-  // quest lands on that view of the catalog rather than on all of it.
-  expect(new URLSearchParams(location.search).get("connection")).toBe(
-    "one-click",
-  );
+});
+
+test("Picking a connector in the dialog opens its connect flow", async () => {
+  configureQuestPage(context, "admin");
+  mockQuestCatalog();
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: {
+      [FeatureSwitchKey.GetStartedQuests]: true,
+      [FeatureSwitchKey.GetStartedQuestIntro]: true,
+    },
+  });
+
+  await openQuestPanel();
+  click(screen.getByTestId("get-started-quest-connector"));
+  await screen.findByTestId("quest-connector-picker");
+
+  click(await screen.findByTestId("quest-connector-gmail"));
+
+  // Connecting happens here rather than on a page the reader would have to
+  // find the same connector on again.
+  await screen.findByRole("dialog", { name: /Gmail/u });
+  expect(pathname()).toBe(questChatPath());
 });
 
 test("Declining an introduced step costs the user nothing", async () => {

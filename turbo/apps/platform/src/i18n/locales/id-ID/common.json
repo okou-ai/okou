@@ -1446,8 +1446,10 @@
             "title": "Sudah check-in"
           },
           "connector": {
-            "confirm": "Pilih satu perkakas",
+            "confirm": "Lihat semua konektor",
             "description": "Setelah itu ia bekerja di kotak masuk, dokumen, dan kalender Anda.",
+            "pickerFailed": "Konektor gagal dimuat. Buka halaman konektor untuk mencoba lagi.",
+            "pickerLoading": "Memuat konektor…",
             "scopeCredentials": "Kredensial Anda tidak pernah sampai ke {{assistantName}}.",
             "scopeRevoke": "Izin seminimal mungkin, dan bisa diputus kapan saja.",
             "title": "Biarkan {{assistantName}} bekerja di perkakas Anda sendiri"
@@ -3165,7 +3167,6 @@
         "connected": "Tidak ada konektor yang terhubung",
         "matching": "{{message}} yang cocok dengan \"{{search}}\"",
         "notConnected": "Tidak ada konektor lagi untuk dihubungkan",
-        "oneClick": "Tidak ada konektor sekali klik yang cocok.",
         "search": "Tidak ada konektor yang cocok dengan \"{{search}}\"",
         "unshared": "Setiap konektor sudah dibagikan ke sebuah agen"
       },
@@ -3177,7 +3178,6 @@
         "aria": "Filter konektor",
         "connected": "Terhubung",
         "notConnected": "Tidak terhubung",
-        "oneClick": "Hubungkan sekali klik",
         "status": "Status",
         "unshared": "Tidak dibagikan ke agen mana pun"
       },

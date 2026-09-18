@@ -1447,8 +1447,10 @@
             "title": "Checked in"
           },
           "connector": {
-            "confirm": "Pick a tool",
+            "confirm": "Browse all connectors",
             "description": "Then it works on your inbox, your docs and your calendar.",
+            "pickerFailed": "Connectors could not be loaded. Open the connectors page to try again.",
+            "pickerLoading": "Loading connectors…",
             "scopeCredentials": "Your credentials never reach {{assistantName}}.",
             "scopeRevoke": "Least access, and you can disconnect anytime.",
             "title": "Let {{assistantName}} work on your own tools"
@@ -3171,7 +3173,6 @@
         "connected": "No connected connectors",
         "matching": "{{message}} matching \"{{search}}\"",
         "notConnected": "No connectors left to connect",
-        "oneClick": "No one-click connectors match.",
         "search": "No connectors matching \"{{search}}\"",
         "unshared": "Every connector is shared with an agent"
       },
@@ -3183,7 +3184,6 @@
         "aria": "Filter connectors",
         "connected": "Connected",
         "notConnected": "Not connected",
-        "oneClick": "One-click connect",
         "status": "Status",
         "unshared": "Not shared with any agent"
       },

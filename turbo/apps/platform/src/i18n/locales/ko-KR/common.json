@@ -1446,8 +1446,10 @@
             "title": "체크인 완료"
           },
           "connector": {
-            "confirm": "도구 선택",
+            "confirm": "모든 커넥터 보기",
             "description": "연결하면 받은편지함, 문서, 캘린더를 바로 다룹니다.",
+            "pickerFailed": "커넥터를 불러오지 못했습니다. 커넥터 페이지에서 다시 시도하세요.",
+            "pickerLoading": "커넥터 불러오는 중…",
             "scopeCredentials": "인증 정보는 {{assistantName}}에 전달되지 않습니다.",
             "scopeRevoke": "최소 권한만 쓰고, 언제든 해제할 수 있습니다.",
             "title": "{{assistantName}}이(가) 내 도구에서 일하게 하기"
@@ -3165,7 +3167,6 @@
         "connected": "연결된 커넥터가 없습니다",
         "matching": "\"{{search}}\"와(과) 일치하는 {{message}}",
         "notConnected": "연결할 커넥터가 남아 있지 않습니다",
-        "oneClick": "원클릭으로 연결할 수 있는 커넥터가 없습니다.",
         "search": "\"{{search}}\"와(과) 일치하는 커넥터가 없습니다",
         "unshared": "모든 커넥터가 에이전트와 공유되어 있습니다"
       },
@@ -3177,7 +3178,6 @@
         "aria": "커넥터 필터",
         "connected": "연결됨",
         "notConnected": "연결 안 됨",
-        "oneClick": "원클릭 연결",
         "status": "상태",
         "unshared": "어떤 에이전트와도 공유되지 않음"
       },

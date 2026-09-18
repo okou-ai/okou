@@ -1446,8 +1446,10 @@
             "title": "チェックインしました"
           },
           "connector": {
-            "confirm": "ツールを選ぶ",
+            "confirm": "すべてのコネクターを見る",
             "description": "つなぐと、受信トレイ・ドキュメント・カレンダーを直接扱えます。",
+            "pickerFailed": "コネクターを読み込めませんでした。コネクターページで再試行してください。",
+            "pickerLoading": "コネクターを読み込み中…",
             "scopeCredentials": "認証情報が {{assistantName}} に渡ることはありません。",
             "scopeRevoke": "権限は最小限。いつでも解除できます。",
             "title": "{{assistantName}} をあなたのツールで動かす"
@@ -3165,7 +3167,6 @@
         "connected": "コネクタが接続されていません",
         "matching": "{{message}} が「{{search}}」に一致",
         "notConnected": "接続するコネクタが残っていない",
-        "oneClick": "ワンクリックで接続できるコネクターは見つかりません。",
         "search": "「{{search}}」に一致するコネクタはありません",
         "unshared": "すべてのコネクタがいずれかのエージェントと共有されています"
       },
@@ -3177,7 +3178,6 @@
         "aria": "フィルターコネクター",
         "connected": "接続済み",
         "notConnected": "接続されていません",
-        "oneClick": "ワンクリックで接続",
         "status": "ステータス",
         "unshared": "どのエージェントとも共有されていません"
       },

@@ -1471,8 +1471,10 @@
             "title": "Check-in hecho"
           },
           "connector": {
-            "confirm": "Elegir una herramienta",
+            "confirm": "Ver todos los conectores",
             "description": "Entonces trabaja con tu bandeja de entrada, tus documentos y tu calendario.",
+            "pickerFailed": "No se han podido cargar los conectores. Abre la página de conectores para reintentarlo.",
+            "pickerLoading": "Cargando conectores…",
             "scopeCredentials": "Tus credenciales nunca llegan a {{assistantName}}.",
             "scopeRevoke": "Acceso mínimo y puedes desconectarlo cuando quieras.",
             "title": "Deja que {{assistantName}} trabaje con tus propias herramientas"
@@ -3231,7 +3233,6 @@
         "connected": "Sin conectores conectados",
         "matching": "{{message}} \"{{search}}\" que coincida",
         "notConnected": "No quedan conectores para conectar",
-        "oneClick": "No hay conectores de un clic que coincidan.",
         "search": "No hay conectores que coincidan con \"{{search}}\"",
         "unshared": "Todos los conectores están compartidos con un agente"
       },
@@ -3243,7 +3244,6 @@
         "aria": "Conectores de filtro",
         "connected": "Conectados",
         "notConnected": "No conectado",
-        "oneClick": "Conexión con un clic",
         "status": "Estado",
         "unshared": "No compartido con ningún agente"
       },

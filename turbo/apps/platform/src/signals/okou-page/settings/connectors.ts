@@ -30,11 +30,10 @@ import type {
   InitClientReturn,
 } from "@okouai/api-contracts/contracts/trpc-contract";
 import type { ConnectorOauthDeviceAuthSessionPollResponse } from "@okouai/api-contracts/contracts/connector-schemas";
-import {
-  isOneClickConnectorGrantKind,
-  type PublicConnectorCatalogAuthMethodDetail,
-  type PublicConnectorCatalogConnectionStatus,
-  type PublicConnectorCatalogIcon,
+import type {
+  PublicConnectorCatalogAuthMethodDetail,
+  PublicConnectorCatalogConnectionStatus,
+  PublicConnectorCatalogIcon,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import {
   connectors$,
@@ -461,9 +460,6 @@ const CONNECTORS_AGENT_FILTER_PREFIX = "agent:";
 // status, or the connectors a given agent is authorized to use.
 export type ConnectorsConnectionFilter =
   | { readonly kind: "all" }
-  // Everything that connects with one press, which is also everything the Get
-  // started connector reward pays on.
-  | { readonly kind: "one-click" }
   | { readonly kind: "connected" }
   | { readonly kind: "not-connected" }
   | { readonly kind: "unshared" }
@@ -478,17 +474,9 @@ export const connectorsConnectionFilter$ = computed(
       get(connectorDirectoryEnabled$) &&
       get(connectorsScope$) !== "connected"
     ) {
-      // Connection status describes what you already own, so the directory
-      // drops it. One-click describes the catalog itself, so it survives.
-      return get(searchParams$).get(CONNECTORS_CONNECTION_FILTER_PARAM) ===
-        "one-click"
-        ? { kind: "one-click" }
-        : { kind: "all" };
+      return { kind: "all" };
     }
     const raw = get(searchParams$).get(CONNECTORS_CONNECTION_FILTER_PARAM);
-    if (raw === "one-click") {
-      return { kind: "one-click" };
-    }
     if (raw === "connected") {
       return { kind: "connected" };
     }
@@ -598,14 +586,6 @@ export const filteredConnectorCatalogItems$ = computed(async (get) => {
     // chosen, it only ever shows what this workspace has already connected.
     if (scope === "connected" && !connector.connected) {
       return false;
-    }
-    // One-click is a property of the connector itself: it holds an auth method
-    // that finishes in the browser, which is also what the Get started reward
-    // pays on.
-    if (effectiveFilter.kind === "one-click") {
-      return connector.authMethods.some((authMethod) => {
-        return isOneClickConnectorGrantKind(authMethod.grantKind);
-      });
     }
     if (effectiveFilter.kind === "connected") {
       return connector.connected;

@@ -395,23 +395,19 @@ function ConnectorFilterDropdown({
         })
       : undefined;
   const triggerLabel =
-    value.kind === "one-click"
+    value.kind === "connected"
       ? t(($) => {
-          return $.connectors.catalog.filters.oneClick;
+          return $.connectors.catalog.filters.connected;
         })
-      : value.kind === "connected"
+      : value.kind === "not-connected"
         ? t(($) => {
-            return $.connectors.catalog.filters.connected;
+            return $.connectors.catalog.filters.notConnected;
           })
-        : value.kind === "not-connected"
-          ? t(($) => {
-              return $.connectors.catalog.filters.notConnected;
-            })
-          : value.kind === "agent" && activeAgent
-            ? connectorAgentName(activeAgent)
-            : t(($) => {
-                return $.connectors.catalog.filters.all;
-              });
+        : value.kind === "agent" && activeAgent
+          ? connectorAgentName(activeAgent)
+          : t(($) => {
+              return $.connectors.catalog.filters.all;
+            });
 
   return (
     <DropdownMenu>
@@ -449,16 +445,6 @@ function ConnectorFilterDropdown({
         >
           {t(($) => {
             return $.connectors.catalog.filters.all;
-          })}
-        </ConnectorFilterOption>
-        <ConnectorFilterOption
-          active={value.kind === "one-click"}
-          onSelect={() => {
-            onChange({ kind: "one-click" });
-          }}
-        >
-          {t(($) => {
-            return $.connectors.catalog.filters.oneClick;
           })}
         </ConnectorFilterOption>
         <DropdownMenuSeparator />
@@ -1522,23 +1508,19 @@ function renderBuiltinList({
     }
     const trimmedSearch = search.trim();
     const base =
-      connectionFilter.kind === "one-click"
+      connectionFilter.kind === "connected"
         ? i18n.t(($) => {
-            return $.connectors.catalog.empty.oneClick;
+            return $.connectors.catalog.empty.connected;
           })
-        : connectionFilter.kind === "connected"
+        : connectionFilter.kind === "not-connected"
           ? i18n.t(($) => {
-              return $.connectors.catalog.empty.connected;
+              return $.connectors.catalog.empty.notConnected;
             })
-          : connectionFilter.kind === "not-connected"
+          : connectionFilter.kind === "agent"
             ? i18n.t(($) => {
-                return $.connectors.catalog.empty.notConnected;
+                return $.connectors.catalog.empty.agent;
               })
-            : connectionFilter.kind === "agent"
-              ? i18n.t(($) => {
-                  return $.connectors.catalog.empty.agent;
-                })
-              : null;
+            : null;
     const message = base
       ? trimmedSearch
         ? i18n.t(

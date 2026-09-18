@@ -1447,8 +1447,10 @@
             "title": "Eingecheckt"
           },
           "connector": {
-            "confirm": "Tool auswählen",
+            "confirm": "Alle Konnektoren ansehen",
             "description": "Danach arbeitet es mit deinem Postfach, deinen Dokumenten und deinem Kalender.",
+            "pickerFailed": "Konnektoren konnten nicht geladen werden. Bitte auf der Konnektoren-Seite erneut versuchen.",
+            "pickerLoading": "Konnektoren werden geladen …",
             "scopeCredentials": "Deine Zugangsdaten erreichen {{assistantName}} nie.",
             "scopeRevoke": "Minimale Rechte, jederzeit trennbar.",
             "title": "{{assistantName}} mit deinen eigenen Tools arbeiten lassen"
@@ -3179,7 +3181,6 @@
         "connected": "Keine verbundenen Integrationen",
         "matching": "{{message}} passend zu „{{search}}“",
         "notConnected": "Keine weiteren Integrationen verfügbar",
-        "oneClick": "Keine Ein-Klick-Connectors gefunden.",
         "search": "Keine Integrationen passend zu „{{search}}“",
         "unshared": "Jede Integration ist mit einem Agenten geteilt"
       },
@@ -3191,7 +3192,6 @@
         "aria": "Integrationen filtern",
         "connected": "Verbunden",
         "notConnected": "Nicht verbunden",
-        "oneClick": "Ein-Klick-Verbindung",
         "status": "Status",
         "unshared": "Mit keinem Agenten geteilt"
       },
