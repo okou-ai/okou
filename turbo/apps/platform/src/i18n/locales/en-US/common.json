@@ -3737,7 +3737,7 @@
           "iconAlt": "Optional {{brandName}} app icon",
           "iconHint": ", or use any icon you prefer.",
           "iconTitle": "Optional {{brandName}} app icon",
-          "imageAlt": "Feishu app creation form with the app name, icon, and Create button highlighted",
+          "imageAlt": "Lark app creation form with the app name, icon, and Create button highlighted",
           "title": "Create an Agent app"
         },
         "credentials": {

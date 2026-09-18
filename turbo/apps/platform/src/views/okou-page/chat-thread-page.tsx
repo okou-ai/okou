@@ -6141,6 +6141,7 @@ function generationTemplateTypeLabel(
 
 const annotationIconImgs = {
   feishu: settingsIconAssetUrl("lark"),
+  lark: settingsIconAssetUrl("lark"),
   teams: settingsIconAssetUrl("teams"),
   telegram: settingsIconAssetUrl("telegram"),
   github: settingsIconAssetUrl("github"),
@@ -6235,6 +6236,7 @@ function sourceMessageLinkText(
 ) {
   const opensChat =
     part.kind === "feishu" ||
+    part.kind === "lark" ||
     (part.kind === "telegram" &&
       /^https:\/\/t\.me\/[a-z\d_]+$/iu.test(part.href ?? "")) ||
     (part.kind === "teams" &&
@@ -6272,70 +6274,55 @@ function SourceMessageAnnotation({
     );
   }
   const { part } = renderPart;
-  const isLark =
+  // Historical messages used "feishu" for both platforms; their link can
+  // identify Lark. New messages already carry the canonical source kind.
+  const sourceKind =
     part.kind === "feishu" &&
-    part.href?.startsWith("https://applink.larksuite.com/") === true;
-  const sourceLabel =
-    part.kind === "slack"
-      ? t(($) => {
-          return $.chat.origins.slack;
-        })
-      : part.kind === "feishu"
-        ? t(($) => {
-            return $.chat.origins[isLark ? "lark" : "feishu"];
-          })
-        : part.kind === "teams"
-          ? t(($) => {
-              return $.chat.origins.teams;
-            })
-          : part.kind === "telegram"
-            ? t(($) => {
-                return $.chat.origins.telegram;
-              })
-            : part.kind === "github"
-              ? t(($) => {
-                  return $.chat.origins.github;
-                })
-              : t(($) => {
-                  return $.chat.origins.agentphone;
-                });
+    part.href?.startsWith("https://applink.larksuite.com/") === true
+      ? "lark"
+      : part.kind;
+  const sourceLabel = t(($) => {
+    return $.chat.origins[sourceKind];
+  });
   const { opensChat, openLabel } = sourceMessageLinkText(t, part);
   const ariaLabel =
-    opensChat && part.kind !== "feishu"
+    opensChat && sourceKind !== "feishu" && sourceKind !== "lark"
       ? t(
           ($) => {
             return $.chat.origins.openChatIn;
           },
           { integration: sourceLabel },
         )
-      : part.kind === "slack"
+      : sourceKind === "slack"
         ? t(($) => {
             return $.chat.origins.openSlackMessage;
           })
-        : part.kind === "feishu"
+        : sourceKind === "feishu" || sourceKind === "lark"
           ? t(($) => {
-              return $.chat.origins[isLark ? "openLarkChat" : "openFeishuChat"];
+              return $.chat.origins[
+                sourceKind === "lark" ? "openLarkChat" : "openFeishuChat"
+              ];
             })
-          : part.kind === "teams"
+          : sourceKind === "teams"
             ? t(($) => {
                 return $.chat.origins.openTeamsMessage;
               })
-            : part.kind === "telegram"
+            : sourceKind === "telegram"
               ? t(($) => {
                   return $.chat.origins.openTelegramMessage;
                 })
-              : part.kind === "github"
+              : sourceKind === "github"
                 ? t(($) => {
                     return $.chat.origins.openGithubMessage;
                   })
                 : openLabel;
   const content = (
     <>
-      {part.kind === "slack" ? (
+      {sourceKind === "slack" ? (
         <BrandSlack size={15} className="shrink-0" />
       ) : (
         <img
-          src={annotationIconImgs[part.kind]}
+          src={annotationIconImgs[sourceKind]}
           alt=""
           className="size-[15px] shrink-0 object-contain"
         />

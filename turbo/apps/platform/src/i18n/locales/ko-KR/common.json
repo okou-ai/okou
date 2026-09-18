@@ -3731,7 +3731,7 @@
           "iconAlt": "선택 사항인 {{brandName}} 앱 아이콘",
           "iconHint": ", 또는 원하는 아이콘을 사용하세요.",
           "iconTitle": "선택 사항인 {{brandName}} 앱 아이콘",
-          "imageAlt": "앱 이름, 아이콘, 생성 버튼이 강조된 Feishu 앱 생성 양식",
+          "imageAlt": "앱 이름, 아이콘, 생성 버튼이 강조된 Lark 앱 생성 양식",
           "title": "Agent 유형의 앱 만들기"
         },
         "credentials": {

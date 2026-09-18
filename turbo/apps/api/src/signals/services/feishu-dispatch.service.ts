@@ -13,7 +13,7 @@ import {
 } from "@okouai/api-contracts/contracts/model-providers";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
-import { feishuUserAgentPreferences } from "@okouai/db/schema/feishu-user-agent-preference";
+import { feishuPlatformUserAgentPreferences } from "@okouai/db/schema/feishu-user-agent-preference";
 import { agents } from "@okouai/db/schema/agent";
 import {
   buildFeishuHelpMessage,
@@ -81,7 +81,7 @@ interface FeishuAgent {
 }
 
 export interface FeishuDispatchInstallation {
-  readonly platform?: FeishuPlatform;
+  readonly platform: FeishuPlatform;
   readonly orgId: string;
   readonly ownerUserId: string | null;
   readonly defaultAgentId: string;
@@ -289,19 +289,21 @@ async function getVisibleAgents(args: {
 }
 
 async function getUserAgentPreference(args: {
+  readonly platform: FeishuPlatform;
   readonly db: Db;
   readonly orgId: string;
   readonly userId: string;
 }): Promise<string | null> {
   const [preference] = await args.db
     .select({
-      selectedAgentId: feishuUserAgentPreferences.selectedAgentId,
+      selectedAgentId: feishuPlatformUserAgentPreferences.selectedAgentId,
     })
-    .from(feishuUserAgentPreferences)
+    .from(feishuPlatformUserAgentPreferences)
     .where(
       and(
-        eq(feishuUserAgentPreferences.userId, args.userId),
-        eq(feishuUserAgentPreferences.orgId, args.orgId),
+        eq(feishuPlatformUserAgentPreferences.userId, args.userId),
+        eq(feishuPlatformUserAgentPreferences.orgId, args.orgId),
+        eq(feishuPlatformUserAgentPreferences.platform, args.platform),
       ),
     )
     .limit(1);
@@ -309,22 +311,25 @@ async function getUserAgentPreference(args: {
 }
 
 async function setUserAgentPreference(args: {
+  readonly platform: FeishuPlatform;
   readonly db: Db;
   readonly orgId: string;
   readonly userId: string;
   readonly composeId: string | null;
 }): Promise<void> {
   await args.db
-    .insert(feishuUserAgentPreferences)
+    .insert(feishuPlatformUserAgentPreferences)
     .values({
+      platform: args.platform,
       userId: args.userId,
       orgId: args.orgId,
       selectedAgentId: args.composeId,
     })
     .onConflictDoUpdate({
       target: [
-        feishuUserAgentPreferences.userId,
-        feishuUserAgentPreferences.orgId,
+        feishuPlatformUserAgentPreferences.userId,
+        feishuPlatformUserAgentPreferences.orgId,
+        feishuPlatformUserAgentPreferences.platform,
       ],
       set: {
         selectedAgentId: args.composeId,
@@ -339,6 +344,7 @@ export async function resolveEffectiveFeishuAgent(args: {
   readonly connection: FeishuDispatchConnection;
 }): Promise<EffectiveAgentResolution> {
   const preference = await getUserAgentPreference({
+    platform: args.installation.platform,
     db: args.db,
     orgId: args.installation.orgId,
     userId: args.connection.userId,
@@ -859,6 +865,7 @@ async function handleSwitchCommand(
       userId: args.connection.userId,
     }),
     getUserAgentPreference({
+      platform: args.installation.platform,
       db: args.db,
       orgId: args.installation.orgId,
       userId: args.connection.userId,
@@ -892,6 +899,7 @@ async function handleSwitchCommand(
       return;
     }
     await setUserAgentPreference({
+      platform: args.installation.platform,
       db: args.db,
       orgId: args.installation.orgId,
       userId: args.connection.userId,
@@ -932,6 +940,7 @@ async function handleSwitchCommand(
     return;
   }
   await setUserAgentPreference({
+    platform: args.installation.platform,
     db: args.db,
     orgId: args.installation.orgId,
     userId: args.connection.userId,

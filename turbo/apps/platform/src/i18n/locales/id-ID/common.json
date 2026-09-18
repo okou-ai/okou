@@ -3731,7 +3731,7 @@
           "iconAlt": "Ikon aplikasi {{brandName}} opsional",
           "iconHint": ", atau gunakan ikon apa pun yang Anda suka.",
           "iconTitle": "Ikon aplikasi {{brandName}} opsional",
-          "imageAlt": "Formulir pembuatan aplikasi Feishu dengan nama aplikasi, ikon, dan tombol Create disorot",
+          "imageAlt": "Formulir pembuatan aplikasi Lark dengan nama aplikasi, ikon, dan tombol Create disorot",
           "title": "Buat aplikasi bertipe Agent"
         },
         "credentials": {

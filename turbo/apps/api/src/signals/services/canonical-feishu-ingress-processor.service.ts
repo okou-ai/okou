@@ -95,8 +95,12 @@ const feishuInboundMessageSchema = z.object({
   files: z.array(feishuPromptFileSchema),
 });
 
+interface CanonicalFeishuInboundMessage extends FeishuInboundMessage {
+  readonly platform: FeishuPlatform;
+}
+
 function canonicalThreadId(args: {
-  readonly message: FeishuInboundMessage;
+  readonly message: CanonicalFeishuInboundMessage;
   readonly agentId: string;
   readonly selectedModel: string | null;
   readonly serviceTier: IntegrationModelRoutePin["serviceTier"];
@@ -190,7 +194,7 @@ function resolveFeishuIngressPublicBrand(
 
 function parseMatchingMessage(
   ingress: NonNullable<Awaited<ReturnType<typeof loadClaimedIngress>>>,
-): FeishuInboundMessage {
+): CanonicalFeishuInboundMessage {
   const message = feishuInboundMessageSchema.parse(
     JSON.parse(ingress.payload) as unknown,
   );
@@ -208,7 +212,7 @@ function parseMatchingMessage(
 async function loadConnection(
   db: Db,
   orgId: string,
-  message: FeishuInboundMessage,
+  message: CanonicalFeishuInboundMessage,
 ): Promise<FeishuDispatchConnection | undefined> {
   const [connection] = await db
     .select({
@@ -275,7 +279,7 @@ interface PersistedCanonicalFeishuIngress {
   readonly orgId: string;
   readonly userId: string;
   readonly chatThreadId: string;
-  readonly message: FeishuInboundMessage;
+  readonly message: CanonicalFeishuInboundMessage;
   readonly receivedAt: Date;
   readonly publicBrand: PublicBrand;
 }
@@ -302,7 +306,7 @@ interface CanonicalFeishuLaunchContext {
 }
 
 function canonicalFeishuLaunchContext(args: {
-  readonly message: FeishuInboundMessage;
+  readonly message: CanonicalFeishuInboundMessage;
   readonly connectionId: string;
   readonly reactionId: string | undefined;
   readonly conversationHistory: string;
@@ -338,7 +342,7 @@ function canonicalFeishuLaunchContext(args: {
 }
 
 function feishuInboundUserMessage(
-  message: FeishuInboundMessage,
+  message: CanonicalFeishuInboundMessage,
   chatOpenUrl: string,
   assets: readonly IntegrationInputAsset[],
 ) {
@@ -356,7 +360,7 @@ function feishuInboundUserMessage(
       : message.promptText,
     files: integrationInputMessageFiles(assets),
     nonContentPart: createChatEventSourcePart({
-      kind: "feishu",
+      kind: message.platform,
       chatOpenUrl,
     }),
   });
@@ -364,7 +368,7 @@ function feishuInboundUserMessage(
 
 function feishuInputFiles(
   db: Db,
-  message: FeishuInboundMessage,
+  message: CanonicalFeishuInboundMessage,
   platform: FeishuPlatform,
 ): readonly IntegrationInputFile[] {
   return message.files.map((file) => {
@@ -404,7 +408,7 @@ const persistCanonicalFeishuIngress$ = command(
       >;
       readonly installation: FeishuDispatchInstallation;
       readonly connection: FeishuDispatchConnection;
-      readonly message: FeishuInboundMessage;
+      readonly message: CanonicalFeishuInboundMessage;
       readonly agentId: string;
       readonly selectedModel: string | null;
       readonly serviceTier: IntegrationModelRoutePin["serviceTier"];
@@ -520,7 +524,7 @@ async function notifyQueuedFeishuRun(
   args: {
     readonly db: Db;
     readonly ingressId: string;
-    readonly message: FeishuInboundMessage;
+    readonly message: CanonicalFeishuInboundMessage;
   },
   signal: AbortSignal,
 ): Promise<void> {
@@ -556,7 +560,7 @@ async function finishUnconnectedFeishuIngress(
   args: {
     readonly db: Db;
     readonly ingressId: string;
-    readonly message: FeishuInboundMessage;
+    readonly message: CanonicalFeishuInboundMessage;
     readonly publicBrand: PublicBrand;
     readonly botName: string | null;
   },
@@ -579,7 +583,7 @@ async function finishUnavailableAgentFeishuIngress(
   args: {
     readonly db: Db;
     readonly ingressId: string;
-    readonly message: FeishuInboundMessage;
+    readonly message: CanonicalFeishuInboundMessage;
     readonly status: "not_accessible" | "not_found";
   },
   signal: AbortSignal,

@@ -3801,7 +3801,7 @@
           "iconAlt": "Icono opcional de la aplicación {{brandName}}",
           "iconHint": ", o usa cualquier icono que prefieras.",
           "iconTitle": "Icono opcional de la aplicación {{brandName}}",
-          "imageAlt": "Formulario de creación de aplicaciones de Feishu con el nombre, el icono y el botón Crear resaltados",
+          "imageAlt": "Formulario de creación de aplicaciones de Lark con el nombre, el icono y el botón Crear resaltados",
           "title": "Crear una aplicación de tipo Agent"
         },
         "credentials": {

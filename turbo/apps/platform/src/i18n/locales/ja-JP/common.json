@@ -3731,7 +3731,7 @@
           "iconAlt": "任意の {{brandName}} アプリ アイコン",
           "iconHint": "、またはお好みのアイコンを使用してください。",
           "iconTitle": "任意の {{brandName}} アプリ アイコン",
-          "imageAlt": "Feishu アプリ名、アイコン、および [作成] ボタンが強調表示されたアプリ作成フォーム",
+          "imageAlt": "Lark アプリ名、アイコン、および [作成] ボタンが強調表示されたアプリ作成フォーム",
           "title": "Agent タイプのアプリを作成"
         },
         "credentials": {

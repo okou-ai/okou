@@ -4440,7 +4440,7 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
             { type: "text", text: expect.stringContaining(feishuFilePrompt) },
             {
               type: "source",
-              kind: "feishu",
+              kind: platform,
               href: `${provider.appLinkOrigin}/client/chat/open?openChatId=oc_feishu_dm`,
             },
           ],
@@ -4669,7 +4669,7 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
                   "Image comparison\nCompare these images with [the brief](https://example.com/brief)",
                 ),
               },
-              expect.objectContaining({ type: "source", kind: "feishu" }),
+              expect.objectContaining({ type: "source", kind: platform }),
             ],
           },
         }),
@@ -5301,7 +5301,7 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
             { type: "text", text: "do the Feishu task" },
             {
               type: "source",
-              kind: "feishu",
+              kind: platform,
               href: `${provider.appLinkOrigin}/client/chat/open?openChatId=oc_feishu_dm`,
             },
           ],
@@ -5389,7 +5389,7 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
         event.userMessage.parts.some((part) => {
           return (
             part.type === "source" &&
-            part.kind === "feishu" &&
+            part.kind === platform &&
             part.href ===
               `${provider.appLinkOrigin}/client/chat/open?openChatId=oc_feishu_dm`
           );

@@ -3801,7 +3801,7 @@
           "iconAlt": "Icona facoltativa dell'app {{brandName}}",
           "iconHint": "oppure utilizza l'icona che preferisci.",
           "iconTitle": "Icona facoltativa dell'app {{brandName}}",
-          "imageAlt": "Feishu modulo di creazione dell'app con il nome dell'app, l'icona e il pulsante Crea evidenziati",
+          "imageAlt": "Lark modulo di creazione dell'app con il nome dell'app, l'icona e il pulsante Crea evidenziati",
           "title": "Crea un’app di tipo Agent"
         },
         "credentials": {
