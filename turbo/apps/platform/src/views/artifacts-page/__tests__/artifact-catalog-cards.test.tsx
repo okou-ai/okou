@@ -6,6 +6,7 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   artifact,
   findArtifactAction,
+  getButtonByName,
   setupArtifactCatalogPage,
 } from "./artifact-catalog-test-helpers.ts";
 
@@ -96,7 +97,5 @@ test("Artifact catalog failure is announced clearly", async () => {
   // The message owns the recovery, so it no longer tells the reader to come
   // back later with nothing to act on.
   expect(alert).not.toHaveTextContent("later");
-  expect(
-    within(alert).getByRole("button", { name: "Try again" }),
-  ).toBeEnabled();
+  expect(getButtonByName("Try again", alert)).toBeEnabled();
 });

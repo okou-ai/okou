@@ -341,13 +341,11 @@ test("Open a carried generic file over an existing artifact sidebar", async () =
   // Nothing renders here, so the screen has to carry the one action that still
   // applies to the file rather than leaving an icon in the header as its only
   // way out.
-  click(
-    within(lightbox)
-      .getAllByRole("button")
-      .filter((candidate) => {
-        return candidate.textContent?.trim() === "Download";
-      })[0] as HTMLElement,
-  );
+  const download = queryAllByRoleFast("button", lightbox).find((candidate) => {
+    return candidate.textContent?.trim() === "Download";
+  });
+  expect(download).toBeDefined();
+  click(download as HTMLElement);
   await waitFor(() => {
     expect(browser.downloads).toHaveLength(1);
   });
