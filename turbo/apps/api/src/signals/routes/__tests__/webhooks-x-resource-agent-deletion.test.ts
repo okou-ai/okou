@@ -23,10 +23,6 @@ describe("X resource accounting during Agent deletion", () => {
   it("waits for ledger maintenance before owning the Agent's Run", async () => {
     mockEnv("ENV", "development");
     mockEnv("SECRETS_ENCRYPTION_KEY", "a".repeat(64));
-    mockEnv(
-      "X_RESOURCE_BILLING_START_DATE",
-      nowDate().toISOString().slice(0, 10),
-    );
     bdd.acceptAgentStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
