@@ -4577,11 +4577,15 @@
         "note": "",
         "panelTitle": "",
         "placeholder": "",
+        "points": {
+          "accounts": "",
+          "workflows": "",
+          "workspace": ""
+        },
         "title": ""
       },
       "welcome": {
         "copy": "",
-        "offerCopy": "",
         "offerTitle": "",
         "promptLabel": "",
         "start": "",

@@ -86,27 +86,39 @@ function OnboardingWelcomeDialog() {
       }}
     >
       <DialogContent maxWidth="lg" contentClassName="p-6">
-        <div
-          className="flex size-9 items-center justify-center rounded-full bg-primary/10 text-primary"
-          aria-hidden="true"
-        >
-          <Check size={18} />
-        </div>
-        <DialogTitle className="mt-4 text-lg font-semibold">
-          {t(($) => {
-            return $.onboarding.sourcesFirst.welcome.title;
-          })}
-        </DialogTitle>
-        <DialogDescription className="mt-1 text-sm text-muted-foreground">
-          {t(($) => {
-            return $.onboarding.sourcesFirst.welcome.copy;
-          })}
-        </DialogDescription>
-        <section className="mt-5 rounded-xl border border-border p-4">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">
-            {source ? source.label : null}
-          </p>
-          <h3 className="mt-1 text-base font-semibold">{prompt.outcome}</h3>
+        {/* One screen: what is ready, the request it will start with, and the
+            offer as a single line under it. */}
+        <header className="flex items-start gap-3 pr-8">
+          <span
+            className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary"
+            aria-hidden="true"
+          >
+            <Check size={18} />
+          </span>
+          <span className="min-w-0">
+            <DialogTitle className="text-lg font-semibold leading-6">
+              {t(($) => {
+                return $.onboarding.sourcesFirst.welcome.title;
+              })}
+            </DialogTitle>
+            <DialogDescription className="mt-1 text-sm text-muted-foreground">
+              {t(($) => {
+                return $.onboarding.sourcesFirst.welcome.copy;
+              })}
+            </DialogDescription>
+          </span>
+        </header>
+        <section className="mt-5 rounded-xl border border-border bg-muted/30 p-4">
+          <div className="flex items-baseline gap-2">
+            <h3 className="min-w-0 flex-1 text-sm font-semibold text-foreground">
+              {prompt.outcome}
+            </h3>
+            {source ? (
+              <span className="shrink-0 text-xs text-muted-foreground">
+                {source.label}
+              </span>
+            ) : null}
+          </div>
           <label className="sr-only" htmlFor="onboarding-starting-prompt">
             {t(($) => {
               return $.onboarding.sourcesFirst.welcome.promptLabel;
@@ -114,7 +126,7 @@ function OnboardingWelcomeDialog() {
           </label>
           <Textarea
             id="onboarding-starting-prompt"
-            className={`mt-3 min-h-[104px] ${ONBOARDING_TEXTAREA_CLASS}`}
+            className={`mt-3 min-h-[88px] ${ONBOARDING_TEXTAREA_CLASS}`}
             maxLength={STARTING_PROMPT_MAX_LENGTH}
             spellCheck={false}
             value={text}
@@ -126,7 +138,18 @@ function OnboardingWelcomeDialog() {
             }}
           />
         </section>
-        <div className="mt-5 flex justify-end">
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+          <p className="min-w-0 text-xs leading-5 text-muted-foreground">
+            {t(($) => {
+              return $.onboarding.sourcesFirst.welcome.offerTitle;
+            })}{" "}
+            <a
+              className="text-brand-text hover:text-brand-text-hover"
+              href={`mailto:${SUPPORT_EMAIL}`}
+            >
+              {SUPPORT_EMAIL}
+            </a>
+          </p>
           <Button
             type="button"
             size="lg"
@@ -142,24 +165,6 @@ function OnboardingWelcomeDialog() {
             <ArrowRight size={16} aria-hidden="true" />
           </Button>
         </div>
-        <footer className="mt-4 rounded-xl bg-muted/50 p-4 text-sm">
-          <p className="font-medium">
-            {t(($) => {
-              return $.onboarding.sourcesFirst.welcome.offerTitle;
-            })}
-          </p>
-          <p className="mt-1 text-muted-foreground">
-            {t(($) => {
-              return $.onboarding.sourcesFirst.welcome.offerCopy;
-            })}
-          </p>
-          <a
-            className="mt-2 inline-flex text-brand-text hover:text-brand-text-hover"
-            href={`mailto:${SUPPORT_EMAIL}`}
-          >
-            {SUPPORT_EMAIL}
-          </a>
-        </footer>
       </DialogContent>
     </Dialog>
   );

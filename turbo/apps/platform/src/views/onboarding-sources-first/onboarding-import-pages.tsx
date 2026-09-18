@@ -100,7 +100,7 @@ function ImportedSkillRow({ name }: { readonly name: string }) {
 
   return (
     <div className="flex w-full max-w-[420px] items-center gap-3 rounded-xl border border-border/60 bg-muted/30 px-4 py-3 text-left">
-      <OnboardingIllustration name="workflow-default" alt="" size="header" />
+      <OnboardingIllustration name="skill-import" alt="" size="header" />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-medium text-foreground">
           {name}
@@ -124,7 +124,7 @@ function SkillDropCard({ imported }: { readonly imported: string | null }) {
   const { t } = useTranslation();
 
   return (
-    <Card className="flex min-h-[236px] flex-col items-center justify-center gap-4 px-6 py-8 text-center">
+    <Card className="flex min-h-[300px] flex-col items-center justify-center gap-4 px-6 py-8 text-center">
       {imported ? (
         <>
           <ImportedSkillRow name={imported} />
@@ -141,11 +141,7 @@ function SkillDropCard({ imported }: { readonly imported: string | null }) {
         </>
       ) : (
         <>
-          <OnboardingIllustration
-            name="workflow-default"
-            alt=""
-            size="header"
-          />
+          <OnboardingIllustration name="skill-import" alt="" size="poster" />
           <span>
             <span className="block text-sm font-medium text-foreground">
               {t(($) => {
@@ -293,7 +289,6 @@ export function OnboardingSlackPage() {
     >
       {welcomeDialog}
       <OnboardingPanel
-        mark={<ProductMark name="slack" alt="" size="header" />}
         title={t(($) => {
           return $.onboarding.sourcesFirst.slack.rowTitle;
         })}
@@ -302,7 +297,7 @@ export function OnboardingSlackPage() {
         })}
       >
         <SlackPreview />
-        <div className="px-5 pb-5">
+        <div className="mt-auto px-5 pb-5">
           <Button
             type="button"
             variant={connected ? "outline" : "neutral"}
@@ -314,7 +309,11 @@ export function OnboardingSlackPage() {
               updateDraft({ slackStatus: "connected" });
             }}
           >
-            {connected ? <Check size={16} aria-hidden="true" /> : null}
+            {connected ? (
+              <Check size={16} aria-hidden="true" />
+            ) : (
+              <ProductMark name="slack" alt="" />
+            )}
             {connected
               ? t(($) => {
                   return $.onboarding.sourcesFirst.slack.connectedStatus;

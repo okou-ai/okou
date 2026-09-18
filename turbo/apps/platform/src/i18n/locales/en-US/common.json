@@ -4576,15 +4576,19 @@
         "invite": "Send invite",
         "invited": "Invited",
         "label": "Teammate’s email",
-        "note": "Teammates share the workspace; their own accounts stay theirs.",
-        "panelTitle": "Your workspace",
+        "note": "They join this workspace; their own accounts stay theirs.",
+        "panelTitle": "Invite a teammate",
         "placeholder": "teammate@company.com",
+        "points": {
+          "accounts": "Their connected accounts stay theirs — nothing is shared without them.",
+          "workflows": "Anyone here can run the workflows this workspace already has.",
+          "workspace": "They land in this workspace, with the sources you just connected."
+        },
         "title": "Bring the people who do this work with you."
       },
       "welcome": {
         "copy": "A first task, picked for your work.",
-        "offerCopy": "Plus up to 100 credits or a promo code",
-        "offerTitle": "Free 1-hour consultation",
+        "offerTitle": "First hour of consulting is on us, plus up to 100 credits —",
         "promptLabel": "Your starting prompt",
         "start": "Start with Okou",
         "title": "Okou is ready for you"

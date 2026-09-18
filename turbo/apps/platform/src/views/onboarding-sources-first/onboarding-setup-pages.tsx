@@ -75,6 +75,34 @@ export function OnboardingIndustryPage() {
   );
 }
 
+const TEAM_POINT_IDS = ["workspace", "accounts", "workflows"] as const;
+
+/** What joining actually gives a teammate, until there is an invite to show. */
+function TeamPoints() {
+  const { t } = useTranslation();
+
+  return (
+    <ul className="flex flex-1 flex-col justify-center gap-3 border-t border-border/60 px-5 py-4">
+      {TEAM_POINT_IDS.map((id) => {
+        return (
+          <li key={id} className="flex items-start gap-2.5">
+            <Check
+              size={16}
+              className="mt-0.5 shrink-0 text-emerald-600"
+              aria-hidden="true"
+            />
+            <span className="text-sm leading-5 text-muted-foreground">
+              {t(($) => {
+                return $.onboarding.sourcesFirst.team.points[id];
+              })}
+            </span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 /** The invitees already sent, under the form that sent them. */
 function InvitedList({ invites }: { readonly invites: readonly string[] }) {
   const { t } = useTranslation();
@@ -146,7 +174,6 @@ export function OnboardingTeamPage() {
     >
       {welcomeDialog}
       <OnboardingPanel
-        mark={<OnboardingIllustration name="explore" alt="" size="header" />}
         title={t(($) => {
           return $.onboarding.sourcesFirst.team.panelTitle;
         })}
@@ -185,7 +212,9 @@ export function OnboardingTeamPage() {
         </div>
         {flow.draft.invites.length > 0 ? (
           <InvitedList invites={flow.draft.invites} />
-        ) : null}
+        ) : (
+          <TeamPoints />
+        )}
       </OnboardingPanel>
     </OnboardingStepLayout>
   );
@@ -238,11 +267,7 @@ export function OnboardingExperiencePage() {
           value="yes"
           selected={experienced === true}
           mark={
-            <OnboardingIllustration
-              name="workflow-default"
-              alt=""
-              size="poster"
-            />
+            <OnboardingIllustration name="experienced" alt="" size="poster" />
           }
           title={t(($) => {
             return $.onboarding.sourcesFirst.experience.yes;
@@ -254,7 +279,7 @@ export function OnboardingExperiencePage() {
         <OnboardingPosterCard
           value="no"
           selected={experienced === false}
-          mark={<OnboardingIllustration name="explore" alt="" size="poster" />}
+          mark={<OnboardingIllustration name="new" alt="" size="poster" />}
           title={t(($) => {
             return $.onboarding.sourcesFirst.experience.no;
           })}
