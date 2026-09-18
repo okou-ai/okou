@@ -144,7 +144,6 @@ describe("GET /api/billing/invoices", () => {
 
     expect(receivedCustomerId).toBe(customerId);
     expect(response.body).toStrictEqual({
-      receiptDownloadsSupported: true,
       invoices: [
         {
           id: "inv_001",
@@ -435,7 +434,6 @@ describe("GET /api/billing/invoices", () => {
 
     expect(response.body).toStrictEqual({
       invoices: [],
-      receiptDownloadsSupported: true,
     });
   });
 
@@ -471,7 +469,6 @@ describe("GET /api/billing/invoices", () => {
 
     expect(response.body).toStrictEqual({
       invoices: [],
-      receiptDownloadsSupported: true,
     });
   });
 });

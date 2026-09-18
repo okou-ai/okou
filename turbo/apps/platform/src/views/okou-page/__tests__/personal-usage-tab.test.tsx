@@ -42,9 +42,7 @@ function buttonByAriaLabel(
 function usageRows(): UsageRecordRow[] {
   return [
     {
-      source: "chat",
       threadId: "thread-planning",
-      runId: null,
       title: "Quarterly planning chat",
       credits: 1083,
       tokens: 2200,
@@ -103,9 +101,7 @@ function usageRows(): UsageRecordRow[] {
       lastActivityAt: "2026-03-21T10:00:00Z",
     },
     {
-      source: "slack",
       threadId: "thread-slack-follow-up",
-      runId: null,
       title: "Slack customer follow-up",
       credits: 2400,
       tokens: 5100,
@@ -116,9 +112,7 @@ function usageRows(): UsageRecordRow[] {
     ...Array.from({ length: 18 }, (_, index) => {
       const day = String(index + 1).padStart(2, "0");
       return {
-        source: "automation",
         threadId: `thread-scheduled-${index}`,
-        runId: null,
         title: `Scheduled digest ${index + 1}`,
         credits: 100 + index,
         tokens: 1000 + index,
@@ -128,9 +122,7 @@ function usageRows(): UsageRecordRow[] {
       } satisfies UsageRecordRow;
     }),
     {
-      source: "agent",
       threadId: "thread-agent-audit",
-      runId: null,
       title: "Extended agent audit",
       credits: 3100,
       tokens: 7300,
@@ -147,9 +139,7 @@ function usageRow(args: {
   readonly runId: string;
 }): UsageRecordRow {
   return {
-    source: "chat",
     threadId: args.runId,
-    runId: null,
     title: args.title,
     credits: args.credits,
     tokens: 1000,

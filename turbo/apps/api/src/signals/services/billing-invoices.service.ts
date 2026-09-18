@@ -185,13 +185,12 @@ export function orgInvoices(
       .limit(1);
 
     if (!row?.stripeCustomerId) {
-      return { invoices: [], receiptDownloadsSupported: true };
+      return { invoices: [] };
     }
 
     const result = await listStripeInvoices(row.stripeCustomerId);
 
     return {
-      receiptDownloadsSupported: true,
       invoices: result.map((inv) => {
         return {
           id: inv.id,

@@ -1517,14 +1517,12 @@ export {
   usageRecordKindSchema,
   usageRecordRangeSchema,
   usageRecordScopeSchema,
-  usageRecordSourceSchema,
   type UsageRecordContract,
   type UsageRecordKind,
   type UsageRecordRange,
   type UsageRecordResponse,
   type UsageRecordRow,
   type UsageRecordScope,
-  type UsageRecordSource,
 } from "./usage-record";
 export {
   integrationsSlackContract,

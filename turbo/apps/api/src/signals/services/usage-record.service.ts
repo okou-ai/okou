@@ -447,12 +447,7 @@ export const usageRecord$ = command(
         : null,
       rows: rows.map((row) => {
         return {
-          // Old App -> new API rollout bridge. Remove source/runId after the
-          // replacement App is live and its client floor excludes old readers;
-          // tracked by #35077.
-          source: "chat",
           threadId: row.threadId,
-          runId: null,
           title: row.title,
           credits: row.credits,
           tokens: row.tokens,
