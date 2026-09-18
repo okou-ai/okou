@@ -91,6 +91,7 @@ interface SandboxOperationDimensionInput {
   readonly session_history_restore_reason?: string;
   readonly session_history_transfer_source?: string;
   readonly session_history_wire_codec?: string;
+  readonly session_history_codec_decision?: string;
   readonly session_history_codec_reason?: string;
   readonly session_history_transfer_bytes?: number;
   readonly session_history_wire_bytes?: number;
@@ -258,6 +259,7 @@ function historyTransferDimensions(
   for (const key of [
     "session_history_transfer_source",
     "session_history_wire_codec",
+    "session_history_codec_decision",
     "session_history_codec_reason",
     "session_history_transfer_bytes",
     "session_history_wire_bytes",
