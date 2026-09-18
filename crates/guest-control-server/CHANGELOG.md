@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.27](https://github.com/vm0-ai/okou/compare/guest-control-server-v0.21.26...guest-control-server-v0.21.27) (2026-09-18)
+
+
+### Bug Fixes
+
+* **runner:** preserve preinstalled rust toolchain in agent environments ([#35214](https://github.com/vm0-ai/okou/issues/35214)) ([889718b](https://github.com/vm0-ai/okou/commit/889718b259e92a3c96994b88204aaa05077b73ad))
+
 ## [0.21.26](https://github.com/vm0-ai/okou/compare/guest-control-server-v0.21.25...guest-control-server-v0.21.26) (2026-09-18)
 
 ## [0.21.25](https://github.com/vm0-ai/okou/compare/guest-control-server-v0.21.24...guest-control-server-v0.21.25) (2026-09-18)

@@ -103,6 +103,7 @@ import { financeRoutes } from "./routes/finance";
 import { seoRoutes } from "./routes/seo";
 import { artifactShareRoutes } from "./routes/artifact-shares";
 import { artifactReferenceRoutes } from "./routes/artifact-references";
+import { artifactDownloadRoutes } from "./routes/artifact-downloads";
 import { hostRoutes } from "./routes/host";
 import { builtInGenerationRoutes } from "./routes/built-in-generation";
 import { imageIoGenerateRoutes } from "./routes/image-io-generate";
@@ -325,6 +326,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...hostRoutes,
   ...artifactShareRoutes,
   ...artifactReferenceRoutes,
+  ...artifactDownloadRoutes,
   ...builtInGenerationRoutes,
   ...imageIoGenerateRoutes,
   ...avatarVideoRoutes,

@@ -69,6 +69,7 @@ mod telemetry;
 #[cfg(test)]
 mod test_fixtures;
 mod types;
+mod vnc;
 mod workspace_image_cache;
 mod workspace_mount;
 mod workspace_promotion;

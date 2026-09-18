@@ -43,6 +43,8 @@ surface; the index does not replace their detailed rules.
   hosts, TLS trust, membership fences, and the disabled rollout boundary.
 - [Runner VNC authority](./runner-vnc-authority.md): explicit Agent grants,
   private typed handoff, current authorization and native sharing modes.
+- [Runner VNC execution](./runner-vnc-execution.md): Run-owned sessions, guest
+  RPC, streamed captures, input outcomes and resource cleanup.
 - [Social download discovery](./social-download-discovery.md): bounded task
   listing, scoped recovery hints, pagination, and CLI/API compatibility.
 - [Social errors and download recovery](./social-errors.md): stable error

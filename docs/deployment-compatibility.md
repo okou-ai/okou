@@ -144,16 +144,43 @@ It returns `{ url, filename, contentType }` for the authorized delivery. The
 existing typed owner resolver and sharing-management endpoints retain their
 owner checks.
 
-`okou artifact download` and `okou web download-file` use this endpoint for
-short and long artifact references, including same-origin App URLs. They fetch
-the returned delivery URL without forwarding the agent token. Hosted HTML
-downloads contain the entry document; complete owned-site source downloads
-remain the responsibility of `okou host clone`. Raw file IDs and authenticated
-web download URLs keep their existing `file:read` path.
+The additive `GET /api/artifact-references/:reference/download` uses the same
+`artifact:read` and visibility boundary. It returns either
+`{ kind: "file", url, filename, contentType }` or
+`{ kind: "html", site: HostedSiteFilesResponse }`. The latter includes the full
+authorized deployment manifest and per-file delivery URLs. Shared sites use
+the selected version's immutable snapshot, rather than the owner's latest
+deployment. Standalone HTML uploads remain file downloads.
+Conversation references selecting a non-HTML hosted file also retain their
+single-file bytes and MIME type; HTML/page references return the full site.
+
+`okou artifact download` and `okou web download-file` use the download endpoint
+for short and long artifact references, including same-origin App URLs. For
+sites, `--out` now names a new or empty directory and the JSON result adds
+`fileCount` and `entrypoint` to `{ path, mimetype, size }`; `path` denotes that
+directory and `size` totals all downloaded files. They fetch delivery URLs
+without forwarding the agent token. Raw file IDs and authenticated web download
+URLs keep their existing `file:read` path and output shape.
+
+`okou host clone` uses the additive
+`GET /api/artifact-references/:reference/files` for artifact references. This
+returns `HostedSiteFilesResponse` through the same visibility resolver and
+retains the existing `host:read` capability; it rejects standalone files.
+Hosted URLs and slugs continue to use the existing `host:read` files endpoint,
+whose authorization now follows current site visibility rather than requiring
+ownership. An optional `hostname` query disambiguates public aliases against
+the configured hosted domains. The existing files response remains compatible
+with older clients. Version requests never bypass the selected shared version.
+Public conversation resources follow their live shared-thread policy and
+independent snapshot, including after the original artifact changes.
+Bare canonical slugs preserve owner/latest-version cloning; explicit public
+URLs follow the selected publication, including for owners and after revocation.
+Owner-only management and version-listing endpoints remain unchanged.
 
 Deploy the additive API endpoint before selecting the matching CLI artifact.
-Older pinned CLIs keep their existing owner-only behavior against the new API;
-the new CLI needs the new endpoint and the existing `artifact:read` capability,
+Older pinned CLIs retain their existing download behavior against the new API;
+the existing read endpoint continues to return entry-page delivery metadata.
+The new CLI needs the download endpoint and the existing `artifact:read` capability,
 issued under `privateArtifacts`. No tolerant reader for an older API, new
 capability, database migration, visibility change, or Worker protocol is added.
 Keep the endpoint in serving and supported rollback APIs while runs pinned to

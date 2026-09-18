@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.200.1](https://github.com/vm0-ai/okou/compare/runner-rs-v0.200.0...runner-rs-v0.200.1) (2026-09-18)
+
+
+### Bug Fixes
+
+* **runner:** preserve preinstalled rust toolchain in agent environments ([#35214](https://github.com/vm0-ai/okou/issues/35214)) ([889718b](https://github.com/vm0-ai/okou/commit/889718b259e92a3c96994b88204aaa05077b73ad))
+
+
+### Performance Improvements
+
+* **ci:** share runner compiler cache through r2 ([#35205](https://github.com/vm0-ai/okou/issues/35205)) ([5dd5ad7](https://github.com/vm0-ai/okou/commit/5dd5ad7f9ac9823df873d8d5fe8e12520a47cf96))
+* **runner:** deflate before park and transfer running sandboxes ([#35177](https://github.com/vm0-ai/okou/issues/35177)) ([e70762c](https://github.com/vm0-ai/okou/commit/e70762c0c7e82681048048d394399ec459fa374f))
+
 ## [0.200.0](https://github.com/vm0-ai/okou/compare/runner-rs-v0.199.1...runner-rs-v0.200.0) (2026-09-18)
 
 

@@ -1,4 +1,4 @@
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
 import {
   sharedThreadArtifactPolicyKey,
   sharedThreadArtifactPolicySchema,
@@ -16,12 +16,11 @@ import { privateArtifactsBucket } from "./private-artifact-storage.service";
 import { sharedThreadArtifactsBucket } from "./shared-thread-artifact-snapshot.service";
 
 /** Snapshot authority is independent of the original resource's current state. */
-export const resolveSharedThreadArtifactReference$ = command(
-  async (
-    { get, set },
-    reference: SharedThreadArtifactReference,
-    signal: AbortSignal,
-  ) => {
+export function sharedThreadArtifactTarget(
+  reference: SharedThreadArtifactReference,
+  signal: AbortSignal,
+) {
+  return computed(async (get) => {
     const stored = await settle(
       get(
         readArtifactSharePolicyObject(
@@ -59,6 +58,21 @@ export const resolveSharedThreadArtifactReference$ = command(
     ) {
       return null;
     }
+    return target;
+  });
+}
+
+export const resolveSharedThreadArtifactReference$ = command(
+  async (
+    { get, set },
+    reference: SharedThreadArtifactReference,
+    signal: AbortSignal,
+  ) => {
+    const target = await get(sharedThreadArtifactTarget(reference, signal));
+    signal.throwIfAborted();
+    if (!target) {
+      return null;
+    }
     if (target.kind === "file") {
       const preview = await get(
         generateArtifactPreviewUrl(privateArtifactsBucket(), target.key, {
@@ -82,7 +96,7 @@ export const resolveSharedThreadArtifactReference$ = command(
       createHostedPreviewGrant$,
       {
         deploymentId: target.id,
-        publicBrand: policy.publicBrand,
+        publicBrand: reference.publicBrand,
         snapshotId: target.snapshotId,
       },
       signal,
