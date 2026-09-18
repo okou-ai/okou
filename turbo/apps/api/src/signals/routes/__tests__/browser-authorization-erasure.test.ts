@@ -38,7 +38,6 @@ import {
   setChatThreadUserFixture,
   withChatThreadContentBarrierFixture,
 } from "../../../test-fixtures/chat-thread-content-erasure";
-import { deleteChatThreadRootFixture } from "../../../test-fixtures/chat-thread-deletion";
 import { deleteAgentRunRootFixture } from "../../../test-fixtures/run-deletion";
 import { setAgentRunStatusFixture } from "../../../test-fixtures/agent-deletion";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -211,17 +210,15 @@ async function createAuthorizationFixture(options?: {
 function requestAuthorizationCreation(
   fixture: AuthorizationRunFixture,
   statuses: readonly (200 | 400 | 401 | 403 | 404 | 409)[],
-  options?: {
-    readonly tokenType?: "agent" | "sandbox";
-    readonly signal?: AbortSignal;
-  },
+  options?: { readonly tokenType?: "agent" | "sandbox" },
+  signal?: AbortSignal,
 ) {
   const token =
     options?.tokenType === "agent"
       ? runs.okouTokenForRunWithCapabilities(fixture.actor, fixture.runId, [])
       : runs.sandboxTokenForRun(fixture.actor, fixture.runId);
   return accept(
-    authorizationClient(options?.signal).create({
+    authorizationClient(signal).create({
       headers: { authorization: `Bearer ${token}` },
       body: {},
     }),
@@ -853,7 +850,8 @@ describe("account erasure fences cloud browser authorization apply", () => {
           work: async (barrier) => {
             const applying = applyAuthorization(fixture, [404]);
             await barrier.entered;
-            await deleteChatThreadRootFixture(fixture.threadId);
+            await chat.deleteThread(fixture.actor, fixture.threadId);
+            await flushWaitUntilForTest();
             barrier.release();
             await applying;
           },
@@ -1708,7 +1706,10 @@ describe("account erasure fences cloud browser authorization request creation", 
             const creating = requestAuthorizationCreation(fixture, [404]);
             const located = await barrier.entered;
             expect(located.rowCount).toBe(1);
-            await deleteChatThreadRootFixture(fixture.threadId);
+            await chat.deleteThread(fixture.actor, fixture.threadId);
+            await flushWaitUntilForTest();
+            expectOneInvalidation(fixture);
+            clearPublications();
             barrier.release();
             await creating;
           },
@@ -1727,12 +1728,15 @@ describe("account erasure fences cloud browser authorization request creation", 
     { timeout: CASE_TIMEOUT_MS },
     async () => {
       const unsupported = await createAuthorizationRunFixture();
-      await deleteChatThreadRootFixture(unsupported.threadId);
+      await chat.deleteThread(unsupported.actor, unsupported.threadId);
+      await flushWaitUntilForTest();
+      clearPublications();
       const conflict = await requestAuthorizationCreation(unsupported, [409]);
       expect(conflict.status).toBe(409);
       await expect(
         countBrowserAuthorizationRequestsFixture(unsupported.runId),
       ).resolves.toBe(0);
+      expectNoInvalidation(unsupported);
 
       const fixture = await createAuthorizationRunFixture();
       const foreign = await createAuthorizationRunFixture();
@@ -1866,7 +1870,7 @@ describe("account erasure fences cloud browser authorization request creation", 
   );
 
   it(
-    "retries before admitting a newly rebound Agent and denies its closed owner",
+    "retries a rebound Agent with freshly admitted closed and open owners",
     { timeout: CASE_TIMEOUT_MS },
     async () => {
       const fixture = await createAuthorizationRunFixture();
@@ -1907,6 +1911,54 @@ describe("account erasure fences cloud browser authorization request creation", 
       await expectCreationUnchanged(fixture, before);
       expectNoInvalidation(fixture);
       expect(threadListInvalidationChannels()).toStrictEqual([]);
+
+      // A second rebind to a distinct, open same-org owner proves the retry can
+      // also succeed after admitting the newly discovered subject set in a
+      // fresh transaction; the first attempt never carries stale admission
+      // forward or silently follows a different run/thread locator.
+      const admitted = await createAuthorizationRunFixture();
+      const openOwner = orgScoped(bdd.user({ orgId: admitted.orgId }));
+      expect(openOwner.userId).not.toBe(admitted.actor.userId);
+      const openAgent = await bdd.createAgent(openOwner, {
+        displayName: `Open rebound authorization ${randomUUID().slice(0, 8)}`,
+        visibility: "public",
+      });
+      const admittedBefore = await readCreationState(admitted);
+      clearPublications();
+      const created = await withBrowserAuthorizationCreateBarrierFixture(
+        {
+          chatThreadId: admitted.threadId,
+          runId: admitted.runId,
+          stopAt: "thread-share",
+          work: async (barrier) => {
+            const creating = requestAuthorizationCreation(admitted, [200]);
+            await barrier.entered;
+            await setChatThreadAgentFixture({
+              chatThreadId: admitted.threadId,
+              agentId: openAgent.agentId,
+            });
+            barrier.release();
+            return await creating;
+          },
+        },
+        context.signal,
+      );
+      const requestToken = requestTokenFromUrl(
+        createdAuthorizationBody(created).authorizationUrl,
+      );
+      await expect(
+        readBrowserAuthorizationRequestFixture(requestToken),
+      ).resolves.toMatchObject({
+        runId: admitted.runId,
+        chatThreadId: admitted.threadId,
+        userId: admitted.actor.userId,
+        orgId: admitted.orgId,
+      });
+      await expect(readCreationState(admitted)).resolves.toStrictEqual({
+        ...admittedBefore,
+        requestCount: admittedBefore.requestCount + 1,
+      });
+      expectNoInvalidation(admitted);
     },
   );
 
@@ -2019,10 +2071,10 @@ describe("account erasure fences cloud browser authorization request creation", 
         displayName: `Run-wait rebind ${randomUUID().slice(0, 8)}`,
         visibility: "public",
       });
-      const holder = await holdBrowserAuthorizationCreationRunFixture({
-        runId: fixture.runId,
-        signal: context.signal,
-      });
+      const holder = await holdBrowserAuthorizationCreationRunFixture(
+        { runId: fixture.runId },
+        context.signal,
+      );
       clearPublications();
 
       const creating = requestAuthorizationCreation(fixture, [200]);
@@ -2091,7 +2143,7 @@ describe("account erasure fences cloud browser authorization request creation", 
             expect(inserted.rowCount).toBe(1);
             expectNoInvalidation(fixture);
 
-            const deleting = deleteChatThreadRootFixture(fixture.threadId);
+            const deleting = chat.deleteThread(fixture.actor, fixture.threadId);
             await expect
               .poll(barrier.blockedWaiterCount, BLOCKED)
               .toBeGreaterThanOrEqual(1);
@@ -2100,6 +2152,7 @@ describe("account erasure fences cloud browser authorization request creation", 
             barrier.release();
             const response = await creating;
             await deleting;
+            await flushWaitUntilForTest();
             return response;
           },
         },
@@ -2117,11 +2170,14 @@ describe("account erasure fences cloud browser authorization request creation", 
       await expect(
         countBrowserAuthorizationRequestsFixture(fixture.runId),
       ).resolves.toBe(1);
+      expectOneInvalidation(fixture);
+      clearPublications();
       const unsupported = await requestAuthorizationCreation(fixture, [409]);
       expect(unsupported.status).toBe(409);
       await expect(
         countBrowserAuthorizationRequestsFixture(fixture.runId),
       ).resolves.toBe(1);
+      expectNoInvalidation(fixture);
     },
   );
 
@@ -2140,9 +2196,12 @@ describe("account erasure fences cloud browser authorization request creation", 
           runId: fixture.runId,
           stopAt: "insert",
           work: async (barrier) => {
-            const creating = requestAuthorizationCreation(fixture, [200, 404], {
-              signal: cancelled.signal,
-            });
+            const creating = requestAuthorizationCreation(
+              fixture,
+              [200, 404],
+              undefined,
+              cancelled.signal,
+            );
             const inserted = await barrier.entered;
             expect(inserted.rowCount).toBe(1);
             await expect(
@@ -2177,9 +2236,12 @@ describe("account erasure fences cloud browser authorization request creation", 
           runId: fixture.runId,
           stopAt: "commit",
           work: async (barrier) => {
-            const creating = requestAuthorizationCreation(fixture, [200, 404], {
-              signal: cancelled.signal,
-            });
+            const creating = requestAuthorizationCreation(
+              fixture,
+              [200, 404],
+              undefined,
+              cancelled.signal,
+            );
             await barrier.entered;
             await expect(
               countBrowserAuthorizationRequestsFixture(fixture.runId),
@@ -2208,23 +2270,25 @@ describe("account erasure fences cloud browser authorization request creation", 
   );
 
   it(
-    "propagates a real INSERT lock timeout instead of reporting closure and leaves no partial effect",
+    "scopes a real INSERT lock timeout to one run while unrelated creation progresses",
     { timeout: CASE_TIMEOUT_MS },
     async () => {
       const fixture = await createAuthorizationRunFixture();
+      const unrelated = await createAuthorizationRunFixture();
       const before = await readCreationState(fixture);
-      const holder = await holdBrowserAuthorizationRequestInsertFixture({
-        signal: context.signal,
-      });
+      const holder = await holdBrowserAuthorizationRequestInsertFixture(
+        { runId: fixture.runId },
+        context.signal,
+      );
       clearPublications();
 
       const creating = requestAuthorizationCreation(fixture, [200, 404]);
       await expect
         .poll(holder.blockedRequestInsertCount, BLOCKED)
         .toBeGreaterThanOrEqual(1);
+      await createAndInspectOpenRequest(unrelated);
       await expect(creating).rejects.toThrow(/Unknown response status 500/);
-      holder.release();
-      await holder.done;
+      await holder.release();
 
       await expectCreationUnchanged(fixture, before);
     },

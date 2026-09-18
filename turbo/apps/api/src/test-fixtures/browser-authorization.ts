@@ -1,13 +1,19 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { browserAuthorizationRequests } from "@okouai/db/schema/browser-session";
 import { count, eq, sql } from "drizzle-orm";
+import { onTestFinished } from "vitest";
 import { z } from "zod";
 
 import { db } from "../lib/db";
 import { executeRawRows } from "../lib/db-raw-rows";
-import { createDeferredPromise } from "../signals/utils";
+import {
+  createDeferredPromise,
+  isAbortError,
+  onRejection,
+  settleIncludingAbort,
+} from "../signals/utils";
 import {
   barrierQueryBinds,
   barrierQueryText,
@@ -268,17 +274,17 @@ export async function holdBrowserAuthorizationRequestRowLockFixture(args: {
  * second edge proves creation acquired its local thread SHARE before it waited
  * for the run instead of relying on the shared helper's weaker KEY SHARE.
  */
-export async function holdBrowserAuthorizationCreationRunFixture(args: {
-  readonly runId: string;
-  readonly signal: AbortSignal;
-}): Promise<{
+export async function holdBrowserAuthorizationCreationRunFixture(
+  args: { readonly runId: string },
+  signal: AbortSignal,
+): Promise<{
   readonly release: () => void;
   readonly done: Promise<void>;
   readonly blockedCreationRunPinCount: () => Promise<number>;
   readonly blockedThreadMutationCount: () => Promise<number>;
 }> {
-  const started = createDeferredPromise<number>(args.signal);
-  const released = createDeferredPromise<void>(args.signal);
+  const started = createDeferredPromise<number>(signal);
+  const released = createDeferredPromise<void>(signal);
   const done = db().transaction(async (tx) => {
     const [run] = await tx
       .select({ id: agentRuns.id })
@@ -344,44 +350,125 @@ export async function holdBrowserAuthorizationCreationRunFixture(args: {
   };
 }
 
+/** A stable digest safe to carry in a PostgreSQL trigger name. */
+function authorizationRunDigest(runId: string): string {
+  return createHash("sha256").update(runId).digest("hex").slice(0, 32);
+}
+
 /**
- * Holds the request table against INSERT so creation fails at its own write,
- * after every admission and identity pin. There is no production endpoint that
- * can retain a table lock, so this is an infrastructure-only failure fixture.
+ * Makes only the test-owned run's request INSERT wait on a real PostgreSQL
+ * advisory lock. A temporary BEFORE INSERT trigger compares NEW.run_id through
+ * a digest embedded in its randomized name; unrelated workers execute the
+ * predicate but never acquire this holder's lock. This is the narrow
+ * infrastructure exception needed to fail the real INSERT after every
+ * admission and identity pin without locking the shared request table.
  */
-export async function holdBrowserAuthorizationRequestInsertFixture(args: {
-  readonly signal: AbortSignal;
-}): Promise<{
-  readonly release: () => void;
-  readonly done: Promise<void>;
+export async function holdBrowserAuthorizationRequestInsertFixture(
+  args: { readonly runId: string },
+  signal: AbortSignal,
+): Promise<{
+  readonly release: () => Promise<void>;
   readonly blockedRequestInsertCount: () => Promise<number>;
 }> {
-  const started = createDeferredPromise<number>(args.signal);
-  const released = createDeferredPromise<void>(args.signal);
-  const done = db().transaction(async (tx) => {
-    await tx.execute(
-      sql`LOCK TABLE "browser_authorization_requests" IN ACCESS EXCLUSIVE MODE`,
-    );
-    const pidRows = await executeRawRows(
-      tx,
-      sql`SELECT pg_backend_pid() AS "pid"`,
-      databasePidRowSchema,
-    );
-    const holderPid = pidRows[0]?.pid;
-    if (!holderPid) {
-      throw new Error("Expected the request INSERT lock holder pid");
-    }
-    started.resolve(holderPid);
-    await released.promise;
+  const digest = authorizationRunDigest(args.runId);
+  const nonce = randomUUID().replaceAll("-", "").slice(0, 12);
+  const triggerName = `barlock_${digest}_${nonce}`;
+  const functionName = `test_browser_authorization_insert_lock_${nonce}`;
+  const lockKey = `browser-authorization-request-insert:${digest}`;
+
+  await db().transaction(async (tx) => {
+    await tx.execute(sql`
+      CREATE FUNCTION ${sql.identifier(functionName)}() RETURNS trigger
+      LANGUAGE plpgsql AS $$
+      BEGIN
+        IF substring(
+             encode(
+               sha256(convert_to(NEW.run_id::text, 'UTF8')),
+               'hex'
+             ) from 1 for 32
+           ) = split_part(TG_NAME, '_', 2) THEN
+          PERFORM pg_advisory_xact_lock(
+            hashtextextended(
+              'browser-authorization-request-insert:' ||
+                split_part(TG_NAME, '_', 2),
+              0
+            )
+          );
+        END IF;
+        RETURN NEW;
+      END;
+      $$
+    `);
+    signal.throwIfAborted();
+    await tx.execute(sql`
+      CREATE TRIGGER ${sql.identifier(triggerName)}
+      BEFORE INSERT ON browser_authorization_requests
+      FOR EACH ROW EXECUTE FUNCTION ${sql.identifier(functionName)}()
+    `);
+    signal.throwIfAborted();
   });
-  const holderPid = await started.promise;
-  return {
-    release: () => {
-      if (!released.settled()) {
-        released.resolve(undefined);
+
+  let restored = false;
+  const restore = async () => {
+    if (restored) {
+      return;
+    }
+    restored = true;
+    await db().transaction(async (tx) => {
+      await tx.execute(
+        sql`DROP TRIGGER ${sql.identifier(triggerName)} ON browser_authorization_requests`,
+      );
+      await tx.execute(sql`DROP FUNCTION ${sql.identifier(functionName)}()`);
+    });
+  };
+
+  onTestFinished(restore);
+  const started = createDeferredPromise<number>(signal);
+  const released = createDeferredPromise<void>(signal);
+  const holding = onRejection(
+    db().transaction(async (tx) => {
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`,
+      );
+      const pidRows = await executeRawRows(
+        tx,
+        sql`SELECT pg_backend_pid() AS "pid"`,
+        databasePidRowSchema,
+      );
+      const holderPid = pidRows[0]?.pid;
+      if (!holderPid) {
+        throw new Error("Expected the request INSERT lock holder pid");
+      }
+      started.resolve(holderPid);
+      await released.promise;
+    }),
+    (error) => {
+      if (!started.settled()) {
+        started.reject(error);
       }
     },
-    done,
+  );
+  const restoredHolding = onRejection(holding, restore);
+  const finished = settleIncludingAbort(
+    (async () => {
+      await restoredHolding;
+      await restore();
+    })(),
+  );
+  const release = async () => {
+    if (!released.settled()) {
+      released.resolve(undefined);
+    }
+    const result = await finished;
+    if (!result.ok && !(signal.aborted && isAbortError(result.error))) {
+      throw result.error;
+    }
+  };
+  onTestFinished(release);
+
+  const holderPid = await started.promise;
+  return {
+    release,
     blockedRequestInsertCount: async () => {
       const rows = await executeRawRows(
         db(),

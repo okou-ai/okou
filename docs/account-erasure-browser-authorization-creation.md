@@ -95,33 +95,35 @@ request-before-Agent/thread inverse.
 
 ## Complete SQL and cost inventory
 
-The table below is source inventory, not an `EXPLAIN` estimate. All selections
-have bounded cardinality; there is no page, batch, recursive query or
-application loop over database rows.
+The table below is source inventory, not an `EXPLAIN` estimate. Every selection
+returns bounded cardinality; where matching historical rows can exceed that
+returned cardinality, the table says so explicitly. There is no page, batch,
+recursive query or application loop over database rows.
 
-| Order | Statement shape                                                                                                                            | Table/index and cardinality                                                                                                                           | Lock or cost note                                                                                          |
-| ----: | ------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-|     0 | `SELECT chat_thread_id, trigger_source FROM agent_runs WHERE id = ? AND org_id = ? AND user_id = ? AND trigger_source IS NOT NULL LIMIT 1` | `agent_runs` primary key on `id`; zero or one row, remaining labels revalidated as filters                                                            | Outside the transaction and unlocked; locator only. No status predicate.                                   |
-|     1 | `BEGIN ISOLATION LEVEL READ COMMITTED`                                                                                                     | No table                                                                                                                                              | One per attempt.                                                                                           |
-|     2 | `SELECT set_config('lock_timeout', '1s', true)`                                                                                            | No table; one scalar row                                                                                                                              | Transaction-local existing bound.                                                                          |
-|     3 | `SELECT set_config('statement_timeout', '5s', true)`                                                                                       | No table; one scalar row                                                                                                                              | Transaction-local existing bound.                                                                          |
-|     4 | Thread/Agent identity `SELECT` with `chat_threads LEFT JOIN agents`, by thread id, `LIMIT 1`                                               | Primary-key lookup on each table; zero or one joined row                                                                                              | Unlocked authorization read; content-free fields only.                                                     |
-|     5 | `SELECT pg_advisory_xact_lock_shared(hashtextextended(...))`                                                                               | No table; one call for each sorted deduplicated subject                                                                                               | Two calls for an Agent owned by the thread user; three for a distinct shared-Agent owner.                  |
-|     6 | `SELECT id FROM account_erasure_jobs WHERE (kind,id) ... LIMIT 1`                                                                          | Exact pairs use the `(subject_kind, subject_id)` prefix of `account_erasure_subject_generation`; zero or one returned row; at most three OR arms      | New `READ COMMITTED` statement after every advisory wait.                                                  |
-|     7 | `SELECT id FROM agents WHERE id = ? FOR KEY SHARE`                                                                                         | Agent primary key; exactly one for an accepted identity                                                                                               | Retained through commit; protects canonical Agent key/transfer/delete semantics used by the shared helper. |
-|     8 | `SELECT id FROM chat_threads WHERE id = ? FOR KEY SHARE`                                                                                   | Thread primary key; zero or one row                                                                                                                   | Retained through commit; blocks deletion.                                                                  |
-|     9 | Repeat the content-free thread/Agent identity `SELECT`                                                                                     | Same primary-key plan and zero/one cardinality as order 4                                                                                             | Detects changes committed while earlier locks were acquired.                                               |
-|    10 | `SELECT user_id, agent_id FROM chat_threads WHERE id = ? FOR SHARE`                                                                        | Thread primary key; zero or one row                                                                                                                   | Creation-only stronger pin; blocks every thread row update/delete and closes the non-key identity window.  |
-|    11 | `SELECT id FROM agent_runs WHERE id = ? AND user_id = ? AND org_id = ? AND chat_thread_id = ? AND trigger_source = ? LIMIT 1 FOR SHARE`    | Run primary key; zero or one row, all original labels are residual exact predicates                                                                   | Retained effective run pin; no retarget and no active-status check.                                        |
-|    12 | `INSERT INTO browser_authorization_requests (...) VALUES (...)`                                                                            | One row; primary key generation and unique token-hash index maintenance. Run/thread columns cause no parent lookup because they have no foreign keys. | Happens only after every admission and identity pin.                                                       |
-|    13 | `COMMIT`                                                                                                                                   | No table                                                                                                                                              | Releases advisory and row locks together. A failed attempt uses `ROLLBACK` instead.                        |
+| Order | Statement shape                                                                                                                            | Table/index and returned cardinality                                                                                                                                                              | Lock or cost note                                                                                          |
+| ----: | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+|     0 | `SELECT chat_thread_id, trigger_source FROM agent_runs WHERE id = ? AND org_id = ? AND user_id = ? AND trigger_source IS NOT NULL LIMIT 1` | `agent_runs` primary key on `id`; zero or one row, remaining labels revalidated as filters                                                                                                        | Outside the transaction and unlocked; locator only. No status predicate.                                   |
+|     1 | `BEGIN ISOLATION LEVEL READ COMMITTED`                                                                                                     | No table                                                                                                                                                                                          | One per attempt.                                                                                           |
+|     2 | `SELECT set_config('lock_timeout', '1s', true)`                                                                                            | No table; one scalar row                                                                                                                                                                          | Transaction-local existing bound.                                                                          |
+|     3 | `SELECT set_config('statement_timeout', '5s', true)`                                                                                       | No table; one scalar row                                                                                                                                                                          | Transaction-local existing bound.                                                                          |
+|     4 | Thread/Agent identity `SELECT` with `chat_threads LEFT JOIN agents`, by thread id, `LIMIT 1`                                               | Primary-key lookup on each table; zero or one joined row                                                                                                                                          | Unlocked authorization read; content-free fields only.                                                     |
+|     5 | `SELECT current_setting('transaction_isolation') FROM (VALUES (1)) AS erasure_isolation_probe`                                             | No table; exactly one scalar row                                                                                                                                                                  | Verifies `READ COMMITTED` before any subject lock is taken.                                                |
+|     6 | `SELECT pg_advisory_xact_lock_shared(hashtextextended(...))`                                                                               | No table; one call for each sorted deduplicated subject                                                                                                                                           | Two calls for an Agent owned by the thread user; three for a distinct shared-Agent owner.                  |
+|     7 | `SELECT id FROM account_erasure_jobs WHERE (kind,id) ... LIMIT 1`                                                                          | Exact pairs use the `(subject_kind, subject_id)` prefix of `account_erasure_subject_generation`; zero or one row is returned. Each of at most three pairs can have multiple matching generations. | New `READ COMMITTED` statement after every advisory wait.                                                  |
+|     8 | `SELECT id FROM agents WHERE id = ? FOR KEY SHARE`                                                                                         | Agent primary key; exactly one for an accepted identity                                                                                                                                           | Retained through commit; protects canonical Agent key/transfer/delete semantics used by the shared helper. |
+|     9 | `SELECT id FROM chat_threads WHERE id = ? FOR KEY SHARE`                                                                                   | Thread primary key; zero or one row                                                                                                                                                               | Retained through commit; blocks deletion.                                                                  |
+|    10 | Repeat the content-free thread/Agent identity `SELECT`                                                                                     | Same primary-key plan and zero/one cardinality as order 4                                                                                                                                         | Detects changes committed while earlier locks were acquired.                                               |
+|    11 | `SELECT user_id, agent_id FROM chat_threads WHERE id = ? FOR SHARE`                                                                        | Thread primary key; zero or one row                                                                                                                                                               | Creation-only stronger pin; blocks every thread row update/delete and closes the non-key identity window.  |
+|    12 | `SELECT id FROM agent_runs WHERE id = ? AND user_id = ? AND org_id = ? AND chat_thread_id = ? AND trigger_source = ? LIMIT 1 FOR SHARE`    | Run primary key; zero or one row, all original labels are residual exact predicates                                                                                                               | Retained effective run pin; no retarget and no active-status check.                                        |
+|    13 | `INSERT INTO browser_authorization_requests (...) VALUES (...)`                                                                            | One row; primary key generation and unique token-hash index maintenance. Run/thread columns cause no parent lookup because they have no foreign keys.                                             | Happens only after every admission and identity pin.                                                       |
+|    14 | `COMMIT`                                                                                                                                   | No table                                                                                                                                                                                          | Releases advisory and row locks together. A failed attempt uses `ROLLBACK` instead.                        |
 
-For the ordinary same-owner Agent path, one accepted attempt has **14 SQL
-statements inside the transaction**: six no-table/control statements (`BEGIN`,
-two `set_config`, two advisory locks, `COMMIT`) and eight table statements. With
-the unlocked locator, the request has 15 statements. A distinct shared-Agent
-owner adds exactly one advisory-lock statement: 15 inside and 16 including the
-locator.
+For the ordinary same-owner Agent path, one accepted attempt has **15 SQL
+statements inside the transaction**: seven no-table/control statements (`BEGIN`,
+two `set_config`, the isolation probe, two advisory locks and `COMMIT`) plus
+eight table statements. With the unlocked locator, the request has 16
+statements. A distinct shared-Agent owner adds exactly one advisory-lock
+statement: 16 inside and 17 including the locator.
 
 Early dispositions cost less:
 
@@ -130,15 +132,17 @@ Early dispositions cost less:
 - an initially null-thread run issues only the locator and preserves `409`;
 - missing, foreign or Agent-less canonical identity runs `BEGIN`, both settings,
   one identity lookup and `COMMIT` after the locator;
-- closure stops after the two or three advisory calls and one indexed projection
-  lookup, without taking Agent/thread/run locks or inserting.
+- closure executes the isolation probe, two or three advisory calls and one
+  indexed projection lookup, without taking Agent/thread/run locks or inserting;
+  including control statements, commit and the locator, that is 10 statements
+  for a same-owner Agent or 11 for a distinct shared owner.
 
 An ownership-change retry repeats the bounded transaction, including subject
 admission, and ends the failed attempt with `ROLLBACK`. In the longest local
-thread-identity mismatch path, a same-owner failed attempt has 12 statements;
-a distinct-owner attempt has 13. With two such failed attempts followed by one
-success, the absolute source-count ceiling is 39 statements including the
-single locator for the same-owner path, or 42 for a distinct shared owner. This
+thread-identity mismatch path, a same-owner failed attempt has 13 statements;
+a distinct-owner attempt has 14. With two such failed attempts followed by one
+success, the absolute source-count ceiling is 42 statements including the
+single locator for the same-owner path, or 45 for a distinct shared owner. This
 is a statement-count ceiling, not a latency claim.
 
 ## Token, timestamps and cancellation boundary
@@ -199,17 +203,20 @@ includes:
   read and zero inserts;
 - locator races for run deletion and exact user, organization, thread and
   trigger changes, plus foreign canonical thread, null Agent and Agent
-  owner/organization changes;
-- a non-key thread-user update that commits under the shared helper's
-  `FOR KEY SHARE`, then is caught by the local `FOR SHARE` re-read and forces a
-  whole-attempt retry;
+  owner/organization changes; thread deletion races use the production delete
+  route and separately account for its legitimate tombstone publication;
+- non-key thread-user and Agent rebinds that commit under the shared helper's
+  `FOR KEY SHARE`, are caught by the local `FOR SHARE` re-read and force a whole
+  attempt retry; a newly discovered closed owner is denied while a distinct open
+  same-org owner is freshly admitted and succeeds;
 - retained run non-key update and delete blockers, retained canonical thread
   update and delete blockers, and simultaneous unrelated-run progress;
 - TTL sampled after a proved run-pin wait, with a second proved blocker edge
   from this transaction's thread `FOR SHARE` to a non-key thread update;
-- a real request-table lock timeout at `INSERT`, operation-signal rollback after
-  an observed insert, and the post-final-check committed-row/lost-response
-  boundary; and
+- a real `INSERT` timeout on a run-scoped temporary-trigger advisory lock that
+  unrelated request rows never acquire, operation-signal rollback after an
+  observed insert, and the post-final-check committed-row/lost-response boundary;
+  and
 - unchanged request count, thread fields/timestamp, events, sidebar sequence and
   exact realtime channel/topic absence for every denial or rollback.
 
@@ -220,6 +227,6 @@ edges establish actual waiting relationships.
 Local measurements are reported only as test-run measurements, not endpoint or
 production latency. On the implementation worktree's local PostgreSQL 18.6
 database after current migrations, the complete final file passed all 44
-creation and apply cases in **29.15 seconds** wall clock. That measurement
+creation and apply cases in **28.40 seconds** wall clock. That measurement
 includes fixture creation, HTTP test setup, closure projection, barrier polling
 and cleanup, so it is not a per-request benchmark or a production bound.
