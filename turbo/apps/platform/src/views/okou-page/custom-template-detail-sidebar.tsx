@@ -1,4 +1,4 @@
-import { ChevronDown, Lock, Trash2, User, Users } from "lucide-react";
+import { Check, Lock, User, Users } from "lucide-react";
 import { useGet, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
@@ -6,6 +6,7 @@ import {
   Button,
   Input,
   Popover,
+  PopoverClose,
   PopoverContent,
   PopoverTrigger,
   cn,
@@ -75,68 +76,119 @@ function VisibilityOptionList({
     >
       {VISIBILITY_OPTIONS.map((value) => {
         const selected = value === visibility;
+        const Icon = value === "private" ? Lock : Users;
         return (
-          <button
-            key={value}
-            type="button"
-            role="radio"
-            aria-checked={selected}
-            className={cn(
-              "flex w-full flex-col items-start gap-0.5 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-state-hover",
-              selected && "bg-state-selected",
-            )}
-            onClick={() => {
-              if (!selected) {
-                onChange(value);
-              }
-            }}
-          >
-            <span className="text-sm text-foreground">
-              {value === "private"
-                ? t(($) => {
-                    return $.templates.visibility.private;
-                  })
-                : t(($) => {
-                    return $.templates.visibility.organization;
-                  })}
-            </span>
-            <span className="text-xs text-muted-foreground">
-              {value === "private"
-                ? t(($) => {
-                    return $.templates.visibility.privateState;
-                  })
-                : t(($) => {
-                    return $.templates.visibility.organizationState;
-                  })}
-            </span>
-          </button>
+          <PopoverClose asChild key={value}>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              className={cn(
+                "flex w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-state-hover",
+                selected && "bg-state-selected",
+              )}
+              onClick={() => {
+                if (!selected) {
+                  onChange(value);
+                }
+              }}
+            >
+              <Icon
+                size={16}
+                className="mt-0.5 shrink-0 text-muted-foreground"
+                aria-hidden="true"
+              />
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm text-foreground">
+                  {value === "private"
+                    ? t(($) => {
+                        return $.templates.visibility.private;
+                      })
+                    : t(($) => {
+                        return $.templates.visibility.organization;
+                      })}
+                </span>
+                <span className="block text-xs text-muted-foreground">
+                  {value === "private"
+                    ? t(($) => {
+                        return $.templates.visibility.privateState;
+                      })
+                    : t(($) => {
+                        return $.templates.visibility.organizationState;
+                      })}
+                </span>
+              </span>
+              {/* The check column is reserved on both rows: letting it appear
+                  only on the selected one narrows that row's text box, so the
+                  description reflows every time the selection moves. */}
+              <span className="mt-0.5 w-4 shrink-0">
+                {selected ? (
+                  <Check size={16} className="text-foreground" aria-hidden />
+                ) : null}
+              </span>
+            </button>
+          </PopoverClose>
         );
       })}
     </div>
   );
 }
 
-/** The sidebar's primary action, kept out of it so it stays one screenful. */
-function UseCustomTemplateButton({
+/**
+ * Visibility stated as its consequence rather than as a setting, the way the
+ * imported deck panel states it: the two words that name the levels carry less
+ * than the sentence that says what they do, so the sentence stays on screen and
+ * the picker moves behind `Change`.
+ */
+function CustomTemplateVisibilityControl({
   detail,
-  onSelect,
 }: {
   readonly detail: UserTemplateDetail;
-  readonly onSelect: (template: UserTemplateCatalogEntry) => void;
 }) {
   const { t } = useTranslation();
+  const pageSignal = useGet(pageSignal$);
+  const updateTemplate = useSet(updateCustomTemplate$);
+  const CurrentIcon = detail.visibility === "private" ? Lock : Users;
   return (
-    <Button
-      type="button"
-      className="w-full"
-      onClick={() => {
-        onSelect(detail);
-      }}
-    >
-      {t(($) => {
-        return $.artifacts.templates.useThisTemplate;
-      })}
-    </Button>
+    <Popover>
+      <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
+        <CurrentIcon size={14} className="shrink-0" aria-hidden="true" />
+        <span>
+          {detail.visibility === "private"
+            ? t(($) => {
+                return $.templates.visibility.privateState;
+              })
+            : t(($) => {
+                return $.templates.visibility.organizationState;
+              })}
+        </span>
+        <span aria-hidden="true">·</span>
+        <PopoverTrigger className="font-medium text-foreground underline decoration-muted-foreground/40 underline-offset-2 transition-colors hover:decoration-foreground">
+          {t(($) => {
+            return $.templates.visibility.change;
+          })}
+        </PopoverTrigger>
+      </p>
+      <PopoverContent
+        align="start"
+        side="bottom"
+        sideOffset={6}
+        className="w-[19rem] p-1.5"
+      >
+        <VisibilityOptionList
+          visibility={detail.visibility}
+          onChange={(visibility) => {
+            detach(
+              updateTemplate(
+                { templateId: detail.id, body: { visibility } },
+                pageSignal,
+              ),
+              Reason.DomCallback,
+            );
+          }}
+        />
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -183,7 +235,7 @@ function CustomTemplateTitleInput({
         aria-label={t(($) => {
           return $.templates.actions.rename;
         })}
-        className="h-9 text-base font-semibold"
+        className="h-auto min-h-10 rounded-lg border-transparent px-1 py-[5px] text-xl font-semibold leading-7 hover:border-[hsl(var(--gray-400))]"
         onBlur={(event) => {
           rename(event.target.value);
         }}
@@ -214,101 +266,61 @@ export function CustomTemplateDetailSidebar({
 }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
-  const updateTemplate = useSet(updateCustomTemplate$);
   const deleteTemplate = useSet(deleteCustomTemplate$);
   return (
-    <aside className="w-full shrink-0 lg:w-[300px]">
-      {/*
-       * Three bands, largest decision first: what this template is called, what
-       * to do with it, and the settings that outlive this visit. The file it
-       * was compiled from is not repeated here — the catalog tile names it, and
-       * the preview beside this column is that file.
-       */}
-      <div className="flex flex-col gap-4 rounded-xl border border-border bg-background p-4">
-        <div className="flex flex-col gap-3">
-          {detail.canManage ? (
-            <CustomTemplateTitleInput detail={detail} />
-          ) : (
-            <h3 className="text-base font-semibold leading-6 text-foreground">
-              {detail.title}
-            </h3>
-          )}
-          <UseCustomTemplateButton detail={detail} onSelect={onSelect} />
-        </div>
-        <div className="flex flex-col gap-2 border-t border-border pt-4">
-          {detail.canManage ? (
-            <Popover>
-              {/*
-               * The whole row is the control. Reading the current level and
-               * changing it were a label and an underlined word beside it, which
-               * left the thing being clicked smaller than the sentence naming
-               * it.
-               */}
-              <PopoverTrigger
-                render={
-                  <Button
-                    type="button"
-                    variant="neutral"
-                    size="sm"
-                    className="h-9 w-full justify-between px-3 font-normal"
-                    aria-label={t(($) => {
-                      return $.templates.visibility.change;
-                    })}
-                  />
-                }
-              >
-                <VisibilityLabel visibility={detail.visibility} />
-                <ChevronDown className="text-muted-foreground" />
-              </PopoverTrigger>
-              <PopoverContent align="start" className="w-[268px] p-1.5">
-                <VisibilityOptionList
-                  visibility={detail.visibility}
-                  onChange={(visibility) => {
-                    detach(
-                      updateTemplate(
-                        { templateId: detail.id, body: { visibility } },
-                        pageSignal,
-                      ),
-                      Reason.DomCallback,
-                    );
-                  }}
-                />
-              </PopoverContent>
-            </Popover>
-          ) : (
-            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <User size={13} aria-hidden />
-              {t(
-                ($) => {
-                  return $.templates.sharedBy;
-                },
-                { owner: detail.ownerUserId },
-              )}
-            </p>
-          )}
-          {detail.canManage ? (
-            // Carries a surface like the control above it, so the row that
-            // destroys the template is not the one thing here that looks like
-            // loose text.
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-9 w-full gap-2 border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
-              onClick={() => {
-                detach(
-                  deleteTemplate(detail.id, pageSignal),
-                  Reason.DomCallback,
-                );
-              }}
-            >
-              <Trash2 />
-              {t(($) => {
-                return $.templates.actions.delete;
-              })}
-            </Button>
-          ) : null}
-        </div>
+    // The imported deck panel's column, which this now shares: the name, what
+    // it means to share it, then the action, then the way to be rid of it. The
+    // file it was compiled from is not repeated here — the catalog tile names
+    // it, and for a document the preview beside this column is that file.
+    <aside className="flex w-full shrink-0 flex-col lg:sticky lg:top-0 lg:w-[320px]">
+      <div className="rounded-lg border border-border bg-background p-4 shadow-sm">
+        {detail.canManage ? (
+          <CustomTemplateTitleInput detail={detail} />
+        ) : (
+          <h3 className="text-xl font-semibold text-foreground">
+            {detail.title}
+          </h3>
+        )}
+        <div className="my-5 border-t border-border" />
+        {detail.canManage ? (
+          <CustomTemplateVisibilityControl detail={detail} />
+        ) : (
+          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <User size={14} className="shrink-0" aria-hidden />
+            {t(
+              ($) => {
+                return $.templates.sharedBy;
+              },
+              { owner: detail.ownerUserId },
+            )}
+          </p>
+        )}
+        <Button
+          type="button"
+          className="mt-5 h-12 w-full font-semibold shadow-sm"
+          onClick={() => {
+            onSelect(detail);
+          }}
+        >
+          {t(($) => {
+            return $.artifacts.templates.useThisTemplate;
+          })}
+        </Button>
+        {detail.canManage ? (
+          <Button
+            type="button"
+            variant="quiet"
+            size="sm"
+            className="mt-2 w-full text-destructive hover:text-destructive"
+            onClick={() => {
+              detach(deleteTemplate(detail.id, pageSignal), Reason.DomCallback);
+            }}
+          >
+            {t(($) => {
+              return $.templates.actions.delete;
+            })}
+          </Button>
+        ) : null}
       </div>
     </aside>
   );
