@@ -39,10 +39,11 @@ import { calculateNextRun } from "./time-automation";
  * Two of them are load-bearing everywhere else:
  *
  * - **Lock order.** A writer that touches both the legacy automation and this
- *   row takes the member's Morning Brief preference advisory lock first, then
- *   this row's `FOR UPDATE`, then any occurrence row. Nothing else is allowed,
- *   so the Settings, reconciliation, deletion and cron writers can never
- *   deadlock against each other.
+ *   row takes the member's Morning Brief preference/admission lock first when
+ *   applicable, then this row's `FOR UPDATE`, the selected legacy automation,
+ *   its S7a claim/Run/callback rows, and finally any native occurrence row.
+ *   Nothing else is allowed, so Settings, reconciliation, deletion and cron
+ *   writers cannot deadlock against each other.
  * - **Fresh predicates.** Every mutation revalidates the epoch and phase it
  *   read before it commits. External preflight (Clerk, provider, Slack) happens
  *   outside the transaction, and the transaction re-reads what it depends on.
@@ -564,7 +565,7 @@ interface MorningBriefReconciledAutomationState {
   readonly nextRunAt: Date | null;
 }
 
-export interface MorningBriefLegacyAutomationOverrides {
+interface MorningBriefLegacyAutomationOverrides {
   readonly enabled?: boolean;
   readonly officialIntendedEnabled?: boolean;
   readonly nextRunAt?: Date | null;

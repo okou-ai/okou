@@ -70,10 +70,12 @@ schedule, or be resurrected by a later re-enable.
 
 A writer that touches both the legacy automation and the native row takes:
 
-1. the member's Morning Brief preference **advisory lock**
-   (`morning_brief_preference:<org>:<user>`),
+1. the member's Morning Brief preference/admission **advisory lock** when the
+   operation has one (`morning_brief_preference:<org>:<user>`),
 2. the `morning_brief_native_schedules` row `FOR UPDATE`,
-3. any `morning_brief_native_occurrences` row `FOR UPDATE`.
+3. the selected `workflow_automations` row `FOR UPDATE`,
+4. the exact S7a claim, Run, or callback row when the operation owns one,
+5. any `morning_brief_native_occurrences` row `FOR UPDATE`.
 
 Nothing else is permitted. External preflight — Clerk, Slack, the model
 provider — happens **outside** short transactions, and the transaction

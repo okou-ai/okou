@@ -362,6 +362,11 @@ async function recordSelectedMorningBriefPreRunFailure(
       automationId: automation.id,
     };
     const authority = await lockMorningBriefLegacyWriterAuthority(tx, lineage);
+    if (authority.kind === "ordinary") {
+      // Additional Morning Brief installations are not durable authority. Keep
+      // their exact legacy pre-run failure path below.
+      return undefined;
+    }
     if (authority.kind === "stale") {
       return { disabled: false, consecutiveFailures: 0 };
     }
@@ -373,7 +378,7 @@ async function recordSelectedMorningBriefPreRunFailure(
       .for("update");
     if (
       current === undefined ||
-      (authority.kind === "selected" && authority.row.phase !== "legacy") ||
+      authority.row.phase !== "legacy" ||
       (stillDueAt !== undefined &&
         current.nextRunAt?.getTime() !== stillDueAt.getTime()) ||
       (current.scheduleType !== "once" && !current.enabled)
@@ -396,9 +401,7 @@ async function recordSelectedMorningBriefPreRunFailure(
       .set({
         consecutiveFailures,
         ...(shouldDisable ? { enabled: false } : {}),
-        ...(shouldDisable && authority.kind === "selected"
-          ? { officialIntendedEnabled: false }
-          : {}),
+        ...(shouldDisable ? { officialIntendedEnabled: false } : {}),
         nextRunAt,
         updatedAt: failureTime,
       })
@@ -413,6 +416,9 @@ async function recordSelectedMorningBriefPreRunFailure(
     return { disabled: shouldDisable, consecutiveFailures };
   });
   signal.throwIfAborted();
+  if (outcome === undefined) {
+    return false;
+  }
   if (outcome.disabled) {
     log.warn("Workflow automation auto-disabled after consecutive failures", {
       automationId: automation.id,
