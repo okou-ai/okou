@@ -1311,10 +1311,14 @@ describe("Morning Brief native delivery", () => {
     expect(html).not.toContain("<script>");
     expect(html).not.toContain("<img src=x");
     expect(html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
-    const escapedCitationUrl = citationUrl.replaceAll("&", "&amp;");
-    expect(html.split(`href="${escapedCitationUrl}"`)).toHaveLength(
-      markers.length + 1,
-    );
+    const renderedCitationHrefs = [
+      ...html.matchAll(/<a href="([^"]+)"[^>]*>#general<\/a>/g),
+    ].map((match) => {
+      return match[1];
+    });
+    expect(renderedCitationHrefs).toHaveLength(markers.length);
+    expect(new Set(renderedCitationHrefs)).toHaveProperty("size", 1);
+    expect(renderedCitationHrefs[0]).toContain("&amp;channel=");
     expect(text.split(citationUrl)).toHaveLength(markers.length + 1);
     expect(html.split("|")).toHaveLength(expandedFillerCharacters + 1);
     expect(text.split("|")).toHaveLength(expandedFillerCharacters + 1);
