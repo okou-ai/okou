@@ -36,4 +36,5 @@ CREATE UNIQUE INDEX "idx_morning_brief_schedule_claims_anchor" ON "morning_brief
 CREATE UNIQUE INDEX "idx_morning_brief_schedule_claims_queue_event" ON "morning_brief_schedule_claims" USING btree ("queue_event_id") WHERE "morning_brief_schedule_claims"."queue_event_id" IS NOT NULL;--> statement-breakpoint
 CREATE UNIQUE INDEX "idx_morning_brief_schedule_claims_run" ON "morning_brief_schedule_claims" USING btree ("run_id") WHERE "morning_brief_schedule_claims"."run_id" IS NOT NULL;--> statement-breakpoint
 CREATE UNIQUE INDEX "idx_morning_brief_schedule_claims_sequence" ON "morning_brief_schedule_claims" USING btree ("automation_id","claim_sequence");--> statement-breakpoint
-CREATE INDEX "idx_morning_brief_schedule_claims_owner" ON "morning_brief_schedule_claims" USING btree ("org_id","owner_user_id");
+CREATE INDEX "idx_morning_brief_schedule_claims_owner" ON "morning_brief_schedule_claims" USING btree ("org_id","owner_user_id");--> statement-breakpoint
+CREATE INDEX "idx_morning_brief_schedule_claims_owner_user" ON "morning_brief_schedule_claims" USING btree ("owner_user_id");

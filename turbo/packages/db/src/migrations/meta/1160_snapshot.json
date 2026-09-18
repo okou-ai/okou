@@ -1,5 +1,5 @@
 {
-  "id": "b7ba1d1b-3e05-430a-88f2-b6600e555065",
+  "id": "022a6880-5476-4d8a-8a35-bd47d950b055",
   "prevId": "208f13f6-900e-4ed0-a105-743d80d5931e",
   "version": "7",
   "dialect": "postgresql",
@@ -20070,6 +20070,21 @@
               "asc": true,
               "nulls": "last"
             },
+            {
+              "expression": "owner_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_morning_brief_schedule_claims_owner_user": {
+          "name": "idx_morning_brief_schedule_claims_owner_user",
+          "columns": [
             {
               "expression": "owner_user_id",
               "isExpression": false,
