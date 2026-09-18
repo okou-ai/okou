@@ -66,6 +66,7 @@ import {
 } from "../../../test-fixtures/org-plan-entitlement";
 import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
 import {
+  API_TEST_CONNECTOR_CATALOG,
   API_TEST_CONNECTOR_FIREWALL_CONFIGS,
   apiTestConnectorCatalogValidationAuthority,
   clearApiTestConnectorCatalogRuntimeProjectionIdentityReplacements,
@@ -12694,7 +12695,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     await api.requestCancelRun(actor, resumed.runId, [200]);
   });
 
-  it("preserves defaults and overrides across a broad connector scope", async () => {
+  it("preserves defaults and overrides across a broad HTTP connector scope", async () => {
     const bdd = createBddApi(context);
     const api = createRunsApi(context);
     const fw = createFirewallApi(context);
@@ -12711,13 +12712,18 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     });
     // Nintendo Store owns a catalog skill, so enabling it without its account
     // intentionally fails run preparation before firewall policy assembly.
-    const broadConnectorScope = API_TEST_CONNECTOR_FIREWALL_CONFIGS.filter(
-      (firewall) => {
-        return firewall.name !== "nintendo-store";
-      },
-    ).map((firewall) => {
-      return firewall.name;
-    });
+    // MCP connectors do not participate in HTTP permission grants.
+    const broadConnectorScope = API_TEST_CONNECTOR_CATALOG.connectors
+      .filter((connector) => {
+        return (
+          connector.mcp === undefined &&
+          connector.firewall.kind !== "none" &&
+          connector.slug !== "nintendo-store"
+        );
+      })
+      .map((connector) => {
+        return connector.slug;
+      });
     expect(broadConnectorScope.length).toBeGreaterThanOrEqual(17);
     await api.enableAgentConnectors(actor, agentId, broadConnectorScope);
 
