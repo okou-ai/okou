@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.679.0](https://github.com/vm0-ai/okou/compare/core-v8.678.0...core-v8.679.0) (2026-09-18)
+
+
+### Features
+
+* **mcp:** add oauth-authorized http entry and indicators ([#34954](https://github.com/vm0-ai/okou/issues/34954)) ([7999ce4](https://github.com/vm0-ai/okou/commit/7999ce41c17d7544b0f1da457d840fb2f0505b54))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.463.0
+
 ## [8.678.0](https://github.com/vm0-ai/okou/compare/core-v8.677.0...core-v8.678.0) (2026-09-17)
 
 
