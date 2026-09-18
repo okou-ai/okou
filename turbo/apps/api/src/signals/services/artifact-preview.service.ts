@@ -79,12 +79,12 @@ const NAVIGATION_TIMEOUT_RETRY_OPTIONS = {
 // outlives the function loses the failure record #34591 exists to produce,
 // which is why a stated wait past the ceiling stops instead of sleeping.
 const MAX_SNAPSHOT_REQUESTS = 3;
-const RATE_LIMIT_MIN_DELAY_MS = 1_000;
+const RATE_LIMIT_MIN_DELAY_MS = 1000;
 const RATE_LIMIT_MAX_DELAY_MS = 30_000;
 const RATE_LIMIT_TOTAL_DELAY_BUDGET_MS = 45_000;
 // 2s then 8s when the response states no wait. Quadrupling gets the second
 // attempt clear of a short burst without spending the whole budget.
-const RATE_LIMIT_BACKOFF_BASE_MS = 2_000;
+const RATE_LIMIT_BACKOFF_BASE_MS = 2000;
 const RATE_LIMIT_BACKOFF_FACTOR = 4;
 const RATE_LIMIT_MAX_JITTER_MS = 500;
 
