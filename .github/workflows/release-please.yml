@@ -4,8 +4,9 @@ name: release-please
 # adds no artifact dependency: each queued pull request's merge-group Turbo run
 # uploads the canonical app and CLI artifacts under its merged commit SHA, and
 # the Desktop workflow does the same when its package version changes.
+# iOS archives are built in the approved TestFlight publishing job below.
 # release-please deploys that same SHA as release_target. Staging independently
-# reuses those artifacts to deploy and verify the shared staging environment.
+# reuses the Turbo artifacts to deploy and verify the shared staging environment.
 on:
   push:
     branches: ["main"]
@@ -90,6 +91,8 @@ jobs:
       app_deploy_required: ${{ steps.app-release.outputs.required }}
       app_deploy_tag: ${{ steps.app-release.outputs.tag }}
       app_deploy_version: ${{ steps.app-release.outputs.version }}
+      ios_release_created: ${{ steps.release.outputs['ios--release_created'] }}
+      ios_version: ${{ steps.release.outputs['ios--version'] }}
       desktop_release_created: ${{ steps.release.outputs['turbo/apps/desktop--release_created'] }}
       host_worker_release_created: ${{ steps.release.outputs['turbo/apps/host-worker--release_created'] }}
       runner_rs_release_created: ${{ steps.release.outputs['crates/runner--release_created'] }}
@@ -152,6 +155,7 @@ jobs:
         env:
           RELEASE_SHAS: >-
             [
+              ${{ toJSON(steps.release.outputs['ios--sha']) }},
               ${{ toJSON(steps.release.outputs['crates/ably-subscriber--sha']) }},
               ${{ toJSON(steps.release.outputs['crates/api-contracts--sha']) }},
               ${{ toJSON(steps.release.outputs['crates/guest-agent--sha']) }},
@@ -242,6 +246,7 @@ jobs:
         env:
           RELEASE_TAGS: >-
             [
+              ${{ toJSON(steps.release.outputs['ios--tag_name']) }},
               ${{ toJSON(steps.release.outputs['crates/ably-subscriber--tag_name']) }},
               ${{ toJSON(steps.release.outputs['crates/api-contracts--tag_name']) }},
               ${{ toJSON(steps.release.outputs['crates/guest-agent--tag_name']) }},
@@ -340,6 +345,12 @@ jobs:
   # the pull request from scratch on every run, so a failed refresh self-heals on
   # the next push to main.
   refresh-release-pull-request:
+    permissions:
+      actions: write
+      contents: write
+      pull-requests: write
+      issues: write
+      checks: write
     needs: release-please
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -377,6 +388,61 @@ jobs:
           fi
 
           echo "DB/API release coupling validated."
+
+  publish-ios-testflight:
+    name: publish-ios-testflight
+    needs: release-please
+    if: ${{ needs.release-please.outputs.ios_release_created == 'true' }}
+    runs-on: macos-26
+    timeout-minutes: 60
+    environment: production
+    permissions:
+      contents: read
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+      IOS_VERSION: ${{ needs.release-please.outputs.ios_version }}
+      IOS_INTERNAL_GROUP_NAME: ${{ vars.IOS_INTERNAL_GROUP_NAME }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release-please.outputs.release_target }}
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+      - name: Resolve internal group and next build number
+        id: prepare
+        env:
+          IOS_RELEASE_METADATA: ${{ runner.temp }}/okou-ios-release.json
+          APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+        run: node ios/scripts/testflight.mjs prepare
+      - name: Archive and upload internal-only iOS build
+        env:
+          IOS_BUILD_NUMBER: ${{ steps.prepare.outputs.build_number }}
+          IOS_APP_ID: ${{ steps.prepare.outputs.app_id }}
+          IOS_DISTRIBUTION_P12_BASE64: ${{ secrets.IOS_DISTRIBUTION_P12_BASE64 }}
+          IOS_DISTRIBUTION_P12_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_P12_PASSWORD }}
+          IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+          APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+        run: bash ios/scripts/release-testflight.sh
+      - name: Wait for processing and verify internal availability
+        env:
+          IOS_RELEASE_METADATA: ${{ runner.temp }}/okou-ios-release.json
+          APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+        run: node ios/scripts/testflight.mjs distribute
+      - name: Retain release symbols
+        if: ${{ !cancelled() && steps.prepare.outcome == 'success' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ios-symbols-${{ needs.release-please.outputs.ios_version }}-${{ steps.prepare.outputs.build_number }}
+          path: ${{ runner.temp }}/okou-ios-symbols
+          if-no-files-found: ignore
+          retention-days: 90
 
   promote-desktop-release:
     name: promote-desktop-release
@@ -1915,6 +1981,7 @@ jobs:
         promote-api-production,
         promote-app-worker-production,
         promote-desktop-release,
+        publish-ios-testflight,
         promote-runner-production,
       ]
     if: >-
@@ -1923,6 +1990,8 @@ jobs:
       needs.promote-api-production.result == 'success' &&
       (needs.release-please.outputs.app_deploy_required != 'true' ||
        needs.promote-app-worker-production.result == 'success') &&
+      (needs.release-please.outputs.ios_release_created != 'true' ||
+       needs.publish-ios-testflight.result == 'success') &&
       (needs.release-please.outputs.desktop_release_created != 'true' ||
        needs.promote-desktop-release.result == 'success') &&
       (needs.release-please.outputs.runner_rs_release_created != 'true' ||

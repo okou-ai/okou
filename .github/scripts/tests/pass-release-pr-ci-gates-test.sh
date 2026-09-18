@@ -125,7 +125,11 @@ set -euo pipefail
 
 case "${1:-} ${2:-}" in
   "pr view")
-    printf '{"number":42,"headRefOid":"%s"}\n' "$MOCK_PR_HEAD"
+    printf '{"number":42,"headRefOid":"%s","headRefName":"release-valid"}\n' "$MOCK_PR_HEAD"
+    ;;
+  "workflow run")
+    printf '%s\n' "$*" >>"$MOCK_GH_LOG"
+    if [ "${MOCK_DISPATCH_FAILURE:-false}" = true ]; then exit 1; fi
     ;;
   "pr diff")
     printf '%s\n' .release-please-manifest.json native/helper/Cargo.toml native/Cargo.lock
@@ -203,15 +207,13 @@ done
 for ios_input in ios/Okou/App/OkouApp.swift .github/workflows/ios.yml .github/scripts/changed-base-ref.sh; do
   : >"$GH_LOG"
   ios_output=""
-  if ios_output=$(MOCK_ADDITIONAL_CHANGED_FILE="$ios_input" run_gates "$VALID_HEAD" 2>&1); then
-    fail "a release PR that changes $ios_input must not skip iOS validation"
-  fi
-  grep -Eq 'name=ci-gate-ios .*conclusion=failure' "$GH_LOG" ||
-    fail "changed iOS inputs must receive a failing iOS gate"
+  ios_output=$(MOCK_ADDITIONAL_CHANGED_FILE="$ios_input" run_gates "$VALID_HEAD" 2>&1)
+  grep -Fq "workflow run ios.yml --repo vm0-ai/vm0 --ref release-valid" "$GH_LOG" ||
+    fail "changed iOS inputs must dispatch real iOS validation"
   if grep -Eq 'name=ci-gate-ios .*conclusion=success' "$GH_LOG"; then
     fail "changed iOS inputs received an unearned successful iOS gate"
   fi
-  assert_contains "$ios_output" "cannot skip iOS validation"
+  assert_contains "$ios_output" "Dispatched iOS validation"
 done
 
 # A large diff must not turn an early iOS match into an unearned successful gate.
@@ -224,15 +226,21 @@ long_changed_files_path="${TEST_ROOT}/long-changed-files.txt"
 } >"$long_changed_files_path"
 : >"$GH_LOG"
 ios_output=""
-if ios_output=$(MOCK_ADDITIONAL_CHANGED_FILES_PATH="$long_changed_files_path" run_gates "$VALID_HEAD" 2>&1); then
-  fail "a large release PR diff containing iOS changes must not skip iOS validation"
-fi
-grep -Eq 'name=ci-gate-ios .*conclusion=failure' "$GH_LOG" ||
-  fail "a large diff containing iOS changes must receive a failing iOS gate"
+ios_output=$(MOCK_ADDITIONAL_CHANGED_FILES_PATH="$long_changed_files_path" run_gates "$VALID_HEAD" 2>&1)
+grep -Fq "workflow run ios.yml --repo vm0-ai/vm0 --ref release-valid" "$GH_LOG" ||
+  fail "a large diff containing iOS changes must dispatch iOS validation"
 if grep -Eq 'name=ci-gate-ios .*conclusion=success' "$GH_LOG"; then
   fail "a large diff containing iOS changes received an unearned successful iOS gate"
 fi
-assert_contains "$ios_output" "cannot skip iOS validation"
+assert_contains "$ios_output" "Dispatched iOS validation"
+
+: >"$GH_LOG"
+if MOCK_DISPATCH_FAILURE=true MOCK_ADDITIONAL_CHANGED_FILE=ios/Config/Shared.xcconfig run_gates "$VALID_HEAD" >/dev/null 2>&1; then
+  fail "a failed iOS workflow dispatch must fail the release refresh"
+fi
+if grep -Eq 'name=ci-gate-ios .*conclusion=success' "$GH_LOG"; then
+  fail "dispatch failure cannot create a successful gate"
+fi
 
 command -v yq >/dev/null || fail "yq is required"
 security_json=$(yq -o=json '.' "$SECURITY_WORKFLOW")
