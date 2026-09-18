@@ -43,7 +43,7 @@ interface Principal {
   readonly orgId: string;
 }
 
-export interface ChatThreadMetadataPatch {
+interface ChatThreadMetadataPatch {
   readonly title?: string;
   readonly model?: string | null;
   readonly reasoningEffort?: ReasoningEffort;
@@ -55,7 +55,7 @@ interface EventIds {
   readonly serviceTier?: string;
 }
 
-export interface ChatThreadMetadataUpdateArgs {
+interface ChatThreadMetadataUpdateArgs {
   readonly principal: Principal;
   readonly threadId: string;
   readonly patch: ChatThreadMetadataPatch;
@@ -67,7 +67,7 @@ export interface ChatThreadMetadataUpdateArgs {
   readonly mutationId?: string;
 }
 
-export interface ChatThreadMetadataState {
+interface ChatThreadMetadataState {
   readonly threadId: string;
   readonly title: string | null;
   readonly titleTruncated: boolean;
@@ -77,7 +77,7 @@ export interface ChatThreadMetadataState {
   readonly updatedAt: Date;
 }
 
-export type ChatThreadMetadataUpdateResult =
+type ChatThreadMetadataUpdateResult =
   | {
       readonly kind: "ok";
       readonly state: ChatThreadMetadataState;
