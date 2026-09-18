@@ -313,7 +313,16 @@ export async function countMorningBriefChatWritesFixture(owner: {
   };
 }
 
-/** Point the member's Morning Brief binding at a destination thread. */
+/**
+ * Point the member's Morning Brief binding at a destination thread.
+ *
+ * No external endpoint sets or clears this internal delivery binding by itself:
+ * production creates it only while executing an S6 delivery, which would also
+ * create the Run, Chat and e-mail side effects this read-only route must not
+ * produce. The destination-identity regression therefore writes its uniquely
+ * owned binding row directly while keeping the real canonical reader and
+ * PostgreSQL constraint behavior under test.
+ */
 export async function bindMorningBriefThreadFixture(args: {
   readonly orgId: string;
   readonly userId: string;
