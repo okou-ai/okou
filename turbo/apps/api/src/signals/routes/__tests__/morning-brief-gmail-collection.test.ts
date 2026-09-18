@@ -1546,9 +1546,10 @@ describe("Morning Brief Gmail collection preview", () => {
     const membership = holdNextMembershipRead(releaseFence.promise);
     bodies.resolve();
     await membership.arrived;
-    // One millisecond of budget is still one millisecond: the positive control
-    // that keeps the case above from passing by refusing everything.
-    mockNow(startedAt + MORNING_BRIEF_SOURCE_BUDGET_MS - 1);
+    // The final local authority transaction still has one second to complete:
+    // the positive control keeps the case above from passing by refusing every
+    // payload while respecting that local checks now spend this same budget.
+    mockNow(startedAt + MORNING_BRIEF_SOURCE_BUDGET_MS - 1000);
     releaseFence.resolve();
 
     const response = await collection;

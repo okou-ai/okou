@@ -25,7 +25,7 @@ legacy zero-host.test.ts and zero-maps.test.ts route tests:
   (`claim.platformEnvironment.OKOU_TOKEN`) instead of seeding runs and rewriting
   deployment rows.
 - Maps gates (NOT_CONFIGURED / 402 / invalid location) stay owned by
-  billing-usage-media.bdd.test.ts BILL-02; the slug-suffix reuse and
+  billing-usage-media.bdd.test.ts BILL-02; the legacy slug-suffix request and
   missing-index validations stay owned by chat-files.bdd.test.ts FILE-01.
 - "run token without maps:read -> 403" is dropped: every production Okou
   token carries maps:read unconditionally (generateOkouToken), so the case is
@@ -60,7 +60,7 @@ function geocodeOkHandler(requests: URL[]) {
 }
 
 describe("FILE-01: hosted-site deployments through host APIs", () => {
-  it("allocates distinct versions when the same site is prepared concurrently [HOST-A]", async () => {
+  it("allocates independent sites when concurrent publications use the same preferred slug [HOST-A]", async () => {
     const bdd = createBddApi(context);
     const api = createHostMapsBddApi(context);
     const actor = bdd.user();
@@ -71,45 +71,46 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
       spaFallback: false,
       files: [hostedTextFile("/index.html", "<main>concurrent</main>")],
     };
-    const prepared = await Promise.all(
+    const results = await Promise.all(
       Array.from({ length: 3 }, async () => {
         return await api.prepareHostedSite(actor, body);
       }),
     );
     expect(
       new Set(
-        prepared.map(({ siteId }) => {
-          return siteId;
-        }),
-      ).size,
-    ).toBe(1);
-    expect(
-      new Set(
-        prepared.map(({ deploymentId }) => {
-          return deploymentId;
+        results.map((result) => {
+          return result.siteId;
         }),
       ).size,
     ).toBe(3);
     expect(
-      prepared
-        .map(({ deploymentVersion }) => {
-          return deploymentVersion;
-        })
-        .sort(),
-    ).toStrictEqual([1, 2, 3]);
-    const history = await api.readHostedSiteDeployments(actor, body.site);
-    expect(history.siteId).toBe(prepared[0]?.siteId);
-    expect(history.deployments).toHaveLength(3);
+      new Set(
+        results.map((result) => {
+          return result.publicSlug;
+        }),
+      ).size,
+    ).toBe(3);
     expect(
-      history.deployments
-        .map(({ deploymentVersion }) => {
-          return deploymentVersion;
-        })
-        .sort(),
-    ).toStrictEqual([1, 2, 3]);
+      results.map((result) => {
+        return result.publicSlug;
+      }),
+    ).toContain(body.site);
+    for (const prepared of results) {
+      const history = await api.readHostedSiteDeployments(
+        actor,
+        prepared.publicSlug,
+      );
+      expect(history.deployments).toStrictEqual([
+        expect.objectContaining({
+          deploymentId: prepared.deploymentId,
+          deploymentVersion: 1,
+          status: "uploading",
+        }),
+      ]);
+    }
   });
 
-  it("creates immutable versions behind a simple alias and promotes only the newest completed version [HOST-A]", async () => {
+  it("adds a suffix for repeated publications while keeping previous URLs and completion retries stable [HOST-A]", async () => {
     mockEnv("OKOU_PUBLIC_HOST_DOMAIN", "okou-public-sites.test");
     mockEnv("ZERO_HOST_DOMAIN", "zero-sites.test");
     mockEnv("OKOU_HOST_SCHEME", "http");
@@ -117,158 +118,133 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
     const bdd = createBddApi(context);
     const api = createHostMapsBddApi(context);
     const actor = bdd.user();
-    if (!actor.orgId) {
-      throw new Error("Expected versioned host actor to have an org");
-    }
-    const capture = api.captureHostedSitesS3();
-    await upsertOrgPlanEntitlementFixture({ orgId: actor.orgId });
-
-    const site = `bdd-versioned-${randomUUID().slice(0, 8)}`;
+    api.captureHostedSitesS3();
+    const site = `bdd-published-${randomUUID().slice(0, 8)}`;
     const body = {
       site,
       artifactKind: "hosted-site" as const,
       spaFallback: false,
-      files: [hostedTextFile("/index.html", "<main>versioned</main>")],
+      files: [hostedTextFile("/index.html", "<main>original</main>")],
     };
-
     const first = await api.prepareHostedSite(actor, body);
-    const second = await api.prepareHostedSite(actor, body);
-
-    expect(first.siteId).toBe(second.siteId);
-    expect(first.publicSlug).toBe(site);
-    expect(second.publicSlug).toBe(site);
-    expect(first.url).toBe(second.url);
     expect(first.url).toBe(`http://${site}.okou-public-sites.test`);
     expect(first.aliasUrl).toBe(first.url);
-    expect(second.aliasUrl).toBe(second.url);
     expect(first.deploymentVersion).toBe(1);
-    expect(second.deploymentVersion).toBe(2);
-    expect(first.artifactUrl).not.toBe(second.artifactUrl);
-    expect(new URL(first.artifactUrl ?? "").hostname).toBe(
-      `dpl-${first.deploymentId}.${new URL(first.url).hostname.slice(site.length + 1)}`,
+    expect(first.artifactUrl).toBe(
+      `http://dpl-${first.deploymentId}.okou-public-sites.test`,
     );
+    const completed = await api.completeHostedSite(actor, first.deploymentId);
+    await expect(
+      api.completeHostedSite(actor, first.deploymentId),
+    ).resolves.toStrictEqual(completed);
 
-    const completedSecond = await api.completeHostedSite(
-      actor,
-      second.deploymentId,
-    );
-    const completedFirst = await api.completeHostedSite(
-      actor,
-      first.deploymentId,
-    );
-    expect(completedSecond).toMatchObject({
-      deploymentVersion: 2,
-      artifactUrl: second.artifactUrl,
-      aliasUrl: second.url,
-      isActive: true,
-      activeDeploymentVersion: 2,
+    const replacement = await api.prepareHostedSite(actor, {
+      ...body,
+      files: [hostedTextFile("/index.html", "<main>updated</main>")],
     });
-    expect(completedFirst).toMatchObject({
-      deploymentVersion: 1,
-      artifactUrl: first.artifactUrl,
-      aliasUrl: first.url,
-      isActive: false,
-      activeDeploymentVersion: 2,
-    });
-
-    const versionPrefix = `sites/orgs/${actor.orgId}/${site}/versions`;
-    expect(
-      capture.puts.map((put) => {
-        return put.key;
-      }),
-    ).toStrictEqual(
-      expect.arrayContaining([
-        `${versionPrefix}/1/manifest.json`,
-        `${versionPrefix}/2/manifest.json`,
-        `sites/brands/okou/deployments/${first.deploymentId}.json`,
-        `sites/brands/okou/deployments/${second.deploymentId}.json`,
-      ]),
+    await api.completeHostedSite(actor, replacement.deploymentId);
+    expect(replacement.siteId).not.toBe(first.siteId);
+    expect(replacement.publicSlug).not.toBe(first.publicSlug);
+    expect(replacement.publicSlug.startsWith(`${site}-`)).toBeTruthy();
+    expect(replacement.publicSlug.slice(site.length + 1)).toMatch(
+      /^[a-z0-9]{4}$/u,
     );
-    expect(
-      capture.puts.filter((put) => {
-        return put.key === `sites/brands/okou/${site}/active.json`;
-      }),
-    ).toHaveLength(1);
+    expect(replacement.artifactUrl).not.toBe(first.artifactUrl);
+    expect(replacement.deploymentVersion).toBe(1);
+    await expect(
+      api.completeHostedSite(actor, first.deploymentId),
+    ).resolves.toStrictEqual(completed);
 
     context.mocks.s3.getSignedUrl.mockResolvedValue(
       "https://r2.example.com/hosted-sites/download?sig=bdd",
     );
-    const active = await api.readHostedSiteFiles(actor, site);
-    const versionOne = await api.readHostedSiteFiles(actor, site, 1);
-    const immutableVersionOne = await api.readHostedSiteFiles(
-      actor,
-      `dpl-${first.deploymentId}`,
-    );
-    expect(active.deploymentId).toBe(second.deploymentId);
-    expect(active.deploymentVersion).toBe(2);
-    expect(versionOne.deploymentId).toBe(first.deploymentId);
-    expect(versionOne.artifactUrl).toBe(first.artifactUrl);
-    expect(immutableVersionOne.deploymentId).toBe(first.deploymentId);
-    expect(immutableVersionOne.artifactUrl).toBe(first.artifactUrl);
-
-    context.mocks.s3.getSignedUrl.mockResolvedValue(
-      "https://r2.example.com/hosted-sites/upload?sig=bdd",
-    );
-    const third = await api.prepareHostedSite(actor, {
-      ...body,
+    for (const target of [site, `dpl-${first.deploymentId}`]) {
+      await expect(
+        api.readHostedSiteFiles(actor, target),
+      ).resolves.toMatchObject({
+        deploymentId: first.deploymentId,
+        artifactUrl: first.artifactUrl,
+        deploymentVersion: 1,
+        files: body.files,
+      });
+    }
+    await expect(
+      api.readHostedSiteFiles(actor, site, 1),
+    ).resolves.toMatchObject({
+      deploymentId: first.deploymentId,
+    });
+    await expect(
+      api.readHostedSiteFiles(actor, replacement.publicSlug),
+    ).resolves.toMatchObject({
+      deploymentId: replacement.deploymentId,
       files: [
-        hostedTextFile(
-          "/index.html",
-          "<!doctype html><main>version three</main>",
-        ),
+        expect.objectContaining({
+          sha256: hostedTextFile("/index.html", "<main>updated</main>").sha256,
+        }),
       ],
     });
-    const completedThird = await api.completeHostedSite(
-      actor,
-      third.deploymentId,
-    );
-    expect(completedThird).toMatchObject({
-      siteId: first.siteId,
-      publicSlug: site,
-      deploymentVersion: 3,
-      aliasUrl: first.url,
-      isActive: true,
-      activeDeploymentVersion: 3,
-    });
-    expect(third.deploymentId).not.toBe(first.deploymentId);
-    expect(third.artifactUrl).not.toBe(first.artifactUrl);
-    expect(third.artifactUrl).not.toBe(second.artifactUrl);
-    expect(third.uploads).toStrictEqual([
-      {
-        path: "/index.html",
-        uploadUrl: "https://r2.example.com/hosted-sites/upload?sig=bdd",
-      },
-    ]);
-
     const history = await api.readHostedSiteDeployments(actor, site);
-    expect(history).toMatchObject({
-      siteId: first.siteId,
-      site,
-      publicSlug: site,
-      aliasUrl: first.url,
-      activeDeploymentId: third.deploymentId,
-      activeDeploymentVersion: 3,
-    });
-    expect(
-      history.deployments
-        .map((deployment) => {
-          return deployment.deploymentVersion;
-        })
-        .sort(),
-    ).toStrictEqual([1, 2, 3]);
-    expect(
-      history.deployments.filter((deployment) => {
-        return deployment.isActive;
-      }),
-    ).toStrictEqual([
+    expect(history.deployments).toStrictEqual([
       expect.objectContaining({
-        deploymentId: third.deploymentId,
-        deploymentVersion: 3,
+        deploymentId: first.deploymentId,
+        deploymentVersion: 1,
+        isActive: true,
       }),
     ]);
   });
 
-  it("preserves historical hosted-site domains and creates new sites on Okou [HOST-A]", async () => {
+  it("can publish the same preferred slug more times than the collision retry limit [HOST-A]", async () => {
+    const bdd = createBddApi(context);
+    const api = createHostMapsBddApi(context);
+    const actor = bdd.user();
+    api.captureHostedSitesS3();
+    const body = {
+      site: `bdd-repeat-${randomUUID().slice(0, 8)}`,
+      artifactKind: "hosted-site" as const,
+      spaFallback: false,
+      files: [hostedTextFile("/index.html", "<main>copy</main>")],
+    };
+    const publications = [await api.prepareHostedSite(actor, body)];
+    for (let index = 1; index < 8; index += 1) {
+      publications.push(await api.prepareHostedSite(actor, body));
+    }
+    expect(
+      new Set(
+        publications.map((site) => {
+          return site.siteId;
+        }),
+      ).size,
+    ).toBe(8);
+    expect(
+      new Set(
+        publications.map((site) => {
+          return site.deploymentId;
+        }),
+      ).size,
+    ).toBe(8);
+    expect(
+      new Set(
+        publications.map((site) => {
+          return site.publicSlug;
+        }),
+      ).size,
+    ).toBe(8);
+    for (const publication of publications) {
+      expect(publication.deploymentVersion).toBe(1);
+      const history = await api.readHostedSiteDeployments(
+        actor,
+        publication.publicSlug,
+      );
+      expect(history.deployments).toStrictEqual([
+        expect.objectContaining({
+          deploymentId: publication.deploymentId,
+          deploymentVersion: 1,
+        }),
+      ]);
+    }
+  });
+
+  it("reserves historical hosted-site identities and creates new sites on Okou [HOST-A]", async () => {
     mockEnv("OKOU_PUBLIC_HOST_DOMAIN", "okou.app");
     mockEnv("ZERO_HOST_DOMAIN", "sites.vm0.io");
     mockEnv("OKOU_HOST_SCHEME", "https");
@@ -290,28 +266,25 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
       spaFallback: false,
       files: [hostedTextFile("/index.html", "<main>VM0 site</main>")],
     };
-    // The current API cannot create a VM0 site. Reproduce the stored identity
-    // so redeployment still exercises the historical domain and pointer path.
+    // Historical site identities remain reserved after redeployment is retired.
     const legacySiteId = await insertLegacyHostedSiteFixture({
       orgId: actor.orgId,
       userId: actor.userId,
       site: vm0Site,
     });
-    const createdOnVm0 = await api.prepareHostedSite(actor, vm0Body);
-    expect(createdOnVm0.siteId).toBe(legacySiteId);
-    const redeployedFromOkou = await api.prepareHostedSite(actor, vm0Body);
-
-    expect(createdOnVm0.url).toBe(`https://${vm0Site}.sites.vm0.io`);
-    await api.completeHostedSite(actor, redeployedFromOkou.deploymentId);
-    expect(capture.puts).toContainEqual(
-      expect.objectContaining({
-        key: `sites/${vm0Site}/active.json`,
-      }),
+    const replacement = await api.prepareHostedSite(actor, vm0Body);
+    expect(replacement.siteId).not.toBe(legacySiteId);
+    expect(replacement.publicSlug.startsWith(`${vm0Site}-`)).toBeTruthy();
+    expect(replacement.publicSlug.slice(vm0Site.length + 1)).toMatch(
+      /^[a-z0-9]{4}$/u,
     );
-    expect(redeployedFromOkou).toMatchObject({
-      siteId: createdOnVm0.siteId,
-      url: createdOnVm0.url,
-      deploymentVersion: 2,
+    expect(replacement.url).toBe(`https://${replacement.publicSlug}.okou.app`);
+    await expect(
+      api.readHostedSiteDeployments(actor, vm0Site),
+    ).resolves.toMatchObject({
+      siteId: legacySiteId,
+      publicSlug: vm0Site,
+      deployments: [],
     });
 
     const browserOkouSite = `bdd-browser-okou-${randomUUID().slice(0, 8)}`;
@@ -414,8 +387,11 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
       spaFallback: false,
       files: [hostedTextFile("/index.html", "<main>collision</main>")],
     });
-    expect(versioned.publicSlug).toMatch(
-      new RegExp(`^${occupied.publicSlug}-[a-z0-9]{4}$`, "u"),
+    expect(
+      versioned.publicSlug.startsWith(`${occupied.publicSlug}-`),
+    ).toBeTruthy();
+    expect(versioned.publicSlug.slice(occupied.publicSlug.length + 1)).toMatch(
+      /^[a-z0-9]{4}$/u,
     );
     expect(versioned.deploymentVersion).toBe(1);
     expect(versioned.artifactUrl).toContain(`dpl-${versioned.deploymentId}.`);
@@ -430,7 +406,7 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
     );
   });
 
-  it("reuses stable public slugs, serves owner file metadata, and gates suspended orgs [HOST-A]", async () => {
+  it("serves owner file metadata after retrying incomplete uploads and gates suspended orgs [HOST-A]", async () => {
     const bdd = createBddApi(context);
     const api = createHostMapsBddApi(context);
     const actor = bdd.user();
@@ -457,15 +433,8 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
     };
 
     const first = await api.prepareHostedSite(actor, body);
-    const second = await api.prepareHostedSite(actor, body);
-
     expect(first.publicSlug).toBe(site);
-    expect(second.publicSlug).toBe(site);
     expect(first.deploymentVersion).toBe(1);
-    expect(second.deploymentVersion).toBe(2);
-    expect(second.url).toBe(first.url);
-    expect(second.artifactUrl).not.toBe(first.artifactUrl);
-    expect(second.siteId).toBe(first.siteId);
     expect(
       first.uploads.map((upload) => {
         return upload.path;
@@ -493,29 +462,29 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
     );
     capture.missingKeys.delete(missingKey);
 
-    const completed = await api.completeHostedSite(actor, second.deploymentId);
+    const completed = await api.completeHostedSite(actor, first.deploymentId);
     expect(completed).toMatchObject({
       siteId: first.siteId,
-      deploymentId: second.deploymentId,
-      publicSlug: second.publicSlug,
-      url: second.url,
-      deploymentVersion: 2,
-      artifactUrl: second.artifactUrl,
-      aliasUrl: second.url,
+      deploymentId: first.deploymentId,
+      publicSlug: first.publicSlug,
+      url: first.url,
+      deploymentVersion: 1,
+      artifactUrl: first.artifactUrl,
+      aliasUrl: first.url,
       isActive: true,
-      activeDeploymentVersion: 2,
+      activeDeploymentVersion: 1,
       status: "ready",
     });
 
     context.mocks.s3.getSignedUrl.mockResolvedValue(
       "https://r2.example.com/hosted-sites/download?sig=bdd",
     );
-    const listed = await api.readHostedSiteFiles(actor, second.publicSlug);
+    const listed = await api.readHostedSiteFiles(actor, first.publicSlug);
     expect(listed).toMatchObject({
       siteId: first.siteId,
-      deploymentId: second.deploymentId,
-      publicSlug: second.publicSlug,
-      url: second.url,
+      deploymentId: first.deploymentId,
+      publicSlug: first.publicSlug,
+      url: first.url,
       fileCount: 2,
       size: indexFile.size + scriptFile.size,
     });
@@ -546,12 +515,15 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
     const outsider = bdd.user();
     const crossOrg = await api.requestHostedSiteFiles(
       outsider,
-      second.publicSlug,
+      first.publicSlug,
       [200],
     );
     expect(crossOrg.body).toStrictEqual(listed);
 
-    const third = await api.prepareHostedSite(actor, body);
+    const third = await api.prepareHostedSite(actor, {
+      ...body,
+      site: `${site}-pending`,
+    });
     const onboardingCompleted = await bdd.completeOnboarding(actor);
     expect(onboardingCompleted.status).toBe(200);
     if (!actor.orgId) {

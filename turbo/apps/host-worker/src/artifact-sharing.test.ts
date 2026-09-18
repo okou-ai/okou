@@ -596,7 +596,7 @@ test("html snapshots protect every resource and navigation on an isolated origin
   }
 });
 
-test("organization snapshot credentials remain bearer capabilities only until their exact expiry", async () => {
+test("organization snapshots cache bytes but reject expired network credentials", async () => {
   const f = fixture(true);
   const token = "c".repeat(48);
   const key = `shared-previews/okou/${token}.json`;
@@ -611,7 +611,11 @@ test("organization snapshot credentials remain bearer capabilities only until th
   const request = (path: string) => {
     return new Request(`https://ps-${token}.okou.app${path}`);
   };
-  expect((await fetchWorker(request("/"), f.env)).status).toBe(200);
+  const page = await fetchWorker(request("/"), f.env);
+  expect(page.status).toBe(200);
+  expect(page.headers.get("Cache-Control")).toBe(
+    "private, max-age=31536000, must-revalidate",
+  );
   const rewritten = new Request(`https://pv-${token}.okou.app/`);
   expect((await fetchWorker(rewritten, f.env)).status).toBe(404);
   expect(f.objects.has(`private-previews/okou/${token}.json`)).toBeFalsy();
@@ -630,7 +634,9 @@ test("organization snapshot credentials remain bearer capabilities only until th
     key,
     JSON.stringify({ ...grant, expiresAt: "2000-01-01T00:00:00Z" }),
   );
-  expect((await fetchWorker(request("/"), f.env)).status).toBe(404);
+  const expired = await fetchWorker(request("/"), f.env);
+  expect(expired.status).toBe(404);
+  expect(expired.headers.get("Cache-Control")).toBe("private, no-store");
   expect((await fetchWorker(request("/style.css"), f.env)).status).toBe(404);
 });
 

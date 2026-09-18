@@ -9,6 +9,7 @@ import { z } from "zod";
 import { db } from "../lib/db";
 import { executeRawRows } from "../lib/db-raw-rows";
 import {
+  acknowledgeDetachedForTest,
   createDeferredPromise,
   isAbortError,
   onRejection,
@@ -148,43 +149,71 @@ export async function holdComputerUseAuthorizationCreationRunFixture(
   args: { readonly runId: string },
   signal: AbortSignal,
 ): Promise<{
-  readonly release: () => void;
-  readonly done: Promise<void>;
+  readonly release: () => Promise<void>;
   readonly blockedCreationRunPinCount: () => Promise<number>;
   readonly blockedThreadMutationCount: () => Promise<number>;
 }> {
-  const started = createDeferredPromise<number>(signal);
+  const started = createDeferredPromise<
+    | { readonly ok: true; readonly holderPid: number }
+    | { readonly ok: false; readonly error: unknown }
+  >(signal);
   const released = createDeferredPromise<void>(signal);
-  const done = db().transaction(async (tx) => {
-    const [run] = await tx
-      .select({ id: agentRuns.id })
-      .from(agentRuns)
-      .where(eq(agentRuns.id, args.runId))
-      .for("update");
-    if (!run) {
-      throw new Error("Expected the authorization creation run row");
-    }
-    const pidRows = await executeRawRows(
-      tx,
-      sql`SELECT pg_backend_pid() AS "pid"`,
-      databasePidRowSchema,
-    );
-    const holderPid = pidRows[0]?.pid;
-    if (!holderPid) {
-      throw new Error("Expected the creation run lock holder pid");
-    }
-    started.resolve(holderPid);
-    await released.promise;
-  });
-  const holderPid = await started.promise;
-
-  return {
-    release: () => {
+  const holding = onRejection(
+    db().transaction(async (tx) => {
+      const [run] = await tx
+        .select({ id: agentRuns.id })
+        .from(agentRuns)
+        .where(eq(agentRuns.id, args.runId))
+        .for("update");
+      if (!run) {
+        throw new Error("Expected the authorization creation run row");
+      }
+      const pidRows = await executeRawRows(
+        tx,
+        sql`SELECT pg_backend_pid() AS "pid"`,
+        databasePidRowSchema,
+      );
+      const holderPid = pidRows[0]?.pid;
+      if (!holderPid) {
+        throw new Error("Expected the creation run lock holder pid");
+      }
+      started.resolve({ ok: true, holderPid });
+      await released.promise;
+    }),
+    (error) => {
+      if (!started.settled()) {
+        started.resolve({ ok: false, error });
+      }
       if (!released.settled()) {
         released.resolve(undefined);
       }
     },
-    done,
+  );
+  const finished = settleIncludingAbort(holding);
+  const release = async () => {
+    if (!released.settled()) {
+      released.resolve(undefined);
+    }
+    const result = await finished;
+    if (!result.ok && !(signal.aborted && isAbortError(result.error))) {
+      throw result.error;
+    }
+  };
+  const ready = await settleIncludingAbort(started.promise);
+  acknowledgeDetachedForTest(started.promise);
+  if (!ready.ok) {
+    await finished;
+    throw ready.error;
+  }
+  if (!ready.value.ok) {
+    await finished;
+    throw ready.value.error;
+  }
+  onTestFinished(release);
+  const { holderPid } = ready.value;
+
+  return {
+    release,
     blockedCreationRunPinCount: async () => {
       const rows = await executeRawRows(
         db(),

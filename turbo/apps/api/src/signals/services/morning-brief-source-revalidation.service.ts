@@ -35,13 +35,14 @@ import { chatThreads } from "@okouai/db/schema/chat-thread";
 import { and, eq, inArray, or } from "drizzle-orm";
 
 import { listSharedSlackChannelsPage } from "../../lib/slack-client";
-import { nowDate } from "../../lib/time";
+import { monotonicNow, nowDate } from "../../lib/time";
 import type { ClerkClient } from "../external/clerk";
 import type { Db } from "../external/db";
 import { settle } from "../utils";
 import {
   admitMorningBriefCollection,
   revalidateMorningBriefRetainedRead,
+  withMorningBriefDatabaseDeadline,
   type MorningBriefCollectionScope,
   type MorningBriefSourceDeadline,
 } from "./morning-brief-connector-reader.service";
@@ -60,6 +61,10 @@ import { loadSlackUserBinding } from "./slack-data.service";
  * given a budget of its own.
  */
 const MORNING_BRIEF_REVALIDATION_PHASE_MS = 5000;
+const RETAINED_LOCAL_DATABASE_CAPS = {
+  lockTimeoutMs: 1000,
+  statementTimeoutMs: 5000,
+} as const;
 
 /** Enumeration pages one re-proof may spend, matching the collector's ceiling. */
 const SLACK_REPROOF_PAGES = 3;
@@ -96,16 +101,27 @@ interface MorningBriefSlackAuthority {
  * interruption boundary rather than being replaced by a fresh timeout.
  */
 export function startMorningBriefRetainedCheckDeadline(
-  reservationAt: number,
+  reservation: Pick<MorningBriefSourceDeadline, "at" | "ioAt">,
   reservationSignal: AbortSignal,
 ): MorningBriefSourceDeadline {
   const startedAt = nowDate().getTime();
   const at = Math.min(
     startedAt + MORNING_BRIEF_REVALIDATION_PHASE_MS,
-    reservationAt,
+    reservation.at,
   );
-  const timeout = AbortSignal.timeout(Math.max(0, at - startedAt));
-  return { at, signal: AbortSignal.any([reservationSignal, timeout]) };
+  // Preserve the reservation's application/monotonic correspondence. The
+  // retained phase may shorten it, but a controlled application-clock jump is
+  // not real I/O time and must not manufacture a one-millisecond transaction.
+  const ioAt = reservation.ioAt - Math.max(0, reservation.at - at);
+  const ioRemainingMs = Math.max(0, Math.floor(ioAt - monotonicNow()));
+  return {
+    at,
+    ioAt,
+    signal: AbortSignal.any([
+      reservationSignal,
+      AbortSignal.timeout(ioRemainingMs),
+    ]),
+  };
 }
 
 /** Equality is expired even before the timeout callback gets a turn. */
@@ -182,7 +198,14 @@ export async function revalidateMorningBriefRetainedSources(
     }
     const reason = await settle(
       revalidateSource(
-        { db, clerk, scope, slack: input.slack, descriptor },
+        {
+          db,
+          clerk,
+          scope,
+          slack: input.slack,
+          descriptor,
+          deadline: input.deadline,
+        },
         bounded,
       ),
       signal,
@@ -259,6 +282,7 @@ async function revalidateSource(
     readonly scope: MorningBriefCollectionScope;
     readonly slack: MorningBriefSlackAuthority | null;
     readonly descriptor: MorningBriefRetainedSourceDescriptor;
+    readonly deadline: MorningBriefSourceDeadline;
   },
   signal: AbortSignal,
 ): Promise<string | null> {
@@ -290,6 +314,7 @@ async function revalidateSource(
         accountRef: descriptor.accountRef,
         scopeDigest: descriptor.scopeDigest,
         endpoints: descriptor.endpoints,
+        deadline: args.deadline,
       },
       signal,
     );
@@ -301,12 +326,18 @@ async function revalidateSource(
         scope: args.scope,
         slack: args.slack,
         descriptor,
+        deadline: args.deadline,
       },
       signal,
     );
   }
   return await revalidateChatContainers(
-    { db: args.db, scope: args.scope, containers: descriptor.containers },
+    {
+      db: args.db,
+      scope: args.scope,
+      containers: descriptor.containers,
+      deadline: args.deadline,
+    },
     signal,
   );
 }
@@ -325,6 +356,7 @@ async function revalidateSlackContainers(
     readonly scope: MorningBriefCollectionScope;
     readonly slack: MorningBriefSlackAuthority | null;
     readonly descriptor: MorningBriefRetainedSourceDescriptor;
+    readonly deadline: MorningBriefSourceDeadline;
   },
   signal: AbortSignal,
 ): Promise<string | null> {
@@ -336,7 +368,7 @@ async function revalidateSlackContainers(
     return "not-connected";
   }
   const bound = { ...args, slack };
-  if (!(await slackBindingMatchesDescriptor(bound))) {
+  if (!(await slackBindingMatchesDescriptor(bound, signal))) {
     return "not-connected";
   }
   signal.throwIfAborted();
@@ -375,24 +407,40 @@ async function revalidateSlackContainers(
   // installation/member connection afterwards so a disconnect or rebind that
   // committed while Slack was held wins this decision. A later change remains
   // the final consumer's responsibility; no remote check can make it atomic.
-  return (await slackBindingMatchesDescriptor(bound)) ? null : "not-connected";
+  return (await slackBindingMatchesDescriptor(bound, signal))
+    ? null
+    : "not-connected";
 }
 
 /** Credential-free comparison against the exact retained native identity. */
-async function slackBindingMatchesDescriptor(args: {
-  readonly db: Db;
-  readonly scope: MorningBriefCollectionScope;
-  readonly slack: MorningBriefSlackAuthority;
-  readonly descriptor: MorningBriefRetainedSourceDescriptor;
-}): Promise<boolean> {
-  const binding = await args.db.transaction(
-    async (tx) => {
-      return await loadSlackUserBinding(tx, {
-        orgId: args.scope.orgId,
-        userId: args.scope.userId,
-      });
+async function slackBindingMatchesDescriptor(
+  args: {
+    readonly db: Db;
+    readonly scope: MorningBriefCollectionScope;
+    readonly slack: MorningBriefSlackAuthority;
+    readonly descriptor: MorningBriefRetainedSourceDescriptor;
+    readonly deadline: MorningBriefSourceDeadline;
+  },
+  signal: AbortSignal,
+): Promise<boolean> {
+  const binding = await withMorningBriefDatabaseDeadline(
+    {
+      db: args.db,
+      deadline: args.deadline,
+      caps: RETAINED_LOCAL_DATABASE_CAPS,
+      transactionConfig: {
+        isolationLevel: "repeatable read",
+        accessMode: "read only",
+      },
     },
-    { isolationLevel: "repeatable read", accessMode: "read only" },
+    signal,
+    async (tx, beforeStatement) => {
+      return await loadSlackUserBinding(
+        tx,
+        { orgId: args.scope.orgId, userId: args.scope.userId },
+        beforeStatement,
+      );
+    },
   );
   if (binding.kind !== "connected") {
     return false;
@@ -410,36 +458,51 @@ async function slackBindingMatchesDescriptor(args: {
  *
  * Ownership, the Agent's organization and visibility, and the thread's
  * provenance are all live state that can move while a sibling source is held.
- * This is a read outside any transaction on purpose: the consumer that finally
- * releases the brief takes its own locks and re-reads these rows there.
+ * This remains a credential-free proof rather than the final consumer lock; its
+ * short read-only transaction only keeps the query inside the retained deadline.
  */
 async function revalidateChatContainers(
   args: {
     readonly db: Db;
     readonly scope: MorningBriefCollectionScope;
     readonly containers: readonly string[];
+    readonly deadline: MorningBriefSourceDeadline;
   },
   signal: AbortSignal,
 ): Promise<string | null> {
   if (args.containers.length === 0) {
     return null;
   }
-  const rows = await args.db
-    .select({ id: chatThreads.id })
-    .from(chatThreads)
-    .innerJoin(agents, eq(agents.id, chatThreads.agentId))
-    .where(
-      and(
-        inArray(chatThreads.id, [...args.containers]),
-        eq(chatThreads.userId, args.scope.userId),
-        eq(agents.orgId, args.scope.orgId),
-        eq(chatThreads.provenance, ORDINARY_CHAT_THREAD_PROVENANCE),
-        or(
-          eq(agents.visibility, "public"),
-          eq(agents.owner, args.scope.userId),
-        ),
-      ),
-    );
+  const rows = await withMorningBriefDatabaseDeadline(
+    {
+      db: args.db,
+      deadline: args.deadline,
+      caps: RETAINED_LOCAL_DATABASE_CAPS,
+      transactionConfig: {
+        isolationLevel: "repeatable read",
+        accessMode: "read only",
+      },
+    },
+    signal,
+    async (tx) => {
+      return await tx
+        .select({ id: chatThreads.id })
+        .from(chatThreads)
+        .innerJoin(agents, eq(agents.id, chatThreads.agentId))
+        .where(
+          and(
+            inArray(chatThreads.id, [...args.containers]),
+            eq(chatThreads.userId, args.scope.userId),
+            eq(agents.orgId, args.scope.orgId),
+            eq(chatThreads.provenance, ORDINARY_CHAT_THREAD_PROVENANCE),
+            or(
+              eq(agents.visibility, "public"),
+              eq(agents.owner, args.scope.userId),
+            ),
+          ),
+        );
+    },
+  );
   signal.throwIfAborted();
   const authorized = new Set(
     rows.map((row) => {

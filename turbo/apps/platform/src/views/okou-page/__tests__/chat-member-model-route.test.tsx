@@ -46,7 +46,7 @@ function policy(
 }
 
 test.each(
-  (["select", "compact", "flyout"] as const).flatMap((layout) => {
+  (["compact", "flyout"] as const).flatMap((layout) => {
     return [
       { layout, modelLabel: "GPT 5.6 Sol", source: "ChatGPT (Codex)" },
       {
@@ -94,20 +94,16 @@ test.each(
         [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
         // A second row per model would make the model options ambiguous here.
         [FeatureSwitchKey.CodexFastMode]: layout === "compact",
-        [FeatureSwitchKey.ModelPickerFlyout]: layout !== "select",
       },
     });
-    const trigger =
-      layout === "select"
-        ? await screen.findByRole("combobox", { name: "GPT 5.6 Sol" })
-        : await waitFor(() => {
-            // Wait for the requested menu while feature switches load.
-            const button = queryButton("GPT 5.6 Sol");
-            if (button?.getAttribute("aria-haspopup") !== "dialog") {
-              throw new Error("The model menu trigger is not ready");
-            }
-            return button;
-          });
+    const trigger = await waitFor(() => {
+      // Wait for the requested menu while feature switches load.
+      const button = queryButton("GPT 5.6 Sol");
+      if (button?.getAttribute("aria-haspopup") !== "dialog") {
+        throw new Error("The model menu trigger is not ready");
+      }
+      return button;
+    });
     expect(trigger).not.toHaveTextContent("BYOK");
     click(trigger);
     if (layout === "compact") {

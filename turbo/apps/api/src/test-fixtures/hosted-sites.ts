@@ -1,6 +1,6 @@
 /**
  * Current APIs create only Okou sites. This fixture represents a historical
- * VM0 site so redeployment can verify its stored domain and storage identity.
+ * VM0 site whose slug must remain reserved after redeployment is retired.
  */
 import { hostedSites } from "@okouai/db/schema/hosted-site";
 import { createStore } from "ccstate";

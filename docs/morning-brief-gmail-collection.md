@@ -170,11 +170,14 @@ compares the absolute deadline; the timer is left to do the one thing a clock
 cannot, which is interrupt I/O already in flight.
 
 That includes the last decision of all. The release fence re-derives identity
-and every retained permission, which takes real time and can outlast the budget,
-so the clock is compared again **after** that fence and before any payload is
-handed back. A collection accepted after its absolute deadline is late content,
-not a healthy read. The boundary is inclusive: arriving exactly at it is already
-too late, and the millisecond before it is still inside.
+and every retained permission, which takes real time and can outlast the budget.
+Its local erasure, complete-binding and Agent-visibility transaction spends the
+same deadline as the external membership read, so an external answer that
+arrives just inside the boundary does not create a fresh allowance for those
+queries. The clock is compared again **after** the whole fence and before any
+payload is handed back. A collection accepted after its absolute deadline is
+late content, not a healthy read. The boundary is inclusive: the whole fence
+must finish before it, while equality is already too late.
 
 The preflight spends the same budget. `admitMorningBriefCollection` composes the
 caller's signal with the source deadline for its own reads and compares the

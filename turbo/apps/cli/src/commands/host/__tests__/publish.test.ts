@@ -18,11 +18,10 @@ const COMPLETE_URL =
   "http://localhost:3000/api/host/deployments/:deploymentId/complete";
 const INDEX_UPLOAD_URL = "https://uploads.example.com/index";
 const ROBOTS_UPLOAD_URL = "https://uploads.example.com/robots";
-const ALIAS_URL = "https://demo-site.sites.example.com";
 const ARTIFACT_URL =
   "https://dpl-00000000-0000-4000-8000-000000000002.sites.example.com";
-const CHAT_SCOPE_CONFLICT_MESSAGE =
-  'Hosted site slug "demo-site" is owned outside this chat. Choose a different --site value and rerun the same okou host command.';
+const ALLOCATION_CONFLICT_MESSAGE =
+  'Unable to allocate a unique hosted site slug for "demo-site". Retry publishing or choose a different --site value.';
 
 function sha256(bytes: string): string {
   return createHash("sha256").update(bytes).digest("hex");
@@ -67,24 +66,35 @@ describe("okou host publish command", () => {
   });
 
   it.each([
-    { label: "public", privateArtifact: false },
-    { label: "private", privateArtifact: true },
+    { label: "public", privateArtifact: false, publicSlug: "demo-site" },
+    { label: "private", privateArtifact: true, publicSlug: "demo-site" },
+    {
+      label: "public with an automatic suffix",
+      privateArtifact: false,
+      publicSlug: "demo-site-a1b2",
+    },
+    {
+      label: "private with an automatic suffix",
+      privateArtifact: true,
+      publicSlug: "demo-site-a1b2",
+    },
   ])(
     "uploads a $label bundle and returns complete artifact URLs in text and JSON",
-    async ({ privateArtifact }) => {
+    async ({ privateArtifact, publicSlug }) => {
       vi.stubEnv("OKOU_CURRENT_INTEGRATION", "slack");
+      const aliasUrl = `https://${publicSlug}.sites.example.com`;
       const artifactUrl = privateArtifact
         ? artifactReferencePath(
             "00000000-0000-4000-8000-000000000002",
             "index.html",
           )
         : ARTIFACT_URL;
-      const url = privateArtifact ? artifactUrl : ALIAS_URL;
+      const url = privateArtifact ? artifactUrl : aliasUrl;
       const expectedArtifactUrl = privateArtifact
         ? `https://app.okou.ai${artifactUrl}`
         : artifactUrl;
-      const expectedUrl = privateArtifact ? expectedArtifactUrl : ALIAS_URL;
-      const alias = privateArtifact ? {} : { aliasUrl: ALIAS_URL };
+      const expectedUrl = privateArtifact ? expectedArtifactUrl : aliasUrl;
+      const alias = privateArtifact ? {} : { aliasUrl };
       const index = "<!doctype html><main>Hosted site</main>";
       let uploadedRobots = false;
 
@@ -125,7 +135,7 @@ describe("okou host publish command", () => {
           return HttpResponse.json({
             siteId: "00000000-0000-4000-8000-000000000001",
             deploymentId: "00000000-0000-4000-8000-000000000002",
-            publicSlug: "demo-site",
+            publicSlug,
             url,
             deploymentVersion: 1,
             artifactUrl,
@@ -152,7 +162,7 @@ describe("okou host publish command", () => {
           return HttpResponse.json({
             siteId: "00000000-0000-4000-8000-000000000001",
             deploymentId: "00000000-0000-4000-8000-000000000002",
-            publicSlug: "demo-site",
+            publicSlug,
             url,
             deploymentVersion: 1,
             artifactUrl,
@@ -178,12 +188,13 @@ describe("okou host publish command", () => {
       const stdout = mockConsoleLog.mock.calls.flat().join("\n");
       expect(stdout).not.toContain("upload-file");
       expect(stdout).toContain("✓ Hosted site deployed");
+      expect(stdout).toContain(`Site: ${publicSlug}`);
       expect(stdout).toContain(`Artifact: ${expectedArtifactUrl}`);
       if (privateArtifact) {
-        expect(stdout).not.toContain(ALIAS_URL);
+        expect(stdout).not.toContain(aliasUrl);
         expect(stdout).not.toContain("Alias:");
       } else {
-        expect(stdout).toContain(`Alias: ${ALIAS_URL} → v1`);
+        expect(stdout).toContain(`Alias: ${aliasUrl} → v1`);
       }
       expect(stdout).toContain("Artifact presentation context:");
       expect(stdout).toContain(`[demo-site](<${expectedUrl}>)`);
@@ -210,7 +221,7 @@ describe("okou host publish command", () => {
       expect(jsonOutput).not.toContain("upload-file");
       const parsed = JSON.parse(jsonOutput) as Record<string, unknown>;
       expect(parsed).toMatchObject({
-        publicSlug: "demo-site",
+        publicSlug,
         deploymentVersion: 1,
         artifactUrl: expectedArtifactUrl,
         url: expectedUrl,
@@ -228,7 +239,7 @@ describe("okou host publish command", () => {
       });
       if (privateArtifact) {
         expect(parsed.aliasUrl).toBeUndefined();
-        expect(jsonOutput).not.toContain(ALIAS_URL);
+        expect(jsonOutput).not.toContain(aliasUrl);
       }
     },
   );
@@ -302,11 +313,21 @@ describe("okou host publish command", () => {
   });
 
   it.each([
-    { label: "TTY", isTty: true, extraArgs: [] },
-    { label: "non-TTY JSON", isTty: false, extraArgs: ["--json"] },
+    {
+      label: "allocation conflict in TTY",
+      isTty: true,
+      extraArgs: [],
+      message: ALLOCATION_CONFLICT_MESSAGE,
+    },
+    {
+      label: "allocation conflict in non-TTY JSON",
+      isTty: false,
+      extraArgs: ["--json"],
+      message: ALLOCATION_CONFLICT_MESSAGE,
+    },
   ])(
-    "prints actionable chat-scope conflicts in $label mode",
-    async ({ isTty, extraArgs }) => {
+    "prints actionable guidance for $label mode",
+    async ({ isTty, extraArgs, message }) => {
       writeFileSync(
         join(tempDir, "index.html"),
         "<!doctype html><main>Hosted site</main>",
@@ -321,7 +342,7 @@ describe("okou host publish command", () => {
             {
               error: {
                 code: "CONFLICT",
-                message: CHAT_SCOPE_CONFLICT_MESSAGE,
+                message,
               },
             },
             { status: 409 },
@@ -341,7 +362,7 @@ describe("okou host publish command", () => {
       ).rejects.toThrow("process.exit called");
 
       expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
-        `409: ${CHAT_SCOPE_CONFLICT_MESSAGE}`,
+        `409: ${message}`,
       );
       expect(mockExit).toHaveBeenCalledWith(1);
     },

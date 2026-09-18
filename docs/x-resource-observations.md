@@ -26,9 +26,9 @@ and lifecycle admission remain active when the switch is disabled.
 
 Observations must be inside the two-date admission window below. The complete
 batch commits atomically and returns the existing `{ success: true }`
-acknowledgement. Mixed batches retain legacy quantities and the existing BYOK
-model filter; legacy-only batches retain their quantities and source behavior,
-sharing bounded write admission regardless of the switch.
+acknowledgement. Both mixed and legacy-only batches discard original zero
+quantities for every usage kind, retain positive quantities and the existing BYOK
+model filter, and share bounded write admission regardless of the switch.
 
 Runner claims always advertise
 `xResourceBilling: { protocol: "x-resource-v1", startDate: "1970-01-01" }`.
@@ -69,7 +69,10 @@ quantity reaches the existing ledger and rollups.
 Resources recorded while the switch is disabled also count as prior reads when
 it is enabled later that UTC day, including across organizations. Disabling the
 switch makes new observations count-priced again without clearing shared reads.
-Changing the switch never recalculates an already accepted source's quantity.
+Changing the switch never recalculates a persisted positive source's quantity.
+Zero results are discarded without a source receipt. Replaying one evaluates it
+against the current switch and retained resources; turning deduplication off can
+therefore make that previously discarded observation billable at Q.
 
 ## One short-lived table
 
@@ -93,9 +96,12 @@ additional schema or index is required by the consumer.
 
 ## Consumer transaction and retries
 
-Reuse `usage_event.idempotencyKey` for source idempotency, including a ledger
-row when net quantity is zero. The producer preserves one immutable source
-UUID, observation time and payload across retries. Keep the existing success
+Reuse `usage_event.idempotencyKey` for positive source idempotency. Original zero
+quantities are filtered before reservation. When deduplication produces zero,
+discard its transaction-local placeholder before commit while retaining the
+resource reads. No zero usage event or separate idempotency receipt is persisted.
+The producer preserves one immutable source UUID, observation time and payload
+across retries. Keep the existing success
 acknowledgement; there is no separate receipt table, payload digest or replay
 result API.
 
@@ -113,12 +119,16 @@ the entire normalized/sorted source UUID set, then the entire sorted
 date/type/ID set. Reserve source rows at quantity zero before inserting any
 resource; uncommitted placeholders are invisible to settlement. Insert resources
 with `ON CONFLICT DO NOTHING RETURNING`, derive N from the inserted identities,
-and update the new sources to Q when disabled or N+R when enabled in that
-transaction. Repeated resources within a batch are first recorded by the first
-source in UUID order; that determines their contribution to N when enabled. Any
+and finalize the new sources at Q when disabled or N+R when enabled in that
+transaction, deleting placeholders whose final quantity is zero. Repeated
+resources within a batch are first recorded by the first source in UUID order;
+that determines their contribution to N when enabled. Any
 failure rolls back both sources and claims. The first successfully committed
 observation records each resource, including allowance/pack-funded reads, in
 either switch state.
+Only quantity zero is omitted. Positive usage remains billable and observable
+when allowances cover it or pricing produces zero charged credits. Existing
+historical zero ledger rows are not rewritten or deleted by this change.
 Credit settlement keeps its billing behavior and takes shared compaction
 admission before its organization credit lock. Different organizations can
 still settle concurrently; exclusive maintenance waits for admitted settlements.
