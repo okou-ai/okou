@@ -114,67 +114,71 @@ export function OnboardingStepLayout({
             <OnboardingStepProgress current={currentStep} total={totalSteps} />
           </div>
         </div>
-        <div className="mx-auto flex w-full max-w-[1180px] flex-1 flex-col items-center justify-center gap-10 py-8 lg:flex-row lg:items-center lg:gap-14">
-          <div className="w-full shrink-0 lg:w-[380px]">
-            <h1 className="text-[32px] font-semibold leading-[1.12] tracking-[-0.02em] lg:text-[40px]">
-              {title}
-            </h1>
-            <p className="mt-5 text-base leading-[1.7] text-muted-foreground">
-              {description}
-            </p>
-            {/* Navigation stays on one line: a step back, the one filled
+        {/* The block centres as a whole, but its two columns start on the same
+            line: the headline's first line sits level with the first card. */}
+        <div className="flex w-full flex-1 items-center py-8">
+          <div className="mx-auto flex w-full max-w-[1180px] flex-col gap-10 lg:flex-row lg:items-start lg:gap-14">
+            <div className="w-full shrink-0 lg:w-[380px]">
+              <h1 className="text-[32px] font-semibold leading-[1.12] tracking-[-0.02em] lg:text-[40px]">
+                {title}
+              </h1>
+              <p className="mt-5 text-base leading-[1.7] text-muted-foreground">
+                {description}
+              </p>
+              {/* Navigation stays on one line: a step back, the one filled
                 action, and its opt-out. */}
-            <div className="mt-9 flex flex-wrap items-center gap-2">
-              {onBack ? (
-                <Button
-                  type="button"
-                  size="icon-lg"
-                  variant="outline"
-                  showTooltip
-                  onClick={onBack}
-                  aria-label={t(($) => {
-                    return $.onboarding.sourcesFirst.common.back;
-                  })}
-                >
-                  <ChevronLeft size={18} aria-hidden="true" />
-                </Button>
-              ) : null}
-              <Button
-                type="button"
-                size="lg"
-                onClick={onPrimary}
-                disabled={primaryDisabled || primaryBusy}
-                aria-busy={primaryBusy}
-                className="min-w-[132px] gap-2 disabled:bg-[hsl(var(--primary-100))]"
-              >
-                {primaryBusy ? (
-                  <Loader2
-                    size={16}
-                    className="animate-spin"
-                    aria-hidden="true"
-                  />
+              <div className="mt-9 flex flex-wrap items-center gap-2">
+                {onBack ? (
+                  <Button
+                    type="button"
+                    size="icon-lg"
+                    variant="outline"
+                    showTooltip
+                    onClick={onBack}
+                    aria-label={t(($) => {
+                      return $.onboarding.sourcesFirst.common.back;
+                    })}
+                  >
+                    <ChevronLeft size={18} aria-hidden="true" />
+                  </Button>
                 ) : null}
-                {primaryLabel}
-              </Button>
-              {secondaryLabel && onSecondary ? (
                 <Button
                   type="button"
                   size="lg"
-                  variant="ghost"
-                  onClick={onSecondary}
+                  onClick={onPrimary}
+                  disabled={primaryDisabled || primaryBusy}
+                  aria-busy={primaryBusy}
+                  className="min-w-[132px] gap-2 disabled:bg-[hsl(var(--primary-100))]"
                 >
-                  {secondaryLabel}
+                  {primaryBusy ? (
+                    <Loader2
+                      size={16}
+                      className="animate-spin"
+                      aria-hidden="true"
+                    />
+                  ) : null}
+                  {primaryLabel}
                 </Button>
-              ) : null}
+                {secondaryLabel && onSecondary ? (
+                  <Button
+                    type="button"
+                    size="lg"
+                    variant="ghost"
+                    onClick={onSecondary}
+                  >
+                    {secondaryLabel}
+                  </Button>
+                ) : null}
+              </div>
             </div>
-          </div>
-          <div
-            className={cn(
-              "w-full min-w-0 lg:flex-1",
-              CONTENT_WIDTHS[contentWidth],
-            )}
-          >
-            {children}
+            <div
+              className={cn(
+                "w-full min-w-0 lg:flex-1",
+                CONTENT_WIDTHS[contentWidth],
+              )}
+            >
+              {children}
+            </div>
           </div>
         </div>
       </main>
