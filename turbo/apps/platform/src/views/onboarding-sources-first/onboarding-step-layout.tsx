@@ -105,36 +105,23 @@ export function OnboardingStepLayout({
       </div>
       <main
         key={`${String(currentStep)}-${title}`}
-        className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-10 pt-3"
+        className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-6"
       >
-        {/* How far along you are belongs at the top of the page, over the
-            column it describes. */}
-        <div className="mx-auto w-full max-w-[1180px] shrink-0 pt-3">
-          <div className="w-full lg:w-[380px]">
-            <OnboardingStepProgress current={currentStep} total={totalSteps} />
-          </div>
-        </div>
         {/* The block centres as a whole, but its two columns start on the same
-            line: the headline's first line sits level with the first card. */}
+            line: the stepper sits level with the first card. */}
         <div className="flex w-full flex-1 items-center py-8">
           <div className="mx-auto flex w-full max-w-[1180px] flex-col gap-10 lg:flex-row lg:items-start lg:gap-14">
             <div className="w-full shrink-0 lg:w-[380px]">
-              <h1 className="text-[32px] font-semibold leading-[1.12] tracking-[-0.02em] lg:text-[40px]">
-                {title}
-              </h1>
-              <p className="mt-5 text-base leading-[1.7] text-muted-foreground">
-                {description}
-              </p>
-              {/* Navigation stays on one line: a step back, the one filled
-                action, and its opt-out. */}
-              <div className="mt-9 flex flex-wrap items-center gap-2">
+              {/* How far along you are, and the way back one step. */}
+              <div className="flex h-8 items-center gap-2">
                 {onBack ? (
                   <Button
                     type="button"
-                    size="icon-lg"
-                    variant="outline"
+                    size="icon-sm"
+                    variant="quiet"
                     showTooltip
                     onClick={onBack}
+                    className="-ml-2 shrink-0"
                     aria-label={t(($) => {
                       return $.onboarding.sourcesFirst.common.back;
                     })}
@@ -142,6 +129,19 @@ export function OnboardingStepLayout({
                     <ChevronLeft size={18} aria-hidden="true" />
                   </Button>
                 ) : null}
+                <OnboardingStepProgress
+                  current={currentStep}
+                  total={totalSteps}
+                />
+              </div>
+              <h1 className="mt-8 text-[32px] font-semibold leading-[1.12] tracking-[-0.02em] lg:text-[40px]">
+                {title}
+              </h1>
+              <p className="mt-5 text-base leading-[1.7] text-muted-foreground">
+                {description}
+              </p>
+              {/* The step's one filled action, with its opt-out beside it. */}
+              <div className="mt-9 flex flex-wrap items-center gap-2">
                 <Button
                   type="button"
                   size="lg"
