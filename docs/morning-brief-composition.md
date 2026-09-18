@@ -313,13 +313,13 @@ at all.
 The registered composition-route coverage uses the real database, canonical
 instruction publisher and an object-storage boundary double. It proves
 before/equality/after behavior at the nearest real manifest and archive response
-boundaries, a genuinely tighter remaining collection budget, and joined
-cancellation while a storage read is held. A production route cannot yield
-between two synchronous parsing instructions, so the pure production admission
-helper pins the exact before/equality/after rule used immediately after manifest
-parsing and archive extraction, including tighter-outer-deadline selection and
-the nonpositive entry that returns before timer or storage construction; no
-internal reader, planner or authorizer is replaced. Held-I/O
+boundaries and joined cancellation while a storage read is held. A production
+route cannot yield between source finalization and language admission or between
+two synchronous parsing instructions. The pure production admission helper
+therefore pins the exact before/equality/after rule used at those synchronous
+edges, including genuinely tighter outer-deadline selection and the nonpositive
+entry that returns before timer or storage construction; no internal reader,
+planner or authorizer is replaced. Held-I/O
 cases use arrival and settlement barriers rather than sleeps. This is
 deterministic integration and helper evidence for admission and ownership, not
 evidence of real model language compliance. The single-model migration/cohort

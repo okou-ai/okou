@@ -856,7 +856,7 @@ describe("declared bounds", () => {
     expect(MORNING_BRIEF_STORAGE_PHASE_MS).toBe(5000);
   });
 
-  it("admits only positive language-storage time before creating a timer", () => {
+  it("selects one language deadline and admits only positive timer time", () => {
     const expiresAt = 5000;
 
     expect(morningBriefStoragePhaseExpiresAt(0, 45_000)).toBe(5000);

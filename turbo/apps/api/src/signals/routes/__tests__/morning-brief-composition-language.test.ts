@@ -54,7 +54,6 @@ const store = createStore();
 const CANONICAL_TARGET = "CLAUDE.md";
 const INSTRUCTIONS_MAX_BYTES = 64 * 1024;
 const STORAGE_PHASE_MS = 5000;
-const COLLECTION_PHASE_MS = 45_000;
 
 afterEach(() => {
   clearMockNow();
@@ -415,28 +414,6 @@ function membershipBarrier(member: Member): MembershipBarrier {
       };
     },
   };
-}
-
-/** Advance the application clock after one numbered real Clerk answer. */
-function advanceClockAfterOwnerLookup(
-  member: Member,
-  index: number,
-  instant: number,
-): void {
-  const lookup =
-    context.mocks.clerk.organizations.getOrganizationMembershipList;
-  const answer = lookup.getMockImplementation();
-  if (!answer) {
-    throw new Error("Expected seeded Clerk organization memberships");
-  }
-  let matched = 0;
-  lookup.mockImplementation(async (...args: unknown[]) => {
-    const memberships = await answer(...args);
-    if (isOwnerLookup(args, member) && (matched += 1) === index) {
-      mockNow(instant);
-    }
-    return memberships;
-  });
 }
 
 /**
@@ -987,27 +964,6 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
       ).resolves.toStrictEqual(timedOut);
     });
 
-    it("uses the genuinely tighter remaining collection budget", async () => {
-      const storage = installStorageBoundary();
-      const member = await briefMember();
-      await publishInstructions(member, "Write in Danish.");
-      const anchor = now();
-      // Start the one outer phase 44 seconds behind its anchor, then advance at
-      // admission's real Clerk boundary. Sources and language therefore run
-      // with one genuine second left on the original collection deadline.
-      mockNow(anchor - COLLECTION_PHASE_MS + 1000);
-      advanceClockAfterOwnerLookup(member, 1, anchor);
-      storage.beforeRead("/manifest.json", () => {
-        mockNow(anchor + 1000);
-      });
-
-      const body = await compose(member, new Date(anchor).toISOString());
-
-      expect(body).toStrictEqual(timedOut);
-      expect(context.mocks.abortSignal.timeout).toHaveBeenCalledWith(1000);
-      expect(archiveReads(storage)).toStrictEqual([]);
-    });
-
     it("joins held storage work when the caller cancels", async () => {
       const storage = installStorageBoundary();
       const member = await briefMember();
@@ -1015,7 +971,6 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
       const controller = new AbortController();
       const cancellation = new Error("language storage caller cancelled");
       const arrived = createDeferredPromise<void>(context.signal);
-      const cancelled = createDeferredPromise<void>(context.signal);
       const release = createDeferredPromise<void>(context.signal);
       const finished = createDeferredPromise<void>(context.signal);
       onTestFinished(() => {
@@ -1023,21 +978,9 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
           release.resolve();
         }
       });
+      let observedStorageSignal: AbortSignal | undefined;
       storage.beforeRead("/manifest.json", async (storageSignal) => {
-        if (!storageSignal) {
-          throw new Error("Expected the storage read to own a signal");
-        }
-        if (storageSignal.aborted) {
-          cancelled.resolve();
-        } else {
-          storageSignal.addEventListener(
-            "abort",
-            () => {
-              cancelled.resolve();
-            },
-            { once: true },
-          );
-        }
+        observedStorageSignal = storageSignal;
         arrived.resolve();
         await release.promise;
         finished.resolve();
@@ -1055,7 +998,8 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
 
       await arrived.promise;
       controller.abort(cancellation);
-      await cancelled.promise;
+      expect(observedStorageSignal).toBeDefined();
+      expect(observedStorageSignal?.aborted).toBeTruthy();
       release.resolve();
       await finished.promise;
       await expect(pending).rejects.toThrow(cancellation.message);
