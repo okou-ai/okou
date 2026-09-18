@@ -54,6 +54,7 @@ const store = createStore();
 const CANONICAL_TARGET = "CLAUDE.md";
 const INSTRUCTIONS_MAX_BYTES = 64 * 1024;
 const STORAGE_PHASE_MS = 5000;
+const COLLECTION_PHASE_MS = 45_000;
 
 afterEach(() => {
   clearMockNow();
