@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto";
 
+import {
+  CONNECTOR_CONTRACT_BUILTIN_MCP_V1,
+  CONNECTOR_CONTRACT_HEADER,
+} from "@okouai/api-contracts/contracts/client-headers";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
   connectorManualGrantContract,
@@ -69,7 +73,7 @@ async function connectGitlab(fixture: AuthenticatedFixture): Promise<void> {
 
 async function deleteConnector(
   fixture: AuthenticatedFixture,
-  connectorSlug: "gitlab" | "openai",
+  connectorSlug: "gitlab" | "openai" | "manual-mcp",
 ): Promise<void> {
   mocks.clerk.session(fixture.userId, fixture.orgId);
   const client = setupApp({ context, routes: connectorAccountRoutes })(
@@ -78,6 +82,9 @@ async function deleteConnector(
   const accounts = await accept(
     client.connections({
       headers: authHeaders(),
+      extraHeaders: {
+        [CONNECTOR_CONTRACT_HEADER]: CONNECTOR_CONTRACT_BUILTIN_MCP_V1,
+      },
       query: { kind: "builtin", connectorSlug },
     }),
     [200, 404],
@@ -89,6 +96,9 @@ async function deleteConnector(
     await accept(
       client.delete({
         headers: authHeaders(),
+        extraHeaders: {
+          [CONNECTOR_CONTRACT_HEADER]: CONNECTOR_CONTRACT_BUILTIN_MCP_V1,
+        },
         params: { connectionId: account.id },
         body: { target: { kind: "builtin", connectorSlug } },
       }),
@@ -106,6 +116,7 @@ describe("GET /api/connectors", () => {
       if (fixture) {
         await deleteConnector(fixture, "gitlab");
         await deleteConnector(fixture, "openai");
+        await deleteConnector(fixture, "manual-mcp");
       }
     }
   });
@@ -154,6 +165,69 @@ describe("GET /api/connectors", () => {
         name: "GITLAB_TOKEN",
       }),
     );
+  });
+
+  it("exposes sandbox bindings only for HTTP connectors across client versions", async () => {
+    const fixture = seedAuthenticatedFixture();
+    seededFixtures.push(fixture);
+    await connectGitlab(fixture);
+    await accept(
+      setupApp({ context, routes: connectorsRoutes })(
+        connectorManualGrantContract,
+      ).connect({
+        headers: authHeaders(),
+        extraHeaders: {
+          [CONNECTOR_CONTRACT_HEADER]: CONNECTOR_CONTRACT_BUILTIN_MCP_V1,
+        },
+        params: { connectorSlug: "manual-mcp" },
+        body: {
+          authMethod: "api-token",
+          account: { intent: "add" },
+          values: { apiKey: "test-mcp-token" },
+        },
+      }),
+      [200],
+    );
+    const client = setupApp({ context, routes: connectorsRoutes })(
+      connectorsMainContract,
+    );
+    for (const contract of [
+      undefined,
+      "unknown-contract",
+      CONNECTOR_CONTRACT_BUILTIN_MCP_V1,
+    ]) {
+      const listed = await accept(
+        client.list({
+          headers: authHeaders(),
+          extraHeaders:
+            contract === undefined
+              ? undefined
+              : { [CONNECTOR_CONTRACT_HEADER]: contract },
+        }),
+        [200],
+      );
+      expect(
+        listed.body.connectors.map((connector) => {
+          return connector.slug;
+        }),
+      ).toStrictEqual(
+        contract === CONNECTOR_CONTRACT_BUILTIN_MCP_V1
+          ? expect.arrayContaining(["gitlab", "manual-mcp"])
+          : ["gitlab"],
+      );
+      expect(listed.body.connectorProvidedBindings).toStrictEqual([
+        expect.objectContaining({
+          connectorSlug: "gitlab",
+          namespace: "secrets",
+          name: "GITLAB_TOKEN",
+        }),
+        expect.objectContaining({
+          connectorSlug: "gitlab",
+          namespace: "vars",
+          name: "GITLAB_HOST",
+        }),
+      ]);
+    }
   });
 
   it("projects only the default account for each connector target", async () => {

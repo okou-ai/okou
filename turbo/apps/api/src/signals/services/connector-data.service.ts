@@ -74,6 +74,7 @@ import {
   searchConnectorCatalog,
 } from "./connector-catalog-reader.service";
 import {
+  getConnectorRuntimeConnector,
   loadConnectorRuntimeSnapshot,
   type ConnectorRuntimeMethod,
   type ConnectorRuntimeSnapshot,
@@ -592,7 +593,12 @@ function connectorListState(args: {
             return connector === null ? [] : [connector];
           });
     const connectorProvidedBindings =
-      connectorProvidedBindingsForStoredConnectors(storedConnectors);
+      snapshot === null
+        ? []
+        : connectorProvidedBindingsForStoredConnectors(
+            storedConnectors,
+            snapshot,
+          );
 
     return {
       response: {
@@ -633,10 +639,15 @@ export function connectorCatalogConnectionList(args: {
 
 function connectorProvidedBindingsForStoredConnectors(
   storedConnectors: readonly ConnectorWithRuntimeMethod[],
+  snapshot: ConnectorRuntimeSnapshot,
 ): ConnectorProvidedBinding[] {
   const provided: ConnectorProvidedBinding[] = [];
   for (const connector of storedConnectors) {
-    if (connector.response.connectionStatus !== "connected") {
+    if (
+      connector.response.connectionStatus !== "connected" ||
+      getConnectorRuntimeConnector(snapshot, connector.response.slug)
+        ?.catalogConnector.mcp !== undefined
+    ) {
       continue;
     }
     const metadata = connectorAuthMethodRuntimeMetadata(
