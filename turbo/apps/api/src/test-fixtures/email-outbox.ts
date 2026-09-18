@@ -145,6 +145,25 @@ export async function rejectEmailOutboxCompletion(
 }
 
 /**
+ * Hold one row exactly as a concurrent worker's claim transaction does.
+ *
+ * The claim selects `FOR UPDATE SKIP LOCKED`, so another drain passes this row
+ * over instead of waiting for it. The preflight takes no lock at all and still
+ * sees it, which is the divergence this barrier exists to exercise. The hold is
+ * established before the helper returns, so the case needs no sleep.
+ */
+export async function holdEmailOutboxRow(
+  itemId: string,
+  signal: AbortSignal,
+): Promise<HeldEmailOutboxWrite> {
+  return await holdDeferredRow(signal, async (tx) => {
+    await tx.execute(
+      sql`SELECT 1 FROM email_outbox WHERE id = ${itemId}::uuid FOR UPDATE`,
+    );
+  });
+}
+
+/**
  * Take one row away and hold that removal uncommitted, so a drain attempt that
  * still believes it owns the row queues behind it.
  */
