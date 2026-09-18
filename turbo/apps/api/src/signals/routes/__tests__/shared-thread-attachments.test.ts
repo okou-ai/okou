@@ -3,6 +3,7 @@ import type { UserMessageInputPart } from "@okouai/api-contracts/contracts/chat-
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
+import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { expect, test } from "vitest";
 import { createStore } from "ccstate";
@@ -11,6 +12,7 @@ import { randomUUID } from "node:crypto";
 import { testContext, accept } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { sharedThreadRoutes } from "../shared-threads";
+import { artifactReferenceRoutes } from "../artifact-references";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { uploadsCompleteRoutes } from "../uploads-complete";
 import { featureSwitchesRoutes } from "../feature-switches";
@@ -24,6 +26,7 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { CopyObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { now } from "../../../lib/time";
+import { mockEnv } from "../../../lib/env";
 import {
   createPreviousSharedThread$,
   previousSharedThreadReadRoutes,
@@ -40,6 +43,7 @@ const api = () => {
     context,
     routes: [
       ...sharedThreadRoutes,
+      ...artifactReferenceRoutes,
       ...uploadsPrepareRoutes,
       ...uploadsCompleteRoutes,
       ...featureSwitchesRoutes,
@@ -49,6 +53,7 @@ const api = () => {
 };
 
 async function fixture(privateFiles = false) {
+  mockEnv("APP_URL", "https://app.okou.ai");
   const actor = bdd.user();
   context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
     {
@@ -160,6 +165,20 @@ async function fixture(privateFiles = false) {
     ).toStrictEqual([]);
   }
   return { actor, storage, upload, send, share, expectNoShare };
+}
+
+async function attachmentBytes(url: string): Promise<string> {
+  const parsed = new URL(url);
+  if (parsed.origin === "https://app.okou.ai") {
+    const resolved = await accept(
+      api()(artifactReferencesContract).resolve({
+        params: { reference: parsed.pathname.slice("/artifacts/".length) },
+      }),
+      [200],
+    );
+    return (await fetch(resolved.body.url)).text();
+  }
+  return (await fetch(url)).text();
 }
 
 test("publishes independent attachment bytes", async () => {
@@ -287,8 +306,10 @@ test("sends private attachments and shares independent private snapshots after r
     throw new Error("Expected shared private attachment");
   }
   expect(attachments?.[1]?.url).toBe(url);
-  expect(url).toMatch(/^https:\/\/a\.okou\.io\/[a-z0-9]{10}\.pdf$/u);
-  await expect((await fetch(url)).text()).resolves.toBe("private bytes");
+  expect(url).toMatch(
+    /^https:\/\/app\.okou\.ai\/artifacts\/[a-z0-9]{10}\.pdf$/u,
+  );
+  await expect(attachmentBytes(url)).resolves.toBe("private bytes");
   const copies = context.mocks.s3.send.mock.calls
     .map(([command]) => {
       return command;
@@ -312,7 +333,7 @@ test("sends private attachments and shares independent private snapshots after r
   );
   expect(source.body.publicUrl).toBeNull();
   f.storage.removeUpload(file.uploadUrl);
-  await expect((await fetch(url)).text()).resolves.toBe("private bytes");
+  await expect(attachmentBytes(url)).resolves.toBe("private bytes");
 });
 
 test("shares attachment-only prompts and reuses a copy for repeated references", async () => {
@@ -372,7 +393,7 @@ test.each([false, true])(
       throw new Error("Expected annotated attachment");
     }
     expect(attachment.filename).toBe("screen.annotated.png");
-    await expect((await fetch(attachment.url)).text()).resolves.toBe(
+    await expect(attachmentBytes(attachment.url)).resolves.toBe(
       "annotated image",
     );
     expect(JSON.stringify(shared.body)).not.toContain(original.id);

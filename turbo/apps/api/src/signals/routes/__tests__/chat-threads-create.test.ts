@@ -597,9 +597,6 @@ describe("POST /api/chat-threads", () => {
 
   it("creates exact custom HTTP and MCP connector selections", async () => {
     const fixture = await seedAgent();
-    await updateFeatureSwitchesForUser(context, fixture, {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
-    });
     const httpConnector = await connectorApi.createCustomConnector(
       fixture.actor,
       manualHttpCustomConnectorCreateBody({

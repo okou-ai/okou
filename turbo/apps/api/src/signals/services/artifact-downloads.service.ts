@@ -3,10 +3,61 @@ import type { ArtifactDownloadResponse } from "@okouai/api-contracts/contracts/a
 import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
 import { nowDate } from "../../lib/time";
 import { generateArtifactPreviewUrl, s3ObjectHead } from "../external/s3";
-import { artifactReferenceRecord } from "./artifact-reference.service";
+import {
+  artifactReferenceRecord,
+  type SharedThreadArtifactReference,
+} from "./artifact-reference.service";
 import { privateArtifactRecord } from "./private-artifact-storage.service";
 import { resolveArtifactShareDownload$ } from "./artifact-shares.service";
 import { getHostedSiteFiles$ } from "./host.service";
+import { resolveSharedThreadArtifactReference$ } from "./shared-thread-artifact-reference.service";
+import { resolveSharedThreadHostedDownload$ } from "./shared-thread-artifacts.service";
+
+const resolveSharedThreadArtifactDownload$ = command(
+  async (
+    { set },
+    args: {
+      readonly reference: SharedThreadArtifactReference;
+      readonly expectedKind?: "html";
+    },
+    signal: AbortSignal,
+  ): Promise<ArtifactDownloadResponse | null> => {
+    const { reference } = args;
+    if (reference.target.kind === "file") {
+      if (args.expectedKind) {
+        return null;
+      }
+      const file = await set(
+        resolveSharedThreadArtifactReference$,
+        reference,
+        signal,
+      );
+      return file
+        ? {
+            kind: "file",
+            url: file.url,
+            filename: file.filename,
+            contentType: file.contentType,
+          }
+        : null;
+    }
+    const site = await set(
+      resolveSharedThreadHostedDownload$,
+      {
+        publicSlug: reference.publicToken,
+        record: {
+          publicBrand: reference.publicBrand,
+          threadId: reference.threadId,
+          publicToken: reference.publicToken,
+          targetKind: reference.target.kind,
+          targetId: reference.target.id,
+        },
+      },
+      signal,
+    );
+    return site ? { kind: "html", site } : null;
+  },
+);
 
 /** References identify one resource; all byte access is authorized afresh. */
 export const resolveArtifactDownload$ = command(
@@ -41,6 +92,13 @@ export const resolveArtifactDownload$ = command(
             allowPrivateOwner: true,
             expectedKind: args.expectedKind,
           },
+          signal,
+        );
+      }
+      if (record.version === 3) {
+        return await set(
+          resolveSharedThreadArtifactDownload$,
+          { reference: record, expectedKind: args.expectedKind },
           signal,
         );
       }

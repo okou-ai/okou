@@ -281,11 +281,9 @@ function expectSharedSnapshot(site: HostedSiteFilesResponse) {
     -site.files[0]!.path.length,
   );
   expect(prefix).toMatch(
-    new RegExp(
-      `^shared-artifacts/okou/[a-f0-9-]{36}/${site.deploymentId}$`,
-      "u",
-    ),
+    /^shared-artifacts\/okou\/[a-f0-9-]{36}\/[a-f0-9-]{36}$/u,
   );
+  expect(prefix.endsWith(`/${site.deploymentId}`)).toBeTruthy();
   for (const file of site.files) {
     expect(storageKey(file.downloadUrl)).toBe(`${prefix}${file.path}`);
   }
@@ -558,8 +556,11 @@ test.each([
     }
     const key = storageKey(publicDownload.body.url);
     expect(key).toMatch(
-      new RegExp(`^private-artifacts/${target.id}/shares/[a-f0-9-]{36}/`, "u"),
+      /^private-artifacts\/[a-f0-9-]{36}\/shares\/[a-f0-9-]{36}\//u,
     );
+    expect(
+      key.startsWith(`private-artifacts/${target.id}/shares/`),
+    ).toBeTruthy();
     expect(key.endsWith(`/${filename}`)).toBeTruthy();
     await share(target, "private");
     await rejectDownload(outsider, completed.body.url);

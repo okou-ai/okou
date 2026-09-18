@@ -418,13 +418,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.CustomConnectorMcp]: {
-    maintainer: "liangyou@okou.ai",
-    description:
-      "Enable remote Streamable HTTP MCP definitions for organization Custom Connectors.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.McpServer]: {
     maintainer: "liangyou@okou.ai",
     description:

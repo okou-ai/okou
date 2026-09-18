@@ -1,11 +1,12 @@
 //! Ownership-preserving transitions from an active sandbox to idle reuse.
 //!
-//! The transition has two ownership boundaries that must not be conflated:
+//! The transition has ownership boundaries that must not be conflated:
 //! [`IdleParkRequest`] owns an active sandbox until physical parking and
 //! reuse-preparation validation complete, while a [`ParkedIdleCandidate`] owns
 //! a sandbox that has physically parked but has not yet been accepted by
 //! [`super::IdlePool`]. Only an accepted [`super::entry::IdleEntry`] is
-//! pool-owned.
+//! pool-owned. A running exact handoff carries a separate candidate and can
+//! never be represented by a parked candidate or restored to idle inventory.
 //!
 //! The transition contract is:
 //!
@@ -37,6 +38,9 @@
 //!    handoff changes the result from generic idle publication to a candidate
 //!    bound to that waiting successor; an undelivered candidate remains owned
 //!    by the caller for cleanup.
+//!    Its Guest operations remain fenced while the VM is still running. Failed
+//!    validation, failed delivery, or cancellation destroys that candidate
+//!    without invoking parked workspace promotion.
 //! 5. **Speculative rollback.** A reserved exact-generation entry can be
 //!    unparked for claim-time preparation without becoming committed to a job.
 //!    [`SpeculativeIdleSandbox::repark_for_claim_rollback`] re-runs preparation
@@ -118,8 +122,8 @@ pub(crate) struct IdleParkRequestParts {
     pub(crate) handoff: Option<SandboxFinalExecParkHandoff>,
 }
 
-/// Result after the sandbox successfully reaches the parked state and reuse
-/// preparation validates.
+/// Result after the sandbox reaches a parked or fenced running-handoff boundary
+/// and reuse preparation validates.
 ///
 /// Every candidate remains owned by the caller until it is accepted by
 /// [`super::IdlePool::park`], handed directly to an exact successor, or
@@ -142,8 +146,8 @@ pub(crate) enum IdleParkOutcome {
     },
 }
 
-/// A successfully parked candidate before the finalization caller transfers
-/// it to the idle pool or another owner.
+/// A prepared sandbox before the finalization caller transfers it to the idle
+/// pool or its exact successor.
 pub(crate) enum IdleParkCandidate {
     /// Ordinary idle-pool candidate, including a candidate later reported as
     /// non-reusable by the park outcome.
@@ -153,6 +157,21 @@ pub(crate) enum IdleParkCandidate {
 }
 
 impl IdleParkCandidate {
+    pub(crate) fn into_finalizing_handoff(
+        self,
+        successor_run_id: RunId,
+        predecessor_run_id: RunId,
+    ) -> super::entry::FinalizingHandoffCandidate {
+        match self {
+            Self::Ordinary(candidate) => {
+                candidate.into_finalizing_handoff(successor_run_id, predecessor_run_id)
+            }
+            Self::Immediate(candidate) => {
+                candidate.into_finalizing_handoff(successor_run_id, predecessor_run_id)
+            }
+        }
+    }
+
     pub(crate) fn with_last_completed_at(self, last_completed_at: String) -> Self {
         match self {
             Self::Ordinary(candidate) => {
@@ -186,7 +205,8 @@ pub(crate) struct IdleParkNonReusable {
 /// the finalization caller receives the sandbox, factory, lease, and any
 /// still-publishable promotion. `Parked` means physical parking succeeded but
 /// post-park reuse validation rejected the candidate; its parked destroy path
-/// must be used instead.
+/// must be used instead. `RunningHandoff` preserves the distinct fenced-running
+/// ownership and must be destroyed without parked workspace promotion.
 #[must_use = "idle park failures must be explicitly destroyed or otherwise handled"]
 pub(crate) struct IdleParkFailure {
     ownership: IdleParkFailureOwnership,
@@ -202,6 +222,9 @@ enum IdleParkFailureOwnership {
     },
     Parked {
         rejected: Box<RejectedParkedIdleCandidate>,
+    },
+    RunningHandoff {
+        candidate: Box<ImmediateHandoffCandidate>,
     },
 }
 
@@ -221,8 +244,8 @@ pub(crate) struct IdleParkActiveParts {
 
 /// Failure parts split by the last proven ownership boundary.
 ///
-/// The finalization caller in `sandbox_finalization.rs` must consume both
-/// variants. `Active` returns an active sandbox and its budget lease for the
+/// The finalization caller in `sandbox_finalization.rs` must consume every
+/// variant. `Active` returns an active sandbox and its budget lease for the
 /// active stop/destroy path. `Parked` returns a physically parked candidate
 /// that failed reuse validation; the caller must convert it through
 /// [`RejectedParkedIdleCandidate::into_active_destroy_parts`] and destroy it,
@@ -241,6 +264,14 @@ pub(crate) enum IdleParkFailureParts {
     /// Park succeeded, but reuse-preparation validation rejected admission.
     Parked {
         rejected: RejectedParkedIdleCandidate,
+        reason: &'static str,
+        error: String,
+        expected_capacity_rejection: bool,
+    },
+    /// Running takeover succeeded, but preparation validation rejected reuse.
+    /// This candidate must be destroyed without parked workspace promotion.
+    RunningHandoff {
+        candidate: Box<ImmediateHandoffCandidate>,
         reason: &'static str,
         error: String,
         expected_capacity_rejection: bool,
@@ -359,13 +390,14 @@ impl IdleParkRequest {
     }
 }
 
-/// Perform the shared active-to-parked transition.
+/// Transition active execution to physical park or fenced running handoff.
 ///
 /// This function validates promotion identity before invoking the sandbox,
-/// then validates the reuse-preparation report only after the sandbox confirms
-/// that it parked. That ordering determines whether a failure returns
-/// [`IdleParkFailureParts::Active`] or [`IdleParkFailureParts::Parked`]. The
-/// handoff argument is supplied by the finalization caller for an exact
+/// then validates the reuse-preparation report after the sandbox confirms park
+/// or running handoff. Failures retain [`IdleParkFailureParts::Active`],
+/// [`IdleParkFailureParts::Parked`], or [`IdleParkFailureParts::RunningHandoff`]
+/// ownership according to the completed boundary. The handoff argument is
+/// supplied by the finalization caller for an exact
 /// predecessor; this function does not infer that relationship from the
 /// metadata.
 async fn park_idle_transition(
@@ -485,14 +517,10 @@ async fn park_idle_transition(
     };
     match final_exec_and_park {
         Ok(Ok(outcome)) => {
-            let candidate = ParkedIdleCandidate {
-                resources: IdleSandboxResources {
-                    sandbox,
-                    factory,
-                    workspace_promotion,
-                },
-                metadata,
-                budget_lease,
+            let resources = IdleSandboxResources {
+                sandbox,
+                factory,
+                workspace_promotion,
             };
             let exec_result = match &outcome {
                 SandboxFinalExecParkHandoffOutcome::Parked(outcome) => &outcome.exec_result,
@@ -502,10 +530,30 @@ async fn park_idle_transition(
                 Ok(report) => report,
                 Err(error) => {
                     let expected_capacity_rejection = error.is_expected_capacity_rejection();
+                    let ownership = match outcome {
+                        SandboxFinalExecParkHandoffOutcome::Parked(_) => {
+                            let candidate = ParkedIdleCandidate {
+                                resources,
+                                metadata,
+                                budget_lease,
+                            };
+                            IdleParkFailureOwnership::Parked {
+                                rejected: Box::new(candidate.into_rejected()),
+                            }
+                        }
+                        SandboxFinalExecParkHandoffOutcome::Handoff { point, .. } => {
+                            IdleParkFailureOwnership::RunningHandoff {
+                                candidate: Box::new(ImmediateHandoffCandidate {
+                                    resources,
+                                    metadata,
+                                    budget_lease,
+                                    handoff_point: point,
+                                }),
+                            }
+                        }
+                    };
                     return Err(IdleParkFailure {
-                        ownership: IdleParkFailureOwnership::Parked {
-                            rejected: Box::new(candidate.into_rejected()),
-                        },
+                        ownership,
                         reason: "reuse_preparation_failed",
                         error: error.to_string(),
                         expected_capacity_rejection,
@@ -514,16 +562,28 @@ async fn park_idle_transition(
             };
             Ok(match outcome {
                 SandboxFinalExecParkHandoffOutcome::Handoff { point, .. } => {
-                    IdleParkOutcome::Handoff(candidate.into_immediate_handoff(point))
+                    IdleParkOutcome::Handoff(ImmediateHandoffCandidate {
+                        resources,
+                        metadata,
+                        budget_lease,
+                        handoff_point: point,
+                    })
                 }
-                SandboxFinalExecParkHandoffOutcome::Parked(outcome) => match outcome.park_outcome {
-                    SandboxParkOutcome::Reusable => IdleParkOutcome::Reusable(candidate),
-                    SandboxParkOutcome::NonReusable(reason) => IdleParkOutcome::NonReusable {
-                        candidate,
-                        reason,
-                        preparation_report,
-                    },
-                },
+                SandboxFinalExecParkHandoffOutcome::Parked(outcome) => {
+                    let candidate = ParkedIdleCandidate {
+                        resources,
+                        metadata,
+                        budget_lease,
+                    };
+                    match outcome.park_outcome {
+                        SandboxParkOutcome::Reusable => IdleParkOutcome::Reusable(candidate),
+                        SandboxParkOutcome::NonReusable(reason) => IdleParkOutcome::NonReusable {
+                            candidate,
+                            reason,
+                            preparation_report,
+                        },
+                    }
+                }
             })
         }
         Ok(Err(error)) => Err(IdleParkFailure {
@@ -608,9 +668,9 @@ impl SpeculativeIdleSandbox {
         .await
         {
             Ok(IdleParkOutcome::Reusable(candidate)) => {
-                SpeculativeReparkResult::Reparked(Box::new(ReservedIdleSandbox {
-                    entry: candidate.into_idle_entry(parked_at),
-                }))
+                SpeculativeReparkResult::Reparked(Box::new(ReservedIdleSandbox::parked(
+                    candidate.into_idle_entry(parked_at),
+                )))
             }
             Ok(IdleParkOutcome::Handoff(candidate)) => {
                 let (payload, budget_lease) = candidate.into_active_destroy_parts();
@@ -725,6 +785,9 @@ impl IdleParkFailure {
             IdleParkFailureOwnership::Parked { rejected } => {
                 (*rejected).into_active_destroy_parts()
             }
+            IdleParkFailureOwnership::RunningHandoff { candidate } => {
+                candidate.into_active_destroy_parts()
+            }
         };
         (
             IdleDestroyJob {
@@ -778,6 +841,14 @@ impl IdleParkFailure {
                 error,
                 expected_capacity_rejection,
             },
+            IdleParkFailureOwnership::RunningHandoff { candidate } => {
+                IdleParkFailureParts::RunningHandoff {
+                    candidate,
+                    reason,
+                    error,
+                    expected_capacity_rejection,
+                }
+            }
         }
     }
 
@@ -785,7 +856,8 @@ impl IdleParkFailure {
     pub(crate) fn into_error(self) -> String {
         match self.into_parts() {
             IdleParkFailureParts::Active { error, .. }
-            | IdleParkFailureParts::Parked { error, .. } => error,
+            | IdleParkFailureParts::Parked { error, .. }
+            | IdleParkFailureParts::RunningHandoff { error, .. } => error,
         }
     }
 }

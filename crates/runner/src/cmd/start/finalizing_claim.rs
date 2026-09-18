@@ -16,8 +16,9 @@
 //!
 //! The successor requests one direct handoff while the predecessor can still publish exact
 //! reuse. Pre-finalization waiting ends at the API preference deadline. Once finalization begins,
-//! handoff acceptance remains open until the producer's finalization start plus
-//! `FINALIZING_HANDOFF_ACCEPTANCE_GRACE`. An accepted handoff, including a candidate that was
+//! handoff acceptance remains open for `FINALIZING_HANDOFF_ACCEPTANCE_GRACE` after the later of
+//! the producer's finalization start and this successor's wait start. A late successor therefore
+//! has time to interrupt an ongoing park. An accepted handoff, including a candidate that was
 //! already delivered, wins a deadline race. Cancellation is checked with priority; if a candidate
 //! was delivered before the receiver was closed, the handoff request recovers it so this module
 //! can destroy it rather than lose ownership.
@@ -575,9 +576,10 @@ async fn prepare_finalizing_resource(
 ///
 /// The handoff request is one-shot and is created before observing the predecessor state so a
 /// successor that was claimed early can race publication safely. The API preference deadline
-/// bounds pre-finalization waiting; the producer's finalization start bounds the subsequent
-/// acceptance grace. Only an unaccepted request expires at either boundary, while an accepted
-/// handoff is still received. A cancellation can recover a candidate already sent over the
+/// bounds pre-finalization waiting. Acceptance grace starts when both finalization and this
+/// successor's wait have begun, so a late request cannot arrive already expired. Only an
+/// unaccepted request expires at either boundary, while an accepted handoff is still received.
+/// A cancellation can recover a candidate already sent over the
 /// request, and the caller owns destroying that candidate or rolling back an exact reservation
 /// returned through `reserved_exact`.
 async fn wait_for_finalizing_resource(
@@ -593,6 +595,7 @@ async fn wait_for_finalizing_resource(
         ctx,
     } = request;
     let cancel = cancellation.token();
+    let wait_started_at = tokio::time::Instant::now();
     let mut handoff = admission.predecessor.request_handoff(run_id);
     loop {
         if cancel.is_cancelled() {
@@ -670,16 +673,17 @@ async fn wait_for_finalizing_resource(
             };
         }
 
-        let deadline = tokio::time::Instant::from_std(match state {
-            ActiveRunReuseState::Pending => admission.deadline,
+        let deadline = match state {
+            ActiveRunReuseState::Pending => tokio::time::Instant::from_std(admission.deadline),
             ActiveRunReuseState::Finalizing { started_at } => {
-                started_at + FINALIZING_HANDOFF_ACCEPTANCE_GRACE
+                tokio::time::Instant::from_std(started_at).max(wait_started_at)
+                    + FINALIZING_HANDOFF_ACCEPTANCE_GRACE
             }
             ActiveRunReuseState::ExactSandboxPublished
             | ActiveRunReuseState::ExactSandboxHandedOff
             | ActiveRunReuseState::NoExactSandbox
             | ActiveRunReuseState::Released => continue,
-        });
+        };
         if let Some(request) = handoff.as_mut() {
             tokio::select! {
                 biased;
@@ -796,7 +800,7 @@ async fn receive_finalizing_handoff(
     info!(
         run_id = %run_id,
         predecessor_run_id = %predecessor_run_id,
-        "finalizing successor received direct parked sandbox handoff"
+        "finalizing successor received direct sandbox handoff"
     );
     FinalizingWaitOutcome::Handoff(candidate)
 }
@@ -1065,7 +1069,10 @@ mod tests {
             .with_history_generation_run_id(predecessor_run_id)
             .build();
         assert!(matches!(
-            publisher.deliver_exact_handoff(candidate, predecessor_run_id),
+            publisher.deliver_exact_handoff(
+                crate::idle_pool::IdleParkCandidate::Ordinary(candidate),
+                predecessor_run_id,
+            ),
             ActiveRunHandoffDeliveryResult::Delivered
         ));
 

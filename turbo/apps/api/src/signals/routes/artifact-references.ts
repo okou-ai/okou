@@ -12,7 +12,7 @@ import {
 import { notFound } from "../../lib/error";
 import { authContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
-import { setResHeader$ } from "../context/hono";
+import { authorization$, setResHeader$ } from "../context/hono";
 import { pathParamsOf, queryOf } from "../context/request";
 import { db$ } from "../external/db";
 import { generateArtifactPreviewUrl, s3ObjectHead } from "../external/s3";
@@ -24,6 +24,7 @@ import {
   resolvePublicArtifactUrl$,
 } from "../services/artifact-shares.service";
 import { artifactReferenceRecord } from "../services/artifact-reference.service";
+import { resolveSharedThreadArtifactReference$ } from "../services/shared-thread-artifact-reference.service";
 import type { RouteEntry } from "../route-entry";
 
 const resolveFileReference$ = command(
@@ -84,51 +85,17 @@ const resolveFileReference$ = command(
   },
 );
 
-const resolveReference$ = command(
+const resolveHostedReference$ = command(
   async (
     { get, set },
-    reference: string,
-    ownerKind: "file" | "html" | "artifact" | undefined,
+    args: {
+      readonly id: string;
+      readonly ownerKind: "file" | "html" | "artifact" | undefined;
+    },
     signal: AbortSignal,
   ) => {
+    const { id, ownerKind } = args;
     const auth = get(authContext$);
-    const parsed = parseArtifactReference(`/artifacts/${reference}`);
-    if (!parsed) {
-      return notFound("Artifact unavailable");
-    }
-    let id = parsed.id;
-    let targetKind: "file" | "html" | undefined;
-    if (id === null) {
-      const record = await get(artifactReferenceRecord(parsed.hash, signal));
-      signal.throwIfAborted();
-      if (!record) {
-        return notFound("Artifact unavailable");
-      }
-      if (record.version === 1) {
-        if (ownerKind) {
-          return notFound("Artifact unavailable");
-        }
-        const shared = await set(
-          resolveArtifactShare$,
-          { id: record.shareId, userId: auth.userId, allowPrivateOwner: true },
-          signal,
-        );
-        return shared
-          ? { status: 200 as const, body: shared }
-          : notFound("Artifact unavailable");
-      }
-      id = record.target.id;
-      targetKind = record.target.kind;
-    }
-    if (targetKind !== "html") {
-      const file = await set(resolveFileReference$, { id, ownerKind }, signal);
-      if (file) {
-        return file;
-      }
-    }
-    if (targetKind === "file") {
-      return notFound("Artifact unavailable");
-    }
     const [site] = await get(db$)
       .select({ deployment: privateHostedDeployments })
       .from(privateHostedDeployments)
@@ -183,6 +150,76 @@ const resolveReference$ = command(
           }
         : notFound("Artifact unavailable");
     }
+    return null;
+  },
+);
+
+const resolveReference$ = command(
+  async (
+    { get, set },
+    reference: string,
+    ownerKind: "file" | "html" | "artifact" | undefined,
+    signal: AbortSignal,
+  ) => {
+    const auth = get(authContext$);
+    const parsed = parseArtifactReference(`/artifacts/${reference}`);
+    if (!parsed) {
+      return notFound("Artifact unavailable");
+    }
+    let id = parsed.id;
+    let targetKind: "file" | "html" | undefined;
+    if (id === null) {
+      const record = await get(artifactReferenceRecord(parsed.hash, signal));
+      signal.throwIfAborted();
+      if (!record) {
+        return notFound("Artifact unavailable");
+      }
+      if (record.version === 3) {
+        if (ownerKind) {
+          return notFound("Artifact unavailable");
+        }
+        const shared = await set(
+          resolveSharedThreadArtifactReference$,
+          record,
+          signal,
+        );
+        return shared
+          ? { status: 200 as const, body: shared }
+          : notFound("Artifact unavailable");
+      }
+      if (record.version === 1) {
+        if (ownerKind) {
+          return notFound("Artifact unavailable");
+        }
+        const shared = await set(
+          resolveArtifactShare$,
+          { id: record.shareId, userId: auth.userId, allowPrivateOwner: true },
+          signal,
+        );
+        return shared
+          ? { status: 200 as const, body: shared }
+          : notFound("Artifact unavailable");
+      }
+      id = record.target.id;
+      targetKind = record.target.kind;
+    }
+    if (targetKind !== "html") {
+      const file = await set(resolveFileReference$, { id, ownerKind }, signal);
+      if (file) {
+        return file;
+      }
+    }
+    if (targetKind === "file") {
+      return notFound("Artifact unavailable");
+    }
+    const hosted = await set(
+      resolveHostedReference$,
+      { id, ownerKind },
+      signal,
+    );
+    if (hosted) {
+      return hosted;
+    }
     if (targetKind || ownerKind) {
       return notFound("Artifact unavailable");
     }
@@ -214,6 +251,27 @@ const resolvePublicReference$ = command(
         ? await get(artifactReferenceRecord(parsed.hash, signal))
         : null;
     signal.throwIfAborted();
+    if (record?.version === 3) {
+      const shared = await set(
+        resolveSharedThreadArtifactReference$,
+        record,
+        signal,
+      );
+      return shared
+        ? {
+            status: 200 as const,
+            body: {
+              url: shared.url,
+              expiresAt: shared.expiresAt,
+              sharedThreadSnapshot: shared.sharedThreadSnapshot,
+              preview: {
+                filename: shared.filename,
+                contentType: shared.contentType,
+              },
+            },
+          }
+        : notFound("Artifact unavailable");
+    }
     const target =
       parsed.id !== null
         ? { id: parsed.id }
@@ -299,6 +357,27 @@ export const artifactReferenceRoutes: readonly RouteEntry[] = [
       set(setResHeader$, "Cache-Control", "private, no-store");
       set(setResHeader$, "Referrer-Policy", "no-referrer");
       const { kind } = get(queryOf(artifactReferencesContract.resolve));
+      if (kind === undefined && !get(authorization$)) {
+        const { reference } = get(
+          pathParamsOf(artifactReferencesContract.resolve),
+        );
+        const parsed = parseArtifactReference(`/artifacts/${reference}`);
+        const record =
+          parsed?.id === null
+            ? await get(artifactReferenceRecord(parsed.hash, signal))
+            : null;
+        signal.throwIfAborted();
+        if (record?.version === 3) {
+          const shared = await set(
+            resolveSharedThreadArtifactReference$,
+            record,
+            signal,
+          );
+          return shared
+            ? { status: 200 as const, body: shared }
+            : notFound("Artifact unavailable");
+        }
+      }
       return await set(
         kind === "file"
           ? authorizedFileResolve$

@@ -15,7 +15,6 @@ import {
   loadConnectorRuntimeSnapshot,
   type ConnectorRuntimeSnapshot,
 } from "./connector-catalog-runtime.service";
-import { isCustomConnectorMcpEnabled } from "./custom-connector-mcp-feature.service";
 import { loadCustomConnectorPermissionBundle } from "./custom-connector-permission-bundle.service";
 import { publishConnectorRuntimeSyncWakeups } from "./connector-runtime-wakeup.service";
 import { changedCustomConnectorIds } from "./user-custom-connector-changes";
@@ -23,7 +22,6 @@ import {
   effectiveCustomConnectorPermissionBundleRef,
   FEISHU_CUSTOM_CONNECTOR_PERMISSION_BUNDLE_REF,
 } from "./feishu-custom-connector-permissions";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import type { Tx } from "../../lib/db-types";
 
 type UpdateUserConnectorsResult =
@@ -52,8 +50,7 @@ type UpdateUserCustomConnectorsResult =
   | {
       readonly status: "invalidCustomConnectorPermissions";
       readonly message: string;
-    }
-  | { readonly status: "mcpFeatureDisabled" };
+    };
 
 type UserCustomConnectorUpdateOperation = "replace" | "add" | "remove";
 type CustomConnectorPermissionIntent = "exact" | "preserveExistingOrDefault";
@@ -91,8 +88,7 @@ type AddUserCustomConnectorResult =
   | {
       readonly status: "invalidCustomConnectorPermissions";
       readonly message: string;
-    }
-  | { readonly status: "mcpFeatureDisabled" };
+    };
 
 async function lockAgentForConnectorReplace(
   db: Pick<Db, "select">,
@@ -132,7 +128,6 @@ interface LockedCustomConnectorRow {
   readonly id: string;
   readonly slug: string;
   readonly prefixTemplates: readonly string[];
-  readonly mcpTransport: string | null;
   readonly authMode: OrgCustomConnectorAuthMode;
   readonly oauthProviderAdapter: string | null;
   readonly permissionBundleRef: string | null;
@@ -140,7 +135,6 @@ interface LockedCustomConnectorRow {
 
 interface LockedCustomConnectorDefinitions {
   readonly missingIds: readonly string[];
-  readonly mcpConnectorIds: ReadonlySet<string>;
   readonly permissionBundleRefs: ReadonlyMap<string, string | null>;
 }
 
@@ -154,7 +148,6 @@ async function lockCustomConnectorDefinitionsForGrant(
   if (args.connectorIds.length === 0) {
     return {
       missingIds: [],
-      mcpConnectorIds: new Set(),
       permissionBundleRefs: new Map(),
     };
   }
@@ -167,7 +160,6 @@ async function lockCustomConnectorDefinitionsForGrant(
         id: orgCustomConnectors.id,
         slug: orgCustomConnectors.slug,
         prefixTemplates: orgCustomConnectors.prefixTemplates,
-        mcpTransport: orgCustomConnectors.mcpTransport,
         authMode: orgCustomConnectors.authMode,
         oauthProviderAdapter: orgCustomConnectorOauthConfigs.providerAdapter,
         permissionBundleRef: orgCustomConnectors.permissionBundleRef,
@@ -202,25 +194,18 @@ async function lockCustomConnectorDefinitionsForGrant(
       return row.id;
     }),
   );
-  const mcpConnectorIds = new Set(
-    lockedRows.flatMap((row) => {
-      return row.mcpTransport === null ? [] : [row.id];
-    }),
-  );
   const missingIds = args.connectorIds.filter((id) => {
     return !lockedIds.has(id);
   });
   if (missingIds.length > 0) {
     return {
       missingIds,
-      mcpConnectorIds,
       permissionBundleRefs: new Map(),
     };
   }
 
   return {
     missingIds: [],
-    mcpConnectorIds,
     permissionBundleRefs: new Map(
       lockedRows.map((row) => {
         return [
@@ -605,9 +590,6 @@ async function persistUserCustomConnectorTransaction(args: {
       ),
     )
     .for("update");
-  const previousIds = previousRows.map((row) => {
-    return row.customConnectorId;
-  });
   const connectorIds = args.grants.map((grant) => {
     return grant.customConnectorId;
   });
@@ -640,26 +622,6 @@ async function persistUserCustomConnectorTransaction(args: {
       },
       changedConnectorIds: [],
     };
-  }
-  const previousIdSet = new Set(previousIds);
-  const addsMcpConnector = connectorIds.some((connectorId) => {
-    return (
-      !previousIdSet.has(connectorId) &&
-      definitions.mcpConnectorIds.has(connectorId)
-    );
-  });
-  if (addsMcpConnector) {
-    const featureSwitchContext = await loadUserFeatureSwitchContext(
-      args.tx,
-      args.request.orgId,
-      args.request.userId,
-    );
-    if (!isCustomConnectorMcpEnabled(featureSwitchContext)) {
-      return {
-        result: { status: "mcpFeatureDisabled" },
-        changedConnectorIds: [],
-      };
-    }
   }
   const permissionSelection = await resolveCustomConnectorPermissionSelection({
     connectorIds,

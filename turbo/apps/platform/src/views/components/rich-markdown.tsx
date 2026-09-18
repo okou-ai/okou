@@ -1,11 +1,12 @@
 import { withChatScrollLayout } from "./chat-scroll-layout.tsx";
 import "../css/vendor/uiw-react-markdown-preview-5.2.0.css";
-import { useGet, useLastResolved, useSet } from "ccstate-react";
+import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import type { Element, Root } from "hast";
 import { toJsxRuntime } from "hast-util-to-jsx-runtime";
 import { File, Image, Loader2, Video } from "lucide-react";
 import type { ComponentPropsWithoutRef, CSSProperties, ReactNode } from "react";
 import { Fragment, jsx, jsxs } from "react/jsx-runtime";
+import { useTranslation } from "react-i18next";
 import { z } from "zod";
 import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
 
@@ -25,6 +26,7 @@ import type { AttachmentPreviewSignals } from "../../signals/attachment-resource
 import { isImageUrl, isSafeMediaUrl } from "../../lib/media-url.ts";
 import { resolveArtifactImageTransformOrigin } from "../../lib/platform-host.ts";
 import { MarkdownCardView } from "../okou-page/chat-body-cards.tsx";
+import { FilePreviewIcon } from "../okou-page/file-preview-icon.tsx";
 import {
   fallbackHtmlPreviewTitle,
   SitePreviewCard,
@@ -84,6 +86,7 @@ function MediaImage({
   resolvedPreview,
   asLink = false,
   insideLink = false,
+  resolutionFailed = false,
 }: {
   src: string | undefined;
   url: string;
@@ -93,8 +96,11 @@ function MediaImage({
   resolvedPreview?: AttachmentPreviewSignals;
   asLink?: boolean;
   insideLink?: boolean;
+  resolutionFailed?: boolean;
 }) {
-  const imageStatus = useGet(load.status$);
+  const { t } = useTranslation();
+  const loadStatus = useGet(load.status$);
+  const imageStatus = resolutionFailed ? "error" : loadStatus;
   const thumbnailSrc =
     src === undefined
       ? undefined
@@ -121,6 +127,14 @@ function MediaImage({
       {showPlaceholder && (
         <span
           data-testid="markdown-image-preview-loading"
+          role={imageStatus === "error" ? "status" : undefined}
+          aria-label={
+            imageStatus === "error"
+              ? t(($) => {
+                  return $.artifacts.access.title;
+                })
+              : undefined
+          }
           className="col-start-1 row-start-1 z-10 flex h-full w-full min-h-0 min-w-0 items-center justify-center bg-muted/70 text-muted-foreground"
         >
           {imageStatus === "loading" ? (
@@ -354,8 +368,93 @@ function MarkdownSitePreview({ site }: { readonly site: HostedSiteCard }) {
   );
 }
 
+function LinkedArtifactImage({
+  signals,
+  alt,
+  insideLink,
+}: {
+  readonly signals: ArtifactSignals;
+  readonly alt: string;
+  readonly insideLink?: boolean;
+}) {
+  const thumbnail = useLoadable(signals.thumbnailUrl$);
+  return (
+    <MediaImage
+      src={thumbnail.state === "hasData" ? thumbnail.data : undefined}
+      url={signals.url}
+      alt={alt}
+      load={signals.previewImageLoad}
+      asLink
+      insideLink={insideLink}
+      resolutionFailed={thumbnail.state === "hasError"}
+    />
+  );
+}
+
+function LinkedArtifactPreview({
+  signals,
+  label,
+}: {
+  readonly signals: ArtifactSignals;
+  readonly label: string;
+}) {
+  const { t } = useTranslation();
+  const resourceUrl = useLoadable(signals.resourceUrl$);
+  const src = resourceUrl.state === "hasData" ? resourceUrl.data : undefined;
+  const title = label.trim() || signals.filename;
+  return (
+    <SitePreviewCard
+      href={signals.url}
+      testId={`markdown-artifact-preview-${signals.kind}`}
+      openInNewTab
+      title={title}
+    >
+      {resourceUrl.state === "hasError" ? (
+        <span
+          role="status"
+          className="absolute inset-0 flex items-center justify-center px-3 text-sm text-muted-foreground"
+        >
+          {t(($) => {
+            return $.artifacts.access.title;
+          })}
+        </span>
+      ) : signals.kind === "html" ? (
+        <SitePreviewViewport src={src} title={title} />
+      ) : signals.kind === "video" ? (
+        <video
+          src={src}
+          muted
+          playsInline
+          preload="metadata"
+          aria-hidden="true"
+          className="pointer-events-none h-full w-full bg-black object-contain"
+        />
+      ) : (
+        <span className="absolute inset-0 flex items-center justify-center">
+          <FilePreviewIcon
+            filename={signals.filename}
+            contentType={signals.contentType}
+          />
+        </span>
+      )}
+    </SitePreviewCard>
+  );
+}
+
 function LinkedMediaImageRenderer(props: MarkdownImageProps) {
   const { src, alt } = props;
+  const artifact = props.node?.data?.linkedArtifact;
+  if (artifact) {
+    return artifact.kind === "image" ? (
+      <LinkedArtifactImage
+        signals={artifact}
+        alt={alt ?? ""}
+        insideLink={props.node?.data?.imageInsideLink}
+      />
+    ) : (
+      <LinkedArtifactPreview signals={artifact} label={alt ?? ""} />
+    );
+  }
   const site = props.node?.data?.hostedSite;
   if (site) {
     return <MarkdownSitePreview site={site} />;
@@ -385,6 +484,8 @@ function containsBlockArtifact(node: Element): boolean {
     return (
       (child.tagName === "img" &&
         ((card?.kind === "artifact" && card.signals.kind !== "image") ||
+          (child.data?.linkedArtifact !== undefined &&
+            child.data.linkedArtifact.kind !== "image") ||
           child.data?.hostedSite !== undefined)) ||
       containsBlockArtifact(child)
     );

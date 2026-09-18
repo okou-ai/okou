@@ -31,7 +31,6 @@ import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 
 import { resolveApiBaseForTarget } from "../../../../signals/api-base.ts";
-import { customConnectorMcpEnabled$ } from "../../../../signals/external/feature-switch.ts";
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
 import {
   addCustomConnectorAuthMethod$,
@@ -147,17 +146,15 @@ function BaseFields({
   form,
   setField,
   editing,
-  mcpEnabled,
   setKind,
 }: CreateFormFieldProps & {
   readonly editing: boolean;
-  readonly mcpEnabled: boolean;
   readonly setKind: (kind: CustomConnectorResponse["kind"]) => void;
 }) {
   const { t } = useTranslation();
   return (
     <>
-      {!editing && mcpEnabled && (
+      {!editing && (
         <div className="flex flex-col gap-2">
           <label className="text-sm font-medium text-foreground">
             {t(($) => {
@@ -1068,15 +1065,13 @@ function oauthCredentialsCanSubmit(
 function formCanSubmit(
   form: CustomConnectorCreateForm,
   connector: CustomConnectorResponse | undefined,
-  mcpEnabled: boolean,
 ): boolean {
   const connectorKind = connector?.kind ?? form.kind;
   if (
     form.displayName.trim().length === 0 ||
     (connectorKind === "http"
       ? parsePrefixLines(form.prefixesRaw).length === 0
-      : form.mcpEndpoint.trim().length === 0) ||
-    (connectorKind === "mcp" && !mcpEnabled)
+      : form.mcpEndpoint.trim().length === 0)
   ) {
     return false;
   }
@@ -1243,7 +1238,6 @@ function CustomConnectorForm({
   setField,
   setKind,
   editing,
-  mcpEnabled,
   advancedApiDefinition,
   addAuthMethod,
   removeAuthMethod,
@@ -1253,7 +1247,6 @@ function CustomConnectorForm({
   onCancel,
 }: AuthenticationFieldsProps & {
   readonly setKind: (kind: CustomConnectorResponse["kind"]) => void;
-  readonly mcpEnabled: boolean;
   readonly submitting: boolean;
   readonly canSubmit: boolean;
   readonly onSubmit: (event: FormEvent<HTMLFormElement>) => void;
@@ -1267,7 +1260,6 @@ function CustomConnectorForm({
         setField={setField}
         setKind={setKind}
         editing={editing}
-        mcpEnabled={mcpEnabled}
       />
       <AuthenticationFields
         form={form}
@@ -1334,7 +1326,6 @@ export function CustomConnectorCreateDialog({
 }) {
   const { t } = useTranslation();
   const form = useGet(customConnectorCreateForm$);
-  const mcpEnabled = useGet(customConnectorMcpEnabled$);
   const setField = useSet(setCustomConnectorCreateField$);
   const setKind = useSet(setCustomConnectorCreateKind$);
   const addAuthMethod = useSet(addCustomConnectorAuthMethod$);
@@ -1359,7 +1350,7 @@ export function CustomConnectorCreateDialog({
   const submitting = editing
     ? updateLoadable.state === "loading"
     : createLoadable.state === "loading";
-  const canSubmit = !submitting && formCanSubmit(form, connector, mcpEnabled);
+  const canSubmit = !submitting && formCanSubmit(form, connector);
   const advancedApiDefinition = connectorHasAdvancedApiDefinition(connector);
 
   const close = () => {
@@ -1433,7 +1424,6 @@ export function CustomConnectorCreateDialog({
             setField={setField}
             setKind={setKind}
             editing={editing}
-            mcpEnabled={mcpEnabled}
             advancedApiDefinition={advancedApiDefinition}
             addAuthMethod={addAuthMethod}
             removeAuthMethod={removeAuthMethod}

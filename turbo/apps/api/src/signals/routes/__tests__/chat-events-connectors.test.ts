@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it, onTestFinished, beforeEach } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -30,7 +29,6 @@ import {
   readCustomConnectorCredentialStorageParent,
   setCustomConnectorCredentialStorageState,
 } from "./helpers/connector-credential-storage-state";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import {
   createChatEventsFixture,
@@ -667,13 +665,6 @@ describe("CHAT-02: thread connector account selection", () => {
     if (!orgId) {
       throw new Error("Expected an organization-scoped chat actor");
     }
-    await updateFeatureSwitchesForUser(
-      context,
-      { userId: actor.userId, orgId },
-      {
-        [FeatureSwitchKey.CustomConnectorMcp]: true,
-      },
-    );
     const httpConnector = await connectors.createCustomConnector(
       actor,
       manualHttpCustomConnectorCreateBody({

@@ -12,14 +12,12 @@ import {
   connectorManualGrantContract,
   connectorsBySlugContract,
 } from "@okouai/api-contracts/contracts/connectors";
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import {
   customConnectorByIdContract,
   customConnectorValuesContract,
   customConnectorsContract,
   type CreateCustomConnectorBody,
 } from "@okouai/api-contracts/contracts/custom-connectors";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -35,7 +33,6 @@ import { connectorsRoutes } from "../connectors";
 import { customConnectorsRoutes } from "../custom-connectors";
 import { customConnectorsDeleteRoutes } from "../custom-connectors-delete";
 import { customConnectorsValuesSetRoutes } from "../custom-connectors-values-set";
-import { featureSwitchesRoutes } from "../feature-switches";
 import { cronConnectorCatalogRoutes } from "../cron-connector-catalog";
 import {
   seedConnectorStorageRow,
@@ -54,7 +51,6 @@ const routes = Object.freeze([
   ...customConnectorsRoutes,
   ...customConnectorsDeleteRoutes,
   ...customConnectorsValuesSetRoutes,
-  ...featureSwitchesRoutes,
 ]);
 
 interface Fixture {
@@ -92,10 +88,6 @@ function connectorClient() {
 
 function connectorProjectionClient() {
   return setupApp({ context, routes })(connectorsBySlugContract);
-}
-
-function featureClient() {
-  return setupApp({ context, routes })(featureSwitchesContract);
 }
 
 function customConnectorClient() {
@@ -198,7 +190,6 @@ async function cleanupFixture(fixture: Fixture): Promise<void> {
       [204, 404],
     );
   }
-  await accept(featureClient().delete({ headers: authHeaders() }), [200]);
 }
 
 describe("connector account lifecycle routes", () => {
@@ -1243,17 +1234,6 @@ describe("connector account lifecycle routes", () => {
     async ({ body }) => {
       const fixture = await seedFixture();
       mocks.clerk.session(fixture.userId, fixture.orgId);
-      await accept(
-        featureClient().update({
-          headers: authHeaders(),
-          body: {
-            switches: {
-              [FeatureSwitchKey.CustomConnectorMcp]: true,
-            },
-          },
-        }),
-        [200],
-      );
       const definition = await accept(
         customConnectorClient().create({ headers: authHeaders(), body }),
         [201],
@@ -1389,17 +1369,6 @@ describe("connector account lifecycle routes", () => {
     async ({ body }) => {
       const fixture = await seedFixture();
       mocks.clerk.session(fixture.userId, fixture.orgId);
-      await accept(
-        featureClient().update({
-          headers: authHeaders(),
-          body: {
-            switches: {
-              [FeatureSwitchKey.CustomConnectorMcp]: true,
-            },
-          },
-        }),
-        [200],
-      );
       const definition = await accept(
         customConnectorClient().create({ headers: authHeaders(), body }),
         [201],

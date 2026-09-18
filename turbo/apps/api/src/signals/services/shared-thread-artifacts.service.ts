@@ -45,9 +45,9 @@ export const resolveSharedThreadHostedDownload$ = command(
     { get, set },
     args: {
       readonly publicSlug: string;
-      readonly record: Extract<
-        ArtifactDeliveryRecord,
-        { kind: "thread-resource" }
+      readonly record: Pick<
+        Extract<ArtifactDeliveryRecord, { kind: "thread-resource" }>,
+        "publicBrand" | "threadId" | "publicToken" | "targetKind" | "targetId"
       >;
     },
     signal: AbortSignal,
