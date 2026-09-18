@@ -18,6 +18,9 @@ import {
   MORNING_BRIEF_ARCHIVE_MAX_DECOMPRESSED_BYTES,
   MORNING_BRIEF_INSTRUCTIONS_MAX_BYTES,
   MORNING_BRIEF_MANIFEST_MAX_BYTES,
+  morningBriefStoragePhaseExpired,
+  morningBriefStoragePhaseExpiresAt,
+  morningBriefStoragePhaseRemainingMs,
   MORNING_BRIEF_STORAGE_PHASE_MS,
 } from "../morning-brief-language-bounds";
 import {
@@ -951,6 +954,22 @@ describe("declared bounds", () => {
     expect(MORNING_BRIEF_ARCHIVE_MAX_DECOMPRESSED_BYTES).toBe(2 * 1024 * 1024);
     expect(MORNING_BRIEF_INSTRUCTIONS_MAX_BYTES).toBe(64 * 1024);
     expect(MORNING_BRIEF_STORAGE_PHASE_MS).toBe(5000);
+  });
+
+  it("selects one language deadline and admits only positive timer time", () => {
+    const expiresAt = 5000;
+
+    expect(morningBriefStoragePhaseExpiresAt(0, 45_000)).toBe(5000);
+    expect(morningBriefStoragePhaseExpiresAt(44_000, 45_000)).toBe(45_000);
+    expect(morningBriefStoragePhaseRemainingMs(45_000, 44_000)).toBe(1000);
+    expect(morningBriefStoragePhaseExpiresAt(45_000, 45_000)).toBe(45_000);
+    expect(morningBriefStoragePhaseRemainingMs(45_000, 45_000)).toBeNull();
+    expect(morningBriefStoragePhaseExpired(expiresAt, 4999)).toBeFalsy();
+    expect(morningBriefStoragePhaseRemainingMs(expiresAt, 4999)).toBe(1);
+    expect(morningBriefStoragePhaseExpired(expiresAt, 5000)).toBeTruthy();
+    expect(morningBriefStoragePhaseRemainingMs(expiresAt, 5000)).toBeNull();
+    expect(morningBriefStoragePhaseExpired(expiresAt, 5010)).toBeTruthy();
+    expect(morningBriefStoragePhaseRemainingMs(expiresAt, 5010)).toBeNull();
   });
 
   it("pins the retained descriptor bounds", () => {

@@ -284,6 +284,90 @@ export async function holdMorningBriefOwnerRow(
   return { waitForArrival: held.waitForBlocked, release: held.release };
 }
 
+/**
+ * Hold the workflow row inside final local admission, exclusively.
+ *
+ * Acceptance and release take the Agent parent first, then this occurrence's
+ * pinned workflow `FOR SHARE`, followed by schedule, Slack, generation and the
+ * canonical reads. A request observed here has therefore committed to the safe
+ * Agent→workflow order while every later authority row remains free. This is
+ * useful for proving a real Agent update or deletion cannot acquire Agent after
+ * admission and then reverse into workflow or generation.
+ */
+export async function holdMorningBriefAdmissionInstallation(
+  workflowId: string,
+  signal: AbortSignal,
+): Promise<{
+  readonly waitForArrival: (minimum?: number) => Promise<number>;
+  readonly release: () => Promise<void>;
+}> {
+  const held = await holdDeferredRow(signal, async (tx) => {
+    await tx.execute(
+      sql`SELECT 1 FROM workflows WHERE id = ${workflowId}::uuid FOR UPDATE`,
+    );
+  });
+  onTestFinished(held.release);
+  return { waitForArrival: held.waitForBlocked, release: held.release };
+}
+
+/**
+ * Hold a relation that canonical local authority still has to read.
+ *
+ * The route is staged after collection/provider work before this is acquired,
+ * so an observed waiter is the persistence or readback authority pass itself.
+ * A relation lock is the narrow PostgreSQL rendezvous for a plain SELECT; no
+ * production dependency is mocked and no application behavior is replaced.
+ */
+export async function holdMorningBriefAuthorityRead(
+  signal: AbortSignal,
+): Promise<{
+  readonly waitForArrival: (minimum?: number) => Promise<number>;
+  readonly release: () => Promise<void>;
+}> {
+  const held = await holdDeferredRow(signal, async (tx) => {
+    await tx.execute(
+      sql`LOCK TABLE workflow_automations IN ACCESS EXCLUSIVE MODE`,
+    );
+  });
+  onTestFinished(held.release);
+  return { waitForArrival: held.waitForBlocked, release: held.release };
+}
+
+/** Hold the generation row so final admission can acquire every parent first. */
+export async function holdMorningBriefGenerationRow(
+  owner: MorningBriefGenerationOwner,
+  signal: AbortSignal,
+): Promise<{
+  readonly waitForArrival: (minimum?: number) => Promise<number>;
+  readonly release: () => Promise<void>;
+}> {
+  const held = await holdDeferredRow(signal, async (tx) => {
+    await tx
+      .select({ attemptId: morningBriefGenerations.attemptId })
+      .from(morningBriefGenerations)
+      .where(ownerRows(owner))
+      .for("update");
+  });
+  onTestFinished(held.release);
+  return { waitForArrival: held.waitForBlocked, release: held.release };
+}
+
+/** Hold the first canonical read after authority and generation rows are held. */
+export async function holdMorningBriefFeatureSwitchRead(
+  signal: AbortSignal,
+): Promise<{
+  readonly waitForArrival: (minimum?: number) => Promise<number>;
+  readonly release: () => Promise<void>;
+}> {
+  const held = await holdDeferredRow(signal, async (tx) => {
+    await tx.execute(
+      sql`LOCK TABLE user_feature_switches IN ACCESS EXCLUSIVE MODE`,
+    );
+  });
+  onTestFinished(held.release);
+  return { waitForArrival: held.waitForBlocked, release: held.release };
+}
+
 function ownerDigest(owner: MorningBriefGenerationOwner): string {
   return createHash("sha256")
     .update(`${owner.orgId}:${owner.userId}`, "utf8")

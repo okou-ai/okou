@@ -432,11 +432,30 @@ any storage I/O.
 The version is resolved before network reads and that immutable version is read
 outside any transaction. One absolute deadline starts before that resolution and
 bounds everything the phase owns; it is the tighter of the five seconds and what
-is left of the collection budget, and reaching it is already expired. The clock
-and cancellation are rechecked after every wait and after the synchronous parse
-and extraction, so a successful response whose own timer has not fired yet
-cannot be released late, and an exhausted budget asks storage for nothing at
-all.
+is left of the collection budget, and reaching it is already expired. A positive
+remaining duration is admitted before the phase timer is constructed, so a clock
+that crosses the deadline between the initial check and timer creation returns
+the normal timeout outcome rather than passing a negative delay to the timer.
+The clock and cancellation are rechecked after every wait and after manifest
+decode, JSON parsing, target filtering and archive extraction, so a successful
+response whose own timer has not fired yet cannot release absence or text late
+or authorize another archive read. An exhausted budget asks storage for nothing
+at all.
+
+The registered composition-route coverage uses the real database, canonical
+instruction publisher and an object-storage boundary double. It proves
+before/equality/after behavior at the nearest real manifest and archive response
+boundaries and joined cancellation while a storage read is held. A production
+route cannot yield between source finalization and language admission or between
+two synchronous parsing instructions. The pure production admission helper
+therefore pins the exact before/equality/after rule used at those synchronous
+edges, including genuinely tighter outer-deadline selection and the nonpositive
+entry that returns before timer or storage construction; no internal reader,
+planner or authorizer is replaced. Held-I/O
+cases use arrival and settlement barriers rather than sleeps. This is
+deterministic integration and helper evidence for admission and ownership, not
+evidence of real model language compliance. The single-model migration/cohort
+limitation below remains open.
 
 Every frozen outcome is revalidated against live configuration before the
 generation reservation, absence included: an available or empty file must still

@@ -5939,6 +5939,7 @@ function MessageAttachment({
       <ChatVideoPreviewButton
         resourceUrl$={a.signals.resourceUrl$}
         posterLoad={a.signals.previewImageLoad}
+        previewImageUrl$={a.signals.previewImageUrl$}
         ariaLabel={t(
           ($) => {
             return $.chat.attachments.previewFile;
@@ -6460,6 +6461,7 @@ function UserMessageFileReference({
       <ChatVideoPreviewButton
         resourceUrl$={signals.resourceUrl$}
         posterLoad={signals.previewImageLoad}
+        previewImageUrl$={signals.previewImageUrl$}
         ariaLabel={t(
           ($) => {
             return $.chat.attachments.previewFile;

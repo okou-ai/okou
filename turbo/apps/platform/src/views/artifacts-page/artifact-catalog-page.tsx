@@ -11,8 +11,13 @@ import {
   Video,
   Globe,
 } from "lucide-react";
-import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
-import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
+import {
+  useGet,
+  useLastLoadable,
+  useLastResolved,
+  useLoadable,
+  useSet,
+} from "ccstate-react";
 import { surfaceVariants, cn } from "@okouai/ui";
 import { Alert, AlertDescription } from "@okouai/ui/components/ui/alert";
 import { useTranslation } from "react-i18next";
@@ -39,7 +44,6 @@ import {
 // requested. The signal layer deduplicates repeated requests for one cursor.
 const ARTIFACT_AUTO_LOAD_VIEWPORT_COUNT = 2;
 const ARTIFACT_GRID_MIN_CARD_WIDTH_PX = 292;
-const ARTIFACT_CARD_THUMBNAIL_WIDTH_PX = 640;
 
 const ARTIFACT_KIND_OPTIONS: readonly ArtifactCatalogKind[] = [
   "presentation",
@@ -168,10 +172,15 @@ function ArtifactCatalogCard({
 }) {
   const { t } = useTranslation();
   const scrollArtifactCardIntoViewRef = useSet(scrollArtifactCardIntoViewRef$);
-  const thumbnailUrl = useLastResolved(artifact.thumbnailUrl$);
-  const sourceVideo = artifact.videoSourceUrl ? (
-    <ArtifactCatalogVideoPreview artifact={artifact} />
-  ) : null;
+  const thumbnailLoadable = useLastLoadable(artifact.thumbnailUrl$);
+  const thumbnailUrl =
+    thumbnailLoadable.state === "hasData" ? thumbnailLoadable.data : null;
+  const thumbnailPending =
+    artifact.thumbnail !== null && thumbnailLoadable.state === "loading";
+  const sourceVideo =
+    artifact.videoSourceUrl && !thumbnailPending ? (
+      <ArtifactCatalogVideoPreview artifact={artifact} />
+    ) : null;
   const fallbackPreview =
     sourceVideo ??
     (artifact.kind === "file" ? (
@@ -211,10 +220,7 @@ function ArtifactCatalogCard({
       >
         {thumbnailUrl ? (
           <ArtifactThumbnailImage
-            src={r2ImageTransformUrl(thumbnailUrl, {
-              width: ARTIFACT_CARD_THUMBNAIL_WIDTH_PX,
-              fit: "scale-down",
-            })}
+            src={thumbnailUrl}
             load={artifact.thumbnailLoad}
             className="h-full w-full object-cover"
             fallback={

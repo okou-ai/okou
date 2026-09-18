@@ -19,15 +19,23 @@ import {
 } from "../../../test-fixtures/morning-brief-collection";
 import { expireMorningBriefGenerationRetention } from "../../../test-fixtures/morning-brief-generation";
 import {
+  holdEmailOutboxClaim,
   holdEmailOutboxRow,
   rejectEmailOutboxCompletion,
 } from "../../../test-fixtures/email-outbox";
 import {
   ageEmailOutboxItem,
+  cleanupMorningBriefMember,
   deleteOwnedChatThread,
+  deleteOwnedMorningBriefAgent,
+  emailOutboxLockIsAvailable,
   rejectMorningBriefDeliveryInsert,
   holdDeliveryAgentRow,
   holdDeliveryOwnerRow,
+  holdMemberUnsubscribe,
+  holdMorningBriefAgentTransfer,
+  holdMorningBriefAutomationDisable,
+  holdMorningBriefDeliveryCleanup,
   readBoundChatThreadId,
   setGenerationExpiry,
   sweepGenerations,
@@ -40,12 +48,14 @@ import {
   readEmailOutboxRow,
   readMorningBriefDeliveries,
   readMorningBriefDeliveryOutbox,
+  rejectMorningBriefOutboxDelete,
   revokeMemberMorningBriefDeliveries,
   seedMemberEmailAddress,
   seedUnrelatedEmailIntent,
   spendEmailOutboxAttempts,
   suppressEmailAddress,
   unsubscribeMember,
+  waitForDatabaseBlocker,
 } from "../../../test-fixtures/morning-brief-delivery";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { morningBriefDeliveryPreviewRoutes } from "../morning-brief-delivery-preview";
@@ -356,6 +366,22 @@ async function readOutbox(f: Fixture) {
     orgId: f.orgId,
     userId: f.userId,
   });
+}
+
+async function enqueueNativeDelivery(
+  f: Fixture,
+  scheduledFor: string = ANCHOR,
+): Promise<{ readonly outboxId: string; readonly chatThreadId: string }> {
+  const attemptId = await generateAcceptedResult(f, scheduledFor);
+  const delivered = await accept(deliver(f, attemptId), [200]);
+  const [queued] = await readOutbox(f);
+  if (!queued) {
+    throw new Error("Expected one queued native Morning Brief intent");
+  }
+  return {
+    outboxId: queued.id,
+    chatThreadId: delivered.body.delivery.chatThreadId,
+  };
 }
 
 describe("Morning Brief native delivery", () => {
@@ -924,6 +950,335 @@ describe("Morning Brief native delivery", () => {
     // content-bearing mail with it rather than leaving it to expire.
     await expect(readDeliveries(f)).resolves.toHaveLength(0);
     await expect(readEmailOutboxRow(queued!.id)).resolves.toBeUndefined();
+  });
+
+  it(
+    "serializes the real member cleanup and native claim in both winning orders",
+    { timeout: 40_000 },
+    async () => {
+      scriptSlack();
+      scriptProviders();
+
+      // Claim wins: it holds member/policy and outbox while its committed
+      // request is paused. The real member cleanup waits on those first locks,
+      // then removes local delivery state; the admitted provider operation is
+      // the one thing cleanup cannot recall.
+      const admittedOwner = await fixture();
+      const admitted = await enqueueNativeDelivery(admittedOwner);
+      const genericId = await seedUnrelatedEmailIntent("generic@example.test");
+      const claimGate = await holdEmailOutboxClaim(
+        admitted.outboxId,
+        context.signal,
+      );
+      const admittedDrain = drainEmailOutbox(
+        [admitted.outboxId],
+        context.signal,
+      );
+      const drainPid = await claimGate.waitForBlocked();
+      const laterCleanup = cleanupMorningBriefMember(
+        { orgId: admittedOwner.orgId, userId: admittedOwner.userId },
+        context.signal,
+      );
+      await waitForDatabaseBlocker(drainPid);
+      await claimGate.release();
+      await Promise.all([admittedDrain, laterCleanup]);
+
+      expect(emailSends()).toHaveLength(1);
+      await expect(readDeliveries(admittedOwner)).resolves.toHaveLength(0);
+      await expect(
+        readEmailOutboxRow(admitted.outboxId),
+      ).resolves.toBeUndefined();
+      await expect(readEmailOutboxRow(genericId)).resolves.toBeDefined();
+
+      // Cleanup wins: it retains the member lock before reaching delivery
+      // deletion. The drain is observed waiting on that authority lock while a
+      // third session can still lock the outbox, proving it did not recreate
+      // the old outbox -> member edge.
+      const revokedOwner = await fixture();
+      const revoked = await enqueueNativeDelivery(revokedOwner, SECOND_ANCHOR);
+      const cleanupGate = await holdMorningBriefDeliveryCleanup(
+        revoked.outboxId,
+        context.signal,
+      );
+      const firstCleanup = cleanupMorningBriefMember(
+        { orgId: revokedOwner.orgId, userId: revokedOwner.userId },
+        context.signal,
+      );
+      const cleanupPid = await cleanupGate.waitForBlocked();
+      const refusedDrain = drainEmailOutbox([revoked.outboxId], context.signal);
+      await waitForDatabaseBlocker(cleanupPid);
+      await expect(
+        emailOutboxLockIsAvailable(revoked.outboxId),
+      ).resolves.toBeTruthy();
+      await cleanupGate.release();
+      await Promise.all([firstCleanup, refusedDrain]);
+
+      expect(emailSends()).toHaveLength(1);
+      await expect(readDeliveries(revokedOwner)).resolves.toHaveLength(0);
+      await expect(
+        readEmailOutboxRow(revoked.outboxId),
+      ).resolves.toBeUndefined();
+      await expect(readEmailOutboxRow(genericId)).resolves.toBeDefined();
+    },
+  );
+
+  it(
+    "serializes the real thread cleanup and native claim in both winning orders",
+    { timeout: 40_000 },
+    async () => {
+      scriptSlack();
+      scriptProviders();
+
+      const admittedOwner = await fixture();
+      const admitted = await enqueueNativeDelivery(admittedOwner);
+      const claimGate = await holdEmailOutboxClaim(
+        admitted.outboxId,
+        context.signal,
+      );
+      const admittedDrain = drainEmailOutbox(
+        [admitted.outboxId],
+        context.signal,
+      );
+      const drainPid = await claimGate.waitForBlocked();
+      const laterDeletion = deleteOwnedChatThread(
+        {
+          threadId: admitted.chatThreadId,
+          userId: admittedOwner.userId,
+          orgId: admittedOwner.orgId,
+        },
+        context.signal,
+      );
+      await waitForDatabaseBlocker(drainPid);
+      await claimGate.release();
+      await Promise.all([admittedDrain, laterDeletion]);
+      expect(emailSends()).toHaveLength(1);
+      await expect(readDeliveries(admittedOwner)).resolves.toHaveLength(0);
+
+      const deletedOwner = await fixture();
+      const deleted = await enqueueNativeDelivery(deletedOwner, SECOND_ANCHOR);
+      const cleanupGate = await holdMorningBriefDeliveryCleanup(
+        deleted.outboxId,
+        context.signal,
+      );
+      const firstDeletion = deleteOwnedChatThread(
+        {
+          threadId: deleted.chatThreadId,
+          userId: deletedOwner.userId,
+          orgId: deletedOwner.orgId,
+        },
+        context.signal,
+      );
+      const cleanupPid = await cleanupGate.waitForBlocked();
+      const refusedDrain = drainEmailOutbox([deleted.outboxId], context.signal);
+      await waitForDatabaseBlocker(cleanupPid);
+      await expect(
+        emailOutboxLockIsAvailable(deleted.outboxId),
+      ).resolves.toBeTruthy();
+      await cleanupGate.release();
+      await Promise.all([firstDeletion, refusedDrain]);
+
+      expect(emailSends()).toHaveLength(1);
+      await expect(readDeliveries(deletedOwner)).resolves.toHaveLength(0);
+      await expect(
+        readEmailOutboxRow(deleted.outboxId),
+      ).resolves.toBeUndefined();
+    },
+  );
+
+  it(
+    "keeps the real Agent cleanup conflict bounded without a deadlock",
+    { timeout: 40_000 },
+    async () => {
+      const f = await fixture();
+      scriptSlack();
+      scriptProviders();
+      const queued = await enqueueNativeDelivery(f);
+
+      // A native claim that has won admission retains the Agent row. Real Agent
+      // deletion uses NOWAIT plus its existing 100 ms transaction bound, so it
+      // must return its ordinary conflict rather than wait for outbox or turn
+      // this intentional bounded conflict into a deadlock retry.
+      const claimGate = await holdEmailOutboxClaim(
+        queued.outboxId,
+        context.signal,
+      );
+      const drain = drainEmailOutbox([queued.outboxId], context.signal);
+      await claimGate.waitForBlocked();
+      const deletion = await deleteOwnedMorningBriefAgent(
+        { agentId: f.agentId, orgId: f.orgId, userId: f.userId },
+        context.signal,
+      );
+      await claimGate.release();
+      await drain;
+      expect(deletion).toMatchObject({
+        status: 409,
+        body: {
+          error: {
+            code: "CONFLICT",
+            message: expect.stringContaining("retry shortly"),
+          },
+        },
+      });
+      expect(emailSends()).toHaveLength(1);
+      await expect(readDeliveries(f)).resolves.toHaveLength(1);
+      await expect(readEmailOutboxRow(queued.outboxId)).resolves.toMatchObject({
+        status: "sent",
+      });
+    },
+  );
+
+  it(
+    "rechecks opt-out, automation and Agent authority after their real waits",
+    { timeout: 40_000 },
+    async () => {
+      scriptSlack();
+      scriptProviders();
+
+      const optedOut = await fixture();
+      const optedOutIntent = await enqueueNativeDelivery(optedOut);
+      const optOut = await holdMemberUnsubscribe(
+        optedOut.userId,
+        context.signal,
+      );
+      const optedOutDrain = drainEmailOutbox(
+        [optedOutIntent.outboxId],
+        context.signal,
+      );
+      await optOut.waitForBlocked();
+      await optOut.release();
+      await optedOutDrain;
+      await expect(
+        readEmailOutboxRow(optedOutIntent.outboxId),
+      ).resolves.toMatchObject({
+        status: "failed",
+        lastError: expect.stringContaining("unsubscribed"),
+      });
+
+      const disabled = await fixture();
+      const disabledIntent = await enqueueNativeDelivery(
+        disabled,
+        SECOND_ANCHOR,
+      );
+      const disable = await holdMorningBriefAutomationDisable(
+        disabled.automationId,
+        context.signal,
+      );
+      const disabledDrain = drainEmailOutbox(
+        [disabledIntent.outboxId],
+        context.signal,
+      );
+      await disable.waitForBlocked();
+      await disable.release();
+      await disabledDrain;
+      await expect(
+        readEmailOutboxRow(disabledIntent.outboxId),
+      ).resolves.toMatchObject({
+        status: "failed",
+        lastError: expect.stringContaining("no longer enabled"),
+      });
+
+      const transferred = await fixture();
+      const transferredIntent = await enqueueNativeDelivery(transferred);
+      const transfer = await holdMorningBriefAgentTransfer(
+        transferred.agentId,
+        `user_${randomUUID()}`,
+        context.signal,
+      );
+      const transferredDrain = drainEmailOutbox(
+        [transferredIntent.outboxId],
+        context.signal,
+      );
+      await transfer.waitForBlocked();
+      await transfer.release();
+      await transferredDrain;
+      await expect(
+        readEmailOutboxRow(transferredIntent.outboxId),
+      ).resolves.toMatchObject({
+        status: "failed",
+        lastError: expect.stringContaining("Agent is no longer usable"),
+      });
+
+      expect(emailSends()).toHaveLength(0);
+    },
+  );
+
+  it(
+    "fails closed when native provenance disappears during unlocked discovery",
+    { timeout: 40_000 },
+    async () => {
+      const f = await fixture();
+      scriptSlack();
+      scriptProviders();
+      const queued = await enqueueNativeDelivery(f);
+      const agentGate = await holdDeliveryAgentRow(f.agentId, context.signal);
+      const drain = drainEmailOutbox([queued.outboxId], context.signal);
+      await agentGate.waitForBlocked();
+
+      // This deliberately bypasses lifecycle locks to model the relationship
+      // changing in the unlocked discovery window. The post-outbox re-read,
+      // not the earlier snapshot, must decide the send.
+      await discardMorningBriefDeliveries({
+        orgId: f.orgId,
+        userId: f.userId,
+      });
+      await agentGate.release();
+      await drain;
+
+      expect(emailSends()).toHaveLength(0);
+      await expect(readEmailOutboxRow(queued.outboxId)).resolves.toMatchObject({
+        status: "failed",
+        lastError: expect.stringContaining("provenance changed"),
+      });
+    },
+  );
+
+  it("rolls back receipt and outbox cleanup together without touching siblings", async () => {
+    const owner = await fixture();
+    const otherOwner = await fixture();
+    scriptSlack();
+    scriptProviders();
+    const owned = await enqueueNativeDelivery(owner);
+    const other = await enqueueNativeDelivery(otherOwner, SECOND_ANCHOR);
+    const genericId = await seedUnrelatedEmailIntent("legacy@example.test");
+    const restore = await rejectMorningBriefOutboxDelete(
+      owned.outboxId,
+      context.signal,
+    );
+
+    const cleanupFailure = await cleanupMorningBriefMember(
+      { orgId: owner.orgId, userId: owner.userId },
+      context.signal,
+    ).then(
+      () => {
+        throw new Error("Expected Morning Brief cleanup to fail");
+      },
+      (error: unknown) => {
+        return error;
+      },
+    );
+    expect(cleanupFailure).toBeInstanceOf(Error);
+    const failure = cleanupFailure as Error & { readonly cause?: unknown };
+    expect(failure.message).toContain('delete from "email_outbox"');
+    expect(String(failure.cause)).toContain(
+      "Test Morning Brief outbox delete failed",
+    );
+
+    await expect(readDeliveries(owner)).resolves.toHaveLength(1);
+    await expect(readEmailOutboxRow(owned.outboxId)).resolves.toBeDefined();
+    await expect(readDeliveries(otherOwner)).resolves.toHaveLength(1);
+    await expect(readEmailOutboxRow(other.outboxId)).resolves.toBeDefined();
+    await expect(readEmailOutboxRow(genericId)).resolves.toBeDefined();
+
+    await restore();
+    await cleanupMorningBriefMember(
+      { orgId: owner.orgId, userId: owner.userId },
+      context.signal,
+    );
+    await expect(readDeliveries(owner)).resolves.toHaveLength(0);
+    await expect(readEmailOutboxRow(owned.outboxId)).resolves.toBeUndefined();
+    await expect(readDeliveries(otherOwner)).resolves.toHaveLength(1);
+    await expect(readEmailOutboxRow(other.outboxId)).resolves.toBeDefined();
+    await expect(readEmailOutboxRow(genericId)).resolves.toBeDefined();
   });
 
   it("converges concurrent deliveries of one result on a single message", async () => {

@@ -151,27 +151,61 @@ against that row field by field:
   previous binding's work. Settling a lapsed reservation is exempt: it records
   an operational fact and releases nothing.
 - **At the moment of release, after every wait.** The read-back's last step is a
-  local fence under the owner lock: the slot is read again, its attempt must
-  still be the one that was validated, its retention deadline must still be in
-  the future, and the local binding must still match. It runs after the receipt
-  lookup, so a deletion, a disable, a rebinding or the deadline landing during
-  that final read cannot hand back the copy the request started with. It writes
-  nothing and never recreates an owner row.
+  local fence under the owner lock: authority parents are held first, the slot
+  is read again and taken `FOR UPDATE`, its attempt must still be the one that
+  was validated, the canonical local binding is re-read, and only then is the
+  retention deadline compared against a freshly sampled clock. It runs after
+  the receipt lookup, so a
+  deletion, a disable, a rebinding or the deadline landing during that final
+  read cannot hand back the copy the request started with. Holding the row is
+  what makes the copy it returns the one it checked: the maintenance purge
+  selects `SKIP LOCKED` and leaves a held row for its next pass, so a concurrent
+  purge can no longer delete the row between the check and the release. It
+  writes nothing and never recreates an owner row.
 
 There is no second adoption algorithm and no always-allow path: this is the
 collection contract's own reader with the Slack credential withheld. It
 serializes local acceptance only — a request already in flight to the provider
 cannot be recalled, and this never claims otherwise.
 
-### The commit-admission fence
+### The final local admission point
 
-Each of those checks describes an instant that has already passed by the time
-anything is written: the canonical resolution waits on Clerk, and the writes
-that follow it wait for the owner lock and the slot row. A Settings disable, an
-Agent transfer, a Slack rebinding or the caller going away can all land inside
-exactly that wait, which is why the decision is re-taken where the mutation is
-really admitted — after every wait, before any statement is issued, and on every
-persistence attempt:
+Acceptance and release share one admission point, because they need the same
+thing at the same moment: the local authority proved while the rows that could
+revoke it are held, inside the caller's own transaction.
+
+The rows are taken by primary key, in **parent-before-child order**, and the
+order is what keeps it safe:
+
+| Step | Row                                                | Mode         | Serializes                                           |
+| ---- | -------------------------------------------------- | ------------ | ---------------------------------------------------- |
+| 1    | `org_members_metadata`                             | `KEY SHARE`  | membership, user and organization cleanup            |
+| 2    | the pinned `agents` row                            | `SHARE`      | visibility update and Agent deletion                 |
+| 3    | the pinned `workflows` installation                | `SHARE`      | uninstall and installation mutation                  |
+| 4    | the pinned `workflow_automations` schedule         | `SHARE`      | Settings disable and generic automation mutation     |
+| 5    | `slack_org_installations`, `slack_org_connections` | `SHARE`      | Slack install, disconnect and rebinding              |
+| 6    | the occurrence's `morning_brief_generations`       | `FOR UPDATE` | the retention purge, the owner sweep, other attempts |
+
+`SHARE` is the weakest mode that conflicts with the `FOR NO KEY UPDATE` an
+ordinary `UPDATE` takes, so a visibility change, disable or rebinding either
+commits before its step and is read, or waits for this transaction and loses.
+
+Agent comes before both foreign-key branches it owns. The real visibility routes
+and deletion service also take Agent first; deletion then cascades independently
+through `workflows` and through `morning_brief_collection_occurrences` into
+`morning_brief_generations`. Taking generation before workflow or Agent would
+permit the inverse generation→workflow edge and a cascade cycle. The order above
+instead makes a deletion that arrives second return its existing bounded
+`409 … retry shortly` conflict, while a deletion or visibility update that wins
+first is visible to canonical re-resolution.
+
+Each of the earlier checks describes an instant that has already passed by the
+time anything is written: the canonical resolution waits on Clerk, and the write
+then waits for all five locks above. A Settings disable, a Slack rebinding or the
+caller going away can all land inside exactly that wait, which is why the
+decision is re-taken where the mutation is really admitted — after every one of
+those waits and after the local reads they protect, before any statement is
+issued, and on every persistence attempt:
 
 - **Cancellation.** A caller that has gone away commits nothing to the owner
   slot. The whole transaction unwinds, so the slot keeps its original attempt,
@@ -180,9 +214,9 @@ persistence attempt:
   then and is kept.
 - **The local half of the authority.** The installation resolution — switch,
   canonical installed-and-enabled brief, timezone, installation Agent, native
-  Slack binding — is re-resolved from the same readers admission uses, under the
-  locks those mutators really take, and compared against the occurrence with the
-  shared binding comparator. A lapse turns an acceptance into `result_discarded`.
+  Slack binding — is re-resolved from the same readers admission uses, while the
+  rows above are held, and compared against the occurrence with the shared
+  binding comparator. A lapse turns an acceptance into `result_discarded`.
 - **The remote half is not re-resolved.** A transaction is never held open
   across a Clerk round trip. The membership generation proved before persistence
   is carried in the fence the write is guarded by; a membership that changes
@@ -190,26 +224,33 @@ persistence attempt:
 
 ### The admission clock
 
-The clock is sampled at that same point — after the owner lock and the slot row
-are really held, and on every persistence attempt — so the deadline comparison
-describes the instant the mutation is actually admitted rather than the instant
-the response arrived. A response observed before expiry that waits behind a lock
-until after it is refused, not accepted. Equality with the deadline is expired at
-every boundary.
+The clock is sampled last — after every lock above is held, after the local reads
+they protect, after the cancellation check, and on every persistence attempt — so
+the deadline comparison describes the instant the mutation is actually admitted
+rather than the instant the response arrived or the instant the first lock was
+taken. A response observed before expiry that waits behind a lock until after it
+is refused, not accepted. Equality with the deadline is expired at every
+boundary.
+
+The linearization boundary is that transaction's COMMIT. Cancellation, a
+disable, a rebinding or the deadline decides the outcome when it is observable
+at the admission point; once the transaction commits, nothing retracts it. A
+cancellation that arrives afterwards is reported honestly as too late rather
+than as a rollback.
 
 ### Finite phase ownership
 
-| Budget                    | Value                                               |
-| ------------------------- | --------------------------------------------------- |
-| Reservation               | 60 s, never beyond the occurrence's own lifetime    |
-| Provider request          | 45 s, minus 10 s reserved for recording the outcome |
-| Serialized request        | 128 KiB, measured on the exact bytes sent           |
-| Model output tokens       | 8,192, including this model's mandatory reasoning   |
-| Streamed success response | 256 KiB                                             |
-| Error response            | 64 KiB                                              |
-| Accepted rendered result  | 32 KiB                                              |
-| Preview result retention  | 24 h, then unreadable; purged on a maintenance tick |
-| Retention purge batch     | 200 rows per statement, 10 statements, 5 s per tick |
+| Budget                    | Value                                                  |
+| ------------------------- | ------------------------------------------------------ |
+| Reservation               | 60 s, never beyond the occurrence's own lifetime       |
+| Provider request          | 45 s, minus 10 s reserved for recording the outcome    |
+| Serialized request        | 128 KiB, measured on the exact bytes sent              |
+| Model output tokens       | 8,192, including this model's mandatory reasoning      |
+| Streamed success response | 256 KiB                                                |
+| Error response            | 64 KiB                                                 |
+| Accepted rendered result  | 32 KiB                                                 |
+| Preview result retention  | 24 h, then unreadable; purged on a maintenance tick    |
+| Retention purge batch     | 200 rows per statement, at most 10 statements per tick |
 
 The collection lease is **not** reused as generation ownership.
 
@@ -540,11 +581,21 @@ once and never again would keep title and Markdown forever. The real bound is
 `/api/cron/execute-workflow-automations` tick — the same maintenance entrypoint
 the Morning Brief enrollment worker already runs on. It settles independently of
 the automations beside it, and it is deliberately finite: up to 200 rows per
-statement, 10 statements and 5 seconds per tick, selected in deadline order with
+statement and 10 statements per tick, selected in deadline order with
 `SKIP LOCKED` so it never queues behind a live attempt or takes a table-wide
-lock. That tick runs every minute, so purge latency after a deadline is
-**minutes under normal load, and longer only while a backlog drains** — never a
-reason a result stays readable.
+lock. A 5-second budget is checked **between** statements, so it bounds how many
+further batches are started rather than how long one already in flight may run;
+a single statement's duration is bounded by the batch size instead. That tick
+runs every minute, so purge latency after a deadline is **minutes under normal
+load, and longer only while a backlog drains** — never a reason a result stays
+readable.
+
+`SKIP LOCKED` also decides what happens when a purge and a live read-back meet:
+the read-back holds its own row `FOR UPDATE` at its final admission, so the
+purge skips it and takes it on a later pass. A read-back that legitimately wins
+returns its result and the row is purged afterwards; a purge that wins first
+leaves a completed collection holding no generation. The two outcomes stay
+distinguishable, and neither releases content past its deadline.
 
 No scheduler, queue or recovery poller is introduced, and no other owner's rows
 are touched. Expired results are deleted; the anonymous platform receipt is not,

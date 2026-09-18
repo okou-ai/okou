@@ -12,7 +12,7 @@ use tokio::{
 
 use crate::{
     Capture, Error, FramebufferConnection, Input, InputOutcome, Key, MouseButton, ScrollAxis,
-    Session, TrustRoots, VncPassword, authenticate,
+    Session, SharingMode, TrustRoots, VncPassword, authenticate,
 };
 
 fn deadline() -> Instant {
@@ -95,7 +95,10 @@ impl Fixture {
         )
         .await
         .unwrap();
-        let mut connection = authenticated.initialize(deadline()).await.unwrap();
+        let mut connection = authenticated
+            .initialize(SharingMode::Shared, deadline())
+            .await
+            .unwrap();
         // A module-private adapter forces each production decoder against the
         // independent server without adding encoder controls to the public API.
         let encodings = [encoding, 1, -239, -223];

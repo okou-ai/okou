@@ -249,6 +249,24 @@ test("The Custom category lists every reachable template", async () => {
   expect(within(dialog).getByText("Partner QBR")).toBeInTheDocument();
 });
 
+test("A card carries who can see the template and nothing else about it", async () => {
+  mockCustomTemplates([customTemplate()]);
+
+  const { dialog } = await openCustomPanel();
+  click(tabByText("Custom"));
+
+  await expect(
+    within(dialog).findByText("Private"),
+  ).resolves.toBeInTheDocument();
+  // A grid is read by what tells its tiles apart, and the file a template was
+  // compiled from says nothing about the one beside it. Both facts are still
+  // on the detail column, which is where they are asked for.
+  expect(within(dialog).queryByText("18 pages")).not.toBeInTheDocument();
+  expect(
+    within(dialog).queryByText("q3-board-final-v4.pptx"),
+  ).not.toBeInTheDocument();
+});
+
 test("A colleague's template names its owner and offers no management", async () => {
   mockCustomTemplates([
     customTemplate({ title: "Mine" }),
@@ -412,22 +430,16 @@ function previewDialogAround(frame: HTMLElement): HTMLElement {
   return preview;
 }
 
-test("A document template is described by its file, not by a page count", async () => {
+test("A document template with no cover is tiled by its format", async () => {
   const template = documentTemplate();
   mockCustomTemplates([template]);
-  context.mocks.api(userTemplatesContract.get, ({ respond }) => {
-    return respond(200, template);
-  });
 
   const { dialog } = await openCustomPanel();
   click(tabByText("Custom"));
 
-  // A document is its styles. The card still names the file it was compiled
-  // from, and claims no pages rather than reporting zero of them.
   await expect(
-    within(dialog).findByText("brand-report.docx"),
+    within(dialog).findByText("Brand report"),
   ).resolves.toBeInTheDocument();
-  expect(within(dialog).queryByText("0 pages")).not.toBeInTheDocument();
   // Nothing was rendered for it, so the tile carries the format it was
   // compiled from rather than an empty frame.
   expect(within(dialog).getByText("DOCX")).toBeInTheDocument();
@@ -458,7 +470,7 @@ test("Opening a Word template hands the source file to the Office viewer", async
   expect(buttonByName("Use this template", preview)).toBeTruthy();
   // The catalog stays mounted behind the dialog instead of being replaced by
   // it, which is what separates opening a document from opening a deck.
-  expect(within(dialog).getByText("brand-report.docx")).toBeInTheDocument();
+  expect(within(dialog).getByText("Brand report")).toBeInTheDocument();
 });
 
 test("A PDF template opens in the browser's own viewer", async () => {

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { createStore } from "ccstate";
 import { and, asc, eq, sql } from "drizzle-orm";
+import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
 import { emailOutbox } from "@okouai/db/schema/email-outbox";
@@ -10,16 +11,23 @@ import { morningBriefDeliveries } from "@okouai/db/schema/morning-brief-delivery
 import { userCache } from "@okouai/db/schema/user-cache";
 import { morningBriefGenerations } from "@okouai/db/schema/morning-brief-generation";
 import { users } from "@okouai/db/schema/user";
-import { workflowUserAutomationThreads } from "@okouai/db/schema/workflow";
+import {
+  workflowAutomations,
+  workflowUserAutomationThreads,
+} from "@okouai/db/schema/workflow";
 
 import { onTestFinished } from "vitest";
 
 import { db } from "../lib/db";
-import { holdDeferredRow } from "./pi-deferred-lock";
+import { holdDeferredRow, waitForDeferredBlocker } from "./pi-deferred-lock";
 import { nowDate } from "../lib/time";
+import { isLockNotAvailable } from "../lib/pg-errors";
+import { deleteAgentById$ } from "../signals/services/agent-deletion.service";
 import { deleteChatThread$ } from "../signals/services/chat-thread.service";
 import { drainEmailOutboxItems$ } from "../signals/services/email-common.service";
+import { cleanupOrgMemberResources } from "../signals/services/org-member-cleanup.service";
 import { revokeMorningBriefDeliveryOwnership } from "../signals/services/morning-brief-delivery.service";
+import { settle } from "../signals/utils";
 
 /**
  * Owner-scoped infrastructure for native Morning Brief delivery tests.
@@ -323,6 +331,34 @@ export async function revokeMemberMorningBriefDeliveries(
   });
 }
 
+/** The real membership cleanup, including its earliest revocation transaction. */
+export async function cleanupMorningBriefMember(
+  owner: DeliveryOwner,
+  signal: AbortSignal,
+): Promise<void> {
+  await cleanupOrgMemberResources(db(), owner, signal);
+}
+
+/** The real owned Agent deletion, including its bounded lifecycle transaction. */
+export async function deleteOwnedMorningBriefAgent(
+  args: {
+    readonly agentId: string;
+    readonly orgId: string;
+    readonly userId: string;
+  },
+  signal: AbortSignal,
+) {
+  return await store.set(
+    deleteAgentById$,
+    {
+      agentId: args.agentId,
+      orgId: args.orgId,
+      member: { userId: args.userId, role: "admin" },
+    },
+    signal,
+  );
+}
+
 /** The real owned thread deletion, including its own cleanup transaction. */
 export async function deleteOwnedChatThread(
   args: {
@@ -393,6 +429,179 @@ export async function holdDeliveryAgentRow(
   });
   onTestFinished(held.release);
   return { waitForBlocked: held.waitForBlocked, release: held.release };
+}
+
+/**
+ * Suspend a real lifecycle cleanup immediately before it deletes one delivery.
+ *
+ * Membership, thread and Agent cleanup have already taken their canonical
+ * authority/policy locks at this point but have not touched the outbox. The
+ * advisory gate is test-only; `pg_blocking_pids` identifies the real cleanup
+ * backend waiting in this trigger and every contender it blocks.
+ */
+export async function holdMorningBriefDeliveryCleanup(
+  outboxId: string,
+  signal: AbortSignal,
+): Promise<{
+  readonly waitForBlocked: () => Promise<number>;
+  readonly release: () => Promise<void>;
+}> {
+  const functionName = `test_mb_delivery_cleanup_${randomUUID().replaceAll("-", "")}`;
+  await db().transaction(async (tx) => {
+    await tx.execute(sql`
+      CREATE FUNCTION ${sql.identifier(functionName)}() RETURNS trigger
+      LANGUAGE plpgsql AS $$
+      BEGIN
+        IF OLD.email_outbox_id::text = TG_NAME THEN
+          PERFORM pg_advisory_xact_lock(
+            hashtextextended('morning-brief-delivery-cleanup:' || TG_NAME, 0)
+          );
+        END IF;
+        RETURN OLD;
+      END;
+      $$
+    `);
+    await tx.execute(sql`
+      CREATE TRIGGER ${sql.identifier(outboxId)}
+      BEFORE DELETE ON morning_brief_deliveries
+      FOR EACH ROW EXECUTE FUNCTION ${sql.identifier(functionName)}()
+    `);
+  });
+
+  const held = await holdDeferredRow(signal, async (tx) => {
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtextextended(${`morning-brief-delivery-cleanup:${outboxId}`}, 0))`,
+    );
+  });
+  onTestFinished(async () => {
+    await held.release();
+    await db().transaction(async (tx) => {
+      await tx.execute(
+        sql`DROP TRIGGER IF EXISTS ${sql.identifier(outboxId)} ON morning_brief_deliveries`,
+      );
+      await tx.execute(
+        sql`DROP FUNCTION IF EXISTS ${sql.identifier(functionName)}()`,
+      );
+    });
+  });
+  return held;
+}
+
+/** True only when no concurrent transaction retains this exact outbox row. */
+export async function emailOutboxLockIsAvailable(
+  outboxId: string,
+): Promise<boolean> {
+  const result = await settle(
+    db().transaction(async (tx) => {
+      await tx
+        .select({ id: emailOutbox.id })
+        .from(emailOutbox)
+        .where(eq(emailOutbox.id, outboxId))
+        .for("update", { noWait: true });
+    }),
+  );
+  if (result.ok) {
+    return true;
+  }
+  if (isLockNotAvailable(result.error)) {
+    return false;
+  }
+  throw result.error;
+}
+
+/** Observe a waiter whose blocker is the supplied real PostgreSQL backend. */
+export async function waitForDatabaseBlocker(
+  blockerPid: number,
+): Promise<number> {
+  return await waitForDeferredBlocker(blockerPid);
+}
+
+/** Hold and commit the canonical opt-out row update. */
+export async function holdMemberUnsubscribe(
+  userId: string,
+  signal: AbortSignal,
+) {
+  return await holdDeferredRow(signal, async (tx) => {
+    await tx
+      .update(users)
+      .set({ emailUnsubscribed: true })
+      .where(eq(users.id, userId));
+  });
+}
+
+/** Hold and commit the enabled-automation policy update. */
+export async function holdMorningBriefAutomationDisable(
+  automationId: string,
+  signal: AbortSignal,
+) {
+  return await holdDeferredRow(signal, async (tx) => {
+    await tx
+      .update(workflowAutomations)
+      .set({ enabled: false, nextRunAt: null })
+      .where(eq(workflowAutomations.id, automationId));
+  });
+}
+
+/**
+ * Hold and commit the otherwise-unexposed Agent ownership transfer boundary.
+ * Making the Agent private turns that transfer into an actual authority loss.
+ */
+export async function holdMorningBriefAgentTransfer(
+  agentId: string,
+  nextOwner: string,
+  signal: AbortSignal,
+) {
+  return await holdDeferredRow(signal, async (tx) => {
+    await tx
+      .update(agents)
+      .set({ owner: nextOwner, visibility: "private" })
+      .where(eq(agents.id, agentId));
+  });
+}
+
+/** Fail one cleanup's outbox delete so receipt and content rollback together. */
+export async function rejectMorningBriefOutboxDelete(
+  outboxId: string,
+  signal: AbortSignal,
+): Promise<() => Promise<void>> {
+  const functionName = `test_mb_outbox_delete_${randomUUID().replaceAll("-", "")}`;
+  await db().transaction(async (tx) => {
+    await tx.execute(sql`
+      CREATE FUNCTION ${sql.identifier(functionName)}() RETURNS trigger
+      LANGUAGE plpgsql AS $$
+      BEGIN
+        IF OLD.id::text = TG_NAME THEN
+          RAISE EXCEPTION 'Test Morning Brief outbox delete failed'
+            USING ERRCODE = '23514';
+        END IF;
+        RETURN OLD;
+      END;
+      $$
+    `);
+    signal.throwIfAborted();
+    await tx.execute(sql`
+      CREATE TRIGGER ${sql.identifier(outboxId)}
+      BEFORE DELETE ON email_outbox
+      FOR EACH ROW EXECUTE FUNCTION ${sql.identifier(functionName)}()
+    `);
+    signal.throwIfAborted();
+  });
+
+  let dropped = false;
+  const drop = async () => {
+    if (dropped) {
+      return;
+    }
+    dropped = true;
+    await db().transaction(async (tx) => {
+      await tx.execute(
+        sql`DROP TRIGGER ${sql.identifier(outboxId)} ON email_outbox`,
+      );
+      await tx.execute(sql`DROP FUNCTION ${sql.identifier(functionName)}()`);
+    });
+  };
+  onTestFinished(drop);
+  return drop;
 }
 
 /** Move one generation's retention deadline to an exact instant. */

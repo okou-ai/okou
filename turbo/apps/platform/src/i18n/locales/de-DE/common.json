@@ -6371,8 +6371,6 @@
       "description": "Okou macht aus dem Design Ihrer Datei eine Vorlage, die Sie wiederverwenden können."
     },
     "loadFailed": "Vorlagen konnten nicht geladen werden.",
-    "pageCount_one": "{{count}} Seite",
-    "pageCount_other": "{{count}} Seiten",
     "renameFailed": "Vorlage konnte nicht umbenannt werden.",
     "retry": "Erneut versuchen",
     "sharedBy": "Geteilt von {{owner}}",

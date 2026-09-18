@@ -142,6 +142,58 @@ async function enterInvalidCode(page: Page, code: string): Promise<void> {
   await expect(input).toHaveValue("");
 }
 
+const clerkCoreAsset = "**/npm/@clerk/clerk-js@*/dist/clerk.browser.js";
+
+test("hosted sign-in recovers from transient Clerk core failures", async ({
+  page,
+}) => {
+  const requests: string[] = [];
+  await page.route(clerkCoreAsset, async (route) => {
+    requests.push(route.request().url());
+    if (requests.length <= 2) {
+      await route.abort("connectionreset");
+    } else {
+      await route.continue();
+    }
+  });
+
+  await page.goto("/sign-in", { waitUntil: "domcontentloaded" });
+
+  const email = page.getByLabel("Email address", { exact: true });
+  await expect(email).toBeVisible();
+  await email.fill("retry+clerk_test@example.com");
+  await expect(email).toHaveValue("retry+clerk_test@example.com");
+  await expectClerkTestInstance(page);
+  expect(requests).toHaveLength(3);
+  expect(new Set(requests).size).toBe(1);
+});
+
+test("exhausted Clerk core retries preserve manual refresh recovery", async ({
+  page,
+}) => {
+  const requests: string[] = [];
+  await page.route(clerkCoreAsset, async (route) => {
+    requests.push(route.request().url());
+    await route.abort("connectionreset");
+  });
+
+  await page.goto("/sign-in", { waitUntil: "domcontentloaded" });
+
+  const failure = page.getByRole("alert");
+  await expect(failure).toContainText("Oops! Something went sideways");
+  expect(requests).toHaveLength(3);
+  expect(new Set(requests).size).toBe(1);
+  await expect(page.getByLabel("Email address", { exact: true })).toHaveCount(
+    0,
+  );
+
+  await page.unroute(clerkCoreAsset);
+  await failure.getByRole("button", { name: "Refresh" }).click();
+
+  await expect(page.getByLabel("Email address", { exact: true })).toBeVisible();
+  await expectClerkTestInstance(page);
+});
+
 for (const theme of ["light", "dark"] as const) {
   test.describe(`narrow footer ${theme}`, () => {
     test.use({
