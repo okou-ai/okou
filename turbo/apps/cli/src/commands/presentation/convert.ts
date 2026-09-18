@@ -497,6 +497,19 @@ function convert(options: Options): void {
     return;
   }
 
+  if (failed) {
+    // The deck is kept for inspection, but this is not a success: the missing
+    // strings go to stderr so they survive a redirect of the failed run.
+    process.stderr.write(`Converted deck kept at ${out}\n`);
+    process.stderr.write(
+      `Slides ${rendered.slides.toString()} via selector ${rendered.selector}\n`,
+    );
+    for (const entry of report.missing) {
+      process.stderr.write(`  missing: ${entry}\n`);
+    }
+    throw new Error(coverageFailure(report));
+  }
+
   console.log(chalk.green("✓ Presentation converted"));
   console.log(chalk.dim(`  Output:   ${out}`));
   console.log(chalk.dim(`  Slides:   ${rendered.slides.toString()}`));
@@ -508,12 +521,6 @@ function convert(options: Options): void {
         `  Coverage: ${percent}% (${report.matchedStrings.toString()}/${report.sourceStrings.toString()} strings)`,
       ),
     );
-    for (const entry of report.missing) {
-      console.log(chalk.dim(`    missing: ${entry}`));
-    }
-  }
-  if (failed) {
-    throw new Error(coverageFailure(report));
   }
   console.log();
   console.log("Check how it renders:");
