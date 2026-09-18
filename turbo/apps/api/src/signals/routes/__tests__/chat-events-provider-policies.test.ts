@@ -707,7 +707,6 @@ describe("CHAT-02: model-first provider policies", () => {
       const { actor, agentId } = await entitledChatActor();
       await configureBuiltInPiModel(actor, "deepseek-v4.1-flash");
       await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.Effort]: true,
         [FeatureSwitchKey.PiLoop]: true,
       });
       if (boundary !== "effort") {
@@ -1557,7 +1556,6 @@ describe("CHAT-02: model-first provider policies", () => {
 
     await updateFeatureSwitchesForUser(context, actorWithOrg, {
       [FeatureSwitchKey.CodexFastMode]: false,
-      [FeatureSwitchKey.Effort]: false,
     });
     const switchOffThreadId = randomUUID();
     const switchOff = await chat.requestSendEvent(

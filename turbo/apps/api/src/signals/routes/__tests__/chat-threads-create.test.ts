@@ -958,13 +958,12 @@ describe("POST /api/chat-threads", () => {
     });
   });
 
-  it.each([FeatureSwitchKey.CodexFastMode, FeatureSwitchKey.Effort])(
-    "inherits priority from the run's chat thread and allows an explicit standard override with %s",
-    async (fastSwitch) => {
+  it(
+    "inherits priority from the run's chat thread and allows an explicit standard override",
+    async () => {
       const fixture = await seedAgent();
       await updateFeatureSwitchesForUser(context, fixture, {
-        [FeatureSwitchKey.CodexFastMode]: false,
-        [fastSwitch]: true,
+        [FeatureSwitchKey.CodexFastMode]: true,
       });
       const sourceToken = okouToken({
         userId: fixture.userId,

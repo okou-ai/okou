@@ -1,7 +1,6 @@
 import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { command, computed } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isChatEffortEnabled } from "@okouai/core/model-feature-switch";
 import type { ImageModel } from "@okouai/core/image-model-catalog";
 import type { VideoModel } from "@okouai/core/video-model-catalog";
 import {
@@ -387,17 +386,15 @@ async function createChatThread(
     readonly clientThreadId: string;
     readonly eventId: string;
     readonly modelSelection: ModelProviderSelection;
-    readonly reasoningEffortEnabled: boolean;
     readonly imageModel?: ImageModel;
     readonly videoModel?: VideoModel;
     readonly connectorSelections?: readonly ConnectorAccountSelection[];
   },
   signal: AbortSignal,
 ): Promise<void> {
-  const selectedEffort = args.reasoningEffortEnabled
-    ? args.modelSelection.modelSettings?.[args.modelSelection.selectedModel]
-        ?.effort
-    : undefined;
+  const selectedEffort =
+    args.modelSelection.modelSettings?.[args.modelSelection.selectedModel]
+      ?.effort;
   const client = args.createClient(chatThreadsContract);
   await accept(
     client.create({
@@ -483,9 +480,6 @@ const startNewChatThreadCreate$ = command(
           clientThreadId: threadId,
           eventId,
           modelSelection,
-          reasoningEffortEnabled: isChatEffortEnabled({
-            overrides: featureSwitches,
-          }),
         },
         signal,
       );
@@ -618,7 +612,6 @@ const sendNewThreadMessage$ = command(
         clientThreadId: threadId,
         eventId: chatThreadEventId,
         modelSelection: resolvedModelSelection,
-        reasoningEffortEnabled: isChatEffortEnabled({ overrides: features }),
         imageModel,
         videoModel,
         connectorSelections: request.connectorSelections,

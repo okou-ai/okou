@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 
 import { afterEach, describe, expect, it } from "vitest";
 import { DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL } from "@okouai/api-contracts/contracts/model-providers";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { testContext } from "../../../__tests__/test-context";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
@@ -12,7 +11,6 @@ import {
 } from "./helpers/api-bdd-auth-org";
 import { expectApiError } from "./helpers/api-bdd";
 import { createUserConfigBddApi } from "./helpers/api-bdd-user-config";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 /*
 Round-5 cluster auth-03 (AUTH-01/AUTH-03): user-owned configuration plus the
@@ -318,34 +316,6 @@ describe("AUTH-03 user model preference", () => {
     const admin = api.user();
     await onboardAdmin(admin, { slug: slug("bdd-uc-effort") });
 
-    if (!admin.orgId) {
-      throw new Error("Expected an organization-backed test actor");
-    }
-    const actor = {
-      userId: admin.userId,
-      orgId: admin.orgId,
-      orgRole: admin.orgRole,
-    };
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.Effort]: false,
-    });
-    const disabled = await cfg.requestUpdateModelPreference(
-      admin,
-      {
-        selectedModel: "gpt-6-astra",
-        serviceTier: null,
-        modelSettingsPatch: { model: "gpt-6-astra", effort: "high" },
-      },
-      [400],
-    );
-    expectApiError(disabled.body);
-    expect(disabled.body.error.message).toBe(
-      "Reasoning effort selection is not enabled",
-    );
-
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.Effort]: true,
-    });
     const astra = await cfg.updateModelPreference(admin, {
       selectedModel: "gpt-6-astra",
       serviceTier: null,
