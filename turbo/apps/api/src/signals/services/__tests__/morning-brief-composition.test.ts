@@ -1107,6 +1107,9 @@ describe("five-source normalization", () => {
     });
     expect(JSON.stringify(serialized)).not.toContain("T00:00:00.000Z");
     expect(only?.identity.container).toBe("cal-1");
+    // Request evidence is independent of retained per-calendar coverage: the
+    // collector may omit whole coverage entries to stay inside its text cap.
+    expect(normalized.requests).toBe(1);
   });
 
   it("keeps two occurrences of one recurring series apart", () => {

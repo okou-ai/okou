@@ -106,9 +106,18 @@ is preserved as the provider stated it.
 - If the list itself is denied, `coverage.calendarList` is `denied` and no
   events are read. The collector does not fall back to `primary`: that would
   claim coverage the account never proved.
-- The readable set is ordered primary-first _within the calendars actually
-  enumerated_, then by stable calendar ID, and capped. Calendars beyond the cap
-  are reported as `not-read` with a `calendars` truncation.
+- Calendar identity is exact. Repeated entries across list pages are reconciled
+  before selection, so one ID consumes one slot and one ordinary
+  `(calendarId,eventId)` pair is released at most once. A recurrence instance
+  additionally keeps its exact original start, so distinct occurrences survive.
+  Contradictory duplicate metadata is handled
+  conservatively and independently of page order: a role conflict becomes
+  `unknown-access`, conflicting presentation metadata is omitted, and `primary`
+  survives only when every copy agrees. The collector never picks the broader
+  role from contradictory copies.
+- The distinct readable set is ordered primary-first _within the calendars
+  actually enumerated_, then by stable calendar ID, and capped. Calendars beyond
+  the cap are reported as `not-read` with a `calendars` truncation.
 - An account with **no** readable calendar read nothing, so it is never
   `empty`. It reports `unavailable`, and `not-authorized` once the whole list
   was enumerated and nothing in it grants event detail.
@@ -141,9 +150,11 @@ A provider byte ceiling is not a final-text ceiling. Five small responses stay
 far inside 256 KiB and 2 MiB while carrying 200 events whose ordinary displayed
 fields — a summary, an organizer and a repeated calendar name — are already
 100,000 characters. The 40,000-character budget is therefore charged against
-the **real retained representation** of each item: every provider-derived string
-that can reach composition, including the provenance repeated on each item, the
-organizer, recurrence metadata, response statuses and the display link.
+the **real retained representation** of the whole collection envelope: every
+provider-derived string that can reach composition in items **or per-calendar
+coverage**, including calendar IDs, names and roles, the provenance repeated on
+each item, the organizer, recurrence metadata, response statuses and the
+display link.
 
 Fields the provider can make arbitrarily long are projected to their own
 ceilings before being charged, so no single transport-valid value can carry the
@@ -170,8 +181,13 @@ different event or a different page — so those are kept whole or dropped:
 - A display link past its ceiling is dropped to `null` with an `oversized-link`
   truncation. A URL is never rebuilt from a prefix.
 
-When the shared caps are reached, items are dropped rather than presented
-half-accounted, and the owning calendar becomes `truncated`.
+Coverage entries reserve their complete provider text before items are
+admitted. An entry whose exact ID and metadata cannot fit is dropped whole and
+`text-characters` declares the omitted remainder; no ID or URL is clipped, and
+the source can no longer look completely covered. Items then spend the same
+remaining 40,000-character budget. When that shared cap is reached, items are
+dropped rather than presented half-accounted, and the owning calendar becomes
+`truncated`.
 
 ## Result envelope
 
@@ -240,10 +256,12 @@ and neither may depend on network timing:
   in the stable selection order.
 - **Every started read is joined.** Both workers are started, so both are
   awaited through `joinAll`, and the collection never settles while a read it
-  issued is still running. The first error still propagates and caller
-  cancellation is never masked: a cancelled caller receives the cancellation
-  rather than a partial day, and no further provider request is issued after
-  the cancellation reaches the started reads.
+  issued is still running. This includes work inside the shared authorizer, not
+  only fetches: cancellation of one provider request cannot publish completion
+  while a sibling is still blocked in its next-page authorization. The first
+  error still propagates and caller cancellation is never masked: a cancelled
+  caller receives the cancellation rather than a partial day, and no further
+  provider request is issued after the cancellation reaches the started reads.
 
 ## What is retained
 
@@ -255,8 +273,9 @@ stay distinguishable; the same meeting seen on two calendars keeps both
 provenances rather than being collapsed without evidence.
 
 Every one of those strings is charged to the final text budget above, the
-calendar identity and name repeated on each item included. A field retained for
-free is still text the brief has to carry.
+calendar identity and name repeated on each item included. Coverage's provider
+calendar ID, summary and access role spend that same budget. A field retained
+for free is still text the brief has to carry.
 
 Only absolute HTTP(S) display links survive, and they are never fetched.
 Description, meeting and attachment URLs are not followed. Raw provider bodies,
