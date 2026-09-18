@@ -1703,17 +1703,20 @@ function RemoteAccessConnectedPanel(
   props: Parameters<typeof ConnectorsConnectedPanel>[0],
 ) {
   const { t } = useTranslation();
+  const vncEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.VncAccess] === true;
   const summary = useLoadable(vncSummary$);
   const filtered = useLoadable(filteredVncSummary$);
   const rows = useLoadable(vncAgentAccessRows$);
-  const failed = [summary.state, filtered.state, rows.state].includes(
-    "hasError",
-  );
-  const loading = summary.state === "loading" || filtered.state === "loading";
+  const failed =
+    vncEnabled &&
+    [summary.state, filtered.state, rows.state].includes("hasError");
+  const loading =
+    vncEnabled && (summary.state === "loading" || filtered.state === "loading");
   return (
     <>
       <SshDirectoryLoadError />
-      <VncDirectoryLoadError />
+      {vncEnabled && <VncDirectoryLoadError />}
       {!failed && loading && (
         <p role="status" className="text-sm text-muted-foreground">
           {t(($) => {
@@ -1727,10 +1730,11 @@ function RemoteAccessConnectedPanel(
 }
 
 function remoteAccessLoadState(
+  vncEnabled: boolean,
   ssh: Loadable<{ configuredCount: number } | null>,
   vnc: Loadable<{ configuredCount: number } | null>,
 ): "loading" | "hasError" | "hasData" {
-  const states = new Set([ssh.state, vnc.state]);
+  const states = new Set(vncEnabled ? [ssh.state, vnc.state] : [ssh.state]);
   if (states.has("hasError")) {
     return "hasError";
   }
@@ -1739,10 +1743,10 @@ function remoteAccessLoadState(
 
 function suppressBuiltinEmptyState(
   shelfEnabled: boolean,
-  ssh: Loadable<{ configuredCount: number } | null>,
+  vncEnabled: boolean,
   vnc: Loadable<{ configuredCount: number } | null>,
 ): boolean {
-  return shelfEnabled || remoteAccessLoadState(ssh, vnc) !== "hasData";
+  return shelfEnabled || (vncEnabled && vnc.state !== "hasData");
 }
 
 function connectorLabelForSlug(
@@ -2022,8 +2026,10 @@ function builtinListData(
 
 export function ConnectorsPage() {
   const { t } = useTranslation();
+  const featureSwitches = useGet(featureSwitch$);
   const shelfEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ConnectorDirectory] === true;
+    featureSwitches[FeatureSwitchKey.ConnectorDirectory] === true;
+  const vncEnabled = featureSwitches[FeatureSwitchKey.VncAccess] === true;
   const relatedCatalogItemsLoadable = useLastLoadable(relatedCatalogItems$);
   const filteredCatalogItemsLoadable = useFilteredCatalogItems(shelfEnabled);
   const sshSummary = useLoadable(sshSummary$);
@@ -2281,7 +2287,7 @@ export function ConnectorsPage() {
     connectionFilter,
     suppressEmpty: suppressBuiltinEmptyState(
       shelfEnabled,
-      filteredSshSummary,
+      vncEnabled,
       filteredVncSummary,
     ),
   });
@@ -2432,6 +2438,7 @@ export function ConnectorsPage() {
                     </>
                   }
                   remoteState={remoteAccessLoadState(
+                    vncEnabled,
                     filteredSshSummary,
                     filteredVncSummary,
                   )}
