@@ -127,8 +127,12 @@ export function OnboardingStepLayout({
                   rule, the way back and the way on below it. Content that
                   outgrows the card scrolls inside it. */}
               <div className="flex flex-col overflow-hidden rounded-3xl border border-border/60 bg-background">
-                <div className="flex flex-col justify-center overflow-y-auto p-6 lg:h-[440px]">
-                  {children}
+                <div className="overflow-y-auto p-6 lg:h-[440px]">
+                  {/* Centred while it fits, scrolled from the top when it does
+                      not. */}
+                  <div className="flex min-h-full flex-col justify-center">
+                    {children}
+                  </div>
                 </div>
                 <div className="flex items-center justify-between gap-3 border-t border-border/60 px-6 py-4">
                   {onBack ? (
