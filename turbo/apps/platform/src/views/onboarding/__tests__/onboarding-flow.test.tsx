@@ -1,3 +1,4 @@
+import { marketingEventsContract } from "@okouai/api-contracts/contracts/marketing-events";
 import { acquisitionAttributionContract } from "@okouai/api-contracts/contracts/acquisition-attribution";
 import {
   agentsByIdContract,
@@ -1454,17 +1455,19 @@ test.each([
 ])(
   "Onboarding and checkout route only to $accountId",
   async ({ accountId, onboarding, checkout }) => {
-    const marketing = "https://www.okou.ai/api/marketing";
     const requests: Request[] = [];
     const checkoutReceived = context.mocks.deferred<Request>();
-    context.mocks.http.post(`${marketing}/checkout-start`, ({ request }) => {
-      checkoutReceived.resolve(request);
-      return new Response(null, { status: 204 });
-    });
-    context.mocks.http.post(`${marketing}/onboarding-start`, ({ request }) => {
-      requests.push(request);
-      return new Response(null, { status: 204 });
-    });
+    context.mocks.api(
+      marketingEventsContract.record,
+      ({ request, body, respond }) => {
+        if (body.tag === "checkout-start") {
+          checkoutReceived.resolve(request);
+        } else {
+          requests.push(request);
+        }
+        return respond(204);
+      },
+    );
     context.mocks.api(
       acquisitionAttributionContract.resolveGoogleAdsAccount,
       ({ respond }) => {
@@ -1515,13 +1518,15 @@ test.each([
       expect(window.location.href).toContain("checkout.stripe.com");
       expect(sentConversions(gtag)).toStrictEqual([...onboarding, ...checkout]);
     });
-    expect(requests).toHaveLength(1);
-    await expect(requests[0]?.text()).resolves.toBe("");
+    expect(requests).toHaveLength(2);
+    await expect(requests[0]?.json()).resolves.toStrictEqual({
+      eventId: expect.any(String),
+      tag: "onboarding-start",
+    });
     const checkoutRequest = await checkoutReceived.promise;
     await expect(checkoutRequest.json()).resolves.toStrictEqual({
       eventId: expect.any(String),
-      occurredAt: expect.any(String),
-      checkoutSource: "onboarding_video",
+      tag: "checkout-start",
     });
   },
 );

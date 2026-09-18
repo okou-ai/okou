@@ -2248,51 +2248,53 @@ lease semantics, finite budgets and declared coverage limits.
 
 ## Marketing browser funnel events
 
-The App posts onboarding entry to `/api/marketing/onboarding-start` and actual
-Stripe redirect actions to `/api/marketing/checkout-start` on the Marketing
-origin. The owner confirmed this feature has not launched and requested removal
-of `/api/marketing/finish-onboarding` without an alias, with a client force
-upgrade as the supported-client boundary.
+The App sends both onboarding entry and actual Stripe redirect actions to
+`POST /api/events` on the environment-matched Marketing origin
+(`https://www.okou.ai` in production). The owner explicitly requested removing
+the previous onboarding-start and checkout-start receivers without aliases.
+Both repositories must ship the matching event contract as a coordinated
+cutover; a new App against an old Marketing deployment receives a failed event
+request, and an old App against the new receiver uses a retired route. Neither
+combination is supported by this prelaunch change. Event failures never block
+the onboarding or checkout flow and are not retried by the App.
 
-Deploy the Marketing receiver before this App. Verify the production App version
-and commit contain the new callers, then raise `minimumSupportedVersion` in
+Verify the production App version and commit contain the new caller, then raise
+`minimumSupportedVersion` in
 `turbo/apps/api/src/lib/web-client-compatibility.json` to that verified version
 in a separate release. Do not guess a version from this PR or raise the floor
 with the first replacement App deployment: production promotes the API first,
-so a refresh could still load an unsupported build. This PR does not activate
-the floor increase before the replacement App is live.
+so a refresh could still load an unsupported build. This PR does not change the
+floor or authorize a production rollout.
 
 The existing App API check prompts old clients to refresh on their next handled
 API request. Direct Marketing requests do not pass through that middleware;
 cached old callers before the floor takes effect are outside this prelaunch
 support boundary. Do not roll the App back below the floor or Marketing back
-behind the new receivers while those App builds are supported.
+behind the unified receiver while those App builds are supported.
 
-Onboarding remains bodyless and preserves the existing
-`marketing_onboarding_attempts` user/org attempt marker. Changing the URL does
-not replay past attempts, including failed attempts. Checkout sends only a fresh
-UUID, its UTC occurrence time and the bounded source `onboarding_video` or
-`paywall`; Marketing derives identity from the bearer token and attribution from
-its own consented cookies. Both requests include credentials, run under the App
-root with a ten-second deadline and never delay navigation for their response.
-There is no periodic check or browser retry.
+`sendEvent$(tag)` sends only `tag` (`onboarding-start` or `checkout-start`) and a
+fresh UUID `eventId`. Marketing derives identity from the bearer token, supplies
+the event timestamp, preserves existing first-touch attribution, and records
+events even without attribution cookies. A recorded event returns 200 with
+`{code: "EVENT_RECORDED"}` when usable attribution is available, otherwise an
+empty 204. Errors return their HTTP status with `{code, error}`. The App does
+not consume the response body or add outcome telemetry.
 
-App-side Marketing diagnostics are retired without changing either request
-contract. Marketing owns these logs and correlates authenticated requests by
-`userId` and `orgId`. The optional `X-Marketing-Request-Id` response header has
-no business consumer: older App builds already accept an absent header, and
-new builds do not read it. Its removal can deploy independently of this App
-cleanup and requires no additional client-version floor.
+Requests include credentials and keepalive and belong to the App root, so
+navigation never waits for them and a session change cancels pending work.
+There is no ten-second deadline, local attempt marker, deferred onboarding
+handoff, retry, or fallback. Each actual POST is preceded by one Axiom
+`marketing.event.send` record with tag, userId, and orgId; `outcome: started`
+means a send attempt, not server acceptance. No browser request ID header is
+introduced. Existing legacy gtag/PostHog event and account routing is unchanged.
 
-The new receiver records Google Ads funnel shadows only. Marketing deduplicates
-onboarding by user/org and checkout by user/org/event UUID. These counts differ
-intentionally from the legacy gtag browser-session/account deduplication: another
-checkout action produces another event. A shadow acknowledgement is neither
-proof of eligible consent nor a Google Ads delivery receipt. Existing App gtag
-and PostHog reporting remain active; this change adds no GA4/PostHog sender,
-provider cutover, historical replay, App table or MaskDB scan. Checkout coverage
-matches the existing `RedirectToStripe` producers, excluding previews and other
-payment paths without that producer.
+Marketing deduplicates onboarding by user/org and checkout by user/org/event
+UUID. These counts differ intentionally from the legacy gtag browser-session/
+account deduplication: another checkout action produces another event. A
+successful event response is not a provider delivery receipt. This change
+retains existing provider sending gates, adds no provider activation or replay,
+and leaves checkout coverage at the existing `RedirectToStripe` producers,
+excluding previews and other payment paths without that producer.
 
 ## Morning Brief collection revocation stamp (#34860)
 

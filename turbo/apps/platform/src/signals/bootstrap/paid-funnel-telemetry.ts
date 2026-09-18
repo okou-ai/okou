@@ -23,8 +23,7 @@ import { readStoredAdAttributionMetadata$ } from "./ad-attribution.ts";
 import { sessionStorageSignals } from "../external/session-storage.ts";
 import { resolveGoogleAdsAccount$ } from "./google-ads-account.ts";
 import type { OnboardingRouteStep } from "../onboarding/onboarding-state.ts";
-import type { MarketingCheckoutRequest } from "@okouai/api-contracts/contracts/marketing-checkout";
-import { recordMarketingCheckoutStart$ } from "../marketing/checkout-start.ts";
+import { sendEvent$ } from "../marketing/events.ts";
 
 const ONBOARDING_START_CONVERSION_KEY =
   "vm0.googleAdsOnboardingStartConversionRecorded";
@@ -155,10 +154,10 @@ export const capturePaidOnboardingRoleConfirmed$ = command(
 export const capturePaidOnboardingRedirectToStripe$ = command(
   async (
     { get, set },
-    checkoutSource: MarketingCheckoutRequest["checkoutSource"],
+    checkoutSource: "onboarding_video" | "paywall",
     signal: AbortSignal,
   ): Promise<void> => {
-    set(recordMarketingCheckoutStart$, checkoutSource);
+    set(sendEvent$, "checkout-start");
     capturePaidOnboardingEvent("RedirectToStripe", {
       ...attributionProperties(set(readStoredAdAttributionMetadata$)),
       checkout_source: checkoutSource,
