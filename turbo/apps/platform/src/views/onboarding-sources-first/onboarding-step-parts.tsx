@@ -6,12 +6,13 @@ import { settingsIconAssetUrl } from "../okou-page/components/settings/settings-
 const ILLUSTRATION_BASE = "https://static.okou.io/web/assets/onboarding/";
 
 /**
- * A card leads with a poster-sized illustration; a panel header carries the
- * same art at row size. Nothing in onboarding needs a third size.
+ * Illustrations keep their own aspect ratio, so a mark is sized by height and
+ * capped in width. A card leads with the poster size; a row carries the same
+ * art at header size.
  */
 const MARK_SIZES = {
-  poster: "h-[136px] w-[136px]",
-  header: "h-9 w-9",
+  poster: "h-[132px] max-w-[240px]",
+  header: "h-9 max-w-9",
 } as const;
 
 type MarkSize = keyof typeof MARK_SIZES;
@@ -27,7 +28,7 @@ export function OnboardingIllustration({
 }) {
   return (
     <img
-      src={`${ILLUSTRATION_BASE}v3-${name === "skill-import" ? "skill-import" : `choice-${name}`}_480x480.png`}
+      src={`${ILLUSTRATION_BASE}v3-${name === "skill-import" ? "skill-import" : `choice-${name}`}-fit_480.png`}
       alt={alt}
       className={cn("shrink-0 object-contain", MARK_SIZES[size])}
     />
